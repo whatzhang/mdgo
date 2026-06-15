@@ -216,3 +216,18 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+.DS_Store
+.obsidian
+.idea
+.trae
+.venv
+.vscode
+/target/
+resource.iml
+server/static/data
+!server/static/data/index_tools.json
+server/server.pid
+server/server.log
+server/server_*.log
