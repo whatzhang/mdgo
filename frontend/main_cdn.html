@@ -7076,7 +7076,7 @@
             background: rgba(255, 255, 255, 0.96);
             backdrop-filter: blur(8px);
             z-index: 20;
-            font-size: 13PX;
+            font-size: 13px;
         }
 
         .timeline-view-tabs,
@@ -22627,6 +22627,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return await fileHandle.remove();
         }
 
+        async function deleteDir(dirHandle, dirName) {
+            return await dirHandle.removeEntry(dirName);
+        }
+
         async function deleteFileByName(dirHandle, fileName) {
             return await dirHandle.removeEntry(fileName);
         }
@@ -31774,7 +31778,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         try {
                             const { parentHandle, name } = await _resolveParent(np);
                             if (!parentHandle || !name) { cb(new Error('EISDIR')); return; }
-                            await parentHandle.removeEntry(name);
+                            await deleteDir(parentHandle, name);
                             cb(null);
                         } catch (e) { cb(e); }
                     })();
