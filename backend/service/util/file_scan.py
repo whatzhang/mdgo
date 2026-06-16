@@ -5,7 +5,7 @@ import os
 import sys
 import time
 from datetime import datetime
-from service.config import PROJECT_ROOT
+from backend.service.config import PROJECT_ROOT
 
 # 增量扫描缓存文件
 _CACHE_SNAPSHOT_FILE = "index_file_scan_snapshot.json"
@@ -84,8 +84,9 @@ _IGNORE_DIRS_TUPLE = tuple(
     os.path.normpath(d).replace("\\", "/") for d in [".",
                                                      ".obsidian", ".venv", ".vscode", ".git", "assets",
                                                      ".trae", ".claude", ".idea",
-                                                     "server/static/css_js/cdn",
-                                                     "node_modules", "vendor", "dist", "build", "out", "target", "__pycache__"
+                                                     ".mdgo",
+                                                     "node_modules", "vendor", "dist", "build", "out", "target",
+                                                     "__pycache__"
                                                      ]
 )
 _IGNORE_FILENAMES = (".", ".bobconfig", ".itermexport",
@@ -99,8 +100,6 @@ def should_ignore_file(file_name):
 # 大小格式化的单位常量
 _SIZE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB']
 _SIZE_DIVISORS = [1, 1024, 1024 ** 2, 1024 ** 3, 1024 ** 4]
-
-TARGET_DIR = os.getenv("FILE_SCAN_TARGET_DIR", PROJECT_ROOT)
 
 
 def should_ignore_dir(relative_path):
@@ -350,10 +349,8 @@ def scan_files(base_dir):
 
 def _get_cache_paths(base_dir):
     """获取扫描结果文件和缓存快照文件的路径"""
-    output_file = os.path.join(base_dir, 'server', 'static',
-                               'data', 'index_file_scan_data.json')
-    cache_file = os.path.join(base_dir, 'server', 'static',
-                              'data', _CACHE_SNAPSHOT_FILE)
+    output_file = os.path.join(base_dir, '.mdgo', 'data', 'index_file_scan_data.json')
+    cache_file = os.path.join(base_dir, '.mdgo', 'data', _CACHE_SNAPSHOT_FILE)
     return output_file, cache_file
 
 
@@ -448,8 +445,6 @@ def scan_file_info(base_dir=None, force=False):
         3. 若没有变更且缓存存在，直接返回缓存结果（毫秒级）
         4. 若有变更，仅扫描变更的文件重新采数，合并到缓存结果中
     """
-    if base_dir is None:
-        base_dir = TARGET_DIR
 
     output_file, cache_file = _get_cache_paths(base_dir)
 
@@ -706,8 +701,6 @@ def _remove_deleted_files(deleted_paths, cached_result, current_total_size):
 if __name__ == '__main__':
     if len(sys.argv) > 1:
         base_dir = os.path.abspath(sys.argv[1])
-    else:
-        base_dir = TARGET_DIR
-    # 支持 --force 参数强制全量扫描
-    force = '--force' in sys.argv or '-f' in sys.argv
-    scan_file_info(base_dir=base_dir, force=force)
+        # 支持 --force 参数强制全量扫描
+        force = '--force' in sys.argv or '-f' in sys.argv
+        scan_file_info(base_dir=base_dir, force=force)

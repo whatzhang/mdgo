@@ -11220,6 +11220,7 @@
         const LOCAL_LLM_TOKEN = 'c17f18e31adb10978d3a9cd0d6743d30a067af602a8789e7';
         const LOCAL_LLM_MODEL = 'gemma-4-e4b-it';//openclaw/main, gemma-4-e4b-it, qwen/qwen3.5-9b
         const CONTEXT_LENGTH = 10000;
+        const NGINX_CONF_PATH = '/usr/local/etc/openresty/sites/index.conf';
         const DOT = '.';
         const SLASH = '/';
         const PROMPTS = {
@@ -11357,7 +11358,7 @@
         ]
         // 目录黑名单:这些目录将被忽略,不显示在文件树中
         const DIR_BLACKLIST = [".", ".obsidian", ".venv", ".vscode", ".git", "assets", ".trae", ".claude", ".idea",
-            'server/static/css_js/cdn', 'node_modules', 'vendor', 'dist', 'build', 'out', 'target', '__pycache__'];
+            'frontend/css_js/cdn', 'node_modules', 'vendor', 'dist', 'build', 'out', 'target', '__pycache__'];
         // 文件后缀正则黑名单:匹配这些后缀的文件将被忽略
         const FILE_BLACKLIST = [DOT, '.bobconfig', '.itermexport', '.DS_Store', '.gitignore', '.rayconfig'];
         // 随机打开文件的白名单目录, 默认判断尾缀名
@@ -11365,7 +11366,6 @@
         const RANDOM_DIR_BLACKLIST = ['note/moc', 'note/templates', 'deleted', 'data', 'code'];
         // code目录下的HTML文件显示代码,其他文件正常显示
         const HTML_CODE_SHOW_BLACKLIST = ["note"];
-        const CRON_HTML_URL = './subindex/cron.html';
         // ========== 常量定义 ==========
         const MAX_FILE_SIZE = 50 * 1024 * 1024; // 5MB - 大文件限制
         const MAX_DIR_DEPTH = 50; // 最大目录深度
@@ -18880,12 +18880,20 @@
             if (force) {
                 url += '&force=true';
             }
-            const response = await fetch(url);
-            if (!response.ok) {
-                console.error(`HTTP error! status: ${response.status}, url: ${url}`);
-                throw new Error(`HTTP error! status: ${response.status}, url: ${url}`);
-            }
-            return await response.json();
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        return data.data;
+                    } else {
+                        showNotification('✗ 配置失败: ' + data.message, 'error');
+                        throw new Error(data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error(`HTTP error! status`, error);
+                    throw new Error(error.message);
+                });
         }
 
         async function scanDirToIndexByLocal() {
@@ -21418,14 +21426,14 @@ query {
                                                     ⚠️ 获取配置失败: errorMsg
                                                 </div>
                                              </div>`;
-            fetch('/api/system/openresty/conf')
+            fetch(`/api/system/openresty/conf?conf_path=${encodeURIComponent(NGINX_CONF_PATH)}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
                         initOpenRestyEditor(data.conf, data.path);
                         document.getElementById('openresty-editor-header').innerHTML = '📝 编辑模式 - ' + data.path;
                     } else {
-                        let errorMsg = JSON.stringify(data);
+                        let errorMsg = data.message || JSON.stringify(data);
                         openrestyEditorContainer.innerHTML = html.replace('errorMsg', errorMsg);
                         showNotification('获取配置失败: ' + errorMsg, 'error');
                     }
@@ -21494,13 +21502,13 @@ query {
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ conf: content })
+                    body: JSON.stringify({ conf: content, conf_path: NGINX_CONF_PATH })
                 }).then(response => response.json())
                     .then(data => {
                         if (data.success) {
                             showNotification('✓ 配置已生效', 'success');
                         } else {
-                            showNotification('✗ 配置失败: ' + data.error, 'error');
+                            showNotification('✗ 配置失败: ' + data.message, 'error');
                         }
                     })
                     .catch(error => {
@@ -22761,9 +22769,8 @@ query {
         }
 
         async function getDataDir() {
-            const serverDir = await getOrCreateDirectory(getRootHandle(), 'server');
-            const staticDir = await getOrCreateDirectory(serverDir, 'static');
-            return await getOrCreateDirectory(staticDir, 'data');
+            const serverDir = await getOrCreateDirectory(getRootHandle(), '.mdgo');
+            return await getOrCreateDirectory(serverDir, 'data');
         }
 
         async function verifyPermission(handle) {

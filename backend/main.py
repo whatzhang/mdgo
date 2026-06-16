@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import psutil
 
 from service.system_service import scan_file_info, get_openresty_conf, reload_openresty_conf
-from service.config import PROJECT_ROOT, STATIC_DIR, HOST, PORT, LOG_LEVEL
+from service.config import PROJECT_ROOT, FRENDEND_DIR, HOST, PORT, LOG_LEVEL
 from typing import Optional
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -54,55 +54,34 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization"],
 )
 
-STATIC_CSS_JS_DIR = os.path.join(STATIC_DIR, "css_js")
-STATIC_SUBINDEX_DIR = os.path.join(STATIC_DIR, "subindex")
-STATIC_DATA_DIR = os.path.join(STATIC_DIR, "data")
+STATIC_CSS_JS_DIR = os.path.join(FRENDEND_DIR, "css_js")
 
 for mount_path, directory, mount_name in [
     ("/css_js", STATIC_CSS_JS_DIR, "css_js"),
-    ("/subindex", STATIC_SUBINDEX_DIR, "subindex"),
 ]:
     if os.path.isdir(directory):
         app.mount(mount_path, StaticFiles(
             directory=directory), name=mount_name)
     else:
-        logging.warning(
-            "静态挂载被跳过，因为路径不存在: %s", directory)
+        logging.warning("静态挂载被跳过，因为路径不存在: %s", directory)
 
 DYNAMIC_SCAN_PATH = None
 
 
 def dynamic_mount_directory(real_path):
     global DYNAMIC_SCAN_PATH
-
     if not real_path or '..' in real_path:
         logging.warning(f"无效路径: {real_path}")
         return False
-
     abs_path = os.path.abspath(real_path)
-
     if not os.path.isdir(abs_path):
         logging.warning(f"目录未找到: {abs_path}")
         return False
-
     if DYNAMIC_SCAN_PATH == abs_path:
         return True
-
     DYNAMIC_SCAN_PATH = abs_path
     logging.info(f"动态扫描路径设置为: {abs_path}")
-
     return True
-
-
-@app.get("/api/system/scan")
-async def api_scan_file_info(dir: Optional[str] = Query(None),
-                              force: bool = Query(False)):
-    result = scan_file_info(dir_path=dir, force=force)
-    if dir:
-        if dynamic_mount_directory(dir) and isinstance(result, dict):
-            result["mount_path"] = "/"
-            result["scan_root"] = DYNAMIC_SCAN_PATH
-    return result
 
 
 graphql_router = GraphQLRouter(schema, graphql_ide=None)
@@ -118,32 +97,40 @@ def _load_static_file(directory: str, filename: str):
 
 @app.get("/", response_class=HTMLResponse)
 async def index_page():
-    return _load_static_file(STATIC_DIR, "main.html")
+    return _load_static_file(FRENDEND_DIR, "main.html")
 
 
 @app.get("/main", response_class=HTMLResponse)
 async def index_alias():
-    return _load_static_file(STATIC_DIR, "main.html")
+    return _load_static_file(FRENDEND_DIR, "main.html")
+
 
 @app.get("/cdn", response_class=HTMLResponse)
 async def hello_page():
-    return _load_static_file(STATIC_DIR, "main_cdn.html")
+    return _load_static_file(FRENDEND_DIR, "main_cdn.html")
 
 
-@app.get("/api/health")
-async def health_check():
-    return {"code": 200, "message": "OK", "data": {"status": "healthy"}}
+@app.get("/api/system/scan")
+async def api_scan_file_info(dir: Optional[str] = Query(None),
+                             force: bool = Query(False)):
+    result = scan_file_info(dir_path=dir, force=force)
+    if dir:
+        if dynamic_mount_directory(dir) and isinstance(result, dict):
+            result["data"]["mount_path"] = "/"
+            result["data"]["scan_root"] = DYNAMIC_SCAN_PATH
+    return result
 
 
 @app.get("/api/system/openresty/conf")
-async def api_get_openresty_conf():
-    return get_openresty_conf()
+async def api_get_openresty_conf(conf_path: Optional[str] = Query(None)):
+    return get_openresty_conf(conf_path)
 
 
 @app.post("/api/system/openresty/reload")
 async def api_reload_openresty_conf(body: dict = Body(...)):
-    conf = body.get("conf", "")
-    return reload_openresty_conf(conf_content=conf)
+    content = body.get("conf", "")
+    conf_path = body.get("conf_path", None)
+    return reload_openresty_conf(conf_path=conf_path, conf_content=content)
 
 
 # ── WebSocket 统一推送通道 ──
@@ -177,7 +164,7 @@ async def api_system_metrics_stream():
     return StreamingResponse(metrics_stream(interval=5.0), media_type="text/event-stream")
 
 
-RESERVED_PATH_PREFIXES = ("/css_js", "/subindex", "/graphql", "/api/")
+RESERVED_PATH_PREFIXES = ("/css_js", "/graphql", "/api/")
 
 
 @app.get("/{full_path:path}")

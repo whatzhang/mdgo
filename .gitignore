@@ -224,10 +224,10 @@ __marimo__/
 .trae
 .venv
 .vscode
+.mdgo
 /target/
 resource.iml
-server/static/data
-!server/static/data/index_tools.json
-server/server.pid
-server/server.log
-server/server_*.log
+backend/server.pid
+backend/server.log
+backend/server_*.log
+frontend/data/
