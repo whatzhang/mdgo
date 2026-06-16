@@ -71,17 +71,18 @@ class Query:
     @strawberry.field
     def scan_file_info(self, dir: Optional[str] = None) -> ScanResult:
         result = svc_scan_file_info(dir_path=dir)
+        data = result["data"]
         return ScanResult(
-            scan_time=result["scan_time"],
-            base_dir=result["base_dir"],
+            scan_time=data["scan_time"],
+            base_dir=data["base_dir"],
             stats=ScanStats(
-                total_files=result["stats"]["total_files"],
-                total_folders=result["stats"]["total_folders"],
-                total_size_bytes=result["stats"]["total_size_bytes"],
-                total_size_str=result["stats"]["total_size_str"],
+                total_files=data["stats"]["total_files"],
+                total_folders=data["stats"]["total_folders"],
+                total_size_bytes=data["stats"]["total_size_bytes"],
+                total_size_str=data["stats"]["total_size_str"],
             ),
-            files=[ScanFile(**f) for f in result["files"]],
-            folder_tree=_build_folder_tree(result["folderTree"]),
+            files=[ScanFile(**f) for f in data["files"]],
+            folder_tree=_build_folder_tree(data["folderTree"]),
         )
 
 

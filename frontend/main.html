@@ -21297,7 +21297,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             name: '示例查询',
                             endpoint: GRAPHQL_ENDPOINT,
                             query: `{
-  scanFileInfo {
+  scanFileInfo (dir: "${currentRootPath}" ){
     scanTime
     baseDir
     stats {
@@ -21360,9 +21360,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         function openGraphiQL() {
             switchToView(graphqlContainer);
-            const defaultQuery = `# 查询工作空间文件及文件层级关系
-query {
-  scanFileInfo {
+            const defaultQuery = `{
+  scanFileInfo (dir: "${currentRootPath}" ){
     scanTime
     baseDir
     stats {
