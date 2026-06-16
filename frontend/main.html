@@ -11600,6 +11600,34 @@
             await initAll();
         });
 
+        // ========== 页面可见性和空闲检测 ==========
+        let lastActivityTime = Date.now();
+        const IDLE_TIMEOUT = 5 * 60 * 1000; // 5分钟空闲阈值
+        // 空闲检测：记录用户最后活动时间
+        function updateActivity() {
+            lastActivityTime = Date.now();
+        }
+        ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'].forEach(event => {
+            document.addEventListener(event, updateActivity, { passive: true });
+        });
+        // 检查是否空闲
+        function isIdle() {
+            return Date.now() - lastActivityTime > IDLE_TIMEOUT;
+        }
+
+        // 页面可见性检测：页面隐藏时暂停定时器，节省CPU
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                // 页面隐藏时暂停所有定时器
+                TimerManager.pauseAll();
+            } else {
+                // 页面可见时恢复所有定时器
+                TimerManager.resumeAll();
+                // 更新活动时间
+                lastActivityTime = Date.now();
+            }
+        });
+
         window.addEventListener('beforeunload', function (e) {
             safeLocalStorageSet(BROWSER_REFRESHED_KEY, BROWSER_REFRESHED_KEY);
             stopScheduledTask();
@@ -11996,13 +12024,17 @@
         }
 
         // ========== 定时器管理器 ==========
+        // 系统级定时器（页面隐藏时继续运行）和普通定时器
         const TimerManager = {
-            timers: new Map(), // setInterval timers
+            timers: new Map(), // setInterval timers { id, callback, interval, system }
             timeoutTimers: new Map(), // setTimeout timers
-            set(name, callback, interval) {
+            _paused: false, // 全局暂停状态
+
+            // system=true: 页面隐藏时继续运行（如定时任务通知）
+            set(name, callback, interval, system = false) {
                 this.clear(name);
                 const id = setInterval(callback, interval);
-                this.timers.set(name, id);
+                this.timers.set(name, { id, callback, interval, system });
                 return id;
             },
             setTimeout(name, callback, delay) {
@@ -12016,7 +12048,7 @@
             },
             clear(name) {
                 if (this.timers.has(name)) {
-                    clearInterval(this.timers.get(name));
+                    clearInterval(this.timers.get(name).id);
                     this.timers.delete(name);
                 }
                 this.clearTimeout(name);
@@ -12028,13 +12060,63 @@
                 }
             },
             clearAll() {
-                this.timers.forEach((id) => clearInterval(id));
+                this.timers.forEach((t) => clearInterval(t.id));
                 this.timers.clear();
                 this.timeoutTimers.forEach((id) => clearTimeout(id));
                 this.timeoutTimers.clear();
             },
             has(name) {
                 return this.timers.has(name) || this.timeoutTimers.has(name);
+            },
+            // 暂停指定定时器（非系统定时器）
+            pause(name) {
+                if (this.timers.has(name)) {
+                    const t = this.timers.get(name);
+                    if (!t.system) {
+                        clearInterval(t.id);
+                        t.id = null;
+                    }
+                }
+            },
+            // 恢复指定定时器
+            resume(name) {
+                if (this.timers.has(name)) {
+                    const t = this.timers.get(name);
+                    if (t.id === null && !t.system) {
+                        t.id = setInterval(t.callback, t.interval);
+                    }
+                }
+            },
+            // 暂停所有非系统定时器
+            pauseAll() {
+                this._paused = true;
+                this.timers.forEach((t) => {
+                    if (t.id !== null && !t.system) {
+                        clearInterval(t.id);
+                        t.id = null;
+                    }
+                });
+            },
+            // 恢复所有定时器
+            resumeAll() {
+                this._paused = false;
+                this.timers.forEach((t) => {
+                    if (t.id === null) {
+                        t.id = setInterval(t.callback, t.interval);
+                    }
+                });
+            },
+            // 获取当前暂停状态
+            isPaused() {
+                return this._paused;
+            },
+            // 获取所有系统级定时器名称
+            getSystemTimers() {
+                const systems = [];
+                this.timers.forEach((t, name) => {
+                    if (t.system) systems.push(name);
+                });
+                return systems;
             }
         };
 
@@ -20241,7 +20323,12 @@
             const timeDisplay = dashboardContainer.querySelector('#dashboard-time');
             if (timeDisplay) {
                 todoUpdateModalTime(timeDisplay);
-                TimerManager.set('dashboardTime', () => todoUpdateModalTime(timeDisplay), 1000);
+                TimerManager.set('dashboardTime', () => {
+                    // 空闲时不更新时间，减少 CPU 占用
+                    if (!isIdle()) {
+                        todoUpdateModalTime(timeDisplay);
+                    }
+                }, 1000);
             }
             if (isFirst) {
                 // 首次加载或点击"扫描数据"按钮 → 强制全量扫描
@@ -23892,9 +23979,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const intervalMs = intervalMinutes * 60 * 1000;
             console.log(`[定时任务] 启动，间隔: ${intervalMinutes}分钟 (${intervalMs}ms)`);
             executeScheduledTask().catch(e => console.error('[定时任务] 执行失败:', e));
+            // 系统级定时器：页面隐藏时继续运行，确保定时任务通知
             TimerManager.set('scheduledTask', () => {
                 executeScheduledTask().catch(e => console.error('[定时任务] 执行失败:', e));
-            }, intervalMs);
+            }, intervalMs, true);
         }
 
         function stopScheduledTask() {
@@ -25866,7 +25954,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const timeDisplay = calendarContainer.querySelector('#todo-display-time');
             if (timeDisplay) {
                 todoUpdateModalTime(timeDisplay);
-                TimerManager.set('dashboardTime', () => todoUpdateModalTime(timeDisplay), 1000);
+                TimerManager.set('dashboardTime', () => {
+                    // 空闲时不更新时间，减少 CPU 占用
+                    if (!isIdle()) {
+                        todoUpdateModalTime(timeDisplay);
+                    }
+                }, 1000);
             }
         }
 
@@ -26050,7 +26143,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 await todoLoadFromFile();
             }
             todoRenderAll();
-            TimerManager.set('todoTimeline', todoRenderCurrentTimeLine, 60000);
+            // 系统级定时器：页面隐藏时继续运行，确保时间线实时更新
+            TimerManager.set('todoTimeline', todoRenderCurrentTimeLine, 60000, true);
             // 点击遮罩关闭（只绑定一次）
             if (!_todoModalClickBound) {
                 const modal = todo$('todo-modal');
@@ -27089,7 +27183,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         function todoStartLocalScheduler() {
             todoStopLocalScheduler();
             todoCheckScheduledEvents();
-            TimerManager.set('todoScheduler', todoCheckScheduledEvents, 60000);
+            // 系统级定时器：页面隐藏时继续运行，确保日程提醒
+            TimerManager.set('todoScheduler', todoCheckScheduledEvents, 60000, true);
         }
         // 停止本地定时任务调度器
         function todoStopLocalScheduler() {
