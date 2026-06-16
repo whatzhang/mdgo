@@ -199,7 +199,7 @@
             --photo-shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.12), 0 12px 40px rgba(0, 0, 0, 0.15);
 
             /* ==================== git ==================== */
-            --git-bg-secondary: var(--color-bg);
+            --git-bg-secondary: var(--color-bg-secondary);
             --git-border: var(--color-border);
             --git-text: var(--color-text);
             --git-text-muted: var(--t2);
@@ -3753,578 +3753,6 @@
         .tool-button:active {
             transform: translateY(0);
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-        }
-
-        .bookmark-knowledge-modal {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 1000;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .bookmark-knowledge-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.5);
-            cursor: pointer;
-        }
-
-        .bookmark-knowledge-content {
-            position: relative;
-            width: 75%;
-            height: auto;
-            background: white;
-            border-radius: 10px;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-        }
-
-        .bookmark-knowledge-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 16px 20px;
-            border-bottom: 1px solid #eaecef;
-            background: #f6f8fa;
-        }
-
-        .bookmark-knowledge-title {
-            font-size: 18px;
-            font-weight: 600;
-            color: #24292f;
-        }
-
-        .bookmark-knowledge-close {
-            position: absolute;
-            top: 12px;
-            right: 12px;
-            width: 32px;
-            height: 32px;
-            border: none;
-            background: transparent;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 50%;
-            transition: background-color 0.2s;
-        }
-
-        .bookmark-knowledge-close:hover {
-            background-color: rgba(0, 0, 0, 0.08);
-        }
-
-        .bookmark-knowledge-close svg {
-            width: 20px;
-            height: 20px;
-            stroke: #666;
-        }
-
-        .bookmark-knowledge-body {
-            padding: 20px;
-            overflow: hidden;
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            min-height: 0;
-        }
-
-        .bookmark-search-add-row {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 12px;
-        }
-
-        .bookmark-search-box {
-            flex: 1;
-            display: flex;
-            gap: 6px;
-            align-items: center;
-        }
-
-        .bookmark-search-box .search-input-wrapper {
-            position: relative;
-            flex: 0.8;
-        }
-
-        .bookmark-search-box .search-input-wrapper input {
-            width: 100%;
-            padding: 7px 28px 7px 12px;
-            border: 1px solid #ddd;
-            border-radius: 6px;
-            font-size: 12px;
-            box-sizing: border-box;
-            height: 32px;
-        }
-
-        .bookmark-search-box .search-input-wrapper input:focus {
-            outline: none;
-            border-color: #1a73e8;
-        }
-
-        .bookmark-search-box .search-input-wrapper button {
-            position: absolute;
-            right: 6px;
-            top: 50%;
-            transform: translateY(-50%);
-            background: none;
-            border: none;
-            cursor: pointer;
-            padding: 2px;
-            display: none;
-            color: #666;
-        }
-
-        .bookmark-search-box .search-input-wrapper button:hover {
-            color: #1a73e8;
-        }
-
-        .bookmark-add-section {
-            flex: 1;
-            display: flex;
-            gap: 6px;
-            align-items: center;
-        }
-
-        .bookmark-add-section .add-input-wrapper {
-            position: relative;
-            flex: 1;
-        }
-
-        .bookmark-add-section .add-input-wrapper input {
-            width: 100%;
-            padding: 7px 28px 7px 12px;
-            border: 1px solid #ddd;
-            border-radius: 6px;
-            font-size: 12px;
-            box-sizing: border-box;
-            height: 32px;
-        }
-
-        .bookmark-add-section .add-input-wrapper input:focus {
-            outline: none;
-            border-color: #1a73e8;
-        }
-
-        .bookmark-add-section .add-input-wrapper button {
-            position: absolute;
-            right: 6px;
-            top: 50%;
-            transform: translateY(-50%);
-            background: none;
-            border: none;
-            cursor: pointer;
-            padding: 2px;
-            display: none;
-            color: #666;
-        }
-
-        .bookmark-add-section .add-input-wrapper button:hover {
-            color: #1a73e8;
-        }
-
-        .bm-action-btn {
-            height: 32px;
-            padding: 0 12px;
-            font-size: 12px;
-            border-radius: 6px;
-        }
-
-        .bookmark-stats-section {
-            margin-bottom: 12px;
-        }
-
-        .bookmark-stats-title {
-            font-size: 13px;
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 8px;
-        }
-
-        .bookmark-stats-grid {
-            display: flex;
-            gap: 8px;
-        }
-
-        .bookmark-stat-card {
-            flex: 1;
-            padding: 10px 8px;
-            background: #f5f7fa;
-            border-radius: 6px;
-            text-align: center;
-        }
-
-        .bookmark-stat-number {
-            font-size: 20px;
-            font-weight: 700;
-            color: #1a73e8;
-        }
-
-        .bookmark-stat-label {
-            font-size: 11px;
-            color: #666;
-            margin-top: 2px;
-        }
-
-        .bookmark-recommend-section {
-            margin-top: 5px;
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            min-height: 0;
-        }
-
-        .bookmark-recommend-scroll-area {
-            padding: 5px 0 0 1px;
-            flex: 1;
-            overflow-y: auto;
-            min-height: 0;
-            max-height: 390px;
-        }
-
-        .bookmark-recommend-scroll-area::-webkit-scrollbar {
-            width: 4px;
-        }
-
-        .bookmark-recommend-scroll-area::-webkit-scrollbar-thumb {
-            background: #ccc;
-            border-radius: 2px;
-        }
-
-        .bookmark-recommend-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 8px;
-        }
-
-        .bookmark-recommend-title {
-            font-size: 13px;
-            font-weight: 600;
-            color: #333;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .bookmark-filter-section {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 12px;
-            color: #666;
-        }
-
-        .bookmark-filter-section select {
-            padding: 4px 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 12px;
-            background: white;
-            cursor: pointer;
-            min-width: 100px;
-        }
-
-        .bookmark-filter-section select:focus {
-            outline: none;
-            border-color: #1a73e8;
-        }
-
-        .bookmark-recommend-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-            gap: 8px;
-        }
-
-        .bookmark-recommend-card {
-            padding: 8px;
-            background: white;
-            border: 1px solid #eaecef;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: box-shadow 0.3s ease, border-color 0.3s ease, transform 0.3s ease;
-            min-width: 0;
-        }
-
-        .bookmark-recommend-card:hover {
-            box-shadow: 0 6px 20px rgba(26, 115, 232, 0.15);
-            border-color: #1a73e8;
-            transform: translateY(-1px);
-        }
-
-        .bookmark-recommend-card .bm-title {
-            font-size: 13px;
-            font-weight: 600;
-            color: #4f46e5;
-            margin-bottom: 4px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .bookmark-recommend-card .bm-url {
-            font-size: 11px;
-            color: #999;
-            margin-bottom: 4px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            max-width: 100%;
-        }
-
-        .bookmark-recommend-card .bm-tags {
-            display: flex;
-            gap: 4px;
-            flex-wrap: wrap;
-            margin-bottom: 3px;
-        }
-
-        .bookmark-recommend-card .bm-tag {
-            padding: 1px 6px;
-            background: #e8f0fe;
-            color: #1a73e8;
-            border-radius: 10px;
-            font-size: 11px;
-            line-height: 1.4;
-        }
-
-        .bookmark-recommend-card .bm-category {
-            font-size: 11px;
-            color: #999;
-        }
-
-        .bookmark-recommend-card .bm-category span {
-            color: #333;
-            font-weight: 500;
-        }
-
-        .bookmark-recommend-card .bm-url {
-            font-size: 12px;
-            color: #666;
-            margin-bottom: 8px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            max-width: 100%;
-            cursor: pointer;
-            text-decoration: underline;
-        }
-
-        .bookmark-recommend-card .bm-url:hover {
-            color: #1a73e8;
-        }
-
-        .bookmark-detail-container {
-            width: 100%;
-            cursor: pointer;
-        }
-
-        .bookmark-detail-card {
-            max-height: 400px;
-            overflow: auto;
-            background: white;
-            border: 1px solid #eaecef;
-            border-radius: 6px;
-            padding: 16px;
-            transition: box-shadow 0.3s ease;
-        }
-
-        .bookmark-detail-card::-webkit-scrollbar {
-            width: 0px;
-        }
-
-        .bookmark-detail-card .detail-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 5px;
-        }
-
-        .bookmark-detail-card .detail-title {
-            font-size: 15px;
-            font-weight: 600;
-            color: #333;
-            flex: 1;
-            margin-bottom: 5px;
-        }
-
-        .bookmark-detail-card .detail-delete-btn {
-            background: #fee;
-            color: #e01e1e;
-            border: 1px solid #fcc;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 13px;
-            transition: all 0.2s ease;
-        }
-
-        .bookmark-detail-card .detail-delete-btn:hover {
-            background: #fdd;
-            border-color: #faa;
-        }
-
-        .bookmark-detail-card .detail-url {
-            font-size: 14px;
-            color: #1a73e8;
-            margin-bottom: 8px;
-            word-break: break-all;
-        }
-
-        .bookmark-detail-card .detail-summary {
-            font-size: 14px;
-            color: #666;
-            line-height: 1.6;
-            margin-bottom: 10px;
-        }
-
-        .bookmark-detail-card .detail-tags {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            margin-bottom: 16px;
-        }
-
-        .bookmark-detail-card .detail-tag {
-            padding: 4px 12px;
-            background: #e8f0fe;
-            color: #1a73e8;
-            border-radius: 16px;
-            font-size: 13px;
-        }
-
-        .bookmark-detail-card .detail-tag-green {
-            background: #e8f5e9;
-            color: #2e7d32;
-        }
-
-        .bookmark-detail-card .detail-meta {
-            font-size: 13px;
-            color: #666;
-            margin-bottom: 8px;
-        }
-
-        .bookmark-detail-card .detail-meta span {
-            color: #333;
-            font-weight: 500;
-        }
-
-        .bookmark-detail-loading {
-            text-align: center;
-            padding: 40px;
-            color: #666;
-        }
-
-        /* 书签分页 */
-        .bookmark-pagination {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-            padding: 15px 0 0 0;
-            flex-shrink: 0;
-        }
-
-        .bookmark-pagination button {
-            padding: 4px 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            background: white;
-            cursor: pointer;
-            font-size: 12px;
-            color: #333;
-            transition: all 0.2s;
-        }
-
-        .bookmark-pagination button:hover:not(:disabled) {
-            border-color: #1a73e8;
-            color: #1a73e8;
-            background: #f0f6ff;
-        }
-
-        .bookmark-pagination button:disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
-        }
-
-        .bookmark-pagination button.active {
-            background: #1a73e8;
-            color: white;
-            border-color: #1a73e8;
-        }
-
-        .bookmark-pagination .page-info {
-            font-size: 12px;
-            color: #666;
-            margin: 0 4px;
-        }
-
-        .bookmark-pagination .page-size-select {
-            padding: 3px 6px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 12px;
-            background: white;
-            cursor: pointer;
-            margin-left: 8px;
-        }
-
-        .bm-back-btn {
-            background: none;
-            border: 1px solid #ddd;
-            padding: 4px 12px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 13px;
-            margin-left: 12px;
-        }
-
-        .bm-back-btn:hover {
-            background: #f5f7fa;
-        }
-
-        .detail-related-title {
-            font-size: 13px;
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 8px;
-        }
-
-        .detail-related-empty {
-            font-size: 12px;
-            color: #999;
-            padding: 8px 0;
-        }
-
-        .bookmark-detail-card .related-tags {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        .bookmark-detail-card .related-tag {
-            padding: 6px 16px;
-            background: var(--color-bg);
-            color: #d97706;
-            border-radius: 8px;
-            font-size: 13px;
-            margin-bottom: 5px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        .bookmark-detail-card .related-tag:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
         }
 
         /* graphql-样式 */
@@ -9615,17 +9043,16 @@
         .photo-layout-container {
             display: block;
             width: 100%;
-            height: auto;
-            min-height: 100%;
+            height: 100%;
             background: var(--color-bg-secondary);
             color: var(--color-text);
+            overflow-y: auto;
             overflow-x: hidden;
         }
 
         .photo-main {
             overflow-x: hidden;
             width: 100%;
-            min-height: 100%;
             height: auto;
         }
 
@@ -9652,6 +9079,7 @@
             background: transparent;
             color: var(--color-text);
             font-size: 13px;
+            font-weight: 500;
             font-weight: 500;
             border-radius: 8px;
             cursor: pointer;
@@ -9748,7 +9176,6 @@
 
         .photo-scatter {
             position: relative;
-            min-height: 100vh;
             height: auto;
             perspective: 1000px;
             width: 100%;
@@ -9834,7 +9261,7 @@
 
         .git-left-panel {
             width: 19%;
-            background: var(--git-bg-secondary);
+            background: var(--color-bg);
             border-right: 1px solid var(--git-border);
             display: flex;
             flex-direction: column;
@@ -9845,12 +9272,13 @@
             padding: 10px 14px;
             font-size: 12px;
             font-weight: 600;
-            color: var(--git-text-muted);
+            color: var(--t1);
             border-bottom: 1px solid var(--git-border);
             flex-shrink: 0;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            background: var(--color-bg-secondary);
         }
 
         .git-graph-scroll {
@@ -9858,6 +9286,7 @@
             overflow-y: auto;
             overflow-x: auto;
             position: relative;
+            padding: 3px;
         }
 
         .git-records-container *::-webkit-scrollbar {
@@ -9889,7 +9318,7 @@
         .git-graph-rows {
             position: relative;
             z-index: 2;
-            padding: 0 5px;
+            padding: 0 5px 5px 5px;
             display: flex;
             flex-direction: column;
         }
@@ -9908,11 +9337,11 @@
         }
 
         .git-graph-row:hover .git-graph-cell-info {
-            background: rgba(232, 234, 237, 0.45);
+            transform: scale(1.025);
         }
 
         .git-graph-row.git-graph-row-active .git-graph-cell-info {
-            background: rgba(225, 239, 255, 0.55);
+            border: 1px solid var(--color-primary);
         }
 
         .git-graph-row.git-graph-row-muted .git-graph-msg,
@@ -9936,14 +9365,56 @@
             display: flex;
             flex-direction: column;
             justify-content: center;
+            background: var(--color-bg);
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            transition: all 0.2s ease;
         }
 
-        .git-graph-row:last-child .git-graph-cell-info {
-            border-bottom: none;
+        /* ── Commit Hover Detail Panel ── */
+        .git-commit-hover-panel {
+            display: none;
+            position: fixed;
+            z-index: 9999;
+            width: 320px;
+            height: auto;
+            background: #ffffff;
+            border: 1px solid var(--git-border);
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            padding: 12px;
+            font-size: 12px;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        [data-theme="dark"] .git-commit-hover-panel {
+            background: #2a2a2a;
+        }
+
+        .git-commit-hover-panel.show {
+            display: block;
+        }
+
+        .git-commit-hover-panel .git-hover-author {
+            color: var(--git-text-muted);
+            margin-bottom: 6px;
+            line-height: 1.4;
+        }
+
+        .git-commit-hover-panel .git-hover-refs {
+            margin-bottom: 6px;
+        }
+
+        .git-commit-hover-panel .git-hover-msg {
+            white-space: pre-wrap;
+            word-break: break-all;
+            line-height: 1.5;
+            color: var(--git-text);
+            height: auto;
         }
 
         .git-graph-msg {
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 500;
             white-space: nowrap;
             overflow: hidden;
@@ -9971,7 +9442,6 @@
         .git-graph-refs {
             font-size: 11px;
             color: var(--git-text-muted);
-            margin-top: 4px;
             display: flex;
             column-gap: 8px;
             row-gap: 4px;
@@ -10046,7 +9516,7 @@
         /* ── Detail Area (two-column: left=info 4, right=file tree 6) ── */
         .git-detail-area {
             flex: 2;
-            background: var(--git-bg-secondary);
+            background: var(--color-bg);
             overflow-y: auto;
             overflow-x: hidden;
             min-height: 0;
@@ -10060,11 +9530,14 @@
 
         .git-detail-left {
             flex: 4;
-            padding: 14px 16px;
+            padding: 8px 8px 0 8px;
+            margin: 8px 8px 0 8px;
             overflow: hidden;
             min-width: 0;
             display: flex;
             flex-direction: column;
+            background: var(--color-bg);
+            border-radius: 10px;
         }
 
         .git-detail-right {
@@ -10074,6 +9547,7 @@
             display: flex;
             flex-direction: column;
             padding: 8px 8px 0 8px;
+            background: var(--color-bg);
         }
 
         .git-detail-header {
@@ -10129,6 +9603,7 @@
             overflow-y: auto;
             overflow-x: hidden;
             min-height: 0;
+            background: var(--color-bg);
         }
 
         .git-file-tree tbody td {
@@ -10158,11 +9633,11 @@
         }
 
         .git-file-tree .git-file-icon.git-file-added {
-            color: var(--green);
+            color: var(--color-success);
         }
 
         .git-file-tree .git-file-icon.git-file-removed {
-            color: var(--red);
+            color: var(--color-danger);
         }
 
         .git-file-tree .git-file-path {
@@ -10172,12 +9647,12 @@
         }
 
         .git-file-tree .git-file-num.git-file-additions {
-            color: var(--green);
+            color: var(--color-success);
             text-align: right;
         }
 
         .git-file-tree .git-file-num.git-file-deletions {
-            color: var(--red);
+            color: var(--color-danger);
             text-align: right;
         }
 
@@ -10201,9 +9676,9 @@
             align-items: center;
             justify-content: space-between;
             padding: 0px 12px;
-            background: var(--git-bg-secondary);
+            background: var(--color-bg);
             flex-shrink: 0;
-            margin: 4px 0;
+            margin: 5px 0;
         }
 
         .git-diff-header-title {
@@ -10284,13 +9759,6 @@
 
         .git-empty-hint {
             font-size: 13px;
-        }
-
-        .git-empty-sub {
-            font-size: 11px;
-            opacity: .6;
-            max-width: 260px;
-            text-align: center;
         }
     </style>
 </head>
@@ -10691,7 +10159,7 @@
         <div id="graphql-playground-container" class="graphql-container" style="display: none;"></div>
         <!-- OpenResty 编辑器容器 -->
         <div id="openresty-editor-container" class="openresty-editor-container" style="display: none;"></div>
-        <!-- 书签图谱容器/知识图谱容器 -->
+        <!-- 通用 iframe 容器 -->
         <div id="iframe-common-container" style="display: none; width: 100%; height: 100%;">
             <iframe id="common-iframe" src="" style="width: 100%; height: 100%; border: none;"></iframe>
         </div>
@@ -11013,113 +10481,6 @@
                 </div>
                 <div class="whiteboard-save-content">
                     <div class="whiteboard-save-directory-tree" id="common-save-directory-tree"></div>
-                </div>
-            </div>
-        </div>
-        <!-- 书签知识库模态框 -->
-        <div id="bookmark-knowledge-modal" class="bookmark-knowledge-modal" style="display: none;">
-            <div class="bookmark-knowledge-overlay" onclick="closeBookmarkKnowledgeModal()"></div>
-            <div class="bookmark-knowledge-content">
-                <div class="bookmark-knowledge-header">
-                    <div class="bookmark-knowledge-title">书签知识库</div>
-                    <button class="bookmark-knowledge-close" onclick="closeBookmarkKnowledgeModal()">
-                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
-                            stroke-width="2">
-                            <path d="M18 6L6 18M6 6l12 12" />
-                        </svg>
-                    </button>
-                </div>
-                <div class="bookmark-knowledge-body">
-                    <div class="bookmark-search-add-row">
-                        <div class="bookmark-search-box">
-                            <div class="search-input-wrapper">
-                                <input type="text" id="bookmark-search-input" placeholder="🔍 搜索书签..."
-                                    onkeydown="handleBookmarkSearchKeydown(event)">
-                                <button id="bm-search-clear" onclick="clearBookmarkSearch()">
-                                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
-                                        stroke-width="2">
-                                        <path d="M18 6L6 18M6 6l12 12" />
-                                    </svg>
-                                </button>
-                            </div>
-                            <button class="btn btn-primary bm-action-btn" onclick="handleBookmarkSearch()">🔍
-                                搜索
-                            </button>
-                            <button class="btn btn-success bm-action-btn" onclick="handleBookmarkRecommend()">✨
-                                推荐
-                            </button>
-                        </div>
-                        <div class="bookmark-add-section">
-                            <div class="add-input-wrapper">
-                                <input type="text" id="bookmark-add-url" placeholder="输入 URL 添加书签..."
-                                    onkeypress="handleBookmarkAddKeypress(event)">
-                                <button id="bm-add-clear" onclick="clearBookmarkAdd()">
-                                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
-                                        stroke-width="2">
-                                        <path d="M18 6L6 18M6 6l12 12" />
-                                    </svg>
-                                </button>
-                            </div>
-                            <button class="btn btn-primary bm-action-btn" onclick="handleBookmarkAdd()">+ 新增</button>
-                        </div>
-                    </div>
-                    <div class="bookmark-stats-section">
-                        <div class="bookmark-stats-title">书签概览</div>
-                        <div class="bookmark-stats-grid">
-                            <div class="bookmark-stat-card">
-                                <div class="bookmark-stat-number" id="bm-stat-total">0</div>
-                                <div class="bookmark-stat-label">书签总数</div>
-                            </div>
-                            <div class="bookmark-stat-card">
-                                <div class="bookmark-stat-number" id="bm-stat-tags">0</div>
-                                <div class="bookmark-stat-label">标签数</div>
-                            </div>
-                            <div class="bookmark-stat-card">
-                                <div class="bookmark-stat-number" id="bm-stat-categories">0</div>
-                                <div class="bookmark-stat-label">分类数</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="bookmark-recommend-section" id="bm-recommend-section">
-                        <div class="bookmark-recommend-header">
-                            <div class="bookmark-recommend-title">
-                                <span>书签列表</span>
-                                <button class="bm-back-btn" id="bm-back-btn" onclick="hideBookmarkDetail()"
-                                    style="display: none;">← 返回列表
-                                </button>
-                            </div>
-                            <div class="bookmark-filter-section">
-                                <span>筛选：</span>
-                                <select id="bm-category-filter" onchange="handleBookmarkFilter()">
-                                    <option value="">全部分类</option>
-                                </select>
-                                <select id="bm-tag-filter" onchange="handleBookmarkFilter()">
-                                    <option value="">全部标签</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="bookmark-recommend-scroll-area">
-                            <div class="bookmark-recommend-grid" id="bm-recommend-grid"></div>
-                            <div class="bookmark-detail-container" id="bm-detail-container" style="display: none;">
-                            </div>
-                        </div>
-                        <!-- 分页控件 -->
-                        <div class="bookmark-pagination" id="bm-pagination" style="display: none;">
-                            <button class="bm-page-btn" data-page="prev" onclick="goBookmarkPage('prev')" disabled>‹
-                                上一页
-                            </button>
-                            <span class="page-info" id="bm-page-info">第 1 页 / 共 1 页</span>
-                            <button class="bm-page-btn" data-page="next" onclick="goBookmarkPage('next')" disabled>下一页
-                                ›
-                            </button>
-                            <select class="page-size-select" id="bm-page-size" onchange="changeBookmarkPageSize()">
-                                <option value="12" selected>12条/页</option>
-                                <option value="24">24条/页</option>
-                                <option value="48">48条/页</option>
-                                <option value="0">全部</option>
-                            </select>
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>
@@ -11795,7 +11156,7 @@
                 <div class="video-footer-right">
                     <span id="video-footer-rate">1.0x</span>
                     <span class="video-footer-sep">|</span>
-                    <span id="video-footer-volume">🔊50%</span>
+                    <span id="video-footer-volume">🔈️50%</span>
                     <span class="video-footer-sep">|</span>
                     <span id="video-footer-buffered">缓冲: 0%</span>
                     <span class="video-footer-sep">|</span>
@@ -11806,22 +11167,20 @@
         </div>
         <!-- Git历史记录 -->
         <div id="git-records-container" class="git-records-container" style="display: none;">
-            <div class="git-main">
+            <div id="git-loading"
+                style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;min-height:80vh;gap:16px;">
+            </div>
+            <div id="git-main" class="git-main" style="display: none;">
                 <div class="git-left-panel" id="gitLeftPanel">
                     <div class="git-left-header">
                         <span style="white-space:nowrap;">提交历史</span>
                         <span id="gitRepoInfo"
-                            style="font-weight:400;color:var(--git-text-muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px;">尚未打开仓库</span>
+                            style="font-weight:500;color:var(--t1);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px;">尚未打开仓库</span>
                     </div>
                     <div class="git-graph-scroll" id="gitGraphScroll">
                         <div class="git-graph-layers" id="gitGraphLayers">
                             <canvas id="gitGraphCanvas" class="git-graph-canvas"></canvas>
                             <div class="git-graph-rows" id="gitGraphRows">
-                                <div class="git-empty-state">
-                                    <div class="git-empty-icon">📁</div>
-                                    <div class="git-empty-hint">打开一个本地 Git 仓库</div>
-                                    <div class="git-empty-sub">点击上方按钮选择包含 .git 目录的文件夹</div>
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -11861,6 +11220,7 @@
         const LOCAL_LLM_MODEL = 'gemma-4-e4b-it';//openclaw/main, gemma-4-e4b-it, qwen/qwen3.5-9b
         const CONTEXT_LENGTH = 10000;
         const DOT = '.';
+        const SLASH = '/';
         const PROMPTS = {
             summarize: {
                 key: '总结',
@@ -11936,8 +11296,8 @@
         const NEW_DIR = [
             { key: '📁 新建目录', name: "新建目录", click: "createDirByParentDir" },
             { key: '📄 新建文件', name: "untitled.txt", click: "createFileByParentDir" },
-            { key: '📄 图片墙', name: "图片墙", click: "picLayoutDisplay" },
-            { key: '📄 文件词云', name: "文件词云", click: "openWordCloudFile" },
+            { key: '🌄 图片墙', name: "图片墙", click: "picLayoutDisplay" },
+            { key: '📚️ 文件词云', name: "文件词云", click: "openWordCloudFile" },
             { key: '标记', name: "标记", click: "markDir" },
         ]
         const OPERATION_TYPES = {
@@ -11960,8 +11320,6 @@
             { key: 'GraphQLPlayground', value: 'toggleFile("graphQLPlayground")', display: true, fileProtocolDisplay: false },
             { key: 'OpenResty', value: 'toggleFile("openRestyEditor")', display: true, fileProtocolDisplay: false },
             { key: '书签', value: 'toggleFile("bookmarks")', display: true, fileProtocolDisplay: true },
-            { key: '书签图谱', value: 'toggleFile("bookmarkGraph")', display: false, fileProtocolDisplay: false },
-            { key: '书签知识库', value: 'toggleBookmarkKnowledgeModal()', display: false, fileProtocolDisplay: false },
             { key: 'Mermaid', value: 'toggleFile("mermaid")', display: true, fileProtocolDisplay: true },
             { key: 'excalidraw白板', value: 'toggleFile("whiteboard")', display: true, fileProtocolDisplay: true },
             { key: '文件时间线', value: 'toggleFile("timeline")', display: true, fileProtocolDisplay: true },
@@ -12006,7 +11364,6 @@
         const RANDOM_DIR_BLACKLIST = ['note/moc', 'note/templates', 'deleted', 'data', 'code'];
         // code目录下的HTML文件显示代码,其他文件正常显示
         const HTML_CODE_SHOW_BLACKLIST = ["note"];
-        const BOOKMARK_GRAPH_URL = './subindex/bookmarks-graph.html';
         const CRON_HTML_URL = './subindex/cron.html';
         // ========== 常量定义 ==========
         const MAX_FILE_SIZE = 50 * 1024 * 1024; // 5MB - 大文件限制
@@ -12076,7 +11433,7 @@
         // 路径归一化
         const normalizePath = (p) => {
             if (!p && p !== '') return '';
-            return String(p).replace(/\\/g, '/');
+            return String(p).replace(/\\/g, SLASH);
         }
         // 目录路径拼接
         const joinPath = (...parts) => {
@@ -12085,22 +11442,22 @@
             let first = arr[0] || '';
             first = first.replace(/\/\/+$/, '');
             const rest = arr.slice(1).map(p => p.replace(/^\/+|\/+$/g, '')).filter(Boolean);
-            if (first === '') return rest.join('/');
-            return [first, ...rest].join('/');
+            if (first === '') return rest.join(SLASH);
+            return [first, ...rest].join(SLASH);
         }
         // 获取路径里的文件名
         const basename = (p) => {
             const n = normalizePath(p || '');
-            const seg = n.split('/').filter(Boolean);
+            const seg = n.split(SLASH).filter(Boolean);
             return seg.length ? seg[seg.length - 1] : '';
         }
         // 获取路径里的文件目录名
         const dirname = (p) => {
             const n = normalizePath(p || '');
-            const seg = n.split('/').filter(Boolean);
+            const seg = n.split(SLASH).filter(Boolean);
             if (seg.length <= 1) return '';
             seg.pop();
-            return seg.join('/');
+            return seg.join(SLASH);
         }
         // 获取路径里的文件后缀名
         const getExt = (p) => p?.split(DOT).pop() || '';
@@ -12336,9 +11693,6 @@
                 openGraphQLPlayground();
             } else if (type === 'openRestyEditor') {
                 openOpenRestyEditor();
-            } else if (type === 'bookmarkGraph') {
-                aiFabContainer.style.display = 'none';
-                openBookmarkGraph();
             } else if (type === 'mermaid') {
                 aiFabContainer.style.display = 'none';
                 renderMermaidFile();
@@ -13949,7 +13303,7 @@
             details.forEach(detail => {
                 const dirKey = detail.dataset.dirKey;
                 if (dirKey) {
-                    const depth = normalizePath(dirKey || '').split('/').filter(Boolean).length;
+                    const depth = normalizePath(dirKey || '').split(SLASH).filter(Boolean).length;
                     const shouldOpen = depth <= level;
                     detail.open = shouldOpen;
                     saveDirExpandedState(dirKey, shouldOpen);
@@ -14277,11 +13631,15 @@
                     e.stopPropagation();
                     await copyCurrentFile(rawEntry, relativePath);
                 }));
+                dropdown.appendChild(_ddItem('🗂️ git记录', async (e) => {
+                    e.stopPropagation();
+                    await openGitPageByFile(relativePath);
+                }));
                 dropdown.appendChild(_ddItem('🔗 相对路径', async (e) => {
                     e.stopPropagation();
                     await copyCurrentFilePath(relativePath, true);
                 }));
-                dropdown.appendChild(_ddItem('🔗 绝对路径', async (e) => {
+                dropdown.appendChild(_ddItem('🖇️ 绝对路径', async (e) => {
                     e.stopPropagation();
                     await copyCurrentFilePath(relativePath, false);
                 }));
@@ -15427,7 +14785,7 @@
                 return false;
             }
             try {
-                const parts = normalizePath(lastFilePath).split('/').filter(p => p);
+                const parts = normalizePath(lastFilePath).split(SLASH).filter(p => p);
                 let currentDir = getRootHandle();
                 // 遍历到目标文件所在的目录（去掉最后一个文件名部分）
                 for (let i = 0; i < parts.length - 1; i++) {
@@ -15464,7 +14822,7 @@
         async function saveSvgToFolder(svgText, fileName) {
             const lastFilePath = safeLocalStorageGet(LAST_FILE_KEY);
             try {
-                const parts = normalizePath(lastFilePath).split('/').filter(p => p);
+                const parts = normalizePath(lastFilePath).split(SLASH).filter(p => p);
                 let parentDir = getRootHandle();
                 let parentRelativePath = '';
                 if (parts.length > 1) {
@@ -15476,7 +14834,7 @@
                             console.warn('创建目录失败: ' + part, error);
                         }
                     }
-                    parentRelativePath = parts.join('/');
+                    parentRelativePath = parts.join(SLASH);
                 }
                 const newFileHandle = await writeFileByDirHandle(parentDir, fileName, svgText);
                 const newRelativePath = parentRelativePath ? joinPath(parentRelativePath, fileName) : fileName;
@@ -18815,7 +18173,7 @@
                 const newFileHandle = await writeFileByDirHandle(pathResult.currentHandle, newFileName, contentBuffer);
                 // 计算新文件的相对路径
                 const normalizedRel = normalizePath(relativePath || '');
-                const lastSlashIndex = normalizedRel.lastIndexOf('/');
+                const lastSlashIndex = normalizedRel.lastIndexOf(SLASH);
                 const newRelativeParentPath = lastSlashIndex === -1 ? '' : normalizedRel.slice(0, lastSlashIndex);
                 const newRelativePath = newRelativeParentPath ? joinPath(newRelativeParentPath, newFileName) : newFileName;
                 safeLocalStorageSet(LAST_FILE_KEY, newRelativePath);
@@ -18982,7 +18340,7 @@
                         showNotification('✗ 找不到原始路径信息', 'error');
                         return;
                     }
-                    const pathParts = normalizePath(originalPath).split('/').filter(p => p);
+                    const pathParts = normalizePath(originalPath).split(SLASH).filter(p => p);
                     const fileName = pathParts.pop();
                     let currentDir = getRootHandle();
                     for (const part of pathParts) {
@@ -19001,7 +18359,7 @@
                         await deleteFile(entry);
                         await removeFromDeletedIndex(entry.name);
                         if (fileSpan) fileSpan.remove();
-                        const newRelativeParentPath = pathParts.length > 0 ? pathParts.join('/') : '';
+                        const newRelativeParentPath = pathParts.length > 0 ? pathParts.join(SLASH) : '';
                         const deletedDirDom = document.querySelector('[data-dir-key="' + newRelativeParentPath + '"]');
                         if (deletedDirDom) {
                             if (!fileExists) {
@@ -19423,8 +18781,7 @@
                 showNotification('✗ 重命名成功但索引更新失败，请刷新目录', 'error');
             }
             // 异步刷新扫描数据（不阻塞重命名流程，失败不提示）
-            scanDirToIndex().catch(() => {
-            });
+            scanDashboardData(true);
             // 阶段3: 删除旧文件并更新UI
             try {
                 await deleteFileByName(currentHandle, originalName);
@@ -19483,13 +18840,18 @@
             return dashboardCharts[chartInstance];
         }
 
-        async function fetchScanData(force = false) {
+        async function scanDashboardData(force = false) {
             let data;
             try {
-                if (isFileProtocol()) {
-                    data = await scanDirToIndexByLocal();
+                if (force) {
+                    if (isFileProtocol()) {
+                        data = await scanDirToIndexByLocal();
+                    } else {
+                        data = await scanDirToIndex(force)
+                    }
                 } else {
-                    data = await scanDirToIndex(force)
+                    const rtn = await getAssetsData(INDEX_FILE_SCAN_DATA_FILE)
+                    data = rtn.data;
                 }
             } catch (e) {
                 console.error('✗ 获取数据失败', e)
@@ -19707,7 +19069,7 @@
                     totalSize += sizeBytes;
 
                     // ===== 边扫描边构建 folderTree（与 Python 逻辑一致） =====
-                    const pathParts = childRel.split('/');
+                    const pathParts = childRel.split(SLASH);
                     let current = treeDict;
                     for (let i = 0; i < pathParts.length - 1; i++) {
                         const part = pathParts[i];
@@ -19812,7 +19174,10 @@
                 }),
                 "folderTree": folderTree,
             };
-
+            writeFileByDirHandle(await getDataDir(), INDEX_FILE_SCAN_DATA_FILE, JSON.stringify(result)).catch(error => {
+                console.error('保存本地扫描目录结构数据失败:', error)
+                showNotification('保存本地扫描目录结构数据失败: ' + error.message, 'error');
+            });
             return result;
         }
 
@@ -19973,7 +19338,7 @@
                 }
 
                 // --- treemap 数量图：目录 → 文件计数 ---
-                const lastSlash = f.path.lastIndexOf('/');
+                const lastSlash = f.path.lastIndexOf(SLASH);
                 const dir = lastSlash >= 0 ? f.path.substring(0, lastSlash) : '';
                 dirFileCountMap[dir] = (dirFileCountMap[dir] || 0) + 1;
 
@@ -19999,7 +19364,7 @@
 
             // ===== 后处理: 目录大小排名 =====
             function collectFolderSize(node, parentPath) {
-                var curPath = parentPath ? parentPath + '/' + node.name : node.name;
+                var curPath = parentPath ? parentPath + SLASH + node.name : node.name;
                 if (node && node.size !== undefined) {
                     folderSizeList.push({ name: node.name, path: curPath, size: node.size, size_str: node.size_str });
                 }
@@ -20619,7 +19984,7 @@
                                     treePath.push(treePathInfo[i].name);
                                 }
                                 return [
-                                    '📦&nbsp;' + escapeHtml(treePath.join('/')) + '<br>' + '📊&nbsp;' + info.data.size_str
+                                    '📦&nbsp;' + escapeHtml(treePath.join(SLASH)) + '<br>' + '📊&nbsp;' + info.data.size_str
                                 ].join('');
                             }
                         },
@@ -20654,7 +20019,7 @@
                                     treePath.push(treePathInfo[i].name);
                                 }
                                 return [
-                                    '📦&nbsp;' + escapeHtml(treePath.join('/')) + '<br>' + '📊&nbsp;' + info.data.file_num
+                                    '📦&nbsp;' + escapeHtml(treePath.join(SLASH)) + '<br>' + '📊&nbsp;' + info.data.file_num
                                 ].join('');
                             }
                         },
@@ -20719,13 +20084,13 @@
             }
             if (isFirst) {
                 // 首次加载或点击"扫描数据"按钮 → 强制全量扫描
-                renderDashboard(await fetchScanData(true));
+                await renderDashboard(await scanDashboardData(true));
                 showNotification('✓ 数据扫描刷新成功', 'success');
             } else {
                 try {
                     // 点击"刷新"按钮 → 使用增量扫描（后端自动判断）
-                    const data = await fetchScanData(false);
-                    renderDashboard(data);
+                    const data = await scanDashboardData(false);
+                    await renderDashboard(data);
                 } catch (e) {
                     showNotification(`✗ 获取数据失败: ${e.message}`, 'error');
                 }
@@ -20849,7 +20214,7 @@
         function shortenUrl(url) {
             try {
                 const u = new URL(url);
-                return u.protocol + '//' + u.hostname + (u.pathname === '/' ? '' : u.pathname);
+                return u.protocol + '//' + u.hostname + (u.pathname === SLASH ? '' : u.pathname);
             } catch (e) {
                 return url;
             }
@@ -21233,7 +20598,7 @@
         }
         async function expandPathToFile(filePath) {
             const normalizedPath = normalizePath(filePath);
-            const parts = normalizedPath.split('/').filter(Boolean);
+            const parts = normalizedPath.split(SLASH).filter(Boolean);
             if (parts.length <= 1) return true;
             const dirParts = parts.slice(0, -1);
             let currentPath = '';
@@ -21267,7 +20632,7 @@
 
         async function expandPathToDir(dirPath) {
             const np = normalizePath(dirPath);
-            const parts = np.split('/').filter(Boolean);
+            const parts = np.split(SLASH).filter(Boolean);
             if (parts.length === 0) return null;
             let currentPath = '';
             let targetDetails = null;
@@ -22070,12 +21435,6 @@ query {
                 });
         }
 
-        function openBookmarkGraph() {
-            switchToView(iframeCommonContainer);
-            const iframe = document.getElementById('common-iframe');
-            iframe.src = BOOKMARK_GRAPH_URL;
-        }
-
         async function cleanupCommonIframe() {
             const iframe = document.getElementById('common-iframe');
             if (iframe && iframe.src) {
@@ -22147,539 +21506,6 @@ query {
                         showNotification('请求失败: ' + error.message, 'error');
                     });
             });
-        }
-
-        const BOOKMARK_API_BASE = '/api/bm';
-
-        async function bmParseResponse(res) {
-            const text = await res.text();
-            try {
-                const parsed = JSON.parse(text);
-                if (parsed.code === 200) {
-                    return parsed.data;
-                } else {
-                    console.error('API Error:', parsed);
-                    throw new Error(parsed.message || 'Unknown error');
-                }
-            } catch (e) {
-                console.error('Parse error:', e);
-                showNotification('解析响应失败: response=' + text + ', error=' + e.message, 'error');
-                throw e;
-            }
-        }
-
-        async function bmParseResponseSelf(res) {
-            const text = await res.text();
-            try {
-                return JSON.parse(text);
-            } catch (e) {
-                console.error('Parse error:', e);
-                showNotification('解析响应失败: response=' + text + ', error=' + e.message, 'error');
-                throw e;
-            }
-        }
-
-        const bmApi = {
-            async listBookmarks(params = {}) {
-                try {
-                    const searchParams = new URLSearchParams();
-                    if (params.search) searchParams.set('search', params.search);
-                    if (params.tag) searchParams.set('tag', params.tag);
-                    if (params.category) searchParams.set('category', params.category);
-                    if (params.limit) searchParams.set('limit', params.limit);
-                    const url = `${BOOKMARK_API_BASE}/bookmarks/list${searchParams.toString() ? '?' + searchParams.toString() : ''}`;
-                    const res = await fetch(url);
-                    return await bmParseResponse(res);
-                } catch (e) {
-                    console.error('listBookmarks Error:', e);
-                    return { list: [], total: 0 };
-                }
-            },
-
-            async addBookmark(url) {
-                const res = await fetch(`${BOOKMARK_API_BASE}/bookmarks/add`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url })
-                });
-                return await bmParseResponseSelf(res);
-            },
-
-            async listTags() {
-                try {
-                    const res = await fetch(`${BOOKMARK_API_BASE}/tags/list`);
-                    return await bmParseResponse(res);
-                } catch (e) {
-                    console.error('listTags Error:', e);
-                    return [];
-                }
-            },
-
-            async getRandomBookmarks(count = 12) {
-                try {
-                    const res = await fetch(`${BOOKMARK_API_BASE}/bookmarks/random`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ count })
-                    });
-                    return await bmParseResponse(res);
-                } catch (e) {
-                    console.error('getRandomBookmarks Error:', e);
-                    return [];
-                }
-            },
-
-            async getBookmark(id) {
-                try {
-                    const res = await fetch(`${BOOKMARK_API_BASE}/bookmarks/${id}`);
-                    return await bmParseResponse(res);
-                } catch (e) {
-                    console.error('getBookmark Error:', e);
-                    return null;
-                }
-            },
-
-            async getRelatedBookmarks(id) {
-                try {
-                    const res = await fetch(`${BOOKMARK_API_BASE}/related/${id}`);
-                    return await bmParseResponse(res);
-                } catch (e) {
-                    console.error('getRelatedBookmarks Error:', e);
-                    return [];
-                }
-            },
-
-            async deleteBookmark(id) {
-                try {
-                    const res = await fetch(`${BOOKMARK_API_BASE}/bookmarks/delete/${id}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ id })
-                    });
-                    return await bmParseResponseSelf(res);
-                } catch (e) {
-                    console.error('deleteBookmark Error:', e);
-                    throw e;
-                }
-            }
-        };
-
-        let bmBookmarks = [];
-        let bmTags = [];
-        let bmCategories = [];
-        let bmSearchTimer = null;
-        let bmTotalCount = 0;
-        let bmCurrentPage = 1;
-        let bmPageSize = 12;
-        let bmFilteredBookmarks = []; // 当前筛选后的数据
-        async function toggleBookmarkKnowledgeModal() {
-            const modal = document.getElementById('bookmark-knowledge-modal');
-            if (modal.style.display === 'none') {
-                modal.style.display = 'flex';
-                if (bmBookmarks.length > 0) {
-                    switchBookmarkView('recommend');
-                } else {
-                    await loadBookmarkData();
-                }
-            } else {
-                closeBookmarkKnowledgeModal();
-            }
-        }
-
-        function closeBookmarkKnowledgeModal() {
-            const modal = document.getElementById('bookmark-knowledge-modal');
-            modal.style.display = 'none';
-            document.getElementById('bookmark-search-input').value = '';
-            document.getElementById('bookmark-add-url').value = '';
-            document.getElementById('bm-category-filter').value = '';
-            document.getElementById('bm-tag-filter').value = '';
-        }
-
-        async function loadBookmarkData() {
-            try {
-                const [bookmarksData, tags] = await Promise.all([
-                    bmApi.listBookmarks({ limit: -1 }),  // 获取全部书签
-                    bmApi.listTags()
-                ]);
-                bmBookmarks = bookmarksData.list || [];
-                bmTotalCount = bookmarksData.total || 0;
-                bmTags = tags || [];
-                bmFilteredBookmarks = bmBookmarks;
-                bmCurrentPage = 1;
-                updateBookmarkStats();
-                loadBookmarkTags();
-                loadBookmarkCategories();
-                switchBookmarkView('recommend');
-            } catch (e) {
-                console.error('加载书签数据失败:', e);
-            }
-        }
-
-        /** 切换视图模式：'recommend' 显示推荐卡片，'list' 显示分页列表 */
-        function switchBookmarkView(mode) {
-            const pagination = document.getElementById('bm-pagination');
-            const titleSpan = document.querySelector('.bookmark-recommend-title span');
-            if (mode === 'list') {
-                pagination.style.display = 'flex';
-                if (titleSpan) titleSpan.textContent = '书签列表';
-                renderCurrentPage();
-            } else {
-                pagination.style.display = 'none';
-                if (titleSpan) titleSpan.textContent = '推荐书签';
-                loadBookmarkRecommendations();
-            }
-        }
-
-        /** 根据分页参数获取当前页要显示的数据 */
-        function getBookmarkPageData() {
-            const total = bmFilteredBookmarks.length;
-            if (bmPageSize === 0) return { data: bmFilteredBookmarks, total, page: 1, totalPages: 1 };
-            const totalPages = Math.max(1, Math.ceil(total / bmPageSize));
-            const page = Math.min(bmCurrentPage, totalPages);
-            const start = (page - 1) * bmPageSize;
-            const end = Math.min(start + bmPageSize, total);
-            return {
-                data: bmFilteredBookmarks.slice(start, end),
-                total,
-                page,
-                totalPages
-            };
-        }
-
-        function renderCurrentPage() {
-            const { data, total, page, totalPages } = getBookmarkPageData();
-            bmCurrentPage = page;
-            renderBookmarkRecommendCards(data, document.getElementById('bm-recommend-grid'));
-            renderPagination(page, totalPages, total);
-        }
-
-        function renderPagination(currentPage, totalPages, total) {
-            const prevBtn = document.querySelector('.bm-page-btn[data-page="prev"]');
-            const nextBtn = document.querySelector('.bm-page-btn[data-page="next"]');
-            const info = document.getElementById('bm-page-info');
-            prevBtn.disabled = currentPage <= 1 || totalPages <= 1;
-            nextBtn.disabled = currentPage >= totalPages || totalPages <= 1;
-            info.textContent = bmPageSize === 0
-                ? `共 ${total} 条`
-                : `第 ${currentPage} 页 / 共 ${totalPages} 页（${total} 条）`;
-        }
-
-        function goBookmarkPage(dir) {
-            if (dir === 'prev' && bmCurrentPage > 1) bmCurrentPage--;
-            else if (dir === 'next') {
-                const totalPages = Math.max(1, Math.ceil(bmFilteredBookmarks.length / (bmPageSize || bmFilteredBookmarks.length)));
-                if (bmCurrentPage < totalPages) bmCurrentPage++;
-            }
-            renderCurrentPage();
-        }
-
-        function changeBookmarkPageSize() {
-            bmPageSize = parseInt(document.getElementById('bm-page-size').value) || 0;
-            bmCurrentPage = 1;
-            renderCurrentPage();
-        }
-
-        function updateBookmarkStats() {
-            document.getElementById('bm-stat-total').textContent = bmTotalCount;
-            document.getElementById('bm-stat-tags').textContent = bmTags.length;
-            const categories = new Set(bmBookmarks.map(b => b.category).filter(Boolean));
-            bmCategories = Array.from(categories);
-            document.getElementById('bm-stat-categories').textContent = bmCategories.length;
-        }
-
-        function loadBookmarkTags() {
-            const select = document.getElementById('bm-tag-filter');
-            select.innerHTML = '<option value="">全部标签</option>';
-            bmTags.forEach(t => {
-                const name = t.name || '';
-                const option = document.createElement('option');
-                option.value = name;
-                option.textContent = name;
-                select.appendChild(option);
-            });
-        }
-
-        function loadBookmarkCategories() {
-            const select = document.getElementById('bm-category-filter');
-            select.innerHTML = '<option value="">全部分类</option>';
-            bmCategories.forEach(cat => {
-                const option = document.createElement('option');
-                option.value = cat;
-                option.textContent = cat;
-                select.appendChild(option);
-            });
-        }
-
-        async function loadBookmarkRecommendations() {
-            const grid = document.getElementById('bm-recommend-grid');
-            grid.innerHTML = '<p style="text-align:center;color:#666;grid-column:1/-1;">加载中...</p>';
-            try {
-                const recs = await bmApi.getRandomBookmarks(12);
-                renderBookmarkRecommendCards(recs, grid);
-            } catch (e) {
-                console.error('加载推荐失败:', e);
-                grid.innerHTML = '<p style="text-align:center;color:#666;grid-column:1/-1;">加载失败</p>';
-            }
-        }
-
-        function renderBookmarkRecommendCards(items, grid) {
-            grid.innerHTML = '';
-            if (!items || items.length === 0) {
-                grid.innerHTML = '<p style="text-align:center;color:#666;grid-column:1/-1;">暂无推荐书签</p>';
-                return;
-            }
-            items.forEach(b => {
-                const card = document.createElement('div');
-                card.className = 'bookmark-recommend-card';
-                card.innerHTML = `<div class="bm-title">${escapeHtml(b.title || '无标题')}</div>
-                        <div class="bm-url" onclick="event.stopPropagation(); window.open('${escapeHtml(b.url || '')}', '_blank')">${escapeHtml(b.url || '')}</div>
-                        <div class="bm-tags">
-                            ${(b.tags || []).map(t => `<span class="bm-tag">${escapeHtml(t || '')}</span>`).join('')}
-                        </div>
-                        <div class="bm-category">分类: <span>${escapeHtml(b.category || '未分类')}</span></div>`;
-                card.addEventListener('click', () => {
-                    showBookmarkDetail(b.id);
-                });
-                grid.appendChild(card);
-            });
-        }
-
-        async function showBookmarkDetail(bookmarkId, detail = {}) {
-            const grid = document.getElementById('bm-recommend-grid');
-            const detailContainer = document.getElementById('bm-detail-container');
-            const backBtn = document.getElementById('bm-back-btn');
-            const pagination = document.getElementById('bm-pagination');
-            grid.style.display = 'none';
-            detailContainer.style.display = 'block';
-            backBtn.style.display = 'inline-block';
-            if (pagination) pagination.style.display = 'none';
-            detailContainer.innerHTML = '<div class="bookmark-detail-loading">加载中...</div>';
-            try {
-                if (!detail || !detail.id) {
-                    detail = await bmApi.getBookmark(bookmarkId);
-                }
-                const related = await bmApi.getRelatedBookmarks(bookmarkId);
-                detailContainer.innerHTML = `<div class="bookmark-detail-card">
-                        <div class="detail-header">
-                            <div class="detail-title">${escapeHtml(detail.title || '无标题')}</div>
-                            <button class="detail-delete-btn" onclick="handleBookmarkDelete('${detail.id}')">删除</button>
-                        </div>
-                        <div class="detail-url" onclick="window.open('${escapeHtml(detail.url || '')}', '_blank')" style="cursor:pointer;">${escapeHtml(detail.url || '')}</div>
-                        <div class="detail-summary">${escapeHtml(detail.summary || '暂无摘要')}</div>
-                        <div class="detail-tags">
-                            ${(detail.tags || []).map(t => `<span class="detail-tag">${escapeHtml(t || '')}</span>`).join('')}
-                            <span class="detail-tag detail-tag-green">${escapeHtml(detail.category || '未分类')}</span>
-                            <span class="detail-tag detail-tag-green">评分: ${detail.score || 3}</span>
-                        </div>
-                        <div id="bm-detail-related">
-                            <div class="detail-related-title">相关推荐</div>
-                            <div class="related-tags" id="bm-related-list"></div>
-                        </div>
-                    </div> `;
-                renderRelatedBookmarks(related);
-            } catch (e) {
-                console.error('加载详情失败:', e);
-                detailContainer.innerHTML = '<div class="bookmark-detail-loading">加载失败，请重试</div>';
-            }
-        }
-
-        function renderRelatedBookmarks(related) {
-            const container = document.getElementById('bm-related-list');
-            if (!related || related.length === 0) {
-                container.innerHTML = '<div class="detail-related-empty">暂无相关书签</div>';
-                return;
-            }
-            container.innerHTML = '';
-            if (related && related.length > 0) {
-                related.slice(0, 10).forEach(b => {
-                    const div = document.createElement('div');
-                    div.innerHTML = `<div class="related-tag">${escapeHtml(b.title || '无标题')}</div>`;
-                    div.addEventListener('click', () => {
-                        showBookmarkDetail(b.id);
-                    });
-                    container.appendChild(div);
-                });
-            }
-        }
-
-        async function handleBookmarkDelete(bookmarkId) {
-            showConfirmModal('确认删除', '确定要删除这个书签吗?', async (confirmed) => {
-                if (!confirmed) return;
-                const msg = '';
-                try {
-                    const resp = await bmApi.deleteBookmark(bookmarkId);
-                    if (resp.code === 200) {
-                        showNotification('书签删除成功', 'success');
-                        await loadBookmarkData();
-                        hideBookmarkDetail();
-                        return;
-                    }
-                    showNotification('删除书签失败: ' + resp.message || '未知错误', 'error');
-                } catch (e) {
-                    console.error('删除书签失败:', e);
-                    showNotification('删除书签失败: ' + e.message, 'error');
-                }
-            });
-        }
-
-        function hideBookmarkDetail() {
-            const grid = document.getElementById('bm-recommend-grid');
-            const detailContainer = document.getElementById('bm-detail-container');
-            const backBtn = document.getElementById('bm-back-btn');
-            const pagination = document.getElementById('bm-pagination');
-            grid.style.display = 'grid';
-            detailContainer.style.display = 'none';
-            backBtn.style.display = 'none';
-            if (pagination) {
-                const titleSpan = document.querySelector('.bookmark-recommend-title span');
-                pagination.style.display = titleSpan && titleSpan.textContent === '书签列表' ? 'flex' : 'none';
-            }
-        }
-
-        function handleBookmarkSearchKeydown(event) {
-            if (event.key === 'Enter') handleBookmarkSearch();
-        }
-
-        function handleBookmarkSearch() {
-            const value = document.getElementById('bookmark-search-input').value;
-            const clearBtn = document.getElementById('bm-search-clear');
-            clearBtn.style.display = value ? 'flex' : 'none';
-            doBookmarkSearch(value);
-        }
-
-        function handleBookmarkRecommend() {
-            hideBookmarkDetail();
-            document.getElementById('bookmark-search-input').value = '';
-            document.getElementById('bm-search-clear').style.display = 'none';
-            document.getElementById('bm-category-filter').value = '';
-            document.getElementById('bm-tag-filter').value = '';
-            switchBookmarkView('recommend');
-        }
-
-        document.getElementById('bookmark-search-input').addEventListener('input', function () {
-            const clearBtn = document.getElementById('bm-search-clear');
-            clearBtn.style.display = this.value ? 'flex' : 'none';
-        });
-
-        function clearBookmarkSearch() {
-            const input = document.getElementById('bookmark-search-input');
-            input.value = '';
-            document.getElementById('bm-search-clear').style.display = 'none';
-            doBookmarkSearch('');
-        }
-
-        document.getElementById('bookmark-add-url').addEventListener('input', function () {
-            const clearBtn = document.getElementById('bm-add-clear');
-            clearBtn.style.display = this.value ? 'flex' : 'none';
-        });
-
-        function clearBookmarkAdd() {
-            const input = document.getElementById('bookmark-add-url');
-            input.value = '';
-            document.getElementById('bm-add-clear').style.display = 'none';
-        }
-
-        async function doBookmarkSearch(value) {
-            const searchBtn = document.querySelector('.bookmark-search-box .bm-action-btn');
-            if (searchBtn) {
-                searchBtn.disabled = true;
-                searchBtn.style.opacity = '0.6';
-            }
-            try {
-                hideBookmarkDetail();
-                if (!value) {
-                    bmFilteredBookmarks = bmBookmarks;
-                } else {
-                    const searchResults = await bmApi.listBookmarks({ search: value, limit: -1 });
-                    bmFilteredBookmarks = searchResults.list || [];
-                }
-                bmCurrentPage = 1;
-                switchBookmarkView('list');
-            } finally {
-                if (searchBtn) {
-                    searchBtn.disabled = false;
-                    searchBtn.style.opacity = '1';
-                }
-            }
-        }
-
-        async function handleBookmarkAdd() {
-            const addBtn = document.querySelector('.bookmark-add-section .bm-action-btn');
-            const urlInput = document.getElementById('bookmark-add-url');
-            const url = urlInput.value.trim();
-            if (!url) {
-                urlInput.style.borderColor = '#ff6b6b';
-                urlInput.focus();
-                return;
-            }
-            if (!url.startsWith('http://') && !url.startsWith('https://')) {
-                showNotification('请输入完整的 URL，以 http:// 或 https:// 开头', 'warning');
-                return;
-            }
-            try {
-                new URL(url);
-            } catch (e) {
-                showNotification('请输入有效的 URL 格式', 'warning');
-                return;
-            }
-            if (addBtn) {
-                addBtn.disabled = true;
-                addBtn.style.opacity = '0.6';
-            }
-            try {
-                const resp = await bmApi.addBookmark(url);
-                if (resp.code === 200) {
-                    showNotification('书签添加成功', 'success');
-                    urlInput.style.borderColor = '';
-                    // 重新加载数据
-                    await loadBookmarkData();
-                    if (resp.data.bookmark && resp.data.bookmark.id) {
-                        showBookmarkDetail(resp.data.bookmark.id, resp.data.bookmark);
-                    }
-                } else if (resp.code === 201) {
-                    showNotification('URL 不能为空', 'error');
-                } else if (resp.code === 202) {
-                    showNotification('URL 格式无效', 'error');
-                } else if (resp.code === 203) {
-                    showNotification('获取URL网页内容失败，可能是因为网络问题或目标网站拒绝访问', 'error');
-                } else {
-                    showNotification('添加书签失败: ' + resp.message || '未知错误', 'error');
-                }
-            } catch (e) {
-                console.error('添加书签失败:', e);
-                showNotification('添加书签失败: ' + e.message, 'error');
-            } finally {
-                if (addBtn) {
-                    addBtn.disabled = false;
-                    addBtn.style.opacity = '1';
-                }
-            }
-        }
-
-        async function handleBookmarkFilter() {
-            hideBookmarkDetail();
-            const category = document.getElementById('bm-category-filter').value;
-            const tag = document.getElementById('bm-tag-filter').value;
-            const search = document.getElementById('bookmark-search-input').value;
-            let filtered = bmBookmarks;
-            if (category) {
-                filtered = filtered.filter(b => b.category === category);
-            }
-            if (tag) {
-                filtered = filtered.filter(b => (b.tags || []).includes(tag));
-            }
-            if (search) {
-                try {
-                    const searchResults = await bmApi.listBookmarks({ search, limit: -1 });
-                    const searchIds = new Set((searchResults.list || []).map(b => b.id));
-                    filtered = filtered.filter(b => searchIds.has(b.id));
-                } catch (e) {
-                    console.error('搜索失败:', e);
-                }
-            }
-            bmFilteredBookmarks = filtered;
-            bmCurrentPage = 1;
-            switchBookmarkView('list');
         }
 
         //destroyForce: true强制销毁编辑器，不进行内容检查,diffSave: true在有内容变更时进行保存确认
@@ -23874,7 +22700,7 @@ query {
          */
         async function getDirHandleByDirPath(dirPath) {
             if (!dirPath) return getRootHandle();
-            const pathParts = normalizePath(dirPath).split('/').filter(p => p);
+            const pathParts = normalizePath(dirPath).split(SLASH).filter(p => p);
             let currentDirHandle = getRootHandle();
             for (const part of pathParts) {
                 try {
@@ -23892,7 +22718,7 @@ query {
          * @returns {Promise<{ currentHandle: 当前目录句柄, parentPath: 父目录路径, fileName: 文件名 }>}
          */
         async function getFileParentHandleByFilePath(path) {
-            const pathParts = normalizePath(path).split('/').filter(p => p);
+            const pathParts = normalizePath(path).split(SLASH).filter(p => p);
             const fileName = pathParts[pathParts.length - 1];
             pathParts.pop();
             let currentHandle = getRootHandle();
@@ -23904,7 +22730,7 @@ query {
                     return null;
                 }
             }
-            const parentPath = pathParts.length > 0 ? `${pathParts.join('/')}` : '';
+            const parentPath = pathParts.length > 0 ? `${pathParts.join(SLASH)}` : '';
             return { currentHandle: currentHandle, parentPath: parentPath, fileName: fileName };
         }
         async function getFileHandleByPath(path) {
@@ -23913,7 +22739,7 @@ query {
             return await getFileHandleByDirHandle(currentHandle, fileName);
         }
         async function getEmbedNodeFileHandleByPath(filePath) {
-            const parts = normalizePath(filePath).split('/').filter(Boolean);
+            const parts = normalizePath(filePath).split(SLASH).filter(Boolean);
             if (parts.length === 0) return await getFileHandleByDirHandle(getRootHandle(), filePath);
             const fileName = parts[parts.length - 1];
             let currentDir = getRootHandle();
@@ -24756,7 +23582,7 @@ query {
         async function timelineInit() {
             try {
                 if (!allFilesCacheList) {
-                    const data = await fetchScanData();
+                    const data = await scanDashboardData();
                     allFilesCacheList = data.files;
                 }
                 timelineInitTimeline();
@@ -25609,7 +24435,7 @@ query {
             const usedGB = (d.memory.used / 1073741824).toFixed(1);
             const totalGB = (d.memory.total / 1073741824).toFixed(1);
             const memDetail = document.getElementById('memDetail');
-            if (memDetail) memDetail.textContent = usedGB + '/' + totalGB + ' GB';
+            if (memDetail) memDetail.textContent = usedGB + SLASH + totalGB + ' GB';
 
             function formatBytes(bytes) {
                 if (bytes === 0) return '0 B';
@@ -25828,7 +24654,7 @@ query {
             }
 
             function updateFlagsPreview() {
-                flagsPreview.textContent = '/' + getFlags();
+                flagsPreview.textContent = SLASH + getFlags();
             }
 
             function showError(msg) {
@@ -26346,7 +25172,7 @@ query {
                     }
                     matchBody.innerHTML = html;
                     matchPanel.style.display = 'block';
-                    matchCounter.textContent = (currentIdx + 1) + '/' + matches.length;
+                    matchCounter.textContent = (currentIdx + 1) + SLASH + matches.length;
                     matchPerf.textContent = elapsed + 'ms';
                     prevBtn.disabled = (currentIdx <= 0);
                     nextBtn.disabled = (currentIdx >= matches.length - 1);
@@ -28915,13 +27741,13 @@ query {
                 for await (const entry of dirHandle.values()) {
                     const name = entry.name;
                     const entryPath = _buildPath(parentPath, name);
-                    let topDir = entryPath.split('/')[0];
+                    let topDir = entryPath.split(SLASH)[0];
                     let group = groupMap.get(topDir);
                     if (group === undefined) {
                         group = groupCounter++;
                         groupMap.set(topDir, group);
                     }
-                    const depth = entryPath.split('/').length;
+                    const depth = entryPath.split(SLASH).length;
                     if (entry.kind === 'directory') {
                         if (isSkipFile(entryPath) || isSkipDir(name)) continue;
                         nodes.push({
@@ -28958,12 +27784,12 @@ query {
             const nodeMap = new Map(nodes.map(n => [n.id, n]));
             nodeMap.forEach((node, nodeId) => {
                 if (nodeId === 'root') return;
-                const parts = nodeId.split('/');
+                const parts = nodeId.split(SLASH);
                 let parentPath;
                 if (parts.length === 1) {
                     parentPath = 'root';
                 } else {
-                    parentPath = parts.slice(0, -1).join('/');
+                    parentPath = parts.slice(0, -1).join(SLASH);
                 }
                 if (nodeMap.has(parentPath)) {
                     edges.push({
@@ -30407,7 +29233,7 @@ query {
                     const g = rawGcd(n, d);
                     const sn = n / g, sd = d / g;
                     if (sd === 1) return String(sn);
-                    return sn + '/' + sd;
+                    return sn + SLASH + sd;
                 }
                 function rawGcd(a, b) {
                     a = Math.abs(a); b = Math.abs(b);
@@ -31690,8 +30516,8 @@ query {
             container.appendChild(fragment);
             container.style.height = contentMain.clientHeight + 'px';
         }
-        const GIT_COMMIT_PAGE_SIZE = 30; // 每页显示的提交数量
-        const GIT_GRAPH_ROW_HEIGHT = 60; // 图中每一行的内容高度
+        const GIT_COMMIT_PAGE_SIZE = 20; // 每页显示的提交数量
+        const GIT_GRAPH_ROW_HEIGHT = 70; // 图中每一行的内容高度
         const GIT_GRAPH_ROW_MARGIN = 5; // 行上下 margin（与 CSS .git-graph-row 的 margin 保持一致）
         const GIT_GRAPH_ROW_STEP = GIT_GRAPH_ROW_HEIGHT + GIT_GRAPH_ROW_MARGIN * 2; // 每行占据的总垂直空间
         const GIT_GRAPH_LANE_WIDTH = 12; // 图中每一行的宽度
@@ -31710,6 +30536,11 @@ query {
         const gitGraphRows = git$('#gitGraphRows');
         const gitDetailArea = git$('#gitDetailArea');
         const gitDiffContainer = git$('#gitDiffContainer');
+        // 创建 hover 详情面板
+        const gitCommitHoverPanel = document.createElement('div');
+        gitCommitHoverPanel.className = 'git-commit-hover-panel';
+        gitCommitHoverPanel.id = 'gitCommitHoverPanel';
+        document.body.appendChild(gitCommitHoverPanel);
         let gitFs = null; // 当前 Git FS 适配器实例（基于 FileSystemDirectoryHandle）
         let gitCommits = []; // 所有提交记录
         let gitCommitLookup = {}; // 提交记录查找表，键为提交哈希，值为提交记录索引
@@ -31747,21 +30578,15 @@ query {
             if (!ts || ts < 0) return '';
             return new Date(ts * 1000).toLocaleString('zh-CN');
         }
+        // 打开 Git 页面
         function openGitPage() {
-            switchToView(gitRecordsContainer, 'flex');
-            destroyGitViewData().then(() => gitOpenRepo());
+            openGitPageCore(null);
         }
         async function destroyGitViewData() {
             // 销毁 diff 编辑器
             gitDisposeDiffEditor();
-
             // 清理 Git FS 适配器实例
             gitFs = null;
-
-            // 清理防抖定时器
-            clearTimeout(gitScrollTimer);
-            gitScrollTimer = 0;
-
             // 重置所有状态变量
             gitCommits = [];
             gitCommitLookup = {};
@@ -31786,11 +30611,9 @@ query {
             gitHasMoreCommits = false;
             gitIsRendering = false;
             gitCanvasEventsBound = false;
-            gitVirtualRange = { start: 0, end: 0 };
             gitRefByHash = null;
             gitDiffNavIdx = -1;
             gitDiffChanges = [];
-
             // 清理 canvas 自定义数据
             if (gitGraphCanvas) gitGraphCanvas._gitVertices = null;
         }
@@ -31814,7 +30637,7 @@ query {
             gitDisposeDiffEditor();
             gitDiffNavIdx = -1;
             gitDiffChanges = [];
-            gitDiffContainer.innerHTML = `<div class="git-diff-placeholder">${gitEscapeHtml(msg || '选择一个文件查看差异对比')}</div>`;
+            gitDiffContainer.innerHTML = `<div class="git-diff-placeholder">${gitEscapeHtml(msg || '⚠️ 选择一个文件查看差异对比')}</div>`;
         }
 
         // ── Diff 导航状态 ──
@@ -31897,8 +30720,11 @@ query {
                     theme: 'vs',
                     lineNumbersMinChars: 5,
                     fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, monospace',
-                    fontSize: 13,
+                    fontSize: 12,
                 });
+                // 单独设置内部编辑器的字体大小
+                gitDiffEditor.getOriginalEditor().updateOptions({ fontSize: 12, minimap: { enabled: false }, lineNumbersMinChars: 5 });
+                gitDiffEditor.getModifiedEditor().updateOptions({ fontSize: 12, minimap: { enabled: false }, lineNumbersMinChars: 5 });
                 gitDiffEditor.setModel({ original: originalModel, modified: modifiedModel });
 
                 // 等 Monaco diff 计算完成后再提取变更列表（diff 是异步计算的）
@@ -32256,7 +31082,6 @@ query {
         let gitGraphInstance = null; // 轨道图实例
         let gitIsRendering = false; // 是否正在渲染
         let gitCanvasEventsBound = false; // Canvas 事件绑定标志（仅绑定一次）
-        let gitVirtualRange = { start: 0, end: 0 }; // 虚拟滚动范围
         let gitRefByHash = null; // 缓存 ref 查找表，仅在 refs 变化时重建
         /** 构建 ref 查找表（仅在 refs 变化时调用） */
         function gitBuildRefByHash() {
@@ -32315,8 +31140,7 @@ query {
                 const mx = e.clientX - rect.left;
                 const my = e.clientY - rect.top + gitGraphScroll.scrollTop - 6;
                 const verts = gitGraphCanvas._gitVertices || [];
-                const first = gitVirtualRange.start, last = gitVirtualRange.end;
-                for (let vi = Math.max(0, first); vi <= Math.min(verts.length - 1, last); vi++) {
+                for (let vi = 0; vi < verts.length; vi++) {
                     const v = verts[vi];
                     if (Math.abs(mx - v.x) <= v.r + 4 && Math.abs(my - v.y) <= v.r + 4) {
                         gitHandleCommitClick(v.id); return;
@@ -32370,12 +31194,12 @@ query {
                 const readRefDirAsync = async function* (dirPath, prefix) {
                     const entries = await listDir(dirPath);
                     for (const name of entries) {
-                        const fullPath = dirPath + '/' + name;
+                        const fullPath = dirPath + SLASH + name;
                         const hash = await readRefFile(fullPath);
                         if (hash) {
                             yield { name: prefix + name, hash };
                         } else {
-                            yield* readRefDirAsync(fullPath, prefix + name + '/');
+                            yield* readRefDirAsync(fullPath, prefix + name + SLASH);
                         }
                     }
                 };
@@ -32391,7 +31215,7 @@ query {
                     const remotesDir = '/.git/refs/remotes';
                     const remoteNames = await listDir(remotesDir);
                     for (const remote of remoteNames) {
-                        for await (const ref of readRefDirAsync(remotesDir + '/' + remote, remote + '/')) {
+                        for await (const ref of readRefDirAsync(remotesDir + SLASH + remote, remote + SLASH)) {
                             gitRemotes.push({ name: ref.name, hash: ref.hash, remote });
                         }
                     }
@@ -32426,7 +31250,7 @@ query {
                         } else if (ref.startsWith('refs/remotes/')) {
                             const remoteName = ref.replace('refs/remotes/', '');
                             if (!gitRemotes.find(r => r.name === remoteName)) {
-                                const slash = remoteName.indexOf('/');
+                                const slash = remoteName.indexOf(SLASH);
                                 gitRemotes.push({ name: remoteName, hash, remote: slash > -1 ? remoteName.substring(0, slash) : 'origin' });
                             }
                         } else if (ref.startsWith('refs/tags/')) {
@@ -32445,8 +31269,8 @@ query {
             }
         }
         /**
-         * 渲染提交列表（虚拟滚动）
-         * @param {boolean} fullRender - true=完整渲染（含 canvas 重绘），false=仅更新可见行（滚动时用）
+         * 渲染提交列表
+         * @param {boolean} fullRender - true=完整渲染（含 canvas 重绘），false=仅更新行高亮
          */
         function gitRenderGraphAndList(fullRender = true) {
             if (gitIsRendering) return; // 防止递归渲染
@@ -32458,31 +31282,24 @@ query {
                     return;
                 }
                 if (fullRender) {
-                    gitLayoutGraph();
-                    gitBindCanvasEvents(); // 仅首次绑定事件
-                    gitDrawGraphOnCanvas(gitGraphCanvas);
-                    gitGraphCanvas.style.display = '';
+                    // 当有文件过滤器时，不显示轨道图（只显示提交列表）
+                    if (!gitFileFilter) {
+                        gitLayoutGraph();
+                        gitBindCanvasEvents(); // 仅首次绑定事件
+                        gitDrawGraphOnCanvas(gitGraphCanvas);
+                        gitGraphCanvas.style.display = '';
+                    } else {
+                        gitGraphCanvas.style.display = 'none';
+                    }
                     gitBuildRefByHash(); // refs 只在 fullRender 时重建
                 }
                 // 使用缓存的 ref 查找表
                 const refByHash = gitRefByHash || {};
-                // 虚拟滚动：计算可见范围
-                const totalCount = gitCommits.length;
-                const totalHeight = totalCount * GIT_GRAPH_ROW_STEP;
-                const savedScrollTop = gitGraphScroll.scrollTop; // 保存当前滚动位置
-                const scrollTop = savedScrollTop;
-                const viewH = gitGraphScroll.clientHeight;
-                const firstVis = Math.max(0, Math.floor((scrollTop - 6) / GIT_GRAPH_ROW_STEP) - GIT_VISIBLE_OVERSCAN);
-                const lastVis = Math.min(totalCount - 1, Math.ceil((scrollTop + viewH) / GIT_GRAPH_ROW_STEP) + GIT_VISIBLE_OVERSCAN);
-                gitVirtualRange = { start: firstVis, end: lastVis };
-                const topSpacerH = firstVis * GIT_GRAPH_ROW_STEP;
-                const bottomSpacerH = Math.max(0, totalHeight - (lastVis + 1) * GIT_GRAPH_ROW_STEP);
                 // 获取 canvas 宽度（用于行对齐）
                 const cw = parseFloat(gitGraphCanvas.style.width) || 140;
-                // 构建可见行 HTML
+                // 构建所有行 HTML
                 let rowsHtml = '';
-                if (topSpacerH > 0) rowsHtml += `<div class="git-graph-rows-spacer" style="height:${topSpacerH}px;"></div>`;
-                for (let i = firstVis; i <= lastVis; i++) {
+                for (let i = 0; i < gitCommits.length; i++) {
                     const c = gitCommits[i];
                     const isMuted = gitMutedCommits[i] || false;
                     const isActive = i === gitActiveCommitIdx;
@@ -32498,33 +31315,71 @@ query {
                     for (const r of refs.remotes) refsHtml += `<span class="git-graph-ref git-graph-ref-remote">${gitEscapeHtml(r)}</span>`;
                     for (const t of refs.tags) refsHtml += `<span class="git-graph-ref git-graph-ref-tag">🏷 ${gitEscapeHtml(t)}</span>`;
                     if (c.oid === gitHeadHash && gitCurrentBranch === 'HEAD (detached)') refsHtml += '<span class="git-graph-ref git-graph-ref-head">HEAD</span>';
+                    // 当有文件过滤器时，不显示轨道图占位单元格
+                    const svgCellHtml = gitFileFilter ? '' : `<div class="git-graph-cell-svg" style="width:${cw}px; min-width:${cw}px;"></div>`;
                     rowsHtml += `
                     <div class="${rowClass}" data-git-idx="${i}" style="height:${GIT_GRAPH_ROW_HEIGHT}px;">
-                        <div class="git-graph-cell-svg" style="width:${cw}px; min-width:${cw}px;"></div>
+                        ${svgCellHtml}
                         <div class="git-graph-cell-info">
                             <div class="git-graph-msg">${gitEscapeHtml(c.commit.message.split('\n')[0])}</div>
                             <div class="git-graph-meta">
                                 <span class="git-graph-sha">${gitShortSha(c.oid)}</span>
                                 <span>${gitEscapeHtml(c.commit.author.name)}</span>
                                 <span>${gitFormatTime(c.commit.author.timestamp)}</span>
+                                ${refsHtml ? `<span class="git-graph-refs">${refsHtml}</span>` : ''}
                             </div>
-                            ${refsHtml ? `<div class="git-graph-refs">${refsHtml}</div>` : ''}
                         </div>
                     </div>`;
                 }
-                if (bottomSpacerH > 0) rowsHtml += `<div class="git-graph-rows-spacer" style="height:${bottomSpacerH}px;"></div>`;
                 if (gitHasMoreCommits) {
                     rowsHtml += `<div class="git-load-more"><button class="git-load-more-btn" id="gitLoadMoreBtn">${gitIsLoadingMore ? '加载中...' : '加载更多提交...'}</button></div>`;
                 }
                 gitGraphRows.innerHTML = rowsHtml;
-                // 恢复滚动位置（innerHTML 替换可能导致滚动位置丢失）
-                if (gitGraphScroll.scrollTop !== savedScrollTop) {
-                    gitGraphScroll.scrollTop = savedScrollTop;
-                }
                 gitGraphRows.querySelectorAll('.git-graph-row').forEach(row => {
                     row.addEventListener('click', (e) => {
                         const idx = parseInt(row.dataset.gitIdx);
                         gitHandleCommitClick(idx);
+                    });
+                    // hover 事件：显示详情面板
+                    row.addEventListener('mouseenter', (e) => {
+                        const idx = parseInt(row.dataset.gitIdx);
+                        const c = gitCommits[idx];
+                        if (!c) return;
+                        const refs = refByHash[c.oid] || { heads: [], remotes: [], tags: [] };
+                        let refsHtml = '';
+                        for (const h of refs.heads) {
+                            const cls = h === gitCurrentBranch ? 'git-graph-ref git-graph-ref-head' : 'git-graph-ref git-graph-ref-local';
+                            refsHtml += `<span class="${cls}">${gitEscapeHtml(h)}</span> `;
+                        }
+                        for (const r of refs.remotes) refsHtml += `<span class="git-graph-ref git-graph-ref-remote">${gitEscapeHtml(r)}</span> `;
+                        for (const t of refs.tags) refsHtml += `<span class="git-graph-ref git-graph-ref-tag">🏷 ${gitEscapeHtml(t)}</span> `;
+                        if (c.oid === gitHeadHash && gitCurrentBranch === 'HEAD (detached)') refsHtml += '<span class="git-graph-ref git-graph-ref-head">HEAD</span> ';
+                        gitCommitHoverPanel.innerHTML = `
+                            <div class="git-hover-author">👤 ${gitEscapeHtml(c.commit.author.name)} &lt;${gitEscapeHtml(c.commit.author.email)}&gt;</div>
+                            <div class="git-hover-author">🕐 ${gitFormatTime(c.commit.author.timestamp)}</div>
+                            ${refsHtml ? `<div class="git-hover-refs">${refsHtml}</div>` : ''}
+                            <div class="git-hover-msg">${gitEscapeHtml(c.commit.message)}</div>
+                        `;
+                        // 定位面板
+                        const rowRect = row.getBoundingClientRect();
+                        let left = rowRect.right + 10;
+                        let top = rowRect.top;
+                        // 边界检测
+                        const panelW = 320;
+                        const panelH = gitCommitHoverPanel.scrollHeight || 280;
+                        if (left + panelW > window.innerWidth) {
+                            left = rowRect.left - panelW - 10;
+                        }
+                        if (top + panelH > window.innerHeight) {
+                            top = window.innerHeight - panelH - 10;
+                        }
+                        if (top < 0) top = 10;
+                        gitCommitHoverPanel.style.left = left + 'px';
+                        gitCommitHoverPanel.style.top = top + 'px';
+                        gitCommitHoverPanel.classList.add('show');
+                    });
+                    row.addEventListener('mouseleave', () => {
+                        gitCommitHoverPanel.classList.remove('show');
                     });
                 });
                 const loadMoreBtn = document.getElementById('gitLoadMoreBtn');
@@ -32533,25 +31388,21 @@ query {
                 gitIsRendering = false;
             }
         }
-        // 虚拟滚动监听
-        let gitScrollTimer = 0; // 滚动事件防抖定时器
-        gitGraphScroll.addEventListener('scroll', () => {
-            if (gitIsRendering) return;
-            clearTimeout(gitScrollTimer);
-            gitScrollTimer = setTimeout(() => {
-                const rowH = GIT_GRAPH_ROW_STEP;
-                const newFirst = Math.max(0, Math.floor((gitGraphScroll.scrollTop - 6) / rowH) - GIT_VISIBLE_OVERSCAN);
-                if (Math.abs(newFirst - gitVirtualRange.start) > 3) {
-                    gitRenderGraphAndList(false); // 滚动时只更新可见行，不重绘 canvas
-                }
-            }, 50);
-        }, { passive: true });
         // 提交点击处理
         function gitHandleCommitClick(idx, onFilesRendered) {
             gitActiveCommitIdx = idx;
             gitActiveFileIdx = -1;
             gitRenderGraphAndList(false); // 仅更新行高亮，不需要重绘 canvas
-            gitLoadAndRenderChangedFiles(idx, onFilesRendered);
+            // 如果有文件过滤器，切换提交时选中当前文件但不自动打开对比
+            const capturedFileFilter = gitFileFilter;
+            gitLoadAndRenderChangedFiles(idx, () => {
+                // 先执行原有的回调
+                if (onFilesRendered) onFilesRendered();
+                // 如果有文件过滤器，选中当前文件但不自动打开对比
+                if (capturedFileFilter) {
+                    gitSelectFileInList(capturedFileFilter, false);
+                }
+            });
         }
         // 提交详情渲染
         function gitRenderDetail(commitIdx, fileStatsHtml) {
@@ -32577,6 +31428,17 @@ query {
                 </div>
             `;
         }
+
+        // 滚动文件列表使选中项居中
+        function gitScrollFileToCenter(row) {
+            if (!row) return;
+            const container = row.closest('.git-file-tree-scroll');
+            if (!container) return;
+            const containerRect = container.getBoundingClientRect();
+            const rowRect = row.getBoundingClientRect();
+            const scrollTop = container.scrollTop + (rowRect.top - containerRect.top) - (containerRect.height / 2) + (rowRect.height / 2);
+            container.scrollTo({ top: Math.max(0, scrollTop), behavior: 'smooth' });
+        }
         // 文件变更计算（git.walk 双树对比 + 子树剪枝）
         async function gitComputeChangedFiles(commitIdx) {
             const commit = gitCommits[commitIdx];
@@ -32587,7 +31449,7 @@ query {
                     // 对比两个 commit 的 tree：自动跳过 OID 相同的子树
                     const results = await window.git.walk({
                         fs: gitFs,
-                        dir: '/',
+                        dir: SLASH,
                         trees: [window.git.TREE({ ref: parentOid }), window.git.TREE({ ref: commit.oid })],
                         map: async (filepath, [parentEntry, currentEntry]) => {
                             if (filepath === DOT) return; // 跳过根目录标记，继续遍历子节点
@@ -32624,7 +31486,7 @@ query {
                     // 初始提交：列出所有文件为 added
                     const results = await window.git.walk({
                         fs: gitFs,
-                        dir: '/',
+                        dir: SLASH,
                         trees: [window.git.TREE({ ref: commit.oid })],
                         map: async (filepath, [entry]) => {
                             if (filepath === DOT) return;
@@ -32655,15 +31517,15 @@ query {
             try {
                 let oldContent = '', newContent = '';
                 if (file.status === 'added') {
-                    const { blob } = await window.git.readBlob({ fs: gitFs, dir: '/', oid: cOid, filepath: file.path });
+                    const { blob } = await window.git.readBlob({ fs: gitFs, dir: SLASH, oid: cOid, filepath: file.path });
                     newContent = new TextDecoder().decode(blob);
                 } else if (file.status === 'removed') {
-                    const { blob } = await window.git.readBlob({ fs: gitFs, dir: '/', oid: pOid, filepath: file.path });
+                    const { blob } = await window.git.readBlob({ fs: gitFs, dir: SLASH, oid: pOid, filepath: file.path });
                     oldContent = new TextDecoder().decode(blob);
                 } else {
                     const [newBlob, oldBlob] = await Promise.all([
-                        window.git.readBlob({ fs: gitFs, dir: '/', oid: cOid, filepath: file.path }),
-                        pOid ? window.git.readBlob({ fs: gitFs, dir: '/', oid: pOid, filepath: file.path }) : Promise.resolve(null),
+                        window.git.readBlob({ fs: gitFs, dir: SLASH, oid: cOid, filepath: file.path }),
+                        pOid ? window.git.readBlob({ fs: gitFs, dir: SLASH, oid: pOid, filepath: file.path }) : Promise.resolve(null),
                     ]);
                     newContent = new TextDecoder().decode(newBlob.blob);
                     oldContent = oldBlob ? new TextDecoder().decode(oldBlob.blob) : '';
@@ -32760,7 +31622,7 @@ query {
             gitChangedFilesCache = []; // 清空缓存
             gitActiveFileIdx = -1; // 重置当前选中的文件索引
             gitDisposeDiffEditor();
-            gitShowDiffPlaceholder('选择一个文件查看差异对比');
+            gitShowDiffPlaceholder('⚠️ 选择一个文件查看差异对比');
             gitRenderDetail(commitIdx);
             try {
                 gitChangedFilesCache = await gitComputeChangedFiles(commitIdx);
@@ -32785,6 +31647,7 @@ query {
                     gitActiveFileIdx = fidx;
                     container.querySelectorAll('tbody tr').forEach(r => r.classList.remove('git-file-active'));
                     row.classList.add('git-file-active');
+                    gitScrollFileToCenter(row); // 滚动到中间
                     const file = gitChangedFilesCache[fidx];
                     if (!file) return;
                     // 过滤出可预览的文件（代码/文档类型）
@@ -32823,14 +31686,14 @@ query {
                 let s = p;
                 if (s.startsWith('/.git/')) s = s.substring(5);
                 else if (s === '/.git') s = '';
-                else if (s.startsWith('/')) s = s.substring(1);
+                else if (s.startsWith(SLASH)) s = s.substring(1);
                 return s || DOT;
             }
 
             /** 定位到父目录句柄和文件名，复用已有的 getDirectoryHandle */
             async function _resolveParent(np) {
                 if (!np || np === DOT || np === '') return { parentHandle: null, name: '' };
-                const parts = np.split('/').filter(Boolean);
+                const parts = np.split(SLASH).filter(Boolean);
                 if (parts.length === 0) return { parentHandle: null, name: '' };
                 const name = parts.pop();
                 let handle = gitDirHandle;
@@ -32883,7 +31746,7 @@ query {
                         try {
                             let handle = gitDirHandle;
                             if (np !== DOT) {
-                                for (const part of np.split('/').filter(Boolean)) {
+                                for (const part of np.split(SLASH).filter(Boolean)) {
                                     handle = await getDirectoryHandle(handle, part);
                                 }
                             }
@@ -32898,7 +31761,7 @@ query {
                         try {
                             if (np === DOT) { cb(null); return; }
                             let handle = gitDirHandle;
-                            for (const part of np.split('/').filter(Boolean)) {
+                            for (const part of np.split(SLASH).filter(Boolean)) {
                                 handle = await getOrCreateDirectory(handle, part);
                             }
                             cb(null);
@@ -32947,16 +31810,19 @@ query {
                 symlink(target, filePath, cb) { cb(new Error('ENOSYS')); },
             };
         }
-        // 仓库加载
-        async function gitLoadRepo() {
+        // 仓库加载（filepath 可选，用于按文件过滤提交记录）
+        async function gitLoadRepo(filepath = null) {
             if (!gitFs) throw new Error('Git FS 适配器实例不存在');
             // 释放旧的图实例和全局状态
             gitGraphInstance = null; // 释放旧实例
             gitGraphVertexColours = []; // 释放旧颜色数组
             gitGraphVertexXs = []; // 释放旧 x 坐标数组
             gitMutedCommits = []; // 释放旧静音提交数组
+            gitFileFilter = filepath || null;
             await gitParseRefs(); // 解析所有分支和标签
-            gitCommits = await window.git.log({ fs: gitFs, dir: '/', depth: GIT_COMMIT_PAGE_SIZE });
+            const logOpts = { fs: gitFs, dir: SLASH, depth: GIT_COMMIT_PAGE_SIZE };
+            if (filepath) logOpts.filepath = filepath;
+            gitCommits = await window.git.log(logOpts);
             gitHasMoreCommits = gitCommits.length >= GIT_COMMIT_PAGE_SIZE;
             // 构建 commit 查找表
             gitCommitLookup = {}; // 提交查找表，键为 oid，值为索引
@@ -32969,7 +31835,7 @@ query {
             gitChangedFilesCache = []; // 缓存已加载的文件内容
             gitDisposeDiffEditor();
             gitShowDiffPlaceholder('⚠️ 选择一个文件查看差异对比');
-
+            // 渲染提交图和提交列表
             gitRenderGraphAndList();
             // 自动选中最新提交并展开第一个变更文件
             if (gitCommits.length > 0) {
@@ -32978,7 +31844,6 @@ query {
                     if (firstFileRow) firstFileRow.click();
                 });
             }
-
             gitRepoInfo.textContent = `${gitRepoPathHint}  ·  ${gitCurrentBranch || 'unknown'}  ·  ${gitCommits.length}${gitHasMoreCommits ? '+' : ''} 个提交`;
         }
         // 加载更多提交
@@ -32994,12 +31859,11 @@ query {
                     gitHasMoreCommits = false;
                     return;
                 }
-                const more = await window.git.log({
-                    fs: gitFs,
-                    dir: '/',
-                    depth: GIT_COMMIT_PAGE_SIZE,
-                    ref: parentOid
-                });
+                // 如果有文件过滤，加载更多时也需带上 filepath
+                gitFileFilter = gitFileFilter || null;
+                const moreOpts = { fs: gitFs, dir: SLASH, depth: GIT_COMMIT_PAGE_SIZE, ref: parentOid };
+                if (gitFileFilter) moreOpts.filepath = gitFileFilter;
+                const more = await window.git.log(moreOpts);
                 if (more.length < GIT_COMMIT_PAGE_SIZE) gitHasMoreCommits = false;
                 // 去重：排除已存在的 commit（parentOid 可能已在列表中）
                 const existingOids = new Set(gitCommits.map(c => c.oid));
@@ -33019,49 +31883,145 @@ query {
             }
         }
 
-        // 打开仓库
-        async function gitOpenRepo() {
-            if (!isRootHandleAvailable()) {
-                showNotification('✗ 请先打开根目录', 'error');
+        // Git 文件过滤状态
+        let gitFileFilter = null; // 要过滤的文件路径，为 null 表示显示全部
+        let rootGitHandle; // Git 仓库目录句柄
+
+        // 根据文件路径获取所有相关提交
+        async function gitGetCommitsForFile(filePath) {
+            if (!gitFs || !gitCommits.length) return [];
+            const result = [];
+            for (const commit of gitCommits) {
+                try {
+                    // 检查该提交是否包含此文件
+                    const exists = await window.git.checkIsBinary({
+                        fs: gitFs,
+                        dir: SLASH,
+                        filepath: filePath,
+                        oid: commit.oid
+                    }).catch(() => false);
+                    // checkIsBinary 返回 false 可能是文件不存在，也可能是存在
+                    // 需要另一种方式检查：尝试读取文件
+                    const content = await window.git.readBlob({
+                        fs: gitFs,
+                        dir: SLASH,
+                        oid: commit.oid,
+                        filepath: filePath
+                    }).then(() => true).catch(() => false);
+                    if (content) {
+                        result.push(commit.oid);
+                    }
+                } catch (e) {
+                    // 忽略错误，继续检查下一个提交
+                }
+            }
+            return result;
+        }
+
+        // 设置 Git 文件过滤器
+        async function gitSetFileFilter(filePath) {
+            gitFileFilter = filePath;
+            if (!filePath) {
+                // 清除过滤器，重新布局轨道图
+                gitMutedCommits = [];
+                gitLayoutGraph();
+                gitDrawGraphOnCanvas(gitGraphCanvas);
+                gitGraphCanvas.style.display = '';
+                gitRenderGraphAndList();
                 return;
             }
-            let gitHandle;
-            // 尝试从 IndexedDB 读取缓存的 git 目录句柄（需与当前根目录匹配）
+            // 查找包含该文件的所有提交
+            const matchingOids = await gitGetCommitsForFile(filePath);
+            const matchingSet = new Set(matchingOids);
+            // 标记不包含该文件的提交为静音
+            gitMutedCommits = gitCommits.map(c => !matchingSet.has(c.oid));
+            gitRenderGraphAndList();
+            // 如果有匹配的提交，自动选中第一个并显示对比
+            if (matchingOids.length > 0) {
+                const firstIdx = gitCommits.findIndex(c => c.oid === matchingOids[0]);
+                if (firstIdx >= 0) {
+                    // 选中第一个提交，并在文件列表渲染后自动打开当前文件的对比
+                    gitHandleCommitClick(firstIdx, () => {
+                        gitSelectFileInList(filePath, true); // 自动打开对比
+                    });
+                }
+            }
+        }
+
+        // 在文件变更列表中选中指定文件
+        // @param {string} filePath - 要选中的文件路径
+        // @param {boolean} autoOpen - 是否自动打开文件对比
+        function gitSelectFileInList(filePath, autoOpen = false) {
+            const container = document.getElementById('gitChangedFiles');
+            if (!container) return;
+            const rows = container.querySelectorAll('tbody tr[data-git-fidx]');
+            for (const row of rows) {
+                const fidx = parseInt(row.dataset.gitFidx);
+                const file = gitChangedFilesCache[fidx];
+                if (file && file.path === filePath) {
+                    gitActiveFileIdx = fidx;
+                    container.querySelectorAll('tbody tr').forEach(r => r.classList.remove('git-file-active'));
+                    row.classList.add('git-file-active');
+                    // 滚动到中间
+                    gitScrollFileToCenter(row);
+                    if (autoOpen) {
+                        row.click(); // 触发点击以加载并显示对比
+                    }
+                    return;
+                }
+            }
+        }
+
+        // 打开 Git 页面（通用）
+        async function openGitPageCore(fileFilter = null) {
+            switchToView(gitRecordsContainer, 'flex');
+            const loadingElement = document.getElementById('git-loading');
+            const mainElement = document.getElementById('git-main');
+            loadingElement.style.display = 'flex';
+            loadingElement.innerHTML = `
+                <div class="raw-spinner"></div>
+                <span style="color:var(--color-text-secondary);font-size:14px">正在解析git提交记录…</span>`;
+            mainElement.style.display = 'none';
+            await destroyGitViewData();
             const cachedGitHandle = await idbGet(DIRECTORY_STORE_NAME, 'handles', 'gitHandle');
             const cachedGitHandleRepo = await idbGet(DIRECTORY_STORE_NAME, 'handles', 'gitHandleRepo');
             const rootName = getRootHandle().name;
             if (cachedGitHandle && cachedGitHandleRepo === rootName) {
-                gitHandle = cachedGitHandle;
+                rootGitHandle = cachedGitHandle;
             } else {
                 try {
-                    gitHandle = await getDirectoryHandle(getRootHandle(), '.git');
+                    rootGitHandle = await getDirectoryHandle(getRootHandle(), '.git');
                 } catch {
-                    showNotification('所选目录不包含 .git 子目录，请选择 Git 仓库的根目录', 'error');
+                    showNotification('所选目录不包含.git子目录，请选择git仓库的根目录', 'error');
+                    loadingElement.innerHTML = `
+                            <div style="text-align:center;">
+                                ⚠️ 所选目录不包含.git子目录，请选择git仓库的根目录!
+                            </div>`;
                     return;
                 }
-                // 缓存 gitHandle 到 IndexedDB
-                await idbPut(DIRECTORY_STORE_NAME, 'handles', 'gitHandle', gitHandle);
+                await idbPut(DIRECTORY_STORE_NAME, 'handles', 'gitHandle', rootGitHandle);
                 await idbPut(DIRECTORY_STORE_NAME, 'handles', 'gitHandleRepo', rootName);
             }
             gitRepoPathHint = getRootHandle().name;
-
-            // 直接基于 FileSystemDirectoryHandle 创建 FS 适配器，无需 LightningFS
-            gitFs = createGitFsAdapter(gitHandle);
-
-            showNotification('正在解析 Git 历史...', 'info', 400);
+            gitFs = createGitFsAdapter(rootGitHandle);
+            showNotification('正在解析 Git 历史...', 'info', 1000);
             try {
-                await gitLoadRepo();
+                gitFileFilter = fileFilter || null;
+                await gitLoadRepo(fileFilter || null);
             } catch (err) {
                 gitFs = null;
-                gitGraphRows.innerHTML = `
-                    <div class="git-empty-state">
-                        <div class="git-empty-icon" style="font-size:32px;">⚠</div>
-                        <div class="git-empty-hint" style="color:var(--red);">解析失败</div>
-                        <div class="git-empty-sub">${gitEscapeHtml(err.message || '未知错误')}<br><br>仓库可能使用 pack 文件，或 objects 不完整</div>
-                    </div>`;
+                showNotification(`${gitEscapeHtml(err.message || '未知错误')}, 请检查仓库是否完整`, 'error');
                 gitGraphCanvas.style.display = 'none';
-                return;
+            } finally {
+                loadingElement.style.display = 'none';
+                mainElement.style.display = 'flex';
             }
+        }
+
+        // 根据文件打开 Git 页面（只显示该文件的提交）
+        async function openGitPageByFile(relativePath) {
+            if (!relativePath) return;
+            await openGitPageCore(relativePath);
         }
     </script>
 </body>
