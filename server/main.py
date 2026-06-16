@@ -4,12 +4,6 @@ from contextlib import asynccontextmanager
 import psutil
 
 from service.system_service import scan_file_info, get_openresty_conf, reload_openresty_conf
-from service.bookmark_service import (
-    list_bookmarks, get_random_bookmarks, add_bookmark,
-    delete_bookmark_by_url, delete_bookmark, get_bookmark,
-    get_related_bookmarks, list_tags, get_graph_data,
-    build_inverted_index
-)
 from service.config import PROJECT_ROOT, STATIC_DIR, HOST, PORT, LOG_LEVEL
 from typing import Optional
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,7 +28,6 @@ for name in ["uvicorn", "uvicorn.error", "uvicorn.access", "fastapi", "starlette
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    build_inverted_index()
     # 启动 WebSocket 后台任务
     bg_tasks = [
         asyncio.create_task(ws_heartbeat_loop()),
@@ -140,59 +133,6 @@ async def hello_page():
 @app.get("/api/health")
 async def health_check():
     return {"code": 200, "message": "OK", "data": {"status": "healthy"}}
-
-
-@app.get("/api/bm/bookmarks/list")
-async def api_list_bookmarks(
-        search: Optional[str] = Query(None),
-        tag: Optional[str] = Query(None),
-        category: Optional[str] = Query(None),
-        limit: int = Query(-1)
-):
-    return list_bookmarks(search=search, tag=tag, category=category, limit=limit)
-
-
-@app.post("/api/bm/bookmarks/random")
-async def api_get_random_bookmarks(body: Optional[dict] = Body(None)):
-    count = body.get("count", 10) if body else 10
-    return get_random_bookmarks(count=count)
-
-
-@app.post("/api/bm/bookmarks/add")
-async def api_add_bookmark(body: dict = Body(...)):
-    url = body.get("url", "")
-    return add_bookmark(url=url)
-
-
-@app.post("/api/bm/bookmarks/delete_by_url")
-async def api_delete_bookmark_by_url(body: dict = Body(...)):
-    url = body.get("url", "")
-    return delete_bookmark_by_url(url=url)
-
-
-@app.get("/api/bm/tags/list")
-async def api_list_tags():
-    return list_tags()
-
-
-@app.get("/api/bm/graph/data")
-async def api_get_graph_data():
-    return get_graph_data()
-
-
-@app.post("/api/bm/bookmarks/delete/{bookmark_id}")
-async def api_delete_bookmark(bookmark_id: str):
-    return delete_bookmark(bookmark_id=bookmark_id)
-
-
-@app.get("/api/bm/related/{bookmark_id}")
-async def api_get_related_bookmarks(bookmark_id: str):
-    return get_related_bookmarks(bookmark_id=bookmark_id)
-
-
-@app.get("/api/bm/bookmarks/{bookmark_id}")
-async def api_get_bookmark(bookmark_id: str):
-    return get_bookmark(bookmark_id=bookmark_id)
 
 
 @app.get("/api/system/openresty/conf")
