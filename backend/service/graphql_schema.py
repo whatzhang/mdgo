@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import strawberry
 from typing import Optional, List
-from backend.service.system_service import scan_file_info as svc_scan_file_info
+from service.system_service import scan_file_info as svc_scan_file_info
 
 
 @strawberry.type

@@ -18880,20 +18880,14 @@
             if (force) {
                 url += '&force=true';
             }
-            fetch(url)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        return data.data;
-                    } else {
-                        showNotification('✗ 配置失败: ' + data.message, 'error');
-                        throw new Error(data.message);
-                    }
-                })
-                .catch(error => {
-                    console.error(`HTTP error! status`, error);
-                    throw new Error(error.message);
-                });
+            const response = await fetch(url);
+            const data = await response.json();
+            if (data.success) {
+                return data.data;
+            } else {
+                showNotification('✗ 配置失败: ' + data.message, 'error');
+                throw new Error(data.message);
+            }
         }
 
         async function scanDirToIndexByLocal() {

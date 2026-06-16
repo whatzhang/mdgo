@@ -5,7 +5,7 @@ import os
 import sys
 import time
 from datetime import datetime
-from backend.service.config import PROJECT_ROOT
+from service.config import PROJECT_ROOT
 
 # 增量扫描缓存文件
 _CACHE_SNAPSHOT_FILE = "index_file_scan_snapshot.json"

@@ -79,7 +79,7 @@ async def ws_heartbeat_loop():
 
 async def ws_metrics_loop(interval: float = 5.0):
     """后台指标推送任务：定期推送系统监控数据"""
-    from backend.service.system_monitor_service import get_metrics
+    from service.system_monitor_service import get_metrics
 
     # 首次收集（interval=0 避免阻塞事件循环）
     try:

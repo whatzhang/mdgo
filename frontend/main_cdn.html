@@ -11219,6 +11219,7 @@
         const LOCAL_LLM_TOKEN = 'c17f18e31adb10978d3a9cd0d6743d30a067af602a8789e7';
         const LOCAL_LLM_MODEL = 'gemma-4-e4b-it';//openclaw/main, gemma-4-e4b-it, qwen/qwen3.5-9b
         const CONTEXT_LENGTH = 10000;
+        const NGINX_CONF_PATH = '/usr/local/etc/openresty/sites/index.conf';
         const DOT = '.';
         const SLASH = '/';
         const PROMPTS = {
@@ -18878,20 +18879,14 @@
             if (force) {
                 url += '&force=true';
             }
-            fetch(url)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        return data.data;
-                    } else {
-                        showNotification('✗ 配置失败: ' + data.message, 'error');
-                        throw new Error(data.message);
-                    }
-                })
-                .catch(error => {
-                    console.error(`HTTP error! status`, error);
-                    throw new Error(error.message);
-                });
+            const response = await fetch(url);
+            const data = await response.json();
+            if (data.success) {
+                return data.data;
+            } else {
+                showNotification('✗ 配置失败: ' + data.message, 'error');
+                throw new Error(data.message);
+            }
         }
 
         async function scanDirToIndexByLocal() {
@@ -21424,7 +21419,7 @@ query {
                                                     ⚠️ 获取配置失败: errorMsg
                                                 </div>
                                              </div>`;
-            fetch('/api/system/openresty/conf')
+            fetch(`/api/system/openresty/conf?conf_path=${encodeURIComponent(NGINX_CONF_PATH)}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
@@ -21500,7 +21495,7 @@ query {
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ conf: content })
+                    body: JSON.stringify({ conf: content, conf_path: NGINX_CONF_PATH })
                 }).then(response => response.json())
                     .then(data => {
                         if (data.success) {

@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import psutil
 
 from service.system_service import scan_file_info, get_openresty_conf, reload_openresty_conf
-from service.config import PROJECT_ROOT, FRENDEND_DIR, HOST, PORT, LOG_LEVEL
+from service.config import FRENDEND_DIR, HOST, PORT, LOG_LEVEL
 from typing import Optional
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles

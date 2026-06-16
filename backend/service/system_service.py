@@ -3,7 +3,7 @@ import subprocess
 import tempfile
 import time
 
-from backend.service.util.file_scan import scan_file_info as scan_file_info_impl
+from service.util.file_scan import scan_file_info as scan_file_info_impl
 
 
 def scan_file_info(dir_path=None, force=False):
