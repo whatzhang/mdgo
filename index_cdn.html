@@ -13905,7 +13905,11 @@
                     dot.title = _MARKER_COLOR_NAMES[i];
                     dot.addEventListener('click', async (e) => {
                         e.stopPropagation();
-                        await setFileMarker(rawEntry, relativePath, markerDiv, _MARKER_COLOR_NAMES[i], _MARKER_COLORS[i]);
+                        try {
+                            await setFileMarker(rawEntry, relativePath, markerDiv, _MARKER_COLOR_NAMES[i], _MARKER_COLORS[i]);
+                        } catch (err) {
+                            console.error('设置文件标记失败:', err);
+                        }
                     });
                     crPicker.appendChild(dot);
                 }
@@ -13915,7 +13919,11 @@
                 clearDot.title = '取消标记';
                 clearDot.addEventListener('click', async (e) => {
                     e.stopPropagation();
-                    await clearFileMarker(relativePath, markerDiv);
+                    try {
+                        await clearFileMarker(relativePath, markerDiv);
+                    } catch (err) {
+                        console.error('清除文件标记失败:', err);
+                    }
                 });
                 crPicker.appendChild(clearDot);
                 dropdown.appendChild(crPicker);
@@ -13939,15 +13947,19 @@
             fileSpan.onclick = async (event) => {
                 if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; return; }
                 clickTimer = setTimeout(async () => {
-                    const filePath = fileSpan.dataset.filePath;
-                    currentFileHandle = await getFileHandleByPath(filePath);
-                    if (!currentFileHandle) {
-                        showNotification(`✗ 无法找到文件: ${filePath}`, 'error');
+                    try {
+                        const filePath = fileSpan.dataset.filePath;
+                        currentFileHandle = await getFileHandleByPath(filePath);
+                        if (!currentFileHandle) {
+                            showNotification(`✗ 无法找到文件: ${filePath}`, 'error');
+                            return;
+                        }
+                        await toggleFile('renderFile', '', filePath, fileSpan, event);
+                    } catch (e) {
+                        console.error('文件切换失败:', e);
+                    } finally {
                         clickTimer = null;
-                        return;
                     }
-                    await toggleFile('renderFile', '', filePath, fileSpan, event);
-                    clickTimer = null;
                 }, 100);
             };
             fileSpan.addEventListener('dblclick', (e) => {
@@ -14097,7 +14109,11 @@
                 dot.title = _MARKER_COLOR_NAMES[i];
                 dot.addEventListener('click', async (e) => {
                     e.stopPropagation();
-                    await setFileMarker({ name: dirPathStr }, dirPathStr, markerDiv, _MARKER_COLOR_NAMES[i], _MARKER_COLORS[i], 'dir');
+                    try {
+                        await setFileMarker({ name: dirPathStr }, dirPathStr, markerDiv, _MARKER_COLOR_NAMES[i], _MARKER_COLORS[i], 'dir');
+                    } catch (err) {
+                        console.error('设置目录标记失败:', err);
+                    }
                 });
                 crPicker.appendChild(dot);
             }
@@ -14107,7 +14123,11 @@
             clearDot.title = '取消标记';
             clearDot.addEventListener('click', async (e) => {
                 e.stopPropagation();
-                await clearFileMarker(dirPathStr, markerDiv);
+                try {
+                    await clearFileMarker(dirPathStr, markerDiv);
+                } catch (err) {
+                    console.error('清除目录标记失败:', err);
+                }
             });
             crPicker.appendChild(clearDot);
             dropdown.appendChild(crPicker);
@@ -15222,7 +15242,7 @@
             if (isObsidianKanban(text)) {
                 mdIsKanban = true;
                 const kanbanData = parseMarkdownKanban(text);
-                renderKanbanToContent(kanbanData);
+                await renderKanbanToContent(kanbanData);
                 return;
             }
             mdIsKanban = false;
@@ -15580,7 +15600,7 @@
             return html.includes('NETSCAPE-Bookmark-file');
         }
 
-        async function renderDrawioFile(text) {
+        function renderDrawioFile(text) {
             const fileUrl = encodeURIComponent(text);
             contentMain.innerHTML = `<iframe id="temp-drawio-frame" frameborder="1" style="width:100%;height:100%;" src="https://viewer.diagrams.net/?#R${fileUrl}"></iframe>`;
         }
@@ -16333,13 +16353,13 @@
             });
         }
 
-        function renderTextNode(node, nodeGroup) {
+        async function renderTextNode(node, nodeGroup) {
             nodeGroup.on('click', (event) => {
                 event.stopPropagation();
                 showCanvasNodeContent(node);
             });
             const previewText = node.text;
-            const renderedText = markedParse(parseObsidianToHTML(previewText));
+            const renderedText = await markedParse(parseObsidianToHTML(previewText));
             const foreignObject = nodeGroup.append('foreignObject')
                 .attr('x', 10)
                 .attr('y', 10)
@@ -16587,7 +16607,7 @@
             }
         }
 
-        function renderCanvasNode(node, group) {
+        async function renderCanvasNode(node, group) {
             const nodeGroup = group.append('g')
                 .attr('class', 'canvas-node')
                 .attr('transform', `translate(${node.x}, ${node.y})`);
@@ -16596,16 +16616,16 @@
                 .attr('width', node.width)
                 .attr('height', node.height);
             if (node.type === 'text') {
-                renderTextNode(node, nodeGroup);
+                await renderTextNode(node, nodeGroup);
             } else if (node.type === 'file') {
                 renderFileNode(node, nodeGroup);
             }
         }
 
-        function renderCanvasNodes(nodes, group) {
+        async function renderCanvasNodes(nodes, group) {
             const nodesGroup = group.append('g').attr('class', 'canvas-nodes');
             for (const node of nodes) {
-                renderCanvasNode(node, nodesGroup);
+                await renderCanvasNode(node, nodesGroup);
             }
         }
 
@@ -16691,7 +16711,7 @@
                 };
             }
             renderCanvasEdges(edges, nodes, g);
-            renderCanvasNodes(nodes, g);
+            await renderCanvasNodes(nodes, g);
             const fitFn = () => fitCanvasToContent(container, bounds.contentWidth, bounds.contentHeight, bounds.centerX, bounds.centerY, svg, zoom);
             addCanvasControls(contentDiv, svg, zoom, fitFn);
             setTimeout(fitFn, 100);
@@ -16980,7 +17000,7 @@
             }, 100);
         }
 
-        function saveNodeContent(event, button) {
+        async function saveNodeContent(event, button) {
             event.stopPropagation();
             const contentPanel = button.closest('.node-content-panel');
             if (!contentPanel) return;
@@ -16992,8 +17012,8 @@
             if (currentNodeEditor && currentNodeEditor.getValue) {
                 const newText = currentNodeEditor.getValue();
                 const originalContent = isFileNode ? fileContent : (nodeData.text || '');
-                const renderPreviewPanel = (text) => {
-                    const htmlContent = markedParse(parseObsidianToHTML(text));
+                const renderPreviewPanel = async (text) => {
+                    const htmlContent = await markedParse(parseObsidianToHTML(text));
                     const fileLabel = isFileNode ? `<span style="font-size:13px;font-weight:500;color:#0969da;">📝 ${escapeHtml(filePath)}</span>` : '';
                     contentPanel.innerHTML = `<div class="canvas-edit-controls" id="canvas-edit-controls">
                                 ${fileLabel}
@@ -17705,29 +17725,29 @@
         }
 
         // 生成卡片的HTML
-        function renderCardHTML(card, colIndex, cardIndex) {
-            let html = markedParse(parseObsidianToHTML(card.content)).trim();
+        async function renderCardHTML(card, colIndex, cardIndex) {
+            let html = (await markedParse(parseObsidianToHTML(card.content))).trim();
             if (card.checked === null) {
                 html = `<div class="card-title null-checked">${html}</div>`;
             } else {
                 html = `<div class="card-title ${card.checked ? 'checked' : ''}">${html}</div>`;
             }
             let cardBody = '';
-            if (card.body) cardBody = markedParse(parseObsidianToHTML(card.body)).trim();
+            if (card.body) cardBody = (await markedParse(parseObsidianToHTML(card.body))).trim();
             html += `<div class="kanban-card-body" style="font-size: 13px; line-height: 1;padding-left: 14px;"><div class="markdown-body">${cardBody}</div></div>`;
             if (card.taskList && card.taskList.length > 0) {
                 html += '<div class="kanban-tasks">';
-                card.taskList.forEach(task => {
-                    const taskContent = markedParse(parseObsidianToHTML(task.task)).trim();
+                for (const task of card.taskList) {
+                    const taskContent = (await markedParse(parseObsidianToHTML(task.task))).trim();
                     if (task.checked === null) {
                         html += `<div class="kanban-task null-checked">${taskContent}</div>`;
                     } else {
                         html += `<div class="kanban-task ${task.checked ? 'checked' : ''}">${taskContent}</div>`;
                     }
                     let taskBody = '';
-                    if (task.body) taskBody = markedParse(parseObsidianToHTML(task.body)).trim();
+                    if (task.body) taskBody = (await markedParse(parseObsidianToHTML(task.body))).trim();
                     html += `<div class="kanban-task-body" style="font-size: 13px; line-height: 1;padding-left: 15px;">${taskBody}</div>`;
-                });
+                }
                 html += '</div>';
             }
             html += `<div class="kanban-card-more" data-col-index="${colIndex}" data-card-index="${cardIndex}">⋮
@@ -17942,7 +17962,7 @@
         }
 
         // 渲染看板到 content-main
-        function renderKanbanToContent(kanbanData) {
+        async function renderKanbanToContent(kanbanData) {
             switchToView(contentMain);
             // 隐藏原有内容和目录
             contentMain.innerHTML = '';
@@ -17969,27 +17989,29 @@
             const container = document.createElement('div');
             container.id = 'kanban-container';
             container.className = 'kanban-container';
-            kanbanData.forEach((column, colIndex) => {
+            for (const column of kanbanData) {
+                const colIndex = kanbanData.indexOf(column);
                 const colEl = document.createElement('div');
                 colEl.className = 'kanban-column';
                 colEl.innerHTML = `<h2>${escapeHtml(column.title)}</h2><div class="kanban-cards" data-col-index="${colIndex}"></div>`;
                 const cardsContainer = colEl.querySelector('.kanban-cards');
-                column.cards.forEach((card, cardIndex) => {
+                for (const card of column.cards) {
+                    const cardIndex = column.cards.indexOf(card);
                     const cardEl = document.createElement('div');
                     cardEl.className = `kanban-card ${card.checked ? 'checked' : ''}`;
                     cardEl.dataset.cardIndex = cardIndex;
                     cardEl.dataset.colIndex = colIndex;
                     cardEl.dataset.content = card.md;
-                    cardEl.innerHTML = renderCardHTML(card, colIndex, cardIndex);
+                    cardEl.innerHTML = await renderCardHTML(card, colIndex, cardIndex);
                     cardsContainer.appendChild(cardEl);
-                });
+                }
                 const addBtn = document.createElement('button');
                 addBtn.className = 'kanban-add-btn';
                 addBtn.textContent = '新建卡片';
                 addBtn.dataset.colIndex = colIndex;
                 colEl.appendChild(addBtn);
                 container.appendChild(colEl);
-            });
+            }
             contentMain.appendChild(container);
             initKanbanDrag();
             initKanbanCheckboxClick();
@@ -18061,13 +18083,13 @@
             }
         }
 
-        function handleKanbanAddInput() {
+        async function handleKanbanAddInput() {
             const textarea = document.querySelector('#kanban-context-textarea');
             const content = textarea.value.trim();
             const colIndex = parseInt(textarea.dataset.colIndex);
             const cardsContainer = document.querySelector(`.kanban-cards[data-col-index="${colIndex}"]`);
             if (content && Number.isInteger(colIndex) && !isNaN(colIndex)) {
-                addNewCardToColumn(colIndex, content, cardsContainer);
+                await addNewCardToColumn(colIndex, content, cardsContainer);
             }
             clearKanbanEditConext();
             initKanbanAddCard(cardsContainer);
@@ -18120,7 +18142,7 @@
             return content;
         }
 
-        function addNewCardToColumn(colIndex, content, cardsContainer) {
+        async function addNewCardToColumn(colIndex, content, cardsContainer) {
             if (!currentKanban || !currentKanban[colIndex] || !cardsContainer) {
                 return;
             }
@@ -18129,17 +18151,18 @@
                 return;
             }
             const cardIndex = currentKanban[colIndex].cards.length - 1;
-            cardData.forEach((card, index) => {
+            for (const card of cardData) {
+                const index = cardData.indexOf(card);
                 const newCardIndex = cardIndex + index;
                 const cardEl = document.createElement('div');
                 cardEl.className = `kanban-card ${card.checked ? 'checked' : ''}`;
                 cardEl.dataset.cardIndex = newCardIndex;
                 cardEl.dataset.colIndex = colIndex;
                 cardEl.dataset.content = card.md;
-                cardEl.innerHTML = renderCardHTML(card, colIndex, newCardIndex);
+                cardEl.innerHTML = await renderCardHTML(card, colIndex, newCardIndex);
                 cardsContainer.appendChild(cardEl);
                 currentKanban[colIndex].cards.push(card);
-            });
+            }
             initKanbanDrag();
             initKanbanCheckboxClick(cardsContainer);
             initKanbanMoreMenu(cardsContainer);
@@ -18147,7 +18170,7 @@
             postProcessCodeAndDiagrams(cardsContainer);
         }
 
-        function editCardToColumn(colIndex, cardIndex, content, input) {
+        async function editCardToColumn(colIndex, cardIndex, content, input) {
             if (!currentKanban || !currentKanban[colIndex] || !currentKanban[colIndex].cards[cardIndex] || !input) {
                 console.error('editCardToColumn: 无效的参数');
                 return;
@@ -18164,7 +18187,7 @@
                 cardEl.dataset.cardIndex = cardIndex;
                 cardEl.dataset.colIndex = colIndex;
                 cardEl.dataset.content = card.md;
-                cardEl.innerHTML = renderCardHTML(card, colIndex, cardIndex);
+                cardEl.innerHTML = await renderCardHTML(card, colIndex, cardIndex);
                 input.replaceWith(cardEl);
                 currentKanban[colIndex].cards[cardIndex] = card;
             } else {
@@ -18180,15 +18203,16 @@
                     }
                 }
                 cardsContainer.innerHTML = '';
-                newCards.forEach((card, index) => {
+                for (const card of newCards) {
+                    const index = newCards.indexOf(card);
                     const cardEl = document.createElement('div');
                     cardEl.className = `kanban-card ${card.checked ? 'checked' : ''}`;
                     cardEl.dataset.cardIndex = index;
                     cardEl.dataset.colIndex = colIndex;
                     cardEl.dataset.content = card.md;
-                    cardEl.innerHTML = renderCardHTML(card, colIndex, index);
+                    cardEl.innerHTML = await renderCardHTML(card, colIndex, index);
                     cardsContainer.appendChild(cardEl);
-                });
+                }
                 currentKanban[colIndex].cards = newCards;
             }
             initKanbanDrag();
@@ -18266,14 +18290,14 @@
             }
         }
 
-        function handleKanbanEditInput() {
+        async function handleKanbanEditInput() {
             const textarea = document.querySelector('#kanban-context-textarea');
             const content = textarea.value.trim();
             const colIndex = parseInt(textarea.dataset.colIndex);
             const cardIndex = parseInt(textarea.dataset.cardIndex);
             if (content && Number.isInteger(cardIndex) && !isNaN(cardIndex)
                 && Number.isInteger(colIndex) && !isNaN(colIndex)) {
-                editCardToColumn(colIndex, cardIndex, content, editingCardTextarea);
+                await editCardToColumn(colIndex, cardIndex, content, editingCardTextarea);
             }
         }
 
@@ -18528,7 +18552,7 @@
             });
         }
 
-        function handleMenuItemClick(e) {
+        async function handleMenuItemClick(e) {
             e.stopPropagation();
             const action = this.dataset.action;
             const moreBtn = this.closest('.kanban-card-more');
@@ -18536,7 +18560,7 @@
             const cardIndex = parseInt(moreBtn.dataset.cardIndex);
             closeAllKanbanMenus();
             if (action === 'archive') {
-                handleArchiveCard(colIndex, cardIndex);
+                await handleArchiveCard(colIndex, cardIndex);
             } else if (action === 'delete') {
                 showConfirmModal('确认删除', `确认要删除此卡片吗?`, (confirmed) => {
                     if (confirmed) {
@@ -18546,7 +18570,7 @@
             }
         }
 
-        function handleArchiveCard(colIndex, cardIndex) {
+        async function handleArchiveCard(colIndex, cardIndex) {
             if (!currentKanban || !currentKanban[colIndex] || !currentKanban[colIndex].cards[cardIndex]) {
                 return;
             }
@@ -18565,7 +18589,7 @@
             currentKanban[colIndex].cards.splice(cardIndex, 1);
             archiveColumn.cards.push(cardToArchive);
             saveCurrentKanban();
-            renderKanbanToContent(currentKanban);
+            await renderKanbanToContent(currentKanban);
             showNotification('✓ 卡片已归档', 'success');
         }
 
@@ -22898,7 +22922,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                     // 并行执行：renderDirectory 和 toggleDashboardView 同时进行
                     if (BROWSER_REFRESHED_KEY === safeLocalStorageGet(BROWSER_REFRESHED_KEY)) {
-                        Promise.all([renderDirectory(storedHandle), toggleDashboardView(true)]);
+                        await Promise.all([renderDirectory(storedHandle), toggleDashboardView(true)]);
                     } else {
                         renderDirectory(storedHandle);
                     }
@@ -30899,19 +30923,24 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (photoSwitchTimer) return;
             const targetEl = triggerEl || event?.target;
             photoSwitchTimer = setTimeout(async () => {
-                document.querySelectorAll('.photo-layout').forEach(l => l.classList.remove('active'));
-                document.getElementById(`photo-layout-${name}`).classList.add('active');
-                document.querySelectorAll('.photo-tab').forEach(t => t.classList.remove('active'));
-                if (targetEl) targetEl.classList.add('active');
-                photoCurrentLayout = name;
+                try {
+                    document.querySelectorAll('.photo-layout').forEach(l => l.classList.remove('active'));
+                    document.getElementById(`photo-layout-${name}`).classList.add('active');
+                    document.querySelectorAll('.photo-tab').forEach(t => t.classList.remove('active'));
+                    if (targetEl) targetEl.classList.add('active');
+                    photoCurrentLayout = name;
 
-                // 懒加载：只有未渲染过才渲染
-                if (!photoRenderedLayouts[name]) {
-                    if (name === 'masonry') await photoRenderMasonry();
-                    else if (name === 'scatter') await photoRenderScatter();
-                    photoRenderedLayouts[name] = true;
+                    // 懒加载：只有未渲染过才渲染
+                    if (!photoRenderedLayouts[name]) {
+                        if (name === 'masonry') await photoRenderMasonry();
+                        else if (name === 'scatter') await photoRenderScatter();
+                        photoRenderedLayouts[name] = true;
+                    }
+                } catch (e) {
+                    console.error('布局渲染失败:', e);
+                } finally {
+                    photoSwitchTimer = null;
                 }
-                photoSwitchTimer = null;
             }, 100);
         }
         async function getPhotoFromDirHandle(handle, relPath = '') {
