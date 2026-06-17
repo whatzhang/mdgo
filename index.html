@@ -11440,6 +11440,7 @@
         const INDEX_MARKERS_FILE = 'index_file_markers.json';
         const INDEX_OPER_FILE = 'index_operation.json';
         const INDEX_SCHEDULE_FILE = 'index_schedule.json';
+        let hasBackendServer = false;
         //工具常量
         const isShowHtmlCode = (relativePath) => {
             const p = normalizePath(relativePath || '');
@@ -11457,13 +11458,10 @@
             if (RANDOM_DIR_BLACKLIST.some(dir => p.startsWith(normalizePath(dir)))) return false;
             return RANDOM_DIR_WHITELIST.some(dir => p.startsWith(normalizePath(dir))) || (ext && isDoc(ext));
         };
-        const isLocalVisit = () => window.location.protocol === 'file:' || window.location.hostname.includes('github.io');
-        const replaceMediaUrl = (text) => {
-            if (!text.includes('assets/media/')) return text;
-            if (isLocalVisit()) {
-                return text.replace(/(\.\.?\/)+assets\/media\//g, '../../assets/media/');
-            }
-            return text.replace(/(\.\.?\/)+assets\/media\//g, '../assets/media/');
+        const isLocalVisit = () => window.location.protocol === 'file:';
+        const replaceMediaUrl = (path, isFullText) => {
+            if (hasBackendServer) return path;
+            return buildLocalImg(path, isFullText);
         };
         const isInDeletedDir = (relativePath) => {
             const p = normalizePath(relativePath || '');
@@ -11735,6 +11733,7 @@
             }
             hiddenAiPanel();
             destroyJsMind();
+            cleanupObjectUrls();
             currentArtPlayer?.pause();
             aiFabContainer.style.display = 'block';
             if (type === 'newFile') {
@@ -15231,7 +15230,7 @@
             }
             htmlCanBePng = true;
             setControlsState({ mdImageBtn: true });
-            const htmlText = replaceMediaUrl(text);
+            const htmlText = replaceMediaUrl(text, true);
             const iframe = document.createElement('iframe');
             iframe.id = 'temp-html-frame';
             iframe.style.width = '100%';
@@ -15276,7 +15275,55 @@
                 doc.close();
             }
         }
+        const IMG_SRC_REGEX = /<img([^>]*)src\s*=\s*["']([^"']+)["']([^>]*)>/gi;
+        function buildLocalImg(text, isFullText = false) {
+            const normalizedRootPath = normalizePath(currentRootPath);
+            const buildSrc = (src) => {
+                // 跳过非本地图片：data URI、blob URL、外部链接
+                if (src.startsWith('data:') || src.startsWith('blob:') ||
+                    src.startsWith('http://') || src.startsWith('https://') ||
+                    src.startsWith('//')) return src;
 
+                let relativePath = currentActiveItem ? currentActiveItem.dataset.filePath : '';
+                if (!relativePath) return src;
+                // 归一化路径
+                src = normalizePath(src);
+                if (src.includes(normalizedRootPath)) return src;
+                const htmlDir = dirname(relativePath);
+                let fullPath;
+                if (src.startsWith(SLASH)) {
+                    // 绝对路径（从 rootHandle 根目录开始）
+                    fullPath = src.replace(/^\/+/, ''); // 去掉开头的 /
+                } else if (src.startsWith('./') || src.startsWith('../')) {
+                    // 相对路径（./ 或 ../ 开头），相对于 HTML 文件所在目录
+                    fullPath = joinPath(htmlDir, src);
+                } else {
+                    // 普通相对路径，相对于 HTML 文件所在目录
+                    fullPath = joinPath(htmlDir, src);
+                }
+                // 归一化并解析 .. 和 . 
+                fullPath = normalizePath(fullPath);
+                const parts = fullPath.split(SLASH).filter(Boolean);
+                const resolvedParts = [];
+                for (const part of parts) {
+                    if (part === '..') {
+                        resolvedParts.pop();
+                    } else if (part !== '.') {
+                        resolvedParts.push(part);
+                    }
+                }
+                return joinPath(normalizedRootPath, resolvedParts.join(SLASH));
+            }
+            if (!isFullText) {
+                return buildSrc(text);
+            } else {
+                IMG_SRC_REGEX.lastIndex = 0;
+                return text.replace(IMG_SRC_REGEX, (_, before, src, after) => {
+                    const localSrc = buildSrc(src);
+                    return `<img${before}src="${localSrc}"${after}>`;
+                });
+            }
+        }
         async function buildHtmlToc(doc, htmlText) {
             var headings = [];
             if (htmlText.indexOf('.node-list') > -1 && htmlText.indexOf('.bullet-dot') > -1) {
@@ -18120,8 +18167,7 @@
 
         function markedParse(str) {
             try {
-                str = replaceMediaUrl(str);
-                return marked.parse(str);
+                return replaceMediaUrl(marked.parse(str), true);
             } catch (error) {
                 console.error('Markdown 解析错误:', error);
                 return str;
@@ -19132,6 +19178,7 @@
             const response = await fetch(url);
             const data = await response.json();
             if (data.success) {
+                if (!hasBackendServer) hasBackendServer = true;
                 return data.data;
             } else {
                 showNotification('✗ 配置失败: ' + data.message, 'error');
@@ -22671,7 +22718,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 setRootHandle(dirHandle)
                 const root = safeLocalStorageGet("ROOT_DIR");
                 showInputModal('请输入物理路径', root || currentRootPath, async (path) => {
-                    currentRootPath = path.trim();
+                    let trimmedPath = path.trim();
+                    //去除路径末尾的斜杠，兼容 windows 和 linux 系统
+                    currentRootPath = trimmedPath.replace(/[\/\\]+$/, '');
                     safeLocalStorageSet("ROOT_DIR", currentRootPath);
                     await clearOldData();
                     await idbPut(DIRECTORY_STORE_NAME, 'handles', 'default', dirHandle);
@@ -22698,8 +22747,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             safeLocalStorageRemove(VIEW_OPER_RECORDS_KEY);
             safeLocalStorageRemove(GRAPH_PARAMS_KEY);
             safeLocalStorageRemove(VIDEO_HISTORY_KEY);
+            safeLocalStorageRemove(BROWSER_REFRESHED_KEY);
             // 清理目录句柄数据库
             idbDeleteDatabase(DIRECTORY_STORE_NAME);
+            _markersCache = null; // markers 缓存
+            _markersMap = new Map(); // markers 快速查找 Map
+            _cachedLastFile = null;    // createFileItem 预缓存：最后一次打开的文件路径
+            _browserRefreshed = false;   // createFileItem 预缓存：是否浏览器刷新场景
         }
 
         // 初始化从存储加载目录句柄 功能:从本地存储加载目录句柄并验证权限
@@ -24820,6 +24874,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
                 _wsClient.onmessage = (event) => {
                     try {
+                        if (!hasBackendServer) hasBackendServer = true;
                         if (!isRootHandleAvailable()) return;
                         const msg = JSON.parse(event.data);
                         const handler = WS_HANDLERS[msg.type];
