@@ -11459,9 +11459,15 @@
             return RANDOM_DIR_WHITELIST.some(dir => p.startsWith(normalizePath(dir))) || (ext && isDoc(ext));
         };
         const isLocalVisit = () => window.location.protocol === 'file:';
-        const replaceMediaUrl = (path, isFullText) => {
-            if (hasBackendServer) return path;
-            return buildLocalImg(path, isFullText);
+        const isHttpVisit = () => window.location.protocol === 'http:' || window.location.protocol === 'https:';
+        const replaceMediaUrl = async (path, isFullText) => {
+            // 存在后端服务, 更改绝对路径
+            if (hasBackendServer) return buildLocalAbsoluteImg(path, isFullText);
+            // 本地访问, 构建本地图片路径
+            if (isLocalVisit()) return buildLocalImg(path, isFullText);
+            // http访问, 无后端服务
+            if (isHttpVisit()) return await buildHttpImg(path, isFullText);
+            return path;
         };
         const isInDeletedDir = (relativePath) => {
             const p = normalizePath(relativePath || '');
@@ -12017,7 +12023,7 @@
             let initialContent = previewFileText || originalContent;
             const editorInner = document.getElementById('editor-inner-live');
             const previewContent = document.getElementById('live-preview-content');
-            updateLivePreviewContent(initialContent, previewContent);
+            await updateLivePreviewContent(initialContent, previewContent);
             initMonacoEditor().then(() => {
                 currentEditor = createMonacoEditor(editorInner, {
                     value: initialContent,
@@ -12032,9 +12038,9 @@
                     }
                 });
                 currentEditor.onDidChangeModelContent(() => {
-                    TimerManager.setTimeout('livePreview', () => {
+                    TimerManager.setTimeout('livePreview', async () => {
                         const content = currentEditor.getValue();
-                        updateLivePreviewContent(content, previewContent);
+                        await updateLivePreviewContent(content, previewContent);
                     }, 300);
                 });
                 updateStatus(currentEditor, editorInnerDiv, '', false);
@@ -12454,9 +12460,9 @@
             });
         }
 
-        function updateLivePreviewContent(content, container) {
+        async function updateLivePreviewContent(content, container) {
             if (!container || !content) return;
-            const htmlContent = markedParse(parseObsidianToHTML(content));
+            const htmlContent = await markedParse(parseObsidianToHTML(content));
             container.innerHTML = htmlContent;
             postProcessMarkdown(container);
         }
@@ -14268,7 +14274,7 @@
             }
         }
 
-        function renderMindmapNode(node, level) {
+        async function renderMindmapNodeAsync(node, level) {
             const isRoot = level === 0;
             const hasChildren = node.children && node.children.length > 0;
             const nodeId = 'node_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
@@ -14286,7 +14292,7 @@
                     if (node.head != "") {
                         html += getTitle(-1, node);
                     }
-                    html += getImage(node.local_images, node.images, nodeId);
+                    html += await getImage(node.local_images, node.images, nodeId);
                 } else {
                     html += getTitle(level, node);
                 }
@@ -14297,7 +14303,7 @@
             if (hasChildren) {
                 html += `<div id="${nodeId}" class="mindmap-children">`;
                 for (const child of node.children) {
-                    html += renderMindmapNode(child, level + 1);
+                    html += await renderMindmapNodeAsync(child, level + 1);
                 }
                 html += `</div>`;
             }
@@ -14305,7 +14311,7 @@
             return html;
         }
 
-        function getImage(local_images, images_url, nodeId, style = true) {
+        async function getImage(local_images, images_url, nodeId, style = true) {
             let html = "";
             if (local_images) {
                 const localImages = decodeURIComponent(local_images);
@@ -14316,7 +14322,7 @@
                     html += `<div style="display: flex; flex-wrap: wrap;">`;
                     for (let i = 0; i < localBj.length; i++) {
                         let imgSrc = localBj[i].uri;
-                        imgSrc = replaceMediaUrl(imgSrc);
+                        imgSrc = await replaceMediaUrl(imgSrc);
                         const imgId = `${localBj[i].id}${nodeId}-${Math.random().toString(36).slice(2)}`;
                         html += `<img src="${imgSrc}" id="${imgId}" ${style ? 'style="width: auto;height: auto;max-height: 150px; max-width: 100%; cursor: pointer;"' : ''} onclick="showImageModal('${imgSrc}')">`;
                     }
@@ -14619,7 +14625,7 @@
             currentJsMind = null;
             const text = await getFileContent(currentFileHandle);
             const rootNode = parseFreeMind(text);
-            contentMain.innerHTML = `<div class="mindmap-container">${renderMindmapNode(rootNode, 0)}</div>`;
+            contentMain.innerHTML = `<div class="mindmap-container">${await renderMindmapNodeAsync(rootNode, 0)}</div>`;
         }
 
         async function convertToMindmap() {
@@ -14729,7 +14735,15 @@
             if (topic && hasMarkdown(topic)) {
                 element.innerHTML = '';
                 element.classList.add('jm-node-markdown');
-                element.innerHTML = markedParse(parseObsidianToHTML(normalizeMarkdown(topic)));
+                // 先渲染纯文本作为初始内容，避免 jsMind 尺寸为零
+                const plainText = topic.replace(/\*\*/g, '').replace(/`/g, '').replace(/~~/g, '').replace(/==/g, '').substring(0, 200);
+                element.innerHTML = `<span>${escapeHtml(plainText)}</span>`;
+                // markedParse 是 async 函数，异步更新渲染结果
+                markedParse(parseObsidianToHTML(normalizeMarkdown(topic))).then(result => {
+                    if (element.isConnected) {
+                        element.innerHTML = result;
+                    }
+                });
                 return true;
             }
             if (local_images != "" || images != "") {
@@ -14737,9 +14751,14 @@
                 let html = '';
                 if (topic && topic.trim() !== "")
                     html += `<span class="mindmap-node-content-z" style="font-size: 11px;margin-bottom: 8px;">${topic}</span>`;
-                html += getImage(local_images, images, node.id, false);
                 element.classList.add('jm-node-img');
                 element.innerHTML = html;
+                // 异步加载图片
+                getImage(local_images, images, node.id, false).then(imgHtml => {
+                    if (element.isConnected) {
+                        element.innerHTML = html + imgHtml;
+                    }
+                });
                 return true;
             }
             return false;
@@ -14924,7 +14943,8 @@
 
         // 渲染OPML文件(思维导图)
         async function renderOPMLFile(text) {
-            contentMain.innerHTML = `<div class="mindmap-container">${renderMindmapNode(parseOPML(text), 0)}</div>`;
+            const rootNode = parseOPML(text);
+            contentMain.innerHTML = `<div class="mindmap-container">${await renderMindmapNodeAsync(rootNode, 0)}</div>`;
             setControlsState({
                 topControls: true,
                 opmlBtns: true,
@@ -15207,12 +15227,12 @@
                 return;
             }
             mdIsKanban = false;
-            renderOriginalMarkdown(text);
+            await renderOriginalMarkdown(text);
             setControlsState({ aiFab: true, mdImageBtn: true });
         }
 
         async function renderOriginalMarkdown(text) {
-            const htmlContent = markedParse(parseObsidianToHTML(text));
+            const htmlContent = await markedParse(parseObsidianToHTML(text));
             contentMain.innerHTML = `<article class="markdown-body">${htmlContent}</article>`;
             generateTOC(text);
             postProcessMarkdown(contentMain);
@@ -15230,7 +15250,7 @@
             }
             htmlCanBePng = true;
             setControlsState({ mdImageBtn: true });
-            const htmlText = replaceMediaUrl(text, true);
+            const htmlText = await replaceMediaUrl(text, true);
             const iframe = document.createElement('iframe');
             iframe.id = 'temp-html-frame';
             iframe.style.width = '100%';
@@ -15276,54 +15296,164 @@
             }
         }
         const IMG_SRC_REGEX = /<img([^>]*)src\s*=\s*["']([^"']+)["']([^>]*)>/gi;
-        function buildLocalImg(text, isFullText = false) {
-            const normalizedRootPath = normalizePath(currentRootPath);
-            const buildSrc = (src) => {
-                // 跳过非本地图片：data URI、blob URL、外部链接
-                if (src.startsWith('data:') || src.startsWith('blob:') ||
-                    src.startsWith('http://') || src.startsWith('https://') ||
-                    src.startsWith('//')) return src;
-
-                let relativePath = currentActiveItem ? currentActiveItem.dataset.filePath : '';
-                if (!relativePath) return src;
-                // 归一化路径
-                src = normalizePath(src);
-                if (src.includes(normalizedRootPath)) return src;
-                const htmlDir = dirname(relativePath);
-                let fullPath;
-                if (src.startsWith(SLASH)) {
-                    // 绝对路径（从 rootHandle 根目录开始）
-                    fullPath = src.replace(/^\/+/, ''); // 去掉开头的 /
-                } else if (src.startsWith('./') || src.startsWith('../')) {
-                    // 相对路径（./ 或 ../ 开头），相对于 HTML 文件所在目录
-                    fullPath = joinPath(htmlDir, src);
-                } else {
-                    // 普通相对路径，相对于 HTML 文件所在目录
-                    fullPath = joinPath(htmlDir, src);
-                }
-                // 归一化并解析 .. 和 . 
-                fullPath = normalizePath(fullPath);
-                const parts = fullPath.split(SLASH).filter(Boolean);
-                const resolvedParts = [];
-                for (const part of parts) {
-                    if (part === '..') {
-                        resolvedParts.pop();
-                    } else if (part !== '.') {
-                        resolvedParts.push(part);
-                    }
-                }
-                return joinPath(normalizedRootPath, resolvedParts.join(SLASH));
+        const isContinueImg = (src) => {
+            // 跳过非本地图片：data URI、blob URL、外部链接
+            if (src.startsWith('data:') || src.startsWith('blob:') ||
+                src.startsWith('http://') || src.startsWith('https://') ||
+                src.startsWith('//')) return true;
+            return false;
+        }
+        // 相对图片路径转换为本地路径
+        const buildLocalImgSrc = (src, normalizedRootPath) => {
+            // 归一化路径
+            let relativePath = currentActiveItem ? currentActiveItem.dataset.filePath : '';
+            const htmlDir = dirname(relativePath);
+            let fullPath;
+            if (src.startsWith(SLASH)) {
+                // 绝对路径（从 rootHandle 根目录开始）
+                fullPath = src.replace(/^\/+/, ''); // 去掉开头的 /
+            } else if (src.startsWith('./') || src.startsWith('../')) {
+                // 相对路径（./ 或 ../ 开头），相对于 HTML 文件所在目录
+                fullPath = joinPath(htmlDir, src);
+            } else {
+                // 普通相对路径，相对于 HTML 文件所在目录
+                fullPath = joinPath(htmlDir, src);
             }
+            // 归一化并解析 .. 和 . 
+            fullPath = normalizePath(fullPath);
+            const parts = fullPath.split(SLASH).filter(Boolean);
+            const resolvedParts = [];
+            for (const part of parts) {
+                if (part === '..') {
+                    resolvedParts.pop();
+                } else if (part !== '.') {
+                    resolvedParts.push(part);
+                }
+            }
+            return resolvedParts.join(SLASH);
+        }
+        /**
+         * 存在后端服务, 更改绝对路径
+         * 构建本地绝对图片, 绝对路径前缀为打开为 rootHandle 根目录的路径下
+         * @param {string} text - 输入文本
+         * @param {boolean} isFullText - 是否替换所有图片
+         * @returns {string} - 替换后的文本
+         */
+        const buildLocalAbsoluteImg = (text, isFullText = false) => {
+            const normalizedRootPath = normalizePath(currentRootPath);
             if (!isFullText) {
-                return buildSrc(text);
+                return dealWithAbsolutePath(text, normalizedRootPath);
             } else {
                 IMG_SRC_REGEX.lastIndex = 0;
                 return text.replace(IMG_SRC_REGEX, (_, before, src, after) => {
-                    const localSrc = buildSrc(src);
+                    return `<img${before}src="${dealWithAbsolutePath(src, normalizedRootPath)}"${after}>`;
+                });
+            }
+        }
+        /**
+         * 本地访问 file:// , 构建本地图片路径, 全部为本地路径
+         * @param {string} text - 输入文本
+         * @param {boolean} isFullText - 是否替换所有图片
+         * @returns {string} - 替换后的文本
+         */
+        function buildLocalImg(text, isFullText = false) {
+            const normalizedRootPath = normalizePath(currentRootPath);
+            if (!isFullText) {
+                if (isContinueImg(text)) return text;
+                let localSrc = dealWithAbsolutePath(text, normalizedRootPath);
+                if (localSrc === text) {
+                    localSrc = joinPath(normalizedRootPath, buildLocalImgSrc(localSrc, normalizedRootPath));
+                } else {
+                    localSrc = joinPath(normalizedRootPath, localSrc);
+                }
+                return localSrc || text;
+            } else {
+                IMG_SRC_REGEX.lastIndex = 0;
+                return text.replace(IMG_SRC_REGEX, (_, before, src, after) => {
+                    let localSrc = '';
+                    if (isContinueImg(src)) {
+                        localSrc = src;
+                    } else {
+                        localSrc = dealWithAbsolutePath(src, normalizedRootPath);
+                        if (localSrc === src) {
+                            localSrc = joinPath(normalizedRootPath, buildLocalImgSrc(localSrc, normalizedRootPath));
+                        } else {
+                            localSrc = joinPath(normalizedRootPath, localSrc);
+                        }
+                    }
                     return `<img${before}src="${localSrc}"${after}>`;
                 });
             }
         }
+        /**
+         * 构建 HTTP 图片, 全部为 base64 编码的图片
+         * @param {string} text - 输入文本
+         * @param {boolean} isFullText - 是否替换所有图片
+         * @returns {Promise<string>} - 替换后的文本
+         */
+        async function buildHttpImg(text, isFullText = false) {
+            const normalizedRootPath = normalizePath(currentRootPath);
+            if (!isFullText) {
+                if (isContinueImg(text)) return text;
+                let localSrc = dealWithAbsolutePath(text, normalizedRootPath);
+                if (localSrc === text) {
+                    localSrc = buildLocalImgSrc(text, normalizedRootPath);
+                }
+                localSrc = await readFileAsBase64(localSrc);
+                return localSrc || text;
+            } else {
+                // 先收集所有图片 src，并行读取为 base64
+                const matches = [];
+                let match;
+                IMG_SRC_REGEX.lastIndex = 0;
+                while ((match = IMG_SRC_REGEX.exec(text)) !== null) {
+                    matches.push({ fullMatch: match[0], before: match[1], src: match[2], after: match[3] });
+                }
+                if (matches.length === 0) return text;
+                const replacements = await Promise.all(matches.map(async (m) => {
+                    if (isContinueImg(m.src)) return { oldStr: m.fullMatch, newStr: m.fullMatch };
+                    let localSrc = dealWithAbsolutePath(m.src, normalizedRootPath);
+                    if (localSrc === m.src) {
+                        localSrc = buildLocalImgSrc(m.src, normalizedRootPath);
+                    }
+                    localSrc = await readFileAsBase64(localSrc);
+                    if (!localSrc || localSrc === m.src) return { oldStr: m.fullMatch, newStr: m.fullMatch };
+                    return { oldStr: m.fullMatch, newStr: `<img${m.before}src="${localSrc}"${m.after}>` };
+                }));
+                let result = text;
+                for (const r of replacements) {
+                    result = result.replace(r.oldStr, r.newStr);
+                }
+                return result;
+            }
+        }
+        async function readFileAsBase64(fullPath) {
+            try {
+                const fileHandle = await getFileHandleByPath(fullPath);
+                if (!fileHandle) return null;
+                const file = await fileHandle.getFile();
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = () => reject(reader.error);
+                    reader.readAsDataURL(file);
+                });
+            } catch (e) {
+                console.warn(`本地图片读取失败: ${fullPath}`, e);
+                return null;
+            }
+        }
+        const dealWithAbsolutePath = (src, normalizedRootPath) => {
+            const isLocal = normalizePath(src).startsWith(normalizedRootPath);
+            if (isLocal) {
+                let localSrc = src.replace(normalizedRootPath, '');
+                if (localSrc.startsWith(SLASH)) {
+                    return localSrc.substring(1);
+                }
+            }
+            return src;
+        }
+
         async function buildHtmlToc(doc, htmlText) {
             var headings = [];
             if (htmlText.indexOf('.node-list') > -1 && htmlText.indexOf('.bullet-dot') > -1) {
@@ -16366,7 +16496,7 @@
                     return;
                 }
                 const previewText = await getFileContent(fileHandle);
-                const renderedText = markedParse(parseObsidianToHTML(previewText));
+                const renderedText = await markedParse(parseObsidianToHTML(previewText));
                 contentDiv.html(renderedText);
             } catch (error) {
                 console.error('加载 markdown 预览失败:', error);
@@ -16630,9 +16760,9 @@
             }
         }
 
-        function showCanvasNodeContent(node) {
+        async function showCanvasNodeContent(node) {
             const contentPanel = createNodeContentPanel('100%');
-            const htmlContent = markedParse(parseObsidianToHTML(node.text));
+            const htmlContent = await markedParse(parseObsidianToHTML(node.text));
             contentPanel.innerHTML = ` <div class="canvas-edit-controls" id="canvas-edit-controls">
                     <button class="btn btn-primary btn-sm" data-node-id="${node.id}" onclick="editNodeContent(event, this)">
                         编辑内容
@@ -16664,7 +16794,7 @@
                         throw new Error('文件不存在');
                     }
                     const text = await getFileContent(fileHandle);
-                    const htmlContent = markedParse(parseObsidianToHTML(text));
+                    const htmlContent = await markedParse(parseObsidianToHTML(text));
                     contentPanel.innerHTML = `
                         <div class="canvas-edit-controls" id="canvas-edit-controls">
                             <span style="font-size:13px;font-weight:500;color:#0969da;">
@@ -17739,7 +17869,7 @@
                 copyBtn: true,
                 formatBtn: false
             });
-            renderOriginalMarkdown(fileText);
+            await renderOriginalMarkdown(fileText);
         }
 
         async function buildPng(targetElement, name) {
@@ -18165,9 +18295,9 @@
             itemEl.classList.toggle('checked', task.checked);
         }
 
-        function markedParse(str) {
+        async function markedParse(str) {
             try {
-                return replaceMediaUrl(marked.parse(str), true);
+                return await replaceMediaUrl(marked.parse(str), true);
             } catch (error) {
                 console.error('Markdown 解析错误:', error);
                 return str;
@@ -20870,7 +21000,7 @@
                     showNotification('未找到AI记录', 'warning');
                     return;
                 }
-                showAIResultModal(foundItem.type, foundItem.label, foundItem.result, foundItem.fileName, foundItem.filePath);
+                await showAIResultModal(foundItem.type, foundItem.label, foundItem.result, foundItem.fileName, foundItem.filePath);
                 return;
             }
             openFileFromPath(filePath);
@@ -21095,7 +21225,7 @@
                 const promptInput = document.getElementById('ai-prompt-input');
                 if (promptInput) promptInput.value = item.prompt;
             }
-            showAIResultModal(item.type, item.label, item.result, item.fileName, item.filePath);
+            await showAIResultModal(item.type, item.label, item.result, item.fileName, item.filePath);
         }
         async function addAIHistoryItem(item) {
             aiHistory.push(item);
@@ -21355,7 +21485,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     lastAccess: time
                 });
                 recordOperation(name, '', OPERATION_TYPES.AI, time, name);
-                showAIResultModal(name, PROMPTS[action].title, finalResult, name, '');
+                await showAIResultModal(name, PROMPTS[action].title, finalResult, name, '');
             } catch (error) {
                 console.error('操作失败:', error);
                 showNotification(name + '操作失败！' + ((error && error.message) || error), 'error');
@@ -21437,18 +21567,18 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     recordOperation(context, '', OPERATION_TYPES.AI, time, actionStr);
                 }
                 if (action === 'analyze' || action === 'summarize') {
-                    showAIResultModal(action, PROMPTS[action].title, processedResult, fileName, filePath);
+                    await showAIResultModal(action, PROMPTS[action].title, processedResult, fileName, filePath);
                     showNotification(`处理完成，${PROMPTS[action].title}已展示在弹窗中，输入字符数: ${inputLen}，输出字符数: ${outputLen}`, 'success');
                 } else if (action === 'reformat') {
                     if (aiSelectionMode) {
-                        showAIResultModal(action, PROMPTS[action].title, processedResult, fileName, filePath);
+                        await showAIResultModal(action, PROMPTS[action].title, processedResult, fileName, filePath);
                         showNotification(`处理完成，${PROMPTS[action].title}已展示在弹窗中，输入字符数: ${inputLen}，输出字符数: ${outputLen}`, 'success');
                     } else {
                         enterEditMode(false, processedResult);
                         showNotification(`处理完成，结果已放入编辑器，输入字符数: ${inputLen}，输出字符数: ${outputLen}`, 'success');
                     }
                 } else {
-                    showAIResultModal(action, customPrompt, processedResult, fileName, filePath);
+                    await showAIResultModal(action, customPrompt, processedResult, fileName, filePath);
                     showNotification(`处理完成，结果已展示在弹窗中，输入字符数: ${inputLen}，输出字符数: ${outputLen}`, 'success');
                 }
             } catch (error) {
@@ -21498,7 +21628,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (opts.formatBtn !== undefined) formatBtn.style.display = opts.formatBtn ? 'inline-flex' : 'none';
         }
 
-        function showAIResultModal(action, titles, content, fileName, filePath) {
+        async function showAIResultModal(action, titles, content, fileName, filePath) {
             const modal = document.getElementById('ai-result-modal');
             const titleEl = document.getElementById('ai-result-title');
             const contentEl = document.getElementById('ai-result-content');
@@ -21516,7 +21646,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 aiResultContext = content.match(/```[\w]*\n([\s\S]*?)```/)?.[1].trim() || content;
             }
             try {
-                const htmlContent = markedParse(parseObsidianToHTML(content));
+                const htmlContent = await markedParse(parseObsidianToHTML(content));
                 contentEl.innerHTML = `<div class="markdown-body" style="height: 100%; width: 100%; overflow: auto;">${htmlContent}</div>`;
                 postProcessMarkdown(contentEl);
             } catch (error) {
@@ -30534,7 +30664,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (dirPath) {
                     dirHandle = await getDirHandleByDirPath(dirPath);
                 }
-                var fileList = await getDocFileList(dirHandle, 0, dirPath);
+                var fileList = await getCustomFileList(dirHandle, 0, dirPath);
                 if (!fileList || fileList.length === 0) {
                     wordViewContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;width:100%;min-height:80vh;color:var(--color-text-secondary);font-size:14px">未找到文档文件</div>';
                     return;
@@ -30685,7 +30815,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (_wordCloudTimer) { clearInterval(_wordCloudTimer); _wordCloudTimer = null; }
             if (_wordCloudResizeHandler) { window.removeEventListener('resize', _wordCloudResizeHandler); _wordCloudResizeHandler = null; }
         }
-        async function getDocFileList(handle, depth = 0, relPath,
+        async function getCustomFileList(handle, depth = 0, relPath,
             callback = (str) => { return !isDoc(getExt(str)) && !/[\u4e00-\u9fa5]/.test(str) }) {
             if (!handle || (handle.kind === 'file' && depth === 0)) return [];
             var fileName = handle.name
@@ -30706,7 +30836,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (depth > MAX_DIR_DEPTH || isSkipDir(relPath)) return [];
                 for await (const child of handle.values()) {
                     const childRelPath = child.kind === 'file' ? relPath : joinPath(relPath, child.name);
-                    const childList = await getDocFileList(child, depth + 1, childRelPath, callback);
+                    const childList = await getCustomFileList(child, depth + 1, childRelPath, callback);
                     if (!isEmpty(childList)) {
                         fileList = fileList.concat(childList);
                     }
@@ -30722,10 +30852,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         // 布局切换防抖
         let photoSwitchTimer = null;
         // 散落布局 resize 处理
-        function photoHandleResize() {
+        async function photoHandleResize() {
             if (photoCurrentLayout === 'scatter' && photoScatterPositions.size > 0) {
                 photoScatterPositions.clear();
-                photoRenderScatter();
+                await photoRenderScatter();
             }
         }
         async function picLayoutDisplay(relPath) {
@@ -30750,7 +30880,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 </div>
             </div>`;
             await getPhotoFromDirHandle(await getDirHandleByDirPath(relPath), relPath);
-            photoRenderMasonry();
+            await photoRenderMasonry();
             photoRenderedLayouts['masonry'] = true;
             const dom = document.querySelector('.photo-main');
             bindImagePreview(dom, true);
@@ -30766,10 +30896,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             window.removeEventListener('resize', photoHandleResize);
         }
         // 切换布局 - 懒加载渲染
-        function photoSwitchLayout(name, triggerEl) {
+        async function photoSwitchLayout(name, triggerEl) {
             if (photoSwitchTimer) return;
             const targetEl = triggerEl || event?.target;
-            photoSwitchTimer = setTimeout(() => {
+            photoSwitchTimer = setTimeout(async () => {
                 document.querySelectorAll('.photo-layout').forEach(l => l.classList.remove('active'));
                 document.getElementById(`photo-layout-${name}`).classList.add('active');
                 document.querySelectorAll('.photo-tab').forEach(t => t.classList.remove('active'));
@@ -30778,8 +30908,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
                 // 懒加载：只有未渲染过才渲染
                 if (!photoRenderedLayouts[name]) {
-                    if (name === 'masonry') photoRenderMasonry();
-                    else if (name === 'scatter') photoRenderScatter();
+                    if (name === 'masonry') await photoRenderMasonry();
+                    else if (name === 'scatter') await photoRenderScatter();
                     photoRenderedLayouts[name] = true;
                 }
                 photoSwitchTimer = null;
@@ -30794,25 +30924,30 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const judgePic = (str) => {
                     return !isPicImage(getExt(str));
                 };
-                var fileList = await getDocFileList(handle, 0, relPath, judgePic);
+                var fileList = await getCustomFileList(handle, 0, relPath, judgePic);
                 currentPhotoDirData = fileList.map((h, i) => ({ id: i, title: h.nameFull, url: h.path }));
             }
         }
         // ========== 瀑布流 ==========
-        function photoRenderMasonry() {
+        async function photoRenderMasonry() {
             const container = document.getElementById('photo-masonry-container');
             const fragment = document.createDocumentFragment();
-            currentPhotoDirData.forEach(p => {
+            for (const p of currentPhotoDirData) {
                 const div = document.createElement('div');
                 div.className = 'photo-masonry-item';
                 div.innerHTML = `
-                    <img src="${p.url}" alt="${p.title}" loading="lazy" decoding="async">
+                    <img src="${await photoLoadFromLocal(p.url)}" alt="${p.title}" loading="lazy" decoding="async">
                     <div class="photo-caption">${p.title}</div>
                 `;
                 fragment.appendChild(div);
-            });
+            }
             container.innerHTML = '';
             container.appendChild(fragment);
+        }
+        async function photoLoadFromLocal(src) {
+            if (isLocalVisit()) return buildLocalImg(src, false);
+            if (isHttpVisit()) return await buildHttpImg(src, false);
+            return src;
         }
         // ========== 散落布局位置计算 ==========
         function photoComputeScatterPositions(count) {
@@ -30844,18 +30979,20 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
         // ========== 随机散落 ==========
-        function photoRenderScatter() {
+        async function photoRenderScatter() {
             const container = document.getElementById('photo-scatter-container');
-            const count = Math.min(currentPhotoDirData.length, 40);
+            const count = Math.min(currentPhotoDirData.length, 20);
             // 预计算位置（复用已计算的位置）
             if (photoScatterPositions.size === 0) {
                 photoComputeScatterPositions(count);
             }
 
             const fragment = document.createDocumentFragment();
-            currentPhotoDirData.slice(0, count).forEach((p, i) => {
+            const items = currentPhotoDirData.slice(0, count);
+            for (let i = 0; i < items.length; i++) {
+                const p = items[i];
                 const pos = photoScatterPositions.get(i);
-                if (!pos) return;
+                if (!pos) continue;
                 const div = document.createElement('div');
                 div.className = 'photo-scatter-item';
                 // 使用 left/top 定位，hover 的 transform: scale 不会影响位置
@@ -30867,11 +31004,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     z-index: ${i};
                 `;
                 div.innerHTML = `
-                    <img src="${p.url}" alt="${p.title}" loading="lazy" decoding="async">
+                    <img src="${await photoLoadFromLocal(p.url)}" alt="${p.title}" loading="lazy" decoding="async">
                     <div class="photo-polaroid-text">${p.title}</div>
                 `;
                 fragment.appendChild(div);
-            });
+            }
             container.innerHTML = '';
             container.appendChild(fragment);
             container.style.height = contentMain.clientHeight + 'px';
