@@ -307,6 +307,8 @@
             white-space: nowrap;
             text-overflow: ellipsis;
             position: relative;
+            align-items: center;
+            justify-items: center;
         }
 
         .file-item-text .file-name {
@@ -314,7 +316,7 @@
             text-overflow: ellipsis;
             white-space: nowrap;
             flex: 1;
-            margin-left: 5px;
+            margin-left: 3px;
         }
 
         .file-item-text .file-name:hover::after {
@@ -479,18 +481,19 @@
         }
 
         details>summary::before {
-            content: '▶';
+            content: '';
             display: inline-block;
-            font-size: 11px;
-            color: var(--t2);
-            transition: transform 0.15s ease;
+            width: 15px;
+            height: 15px;
             flex-shrink: 0;
-            width: 11px;
-            text-align: center;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v2h20V8c0-1.1-.9-2-2-2z' opacity='0.8' fill='%23e8a735'/%3E%3Cpath d='M2 10h20v10c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V10z' fill='%23e8a735'/%3E%3C/svg%3E");
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center center;
         }
 
         details[open]>summary::before {
-            transform: rotate(90deg);
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v2c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2z' fill='%23e8a735'/%3E%3Cpath d='M2 12h20v8c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2v-8z' fill='%23cf8706'/%3E%3C/svg%3E");
         }
 
         summary:hover {
@@ -2802,11 +2805,12 @@
         }
 
         .activity-item {
-            display: flex;
+            display: inline-flex;
             align-items: center;
+            justify-content: center;
             padding: 8px 0;
             border-bottom: 1px solid #f5f7fa;
-            gap: 8px;
+            gap: 6px;
             cursor: pointer;
             margin-left: 5px;
             height: 36px;
@@ -2846,6 +2850,8 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            align-items: center;
+            display: flex;
         }
 
         .activity-item:hover .activity-file {
@@ -3575,7 +3581,7 @@
         }
 
         .bookmark-folder-header.collapsed .bookmark-folder-icon {
-            transform: rotate(90deg);
+            transform: rotate(-90deg);
         }
 
         .bookmark-folder-name {
@@ -9763,6 +9769,32 @@
         .git-empty-hint {
             font-size: 13px;
         }
+
+        .file-item-icon {
+            content: '';
+            width: 14px;
+            height: 14px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230077ff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z'/%3E%3Cpath d='M9 12h6'/%3E%3Cpath d='M9 16h4'/%3E %3C/svg%3E");
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center center;
+        }
+
+        .file-item-icon.file-item-icon-code {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230077ff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z'/%3E%3Cpolyline points='10 13 8 15 10 17'/%3E%3Cpolyline points='14 13 16 15 14 17'/%3E%3C/svg%3E") !important;
+        }
+
+        .file-item-icon.file-item-icon-image {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230077ff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z'/%3E%3Crect x='8' y='11' width='8' height='6' rx='1'/%3E%3circle cx='10' cy='13' r='1'/%3E%path d='M16 17l-2-2-2 2'/%3E%3C/svg%3E") !important;
+        }
+
+        .file-item-icon.file-item-icon-video {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230077ff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z'/%3E%3Cpolygon points='10 11 10 17 15 14' fill='#60A5FA' stroke='none'/%3E%3C/svg%3E") !important;
+        }
+
+        .file-item-icon.file-item-icon-doc {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230077ff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z'/%3E%3Cline x1='16' y1='13' x2='8' y2='13'/%3E%3Cline x1='16' y1='17' x2='8' y2='17'/%3E%3Cline x1='10' y1='9' x2='8' y2='9'/%3E%3C/svg%3E") !important;
+        }
     </style>
 </head>
 
@@ -13637,7 +13669,7 @@
                     }
                 } else if (nodeData.kind === 'file') {
                     filePromises.push(
-                        createFileItem(nodeData.entry.rawEntry, nodeData.path, nodeData.depth)
+                        createFileItem(nodeData.entry.rawEntry, nodeData.path, nodeData.depth, nodeData.iconType)
                     );
                 }
             }
@@ -13767,22 +13799,33 @@
 
         // ---------- createFileItem / createDirectoryEntry 共享常量 ----------
         const _SVG_MORE_BTN = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="8" cy="3" r="1.5" fill="#ef4444"/><circle cx="8" cy="8" r="1.5" fill="#ef4444"/><circle cx="8" cy="13" r="1.5" fill="#ef4444"/></svg>';
-        const _FILE_ICON_MAP = { '.md': '📝', '.drawio': '📊', '.puml': '📊', '.plantuml': '📊', '.opml': '🧠', '.mm': '🧠' };
         const _MARKER_COLORS = ['#ef4444', '#f97316', '#22c55e', '#3b82f6', '#a855f7'];
         const _MARKER_COLOR_NAMES = ['red', 'orange', 'green', 'blue', 'purple'];
-        function _fileIcon(name) {
-            const dot = name.lastIndexOf(DOT);
-            return dot > 0 ? (_FILE_ICON_MAP[name.slice(dot)] || '📄') : '📄';
+        function getFileTypeByExt(ext) {
+            if (isDoc(ext)) return 'doc';
+            else if (isCode(ext)) return 'code';
+            else if (isImage(ext)) return 'image';
+            else if (isVideoFile(ext)) return 'video';
+            return 'other';
+        }
+        function _fileIcon(name, iconType = '') {
+            const div = document.createElement('div');
+            if (iconType) {
+                div.className = 'file-item-icon file-item-icon-' + iconType;
+            } else {
+                div.className = 'file-item-icon file-item-icon-' + getFileTypeByExt(getExt(name));
+            }
+            return div;
         }
         // 创建单个文件树项 DOM
-        async function createFileItem(entry, relativePath, depth) {
+        async function createFileItem(entry, relativePath, depth, iconType = '') {
             const name = entry instanceof FileEntry ? entry.name : entry.name;
             const np = normalizePath(relativePath);
             if (isSkipFile(name)) return null;
             const rawEntry = entry instanceof FileEntry ? entry.rawEntry : entry;
             const fileSpan = document.createElement('div');
             fileSpan.className = 'file-item';
-            fileSpan.style.paddingLeft = (depth * 13) + 1 + 'px';
+            fileSpan.style.paddingLeft = (depth * 13) + 'px';
             const inDeleted = isInDeletedDir(np);
             if (inDeleted) fileSpan.classList.add('deleted-file');
 
@@ -13792,7 +13835,7 @@
             nameSpan.className = 'file-name';
             nameSpan.textContent = name;
             nameSpan.title = name;
-            textSpan.appendChild(document.createTextNode(_fileIcon(name) + ' '));
+            textSpan.appendChild(_fileIcon(name, iconType));
             textSpan.appendChild(nameSpan);
 
             const markerDiv = document.createElement('div');
@@ -13950,45 +13993,44 @@
             if (isSkipDir(name) || isSkipDir(dirPathStr)) return null;
             const details = document.createElement('details');
             const summary = document.createElement('summary');
-
-            // 预计算小写名称以复用
+            // 预计算小写名称以复用（只在根目录需要）
             const nameLow = depth === 0 ? name.toLowerCase() : '';
             const nameSpan = document.createElement('span');
             nameSpan.className = 'file-name';
             if (depth === 0) {
-                summary.style.fontSize = '14px';
-                nameSpan.style.fontSize = '14px';
+                nameSpan.style.fontSize = '13px';
+                nameSpan.style.fontWeight = '500';
                 // 使用 switch 替代多层 if/else
                 switch (nameLow) {
                     case DELETED_DIR_NAME:
-                        nameSpan.textContent = '🗑️ 垃圾箱';
+                        nameSpan.textContent = '垃圾箱';
                         nameSpan.style.color = 'var(--color-text-secondary)';
                         break;
                     case DIARY_DIR_NAME:
-                        nameSpan.textContent = '📝 日记';
+                        nameSpan.textContent = '日记';
                         nameSpan.style.color = 'var(--color-note)';
                         break;
                     case NOTE_DIR_NAME:
-                        nameSpan.textContent = '✏️ 笔记';
+                        nameSpan.textContent = '笔记';
                         nameSpan.style.color = 'var(--color-note)';
                         break;
                     case PIC_DIR_NAME:
-                        nameSpan.textContent = '🖼️ 图片';
+                        nameSpan.textContent = '图片';
                         nameSpan.style.color = 'var(--color-note)';
                         break;
                     case CODE_DIR_NAME:
-                        nameSpan.textContent = '💻 代码';
+                        nameSpan.textContent = '代码';
                         nameSpan.style.color = 'var(--color-note)';
                         break;
                     case DATA_DIR_NAME:
-                        nameSpan.textContent = '📊 数据';
+                        nameSpan.textContent = '数据';
                         nameSpan.style.color = 'var(--color-note)';
                         break;
                     default:
-                        nameSpan.textContent = '📁 ' + name;
+                        nameSpan.textContent = name;
                 }
             } else {
-                nameSpan.textContent = '📁 ' + name;
+                nameSpan.textContent = name;
             }
             nameSpan.title = name;
             summary.appendChild(nameSpan);
@@ -18866,7 +18908,8 @@
                     minute: '2-digit'
                 }) : '';
                 const isDir = i.type === 'dir';
-                const icon = isDir ? '📁' : '';
+                const icon = isDir ? '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="#e8a735"><path d="M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v2h20V8c0-1.1-.9-2-2-2z"/><path d="M2 10h20v10c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V10z"/></svg>'
+                    : "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='14' height='14' fill='none' stroke='#0077ff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z'/><path d='M9 12h6'/><path d='M9 16h4'/> </svg>";
                 const id = 'marker_' + _pathToId(np);
                 // 使用 data-path 属性存储路径，避免 onclick 属性中的转义问题
                 const onClickClear = `event.stopPropagation();clearMarker(this.getAttribute('data-path'))`;
@@ -18876,7 +18919,7 @@
                 return `<div class="activity-item" id="${id}" data-path="${escapeHtml(np)}" ondblclick="${onDblClick}">
                     <div class="activity-time" style="color:${hex};font-weight:bold;">●</div>
                     <div style="color:${hex};font-size: 12px;">${timeStr}</div>
-                    <div class="activity-content"><div class="activity-file" title="${escapeHtml(np)}">${icon} ${escapeHtml(i.name)}</div></div>
+                    <div class="activity-content"><div class="activity-file" title="${escapeHtml(np)}">${icon}&nbsp;${escapeHtml(i.name)}</div></div>
                     <div class="activity-marker-clear-dot" title="取消标记" data-path="${escapeHtml(np)}" onclick="${onClickClear}">✕</div>
                 </div>`;
             }).join('');
@@ -20423,7 +20466,7 @@
                     html += '<div class="bookmark-folder" data-depth="' + depth + '">' +
                         '<div class="bookmark-folder-header" onclick="toggleBookmarkFolder(this)">' +
                         '<span class="bookmark-folder-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg></span>' +
-                        '<svg viewBox="0 0 24 24" width="16" height="16" fill="#e8a735" style="flex-shrink:0"><path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2z"/></svg>' +
+                        '<svg viewBox="0 0 24 24" width="16" height="16" fill="#e8a735"><path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2z"/></svg>' +
                         '<span class="bookmark-folder-name">' + escapeHtml(child.title || '未命名目录') + '</span>' +
                         '<span class="bookmark-folder-count">' + count + '</span>' +
                         '</div>' +
@@ -23220,6 +23263,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     name: fileEntry.name,
                     path: _buildPath(parentPath, fileEntry.name),
                     depth: depth,
+                    iconType: getFileTypeByExt(getExt(fileEntry.name)),
                     entry: fileEntry
                 });
             }
