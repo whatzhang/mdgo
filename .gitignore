@@ -230,4 +230,4 @@ resource.iml
 backend/server.pid
 backend/server.log
 backend/server_*.log
-frontend/data/
+data/

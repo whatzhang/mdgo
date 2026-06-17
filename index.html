@@ -9993,11 +9993,9 @@
                     </div>
                 </div>
                 <div class="top-right-controls">
-                    <button class="btn btn-primary" id="dashboard-refresh-btn" onclick="toggleDashboardView(false)"
-                        title="增量刷新（仅扫描变更文件）">🔄 刷新
+                    <button class="btn btn-primary" id="dashboard-refresh-btn" onclick="toggleDashboardView(false)">刷新
                     </button>
-                    <button class="btn btn-primary" id="data-refresh-btn" onclick="toggleDashboardView(true)"
-                        title="强制全量扫描所有文件">📡 全量扫描
+                    <button class="btn btn-primary" id="data-refresh-btn" onclick="toggleDashboardView(true)">扫描数据
                     </button>
                 </div>
             </div>
@@ -11393,7 +11391,7 @@
         ]
         // 目录黑名单:这些目录将被忽略,不显示在文件树中
         const DIR_BLACKLIST = [".", ".obsidian", ".venv", ".vscode", ".git", "assets", ".trae", ".claude", ".idea",
-            'frontend/css_js/cdn', 'node_modules', 'vendor', 'dist', 'build', 'out', 'target', '__pycache__'];
+            'node_modules', 'vendor', 'dist', 'build', 'out', 'target', '__pycache__'];
         // 文件后缀正则黑名单:匹配这些后缀的文件将被忽略
         const FILE_BLACKLIST = [DOT, '.bobconfig', '.itermexport', '.DS_Store', '.gitignore', '.rayconfig'];
         // 随机打开文件的白名单目录, 默认判断尾缀名
@@ -11453,10 +11451,10 @@
             if (RANDOM_DIR_BLACKLIST.some(dir => p.startsWith(normalizePath(dir)))) return false;
             return RANDOM_DIR_WHITELIST.some(dir => p.startsWith(normalizePath(dir))) || (ext && isDoc(ext));
         };
-        const isFileProtocol = () => window.location.protocol === 'file:';
+        const isLocalVisit = () => window.location.protocol === 'file:' || window.location.hostname.includes('github.io');
         const replaceMediaUrl = (text) => {
             if (!text.includes('assets/media/')) return text;
-            if (isFileProtocol()) {
+            if (isLocalVisit()) {
                 return text.replace(/(\.\.?\/)+assets\/media\//g, '../../assets/media/');
             }
             return text.replace(/(\.\.?\/)+assets\/media\//g, '../assets/media/');
@@ -19090,7 +19088,7 @@
             let data;
             try {
                 if (force) {
-                    if (isFileProtocol()) {
+                    if (isLocalVisit()) {
                         data = await scanDirToIndexByLocal();
                     } else {
                         data = await scanDirToIndex(force)
@@ -19485,7 +19483,7 @@
             const btn = document.getElementById('data-refresh-btn');
             if (btn) {
                 btn.disabled = true;
-                btn.innerText = '⏳ 加载中...';
+                btn.innerText = '加载中...';
             }
             // 单次遍历完成所有数据处理 (stats + heatmap + 活动列表预排序 + treemap 映射)
             const stats = await renderDashStats(data);
@@ -20352,7 +20350,7 @@
             let html = '';
             DASHBOARD_BUTTON.forEach(b => {
                 if (b.display) {
-                    if (isFileProtocol()) {
+                    if (isLocalVisit()) {
                         if (b.fileProtocolDisplay) {
                             html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
                         }
@@ -24803,7 +24801,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
          * 连接统一 WebSocket
          */
         function wsConnect() {
-            if (isFileProtocol()) return;
+            if (isLocalVisit()) return;
             wsDisconnect();
             try {
                 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';

@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import psutil
 
 from service.system_service import scan_file_info, get_openresty_conf, reload_openresty_conf
-from service.config import FRENDEND_DIR, HOST, PORT, LOG_LEVEL
+from service.config import PROJECT_ROOT, HOST, PORT, LOG_LEVEL
 from typing import Optional
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -54,7 +54,7 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization"],
 )
 
-STATIC_CSS_JS_DIR = os.path.join(FRENDEND_DIR, "css_js")
+STATIC_CSS_JS_DIR = os.path.join(PROJECT_ROOT, "css_js")
 
 for mount_path, directory, mount_name in [
     ("/css_js", STATIC_CSS_JS_DIR, "css_js"),
@@ -97,17 +97,17 @@ def _load_static_file(directory: str, filename: str):
 
 @app.get("/", response_class=HTMLResponse)
 async def index_page():
-    return _load_static_file(FRENDEND_DIR, "main.html")
+    return _load_static_file(PROJECT_ROOT, "index.html")
 
 
-@app.get("/main", response_class=HTMLResponse)
+@app.get("/index", response_class=HTMLResponse)
 async def index_alias():
-    return _load_static_file(FRENDEND_DIR, "main.html")
+    return _load_static_file(PROJECT_ROOT, "index.html")
 
 
 @app.get("/cdn", response_class=HTMLResponse)
 async def hello_page():
-    return _load_static_file(FRENDEND_DIR, "main_cdn.html")
+    return _load_static_file(PROJECT_ROOT, "index_cdn.html")
 
 
 @app.get("/api/system/scan")
