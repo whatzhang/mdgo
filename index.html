@@ -3880,7 +3880,6 @@
             display: flex;
             gap: 6px;
             flex-wrap: wrap;
-            margin: 0 0 8px 5px;
         }
 
         .marker-tab-btn {
@@ -7376,42 +7375,43 @@
         /* ——— 工具栏容器与折叠 ——— */
         .graph-toolbar-container {
             position: relative;
+            background-color: var(--color-bg);
+            min-height: 120px;
         }
 
         .graph-toolbar-toggle {
             position: absolute;
             top: 6px;
-            left: 197px;
+            left: 196px;
             width: 26px;
             height: 26px;
             z-index: 1000;
-            box-shadow: var(--shadow-md);
             border-radius: 0 6px 6px 0;
+            border-width: 0px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
             padding: 0;
-            color: var(--color-bg);
-            transition: all 0.1s ease;
-            box-shadow: 2px 0 6px rgba(0, 0, 0, 0.06);
+            color: var(--color-note);
             font-size: 14px;
+            font-weight: 900;
             line-height: 1;
             font-weight: bold;
-            background: var(--color-primary);
+            background: var(--color-bg);
+            box-shadow: 4px 2px 8px -2px rgba(0, 0, 0, 0.3);
+            border-left: none;
         }
 
         .graph-toolbar-toggle:hover {
-            color: var(--color-bg);
             font-weight: bold;
         }
 
         .graph-toolbar-toggle.collapsed {
             left: 10px;
             border-radius: 6px;
-            box-shadow: var(--shadow-md);
             font-weight: bold;
-            color: var(--color-bg);
+            box-shadow: var(--shadow-md);
         }
 
         .graph-toolbar.collapsed {
@@ -7423,13 +7423,13 @@
         /* ——— 工具栏面板 ——— */
         .graph-toolbar {
             position: absolute;
-            top: 5px;
+            top: 6px;
             left: 5px;
             background: var(--color-bg);
-            border: 1px solid var(--color-border);
-            border-radius: var(--radius-md);
             box-shadow: var(--shadow-md);
-            z-index: 100;
+            border-width: 0px;
+            border-radius: var(--radius-md) 0 var(--radius-md) var(--radius-md);
+            z-index: 1000;
             display: flex;
             flex-direction: column;
             width: 177px;
@@ -10173,7 +10173,9 @@
                     </div>
                     <div class="heatmap-right">
                         <div id="ai-file-summary" class="ai-file-summary">
-                            <div class="monitor-panel">
+                            <div class="monitor-panel" id="file-sum-panel" style="display: none">
+                            </div>
+                            <div class="monitor-panel" id="monitor-panel" style="display: none">
                                 <div class="monitor-header">
                                     <span>监控</span>
                                     <p>
@@ -12693,6 +12695,7 @@
                 Promise.resolve(closeSystemMonitor()),
                 Promise.resolve(destroyRawViewer()),
                 Promise.resolve(destroyWordCloud()),
+                Promise.resolve(destroyFileGraph()),
             ]);
         }
 
@@ -20714,6 +20717,16 @@
             switchToView(dashboardContainer);
             initSystemMonitor();
             aiFabContainer.style.display = 'block';
+            //监控面板展示
+            const monitorPanel = dashboardContainer.querySelector('#monitor-panel');
+            const fileSumPanel = dashboardContainer.querySelector('#file-sum-panel');
+            if (hasBackendServer) {
+                monitorPanel.style.display = 'flex';
+                fileSumPanel.style.display = 'none';
+            } else {
+                monitorPanel.style.display = 'none';
+                fileSumPanel.style.display = 'flex';
+            }
             let html = '';
             DASHBOARD_BUTTON.forEach(b => {
                 if (b.display) {
@@ -27742,6 +27755,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         async function destroyFileGraph() {
             // 停止图谱视图激活状态
             graphViewActive = false;
+            // 移除 resize 监听，防止销毁后访问 null canvas
+            window.removeEventListener('resize', resizeFileGraphCanvas);
             // 清除聚焦状态
             if (graphRenderer) {
                 graphRenderer.clearFocus();
@@ -27768,10 +27783,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             graphFps = 0;
             graphFrameCount = 0;
             graphLastFrameTime = performance.now();
-            // 隐藏画布容器
-            if (graphViewContainer) {
-                graphViewContainer.style.display = 'none';
-            }
             // 重置画布上下文
             if (graphCanvas) {
                 graphCtx = null;
@@ -27780,8 +27791,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             // 重置尺寸
             graphWidth = 0;
             graphHeight = 0;
-            // 重置参数
-            graphParams = { ...DEFAULT_PARAMS };
         }
 
         async function toggleGraphView() {
@@ -27875,10 +27884,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 return [(sx - viewport.x) / viewport.k, (sy - viewport.y) / viewport.k];
             }
 
-            canvasToScreen(cx, cy, viewport) {
-                return [cx * viewport.k + viewport.x, cy * viewport.k + viewport.y];
-            }
-
             resize(width, height) {
                 this.width = width;
                 this.height = height;
@@ -27950,7 +27955,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             clearFocus() {
                 this.focusNodeId = null;
                 this.highlightedNode = null;
-                this.throttledRender();
+                // 绕过节流直接渲染：聚焦切换是低频用户操作，
+                // 若被 throttle 阻塞且仿真已冷却，将永远无法刷新
+                this.render();
             }
 
             getNeighborIds(nodeId) {
@@ -28169,6 +28176,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 this.layout = layout;
                 this.draggingNode = null;
                 this.didDrag = false;
+                this._zoomDetached = false;
                 this.zoomBehavior = d3.zoom()
                     .scaleExtent([0.1, 5])
                     .on('zoom', (event) => {
@@ -28176,30 +28184,34 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         this.renderer.setViewport({ x: viewport.x, y: viewport.y, k: viewport.k });
                     });
                 d3.select(canvas).call(this.zoomBehavior);
-                canvas.addEventListener('mousedown', this.onMouseDown.bind(this));
-                canvas.addEventListener('mousemove', this.onMouseMove.bind(this));
-                canvas.addEventListener('mouseup', this.onMouseUp.bind(this));
-                canvas.addEventListener('mouseleave', this.onMouseUp.bind(this));
-                canvas.addEventListener('click', this.onClick.bind(this));
+                // 保存绑定后的函数引用，确保 destroy 能正确移除
+                this._boundMouseDown = this.onMouseDown.bind(this);
+                this._boundMouseMove = this.onMouseMove.bind(this);
+                this._boundMouseUp = this.onMouseUp.bind(this);
+                this._boundClick = this.onClick.bind(this);
+                canvas.addEventListener('mousedown', this._boundMouseDown);
+                canvas.addEventListener('mousemove', this._boundMouseMove);
+                canvas.addEventListener('mouseup', this._boundMouseUp);
+                canvas.addEventListener('mouseleave', this._boundMouseUp);
+                canvas.addEventListener('click', this._boundClick);
+            }
+
+            _getCandidateNodes() {
+                const allNodes = Array.from(graphDataMap?.nodes.values() || []);
+                if (!this.renderer.focusNodeId) return allNodes;
+                const neighborIds = this.renderer.getNeighborIds(this.renderer.focusNodeId);
+                neighborIds.add(this.renderer.focusNodeId);
+                return allNodes.filter(n => neighborIds.has(n.id));
             }
 
             onMouseDown(event) {
                 const [x, y] = [event.offsetX, event.offsetY];
                 const viewport = this.getCurrentViewport();
-                const allNodes = Array.from(graphDataMap?.nodes.values() || []);
-                // 聚焦模式下仅允许与可见节点交互
-                let candidateNodes = allNodes;
-                if (this.renderer.focusNodeId) {
-                    const neighborIds = this.renderer.getNeighborIds(this.renderer.focusNodeId);
-                    neighborIds.add(this.renderer.focusNodeId);
-                    candidateNodes = allNodes.filter(n => neighborIds.has(n.id));
-                }
+                const candidateNodes = this._getCandidateNodes();
                 const node = this.layout.getNodeAt(x, y, candidateNodes, viewport);
                 this.didDrag = false;
                 if (node) {
-                    if (this.zoomBehavior) {
-                        d3.select(this.canvas).on('.zoom', null);
-                    }
+                    this._detachZoom();
                     this.draggingNode = node;
                     this.layout.fixNode(node, ...this.layout.screenToCanvas(x, y, viewport));
                     this.renderer.setHighlightedNode(node);
@@ -28210,19 +28222,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             onMouseMove(event) {
                 const [x, y] = [event.offsetX, event.offsetY];
                 const viewport = this.getCurrentViewport();
-                const allNodes = Array.from(graphDataMap?.nodes.values() || []);
-                let candidateNodes = allNodes;
-                if (this.renderer.focusNodeId) {
-                    const neighborIds = this.renderer.getNeighborIds(this.renderer.focusNodeId);
-                    neighborIds.add(this.renderer.focusNodeId);
-                    candidateNodes = allNodes.filter(n => neighborIds.has(n.id));
-                }
                 if (this.draggingNode) {
                     this.didDrag = true;
                     this.layout.fixNode(this.draggingNode, ...this.layout.screenToCanvas(x, y, viewport));
                 } else {
+                    const candidateNodes = this._getCandidateNodes();
                     const node = this.layout.getNodeAt(x, y, candidateNodes, viewport);
-                    this.canvas.style.cursor = node ? 'grab' : 'move';
+                    // 悬停节点设 grab，空白不设行内样式让 CSS :active 生效
+                    this.canvas.style.cursor = node ? 'grab' : '';
                 }
             }
 
@@ -28231,8 +28238,20 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     this.layout.releaseNode(this.draggingNode);
                     this.draggingNode = null;
                 }
-                if (this.zoomBehavior) {
+                this._reattachZoom();
+            }
+
+            _detachZoom() {
+                if (this.zoomBehavior && !this._zoomDetached) {
+                    d3.select(this.canvas).on('.zoom', null);
+                    this._zoomDetached = true;
+                }
+            }
+
+            _reattachZoom() {
+                if (this.zoomBehavior && this._zoomDetached) {
                     d3.select(this.canvas).call(this.zoomBehavior);
+                    this._zoomDetached = false;
                 }
             }
 
@@ -28240,23 +28259,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (this.didDrag) return;
                 const [x, y] = [event.offsetX, event.offsetY];
                 const viewport = this.getCurrentViewport();
-                const allNodes = Array.from(graphDataMap?.nodes.values() || []);
-                let candidateNodes = allNodes;
-                if (this.renderer.focusNodeId) {
-                    const neighborIds = this.renderer.getNeighborIds(this.renderer.focusNodeId);
-                    neighborIds.add(this.renderer.focusNodeId);
-                    candidateNodes = allNodes.filter(n => neighborIds.has(n.id));
-                }
+                const candidateNodes = this._getCandidateNodes();
                 const node = this.layout.getNodeAt(x, y, candidateNodes, viewport);
                 if (node) {
                     if (this.renderer.focusNodeId === node.id) {
                         this.renderer.clearFocus();
                     } else {
                         this.renderer.setFocusNode(node.id);
-                    }
-                } else {
-                    if (this.renderer.focusNodeId) {
-                        this.renderer.clearFocus();
                     }
                 }
             }
@@ -28266,19 +28275,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 return { x: transform.x, y: transform.y, k: transform.k };
             }
 
-            getHighlightedNode() {
-                return this.renderer.highlightedNode;
-            }
-
             destroy() {
                 if (this.zoomBehavior) {
                     d3.select(this.canvas).on('.zoom', null);
                 }
-                this.canvas.removeEventListener('mousedown', this.onMouseDown.bind(this));
-                this.canvas.removeEventListener('mousemove', this.onMouseMove.bind(this));
-                this.canvas.removeEventListener('mouseup', this.onMouseUp.bind(this));
-                this.canvas.removeEventListener('mouseleave', this.onMouseUp.bind(this));
-                this.canvas.removeEventListener('click', this.onClick.bind(this));
+                this.canvas.removeEventListener('mousedown', this._boundMouseDown);
+                this.canvas.removeEventListener('mousemove', this._boundMouseMove);
+                this.canvas.removeEventListener('mouseup', this._boundMouseUp);
+                this.canvas.removeEventListener('mouseleave', this._boundMouseUp);
+                this.canvas.removeEventListener('click', this._boundClick);
             }
         }
 
@@ -28292,11 +28297,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const s = Math.max(22, 76 - d * 10);
             const l = Math.min(66, 28 + d * 9);
             return `hsl(${hue}, ${s}%, ${l}%)`;
-        }
-
-        function incrementGraphNodeBaseSize(nodes, id) {
-            const node = nodes.get(id);
-            if (node) node.baseSize = Math.min(node.baseSize + 2, 50);
         }
 
         function updateGraphAllNodeSizes(nodes) {
@@ -28417,7 +28417,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 id: 'root',
                 title: getRootHandle().name,
                 path: '',
-                size: 12,
+                size: 100,
                 group: 0,
                 depth: 0
             });
@@ -28488,6 +28488,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         function processAndStartSimulation(nodes, edges) {
+            // 1. 路径过滤
             const filteredNodeIds = new Set();
             nodes.forEach(n => {
                 if (graphParams.filterPath && !n.path.toLowerCase().includes(graphParams.filterPath)) return;
@@ -28495,25 +28496,29 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             });
             nodes = nodes.filter(n => filteredNodeIds.has(n.id));
             edges = edges.filter(e => filteredNodeIds.has(e.source) && filteredNodeIds.has(e.target));
+
+            // 2. 一次性计算所有节点的度（连接数），供后续过滤和大小计算复用
+            const degree = new Map();
+            nodes.forEach(n => degree.set(n.id, 0));
+            edges.forEach(e => {
+                degree.set(e.source, degree.get(e.source) + 1);
+                degree.set(e.target, degree.get(e.target) + 1);
+            });
+
+            // 3. 孤立节点过滤（复用步骤2的 degree）
             if (!graphParams.showIsolated) {
-                const degree = new Map();
-                nodes.forEach(n => degree.set(n.id, 0));
-                edges.forEach(e => {
-                    degree.set(e.source, (degree.get(e.source) || 0) + 1);
-                    degree.set(e.target, (degree.get(e.target) || 0) + 1);
-                });
-                const filteredIds = new Set(
-                    nodes
-                        .filter(n => (degree.get(n.id) || 0) > 0)
-                        .map(n => n.id)
-                );
-                nodes = nodes.filter(n => filteredIds.has(n.id));
-                edges = edges.filter(e => filteredIds.has(e.source) && filteredIds.has(e.target));
+                nodes = nodes.filter(n => degree.get(n.id) > 0);
+                const connectedIds = new Set(nodes.map(n => n.id));
+                edges = edges.filter(e => connectedIds.has(e.source) && connectedIds.has(e.target));
             }
 
+            // 4. 构建节点数据，根节点视觉最大，公式: 8 + √d × 5（比之前 √d × 4 拉开差距）
             graphDataMap = { nodes: new Map(), edges: edges };
             nodes.forEach(nodeData => {
-                const baseSize = Math.max(8, nodeData.size * 2);
+                const d = degree.get(nodeData.id) || 0;
+                const baseSize = nodeData.id === 'root'
+                    ? 55  // 根节点感官最大
+                    : Math.round(5 + Math.sqrt(d) * 6);
                 graphDataMap.nodes.set(nodeData.id, {
                     id: nodeData.id,
                     title: nodeData.title,
@@ -28525,12 +28530,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     baseSize: baseSize,
                     size: baseSize * graphParams.nodeSize,
                 });
-            });
-            edges.forEach(edgeData => {
-                if (graphDataMap.nodes.has(edgeData.source) && graphDataMap.nodes.has(edgeData.target)) {
-                    incrementGraphNodeBaseSize(graphDataMap.nodes, edgeData.source);
-                    incrementGraphNodeBaseSize(graphDataMap.nodes, edgeData.target);
-                }
             });
             updateGraphAllNodeSizes(graphDataMap.nodes);
             if (!graphLayout) {
