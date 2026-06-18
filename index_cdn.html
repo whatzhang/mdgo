@@ -71,7 +71,7 @@
     <script src="https://cdn.jsdelivr.net/npm/html2canvas-pro@2.0.4/dist/html2canvas-pro.min.js"></script>
     <script src="https://unpkg.com/isomorphic-git@1.25.10/index.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsonpath@1.3.0/jsonpath.min.js"></script>
-    
+
     <!-- cronstrue cron 表达式解析（含中文语言包） -->
     <script src="https://cdn.jsdelivr.net/npm/cronstrue@3.14.0/dist/cronstrue-i18n.min.js"></script>
     <!-- graphiql - 必须在 define 清理之前加载（它是 UMD 库，使用 AMD define） -->
@@ -11777,6 +11777,7 @@
             wsDisconnect();
             destroyVideoPlayer();
             TimerManager.clearAll();
+            destroyEverything();
         });
 
         async function initAll() {
@@ -23034,14 +23035,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     let trimmedPath = path.trim();
                     //去除路径末尾的斜杠，兼容 windows 和 linux 系统
                     currentRootPath = trimmedPath.replace(/[\/\\]+$/, '');
-                    safeLocalStorageSet("ROOT_DIR", currentRootPath);
                     await clearOldData();
+                    treeElement.innerHTML = '';
+                    safeLocalStorageSet("ROOT_DIR", currentRootPath);
                     await idbPut(DIRECTORY_STORE_NAME, 'handles', 'default', dirHandle);
                     initAll();
                 }, async () => {
                     currentRootPath = '';
                     setRootHandle(null);
                     await clearOldData();
+                    treeElement.innerHTML = '';
                     showNotification('必须输入物理路径，否则系统无法正常运行！', 'error');
                     openDir();
                 });
@@ -23060,6 +23063,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             safeLocalStorageRemove(VIEW_OPER_RECORDS_KEY);
             safeLocalStorageRemove(GRAPH_PARAMS_KEY);
             safeLocalStorageRemove(VIDEO_HISTORY_KEY);
+            safeLocalStorageRemove(TOC_VISIBLE_KEY);
+            safeLocalStorageRemove(SIDEBAR_VISIBLE_KEY);
+            safeLocalStorageRemove(BOOKMARK_CACHE_KEY);
+            safeLocalStorageRemove('highlight-colors');
+            safeLocalStorageRemove('annotation-colors');
             safeLocalStorageSet(BROWSER_REFRESHED_KEY, BROWSER_REFRESHED_KEY);
             // 清理目录句柄数据库
             idbDeleteDatabase(DIRECTORY_STORE_NAME);
