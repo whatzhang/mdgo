@@ -19297,7 +19297,11 @@
                     if (isLocalVisit()) {
                         data = await scanDirToIndexByLocal();
                     } else {
-                        data = await scanDirToIndex(force)
+                        try {
+                            data = await scanDirToIndex(force)
+                        } catch (e) {
+                            data = await scanDirToIndexByLocal();
+                        }
                     }
                 } else {
                     const rtn = await getAssetsData(INDEX_FILE_SCAN_DATA_FILE)
@@ -19329,7 +19333,20 @@
             if (force) {
                 url += '&force=true';
             }
-            const response = await fetch(url);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 1000);
+            let response;
+            try {
+                response = await fetch(url, { signal: controller.signal });
+            } catch (e) {
+                clearTimeout(timeoutId);
+                if (e.name === 'AbortError') {
+                    console.error('✗ 请求超时，后端服务无响应, url:', url, e);
+                }
+                throw e;
+            } finally {
+                clearTimeout(timeoutId);
+            }
             const data = await response.json();
             if (data.success) {
                 if (!hasBackendServer) hasBackendServer = true;
@@ -24941,7 +24958,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         // ════════════════════════════════════════════════════════════════
         let _wsClient = null;
         let _wsReconnectCount = 0;
-        const _wsMaxReconnect = 20;
+        const _wsMaxReconnect = 5;
 
         const WS_HANDLERS = {
             heartbeat: () => {
@@ -30903,7 +30920,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     </div>
                 </div>
             </div>`;
-            await getPhotoFromDirHandle(await getDirHandleByDirPath(relPath), relPath);
+            currentPhotoDirHandle = await getDirHandleByDirPath(relPath);
+            await getPhotoFromDirHandle(relPath);
             await photoRenderMasonry();
             photoRenderedLayouts['masonry'] = true;
             const dom = document.querySelector('.photo-main');
@@ -30944,18 +30962,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             }, 100);
         }
-        async function getPhotoFromDirHandle(handle, relPath = '') {
-            if (!handle) {
+        async function getPhotoFromDirHandle(relPath = '') {
+            if (!currentPhotoDirHandle) {
                 showNotification('✗ 目录不存在', 'error');
                 return;
             }
-            if (isEmpty(currentPhotoDirData)) {
-                const judgePic = (str) => {
-                    return !isPicImage(getExt(str));
-                };
-                var fileList = await getCustomFileList(handle, 0, relPath, judgePic);
-                currentPhotoDirData = fileList.map((h, i) => ({ id: i, title: h.nameFull, url: h.path }));
-            }
+            const judgePic = (str) => {
+                return !isPicImage(getExt(str));
+            };
+            var fileList = await getCustomFileList(currentPhotoDirHandle, 0, relPath, judgePic);
+            currentPhotoDirData = fileList.map((h, i) => ({ id: i, title: h.nameFull, url: h.path }));
         }
         // ========== 瀑布流 ==========
         async function photoRenderMasonry() {
@@ -30974,8 +30990,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             container.appendChild(fragment);
         }
         async function photoLoadFromLocal(src) {
-            if (isLocalVisit()) return buildLocalImg(src, false);
-            if (isHttpVisit()) return await buildHttpImg(src, false);
+            if (isLocalVisit()) {
+                const normalizedRootPath = normalizePath(currentRootPath);
+                return joinPath(normalizedRootPath, src);
+            }
+            if (isHttpVisit()) {
+                return await readFileAsBase64(src);
+            }
             return src;
         }
         // ========== 散落布局位置计算 ==========
