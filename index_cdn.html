@@ -70,7 +70,8 @@
     <script src="https://unpkg.com/tippy.js@6"></script>
     <script src="https://cdn.jsdelivr.net/npm/html2canvas-pro@2.0.4/dist/html2canvas-pro.min.js"></script>
     <script src="https://unpkg.com/isomorphic-git@1.25.10/index.umd.min.js"></script>
-
+    <script src="https://cdn.jsdelivr.net/npm/jsonpath@1.3.0/jsonpath.min.js"></script>
+    
     <!-- cronstrue cron 表达式解析（含中文语言包） -->
     <script src="https://cdn.jsdelivr.net/npm/cronstrue@3.14.0/dist/cronstrue-i18n.min.js"></script>
     <!-- graphiql - 必须在 define 清理之前加载（它是 UMD 库，使用 AMD define） -->
@@ -96,10 +97,6 @@
     <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs/loader.js"></script>
     <!-- ECharts 词云扩展 -->
     <script src="https://cdn.jsdelivr.net/npm/echarts-wordcloud@2/dist/echarts-wordcloud.min.js"></script>
-    <script type="module">
-        import { JSONPath } from 'https://cdn.jsdelivr.net/npm/jsonpath-plus@10.4.0/dist/index-browser-esm.min.js';
-        window.JSONPath = JSONPath;
-    </script>
     <style>
         :root {
             --color-primary: #165bfa;
@@ -11847,8 +11844,7 @@
                 return;
             }
             hiddenAiPanel();
-            destroyJsMind();
-            cleanupObjectUrls();
+            destroyEverything();
             currentArtPlayer?.pause();
             aiFabContainer.style.display = 'block';
             if (type === 'newFile') {
@@ -11919,7 +11915,6 @@
             if (event && event.isTrusted) {
                 saveScrollPosition();
             }
-            cleanupObjectUrls();
             //判断文件类型是否为支持的，不是则不打开
             const ext = getExt(relativePath);
             if (checkFileExt(ext)) {
@@ -12671,23 +12666,31 @@
             for (let i = 0; i < AUX_CONTROLS.length; i++) {
                 AUX_CONTROLS[i].style.display = 'none';
             }
+            destroyEverything();
+        }
+
+        function destroyEverything() {
             disposeAllCharts();
             cleanupObjectUrls();
             showTocToggleBtn(false);
-            destroyExcalidraw();
-            destroyJsMind();
-            destroyMermaid();
-            cleanupCanvasState();
-            hiddenAiPanel();
-            timelineDestroy();
-            picLayoutDestroy();
-            destroySwaggerEditor();
-            destroyGraphQLPlayground();
-            cleanupCommonIframe();
-            destroyRegesTest();
-            closeSystemMonitor();
-            destroyRawViewer();
-            destroyWordCloud();
+            // 并发执行所有销毁操作，提升切换性能
+            Promise.allSettled([
+                Promise.resolve(destroyExcalidraw()),
+                Promise.resolve(destroyJsMind()),
+                Promise.resolve(destroyMermaid()),
+                Promise.resolve(cleanupCanvasState()),
+                Promise.resolve(hiddenAiPanel()),
+                Promise.resolve(timelineDestroy()),
+                Promise.resolve(picLayoutDestroy()),
+                Promise.resolve(destroySwaggerEditor()),
+                Promise.resolve(destroyGraphQLPlayground()),
+                Promise.resolve(cleanupCommonIframe()),
+                Promise.resolve(destroyRegesTest()),
+                Promise.resolve(destroyJSONPage()),
+                Promise.resolve(closeSystemMonitor()),
+                Promise.resolve(destroyRawViewer()),
+                Promise.resolve(destroyWordCloud()),
+            ]);
         }
 
         async function copyToClipboard() {
@@ -15653,7 +15656,6 @@
         // 渲染图片或SVG文件
         async function renderImageFile(file) {
             aiFabContainer.style.display = 'none';
-            cleanupObjectUrls();
             if (file.name.endsWith('.svg')) {
                 const text = await file.text();
                 // 使用 sandbox iframe 安全渲染 SVG 文件，防止 SVG 内嵌脚本
@@ -15740,7 +15742,6 @@
         }
 
         async function renderPDFFile(file) {
-            cleanupObjectUrls();
             const arrayBuffer = await file.arrayBuffer();
             const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
             const pdfUrl = URL.createObjectURL(blob);
@@ -16021,17 +16022,27 @@
 
             return search(currentJsonTree.rootNode);
         }
+        let currentJSONData = null;
+        async function destroyJSONPage() {
+            if (currentJsonTree) {
+                const container = document.getElementById('json-container');
+                if (container) container.innerHTML = '';
+                currentJsonTree.destroy();
+                currentJsonTree = null;
+            }
+            currentJSONData = null;
+            jsonPathResultMatches = [];
+        }
 
         async function renderJSONFile(text) {
-            let parsed;
             try {
-                parsed = JSON.parse(text);
+                currentJSONData = JSON.parse(text);
             } catch (e) {
                 contentMain.innerHTML = `<div style="color:#cf222e; padding:20px;">❌ JSON解析失败: ${escapeHtml(e.message)}</div>`;
                 return;
             }
             let html = `
-                <div class="json-container">
+                <div class="json-container" id="json-container">
                     <div class="json-left-panel">
                         <div class="json-toolbar">
                             <button class="btn btn-sm json-btn" id="json-btn-expand-all" onclick="jsonTreeExpandAll()">展开全部</button>
@@ -16067,8 +16078,7 @@
                     </div>
                 </div>`;
             contentMain.innerHTML = html;
-            window.currentJSONData = parsed;
-            renderJSON(parsed);
+            renderJSON(currentJSONData);
             setTimeout(() => {
                 const jsonTreeContainer = document.getElementById('json-tree-container');
                 if (jsonTreeContainer) {
@@ -16245,10 +16255,6 @@
         }
 
         function jsonPathQuery() {
-            if (!window.JSONPath) {
-                showNotification('JSONPath 库加载中,请稍后再试', 'warning');
-                return;
-            }
             const input = document.getElementById('jsonpath-input');
             const expr = input.value.trim();
             const resultList = document.getElementById('json-result-list');
@@ -16263,14 +16269,14 @@
             }
             try {
                 clearJsonHighlight();
-                const results = window.JSONPath({
-                    path: expr,
-                    json: window.currentJSONData,
-                    resultType: 'all'
-                });
-                jsonPathResultMatches = results;
-                displayJsonResults(results);
-                highlightJsonResults(results);
+                const results = jsonpath.nodes(currentJSONData, expr);
+                jsonPathResultMatches = results.map(r => ({
+                    value: r.value,
+                    path: r.path,
+                    displayPath: jsonpath.stringify(r.path)
+                }));
+                displayJsonResults(jsonPathResultMatches);
+                highlightJsonResults(jsonPathResultMatches);
                 panel.classList.add('show');
             } catch (e) {
                 console.error('JSONPath查询失败:', e);
@@ -16292,7 +16298,8 @@
             results.forEach((result, idx) => {
                 const div = document.createElement('div');
                 div.className = 'json-result-item';
-                div.innerHTML = `<div class="path">${escapeHtml(result.path)}</div>
+                const pathStr = result.displayPath || (Array.isArray(result.path) ? result.path.join('.') : result.path);
+                div.innerHTML = `<div class="path">${escapeHtml(pathStr)}</div>
                     <pre class="value">${escapeHtml(JSON.stringify(result.value, null, 2))}</pre>`;
                 div.onclick = () => jumpToJsonMatch(idx);
                 resultList.appendChild(div);
@@ -19239,7 +19246,7 @@
                     : `openFileFromPath(this.getAttribute('data-path'))`;
                 return `<div class="activity-item" id="${id}" data-path="${escapeHtml(np)}" ondblclick="${onDblClick}">
                     <div class="activity-time" style="color:${hex};font-weight:bold;">●</div>
-                    <div style="color:${hex};font-size: 12px;width: 68px;">${timeStr}</div>
+                    <div style="color:${hex};font-size: 12px;width: 70px;">${timeStr.trim()}</div>
                     <div class="activity-content"><div class="activity-file" title="${escapeHtml(np)}">${icon}&nbsp;${escapeHtml(i.name)}</div></div>
                     <div class="activity-marker-clear-dot" title="取消标记" data-path="${escapeHtml(np)}" onclick="${onClickClear}">✕</div>
                 </div>`;
