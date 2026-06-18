@@ -3012,11 +3012,11 @@
             -webkit-backdrop-filter: blur(20px) saturate(190%);
             border: 1px solid rgba(255, 255, 255, 0.6);
             border-radius: 20px;
-            box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.03),
-                0 2px 4px rgba(0, 0, 0, 0.02),
-                0 8px 16px rgba(0, 0, 0, 0.04),
-                0 16px 32px rgba(0, 0, 0, 0.08),
-                0 24px 48px rgba(0, 0, 0, 0.06);
+            box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06),
+                0 2px 4px rgba(0, 0, 0, 0.05),
+                0 8px 16px rgba(0, 0, 0, 0.07),
+                0 16px 32px rgba(0, 0, 0, 0.11),
+                0 24px 48px rgba(0, 0, 0, 0.09);
             padding: 12px;
             opacity: 0;
             visibility: hidden;
@@ -13952,7 +13952,7 @@
             const rawEntry = entry instanceof FileEntry ? entry.rawEntry : entry;
             const fileSpan = document.createElement('div');
             fileSpan.className = 'file-item';
-            fileSpan.style.paddingLeft = (depth * 13) + 'px';
+            fileSpan.style.paddingLeft = (depth * 13) + 1 + 'px';
             const inDeleted = isInDeletedDir(np);
             if (inDeleted) fileSpan.classList.add('deleted-file');
 
@@ -19224,7 +19224,23 @@
         function _pathToId(p) {
             return normalizePath(p).replace(/[\/\\]/g, '_');
         }
-
+        const timeAge = (time) => {
+            if (!time) return '';
+            const now = Date.now();
+            const diff = now - time;
+            const seconds = Math.floor(diff / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const hours = Math.floor(minutes / 60);
+            const days = Math.floor(hours / 24);
+            const months = Math.floor(days / 30);
+            const years = Math.floor(days / 365);
+            if (seconds < 60) return '1分钟前';
+            if (minutes < 60) return minutes + '分钟前';
+            if (hours < 24) return hours + '小时前';
+            if (days < 30) return days + '天前';
+            if (months < 12) return months + '月前';
+            return years + '年前';
+        }
         function renderMarkerList(items, listEl) {
             if (!items || items.length === 0) {
                 listEl.innerHTML = '<div class="marker-empty">暂无标记</div>';
@@ -19240,6 +19256,7 @@
                     hour: '2-digit',
                     minute: '2-digit'
                 }) : '';
+
                 const isDir = i.type === 'dir';
                 const icon = isDir ? '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="#e8a735"><path d="M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v2h20V8c0-1.1-.9-2-2-2z"/><path d="M2 10h20v10c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V10z"/></svg>'
                     : "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='14' height='14' fill='none' stroke='#0077ff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z'/><path d='M9 12h6'/><path d='M9 16h4'/> </svg>";
@@ -19251,7 +19268,7 @@
                     : `openFileFromPath(this.getAttribute('data-path'))`;
                 return `<div class="activity-item" id="${id}" data-path="${escapeHtml(np)}" ondblclick="${onDblClick}">
                     <div class="activity-time" style="color:${hex};font-weight:bold;">●</div>
-                    <div style="color:${hex};font-size: 12px;width: 70px;">${timeStr.trim()}</div>
+                    <div style="color:${hex};font-size: 12px;width: 52px;text-align: center;" title="${timeStr.trim()}">${timeAge(i.time)}</div>
                     <div class="activity-content"><div class="activity-file" title="${escapeHtml(np)}">${icon}&nbsp;${escapeHtml(i.name)}</div></div>
                     <div class="activity-marker-clear-dot" title="取消标记" data-path="${escapeHtml(np)}" onclick="${onClickClear}">✕</div>
                 </div>`;
@@ -20016,7 +20033,7 @@
             const sortedByMtimeTop10 = [...data.files]
                 .sort((a, b) => b.mtime - a.mtime)
                 .slice(0, 10)
-                .map(f => ({ time: formatTimeHHMMSS(f.mtime * 1000), name: f.name, path: f.path }));
+                .map(f => ({ time: f.mtime * 1000, name: f.name, path: f.path }));
 
             // ===== 后处理: 目录大小排名 =====
             function collectFolderSize(node, parentPath) {
@@ -20356,7 +20373,7 @@
             };
             const topViewFiles = viewData.sumList.slice(0, 10);
             const operationList = [...viewData.viewList].sort((a, b) => b.viewTime - a.viewTime).map(f => ({
-                time: formatTime(f.viewTime),
+                time: f.viewTime,
                 name: f.name,
                 path: f.path,
                 type: f.type || '',
@@ -20365,17 +20382,27 @@
                 action: f.action || ''
             }));
             document.getElementById('editList').innerHTML = sortedByMtimeTop10.map(i =>
-                `<div class="activity-item" ondblclick="openFileFromPath('${i.path}')"><div class="activity-time">${i.time}</div><div class="activity-content"><div class="activity-file" title="${i.path}">${i.name}</div></div></div>`
+                `<div class="activity-item" ondblclick="openFileFromPath('${i.path}')">
+                    <div class="activity-time" style="width: 52px;" title="${formatTime(i.time)}">${timeAge(i.time)}</div>
+                    <div class="activity-content">
+                        <div class="activity-file" title="${i.path}">${i.name}</div>
+                    </div>
+                </div>`
             ).join('');
             document.getElementById('viewRankList').innerHTML = topViewFiles.map(i =>
-                `<div class="activity-item" ondblclick="openFileFromPath('${i.path}')"><div class="activity-time">${i.count}次</div><div class="activity-content"><div class="activity-file" title="${i.path}">${i.name}</div></div></div>`
+                `<div class="activity-item" ondblclick="openFileFromPath('${i.path}')">
+                    <div class="activity-time">${i.count}次</div>
+                    <div class="activity-content">
+                        <div class="activity-file" title="${i.path}">${i.name}</div>
+                    </div>
+                </div>`
             ).join('');
             document.getElementById('operationList').innerHTML = operationList.map(i =>
                 `<div class="activity-item" ondblclick="openFileFromPathAndType('${i.path}','${i.type}',${i.timestamp})">
-            <div class="activity-time">${i.time}</div>
-            <div class="activity-content">
-                <div class="activity-file" title="${i.path}">${i.name}</div>
-            </div>` +
+                    <div class="activity-time" style="width: 52px;" title="${formatTime(i.time)}">${timeAge(i.time)}</div>
+                    <div class="activity-content">
+                        <div class="activity-file" title="${i.path}">${i.name}</div>
+                    </div>` +
                 (i.type ? `<div class="dashboard-tag" style="${i.color ? 'color: ' + i.color + ';' : ''}">${i.type}${i.action ? ` : ${i.action}` : ''}</div></div>` : `</div>`)
             ).join('');
             renderMarkerDash();
@@ -21237,7 +21264,9 @@
                 showNotification('未找到目录: ' + np, 'error');
                 return;
             }
-            // 展开目录
+            // 先展开所有父级目录（确保目标目录在视图中可见）
+            expandPathToFileParent(targetDetails);
+            // 展开目标目录自身
             if (!targetDetails.open) {
                 targetDetails.open = true;
                 saveDirExpandedState(np, true);
@@ -21273,42 +21302,35 @@
             const parts = normalizedPath.split(SLASH).filter(Boolean);
             if (parts.length <= 1) return true;
             const dirParts = parts.slice(0, -1);
-            let currentPath = '';
             const allDirs = treeElement.querySelectorAll('details[data-dir-key]');
-            let foundAny = false;
-            let dirDetails = null;
+            let currentPath = '';
             for (const dirName of dirParts) {
                 currentPath = currentPath ? joinPath(currentPath, dirName) : dirName;
+                let found = false;
                 for (const dir of allDirs) {
                     if (dir.dataset.dirKey === currentPath) {
-                        dirDetails = dir;
+                        if (!dir.open) {
+                            dir.open = true;
+                            saveDirExpandedState(currentPath, true);
+                        }
+                        found = true;
                         break;
                     }
                 }
-                if (dirDetails) {
-                    foundAny = true;
-                }
+                if (!found) break;
             }
-            if (foundAny && dirDetails) {
-                let rtn = dirDetails.querySelector(`.file-item[data-file-path="${normalizedPath}"]`);
-                if (rtn) {
-                    if (!dirDetails.open) {
-                        dirDetails.open = true;
-                        saveDirExpandedState(currentPath, true);
-                    }
-                    return rtn;
-                }
-            }
-            return null;
+            // 尝试查找目标文件
+            const rtn = treeElement.querySelector(`.file-item[data-file-path="${CSS.escape(normalizedPath)}"]`);
+            return rtn || null;
         }
 
         async function expandPathToDir(dirPath) {
             const np = normalizePath(dirPath);
             const parts = np.split(SLASH).filter(Boolean);
             if (parts.length === 0) return null;
+            const allDirs = treeElement.querySelectorAll('details[data-dir-key]');
             let currentPath = '';
             let targetDetails = null;
-            const allDirs = treeElement.querySelectorAll('details[data-dir-key]');
             for (const dirName of parts) {
                 currentPath = joinPath(currentPath, dirName);
                 let found = false;
@@ -21323,7 +21345,10 @@
                         break;
                     }
                 }
-                if (!found) break;
+                if (!found) {
+                    targetDetails = null;
+                    break;
+                }
             }
             return targetDetails;
         }
@@ -21489,33 +21514,22 @@
             });
         }
 
-        const alChatTooltip = document.getElementById('ai-fab-tooltip');
-
         function initAIPanelToggle() {
             const aiButton = document.getElementById('ai-fab-button');
-            aiButton.addEventListener('mouseenter', (e) => {
-                e.stopPropagation();
-                displayAiPanel();
-            });
-            alChatTooltip.addEventListener('mouseenter', (e) => {
-                e.stopPropagation();
-                aiPanelVisible = true;
-            });
-            document.addEventListener('click', (e) => {
-                if (!aiPanelVisible) return;
-                const aiResultModal = document.getElementById('ai-result-modal');
-                const aiResultModalVisible = aiResultModal && aiResultModal.style.display !== 'none';
-                if (aiResultModalVisible) return;
-                if (!alChatTooltip.contains(e.target) && !aiButton.contains(e.target) && !selectionToolbar.contains(e.target)) {
-                    aiPanelVisible = false;
-                    alChatTooltip.classList.add('ai-fab-tooltip-hidden');
+            const showOrHidePanel = () => {
+                aiPanelVisible = !aiPanelVisible;
+                if (aiPanelVisible) {
+                    displayAiPanel(aiSelectionText);
+                } else {
+                    hiddenAiPanel();
                 }
-            });
+            };
+            aiButton.removeEventListener('click', showOrHidePanel);
+            aiButton.addEventListener('click', showOrHidePanel);
             getAIHistoryData().then(() => {
                 renderAIHistory();
             });
         }
-
         function displayAiPanel(selectionText = null) {
             aiPanelVisible = true;
             aiFabContainer.style.display = 'block';
@@ -21537,7 +21551,6 @@
             }
             showAITooltip();
         }
-
         function hiddenAiPanel() {
             aiPanelVisible = false;
             aiSelectionMode = false;
@@ -21546,13 +21559,12 @@
             if (countEl) countEl.style.display = 'none';
             hideAITooltip();
         }
-
+        const alChatTooltip = document.getElementById('ai-fab-tooltip');
         function hideAITooltip() {
             if (!alChatTooltip.classList.contains('ai-fab-tooltip-hidden')) {
                 alChatTooltip.classList.add('ai-fab-tooltip-hidden');
             }
         }
-
         function showAITooltip() {
             alChatTooltip.classList.remove('ai-fab-tooltip-hidden');
         }
@@ -21958,6 +21970,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         async function initAiResultModal() {
             const modal = document.getElementById('ai-result-modal');
             const overlay = modal.querySelector('.ai-result-overlay');
+            overlay.removeEventListener('click', closeAIResultModal);
             overlay.addEventListener('click', closeAIResultModal);
         }
 
@@ -28121,8 +28134,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         ctx.stroke();
                     }
                     if (graphParams.showTags && (viewport.k > 0.5 || (this.focusNodeId && (isFocused || isNeighbor)))) {
-                        ctx.fillStyle = (isHighlighted || isFocused) ? '#ffffff' : '#0a0e14';
-                        ctx.font = `${Math.max(7, 9 / viewport.k)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif`;
+                        ctx.fillStyle = (isHighlighted || isFocused) ? 'red' : '#646a73';
+                        ctx.font = `${Math.max(6, 8 / viewport.k)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif`;
                         ctx.textAlign = 'center';
                         ctx.textBaseline = 'middle';
                         ctx.fillText(node.title, node.x, node.y + node.size + 18);
@@ -30930,10 +30943,23 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 var height = wordViewContainer.clientHeight || 600;
                 // 清除 loading，准备渲染词云
                 wordViewContainer.innerHTML = '';
-                // 注入遮挡词云 CSS
+                // 注入词云 CSS（遮挡 + 动画关键帧）
                 var styleEl = document.createElement('style');
                 styleEl.id = 'occlusion-wordcloud-css';
-                styleEl.textContent = 'svg.cursor-pointer { cursor: pointer; } svg text.occluded { opacity: 0.06 !important; }';
+                styleEl.textContent = 'svg.cursor-pointer { cursor: pointer; }\
+                    svg text.occluded { opacity: 0.06 !important; animation: wc-blip 4s ease-in-out infinite !important; }\
+                    svg text.wc-visible { animation: wc-breathe 3s ease-in-out infinite; }\
+                    svg text.wc-hover { transition: font-weight 0.15s; font-weight: bold !important; }\
+                    @keyframes wc-breathe {\
+                        0%,100% { transform: translateY(0px); }\
+                        50% { transform: translateY(-3px); }\
+                    }\
+                    @keyframes wc-blip {\
+                        0%,85%,100% { opacity: 0.06 !important; }\
+                        88% { opacity: 0.25 !important; }\
+                        91% { opacity: 0.06 !important; }\
+                        94% { opacity: 0.2 !important; }\
+                    }';
                 wordViewContainer.appendChild(styleEl);
                 // 创建 SVG
                 var svg = d3.select(wordViewContainer)
@@ -30943,11 +30969,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     .attr('viewBox', [0, 0, width, height])
                     .attr('style', 'max-width:100%;height:100%;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;');
                 var priority = 0;
+                var cx = width / 2;
+                var cy = height / 2;
                 var textSelection = svg.selectAll('text')
                     .data(items)
                     .join('text')
                     .text(function (d) { return d.name; })
                     .attr('text-anchor', 'middle')
+                    // 直接随机位置（无入场动画）
                     .attr('x', function () { return (width * 0.05 + width * 0.9 * Math.random()) | 0; })
                     .attr('y', function () { return (height * 0.05 + height * 0.9 * Math.random()) | 0; })
                     .style('font-size', function (d) { return d.size + 'px'; })
@@ -30960,16 +30989,26 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     })
                     .style('opacity', 0.82)
                     .attr('data-priority', null)
+                    .attr('data-original-opacity', 0.82)
+                    .attr('data-original-font-size', function (d) { return d.size; })
                     .on('mouseover', function () {
-                        d3.select(this).attr('fill', '#e74c3c').raise().style('opacity', 1);
+                        var self = d3.select(this);
+                        self.classed('wc-hover', true);
+                        self.style('font-size', function () {
+                            var orig = parseFloat(self.attr('data-original-font-size'));
+                            return (orig * 1.25) + 'px';
+                        });
+                        self.attr('fill', '#e74c3c').raise().style('opacity', 1);
                         svg.call(_occlusion);
                     })
                     .on('mouseout', function () {
                         var self = d3.select(this);
-                        // 已固定（pinned）的词保持固定色，不恢复原始色
+                        self.classed('wc-hover', false);
+                        // 已固定（pinned）的词保持固定色
                         var isPinned = +(self.attr('data-priority') || 0) > 0;
                         self.attr('fill', isPinned ? '#2c3e50' : (self.attr('data-original-fill') || self.attr('fill')))
-                            .style('opacity', 0.82);
+                            .style('opacity', isPinned ? 1 : parseFloat(self.attr('data-original-opacity')))
+                            .style('font-size', self.attr('data-original-font-size') + 'px');
                         svg.call(_occlusion);
                     })
                     .on('click', function (event, d) {
@@ -30983,14 +31022,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         svg.call(_occlusion);
                         // 打开对应的文件
                         openFileFromPath(d.path);
+                    })
+                    .each(function () {
+                        var el = d3.select(this);
+                        var originalFill = el.attr('fill');
+                        if (originalFill) el.attr('data-original-fill', originalFill);
                     });
 
-                // 保存原始颜色
-                textSelection.each(function () {
-                    var el = d3.select(this);
-                    var originalFill = el.attr('fill');
-                    if (originalFill) el.attr('data-original-fill', originalFill);
-                });
+                // 可见文字添加呼吸动画类
+                textSelection.classed('wc-visible', true);
 
                 // 初次调用 occlusion 计算可见性
                 svg.call(_occlusion);
