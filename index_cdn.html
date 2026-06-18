@@ -31584,10 +31584,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
             const lang = getMonacoLanguage(fileName);
             initMonacoEditor().then(() => {
-                const originalModel = monaco.editor.createModel(originalContent, lang,
-                    monaco.Uri.parse(`git-original:///${filePath}`));
-                const modifiedModel = monaco.editor.createModel(modifiedContent, lang,
-                    monaco.Uri.parse(`git-modified:///${filePath}`));
+                const originalUri = monaco.Uri.parse(`git-original:///${filePath}`);
+                const modifiedUri = monaco.Uri.parse(`git-modified:///${filePath}`);
+                // 先销毁同 URI 的已有模型，避免 "model already exists" 错误
+                const existOrig = monaco.editor.getModel(originalUri);
+                if (existOrig) existOrig.dispose();
+                const existMod = monaco.editor.getModel(modifiedUri);
+                if (existMod) existMod.dispose();
+                const originalModel = monaco.editor.createModel(originalContent, lang, originalUri);
+                const modifiedModel = monaco.editor.createModel(modifiedContent, lang, modifiedUri);
 
                 gitDiffEditor = monaco.editor.createDiffEditor(editorWrap, {
                     readOnly: true,
