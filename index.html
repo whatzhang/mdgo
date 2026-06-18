@@ -9142,11 +9142,16 @@
             border-radius: var(--radius-xxl);
             overflow: hidden;
             box-shadow: var(--photo-shadow);
-            transition: all 0.3s ease;
+            transition: all 0.3s ease, opacity 0.5s ease;
             cursor: pointer;
             position: relative;
             background: var(--color-bg);
             padding: 10px;
+            opacity: 0;
+        }
+
+        .photo-masonry-item.loaded {
+            opacity: 1;
         }
 
         .photo-masonry-item:hover {
@@ -9255,6 +9260,107 @@
             100% {
                 background-position: -200% 0;
             }
+        }
+
+        /* ========== 图片墙分页 ========== */
+        #photo-scatter-pager {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            z-index: 9999;
+            background: var(--color-bg);
+            padding: 6px 10px;
+            border-radius: 20px;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .photo-pager-info {
+            font-size: 13px;
+            color: var(--color-text-secondary);
+            min-width: 60px;
+            text-align: center;
+        }
+
+        .photo-pager-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: none;
+            background: var(--color-primary);
+            color: var(--color-bg);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all var(--transition-normal);
+        }
+
+        .photo-pager-btn:hover:not(:disabled) {
+            background: var(--color-primary-hover);
+            transform: scale(1.1);
+        }
+
+        .photo-pager-btn:active:not(:disabled) {
+            background: var(--color-primary-active);
+            transform: scale(0.95);
+        }
+
+        .photo-pager-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .photo-loadmore-btn {
+            padding: 8px 24px;
+            border: none;
+            border-radius: 24px;
+            background: var(--color-primary);
+            color: var(--color-bg);
+            font-size: 12px;
+            cursor: pointer;
+            transition: all var(--transition-normal);
+        }
+
+        .photo-loadmore-btn:hover {
+            background: var(--color-primary-hover);
+            transform: scale(1.05);
+        }
+
+        /* 散落图片翻页动画 */
+        .photo-scatter-item {
+            opacity: 0;
+        }
+
+        @keyframes photoFallIn {
+            0% {
+                opacity: 0;
+                transform: translateY(-100vh) rotate(0deg);
+            }
+
+            60% {
+                opacity: 1;
+                transform: translateY(20px) rotate(var(--fall-rotation, 5deg));
+            }
+
+            80% {
+                transform: translateY(-10px) rotate(var(--fall-rotation, 5deg));
+            }
+
+            90% {
+                transform: translateY(5px) rotate(var(--fall-rotation, 5deg));
+            }
+
+            100% {
+                opacity: 1;
+                transform: translateY(0) rotate(var(--fall-rotation, 5deg));
+            }
+        }
+
+        .photo-scatter-item.animate-fall {
+            animation: photoFallIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
         }
 
         /* ========== Git 应用 ========== */
@@ -11407,7 +11513,7 @@
         const HTML_CODE_SHOW_BLACKLIST = ["note"];
         // ========== 常量定义 ==========
         const MAX_FILE_SIZE = 50 * 1024 * 1024; // 5MB - 大文件限制
-        const MAX_DIR_DEPTH = 50; // 最大目录深度
+        const MAX_DIR_DEPTH = 20; // 最大目录深度
         const SCROLL_RESTORE_DELAY = 200; // 滚动恢复延迟(ms)
         const DELETED_INDEX_EXPIRE_DAYS = 30; // 删除索引过期天数
         // 本地存储键名常量
@@ -11440,7 +11546,6 @@
         const INDEX_MARKERS_FILE = 'index_file_markers.json';
         const INDEX_OPER_FILE = 'index_operation.json';
         const INDEX_SCHEDULE_FILE = 'index_schedule.json';
-        let hasBackendServer = false;
         //工具常量
         const isShowHtmlCode = (relativePath) => {
             const p = normalizePath(relativePath || '');
@@ -11458,6 +11563,8 @@
             if (RANDOM_DIR_BLACKLIST.some(dir => p.startsWith(normalizePath(dir)))) return false;
             return RANDOM_DIR_WHITELIST.some(dir => p.startsWith(normalizePath(dir))) || (ext && isDoc(ext));
         };
+        // 运行环境判断
+        let hasBackendServer = false;
         const isLocalVisit = () => window.location.protocol === 'file:';
         const isHttpVisit = () => window.location.protocol === 'http:' || window.location.protocol === 'https:';
         const replaceMediaUrl = async (path, isFullText) => {
@@ -11636,7 +11743,7 @@
         marked.setOptions({ breaks: true, gfm: true, headerIds: false });
 
         document.addEventListener('DOMContentLoaded', async () => {
-            initMonacoEditor();
+            await heartbeat();
             await initAll();
         });
 
@@ -11678,28 +11785,31 @@
 
         async function initAll() {
             if (!await initTreeBrowser()) return;
-            // 初始化WebSocket连接
-            wsConnect();
-            // 初始化AI相关组件
-            initAiActionRow();
-            // 初始化AI面板切换按钮
-            initAIPanelToggle();
-            // 初始化AI结果设置
-            initAIResultSettings();
-            // 初始化新文件下拉菜单
-            initNewFileDropdown();
-            // 初始化AI结果弹窗
-            initAiResultModal();
-            // 初始化Markdown选择工具栏
-            initMarkdownSelectionToolbar();
-            // 初始化定时任务组件
-            startScheduledTask(10);
-            // 初始化系统监控
-            initSystemMonitor();
-            // 初始化侧边栏切换按钮
-            initSidebarToggle();
-            // 初始化日历日程
-            todoEarlyInit();
+            // 并发执行所有初始化操作，提升启动性能
+            await Promise.all([
+                // 初始化WebSocket连接
+                Promise.resolve(wsConnect()),
+                // 初始化AI相关组件
+                Promise.resolve(initAiActionRow()),
+                // 初始化AI面板切换按钮
+                Promise.resolve(initAIPanelToggle()),
+                // 初始化AI结果设置
+                Promise.resolve(initAIResultSettings()),
+                // 初始化新文件下拉菜单
+                Promise.resolve(initNewFileDropdown()),
+                // 初始化AI结果弹窗
+                Promise.resolve(initAiResultModal()),
+                // 初始化Markdown选择工具栏
+                Promise.resolve(initMarkdownSelectionToolbar()),
+                // 初始化定时任务组件
+                Promise.resolve(startScheduledTask(10)),
+                // 初始化系统监控
+                Promise.resolve(initSystemMonitor()),
+                // 初始化侧边栏切换按钮
+                Promise.resolve(initSidebarToggle()),
+                // 初始化日历日程
+                Promise.resolve(todoEarlyInit()),
+            ]);
         }
 
         async function renderDirectory(dirHandle) {
@@ -14468,6 +14578,11 @@
         }
 
         function showImageModal(imgSrc, nextEnable = false) {
+            // 隐藏散落分页按钮
+            const pager = document.getElementById('photo-scatter-pager');
+            const pagerDisplay = pager ? pager.style.display : 'none';
+            if (pager) pager.style.display = 'none';
+
             const modal = document.createElement('div');
             modal.style.cssText = `position: fixed;top: 0;left: 0;width: 100%;height: 100%;background: rgba(0,0,0,0.5);display: flex;justify-content: center;align-items: center; z-index: 10000;cursor: zoom-out;opacity: 0;transition: opacity 0.03s ease;`;
             const containerDiv = document.createElement('div');
@@ -14622,6 +14737,8 @@
                 modalClosed = true;
                 modal.remove();
                 document.removeEventListener('keydown', keydownHandler);
+                // 恢复散落分页按钮
+                if (pager) pager.style.display = pagerDisplay;
             };
             const keydownHandler = (e) => {
                 if (e.key === 'Escape') closeModal();
@@ -19123,7 +19240,7 @@
                     : `openFileFromPath(this.getAttribute('data-path'))`;
                 return `<div class="activity-item" id="${id}" data-path="${escapeHtml(np)}" ondblclick="${onDblClick}">
                     <div class="activity-time" style="color:${hex};font-weight:bold;">●</div>
-                    <div style="color:${hex};font-size: 12px;">${timeStr}</div>
+                    <div style="color:${hex};font-size: 12px;width: 68px;">${timeStr}</div>
                     <div class="activity-content"><div class="activity-file" title="${escapeHtml(np)}">${icon}&nbsp;${escapeHtml(i.name)}</div></div>
                     <div class="activity-marker-clear-dot" title="取消标记" data-path="${escapeHtml(np)}" onclick="${onClickClear}">✕</div>
                 </div>`;
@@ -19328,6 +19445,24 @@
             return data;
         }
 
+        async function heartbeat() {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 300);
+            try {
+                response = await fetch('/api/system/heartbeat', { signal: controller.signal });
+                const data = await response.json();
+                if (data.success) {
+                    hasBackendServer = true;
+                    return data;
+                }
+            } catch (e) {
+                clearTimeout(timeoutId);
+                hasBackendServer = false;
+            } finally {
+                clearTimeout(timeoutId);
+            }
+        }
+
         async function scanDirToIndex(force = false) {
             let url = `/api/system/scan?dir=${encodeURI(currentRootPath)}`;
             if (force) {
@@ -19349,7 +19484,6 @@
             }
             const data = await response.json();
             if (data.success) {
-                if (!hasBackendServer) hasBackendServer = true;
                 return data.data;
             } else {
                 showNotification('✗ 配置失败: ' + data.message, 'error');
@@ -20574,12 +20708,14 @@
             let html = '';
             DASHBOARD_BUTTON.forEach(b => {
                 if (b.display) {
-                    if (isLocalVisit()) {
-                        if (b.fileProtocolDisplay) {
+                    if (isLocalVisit() || !hasBackendServer) {
+                        if (b.fileProtocolDisplay && b.display) {
                             html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
                         }
                     } else {
-                        html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
+                        if (b.display) {
+                            html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
+                        }
 
                     }
                 }
@@ -22918,7 +23054,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             safeLocalStorageRemove(VIEW_OPER_RECORDS_KEY);
             safeLocalStorageRemove(GRAPH_PARAMS_KEY);
             safeLocalStorageRemove(VIDEO_HISTORY_KEY);
-            safeLocalStorageRemove(BROWSER_REFRESHED_KEY);
+            safeLocalStorageSet(BROWSER_REFRESHED_KEY, BROWSER_REFRESHED_KEY);
             // 清理目录句柄数据库
             idbDeleteDatabase(DIRECTORY_STORE_NAME);
             _markersCache = null; // markers 缓存
@@ -24958,7 +25094,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         // ════════════════════════════════════════════════════════════════
         let _wsClient = null;
         let _wsReconnectCount = 0;
-        const _wsMaxReconnect = 5;
+        const _wsMaxReconnect = 3;
 
         const WS_HANDLERS = {
             heartbeat: () => {
@@ -25045,7 +25181,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
                 _wsClient.onmessage = (event) => {
                     try {
-                        if (!hasBackendServer) hasBackendServer = true;
                         if (!isRootHandleAvailable()) return;
                         const msg = JSON.parse(event.data);
                         const handler = WS_HANDLERS[msg.type];
@@ -30888,16 +31023,37 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         let photoCurrentLayout = 'masonry'; // 当前布局
         let photoRenderedLayouts = {}; // 已渲染的布局
         let currentPhotoDirHandle = null;  // 当前目录句柄
+        const PHOTO_MASONRY_PAGE_SIZE = 30; // 瀑布流每页数量
+        const PHOTO_SCATTER_PAGE_SIZE = 15; // 散落每页数量
+        const PHOTO_SCATTER_ANIMATION_DELAY = 50; // 散落动画延迟间隔(ms)
+        const PHOTO_SCATTER_COLLISION_ATTEMPTS = 100; // 散落位置碰撞检测最大尝试次数
+        const PHOTO_SCATTER_COLLISION_MARGIN = 15; // 散落位置碰撞检测边距
+        const PHOTO_SCATTER_PHOTO_MIN_WIDTH = 160; // 散落照片最小宽度
+        const PHOTO_SCATTER_PHOTO_MAX_WIDTH_ADD = 100; // 散落照片最大宽度增量
+        const PHOTO_SCATTER_PHOTO_ASPECT_RATIO_MIN = 0.8; // 散落照片最小宽高比
+        const PHOTO_SCATTER_PHOTO_ASPECT_RATIO_MAX_ADD = 0.4; // 散落照片最大宽高比增量
+        const PHOTO_SCATTER_ROTATION_RANGE = 20; // 散落照片旋转角度范围
+        const PHOTO_SCATTER_PADDING = 40; // 散落布局内边距
+        const PHOTO_SCATTER_EXTRA_WIDTH = 50; // 散落布局额外宽度
+        const PHOTO_RESIZE_DEBOUNCE_DELAY = 300; // resize 防抖延迟(ms)
+        let photoMasonryPage = 0; // 瀑布流当前页
+        let photoScatterPage = 0; // 散落当前页
         // 散落布局位置缓存
         const photoScatterPositions = new Map();
         // 布局切换防抖
         let photoSwitchTimer = null;
-        // 散落布局 resize 处理
+        // resize 防抖定时器
+        let photoResizeTimer = null;
+        // 散落布局 resize 处理（带防抖）
         async function photoHandleResize() {
-            if (photoCurrentLayout === 'scatter' && photoScatterPositions.size > 0) {
-                photoScatterPositions.clear();
-                await photoRenderScatter();
+            if (photoResizeTimer) {
+                clearTimeout(photoResizeTimer);
             }
+            photoResizeTimer = setTimeout(async () => {
+                if (photoCurrentLayout === 'scatter' && photoScatterPositions.size > 0) {
+                    await photoRenderScatter(false, true); // 跳过动画
+                }
+            }, PHOTO_RESIZE_DEBOUNCE_DELAY);
         }
         async function picLayoutDisplay(relPath) {
             if (!relPath) return;
@@ -30913,6 +31069,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     <!-- 瀑布流 -->
                     <div class="photo-layout active" id="photo-layout-masonry">
                         <div class="photo-masonry" id="photo-masonry-container"></div>
+                        <div id="photo-masonry-loadmore-container" style="display: flex; justify-content: center; padding: 20px 0;"></div>
                     </div>
                     <!-- 散落 -->
                     <div class="photo-layout" id="photo-layout-scatter">
@@ -30922,7 +31079,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             </div>`;
             currentPhotoDirHandle = await getDirHandleByDirPath(relPath);
             await getPhotoFromDirHandle(relPath);
-            await photoRenderMasonry();
+            await photoRenderMasonry(true);
             photoRenderedLayouts['masonry'] = true;
             const dom = document.querySelector('.photo-main');
             bindImagePreview(dom, true);
@@ -30935,7 +31092,18 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             currentPhotoDirHandle = null;
             currentPhotoDirData = [];
             photoScatterPositions.clear();
+            photoMasonryPage = 0;
+            photoScatterPage = 0;
+            const pager = document.getElementById('photo-scatter-pager');
+            if (pager) pager.remove();
+            const loadMoreBtn = document.getElementById('photo-masonry-loadmore');
+            if (loadMoreBtn) loadMoreBtn.remove();
             window.removeEventListener('resize', photoHandleResize);
+            // 清理 resize 防抖定时器
+            if (photoResizeTimer) {
+                clearTimeout(photoResizeTimer);
+                photoResizeTimer = null;
+            }
         }
         // 切换布局 - 懒加载渲染
         async function photoSwitchLayout(name, triggerEl) {
@@ -30949,10 +31117,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     if (targetEl) targetEl.classList.add('active');
                     photoCurrentLayout = name;
 
+                    // 显示/隐藏散落分页按钮
+                    const pager = document.getElementById('photo-scatter-pager');
+                    if (pager) {
+                        pager.style.display = name === 'scatter' ? 'flex' : 'none';
+                    }
+
                     // 懒加载：只有未渲染过才渲染
                     if (!photoRenderedLayouts[name]) {
-                        if (name === 'masonry') await photoRenderMasonry();
-                        else if (name === 'scatter') await photoRenderScatter();
+                        if (name === 'masonry') await photoRenderMasonry(true);
+                        else if (name === 'scatter') await photoRenderScatter(true);
                         photoRenderedLayouts[name] = true;
                     }
                 } catch (e) {
@@ -30974,20 +31148,62 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             currentPhotoDirData = fileList.map((h, i) => ({ id: i, title: h.nameFull, url: h.path }));
         }
         // ========== 瀑布流 ==========
-        async function photoRenderMasonry() {
+        async function photoRenderMasonry(isFirstPage = false) {
             const container = document.getElementById('photo-masonry-container');
-            const fragment = document.createDocumentFragment();
-            for (const p of currentPhotoDirData) {
+            const startIdx = photoMasonryPage * PHOTO_MASONRY_PAGE_SIZE;
+            const endIdx = Math.min(startIdx + PHOTO_MASONRY_PAGE_SIZE, currentPhotoDirData.length);
+            const pageData = currentPhotoDirData.slice(startIdx, endIdx);
+
+            if (isFirstPage) {
+                container.innerHTML = '';
+                photoMasonryPage = 0;
+            }
+
+            for (const p of pageData) {
                 const div = document.createElement('div');
                 div.className = 'photo-masonry-item';
-                div.innerHTML = `
-                    <img src="${await photoLoadFromLocal(p.url)}" alt="${p.title}" loading="lazy" decoding="async">
-                    <div class="photo-caption">${p.title}</div>
-                `;
-                fragment.appendChild(div);
+
+                const img = document.createElement('img');
+                img.alt = p.title;
+                img.loading = 'lazy';
+                img.decoding = 'async';
+                // 图片加载完成后淡入显示
+                img.onload = () => div.classList.add('loaded');
+                img.onerror = () => div.classList.add('loaded'); // 加载失败也显示
+
+                const caption = document.createElement('div');
+                caption.className = 'photo-caption';
+                caption.textContent = p.title;
+
+                div.appendChild(img);
+                div.appendChild(caption);
+                container.appendChild(div);
+
+                // 设置图片源
+                photoLoadFromLocal(p.url).then(src => {
+                    img.src = src;
+                });
             }
-            container.innerHTML = '';
-            container.appendChild(fragment);
+
+            // 显示加载更多按钮
+            const loadMoreContainer = document.getElementById('photo-masonry-loadmore-container');
+            let loadMoreBtn = document.getElementById('photo-masonry-loadmore');
+            const hasMore = endIdx < currentPhotoDirData.length;
+
+            // 始终保持按钮存在，只切换显示/隐藏状态
+            if (!loadMoreBtn) {
+                loadMoreBtn = document.createElement('button');
+                loadMoreBtn.id = 'photo-masonry-loadmore';
+                loadMoreBtn.className = 'photo-loadmore-btn';
+                loadMoreBtn.textContent = '加载更多';
+                loadMoreBtn.onclick = async () => {
+                    photoMasonryPage++;
+                    await photoRenderMasonry();
+                };
+                loadMoreContainer.appendChild(loadMoreBtn);
+            }
+            // 根据是否有更多内容显示/隐藏按钮
+            loadMoreBtn.style.display = hasMore ? '' : 'none';
         }
         async function photoLoadFromLocal(src) {
             if (isLocalVisit()) {
@@ -31002,12 +31218,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         // ========== 散落布局位置计算 ==========
         function photoComputeScatterPositions(count) {
             photoScatterPositions.clear();
-            const padding = 40;
-            const photoContainerW = contentMain.clientWidth - padding * 2 - 50;
+            const padding = PHOTO_SCATTER_PADDING;
+            const photoContainerW = contentMain.clientWidth - padding * 2 - PHOTO_SCATTER_EXTRA_WIDTH;
             const photoContainerH = contentMain.clientHeight - padding * 2;
             const positions = [];
+
             function checkOverlap(x, y, w, h) {
-                const margin = 15;
+                const margin = PHOTO_SCATTER_COLLISION_MARGIN;
                 return positions.some(pos =>
                     x < pos.x + pos.w + margin &&
                     x + w + margin > pos.x &&
@@ -31015,32 +31232,49 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     y + h + margin > pos.y
                 );
             }
+
             for (let i = 0; i < count; i++) {
-                const w = 160 + Math.random() * 100;
-                const h = w * (0.8 + Math.random() * 0.4);
+                const w = PHOTO_SCATTER_PHOTO_MIN_WIDTH + Math.random() * PHOTO_SCATTER_PHOTO_MAX_WIDTH_ADD;
+                const h = w * (PHOTO_SCATTER_PHOTO_ASPECT_RATIO_MIN + Math.random() * PHOTO_SCATTER_PHOTO_ASPECT_RATIO_MAX_ADD);
                 let x, y, attempts = 0;
                 do {
                     x = Math.random() * (photoContainerW - w);
                     y = Math.random() * (photoContainerH - h);
                     attempts++;
-                } while (checkOverlap(x, y, w, h) && attempts < 100);
+                } while (checkOverlap(x, y, w, h) && attempts < PHOTO_SCATTER_COLLISION_ATTEMPTS);
                 positions.push({ x, y, w, h });
-                photoScatterPositions.set(i, { x, y, w, h, rotation: (Math.random() - 0.5) * 20 });
+                photoScatterPositions.set(i, { x, y, w, h, rotation: (Math.random() - 0.5) * PHOTO_SCATTER_ROTATION_RANGE });
             }
         }
         // ========== 随机散落 ==========
-        async function photoRenderScatter() {
+        async function photoRenderScatter(isFirstPage = false, skipAnimation = false) {
             const container = document.getElementById('photo-scatter-container');
-            const count = Math.min(currentPhotoDirData.length, 20);
-            // 预计算位置（复用已计算的位置）
-            if (photoScatterPositions.size === 0) {
-                photoComputeScatterPositions(count);
+            const pageSize = PHOTO_SCATTER_PAGE_SIZE;
+            const totalPages = Math.ceil(currentPhotoDirData.length / pageSize);
+
+            // 重置页码
+            if (isFirstPage) {
+                photoScatterPage = 0;
             }
 
+            const startIdx = photoScatterPage * pageSize;
+            const endIdx = Math.min(startIdx + pageSize, currentPhotoDirData.length);
+            const count = endIdx - startIdx;
+
+            // 每次渲染都重新计算随机位置
+            photoComputeScatterPositions(count);
+
+            // 并行加载所有图片
+            const imagePromises = [];
+            for (let i = 0; i < count; i++) {
+                const p = currentPhotoDirData[startIdx + i];
+                imagePromises.push(photoLoadFromLocal(p.url));
+            }
+            const imageSrcs = await Promise.all(imagePromises);
+
             const fragment = document.createDocumentFragment();
-            const items = currentPhotoDirData.slice(0, count);
-            for (let i = 0; i < items.length; i++) {
-                const p = items[i];
+            for (let i = 0; i < count; i++) {
+                const p = currentPhotoDirData[startIdx + i];
                 const pos = photoScatterPositions.get(i);
                 if (!pos) continue;
                 const div = document.createElement('div');
@@ -31052,16 +31286,74 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     top: ${pos.y}px;
                     transform: rotate(${pos.rotation}deg);
                     z-index: ${i};
+                    --fall-rotation: ${pos.rotation}deg;
                 `;
                 div.innerHTML = `
-                    <img src="${await photoLoadFromLocal(p.url)}" alt="${p.title}" loading="lazy" decoding="async">
+                    <img src="${imageSrcs[i]}" alt="${p.title}" loading="lazy" decoding="async">
                     <div class="photo-polaroid-text">${p.title}</div>
                 `;
+                // 添加落体动画
+                const delay = i * PHOTO_SCATTER_ANIMATION_DELAY;
+                div.style.animationDelay = `${delay}ms`;
+                if (!skipAnimation) {
+                    div.classList.add('animate-fall');
+                }
                 fragment.appendChild(div);
             }
             container.innerHTML = '';
             container.appendChild(fragment);
             container.style.height = contentMain.clientHeight + 'px';
+
+            // 渲染分页按钮
+            renderPhotoScatterPager(startIdx + 1, endIdx, totalPages, currentPhotoDirData.length);
+        }
+
+        function renderPhotoScatterPager(start, end, totalPages, totalCount) {
+            let pager = document.getElementById('photo-scatter-pager');
+            if (!pager) {
+                pager = document.createElement('div');
+                pager.id = 'photo-scatter-pager';
+                document.querySelector('.photo-layout-container').appendChild(pager);
+            }
+            const currentPage = photoScatterPage + 1;
+
+            // 克隆节点以移除所有旧的事件监听器
+            const newPager = pager.cloneNode(false);
+            newPager.id = 'photo-scatter-pager';
+            newPager.innerHTML = `
+                <button class="image-btn photo-pager-btn" id="photo-scatter-prev" title="上一页" ${currentPage <= 1 ? 'disabled' : ''}>
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                        <path d="M15 18l-6-6 6-6v12z"/>
+                    </svg>
+                </button>
+                <span class="photo-pager-info">${start}-${end} / ${totalCount}</span>
+                <button class="image-btn photo-pager-btn" id="photo-scatter-next" title="下一页" ${currentPage >= totalPages ? 'disabled' : ''}>
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                        <path d="M9 18l6-6-6-6v12z"/>
+                    </svg>
+                </button>
+            `;
+
+            // 替换旧节点
+            pager.parentNode.replaceChild(newPager, pager);
+
+            // 绑定事件
+            const prevBtn = document.getElementById('photo-scatter-prev');
+            const nextBtn = document.getElementById('photo-scatter-next');
+            prevBtn.onclick = async () => {
+                if (photoScatterPage > 0) {
+                    photoScatterPage--;
+                    await photoRenderScatter();
+                }
+            };
+            nextBtn.onclick = async () => {
+                // 重新计算 totalPages，避免闭包导致的陈旧值
+                const currentTotalPages = Math.ceil(currentPhotoDirData.length / PHOTO_SCATTER_PAGE_SIZE);
+                if (photoScatterPage < currentTotalPages - 1) {
+                    photoScatterPage++;
+                    await photoRenderScatter();
+                }
+            };
         }
         const GIT_COMMIT_PAGE_SIZE = 20; // 每页显示的提交数量
         const GIT_GRAPH_ROW_HEIGHT = 70; // 图中每一行的内容高度

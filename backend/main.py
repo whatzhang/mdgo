@@ -110,6 +110,11 @@ async def hello_page():
     return _load_static_file(PROJECT_ROOT, "index_cdn.html")
 
 
+@app.get("/api/system/heartbeat")
+async def api_heartbeat():
+    return {"success": True, "message": "healthy", "code": 200}
+
+
 @app.get("/api/system/scan")
 async def api_scan_file_info(dir: Optional[str] = Query(None),
                              force: bool = Query(False)):
