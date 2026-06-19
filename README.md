@@ -2,6 +2,8 @@
 
 一款轻量级本地知识库工具，支持 Markdown、HTML、思维导图、OPML 文档的预览编辑，提供丰富的文件格式支持、图表工具、系统监控和 AI 辅助功能。
 
+![](css_js/snipaste.png) 
+
 ## 文件格式支持
 
 - `.md`: Markdown 文档，支持实时预览
