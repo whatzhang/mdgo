@@ -14948,7 +14948,7 @@
             }
         }
 
-        function showImageModal(imgSrc, nextEnable = false) {
+        function showImageModal(imgSrc, nextEnable = false, originUrl = null) {
             // 隐藏散落分页按钮
             const pager = document.getElementById('photo-scatter-pager');
             const pagerDisplay = pager ? pager.style.display : 'none';
@@ -14976,8 +14976,9 @@
             let initialTransform;
             const actualImg = new Image();
             // 渲染图片函数（用于初始加载和切换图片时调用）
-            const renderImage = (imgUrl) => {
-                actualImg.src = imgUrl;
+            const renderImage = async (imgUrl) => {
+                const fullUrl = await photoLoadFromLocal(imgUrl);
+                actualImg.src = fullUrl;
             };
             actualImg.onload = () => {
                 setTimeout(() => {
@@ -15005,8 +15006,11 @@
                     modal.style.opacity = '1';
                 }, 10);
             };
-            actualImg.src = imgSrc;
-            let currentUrl = imgSrc;
+            let currentUrl = originUrl || imgSrc;
+            // 首次加载也用 photoLoadFromLocal 转换
+            photoLoadFromLocal(currentUrl).then(src => {
+                actualImg.src = src;
+            });
             const controls = document.createElement('div');
             controls.className = 'image-controls';
             controls.innerHTML = `
@@ -18172,7 +18176,8 @@
                 if (!img || !target.contains(img)) return;
                 e.stopPropagation();
                 const src = img.getAttribute('src');
-                if (src) showImageModal(src, nextEnable);
+                const originUrl = img.dataset.originUrl || src;
+                if (src) showImageModal(src, nextEnable, originUrl);
             }
             target.removeEventListener('click', (e) => imgHandler(e));
             target.addEventListener('click', (e) => imgHandler(e));
@@ -31859,6 +31864,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 div.appendChild(caption);
                 container.appendChild(div);
 
+                // 保存原始 URL 用于预览导航
+                img.dataset.originUrl = p.url;
                 // 设置图片源
                 photoLoadFromLocal(p.url).then(src => {
                     img.src = src;
@@ -31969,7 +31976,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     --fall-rotation: ${pos.rotation}deg;
                 `;
                 div.innerHTML = `
-                    <img src="${imageSrcs[i]}" alt="${p.title}" loading="lazy" decoding="async">
+                    <img src="${imageSrcs[i]}" alt="${p.title}" loading="lazy" decoding="async" data-origin-url="${p.url}">
                     <div class="photo-polaroid-text">${p.title}</div>
                 `;
                 // 添加落体动画
