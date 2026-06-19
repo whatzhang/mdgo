@@ -5,7 +5,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>本地文档浏览器</title>
+    <title>本地文档知识库</title>
     <link rel="icon" type="image/svg+xml"
         href="data:image/svg+xml;charset=utf-8;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiMxYTU2ZGIiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjM2I4MmY2Ii8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIOWchuinkuaWueW9ouiDjOaZryAtLT4KICA8cmVjdCB4PSIyIiB5PSIyIiB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHJ4PSIxNCIgcnk9IjE0IiBmaWxsPSJ1cmwoI2JnKSIvPgogIDwhLS0g5bem5L6n5Lmm6ISK57q/IC0tPgogIDxyZWN0IHg9IjE4IiB5PSIxMiIgd2lkdGg9IjQiIGhlaWdodD0iNDAiIHJ4PSIxLjUiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjkiLz4KICA8IS0tIOWPs+S+p+S5pumhtSAoM+adoeaoque6v+S7o+ihqOWkmuWxguaWh+ahoykgLS0+CiAgPHJlY3QgeD0iMjYiIHk9IjE1IiB3aWR0aD0iMjAiIGhlaWdodD0iNSIgcng9IjIiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjg1Ii8+CiAgPHJlY3QgeD0iMjYiIHk9IjI0IiB3aWR0aD0iMTYiIGhlaWdodD0iNCIgcng9IjIiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjY1Ii8+CiAgPHJlY3QgeD0iMjYiIHk9IjMyIiB3aWR0aD0iMTgiIGhlaWdodD0iNCIgcng9IjIiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjc1Ii8+CiAgPHJlY3QgeD0iMjYiIHk9IjQwIiB3aWR0aD0iMTQiIGhlaWdodD0iNSIgcng9IjIiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjYiLz4KICA8IS0tIOW6lemDqOWwj+agh+etvi/kuabnrb4gLS0+CiAgPHJlY3QgeD0iMjIiIHk9IjUwIiB3aWR0aD0iOCIgaGVpZ2h0PSIzIiByeD0iMS41IiBmaWxsPSJ3aGl0ZSIgb3BhY2l0eT0iMC41NSIvPgo8L3N2Zz4=">
     <!-- 非关键 CSS: 延迟加载 -->
@@ -299,13 +299,12 @@
         .file-item-text {
             font-size: 13px;
             display: flex;
-            align-items: left;
+            align-items: center;
             flex: 1;
             overflow: hidden;
             white-space: nowrap;
             text-overflow: ellipsis;
             position: relative;
-            align-items: center;
             justify-items: center;
         }
 
@@ -457,7 +456,6 @@
         details>summary {
             list-style: none;
             cursor: pointer;
-            font-weight: solid;
             padding: 4px 4px 4px 4px;
             border-radius: var(--radius-sm);
             display: flex;
@@ -2332,7 +2330,7 @@
         .json-container {
             display: flex;
             height: 100%;
-            width: calc(100%-30px);
+            width: calc(100% - 30px);
             padding: 4px 0 0 8px;
         }
 
@@ -3488,7 +3486,6 @@
             overflow: auto;
             flex: 1;
             box-sizing: border-box;
-            height: 100%;
             height: 100%;
         }
 
@@ -4684,6 +4681,9 @@
             color: #555;
             margin-bottom: 2px;
             flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            gap: 4px;
         }
 
         .monitor-chart {
@@ -4748,26 +4748,48 @@
 
         .disk-bar-fill {
             height: 100%;
-            background: linear-gradient(90deg, #2ea043, #1a7f37);
             border-radius: 3px;
             transition: width 0.5s ease;
+        }
+
+        .disk-bar-fill.doc {
+            background: linear-gradient(90deg, #3399ff, #0077ff);
+        }
+
+        .disk-bar-fill.code {
+            background: linear-gradient(90deg, #a855f7, #9333ea);
+        }
+
+        .disk-bar-fill.img {
+            background: linear-gradient(90deg, #fb923c, #f97316);
         }
 
         .disk-percent {
             font-size: 11px;
             font-weight: 600;
-            color: #1a7f37;
             min-width: 32px;
             text-align: right;
             font-variant-numeric: tabular-nums;
         }
 
+        .disk-percent.doc {
+            color: #0077ff;
+        }
+
+        .disk-percent.code {
+            color: #9333ea;
+        }
+
+        .disk-percent.img {
+            color: #f97316;
+        }
+
         .disk-bar-fill.warning {
-            background: linear-gradient(90deg, #d97706, #ea580c);
+            background: linear-gradient(90deg, #d97706, #ea580c) !important;
         }
 
         .disk-bar-fill.critical {
-            background: linear-gradient(90deg, #dc2626, #b91c1c);
+            background: linear-gradient(90deg, #dc2626, #b91c1c) !important;
         }
 
         .file-sum-heatmap {
@@ -9891,11 +9913,11 @@
         }
 
         .file-item-icon.file-item-icon-code {
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='purple' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z'/%3E%3Cpolyline points='10 13 8 15 10 17'/%3E%3Cpolyline points='14 13 16 15 14 17'/%3E%3C/svg%3E") !important;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239333ea' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z'/%3E%3Cpolyline points='10 13 8 15 10 17'/%3E%3Cpolyline points='14 13 16 15 14 17'/%3E%3C/svg%3E") !important;
         }
 
         .file-item-icon.file-item-icon-image {
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='orange' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z'/%3E%3Crect x='8' y='11' width='8' height='6' rx='1'/%3E%3circle cx='10' cy='13' r='1'/%3E%path d='M16 17l-2-2-2 2'/%3E%3C/svg%3E") !important;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f97316' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z'/%3E%3Crect x='8' y='11' width='8' height='6' rx='1'/%3E%3circle cx='10' cy='13' r='1'/%3E%path d='M16 17l-2-2-2 2'/%3E%3C/svg%3E") !important;
         }
 
         .file-item-icon.file-item-icon-video {
@@ -9904,6 +9926,26 @@
 
         .file-item-icon.file-item-icon-doc {
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230077ff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z'/%3E%3Cline x1='16' y1='13' x2='8' y2='13'/%3E%3Cline x1='16' y1='17' x2='8' y2='17'/%3E%3Cline x1='10' y1='9' x2='8' y2='9'/%3E%3C/svg%3E") !important;
+        }
+
+        .dashboard-time {
+            font-size: 13px;
+            color: var(--color-primary);
+        }
+
+        .monitor-icon {
+            width: 13px;
+            height: 13px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .monitor-icon svg {
+            width: 13px;
+            height: 13px;
+            display: block;
         }
     </style>
 </head>
@@ -10097,8 +10139,8 @@
             <div class="page-header">
                 <div>
                     <div class="page-title">欢迎回来 👋</div>
-                    <div class="page-subtitle">文件库数据看板 | Python 本地扫描，
-                        <span id="dashboard-time"></span>
+                    <div class="page-subtitle">本地文档知识库
+                        <span id="dashboard-time" class="dashboard-time"></span>
                     </div>
                 </div>
                 <div class="top-right-controls">
@@ -10173,6 +10215,87 @@
                     <div class="heatmap-right">
                         <div id="ai-file-summary" class="ai-file-summary">
                             <div class="monitor-panel" id="file-sum-panel" style="display: none">
+                                <div class="monitor-header">
+                                    <span>监控</span>
+                                    <p>
+                                        <span class="monitor-uptime" id="htmlRunTime">打开时长：加载中...</span>
+                                        <span class="monitor-uptime">｜</span>
+                                        <span class="monitor-uptime" id="permissionTime">授权时长：加载中...</span>
+                                    </p>
+                                </div>
+                                <div class="monitor-body">
+                                    <div class="monitor-item">
+                                        <div class="monitor-label">🔖 侧面板</div>
+                                        <div id="fileSumTreeGauge" class="monitor-chart"></div>
+                                        <div class="monitor-sub" id="treeLoadTime"></div>
+                                    </div>
+                                    <div class="monitor-item">
+                                        <div class="monitor-label">📚️ 主面板</div>
+                                        <div id="fileSumScanGauge" class="monitor-chart"></div>
+                                        <div class="monitor-sub" id="fileScanTime"></div>
+                                    </div>
+                                    <div class="monitor-item">
+                                        <div class="monitor-label" style="margin-top:4px;">
+                                            <div class="monitor-icon">
+                                                <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'
+                                                    stroke='#0077ff' stroke-width='1.8' stroke-linecap='round'
+                                                    stroke-linejoin='round'>
+                                                    <path
+                                                        d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z' />
+                                                    <line x1='16' y1='13' x2='8' y2='13' />
+                                                    <line x1='16' y1='17' x2='8' y2='17' />
+                                                    <line x1='10' y1='9' x2='8' y2='9' />
+                                                </svg>
+                                            </div>
+                                            文档
+                                        </div>
+                                        <div class="monitor-disk" style="margin-top:6px;">
+                                            <div class="disk-bar">
+                                                <div class="disk-bar-fill doc" id="docBarFill"></div>
+                                            </div>
+                                            <span class="disk-percent doc" id="docPercent">0%</span>
+                                        </div>
+                                        <div class="monitor-label" style="margin-top:4px;">
+                                            <div class="monitor-icon">
+                                                <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'
+                                                    stroke='purple' stroke-width='1.8' stroke-linecap='round'
+                                                    stroke-linejoin='round'>
+                                                    <path
+                                                        d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z' />
+                                                    <polyline points='10 13 8 15 10 17' />
+                                                    <polyline points='14 13 16 15 14 17' />
+                                                </svg>
+                                            </div>
+                                            代码
+                                        </div>
+                                        <div class="monitor-disk" style="margin-top:6px;">
+                                            <div class="disk-bar">
+                                                <div class="disk-bar-fill code" id="codeBarFill"></div>
+                                            </div>
+                                            <span class="disk-percent code" id="codePercent">0%</span>
+                                        </div>
+                                        <div class="monitor-label" style="margin-top:4px;">
+                                            <div class="monitor-icon">
+                                                <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'
+                                                    stroke='orange' stroke-width='1.8' stroke-linecap='round'
+                                                    stroke-linejoin='round'>
+                                                    <path
+                                                        d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z' />
+                                                    <rect x='8' y='11' width='8' height='6' rx='1' />
+                                                    <circle cx='10' cy='13' r='1' />
+                                                    <path d='M16 17l-2-2-2 2' />
+                                                </svg>
+                                            </div>
+                                            图片
+                                        </div>
+                                        <div class="monitor-disk" style="margin-top:6px;">
+                                            <div class="disk-bar">
+                                                <div class="disk-bar-fill img" id="imgBarFill"></div>
+                                            </div>
+                                            <span class="disk-percent img" id="imgPercent">0%</span>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                             <div class="monitor-panel" id="monitor-panel" style="display: none">
                                 <div class="monitor-header">
@@ -11526,6 +11649,9 @@
         const SIDEBAR_VISIBLE_KEY = 'sidebar_visible_state'; // 文件菜单侧边栏可见性状态键名
         const GRAPH_PARAMS_KEY = 'graph_params'; // 图谱参数键名
         const VIDEO_HISTORY_KEY = 'video_play_history'; // 视频播放历史键名
+        const PERMISSION_TIME_KEY = 'permission_timestamp'; // 授权时间戳键名
+        const TREE_LOAD_TIME_KEY = 'tree_load_duration'; // 文件树加载时长键名
+        const FILE_SCAN_TIME_KEY = 'file_scan_duration'; // 文件扫描时长键名
         // 目录 indexdb常量
         const DIRECTORY_STORE_NAME = 'idb-data-store';
         // 目录常量
@@ -11673,6 +11799,9 @@
         let systemMonitorMemChart = null; // 内存仪表盘 ECharts 实例
         // 图片布局相关
         let currentPhotoDirData = [];    // 当前目录图片数据
+        let _pageLoadTimestamp = Date.now(); // 页面打开时间戳（用于性能面板）
+        let _treeLoadDuration = null; // 文件树加载耗时(ms)
+        let _fileScanDuration = null; // 文件扫描耗时(ms)
 
         const treeElement = document.getElementById('tree');
         const clearSearchBtn = document.getElementById('clear-search');
@@ -11817,12 +11946,15 @@
                 treeElement.innerHTML = '';
             }
             if (treeElement) {
+                const _treeStart = performance.now();
                 _markersCache = null;
                 _cachedLastFile = safeLocalStorageGet(LAST_FILE_KEY);
                 _browserRefreshed = BROWSER_REFRESHED_VALUE === safeLocalStorageGet(BROWSER_REFRESHED_KEY);
                 await readMarkers();
                 const treeData = await getTreeData(dirHandle, 0, '');
                 renderTreeFromData(treeData, treeElement);
+                _treeLoadDuration = Math.round(performance.now() - _treeStart);
+                safeLocalStorageSet(TREE_LOAD_TIME_KEY, _treeLoadDuration.toString());
                 setTimeout(() => {
                     treeElement.scrollTop = getScrollPosition();
                 }, SCROLL_RESTORE_DELAY);
@@ -19891,19 +20023,19 @@
                 year: stats.year,
                 filesByDate: stats.heatmapFilesByDate
             };
-            // 异步渲染各板块: 互不阻塞
+            // 从 stats 预提取文件类型计数，避免 renderFileSumPanel 重复遍历
+            const fileTypeCounts = {
+                doc: stats.docCount || 0,
+                code: stats.codeCount || 0,
+                image: stats.imgCount || 0
+            };
+            // 并行启动所有板块渲染
             const sections = [
+                renderFileSumPanel(data, fileTypeCounts),
                 renderDashHeatmap(heatmapData),
                 renderDashActivity(sortedByMtimeTop10, viewData),
                 renderDashCharts(stats, data)
             ];
-            // 依次启动(不 await,让它们并发,但通过 yieldToMain 各自让出主线程)
-            for (const section of sections) {
-                section.then(() => {
-                }); // 启动异步任务
-                await yieldToMain();
-            }
-            // 等待所有板块完成
             await Promise.all(sections);
             if (!chartsResizeBound) {
                 window.addEventListener('resize', resizeDashboardCharts);
@@ -19911,6 +20043,113 @@
             }
             btn.disabled = false;
             btn.innerText = '扫描数据';
+        }
+
+        /** 性能面板: 更新文件摘要面板数据 */
+        async function renderFileSumPanel(data, typeCounts = null) {
+            if (hasBackendServer) return;
+            const now = Date.now();
+            // 打开时长
+            const htmlEl = document.getElementById('htmlRunTime');
+            if (htmlEl) {
+                const elapsed = Math.floor((now - _pageLoadTimestamp) / 1000);
+                htmlEl.textContent = '打开时长：' + formatDuration(elapsed);
+            }
+            // 授权时长
+            const permEl = document.getElementById('permissionTime');
+            if (permEl) {
+                const permTs = parseInt(safeLocalStorageGet(PERMISSION_TIME_KEY)) || 0;
+                if (permTs) {
+                    const elapsed = Math.floor((now - permTs) / 1000);
+                    permEl.textContent = '授权时长：' + formatDuration(elapsed);
+                } else {
+                    permEl.textContent = '授权时长：--';
+                }
+            }
+            // 文件树加载时长
+            const treeEl = document.getElementById('treeLoadTime');
+            if (treeEl) {
+                const dur = _treeLoadDuration || parseInt(safeLocalStorageGet(TREE_LOAD_TIME_KEY)) || 0;
+                treeEl.textContent = dur ? formatMs(dur) + '/' + formatMs(3000) : '--';
+                // 渲染仪表盘
+                renderFileSumGauge('fileSumTreeGauge', dur, 3000);
+            }
+            // 文件扫描时长
+            const scanEl = document.getElementById('fileScanTime');
+            if (scanEl) {
+                const dur = _fileScanDuration || parseInt(safeLocalStorageGet(FILE_SCAN_TIME_KEY)) || 0;
+                scanEl.textContent = dur ? formatMs(dur) + '/' + formatMs(3000) : '--';
+                renderFileSumGauge('fileSumScanGauge', dur, 3000);
+            }
+            // 文档/代码/图片占比（使用预计算计数，避免重复遍历）
+            const total = (data.files && data.files.length) || 1;
+            const docCount = typeCounts ? typeCounts.doc : 0;
+            const codeCount = typeCounts ? typeCounts.code : 0;
+            const imgCount = typeCounts ? typeCounts.image : 0;
+            updateDataBar('docBarFill', 'docPercent', docCount / total, 'doc');
+            updateDataBar('codeBarFill', 'codePercent', codeCount / total, 'code');
+            updateDataBar('imgBarFill', 'imgPercent', imgCount / total, 'img');
+        }
+
+        function renderFileSumGauge(id, valueMs, maxMs) {
+            const pct = Math.min(100, Math.round((valueMs / maxMs) * 100));
+            const labelText = formatMs(valueMs);
+            const option = {
+                series: [{
+                    type: 'gauge',
+                    center: ['50%', '55%'],
+                    radius: '85%',
+                    startAngle: 220,
+                    endAngle: -40,
+                    min: 0,
+                    max: 100,
+                    splitNumber: 5,
+                    progress: { show: true, width: 6, roundCap: true },
+                    axisLine: { lineStyle: { width: 6, color: [[0.5, '#2ea043'], [0.8, '#d97706'], [1, '#dc2626']] } },
+                    axisTick: { show: false },
+                    splitLine: { show: false },
+                    axisLabel: { show: false },
+                    detail: {
+                        fontSize: 10,
+                        color: '#333',
+                        formatter: function () { return labelText; },
+                        offsetCenter: ['7%', '50%']
+                    },
+                    data: [{ value: pct }]
+                }]
+            };
+            const chart = initChart(id, id);
+            chart.setOption(option);
+        }
+
+        function updateDataBar(barId, percentId, ratio, colorClass) {
+            const bar = document.getElementById(barId);
+            const pctEl = document.getElementById(percentId);
+            if (!bar || !pctEl) return;
+            const pct = Math.round(ratio * 100);
+            bar.style.width = pct + '%';
+            pctEl.textContent = pct + '%';
+            // 警告色：超过80%变橙色
+            bar.classList.toggle('warning', pct > 80);
+        }
+
+        /** 格式化秒数为可读时长 */
+        function formatDuration(totalSeconds) {
+            if (totalSeconds < 60) return totalSeconds + '秒';
+            const mins = Math.floor(totalSeconds / 60);
+            if (mins < 60) return mins + '分钟';
+            const hours = Math.floor(mins / 60);
+            const remainMins = mins % 60;
+            if (hours < 24) return hours + '小时' + (remainMins ? remainMins + '分' : '');
+            const days = Math.floor(hours / 24);
+            return days + '天' + (hours % 24) + '小时';
+        }
+
+        /** 格式化毫秒数 */
+        function formatMs(ms) {
+            if (ms < 1000) return ms + 'ms';
+            if (ms < 60000) return (ms / 1000).toFixed(2) + 's';
+            return formatDuration(Math.round(ms / 1000));
         }
 
         /** 板块1: 统计数据预处理 (合并热力图、活动列表、treemap 所需数据，单次遍历) */
@@ -19930,9 +20169,10 @@
             const heatmapMonthData = {};         // 热力图用：monthData（不含 deleted）
             const dirFileCountMap = {};          // treemap 数量图用：目录→文件计数
             let deletedCount = 0;
+            let docCount = 0, codeCount = 0, imgCount = 0;  // 性能面板用: isDoc/isCode/isImage 分类
             const fileSizeRangeMap = { '0-1KB': 0, '1-10KB': 0, '10-100KB': 0, '100KB-1MB': 0, '1-10MB': 0, '10MB+': 0 };
             const folderSizeList = [];
-            const BATCH = 500;
+            const BATCH = 3000;
 
             for (let i = 0; i < data.files.length; i++) {
                 const f = data.files[i];
@@ -19989,31 +20229,39 @@
                 else if (size < 10485760) fileSizeRangeMap['1-10MB']++;
                 else fileSizeRangeMap['10MB+']++;
 
-                // --- 生命周期 ---
-                const diffDays = Math.floor((editDate - createDate) / (1000 * 60 * 60 * 24));
+                // --- 生命周期 (基于过去7天) ---
+                const nowTs = Date.now();
+                const daysSinceCreate = Math.floor((nowTs - createTs) / (1000 * 60 * 60 * 24));
+                const daysSinceEdit = Math.floor((nowTs - editTs) / (1000 * 60 * 60 * 24));
                 if (isDeleteFolder) {
                     deletedCount++;
                     f.lifeCycle = '废弃';
                     fileLifeInnerMap['废弃'] = (fileLifeInnerMap['废弃'] || 0) + 1;
                     fileLifeOuterMap['废弃-' + f.file_type] = (fileLifeOuterMap['废弃-' + f.file_type] || 0) + 1;
-                } else if (createDate.toDateString() === editDate.toDateString()) {
+                } else if (daysSinceCreate < 7) {
                     f.lifeCycle = '新建';
                     fileLifeInnerMap['新建'] = (fileLifeInnerMap['新建'] || 0) + 1;
                     fileLifeOuterMap['新建-' + f.file_type] = (fileLifeOuterMap['新建-' + f.file_type] || 0) + 1;
-                } else if (diffDays < 7) {
+                } else if (daysSinceEdit < 7) {
                     f.lifeCycle = '活跃';
                     fileLifeInnerMap['活跃'] = (fileLifeInnerMap['活跃'] || 0) + 1;
                     fileLifeOuterMap['活跃-' + f.file_type] = (fileLifeOuterMap['活跃-' + f.file_type] || 0) + 1;
                 } else {
-                    f.lifeCycle = '稳定';
-                    fileLifeInnerMap['稳定'] = (fileLifeInnerMap['稳定'] || 0) + 1;
-                    fileLifeOuterMap['稳定-' + f.file_type] = (fileLifeOuterMap['稳定-' + f.file_type] || 0) + 1;
+                    f.lifeCycle = '沉寂';
+                    fileLifeInnerMap['沉寂'] = (fileLifeInnerMap['沉寂'] || 0) + 1;
+                    fileLifeOuterMap['沉寂-' + f.file_type] = (fileLifeOuterMap['沉寂-' + f.file_type] || 0) + 1;
                 }
 
                 // --- treemap 数量图：目录 → 文件计数 ---
                 const lastSlash = f.path.lastIndexOf(SLASH);
                 const dir = lastSlash >= 0 ? f.path.substring(0, lastSlash) : '';
                 dirFileCountMap[dir] = (dirFileCountMap[dir] || 0) + 1;
+
+                // --- 性能面板: 文档/代码/图片计数 (isDoc/isCode/isImage 分类) ---
+                const extLower = (f.ext || '').toLowerCase();
+                if (isDoc(extLower)) docCount++;
+                else if (isCode(extLower)) codeCount++;
+                else if (isImage(extLower)) imgCount++;
 
                 // 每批让出主线程
                 if (i > 0 && i % BATCH === 0) await yieldToMain();
@@ -20025,15 +20273,20 @@
                 filesByDateTop10[dateKey] = filesByDateTop10[dateKey].slice(0, 10);
             });
 
-            // ===== 后处理: 最近修改 Top10 (避免 renderDashActivity 再次遍历 data.files) =====
-            const formatTimeHHMMSS = (ts) => {
-                const d = new Date(ts);
-                return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
-            };
-            const sortedByMtimeTop10 = [...data.files]
-                .sort((a, b) => b.mtime - a.mtime)
-                .slice(0, 10)
-                .map(f => ({ time: f.mtime * 1000, name: f.name, path: f.path }));
+            // ===== 后处理: 最近修改 Top10 (线性扫描, O(n), 避免全量排序 O(n log n)) =====
+            let top10 = [];
+            for (let i = 0; i < data.files.length; i++) {
+                const f = data.files[i];
+                const mtime = f.mtime;
+                if (top10.length < 10) {
+                    top10.push(f);
+                    top10.sort((a, b) => b.mtime - a.mtime);
+                } else if (mtime > top10[9].mtime) {
+                    top10[9] = f;
+                    top10.sort((a, b) => b.mtime - a.mtime);
+                }
+            }
+            const sortedByMtimeTop10 = top10.map(f => ({ time: f.mtime * 1000, name: f.name, path: f.path }));
 
             // ===== 后处理: 目录大小排名 =====
             function collectFolderSize(node, parentPath) {
@@ -20068,7 +20321,9 @@
                 // treemap 数量图数据
                 dirFileCountMap,
                 // 活动列表预排序数据
-                sortedByMtimeTop10
+                sortedByMtimeTop10,
+                // 性能面板文件分类计数
+                docCount, codeCount, imgCount
             };
         }
 
@@ -20427,69 +20682,13 @@
                 .sort((a, b) => b.value - a.value)
                 .slice(0, 20);
 
-            // folderTree 只包含目录节点，为其设 value 以便 treemap 渲染
-            function buildFolderTree(node, isCountMode) {
-                if (!node || typeof node !== 'object') return null;
-                const cloned = {};
-                for (const key of Object.keys(node)) {
-                    if (key === 'children' && Array.isArray(node.children)) {
-                        var filteredChildren = [];
-                        node.children.forEach(function (child) {
-                            var childClone = buildFolderTree(child, isCountMode);
-                            if (childClone) filteredChildren.push(childClone);
-                        });
-                        if (filteredChildren.length > 0) {
-                            cloned.children = filteredChildren;
-                        }
-                    } else if (key === 'value' || key === 'file_num') {
-                    } else {
-                        cloned[key] = node[key];
-                    }
-                }
-                cloned.file_num = node.file_num || 0;
-                if (isCountMode) {
-                    cloned.value = node.file_num || 0;
-                } else {
-                    cloned.value = node.size || 0;
-                }
-                return cloned;
-            }
-
-            var countTree = data.folderTree ? buildFolderTree(data.folderTree, true) : null;
-            // 重新计算 countTree 的 value，确保每个父节点的 value 等于子节点 value 之和
-            function recalcTreemapValues(node) {
-                if (!node.children || node.children.length === 0) {
-                    return node.value || 0;
-                }
-                node.value = node.children.reduce((sum, child) => sum + recalcTreemapValues(child), 0);
-                return node.value;
-            }
-            if (countTree) recalcTreemapValues(countTree);
-            var sizeTree = data.folderTree ? buildFolderTree(data.folderTree, false) : null;
-            function getLevelOption() {
-                return [
-                    {
-                        itemStyle: {
-                            borderWidth: 0,
-                            gapWidth: 5
-                        }
-                    },
-                    {
-                        itemStyle: {
-                            gapWidth: 1
-                        }
-                    },
-                    {
-                        colorSaturation: [0.35, 0.5],
-                        itemStyle: {
-                            gapWidth: 1,
-                            borderColorSaturation: 0.6
-                        }
-                    }
-                ];
-            }
-            // 构建所有图表的配置
-            const chartOptions = [
+            // ===== 轻量图表(前7个): 立即渲染 =====
+            const getLevelOption = () => [
+                { itemStyle: { borderWidth: 0, gapWidth: 5 } },
+                { itemStyle: { gapWidth: 1 } },
+                { colorSaturation: [0.35, 0.5], itemStyle: { gapWidth: 1, borderColorSaturation: 0.6 } }
+            ];
+            const lightCharts = [
                 {
                     id: 'nestChart', option: {
                         tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
@@ -20623,135 +20822,153 @@
                             label: { show: true, position: 'top', fontSize: 9 }, barWidth: '60%'
                         }]
                     }
-                },
-                {
-                    id: 'folderChart', option: {
-                        tooltip: {
-                            trigger: 'item', triggerOn: 'mousemove', formatter: function (p) {
-                                const n = p.data;
-                                let c = `<div style="font-weight:600; margin-bottom:6px;">📁 ${n.name}</div>`;
-                                if (n.size_str) c += `<div style="font-size:12px;">📊 大小: ${n.size_str}</div>`;
-                                return c;
-                            }
-                        },
-                        series: [{
-                            type: 'tree', data: [data.folderTree], top: '5%', left: '10%', bottom: '5%', right: '10%',
-                            symbolSize: 10, initialTreeDepth: 50,
-                            lineStyle: { width: 1.5, color: '#ccc' },
-                            itemStyle: { color: '#4a90e2', borderWidth: 0 },
-                            label: {
-                                show: true,
-                                position: 'left',
-                                fontSize: 11,
-                                color: '#333',
-                                backgroundColor: '#f8f9fa',
-                                borderRadius: 3,
-                                padding: [4, 8]
-                            },
-                            leaves: { label: { position: 'right', backgroundColor: '#e6f0fa' }, itemStyle: { color: '#0969da' } },
-                            emphasis: { focus: 'descendant', itemStyle: { color: '#0550ae' } },
-                            expandAndCollapse: true, animationDuration: 600
-                        }]
-                    }
-                },
-
-
-                {
-                    id: 'treemapChart', option: {
-                        tooltip: {
-                            formatter: function (info) {
-                                var value = info.value;
-                                var treePathInfo = info.treePathInfo;
-                                var treePath = [];
-                                for (var i = 1; i < treePathInfo.length; i++) {
-                                    treePath.push(treePathInfo[i].name);
-                                }
-                                return [
-                                    '📦&nbsp;' + escapeHtml(treePath.join(SLASH)) + '<br>' + '📊&nbsp;' + info.data.size_str
-                                ].join('');
-                            }
-                        },
-                        series: [
-                            {
-                                type: 'treemap',
-                                roam: false,
-                                visibleMin: 300,
-                                label: {
-                                    show: true,
-                                    formatter: '{b}'
-                                },
-                                itemStyle: {
-                                    borderColor: '#fff'
-                                },
-                                levels: getLevelOption(),
-                                name: sizeTree ? sizeTree.name : '',
-                                data: sizeTree ? sizeTree.children : [],
-                                animationDuration: 600
-                            }
-                        ]
-                    }
-                },
-                {
-                    id: 'treemapCountChart', option: {
-                        tooltip: {
-                            formatter: function (info) {
-                                var value = info.value;
-                                var treePathInfo = info.treePathInfo;
-                                var treePath = [];
-                                for (var i = 1; i < treePathInfo.length; i++) {
-                                    treePath.push(treePathInfo[i].name);
-                                }
-                                return [
-                                    '📦&nbsp;' + escapeHtml(treePath.join(SLASH)) + '<br>' + '📊&nbsp;' + info.data.file_num
-                                ].join('');
-                            }
-                        },
-                        series: [
-                            {
-                                type: 'treemap',
-                                roam: false,
-                                visibleMin: 300,
-                                label: {
-                                    show: true,
-                                    formatter: '{b}'
-                                },
-                                itemStyle: {
-                                    borderColor: '#fff'
-                                },
-                                levels: getLevelOption(),
-                                name: countTree ? countTree.name : '',
-                                data: countTree ? countTree.children : [],
-                                animationDuration: 600
-                            }
-                        ]
-                    }
-                }
+                }  // 轻量图表结束
             ];
 
-            // 分帧渲染: 每帧 2 个图表
-            for (let i = 0; i < chartOptions.length; i += 2) {
-                const batch = chartOptions.slice(i, i + 2);
+            // 分帧渲染轻量图表: 每帧 2 个
+            for (let i = 0; i < lightCharts.length; i += 2) {
+                const batch = lightCharts.slice(i, i + 2);
                 batch.forEach(({ id, option }) => {
                     const chart = initChart(id, id);
                     chart.setOption(option);
                 });
-                if (i + 2 < chartOptions.length) await yieldToMain();
+                if (i + 2 < lightCharts.length) await yieldToMain();
             }
+
+            // ===== 重量图表(树图+treemap): 延迟到首帧之后渲染, 避免阻塞主线程 =====
+            requestAnimationFrame(() => {
+                setTimeout(() => {
+                    // 树数据构建(懒加载, 仅在需要时计算)
+                    const buildFolderTree = (node, isCountMode) => {
+                        if (!node || typeof node !== 'object') return null;
+                        const cloned = {};
+                        for (const key of Object.keys(node)) {
+                            if (key === 'children' && Array.isArray(node.children)) {
+                                const filteredChildren = [];
+                                node.children.forEach(child => {
+                                    const childClone = buildFolderTree(child, isCountMode);
+                                    if (childClone) filteredChildren.push(childClone);
+                                });
+                                if (filteredChildren.length > 0) cloned.children = filteredChildren;
+                            } else if (key !== 'value' && key !== 'file_num') {
+                                cloned[key] = node[key];
+                            }
+                        }
+                        cloned.file_num = node.file_num || 0;
+                        cloned.value = isCountMode ? (node.file_num || 0) : (node.size || 0);
+                        return cloned;
+                    };
+                    const recalcTreemapValues = (node) => {
+                        if (!node.children || node.children.length === 0) return node.value || 0;
+                        node.value = node.children.reduce((sum, child) => sum + recalcTreemapValues(child), 0);
+                        return node.value;
+                    };
+                    const countTree = data.folderTree ? buildFolderTree(data.folderTree, true) : null;
+                    if (countTree) recalcTreemapValues(countTree);
+                    const sizeTree = data.folderTree ? buildFolderTree(data.folderTree, false) : null;
+
+                    const heavyCharts = [
+                        {
+                            id: 'folderChart', option: {
+                                tooltip: {
+                                    trigger: 'item', triggerOn: 'mousemove',
+                                    formatter: (p) => {
+                                        const n = p.data;
+                                        return `<div style="font-weight:600;margin-bottom:6px;">📁 ${n.name}</div>` +
+                                            (n.size_str ? `<div style="font-size:12px;">📊 大小: ${n.size_str}</div>` : '');
+                                    }
+                                },
+                                series: [{
+                                    type: 'tree', data: [data.folderTree], top: '5%', left: '10%', bottom: '5%', right: '10%',
+                                    symbolSize: 10, initialTreeDepth: 50,
+                                    lineStyle: { width: 1.5, color: '#ccc' },
+                                    itemStyle: { color: '#4a90e2', borderWidth: 0 },
+                                    label: { show: true, position: 'left', fontSize: 11, color: '#333', backgroundColor: '#f8f9fa', borderRadius: 3, padding: [4, 8] },
+                                    leaves: { label: { position: 'right', backgroundColor: '#e6f0fa' }, itemStyle: { color: '#0969da' } },
+                                    emphasis: { focus: 'descendant', itemStyle: { color: '#0550ae' } },
+                                    expandAndCollapse: true, animationDuration: 600
+                                }]
+                            }
+                        },
+                        {
+                            id: 'treemapChart', option: {
+                                tooltip: {
+                                    formatter: (info) => {
+                                        const parts = [];
+                                        for (let i = 1; i < info.treePathInfo.length; i++) parts.push(info.treePathInfo[i].name);
+                                        return '📦&nbsp;' + escapeHtml(parts.join(SLASH)) + '<br>📊&nbsp;' + info.data.size_str;
+                                    }
+                                },
+                                series: [{
+                                    type: 'treemap', roam: false, visibleMin: 300,
+                                    label: { show: true, formatter: '{b}' },
+                                    itemStyle: { borderColor: '#fff' },
+                                    levels: getLevelOption(),
+                                    name: sizeTree ? sizeTree.name : '',
+                                    data: sizeTree ? sizeTree.children : [],
+                                    animationDuration: 600
+                                }]
+                            }
+                        },
+                        {
+                            id: 'treemapCountChart', option: {
+                                tooltip: {
+                                    formatter: (info) => {
+                                        const parts = [];
+                                        for (let i = 1; i < info.treePathInfo.length; i++) parts.push(info.treePathInfo[i].name);
+                                        return '📦&nbsp;' + escapeHtml(parts.join(SLASH)) + '<br>📊&nbsp;' + info.data.file_num;
+                                    }
+                                },
+                                series: [{
+                                    type: 'treemap', roam: false, visibleMin: 300,
+                                    label: { show: true, formatter: '{b}' },
+                                    itemStyle: { borderColor: '#fff' },
+                                    levels: getLevelOption(),
+                                    name: countTree ? countTree.name : '',
+                                    data: countTree ? countTree.children : [],
+                                    animationDuration: 600
+                                }]
+                            }
+                        }
+                    ];
+                    heavyCharts.forEach(({ id, option }) => {
+                        const chart = initChart(id, id);
+                        chart.setOption(option);
+                    });
+                }, 0);
+            });
         }
 
         async function toggleDashboardView(isFirst = false) {
+            const _scanStart = performance.now();
             switchToView(dashboardContainer);
-            initSystemMonitor();
             aiFabContainer.style.display = 'block';
             //监控面板展示
             const monitorPanel = dashboardContainer.querySelector('#monitor-panel');
             const fileSumPanel = dashboardContainer.querySelector('#file-sum-panel');
             if (hasBackendServer) {
+                initSystemMonitor();
                 monitorPanel.style.display = 'flex';
                 fileSumPanel.style.display = 'none';
+                TimerManager.clear('fileSumUptime');
             } else {
                 monitorPanel.style.display = 'none';
                 fileSumPanel.style.display = 'flex';
+                // 定时更新打开时长和授权时长
+                TimerManager.set('fileSumUptime', () => {
+                    if (!isIdle()) {
+                        const now = Date.now();
+                        const htmlEl = document.getElementById('htmlRunTime');
+                        if (htmlEl) {
+                            htmlEl.textContent = '打开时长：' + formatDuration(Math.floor((now - _pageLoadTimestamp) / 1000));
+                        }
+                        const permEl = document.getElementById('permissionTime');
+                        if (permEl) {
+                            const permTs = parseInt(safeLocalStorageGet(PERMISSION_TIME_KEY)) || 0;
+                            permEl.textContent = permTs ? '授权时长：' + formatDuration(Math.floor((now - permTs) / 1000)) : '授权时长：--';
+                        }
+                    }
+                }, 1000);
             }
             let html = '';
             DASHBOARD_BUTTON.forEach(b => {
@@ -20792,6 +21009,8 @@
                     showNotification(`✗ 获取数据失败: ${e.message}`, 'error');
                 }
             }
+            _fileScanDuration = Math.round(performance.now() - _scanStart);
+            safeLocalStorageSet(FILE_SCAN_TIME_KEY, _fileScanDuration.toString());
         }
 
         function toggleBookmarkView(html = '') {
@@ -23065,6 +23284,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     await clearOldData();
                     treeElement.innerHTML = '';
                     safeLocalStorageSet("ROOT_DIR", currentRootPath);
+                    safeLocalStorageSet(PERMISSION_TIME_KEY, Date.now().toString());
                     await idbPut(DIRECTORY_STORE_NAME, 'handles', 'default', dirHandle);
                     initAll();
                 }, async () => {
