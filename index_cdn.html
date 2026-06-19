@@ -3665,11 +3665,6 @@
             margin-bottom: 12px;
         }
 
-        .bookmark-empty-text {
-            font-size: 16px;
-            margin-bottom: 8px;
-        }
-
         .bookmark-empty-hint {
             font-size: 13px;
             color: var(--color-text-tertiary);
@@ -4251,8 +4246,8 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 32px;
             position: relative;
+            padding: 20px;
         }
 
         .mermaid-preview-area::-webkit-scrollbar {
@@ -4269,11 +4264,14 @@
             justify-content: center;
             width: 100%;
             height: 100%;
+            overflow: visible;
         }
 
         #mermaid-preview svg {
-            max-width: none;
+            max-width: 100%;
+            max-height: 100%;
             display: block;
+            flex-shrink: 0;
         }
 
         .mermaidError,
@@ -4426,6 +4424,133 @@
             width: 1px;
             height: 14px;
             background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* ═══ Fullscreen Overlay ═══ */
+        .mermaid-fullscreen-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.97);
+            z-index: 9000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            cursor: zoom-out;
+        }
+
+        .mermaid-fullscreen-overlay.active {
+            display: flex;
+        }
+
+        .mermaid-fullscreen-overlay .mermaid-fullscreen-svg-wrap {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            padding: 20px;
+            box-sizing: border-box;
+            position: relative;
+        }
+
+        .mermaid-fullscreen-close-btn {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            z-index: 9003;
+            background: rgba(0, 0, 0, 0.06);
+            border: none;
+            color: #555;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            line-height: 1;
+            transition: all 0.15s;
+        }
+
+        .mermaid-fullscreen-close-btn:hover {
+            background: rgba(0, 0, 0, 0.12);
+            color: #1d2129;
+        }
+
+        .mermaid-fullscreen-overlay .mermaid-fullscreen-svg-wrap svg {
+            display: block;
+            flex-shrink: 0;
+            width: auto;
+            height: auto;
+            max-width: 100%;
+            max-height: 100%;
+            transition: transform 0.15s ease;
+        }
+
+        .mermaid-fullscreen-overlay .mermaid-fullscreen-zoom-bar {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            background: #fff;
+            border: 1px solid #e4e6eb;
+            border-radius: 8px;
+            padding: 4px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            z-index: 9002;
+            user-select: none;
+        }
+
+        .mermaid-fullscreen-overlay .mermaid-fullscreen-zoom-bar button {
+            font-size: 15px;
+            color: #1d2129;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            border: none;
+            background: transparent;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .mermaid-fullscreen-overlay .mermaid-fullscreen-zoom-bar button:hover {
+            background: #f2f3f5;
+            color: var(--color-primary, #1677ff);
+        }
+
+        .mermaid-fullscreen-overlay .mermaid-fullscreen-zoom-bar button:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+        }
+
+        .mermaid-fullscreen-overlay .mermaid-fullscreen-zoom-bar button:disabled:hover {
+            background: transparent;
+            color: #1d2129;
+        }
+
+        .mermaid-fullscreen-overlay .mermaid-fullscreen-zoom-bar button svg {
+            width: 15px;
+            height: 15px;
+            display: block;
+        }
+
+        .mermaid-fullscreen-overlay .mermaid-fullscreen-zoom-bar .mermaid-fs-zoom-label {
+            font-size: 11px;
+            color: #94a3b8;
+            min-width: 34px;
+            text-align: center;
+            font-variant-numeric: tabular-nums;
+            user-select: none;
         }
 
         /* ═══ Save Dropdown ═══ */
@@ -10517,6 +10642,14 @@
                                 <path d="M3 3v5h5"></path>
                             </svg>
                         </button>
+                        <button class="mermaid-tb mermaid-zoom-btn" id="mermaid-fullscreen-toggle" title="全屏">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round">
+                                <path
+                                    d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M5 16v3a2 2 0 0 0 2 2h3">
+                                </path>
+                            </svg>
+                        </button>
                         <div class="mermaid-divider"></div>
                         <div class="mermaid-dropdown mermaid-save-dropdown">
                             <button class="mermaid-tb mermaid-render-btn" id="mermaid-save-toggle">保存</button>
@@ -10566,6 +10699,35 @@
                         <div class="mermaid-status-sep"></div>
                         <div class="mermaid-status-item">Mermaid 11</div>
                     </div>
+                </div>
+            </div>
+            <!-- Mermaid 全屏遮罩层 -->
+            <div class="mermaid-fullscreen-overlay" id="mermaid-fullscreen-overlay">
+                <button class="mermaid-fullscreen-close-btn" id="mermaid-fullscreen-close-btn" title="关闭">✕</button>
+                <div class="mermaid-fullscreen-svg-wrap" id="mermaid-fullscreen-svg-wrap"></div>
+                <div class="mermaid-fullscreen-zoom-bar" id="mermaid-fullscreen-zoom-bar"
+                    onclick="event.stopPropagation()">
+                    <button id="mermaid-fs-zoom-out" title="缩小">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                    </button>
+                    <span class="mermaid-fs-zoom-label" id="mermaid-fs-zoom-label">100%</span>
+                    <button id="mermaid-fs-zoom-in" title="放大">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                    </button>
+                    <button id="mermaid-fs-zoom-reset" title="重置缩放">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                            <path d="M3 3v5h5"></path>
+                        </svg>
+                    </button>
                 </div>
             </div>
         </div>
@@ -11631,7 +11793,7 @@
         const DASHBOARD_BUTTON = [
             { key: '行为记录分析', value: 'analyzeFileOs()', display: true, fileProtocolDisplay: false },
             { key: 'GraphiQL', value: 'toggleFile("graphiQL")', display: true, fileProtocolDisplay: false },
-            { key: 'GraphQLPlayground', value: 'toggleFile("graphQLPlayground")', display: true, fileProtocolDisplay: false },
+            { key: 'GraphQLPlayground', value: 'toggleFile("graphQLPlayground")', display: true, fileProtocolDisplay: true },
             { key: 'OpenResty', value: 'toggleFile("openRestyEditor")', display: true, fileProtocolDisplay: false },
             { key: '书签', value: 'toggleFile("bookmarks")', display: true, fileProtocolDisplay: true },
             { key: 'Mermaid', value: 'toggleFile("mermaid")', display: true, fileProtocolDisplay: true },
@@ -21130,11 +21292,10 @@
         function renderBookmarkEmpty() {
             return `<div class="bookmark-empty">
                 <div class="bookmark-empty-icon">🔖</div>
-                <div class="bookmark-empty-text">无法直接读取浏览器书签</div>
-                <div class="bookmark-empty-hint">可从浏览器导出书签为 HTML 文件后，点击下方按钮导入</div>
+                <div class="bookmark-empty-hint">从浏览器导出书签为 HTML 文件后，点击下方按钮导入</div>
                 <div style="margin-top: 16px;">
                     <input type="file" id="bookmark-file-input" accept=".html,.htm" style="display:none" onchange="importBookmarkFile(this)">
-                    <button class="btn btn-primary" onclick="document.getElementById('bookmark-file-input').click()" style="padding: 8px 24px; font-size: 14px; border-radius: 6px; border: none; background: var(--color-primary); color: #fff; cursor: pointer;">📂 导入书签 HTML 文件</button>
+                    <button class="btn btn-primary" onclick="document.getElementById('bookmark-file-input').click()" style="padding: 6px 16px; font-size: 14px; border-radius: 6px; border: none; background: var(--color-primary); color: #fff; cursor: pointer;">📂 导入书签 HTML 文件</button>
                  </div>
              </div>`;
         }
@@ -23230,6 +23391,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         function handleMermaidCloseMenusClick(e) {
+            // 全屏遮罩打开时不处理菜单关闭
+            const fsOverlay = document.getElementById('mermaid-fullscreen-overlay');
+            if (fsOverlay && fsOverlay.classList.contains('active')) return;
             if (!saveMenuMermaid.contains(e.target) &&
                 !exportMenuMermaid.contains(e.target) &&
                 !document.querySelector("#mermaid-save-toggle").contains(e.target) &&
@@ -23258,6 +23422,71 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 await loadSaveDirectoryTreeMermaid();
             }
         }
+        // 全屏遮罩缩放状态（独立于主界面缩放）
+        let fsZoomLevel = 100;
+
+        function fsCloseOverlay() {
+            const overlay = document.getElementById('mermaid-fullscreen-overlay');
+            const sw = document.getElementById('mermaid-fullscreen-svg-wrap');
+            if (overlay) overlay.classList.remove('active');
+            if (sw) sw.innerHTML = '';
+            fsZoomLevel = 100;
+        }
+
+        function fsSetZoom(level) {
+            const svgWrap = document.getElementById('mermaid-fullscreen-svg-wrap');
+            const label = document.getElementById('mermaid-fs-zoom-label');
+            const zoomIn = document.getElementById('mermaid-fs-zoom-in');
+            const zoomOut = document.getElementById('mermaid-fs-zoom-out');
+            if (!svgWrap) return;
+            fsZoomLevel = Math.max(25, Math.min(300, level));
+            if (label) label.textContent = fsZoomLevel + '%';
+            if (zoomIn) zoomIn.disabled = fsZoomLevel >= 300;
+            if (zoomOut) zoomOut.disabled = fsZoomLevel <= 25;
+            const svg = svgWrap.querySelector('svg');
+            if (svg) {
+                svg.style.transform = 'scale(' + fsZoomLevel / 100 + ')';
+                svg.style.transformOrigin = 'center center';
+            }
+        }
+
+        function fsZoomIn() { fsSetZoom(fsZoomLevel + 10); }
+        function fsZoomOut() { fsSetZoom(fsZoomLevel - 10); }
+        function fsZoomReset() { fsSetZoom(100); }
+
+        async function handleMermaidFullscreenToggleClick(e) {
+            e.stopPropagation();
+            const overlay = document.getElementById('mermaid-fullscreen-overlay');
+            const svgWrap = document.getElementById('mermaid-fullscreen-svg-wrap');
+            if (!overlay || !svgWrap) return;
+
+            if (overlay.classList.contains('active')) {
+                fsCloseOverlay();
+                return;
+            }
+
+            // 获取当前渲染的 SVG
+            const svgEle = previewAreaMermaid.querySelector('svg');
+            if (!svgEle) {
+                showNotification('请先渲染图表', 'warning');
+                return;
+            }
+
+            // 克隆 SVG，保留原始 viewBox
+            const svgClone = svgEle.cloneNode(true);
+            if (!svgClone.getAttribute('viewBox')) {
+                const bbox = svgEle.getBBox();
+                svgClone.setAttribute('viewBox', `0 0 ${bbox.width || 800} ${bbox.height || 600}`);
+            }
+            // 移除固定宽高，让容器自适应
+            svgClone.removeAttribute('width');
+            svgClone.removeAttribute('height');
+
+            svgWrap.innerHTML = '';
+            svgWrap.appendChild(svgClone);
+            fsSetZoom(100);
+            overlay.classList.add('active');
+        }
 
         function initMermaidEventListeners() {
             if (mermaidEventsInitialized) return;
@@ -23270,6 +23499,35 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             document.querySelector("#mermaid-zoom-reset").addEventListener("click", handleMermaidZoomResetClick);
             document.querySelector("#mermaid-export-toggle").addEventListener("click", handleMermaidExportToggleClick);
             document.querySelector("#mermaid-save-toggle").addEventListener("click", handleMermaidSaveToggleClick);
+            document.querySelector("#mermaid-fullscreen-toggle").addEventListener("click", handleMermaidFullscreenToggleClick);
+            // 全屏缩放按钮事件（只绑定一次）
+            const fsZoomInBtn = document.getElementById('mermaid-fs-zoom-in');
+            const fsZoomOutBtn = document.getElementById('mermaid-fs-zoom-out');
+            const fsZoomResetBtn = document.getElementById('mermaid-fs-zoom-reset');
+            if (fsZoomInBtn) fsZoomInBtn.addEventListener('click', fsZoomIn);
+            if (fsZoomOutBtn) fsZoomOutBtn.addEventListener('click', fsZoomOut);
+            if (fsZoomResetBtn) fsZoomResetBtn.addEventListener('click', fsZoomReset);
+            // 全屏关闭按钮事件（只绑定一次）
+            const fsCloseBtn = document.getElementById('mermaid-fullscreen-close-btn');
+            if (fsCloseBtn) fsCloseBtn.addEventListener('click', (e) => { e.stopPropagation(); fsCloseOverlay(); });
+            // 全屏遮罩关闭事件：点击遮罩背景或空白区域（svg-wrap）时关闭
+            const fullscreenOverlay = document.getElementById('mermaid-fullscreen-overlay');
+            if (fullscreenOverlay) {
+                fullscreenOverlay.addEventListener('click', (e) => {
+                    if (e.target === fullscreenOverlay || e.target === document.getElementById('mermaid-fullscreen-svg-wrap')) {
+                        fsCloseOverlay();
+                    }
+                });
+            }
+            // Escape 键关闭全屏
+            document.addEventListener('keydown', function fsEscHandler(e) {
+                if (e.key === 'Escape') {
+                    const o = document.getElementById('mermaid-fullscreen-overlay');
+                    if (o && o.classList.contains('active')) {
+                        fsCloseOverlay();
+                    }
+                }
+            });
             mermaidEventsInitialized = true;
         }
 
