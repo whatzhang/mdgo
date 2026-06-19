@@ -4933,6 +4933,45 @@
             }
         }
 
+        .global-loading-overlay {
+            position: fixed;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: rgba(15, 23, 42, 0.42);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            z-index: 100000;
+        }
+
+        .global-loading-overlay.is-visible {
+            display: flex;
+        }
+
+        .global-loading-card {
+            min-width: 180px;
+            padding: 18px 22px;
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.96);
+            box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #0f172a;
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }
+
+        .global-loading-card .spinner {
+            width: 18px;
+            height: 18px;
+            margin-right: 0;
+            border-color: rgba(15, 23, 42, 0.12);
+            border-top-color: #2563eb;
+        }
+
         /* 实时预览模式样式 */
         .content-live-preview {
             display: none;
@@ -10753,6 +10792,12 @@
                 </div>
             </div>
         </div>
+        <div id="global-loading-overlay" class="global-loading-overlay" aria-live="polite" aria-busy="true">
+            <div class="global-loading-card">
+                <span class="spinner"></span>
+                <span id="global-loading-text">加载中...</span>
+            </div>
+        </div>
         <!-- Markdown 文本选区浮动工具栏 -->
         <div id="markdown-selection-toolbar" class="markdown-selection-toolbar" role="toolbar" aria-label="文本选择操作">
             <div id="selection-tools-btns"></div>
@@ -11939,6 +11984,8 @@
                 Promise.resolve(initSidebarToggle()),
                 // 初始化日历日程
                 Promise.resolve(todoEarlyInit()),
+                // 初始化编辑器
+                Promise.resolve(initMonacoEditor())
             ]);
         }
 
@@ -11948,7 +11995,9 @@
             }
             if (treeElement) {
                 const _treeStart = performance.now();
+                _treeLRUCache.clear();
                 _markersCache = null;
+                _fileRawEntryMap.clear(); // 每次重建目录树时清空 rawEntry 映射
                 _cachedLastFile = safeLocalStorageGet(LAST_FILE_KEY);
                 _browserRefreshed = BROWSER_REFRESHED_VALUE === safeLocalStorageGet(BROWSER_REFRESHED_KEY);
                 await readMarkers();
@@ -11961,6 +12010,50 @@
                 }, SCROLL_RESTORE_DELAY);
             }
         }
+
+        // ===== 文件树事件委托：click + dblclick 统一挂载到 treeElement，替代 per-file 监听器 =====
+        // 注：下拉菜单和颜色点的监听器仍保留在各自按钮上（数量少且逻辑差异大）
+        ; (function _initTreeDelegation() {
+            // click 委托 —— 打开文件（100ms 防双击）
+            treeElement.addEventListener('click', async (event) => {
+                const fileSpan = event.target.closest('.file-item');
+                if (!fileSpan) return;
+                // 若点击的是更多菜单按钮或颜色选择器，不触发文件打开
+                if (event.target.closest('.file-item-more-menu') || event.target.closest('.marker-color-picker')) return;
+                if (_treeClickTimer) { clearTimeout(_treeClickTimer); _treeClickTimer = null; return; }
+                _treeClickTimer = setTimeout(async () => {
+                    try {
+                        const filePath = fileSpan.dataset.filePath;
+                        currentFileHandle = await getFileHandleByPath(filePath);
+                        if (!currentFileHandle) {
+                            showNotification(`✗ 无法找到文件: ${filePath}`, 'error');
+                            return;
+                        }
+                        await toggleFile('renderFile', '', filePath, fileSpan, event);
+                    } catch (e) {
+                        console.error('文件切换失败:', e);
+                    } finally {
+                        _treeClickTimer = null;
+                    }
+                }, 100);
+            });
+
+            // dblclick 委托 —— 重命名文件
+            treeElement.addEventListener('dblclick', (e) => {
+                const fileSpan = e.target.closest('.file-item');
+                if (!fileSpan) return;
+                if (e.target.closest('.file-item-more-menu') || e.target.closest('.marker-color-picker')) return;
+                e.stopPropagation();
+                e.preventDefault();
+                if (_treeClickTimer) { clearTimeout(_treeClickTimer); _treeClickTimer = null; }
+                if (e.isTrusted) saveScrollPosition();
+                const filePath = fileSpan.dataset.filePath;
+                const rawEntry = _fileRawEntryMap.get(filePath);
+                if (!rawEntry) return;
+                const textSpan = fileSpan.querySelector('.file-item-text');
+                startRenameFile(rawEntry, filePath, fileSpan, textSpan);
+            });
+        })();
 
         let previewFileText = ''; // 当前预览的文件内容（用于判断是否需要重新渲染）
         let lastToggle = 'none';  // 记录上一次打开的功能类型，默认为 'none'
@@ -13938,13 +14031,13 @@
             const fileItems = await Promise.all(filePromises);
             await Promise.all(dirPromises);
 
-            // 统一追加到容器
-            container.appendChild(fragment);
+            // 文件项也收集进 fragment，最终单次挂载到 container，避免 n 次 DOM 重排
             for (const fileItem of fileItems) {
                 if (fileItem) {
-                    container.appendChild(fileItem);
+                    fragment.appendChild(fileItem);
                 }
             }
+            container.appendChild(fragment);
         }
 
         //保存目录展开状态 功能:将目录的展开/折叠状态保存到本地存储（防抖优化）
@@ -14194,32 +14287,8 @@
                 markerDiv.style.background = _cachedMarker.hex;
                 markerDiv.style.display = 'flex';
             }
-            let clickTimer = null;
-            fileSpan.onclick = async (event) => {
-                if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; return; }
-                clickTimer = setTimeout(async () => {
-                    try {
-                        const filePath = fileSpan.dataset.filePath;
-                        currentFileHandle = await getFileHandleByPath(filePath);
-                        if (!currentFileHandle) {
-                            showNotification(`✗ 无法找到文件: ${filePath}`, 'error');
-                            return;
-                        }
-                        await toggleFile('renderFile', '', filePath, fileSpan, event);
-                    } catch (e) {
-                        console.error('文件切换失败:', e);
-                    } finally {
-                        clickTimer = null;
-                    }
-                }, 100);
-            };
-            fileSpan.addEventListener('dblclick', (e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
-                if (e && e.isTrusted) saveScrollPosition();
-                startRenameFile(rawEntry, relativePath, fileSpan, textSpan);
-            });
+            // 存储 rawEntry 供事件委托（dblclick 重命名）使用，替代 per-file 监听器
+            _fileRawEntryMap.set(np, rawEntry);
             // 仅对标记为"最后打开"的文件触发点击（仅在浏览器刷新场景）
             if (relativePath === _cachedLastFile) {
                 if (_browserRefreshed && lastToggle === 'renderFile') clickFileSpan(relativePath, fileSpan, true);
@@ -19207,6 +19276,9 @@
         let _markersMap = new Map(); // markers 快速查找 Map
         let _cachedLastFile = null;    // createFileItem 预缓存：最后一次打开的文件路径
         let _browserRefreshed = false;   // createFileItem 预缓存：是否浏览器刷新场景
+        // 事件委托：存储 path → rawEntry，供 dblclick 重命名使用
+        const _fileRawEntryMap = new Map();
+        let _treeClickTimer = null; // 文件树单击防抖计时器（事件委托共享）
 
         async function readMarkers() {
             if (_markersCache !== null) return _markersCache;
@@ -19311,8 +19383,7 @@
             return groups;
         }
 
-        let _activeMarkerTab = 'all';
-
+        let _activeMarkerTab = 'all'; // 当前活动的标记 tab，默认显示全部
         async function renderMarkerDash() {
             const markerMap = await readMarkers();
             const tabBar = document.getElementById('markerTabBar');
@@ -19384,6 +19455,7 @@
                 const np = normalizePath(i.path);
                 const hex = i.hex || MARKER_COLORS[MARKER_NAMES.indexOf(i.color)] || '#888';
                 const timeStr = i.time ? new Date(i.time).toLocaleString('zh-CN', {
+                    year: 'numeric',
                     month: '2-digit',
                     day: '2-digit',
                     hour: '2-digit',
@@ -19428,6 +19500,8 @@
             input.className = 'file-rename-input';
             input.style.cssText = `
                 flex: 1;
+                height: 18px;
+                box-sizing: border-box;
                 padding: 2px 4px;
                 border: 1px solid #0d6efd;
                 border-radius: 3px;
@@ -19455,12 +19529,12 @@
                 }
                 await renameFile(entry, relativePath, originalName, newName, fileSpan);
                 input.remove();
-                textSpan.style.display = 'inline';
+                textSpan.style.display = ''; // 清空内联样式，恢复 CSS class 的 display:flex
             }
 
             function cancelRename() {
                 input.remove();
-                textSpan.style.display = 'inline';
+                textSpan.style.display = ''; // 清空内联样式，恢复 CSS class 的 display:flex
             }
 
             input.addEventListener('keydown', (e) => {
@@ -19833,7 +19907,8 @@
                     stack.push({ handle: d.entry, relPath: d.childRel, depth: depth + 1 });
                 }
 
-                if (relRoot && depth <= MAX_DIR_DEPTH && !isSkipDir(relRoot)) {
+                // depth > MAX_DIR_DEPTH 和 isSkipDir 情况已在循环顶部 continue 排除，无需重复检查
+                if (relRoot) {
                     folderSet.add(relRoot);
                     totalFolders++;
                 }
@@ -20159,7 +20234,6 @@
             let todayEdit = 0;
             const monthData = {};
             const monthCreateTrend = {};
-            const todayStr = new Date().toDateString();
             const year = new Date().getFullYear();
             const typeMap = {};
             const extMap = {};
@@ -20174,6 +20248,11 @@
             const fileSizeRangeMap = { '0-1KB': 0, '1-10KB': 0, '10-100KB': 0, '100KB-1MB': 0, '1-10MB': 0, '10MB+': 0 };
             const folderSizeList = [];
             const BATCH = 3000;
+            // ===== 提取循环不变量（避免每次迭代重复计算）=====
+            const nowTs = Date.now();
+            const DAY_MS = 86400000; // 1000 * 60 * 60 * 24
+            const todayStart = new Date().setHours(0, 0, 0, 0);
+            const tomorrowStart = todayStart + DAY_MS;
 
             for (let i = 0; i < data.files.length; i++) {
                 const f = data.files[i];
@@ -20181,7 +20260,6 @@
                 const createTs = f.ctime * 1000;
                 const editTs = f.mtime * 1000;
                 const createDate = new Date(createTs);
-                const editDate = new Date(editTs);
                 const isDeleteFolder = isInDeletedDir(f.path);
 
                 // ===== 日期 Key 统一构建，复用于 stats + heatmap =====
@@ -20198,23 +20276,27 @@
                 if (!heatmapFilesByDate[createDateKey]) heatmapFilesByDate[createDateKey] = [];
                 heatmapFilesByDate[createDateKey].push(f);
 
-                // --- 今日编辑/新增 (不含 deleted) ---
-                if (!isDeleteFolder) {
-                    if (editDate.toDateString() === todayStr) todayEdit++;
-                    if (createDate.toDateString() === todayStr) todayAdd++;
+                // --- deleted 文件：只统计 heatmap/lifecycle 相关，跳过后续统计 ---
+                if (isDeleteFolder) {
+                    deletedCount++;
+                    f.lifeCycle = '废弃';
+                    fileLifeInnerMap['废弃'] = (fileLifeInnerMap['废弃'] || 0) + 1;
+                    fileLifeOuterMap['废弃-' + f.file_type] = (fileLifeOuterMap['废弃-' + f.file_type] || 0) + 1;
+                    if (i > 0 && i % BATCH === 0) await yieldToMain();
+                    continue; // 跳过 typeMap/extMap/size/trend/dirCount 等非 deleted 统计
                 }
 
-                // --- monthData / monthCreateTrend (仅今年, 不含 deleted) ---
-                if (cYear === year && !isDeleteFolder) {
+                // --- 今日编辑/新增 (时间戳比较，比 toDateString 字符串比较快 3-5x) ---
+                if (editTs >= todayStart && editTs < tomorrowStart) todayEdit++;
+                if (createTs >= todayStart && createTs < tomorrowStart) todayAdd++;
+
+                // --- monthData / monthCreateTrend (仅今年) ---
+                if (cYear === year) {
                     const dateStr = `${cMonth}-${cDay}`;
                     monthData[dateStr] = (monthData[dateStr] || 0) + 1;
                     heatmapMonthData[dateStr] = (heatmapMonthData[dateStr] || 0) + 1;
                     const monthKey = `${cYear}-${String(cMonth).padStart(2, '0')}`;
                     monthCreateTrend[monthKey] = (monthCreateTrend[monthKey] || 0) + 1;
-                } else if (cYear === year) {
-                    // heatmap 只统计非 deleted
-                    const dateStr = `${cMonth}-${cDay}`;
-                    heatmapMonthData[dateStr] = (heatmapMonthData[dateStr] || 0) + 1;
                 }
 
                 // --- 类型/尾缀统计 ---
@@ -20230,16 +20312,10 @@
                 else if (size < 10485760) fileSizeRangeMap['1-10MB']++;
                 else fileSizeRangeMap['10MB+']++;
 
-                // --- 生命周期 (基于过去7天) ---
-                const nowTs = Date.now();
-                const daysSinceCreate = Math.floor((nowTs - createTs) / (1000 * 60 * 60 * 24));
-                const daysSinceEdit = Math.floor((nowTs - editTs) / (1000 * 60 * 60 * 24));
-                if (isDeleteFolder) {
-                    deletedCount++;
-                    f.lifeCycle = '废弃';
-                    fileLifeInnerMap['废弃'] = (fileLifeInnerMap['废弃'] || 0) + 1;
-                    fileLifeOuterMap['废弃-' + f.file_type] = (fileLifeOuterMap['废弃-' + f.file_type] || 0) + 1;
-                } else if (daysSinceCreate < 7) {
+                // --- 生命周期 (基于过去7天，使用预计算的 nowTs 和 DAY_MS) ---
+                const daysSinceCreate = Math.floor((nowTs - createTs) / DAY_MS);
+                const daysSinceEdit = Math.floor((nowTs - editTs) / DAY_MS);
+                if (daysSinceCreate < 7) {
                     f.lifeCycle = '新建';
                     fileLifeInnerMap['新建'] = (fileLifeInnerMap['新建'] || 0) + 1;
                     fileLifeOuterMap['新建-' + f.file_type] = (fileLifeOuterMap['新建-' + f.file_type] || 0) + 1;
@@ -20337,17 +20413,13 @@
             const start = new Date(year, 0, 1);
             const end = new Date(year, 11, 31);
             for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-                const y = d.getFullYear();
-                const m = String(d.getMonth() + 1).padStart(2, '0');
-                const day = String(d.getDate()).padStart(2, '0');
-                const dateStr = `${y}-${m}-${day}`;
-                const count = monthData[`${m}-${day}`] || 0;
+                // mNum/dayNum 不补零，与 monthData 的 key 格式 "M-D" 一致
+                const mNum = d.getMonth() + 1;
+                const dayNum = d.getDate();
+                const dateStr = `${year}-${String(mNum).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+                const count = monthData[`${mNum}-${dayNum}`] || 0;
                 heatmapDataArr.push([dateStr, count]);
             }
-            Object.entries(monthData).forEach(([date, count]) => {
-                const [month, day] = date.split('-');
-                heatmapDataArr.push([`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`, count]);
-            });
             const heatmapContainer = document.getElementById('file-sum-heatmap');
             if (dashboardCharts.heatmapChart) dashboardCharts.heatmapChart.dispose();
             dashboardCharts.heatmapChart = echarts.init(heatmapContainer);
@@ -20625,8 +20697,16 @@
             clearContainer('operationList');
             const formatTime = (timestamp) => {
                 const date = new Date(timestamp);
-                return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`;
+                return timestamp ? date.toLocaleString('zh-CN', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                }) : '';
             };
+
             const topViewFiles = viewData.sumList.slice(0, 10);
             const operationList = [...viewData.viewList].sort((a, b) => b.viewTime - a.viewTime).map(f => ({
                 time: f.viewTime,
@@ -20837,106 +20917,114 @@
             }
 
             // ===== 重量图表(树图+treemap): 延迟到首帧之后渲染, 避免阻塞主线程 =====
-            requestAnimationFrame(() => {
-                setTimeout(() => {
-                    // 树数据构建(懒加载, 仅在需要时计算)
-                    const buildFolderTree = (node, isCountMode) => {
-                        if (!node || typeof node !== 'object') return null;
-                        const cloned = {};
-                        for (const key of Object.keys(node)) {
-                            if (key === 'children' && Array.isArray(node.children)) {
-                                const filteredChildren = [];
-                                node.children.forEach(child => {
-                                    const childClone = buildFolderTree(child, isCountMode);
-                                    if (childClone) filteredChildren.push(childClone);
-                                });
-                                if (filteredChildren.length > 0) cloned.children = filteredChildren;
-                            } else if (key !== 'value' && key !== 'file_num') {
-                                cloned[key] = node[key];
+            await new Promise((resolve) => {
+                requestAnimationFrame(() => {
+                    setTimeout(() => {
+                        // 树数据构建: 单次遍历同时生成 countTree(按文件数) 和 sizeTree(按大小)，O(n) 替代原来的 O(2n)
+                        const buildBothTrees = (node) => {
+                            if (!node || typeof node !== 'object') return { count: null, size: null };
+                            const countCloned = {};
+                            const sizeCloned = {};
+                            for (const key of Object.keys(node)) {
+                                if (key === 'children' && Array.isArray(node.children)) {
+                                    const countChildren = [], sizeChildren = [];
+                                    node.children.forEach(child => {
+                                        const { count, size } = buildBothTrees(child);
+                                        if (count) countChildren.push(count);
+                                        if (size) sizeChildren.push(size);
+                                    });
+                                    if (countChildren.length > 0) countCloned.children = countChildren;
+                                    if (sizeChildren.length > 0) sizeCloned.children = sizeChildren;
+                                } else if (key !== 'value' && key !== 'file_num') {
+                                    countCloned[key] = sizeCloned[key] = node[key];
+                                }
                             }
-                        }
-                        cloned.file_num = node.file_num || 0;
-                        cloned.value = isCountMode ? (node.file_num || 0) : (node.size || 0);
-                        return cloned;
-                    };
-                    const recalcTreemapValues = (node) => {
-                        if (!node.children || node.children.length === 0) return node.value || 0;
-                        node.value = node.children.reduce((sum, child) => sum + recalcTreemapValues(child), 0);
-                        return node.value;
-                    };
-                    const countTree = data.folderTree ? buildFolderTree(data.folderTree, true) : null;
-                    if (countTree) recalcTreemapValues(countTree);
-                    const sizeTree = data.folderTree ? buildFolderTree(data.folderTree, false) : null;
+                            countCloned.file_num = sizeCloned.file_num = node.file_num || 0;
+                            countCloned.value = node.file_num || 0;
+                            sizeCloned.value = node.size || 0;
+                            return { count: countCloned, size: sizeCloned };
+                        };
+                        const recalcTreemapValues = (node) => {
+                            if (!node.children || node.children.length === 0) return node.value || 0;
+                            node.value = node.children.reduce((sum, child) => sum + recalcTreemapValues(child), 0);
+                            return node.value;
+                        };
+                        const { count: countTree, size: sizeTree } = data.folderTree
+                            ? buildBothTrees(data.folderTree)
+                            : { count: null, size: null };
+                        if (countTree) recalcTreemapValues(countTree);
 
-                    const heavyCharts = [
-                        {
-                            id: 'folderChart', option: {
-                                tooltip: {
-                                    trigger: 'item', triggerOn: 'mousemove',
-                                    formatter: (p) => {
-                                        const n = p.data;
-                                        return `<div style="font-weight:600;margin-bottom:6px;">📁 ${n.name}</div>` +
-                                            (n.size_str ? `<div style="font-size:12px;">📊 大小: ${n.size_str}</div>` : '');
-                                    }
-                                },
-                                series: [{
-                                    type: 'tree', data: [data.folderTree], top: '5%', left: '10%', bottom: '5%', right: '10%',
-                                    symbolSize: 10, initialTreeDepth: 50,
-                                    lineStyle: { width: 1.5, color: '#ccc' },
-                                    itemStyle: { color: '#4a90e2', borderWidth: 0 },
-                                    label: { show: true, position: 'left', fontSize: 11, color: '#333', backgroundColor: '#f8f9fa', borderRadius: 3, padding: [4, 8] },
-                                    leaves: { label: { position: 'right', backgroundColor: '#e6f0fa' }, itemStyle: { color: '#0969da' } },
-                                    emphasis: { focus: 'descendant', itemStyle: { color: '#0550ae' } },
-                                    expandAndCollapse: true, animationDuration: 600
-                                }]
+                        const heavyCharts = [
+                            {
+                                id: 'folderChart', option: {
+                                    tooltip: {
+                                        trigger: 'item', triggerOn: 'mousemove',
+                                        formatter: (p) => {
+                                            const n = p.data;
+                                            return `<div style="font-weight:600;margin-bottom:6px;">📁 ${n.name}</div>` +
+                                                (n.size_str ? `<div style="font-size:12px;">📊 大小: ${n.size_str}</div>` : '');
+                                        }
+                                    },
+                                    series: [{
+                                        type: 'tree', data: [data.folderTree], top: '5%', left: '10%', bottom: '5%', right: '10%',
+                                        symbolSize: 10, initialTreeDepth: 50,
+                                        lineStyle: { width: 1.5, color: '#ccc' },
+                                        itemStyle: { color: '#4a90e2', borderWidth: 0 },
+                                        label: { show: true, position: 'left', fontSize: 11, color: '#333', backgroundColor: '#f8f9fa', borderRadius: 3, padding: [4, 8] },
+                                        leaves: { label: { position: 'right', backgroundColor: '#e6f0fa' }, itemStyle: { color: '#0969da' } },
+                                        emphasis: { focus: 'descendant', itemStyle: { color: '#0550ae' } },
+                                        expandAndCollapse: true, animationDuration: 600
+                                    }]
+                                }
+                            },
+                            {
+                                id: 'treemapChart', option: {
+                                    tooltip: {
+                                        formatter: (info) => {
+                                            const parts = [];
+                                            for (let i = 1; i < info.treePathInfo.length; i++) parts.push(info.treePathInfo[i].name);
+                                            return '📦&nbsp;' + escapeHtml(parts.join(SLASH)) + '<br>📊&nbsp;' + info.data.size_str;
+                                        }
+                                    },
+                                    series: [{
+                                        type: 'treemap', roam: false, visibleMin: 300,
+                                        label: { show: true, formatter: '{b}' },
+                                        itemStyle: { borderColor: '#fff' },
+                                        levels: getLevelOption(),
+                                        name: sizeTree ? sizeTree.name : '',
+                                        data: sizeTree ? sizeTree.children : [],
+                                        animationDuration: 600
+                                    }]
+                                }
+                            },
+                            {
+                                id: 'treemapCountChart', option: {
+                                    tooltip: {
+                                        formatter: (info) => {
+                                            const parts = [];
+                                            for (let i = 1; i < info.treePathInfo.length; i++) parts.push(info.treePathInfo[i].name);
+                                            return '📦&nbsp;' + escapeHtml(parts.join(SLASH)) + '<br>📊&nbsp;' + info.data.file_num;
+                                        }
+                                    },
+                                    series: [{
+                                        type: 'treemap', roam: false, visibleMin: 300,
+                                        label: { show: true, formatter: '{b}' },
+                                        itemStyle: { borderColor: '#fff' },
+                                        levels: getLevelOption(),
+                                        name: countTree ? countTree.name : '',
+                                        data: countTree ? countTree.children : [],
+                                        animationDuration: 600
+                                    }]
+                                }
                             }
-                        },
-                        {
-                            id: 'treemapChart', option: {
-                                tooltip: {
-                                    formatter: (info) => {
-                                        const parts = [];
-                                        for (let i = 1; i < info.treePathInfo.length; i++) parts.push(info.treePathInfo[i].name);
-                                        return '📦&nbsp;' + escapeHtml(parts.join(SLASH)) + '<br>📊&nbsp;' + info.data.size_str;
-                                    }
-                                },
-                                series: [{
-                                    type: 'treemap', roam: false, visibleMin: 300,
-                                    label: { show: true, formatter: '{b}' },
-                                    itemStyle: { borderColor: '#fff' },
-                                    levels: getLevelOption(),
-                                    name: sizeTree ? sizeTree.name : '',
-                                    data: sizeTree ? sizeTree.children : [],
-                                    animationDuration: 600
-                                }]
-                            }
-                        },
-                        {
-                            id: 'treemapCountChart', option: {
-                                tooltip: {
-                                    formatter: (info) => {
-                                        const parts = [];
-                                        for (let i = 1; i < info.treePathInfo.length; i++) parts.push(info.treePathInfo[i].name);
-                                        return '📦&nbsp;' + escapeHtml(parts.join(SLASH)) + '<br>📊&nbsp;' + info.data.file_num;
-                                    }
-                                },
-                                series: [{
-                                    type: 'treemap', roam: false, visibleMin: 300,
-                                    label: { show: true, formatter: '{b}' },
-                                    itemStyle: { borderColor: '#fff' },
-                                    levels: getLevelOption(),
-                                    name: countTree ? countTree.name : '',
-                                    data: countTree ? countTree.children : [],
-                                    animationDuration: 600
-                                }]
-                            }
-                        }
-                    ];
-                    heavyCharts.forEach(({ id, option }) => {
-                        const chart = initChart(id, id);
-                        chart.setOption(option);
-                    });
-                }, 0);
+                        ];
+                        heavyCharts.forEach(({ id, option }) => {
+                            const chart = initChart(id, id);
+                            chart.setOption(option);
+                        });
+                        resolve();
+                    }, 0);
+                });
             });
         }
 
@@ -23222,6 +23310,30 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             localStorage.removeItem(key);
         }
 
+        let _globalLoadingDepth = 0;
+
+        function showGlobalLoading(message = '加载中...') {
+            const overlay = document.getElementById('global-loading-overlay');
+            const text = document.getElementById('global-loading-text');
+            if (!overlay || !text) return;
+            _globalLoadingDepth++;
+            text.textContent = message;
+            overlay.classList.add('is-visible');
+        }
+
+        function hideGlobalLoading(force = false) {
+            const overlay = document.getElementById('global-loading-overlay');
+            if (!overlay) return;
+            if (force) {
+                _globalLoadingDepth = 0;
+            } else {
+                _globalLoadingDepth = Math.max(0, _globalLoadingDepth - 1);
+            }
+            if (_globalLoadingDepth === 0) {
+                overlay.classList.remove('is-visible');
+            }
+        }
+
         function openDir() {
             showOpenPanel('打开本地目录', openLocalDir);
         }
@@ -23282,12 +23394,20 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     let trimmedPath = path.trim();
                     //去除路径末尾的斜杠，兼容 windows 和 linux 系统
                     currentRootPath = trimmedPath.replace(/[\/\\]+$/, '');
-                    await clearOldData();
-                    treeElement.innerHTML = '';
-                    safeLocalStorageSet("ROOT_DIR", currentRootPath);
-                    safeLocalStorageSet(PERMISSION_TIME_KEY, Date.now().toString());
-                    await idbPut(DIRECTORY_STORE_NAME, 'handles', 'default', dirHandle);
-                    initAll();
+                    showGlobalLoading('正在扫描目录文件...');
+                    try {
+                        await clearOldData();
+                        treeElement.innerHTML = '';
+                        safeLocalStorageSet("ROOT_DIR", currentRootPath);
+                        safeLocalStorageSet(PERMISSION_TIME_KEY, Date.now().toString());
+                        await idbPut(DIRECTORY_STORE_NAME, 'handles', 'default', dirHandle);
+                        await initAll();
+                    } catch (e) {
+                        console.error('初始化目录失败', e);
+                        showNotification('✗ 扫描目录失败: ' + e.message, 'error');
+                    } finally {
+                        hideGlobalLoading(true);
+                    }
                 }, async () => {
                     currentRootPath = '';
                     setRootHandle(null);
