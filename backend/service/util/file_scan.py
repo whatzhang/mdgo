@@ -207,7 +207,7 @@ def _scan_scandir(base_dir, on_file, on_dir=None):
             file_type = get_file_type(ext)
 
             on_file(name, ext, file_type, size_bytes, ctime_int,
-                    mtime_int, rel_path)
+                    mtime_int, rel_path, rel_root)
 
             total_files += 1
             total_size += size_bytes
@@ -221,12 +221,12 @@ def scan_files(base_dir):
     全量扫描：用 os.scandir + 回调模式遍历目录，
     边扫描边构建 folder_tree，避免二次遍历。
     """
-    file_list = []
     folder_set = set()
     # 运行时构建文件夹树（增量更新）
     tree_dict = {}
+    fileListMap = {}  # 用于存储文件列表的映射，键为路径，值为文件信息列表
 
-    def on_file(name, ext, file_type, size_bytes, ctime_int, mtime_int, rel_path):
+    def on_file(name, ext, file_type, size_bytes, ctime_int, mtime_int, rel_path, rel_root):
         ctime_str = format_time(ctime_int)
         mtime_str = format_time(mtime_int)
         file_info = {
@@ -243,7 +243,7 @@ def scan_files(base_dir):
             "mtime_date_str": mtime_str[:10],
             "path": rel_path,
         }
-        file_list.append(file_info)
+        fileListMap.setdefault(rel_root, []).append(file_info)  # 将文件信息添加到对应路径的列表中
 
         # 逐层构建目录树（按路径分段）
         path_parts = rel_path.split('/')
@@ -307,17 +307,11 @@ def scan_files(base_dir):
 
     all_root_children = _convert_tree_node(tree_dict)
 
-    # 根节点的时间取所有文件的最早/最晚
-    root_ctime = min((f['ctime'] for f in file_list), default=0) if file_list else 0
-    root_mtime = max((f['mtime'] for f in file_list), default=0) if file_list else 0
-
     folder_tree = {
         'name': os.path.basename(base_dir),
         'file_num': len(all_root_children),
         'size': total_size,
         'size_str': format_size(total_size),
-        'ctime': root_ctime,
-        'mtime': root_mtime,
         'children': all_root_children,
     }
 
@@ -330,7 +324,7 @@ def scan_files(base_dir):
             "total_size_bytes": total_size,
             "total_size_str": format_size(total_size),
         },
-        "files": sorted(file_list, key=lambda f: f['path']),
+        "files": fileListMap,
         "folderTree": folder_tree,
     }
 
@@ -350,83 +344,6 @@ def _get_cache_paths(base_dir):
     return output_file, cache_file
 
 
-def _build_mtime_snapshot(base_dir):
-    """
-    快速构建 mtime 快照（仅收集路径和修改时间，不构建完整数据结构）。
-    用 os.scandir 替代 os.stat 批量 stat，性能更好。
-    返回 (file_snapshot, dir_snapshot, total_size)
-    """
-    file_snapshot = {}
-    dir_snapshot = {}
-    total_size = 0
-    stack = [(base_dir, '')]
-
-    while stack:
-        abs_root, rel_root = stack.pop()
-        try:
-            with os.scandir(abs_root) as it:
-                entries = list(it)
-        except PermissionError:
-            continue
-
-        dirs = []
-        for entry in entries:
-            name = entry.name
-            if should_ignore_file(name):
-                continue
-            try:
-                is_dir = entry.is_dir(follow_symlinks=False)
-            except OSError:
-                continue
-
-            if is_dir:
-                child_rel = f"{rel_root}/{name}" if rel_root else name
-                if should_ignore_dir(child_rel):
-                    continue
-                dir_snapshot[child_rel] = True
-                dirs.append(entry)
-            else:
-                rel_path = f"{rel_root}/{name}" if rel_root else name
-                try:
-                    st = entry.stat(follow_symlinks=False)
-                except OSError:
-                    continue
-                file_snapshot[rel_path] = st.st_mtime
-                total_size += st.st_size
-
-        for d_entry in dirs:
-            d_rel = f"{rel_root}/{d_entry.name}" if rel_root else d_entry.name
-            stack.append((d_entry.path, d_rel))
-
-    return file_snapshot, dir_snapshot, total_size
-
-
-def _load_snapshot(cache_file):
-    """从缓存文件加载 mtime 快照"""
-    try:
-        with open(cache_file, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return None
-
-
-def _load_cached_result(output_file):
-    """从缓存文件加载完整的扫描数据"""
-    try:
-        with open(output_file, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return None
-
-
-def _save_cache(cache_file, snapshot):
-    """原子写入：先写 .tmp 再 rename，防止写入中断损坏缓存"""
-    tmp = cache_file + '.tmp'
-    with open(tmp, 'w', encoding='utf-8') as f:
-        json.dump(snapshot, f, ensure_ascii=False)
-    os.replace(tmp, cache_file)
-
-
 def scan_file_info(base_dir=None, force=False):
     """
     文件扫描入口，支持增量模式。
@@ -437,114 +354,9 @@ def scan_file_info(base_dir=None, force=False):
       3. 无变更 → 直接返回缓存（毫秒级）
       4. 有变更 → 只扫描变更的文件，合并到缓存中
     """
-    output_file, cache_file = _get_cache_paths(base_dir)
-
-    if not force:
-        cached_snapshot = _load_snapshot(cache_file)
-        cached_result = _load_cached_result(output_file)
-
-        if cached_snapshot and cached_result:
-            current_files, current_dirs, current_total_size = _build_mtime_snapshot(
-                base_dir)
-
-            old_files = cached_snapshot.get('files', {})
-            old_dirs = cached_snapshot.get('dirs', {})
-            old_total_size = cached_snapshot.get('total_size', 0)
-
-            # 检查是否有文件/目录变化
-            has_changes = False
-
-            if len(current_files) != len(old_files):
-                has_changes = True
-            else:
-                for rel_path, mtime in current_files.items():
-                    old_mtime = old_files.get(rel_path)
-                    if old_mtime is None or abs(old_mtime - mtime) > 0.001:
-                        has_changes = True
-                        break
-
-            if not has_changes and len(current_dirs) != len(old_dirs):
-                has_changes = True
-
-            if not has_changes and abs(current_total_size - old_total_size) > 0:
-                has_changes = True
-
-            if not has_changes:
-                logger.info("📊 无文件变更，使用缓存数据（增量扫描命中）")
-                return cached_result
-
-            logger.info(f"📊 检测到文件变更，执行增量扫描...")
-            new_file_list = []
-            for rel_path, mtime in current_files.items():
-                old_mtime = old_files.get(rel_path)
-                if old_mtime is None or abs(old_mtime - mtime) > 0.001:
-                    new_file_list.append(rel_path)
-
-            deleted_paths = set(old_files.keys()) - set(current_files.keys())
-
-            if new_file_list or deleted_paths:
-                logger.info(
-                    f"📊 变更文件数：{len(new_file_list)} | 删除文件数：{len(deleted_paths)}")
-
-            # 增量更新：只处理变动的文件
-            if new_file_list:
-                _update_files_from_snapshot(new_file_list, base_dir, cached_result)
-            if deleted_paths:
-                _remove_deleted_files(deleted_paths, cached_result, current_total_size)
-
-            stats = cached_result['stats']
-            stats['total_files'] = len(current_files)
-            stats['total_folders'] = len(current_dirs)
-            stats['total_size_bytes'] = current_total_size
-            stats['total_size_str'] = format_size(current_total_size)
-
-            # 重建 folderTree
-            cached_result['files'].sort(key=lambda f: f['path'])
-            tree_children = _convert_file_list_to_tree(cached_result['files'])
-            files_list = cached_result['files']
-            root_ctime = min((f['ctime'] for f in files_list), default=0) if files_list else 0
-            root_mtime = max((f['mtime'] for f in files_list), default=0) if files_list else 0
-            cached_result['folderTree'] = {
-                'name': os.path.basename(base_dir),
-                'file_num': len(tree_children),
-                'size': current_total_size,
-                'size_str': format_size(current_total_size),
-                'ctime': root_ctime,
-                'mtime': root_mtime,
-                'children': tree_children,
-            }
-            cached_result['scan_time'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-            # 持久化缓存
-            new_snapshot = {
-                'files': current_files,
-                'dirs': current_dirs,
-                'total_size': current_total_size,
-                'updated_at': time.time(),
-            }
-            _save_cache(cache_file, new_snapshot)
-
-            os.makedirs(os.path.dirname(output_file), exist_ok=True)
-            with open(output_file, 'w', encoding='utf-8') as f:
-                json.dump(cached_result, f, ensure_ascii=False)
-
-            logger.info(f"✅ 增量扫描完成！数据已保存到 {output_file}")
-            return cached_result
-
-    # 全量扫描
+    output_file = os.path.join(base_dir, '.mdgo', 'data', 'index_file_scan_data.json')
     logger.info("📊 执行全量扫描..." if force else "📊 首次扫描，执行全量扫描...")
     result = scan_files(base_dir)
-
-    current_files, current_dirs, _ = _build_mtime_snapshot(base_dir)
-    snapshot = {
-        'files': current_files,
-        'dirs': current_dirs,
-        'total_size': result['stats']['total_size_bytes'],
-        'updated_at': time.time(),
-    }
-    os.makedirs(os.path.dirname(cache_file), exist_ok=True)
-    _save_cache(cache_file, snapshot)
-
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     with open(output_file, 'w', encoding='utf-8') as f:
         json.dump(result, f, ensure_ascii=False)
@@ -552,122 +364,6 @@ def scan_file_info(base_dir=None, force=False):
 
     return result
 
-
-def _convert_file_list_to_tree(file_list):
-    """把 file_list 转成 ECharts 树图格式，用于增量重建 folderTree"""
-    tree = {}
-    for file_info in file_list:
-        path_parts = file_info['path'].split('/')
-        file_size = file_info['size']
-        file_ctime = file_info['ctime']
-        file_mtime = file_info['mtime']
-
-        current = tree
-        for i in range(len(path_parts) - 1):
-            part = path_parts[i]
-            if part not in current:
-                current[part] = {
-                    'size': 0, 'ctime': file_ctime, 'mtime': file_mtime,
-                }
-            else:
-                node = current[part]
-                node['size'] += file_size
-                if file_ctime < node['ctime']:
-                    node['ctime'] = file_ctime
-                if file_mtime > node['mtime']:
-                    node['mtime'] = file_mtime
-            current = current[part]
-
-        if '__files__' not in current:
-            current['__files__'] = []
-        current['__files__'].append({
-            'name': file_info['name'],
-            'size': file_size,
-            'ctime': file_ctime,
-            'mtime': file_mtime,
-        })
-
-    def _convert(node):
-        result = []
-        for key in sorted(node):
-            if key == '__files__':
-                continue
-            value = node[key]
-            if isinstance(value, dict):
-                children = _convert(value)
-                sub_dirs = len(children)
-                sub_files = len(value.get('__files__', []))
-                folder_node = {
-                    'name': key,
-                    'file_num': sub_dirs + sub_files,
-                    'size': value['size'],
-                    'size_str': format_size(value['size']),
-                    'ctime': value['ctime'],
-                    'mtime': value['mtime'],
-                }
-                if children:
-                    folder_node['children'] = children
-                else:
-                    folder_node['value'] = value['size']
-                result.append(folder_node)
-        return result
-
-    return _convert(tree)
-
-
-def _update_files_from_snapshot(changed_paths, base_dir, cached_result):
-    """
-    重新采集已变更文件的信息，更新到缓存结果中。
-    changed_paths 是相对路径列表。
-    """
-    for rel_path in changed_paths:
-        abs_path = os.path.join(base_dir, rel_path)
-        try:
-            st = os.stat(abs_path)
-        except OSError:
-            continue
-
-        name = os.path.basename(rel_path)
-        ext = (os.path.splitext(name)[1][1:]).lower()
-        size_bytes = st.st_size
-        ctime_int = int(_get_birthtime(st))
-        mtime_int = int(st.st_mtime)
-        ctime_str = format_time(ctime_int)
-        mtime_str = format_time(mtime_int)
-        file_type = get_file_type(ext)
-
-        new_info = {
-            "name": name,
-            "ext": ext,
-            "file_type": file_type,
-            "size": size_bytes,
-            "size_str": format_size(size_bytes),
-            "ctime": ctime_int,
-            "mtime": mtime_int,
-            "ctime_str": ctime_str,
-            "mtime_str": mtime_str,
-            "ctime_date_str": ctime_str[:10],
-            "mtime_date_str": mtime_str[:10],
-            "path": rel_path,
-        }
-
-        # 覆盖或追加
-        found = False
-        for i, existing in enumerate(cached_result['files']):
-            if existing['path'] == rel_path:
-                cached_result['files'][i] = new_info
-                found = True
-                break
-        if not found:
-            cached_result['files'].append(new_info)
-
-
-def _remove_deleted_files(deleted_paths, cached_result, current_total_size):
-    """从缓存中移除已不存在的文件"""
-    old_files = cached_result['files']
-    cached_result['files'] = [
-        f for f in old_files if f['path'] not in deleted_paths
-    ]
 
 
 if __name__ == '__main__':

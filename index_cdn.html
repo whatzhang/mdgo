@@ -4916,6 +4916,10 @@
             color: #f97316;
         }
 
+        .disk-bar-fill.info {
+            background: linear-gradient(90deg, #3b82f6, #2563eb) !important;
+        }
+
         .disk-bar-fill.warning {
             background: linear-gradient(90deg, #d97706, #ea580c) !important;
         }
@@ -11985,6 +11989,8 @@
         const getRootHandle = () => rootDirectoryHandle;  // 获取根目录句柄的函数
         const setRootHandle = (hander) => rootDirectoryHandle = hander;  // 设置根目录句柄的函数
         const isRootHandleAvailable = () => !!getRootHandle(); // 检查根目录句柄是否可用的函数
+        let allFilesCacheList = []; // 所有文件的缓存列表（包含路径、元数据等信息）
+        let allFoldersCacheList = {}; // 所有目录的缓存列表（包含路径、元数据等信息）
         let currentActiveItem = null;       // 当前激活的文件项
         let currentFileHandle = null;       // 当前文件句柄
         let currentZoom = 1;                // 当前图片缩放比例
@@ -12174,33 +12180,38 @@
             ]);
         }
 
-        async function renderDirectory(dirHandle) {
+        async function renderDirectory(dirHandle, data) {
             if (treeElement) {
                 treeElement.innerHTML = '';
             }
             if (treeElement) {
                 const _treeStart = performance.now();
-                _treeLRUCache.clear();
                 _markersCache = null;
-                _fileRawEntryMap.clear(); // 每次重建目录树时清空 rawEntry 映射
                 _cachedLastFile = safeLocalStorageGet(LAST_FILE_KEY);
                 _browserRefreshed = BROWSER_REFRESHED_VALUE === safeLocalStorageGet(BROWSER_REFRESHED_KEY);
+                _loadExpandedStateCache();
                 await readMarkers();
-                const treeData = await getTreeData(dirHandle, 0, '');
-                renderTreeFromData(treeData, treeElement);
+                let treeData = [];
+                try {
+                    treeData = await buildTreeDataFromScan(data.folderTree, data.files);
+                } catch (e) {
+                    console.error('构建文件树数据失败:', e);
+                    treeData = await getTreeData(dirHandle, 0, '');
+                }
+                await renderTreeFromData(treeData, treeElement);
                 _treeLoadDuration = Math.round(performance.now() - _treeStart);
                 safeLocalStorageSet(TREE_LOAD_TIME_KEY, _treeLoadDuration.toString());
                 setTimeout(() => {
                     treeElement.scrollTop = getScrollPosition();
                 }, SCROLL_RESTORE_DELAY);
+                await initTreeDelegation();
             }
         }
 
         // 文件树事件委托：click/dblclick 挂到 treeElement 上，不用每个文件单独加监听
         // 注：下拉菜单和颜色选择器按钮的监听仍单独绑定（数量少，逻辑差异大）
-        ; (function _initTreeDelegation() {
-            // click 委托 —— 打开文件（100ms 防双击）
-            treeElement.addEventListener('click', async (event) => {
+        async function initTreeDelegation() {
+            async function handleClick(event) {
                 const fileSpan = event.target.closest('.file-item');
                 if (!fileSpan) return;
                 // 若点击的是更多菜单按钮或颜色选择器，不触发文件打开
@@ -12221,10 +12232,12 @@
                         _treeClickTimer = null;
                     }
                 }, 100);
-            });
+            }
+            // click 委托 —— 打开文件（100ms 防双击）
+            treeElement.removeEventListener('click', handleClick);
+            treeElement.addEventListener('click', handleClick);
 
-            // dblclick 委托 —— 重命名文件
-            treeElement.addEventListener('dblclick', (e) => {
+            async function handleDblClick(e) {
                 const fileSpan = e.target.closest('.file-item');
                 if (!fileSpan) return;
                 if (e.target.closest('.file-item-more-menu') || e.target.closest('.marker-color-picker')) return;
@@ -12233,12 +12246,14 @@
                 if (_treeClickTimer) { clearTimeout(_treeClickTimer); _treeClickTimer = null; }
                 if (e.isTrusted) saveScrollPosition();
                 const filePath = fileSpan.dataset.filePath;
-                const rawEntry = _fileRawEntryMap.get(filePath);
-                if (!rawEntry) return;
+                const fileHandle = await getFileHandleByPath(filePath);
                 const textSpan = fileSpan.querySelector('.file-item-text');
-                startRenameFile(rawEntry, filePath, fileSpan, textSpan);
-            });
-        })();
+                startRenameFile(fileHandle, filePath, fileSpan, textSpan);
+            }
+            // dblclick 委托 —— 重命名文件
+            treeElement.removeEventListener('dblclick', handleDblClick);
+            treeElement.addEventListener('dblclick', handleDblClick);
+        }
 
         let previewFileText = ''; // 当前预览的文件内容（用于判断是否需要重新渲染）
         let lastToggle = 'none';  // 记录上一次打开的功能类型，默认为 'none'
@@ -13155,7 +13170,7 @@
                         const parentDom = document.querySelector('[data-dir-key="' + dirPath + '"]');
                         if (parentDom) {
                             const depth = +parentDom.dataset.depth || 0;
-                            const dirEntry = createDirectoryEntry(dirHandle, depth + 1, newRelativePath);
+                            const dirEntry = createDirectoryEntry(dirHandle.name, depth + 1, newRelativePath);
                             parentDom.appendChild(dirEntry.details);
                             // 展开父目录
                             if (!parentDom.open) {
@@ -14175,7 +14190,7 @@
 
             for (const nodeData of treeData) {
                 if (nodeData.kind === 'directory') {
-                    const dirEntry = createDirectoryEntry(nodeData.entry, nodeData.depth, nodeData.path);
+                    const dirEntry = createDirectoryEntry(nodeData.name, nodeData.depth, nodeData.path);
                     if (!dirEntry) continue;
                     fragment.appendChild(dirEntry.details);
                     // 递归渲染子目录 - 收集异步任务，不等待
@@ -14186,7 +14201,7 @@
                     }
                 } else if (nodeData.kind === 'file') {
                     filePromises.push(
-                        createFileItem(nodeData.entry.rawEntry, nodeData.path, nodeData.depth, nodeData.iconType)
+                        createFileItem(nodeData.name, nodeData.path, nodeData.depth, nodeData.iconType)
                     );
                 }
             }
@@ -14224,7 +14239,6 @@
         }
 
         function _loadExpandedStateCache() {
-            if (Object.keys(_expandedStateCache).length > 0) return;
             const states = JSON.parse(safeLocalStorageGet(EXPANDED_STATE_KEY) || '{}');
             _expandedStateCache = states[currentRootPath] || {};
         }
@@ -14242,8 +14256,6 @@
 
         // 读取目录展开状态（带内存缓存，避免频繁读 localStorage）
         function getDirExpandedState(dirKey) {
-            if (!currentRootPath) return false;
-            _loadExpandedStateCache();
             return _expandedStateCache[dirKey] || false;
         }
 
@@ -14335,11 +14347,9 @@
             return div;
         }
         // 创建单个文件树项 DOM
-        async function createFileItem(entry, relativePath, depth, iconType = '') {
-            const name = entry instanceof FileEntry ? entry.name : entry.name;
+        async function createFileItem(name, relativePath, depth, iconType = '') {
             const np = normalizePath(relativePath);
             if (isSkipFile(name)) return null;
-            const rawEntry = entry instanceof FileEntry ? entry.rawEntry : entry;
             const fileSpan = document.createElement('div');
             fileSpan.className = 'file-item';
             fileSpan.style.paddingLeft = (depth * 13) + 1 + 'px';
@@ -14376,16 +14386,19 @@
             if (inDeleted) {
                 dropdown.appendChild(_ddItem('🔄 还原文件', async (e) => {
                     e.stopPropagation();
-                    await restoreFile(rawEntry, relativePath, fileSpan);
+                    const fileHandle = await getFileHandleByPath(np);
+                    await restoreFile(fileHandle, relativePath, fileSpan);
                 }));
                 dropdown.appendChild(_ddItem('🗑️ 永久删除', async (e) => {
                     e.stopPropagation();
-                    await deleteFileTreeItem(rawEntry, relativePath, true, fileSpan);
+                    const fileHandle = await getFileHandleByPath(np);
+                    await deleteFileTreeItem(fileHandle, relativePath, true, fileSpan);
                 }));
             } else {
                 dropdown.appendChild(_ddItem('📄 复制文件', async (e) => {
                     e.stopPropagation();
-                    await copyCurrentFile(rawEntry, relativePath);
+                    const fileHandle = await getFileHandleByPath(np);
+                    await copyCurrentFile(fileHandle, relativePath);
                 }));
                 dropdown.appendChild(_ddItem('🗂️ git记录', async (e) => {
                     e.stopPropagation();
@@ -14401,7 +14414,8 @@
                 }));
                 dropdown.appendChild(_ddItem('🗑️ 删除文件', async (e) => {
                     e.stopPropagation();
-                    await deleteFileTreeItem(rawEntry, relativePath, false, fileSpan);
+                    const fileHandle = await getFileHandleByPath(np);
+                    await deleteFileTreeItem(fileHandle, relativePath, false, fileSpan);
                 }));
                 // 颜色选择器
                 const crPicker = document.createElement('div');
@@ -14414,7 +14428,8 @@
                     dot.addEventListener('click', async (e) => {
                         e.stopPropagation();
                         try {
-                            await setFileMarker(rawEntry, relativePath, markerDiv, _MARKER_COLOR_NAMES[i], _MARKER_COLORS[i]);
+                            const fileHandle = await getFileHandleByPath(np);
+                            await setFileMarker(fileHandle, relativePath, markerDiv, _MARKER_COLOR_NAMES[i], _MARKER_COLORS[i]);
                         } catch (err) {
                             console.error('设置文件标记失败:', err);
                         }
@@ -14428,7 +14443,8 @@
                 clearDot.addEventListener('click', async (e) => {
                     e.stopPropagation();
                     try {
-                        await clearFileMarker(relativePath, markerDiv);
+                        const fileHandle = await getFileHandleByPath(np);
+                        await clearFileMarker(fileHandle, relativePath, markerDiv);
                     } catch (err) {
                         console.error('清除文件标记失败:', err);
                     }
@@ -14451,8 +14467,6 @@
                 markerDiv.style.background = _cachedMarker.hex;
                 markerDiv.style.display = 'flex';
             }
-            // 存储 rawEntry 供事件委托（dblclick 重命名）使用，替代 per-file 监听器
-            _fileRawEntryMap.set(np, rawEntry);
             // 仅对标记为"最后打开"的文件触发点击（仅在浏览器刷新场景）
             if (relativePath === _cachedLastFile) {
                 if (_browserRefreshed && lastToggle === 'renderFile') clickFileSpan(relativePath, fileSpan, true);
@@ -14492,8 +14506,7 @@
         }
 
         //递归生成目录树 功能:生成目录树结构,支持排序、状态保存和恢复
-        function createDirectoryEntry(entry, depth, dirPath) {
-            const name = entry instanceof FileEntry ? entry.name : entry.name;
+        function createDirectoryEntry(name, depth, dirPath) {
             const dirPathStr = normalizePath(dirPath);
             if (isSkipDir(name) || isSkipDir(dirPathStr)) return null;
             const details = document.createElement('details');
@@ -19496,8 +19509,6 @@
         let _markersMap = new Map(); // markers 快速查找 Map
         let _cachedLastFile = null;    // createFileItem 预缓存：最后一次打开的文件路径
         let _browserRefreshed = false;   // createFileItem 预缓存：是否浏览器刷新场景
-        // 事件委托：存储 path → rawEntry，供 dblclick 重命名使用
-        const _fileRawEntryMap = new Map();
         let _treeClickTimer = null; // 文件树单击防抖计时器（事件委托共享）
 
         async function readMarkers() {
@@ -19802,8 +19813,6 @@
             if (hasFailed) {
                 showNotification('✗ 重命名成功但索引更新失败，请刷新目录', 'error');
             }
-            // 异步刷新扫描数据（不阻塞重命名流程，失败不提示）
-            scanDashboardData(true);
             // 阶段3: 删除旧文件并更新UI
             try {
                 await deleteFileByName(currentHandle, originalName);
@@ -19820,6 +19829,8 @@
             safeLocalStorageSet(LAST_FILE_KEY, newRelativePath);
             recordOperation(newName, newRelativePath, OPERATION_TYPES.RENAME);
             showNotification(`✓ 已重命名为 ${newName}` + (hasFailed ? '（部分索引未更新）' : ''), hasFailed ? 'warning' : 'success');
+            // 异步刷新扫描数据（不阻塞重命名流程，失败不提示）
+            scanDashboardData(true);
         }
 
         function handleDeleteCard(colIndex, cardIndex) {
@@ -19870,7 +19881,7 @@
                         data = await scanDirToIndexByLocal();
                     } else {
                         try {
-                            data = await scanDirToIndex(force)
+                            data = await scanDirToIndex();
                         } catch (e) {
                             data = await scanDirToIndexByLocal();
                         }
@@ -19897,6 +19908,15 @@
                     };
                 }
             }
+            if (force) {
+                //map 的 value list 合成一个list
+                allFilesCacheList = [];
+                for (const key in data.files) {
+                    if (Array.isArray(data.files[key])) {
+                        allFilesCacheList.push(...data.files[key]);
+                    }
+                }
+            }
             return data;
         }
 
@@ -19918,11 +19938,8 @@
             }
         }
 
-        async function scanDirToIndex(force = false) {
+        async function scanDirToIndex() {
             let url = `/api/system/scan?dir=${encodeURI(currentRootPath)}`;
-            if (force) {
-                url += '&force=true';
-            }
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 1000);
             let response;
@@ -20154,7 +20171,7 @@
                 const results = await _processFileBatch(pendingBatch);
                 _addFileBatch(results);
             }
-
+            let fileListMap = {};
             // 从 fileList 聚合目录统计，构建目录树（只包含目录，不包含文件）
             function _buildTreeFromFiles() {
                 // 构建目录树结构，每个节点代表一个目录
@@ -20172,6 +20189,15 @@
 
                 // 遍历 fileList，为每个文件创建/更新其父目录节点
                 for (const f of fileList) {
+                    const dirName = dirname(f.path);
+                    var list = fileListMap[dirName];
+                    if (isEmpty(list)) {
+                        fileListMap[dirName] = [f];
+                    } else {
+                        list.push(f);
+                        fileListMap[dirName] = list;
+                    }
+
                     const pathParts = f.path.split(SLASH);
                     // 文件名是路径的最后一部分，不是目录
                     const fileName = pathParts.pop();
@@ -20235,27 +20261,10 @@
                 }
 
                 const rootNode = dirMap[''];
-                // 排序 children
-                function sortNode(node) {
-                    if (node.children) {
-                        node.children.sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
-                        node.children.forEach(sortNode);
-                    }
-                }
-                sortNode(rootNode);
-
                 return buildNode(rootNode);
             }
 
             const folderTree = _buildTreeFromFiles();
-
-            // 计算根节点统计
-            const rootCtime = fileList.length > 0
-                ? fileList.reduce((min, f) => f.ctime < min ? f.ctime : min, fileList[0].ctime)
-                : nowSec;
-            const rootMtime = fileList.length > 0
-                ? fileList.reduce((max, f) => f.mtime > max ? f.mtime : max, fileList[0].mtime)
-                : nowSec;
 
             // 最终结果
             const scanTimeStr = _formatTime(nowSec);
@@ -20268,11 +20277,7 @@
                     "total_size_bytes": totalSize,
                     "total_size_str": formatSize(totalSize),
                 },
-                "files": fileList.sort(function (a, b) {
-                    if (a.path < b.path) return -1;
-                    if (a.path > b.path) return 1;
-                    return 0;
-                }),
+                "files": fileListMap,
                 "folderTree": folderTree,
             };
             writeFileByDirHandle(await getDataDir(), INDEX_FILE_SCAN_DATA_FILE, JSON.stringify(result)).catch(error => {
@@ -20301,7 +20306,6 @@
             }
             // 单次遍历完成所有数据处理 (stats + heatmap + 活动列表预排序 + treemap 映射)
             const stats = await renderDashStats(data);
-            setFileListCache(data);
             // 更新统计卡片 (轻量操作,同步)
             const { todayEdit, todayAdd, deletedCount, sortedByMtimeTop10 } = stats;
             const viewData = loadViewData();
@@ -20378,7 +20382,7 @@
                 renderFileSumGauge('fileSumScanGauge', dur, 3000);
             }
             // 文档/代码/图片占比（使用预计算计数，避免重复遍历）
-            const total = (data.files && data.files.length) || 1;
+            const total = data.stats.total_files || 1;
             const docCount = typeCounts ? typeCounts.doc : 0;
             const codeCount = typeCounts ? typeCounts.code : 0;
             const imgCount = typeCounts ? typeCounts.image : 0;
@@ -20474,8 +20478,8 @@
             const todayStart = new Date().setHours(0, 0, 0, 0);
             const tomorrowStart = todayStart + DAY_MS;
 
-            for (let i = 0; i < data.files.length; i++) {
-                const f = data.files[i];
+            for (let i = 0; i < allFilesCacheList.length; i++) {
+                const f = allFilesCacheList[i];
                 // ===== 统一反序列化，避免重复 new Date(x * 1000) =====
                 const createTs = f.ctime * 1000;
                 const editTs = f.mtime * 1000;
@@ -20572,8 +20576,8 @@
 
             // 后处理：线性扫描取 Top10（O(n)，避免全排序）
             let top10 = [];
-            for (let i = 0; i < data.files.length; i++) {
-                const f = data.files[i];
+            for (let i = 0; i < allFilesCacheList.length; i++) {
+                const f = allFilesCacheList[i];
                 const mtime = f.mtime;
                 if (top10.length < 10) {
                     top10.push(f);
@@ -21248,7 +21252,7 @@
             });
         }
 
-        async function toggleDashboardView(isFirst = false) {
+        async function toggleDashboardView(isFirst = false, data = null) {
             const _scanStart = performance.now();
             switchToView(dashboardContainer);
             aiFabContainer.style.display = 'block';
@@ -21305,17 +21309,21 @@
                     }
                 }, 1000);
             }
-            if (isFirst) {
-                // 首次加载或点击"扫描数据"按钮 → 强制全量扫描
-                await renderDashboard(await scanDashboardData(true));
-                showNotification('✓ 数据扫描刷新成功', 'success');
+            if (data) {
+                await renderDashboard(data);
             } else {
-                try {
-                    // 点击"刷新"按钮 → 使用增量扫描（后端自动判断）
-                    const data = await scanDashboardData(false);
-                    await renderDashboard(data);
-                } catch (e) {
-                    showNotification(`✗ 获取数据失败: ${e.message}`, 'error');
+                if (isFirst) {
+                    // 首次加载或点击"扫描数据"按钮 → 强制全量扫描
+                    await renderDashboard(await scanDashboardData(true));
+                    showNotification('✓ 数据扫描刷新成功', 'success');
+                } else {
+                    try {
+                        // 点击"刷新"按钮 → 使用增量扫描（后端自动判断）
+                        const data = await scanDashboardData(false);
+                        await renderDashboard(data);
+                    } catch (e) {
+                        showNotification(`✗ 获取数据失败: ${e.message}`, 'error');
+                    }
                 }
             }
             _fileScanDuration = Math.round(performance.now() - _scanStart);
@@ -23772,11 +23780,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     if (!currentRootPath) {
                         return false;
                     }
+                    const data = await scanDashboardData(true)
                     // 并行执行：renderDirectory 和 toggleDashboardView 同时进行
                     if (BROWSER_REFRESHED_KEY === safeLocalStorageGet(BROWSER_REFRESHED_KEY)) {
-                        await Promise.all([renderDirectory(storedHandle), toggleDashboardView(true)]);
+                        await Promise.all([renderDirectory(storedHandle, data), toggleDashboardView(true, data)]);
                     } else {
-                        renderDirectory(storedHandle);
+                        renderDirectory(storedHandle, data);
                     }
                     return true;
                 }
@@ -24201,7 +24210,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         const _localeCompare = (a, b) => a.name.localeCompare(b.name, 'zh-CN', { sensitivity: 'base' });
         const _BATCH_SIZE = 100;
-        const _MAX_TREE_CACHE_SIZE = 200; // LRU 缓存最大条目数
+        const _MAX_TREE_CACHE_SIZE = 2000; // LRU 缓存最大条目数
 
         // 带大小限制的 LRU 缓存（Map 封装）
         class LRUCache {
@@ -24231,7 +24240,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             clear() { this._map.clear(); }
             get size() { return this._map.size; }
         }
-        const _treeLRUCache = new LRUCache(_MAX_TREE_CACHE_SIZE);
+        // const _treeLRUCache = new LRUCache(_MAX_TREE_CACHE_SIZE);
 
         function _buildPath(parentPath, name) {
             return parentPath ? joinPath(parentPath, name) : name;
@@ -24266,13 +24275,43 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
+        async function buildTreeDataFromScan(folderTree, files, depth = 0, parentPath = '', maxDepth = MAX_DIR_DEPTH) {
+            const treeData = [];
+            if (depth > maxDepth) return treeData;
+            if (folderTree) {
+                let dirs = folderTree.children || [];
+                const rpath = parentPath || '';
+                const filesList = files[rpath] || [];
+                _sortEntries(dirs, filesList);
+                if (dirs.length > 0) {
+                    for (const dirNode of dirs) {
+                        const entryPath = _buildPath(parentPath, dirNode.name);
+                        const childTreeData = await buildTreeDataFromScan(dirNode, files, depth + 1, entryPath, maxDepth);
+                        treeData.push({
+                            kind: 'directory',
+                            name: dirNode.name,
+                            path: entryPath,
+                            depth: depth,
+                            children: childTreeData
+                        });
+                    }
+                }
+                for (const fileEntry of filesList) {
+                    treeData.push({
+                        kind: 'file',
+                        name: fileEntry.name,
+                        path: _buildPath(parentPath, fileEntry.name),
+                        depth: depth,
+                        iconType: getFileTypeByExt(getExt(fileEntry.name))
+                    });
+                }
+            }
+            return treeData;
+        }
+
         async function getTreeData(dirHandle, depth = 0, parentPath = '', maxDepth = MAX_DIR_DEPTH) {
             if (depth > maxDepth) return [];
             const cacheKey = parentPath + '|' + depth;
-            // 使用 LRU 缓存，自动维护大小限制
-            if (_treeLRUCache.has(cacheKey)) {
-                return _treeLRUCache.get(cacheKey);
-            }
             const { dirs, files } = await _getEntries(dirHandle, parentPath);
             _sortEntries(dirs, files);
             const treeData = [];
@@ -24285,7 +24324,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         name: dirEntry.name,
                         path: entryPath,
                         depth: depth,
-                        entry: dirEntry,
                         children: childTreeData
                     };
                 });
@@ -24298,17 +24336,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     name: fileEntry.name,
                     path: _buildPath(parentPath, fileEntry.name),
                     depth: depth,
-                    iconType: getFileTypeByExt(getExt(fileEntry.name)),
-                    entry: fileEntry
+                    iconType: getFileTypeByExt(getExt(fileEntry.name))
                 });
             }
-            // 使用 LRU 缓存（无 TTL，完全由 LRU 自动管理大小）
-            _treeLRUCache.set(cacheKey, treeData);
             return treeData;
         }
 
         // ---- 看板/日历等模块的全局状态 ----
-        let allFilesCacheList = [];
         let timelineCurrentView = 'day';      // day / week / month / quarter / year / all
         let timelineCurrentFilter = 'all';
         let timelineSearchKeyword = '';
@@ -24933,15 +24967,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             };
         }
 
-        function setFileListCache(data) {
-            allFilesCacheList = data.files;
-        }
-
         async function timelineInit() {
             try {
                 if (isEmpty(allFilesCacheList)) {
-                    const data = await scanDashboardData();
-                    setFileListCache(data);
+                    await scanDashboardData();
                 }
                 timelineInitTimeline();
                 timelineBuildHeatmap();
@@ -25808,7 +25837,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const diskPercent = document.getElementById('diskPercent');
             if (diskBar) {
                 diskBar.style.width = diskPct + '%';
-                diskBar.className = 'disk-bar-fill' + (diskPct > 90 ? ' critical' : diskPct > 75 ? ' warning' : '');
+                diskBar.className = 'disk-bar-fill' + (diskPct > 90 ? ' critical' : diskPct > 75 ? ' warning' : ' info');
             }
             if (diskPercent) diskPercent.textContent = diskPct + '%';
 
@@ -31885,9 +31914,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 // 保存原始 URL 用于预览导航
                 img.dataset.originUrl = p.url;
                 // 设置图片源
-                photoLoadFromLocal(p.url).then(src => {
-                    img.src = src;
-                });
+                const src = await photoLoadFromLocal(p.url);
+                img.src = src;
             }
 
             // 显示加载更多按钮
