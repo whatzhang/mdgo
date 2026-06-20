@@ -12212,10 +12212,20 @@
             }
         }
 
-        // 文件树事件委托：click/dblclick 挂到 treeElement 上，不用每个文件单独加监听
-        // 注：下拉菜单和颜色选择器按钮的监听仍单独绑定（数量少，逻辑差异大）
+        // 文件树事件委托的稳定引用（避免 initTreeDelegation 重复调用时 handler 堆积）
+        let _treeClickHandler = null;
+        let _treeDblClickHandler = null;
+
         async function initTreeDelegation() {
-            async function handleClick(event) {
+            // 先移除旧 handler（使用稳定引用），再绑定新 handler
+            if (_treeClickHandler) {
+                treeElement.removeEventListener('click', _treeClickHandler);
+            }
+            if (_treeDblClickHandler) {
+                treeElement.removeEventListener('dblclick', _treeDblClickHandler);
+            }
+
+            _treeClickHandler = async function (event) {
                 const fileSpan = event.target.closest('.file-item');
                 if (!fileSpan) return;
                 // 若点击的是更多菜单按钮或颜色选择器，不触发文件打开
@@ -12236,12 +12246,10 @@
                         _treeClickTimer = null;
                     }
                 }, 100);
-            }
-            // click 委托 —— 打开文件（100ms 防双击）
-            treeElement.removeEventListener('click', handleClick);
-            treeElement.addEventListener('click', handleClick);
+            };
+            treeElement.addEventListener('click', _treeClickHandler);
 
-            async function handleDblClick(e) {
+            _treeDblClickHandler = async function (e) {
                 const fileSpan = e.target.closest('.file-item');
                 if (!fileSpan) return;
                 if (e.target.closest('.file-item-more-menu') || e.target.closest('.marker-color-picker')) return;
@@ -12253,10 +12261,8 @@
                 const fileHandle = await getFileHandleByPath(filePath);
                 const textSpan = fileSpan.querySelector('.file-item-text');
                 startRenameFile(fileHandle, filePath, fileSpan, textSpan);
-            }
-            // dblclick 委托 —— 重命名文件
-            treeElement.removeEventListener('dblclick', handleDblClick);
-            treeElement.addEventListener('dblclick', handleDblClick);
+            };
+            treeElement.addEventListener('dblclick', _treeDblClickHandler);
         }
 
         let previewFileText = ''; // 当前预览的文件内容（用于判断是否需要重新渲染）
