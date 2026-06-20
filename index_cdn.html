@@ -8,13 +8,13 @@
     <title>本地文档知识库</title>
     <link rel="icon" type="image/svg+xml"
         href="data:image/svg+xml;charset=utf-8;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiMxYTU2ZGIiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjM2I4MmY2Ii8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIOWchuinkuaWueW9ouiDjOaZryAtLT4KICA8cmVjdCB4PSIyIiB5PSIyIiB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHJ4PSIxNCIgcnk9IjE0IiBmaWxsPSJ1cmwoI2JnKSIvPgogIDwhLS0g5bem5L6n5Lmm6ISK57q/IC0tPgogIDxyZWN0IHg9IjE4IiB5PSIxMiIgd2lkdGg9IjQiIGhlaWdodD0iNDAiIHJ4PSIxLjUiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjkiLz4KICA8IS0tIOWPs+S+p+S5pumhtSAoM+adoeaoque6v+S7o+ihqOWkmuWxguaWh+ahoykgLS0+CiAgPHJlY3QgeD0iMjYiIHk9IjE1IiB3aWR0aD0iMjAiIGhlaWdodD0iNSIgcng9IjIiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjg1Ii8+CiAgPHJlY3QgeD0iMjYiIHk9IjI0IiB3aWR0aD0iMTYiIGhlaWdodD0iNCIgcng9IjIiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjY1Ii8+CiAgPHJlY3QgeD0iMjYiIHk9IjMyIiB3aWR0aD0iMTgiIGhlaWdodD0iNCIgcng9IjIiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjc1Ii8+CiAgPHJlY3QgeD0iMjYiIHk9IjQwIiB3aWR0aD0iMTQiIGhlaWdodD0iNSIgcng9IjIiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjYiLz4KICA8IS0tIOW6lemDqOWwj+agh+etvi/kuabnrb4gLS0+CiAgPHJlY3QgeD0iMjIiIHk9IjUwIiB3aWR0aD0iOCIgaGVpZ2h0PSIzIiByeD0iMS41IiBmaWxsPSJ3aGl0ZSIgb3BhY2l0eT0iMC41NSIvPgo8L3N2Zz4=">
-    <!-- 非关键 CSS: 延迟加载 -->
+    <!-- 第三方 CSS 库：编辑器、代码高亮、Markdown 渲染、GraphQL、思维导图等 -->
     <link rel="stylesheet"
         href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/atom-one-dark.min.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/summerstyle/jsonTreeViewer/libs/jsonTree/jsonTree.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs/editor/editor.main.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-editor-dist@4.14.8/swagger-editor.min.css" />
-    <!-- 关键 CSS -->
+    <!-- 关键 CSS（页面核心功能依赖） -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5/github-markdown-light.min.css" />
     <link rel="stylesheet"
         href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/atom-one-dark.min.css" />
@@ -23,14 +23,14 @@
     <link rel="stylesheet" href="https://unpkg.com/tippy.js@6/dist/tippy.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jsmind@0.9.1/style/jsmind.css" />
 
-    <!-- 小体积核心库 (同步加载) -->
+    <!-- 核心 JS 库（同步加载，体积小） -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
 
-    <!-- 大体积库 -->
+    <!-- 大体积库（JSON 树、思维导图、Excel、D3、Excalidraw 等） -->
     <script src="https://cdn.jsdelivr.net/gh/summerstyle/jsonTreeViewer/libs/jsonTree/jsonTree.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsmind@0.9.1/es6/jsmind.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -38,6 +38,7 @@
     <script src="https://cdn.jsdelivr.net/npm/plantuml-encoder@1.4.0/dist/plantuml-encoder.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- excalidraw -->
     <script src="https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@0.17.6/dist/excalidraw.production.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3-force@3.0.0/dist/d3-force.min.js"></script>
     <script
@@ -45,7 +46,7 @@
     <script src="https://cdn.jsdelivr.net/npm/swagger-editor-dist@4.14.8/swagger-editor-bundle.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/graphql-playground-react@1.7.28/build/static/js/middleware.js"></script>
 
-    <!-- Prettier 代码格式化（必须在 monaco-editor-loader 之前加载，避免 define 冲突。不使用 defer，确保在 Monaco 之前同步执行） -->
+    <!-- Prettier: 必须在 Monaco 之前同步加载，避免 AMD define 冲突 -->
     <script src="https://unpkg.com/prettier@3.5.3/standalone.js"></script>
     <script src="https://unpkg.com/prettier@3.5.3/plugins/babel.js"></script>
     <script src="https://unpkg.com/prettier@3.5.3/plugins/estree.js"></script>
@@ -55,13 +56,13 @@
     <script src="https://unpkg.com/prettier@3.5.3/plugins/yaml.js"></script>
     <script src="https://unpkg.com/prettier@3.5.3/plugins/graphql.js"></script>
 
-    <!-- 视频库 - 必须在 monaco-editor-loader 之前加载（它们使用 UMD/AMD define，与 Monaco loader 冲突） -->
+    <!-- 视频播放库（artplayer/hls/dash/flv）：也是 UMD define，必须在 Monaco loader 之前加载 -->
     <script src="https://cdn.jsdelivr.net/npm/artplayer@4.5.6/dist/artplayer.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dashjs@4.7.4/dist/dash.all.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/flv.js@1.6.2/dist/flv.min.js"></script>
 
-    <!-- 1. moment.js 必须在 vis-timeline 之前加载 -->
+    <!-- Moment.js + vis-timeline（moment 必须在前） -->
     <script src="https://unpkg.com/moment@2.30.1/min/moment.min.js"></script>
     <script src="https://unpkg.com/moment@2.30.1/locale/zh-cn.js"></script>
     <script>moment.locale('zh-cn');</script>
@@ -72,28 +73,25 @@
     <script src="https://unpkg.com/isomorphic-git@1.25.10/index.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsonpath@1.3.0/jsonpath.min.js"></script>
 
-    <!-- cronstrue cron 表达式解析（含中文语言包） -->
+    <!-- cronstrue：cron 表达式解析，内置中文 -->
     <script src="https://cdn.jsdelivr.net/npm/cronstrue@3.14.0/dist/cronstrue-i18n.min.js"></script>
-    <!-- graphiql - 必须在 define 清理之前加载（它是 UMD 库，使用 AMD define） -->
+    <!-- GraphiQL（UMD，必须在 define 清理前加载） -->
     <script src="https://unpkg.com/graphiql@3.0.6/graphiql.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/regulex@0.0.5/dist/regulex.js"></script>
     <script>
-        // 早期加载 regulex 模块，缓存到 window.__regulex 中，供后续使用。
-        // 这是为了在 almond.js 加载前，能够正常加载 regulex 模块。
-        // 否则，almond.js 会尝试使用 define 函数加载 regulex 模块，导致加载失败。
+        // 抢先加载 regulex 模块并缓存，避免后面 almond.js 劫持 define 导致加载失败
         try {
             window.__regulex = require('regulex');
         } catch (e) {
             window.__regulex = null;
         }
-        // 移除 define 函数，防止 Monaco loader / almond.js 劫持其他 UMD 模块
-        // cronstrue / regulex / graphiql 已在 define 被移除前完成加载
+        // 清理 define / requirejs，防止 Monaco loader 与已有 UMD 库冲突
         window.define = undefined;
         window.requirejs = undefined;
     </script>
-    <!-- lunar-javascript 农历库（必须在 define 清理之后加载，否则 UMD 走 AMD 路径不设置全局变量） -->
+    <!-- lunar（农历 JS）：必须在 define 清理之后加载，否则 UMD 走 AMD 路径不挂全局变量 -->
     <script src="https://cdn.jsdelivr.net/npm/lunar-javascript@1.7.7/lunar.min.js"></script>
-    <!-- Monaco Editor 加载器（在 define 清理后加载，避免与其它库冲突） -->
+    <!-- Monaco Editor 加载器 -->
     <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs/loader.js"></script>
     <!-- ECharts 词云扩展 -->
     <script src="https://cdn.jsdelivr.net/npm/echarts-wordcloud@2/dist/echarts-wordcloud.min.js"></script>
@@ -133,7 +131,8 @@
             --radius-xxl: 12px;
             --transition-normal: 0.2s ease;
             --color-bg-header: #e1e5e8;
-            /* ==================== 日历应用逻辑 ==================== */
+
+            /* ---- 日历日程 ---- */
             --todo-primary: var(--color-primary);
             --todo-primary-hover: var(--color-primary-hover);
             --todo-primary-light: #E8F0FE;
@@ -150,8 +149,6 @@
             --todo-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
             --todo-radius: 8px;
             --todo-radius-sm: 4px;
-
-            /* 事件颜色（月视图背景/文字、周视图背景共用） */
             --todo-event-blue-bg: #E8F0FE;
             --todo-event-blue-text: #3370FF;
             --todo-event-purple-bg: #F0EBFF;
@@ -163,7 +160,7 @@
             --todo-event-red-bg: #FEE2E2;
             --todo-event-red-text: #DC2626;
 
-            /* ==================== 文件 timeline ==================== */
+            /* ---- 文件时间线 ---- */
             --timeline-border-light: #eef2f6;
             --timeline-text-secondary: #5b6e8c;
             --timeline-accent: #0969da;
@@ -174,7 +171,7 @@
             --heat-level3: #7bb8e0;
             --heat-level4: #2e89f8;
 
-            /* ==================== cron ==================== */
+            /* ---- Cron 表达式工具 ---- */
             --t0: #1f2329;
             --t1: #2b2f36;
             --t2: #646a73;
@@ -190,13 +187,13 @@
             --color-primary-bg2: rgba(51, 112, 255, .03);
             --ease: cubic-bezier(.4, 0, .2, 1);
 
-            /* ==================== 照片布局 ==================== */
+            /* ---- 照片布局 ---- */
             --photo-bg: #f5f6f7;
             --photo-text-secondary: #646a73;
             --photo-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.1);
             --photo-shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.12), 0 12px 40px rgba(0, 0, 0, 0.15);
 
-            /* ==================== git ==================== */
+            /* ---- Git 记录 ---- */
             --git-bg-secondary: var(--color-bg-secondary);
             --git-border: var(--color-border);
             --git-text: var(--color-text);
@@ -1638,13 +1635,18 @@
             padding: 45px 20px 15px 15px;
             gap: 16px;
             align-items: flex-start;
-            overflow-x: auto;
-            overflow-y: hidden;
+            overflow: auto;
             white-space: nowrap;
             background-color: var(--color-bg-secondary);
             min-width: 100%;
             min-height: 100vh;
             box-sizing: border-box;
+            cursor: grab;
+            user-select: none;
+        }
+
+        .kanban-container.grabbing {
+            cursor: grabbing;
         }
 
         .kanban-column {
@@ -4433,12 +4435,15 @@
             left: 0;
             right: 0;
             bottom: 0;
+            inset: 0;
             background: rgba(255, 255, 255, 0.97);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
             z-index: 9000;
             display: none;
             align-items: center;
             justify-content: center;
-            cursor: zoom-out;
+            cursor: pointer;
         }
 
         .mermaid-fullscreen-overlay.active {
@@ -10115,7 +10120,7 @@
 </head>
 
 <body>
-    <!-- 侧边栏 -->
+    <!-- ====== 左侧文件树侧边栏 ====== -->
     <div id="sidebar">
         <div id="sidebar-header">
             <button id="open-btn" class="btn btn-primary" onclick="openDir()" title="打开文件夹">
@@ -10183,21 +10188,21 @@
         </div>
         <div id="tree"></div>
     </div>
-    <!-- 侧边栏切换按钮 -->
+    <!-- 侧边栏折叠/展开按钮（贴屏幕左侧） -->
     <div id="sidebar-toggle-btn" class="sidebar-toggle-btn" onclick="toggleSidebarVisibility()" title="切换文件菜单">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
             <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />
         </svg>
     </div>
-    <!-- 主内容区 -->
+    <!-- ====== 主内容区（文件预览、编辑、统计面板等） ====== -->
     <div id="content">
-        <!-- 主要内容区，包含文件预览、编辑、统计面板、书签等 -->
+        <!-- 编辑模式（Monaco 编辑器） -->
         <div id="content-main-edit" class="content-main-edit" style="display: none;"></div>
-        <!--主内容展示区-->
+        <!-- 展示模式（渲染后的内容） -->
         <div id="content-main" style="display: block;"></div>
-        <!-- Swagger 编辑器/书签容器/白板容器 -->
+        <!-- 通用容器（Swagger/书签/白板等） -->
         <div id="content-common-container" style="display: none;"></div>
-        <!-- 关系图谱容器 -->
+        <!-- 关系图谱 -->
         <div id="graph-view-container" style="display: none;width: 100%; height: 100%;">
             <div class="graph-toolbar-container">
                 <div class="graph-toolbar">
@@ -10298,7 +10303,7 @@
             </button>
             <canvas id="graph-canvas" class="graph-canvas"></canvas>
         </div>
-        <!-- 统计面板 -->
+        <!-- 统计面板（文件数、热力图、图表等） -->
         <div id="dashboard-container" class="dashboard-container" style="display: none;">
             <div class="page-header">
                 <div>
@@ -10585,17 +10590,17 @@
                 </div>
             </div>
         </div>
-        <!-- GraphQL 容器 -->
+        <!-- GraphQL IDE（GraphiQL） -->
         <div id="graphql-container" class="graphql-container" style="display: none;"></div>
-        <!-- GraphQL Playground 容器 -->
+        <!-- GraphQL Playground（备用 IDE） -->
         <div id="graphql-playground-container" class="graphql-container" style="display: none;"></div>
-        <!-- OpenResty 编辑器容器 -->
+        <!-- OpenResty Nginx 配置编辑器 -->
         <div id="openresty-editor-container" class="openresty-editor-container" style="display: none;"></div>
-        <!-- 通用 iframe 容器 -->
+        <!-- 通用 iframe（嵌入外部页面） -->
         <div id="iframe-common-container" style="display: none; width: 100%; height: 100%;">
             <iframe id="common-iframe" src="" style="width: 100%; height: 100%; border: none;"></iframe>
         </div>
-        <!-- mermaid 应用容器 -->
+        <!-- Mermaid 图表编辑器 -->
         <div id="mermaid-app-container" class="mermaid-app-container" style="display: none;">
             <div class="mermaid-app">
                 <div class="mermaid-toolbar">
@@ -10731,7 +10736,7 @@
                 </div>
             </div>
         </div>
-        <!--文件时间线-->
+        <!-- 文件时间线（热力图 + vis-timeline） -->
         <div class="timeline-app-container" id="timeline-app-container" style="display: none;">
             <div class="timeline-navbar">
                 <div class="timeline-view-tabs">
@@ -10791,7 +10796,7 @@
                 </div>
             </div>
         </div>
-        <!-- 目录容器：md 和 html -->
+        <!-- Markdown/HTML 文档目录 -->
         <div id="toc-container" style="display: none;">
             <div class="toc-title">目录</div>
             <div id="toc"></div>
@@ -10803,7 +10808,7 @@
                 <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
             </svg>
         </div>
-        <!-- 右上操作按钮 -->
+        <!-- 顶部操作工具栏（编辑/保存/预览/格式化等） -->
         <div id="top-right-controls" class="top-right-controls" style="display: none;">
             <span class="opml-original-buttons" id="opml-original-buttons">
                 <button id="opml-mindmap-btn" class="btn btn-success btn-sm" onclick="convertToMindmap()">
@@ -10874,7 +10879,7 @@
                 复制
             </button>
         </div>
-        <!-- 新文件操作按钮 -->
+        <!-- 新建文件工具栏（保存/清空） -->
         <div id="new-file-controls" class="top-right-controls" style="display: none;">
             <div class="mermaid-dropdown mermaid-save-dropdown new-file-save-dropdown">
                 <button id="new-file-save-btn" class="btn btn-success btn-sm" onclick="toggleSaveFolderPanel(event)">
@@ -10888,7 +10893,7 @@
                 清空
             </button>
         </div>
-        <!-- AI处理悬浮按钮 -->
+        <!-- AI 助手悬浮按钮（总结/分析/Mermaid 画图等） -->
         <div id="ai-fab-container" class="ai-fab-container" style="display: none;">
             <div id="ai-fab-button" class="ai-fab-button">
                 <img src="data:image/jpeg;base64,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"
@@ -10921,7 +10926,7 @@
                 <div id="ai-history-list" class="ai-history-list"></div>
             </div>
         </div>
-        <!-- AI结果弹窗 -->
+        <!-- AI 处理结果弹窗 -->
         <div id="ai-result-modal" class="ai-result-modal" style="display: none;">
             <div class="ai-result-overlay"></div>
             <div class="ai-result-container">
@@ -10939,7 +10944,7 @@
                 <div class="ai-result-content" id="ai-result-content"></div>
             </div>
         </div>
-        <!-- 通用保存模态框 -->
+        <!-- 通用保存目录选择弹窗 -->
         <div id="common-save-modal" class="whiteboard-save-modal" style="display: none;">
             <div class="whiteboard-save-overlay" onclick="closeCommonSaveModal()"></div>
             <div class="whiteboard-save-container">
@@ -10959,7 +10964,7 @@
                 <span id="global-loading-text">加载中...</span>
             </div>
         </div>
-        <!-- Markdown 文本选区浮动工具栏 -->
+        <!-- Markdown 选区浮动工具栏（高亮/批注/颜色） -->
         <div id="markdown-selection-toolbar" class="markdown-selection-toolbar" role="toolbar" aria-label="文本选择操作">
             <div id="selection-tools-btns"></div>
             <div id="selection-color-picker" class="selection-color-picker"
@@ -10969,7 +10974,7 @@
                 <div id="selection-comment" class="color-options"></div>
             </div>
         </div>
-        <!-- 正则表达式测试工具 -->
+        <!-- 正则表达式测试工作台 -->
         <div id="regex-test-container" style="display: none;">
             <div class="regex-card regex-card-input">
                 <div class="regex-input-body">
@@ -11359,7 +11364,7 @@
                 </div>
             </div>
         </div>
-        <!-- 日历日程管理 -->
+        <!-- 日历日程管理（月/周/日视图） -->
         <div id="calendar-container" style="display: none;">
             <header class="todo-header">
                 <div class="todo-header-left">
@@ -11675,28 +11680,44 @@
     </div>
 
     <script>
-        let monacoInitPromise = null;       // Monaco 初始化 Promise
+        let monacoInitPromise = null;
         function initMonacoEditor() {
             if (!monacoInitPromise) {
-                monacoInitPromise = new Promise((resolve) => {
+                monacoInitPromise = new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                        reject(new Error('Monaco Editor 加载超时'));
+                    }, 30000);
                     require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs' } });
-                    require(['vs/editor/editor.main'], () => {
-                        initPrettierFormatProvider();
-                        resolve();
-                    });
+                    try {
+                        require(['vs/editor/editor.main'], () => {
+                            clearTimeout(timeout);
+                            initPrettierFormatProvider();
+                            resolve();
+                        });
+                    } catch (e) {
+                        clearTimeout(timeout);
+                        reject(e);
+                    }
+                }).catch(err => {
+                    console.warn('Monaco Editor 加载失败:', err);
+                    monacoInitPromise = null; // 重置，允许下次重试
+                    throw err;
                 });
             }
             return monacoInitPromise;
         }
-        const GRAPHQL_ENDPOINT = 'http://localhost:8091/graphql'; //graphql 请求地址
-        const HOLIDAY_API = 'https://timor.tech/api/holiday/year/'; //节假日查询接口，使用时在后面拼接年份，例如查询2024年节假日则请求https://timor.tech/api/holiday/year/2024
-        const LOCAL_LLM_ENDPOINT = 'http://192.168.31.152:12345/v1/chat/completions';//http://localhost:8091/v1/chat/completions
+        // ====== 后端服务地址 ======
+        const GRAPHQL_ENDPOINT = 'http://localhost:8091/graphql';
+        const HOLIDAY_API = 'https://timor.tech/api/holiday/year/'; // 节假日接口，拼接年份使用
+        // ====== 本地 LLM 配置 ======
+        const LOCAL_LLM_ENDPOINT = 'http://192.168.31.152:12345/v1/chat/completions';
         const LOCAL_LLM_TOKEN = 'c17f18e31adb10978d3a9cd0d6743d30a067af602a8789e7';
-        const LOCAL_LLM_MODEL = 'gemma-4-e4b-it';//openclaw/main, gemma-4-e4b-it, qwen/qwen3.5-9b
+        const LOCAL_LLM_MODEL = 'gemma-4-e4b-it';
         const CONTEXT_LENGTH = 10000;
         const NGINX_CONF_PATH = '/usr/local/etc/openresty/sites/index.conf';
         const DOT = '.';
         const SLASH = '/';
+        // AI 助手预设 Prompt 配置，每个 key 对应一种处理模式
         const PROMPTS = {
             summarize: {
                 key: '总结',
@@ -11755,6 +11776,7 @@
                 title: '知识行为分析结果'
             },
         };
+        // 新建文件的模板列表
         const NEW_FILES = [
             { key: '日记', name: "diary.md", ext: ".md" },
             { key: '文件', name: "untitled.txt", ext: ".md" },
@@ -11769,6 +11791,7 @@
             { key: 'txt', name: "untitled.txt", ext: ".txt" },
             { key: 'sql', name: "untitled.sql", ext: ".sql" },
         ]
+        // 右键菜单中的快捷操作
         const NEW_DIR = [
             { key: '📁 新建目录', name: "新建目录", click: "createDirByParentDir" },
             { key: '📄 新建文件', name: "untitled.txt", click: "createFileByParentDir" },
@@ -11776,6 +11799,7 @@
             { key: '📚️ 文件词云', name: "文件词云", click: "openWordCloudFile" },
             { key: '标记', name: "标记", click: "markDir" },
         ]
+        // 操作类型枚举（用于操作记录展示）
         const OPERATION_TYPES = {
             VIEW: { key: '查看', color: '#007AFF' },
             SAVE: { key: '保存', color: '#00BA88' },
@@ -11807,22 +11831,23 @@
             { key: '文件词云', value: 'toggleFile("wordCloud")', display: true, fileProtocolDisplay: true },
             { key: 'git记录', value: 'toggleFile("gitRecords")', display: true, fileProtocolDisplay: true },
         ]
-        // 高亮/批注颜色配置 - 字体颜色（深色系，确保可读性）
+        // 高亮字体颜色（深色系，确保可读性）
         const HIGHLIGHT_FONT_COLORS = [
-            { key: 'font-red', label: '红色', color: '#dc2626', default: true },      // 深红 - 重要强调
-            { key: 'font-orange', label: '橙色', color: '#ea580c', default: false },    // 橙色 - 警告提示
-            { key: 'font-blue', label: '蓝色', color: '#2563eb', default: false },      // 蓝色 - 链接引用
-            { key: 'font-green', label: '绿色', color: '#16a34a', default: false },     // 绿色 - 成功完成
-            { key: 'font-purple', label: '紫色', color: '#9333ea', default: false },    // 紫色 - 创意想法
+            { key: 'font-red', label: '红色', color: '#dc2626', default: true },
+            { key: 'font-orange', label: '橙色', color: '#ea580c', default: false },
+            { key: 'font-blue', label: '蓝色', color: '#2563eb', default: false },
+            { key: 'font-green', label: '绿色', color: '#16a34a', default: false },
+            { key: 'font-purple', label: '紫色', color: '#9333ea', default: false },
         ];
-        // 高亮/批注颜色配置 - 背景颜色（浅色系，柔和不刺眼）
+        // 高亮背景颜色（浅色系，柔和不刺眼）
         const HIGHLIGHT_BG_COLORS = [
-            { key: 'bg-yellow', label: '黄底', color: '#fef08a', default: true },     // 淡黄 - 标准高亮
-            { key: 'bg-green', label: '绿底', color: '#bbf7d0', default: false },      // 浅绿 - 完成标记
-            { key: 'bg-blue', label: '蓝底', color: '#bfdbfe', default: false },       // 浅蓝 - 信息提示
-            { key: 'bg-pink', label: '粉底', color: '#fbcfe8', default: false },       // 浅粉 - 温柔强调
-            { key: 'bg-orange', label: '橙底', color: '#fed7aa', default: false },     // 浅橙 - 注意事项
+            { key: 'bg-yellow', label: '黄底', color: '#fef08a', default: true },
+            { key: 'bg-green', label: '绿底', color: '#bbf7d0', default: false },
+            { key: 'bg-blue', label: '蓝底', color: '#bfdbfe', default: false },
+            { key: 'bg-pink', label: '粉底', color: '#fbcfe8', default: false },
+            { key: 'bg-orange', label: '橙底', color: '#fed7aa', default: false },
         ];
+        // 搜索按钮配置
         const SEARCH_BTNS = [
             { name: '全部', query: 'all' },
             { name: 'google', query: 'https://www.google.com/search?q=' },
@@ -11830,22 +11855,23 @@
             { name: 'bing', query: 'https://www.bing.com/search?q=' },
             { name: 'duckgo', query: 'https://duckduckgo.com/?q=' }
         ]
-        // 目录黑名单:这些目录将被忽略,不显示在文件树中
+        // 文件树中忽略的目录
         const DIR_BLACKLIST = [".", ".obsidian", ".venv", ".vscode", ".git", "assets", ".trae", ".claude", ".idea",
             'node_modules', 'vendor', 'dist', 'build', 'out', 'target', '__pycache__'];
-        // 文件后缀正则黑名单:匹配这些后缀的文件将被忽略
+        // 文件树中忽略的文件后缀
         const FILE_BLACKLIST = [DOT, '.bobconfig', '.itermexport', '.DS_Store', '.gitignore', '.rayconfig'];
-        // 随机打开文件的白名单目录, 默认判断尾缀名
+        // 随机打开功能的目录过滤
         const RANDOM_DIR_WHITELIST = ["pic"];
         const RANDOM_DIR_BLACKLIST = ['note/moc', 'note/templates', 'deleted', 'data', 'code'];
-        // code目录下的HTML文件显示代码,其他文件正常显示
+        // code 目录下的 .html 文件显示代码而非渲染
         const HTML_CODE_SHOW_BLACKLIST = ["note"];
-        // ========== 常量定义 ==========
+
+        // ====== 系统常量 ======
         const MAX_FILE_SIZE = 50 * 1024 * 1024; // 5MB - 大文件限制
         const MAX_DIR_DEPTH = 20; // 最大目录深度
         const SCROLL_RESTORE_DELAY = 200; // 滚动恢复延迟(ms)
         const DELETED_INDEX_EXPIRE_DAYS = 30; // 删除索引过期天数
-        // 本地存储键名常量
+        // ====== localStorage 键名 ======
         const LAST_FILE_KEY = "last_opened_File_path";           // 最后打开的文件路径
         const EXPANDED_STATE_KEY = 'directory_expanded_states'; // 目录展开状态
         const LEVEL_SELECTION_KEY = 'level_selection';         // 级别选择状态
@@ -11859,9 +11885,9 @@
         const PERMISSION_TIME_KEY = 'permission_timestamp'; // 授权时间戳键名
         const TREE_LOAD_TIME_KEY = 'tree_load_duration'; // 文件树加载时长键名
         const FILE_SCAN_TIME_KEY = 'file_scan_duration'; // 文件扫描时长键名
-        // 目录 indexdb常量
         const DIRECTORY_STORE_NAME = 'idb-data-store';
-        // 目录常量
+
+        // ====== 目录名常量 ======
         const DELETED_DIR_NAME = 'deleted';         // 垃圾箱文件名
         const DIARY_DIR_NAME = 'diary';         // 日记文件名
         const NOTE_DIR_NAME = 'note';         // 笔记文件名
@@ -11878,12 +11904,14 @@
         const INDEX_MARKERS_FILE = 'index_file_markers.json';
         const INDEX_OPER_FILE = 'index_operation.json';
         const INDEX_SCHEDULE_FILE = 'index_schedule.json';
-        //工具常量
+        // 判断文件路径是否应显示代码而非渲染 HTML
         const isShowHtmlCode = (relativePath) => {
             const p = normalizePath(relativePath || '');
             return HTML_CODE_SHOW_BLACKLIST.some(dir => !p.startsWith(normalizePath(dir)));
         };
+        // 获取幕布节点文本
         const getMubuText = (node) => node.getAttribute('_mubu_text') ? decodeURIComponent(node.getAttribute('_mubu_text')) : '';
+        // 判断目录是否应跳过（黑名单匹配）
         const isSkipDir = (dirPath) => {
             if (dirPath.includes('__pycache__')) return true;
             const p = normalizePath(dirPath || '');
@@ -11895,29 +11923,21 @@
             if (RANDOM_DIR_BLACKLIST.some(dir => p.startsWith(normalizePath(dir)))) return false;
             return RANDOM_DIR_WHITELIST.some(dir => p.startsWith(normalizePath(dir))) || (ext && isDoc(ext));
         };
-        // 运行环境判断
+        // 运行环境判断：file:// 协议表示本地直接打开，http:// 表示有后端服务
         let hasBackendServer = false;
         const isLocalVisit = () => window.location.protocol === 'file:';
         const isHttpVisit = () => window.location.protocol === 'http:' || window.location.protocol === 'https:';
-        const replaceMediaUrl = async (path, isFullText) => {
-            // 存在后端服务, 更改绝对路径
-            if (hasBackendServer) return buildLocalAbsoluteImg(path, isFullText);
-            // 本地访问, 构建本地图片路径
-            if (isLocalVisit()) return buildLocalImg(path, isFullText);
-            // http访问, 无后端服务
-            if (isHttpVisit()) return await buildHttpImg(path, isFullText);
-            return path;
-        };
+        const replaceMediaUrl = async (text, isAllFile) => photoLoadFromLocal(text, isAllFile);
         const isInDeletedDir = (relativePath) => {
             const p = normalizePath(relativePath || '');
             return p === DELETED_DIR_NAME || p.startsWith(DELETED_DIR_NAME);
         };
-        // 路径归一化
+        // 路径归一化：反斜杠转正斜杠
         const normalizePath = (p) => {
             if (!p && p !== '') return '';
             return String(p).replace(/\\/g, SLASH);
         }
-        // 目录路径拼接
+        // 路径拼接，自动处理分隔符
         const joinPath = (...parts) => {
             const arr = parts.map(p => normalizePath(p || '')).filter(p => p !== undefined && p !== null);
             if (arr.length === 0) return '';
@@ -11956,6 +11976,7 @@
         const isRaw = (ext) => ['arw', 'raw', 'cr2', 'nef', 'dng', 'orf', 'raf', 'rw2', 'pef', 'srf', '3fr', 'erf'].includes(ext.toLowerCase());
         const isSelectWork = (name) => ['md', 'html'].includes(getExt(name).toLowerCase());
 
+        // ====== 文件树状态 ======
         let currentRootPath = '/Users/zhang/gitrepositories/resource'; // 当前目录的完整路径(用于生成唯一标识)
         let rootDirectoryHandle = null;     // 根目录句柄
         const getRootHandle = () => rootDirectoryHandle;  // 获取根目录句柄的函数
@@ -12010,6 +12031,7 @@
         let _treeLoadDuration = null; // 文件树加载耗时(ms)
         let _fileScanDuration = null; // 文件扫描耗时(ms)
 
+        // ====== DOM 元素缓存（避免重复查询） ======
         const treeElement = document.getElementById('tree');
         const clearSearchBtn = document.getElementById('clear-search');
         const openDirBtn = document.getElementById('open-btn');
@@ -12056,6 +12078,7 @@
         const wordViewContainer = document.getElementById('word-view-container');
         const gitRecordsContainer = document.getElementById('git-records-container');
 
+        // 所有主视图容器的集合（切换视图时隐藏其他容器用）
         const MAIN_VIEW_CONTAINERS = [
             contentMain, contentEdit, contentCommonContainer, dashboardContainer,
             graphqlContainer, openrestyEditorContainer, graphViewContainer,
@@ -12077,12 +12100,13 @@
 
         marked.setOptions({ breaks: true, gfm: true, headerIds: false });
 
+        // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', async () => {
             await heartbeat();
             await initAll();
         });
 
-        // ========== 页面可见性和空闲检测 ==========
+        // ====== 空闲检测：5 分钟无操作判定为空闲 ======
         let lastActivityTime = Date.now();
         const IDLE_TIMEOUT = 5 * 60 * 1000; // 5分钟空闲阈值
         // 空闲检测：记录用户最后活动时间
@@ -12092,20 +12116,16 @@
         ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'].forEach(event => {
             document.addEventListener(event, updateActivity, { passive: true });
         });
-        // 检查是否空闲
         function isIdle() {
             return Date.now() - lastActivityTime > IDLE_TIMEOUT;
         }
 
-        // 页面可见性检测：页面隐藏时暂停定时器，节省CPU
+        // 切到后台时暂停定时器省电，回来时恢复
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
-                // 页面隐藏时暂停所有定时器
                 TimerManager.pauseAll();
             } else {
-                // 页面可见时恢复所有定时器
                 TimerManager.resumeAll();
-                // 更新活动时间
                 lastActivityTime = Date.now();
             }
         });
@@ -12119,6 +12139,7 @@
             destroyEverything();
         });
 
+        // 应用初始化入口：文件树就绪后并发启动各模块
         async function initAll() {
             if (!await initTreeBrowser()) return;
             // 并发执行所有初始化操作，提升启动性能
@@ -12172,8 +12193,8 @@
             }
         }
 
-        // ===== 文件树事件委托：click + dblclick 统一挂载到 treeElement，替代 per-file 监听器 =====
-        // 注：下拉菜单和颜色点的监听器仍保留在各自按钮上（数量少且逻辑差异大）
+        // 文件树事件委托：click/dblclick 挂到 treeElement 上，不用每个文件单独加监听
+        // 注：下拉菜单和颜色选择器按钮的监听仍单独绑定（数量少，逻辑差异大）
         ; (function _initTreeDelegation() {
             // click 委托 —— 打开文件（100ms 防双击）
             treeElement.addEventListener('click', async (event) => {
@@ -12559,8 +12580,8 @@
             }
         }
 
-        // ========== 定时器管理器 ==========
-        // 系统级定时器（页面隐藏时继续运行）和普通定时器
+        // ===== 定时器管理器 =====
+        // system=true 的定时器在页面切到后台时继续跑（比如定时任务通知），普通定时器会暂停
         const TimerManager = {
             timers: new Map(), // setInterval timers { id, callback, interval, system }
             timeoutTimers: new Map(), // setTimeout timers
@@ -12729,10 +12750,7 @@
             });
         }
 
-        /**
-         * 清除选中文本中的高亮/标注标记
-         * 遍历选区内的 span 标签，解除包裹（保留文本内容），处理嵌套情况
-         */
+        // 清除选中文本的高亮/标注：解除 span 包裹，保留文本
         async function clearMarkdownTextMark() {
             if (!markdownSelectionState || !markdownSelectionState.range || !markdownSelectionState.text) return;
             const capturedState = {
@@ -12831,11 +12849,7 @@
             }
         }
 
-        /**
-         * 获取 Prettier parser 名称和所需插件
-         * @param {string} language - Monaco language ID
-         * @returns {{ parser: string|null, plugins: Array|null }}
-         */
+        // 根据 Monaco language ID 返回对应的 Prettier parser 和插件
         function getPrettierConfig(language) {
             const config = {
                 javascript: { parser: 'babel', plugins: [window.prettierPlugins?.babel, window.prettierPlugins?.estree] },
@@ -12859,12 +12873,7 @@
             return config[language] || { parser: null, plugins: [], fallback: true };  // 未知语言走 Monaco 内置格式化
         }
 
-        /**
-         * 使用 Prettier 格式化代码
-         * @param {string} code - 源代码
-         * @param {string} language - Monaco language ID
-         * @returns {Promise<string|null>} 格式化后的代码，不支持返回 null
-         */
+        // 调用 Prettier 格式化代码，不支持的语言返回 null
         async function formatCode(code, language) {
             if (!window.prettier) {
                 console.warn('Prettier 未加载');
@@ -12897,13 +12906,7 @@
             }
         }
 
-        /**
-         * 使用 Monaco 内置的缩进规则格式化代码（降级方案）
-         * 适用于 Prettier 不支持的 Lua/Shell/SQL 等语言
-         */
-        /**
-         * 使用 Monaco 内置格式化（降级方案，适用于 Prettier 不支持的语言）
-         */
+        // Monaco 内置格式化（降级方案，用于 Prettier 不支持的语言）
         function formatWithMonacoIndentation() {
             if (!currentEditor) return null;
             try {
@@ -12918,12 +12921,8 @@
             }
         }
 
-        /**
-         * 初始化 Prettier + Monaco DocumentFormattingEditProvider
-         * 为 Prettier 支持的语言注册格式化提供者，使 Shift+Alt+F 快捷键生效。
-         * fallback 语言（JSON/Python/Go/Java/Lua/Shell/SQL/PowerShell）不注册 provider，
-         * 让 Monaco 使用内置格式化（缩进、括号匹配等）。
-         */
+        // 给 Prettier 支持的语言注册格式化提供者，让 Shift+Alt+F 生效
+        // fallback 语言（Java/Lua/Shell/SQL 等）走 Monaco 内置格式化
         function initPrettierFormatProvider() {
             if (!window.prettier || !window.monaco) {
                 // Prettier 或 Monaco 尚未就绪，延迟 500ms 重试（最多重试 10 次）
@@ -13064,7 +13063,7 @@
             disposeAllCharts();
             cleanupObjectUrls();
             showTocToggleBtn(false);
-            // 并发执行所有销毁操作，提升切换性能
+            // 并发清理各模块，避免逐个等待
             Promise.allSettled([
                 Promise.resolve(destroyExcalidraw()),
                 Promise.resolve(destroyJsMind()),
@@ -13073,6 +13072,7 @@
                 Promise.resolve(hiddenAiPanel()),
                 Promise.resolve(timelineDestroy()),
                 Promise.resolve(picLayoutDestroy()),
+                Promise.resolve(cleanupKanbanPan()),
                 Promise.resolve(destroySwaggerEditor()),
                 Promise.resolve(destroyGraphQLPlayground()),
                 Promise.resolve(cleanupCommonIframe()),
@@ -13396,7 +13396,7 @@
             if (historyPanel) historyPanel.style.display = 'none';
         }
 
-        /** 销毁 jsMind 实例，释放 Canvas/DOM 引用 */
+        // 销毁 jsMind，释放 Canvas/DOM
         function destroyJsMind() {
             if (currentJsMind) {
                 try {
@@ -13413,7 +13413,7 @@
             }
         }
 
-        /** 清理 d3 Canvas SVG 状态，释放 zoom 行为和 SVG 元素 */
+        // 清理 d3 SVG 状态，释放 zoom 和 DOM
         function cleanupCanvasState() {
             if (window.canvasState) {
                 try {
@@ -14083,7 +14083,7 @@
             clickFileSpan(lastFilePath, lastFileItem);
         }
 
-        //执行搜索操作,功能:根据关键词筛选文件和目录,并显示匹配结果
+        // 文件搜索：按关键词筛选并高亮匹配项
         function executeSearch(keywordLower) {
             const fileItems = treeElement.querySelectorAll('.file-item');
             const details = treeElement.querySelectorAll('details');
@@ -14237,7 +14237,7 @@
             _expandedStateTimer = setTimeout(_flushExpandedState, _EXPANDED_STATE_DEBOUNCE);
         }
 
-        // 获取目录展开状态 功能:从本地存储中获取目录的展开/折叠状态（带缓存）
+        // 读取目录展开状态（带内存缓存，避免频繁读 localStorage）
         function getDirExpandedState(dirKey) {
             if (!currentRootPath) return false;
             _loadExpandedStateCache();
@@ -14311,7 +14311,7 @@
             return _scrollPositionCache;
         }
 
-        // ---------- createFileItem / createDirectoryEntry 共享常量 ----------
+        // 文件树 DOM 构建中用到的共享常量和工具
         const _SVG_MORE_BTN = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="8" cy="3" r="1.5" fill="#ef4444"/><circle cx="8" cy="8" r="1.5" fill="#ef4444"/><circle cx="8" cy="13" r="1.5" fill="#ef4444"/></svg>';
         const _MARKER_COLORS = ['#ef4444', '#f97316', '#22c55e', '#3b82f6', '#a855f7'];
         const _MARKER_COLOR_NAMES = ['red', 'orange', 'green', 'blue', 'purple'];
@@ -14954,7 +14954,7 @@
             if (pager) pager.style.display = 'none';
 
             const modal = document.createElement('div');
-            modal.style.cssText = `position: fixed;top: 0;left: 0;width: 100%;height: 100%;background: rgba(0,0,0,0.5);display: flex;justify-content: center;align-items: center; z-index: 10000;cursor: zoom-out;opacity: 0;transition: opacity 0.03s ease;`;
+            modal.style.cssText = `position: fixed;top: 0;left: 0;width: 100%;height: 100%; background: rgba(15, 23, 42, 0.42);backdrop-filter: blur(4px);-webkit-backdrop-filter: blur(4px);display: flex;justify-content: center;align-items: center; z-index: 10000;cursor: pointer;opacity: 0;transition: opacity 0.03s ease;`;
             const containerDiv = document.createElement('div');
             containerDiv.style.cssText = `width: 90%; height: 90%; overflow: hidden;`;
             const container = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -15193,11 +15193,7 @@
             }
         }
 
-        /**
-         * 判断文本是否包含 Markdown 格式
-         * @param {string} text - 待检测文本
-         * @returns {boolean} - 是否包含 Markdown
-         */
+        // 检测文本是否包含 Markdown 格式
         function hasMarkdown(text) {
             if (typeof text !== 'string') return false;
             if (text.length < 2) return false;
@@ -15808,8 +15804,8 @@
         }
         const IMG_SRC_REGEX = /<img([^>]*)src\s*=\s*["']([^"']+)["']([^>]*)>/gi;
         const isContinueImg = (src) => {
-            // 跳过非本地图片：data URI、blob URL、外部链接
-            if (src.startsWith('data:') || src.startsWith('blob:') ||
+            // 跳过非本地图片：data URI、blob URL、file URL、外部链接
+            if (src.startsWith('data:') || src.startsWith('blob:') || src.startsWith('file:') ||
                 src.startsWith('http://') || src.startsWith('https://') ||
                 src.startsWith('//')) return true;
             return false;
@@ -15843,30 +15839,21 @@
             }
             return resolvedParts.join(SLASH);
         }
-        /**
-         * 存在后端服务, 更改绝对路径
-         * 构建本地绝对图片, 绝对路径前缀为打开为 rootHandle 根目录的路径下
-         * @param {string} text - 输入文本
-         * @param {boolean} isFullText - 是否替换所有图片
-         * @returns {string} - 替换后的文本
-         */
+        // 后端模式：将图片相对路径拼上 rootHandle 根目录前缀
         const buildLocalAbsoluteImg = (text, isFullText = false) => {
             const normalizedRootPath = normalizePath(currentRootPath);
             if (!isFullText) {
+                if (isContinueImg(text)) return text;
                 return dealWithAbsolutePath(text, normalizedRootPath);
             } else {
                 IMG_SRC_REGEX.lastIndex = 0;
                 return text.replace(IMG_SRC_REGEX, (_, before, src, after) => {
+                    if (isContinueImg(src)) return `<img${before}src="${src}"${after}>`;
                     return `<img${before}src="${dealWithAbsolutePath(src, normalizedRootPath)}"${after}>`;
                 });
             }
         }
-        /**
-         * 本地访问 file:// , 构建本地图片路径, 全部为本地路径
-         * @param {string} text - 输入文本
-         * @param {boolean} isFullText - 是否替换所有图片
-         * @returns {string} - 替换后的文本
-         */
+        // 本地 file:// 模式：图片路径全转本地绝对路径
         function buildLocalImg(text, isFullText = false) {
             const normalizedRootPath = normalizePath(currentRootPath);
             if (!isFullText) {
@@ -15896,12 +15883,7 @@
                 });
             }
         }
-        /**
-         * 构建 HTTP 图片, 全部为 base64 编码的图片
-         * @param {string} text - 输入文本
-         * @param {boolean} isFullText - 是否替换所有图片
-         * @returns {Promise<string>} - 替换后的文本
-         */
+        // HTTP 模式：图片转 base64 内嵌
         async function buildHttpImg(text, isFullText = false) {
             const normalizedRootPath = normalizePath(currentRootPath);
             if (!isFullText) {
@@ -16550,7 +16532,7 @@
             scheduleNext();
         }
 
-        /** 停止 Swagger 自动保存定时器（不销毁编辑器实例，避免插件冲突） */
+        // 停掉 Swagger 自动保存定时器（不销毁编辑器，避免插件冲突）
         async function destroySwaggerEditor() {
             if (swaggerAutoSaveTimer) {
                 clearTimeout(swaggerAutoSaveTimer);
@@ -17831,7 +17813,7 @@
         }
 
 
-        // 从Markdown内容生成目录 功能:解析Markdown文档内容,提取标题信息,生成目录结构
+        // 从 Markdown 解析标题并生成目录侧栏
         async function generateTOC(markdownText) {
             tocElement.innerHTML = '';
             const headings = extractMarkdownHeadings(markdownText);
@@ -17852,7 +17834,7 @@
             showTocToggleBtn(true);
         }
 
-        // 从Markdown文本中提取标题 功能:解析Markdown文本,提取不在代码块中的标题
+        // 提取 Markdown 中的标题（跳过代码块内的 #）
         function extractMarkdownHeadings(markdownText) {
             const headings = [];
             const lines = markdownText.split('\n');
@@ -17892,7 +17874,7 @@
             return text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/__(.+?)__/g, '<strong>$1</strong>');
         }
 
-        // 构建目录HTML 功能:根据标题列表生成目录HTML结构
+        // 根据标题列表生成带层级的目录 HTML
         function buildTOC(headings) {
             let html = '<ul>';
             let currentLevel = 1;
@@ -18115,7 +18097,7 @@
                                     continue;
                                 }
                             } catch (e) {
-                                console.warn('不是有效的 excalidraw JSON:', e);
+                                console.warn('json 解析失败:', e);
                             }
                         } else if (!isMermaid && !hljs.getLanguage(lang)) {
                             codeBlock.classList.remove(langClass);
@@ -18514,6 +18496,7 @@
             initKanbanCheckboxClick();
             initKanbanAddCard();
             initKanbanMoreMenu();
+            initKanbanPan();
             postProcessCodeAndDiagrams(contentMain);
         }
 
@@ -18852,6 +18835,74 @@
                 });
                 sortableInstances.push(columnSortable);
             }
+        }
+
+        // 看板视口拖拽平移
+        // 原理：水平滚动由 #kanban-container 自身处理（flex 列横向溢出），
+        //       垂直滚动由父容器 #content-main 处理（kanban-container 高度超出视口）。
+        //       因此拖拽时水平 scrollLeft 作用在 container 上，垂直 scrollTop 作用在 parent 上。
+        function initKanbanPan() {
+            const container = document.getElementById('kanban-container');
+            if (!container) return;
+            const parent = container.parentElement; // #content-main
+            let isPanning = false;
+            let startX = 0;
+            let startY = 0;
+            let startScrollLeft = 0;
+            let startScrollTop = 0;
+
+            const onMouseDown = (e) => {
+                // 如果点击的是可拖拽的卡片、列标题、按钮或输入框，不启动平移
+                const target = e.target;
+                if (target.closest('.kanban-card') ||
+                    target.closest('.kanban-column h2') ||
+                    target.closest('.kanban-add-btn') ||
+                    target.closest('.kanban-more-menu') ||
+                    target.tagName === 'INPUT' ||
+                    target.tagName === 'TEXTAREA' ||
+                    target.tagName === 'BUTTON' ||
+                    target.closest('[contenteditable]')) {
+                    return;
+                }
+                isPanning = true;
+                container.classList.add('grabbing');
+                startX = e.pageX;
+                startY = e.pageY;
+                startScrollLeft = container.scrollLeft;
+                // 垂直滚动在父容器 #content-main 上（kanban-container 高度可能超出视口）
+                startScrollTop = parent ? parent.scrollTop : 0;
+                container.style.cursor = 'grabbing';
+            };
+
+            const onMouseMove = (e) => {
+                if (!isPanning) return;
+                e.preventDefault();
+                const walkX = (e.pageX - startX) * 1.2;
+                const walkY = (e.pageY - startY) * 1.2;
+                // 水平滚动：作用在 kanban-container 自身
+                container.scrollLeft = startScrollLeft - walkX;
+                // 垂直滚动：作用在父容器 #content-main
+                if (parent) {
+                    parent.scrollTop = startScrollTop - walkY;
+                }
+            };
+
+            const onMouseUp = () => {
+                isPanning = false;
+                container.classList.remove('grabbing');
+                container.style.cursor = '';
+            };
+
+            container.addEventListener('mousedown', onMouseDown);
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+
+            // 清理函数
+            container._panCleanup = () => {
+                container.removeEventListener('mousedown', onMouseDown);
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+            };
         }
 
         // 更新所有列元素的 data-col-index
@@ -19899,7 +19950,7 @@
             }
             const now = new Date();
             const nowSec = Math.floor(now.getTime() / 1000);
-            // ==================== 文件类型映射（与 Python 保持一致） ====================
+            // 文件类型分组（跟 Python 后端保持一致）
             const _EXT_TYPE_MAP = {
                 // 前端
                 'html': '前端', 'htm': '前端', 'xhtml': '前端',
@@ -19979,7 +20030,7 @@
                     pad(d.getSeconds());
             }
 
-            // ===== 优化：使用 Worker 进行并行扫描 =====
+            // 用 Worker 并行扫描文件，避免主线程卡顿
             const SCAN_BATCH_SIZE = 50; // 每批并行处理的文件数
             // 扫描结果容器
             const fileList = [];
@@ -20287,7 +20338,7 @@
             btn.innerText = '扫描数据';
         }
 
-        /** 性能面板: 更新文件摘要面板数据 */
+        // 更新文件摘要面板数据
         async function renderFileSumPanel(data, typeCounts = null) {
             if (hasBackendServer) return;
             const now = Date.now();
@@ -20375,7 +20426,7 @@
             bar.classList.toggle('warning', pct > 80);
         }
 
-        /** 格式化秒数为可读时长 */
+        // 秒数 → 可读时长
         function formatDuration(totalSeconds) {
             if (totalSeconds < 60) return totalSeconds + '秒';
             const mins = Math.floor(totalSeconds / 60);
@@ -20387,14 +20438,14 @@
             return days + '天' + (hours % 24) + '小时';
         }
 
-        /** 格式化毫秒数 */
+        // 毫秒数 → 可读时长
         function formatMs(ms) {
             if (ms < 1000) return ms + 'ms';
             if (ms < 60000) return (ms / 1000).toFixed(2) + 's';
             return formatDuration(Math.round(ms / 1000));
         }
 
-        /** 板块1: 统计数据预处理 (合并热力图、活动列表、treemap 所需数据，单次遍历) */
+        // 板块1：统计数据预处理（一次遍历合并热力图/活动列表/treemap 所需数据）
         async function renderDashStats(data) {
             let todayAdd = 0;
             let todayEdit = 0;
@@ -20414,7 +20465,7 @@
             const fileSizeRangeMap = { '0-1KB': 0, '1-10KB': 0, '10-100KB': 0, '100KB-1MB': 0, '1-10MB': 0, '10MB+': 0 };
             const folderSizeList = [];
             const BATCH = 3000;
-            // ===== 提取循环不变量（避免每次迭代重复计算）=====
+            // 循环不变提量：提前算好时间边界，避免每次迭代重复计算
             const nowTs = Date.now();
             const DAY_MS = 86400000; // 1000 * 60 * 60 * 24
             const todayStart = new Date().setHours(0, 0, 0, 0);
@@ -20442,7 +20493,7 @@
                 if (!heatmapFilesByDate[createDateKey]) heatmapFilesByDate[createDateKey] = [];
                 heatmapFilesByDate[createDateKey].push(f);
 
-                // --- deleted 文件：只统计 heatmap/lifecycle 相关，跳过后续统计 ---
+                // deleted 文件：只算热力图和生命周期，跳过类型/大小/统计等
                 if (isDeleteFolder) {
                     deletedCount++;
                     f.lifeCycle = '废弃';
@@ -20452,11 +20503,11 @@
                     continue; // 跳过 typeMap/extMap/size/trend/dirCount 等非 deleted 统计
                 }
 
-                // --- 今日编辑/新增 (时间戳比较，比 toDateString 字符串比较快 3-5x) ---
+                // 今日编辑/新增：时间戳比较比 toDateString 快 3-5 倍
                 if (editTs >= todayStart && editTs < tomorrowStart) todayEdit++;
                 if (createTs >= todayStart && createTs < tomorrowStart) todayAdd++;
 
-                // --- monthData / monthCreateTrend (仅今年) ---
+                // 今年数据：按日/月统计新增量
                 if (cYear === year) {
                     const dateStr = `${cMonth}-${cDay}`;
                     monthData[dateStr] = (monthData[dateStr] || 0) + 1;
@@ -20465,11 +20516,11 @@
                     monthCreateTrend[monthKey] = (monthCreateTrend[monthKey] || 0) + 1;
                 }
 
-                // --- 类型/尾缀统计 ---
+                // 文件类型/后缀统计
                 if (f.file_type) typeMap[f.file_type] = (typeMap[f.file_type] || 0) + 1;
                 if (f.ext) extMap[f.ext] = (extMap[f.ext] || 0) + 1;
 
-                // --- 文件大小分布 ---
+                // 文件大小分布
                 const size = f.size || 0;
                 if (size < 1024) fileSizeRangeMap['0-1KB']++;
                 else if (size < 10240) fileSizeRangeMap['1-10KB']++;
@@ -20478,7 +20529,7 @@
                 else if (size < 10485760) fileSizeRangeMap['1-10MB']++;
                 else fileSizeRangeMap['10MB+']++;
 
-                // --- 生命周期 (基于过去7天，使用预计算的 nowTs 和 DAY_MS) ---
+                // 生命周期：7天内新建/7天内有编辑/其他
                 const daysSinceCreate = Math.floor((nowTs - createTs) / DAY_MS);
                 const daysSinceEdit = Math.floor((nowTs - editTs) / DAY_MS);
                 if (daysSinceCreate < 7) {
@@ -20495,12 +20546,12 @@
                     fileLifeOuterMap['沉寂-' + f.file_type] = (fileLifeOuterMap['沉寂-' + f.file_type] || 0) + 1;
                 }
 
-                // --- treemap 数量图：目录 → 文件计数 ---
+                // treemap 用：目录 → 文件数
                 const lastSlash = f.path.lastIndexOf(SLASH);
                 const dir = lastSlash >= 0 ? f.path.substring(0, lastSlash) : '';
                 dirFileCountMap[dir] = (dirFileCountMap[dir] || 0) + 1;
 
-                // --- 性能面板: 文档/代码/图片计数 (isDoc/isCode/isImage 分类) ---
+                // 性能面板：文档/代码/图片分类计数
                 const extLower = (f.ext || '').toLowerCase();
                 if (isDoc(extLower)) docCount++;
                 else if (isCode(extLower)) codeCount++;
@@ -20510,13 +20561,13 @@
                 if (i > 0 && i % BATCH === 0) await yieldToMain();
             }
 
-            // ===== 后处理: filesByDateTop10 排序 + 截断 =====
+            // 后处理：filesByDateTop10 排序截断
             Object.keys(filesByDateTop10).forEach(dateKey => {
                 filesByDateTop10[dateKey].sort((a, b) => b.ctime - a.ctime);
                 filesByDateTop10[dateKey] = filesByDateTop10[dateKey].slice(0, 10);
             });
 
-            // ===== 后处理: 最近修改 Top10 (线性扫描, O(n), 避免全量排序 O(n log n)) =====
+            // 后处理：线性扫描取 Top10（O(n)，避免全排序）
             let top10 = [];
             for (let i = 0; i < data.files.length; i++) {
                 const f = data.files[i];
@@ -20531,7 +20582,7 @@
             }
             const sortedByMtimeTop10 = top10.map(f => ({ time: f.mtime * 1000, name: f.name, path: f.path }));
 
-            // ===== 后处理: 目录大小排名 =====
+            // 后处理：目录大小排名
             function collectFolderSize(node, parentPath) {
                 var curPath = parentPath ? parentPath + SLASH + node.name : node.name;
                 if (node && node.size !== undefined) {
@@ -20572,7 +20623,7 @@
 
         // prepareHeatmapData 已合并到 renderDashStats 单次遍历中，不再需要独立函数
 
-        /** 板块3: 渲染热力图 */
+        // 板块3：渲染热力图
         async function renderDashHeatmap(heatmapData) {
             const { monthData, year, filesByDate } = heatmapData;
             const heatmapDataArr = [];
@@ -20590,7 +20641,7 @@
             if (dashboardCharts.heatmapChart) dashboardCharts.heatmapChart.dispose();
             dashboardCharts.heatmapChart = echarts.init(heatmapContainer);
             const heatmapChart = dashboardCharts.heatmapChart;
-            // ==================== 贪吃蛇逻辑（移植到日历热力图） ====================
+            // 日历热力图上的蛇形填充动画
             const FIXED_LEN = 6;
             const SPEED = 200;
             const dateList = [];
@@ -20855,7 +20906,7 @@
             TimerManager.set('snakeGame', tick, SPEED);
         }
 
-        /** 板块4: 渲染操作记录列表 (sortedByMtimeTop10 已在 renderDashStats 中预计算) */
+        // 板块4：渲染操作记录列表（数据已在 renderDashStats 预计算）
         async function renderDashActivity(sortedByMtimeTop10, viewData) {
             clearContainer('editList');
             clearContainer('viewRankList');
@@ -20911,7 +20962,7 @@
             await yieldToMain();
         }
 
-        /** 板块5: 渲染所有图表 (分帧渲染) */
+        // 板块5：分帧渲染所有图表
         async function renderDashCharts(stats, data) {
             const {
                 typeMap,
@@ -23264,7 +23315,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         function getSvgStringMermaid() {
             const svgEle = previewAreaMermaid.querySelector("svg");
             if (!svgEle) return null;
-            // 确保 SVG 有明确的宽度和高度
+            // SVG 必须声明宽高
             const svgClone = svgEle.cloneNode(true);
             let width = svgClone.getAttribute("width");
             let height = svgClone.getAttribute("height");
@@ -23707,7 +23758,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             _browserRefreshed = false;   // createFileItem 预缓存：是否浏览器刷新场景
         }
 
-        // 初始化从存储加载目录句柄 功能:从本地存储加载目录句柄并验证权限
+        // 从 localStorage 加载上次的目录句柄并校验权限
         async function initFromStorage() {
             const storedHandle = await idbGet(DIRECTORY_STORE_NAME, 'handles', 'default');
             if (storedHandle) {
@@ -23899,7 +23950,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        // ===== 本地文件系统 API (直接调用) =====
+        // File System Access API 封装：打开/读取/写入文件
         function getFileName(fileHandle) {
             return fileHandle.name;
         }
@@ -23938,11 +23989,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         async function deleteFileByName(dirHandle, fileName) {
             return await dirHandle.removeEntry(fileName);
         }
-        /**
-         * 写入文件句柄
-         * @param {FileHandle} fileHandle - 文件句柄
-         * @param {string} content - 要写入的内容
-         */
+        // 写入文件句柄（创建可写流 → 写入 → 关闭）
         async function _writeToFileHandle(fileHandle, content) {
             const writable = await fileHandle.createWritable();
             try {
@@ -23956,30 +24003,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 throw e;
             }
         }
-        /**
-         * 写入文件句柄
-         * @param {FileHandle} fileHandle - 文件句柄
-         * @param {string} content - 要写入的内容
-         */
+        // 写入文件
         async function writeFileByDirHandle(parentDirHandle, fileName, content) {
             const fileHandle = await parentDirHandle.getFileHandle(fileName, { create: true });
             await _writeToFileHandle(fileHandle, content);
             return fileHandle;
         }
-        /**
-         * 写入文件句柄
-         * @param {FileHandle} fileHandle - 文件句柄
-         * @param {string} content - 要写入的内容
-         */
+        // 写入已打开的文件句柄
         async function writeFileHandle(fileHandle, content) {
             await _writeToFileHandle(fileHandle, content);
         }
-        /**
-         * 获取或创建目录句柄
-         * @param {DirectoryHandle} parentDirHandle - 父目录句柄
-         * @param {string} dirName - 目录名称
-         * @returns {DirectoryHandle} - 目录句柄
-         */
+        // 获取目录句柄，不存在则创建
         async function getOrCreateDirectory(parentDirHandle, dirName) {
             try {
                 return await getDirectoryHandle(parentDirHandle, dirName);
@@ -23990,11 +24024,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 throw e;
             }
         }
-        /**
-         * 获取目录句柄下的所有条目
-         * @param {DirectoryHandle} dirHandle - 目录句柄
-         * @returns {Promise<Array<{ kind: string, name: string, rawEntry: any }>>} - 目录条目数组
-         */
+        // 列出目录下的所有文件和子目录
         async function getDirectoryEntries(dirHandle) {
             const entries = [];
             for await (const rawEntry of dirHandle.values()) {
@@ -24002,11 +24032,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             return entries;
         }
-        /**
-         * 获取目录句柄
-         * @param {string} dirPath - 目录路径
-         * @returns {Promise<DirectoryHandle>} - 目录句柄
-         */
+        // 根据路径获取目录句柄
         async function getDirHandleByDirPath(dirPath) {
             if (!dirPath) return getRootHandle();
             const pathParts = normalizePath(dirPath).split(SLASH).filter(p => p);
@@ -24021,11 +24047,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             return currentDirHandle;
         }
-        /**
-         * 获取文件句柄的父句柄
-         * @param {string} path - 文件路径
-         * @returns {Promise<{ currentHandle: 当前目录句柄, parentPath: 父目录路径, fileName: 文件名 }>}
-         */
+        // 根据文件路径找到其父目录句柄
         async function getFileParentHandleByFilePath(path) {
             const pathParts = normalizePath(path).split(SLASH).filter(p => p);
             const fileName = pathParts[pathParts.length - 1];
@@ -24088,8 +24110,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        // ========== IndexedDB 公共 CRUD 工具函数 ==========
-        /** 打开 IndexedDB 数据库（自动创建 store） */
+        // IndexedDB 通用增删改查
+        // 打开 IndexedDB（自动建表）
         function idbOpen(dbName, storeName) {
             return new Promise((resolve, reject) => {
                 const req = indexedDB.open(dbName, 1);
@@ -24104,7 +24126,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             });
         }
 
-        /** 从 IndexedDB 读取数据 */
+        // 读 IndexedDB
         async function idbGet(dbName, storeName, key) {
             try {
                 const db = await idbOpen(dbName, storeName);
@@ -24117,7 +24139,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             } catch { return null; }
         }
 
-        /** 写入数据到 IndexedDB */
+        // 写 IndexedDB
         async function idbPut(dbName, storeName, key, value) {
             try {
                 const db = await idbOpen(dbName, storeName);
@@ -24130,7 +24152,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             } catch { /* 静默忽略 */ }
         }
 
-        /** 删除 IndexedDB 中的单条数据 */
+        // 删 IndexedDB 单条
         async function idbDelete(dbName, storeName, key) {
             try {
                 const db = await idbOpen(dbName, storeName);
@@ -24143,7 +24165,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             } catch { /* 静默忽略 */ }
         }
 
-        /** 删除 IndexedDB 数据库 */
+        // 删整个 IndexedDB 库
         function idbDeleteDatabase(dbName) {
             return new Promise((resolve) => {
                 try {
@@ -24154,7 +24176,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             });
         }
 
-        /** 检查 IndexedDB 数据库是否存在且有数据 */
+        // 检查 IndexedDB 是否存在且有数据
         async function idbHasData(dbName) {
             try {
                 const db = await new Promise((resolve, reject) => {
@@ -24178,7 +24200,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         const _BATCH_SIZE = 100;
         const _MAX_TREE_CACHE_SIZE = 200; // LRU 缓存最大条目数
 
-        // LRU 封装的 Map，自动维护访问顺序并限制大小
+        // 带大小限制的 LRU 缓存（Map 封装）
         class LRUCache {
             constructor(maxSize) {
                 this._map = new Map();
@@ -24282,7 +24304,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return treeData;
         }
 
-        // ---------- 全局变量 ----------
+        // ---- 看板/日历等模块的全局状态 ----
         let allFilesCacheList = [];
         let timelineCurrentView = 'day';      // day / week / month / quarter / year / all
         let timelineCurrentFilter = 'all';
@@ -25009,7 +25031,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        // ==================== 定时任务系统 ====================
+        // 定时任务系统（基于 setInterval 的简单调度）
 
         async function executeScheduledTask() {
             if (!currentFileHandle) return;
@@ -25045,12 +25067,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        // ==================== 选中操作 ====================
+        // 文本选中后的操作菜单
         // 模块级状态：选区工具栏相关
         let _selectionDebounceId = null;
         let _toolbarHideSuppressed = false;
 
-        /** 获取当前有效的选区上下文（主文档或 iframe） */
+        // 获取当前选区所在文档（主文档或 iframe）
         function _getSelectionContext() {
             const iframe = document.getElementById('temp-html-frame');
             if (iframe && iframe.contentDocument && currentFileName && currentFileName.endsWith('.html')) {
@@ -25059,7 +25081,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return { win: window, doc: document, root: contentMain };
         }
 
-        /** 判断选区是否在有效视图内 */
+        // 选区是否在有效视图内
         function _isSelectionInViewContext(sel, ctx) {
             if (!sel || sel.isCollapsed || !sel.rangeCount) return false;
             const range = sel.getRangeAt(0);
@@ -25068,7 +25090,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return ctx.root && ctx.root.contains(range.commonAncestorContainer);
         }
 
-        /** 选区变化处理（主文档 + iframe 共用） */
+        // 选区变化处理（主文档和 iframe 共用）
         function _handleSelectionChangeCore() {
             clearTimeout(_selectionDebounceId);
             _selectionDebounceId = setTimeout(() => {
@@ -25092,7 +25114,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }, 150);
         }
 
-        /** mouseup 事件处理（主文档 + iframe 共用） */
+        // mouseup 处理（主文档和 iframe 共用）
         function _handleMouseUpCore(e) {
             if (!isSelectViewActive()) { hideMarkdownSelectionToolbar(); return; }
             if (selectionToolbar.contains(e.target)) return;
@@ -25113,7 +25135,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             setTimeout(() => { _toolbarHideSuppressed = false; }, 300);
         }
 
-        /** 为 iframe 绑定选区事件（在 HTML 文件加载后调用） */
+        // 给 iframe 绑定选区事件（HTML 文件加载后调用）
         function _bindIframeSelectionEvents() {
             const iframe = document.getElementById('temp-html-frame');
             if (!iframe || !iframe.contentDocument) return;
@@ -25746,9 +25768,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             metrics: (data) => _handleWsMetrics(data),
         };
 
-        /**
-         * 处理 WebSocket 推送的系统监控数据
-         */
+        // 处理 WebSocket 推送的系统监控数据
         function _handleWsMetrics(data) {
             const d = data.data || data;
             if (!d || !d.cpu) return;
@@ -25808,9 +25828,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (serviceMem) serviceMem.textContent = formatBytes(d.service.rss);
         }
 
-        /**
-         * 连接统一 WebSocket
-         */
+        // 连接 WebSocket（仅 http 模式下生效）
         function wsConnect() {
             if (isLocalVisit()) return;
             wsDisconnect();
@@ -25852,9 +25870,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        /**
-         * 断开 WebSocket 连接
-         */
+        // 断开 WebSocket
         function wsDisconnect() {
             TimerManager.clear('wsReconnect');
             if (_wsClient) {
@@ -25864,16 +25880,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        /**
-         * 通过 WebSocket 发送消息
-         */
+        // 通过 WebSocket 发消息
         function wsSend(msg) {
             if (_wsClient && _wsClient.readyState === WebSocket.OPEN) {
                 _wsClient.send(JSON.stringify(msg));
             }
         }
 
-        /** 仪表盘 resize 事件处理函数（持有引用以便后续移除） */
+        // 仪表盘 resize 处理（持有引用方便移除）
         function resizeDashboardCharts() {
             Object.values(dashboardCharts).forEach(c => {
                 if (c && !c.isDisposed()) {
@@ -25885,7 +25899,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             });
         }
 
-        /** 关闭系统监控：关闭 SSE 连接 + dispose ECharts 实例 */
+        // 关闭系统监控：断开 SSE + 销毁 ECharts
         function closeSystemMonitor() {
             if (systemMonitorCpuChart) {
                 systemMonitorCpuChart.dispose();
@@ -26823,7 +26837,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             regexAppState = null;
         }
 
-        // ===== 农历 / 节假日缓存 =====
+        // 农历和法定节假日数据缓存
         let _holidayCache = null;           // { "2026-01-01": { date, holiday, ... } }
         let _lunarCache = {};              // { "2026-01-01": { lunarDay, lunarMonth, isLeap, festival, ... } }
         let _holidayLoading = false;
@@ -26831,7 +26845,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         const HOLIDAY_CACHE_KEY = 'todo_holiday_cache';
         const CACHE_EXPIRE_DAYS = 9999; // 缓存永不过期（先读 localStorage，没有再调 API）
 
-        /** 持久化农历缓存到 localStorage */
+        // 农历缓存 → localStorage
         function _saveLunarCache() {
             try {
                 const payload = { _expire: Date.now() + CACHE_EXPIRE_DAYS * 86400000, data: _lunarCache };
@@ -26840,7 +26854,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        /** 从 localStorage 读取农历缓存 */
+        // localStorage → 农历缓存
         function _loadLunarCache() {
             try {
                 const raw = localStorage.getItem(LUNAR_CACHE_KEY);
@@ -26868,7 +26882,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        /** 持久化节假日缓存到 localStorage */
+        // 节假日缓存 → localStorage
         function _saveHolidayCache(year, data) {
             try {
                 const payload = { _year: year, _expire: Date.now() + CACHE_EXPIRE_DAYS * 86400000, holiday: data };
@@ -26877,7 +26891,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        /** 从 localStorage 读取节假日缓存 */
+        // localStorage → 节假日缓存
         function _loadHolidayCache(year) {
             try {
                 const raw = localStorage.getItem(HOLIDAY_CACHE_KEY);
@@ -26895,7 +26909,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        /** 加载指定年份的节假日数据（优先 localStorage，没有则调 API） */
+        // 加载某年节假日（优先走缓存，没有再调 API）
         async function _ensureHolidayData(year) {
             if (_holidayCache && _holidayCache._year === year) return;
             if (_loadHolidayCache(year)) return;
@@ -27069,12 +27083,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return [...result].sort((a, b) => a - b);
         }
 
-        /**
-         * 为 Cron 类型的日程生成指定日期的虚拟事件列表
-         * @param {object} todoE - 日程事件
-         * @param {Date} date - 目标日期
-         * @returns {Array} 虚拟事件列表
-         */
+        // 展开 cron 日程到指定日期，生成虚拟事件
         function _expandCronEventsForDate(todoE, date) {
             if (!todoE.cron) return [];
 
@@ -28337,7 +28346,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             toggleGraphView();
         }
 
-        // ========== 关系图谱功能 ==========
+        // 知识关系图谱（D3 force 布局）
         let graphViewActive = false;     // 是否激活关系图谱
         let graphDataMap = { nodes: new Map(), nodesArray: [], edges: [], neighborsMap: new Map() };   // 处理后的图谱数据
         let graphLastFrameTime = performance.now();  // 上一帧时间
@@ -29808,7 +29817,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const i = cron_fs[key].values.indexOf(v);
             if (i >= 0) cron_fs[key].values.splice(i, 1);
             else {
-                // 防止重复添加
+                // 防重复
                 if (!cron_fs[key].values.includes(v)) {
                     cron_fs[key].values.push(v);
                 }
@@ -29939,7 +29948,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             videoRenderHistory();
         }
 
-        /** 渲染历史列表 */
+        // 渲染播放历史列表
         async function videoRenderHistory() {
             const list = document.getElementById('video-history-list');
             if (!list) return;
@@ -29967,7 +29976,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 `;
             }).join('');
         }
-        /** 从历史记录中播放 */
+        // 从历史记录播放
         function videoPlayFromHistory(index) {
             const history = videoGetHistory();
             const item = history[index];
@@ -31462,7 +31471,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         var _wordCloudTimer = null; // 词云自动重新布局定时器
         var _wordCloudResizeHandler = null; // 词云 resize 事件处理器引用
-        var _wordCloudLoading = false; // 防止重入
+        var _wordCloudLoading = false; // 重入锁
 
         function _occlusion(svg, against) {
             against = against || 'text';
@@ -31482,7 +31491,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         async function openWordCloudFile(dirPath = '') {
-            // 防止重入：上一次调用未完成时忽略新调用
+            // 重入锁：上一次没跑完就跳过
             if (_wordCloudLoading) return;
             _wordCloudLoading = true;
             try {
@@ -31520,7 +31529,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 // 对数缩放：log(0) = -Infinity，确保 minSize >= 1
                 var logMax = Math.log(maxSize);
                 var logMin = Math.log(minSize);
-                var logRange = logMax - logMin || 1; // 防止除以 0（所有文件一样大）
+                var logRange = logMax - logMin || 1; // 防除零
                 var items = fileList.map(function (f) {
                     var val = f.value || 0;
                     if (val <= 0) val = 1;
@@ -31770,6 +31779,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             // 添加 resize 监听，侧边栏切换时重新计算散落位置
             window.addEventListener('resize', photoHandleResize);
         }
+        function cleanupKanbanPan() {
+            const container = document.getElementById('kanban-container');
+            if (container && container._panCleanup) {
+                container._panCleanup();
+            }
+        }
+
         async function picLayoutDestroy() {
             photoCurrentLayout = 'masonry';
             photoRenderedLayouts = {};
@@ -31831,7 +31847,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             var fileList = await getCustomFileList(currentPhotoDirHandle, 0, relPath, judgePic);
             currentPhotoDirData = fileList.map((h, i) => ({ id: i, title: h.nameFull, url: h.path }));
         }
-        // ========== 瀑布流 ==========
+        // 图片瀑布流布局
         async function photoRenderMasonry(isFirstPage = false) {
             const container = document.getElementById('photo-masonry-container');
             const startIdx = photoMasonryPage * PHOTO_MASONRY_PAGE_SIZE;
@@ -31891,17 +31907,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             // 根据是否有更多内容显示/隐藏按钮
             loadMoreBtn.style.display = hasMore ? '' : 'none';
         }
-        async function photoLoadFromLocal(src) {
-            if (isLocalVisit()) {
-                const normalizedRootPath = normalizePath(currentRootPath);
-                return joinPath(normalizedRootPath, src);
-            }
-            if (isHttpVisit()) {
-                return await readFileAsBase64(src);
-            }
-            return src;
+        async function photoLoadFromLocal(text, isAllFile = false) {
+            // 存在后端服务, 更改绝对路径
+            if (hasBackendServer) return buildLocalAbsoluteImg(text, isAllFile);
+            // 本地访问, 构建本地图片路径
+            if (isLocalVisit()) return buildLocalImg(text, isAllFile);
+            // http访问, 无后端服务
+            if (isHttpVisit()) return await buildHttpImg(text, isAllFile);
+            return text;
         }
-        // ========== 散落布局位置计算 ==========
+        // 图片散落布局的位置算法
         function photoComputeScatterPositions(count) {
             photoScatterPositions.clear();
             const padding = PHOTO_SCATTER_PADDING;
@@ -31932,7 +31947,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 photoScatterPositions.set(i, { x, y, w, h, rotation: (Math.random() - 0.5) * PHOTO_SCATTER_ROTATION_RANGE });
             }
         }
-        // ========== 随机散落 ==========
+        // 随机散落布局的入口与翻页
         async function photoRenderScatter(isFirstPage = false, skipAnimation = false) {
             const container = document.getElementById('photo-scatter-container');
             const pageSize = PHOTO_SCATTER_PAGE_SIZE;
@@ -32457,7 +32472,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             }
         }
-        // GitGraph — Layout & Render
+        // Git 图谱的布局与渲染
         class GitGraph {
             constructor() {
                 this.vertices = [];
@@ -32678,7 +32693,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             });
         }
-        // Ref 解析（分支、标签、远程引用）
+        // Git 引用解析（分支/标签/远程）
         async function gitParseRefs() {
             gitHeads = [];
             gitRemotes = [];
@@ -32803,7 +32818,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
          * @param {boolean} fullRender - true=完整渲染（含 canvas 重绘），false=仅更新行高亮
          */
         function gitRenderGraphAndList(fullRender = true) {
-            if (gitIsRendering) return; // 防止递归渲染
+            if (gitIsRendering) return; // 重入锁
             gitIsRendering = true; // 标记为渲染中
             try {
                 if (gitCommits.length === 0) {
@@ -33413,7 +33428,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        // Git 文件过滤状态
+        // Git 文件变更过滤（增删改分类）
         let gitFileFilter = null; // 要过滤的文件路径，为 null 表示显示全部
         let rootGitHandle; // Git 仓库目录句柄
 

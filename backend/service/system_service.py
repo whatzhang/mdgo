@@ -7,6 +7,10 @@ from service.util.file_scan import scan_file_info as scan_file_info_impl
 
 
 def scan_file_info(dir_path=None, force=False):
+    """
+    扫描指定目录的文件信息。
+    force=True 时强制全量扫描，否则走增量模式。
+    """
     if dir_path is None:
         return {"success": False, "message": "目录不能为空", "code": 500}
     try:
@@ -16,6 +20,7 @@ def scan_file_info(dir_path=None, force=False):
 
 
 def get_openresty_conf(conf_path):
+    """读取 OpenResty 配置文件内容"""
     try:
         with open(conf_path, "r", encoding="utf-8") as f:
             return {"success": True, "conf": f.read(), "path": conf_path, "code": 200}
@@ -27,7 +32,11 @@ def get_openresty_conf(conf_path):
         return {"success": False, "message": str(e), "code": 500}
 
 
-def reload_openresty_conf(conf_path,conf_content):
+def reload_openresty_conf(conf_path, conf_content):
+    """
+    写入配置并重载 OpenResty。
+    写入前备份原配置，重载失败时自动回滚备份。
+    """
     if not conf_path:
         return {"success": False, "message": "配置文件路径不能为空", "code": 500}
     if not conf_content:
@@ -35,6 +44,7 @@ def reload_openresty_conf(conf_path,conf_content):
 
     backup_path = None
 
+    # 写入前备份原有配置
     try:
         if os.path.exists(conf_path):
             with open(conf_path, "r", encoding="utf-8") as f:
@@ -61,6 +71,7 @@ def reload_openresty_conf(conf_path,conf_content):
             "code": 500
         }
 
+    # 执行 reload
     try:
         reload_result = subprocess.run(
             ["openresty", "-s", "reload"],
@@ -71,6 +82,7 @@ def reload_openresty_conf(conf_path,conf_content):
         if reload_result.returncode == 0:
             return {"success": True, "message": "配置已生效", "backup_path": backup_path, "code": 200}
 
+        # reload 失败，回滚备份配置
         if backup_path and os.path.exists(backup_path):
             try:
                 with open(backup_path, "r", encoding="utf-8") as f:
@@ -90,6 +102,7 @@ def reload_openresty_conf(conf_path,conf_content):
     except subprocess.TimeoutExpired:
         return {"success": False, "message": "openresty 重载超时", "code": 500}
     except Exception as e:
+        # 异常情况下也尝试回滚
         if backup_path and os.path.exists(backup_path):
             try:
                 with open(backup_path, "r", encoding="utf-8") as f:

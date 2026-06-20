@@ -5,14 +5,17 @@ import os
 import re
 import psutil
 
+# 上次网络 IO 采样数据（用于计算速率）
 _net_io_last = {"bytes_sent": 0, "bytes_recv": 0, "timestamp": time.time()}
 _net_io_ready = False
 
+# 当前进程缓存 + 启动时间
 _service_process = None
 _service_start_time = time.time()
 
 
 def _get_process():
+    """获取当前进程的 psutil.Process 实例（缓存避免重复创建）"""
     global _service_process
     if _service_process is None:
         _service_process = psutil.Process(os.getpid())
@@ -20,6 +23,10 @@ def _get_process():
 
 
 def _get_all_disks_usage():
+    """
+    汇总所有物理磁盘的总用量（去重：同一物理设备仅记录挂载点中用量最大的分区）。
+    返回 {total, used, free, percent}
+    """
     total = 0
     used = 0
     free = 0
@@ -32,6 +39,7 @@ def _get_all_disks_usage():
             if os.name == 'nt':
                 physical_id = device
             else:
+                # 从设备路径提取物理磁盘 ID（如 /dev/disk1, /dev/nvme0n1p1）
                 match = re.match(r'/dev/(disk\d+(?:s\d+)?(?:[sp]\d+)?|nvme\d+n\d+(?:p\d+)?|mmcblk\d+p\d+)', device)
                 physical_id = match.group(1) if match else device
             if physical_id not in physical_disks:
@@ -43,6 +51,7 @@ def _get_all_disks_usage():
                     'mountpoint': p.mountpoint
                 }
             else:
+                # 同一物理设备取用量最大的分区
                 if usage.percent > physical_disks[physical_id]['percent']:
                     physical_disks[physical_id] = {
                         'total': usage.total,
@@ -53,6 +62,7 @@ def _get_all_disks_usage():
                     }
         except Exception:
             continue
+    # 汇总所有物理设备
     for disk_info in physical_disks.values():
         total += disk_info['total']
         used += disk_info['used']
@@ -71,13 +81,16 @@ def _get_all_disks_usage():
 
 
 def get_metrics():
+    """采集 CPU、内存、网络、磁盘、服务进程等系统指标"""
     now = time.time()
     cpu_percent = psutil.cpu_percent(interval=0.5)
     cpu_cores = psutil.cpu_count(logical=True)
     mem = psutil.virtual_memory()
     net = psutil.net_io_counters()
+
     global _net_io_last, _net_io_ready
     elapsed = now - _net_io_last["timestamp"]
+    # 计算网络收发速率（需要至少两次采样）
     if _net_io_ready and elapsed > 0:
         sent_rate = (net.bytes_sent - _net_io_last["bytes_sent"]) / elapsed
         recv_rate = (net.bytes_recv - _net_io_last["bytes_recv"]) / elapsed
@@ -90,6 +103,7 @@ def get_metrics():
         "bytes_recv": net.bytes_recv,
         "timestamp": now
     }
+
     disk = _get_all_disks_usage()
     uptime_seconds = int(time.time() - psutil.boot_time())
     service_process = _get_process()
@@ -129,6 +143,7 @@ def get_metrics():
 
 
 async def metrics_stream(interval: float = 5.0):
+    """SSE 流：按固定间隔推送系统指标"""
     while True:
         data = get_metrics()
         yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"

@@ -5,8 +5,11 @@ from typing import Optional, List
 from service.system_service import scan_file_info as svc_scan_file_info
 
 
+# --- GraphQL 类型定义 ---
+
 @strawberry.type
 class ScanStats:
+    """扫描统计"""
     total_files: int
     total_folders: int
     total_size_bytes: int
@@ -15,6 +18,7 @@ class ScanStats:
 
 @strawberry.type
 class ScanFile:
+    """单个文件信息"""
     name: str
     ext: str
     file_type: str
@@ -31,6 +35,7 @@ class ScanFile:
 
 @strawberry.type
 class FolderTreeNode:
+    """文件夹树节点"""
     name: str
     file_num: int
     size: int
@@ -42,6 +47,7 @@ class FolderTreeNode:
 
 @strawberry.type
 class ScanResult:
+    """扫描结果汇总"""
     scan_time: str
     base_dir: str
     stats: ScanStats
@@ -64,12 +70,15 @@ def _build_folder_tree(node: dict) -> FolderTreeNode:
 
 @strawberry.type
 class Query:
+    """GraphQL 查询入口"""
     @strawberry.field
     def health(self) -> str:
+        """健康检查"""
         return "OK"
 
     @strawberry.field
     def scan_file_info(self, dir: Optional[str] = None) -> ScanResult:
+        """扫描指定目录的文件信息"""
         result = svc_scan_file_info(dir_path=dir)
         data = result["data"]
         return ScanResult(
