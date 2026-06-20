@@ -11908,6 +11908,10 @@
         const INDEX_FILE_SCAN_DATA_FILE = 'index_file_scan_data.json';
         const INDEX_MARKERS_FILE = 'index_file_markers.json';
         const INDEX_OPER_FILE = 'index_operation.json';
+        // 文件类型分组（模块级常量，避免每次扫描重建）
+        const _EXT_TYPE_MAP = {
+            'html':'前端','htm':'前端','xhtml':'前端','css':'前端','scss':'前端','sass':'前端','less':'前端','styl':'前端','pcss':'前端','postcss':'前端','js':'前端','jsx':'前端','ts':'前端','tsx':'前端','mjs':'前端','cjs':'前端','jsm':'前端','tsm':'前端','mts':'前端','cts':'前端','vue':'前端','svelte':'前端','astro':'前端','swift':'前端','kt':'前端','py':'后端','pyw':'后端','java':'后端','kotlin':'后端','scala':'后端','groovy':'后端','c':'后端','cpp':'后端','h':'后端','hpp':'后端','cs':'后端','go':'后端','rs':'后端','rlib':'后端','rmeta':'后端','rb':'后端','php':'后端','dockerfile':'后端','gradle':'后端','makefile':'后端','cmake':'后端','proto':'后端','thrift':'后端','idl':'后端','wasm':'后端','asm':'后端','sh':'脚本','bash':'脚本','zsh':'脚本','bat':'脚本','cmd':'脚本','ps1':'脚本','sql':'数据库','mysql':'数据库','pgsql':'数据库','sqlite':'数据库','db':'数据库','db3':'数据库','sqlite3':'数据库','mdf':'数据库','ldf':'数据库','sqlitedb':'数据库','md':'文档','markdown':'文档','rst':'文档','tex':'文档','docx':'文档','doc':'文档','pdf':'文档','ppt':'文档','odt':'文档','rtf':'文档','epub':'文档','xlsx':'文档','xls':'文档','csv':'文档','tsv':'文档','ods':'文档','json':'文档','jsonc':'文档','xml':'文档','yaml':'文档','yml':'文档','toml':'文档','ini':'文档','conf':'文档','env':'文档','properties':'文档','txt':'文档','text':'文档','log':'文档','bak':'文档','tmp':'文档','cache':'文档','lock':'文档','map':'文档','gitignore':'文档','png':'媒体','jpg':'媒体','jpeg':'媒体','gif':'媒体','bmp':'媒体','svg':'媒体','webp':'媒体','ico':'媒体','tiff':'媒体','tif':'媒体','raw':'媒体','psd':'媒体','ai':'媒体','eps':'媒体','fig':'媒体','mp4':'媒体','mov':'媒体','avi':'媒体','flv':'媒体','wmv':'媒体','mkv':'媒体','webm':'媒体','m4v':'媒体','mpg':'媒体','mpeg':'媒体','3gp':'媒体','mp3':'媒体','wav':'媒体','flac':'媒体','aac':'媒体','ogg':'媒体','wma':'媒体','m4a':'媒体','opus':'媒体','obj':'媒体','fbx':'媒体','dae':'媒体','stl':'媒体','3ds':'媒体','blend':'媒体','zip':'压缩文件','rar':'压缩文件','7z':'压缩文件','tar':'压缩文件','gz':'压缩文件','bz2':'压缩文件','xz':'压缩文件','dmg':'压缩文件','drawio':'图表','excalidraw':'图表','sketch':'图表','xd':'图表','afdesign':'图表','puml':'图表','plantuml':'图表','mmd':'图表','ttf':'字体','otf':'字体','woff':'字体','woff2':'字体','eot':'字体','glyphs':'字体','glyphs2':'字体'
+        };
         const INDEX_SCHEDULE_FILE = 'index_schedule.json';
         // 判断文件路径是否应显示代码而非渲染 HTML
         const isShowHtmlCode = (relativePath) => {
@@ -14181,32 +14185,42 @@
             }
         }
 
+        // 批量并发执行（限制并发数，避免大目录下浏览器 OOM）
+        async function _batchProcess(items, asyncFn, batchSize = 100) {
+            const results = [];
+            for (let i = 0; i < items.length; i += batchSize) {
+                const batch = items.slice(i, i + batchSize);
+                const batchResults = await Promise.all(batch.map(asyncFn));
+                for (let j = 0; j < batchResults.length; j++) {
+                    results.push(batchResults[j]);
+                }
+            }
+            return results;
+        }
+
         async function renderTreeFromData(treeData, container) {
             const fragment = document.createDocumentFragment();
-            const filePromises = [];
-            const dirPromises = [];
+            const fileEntries = [];
+            const dirEntries = [];
 
             for (const nodeData of treeData) {
                 if (nodeData.kind === 'directory') {
                     const dirEntry = createDirectoryEntry(nodeData.name, nodeData.depth, nodeData.path);
                     if (!dirEntry) continue;
                     fragment.appendChild(dirEntry.details);
-                    // 递归渲染子目录 - 收集异步任务，不等待
                     if (nodeData.children && nodeData.children.length > 0) {
-                        dirPromises.push(
-                            renderTreeFromData(nodeData.children, dirEntry.details)
-                        );
+                        dirEntries.push({ children: nodeData.children, details: dirEntry.details });
                     }
                 } else if (nodeData.kind === 'file') {
-                    filePromises.push(
-                        createFileItem(nodeData.name, nodeData.path, nodeData.depth, nodeData.iconType)
-                    );
+                    fileEntries.push(nodeData);
                 }
             }
 
-            // 并行执行所有异步操作：子目录渲染 + 文件创建
-            const fileItems = await Promise.all(filePromises);
-            await Promise.all(dirPromises);
+            // 批量并发：限制单批 100 个，避免大目录下过多并发 Promise 导致 OOM
+            const fileItems = await _batchProcess(fileEntries,
+                (nd) => createFileItem(nd.name, nd.path, nd.depth, nd.iconType));
+            const dirResults = await _batchProcess(dirEntries,
+                (de) => renderTreeFromData(de.children, de.details));
 
             // 文件项也收集进 fragment，最终单次挂载到 container，避免 n 次 DOM 重排
             for (const fileItem of fileItems) {
@@ -19968,70 +19982,7 @@
             }
             const now = new Date();
             const nowSec = Math.floor(now.getTime() / 1000);
-            // 文件类型分组（跟 Python 后端保持一致）
-            const _EXT_TYPE_MAP = {
-                // 前端
-                'html': '前端', 'htm': '前端', 'xhtml': '前端',
-                'css': '前端', 'scss': '前端', 'sass': '前端',
-                'less': '前端', 'styl': '前端', 'pcss': '前端', 'postcss': '前端',
-                'js': '前端', 'jsx': '前端', 'ts': '前端',
-                'tsx': '前端', 'mjs': '前端', 'cjs': '前端',
-                'jsm': '前端', 'tsm': '前端', 'mts': '前端', 'cts': '前端',
-                'vue': '前端', 'svelte': '前端', 'astro': '前端',
-                'swift': '前端', 'kt': '前端',
-                // 后端
-                'py': '后端', 'pyw': '后端',
-                'java': '后端', 'kotlin': '后端', 'scala': '后端', 'groovy': '后端',
-                'c': '后端', 'cpp': '后端', 'h': '后端', 'hpp': '后端', 'cs': '后端',
-                'go': '后端',
-                'rs': '后端', 'rlib': '后端', 'rmeta': '后端',
-                'rb': '后端',
-                'php': '后端',
-                'dockerfile': '后端',
-                'gradle': '后端', 'makefile': '后端', 'cmake': '后端',
-                'proto': '后端', 'thrift': '后端', 'idl': '后端',
-                'wasm': '后端', 'asm': '后端',
-                // 脚本
-                'sh': '脚本', 'bash': '脚本', 'zsh': '脚本',
-                'bat': '脚本', 'cmd': '脚本', 'ps1': '脚本',
-                // 数据库
-                'sql': '数据库', 'mysql': '数据库', 'pgsql': '数据库', 'sqlite': '数据库',
-                'db': '数据库', 'db3': '数据库', 'sqlite3': '数据库',
-                'mdf': '数据库', 'ldf': '数据库', 'sqlitedb': '数据库',
-                // 文档
-                'md': '文档', 'markdown': '文档', 'rst': '文档', 'tex': '文档',
-                'docx': '文档', 'doc': '文档', 'pdf': '文档',
-                'ppt': '文档', 'odt': '文档', 'rtf': '文档', 'epub': '文档',
-                'xlsx': '文档', 'xls': '文档', 'csv': '文档', 'tsv': '文档', 'ods': '文档',
-                'json': '文档', 'jsonc': '文档',
-                'xml': '文档', 'yaml': '文档', 'yml': '文档',
-                'toml': '文档', 'ini': '文档', 'conf': '文档',
-                'env': '文档', 'properties': '文档',
-                'txt': '文档', 'text': '文档', 'log': '文档',
-                'bak': '文档', 'tmp': '文档', 'cache': '文档', 'lock': '文档', 'map': '文档',
-                'gitignore': '文档',
-                // 媒体
-                'png': '媒体', 'jpg': '媒体', 'jpeg': '媒体',
-                'gif': '媒体', 'bmp': '媒体', 'svg': '媒体', 'webp': '媒体',
-                'ico': '媒体', 'tiff': '媒体', 'tif': '媒体',
-                'raw': '媒体', 'psd': '媒体', 'ai': '媒体', 'eps': '媒体', 'fig': '媒体',
-                'mp4': '媒体', 'mov': '媒体', 'avi': '媒体',
-                'flv': '媒体', 'wmv': '媒体', 'mkv': '媒体',
-                'webm': '媒体', 'm4v': '媒体', 'mpg': '媒体', 'mpeg': '媒体', '3gp': '媒体',
-                'mp3': '媒体', 'wav': '媒体', 'flac': '媒体',
-                'aac': '媒体', 'ogg': '媒体', 'wma': '媒体', 'm4a': '媒体', 'opus': '媒体',
-                'obj': '媒体', 'fbx': '媒体', 'dae': '媒体', 'stl': '媒体', '3ds': '媒体', 'blend': '媒体',
-                // 压缩文件
-                'zip': '压缩文件', 'rar': '压缩文件', '7z': '压缩文件',
-                'tar': '压缩文件', 'gz': '压缩文件', 'bz2': '压缩文件', 'xz': '压缩文件', 'dmg': '压缩文件',
-                // 图表
-                'drawio': '图表', 'excalidraw': '图表',
-                'sketch': '图表', 'xd': '图表', 'afdesign': '图表',
-                'puml': '图表', 'plantuml': '图表', 'mmd': '图表',
-                // 字体
-                'ttf': '字体', 'otf': '字体', 'woff': '字体', 'woff2': '字体', 'eot': '字体',
-                'glyphs': '字体', 'glyphs2': '字体',
-            };
+            // 文件类型分组使用模块级 _EXT_TYPE_MAP（避免每次扫描重建 ~140 条映射）
 
             function _getFileType(ext) {
                 return _EXT_TYPE_MAP[ext.toLowerCase()] || '其他';
@@ -20052,7 +20003,6 @@
             const SCAN_BATCH_SIZE = 50; // 每批并行处理的文件数
             // 扫描结果容器
             const fileList = [];
-            const folderSet = new Set();
             let totalFiles = 0;
             let totalFolders = 0;
             let totalSize = 0;
@@ -20142,9 +20092,8 @@
                     stack.push({ handle: d.entry, relPath: d.childRel, depth: depth + 1 });
                 }
 
-                // depth > MAX_DIR_DEPTH 和 isSkipDir 情况已在循环顶部 continue 排除，无需重复检查
+                // depth > MAX_DIR_DEPTH 和 isSkipDir 情况已在循环顶部 continue 排除
                 if (relRoot) {
-                    folderSet.add(relRoot);
                     totalFolders++;
                 }
 
@@ -20172,8 +20121,9 @@
             let fileListMap = {};
             // 从 fileList 聚合目录统计，构建目录树（只包含目录，不包含文件）
             function _buildTreeFromFiles() {
-                // 构建目录树结构，每个节点代表一个目录
                 const dirMap = {};
+                // 子目录跟踪 Map：parentPath -> Set(childName)，实现 O(1) 查重
+                const childSetMap = { '': new Set() };
 
                 // 初始化根目录
                 dirMap[''] = {
@@ -20198,7 +20148,7 @@
 
                     const pathParts = f.path.split(SLASH);
                     // 文件名是路径的最后一部分，不是目录
-                    const fileName = pathParts.pop();
+                    pathParts.pop();
 
                     // 遍历父目录路径（不包括文件名）
                     let parentPath = '';
@@ -20216,8 +20166,12 @@
                                 mtime: 0,
                                 fileNum: 0
                             };
-                            // 添加到父目录的 children
-                            if (!dirMap[parentPath].children.find(c => c.name === part)) {
+                            // O(1) 查重替代 Array.find
+                            if (!childSetMap[parentPath]) {
+                                childSetMap[parentPath] = new Set();
+                            }
+                            if (!childSetMap[parentPath].has(part)) {
+                                childSetMap[parentPath].add(part);
                                 dirMap[parentPath].children.push(dirMap[currentPath]);
                             }
                         }
@@ -20239,17 +20193,24 @@
                     dirMap[''].fileNum += 1;
                 }
 
-                // 递归构建 ECharts 树图格式
+                // 递归构建 ECharts 树图格式（迭代栈避免栈溢出）
                 function buildNode(dirNode) {
-                    const children = dirNode.children.map(c => buildNode(c));
+                    const children = [];
+                    const childNodes = dirNode.children;
+                    for (let i = 0; i < childNodes.length; i++) {
+                        children.push(buildNode(childNodes[i]));
+                    }
                     const result = {
                         name: dirNode.name,
                         size: dirNode.size,
                         size_str: formatSize(dirNode.size),
                         ctime: dirNode.ctime === Infinity ? 0 : dirNode.ctime,
                         mtime: dirNode.mtime,
-                        file_num: dirNode.fileNum + children.reduce((s, c) => s + (c.file_num || 0), 0),
+                        file_num: dirNode.fileNum,
                     };
+                    for (let i = 0; i < children.length; i++) {
+                        result.file_num += children[i].file_num || 0;
+                    }
                     if (children.length > 0) {
                         result.children = children;
                     } else {
@@ -20271,7 +20232,7 @@
                 "base_dir": currentRootPath || rootHandle.name,
                 "stats": {
                     "total_files": totalFiles,
-                    "total_folders": folderSet.size,
+                    "total_folders": totalFolders,
                     "total_size_bytes": totalSize,
                     "total_size_str": formatSize(totalSize),
                 },
@@ -23783,7 +23744,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     if (BROWSER_REFRESHED_KEY === safeLocalStorageGet(BROWSER_REFRESHED_KEY)) {
                         await Promise.all([renderDirectory(storedHandle, data), toggleDashboardView(true, data)]);
                     } else {
-                        renderDirectory(storedHandle, data);
+                        await renderDirectory(storedHandle, data);
                     }
                     return true;
                 }
@@ -24207,6 +24168,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         const _localeCompare = (a, b) => a.name.localeCompare(b.name, 'zh-CN', { sensitivity: 'base' });
+        // 快速比较函数（对超大数据集使用，避免 localeCompare 性能瓶颈）
+        const _fastCompare = (a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+        const _SORT_THRESHOLD = 1000; // 超过此阈值使用快速比较
         const _BATCH_SIZE = 100;
         const _MAX_TREE_CACHE_SIZE = 2000; // LRU 缓存最大条目数
 
@@ -24219,7 +24183,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             get(key) {
                 if (!this._map.has(key)) return undefined;
                 const value = this._map.get(key);
-                // 移到末尾（最新）
                 this._map.delete(key);
                 this._map.set(key, value);
                 return value;
@@ -24228,7 +24191,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (this._map.has(key)) {
                     this._map.delete(key);
                 } else if (this._map.size >= this._maxSize) {
-                    // 删除最旧的条目
                     const firstKey = this._map.keys().next().value;
                     this._map.delete(firstKey);
                 }
@@ -24264,47 +24226,62 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         function _sortEntries(dirs, files) {
-            if (dirs.length > 1000 || files.length > 1000) {
-                dirs.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
-                files.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
-            } else {
-                dirs.sort(_localeCompare);
-                files.sort(_localeCompare);
-            }
+            const cmp = (dirs.length > _SORT_THRESHOLD || files.length > _SORT_THRESHOLD) ? _fastCompare : _localeCompare;
+            dirs.sort(cmp);
+            files.sort(cmp);
         }
 
         async function buildTreeDataFromScan(folderTree, files, depth = 0, parentPath = '', maxDepth = MAX_DIR_DEPTH) {
-            const treeData = [];
-            if (depth > maxDepth) return treeData;
-            if (folderTree) {
-                let dirs = folderTree.children || [];
-                const rpath = parentPath || '';
+            // 迭代栈遍历，避免深层目录递归导致栈溢出
+            const result = [];
+            if (depth > maxDepth || !folderTree) return result;
+
+            // 栈元素：{ node, files, depth, parentPath, parentChildren }
+            const stack = [{ node: folderTree, depth, parentPath, parentChildren: result }];
+            let opsCount = 0;
+
+            while (stack.length > 0) {
+                // 每处理 200 个节点让出主线程，保持 UI 响应
+                if (++opsCount % 200 === 0) {
+                    await yieldToMain();
+                }
+
+                const { node, depth: d, parentPath: pp, parentChildren } = stack.pop();
+                if (d > maxDepth) continue;
+
+                const dirs = node.children || [];
+                const rpath = pp || '';
                 const filesList = files[rpath] || [];
                 _sortEntries(dirs, filesList);
-                if (dirs.length > 0) {
-                    for (const dirNode of dirs) {
-                        const entryPath = _buildPath(parentPath, dirNode.name);
-                        const childTreeData = await buildTreeDataFromScan(dirNode, files, depth + 1, entryPath, maxDepth);
-                        treeData.push({
-                            kind: 'directory',
-                            name: dirNode.name,
-                            path: entryPath,
-                            depth: depth,
-                            children: childTreeData
-                        });
-                    }
-                }
-                for (const fileEntry of filesList) {
-                    treeData.push({
+
+                // 文件直接添加到父级
+                for (let i = 0; i < filesList.length; i++) {
+                    const fileEntry = filesList[i];
+                    parentChildren.push({
                         kind: 'file',
                         name: fileEntry.name,
-                        path: _buildPath(parentPath, fileEntry.name),
-                        depth: depth,
+                        path: _buildPath(rpath, fileEntry.name),
+                        depth: d,
                         iconType: getFileTypeByExt(getExt(fileEntry.name))
                     });
                 }
+
+                // 目录逆序入栈（保证正序处理）
+                for (let i = dirs.length - 1; i >= 0; i--) {
+                    const dirNode = dirs[i];
+                    const entryPath = _buildPath(pp, dirNode.name);
+                    const childList = [];
+                    parentChildren.push({
+                        kind: 'directory',
+                        name: dirNode.name,
+                        path: entryPath,
+                        depth: d,
+                        children: childList
+                    });
+                    stack.push({ node: dirNode, depth: d + 1, parentPath: entryPath, parentChildren: childList });
+                }
             }
-            return treeData;
+            return result;
         }
 
         async function getTreeData(dirHandle, depth = 0, parentPath = '', maxDepth = MAX_DIR_DEPTH) {
