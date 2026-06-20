@@ -9584,7 +9584,7 @@
         }
 
         .git-left-header {
-            padding: 10px 14px;
+            padding: 5px 14px;
             font-size: 12px;
             font-weight: 600;
             color: var(--t1);
@@ -9769,7 +9769,7 @@
             padding: 1px 5px;
             border-radius: 3px;
             white-space: nowrap;
-            max-width: 120px;
+            max-width: 40px;
             overflow: hidden;
             text-overflow: ellipsis;
             border: 1px solid;
@@ -10074,6 +10074,192 @@
 
         .git-empty-hint {
             font-size: 13px;
+        }
+
+        /* ── Commit Input & Button ── */
+        .git-commit-header {
+            padding: 6px 10px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+        }
+
+        .git-commit-input-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+        }
+
+        .git-commit-msg-input {
+            flex: 1;
+            min-width: 0;
+            padding: 5px 10px;
+            border: 1px solid var(--git-border);
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif;
+            background: var(--color-bg);
+            color: var(--color-text);
+            outline: none;
+            transition: border-color 0.15s;
+        }
+
+        .git-commit-msg-input:focus {
+            border-color: var(--color-primary);
+        }
+
+        .git-commit-msg-input::placeholder {
+            color: var(--t3);
+        }
+
+        .git-commit-btn-group {
+            display: flex;
+            align-items: center;
+            flex-shrink: 0;
+            position: relative;
+        }
+
+        .git-commit-btn {
+            padding: 5px 14px;
+            background: var(--color-primary);
+            color: var(--color-bg);
+            border: none;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background 0.15s;
+        }
+
+        .git-commit-btn:hover {
+            background: var(--color-primary-hover);
+        }
+
+        /* ── Staging / Changes List ── */
+        .git-status-item {
+            display: flex;
+            align-items: center;
+            padding: 1px 8px 1px 8px;
+            gap: 6px;
+            cursor: pointer;
+            transition: background 0.1s;
+            min-height: 26px;
+        }
+
+        .git-status-item:hover {
+            background: var(--color-hover-subtle);
+        }
+
+        .git-status-item.active {
+            background: var(--color-hover-subtle);
+            outline: 1px solid var(--color-primary);
+            outline-offset: -1px;
+        }
+
+        .git-status-item-icon {
+            flex-shrink: 0;
+            width: 14px;
+            text-align: center;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .git-status-item-icon.modified {
+            color: var(--yellow);
+        }
+
+        .git-status-item-icon.added {
+            color: var(--color-success);
+        }
+
+        .git-status-item-icon.removed {
+            color: var(--color-danger);
+        }
+
+        .git-status-item-path {
+            flex: 1;
+            min-width: 0;
+            font-size: 12px;
+            color: var(--color-text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .git-status-item-btns {
+            display: flex;
+            gap: 2px;
+            flex-shrink: 0;
+            opacity: 0;
+            transition: opacity 0.12s;
+        }
+
+        .git-status-item:hover .git-status-item-btns {
+            opacity: 1;
+        }
+
+        .git-status-item-btn {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 600;
+            line-height: 1;
+            transition: background 0.12s;
+            padding: 0;
+        }
+
+        .git-status-item-btn.stage {
+            background: transparent;
+            color: var(--color-success);
+        }
+
+        .git-status-item-btn.stage:hover {
+            background: #d4f5e9;
+        }
+
+        .git-status-item-btn.unstage {
+            background: transparent;
+            color: var(--yellow);
+        }
+
+        .git-status-item-btn.unstage:hover {
+            background: #fff3cd;
+        }
+
+        .git-status-item-btn.discard {
+            background: transparent;
+            color: var(--color-danger);
+        }
+
+        .git-status-item-btn.discard:hover {
+            background: #ffe3e3;
+        }
+
+        .git-status-empty {
+            padding: 12px 14px;
+            font-size: 12px;
+            color: var(--t3);
+            text-align: center;
+        }
+
+        .git-staged-count,
+        .git-changed-count {
+            font-size: 11px;
+            color: var(--t3);
+            background: var(--color-bg-secondary);
+            border-radius: 10px;
+            padding: 1px 7px;
+            min-width: 18px;
+            text-align: center;
         }
 
         .file-item-icon {
@@ -11659,6 +11845,29 @@
             </div>
             <div id="git-main" class="git-main" style="display: none;">
                 <div class="git-left-panel" id="gitLeftPanel">
+                    <div class="git-left-header git-commit-header">
+                        <div class="git-commit-input-row">
+                            <input type="text" class="git-commit-msg-input" id="gitCommitMsgInput"
+                                placeholder="输入提交消息 (Ctrl+Enter 提交)" autocomplete="off">
+                            <div class="git-commit-btn-group">
+                                <button class="git-commit-btn" id="gitCommitBtn" onclick="gitDoCommit()">提交</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="git-left-header">
+                        <span style="white-space:nowrap;">暂存</span>
+                        <span class="git-staged-count" id="gitStagedCount" style="display:none;">0</span>
+                    </div>
+                    <div class="git-graph-scroll" id="gitAddList" style="height:150px;flex:none;min-height:150px;max-height:150px;">
+                        <div class="git-status-empty" id="gitAddListEmpty"></div>
+                    </div>
+                    <div class="git-left-header">
+                        <span style="white-space:nowrap;">更改</span>
+                        <span class="git-changed-count" id="gitChangedCount" style="display:none;">0</span>
+                    </div>
+                    <div class="git-graph-scroll" id="gitChangedList" style="height:150px;flex:none;min-height:150px;max-height:150px;">
+                        <div class="git-status-empty" id="gitChangedListEmpty"></div>
+                    </div>
                     <div class="git-left-header">
                         <span style="white-space:nowrap;">提交历史</span>
                         <span id="gitRepoInfo"
@@ -11676,10 +11885,10 @@
                     <div class="git-detail-area" id="gitDetailArea">
                         <div
                             style="color: var(--git-text-muted); font-size: 13px; display: flex; align-items: center; justify-content: center; height: 100%;">
-                            ⚠️ 选择左侧提交查看详情</div>
+                            </div>
                     </div>
                     <div class="git-diff-container" id="gitDiffContainer">
-                        <div class="git-diff-placeholder">⚠️ 选择一个文件查看差异对比</div>
+                        <div class="git-diff-placeholder"></div>
                     </div>
                 </div>
             </div>
@@ -11912,7 +12121,7 @@
         const INDEX_OPER_FILE = 'index_operation.json';
         // 文件类型分组（模块级常量，避免每次扫描重建）
         const _EXT_TYPE_MAP = {
-            'html':'前端','htm':'前端','xhtml':'前端','css':'前端','scss':'前端','sass':'前端','less':'前端','styl':'前端','pcss':'前端','postcss':'前端','js':'前端','jsx':'前端','ts':'前端','tsx':'前端','mjs':'前端','cjs':'前端','jsm':'前端','tsm':'前端','mts':'前端','cts':'前端','vue':'前端','svelte':'前端','astro':'前端','swift':'前端','kt':'前端','py':'后端','pyw':'后端','java':'后端','kotlin':'后端','scala':'后端','groovy':'后端','c':'后端','cpp':'后端','h':'后端','hpp':'后端','cs':'后端','go':'后端','rs':'后端','rlib':'后端','rmeta':'后端','rb':'后端','php':'后端','dockerfile':'后端','gradle':'后端','makefile':'后端','cmake':'后端','proto':'后端','thrift':'后端','idl':'后端','wasm':'后端','asm':'后端','sh':'脚本','bash':'脚本','zsh':'脚本','bat':'脚本','cmd':'脚本','ps1':'脚本','sql':'数据库','mysql':'数据库','pgsql':'数据库','sqlite':'数据库','db':'数据库','db3':'数据库','sqlite3':'数据库','mdf':'数据库','ldf':'数据库','sqlitedb':'数据库','md':'文档','markdown':'文档','rst':'文档','tex':'文档','docx':'文档','doc':'文档','pdf':'文档','ppt':'文档','odt':'文档','rtf':'文档','epub':'文档','xlsx':'文档','xls':'文档','csv':'文档','tsv':'文档','ods':'文档','json':'文档','jsonc':'文档','xml':'文档','yaml':'文档','yml':'文档','toml':'文档','ini':'文档','conf':'文档','env':'文档','properties':'文档','txt':'文档','text':'文档','log':'文档','bak':'文档','tmp':'文档','cache':'文档','lock':'文档','map':'文档','gitignore':'文档','png':'媒体','jpg':'媒体','jpeg':'媒体','gif':'媒体','bmp':'媒体','svg':'媒体','webp':'媒体','ico':'媒体','tiff':'媒体','tif':'媒体','raw':'媒体','psd':'媒体','ai':'媒体','eps':'媒体','fig':'媒体','mp4':'媒体','mov':'媒体','avi':'媒体','flv':'媒体','wmv':'媒体','mkv':'媒体','webm':'媒体','m4v':'媒体','mpg':'媒体','mpeg':'媒体','3gp':'媒体','mp3':'媒体','wav':'媒体','flac':'媒体','aac':'媒体','ogg':'媒体','wma':'媒体','m4a':'媒体','opus':'媒体','obj':'媒体','fbx':'媒体','dae':'媒体','stl':'媒体','3ds':'媒体','blend':'媒体','zip':'压缩文件','rar':'压缩文件','7z':'压缩文件','tar':'压缩文件','gz':'压缩文件','bz2':'压缩文件','xz':'压缩文件','dmg':'压缩文件','drawio':'图表','excalidraw':'图表','sketch':'图表','xd':'图表','afdesign':'图表','puml':'图表','plantuml':'图表','mmd':'图表','ttf':'字体','otf':'字体','woff':'字体','woff2':'字体','eot':'字体','glyphs':'字体','glyphs2':'字体'
+            'html': '前端', 'htm': '前端', 'xhtml': '前端', 'css': '前端', 'scss': '前端', 'sass': '前端', 'less': '前端', 'styl': '前端', 'pcss': '前端', 'postcss': '前端', 'js': '前端', 'jsx': '前端', 'ts': '前端', 'tsx': '前端', 'mjs': '前端', 'cjs': '前端', 'jsm': '前端', 'tsm': '前端', 'mts': '前端', 'cts': '前端', 'vue': '前端', 'svelte': '前端', 'astro': '前端', 'swift': '前端', 'kt': '前端', 'py': '后端', 'pyw': '后端', 'java': '后端', 'kotlin': '后端', 'scala': '后端', 'groovy': '后端', 'c': '后端', 'cpp': '后端', 'h': '后端', 'hpp': '后端', 'cs': '后端', 'go': '后端', 'rs': '后端', 'rlib': '后端', 'rmeta': '后端', 'rb': '后端', 'php': '后端', 'dockerfile': '后端', 'gradle': '后端', 'makefile': '后端', 'cmake': '后端', 'proto': '后端', 'thrift': '后端', 'idl': '后端', 'wasm': '后端', 'asm': '后端', 'sh': '脚本', 'bash': '脚本', 'zsh': '脚本', 'bat': '脚本', 'cmd': '脚本', 'ps1': '脚本', 'sql': '数据库', 'mysql': '数据库', 'pgsql': '数据库', 'sqlite': '数据库', 'db': '数据库', 'db3': '数据库', 'sqlite3': '数据库', 'mdf': '数据库', 'ldf': '数据库', 'sqlitedb': '数据库', 'md': '文档', 'markdown': '文档', 'rst': '文档', 'tex': '文档', 'docx': '文档', 'doc': '文档', 'pdf': '文档', 'ppt': '文档', 'odt': '文档', 'rtf': '文档', 'epub': '文档', 'xlsx': '文档', 'xls': '文档', 'csv': '文档', 'tsv': '文档', 'ods': '文档', 'json': '文档', 'jsonc': '文档', 'xml': '文档', 'yaml': '文档', 'yml': '文档', 'toml': '文档', 'ini': '文档', 'conf': '文档', 'env': '文档', 'properties': '文档', 'txt': '文档', 'text': '文档', 'log': '文档', 'bak': '文档', 'tmp': '文档', 'cache': '文档', 'lock': '文档', 'map': '文档', 'gitignore': '文档', 'png': '媒体', 'jpg': '媒体', 'jpeg': '媒体', 'gif': '媒体', 'bmp': '媒体', 'svg': '媒体', 'webp': '媒体', 'ico': '媒体', 'tiff': '媒体', 'tif': '媒体', 'raw': '媒体', 'psd': '媒体', 'ai': '媒体', 'eps': '媒体', 'fig': '媒体', 'mp4': '媒体', 'mov': '媒体', 'avi': '媒体', 'flv': '媒体', 'wmv': '媒体', 'mkv': '媒体', 'webm': '媒体', 'm4v': '媒体', 'mpg': '媒体', 'mpeg': '媒体', '3gp': '媒体', 'mp3': '媒体', 'wav': '媒体', 'flac': '媒体', 'aac': '媒体', 'ogg': '媒体', 'wma': '媒体', 'm4a': '媒体', 'opus': '媒体', 'obj': '媒体', 'fbx': '媒体', 'dae': '媒体', 'stl': '媒体', '3ds': '媒体', 'blend': '媒体', 'zip': '压缩文件', 'rar': '压缩文件', '7z': '压缩文件', 'tar': '压缩文件', 'gz': '压缩文件', 'bz2': '压缩文件', 'xz': '压缩文件', 'dmg': '压缩文件', 'drawio': '图表', 'excalidraw': '图表', 'sketch': '图表', 'xd': '图表', 'afdesign': '图表', 'puml': '图表', 'plantuml': '图表', 'mmd': '图表', 'ttf': '字体', 'otf': '字体', 'woff': '字体', 'woff2': '字体', 'eot': '字体', 'glyphs': '字体', 'glyphs2': '字体'
         };
         const INDEX_SCHEDULE_FILE = 'index_schedule.json';
         // 判断文件路径是否应显示代码而非渲染 HTML
@@ -12212,62 +12421,8 @@
             }
         }
 
-        // 文件树事件委托的稳定引用（避免 initTreeDelegation 重复调用时 handler 堆积）
-        let _treeClickHandler = null;
-        let _treeDblClickHandler = null;
-
-        async function initTreeDelegation() {
-            // 先移除旧 handler（使用稳定引用），再绑定新 handler
-            if (_treeClickHandler) {
-                treeElement.removeEventListener('click', _treeClickHandler);
-            }
-            if (_treeDblClickHandler) {
-                treeElement.removeEventListener('dblclick', _treeDblClickHandler);
-            }
-
-            _treeClickHandler = async function (event) {
-                const fileSpan = event.target.closest('.file-item');
-                if (!fileSpan) return;
-                // 若点击的是更多菜单按钮或颜色选择器，不触发文件打开
-                if (event.target.closest('.file-item-more-menu') || event.target.closest('.marker-color-picker')) return;
-                if (_treeClickTimer) { clearTimeout(_treeClickTimer); _treeClickTimer = null; return; }
-                _treeClickTimer = setTimeout(async () => {
-                    try {
-                        const filePath = fileSpan.dataset.filePath;
-                        currentFileHandle = await getFileHandleByPath(filePath);
-                        if (!currentFileHandle) {
-                            showNotification(`✗ 无法找到文件: ${filePath}`, 'error');
-                            return;
-                        }
-                        await toggleFile('renderFile', '', filePath, fileSpan, event);
-                    } catch (e) {
-                        console.error('文件切换失败:', e);
-                    } finally {
-                        _treeClickTimer = null;
-                    }
-                }, 100);
-            };
-            treeElement.addEventListener('click', _treeClickHandler);
-
-            _treeDblClickHandler = async function (e) {
-                const fileSpan = e.target.closest('.file-item');
-                if (!fileSpan) return;
-                if (e.target.closest('.file-item-more-menu') || e.target.closest('.marker-color-picker')) return;
-                e.stopPropagation();
-                e.preventDefault();
-                if (_treeClickTimer) { clearTimeout(_treeClickTimer); _treeClickTimer = null; }
-                if (e.isTrusted) saveScrollPosition();
-                const filePath = fileSpan.dataset.filePath;
-                const fileHandle = await getFileHandleByPath(filePath);
-                const textSpan = fileSpan.querySelector('.file-item-text');
-                startRenameFile(fileHandle, filePath, fileSpan, textSpan);
-            };
-            treeElement.addEventListener('dblclick', _treeDblClickHandler);
-        }
-
         let previewFileText = ''; // 当前预览的文件内容（用于判断是否需要重新渲染）
         let lastToggle = 'none';  // 记录上一次打开的功能类型，默认为 'none'
-
         async function toggleFile(type, newFileName = '', relativePath = '', fileSpan = null, event = null) {
             if (!isRootHandleAvailable()) {
                 showNotification('✗ 请先打开根目录', 'error');
@@ -12606,6 +12761,58 @@
             if (fmtCfg.parser || fmtCfg.fallback) {
                 formatBtn.style.display = 'inline-flex';
             }
+        }
+
+        // 文件树事件委托的稳定引用（避免 initTreeDelegation 重复调用时 handler 堆积）
+        let _treeClickHandler = null;
+        let _treeDblClickHandler = null;
+        async function initTreeDelegation() {
+            // 先移除旧 handler（使用稳定引用），再绑定新 handler
+            if (_treeClickHandler) {
+                treeElement.removeEventListener('click', _treeClickHandler);
+            }
+            if (_treeDblClickHandler) {
+                treeElement.removeEventListener('dblclick', _treeDblClickHandler);
+            }
+
+            _treeClickHandler = async function (event) {
+                const fileSpan = event.target.closest('.file-item');
+                if (!fileSpan) return;
+                // 若点击的是更多菜单按钮或颜色选择器，不触发文件打开
+                if (event.target.closest('.file-item-more-menu') || event.target.closest('.marker-color-picker')) return;
+                if (_treeClickTimer) { clearTimeout(_treeClickTimer); _treeClickTimer = null; return; }
+                _treeClickTimer = setTimeout(async () => {
+                    try {
+                        const filePath = fileSpan.dataset.filePath;
+                        currentFileHandle = await getFileHandleByPath(filePath);
+                        if (!currentFileHandle) {
+                            showNotification(`✗ 无法找到文件: ${filePath}`, 'error');
+                            return;
+                        }
+                        await toggleFile('renderFile', '', filePath, fileSpan, event);
+                    } catch (e) {
+                        console.error('文件切换失败:', e);
+                    } finally {
+                        _treeClickTimer = null;
+                    }
+                }, 100);
+            };
+            treeElement.addEventListener('click', _treeClickHandler);
+
+            _treeDblClickHandler = async function (e) {
+                const fileSpan = e.target.closest('.file-item');
+                if (!fileSpan) return;
+                if (e.target.closest('.file-item-more-menu') || e.target.closest('.marker-color-picker')) return;
+                e.stopPropagation();
+                e.preventDefault();
+                if (_treeClickTimer) { clearTimeout(_treeClickTimer); _treeClickTimer = null; }
+                if (e.isTrusted) saveScrollPosition();
+                const filePath = fileSpan.dataset.filePath;
+                const fileHandle = await getFileHandleByPath(filePath);
+                const textSpan = fileSpan.querySelector('.file-item-text');
+                startRenameFile(fileHandle, filePath, fileSpan, textSpan);
+            };
+            treeElement.addEventListener('dblclick', _treeDblClickHandler);
         }
 
         // ===== 定时器管理器 =====
@@ -13132,29 +13339,24 @@
             event.stopPropagation();
             if (newFileDropdownPanel.style.display === 'flex') {
                 newFileDropdownPanel.style.display = 'none';
-                document.removeEventListener('click', closeNewFilePanelOnClick);
                 isNewFileClickListenerActive = false;
             } else {
                 newFileDropdownPanel.style.display = 'flex';
                 setTimeout(() => {
                     if (!isNewFileClickListenerActive) {
-                        document.addEventListener('click', closeNewFilePanelOnClick);
                         isNewFileClickListenerActive = true;
                     }
                 }, 10);
             }
         }
 
-        function closeNewFilePanelOnClick(event) {
-            if (newFileDropdownPanel && !newFileDropdownPanel.contains(event.target)) {
-                newFileDropdownPanel.style.display = 'none';
-                document.removeEventListener('click', closeNewFilePanelOnClick);
-                isNewFileClickListenerActive = false;
-            }
+        function closeNewFilePanelOnClick() {
+            if (newFileDropdownPanel) newFileDropdownPanel.style.display = 'none';
+            isNewFileClickListenerActive = false;
         }
 
         function closeNewFilePanel() {
-            newFileDropdownPanel.style.display = 'none';
+            if (newFileDropdownPanel) newFileDropdownPanel.style.display = 'none';
         }
 
         async function createNewFileInDir(dirPath, name, isNewFile = true) {
@@ -13530,10 +13732,13 @@
         }
 
         document.addEventListener('click', () => {
+            // mermaid dropdown 点击外部关闭
             const newFileSaveMenu = document.getElementById('new-file-save-menu');
             if (newFileSaveMenu) {
                 newFileSaveMenu.classList.remove('mermaid-open');
             }
+            // 新建文件 drpdown 点击外部关闭
+            closeNewFilePanelOnClick();
         });
 
         async function loadNewFileDirectoryTree() {
@@ -23972,13 +24177,22 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         async function _writeToFileHandle(fileHandle, content) {
             const writable = await fileHandle.createWritable();
             try {
-                await writable.write(content);
+                // Git 对象必须是精确的二进制数据，确保类型正确
+                if (content instanceof ArrayBuffer) {
+                    await writable.write(content);
+                } else if (ArrayBuffer.isView(content)) {
+                    // TypedArray / DataView：提取精确的 ArrayBuffer 切片
+                    const slice = content.buffer.slice(content.byteOffset, content.byteOffset + content.byteLength);
+                    await writable.write(slice);
+                } else if (typeof content === 'string') {
+                    await writable.write(content);
+                } else {
+                    // fallback：尝试直接写入
+                    await writable.write(content);
+                }
                 await writable.close();
             } catch (e) {
-                try {
-                    await writable.abort();
-                } catch (_) {
-                }
+                try { await writable.abort(); } catch (_) {}
                 throw e;
             }
         }
@@ -32070,7 +32284,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             };
         }
-        const GIT_COMMIT_PAGE_SIZE = 20; // 每页显示的提交数量
+        const GIT_COMMIT_PAGE_SIZE = 10; // 每页显示的提交数量
         const GIT_GRAPH_ROW_HEIGHT = 70; // 图中每一行的内容高度
         const GIT_GRAPH_ROW_MARGIN = 5; // 行上下 margin（与 CSS .git-graph-row 的 margin 保持一致）
         const GIT_GRAPH_ROW_STEP = GIT_GRAPH_ROW_HEIGHT + GIT_GRAPH_ROW_MARGIN * 2; // 每行占据的总垂直空间
@@ -32168,6 +32382,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             gitRefByHash = null;
             gitDiffNavIdx = -1;
             gitDiffChanges = [];
+            gitWorkingStatus = { staged: [], unstaged: [] };
             // 清理 canvas 自定义数据
             if (gitGraphCanvas) gitGraphCanvas._gitVertices = null;
         }
@@ -32298,31 +32513,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         /** 从 Monaco Diff Editor 的 diff 结果中提取精确的增删行数，更新文件树显示 */
         function gitUpdateFileStatsFromDiffEditor() {
             if (!gitDiffEditor || gitActiveFileIdx < 0) return;
-            try {
-                const changes = gitDiffEditor.getLineChanges();
-                if (!changes || changes.length === 0) {
-                    gitDiffChanges = [];
-                    gitDiffNavIdx = -1;
-                    gitDiffUpdateNavUI();
-                    return;
-                }
-                // 保存变更列表供导航使用（仅在首次获取或变更列表变化时重置导航索引）
-                const prevLen = gitDiffChanges.length;
-                gitDiffChanges = changes;
-                if (prevLen === 0 || gitDiffNavIdx >= changes.length) {
-                    gitDiffNavIdx = changes.length > 0 ? 0 : -1;
-                }
-                gitDiffUpdateNavUI();
+            gitUpdateDiffChangesForNav();
+            const file = gitChangedFilesCache[gitActiveFileIdx];
+            if (file) {
                 let additions = 0, deletions = 0;
-                for (const c of changes) {
+                for (const c of gitDiffChanges) {
                     if (c.originalEndLineNumber > 0) deletions += c.originalEndLineNumber - c.originalStartLineNumber + 1;
                     if (c.modifiedEndLineNumber > 0) additions += c.modifiedEndLineNumber - c.modifiedStartLineNumber + 1;
                 }
-                const file = gitChangedFilesCache[gitActiveFileIdx];
-                if (file) {
-                    file.additions = additions;
-                    file.deletions = deletions;
-                }
+                file.additions = additions;
+                file.deletions = deletions;
                 // 更新文件树中对应行的显示
                 const row = document.querySelector(`tbody tr[data-git-fidx="${gitActiveFileIdx}"]`);
                 if (row) {
@@ -32331,9 +32531,23 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     if (addCell && additions > 0) addCell.textContent = '+' + additions;
                     if (delCell && deletions > 0) delCell.textContent = '−' + deletions;
                 }
-            } catch (e) {
-                // Monaco diff 还未就绪时可能抛异常，忽略即可
             }
+        }
+
+        /** 仅提取 diff 变更块并更新导航 UI（不依赖 gitActiveFileIdx，状态 diff 和提交 diff 共用） */
+        function gitUpdateDiffChangesForNav() {
+            if (!gitDiffEditor) return;
+            try {
+                const changes = gitDiffEditor.getLineChanges();
+                if (!changes || changes.length === 0) {
+                    gitDiffChanges = [];
+                    gitDiffNavIdx = -1;
+                } else {
+                    gitDiffChanges = changes;
+                    if (gitDiffNavIdx < 0 || gitDiffNavIdx >= changes.length) gitDiffNavIdx = 0;
+                }
+                gitDiffUpdateNavUI();
+            } catch (e) { /* Monaco diff 未就绪 */ }
         }
         // 轨道图布局类
         class GitBranch {
@@ -32876,6 +33090,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     if (c.oid === gitHeadHash && gitCurrentBranch === 'HEAD (detached)') refsHtml += '<span class="git-graph-ref git-graph-ref-head">HEAD</span>';
                     // 当有文件过滤器时，不显示轨道图占位单元格
                     const svgCellHtml = gitFileFilter ? '' : `<div class="git-graph-cell-svg" style="width:${cw}px; min-width:${cw}px;"></div>`;
+                    const timeStr = c.commit.author.timestamp ? new Date(c.commit.author.timestamp * 1000).toLocaleString('zh-CN', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit'
+                    }) : '';
                     rowsHtml += `
                     <div class="${rowClass}" data-git-idx="${i}" style="height:${GIT_GRAPH_ROW_HEIGHT}px;">
                         ${svgCellHtml}
@@ -32884,7 +33103,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             <div class="git-graph-meta">
                                 <span class="git-graph-sha">${gitShortSha(c.oid)}</span>
                                 <span>${gitEscapeHtml(c.commit.author.name)}</span>
-                                <span>${gitFormatTime(c.commit.author.timestamp)}</span>
+                                <span>${timeStr}</span>
                                 ${refsHtml ? `<span class="git-graph-refs">${refsHtml}</span>` : ''}
                             </div>
                         </div>
@@ -32951,6 +33170,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         function gitHandleCommitClick(idx, onFilesRendered) {
             gitActiveCommitIdx = idx;
             gitActiveFileIdx = -1;
+            // 恢复右侧面板布局（从全面板 diff 模式恢复）
+            const detailArea = document.getElementById('gitDetailArea');
+            const diffContainer = document.getElementById('gitDiffContainer');
+            if (detailArea) detailArea.style.display = '';
+            if (diffContainer) { diffContainer.style.flex = ''; diffContainer.style.overflow = ''; }
             gitRenderGraphAndList(false); // 仅更新行高亮，不需要重绘 canvas
             // 如果有文件过滤器，切换提交时选中当前文件但不自动打开对比
             const capturedFileFilter = gitFileFilter;
@@ -33145,6 +33369,518 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             }
         }
+
+        // ==================== Git 工作区状态管理 ====================
+        let gitWorkingStatus = { staged: [], unstaged: [] };
+        let _gitStatusTimer = null;
+
+        /** 切换提交下拉菜单 */
+        // 提交消息框 Ctrl+Enter 提交
+        document.addEventListener('keydown', (e) => {
+            const input = document.getElementById('gitCommitMsgInput');
+            if (e.ctrlKey && e.key === 'Enter' && input && document.activeElement === input) {
+                e.preventDefault();
+                gitDoCommit();
+            }
+        });
+
+        /** 获取工作区状态（暂存/未暂存文件列表） */
+
+        /** 解析 .gitignore 文件内容，返回匹配函数 */
+        function gitignoreParse(content) {
+            const patterns = [];
+            if (!content) return { ignores: () => false };
+            const lines = content.split(/\r?\n/);
+            for (let line of lines) {
+                line = line.trim();
+                // 跳过空行和注释
+                if (!line || line.startsWith('#')) continue;
+                // 处理否定模式
+                let negate = false;
+                if (line.startsWith('!')) {
+                    negate = true;
+                    line = line.substring(1).trim();
+                    if (!line) continue;
+                }
+                // 转义特殊正则字符（* ? . + 等在 gitignore 中有特殊含义）
+                let isDirOnly = line.endsWith('/');
+                if (isDirOnly) line = line.slice(0, -1);
+                // 如果包含 /（非末尾），则匹配完整路径；否则匹配文件名
+                const hasSlash = line.includes('/');
+                // 去掉开头的 /（表示从根目录匹配）
+                if (line.startsWith('/')) line = line.substring(1);
+                // 转换 gitignore 通配符为正则
+                let regexStr = '';
+                let i = 0;
+                while (i < line.length) {
+                    const ch = line[i];
+                    if (ch === '*') {
+                        // 检查 ** 或 **/
+                        if (line[i + 1] === '*') {
+                            if (line[i + 2] === '/' || i + 2 >= line.length) {
+                                // ** 匹配任意层级（包括 /）
+                                regexStr += '.*';
+                                i += line[i + 2] === '/' ? 3 : 2;
+                                continue;
+                            }
+                        }
+                        // 单个 * 匹配除 / 外的任意字符
+                        regexStr += '[^/]*';
+                        i++;
+                    } else if (ch === '?') {
+                        regexStr += '[^/]';
+                        i++;
+                    } else if (ch === '[') {
+                        // gitignore 字符类 [abc] 与正则语法兼容，原样保留
+                        let j = i + 1;
+                        while (j < line.length && line[j] !== ']') j++;
+                        if (j < line.length) {
+                            regexStr += line.substring(i, j + 1);
+                            i = j + 1;
+                        } else {
+                            // 未闭合的 [，当作普通字符转义
+                            regexStr += '\\[';
+                            i++;
+                        }
+                    } else {
+                        // 转义正则特殊字符（但 [ ] 已在上面处理，此处不转义）
+                        if ('.+^${}()|\\'.includes(ch)) {
+                            regexStr += '\\' + ch;
+                        } else {
+                            regexStr += ch;
+                        }
+                        i++;
+                    }
+                }
+                // 构建最终正则
+                if (hasSlash || isDirOnly) {
+                    // 包含 / 的模式：从路径开头或某个目录层级开始匹配
+                    regexStr = '(?:^|/)' + regexStr;
+                } else {
+                    // 纯文件名模式（无 /）：匹配任意层级的文件名
+                    regexStr = '(?:^|.*/)(?:' + regexStr + ')';
+                }
+                if (isDirOnly) regexStr += '(?:/.*)?$';
+                else regexStr += '$';
+                try {
+                    patterns.push({ regex: new RegExp(regexStr), negate });
+                } catch (e) {
+                    // 忽略无效的正则
+                }
+            }
+            return {
+                patterns,
+                ignores(filepath) {
+                    let ignored = false;
+                    for (const p of patterns) {
+                        if (p.regex.test(filepath)) {
+                            ignored = !p.negate;
+                        }
+                    }
+                    return ignored;
+                }
+            };
+        }
+
+        /** 缓存的 gitignore 匹配器 */
+        let gitignoreMatcherCache = null;
+        let gitignoreMatcherContent = null;
+
+        /** 获取或刷新 .gitignore 匹配器 */
+        async function gitignoreGetMatcher() {
+            try {
+                const rootHandle = getRootHandle();
+                if (!rootHandle) return { ignores: () => false };
+                const fh = await getFileHandleByDirHandle(rootHandle, '.gitignore');
+                const content = await getFileContent(fh);
+                if (content === gitignoreMatcherContent && gitignoreMatcherCache) {
+                    return gitignoreMatcherCache;
+                }
+                gitignoreMatcherContent = content;
+                gitignoreMatcherCache = gitignoreParse(content);
+                return gitignoreMatcherCache;
+            } catch (e) {
+                // .gitignore 不存在或无法读取，返回空匹配器
+                gitignoreMatcherContent = null;
+                gitignoreMatcherCache = { ignores: () => false, patterns: [] };
+                return gitignoreMatcherCache;
+            }
+        }
+
+        /** 清除 gitignore 缓存（目录切换时调用） */
+        function gitignoreInvalidateCache() {
+            gitignoreMatcherCache = null;
+            gitignoreMatcherContent = null;
+        }
+
+        // ── 状态缓存（避免短时间内重复 statusMatrix 调用）──
+        let gitStatusCache = { matrix: null, staged: null, unstaged: null, time: 0 };
+        const GIT_STATUS_CACHE_TTL = 3000; // 缓存有效期 3 秒
+
+        async function gitGetWorkingStatus(forceRefresh = false) {
+            if (!gitFs) return { staged: [], unstaged: [] };
+            const now = Date.now();
+            if (!forceRefresh && gitStatusCache.staged && (now - gitStatusCache.time) < GIT_STATUS_CACHE_TTL) {
+                return { staged: gitStatusCache.staged, unstaged: gitStatusCache.unstaged };
+            }
+            try {
+                // 并行加载 statusMatrix 和 gitignore 匹配器
+                const [matrix, matcher] = await Promise.all([
+                    window.git.statusMatrix({ fs: gitFs, dir: SLASH }),
+                    gitignoreGetMatcher()
+                ]);
+                const staged = [];
+                const unstaged = [];
+                let ignoredCount = 0;
+                for (const [filepath, head, workdir, stage] of matrix) {
+                    if (filepath === DOT || filepath === '') continue;
+                    // 对未跟踪文件（head===0 && stage===0 && workdir!==0）应用 .gitignore 过滤
+                    if (head === 0 && stage === 0 && workdir !== 0) {
+                        if (matcher.ignores(filepath)) { ignoredCount++; continue; }
+                    }
+                    // 是否已暂存（stage!=head 表示索引与 HEAD 有差异）
+                    const isStaged =
+                        (head === 0 && (stage === 2 || stage === 3)) ||
+                        (head === 1 && stage !== 1);
+                    // 是否有未暂存的更改（workdir 与 stage 不一致，或 untracked）
+                    const hasUnstaged =
+                        // 新文件未暂存（untracked）
+                        (head === 0 && stage === 0 && workdir === 2) ||
+                        // 已跟踪文件：修改了但未暂存
+                        (head === 1 && stage === 1 && workdir === 2) ||
+                        // 已跟踪文件：删除了但未暂存
+                        (head === 1 && stage === 1 && workdir === 0) ||
+                        // 已暂存但工作区有额外修改（stage=3 表示与 workdir 不一致）
+                        (stage === 3 && workdir !== 0) ||
+                        // 已暂存删除但工作区又重建了同名文件
+                        (head === 1 && stage === 0 && workdir === 2);
+                    if (isStaged) {
+                        let status = 'modified';
+                        if (head === 0) status = 'added';
+                        else if (workdir === 0 && stage !== 0) status = 'removed';
+                        staged.push({ filepath, status, head, workdir, stage });
+                    }
+                    if (hasUnstaged) {
+                        let status = 'modified';
+                        if (head === 0) status = 'added';
+                        else if (workdir === 0) status = 'removed';
+                        unstaged.push({ filepath, status, head, workdir, stage });
+                    }
+                }
+                // 缓存结果
+                gitStatusCache = { matrix, staged: [...staged], unstaged: [...unstaged], time: now };
+
+                // 对 [1,2,1] 文件做 OID 二次校验（异步非阻塞，完成后自动刷新列表）
+                const verifyOidFiles = unstaged.filter(f => f.head === 1 && f.workdir === 2 && f.stage === 1);
+                if (verifyOidFiles.length > 0) {
+                    gitVerifyOidAsync(verifyOidFiles, unstaged);
+                }
+                return { staged, unstaged };
+            } catch (e) {
+                console.warn('gitGetWorkingStatus error:', e);
+                return { staged: [], unstaged: [] };
+            }
+        }
+
+        /** 异步 OID 校验：后台执行，发现误判后自动刷新列表 */
+        async function gitVerifyOidAsync(verifyOidFiles, currentUnstaged) {
+            try {
+                const headOid = await window.git.resolveRef({ fs: gitFs, dir: SLASH, ref: 'HEAD' });
+                const normalizeLF = (buf) => {
+                    try {
+                        const text = new TextDecoder('utf-8', { fatal: false }).decode(buf);
+                        return new TextEncoder().encode(text.replace(/\r\n/g, '\n').replace(/\r/g, '\n'));
+                    } catch { return buf; }
+                };
+                // 并行校验，最多同时 3 个避免 IO 拥塞
+                const results = [];
+                for (let i = 0; i < verifyOidFiles.length; i += 3) {
+                    const batch = verifyOidFiles.slice(i, i + 3);
+                    const batchResults = await Promise.all(batch.map(async (f) => {
+                        try {
+                            const [headBlob, rawContent] = await Promise.all([
+                                window.git.readBlob({ fs: gitFs, dir: SLASH, oid: headOid, filepath: f.filepath }),
+                                gitFs.readFile('/' + f.filepath, {})
+                            ]);
+                            const rawHash = await window.git.hashBlob({ object: rawContent });
+                            if (headBlob.oid === rawHash.oid) return { filepath: f.filepath, match: true };
+                            // 长度相同才做逐字节比较（长度不同一定是真有改动）
+                            if (headBlob.blob.byteLength !== rawContent.byteLength) return { filepath: f.filepath, match: false };
+                            const normGit = normalizeLF(headBlob.blob);
+                            const normDisk = normalizeLF(rawContent);
+                            if (normGit.byteLength !== normDisk.byteLength) return { filepath: f.filepath, match: false };
+                            const a = new Uint8Array(normGit), b = new Uint8Array(normDisk);
+                            for (let j = 0; j < a.length; j++) {
+                                if (a[j] !== b[j]) return { filepath: f.filepath, match: false };
+                            }
+                            return { filepath: f.filepath, match: true };
+                        } catch { return { filepath: f.filepath, match: null }; }
+                    }));
+                    results.push(...batchResults);
+                }
+                // 若校验结果与当前缓存一致，更新列表
+                const falsePositives = new Set(results.filter(r => r.match === true).map(r => r.filepath));
+                if (falsePositives.size > 0 && gitStatusCache.unstaged) {
+                    gitStatusCache.unstaged = gitStatusCache.unstaged.filter(f => !falsePositives.has(f.filepath));
+                    gitStatusCache.staged = gitStatusCache.staged || [];
+                    gitStatusCache.time = Date.now(); // 延长缓存有效期
+                    gitUpdateStatusLists();
+                }
+            } catch (e) {
+                console.warn('异步 OID 校验失败:', e.message || e);
+            }
+        }
+
+        /** 渲染暂存/更改列表 */
+        function gitRenderStatusList(containerId, emptyId, countId, items, type) {
+            const container = document.getElementById(containerId);
+            const emptyEl = document.getElementById(emptyId);
+            const countEl = document.getElementById(countId);
+            if (!container) return;
+            if (items.length === 0) {
+                container.innerHTML = '';
+                container.appendChild(emptyEl || document.createElement('div'));
+                if (emptyEl) emptyEl.style.display = '';
+                if (countEl) countEl.style.display = 'none';
+                return;
+            }
+            if (emptyEl) emptyEl.style.display = 'none';
+            if (countEl) {
+                countEl.style.display = '';
+                countEl.textContent = items.length;
+            }
+            let html = '';
+            for (const item of items) {
+                const icon = item.status === 'added' ? 'A' : item.status === 'removed' ? 'D' : 'M';
+                const iconCls = item.status;
+                const fileName = basename(item.filepath);
+                let btnsHtml = '';
+                if (type === 'unstaged') {
+                    btnsHtml = `
+                        <div class="git-status-item-btns">
+                            <button class="git-status-item-btn stage" title="暂存更改" data-action="stage" data-filepath="${gitEscapeHtml(item.filepath)}">+</button>
+                            <button class="git-status-item-btn discard" title="放弃更改" data-action="discard" data-filepath="${gitEscapeHtml(item.filepath)}">✕</button>
+                        </div>`;
+                } else {
+                    btnsHtml = `
+                        <div class="git-status-item-btns">
+                            <button class="git-status-item-btn unstage" title="取消暂存" data-action="unstage" data-filepath="${gitEscapeHtml(item.filepath)}">−</button>
+                        </div>`;
+                }
+                html += `
+                <div class="git-status-item" data-filepath="${gitEscapeHtml(item.filepath)}" data-type="${type}">
+                    <span class="git-status-item-icon ${iconCls}">${icon}</span>
+                    <span class="git-status-item-path" title="${gitEscapeHtml(item.filepath)}">${gitEscapeHtml(fileName)}</span>
+                    ${btnsHtml}
+                </div>`;
+            }
+            container.innerHTML = html;
+            // 绑定整行点击 → 右侧显示差异对比
+            container.querySelectorAll('.git-status-item').forEach(item => {
+                item.addEventListener('click', async (e) => {
+                    // 不拦截按钮点击
+                    if (e.target.closest('.git-status-item-btn')) return;
+                    // 高亮选中项
+                    document.querySelectorAll('.git-status-item.active').forEach(el => el.classList.remove('active'));
+                    item.classList.add('active');
+                    const filepath = item.dataset.filepath;
+                    const itemType = item.dataset.type;
+                    gitShowStatusDiff(filepath, itemType);
+                });
+            });
+            // 绑定按钮事件
+            container.querySelectorAll('.git-status-item-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const action = btn.dataset.action;
+                    const filepath = btn.dataset.filepath;
+                    if (action === 'stage') await gitStageFile(filepath);
+                    else if (action === 'unstage') await gitUnstageFile(filepath);
+                    else if (action === 'discard') await gitDiscardFile(filepath);
+                    // gitStageFile/gitUnstageFile/gitDiscardFile 内部已调用 gitUpdateStatusLists(true)
+                });
+            });
+        }
+
+        /** 刷新暂存/更改列表 */
+        async function gitUpdateStatusLists(forceRefresh = false) {
+            gitWorkingStatus = await gitGetWorkingStatus(forceRefresh);
+            gitRenderStatusList('gitAddList', 'gitAddListEmpty', 'gitStagedCount', gitWorkingStatus.staged, 'staged');
+            gitRenderStatusList('gitChangedList', 'gitChangedListEmpty', 'gitChangedCount', gitWorkingStatus.unstaged, 'unstaged');
+        }
+
+        /** 暂存文件 */
+        async function gitStageFile(filepath) {
+            if (!gitFs) return;
+            try {
+                await window.git.add({ fs: gitFs, dir: SLASH, filepath });
+                showNotification(`✓ 已暂存: ${filepath}`, 'success');
+                await gitUpdateStatusLists(true);
+            } catch (e) {
+                console.error('gitStageFile error filepath=' + filepath, e);
+                showNotification(`✗ 暂存失败: ${e.message}`, 'error');
+            }
+        }
+
+        /** 取消暂存文件 */
+        async function gitUnstageFile(filepath) {
+            if (!gitFs) return;
+            try {
+                await window.git.resetIndex({ fs: gitFs, dir: SLASH, filepath });
+                showNotification(`✓ 已取消暂存: ${filepath}`, 'success');
+                await gitUpdateStatusLists(true);
+            } catch (e) {
+                console.error('gitUnstageFile error:', e);
+                showNotification(`✗ 取消暂存失败: ${e.message}`, 'error');
+            }
+        }
+
+        /** 放弃文件更改（还原到 HEAD 版本） */
+        async function gitDiscardFile(filepath) {
+            if (!gitFs) return;
+            showConfirmModal('确认放弃更改', `确定要放弃 "${filepath}" 的所有更改吗？此操作不可撤销。`, async (confirmed) => {
+                if (!confirmed) return;
+                try {
+                    await window.git.checkout({ fs: gitFs, dir: SLASH, filepath, force: true });
+                    showNotification(`✓ 已放弃更改: ${filepath}`, 'success');
+                    await gitUpdateStatusLists(true);
+                } catch (e) {
+                    console.error('gitDiscardFile error:', e);
+                    showNotification(`✗ 放弃更改失败: ${e.message}`, 'error');
+                }
+            });
+        }
+
+        /** 点击暂存/更改列表项，在右侧面板显示文件差异对比 */
+        async function gitShowStatusDiff(filepath, type) {
+            if (!gitFs) return;
+            try {
+                const headOid = await window.git.resolveRef({ fs: gitFs, dir: SLASH, ref: 'HEAD' });
+                // 并行读取 HEAD 版本和工作区文件
+                const [headResult, workdirBuf] = await Promise.all([
+                    window.git.readBlob({ fs: gitFs, dir: SLASH, oid: headOid, filepath: filepath }).catch(() => null),
+                    gitFs.readFile('/' + filepath, {}).catch(() => null)
+                ]);
+                const originalContent = headResult ? new TextDecoder().decode(headResult.blob) : '';
+                const modifiedContent = workdirBuf ? new TextDecoder().decode(workdirBuf) : '';
+
+                // 全面板模式：隐藏 detailArea，diff 填满右侧
+                const detailArea = document.getElementById('gitDetailArea');
+                const diffContainer = document.getElementById('gitDiffContainer');
+                if (detailArea) detailArea.style.display = 'none';
+                if (diffContainer) {
+                    diffContainer.style.flex = '1';
+                    diffContainer.style.overflow = 'hidden';
+                }
+                await gitShowDiffInline(originalContent, modifiedContent, filepath);
+            } catch (e) {
+                console.error('gitShowStatusDiff error:', e);
+                showNotification(`✗ 无法加载差异: ${e.message}`, 'error');
+            }
+        }
+
+        /** 全面板 diff（含 header + diff 块内导航，填满整个右侧面板） */
+        async function gitShowDiffInline(originalContent, modifiedContent, filePath) {
+            const gen = ++gitEditorGeneration;
+            await window._gitMonacoReady;
+            if (gen !== gitEditorGeneration) return;
+            gitDisposeDiffEditor();
+            gitDiffNavIdx = -1;
+            gitDiffChanges = [];
+            const container = document.getElementById('gitDiffContainer');
+            if (!container) return;
+            const fileName = basename(filePath);
+            container.innerHTML = `
+                <div class="git-diff-header">
+                    <span class="git-diff-header-title" title="${gitEscapeHtml(filePath)}">${gitEscapeHtml(fileName)}</span>
+                    <div class="git-diff-header-nav">
+                        <button class="git-diff-nav-btn" id="gitDiffNavPrev" disabled>上一个</button>
+                        <span class="git-diff-nav-indicator" id="gitDiffNavIndicator">0/0</span>
+                        <button class="git-diff-nav-btn" id="gitDiffNavNext" disabled>下一个</button>
+                    </div>
+                </div>
+                <div class="git-diff-editor-wrap" id="gitDiffEditorWrap" style="flex:1;min-height:0;overflow:hidden;"></div>
+            `;
+            const editorWrap = document.getElementById('gitDiffEditorWrap');
+            if (!editorWrap) return;
+
+            const lang = getMonacoLanguage(filePath);
+            initMonacoEditor().then(() => {
+                const originalUri = monaco.Uri.parse(`git-status-original:///${filePath}`);
+                const modifiedUri = monaco.Uri.parse(`git-status-modified:///${filePath}`);
+                const existOrig = monaco.editor.getModel(originalUri);
+                if (existOrig) existOrig.dispose();
+                const existMod = monaco.editor.getModel(modifiedUri);
+                if (existMod) existMod.dispose();
+                const originalModel = monaco.editor.createModel(originalContent, lang, originalUri);
+                const modifiedModel = monaco.editor.createModel(modifiedContent, lang, modifiedUri);
+
+                gitDiffEditor = monaco.editor.createDiffEditor(editorWrap, {
+                    readOnly: true,
+                    renderSideBySide: true,
+                    automaticLayout: true,
+                    enableSplitViewResizing: true,
+                    renderOverviewRuler: false,
+                    scrollBeyondLastLine: false,
+                    minimap: { enabled: false },
+                    theme: 'vs',
+                    lineNumbersMinChars: 5,
+                    fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, monospace',
+                    fontSize: 12,
+                });
+                gitDiffEditor.getOriginalEditor().updateOptions({ fontSize: 12, minimap: { enabled: false }, lineNumbersMinChars: 5 });
+                gitDiffEditor.getModifiedEditor().updateOptions({ fontSize: 12, minimap: { enabled: false }, lineNumbersMinChars: 5 });
+                gitDiffEditor.setModel({ original: originalModel, modified: modifiedModel });
+
+                // 提取 diff 变更块供导航使用（与 gitShowDiff 逻辑一致）
+                gitDiffUpdateDisposable = gitDiffEditor.onDidUpdateDiff(() => {
+                    gitUpdateDiffChangesForNav();
+                });
+            });
+            // 绑定导航按钮 → 定位文件内的差异块
+            document.getElementById('gitDiffNavPrev')?.addEventListener('click', () => gitDiffNavigate('prev'));
+            document.getElementById('gitDiffNavNext')?.addEventListener('click', () => gitDiffNavigate('next'));
+        }
+
+        /** 执行提交 */
+        async function gitDoCommit() {
+            if (!gitFs) {
+                showNotification('✗ 请先打开 Git 仓库', 'error');
+                return;
+            }
+            const msgInput = document.getElementById('gitCommitMsgInput');
+            const message = msgInput ? msgInput.value.trim() : '';
+            if (!message) {
+                showNotification('✗ 请输入提交消息', 'warning');
+                if (msgInput) msgInput.focus();
+                return;
+            }
+            // 检查是否有暂存文件
+            const status = await gitGetWorkingStatus();
+            if (status.staged.length === 0) {
+                showNotification('✗ 没有暂存的更改可以提交', 'warning');
+                return;
+            }
+            try {
+                const authorName = safeLocalStorageGet('git_author_name') || 'mdgo';
+                const authorEmail = safeLocalStorageGet('git_author_email') || 'mdgo@local';
+                const sha = await window.git.commit({
+                    fs: gitFs,
+                    dir: SLASH,
+                    message,
+                    author: { name: authorName, email: authorEmail },
+                });
+                showNotification(`✓ 提交成功: ${sha.slice(0, 7)}`, 'success');
+                if (msgInput) msgInput.value = '';
+                await gitUpdateStatusLists(true);
+                // 刷新提交历史
+                await gitLoadRepo(gitFileFilter || null);
+            } catch (e) {
+                console.error('gitDoCommit error:', e);
+                showNotification(`✗ 提交失败: ${e.message}`, 'error');
+            }
+        }
+
         // 渲染文件树表格
         function gitRenderFileTree(changedFiles, activeIdx, captures) {
             if (changedFiles.length === 0) {
@@ -33237,136 +33973,212 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         /**
          * 创建基于 FileSystemDirectoryHandle 的 FS 适配器（供 isomorphic-git 使用）
          * @param {FileSystemDirectoryHandle} gitDirHandle - .git 目录的句柄
+         * @param {FileSystemDirectoryHandle} rootDirHandle - 仓库根目录的句柄
          * @returns {object} 符合 isomorphic-git fs 接口的对象
          */
-        function createGitFsAdapter(gitDirHandle) {
-            /** 规范化路径：去除 /.git/ 或 / 前缀，返回相对于 .git 目录的路径 */
-            function _gitPath(p) {
-                let s = p;
-                if (s.startsWith('/.git/')) s = s.substring(5);
-                else if (s === '/.git') s = '';
-                else if (s.startsWith(SLASH)) s = s.substring(1);
-                return s || DOT;
+        function createGitFsAdapter(gitDirHandle, rootDirHandle) {
+            /** 判断路径是否属于 .git 内部，并返回 { isGit, relativePath } */
+            function _route(p) {
+                let s = (p || '');
+                // 标准化：合并连续斜杠，去除 /./ 段
+                s = s.replace(/\/{2,}/g, SLASH).replace(/\/\.\//g, SLASH).replace(/\/\.$/, '');
+                if (s.startsWith('/.git/')) return { isGit: true, rel: s.substring(5) };
+                if (s === '/.git') return { isGit: true, rel: '' };
+                // 其他路径（包括 /xxx, /, 空）都属于工作区
+                if (s.startsWith(SLASH)) s = s.substring(1);
+                return { isGit: false, rel: s };
             }
 
-            /** 定位到父目录句柄和文件名，复用已有的 getDirectoryHandle */
-            async function _resolveParent(np) {
+            /** 根据路由结果选择起始句柄 */
+            function _baseHandle(isGit) {
+                return isGit ? gitDirHandle : rootDirHandle;
+            }
+
+            /** 定位到父目录句柄和文件名，跳过 . 和 .. 防止 API 报错 */
+            async function _resolveParent(np, isGit) {
                 if (!np || np === DOT || np === '') return { parentHandle: null, name: '' };
-                const parts = np.split(SLASH).filter(Boolean);
+                const parts = np.split(SLASH).filter(p => p && p !== '.' && p !== '..');
                 if (parts.length === 0) return { parentHandle: null, name: '' };
                 const name = parts.pop();
-                let handle = gitDirHandle;
+                let handle = _baseHandle(isGit);
                 for (const part of parts) {
-                    handle = await getDirectoryHandle(handle, part);
+                    try {
+                        handle = await getDirectoryHandle(handle, part);
+                    } catch (e) {
+                        // 路径中任何一级目录不存在 → 整个路径不存在
+                        if (e.name === 'NotFoundError') return { parentHandle: null, name: '' };
+                        throw e;
+                    }
                 }
                 return { parentHandle: handle, name };
+            }
+
+            /** 安全遍历路径部件，跳过 . 和 .. */
+            async function _walkPath(baseHandle, np) {
+                let handle = baseHandle;
+                for (const part of np.split(SLASH).filter(p => p && p !== '.' && p !== '..')) {
+                    try {
+                        handle = await getDirectoryHandle(handle, part);
+                    } catch (e) {
+                        if (e.name === 'NotFoundError') return null;
+                        throw e;
+                    }
+                }
+                return handle;
+            }
+
+            /** 将 async 操作同时支持 callback 和 Promise 两种风格 */
+            function _dual(promise, cb) {
+                if (typeof cb === 'function') {
+                    promise.then(r => cb(null, r), e => cb(e));
+                } else {
+                    return promise;
+                }
+            }
+
+            /** 将浏览器 NotFoundError 转为 isomorphic-git 兼容的 ENOENT 错误 */
+            function _enoent(path) {
+                const err = new Error(`ENOENT: no such file or directory, open '${path}'`);
+                err.code = 'ENOENT';
+                return err;
+            }
+
+            /** 创建符合 isomorphic-git 要求的 stat/lstat 返回对象 */
+            function _makeStat(type, size, mtimeMs) {
+                const isDir = type === 'dir';
+                const sec = mtimeMs ? Math.floor(mtimeMs / 1000) : 0;
+                return {
+                    type,
+                    size,
+                    mtimeMs,
+                    ctimeMs: mtimeMs,
+                    mtimeSeconds: sec,
+                    ctimeSeconds: sec,
+                    dev: 0,
+                    ino: 0,
+                    mode: isDir ? 0o40000 : 0o100644,
+                    uid: 0,
+                    gid: 0,
+                    // isomorphic-git GitWalkerFs.stat() 调用这三个方法判断类型
+                    isDirectory: () => isDir,
+                    isFile: () => !isDir,
+                    isSymbolicLink: () => false,
+                };
             }
 
             return {
                 readFile(filePath, opts, cb) {
                     if (typeof opts === 'function') { cb = opts; opts = {}; }
-                    const np = _gitPath(filePath);
-                    (async () => {
+                    const { isGit, rel } = _route(filePath);
+                    const np = rel || DOT;
+                    return _dual((async () => {
+                        const { parentHandle, name } = await _resolveParent(np, isGit);
+                        if (!parentHandle || !name) throw _enoent(filePath);
                         try {
-                            const { parentHandle, name } = await _resolveParent(np);
-                            if (!parentHandle || !name) { cb(new Error('EISDIR')); return; }
                             const fileHandle = await getFileHandleByDirHandle(parentHandle, name);
                             const isUtf8 = opts === 'utf8' || (opts && opts.encoding === 'utf8');
-                            cb(null, isUtf8 ? await getFileContent(fileHandle) : new Uint8Array(await getFileByBuffer(fileHandle)));
-                        } catch (e) { cb(e); }
-                    })();
+                            return isUtf8 ? await getFileContent(fileHandle) : new Uint8Array(await getFileByBuffer(fileHandle));
+                        } catch (e) {
+                            if (e.name === 'NotFoundError') throw _enoent(filePath);
+                            throw e;
+                        }
+                    })(), cb);
                 },
                 writeFile(filePath, data, opts, cb) {
                     if (typeof opts === 'function') { cb = opts; opts = {}; }
-                    const np = _gitPath(filePath);
-                    (async () => {
-                        try {
-                            const { parentHandle, name } = await _resolveParent(np);
-                            if (!parentHandle || !name) { cb(new Error('EISDIR')); return; }
-                            await writeFileByDirHandle(parentHandle, name, data);
-                            cb(null);
-                        } catch (e) { cb(e); }
-                    })();
+                    const { isGit, rel } = _route(filePath);
+                    const np = rel || DOT;
+                    return _dual((async () => {
+                        const { parentHandle, name } = await _resolveParent(np, isGit);
+                        if (!parentHandle || !name) throw new Error('EISDIR');
+                        await writeFileByDirHandle(parentHandle, name, data);
+                    })(), cb);
                 },
                 unlink(filePath, cb) {
-                    const np = _gitPath(filePath);
-                    (async () => {
+                    const { isGit, rel } = _route(filePath);
+                    const np = rel || DOT;
+                    return _dual((async () => {
+                        const { parentHandle, name } = await _resolveParent(np, isGit);
+                        if (!parentHandle || !name) throw new Error('EISDIR');
                         try {
-                            const { parentHandle, name } = await _resolveParent(np);
-                            if (!parentHandle || !name) { cb(new Error('EISDIR')); return; }
                             await deleteFileByName(parentHandle, name);
-                            cb(null);
-                        } catch (e) { cb(e); }
-                    })();
+                        } catch (e) {
+                            if (e.name === 'NotFoundError') throw _enoent(filePath);
+                            throw e;
+                        }
+                    })(), cb);
                 },
                 readdir(dirPath, cb) {
-                    const np = _gitPath(dirPath);
-                    (async () => {
-                        try {
-                            let handle = gitDirHandle;
-                            if (np !== DOT) {
-                                for (const part of np.split(SLASH).filter(Boolean)) {
-                                    handle = await getDirectoryHandle(handle, part);
-                                }
-                            }
-                            const entries = await getDirectoryEntries(handle);
-                            cb(null, entries.map(e => e.name));
-                        } catch (e) { cb(e); }
-                    })();
+                    const { isGit, rel } = _route(dirPath);
+                    const np = rel || DOT;
+                    return _dual((async () => {
+                        let handle = _baseHandle(isGit);
+                        if (np !== DOT) {
+                            handle = await _walkPath(handle, np);
+                            if (!handle) throw _enoent(dirPath);
+                        }
+                        const entries = await getDirectoryEntries(handle);
+                        let names = entries.map(e => e.name);
+                        // 工作区目录：仅排除 .git（git 不应管理自己的内部文件）
+                        if (!isGit) {
+                            names = names.filter(n => n !== '.git');
+                        }
+                        return names;
+                    })(), cb);
                 },
                 mkdir(dirPath, cb) {
-                    const np = _gitPath(dirPath);
-                    (async () => {
-                        try {
-                            if (np === DOT) { cb(null); return; }
-                            let handle = gitDirHandle;
-                            for (const part of np.split(SLASH).filter(Boolean)) {
-                                handle = await getOrCreateDirectory(handle, part);
-                            }
-                            cb(null);
-                        } catch (e) { cb(e); }
-                    })();
+                    const { isGit, rel } = _route(dirPath);
+                    const np = rel || DOT;
+                    return _dual((async () => {
+                        if (np === DOT) return;
+                        let handle = _baseHandle(isGit);
+                        for (const part of np.split(SLASH).filter(p => p && p !== '.' && p !== '..')) {
+                            handle = await getOrCreateDirectory(handle, part);
+                        }
+                    })(), cb);
                 },
                 rmdir(dirPath, cb) {
-                    const np = _gitPath(dirPath);
-                    (async () => {
+                    const { isGit, rel } = _route(dirPath);
+                    const np = rel || DOT;
+                    return _dual((async () => {
+                        const { parentHandle, name } = await _resolveParent(np, isGit);
+                        if (!parentHandle || !name) throw new Error('EISDIR');
                         try {
-                            const { parentHandle, name } = await _resolveParent(np);
-                            if (!parentHandle || !name) { cb(new Error('EISDIR')); return; }
                             await deleteDir(parentHandle, name);
-                            cb(null);
-                        } catch (e) { cb(e); }
-                    })();
+                        } catch (e) {
+                            if (e.name === 'NotFoundError') throw _enoent(filePath);
+                            throw e;
+                        }
+                    })(), cb);
                 },
                 stat(filePath, cb) {
-                    const np = _gitPath(filePath);
-                    (async () => {
+                    const { isGit, rel } = _route(filePath);
+                    const np = rel || DOT;
+                    return _dual((async () => {
+                        if (np === DOT || np === '') {
+                            return _makeStat('dir', 0, Date.now());
+                        }
+                        const { parentHandle, name } = await _resolveParent(np, isGit);
+                        // _resolveParent 返回 null 表示中间目录不存在 → 整个路径不存在
+                        if (!parentHandle || !name) throw _enoent(filePath);
                         try {
-                            if (np === DOT || np === '') {
-                                cb(null, { type: 'dir', size: 0, mtimeMs: Date.now() });
-                                return;
-                            }
-                            const { parentHandle, name } = await _resolveParent(np);
-                            if (!parentHandle || !name) {
-                                cb(null, { type: 'dir', size: 0, mtimeMs: Date.now() });
-                                return;
-                            }
+                            const fh = await getFileHandleByDirHandle(parentHandle, name);
+                            const file = await fh.getFile();
+                            return _makeStat('file', file.size, file.lastModified);
+                        } catch {
                             try {
-                                const fh = await getFileHandleByDirHandle(parentHandle, name);
-                                const file = await fh.getFile();
-                                cb(null, { type: 'file', size: file.size, mtimeMs: file.lastModified });
-                            } catch {
-                                try {
-                                    await getDirectoryHandle(parentHandle, name);
-                                    cb(null, { type: 'dir', size: 0, mtimeMs: Date.now() });
-                                } catch (e) { cb(e); }
+                                await getDirectoryHandle(parentHandle, name);
+                                return _makeStat('dir', 0, Date.now());
+                            } catch (e) {
+                                if (e.name === 'NotFoundError') throw _enoent(filePath);
+                                throw e;
                             }
-                        } catch (e) { cb(e); }
-                    })();
+                        }
+                    })(), cb);
                 },
-                lstat(filePath, cb) { this.stat(filePath, cb); },
-                readlink(filePath, cb) { cb(new Error('ENOSYS')); },
-                symlink(target, filePath, cb) { cb(new Error('ENOSYS')); },
+                lstat(filePath, cb) { return this.stat(filePath, cb); },
+                readlink(filePath, cb) { return _dual(Promise.reject(new Error('ENOSYS')), cb); },
+                symlink(target, filePath, cb) { return _dual(Promise.reject(new Error('ENOSYS')), cb); },
             };
         }
         // 仓库加载（filepath 可选，用于按文件过滤提交记录）
@@ -33396,6 +34208,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             gitShowDiffPlaceholder('⚠️ 选择一个文件查看差异对比');
             // 渲染提交图和提交列表
             gitRenderGraphAndList();
+            // 刷新暂存/更改列表
+            gitUpdateStatusLists();
             // 自动选中最新提交并展开第一个变更文件
             if (gitCommits.length > 0) {
                 gitHandleCommitClick(0, () => {
@@ -33562,7 +34376,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 await idbPut(DIRECTORY_STORE_NAME, 'handles', 'gitHandleRepo', rootName);
             }
             gitRepoPathHint = getRootHandle().name;
-            gitFs = createGitFsAdapter(rootGitHandle);
+            gitFs = createGitFsAdapter(rootGitHandle, getRootHandle());
+            gitignoreInvalidateCache(); // 切换仓库时清除 .gitignore 缓存
             showNotification('正在解析 Git 历史...', 'info', 1000);
             try {
                 gitFileFilter = fileFilter || null;

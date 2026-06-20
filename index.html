@@ -10142,13 +10142,19 @@
             align-items: center;
             padding: 1px 8px 1px 8px;
             gap: 6px;
-            cursor: default;
+            cursor: pointer;
             transition: background 0.1s;
             min-height: 26px;
         }
 
         .git-status-item:hover {
             background: var(--color-hover-subtle);
+        }
+
+        .git-status-item.active {
+            background: var(--color-hover-subtle);
+            outline: 1px solid var(--color-primary);
+            outline-offset: -1px;
         }
 
         .git-status-item-icon {
@@ -11850,14 +11856,14 @@
                         <span style="white-space:nowrap;">暂存</span>
                         <span class="git-staged-count" id="gitStagedCount" style="display:none;">0</span>
                     </div>
-                    <div class="git-graph-scroll" id="gitAddList" style="height: 200px;">
+                    <div class="git-graph-scroll" id="gitAddList" style="height:150px;flex:none;min-height:150px;max-height:150px;">
                         <div class="git-status-empty" id="gitAddListEmpty"></div>
                     </div>
                     <div class="git-left-header">
                         <span style="white-space:nowrap;">更改</span>
                         <span class="git-changed-count" id="gitChangedCount" style="display:none;">0</span>
                     </div>
-                    <div class="git-graph-scroll" id="gitChangedList" style="height: 200px;">
+                    <div class="git-graph-scroll" id="gitChangedList" style="height:150px;flex:none;min-height:150px;max-height:150px;">
                         <div class="git-status-empty" id="gitChangedListEmpty"></div>
                     </div>
                     <div class="git-left-header">
@@ -32505,31 +32511,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         /** 从 Monaco Diff Editor 的 diff 结果中提取精确的增删行数，更新文件树显示 */
         function gitUpdateFileStatsFromDiffEditor() {
             if (!gitDiffEditor || gitActiveFileIdx < 0) return;
-            try {
-                const changes = gitDiffEditor.getLineChanges();
-                if (!changes || changes.length === 0) {
-                    gitDiffChanges = [];
-                    gitDiffNavIdx = -1;
-                    gitDiffUpdateNavUI();
-                    return;
-                }
-                // 保存变更列表供导航使用（仅在首次获取或变更列表变化时重置导航索引）
-                const prevLen = gitDiffChanges.length;
-                gitDiffChanges = changes;
-                if (prevLen === 0 || gitDiffNavIdx >= changes.length) {
-                    gitDiffNavIdx = changes.length > 0 ? 0 : -1;
-                }
-                gitDiffUpdateNavUI();
+            gitUpdateDiffChangesForNav();
+            const file = gitChangedFilesCache[gitActiveFileIdx];
+            if (file) {
                 let additions = 0, deletions = 0;
-                for (const c of changes) {
+                for (const c of gitDiffChanges) {
                     if (c.originalEndLineNumber > 0) deletions += c.originalEndLineNumber - c.originalStartLineNumber + 1;
                     if (c.modifiedEndLineNumber > 0) additions += c.modifiedEndLineNumber - c.modifiedStartLineNumber + 1;
                 }
-                const file = gitChangedFilesCache[gitActiveFileIdx];
-                if (file) {
-                    file.additions = additions;
-                    file.deletions = deletions;
-                }
+                file.additions = additions;
+                file.deletions = deletions;
                 // 更新文件树中对应行的显示
                 const row = document.querySelector(`tbody tr[data-git-fidx="${gitActiveFileIdx}"]`);
                 if (row) {
@@ -32538,9 +32529,23 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     if (addCell && additions > 0) addCell.textContent = '+' + additions;
                     if (delCell && deletions > 0) delCell.textContent = '−' + deletions;
                 }
-            } catch (e) {
-                // Monaco diff 还未就绪时可能抛异常，忽略即可
             }
+        }
+
+        /** 仅提取 diff 变更块并更新导航 UI（不依赖 gitActiveFileIdx，状态 diff 和提交 diff 共用） */
+        function gitUpdateDiffChangesForNav() {
+            if (!gitDiffEditor) return;
+            try {
+                const changes = gitDiffEditor.getLineChanges();
+                if (!changes || changes.length === 0) {
+                    gitDiffChanges = [];
+                    gitDiffNavIdx = -1;
+                } else {
+                    gitDiffChanges = changes;
+                    if (gitDiffNavIdx < 0 || gitDiffNavIdx >= changes.length) gitDiffNavIdx = 0;
+                }
+                gitDiffUpdateNavUI();
+            } catch (e) { /* Monaco diff 未就绪 */ }
         }
         // 轨道图布局类
         class GitBranch {
@@ -33163,6 +33168,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         function gitHandleCommitClick(idx, onFilesRendered) {
             gitActiveCommitIdx = idx;
             gitActiveFileIdx = -1;
+            // 恢复右侧面板布局（从全面板 diff 模式恢复）
+            const detailArea = document.getElementById('gitDetailArea');
+            const diffContainer = document.getElementById('gitDiffContainer');
+            if (detailArea) detailArea.style.display = '';
+            if (diffContainer) { diffContainer.style.flex = ''; diffContainer.style.overflow = ''; }
             gitRenderGraphAndList(false); // 仅更新行高亮，不需要重绘 canvas
             // 如果有文件过滤器，切换提交时选中当前文件但不自动打开对比
             const capturedFileFilter = gitFileFilter;
@@ -33656,13 +33666,26 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         </div>`;
                 }
                 html += `
-                <div class="git-status-item">
+                <div class="git-status-item" data-filepath="${gitEscapeHtml(item.filepath)}" data-type="${type}">
                     <span class="git-status-item-icon ${iconCls}">${icon}</span>
                     <span class="git-status-item-path" title="${gitEscapeHtml(item.filepath)}">${gitEscapeHtml(fileName)}</span>
                     ${btnsHtml}
                 </div>`;
             }
             container.innerHTML = html;
+            // 绑定整行点击 → 右侧显示差异对比
+            container.querySelectorAll('.git-status-item').forEach(item => {
+                item.addEventListener('click', async (e) => {
+                    // 不拦截按钮点击
+                    if (e.target.closest('.git-status-item-btn')) return;
+                    // 高亮选中项
+                    document.querySelectorAll('.git-status-item.active').forEach(el => el.classList.remove('active'));
+                    item.classList.add('active');
+                    const filepath = item.dataset.filepath;
+                    const itemType = item.dataset.type;
+                    gitShowStatusDiff(filepath, itemType);
+                });
+            });
             // 绑定按钮事件
             container.querySelectorAll('.git-status-item-btn').forEach(btn => {
                 btn.addEventListener('click', async (e) => {
@@ -33724,6 +33747,97 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     showNotification(`✗ 放弃更改失败: ${e.message}`, 'error');
                 }
             });
+        }
+
+        /** 点击暂存/更改列表项，在右侧面板显示文件差异对比 */
+        async function gitShowStatusDiff(filepath, type) {
+            if (!gitFs) return;
+            try {
+                const headOid = await window.git.resolveRef({ fs: gitFs, dir: SLASH, ref: 'HEAD' });
+                // 并行读取 HEAD 版本和工作区文件
+                const [headResult, workdirBuf] = await Promise.all([
+                    window.git.readBlob({ fs: gitFs, dir: SLASH, oid: headOid, filepath: filepath }).catch(() => null),
+                    gitFs.readFile('/' + filepath, {}).catch(() => null)
+                ]);
+                const originalContent = headResult ? new TextDecoder().decode(headResult.blob) : '';
+                const modifiedContent = workdirBuf ? new TextDecoder().decode(workdirBuf) : '';
+
+                // 全面板模式：隐藏 detailArea，diff 填满右侧
+                const detailArea = document.getElementById('gitDetailArea');
+                const diffContainer = document.getElementById('gitDiffContainer');
+                if (detailArea) detailArea.style.display = 'none';
+                if (diffContainer) {
+                    diffContainer.style.flex = '1';
+                    diffContainer.style.overflow = 'hidden';
+                }
+                await gitShowDiffInline(originalContent, modifiedContent, filepath);
+            } catch (e) {
+                console.error('gitShowStatusDiff error:', e);
+                showNotification(`✗ 无法加载差异: ${e.message}`, 'error');
+            }
+        }
+
+        /** 全面板 diff（含 header + diff 块内导航，填满整个右侧面板） */
+        async function gitShowDiffInline(originalContent, modifiedContent, filePath) {
+            const gen = ++gitEditorGeneration;
+            await window._gitMonacoReady;
+            if (gen !== gitEditorGeneration) return;
+            gitDisposeDiffEditor();
+            gitDiffNavIdx = -1;
+            gitDiffChanges = [];
+            const container = document.getElementById('gitDiffContainer');
+            if (!container) return;
+            const fileName = basename(filePath);
+            container.innerHTML = `
+                <div class="git-diff-header">
+                    <span class="git-diff-header-title" title="${gitEscapeHtml(filePath)}">${gitEscapeHtml(fileName)}</span>
+                    <div class="git-diff-header-nav">
+                        <button class="git-diff-nav-btn" id="gitDiffNavPrev" disabled>上一个</button>
+                        <span class="git-diff-nav-indicator" id="gitDiffNavIndicator">0/0</span>
+                        <button class="git-diff-nav-btn" id="gitDiffNavNext" disabled>下一个</button>
+                    </div>
+                </div>
+                <div class="git-diff-editor-wrap" id="gitDiffEditorWrap" style="flex:1;min-height:0;overflow:hidden;"></div>
+            `;
+            const editorWrap = document.getElementById('gitDiffEditorWrap');
+            if (!editorWrap) return;
+
+            const lang = getMonacoLanguage(filePath);
+            initMonacoEditor().then(() => {
+                const originalUri = monaco.Uri.parse(`git-status-original:///${filePath}`);
+                const modifiedUri = monaco.Uri.parse(`git-status-modified:///${filePath}`);
+                const existOrig = monaco.editor.getModel(originalUri);
+                if (existOrig) existOrig.dispose();
+                const existMod = monaco.editor.getModel(modifiedUri);
+                if (existMod) existMod.dispose();
+                const originalModel = monaco.editor.createModel(originalContent, lang, originalUri);
+                const modifiedModel = monaco.editor.createModel(modifiedContent, lang, modifiedUri);
+
+                gitDiffEditor = monaco.editor.createDiffEditor(editorWrap, {
+                    readOnly: true,
+                    renderSideBySide: true,
+                    automaticLayout: true,
+                    enableSplitViewResizing: true,
+                    renderOverviewRuler: false,
+                    scrollBeyondLastLine: false,
+                    minimap: { enabled: false },
+                    theme: 'vs',
+                    lineNumbersMinChars: 5,
+                    fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, monospace',
+                    fontSize: 12,
+                });
+                gitDiffEditor.getOriginalEditor().updateOptions({ fontSize: 12, minimap: { enabled: false }, lineNumbersMinChars: 5 });
+                gitDiffEditor.getModifiedEditor().updateOptions({ fontSize: 12, minimap: { enabled: false }, lineNumbersMinChars: 5 });
+                gitDiffEditor.setModel({ original: originalModel, modified: modifiedModel });
+
+                // 提取 diff 变更块供导航使用（与 gitShowDiff 逻辑一致）
+                gitDiffUpdateDisposable = gitDiffEditor.onDidUpdateDiff(() => {
+                    gitUpdateDiffChangesForNav();
+                });
+            });
+            // 绑定导航按钮 → 定位文件内的差异块
+            document.getElementById('gitDiffNavPrev')?.addEventListener('click', () => gitDiffNavigate('prev'));
+            document.getElementById('gitDiffNavNext')?.addEventListener('click', () => gitDiffNavigate('next'));
         }
 
         /** 执行提交 */
@@ -34096,11 +34210,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             gitUpdateStatusLists();
             // 自动选中最新提交并展开第一个变更文件
             if (gitCommits.length > 0) {
-                // TODO 
-                // gitHandleCommitClick(0, () => {
-                //     const firstFileRow = document.querySelector('#gitChangedFiles tbody tr[data-git-fidx="0"]');
-                //     if (firstFileRow) firstFileRow.click();
-                // });
+                gitHandleCommitClick(0, () => {
+                    const firstFileRow = document.querySelector('#gitChangedFiles tbody tr[data-git-fidx="0"]');
+                    if (firstFileRow) firstFileRow.click();
+                });
             }
             gitRepoInfo.textContent = `${gitRepoPathHint}  ·  ${gitCurrentBranch || 'unknown'}  ·  ${gitCommits.length}${gitHasMoreCommits ? '+' : ''} 个提交`;
         }
