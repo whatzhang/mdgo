@@ -11859,7 +11859,8 @@
                                 autocomplete="off"></textarea>
                             <div class="git-commit-btn-group">
                                 <button class="git-commit-btn" id="gitCommitBtn" onclick="gitDoCommit()">提交</button>
-                                <button class="git-commit-btn success" id="gitRefreshBtn" onclick="gitDoRefresh()">刷新</button>
+                                <button class="git-commit-btn success" id="gitRefreshBtn"
+                                    onclick="gitDoRefresh()">刷新</button>
                             </div>
                         </div>
                     </div>
@@ -21446,25 +21447,21 @@
                 initSystemMonitor();
                 monitorPanel.style.display = 'flex';
                 fileSumPanel.style.display = 'none';
-                TimerManager.clear('fileSumUptime');
             } else {
                 monitorPanel.style.display = 'none';
                 fileSumPanel.style.display = 'flex';
-                // 定时更新打开时长和授权时长
-                TimerManager.set('fileSumUptime', () => {
-                    if (!isIdle()) {
-                        const now = Date.now();
-                        const htmlEl = document.getElementById('htmlRunTime');
-                        if (htmlEl) {
-                            htmlEl.textContent = '打开时长：' + formatDuration(Math.floor((now - _pageLoadTimestamp) / 1000));
-                        }
-                        const permEl = document.getElementById('permissionTime');
-                        if (permEl) {
-                            const permTs = parseInt(safeLocalStorageGet(PERMISSION_TIME_KEY)) || 0;
-                            permEl.textContent = permTs ? '授权时长：' + formatDuration(Math.floor((now - permTs) / 1000)) : '授权时长：--';
-                        }
+                if (!isIdle()) {
+                    const now = Date.now();
+                    const htmlEl = document.getElementById('htmlRunTime');
+                    if (htmlEl) {
+                        htmlEl.textContent = '打开时长：' + formatDuration(Math.floor((now - _pageLoadTimestamp) / 1000));
                     }
-                }, 1000);
+                    const permEl = document.getElementById('permissionTime');
+                    if (permEl) {
+                        const permTs = parseInt(safeLocalStorageGet(PERMISSION_TIME_KEY)) || 0;
+                        permEl.textContent = permTs ? '授权时长：' + formatDuration(Math.floor((now - permTs) / 1000)) : '授权时长：--';
+                    }
+                }
             }
             let html = '';
             DASHBOARD_BUTTON.forEach(b => {
@@ -21477,7 +21474,6 @@
                         if (b.display) {
                             html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
                         }
-
                     }
                 }
             });
@@ -26008,14 +26004,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             metrics: (data) => _handleWsMetrics(data),
         };
 
-        // 处理 WebSocket 推送的系统监控数据
+        // 处理 WebSocket 推送的系统监控数据（仅仪表盘可见时更新 DOM）
         function _handleWsMetrics(data) {
             const d = data.data || data;
             if (!d || !d.cpu) return;
+            // 系统监控已关闭（离开仪表盘视图）→ 跳过所有 DOM 更新
+            if (!systemMonitorCpuChart || !systemMonitorMemChart) return;
 
             const cpuChart = systemMonitorCpuChart;
             const memChart = systemMonitorMemChart;
-            if (!cpuChart || !memChart) return;
 
             cpuChart.setOption({ series: [{ data: [{ value: d.cpu.percent }] }] });
             const cpuCores = document.getElementById('cpuCores');
