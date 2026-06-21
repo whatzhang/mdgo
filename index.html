@@ -1294,6 +1294,7 @@
             animation: notificationFadeIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
             transition: opacity 0.3s ease, transform 0.2s ease, bottom 0.35s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease;
         }
+
         /* 背景层：通过 --notif-layer 控制透明度，实现自下往上逐层变淡 */
         .editor-notification::before {
             content: '';
@@ -1303,10 +1304,12 @@
             z-index: -1;
             transition: opacity 0.35s ease;
         }
+
         .editor-notification:hover {
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
             transform: translateY(-2px);
         }
+
         .editor-notification.dismissing {
             animation: none !important;
             opacity: 0 !important;
@@ -1318,14 +1321,17 @@
             background: rgb(26, 127, 55);
             opacity: calc(0.92 - var(--notif-layer, 0) * 0.14);
         }
+
         .editor-notification.error::before {
             background: rgb(207, 34, 46);
             opacity: calc(0.92 - var(--notif-layer, 0) * 0.14);
         }
+
         .editor-notification.warning::before {
             background: rgb(207, 150, 0);
             opacity: calc(0.92 - var(--notif-layer, 0) * 0.14);
         }
+
         .editor-notification.info::before {
             background: rgb(58, 131, 240);
             opacity: calc(0.92 - var(--notif-layer, 0) * 0.14);
@@ -1336,6 +1342,7 @@
                 opacity: 0;
                 transform: translateY(14px) scale(0.88);
             }
+
             to {
                 opacity: 0.95;
                 transform: translateY(0) scale(1);
@@ -11108,7 +11115,7 @@
             </div>
             <div id="ai-fab-tooltip" class="ai-fab-tooltip">
                 <div class="ai-panel-header-wrapper">
-                    <div class="ai-panel-header">文件小助手</div>
+                    <div class="ai-panel-header">小助手</div>
                     <span id="ai-selection-count" style="font-size: 11px; color: #007af5; display: none;"></span>
                     <span style="font-size: 11px; color: #64748b;">使用当前文件</span>
                     <label class="ai-result-sw-lark">
@@ -12524,6 +12531,8 @@
         }
 
         async function renderFile(relativePath = '', fileSpan, event) {
+            const larkCheckbox = document.querySelector('.ai-result-sw-lark input');
+            if (larkCheckbox) larkCheckbox.checked = true;
             if (currentActiveItem) currentActiveItem.classList.remove('active-file');
             fileSpan.classList.add('active-file');
             currentActiveItem = fileSpan;
@@ -14141,6 +14150,8 @@
                 showNotification('⚠️ 白名单目录中没有文件', 'error');
                 return;
             }
+            const larkCheckbox = document.querySelector('.ai-result-sw-lark input');
+            if (larkCheckbox) larkCheckbox.checked = true;
             const randomIndex = Math.floor(Math.random() * whitelistFiles.length);
             const randomFile = whitelistFiles[randomIndex];
             const randomFilePath = randomFile.dataset.filePath;
@@ -21507,6 +21518,8 @@
             const _scanStart = performance.now();
             switchToView(dashboardContainer);
             aiFabContainer.style.display = 'block';
+            const larkCheckbox = document.querySelector('.ai-result-sw-lark input');
+            if (larkCheckbox) larkCheckbox.checked = false;
             //监控面板展示
             const monitorPanel = dashboardContainer.querySelector('#monitor-panel');
             const fileSumPanel = dashboardContainer.querySelector('#file-sum-panel');
