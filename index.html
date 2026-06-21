@@ -9582,7 +9582,7 @@
         }
 
         .git-left-header {
-            padding: 5px 14px;
+            padding: 2px 10px;
             font-size: 12px;
             font-weight: 600;
             color: var(--t1);
@@ -10076,32 +10076,34 @@
 
         /* ── Commit Input & Button ── */
         .git-commit-header {
-            padding: 6px 10px;
+            padding: 6px 10px 3px 10px;
             flex-shrink: 0;
             display: flex;
             flex-direction: column;
             gap: 0;
+            border-bottom: none;
         }
 
         .git-commit-input-row {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 8px;
             width: 100%;
         }
 
         .git-commit-msg-input {
             flex: 1;
             min-width: 0;
-            padding: 5px 10px;
+            padding: 5px;
             border: 1px solid var(--git-border);
             border-radius: 4px;
-            font-size: 12px;
+            font-size: 11px;
             font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif;
             background: var(--color-bg);
             color: var(--color-text);
             outline: none;
             transition: border-color 0.15s;
+            height: 45px;
         }
 
         .git-commit-msg-input:focus {
@@ -10115,21 +10117,29 @@
         .git-commit-btn-group {
             display: flex;
             align-items: center;
-            flex-shrink: 0;
+            flex-direction: column;
+            row-gap: 8px;
             position: relative;
         }
 
         .git-commit-btn {
-            padding: 5px 14px;
+            padding: 2px 5px;
             background: var(--color-primary);
             color: var(--color-bg);
             border: none;
             border-radius: 4px;
             font-size: 12px;
-            font-weight: 500;
             cursor: pointer;
             white-space: nowrap;
             transition: background 0.15s;
+        }
+
+        .git-commit-btn.success {
+            background: var(--color-success);
+        }
+
+        .git-commit-btn.success:hover {
+            background: var(--color-success-hover);
         }
 
         .git-commit-btn:hover {
@@ -10144,7 +10154,7 @@
             gap: 6px;
             cursor: pointer;
             transition: background 0.1s;
-            min-height: 26px;
+            min-height: 20px;
         }
 
         .git-status-item:hover {
@@ -10200,8 +10210,8 @@
         }
 
         .git-status-item-btn {
-            width: 20px;
-            height: 20px;
+            width: 16px;
+            height: 16px;
             border-radius: 4px;
             border: none;
             cursor: pointer;
@@ -11845,10 +11855,11 @@
                 <div class="git-left-panel" id="gitLeftPanel">
                     <div class="git-left-header git-commit-header">
                         <div class="git-commit-input-row">
-                            <input type="text" class="git-commit-msg-input" id="gitCommitMsgInput"
-                                placeholder="输入提交消息 (Ctrl+Enter 提交)" autocomplete="off">
+                            <textarea class="git-commit-msg-input" id="gitCommitMsgInput" placeholder="输入提交消息..."
+                                autocomplete="off"></textarea>
                             <div class="git-commit-btn-group">
                                 <button class="git-commit-btn" id="gitCommitBtn" onclick="gitDoCommit()">提交</button>
+                                <button class="git-commit-btn success" id="gitRefreshBtn" onclick="gitDoRefresh()">刷新</button>
                             </div>
                         </div>
                     </div>
@@ -11856,14 +11867,16 @@
                         <span style="white-space:nowrap;">暂存</span>
                         <span class="git-staged-count" id="gitStagedCount" style="display:none;">0</span>
                     </div>
-                    <div class="git-graph-scroll" id="gitAddList" style="height:150px;flex:none;min-height:150px;max-height:150px;">
+                    <div class="git-graph-scroll" id="gitAddList"
+                        style="height:100px;flex:none;min-height:100px;max-height:100px;">
                         <div class="git-status-empty" id="gitAddListEmpty"></div>
                     </div>
                     <div class="git-left-header">
                         <span style="white-space:nowrap;">更改</span>
                         <span class="git-changed-count" id="gitChangedCount" style="display:none;">0</span>
                     </div>
-                    <div class="git-graph-scroll" id="gitChangedList" style="height:150px;flex:none;min-height:150px;max-height:150px;">
+                    <div class="git-graph-scroll" id="gitChangedList"
+                        style="height:120px;flex:none;min-height:120px;max-height:120px;">
                         <div class="git-status-empty" id="gitChangedListEmpty"></div>
                     </div>
                     <div class="git-left-header">
@@ -11883,7 +11896,7 @@
                     <div class="git-detail-area" id="gitDetailArea">
                         <div
                             style="color: var(--git-text-muted); font-size: 13px; display: flex; align-items: center; justify-content: center; height: 100%;">
-                            </div>
+                        </div>
                     </div>
                     <div class="git-diff-container" id="gitDiffContainer">
                         <div class="git-diff-placeholder"></div>
@@ -24190,7 +24203,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
                 await writable.close();
             } catch (e) {
-                try { await writable.abort(); } catch (_) {}
+                try { await writable.abort(); } catch (_) { }
                 throw e;
             }
         }
@@ -32333,6 +32346,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         let gitEditorGeneration = 0; // 当前 diff 编辑器生成次数
         let gitIsLoadingMore = false; // 是否正在加载更多提交记录
         let gitHasMoreCommits = false; // 是否还有更多提交记录可加载
+        let gitViewActive = false; // 是否仍在 Git 视图（防止后台回调操作失效 DOM）
+        let _statusInFlight = null; // 进行中的 statusMatrix Promise（避免并发覆盖）
+        let _gitRenderDepth = 0; // 渲染嵌套深度计数器（替代 boolean re-entrancy guard）
         const gitIsPreviewable = (filePath) => {
             const ext = getExt(filePath);
             return isDoc(ext) || isCode(ext);
@@ -32375,12 +32391,22 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             gitEditorGeneration = 0;
             gitIsLoadingMore = false;
             gitHasMoreCommits = false;
-            gitIsRendering = false;
             gitCanvasEventsBound = false;
             gitRefByHash = null;
             gitDiffNavIdx = -1;
             gitDiffChanges = [];
             gitWorkingStatus = { staged: [], unstaged: [] };
+            gitViewActive = false; // 标记离开 Git 视图，阻止后台回调操作失效 DOM
+            gitStatusCache = { matrix: null, staged: null, unstaged: null, time: 0 }; // 清空状态缓存
+            _statusInFlight = null; // 清理进行中的 statusMatrix
+            _gitRenderDepth = 0; // 清理渲染嵌套计数
+            // 清理 FS 适配器内部的目录句柄缓存
+            if (_gitHandleCache) _gitHandleCache.clear();
+            // 重置状态列表的事件委托标记（下次进入 Git 页面重新绑定）
+            const addList = document.getElementById('gitAddList');
+            const changedList = document.getElementById('gitChangedList');
+            if (addList) addList._gitStatusDelegated = false;
+            if (changedList) changedList._gitStatusDelegated = false;
             // 清理 canvas 自定义数据
             if (gitGraphCanvas) gitGraphCanvas._gitVertices = null;
         }
@@ -32851,7 +32877,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
         // 轨道图布局与渲染入口
         let gitGraphInstance = null; // 轨道图实例
-        let gitIsRendering = false; // 是否正在渲染
         let gitCanvasEventsBound = false; // Canvas 事件绑定标志（仅绑定一次）
         let gitRefByHash = null; // 缓存 ref 查找表，仅在 refs 变化时重建
         /** 构建 ref 查找表（仅在 refs 变化时调用） */
@@ -32961,55 +32986,73 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         return entries || [];
                     } catch { return []; }
                 };
-                // 递归读取 ref 目录（支持 feature/foo 等多级分支名）
-                const readRefDirAsync = async function* (dirPath, prefix) {
+                // 递归收集所有 ref 文件路径（先收集再并行读取）
+                // ref 目录中：文件名为分支/标签名，子目录用于嵌套分支（如 feature/）
+                const collectRefPaths = async (dirPath, prefix) => {
+                    const result = [];
                     const entries = await listDir(dirPath);
                     for (const name of entries) {
                         const fullPath = dirPath + SLASH + name;
+                        // 尝试作为 ref 文件读取：成功→加入结果，失败→作为子目录递归
                         const hash = await readRefFile(fullPath);
                         if (hash) {
-                            yield { name: prefix + name, hash };
+                            result.push({ path: fullPath, name: prefix + name });
                         } else {
-                            yield* readRefDirAsync(fullPath, prefix + name + SLASH);
+                            const child = await collectRefPaths(fullPath, prefix + name + SLASH);
+                            result.push(...child);
                         }
                     }
+                    return result;
                 };
-                // 本地分支（递归遍历）
+                // 并行读取所有收集到的 ref 文件（性能提升：串行→并行）
+                const readRefsParallel = async (refPaths) => {
+                    const results = await Promise.all(refPaths.map(async (rp) => {
+                        const hash = await readRefFile(rp.path);
+                        return hash ? { name: rp.name, hash } : null;
+                    }));
+                    return results.filter(Boolean);
+                };
+                // 本地分支（并行读取）
                 try {
-                    const headsDir = '/.git/refs/heads';
-                    for await (const ref of readRefDirAsync(headsDir, '')) {
-                        gitHeads.push(ref);
-                    }
+                    const headPaths = await collectRefPaths('/.git/refs/heads', '');
+                    gitHeads = await readRefsParallel(headPaths);
                 } catch { }
-                // 远程分支（递归遍历）
+                // 远程分支（并行读取）
                 try {
                     const remotesDir = '/.git/refs/remotes';
                     const remoteNames = await listDir(remotesDir);
+                    const allRemotePaths = [];
                     for (const remote of remoteNames) {
-                        for await (const ref of readRefDirAsync(remotesDir + SLASH + remote, remote + SLASH)) {
-                            gitRemotes.push({ name: ref.name, hash: ref.hash, remote });
-                        }
+                        const paths = await collectRefPaths(remotesDir + SLASH + remote, remote + SLASH);
+                        allRemotePaths.push(...paths);
                     }
+                    const remoteRefs = await readRefsParallel(allRemotePaths);
+                    gitRemotes = remoteRefs.map(r => ({
+                        name: r.name,
+                        hash: r.hash,
+                        remote: r.name.indexOf(SLASH) > -1 ? r.name.substring(0, r.name.indexOf(SLASH)) : 'origin'
+                    }));
                 } catch { }
-                // 标签（递归遍历）
+                // 标签（并行读取）
                 try {
-                    const tagsDir = '/.git/refs/tags';
-                    for await (const ref of readRefDirAsync(tagsDir, '')) {
-                        gitTags.push(ref);
-                    }
+                    const tagPaths = await collectRefPaths('/.git/refs/tags', '');
+                    gitTags = await readRefsParallel(tagPaths);
                 } catch { }
                 // 从 heads 中解析 HEAD
                 if (!gitHeadHash && gitCurrentBranch && gitCurrentBranch !== 'HEAD (detached)') {
                     const found = gitHeads.find(h => h.name === gitCurrentBranch);
                     if (found) gitHeadHash = found.hash;
                 }
-                // 从 packed-refs 中解析 ref
+                // 从 packed-refs 中解析 ref（使用 Set 做 O(1) 去重，替代 O(n²) Array.find）
                 try {
                     const packedRaw = await new Promise((resolve, reject) => {
                         gitFs.readFile('/.git/packed-refs', 'utf8', (err, data) => {
                             if (err) reject(err); else resolve(data);
                         });
                     });
+                    const headNames = new Set(gitHeads.map(h => h.name));
+                    const remoteNames = new Set(gitRemotes.map(r => r.name));
+                    const tagNames = new Set(gitTags.map(t => t.name));
                     for (const line of packedRaw.split('\n')) {
                         const trimmedLine = line.trim();
                         if (!trimmedLine || trimmedLine.startsWith('#') || trimmedLine.startsWith('^')) continue;
@@ -33017,16 +33060,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         if (!hash || !ref) continue;
                         if (ref.startsWith('refs/heads/')) {
                             const name = ref.replace('refs/heads/', '');
-                            if (!gitHeads.find(h => h.name === name)) gitHeads.push({ name, hash });
+                            if (!headNames.has(name)) { headNames.add(name); gitHeads.push({ name, hash }); }
                         } else if (ref.startsWith('refs/remotes/')) {
                             const remoteName = ref.replace('refs/remotes/', '');
-                            if (!gitRemotes.find(r => r.name === remoteName)) {
+                            if (!remoteNames.has(remoteName)) {
+                                remoteNames.add(remoteName);
                                 const slash = remoteName.indexOf(SLASH);
                                 gitRemotes.push({ name: remoteName, hash, remote: slash > -1 ? remoteName.substring(0, slash) : 'origin' });
                             }
                         } else if (ref.startsWith('refs/tags/')) {
                             const name = ref.replace('refs/tags/', '');
-                            if (!gitTags.find(t => t.name === name)) gitTags.push({ name, hash });
+                            if (!tagNames.has(name)) { tagNames.add(name); gitTags.push({ name, hash }); }
                         }
                     }
                 } catch { }
@@ -33044,8 +33088,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
          * @param {boolean} fullRender - true=完整渲染（含 canvas 重绘），false=仅更新行高亮
          */
         function gitRenderGraphAndList(fullRender = true) {
-            if (gitIsRendering) return; // 重入锁
-            gitIsRendering = true; // 标记为渲染中
+            // 渲染嵌套深度计数：允许 fullRender 打断非 fullRender，但反之不行
+            if (_gitRenderDepth > 0) {
+                if (!fullRender) return; // 非完整渲染在已有渲染进行时跳过
+                // fullRender 等待当前渲染完成后再执行（避免 graph 布局竞争）
+            }
+            _gitRenderDepth++;
             try {
                 if (gitCommits.length === 0) {
                     gitGraphCanvas.style.display = 'none';
@@ -33161,7 +33209,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const loadMoreBtn = document.getElementById('gitLoadMoreBtn');
                 if (loadMoreBtn) loadMoreBtn.addEventListener('click', gitLoadMoreCommits);
             } finally {
-                gitIsRendering = false;
+                _gitRenderDepth--;
             }
         }
         // 提交点击处理
@@ -33371,19 +33419,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         // ==================== Git 工作区状态管理 ====================
         let gitWorkingStatus = { staged: [], unstaged: [] };
         let _gitStatusTimer = null;
-
-        /** 切换提交下拉菜单 */
-        // 提交消息框 Ctrl+Enter 提交
-        document.addEventListener('keydown', (e) => {
-            const input = document.getElementById('gitCommitMsgInput');
-            if (e.ctrlKey && e.key === 'Enter' && input && document.activeElement === input) {
-                e.preventDefault();
-                gitDoCommit();
-            }
-        });
-
-        /** 获取工作区状态（暂存/未暂存文件列表） */
-
         /** 解析 .gitignore 文件内容，返回匹配函数 */
         function gitignoreParse(content) {
             const patterns = [];
@@ -33513,7 +33548,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         // ── 状态缓存（避免短时间内重复 statusMatrix 调用）──
         let gitStatusCache = { matrix: null, staged: null, unstaged: null, time: 0 };
-        const GIT_STATUS_CACHE_TTL = 3000; // 缓存有效期 3 秒
+        let _gitHandleCache = null; // FS 适配器内部目录句柄 LRU 缓存（createGitFsAdapter 中初始化）
+        const GIT_STATUS_CACHE_TTL = 10000; // 缓存有效期 10 秒（statusMatrix 开销大，适当延长）
 
         async function gitGetWorkingStatus(forceRefresh = false) {
             if (!gitFs) return { staged: [], unstaged: [] };
@@ -33521,7 +33557,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (!forceRefresh && gitStatusCache.staged && (now - gitStatusCache.time) < GIT_STATUS_CACHE_TTL) {
                 return { staged: gitStatusCache.staged, unstaged: gitStatusCache.unstaged };
             }
-            try {
+            // 若已有进行中的 statusMatrix 且非强制刷新，直接复用其 Promise 避免并发
+            if (_statusInFlight && !forceRefresh) {
+                try { return await _statusInFlight; } catch { /* 上一次失败，继续发起新请求 */ }
+            }
+            const promise = (async () => {
                 // 并行加载 statusMatrix 和 gitignore 匹配器
                 const [matrix, matcher] = await Promise.all([
                     window.git.statusMatrix({ fs: gitFs, dir: SLASH }),
@@ -33574,9 +33614,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     gitVerifyOidAsync(verifyOidFiles, unstaged);
                 }
                 return { staged, unstaged };
+            })();
+            _statusInFlight = promise;
+            try {
+                return await promise;
             } catch (e) {
                 console.warn('gitGetWorkingStatus error:', e);
                 return { staged: [], unstaged: [] };
+            } finally {
+                if (_statusInFlight === promise) _statusInFlight = null;
             }
         }
 
@@ -33616,9 +33662,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }));
                     results.push(...batchResults);
                 }
-                // 若校验结果与当前缓存一致，更新列表
+                // 若校验结果与当前缓存一致，更新列表（仅当仍在 Git 视图时操作 DOM）
                 const falsePositives = new Set(results.filter(r => r.match === true).map(r => r.filepath));
-                if (falsePositives.size > 0 && gitStatusCache.unstaged) {
+                if (falsePositives.size > 0 && gitStatusCache.unstaged && gitViewActive) {
                     gitStatusCache.unstaged = gitStatusCache.unstaged.filter(f => !falsePositives.has(f.filepath));
                     gitStatusCache.staged = gitStatusCache.staged || [];
                     gitStatusCache.time = Date.now(); // 延长缓存有效期
@@ -33673,31 +33719,28 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 </div>`;
             }
             container.innerHTML = html;
-            // 绑定整行点击 → 右侧显示差异对比
-            container.querySelectorAll('.git-status-item').forEach(item => {
-                item.addEventListener('click', async (e) => {
-                    // 不拦截按钮点击
-                    if (e.target.closest('.git-status-item-btn')) return;
-                    // 高亮选中项
-                    document.querySelectorAll('.git-status-item.active').forEach(el => el.classList.remove('active'));
-                    item.classList.add('active');
-                    const filepath = item.dataset.filepath;
-                    const itemType = item.dataset.type;
-                    gitShowStatusDiff(filepath, itemType);
+            // 事件委托：在容器上绑定一次处理所有点击（避免逐项绑定导致 O(n) 开销）
+            if (!container._gitStatusDelegated) {
+                container._gitStatusDelegated = true;
+                container.addEventListener('click', async (e) => {
+                    const btn = e.target.closest('.git-status-item-btn');
+                    if (btn) {
+                        e.stopPropagation();
+                        const action = btn.dataset.action;
+                        const filepath = btn.dataset.filepath;
+                        if (action === 'stage') await gitStageFile(filepath);
+                        else if (action === 'unstage') await gitUnstageFile(filepath);
+                        else if (action === 'discard') await gitDiscardFile(filepath);
+                        return;
+                    }
+                    const item = e.target.closest('.git-status-item');
+                    if (item) {
+                        document.querySelectorAll('.git-status-item.active').forEach(el => el.classList.remove('active'));
+                        item.classList.add('active');
+                        gitShowStatusDiff(item.dataset.filepath, item.dataset.type);
+                    }
                 });
-            });
-            // 绑定按钮事件
-            container.querySelectorAll('.git-status-item-btn').forEach(btn => {
-                btn.addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    const action = btn.dataset.action;
-                    const filepath = btn.dataset.filepath;
-                    if (action === 'stage') await gitStageFile(filepath);
-                    else if (action === 'unstage') await gitUnstageFile(filepath);
-                    else if (action === 'discard') await gitDiscardFile(filepath);
-                    // gitStageFile/gitUnstageFile/gitDiscardFile 内部已调用 gitUpdateStatusLists(true)
-                });
-            });
+            }
         }
 
         /** 刷新暂存/更改列表 */
@@ -33840,6 +33883,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             document.getElementById('gitDiffNavNext')?.addEventListener('click', () => gitDiffNavigate('next'));
         }
 
+        /** 刷新仓库状态 */
+        async function gitDoRefresh() {
+            if (!gitFs) {
+                showNotification('✗ 请先打开 Git 仓库', 'error');
+                return;
+            }
+            await gitLoadRepo(gitFileFilter || null);
+        }
+
         /** 执行提交 */
         async function gitDoCommit() {
             if (!gitFs) {
@@ -33975,6 +34027,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
          * @returns {object} 符合 isomorphic-git fs 接口的对象
          */
         function createGitFsAdapter(gitDirHandle, rootDirHandle) {
+            // 目录句柄 LRU 缓存：避免 statusMatrix/walk 对同一目录反复调用 getDirectoryHandle
+            // 每次 stat 调用 _resolveParent 从根遍历，1000 文件 × 平均 4 级深 = 4000 次异步调用
+            // 缓存后降至 ~1000 次（每个唯一目录仅一次）
+            if (!_gitHandleCache) _gitHandleCache = new LRUCache(500);
+            const _handleCache = _gitHandleCache; // 局部引用
+
             /** 判断路径是否属于 .git 内部，并返回 { isGit, relativePath } */
             function _route(p) {
                 let s = (p || '');
@@ -33992,34 +34050,58 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 return isGit ? gitDirHandle : rootDirHandle;
             }
 
-            /** 定位到父目录句柄和文件名，跳过 . 和 .. 防止 API 报错 */
+            /** 构建缓存 key：\x00 前缀隔离 git 内部路径和工作区路径 */
+            function _cacheKey(isGit, dirPath) {
+                return isGit ? '\x00.git/' + dirPath : '\x00.work/' + dirPath;
+            }
+
+            /** 定位到父目录句柄和文件名（带 LRU 缓存），跳过 . 和 .. 防止 API 报错 */
             async function _resolveParent(np, isGit) {
                 if (!np || np === DOT || np === '') return { parentHandle: null, name: '' };
                 const parts = np.split(SLASH).filter(p => p && p !== '.' && p !== '..');
                 if (parts.length === 0) return { parentHandle: null, name: '' };
                 const name = parts.pop();
                 let handle = _baseHandle(isGit);
+                let cumPath = '';
                 for (const part of parts) {
-                    try {
-                        handle = await getDirectoryHandle(handle, part);
-                    } catch (e) {
-                        // 路径中任何一级目录不存在 → 整个路径不存在
-                        if (e.name === 'NotFoundError') return { parentHandle: null, name: '' };
-                        throw e;
+                    cumPath = cumPath ? cumPath + '/' + part : part;
+                    const key = _cacheKey(isGit, cumPath);
+                    let cached = _handleCache.get(key);
+                    if (cached !== undefined) {
+                        handle = cached;
+                    } else {
+                        try {
+                            handle = await getDirectoryHandle(handle, part);
+                            _handleCache.set(key, handle);
+                        } catch (e) {
+                            if (e.name === 'NotFoundError') return { parentHandle: null, name: '' };
+                            throw e;
+                        }
                     }
                 }
                 return { parentHandle: handle, name };
             }
 
-            /** 安全遍历路径部件，跳过 . 和 .. */
-            async function _walkPath(baseHandle, np) {
+            /** 安全遍历路径到目录句柄，复用 _resolveParent 的 LRU 缓存逻辑 */
+            async function _walkPath(baseHandle, np, isGit) {
+                if (!np || np === DOT || np === '') return baseHandle;
+                const parts = np.split(SLASH).filter(p => p && p !== '.' && p !== '..');
                 let handle = baseHandle;
-                for (const part of np.split(SLASH).filter(p => p && p !== '.' && p !== '..')) {
-                    try {
-                        handle = await getDirectoryHandle(handle, part);
-                    } catch (e) {
-                        if (e.name === 'NotFoundError') return null;
-                        throw e;
+                let cumPath = '';
+                for (const part of parts) {
+                    cumPath = cumPath ? cumPath + '/' + part : part;
+                    const key = _cacheKey(isGit, cumPath);
+                    let cached = _handleCache.get(key);
+                    if (cached !== undefined) {
+                        handle = cached;
+                    } else {
+                        try {
+                            handle = await getDirectoryHandle(handle, part);
+                            _handleCache.set(key, handle);
+                        } catch (e) {
+                            if (e.name === 'NotFoundError') return null;
+                            throw e;
+                        }
                     }
                 }
                 return handle;
@@ -34112,7 +34194,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     return _dual((async () => {
                         let handle = _baseHandle(isGit);
                         if (np !== DOT) {
-                            handle = await _walkPath(handle, np);
+                            handle = await _walkPath(handle, np, isGit);
                             if (!handle) throw _enoent(dirPath);
                         }
                         const entries = await getDirectoryEntries(handle);
@@ -34188,10 +34270,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             gitGraphVertexXs = []; // 释放旧 x 坐标数组
             gitMutedCommits = []; // 释放旧静音提交数组
             gitFileFilter = filepath || null;
-            await gitParseRefs(); // 解析所有分支和标签
+            // 并行执行：ref 解析和 commit 日志互不依赖
             const logOpts = { fs: gitFs, dir: SLASH, depth: GIT_COMMIT_PAGE_SIZE };
             if (filepath) logOpts.filepath = filepath;
-            gitCommits = await window.git.log(logOpts);
+            const [, commits] = await Promise.all([
+                gitParseRefs(), // 解析所有分支和标签
+                window.git.log(logOpts),
+            ]);
+            gitCommits = commits;
             gitHasMoreCommits = gitCommits.length >= GIT_COMMIT_PAGE_SIZE;
             // 构建 commit 查找表
             gitCommitLookup = {}; // 提交查找表，键为 oid，值为索引
@@ -34258,35 +34344,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         let gitFileFilter = null; // 要过滤的文件路径，为 null 表示显示全部
         let rootGitHandle; // Git 仓库目录句柄
 
-        // 根据文件路径获取所有相关提交
+        // 根据文件路径获取所有相关提交（使用 git.log filepath 参数，一次 API 调用完成）
         async function gitGetCommitsForFile(filePath) {
-            if (!gitFs || !gitCommits.length) return [];
-            const result = [];
-            for (const commit of gitCommits) {
-                try {
-                    // 检查该提交是否包含此文件
-                    const exists = await window.git.checkIsBinary({
-                        fs: gitFs,
-                        dir: SLASH,
-                        filepath: filePath,
-                        oid: commit.oid
-                    }).catch(() => false);
-                    // checkIsBinary 返回 false 可能是文件不存在，也可能是存在
-                    // 需要另一种方式检查：尝试读取文件
-                    const content = await window.git.readBlob({
-                        fs: gitFs,
-                        dir: SLASH,
-                        oid: commit.oid,
-                        filepath: filePath
-                    }).then(() => true).catch(() => false);
-                    if (content) {
-                        result.push(commit.oid);
-                    }
-                } catch (e) {
-                    // 忽略错误，继续检查下一个提交
-                }
+            if (!gitFs) return [];
+            try {
+                const commits = await window.git.log({ fs: gitFs, dir: SLASH, filepath: filePath, depth: 10000 });
+                return commits.map(c => c.oid);
+            } catch (e) {
+                console.warn('gitGetCommitsForFile error:', e);
+                return [];
             }
-            return result;
         }
 
         // 设置 Git 文件过滤器
@@ -34354,6 +34421,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 <span style="color:var(--color-text-secondary);font-size:14px">正在解析git提交记录…</span>`;
             mainElement.style.display = 'none';
             await destroyGitViewData();
+            gitViewActive = true; // 标记进入 Git 视图
             const cachedGitHandle = await idbGet(DIRECTORY_STORE_NAME, 'handles', 'gitHandle');
             const cachedGitHandleRepo = await idbGet(DIRECTORY_STORE_NAME, 'handles', 'gitHandleRepo');
             const rootName = getRootHandle().name;
@@ -34375,11 +34443,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             gitRepoPathHint = getRootHandle().name;
             gitFs = createGitFsAdapter(rootGitHandle, getRootHandle());
-            gitignoreInvalidateCache(); // 切换仓库时清除 .gitignore 缓存
             showNotification('正在解析 Git 历史...', 'info', 1000);
             try {
-                gitFileFilter = fileFilter || null;
-                await gitLoadRepo(fileFilter || null);
+                gitFileFilter = fileFilter;
+                await gitLoadRepo(fileFilter);
             } catch (err) {
                 gitFs = null;
                 showNotification(`${gitEscapeHtml(err.message || '未知错误')}, 请检查仓库是否完整`, 'error');
