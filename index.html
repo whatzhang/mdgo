@@ -1280,9 +1280,8 @@
 
         .editor-notification {
             position: fixed;
-            bottom: 24px;
             right: 20px;
-            background: rgba(0, 0, 0, 0.8);
+            background: transparent;
             color: var(--color-bg);
             padding: 10px 18px;
             border-radius: 10px;
@@ -1291,46 +1290,55 @@
             font-size: 13px;
             width: auto;
             text-align: center;
-            animation: notificationFadeIn 0.3s ease forwards;
+            cursor: default;
+            animation: notificationFadeIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+            transition: opacity 0.3s ease, transform 0.2s ease, bottom 0.35s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease;
+        }
+        /* 背景层：通过 --notif-layer 控制透明度，实现自下往上逐层变淡 */
+        .editor-notification::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 10px;
+            z-index: -1;
+            transition: opacity 0.35s ease;
+        }
+        .editor-notification:hover {
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+            transform: translateY(-2px);
+        }
+        .editor-notification.dismissing {
+            animation: none !important;
+            opacity: 0 !important;
+            transform: translateY(10px) !important;
+            pointer-events: none;
         }
 
-        .editor-notification.success {
-            background: rgba(26, 127, 55, 0.9);
+        .editor-notification.success::before {
+            background: rgb(26, 127, 55);
+            opacity: calc(0.92 - var(--notif-layer, 0) * 0.14);
         }
-
-        .editor-notification.error {
-            background: rgba(207, 34, 46, 0.9);
+        .editor-notification.error::before {
+            background: rgb(207, 34, 46);
+            opacity: calc(0.92 - var(--notif-layer, 0) * 0.14);
         }
-
-        .editor-notification.warning {
-            background: rgba(207, 150, 0, 0.9);
+        .editor-notification.warning::before {
+            background: rgb(207, 150, 0);
+            opacity: calc(0.92 - var(--notif-layer, 0) * 0.14);
         }
-
-        .editor-notification.info {
-            background: rgba(58, 131, 240, 0.9);
+        .editor-notification.info::before {
+            background: rgb(58, 131, 240);
+            opacity: calc(0.92 - var(--notif-layer, 0) * 0.14);
         }
 
         @keyframes notificationFadeIn {
             from {
                 opacity: 0;
-                transform: translateY(10px);
+                transform: translateY(14px) scale(0.88);
             }
-
             to {
                 opacity: 0.95;
-                transform: translateY(0);
-            }
-        }
-
-        @keyframes notificationFadeOut {
-            from {
-                opacity: 0.95;
-                transform: translateY(0);
-            }
-
-            to {
-                opacity: 0;
-                transform: translateY(10px);
+                transform: translateY(0) scale(1);
             }
         }
 
@@ -10123,12 +10131,12 @@
         }
 
         .git-commit-btn {
-            padding: 2px 5px;
+            padding: 4px 8px;
             background: var(--color-primary);
             color: var(--color-bg);
             border: none;
             border-radius: 4px;
-            font-size: 12px;
+            font-size: 11px;
             cursor: pointer;
             white-space: nowrap;
             transition: background 0.15s;
@@ -10509,7 +10517,7 @@
                 <div>
                     <div class="page-title">mdgo 👏</div>
                     <div class="page-subtitle">本地文档知识库 <a href="https://github.com/whatzhang/mdgo" target="_blank"
-                            style="color: var(--orange);">[git]</a>
+                            style="color: var(--orange);">[github]</a>
                         <span id="dashboard-time" class="dashboard-time"></span>
                     </div>
                 </div>
@@ -11953,7 +11961,7 @@
         const RANDOM_DIR_BLACKLIST = ['note/moc', 'note/templates', 'deleted', 'data', 'code'];
         // code 目录下的 .html 文件显示代码而非渲染
         const HTML_CODE_SHOW_BLACKLIST = ["note"];
-        
+
         // AI 助手预设 Prompt 配置，每个 key 对应一种处理模式
         const PROMPTS = {
             summarize: {
@@ -15964,19 +15972,81 @@
             }
         }
 
-        function showNotification(text, type = 'success', duration = 4000) {
-            const existing = document.querySelector('.editor-notification');
-            if (existing) existing.remove();
+        // 通知管理器：支持多条堆叠显示，最早展示的自动消失，返回通知对象供主动删除
+        const NOTIFICATION_MAX_COUNT = 5;
+        const NOTIFICATION_GAP = 8;
+        const NOTIFICATION_BOTTOM = 24;
+        const _activeNotifications = [];
+
+        function _repositionNotifications() {
+            // 读阶段：一次性收集所有高度，避免读写交替导致多次重排
+            const heights = new Array(_activeNotifications.length);
+            for (let i = 0; i < _activeNotifications.length; i++) {
+                heights[i] = _activeNotifications[i].el.getBoundingClientRect().height;
+            }
+            // 写阶段：统一设置位置与层级透明度
+            let bottom = NOTIFICATION_BOTTOM;
+            for (let i = 0; i < _activeNotifications.length; i++) {
+                const el = _activeNotifications[i].el;
+                el.style.bottom = bottom + 'px';
+                el.style.setProperty('--notif-layer', i);
+                bottom += heights[i] + NOTIFICATION_GAP;
+            }
+        }
+
+        function _dismissNotification(item, skipTransition = false) {
+            const idx = _activeNotifications.indexOf(item);
+            if (idx === -1) return;
+            _activeNotifications.splice(idx, 1);
+            // 清除可能残留的自动消失定时器
+            if (item._timer) {
+                clearTimeout(item._timer);
+                item._timer = null;
+            }
+            const el = item.el;
+            if (skipTransition) {
+                el.remove();
+            } else {
+                el.classList.add('dismissing');
+                setTimeout(() => {
+                    if (el.parentNode) el.remove();
+                }, 300);
+            }
+            _repositionNotifications();
+        }
+
+        // 显示通知，返回通知对象供主动删除。
+        // duration 为可见时长(ms)，设为 0 表示不自动消失，需手动调用 item.dismiss()。
+        function showNotification(text, type = 'success', duration = 3000) {
+            // 超过最大数量时，移除最早的一条（跳过动画，同时清理其定时器）
+            while (_activeNotifications.length >= NOTIFICATION_MAX_COUNT) {
+                _dismissNotification(_activeNotifications[0], true);
+            }
+
             const notification = document.createElement('div');
             notification.className = 'editor-notification ' + type;
+            notification.setAttribute('role', 'alert');
             notification.textContent = text;
             document.body.appendChild(notification);
-            setTimeout(() => {
-                notification.style.opacity = '0';
-                notification.style.transform = 'translateY(10px)';
-                notification.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
-            }, duration);
-            setTimeout(() => notification.remove(), duration + 300);
+
+            const item = { el: notification, _timer: null };
+            _activeNotifications.push(item);
+            _repositionNotifications();
+
+            // duration > 0 时设置自动消失定时器（duration=0 永不自动消失）
+            if (duration > 0) {
+                item._timer = setTimeout(() => {
+                    item._timer = null;
+                    _dismissNotification(item);
+                }, duration + 300);
+            }
+
+            // 返回通知对象，调用方可主动删除（例如调用 item.dismiss()）
+            item.dismiss = function () {
+                _dismissNotification(item);
+            };
+
+            return item;
         }
 
         let mdIsKanban = false; // 是否为看板格式
@@ -33908,7 +33978,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 showNotification('✗ 没有暂存的更改可以提交', 'warning');
                 return;
             }
+            const gitCommitBtn = document.getElementById('gitCommitBtn');
+            const notification = showNotification('提交中...', 'info', 0);
             try {
+                gitCommitBtn.disabled = true;
                 const authorName = safeLocalStorageGet('git_author_name') || 'mdgo';
                 const authorEmail = safeLocalStorageGet('git_author_email') || 'mdgo@local';
                 const sha = await window.git.commit({
@@ -33925,6 +33998,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             } catch (e) {
                 console.error('gitDoCommit error:', e);
                 showNotification(`✗ 提交失败: ${e.message}`, 'error');
+            } finally {
+                gitCommitBtn.disabled = false;
+                notification.remove();
             }
         }
 
