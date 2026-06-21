@@ -504,8 +504,7 @@
         #toc-container {
             width: 17%;
             position: relative;
-            height: fit-content;
-            max-height: calc(100vh - 64px);
+            height: 100%;
             overflow-x: auto;
             margin-top: 15px;
             padding: 0 6px;
@@ -526,6 +525,7 @@
 
         #toc {
             font-size: 12px;
+            height: 100%;
         }
 
         #toc ul {
@@ -3546,7 +3546,7 @@
         .bookmark-tree {
             background: var(--color-bg);
             border-radius: var(--radius-lg);
-            padding: 16px 10px 10px 10px;
+            padding: 5px 10px 10px 10px;
             box-shadow: var(--shadow-sm);
         }
 
@@ -10588,8 +10588,6 @@
                                 <div class="monitor-header">
                                     <span>监控</span>
                                     <p>
-                                        <span class="monitor-uptime" id="htmlRunTime">打开时长：加载中...</span>
-                                        <span class="monitor-uptime">｜</span>
                                         <span class="monitor-uptime" id="permissionTime">授权时长：加载中...</span>
                                     </p>
                                 </div>
@@ -11908,6 +11906,7 @@
     </div>
 
     <script>
+        // Monaco Editor 初始化
         let monacoInitPromise = null;
         function initMonacoEditor() {
             if (!monacoInitPromise) {
@@ -11941,10 +11940,20 @@
         const LOCAL_LLM_ENDPOINT = 'http://192.168.31.152:12345/v1/chat/completions';
         const LOCAL_LLM_TOKEN = 'c17f18e31adb10978d3a9cd0d6743d30a067af602a8789e7';
         const LOCAL_LLM_MODEL = 'gemma-4-e4b-it';
-        const CONTEXT_LENGTH = 10000;
+        const LOCAL_LLM_CONTEXT_LENGTH = 10000;
+        // nginx 配置地址
         const NGINX_CONF_PATH = '/usr/local/etc/openresty/sites/index.conf';
-        const DOT = '.';
-        const SLASH = '/';
+        // 文件树中忽略的目录
+        const DIR_BLACKLIST = [".", ".obsidian", ".venv", ".vscode", ".git", "assets", ".trae", ".claude", ".idea",
+            'node_modules', 'vendor', 'dist', 'build', 'out', 'target', '__pycache__'];
+        // 文件树中忽略的文件后缀
+        const FILE_BLACKLIST = ['.', '.bobconfig', '.itermexport', '.DS_Store', '.gitignore', '.rayconfig'];
+        // 随机打开功能的目录过滤
+        const RANDOM_DIR_WHITELIST = ["pic"];
+        const RANDOM_DIR_BLACKLIST = ['note/moc', 'note/templates', 'deleted', 'data', 'code'];
+        // code 目录下的 .html 文件显示代码而非渲染
+        const HTML_CODE_SHOW_BLACKLIST = ["note"];
+        
         // AI 助手预设 Prompt 配置，每个 key 对应一种处理模式
         const PROMPTS = {
             summarize: {
@@ -12083,18 +12092,11 @@
             { name: 'bing', query: 'https://www.bing.com/search?q=' },
             { name: 'duckgo', query: 'https://duckduckgo.com/?q=' }
         ]
-        // 文件树中忽略的目录
-        const DIR_BLACKLIST = [".", ".obsidian", ".venv", ".vscode", ".git", "assets", ".trae", ".claude", ".idea",
-            'node_modules', 'vendor', 'dist', 'build', 'out', 'target', '__pycache__'];
-        // 文件树中忽略的文件后缀
-        const FILE_BLACKLIST = [DOT, '.bobconfig', '.itermexport', '.DS_Store', '.gitignore', '.rayconfig'];
-        // 随机打开功能的目录过滤
-        const RANDOM_DIR_WHITELIST = ["pic"];
-        const RANDOM_DIR_BLACKLIST = ['note/moc', 'note/templates', 'deleted', 'data', 'code'];
-        // code 目录下的 .html 文件显示代码而非渲染
-        const HTML_CODE_SHOW_BLACKLIST = ["note"];
 
         // ====== 系统常量 ======
+        const DOT = '.';
+        const DOUBLE_DOT = '..';
+        const SLASH = '/';
         const MAX_FILE_SIZE = 50 * 1024 * 1024; // 5MB - 大文件限制
         const MAX_DIR_DEPTH = 20; // 最大目录深度
         const SCROLL_RESTORE_DELAY = 200; // 滚动恢复延迟(ms)
@@ -12131,11 +12133,8 @@
         const INDEX_FILE_SCAN_DATA_FILE = 'index_file_scan_data.json';
         const INDEX_MARKERS_FILE = 'index_file_markers.json';
         const INDEX_OPER_FILE = 'index_operation.json';
-        // 文件类型分组（模块级常量，避免每次扫描重建）
-        const _EXT_TYPE_MAP = {
-            'html': '前端', 'htm': '前端', 'xhtml': '前端', 'css': '前端', 'scss': '前端', 'sass': '前端', 'less': '前端', 'styl': '前端', 'pcss': '前端', 'postcss': '前端', 'js': '前端', 'jsx': '前端', 'ts': '前端', 'tsx': '前端', 'mjs': '前端', 'cjs': '前端', 'jsm': '前端', 'tsm': '前端', 'mts': '前端', 'cts': '前端', 'vue': '前端', 'svelte': '前端', 'astro': '前端', 'swift': '前端', 'kt': '前端', 'py': '后端', 'pyw': '后端', 'java': '后端', 'kotlin': '后端', 'scala': '后端', 'groovy': '后端', 'c': '后端', 'cpp': '后端', 'h': '后端', 'hpp': '后端', 'cs': '后端', 'go': '后端', 'rs': '后端', 'rlib': '后端', 'rmeta': '后端', 'rb': '后端', 'php': '后端', 'dockerfile': '后端', 'gradle': '后端', 'makefile': '后端', 'cmake': '后端', 'proto': '后端', 'thrift': '后端', 'idl': '后端', 'wasm': '后端', 'asm': '后端', 'sh': '脚本', 'bash': '脚本', 'zsh': '脚本', 'bat': '脚本', 'cmd': '脚本', 'ps1': '脚本', 'sql': '数据库', 'mysql': '数据库', 'pgsql': '数据库', 'sqlite': '数据库', 'db': '数据库', 'db3': '数据库', 'sqlite3': '数据库', 'mdf': '数据库', 'ldf': '数据库', 'sqlitedb': '数据库', 'md': '文档', 'markdown': '文档', 'rst': '文档', 'tex': '文档', 'docx': '文档', 'doc': '文档', 'pdf': '文档', 'ppt': '文档', 'odt': '文档', 'rtf': '文档', 'epub': '文档', 'xlsx': '文档', 'xls': '文档', 'csv': '文档', 'tsv': '文档', 'ods': '文档', 'json': '文档', 'jsonc': '文档', 'xml': '文档', 'yaml': '文档', 'yml': '文档', 'toml': '文档', 'ini': '文档', 'conf': '文档', 'env': '文档', 'properties': '文档', 'txt': '文档', 'text': '文档', 'log': '文档', 'bak': '文档', 'tmp': '文档', 'cache': '文档', 'lock': '文档', 'map': '文档', 'gitignore': '文档', 'png': '媒体', 'jpg': '媒体', 'jpeg': '媒体', 'gif': '媒体', 'bmp': '媒体', 'svg': '媒体', 'webp': '媒体', 'ico': '媒体', 'tiff': '媒体', 'tif': '媒体', 'raw': '媒体', 'psd': '媒体', 'ai': '媒体', 'eps': '媒体', 'fig': '媒体', 'mp4': '媒体', 'mov': '媒体', 'avi': '媒体', 'flv': '媒体', 'wmv': '媒体', 'mkv': '媒体', 'webm': '媒体', 'm4v': '媒体', 'mpg': '媒体', 'mpeg': '媒体', '3gp': '媒体', 'mp3': '媒体', 'wav': '媒体', 'flac': '媒体', 'aac': '媒体', 'ogg': '媒体', 'wma': '媒体', 'm4a': '媒体', 'opus': '媒体', 'obj': '媒体', 'fbx': '媒体', 'dae': '媒体', 'stl': '媒体', '3ds': '媒体', 'blend': '媒体', 'zip': '压缩文件', 'rar': '压缩文件', '7z': '压缩文件', 'tar': '压缩文件', 'gz': '压缩文件', 'bz2': '压缩文件', 'xz': '压缩文件', 'dmg': '压缩文件', 'drawio': '图表', 'excalidraw': '图表', 'sketch': '图表', 'xd': '图表', 'afdesign': '图表', 'puml': '图表', 'plantuml': '图表', 'mmd': '图表', 'ttf': '字体', 'otf': '字体', 'woff': '字体', 'woff2': '字体', 'eot': '字体', 'glyphs': '字体', 'glyphs2': '字体'
-        };
         const INDEX_SCHEDULE_FILE = 'index_schedule.json';
+
         // 判断文件路径是否应显示代码而非渲染 HTML
         const isShowHtmlCode = (relativePath) => {
             const p = normalizePath(relativePath || '');
@@ -12193,6 +12192,10 @@
             seg.pop();
             return seg.join(SLASH);
         }
+        // 文件类型分组（模块级常量，避免每次扫描重建）
+        const _EXT_TYPE_MAP = {
+            'html': '前端', 'htm': '前端', 'xhtml': '前端', 'css': '前端', 'scss': '前端', 'sass': '前端', 'less': '前端', 'styl': '前端', 'pcss': '前端', 'postcss': '前端', 'js': '前端', 'jsx': '前端', 'ts': '前端', 'tsx': '前端', 'mjs': '前端', 'cjs': '前端', 'jsm': '前端', 'tsm': '前端', 'mts': '前端', 'cts': '前端', 'vue': '前端', 'svelte': '前端', 'astro': '前端', 'swift': '前端', 'kt': '前端', 'py': '后端', 'pyw': '后端', 'java': '后端', 'kotlin': '后端', 'scala': '后端', 'groovy': '后端', 'c': '后端', 'cpp': '后端', 'h': '后端', 'hpp': '后端', 'cs': '后端', 'go': '后端', 'rs': '后端', 'rlib': '后端', 'rmeta': '后端', 'rb': '后端', 'php': '后端', 'dockerfile': '后端', 'gradle': '后端', 'makefile': '后端', 'cmake': '后端', 'proto': '后端', 'thrift': '后端', 'idl': '后端', 'wasm': '后端', 'asm': '后端', 'sh': '脚本', 'bash': '脚本', 'zsh': '脚本', 'bat': '脚本', 'cmd': '脚本', 'ps1': '脚本', 'sql': '数据库', 'mysql': '数据库', 'pgsql': '数据库', 'sqlite': '数据库', 'db': '数据库', 'db3': '数据库', 'sqlite3': '数据库', 'mdf': '数据库', 'ldf': '数据库', 'sqlitedb': '数据库', 'md': '文档', 'markdown': '文档', 'rst': '文档', 'tex': '文档', 'docx': '文档', 'doc': '文档', 'pdf': '文档', 'ppt': '文档', 'odt': '文档', 'rtf': '文档', 'epub': '文档', 'xlsx': '文档', 'xls': '文档', 'csv': '文档', 'tsv': '文档', 'ods': '文档', 'json': '文档', 'jsonc': '文档', 'xml': '文档', 'yaml': '文档', 'yml': '文档', 'toml': '文档', 'ini': '文档', 'conf': '文档', 'env': '文档', 'properties': '文档', 'txt': '文档', 'text': '文档', 'log': '文档', 'bak': '文档', 'tmp': '文档', 'cache': '文档', 'lock': '文档', 'map': '文档', 'gitignore': '文档', 'png': '媒体', 'jpg': '媒体', 'jpeg': '媒体', 'gif': '媒体', 'bmp': '媒体', 'svg': '媒体', 'webp': '媒体', 'ico': '媒体', 'tiff': '媒体', 'tif': '媒体', 'raw': '媒体', 'psd': '媒体', 'ai': '媒体', 'eps': '媒体', 'fig': '媒体', 'mp4': '媒体', 'mov': '媒体', 'avi': '媒体', 'flv': '媒体', 'wmv': '媒体', 'mkv': '媒体', 'webm': '媒体', 'm4v': '媒体', 'mpg': '媒体', 'mpeg': '媒体', '3gp': '媒体', 'mp3': '媒体', 'wav': '媒体', 'flac': '媒体', 'aac': '媒体', 'ogg': '媒体', 'wma': '媒体', 'm4a': '媒体', 'opus': '媒体', 'obj': '媒体', 'fbx': '媒体', 'dae': '媒体', 'stl': '媒体', '3ds': '媒体', 'blend': '媒体', 'zip': '压缩文件', 'rar': '压缩文件', '7z': '压缩文件', 'tar': '压缩文件', 'gz': '压缩文件', 'bz2': '压缩文件', 'xz': '压缩文件', 'dmg': '压缩文件', 'drawio': '图表', 'excalidraw': '图表', 'sketch': '图表', 'xd': '图表', 'afdesign': '图表', 'puml': '图表', 'plantuml': '图表', 'mmd': '图表', 'ttf': '字体', 'otf': '字体', 'woff': '字体', 'woff2': '字体', 'eot': '字体', 'glyphs': '字体', 'glyphs2': '字体'
+        };
         // 获取路径里的文件后缀名
         const getExt = (p) => p?.split(DOT).pop() || '';
         const isDoc = (ext) => ['md', 'txt', 'mmd', 'csv', 'pdf', 'opml', 'drawio', 'excalidraw', 'puml', 'plantuml', 'html',
@@ -12212,7 +12215,7 @@
         let currentRootPath = '/Users/zhang/gitrepositories/resource'; // 当前目录的完整路径(用于生成唯一标识)
         let rootDirectoryHandle = null;     // 根目录句柄
         const getRootHandle = () => rootDirectoryHandle;  // 获取根目录句柄的函数
-        const setRootHandle = (hander) => rootDirectoryHandle = hander;  // 设置根目录句柄的函数
+        const setRootHandle = (handler) => rootDirectoryHandle = handler;  // 设置根目录句柄的函数
         const isRootHandleAvailable = () => !!getRootHandle(); // 检查根目录句柄是否可用的函数
         let allFilesCacheList = []; // 所有文件的缓存列表（包含路径、元数据等信息）
         let allFoldersCacheList = {}; // 所有目录的缓存列表（包含路径、元数据等信息）
@@ -12261,7 +12264,6 @@
         let systemMonitorMemChart = null; // 内存仪表盘 ECharts 实例
         // 图片布局相关
         let currentPhotoDirData = [];    // 当前目录图片数据
-        let _pageLoadTimestamp = Date.now(); // 页面打开时间戳（用于性能面板）
         let _treeLoadDuration = null; // 文件树加载耗时(ms)
         let _fileScanDuration = null; // 文件扫描耗时(ms)
 
@@ -12638,7 +12640,7 @@
             }
         }
 
-        async function enterEditMode(isOrtherFile = false, text = '') {
+        async function enterEditMode(isOtherFile = false, text = '') {
             if (!currentFileHandle) return;
             destroyEditor(true);
             switchToView(contentEdit, 'flex');
@@ -12661,7 +12663,7 @@
             const editorInner = document.getElementById('editor-inner');
             const isKanban = isObsidianKanban(initialContent);
             if (currentFileName.endsWith('.json')) {
-                initialContent = JSON.stringify(JSON.parse(initialContent), null, 4);
+                initialContent = initialContent ? JSON.stringify(JSON.parse(initialContent)) : '';
             }
             initMonacoEditor().then(() => {
                 currentEditor = createMonacoEditor(editorInner, {
@@ -12676,7 +12678,7 @@
                 editBtn: false,
                 saveBtn: true,
                 copyBtn: true,
-                previewBtn: isOrtherFile ? false : !editEnable(currentFileName),
+                previewBtn: isOtherFile ? false : !editEnable(currentFileName),
                 mdImageBtn: false,
                 livePreviewBtn: (isMarkdownViewActive() && !isKanban) ? true : false,
                 formatBtn: false
@@ -13433,7 +13435,7 @@
                         let fileItem = null;
                         if (parentDom) {
                             const depth = +parentDom.dataset.depth || 0;
-                            fileItem = await createFileItem(newFileHandle, newRelativePath, depth + 1);
+                            fileItem = await createFileItem(fileName, newRelativePath, depth + 1);
                             if (fileItem) {
                                 parentDom.appendChild(fileItem);
                                 // 展开父目录
@@ -13444,7 +13446,7 @@
                             }
                         } else {
                             const tree = document.getElementById('tree');
-                            fileItem = await createFileItem(newFileHandle, fileName, 0);
+                            fileItem = await createFileItem(fileName, fileName, 0);
                             if (fileItem) tree.appendChild(fileItem);
                         }
                         if (fileItem) {
@@ -13536,7 +13538,7 @@
                         const dom = document.querySelector('[data-dir-key="' + newRelativeParentPath + '"]');
                         if (dom) {
                             if (!fileExists) {
-                                const fileItem = await createFileItem(fileHandle, newRelativePath, +dom.dataset.depth + 1);
+                                const fileItem = await createFileItem(fileName, newRelativePath, +dom.dataset.depth + 1);
                                 if (fileItem) dom.appendChild(fileItem);
                             }
                             const fileSpan = document.querySelector('.file-item[data-file-path="' + newRelativePath + '"]');
@@ -13545,7 +13547,7 @@
                     } else {
                         const tree = document.getElementById('tree');
                         if (!fileExists) {
-                            const fileItem = await createFileItem(fileHandle, fileName, 0);
+                            const fileItem = await createFileItem(fileName, fileName, 0);
                             if (fileItem) tree.appendChild(fileItem);
                         }
                     }
@@ -16084,9 +16086,9 @@
             const parts = fullPath.split(SLASH).filter(Boolean);
             const resolvedParts = [];
             for (const part of parts) {
-                if (part === '..') {
+                if (part === DOUBLE_DOT) {
                     resolvedParts.pop();
-                } else if (part !== '.') {
+                } else if (part !== DOT) {
                     resolvedParts.push(part);
                 }
             }
@@ -16905,7 +16907,7 @@
             results.forEach((result, idx) => {
                 const div = document.createElement('div');
                 div.className = 'json-result-item';
-                const pathStr = result.displayPath || (Array.isArray(result.path) ? result.path.join('.') : result.path);
+                const pathStr = result.displayPath || (Array.isArray(result.path) ? result.path.join(DOT) : result.path);
                 div.innerHTML = `<div class="path">${escapeHtml(pathStr)}</div>
                     <pre class="value">${escapeHtml(JSON.stringify(result.value, null, 2))}</pre>`;
                 div.onclick = () => jumpToJsonMatch(idx);
@@ -19429,7 +19431,7 @@
                     if (existingItem) existingItem.remove();
                     const depth = newRelativeParentPath ?
                         (parseInt(dirDom.dataset.depth) || 0) + 1 : 0;
-                    const fileItem = await createFileItem(newFileHandle, newRelativePath, depth);
+                    const fileItem = await createFileItem(newFileName, newRelativePath, depth);
                     if (fileItem) {
                         if (dirDom.tagName === 'DETAILS' && !dirDom.open) {
                             dirDom.open = true;
@@ -19472,7 +19474,8 @@
                                 clearMarker(relativePath, false);
                                 const deletedDirDom = document.querySelector('[data-dir-key="' + DELETED_DIR_NAME + '"]');
                                 if (deletedDirDom) {
-                                    const fileItem = await createFileItem(target.targetFileHandle, target.deletedRelativePath, +deletedDirDom.dataset.depth + 1);
+                                    const deletedFileName = target.targetFileHandle.name || entryName;
+                                    const fileItem = await createFileItem(deletedFileName, target.deletedRelativePath, +deletedDirDom.dataset.depth + 1);
                                     if (fileItem) deletedDirDom.appendChild(fileItem);
                                 }
                             }
@@ -19606,7 +19609,7 @@
                         const deletedDirDom = document.querySelector('[data-dir-key="' + newRelativeParentPath + '"]');
                         if (deletedDirDom) {
                             if (!fileExists) {
-                                const fileItem = await createFileItem(restoredFileHandle, originalPath, +deletedDirDom.dataset.depth + 1);
+                                const fileItem = await createFileItem(fileName, originalPath, +deletedDirDom.dataset.depth + 1);
                                 if (fileItem) deletedDirDom.appendChild(fileItem);
                             }
                             const fileSpan = document.querySelector('.file-item[data-file-path="' + originalPath + '"]');
@@ -20533,12 +20536,6 @@
         async function renderFileSumPanel(data, typeCounts = null) {
             if (hasBackendServer) return;
             const now = Date.now();
-            // 打开时长
-            const htmlEl = document.getElementById('htmlRunTime');
-            if (htmlEl) {
-                const elapsed = Math.floor((now - _pageLoadTimestamp) / 1000);
-                htmlEl.textContent = '打开时长：' + formatDuration(elapsed);
-            }
             // 授权时长
             const permEl = document.getElementById('permissionTime');
             if (permEl) {
@@ -20554,7 +20551,7 @@
             const treeEl = document.getElementById('treeLoadTime');
             if (treeEl) {
                 const dur = _treeLoadDuration || parseInt(safeLocalStorageGet(TREE_LOAD_TIME_KEY)) || 0;
-                treeEl.textContent = dur ? formatMs(dur) + '/' + formatMs(3000) : '--';
+                treeEl.textContent = dur ? formatMs(dur) + SLASH + formatMs(3000) : '--';
                 // 渲染仪表盘
                 renderFileSumGauge('fileSumTreeGauge', dur, 3000);
             }
@@ -20562,7 +20559,7 @@
             const scanEl = document.getElementById('fileScanTime');
             if (scanEl) {
                 const dur = _fileScanDuration || parseInt(safeLocalStorageGet(FILE_SCAN_TIME_KEY)) || 0;
-                scanEl.textContent = dur ? formatMs(dur) + '/' + formatMs(3000) : '--';
+                scanEl.textContent = dur ? formatMs(dur) + SLASH + formatMs(3000) : '--';
                 renderFileSumGauge('fileSumScanGauge', dur, 3000);
             }
             // 文档/代码/图片占比（使用预计算计数，避免重复遍历）
@@ -21452,10 +21449,6 @@
                 fileSumPanel.style.display = 'flex';
                 if (!isIdle()) {
                     const now = Date.now();
-                    const htmlEl = document.getElementById('htmlRunTime');
-                    if (htmlEl) {
-                        htmlEl.textContent = '打开时长：' + formatDuration(Math.floor((now - _pageLoadTimestamp) / 1000));
-                    }
                     const permEl = document.getElementById('permissionTime');
                     if (permEl) {
                         const permTs = parseInt(safeLocalStorageGet(PERMISSION_TIME_KEY)) || 0;
@@ -22273,14 +22266,14 @@
             if (countEl) countEl.style.display = 'none';
             hideAITooltip();
         }
-        const alChatTooltip = document.getElementById('ai-fab-tooltip');
+        const aiChatTooltip = document.getElementById('ai-fab-tooltip');
         function hideAITooltip() {
-            if (!alChatTooltip.classList.contains('ai-fab-tooltip-hidden')) {
-                alChatTooltip.classList.add('ai-fab-tooltip-hidden');
+            if (!aiChatTooltip.classList.contains('ai-fab-tooltip-hidden')) {
+                aiChatTooltip.classList.add('ai-fab-tooltip-hidden');
             }
         }
         function showAITooltip() {
-            alChatTooltip.classList.remove('ai-fab-tooltip-hidden');
+            aiChatTooltip.classList.remove('ai-fab-tooltip-hidden');
         }
 
         const SUB_OPERATION = {
@@ -22447,7 +22440,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 fileName = currentFileName;
                 filePath = currentActiveItem ? currentActiveItem.dataset.filePath : '';
                 originalText = await getFileContent(currentFileHandle);
-                let content = originalText.length > CONTEXT_LENGTH ? originalText.substring(0, CONTEXT_LENGTH) : originalText;
+                let content = originalText.length > LOCAL_LLM_CONTEXT_LENGTH ? originalText.substring(0, LOCAL_LLM_CONTEXT_LENGTH) : originalText;
                 if (action === 'custom') {
                     promptStr = `请根据文件内容完成以下要求：${customPrompt}\n\n文件内容：${content}\n\n`;
                 } else if (PROMPTS[action]) {
@@ -22635,7 +22628,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const dirDom = document.querySelector('[data-dir-key="' + dirPath + '"]');
             if (dirDom) {
                 if (!overwrite) {
-                    const fileItem = await createFileItem(newFileHandle, newRelativePath, +dirDom.dataset.depth + 1);
+                    const fileItem = await createFileItem(fileName, newRelativePath, +dirDom.dataset.depth + 1);
                     if (fileItem) dirDom.appendChild(fileItem);
                 }
                 const fileSpan = document.querySelector('.file-item[data-file-path="' + newRelativePath + '"]');
@@ -22643,7 +22636,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             } else {
                 const tree = document.getElementById('tree');
                 if (!overwrite) {
-                    const fileItem = await createFileItem(newFileHandle, newRelativePath, 0);
+                    const fileItem = await createFileItem(fileName, newRelativePath, 0);
                     if (fileItem) tree.appendChild(fileItem);
                 }
                 const fileSpan = document.querySelector('.file-item[data-file-path="' + newRelativePath + '"]');
@@ -23677,6 +23670,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (overlay) overlay.classList.remove('active');
             if (sw) sw.innerHTML = '';
             fsZoomLevel = 100;
+            document.removeEventListener('keydown', mermaidEscHandler);
         }
 
         function fsSetZoom(level) {
@@ -23732,6 +23726,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             svgWrap.appendChild(svgClone);
             fsSetZoom(100);
             overlay.classList.add('active');
+            document.addEventListener('keydown', mermaidEscHandler);
         }
 
         function initMermaidEventListeners() {
@@ -23765,16 +23760,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                 });
             }
-            // Escape 键关闭全屏
-            document.addEventListener('keydown', function fsEscHandler(e) {
-                if (e.key === 'Escape') {
-                    const o = document.getElementById('mermaid-fullscreen-overlay');
-                    if (o && o.classList.contains('active')) {
-                        fsCloseOverlay();
-                    }
-                }
-            });
             mermaidEventsInitialized = true;
+        }
+
+        function mermaidEscHandler(e) {
+            if (e.key === 'Escape') {
+                const o = document.getElementById('mermaid-fullscreen-overlay');
+                if (o && o.classList.contains('active')) {
+                    fsCloseOverlay();
+                }
+            }
         }
 
         initMermaidEventListeners();
@@ -26024,18 +26019,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const memDetail = document.getElementById('memDetail');
             if (memDetail) memDetail.textContent = usedGB + SLASH + totalGB + ' GB';
 
-            function formatBytes(bytes) {
-                if (bytes === 0) return '0 B';
-                const k = 1024;
-                const sizes = ['B', 'KB', 'MB', 'GB'];
-                const i = Math.floor(Math.log(bytes) / Math.log(k));
-                return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-            }
-
             const netRecv = document.getElementById('netRecv');
             const netSent = document.getElementById('netSent');
-            if (netRecv) netRecv.textContent = formatBytes(d.network.recv_rate) + '/s';
-            if (netSent) netSent.textContent = formatBytes(d.network.sent_rate) + '/s';
+            if (netRecv) netRecv.textContent = _wsFormatBytes(d.network.recv_rate) + '/s';
+            if (netSent) netSent.textContent = _wsFormatBytes(d.network.sent_rate) + '/s';
 
             const diskPct = d.disk.percent;
             const diskBar = document.getElementById('diskBarFill');
@@ -26046,24 +26033,33 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             if (diskPercent) diskPercent.textContent = diskPct + '%';
 
-            function formatUptime(seconds) {
-                const d2 = Math.floor(seconds / 86400);
-                const h = Math.floor((seconds % 86400) / 3600);
-                const m = Math.floor((seconds % 3600) / 60);
-                let result = '';
-                if (d2 > 0) result += d2 + '天';
-                if (h > 0) result += h + '时';
-                result += m + '分';
-                return result;
-            }
-
             const monitorUptime = document.getElementById('monitorUptime');
             const serviceUptime = document.getElementById('serviceUptime');
             const serviceMem = document.getElementById('serviceMem');
-            if (monitorUptime) monitorUptime.textContent = '电脑Live: ' + formatUptime(d.uptime);
-            if (serviceUptime) serviceUptime.textContent = '服务Live: ' + formatUptime(d.service.uptime);
-            if (serviceMem) serviceMem.textContent = formatBytes(d.service.rss);
+            if (monitorUptime) monitorUptime.textContent = '电脑Live: ' + _wsFormatUptime(d.uptime);
+            if (serviceUptime) serviceUptime.textContent = '服务Live: ' + _wsFormatUptime(d.service.uptime);
+            if (serviceMem) serviceMem.textContent = _wsFormatBytes(d.service.rss);
         }
+
+        /** WebSocket 数据格式化：字节数转可读字符串（模块级常量，避免每次消息重复定义） */
+        const _wsFormatBytes = (bytes) => {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        };
+        /** WebSocket 数据格式化：秒数转为可读时长 */
+        const _wsFormatUptime = (seconds) => {
+            const d2 = Math.floor(seconds / 86400);
+            const h = Math.floor((seconds % 86400) / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            let result = '';
+            if (d2 > 0) result += d2 + '天';
+            if (h > 0) result += h + '时';
+            result += m + '分';
+            return result;
+        };
 
         // 连接 WebSocket（仅 http 模式下生效）
         function wsConnect() {
@@ -32304,7 +32300,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         const GIT_GRAPH_COLORS = ['#e06c75', '#61afef', '#98c379', '#d19a66', '#c678dd', '#56b6c2', '#e5c07b', '#be5046']; // 图中节点的颜色
         const GIT_GRAPH_BEZIER_D = GIT_GRAPH_ROW_STEP * 0.8; // 图中贝塞尔曲线的长度
         const GIT_NULL_VERTEX_ID = -1; // 空节点的ID
-        const GIT_VISIBLE_OVERSCAN = 8; // 可见区域的额外偏移量
         const git$ = (s) => document.querySelector(s);
         const gitRepoInfo = git$('#gitRepoInfo');
         const gitGraphScroll = git$('#gitGraphScroll');
@@ -32332,12 +32327,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         let gitTags = []; // 所有标签
         let gitMutedCommits = []; // 已静音的提交记录哈希列表
 
-        // 轨道图状态
-        let gitGraphVertices = []; // 轨道图顶点列表
-        let gitGraphBranches = []; // 轨道图分支列表
-        let gitGraphVertexColours = []; // 轨道图顶点颜色列表
-        let gitGraphVertexXs = []; // 轨道图顶点 X 坐标列表
-
         // 加载状态
         let gitLoadGeneration = 0; // 当前加载的提交记录生成次数
         let gitEditorGeneration = 0; // 当前 diff 编辑器生成次数
@@ -32352,7 +32341,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
         const gitEscapeHtml = (s) => escapeHtml(s);
         function gitShortSha(oid) { return oid ? oid.slice(0, 7) : ''; }
-        function gitAbbrevSha(oid) { return oid ? oid.slice(0, 8) : ''; }
         function gitFormatTime(ts) {
             if (!ts || ts < 0) return '';
             return new Date(ts * 1000).toLocaleString('zh-CN');
@@ -32379,10 +32367,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             gitRemotes = [];
             gitTags = [];
             gitMutedCommits = [];
-            gitGraphVertices = [];
-            gitGraphBranches = [];
-            gitGraphVertexColours = [];
-            gitGraphVertexXs = [];
             gitGraphInstance = null;
             gitLoadGeneration = 0;
             gitEditorGeneration = 0;
@@ -32896,8 +32880,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         function gitLayoutGraph() {
             gitGraphInstance = new GitGraph();
             gitGraphInstance.loadCommits(gitCommits, gitHeadHash, gitCommitLookup);
-            gitGraphVertexColours = gitGraphInstance.getVertexColours();
-            gitGraphVertexXs = gitGraphInstance.getWidthsAtVertices();
             gitMutedCommits = gitGraphInstance.getMutedCommits(gitHeadHash);
         }
         /** 将轨道图绘制到已存在的 canvas 上（复用，不创建新元素） */
@@ -33433,12 +33415,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     if (!line) continue;
                 }
                 // 转义特殊正则字符（* ? . + 等在 gitignore 中有特殊含义）
-                let isDirOnly = line.endsWith('/');
+                let isDirOnly = line.endsWith(SLASH);
                 if (isDirOnly) line = line.slice(0, -1);
                 // 如果包含 /（非末尾），则匹配完整路径；否则匹配文件名
-                const hasSlash = line.includes('/');
+                const hasSlash = line.includes(SLASH);
                 // 去掉开头的 /（表示从根目录匹配）
-                if (line.startsWith('/')) line = line.substring(1);
+                if (line.startsWith(SLASH)) line = line.substring(1);
                 // 转换 gitignore 通配符为正则
                 let regexStr = '';
                 let i = 0;
@@ -33447,10 +33429,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     if (ch === '*') {
                         // 检查 ** 或 **/
                         if (line[i + 1] === '*') {
-                            if (line[i + 2] === '/' || i + 2 >= line.length) {
+                            if (line[i + 2] === SLASH || i + 2 >= line.length) {
                                 // ** 匹配任意层级（包括 /）
                                 regexStr += '.*';
-                                i += line[i + 2] === '/' ? 3 : 2;
+                                i += line[i + 2] === SLASH ? 3 : 2;
                                 continue;
                             }
                         }
@@ -33641,7 +33623,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         try {
                             const [headBlob, rawContent] = await Promise.all([
                                 window.git.readBlob({ fs: gitFs, dir: SLASH, oid: headOid, filepath: f.filepath }),
-                                gitFs.readFile('/' + f.filepath, {})
+                                gitFs.readFile(SLASH + f.filepath, {})
                             ]);
                             const rawHash = await window.git.hashBlob({ object: rawContent });
                             if (headBlob.oid === rawHash.oid) return { filepath: f.filepath, match: true };
@@ -33700,7 +33682,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     btnsHtml = `
                         <div class="git-status-item-btns">
                             <button class="git-status-item-btn stage" title="暂存更改" data-action="stage" data-filepath="${gitEscapeHtml(item.filepath)}">+</button>
-                            <button class="git-status-item-btn discard" title="放弃更改" data-action="discard" data-filepath="${gitEscapeHtml(item.filepath)}">✕</button>
+                            <button class="git-status-item-btn discard" title="放弃更改" data-action="discard" data-filepath="${gitEscapeHtml(item.filepath)}" data-status="${item.status}">✕</button>
                         </div>`;
                 } else {
                     btnsHtml = `
@@ -33727,7 +33709,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         const filepath = btn.dataset.filepath;
                         if (action === 'stage') await gitStageFile(filepath);
                         else if (action === 'unstage') await gitUnstageFile(filepath);
-                        else if (action === 'discard') await gitDiscardFile(filepath);
+                        else if (action === 'discard') await gitDiscardFile(filepath, btn.dataset.status);
                         return;
                     }
                     const item = e.target.closest('.git-status-item');
@@ -33773,18 +33755,36 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        /** 放弃文件更改（还原到 HEAD 版本） */
-        async function gitDiscardFile(filepath) {
+        /** 放弃文件更改（新增文件直接删除，已跟踪文件还原到 HEAD 版本） */
+        async function gitDiscardFile(filepath, status) {
             if (!gitFs) return;
-            showConfirmModal('确认放弃更改', `确定要放弃 "${filepath}" 的所有更改吗？此操作不可撤销。`, async (confirmed) => {
+            const isNewFile = status === 'added';
+            const msg = isNewFile
+                ? `确定要删除新增文件 "${filepath}" 吗？此操作不可撤销。`
+                : `确定要放弃 "${filepath}" 的所有更改吗？此操作不可撤销。`;
+            showConfirmModal(isNewFile ? '确认删除文件' : '确认放弃更改', msg, async (confirmed) => {
                 if (!confirmed) return;
                 try {
-                    await window.git.checkout({ fs: gitFs, dir: SLASH, filepath, force: true });
-                    showNotification(`✓ 已放弃更改: ${filepath}`, 'success');
+                    if (isNewFile) {
+                        // 新增文件（untracked）：HEAD 中没有此文件，直接删除
+                        await new Promise((resolve, reject) => {
+                            gitFs.unlink(SLASH + filepath, (err) => {
+                                if (err) {
+                                    // ENOENT：文件已被其他操作删除，视为成功
+                                    if (err.code === 'ENOENT') resolve();
+                                    else reject(err);
+                                } else resolve();
+                            });
+                        });
+                        showNotification(`✓ 已删除文件: ${filepath}`, 'success');
+                    } else {
+                        await window.git.checkout({ fs: gitFs, dir: SLASH, filepath, force: true });
+                        showNotification(`✓ 已放弃更改: ${filepath}`, 'success');
+                    }
                     await gitUpdateStatusLists(true);
                 } catch (e) {
                     console.error('gitDiscardFile error:', e);
-                    showNotification(`✗ 放弃更改失败: ${e.message}`, 'error');
+                    showNotification(`✗ ${isNewFile ? '删除' : '放弃更改'}失败: ${e.message}`, 'error');
                 }
             });
         }
@@ -33797,7 +33797,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 // 并行读取 HEAD 版本和工作区文件
                 const [headResult, workdirBuf] = await Promise.all([
                     window.git.readBlob({ fs: gitFs, dir: SLASH, oid: headOid, filepath: filepath }).catch(() => null),
-                    gitFs.readFile('/' + filepath, {}).catch(() => null)
+                    gitFs.readFile(SLASH + filepath, {}).catch(() => null)
                 ]);
                 const originalContent = headResult ? new TextDecoder().decode(headResult.blob) : '';
                 const modifiedContent = workdirBuf ? new TextDecoder().decode(workdirBuf) : '';
@@ -34055,13 +34055,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             /** 定位到父目录句柄和文件名（带 LRU 缓存），跳过 . 和 .. 防止 API 报错 */
             async function _resolveParent(np, isGit) {
                 if (!np || np === DOT || np === '') return { parentHandle: null, name: '' };
-                const parts = np.split(SLASH).filter(p => p && p !== '.' && p !== '..');
+                const parts = np.split(SLASH).filter(p => p && p !== DOT && p !== DOUBLE_DOT);
                 if (parts.length === 0) return { parentHandle: null, name: '' };
                 const name = parts.pop();
                 let handle = _baseHandle(isGit);
                 let cumPath = '';
                 for (const part of parts) {
-                    cumPath = cumPath ? cumPath + '/' + part : part;
+                    cumPath = cumPath ? cumPath + SLASH + part : part;
                     const key = _cacheKey(isGit, cumPath);
                     let cached = _handleCache.get(key);
                     if (cached !== undefined) {
@@ -34082,11 +34082,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             /** 安全遍历路径到目录句柄，复用 _resolveParent 的 LRU 缓存逻辑 */
             async function _walkPath(baseHandle, np, isGit) {
                 if (!np || np === DOT || np === '') return baseHandle;
-                const parts = np.split(SLASH).filter(p => p && p !== '.' && p !== '..');
+                const parts = np.split(SLASH).filter(p => p && p !== DOT && p !== DOUBLE_DOT);
                 let handle = baseHandle;
                 let cumPath = '';
                 for (const part of parts) {
-                    cumPath = cumPath ? cumPath + '/' + part : part;
+                    cumPath = cumPath ? cumPath + SLASH + part : part;
                     const key = _cacheKey(isGit, cumPath);
                     let cached = _handleCache.get(key);
                     if (cached !== undefined) {
@@ -34209,7 +34209,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     return _dual((async () => {
                         if (np === DOT) return;
                         let handle = _baseHandle(isGit);
-                        for (const part of np.split(SLASH).filter(p => p && p !== '.' && p !== '..')) {
+                        for (const part of np.split(SLASH).filter(p => p && p !== DOT && p !== DOUBLE_DOT)) {
                             handle = await getOrCreateDirectory(handle, part);
                         }
                     })(), cb);
@@ -34263,8 +34263,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (!gitFs) throw new Error('Git FS 适配器实例不存在');
             // 释放旧的图实例和全局状态
             gitGraphInstance = null; // 释放旧实例
-            gitGraphVertexColours = []; // 释放旧颜色数组
-            gitGraphVertexXs = []; // 释放旧 x 坐标数组
             gitMutedCommits = []; // 释放旧静音提交数组
             gitFileFilter = filepath || null;
             // 并行执行：ref 解析和 commit 日志互不依赖
