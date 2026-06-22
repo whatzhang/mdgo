@@ -17653,6 +17653,7 @@
                 }
                 const file = await getFile(fileHandle);
                 const blobUrl = URL.createObjectURL(file);
+                currentObjectUrls.push(blobUrl);
                 showImageModal(blobUrl);
             } catch (error) {
                 console.error('打开图片失败:', error);
@@ -23562,7 +23563,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             document.body.appendChild(doc);
             doc.click();
             document.body.removeChild(doc);
-            setTimeout(() => URL.revokeObjectURL(doc.href), 1000);
+            setTimeout(() => URL.revokeObjectURL(doc.href), 5000);
         }
 
         function getSvgStringMermaid() {
@@ -31594,7 +31595,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         const preview = previews[0];
                         const jpegData = new Uint8Array(buffer, preview.offset, preview.length);
                         const blob = new Blob([jpegData], { type: 'image/jpeg' });
-                        previewImg.src = URL.createObjectURL(blob);
+                        const url = URL.createObjectURL(blob);
+                        currentObjectUrls.push(url);
+                        previewImg.src = url;
                         imageBadge.textContent = `JPEG ${rawFormatSize(preview.length)}`;
                     } else {
                         previewImg.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect fill="%231A1A1A" width="200" height="200"/><text x="100" y="100" text-anchor="middle" fill="%23666" font-size="14">无预览</text></svg>';
@@ -31611,7 +31614,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             a.href = url;
                             a.download = filename.replace(/\.[^.]+$/, '_preview.jpg');
                             a.click();
-                            URL.revokeObjectURL(url);
+                            setTimeout(() => URL.revokeObjectURL(url), 5000);
                         } else {
                             alert('此文件不包含内嵌 JPEG 预览');
                         }
