@@ -275,6 +275,13 @@ def scan_files(base_dir):
 
     def on_dir(rel_path):
         folder_set.add(rel_path)
+        # 将空目录也注入 tree_dict，确保 folderTree 能包含它
+        path_parts = rel_path.split('/')
+        current = tree_dict
+        for part in path_parts:
+            if part not in current:
+                current[part] = {'size': 0, 'ctime': 0, 'mtime': 0}
+            current = current[part]
 
     total_files, total_folders, total_size = _scan_scandir(
         base_dir, on_file=on_file, on_dir=on_dir)

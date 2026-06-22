@@ -13380,17 +13380,17 @@
             if (newFileDropdownPanel) newFileDropdownPanel.style.display = 'none';
         }
 
-        async function createNewFileInDir(dirPath, name, isNewFile = true) {
+        async function createNewFileInDir(dirPath, name, isNewDir = true) {
             if (!name || name === '') return;
-            if (isNewFile) {
+            if (isNewDir) {
                 showInputModal('请输入目录名', name, async (dirName) => {
                     if (!dirName) return;
                     try {
                         const newRelativePath = joinPath(dirPath, dirName);
-                        const currentDirHandle = await getDirHandleByDirPath(dirPath);
+                        const { dirHandle, dirParentHandle } = await getDirHandleByDirPath(dirPath);
                         let fileExists = false;
                         try {
-                            await getDirectoryHandle(currentDirHandle, dirName);
+                            await getDirectoryHandle(dirHandle, dirName);
                             fileExists = true;
                         } catch (e) {
                             fileExists = false;
@@ -13399,12 +13399,20 @@
                             showNotification(`⚠️ 目录已存在: ${newRelativePath}`, 'warning');
                             return;
                         }
-                        const dirHandle = await getDirectoryHandle(currentDirHandle, dirName, { create: true });
+                        const handle = await getDirectoryHandle(dirHandle, dirName, { create: true });
                         const parentDom = document.querySelector('[data-dir-key="' + dirPath + '"]');
                         if (parentDom) {
                             const depth = +parentDom.dataset.depth || 0;
-                            const dirEntry = createDirectoryEntry(dirHandle.name, depth + 1, newRelativePath);
-                            parentDom.appendChild(dirEntry.details);
+                            const dirEntry = createDirectoryEntry(handle.name, depth + 1, newRelativePath);
+                            // 插入到最后一个子目录后面，保持目录按顺序排列
+                            const lastDir = parentDom.querySelector(':scope > details:last-of-type');
+                            if (lastDir && lastDir.nextSibling) {
+                                lastDir.parentNode.insertBefore(dirEntry.details, lastDir.nextSibling);
+                            } else if (parentDom.querySelector('summary')) {
+                                parentDom.querySelector('summary').after(dirEntry.details);
+                            } else {
+                                parentDom.appendChild(dirEntry.details);
+                            }
                             // 展开父目录
                             if (!parentDom.open) {
                                 parentDom.open = true;
@@ -20356,6 +20364,9 @@
                 }
             }
 
+            // 记录所有目录路径（包括空目录），确保空目录不会在刷新时丢失
+            const allDirPaths = new Set();
+
             // 使用栈实现 DFS 遍历
             const stack = [{ handle: rootHandle, relPath: '', depth: 0 }];
             let pendingBatch = []; // 待处理的批次
@@ -20391,9 +20402,10 @@
                     stack.push({ handle: d.entry, relPath: d.childRel, depth: depth + 1 });
                 }
 
-                // depth > MAX_DIR_DEPTH 和 isSkipDir 情况已在循环顶部 continue 排除
+                // 记录所有遇到的目录路径（包括空目录和深层目录）
                 if (relRoot) {
                     totalFolders++;
+                    allDirPaths.add(relRoot);
                 }
 
                 // 收集文件用于批量处理
@@ -20490,6 +20502,36 @@
                     }
                     // 根目录文件数增加
                     dirMap[''].fileNum += 1;
+                }
+
+                // 补充空目录到 dirMap（空目录没有文件路径能被 fileList 推断出来）
+                for (const dirPath of allDirPaths) {
+                    if (dirMap[dirPath]) continue; // 已在 fileList 中有文件，跳过
+                    const parts = dirPath.split(SLASH);
+                    const dirName = parts[parts.length - 1];
+                    // 逐级确保父路径存在
+                    let parentPath = '';
+                    for (let i = 0; i < parts.length; i++) {
+                        const currentPath = i === 0 ? parts[0] : (parentPath + SLASH + parts[i]);
+                        if (!dirMap[currentPath]) {
+                            dirMap[currentPath] = {
+                                name: parts[i],
+                                children: [],
+                                size: 0,
+                                ctime: 0,
+                                mtime: 0,
+                                fileNum: 0
+                            };
+                            if (!childSetMap[parentPath]) {
+                                childSetMap[parentPath] = new Set();
+                            }
+                            if (!childSetMap[parentPath].has(parts[i])) {
+                                childSetMap[parentPath].add(parts[i]);
+                                dirMap[parentPath].children.push(dirMap[currentPath]);
+                            }
+                        }
+                        parentPath = currentPath;
+                    }
                 }
 
                 // 递归构建 ECharts 树图格式（迭代栈避免栈溢出）
@@ -24302,18 +24344,20 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
         // 根据路径获取目录句柄
         async function getDirHandleByDirPath(dirPath) {
-            if (!dirPath) return getRootHandle();
+            if (!dirPath) return { dirHandle: getRootHandle(), dirParentHandle: null };
             const pathParts = normalizePath(dirPath).split(SLASH).filter(p => p);
-            let currentDirHandle = getRootHandle();
+            let dirHandle = getRootHandle();
+            let dirParentHandle = getRootHandle();
             for (const part of pathParts) {
                 try {
-                    currentDirHandle = await getDirectoryHandle(currentDirHandle, part);
+                    dirParentHandle = dirHandle;
+                    dirHandle = await getDirectoryHandle(dirHandle, part);
                 } catch (e) {
                     console.warn(`目录不存在: ${part}`, e);
                     throw new Error(`目录不存在: ${dirPath}`);
                 }
             }
-            return currentDirHandle;
+            return { dirHandle: dirHandle, dirParentHandle: dirParentHandle };
         }
         // 根据文件路径找到其父目录句柄
         async function getFileParentHandleByFilePath(path) {
@@ -31807,11 +31851,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 // 显示 loading 效果
                 wordViewContainer.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;min-height:80vh;gap:16px;"><div class="raw-spinner"></div><span style="color:var(--color-text-secondary);font-size:14px">正在生成词云…</span></div>';
                 // 收集文件名列表和文件大小（限制最大条目数，防止大目录卡死）
-                let dirHandle = await getRootHandle();
+                let handle = await getRootHandle();
                 if (dirPath) {
-                    dirHandle = await getDirHandleByDirPath(dirPath);
+                    const { dirHandle, dirParentHandle } = await getDirHandleByDirPath(dirPath);
+                    handle = dirHandle;
                 }
-                var fileList = await getCustomFileList(dirHandle, 0, dirPath);
+                var fileList = await getCustomFileList(handle, 0, dirPath);
                 if (!fileList || fileList.length === 0) {
                     wordViewContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;width:100%;min-height:80vh;color:var(--color-text-secondary);font-size:14px">未找到文档文件</div>';
                     return;
@@ -32075,7 +32120,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     </div>
                 </div>
             </div>`;
-            currentPhotoDirHandle = await getDirHandleByDirPath(relPath);
+            const { dirHandle, dirParentHandle } = await getDirHandleByDirPath(relPath);
+            currentPhotoDirHandle = dirHandle;
             await getPhotoFromDirHandle(relPath);
             await photoRenderMasonry(true);
             photoRenderedLayouts['masonry'] = true;
