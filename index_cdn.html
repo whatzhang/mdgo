@@ -11923,33 +11923,6 @@
     </div>
 
     <script>
-        // Monaco Editor 初始化
-        let monacoInitPromise = null;
-        function initMonacoEditor() {
-            if (!monacoInitPromise) {
-                monacoInitPromise = new Promise((resolve, reject) => {
-                    const timeout = setTimeout(() => {
-                        reject(new Error('Monaco Editor 加载超时'));
-                    }, 30000);
-                    require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs' } });
-                    try {
-                        require(['vs/editor/editor.main'], () => {
-                            clearTimeout(timeout);
-                            initPrettierFormatProvider();
-                            resolve();
-                        });
-                    } catch (e) {
-                        clearTimeout(timeout);
-                        reject(e);
-                    }
-                }).catch(err => {
-                    console.warn('Monaco Editor 加载失败:', err);
-                    monacoInitPromise = null; // 重置，允许下次重试
-                    throw err;
-                });
-            }
-            return monacoInitPromise;
-        }
         // ====== 后端服务地址 ======
         const GRAPHQL_ENDPOINT = 'http://localhost:8091/graphql';
         const HOLIDAY_API = 'https://timor.tech/api/holiday/year/'; // 节假日接口，拼接年份使用
@@ -12351,36 +12324,27 @@
             securityLevel: 'loose'
         });
 
+        // Monaco Editor 初始化
+        let monacoInitPromise = null;
+        function initMonacoEditor() {
+            if (!monacoInitPromise) {
+                monacoInitPromise = new Promise((resolve) => {
+                	require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs' } });
+                    require(['vs/editor/editor.main'], () => {
+                        initPrettierFormatProvider();
+                        resolve();
+                    });
+                });
+            }
+            return monacoInitPromise;
+        }
+
         marked.setOptions({ breaks: true, gfm: true, headerIds: false });
 
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', async () => {
             await heartbeat();
             await initAll();
-        });
-
-        // ====== 空闲检测：5 分钟无操作判定为空闲 ======
-        let lastActivityTime = Date.now();
-        const IDLE_TIMEOUT = 5 * 60 * 1000; // 5分钟空闲阈值
-        // 空闲检测：记录用户最后活动时间
-        function updateActivity() {
-            lastActivityTime = Date.now();
-        }
-        ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'].forEach(event => {
-            document.addEventListener(event, updateActivity, { passive: true });
-        });
-        function isIdle() {
-            return Date.now() - lastActivityTime > IDLE_TIMEOUT;
-        }
-
-        // 切到后台时暂停定时器省电，回来时恢复
-        document.addEventListener('visibilitychange', () => {
-            if (document.hidden) {
-                TimerManager.pauseAll();
-            } else {
-                TimerManager.resumeAll();
-                lastActivityTime = Date.now();
-            }
         });
 
         window.addEventListener('beforeunload', function (e) {
@@ -12795,6 +12759,30 @@
                 formatBtn.style.display = 'inline-flex';
             }
         }
+
+        // ====== 空闲检测：5 分钟无操作判定为空闲 ======
+        let lastActivityTime = Date.now();
+        const IDLE_TIMEOUT = 5 * 60 * 1000; // 5分钟空闲阈值
+        // 空闲检测：记录用户最后活动时间
+        function updateActivity() {
+            lastActivityTime = Date.now();
+        }
+        ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'].forEach(event => {
+            document.addEventListener(event, updateActivity, { passive: true });
+        });
+        function isIdle() {
+            return Date.now() - lastActivityTime > IDLE_TIMEOUT;
+        }
+
+        // 切到后台时暂停定时器省电，回来时恢复
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                TimerManager.pauseAll();
+            } else {
+                TimerManager.resumeAll();
+                lastActivityTime = Date.now();
+            }
+        });
 
         // 文件树事件委托的稳定引用（避免 initTreeDelegation 重复调用时 handler 堆积）
         let _treeClickHandler = null;
@@ -13349,7 +13337,7 @@
                 Promise.resolve(closeSystemMonitor()),
                 Promise.resolve(destroyRawViewer()),
                 Promise.resolve(destroyWordCloud()),
-                Promise.resolve(destroyFileGraph()),
+                Promise.resolve(destroyFileGraph())
             ]);
         }
 
@@ -16078,9 +16066,9 @@
 
         async function renderOriginalMarkdown(text) {
             const htmlContent = await markedParse(parseObsidianToHTML(text));
-            contentMain.innerHTML = `<article class="markdown-body">${htmlContent}</article>`;
+            contentMain.innerHTML = `<article id="content-article" class="markdown-body">${htmlContent}</article>`;
             generateTOC(text);
-            postProcessMarkdown(contentMain);
+            postProcessMarkdown(contentMain.querySelector('#content-article'));
         }
 
         async function renderHTMLFile(text, relativePath) {
@@ -18492,15 +18480,14 @@
             const target = container instanceof Document ? container : root;
             const imgHandler = (e) => {
                 const img = e.target.closest('img');
-                if (!img || !target.contains(img)) return;
+                if (!img) return;
                 e.stopPropagation();
                 const src = img.getAttribute('src');
                 const originUrl = img.dataset.originUrl || src;
                 if (src) showImageModal(src, nextEnable, originUrl);
             }
-            target.removeEventListener('click', (e) => imgHandler(e));
-            target.addEventListener('click', (e) => imgHandler(e));
-
+            target.removeEventListener('click', imgHandler);
+            target.addEventListener('click', imgHandler);
             target.querySelectorAll('img').forEach(img => {
                 img.style.cursor = 'zoom-in';
             });
@@ -24476,10 +24463,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             } catch { return false; }
         }
 
-        const _localeCompare = (a, b) => a.name.localeCompare(b.name, 'zh-CN', { sensitivity: 'base' });
-        // 快速比较函数（对超大数据集使用，避免 localeCompare 性能瓶颈）
-        const _fastCompare = (a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
-        const _SORT_THRESHOLD = 1000; // 超过此阈值使用快速比较
+        // 自然排序：中文拼音 + 数字按数值比较（file2 < file10）+ 大小写不敏感
+        const _naturalCollator = new Intl.Collator('zh-CN', { numeric: true, sensitivity: 'base' });
+        const _naturalCompare = (a, b) => _naturalCollator.compare(a.name, b.name);
         const _BATCH_SIZE = 100;
         const _MAX_TREE_CACHE_SIZE = 2000; // LRU 缓存最大条目数
 
@@ -24509,7 +24495,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             clear() { this._map.clear(); }
             get size() { return this._map.size; }
         }
-        // const _treeLRUCache = new LRUCache(_MAX_TREE_CACHE_SIZE);
 
         function _buildPath(parentPath, name) {
             return parentPath ? joinPath(parentPath, name) : name;
@@ -24535,9 +24520,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         function _sortEntries(dirs, files) {
-            const cmp = (dirs.length > _SORT_THRESHOLD || files.length > _SORT_THRESHOLD) ? _fastCompare : _localeCompare;
-            dirs.sort(cmp);
-            files.sort(cmp);
+            dirs.sort(_naturalCompare);
+            files.sort(_naturalCompare);
         }
 
         async function buildTreeDataFromScan(folderTree, files, depth = 0, parentPath = '', maxDepth = MAX_DIR_DEPTH) {
