@@ -12668,7 +12668,8 @@
                 previewBtn: isOtherFile ? false : !editEnable(currentFileName),
                 mdImageBtn: false,
                 livePreviewBtn: (isMarkdownViewActive() && !isKanban) ? true : false,
-                formatBtn: false
+                formatBtn: false,
+                opmlBtns: false
             });
             // 检查当前语言是否支持格式化
             const editorLang = getMonacoLanguage(currentFileName);
