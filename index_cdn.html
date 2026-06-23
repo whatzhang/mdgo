@@ -33879,7 +33879,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         });
                         showNotification(`✓ 已删除文件: ${filepath}`, 'success');
                     } else {
-                        await window.git.checkout({ fs: gitFs, dir: SLASH, filepath, force: true });
+                        await window.git.checkout({ fs: gitFs, dir: SLASH, filepaths: [filepath], force: true });
                         showNotification(`✓ 已放弃更改: ${filepath}`, 'success');
                     }
                     await gitUpdateStatusLists(true);

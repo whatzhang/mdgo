@@ -33865,7 +33865,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (!confirmed) return;
                 try {
                     if (isNewFile) {
-                        // 新增文件（untracked）：HEAD 中没有此文件，直接删除
+                        // 新增文件（untracked）：HEAD 中没有此文件，直接删除 
                         await new Promise((resolve, reject) => {
                             gitFs.unlink(SLASH + filepath, (err) => {
                                 if (err) {
@@ -33877,7 +33877,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         });
                         showNotification(`✓ 已删除文件: ${filepath}`, 'success');
                     } else {
-                        await window.git.checkout({ fs: gitFs, dir: SLASH, filepath, force: true });
+                        await window.git.checkout({ fs: gitFs, dir: SLASH, filepaths: [filepath], force: true });
                         showNotification(`✓ 已放弃更改: ${filepath}`, 'success');
                     }
                     await gitUpdateStatusLists(true);
