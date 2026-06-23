@@ -19917,17 +19917,17 @@
         }
 
         async function readMarkers() {
-            if (_markersMap !== null) return _markersMap;
+            if (_markersMap !== null) return Object.fromEntries(_markersMap);
             try {
                 const fh = await getFileHandleByDirHandle(await getDataDir(), INDEX_MARKERS_FILE);
                 const text = await getFileContent(fh);
                 const data = text.trim() ? JSON.parse(text) : {};
                 _markersMap = new Map(Object.entries(data));
-                return _markersMap;
+                return data;
             } catch (e) {
                 console.error('读取标记数据失败:', e);
                 _markersMap = new Map();
-                return _markersMap;
+                return {};
             }
         }
 
