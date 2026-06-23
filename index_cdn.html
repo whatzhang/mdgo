@@ -1095,11 +1095,11 @@
             overflow: auto;
         }
 
-        .mindmap-container::-webkit-scrollbar { 
+        .mindmap-container::-webkit-scrollbar {
             display: none;
         }
- 
-        .mindmap-node { 
+
+        .mindmap-node {
             position: relative;
             margin: 5px 0;
             padding: 7px 0 7px 7px;
@@ -12206,7 +12206,35 @@
         const isPicImage = (ext) => ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext.toLowerCase());
         const isRaw = (ext) => ['arw', 'raw', 'cr2', 'nef', 'dng', 'orf', 'raf', 'rw2', 'pef', 'srf', '3fr', 'erf'].includes(ext.toLowerCase());
         const isSelectWork = (name) => ['md', 'html'].includes(getExt(name).toLowerCase());
-
+        // 带大小限制的 LRU 缓存（Map 封装）
+        class LRUCache {
+            constructor(maxSize) {
+                this._map = new Map();
+                this._maxSize = maxSize;
+            }
+            get(key) {
+                if (!this._map.has(key)) return undefined;
+                const value = this._map.get(key);
+                this._map.delete(key);
+                this._map.set(key, value);
+                return value;
+            }
+            set(key, value) {
+                if (this._map.has(key)) {
+                    this._map.delete(key);
+                } else if (this._map.size >= this._maxSize) {
+                    const firstKey = this._map.keys().next().value;
+                    this._map.delete(firstKey);
+                }
+                this._map.set(key, value);
+            }
+            has(key) { return this._map.has(key); }
+            delete(key) {
+                return this._map.delete(key);
+            }
+            clear() { this._map.clear(); }
+            get size() { return this._map.size; }
+        }
         // ====== 文件树状态 ======
         let currentRootPath = '/Users/zhang/gitrepositories/resource'; // 当前目录的完整路径(用于生成唯一标识)
         let rootDirectoryHandle = null;     // 根目录句柄
@@ -12262,6 +12290,13 @@
         let currentPhotoDirData = [];    // 当前目录图片数据
         let _treeLoadDuration = null; // 文件树加载耗时(ms)
         let _fileScanDuration = null; // 文件扫描耗时(ms)
+        // 左侧文件树
+        let _markersMap = null; // markers 缓存（Map，首次 readMarkers 时加载）
+        let _cachedLastFile = null;    // createFileItem 预缓存：最后一次打开的文件路径
+        let _browserRefreshed = false;   // createFileItem 预缓存：是否浏览器刷新场景
+        let _treeClickTimer = null; // 文件树单击防抖计时器（事件委托共享）
+        let treeDomItemCache = new LRUCache(1000);  // 文件树 DOM 元素缓存（避免重复创建）
+
 
         // ====== DOM 元素缓存（避免重复查询） ======
         const treeElement = document.getElementById('tree');
@@ -12360,6 +12395,7 @@
             destroyVideoPlayer();
             TimerManager.clearAll();
             destroyEverything();
+            treeDomItemCache.clear();
         });
 
         // 应用初始化入口：文件树就绪后并发启动各模块
@@ -12400,8 +12436,7 @@
             }
             if (treeElement) {
                 const _treeStart = performance.now();
-                _markersCache = null;
-                _markersMap = new Map();
+                _markersMap = null;
                 _cachedLastFile = safeLocalStorageGet(LAST_FILE_KEY);
                 _browserRefreshed = BROWSER_REFRESHED_VALUE === safeLocalStorageGet(BROWSER_REFRESHED_KEY);
                 _loadExpandedStateCache();
@@ -12841,6 +12876,7 @@
                 if (_treeClickTimer) { clearTimeout(_treeClickTimer); _treeClickTimer = null; }
                 if (e.isTrusted) saveScrollPosition();
                 const filePath = fileSpan.dataset.filePath;
+                treeDomItemCache.delete(relativePath);
                 const fileHandle = await getFileHandleByPath(filePath);
                 const textSpan = fileSpan.querySelector('.file-item-text');
                 startRenameFile(fileHandle, filePath, fileSpan, textSpan);
@@ -14460,11 +14496,18 @@
 
             for (const nodeData of treeData) {
                 if (nodeData.kind === 'directory') {
-                    const dirEntry = createDirectoryEntry(nodeData.name, nodeData.depth, nodeData.path);
-                    if (!dirEntry) continue;
-                    fragment.appendChild(dirEntry.details);
+                    const dirKey = nodeData.path;
+                    let cachedDir = treeDomItemCache.get(dirKey);
+                    if (cachedDir) {
+                        fragment.appendChild(cachedDir.details);
+                    } else {
+                        cachedDir = createDirectoryEntry(nodeData.name, nodeData.depth, nodeData.path);
+                        if (!cachedDir) continue;
+                        fragment.appendChild(cachedDir.details);
+                        treeDomItemCache.set(dirKey, cachedDir);
+                    }
                     if (nodeData.children && nodeData.children.length > 0) {
-                        dirEntries.push({ children: nodeData.children, details: dirEntry.details });
+                        dirEntries.push({ children: nodeData.children, details: cachedDir.details });
                     }
                 } else if (nodeData.kind === 'file') {
                     fileEntries.push(nodeData);
@@ -14473,7 +14516,16 @@
 
             // 批量并发：限制单批 100 个，避免大目录下过多并发 Promise 导致 OOM
             const fileItems = await _batchProcess(fileEntries,
-                (nd) => createFileItem(nd.name, nd.path, nd.depth, nd.iconType));
+                (nd) => {
+                    const fileKey = nd.path;
+                    let cachedFile = treeDomItemCache.get(fileKey);
+                    if (cachedFile) {
+                        return cachedFile;
+                    }
+                    const fileItem = createFileItem(nd.name, nd.path, nd.depth, nd.iconType);
+                    treeDomItemCache.set(fileKey, fileItem);
+                    return fileItem;
+                });
             const dirResults = await _batchProcess(dirEntries,
                 (de) => renderTreeFromData(de.children, de.details));
 
@@ -14659,6 +14711,7 @@
                 }));
                 dropdown.appendChild(_ddItem('🗑️ 永久删除', async (e) => {
                     e.stopPropagation();
+                    treeDomItemCache.delete(relativePath);
                     const fileHandle = await getFileHandleByPath(np);
                     await deleteFileTreeItem(fileHandle, relativePath, true, fileSpan);
                 }));
@@ -14682,6 +14735,7 @@
                 }));
                 dropdown.appendChild(_ddItem('🗑️ 删除文件', async (e) => {
                     e.stopPropagation();
+                    treeDomItemCache.delete(relativePath);
                     const fileHandle = await getFileHandleByPath(np);
                     await deleteFileTreeItem(fileHandle, relativePath, false, fileSpan);
                 }));
@@ -19597,12 +19651,12 @@
                                     const fileItem = await createFileItem(deletedFileName, target.deletedRelativePath, +deletedDirDom.dataset.depth + 1);
                                     if (fileItem) deletedDirDom.appendChild(fileItem);
                                 }
+                                showNotification(`✓ 文件已移动到垃圾箱`, 'success');
                             }
                         });
                     }
                 });
             }
-
         }
 
         function deletedEmpty(relativePath, message) {
@@ -19770,7 +19824,7 @@
                 markers[newRelativePath] = markers[oldRelativePath];
                 delete markers[oldRelativePath];
                 await writeFileHandle(fh, JSON.stringify(markers));
-                _markersCache = null;
+                _markersMap = null;
                 return true;
             } catch (e) {
                 console.warn('更新 markers 失败:', e);
@@ -19864,26 +19918,18 @@
             return true;
         }
 
-        let _markersCache = null;
-        let _markersMap = new Map(); // markers 快速查找 Map
-        let _cachedLastFile = null;    // createFileItem 预缓存：最后一次打开的文件路径
-        let _browserRefreshed = false;   // createFileItem 预缓存：是否浏览器刷新场景
-        let _treeClickTimer = null; // 文件树单击防抖计时器（事件委托共享）
-
         async function readMarkers() {
-            if (_markersCache !== null) return _markersCache;
+            if (_markersMap !== null) return _markersMap;
             try {
                 const fh = await getFileHandleByDirHandle(await getDataDir(), INDEX_MARKERS_FILE);
                 const text = await getFileContent(fh);
-                _markersCache = text.trim() ? JSON.parse(text) : {};
-                // 构建 Map 以提升查询效率 O(1)
-                _markersMap = new Map(Object.entries(_markersCache));
-                return _markersCache;
+                const data = text.trim() ? JSON.parse(text) : {};
+                _markersMap = new Map(Object.entries(data));
+                return _markersMap;
             } catch (e) {
                 console.error('读取标记数据失败:', e);
-                _markersCache = {};
                 _markersMap = new Map();
-                return _markersCache;
+                return _markersMap;
             }
         }
 
@@ -19896,10 +19942,8 @@
             await prev;
             try {
                 await writeFileByDirHandle(await getDataDir(), INDEX_MARKERS_FILE, JSON.stringify(data));
-                _markersCache = data;
-                _markersMap = new Map(Object.entries(data));
+                _markersMap = data instanceof Map ? data : new Map(Object.entries(data));
             } catch (e) {
-                _markersCache = null;
                 _markersMap = new Map();
                 console.error('写入标记数据失败:', e);
             } finally {
@@ -20608,7 +20652,7 @@
                 "files": [],
                 "folderTree": {}
             };
-            if (!isEmpty(param)) data = param;
+            if (!param || !isEmpty(param)) data = param;
             const btn = document.getElementById('data-refresh-btn');
             if (btn) {
                 btn.disabled = true;
@@ -24066,13 +24110,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             safeLocalStorageRemove(BOOKMARK_CACHE_KEY);
             safeLocalStorageRemove('highlight-colors');
             safeLocalStorageRemove('annotation-colors');
+            _markersMap = null; // markers 缓存
+            _cachedLastFile = null;    // createFileItem 预缓存：最后一次打开的文件路径
+            _browserRefreshed = false;   // createFileItem 预缓存：是否浏览器刷新场景
+            treeDomItemCache.clear();  // treeDomItem 缓存清理
             safeLocalStorageSet(BROWSER_REFRESHED_KEY, BROWSER_REFRESHED_KEY);
             // 清理目录句柄数据库
             idbDeleteDatabase(DIRECTORY_STORE_NAME);
-            _markersCache = null; // markers 缓存
-            _markersMap = new Map(); // markers 快速查找 Map
-            _cachedLastFile = null;    // createFileItem 预缓存：最后一次打开的文件路径
-            _browserRefreshed = false;   // createFileItem 预缓存：是否浏览器刷新场景
         }
 
         // 从 localStorage 加载上次的目录句柄并校验权限
@@ -24530,33 +24574,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         const _naturalCompare = (a, b) => _naturalCollator.compare(a.name, b.name);
         const _BATCH_SIZE = 100;
         const _MAX_TREE_CACHE_SIZE = 2000; // LRU 缓存最大条目数
-
-        // 带大小限制的 LRU 缓存（Map 封装）
-        class LRUCache {
-            constructor(maxSize) {
-                this._map = new Map();
-                this._maxSize = maxSize;
-            }
-            get(key) {
-                if (!this._map.has(key)) return undefined;
-                const value = this._map.get(key);
-                this._map.delete(key);
-                this._map.set(key, value);
-                return value;
-            }
-            set(key, value) {
-                if (this._map.has(key)) {
-                    this._map.delete(key);
-                } else if (this._map.size >= this._maxSize) {
-                    const firstKey = this._map.keys().next().value;
-                    this._map.delete(firstKey);
-                }
-                this._map.set(key, value);
-            }
-            has(key) { return this._map.has(key); }
-            clear() { this._map.clear(); }
-            get size() { return this._map.size; }
-        }
 
         function _buildPath(parentPath, name) {
             return parentPath ? joinPath(parentPath, name) : name;
@@ -32519,7 +32536,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             _statusInFlight = null; // 清理进行中的 statusMatrix
             _gitRenderDepth = 0; // 清理渲染嵌套计数
             // 清理 FS 适配器内部的目录句柄缓存
-            if (_gitHandleCache) _gitHandleCache.clear();
+            _gitHandleCache.clear();
             // 重置状态列表的事件委托标记（下次进入 Git 页面重新绑定）
             const addList = document.getElementById('gitAddList');
             const changedList = document.getElementById('gitChangedList');
@@ -33664,7 +33681,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         // ── 状态缓存（避免短时间内重复 statusMatrix 调用）──
         let gitStatusCache = { matrix: null, staged: null, unstaged: null, time: 0 };
-        let _gitHandleCache = null; // FS 适配器内部目录句柄 LRU 缓存（createGitFsAdapter 中初始化）
+        let _gitHandleCache = new LRUCache(500); // FS 适配器内部目录句柄 LRU 缓存（createGitFsAdapter 中初始化）
         const GIT_STATUS_CACHE_TTL = 10000; // 缓存有效期 10 秒（statusMatrix 开销大，适当延长）
 
         async function gitGetWorkingStatus(forceRefresh = false) {
@@ -34167,12 +34184,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
          * @returns {object} 符合 isomorphic-git fs 接口的对象
          */
         function createGitFsAdapter(gitDirHandle, rootDirHandle) {
-            // 目录句柄 LRU 缓存：避免 statusMatrix/walk 对同一目录反复调用 getDirectoryHandle
-            // 每次 stat 调用 _resolveParent 从根遍历，1000 文件 × 平均 4 级深 = 4000 次异步调用
-            // 缓存后降至 ~1000 次（每个唯一目录仅一次）
-            if (!_gitHandleCache) _gitHandleCache = new LRUCache(500);
-            const _handleCache = _gitHandleCache; // 局部引用
-
             /** 判断路径是否属于 .git 内部，并返回 { isGit, relativePath } */
             function _route(p) {
                 let s = (p || '');
@@ -34206,13 +34217,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 for (const part of parts) {
                     cumPath = cumPath ? cumPath + SLASH + part : part;
                     const key = _cacheKey(isGit, cumPath);
-                    let cached = _handleCache.get(key);
+                    let cached = _gitHandleCache.get(key);
                     if (cached !== undefined) {
                         handle = cached;
                     } else {
                         try {
                             handle = await getDirectoryHandle(handle, part);
-                            _handleCache.set(key, handle);
+                            _gitHandleCache.set(key, handle);
                         } catch (e) {
                             if (e.name === 'NotFoundError') return { parentHandle: null, name: '' };
                             throw e;
@@ -34231,13 +34242,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 for (const part of parts) {
                     cumPath = cumPath ? cumPath + SLASH + part : part;
                     const key = _cacheKey(isGit, cumPath);
-                    let cached = _handleCache.get(key);
+                    let cached = _gitHandleCache.get(key);
                     if (cached !== undefined) {
                         handle = cached;
                     } else {
                         try {
                             handle = await getDirectoryHandle(handle, part);
-                            _handleCache.set(key, handle);
+                            _gitHandleCache.set(key, handle);
                         } catch (e) {
                             if (e.name === 'NotFoundError') return null;
                             throw e;
