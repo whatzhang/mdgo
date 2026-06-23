@@ -15654,7 +15654,9 @@
             let rootNode;
             if (rootOutlines.length === 1) {
                 rootNode = buildNode(rootOutlines[0], 'root');
-                if (!rootNode.topic) {
+                if (!rootNode) {
+                    rootNode = { id: 'root', topic: title, children: [] };
+                } else if (!rootNode.topic) {
                     rootNode.topic = title;
                 }
             } else {
@@ -15665,7 +15667,7 @@
                 };
                 rootOutlines.forEach((o, i) => {
                     const childNode = buildNode(o, `root_${i}`);
-                    rootNode.children.push(childNode);
+                    if (childNode) rootNode.children.push(childNode);
                 });
             }
             return {
@@ -15708,6 +15710,9 @@
             let rootNode;
             if (rootNodes.length === 1) {
                 rootNode = buildNode(rootNodes[0], 'root');
+                if (!rootNode) {
+                    rootNode = { id: 'root', topic: title, children: [] };
+                }
             } else {
                 rootNode = {
                     id: 'root',
