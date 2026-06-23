@@ -506,7 +506,7 @@
             position: relative;
             height: 100%;
             overflow-x: auto;
-            padding: 15px 6px 0 6px;
+            padding: 35px 6px 0 6px;
             background: var(--color-bg-secondary);
         }
 
@@ -1093,10 +1093,14 @@
             overflow: auto;
         }
 
-        .mindmap-node {
+        .mindmap-container::-webkit-scrollbar { 
+            display: none;
+        }
+ 
+        .mindmap-node { 
             position: relative;
             margin: 5px 0;
-            padding: 7px 0px 7px 7px;
+            padding: 7px 0 7px 7px;
             border-radius: var(--radius-md);
             box-shadow: var(--shadow-sm);
         }
@@ -15052,6 +15056,7 @@
         }
 
         async function renderMindmapNodeAsync(node, level) {
+            let opmlTocData = [];
             const isRoot = level === 0;
             const hasChildren = node.children && node.children.length > 0;
             const nodeId = 'node_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
@@ -15062,30 +15067,42 @@
             } else {
                 html += `<span class="mindmap-collapse-child"></span>`;
             }
+            let text = '';
             if (node.head.startsWith("|")) {
-                html += decodeURIComponent(node.mubu_text);
+                const mubu_text = decodeURIComponent(node.mubu_text);
+                html += mubu_text;
+                text = mubu_text.length > 10 ? mubu_text.substring(0, 10) + '...' : mubu_text;
             } else {
                 if (node.images != "") {
                     if (node.head != "") {
-                        html += getTitle(-1, node);
+                        const mubu_text = decodeURIComponent(node.mubu_text || node.head);
+                        html += getTitle(-1, mubu_text);
+                        text = mubu_text;
                     }
                     html += await getImage(node.local_images, node.images, nodeId);
                 } else {
-                    html += getTitle(level, node);
+                    const mubu_text = decodeURIComponent(node.mubu_text || node.head);
+                    html += getTitle(level, mubu_text);
+                    text = mubu_text;
                 }
                 if (node.mubu_note) {
                     html += getTitleNote(node.mubu_note, node.note);
                 }
             }
+            if (level < 3) {
+                opmlTocData.push({ id: nodeId, text: text, level: level + 1 });
+            }
             if (hasChildren) {
                 html += `<div id="${nodeId}" class="mindmap-children">`;
                 for (const child of node.children) {
-                    html += await renderMindmapNodeAsync(child, level + 1);
+                    const childResult = await renderMindmapNodeAsync(child, level + 1);
+                    html += childResult.html;
+                    opmlTocData = opmlTocData.concat(childResult.opmlTocData);
                 }
                 html += `</div>`;
             }
             html += `</div>`;
-            return html;
+            return { html: html, opmlTocData: opmlTocData };
         }
 
         async function getImage(local_images, images_url, nodeId, style = true) {
@@ -15125,8 +15142,7 @@
             return html;
         }
 
-        function getTitle(level, node) {
-            const mubu_text = decodeURIComponent(node.mubu_text || node.head);
+        function getTitle(level, mubu_text) {
             if (level === 0) {
                 return `<span class="mindmap-node-content">${mubu_text}</span>`;
             } else if (level === -1) {
@@ -15413,7 +15429,9 @@
             currentJsMind = null;
             const text = await getFileContent(currentFileHandle);
             const rootNode = parseFreeMind(text);
-            contentMain.innerHTML = `<div class="mindmap-container">${await renderMindmapNodeAsync(rootNode, 0)}</div>`;
+            const { html, opmlTocData } = await renderMindmapNodeAsync(rootNode, 0);
+            contentMain.innerHTML = `<div class="mindmap-container">${html}</div>`;
+            generateTOC('', 'opml', opmlTocData);
         }
 
         async function convertToMindmap() {
@@ -15739,7 +15757,8 @@
         // 渲染OPML文件(思维导图)
         async function renderOPMLFile(text) {
             const rootNode = parseOPML(text);
-            contentMain.innerHTML = `<div class="mindmap-container">${await renderMindmapNodeAsync(rootNode, 0)}</div>`;
+            const { html, opmlTocData } = await renderMindmapNodeAsync(rootNode, 0);
+            contentMain.innerHTML = `<div class="mindmap-container">${html}</div>`;
             setControlsState({
                 topControls: true,
                 opmlBtns: true,
@@ -15749,6 +15768,7 @@
                 copyBtn: true,
                 formatBtn: false
             });
+            generateTOC('', 'opml', opmlTocData);
         }
 
         // 渲染FreeMind (.mm)文件(思维导图)
@@ -16090,7 +16110,7 @@
         async function renderOriginalMarkdown(text) {
             const htmlContent = await markedParse(parseObsidianToHTML(text));
             contentMain.innerHTML = `<article id="content-article" class="markdown-body">${htmlContent}</article>`;
-            generateTOC(text);
+            generateTOC(text, 'md');
             postProcessMarkdown(contentMain.querySelector('#content-article'));
         }
 
@@ -16333,7 +16353,6 @@
                 }
                 const rootList = doc.querySelector('.node-list');
                 _extractMubuHeadings(rootList, 1);
-
             } else {
                 const headingElements = doc.querySelectorAll('h1,h2,h3,h4,h5,h6');
                 for (let i = 0; i < headingElements.length; i++) {
@@ -18162,12 +18181,16 @@
             });
         }
 
-
         // 从 Markdown 解析标题并生成目录侧栏
-        async function generateTOC(markdownText) {
+        async function generateTOC(markdownText, type, opmlData) {
             tocElement.innerHTML = '';
-            const headings = extractMarkdownHeadings(markdownText);
-            if (headings.length === 0) {
+            let headings = [];
+            if (type === 'md') {
+                headings = extractMarkdownHeadings(markdownText);
+            } else {
+                headings = opmlData;
+            }
+            if (isEmpty(headings)) {
                 contentMain.style.width = '100%';
                 tocContainer.style.display = 'none';
                 showTocToggleBtn(false);
@@ -18179,7 +18202,7 @@
             const tocHTML = buildTOC(headings);
             tocElement.innerHTML = tocHTML;
             // 为文档中的标题添加ID
-            addHeadingIDs(headings);
+            if (type === 'md') { addHeadingIDs(headings); }
             tocContainer.style.display = 'block';
             showTocToggleBtn(true);
         }
@@ -18277,7 +18300,7 @@
                 // 高亮效果：短暂闪烁
                 element.style.transition = 'background-color 0.5s ease';
                 element.style.backgroundColor = 'rgba(255, 235, 59, 0.3)';
-                setTimeout(() => { element.style.backgroundColor = ''; }, 1500);
+                setTimeout(() => { element.style.backgroundColor = ''; }, 2000);
                 return;
             }
             const iframe = document.getElementById('temp-html-frame');
