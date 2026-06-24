@@ -117,11 +117,12 @@
             --color-border-light: #eee;
             --color-text: #1f2328;
             --color-black: #000000;
+            --color-text-white: #ffffff;
             --color-text-secondary: #8b949e;
             --color-text-tertiary: #8c959f;
             --color-hover-highlight: #a1dcfa;
             --color-hover-subtle: #eef1f5;
-            --shadow-ss: 0 1px 2px rgba(0, 0, 0, .04);
+            --shadow-ss: 0 1px 2px rgba(0, 0, 0, .06);
             --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.1);
             --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.3);
             --radius-sm: 4px;
@@ -131,24 +132,14 @@
             --radius-xxl: 12px;
             --transition-normal: 0.2s ease;
             --color-bg-header: #e1e5e8;
+            --color-bg-empty: #ebedf0;
 
             /* ---- 日历日程 ---- */
-            --todo-primary: var(--color-primary);
-            --todo-primary-hover: var(--color-primary-hover);
             --todo-primary-light: #E8F0FE;
-            --todo-text-primary: var(--color-text);
-            --todo-text-secondary: var(--color-text-secondary);
-            --todo-text-tertiary: var(--color-text-tertiary);
-            --todo-border: var(--color-border);
-            --todo-border-light: var(--color-border-light);
             --todo-bg: #F5F6F7;
-            --todo-bg-white: var(--color-bg);
             --todo-bg-hover: #F2F3F5;
             --todo-bg-rest: #f9fafb;
             --todo-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.08);
-            --todo-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
-            --todo-radius: 8px;
-            --todo-radius-sm: 4px;
             --todo-event-blue-bg: #E8F0FE;
             --todo-event-blue-text: #3370FF;
             --todo-event-purple-bg: #F0EBFF;
@@ -159,17 +150,6 @@
             --todo-event-orange-text: #EA580C;
             --todo-event-red-bg: #FEE2E2;
             --todo-event-red-text: #DC2626;
-
-            /* ---- 文件时间线 ---- */
-            --timeline-border-light: #eef2f6;
-            --timeline-text-secondary: #5b6e8c;
-            --timeline-accent: #0969da;
-            --timeline-heat-empty: #ebedf0;
-            --heat-empty: #ebedf0;
-            --heat-level1: #d8e8f5;
-            --heat-level2: #b0d3f0;
-            --heat-level3: #7bb8e0;
-            --heat-level4: #2e89f8;
 
             /* ---- Cron 表达式工具 ---- */
             --t0: #1f2329;
@@ -187,22 +167,15 @@
             --color-primary-bg2: rgba(51, 112, 255, .03);
             --ease: cubic-bezier(.4, 0, .2, 1);
 
+            /* ---- 文件时间线 ---- */
+            --heat-level1: #d8e8f5;
+            --heat-level2: #b0d3f0;
+            --heat-level3: #7bb8e0;
+            --heat-level4: #2e89f8;
+
             /* ---- 照片布局 ---- */
-            --photo-bg: #f5f6f7;
-            --photo-text-secondary: #646a73;
             --photo-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.1);
             --photo-shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.12), 0 12px 40px rgba(0, 0, 0, 0.15);
-
-            /* ---- Git 记录 ---- */
-            --git-bg-secondary: var(--color-bg-secondary);
-            --git-border: var(--color-border);
-            --git-text: var(--color-text);
-            --git-text-muted: var(--t2);
-            --git-accent: var(--color-primary);
-            --git-accent-hover: var(--color-primary-hover);
-            --git-commit-bg: var(--color-bg);
-            --git-commit-hover: var(--color-hover-subtle);
-            --git-commit-active: var(--color-hover-highlight);
         }
 
         body {
@@ -319,7 +292,7 @@
             left: 24px;
             top: 100%;
             background: var(--color-bg-tertiary, #24292f);
-            color: var(--color-text, #fff);
+            color: var(--color-text-white);
             padding: 6px 10px;
             border-radius: 4px;
             font-size: 13px;
@@ -437,7 +410,7 @@
 
         .active-file {
             background-color: var(--color-primary) !important;
-            color: var(--color-bg) !important;
+            color: var(--color-text-white) !important;
         }
 
         details {
@@ -560,7 +533,7 @@
             top: 100%;
             white-space: nowrap;
             background: #333;
-            color: var(--color-bg);
+            color: var(--color-text-white);
             padding: 3px 8px;
             border-radius: 4px;
             font-size: 12px;
@@ -595,7 +568,7 @@
 
         .toc-toggle-btn:hover {
             background: var(--color-primary);
-            color: var(--color-bg);
+            color: var(--color-text-white);
             width: 22px;
             box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15);
         }
@@ -637,7 +610,7 @@
 
         .sidebar-toggle-btn:hover {
             background: var(--color-primary);
-            color: var(--color-bg);
+            color: var(--color-text-white);
             width: 22px;
             box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
         }
@@ -798,7 +771,7 @@
             border: none;
             border-radius: 8px;
             background: var(--color-primary);
-            color: var(--color-bg);
+            color: var(--color-text-white);
             font-size: 16px;
             font-weight: bold;
             cursor: pointer;
@@ -849,7 +822,7 @@
 
         .btn-primary {
             background-color: var(--color-primary);
-            color: var(--color-bg);
+            color: var(--color-text-white);
         }
 
         .btn-primary:hover {
@@ -862,7 +835,7 @@
 
         .btn-success {
             background-color: var(--color-success);
-            color: var(--color-bg);
+            color: var(--color-text-white);
         }
 
         .btn-success:hover {
@@ -875,7 +848,7 @@
 
         .btn-warning {
             background-color: var(--color-warning);
-            color: var(--color-bg);
+            color: var(--color-text-white);
         }
 
         .btn-warning:hover {
@@ -971,7 +944,7 @@
             height: 18px;
             border: none;
             background: var(--color-text-tertiary);
-            color: var(--color-bg);
+            color: var(--color-text-white);
             border-radius: 50%;
             font-size: 11px;
             cursor: pointer;
@@ -1036,7 +1009,7 @@
             border-radius: 50%;
             border: none;
             background: var(--color-primary);
-            color: var(--color-bg);
+            color: var(--color-text-white);
             font-size: 15px;
             font-weight: bold;
             cursor: pointer;
@@ -1288,7 +1261,7 @@
             position: fixed;
             right: 20px;
             background: transparent;
-            color: var(--color-bg);
+            color: var(--color-text-white);
             padding: 10px 18px;
             border-radius: 10px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
@@ -2181,7 +2154,7 @@
 
         .input-modal-btn-confirm {
             background: var(--color-primary, #0969da);
-            color: var(--color-bg);
+            color: var(--color-text-white);
         }
 
         .input-modal-btn-confirm:hover {
@@ -2242,7 +2215,7 @@
 
         .confirm-modal-btn-confirm {
             background: #cf222e;
-            color: var(--color-bg);
+            color: var(--color-text-white);
         }
 
         .confirm-modal-btn-confirm:hover {
@@ -2298,7 +2271,7 @@
 
         .open-panel-btn-confirm {
             background: var(--color-primary, #0969da);
-            color: var(--color-bg);
+            color: var(--color-text-white);
         }
 
         .open-panel-btn-confirm:hover {
@@ -3180,7 +3153,7 @@
         .ai-action-btn-left {
             padding: 0 8px;
             background-color: #007af5;
-            color: var(--color-bg);
+            color: var(--color-text-white);
             border: none;
             font-size: 12px;
             font-weight: 500;
@@ -3197,7 +3170,7 @@
 
         .ai-action-btn-right {
             padding: 0 10px;
-            color: var(--color-bg);
+            color: var(--color-text-white);
             background-color: var(--color-success);
             border: none;
             font-size: 11px;
@@ -3719,14 +3692,14 @@
 
         .bookmark-toolbar button.btn-primary {
             background: var(--color-primary);
-            color: var(--color-bg);
+            color: var(--color-text-white);
             border-color: var(--color-primary);
         }
 
         .bookmark-toolbar button.btn-primary:hover {
             background: var(--color-primary-hover);
             border-color: var(--color-primary-hover);
-            color: var(--color-bg);
+            color: var(--color-text-white);
         }
 
         .bookmark-item.bookmark-dead-link {
@@ -4524,7 +4497,7 @@
             display: flex;
             align-items: center;
             gap: 2px;
-            background: #fff;
+            background: var(--color-bg);
             border: 1px solid #e4e6eb;
             border-radius: 8px;
             padding: 4px;
@@ -4669,7 +4642,7 @@
             height: 16px;
             border: none;
             background: var(--color-text-tertiary);
-            color: var(--color-bg);
+            color: var(--color-text-white);
             border-radius: 50%;
             font-size: 10px;
             cursor: pointer;
@@ -4981,7 +4954,7 @@
         }
 
         .tippy-box[data-theme~='custom'] .tippy-arrow {
-            color: var(--color-bg);
+            color: var(--color-text-white);
             border-color: var(--color-border);
         }
 
@@ -5035,7 +5008,7 @@
         .kanban-action-btn-left {
             padding: 0 5px;
             background-color: #007af5;
-            color: var(--color-bg);
+            color: var(--color-text-white);
             border: none;
             font-size: 12px;
             font-weight: 500;
@@ -5052,7 +5025,7 @@
 
         .kanban-action-btn-right {
             padding: 0 5px;
-            color: var(--color-bg);
+            color: var(--color-text-white);
             background-color: var(--color-success);
             border: none;
             font-size: 11px;
@@ -5748,8 +5721,8 @@
 
         .todo-header {
             height: 40px;
-            background: var(--todo-bg-white);
-            border-bottom: 1px solid var(--todo-border-light);
+            background: var(--color-bg);
+            border-bottom: 1px solid var(--color-border-light);
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -5766,7 +5739,7 @@
         .todo-logo {
             font-size: 14px;
             font-weight: 600;
-            color: var(--todo-text-primary);
+            color: var(--color-text);
             display: flex;
             align-items: center;
             gap: 6px;
@@ -5776,7 +5749,7 @@
             width: 60px;
             height: 28px;
             background: var(--color-primary);
-            border-radius: var(--todo-radius-sm);
+            border-radius: var(--radius-sm);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -5794,20 +5767,20 @@
         .todo-btn-icon {
             width: 26px;
             height: 26px;
-            border: 1px solid var(--todo-border);
-            background: var(--todo-bg-white);
-            border-radius: var(--todo-radius-sm);
+            border: 1px solid var(--color-border);
+            background: var(--color-bg);
+            border-radius: var(--radius-sm);
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: var(--todo-text-secondary);
+            color: var(--color-text-secondary);
             transition: all 0.2s;
         }
 
         .todo-btn-icon:hover {
             background: var(--todo-bg-hover);
-            border-color: var(--todo-text-tertiary);
+            border-color: var(--color-text-tertiary);
         }
 
         .todo-btn-today {
@@ -5841,20 +5814,20 @@
 
         .todo-time-column-label {
             width: 60px;
-            border-right: 1px solid var(--todo-border-light);
+            border-right: 1px solid var(--color-border-light);
             flex-shrink: 0;
             position: relative;
         }
 
         .todo-time-column-label-placeholder {
             width: 60px;
-            border-right: 1px solid var(--todo-border-light);
+            border-right: 1px solid var(--color-border-light);
         }
 
         .todo-day-view-header {
             display: flex;
             height: 50px;
-            border-bottom: 1px solid var(--todo-border-light);
+            border-bottom: 1px solid var(--color-border-light);
         }
 
         .todo-day-view-header-content {
@@ -5880,7 +5853,7 @@
         .todo-view-switcher {
             display: flex;
             background: var(--todo-bg);
-            border-radius: var(--todo-radius-sm);
+            border-radius: var(--radius-sm);
             padding: 2px;
             gap: 2px;
         }
@@ -5889,30 +5862,30 @@
             padding: 5px 15px;
             border: none;
             background: transparent;
-            color: var(--todo-text-secondary);
+            color: var(--color-text-secondary);
             font-size: 13px;
             cursor: pointer;
-            border-radius: var(--todo-radius-sm);
+            border-radius: var(--radius-sm);
             transition: all 0.2s;
             font-weight: 500;
         }
 
         .todo-view-btn.todo-active {
-            background: var(--todo-primary);
+            background: var(--color-primary);
             color: var(--todo-bg);
-            box-shadow: var(--todo-shadow-sm);
+            box-shadow: var(--shadow-ss);
         }
 
         .todo-view-btn:hover:not(.todo-active) {
-            color: var(--todo-text-primary);
+            color: var(--color-text);
         }
 
         .todo-btn-primary {
             padding: 5px 10px;
-            background: var(--todo-primary);
+            background: var(--color-primary);
             color: white;
             border: none;
-            border-radius: var(--todo-radius-sm);
+            border-radius: var(--radius-sm);
             font-size: 13px;
             font-weight: 500;
             cursor: pointer;
@@ -5923,7 +5896,7 @@
         }
 
         .todo-btn-primary:hover {
-            background: var(--todo-primary-hover);
+            background: var(--color-primary-hover);
         }
 
         /* 主体布局 */
@@ -5935,8 +5908,8 @@
         /* 侧边栏 */
         .todo-sidebar {
             width: 280px;
-            background: var(--todo-bg-white);
-            border-right: 1px solid var(--todo-border-light);
+            background: var(--color-bg);
+            border-right: 1px solid var(--color-border-light);
             padding: 20px;
             display: flex;
             flex-direction: column;
@@ -6111,7 +6084,7 @@
             align-items: center;
             justify-content: center;
             font-size: 13px;
-            border-radius: var(--todo-radius-sm);
+            border-radius: var(--radius-sm);
             cursor: pointer;
             position: relative;
             gap: 1px;
@@ -6122,23 +6095,23 @@
         .todo-mini-day-number {
             font-size: 12px;
             line-height: 1.2;
-            color: var(--todo-text-primary);
+            color: var(--color-text);
         }
 
         /* 周六/周日字体灰色（迷你日历） */
         .todo-mini-day.todo-weekend .todo-mini-day-number {
-            color: var(--todo-text-tertiary);
+            color: var(--color-text-tertiary);
         }
 
         /* 当天在周末时保持蓝色边框，数字不灰色 */
         .todo-mini-day.todo-today.todo-weekend .todo-mini-day-number {
-            color: var(--todo-text-primary);
+            color: var(--color-text);
         }
 
         /* ✅ 休息日: 淡蓝色背景 */
         .todo-mini-day.todo-rest-day {
             background: #E8F4FD;
-            border-radius: var(--todo-radius-sm);
+            border-radius: var(--radius-sm);
         }
 
         .todo-mini-day.todo-rest-day.todo-other-month {
@@ -6153,12 +6126,12 @@
         /* 周末周标签: 灰色 */
         .todo-day-label:nth-child(7n+6),
         .todo-day-label:nth-child(7n+7) {
-            color: var(--todo-text-tertiary);
+            color: var(--color-text-tertiary);
         }
 
         .todo-mini-lunar {
             font-size: 8px;
-            color: var(--todo-text-tertiary);
+            color: var(--color-text-tertiary);
             line-height: 1;
             white-space: nowrap;
             overflow: hidden;
@@ -6179,21 +6152,21 @@
 
         .todo-mini-day.todo-today {
             border: 1px solid #3370FF;
-            border-radius: var(--todo-radius);
+            border-radius: var(--radius-lg);
         }
 
         .todo-mini-day.todo-today .todo-mini-lunar {
-            color: var(--todo-text-tertiary);
+            color: var(--color-text-tertiary);
         }
 
         .todo-mini-day.todo-selected {
-            border: 1px solid var(--todo-primary);
-            border-radius: var(--todo-radius);
+            border: 1px solid var(--color-primary);
+            border-radius: var(--radius-lg);
             background: var(--color-bg-secondary);
         }
 
         .todo-mini-day.todo-selected .todo-mini-lunar {
-            color: var(--todo-text-tertiary);
+            color: var(--color-text-tertiary);
         }
 
         .todo-mini-day.todo-other-month {
@@ -6210,7 +6183,7 @@
             bottom: 3px;
             width: 4px;
             height: 4px;
-            background: var(--todo-primary);
+            background: var(--color-primary);
             border-radius: 50%;
         }
 
@@ -6226,22 +6199,22 @@
             font-size: 13px;
             font-weight: 600;
             margin-bottom: 12px;
-            color: var(--todo-text-primary);
+            color: var(--color-text);
         }
 
         .todo-today-count {
             font-size: 11px;
             font-weight: 400;
-            color: var(--todo-text-secondary, #888);
+            color: var(--color-text-secondary, #888);
             margin-left: 4px;
         }
 
         .todo-event-item {
             padding: 10px 12px;
             background: var(--todo-bg);
-            border-radius: var(--todo-radius);
+            border-radius: var(--radius-lg);
             margin-bottom: 8px;
-            border-left: 3px solid var(--todo-primary);
+            border-left: 3px solid var(--color-primary);
             cursor: pointer;
             transition: all 0.2s;
         }
@@ -6253,14 +6226,14 @@
 
         .todo-event-time {
             font-size: 12px;
-            color: var(--todo-text-tertiary);
+            color: var(--color-text-tertiary);
             margin-bottom: 4px;
         }
 
         .todo-event-title {
             font-size: 13px;
             font-weight: 500;
-            color: var(--todo-text-primary);
+            color: var(--color-text);
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -6287,7 +6260,7 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            background: var(--todo-bg-white);
+            background: var(--color-bg);
             overflow: hidden;
         }
 
@@ -6301,14 +6274,14 @@
         .todo-weekday-header {
             display: grid;
             grid-template-columns: repeat(7, 1fr);
-            border-bottom: 1px solid var(--todo-border-light);
+            border-bottom: 1px solid var(--color-border-light);
         }
 
         .todo-weekday-cell {
             padding: 12px;
             text-align: center;
             font-size: 14px;
-            color: var(--todo-text-secondary);
+            color: var(--color-text-secondary);
             font-weight: 500;
         }
 
@@ -6320,8 +6293,8 @@
         }
 
         .todo-month-day {
-            border-right: 1px solid var(--todo-border-light);
-            border-bottom: 1px solid var(--todo-border-light);
+            border-right: 1px solid var(--color-border-light);
+            border-bottom: 1px solid var(--color-border-light);
             padding: 8px;
             cursor: pointer;
             position: relative;
@@ -6357,7 +6330,7 @@
         .todo-month-day.todo-today {
             background: transparent;
             border: 1px solid #3370FF;
-            border-radius: var(--todo-radius);
+            border-radius: var(--radius-lg);
         }
 
         .todo-month-day.todo-today .todo-day-number {
@@ -6374,7 +6347,7 @@
         }
 
         .todo-month-day.todo-weekend .todo-day-number {
-            color: var(--todo-text-tertiary);
+            color: var(--color-text-tertiary);
         }
 
         .todo-month-day.todo-today.todo-weekend .todo-day-number {
@@ -6395,7 +6368,7 @@
 
         .todo-day-number {
             font-size: 14px;
-            color: var(--todo-text-primary);
+            color: var(--color-text);
             margin-bottom: 4px;
             text-align: center;
             white-space: nowrap;
@@ -6405,7 +6378,7 @@
         .todo-lunar-label {
             display: block;
             font-size: 10px;
-            color: var(--todo-text-tertiary);
+            color: var(--color-text-tertiary);
             line-height: 1.2;
             white-space: nowrap;
             overflow: hidden;
@@ -6433,7 +6406,7 @@
         .todo-month-event {
             font-size: 12px;
             padding: 2px 6px;
-            border-radius: var(--todo-radius-sm);
+            border-radius: var(--radius-sm);
             margin-bottom: 2px;
             white-space: nowrap;
             overflow: hidden;
@@ -6505,7 +6478,7 @@
             transform: translate(-50%, -50%);
             opacity: 0;
             transition: opacity 0.2s;
-            color: var(--todo-primary);
+            color: var(--color-primary);
             font-size: 30px;
         }
 
@@ -6524,13 +6497,13 @@
 
         .todo-time-header {
             display: flex;
-            border-bottom: 1px solid var(--todo-border-light);
+            border-bottom: 1px solid var(--color-border-light);
             height: 50px;
         }
 
         .todo-time-header .todo-time-column {
             width: 60px;
-            border-right: 1px solid var(--todo-border-light);
+            border-right: 1px solid var(--color-border-light);
         }
 
         .todo-day-columns {
@@ -6540,7 +6513,7 @@
 
         .todo-day-column {
             flex: 1;
-            border-right: 1px solid var(--todo-border-light);
+            border-right: 1px solid var(--color-border-light);
             position: relative;
         }
 
@@ -6560,7 +6533,7 @@
         }
 
         .todo-day-name {
-            color: var(--todo-text-secondary);
+            color: var(--color-text-secondary);
             font-size: 14px;
             font-weight: 500;
         }
@@ -6577,7 +6550,7 @@
         }
 
         .todo-day-number-header.todo-today {
-            background: var(--todo-primary);
+            background: var(--color-primary);
             color: white;
         }
 
@@ -6589,7 +6562,7 @@
 
         .todo-time-slot {
             height: 60px;
-            border-bottom: 1px solid var(--todo-border-light);
+            border-bottom: 1px solid var(--color-border-light);
             position: relative;
         }
 
@@ -6600,21 +6573,21 @@
             text-align: right;
             top: -8px;
             font-size: 12px;
-            color: var(--todo-text-tertiary);
+            color: var(--color-text-tertiary);
         }
 
         .todo-week-event {
             position: absolute;
             left: 2px;
             right: 2px;
-            border-radius: var(--todo-radius-sm);
+            border-radius: var(--radius-sm);
             padding: 4px 8px;
             font-size: 12px;
             color: white;
             cursor: pointer;
             overflow: hidden;
             font-weight: 500;
-            box-shadow: var(--todo-shadow-sm);
+            box-shadow: var(--shadow-ss);
             transition: transform 0.15s, box-shadow 0.15s;
             z-index: 2;
         }
@@ -6626,7 +6599,7 @@
         }
 
         .todo-week-event.todo-blue {
-            background: var(--todo-primary);
+            background: var(--color-primary);
         }
 
         .todo-week-event.todo-purple {
@@ -6654,7 +6627,7 @@
         /* 日视图特定 */
         .todo-day-view .todo-time-column {
             width: 60px;
-            border-right: 1px solid var(--todo-border-light);
+            border-right: 1px solid var(--color-border-light);
             flex-shrink: 0;
         }
 
@@ -6678,8 +6651,8 @@
         }
 
         .todo-modal {
-            background: var(--todo-bg-white);
-            border-radius: var(--todo-radius);
+            background: var(--color-bg);
+            border-radius: var(--radius-lg);
             width: 517px;
             max-width: 90vw;
             box-shadow: 0 17px 50px rgba(0, 0, 0, 0.15);
@@ -6715,7 +6688,7 @@
 
         .todo-modal-header {
             padding: 12px 15px;
-            border-bottom: 1px solid var(--todo-border-light);
+            border-bottom: 1px solid var(--color-border-light);
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -6724,12 +6697,12 @@
         .todo-modal-title {
             font-size: 17px;
             font-weight: 600;
-            color: var(--todo-primary);
+            color: var(--color-primary);
         }
 
         .todo-modal-title-time {
             font-size: 12px;
-            color: var(--todo-text-tertiary);
+            color: var(--color-text-tertiary);
         }
 
         .todo-modal-close {
@@ -6738,17 +6711,17 @@
             border: none;
             background: transparent;
             cursor: pointer;
-            border-radius: var(--todo-radius-sm);
+            border-radius: var(--radius-sm);
             display: flex;
             align-items: center;
             justify-content: center;
-            color: var(--todo-text-tertiary);
+            color: var(--color-text-tertiary);
             font-size: 17px;
         }
 
         .todo-modal-close:hover {
             background: var(--todo-bg-hover);
-            color: var(--todo-text-primary);
+            color: var(--color-text);
         }
 
         .todo-modal-body {
@@ -6764,26 +6737,26 @@
             font-size: 13px;
             font-weight: 500;
             margin-bottom: 7px;
-            color: var(--todo-text-primary);
+            color: var(--color-text);
         }
 
         .todo-form-input,
         .todo-form-select {
             width: 100%;
             padding: 8px 10px;
-            border: 1px solid var(--todo-border);
-            border-radius: var(--todo-radius-sm);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-sm);
             font-size: 13px;
             font-family: inherit;
             transition: border-color 0.2s, box-shadow 0.2s;
-            background: var(--todo-bg-white);
+            background: var(--color-bg);
             box-sizing: border-box;
         }
 
         .todo-form-input:focus,
         .todo-form-select:focus {
             outline: none;
-            border-color: var(--todo-primary);
+            border-color: var(--color-primary);
             box-shadow: 0 0 0 3px rgba(51, 112, 255, 0.1);
         }
 
@@ -6858,10 +6831,10 @@
 
         .todo-btn-secondary {
             padding: 5px 12px;
-            border: 1px solid var(--todo-border);
-            background: var(--todo-bg-white);
-            color: var(--todo-text-primary);
-            border-radius: var(--todo-radius-sm);
+            border: 1px solid var(--color-border);
+            background: var(--color-bg);
+            color: var(--color-text);
+            border-radius: var(--radius-sm);
             font-size: 12px;
             cursor: pointer;
             transition: all 0.2s;
@@ -6876,7 +6849,7 @@
             border: 1px solid transparent;
             background: transparent;
             color: #EF4444;
-            border-radius: var(--todo-radius-sm);
+            border-radius: var(--radius-sm);
             font-size: 14px;
             cursor: pointer;
             margin-right: auto;
@@ -6896,7 +6869,7 @@
 
         .todo-cron-preview {
             font-size: 12px;
-            color: var(--todo-text-secondary);
+            color: var(--color-text-secondary);
             white-space: nowrap;
             min-width: 80px;
             flex: 1;
@@ -6912,17 +6885,17 @@
 
         .todo-cron-preset-label {
             font-size: 12px;
-            color: var(--todo-text-tertiary);
+            color: var(--color-text-tertiary);
             margin-right: 2px;
         }
 
         .todo-cron-btn {
             padding: 2px 8px;
             font-size: 11px;
-            border: 1px solid var(--todo-border);
+            border: 1px solid var(--color-border);
             background: var(--todo-bg);
-            color: var(--todo-text-secondary);
-            border-radius: var(--todo-radius-sm);
+            color: var(--color-text-secondary);
+            border-radius: var(--radius-sm);
             cursor: pointer;
             transition: all 0.15s;
             white-space: nowrap;
@@ -6930,12 +6903,12 @@
 
         .todo-cron-btn:hover {
             background: var(--todo-primary-light);
-            border-color: var(--todo-primary);
-            color: var(--todo-primary);
+            border-color: var(--color-primary);
+            color: var(--color-primary);
         }
 
         .todo-cron-btn-clear {
-            color: var(--todo-text-tertiary);
+            color: var(--color-text-tertiary);
         }
 
         .todo-cron-btn-clear:hover {
@@ -6971,7 +6944,7 @@
             text-align: center;
             padding: 40px;
             font-size: 13px;
-            color: var(--todo-text-tertiary);
+            color: var(--color-text-tertiary);
         }
 
         /* ===== 日程提醒弹窗 ===== */
@@ -6990,14 +6963,14 @@
         }
 
         .todo-reminder-modal {
-            background: var(--todo-bg-white);
+            background: var(--color-bg);
             border-radius: 12px;
             width: 380px;
             max-width: 90vw;
             box-shadow: 0 17px 50px rgba(0, 0, 0, 0.18);
             overflow: hidden;
             animation: todoModalIn 0.25s ease-out;
-            border: 3px solid var(--todo-primary);
+            border: 3px solid var(--color-primary);
             z-index: 20001;
         }
 
@@ -7031,7 +7004,7 @@
         .todo-reminder-title {
             font-size: 14px;
             font-weight: 600;
-            color: var(--todo-text-primary);
+            color: var(--color-text);
         }
 
         .todo-reminder-title-time {
@@ -7046,24 +7019,24 @@
         .todo-reminder-event-title {
             font-size: 17px;
             font-weight: 600;
-            color: var(--todo-text-primary);
+            color: var(--color-text);
             margin-bottom: 6px;
         }
 
         .todo-reminder-time {
             margin-top: 10px;
             font-size: 12px;
-            color: var(--todo-text-secondary);
+            color: var(--color-text-secondary);
             margin-bottom: 4px;
         }
 
         .todo-reminder-desc {
             font-size: 13px;
-            color: var(--todo-text-tertiary);
+            color: var(--color-text-tertiary);
             margin-top: 10px;
             padding: 15px 10px;
             background: var(--todo-bg);
-            border-radius: var(--todo-radius-sm);
+            border-radius: var(--radius-sm);
             line-height: 1.5;
         }
 
@@ -7082,7 +7055,7 @@
 
         .todo-reminder-btn {
             padding: 6px 14px;
-            border-radius: var(--todo-radius-sm);
+            border-radius: var(--radius-sm);
             font-size: 13px;
             cursor: pointer;
             transition: all 0.2s;
@@ -7092,7 +7065,7 @@
 
         .todo-reminder-btn-close {
             background: var(--todo-bg);
-            color: var(--todo-text-primary);
+            color: var(--color-text);
         }
 
         .todo-reminder-btn-close:hover {
@@ -7100,12 +7073,12 @@
         }
 
         .todo-reminder-btn-snooze {
-            background: var(--todo-primary);
+            background: var(--color-primary);
             color: white;
         }
 
         .todo-reminder-btn-snooze:hover {
-            background: var(--todo-primary-hover);
+            background: var(--color-primary-hover);
         }
 
         /* 响应式 */
@@ -7123,9 +7096,9 @@
         }
 
         .todo-drag-placeholder {
-            border: 2px dashed var(--todo-primary);
+            border: 2px dashed var(--color-primary);
             background: rgba(51, 112, 255, 0.05);
-            border-radius: var(--todo-radius-sm);
+            border-radius: var(--radius-sm);
         }
 
         /* ==================== jmnode  ==================== */
@@ -7256,19 +7229,19 @@
 
         jmnodes.theme-self jmnode:hover {
             background-color: var(--color-success);
-            color: var(--color-bg);
+            color: var(--color-text-white);
             box-shadow: 1px 1px 1px 1px var(--color-success) !important;
         }
 
         jmnodes.theme-self jmnode.selected {
             background-color: var(--color-primary);
-            color: var(--color-bg);
+            color: var(--color-text-white);
             box-shadow: 1px 1px 1px 1px var(--color-primary) !important;
         }
 
         jmnodes.theme-self jmnode.root {
             background-color: var(--color-warning);
-            color: var(--color-bg);
+            color: var(--color-text-white); 
             font-weight: 600;
             font-size: 15px;
             box-shadow: 1px 1px 1px 1px var(--color-warning) !important;
@@ -7291,8 +7264,8 @@
         /* 顶部导航栏 */
         .timeline-navbar {
             background: var(--color-bg-secondary);
-            border-bottom: 1px solid var(--timeline-border-light);
-            padding: 1px 5px;
+            border-bottom: 1px solid var(--color-border-light);
+            padding: 2px 5px;
             height: 38px;
             display: flex;
             align-items: center;
@@ -7309,25 +7282,28 @@
             display: flex;
             gap: 6px;
             background: #f1f4f9;
-            padding: 4px;
-            border-radius: 30px;
+            padding: 3px;
+            border-radius: 15px;
         }
 
         .timeline-view-tab,
         .timeline-filter-chip {
             padding: 3px 10px;
-            border-radius: 32px;
-            font-size: 14px;
+            border-radius: 15px;
+            font-size: 13px;
             font-weight: 500;
             cursor: pointer;
             transition: all 0.2s;
             background: transparent;
-            color: var(--timeline-text-secondary);
+            color: var(--t2);
+            line-height: 18px;
+            display: flex;
+            align-items: center;
         }
 
         .timeline-view-tab.timeline-active,
         .timeline-filter-chip.timeline-active {
-            background: var(--timeline-accent);
+            background: var(--color-primary);
             color: white;
         }
 
@@ -7336,8 +7312,8 @@
             align-items: center;
             background: #f1f4f9;
             border-radius: 10px;
-            padding: 2px 14px;
-            height: 30px;
+            padding: 3px 14px;
+            height: 25px;
             gap: 8px;
             width: 300px;
             flex-shrink: 0;
@@ -7354,7 +7330,7 @@
         .timeline-search-clear {
             cursor: pointer;
             font-size: 13px;
-            color: var(--timeline-text-secondary);
+            color: var(--t2);
             display: none;
         }
 
@@ -7363,7 +7339,7 @@
             gap: 24px;
             margin-left: auto;
             background: #f1f4f9;
-            padding: 7px 20px;
+            padding: 5px 20px;
             border-radius: 40px;
             font-size: 13px;
         }
@@ -7371,7 +7347,7 @@
         .timeline-stat-item {
             display: flex;
             gap: 6px;
-            color: var(--timeline-text-secondary);
+            color: var(--t2);
         }
 
         .timeline-stat-number {
@@ -7405,7 +7381,7 @@
 
         .timeline-month-block {
             background: var(--color-bg);
-            border: 1px solid var(--timeline-border-light);
+            border: 1px solid var(--color-border-light);
             box-shadow: var(--shadow-sm);
             flex-shrink: 0;
             border-radius: 12px;
@@ -7416,7 +7392,7 @@
         }
 
         .timeline-month-block.timeline-current-month {
-            border: 2px solid var(--timeline-accent);
+            border: 2px solid var(--color-primary);
         }
 
         .timeline-month-title {
@@ -7443,7 +7419,7 @@
             border-radius: 3px;
             cursor: pointer;
             transition: 0.1s;
-            background-color: var(--timeline-heat-empty);
+            background-color: var(--color-bg-empty);
         }
 
         /* 橘黄色选中样式（小方格） */
@@ -7464,7 +7440,7 @@
         .timeline-heatmap-tooltip {
             position: fixed;
             background: var(--color-bg);
-            border: 1px solid var(--timeline-border-light);
+            border: 1px solid var(--color-border-light);
             border-radius: 8px;
             padding: 8px 12px;
             box-shadow: var(--shadow-md);
@@ -7485,7 +7461,7 @@
             gap: 8px;
             margin: 12px 2px 0 8px;
             font-size: 10px;
-            color: var(--timeline-text-secondary);
+            color: var(--t2);
         }
 
         .timeline-legend-colors {
@@ -7513,7 +7489,7 @@
             flex: 1;
             background: var(--color-bg);
             border-radius: 24px;
-            border: 1px solid var(--timeline-border-light);
+            border: 1px solid var(--color-border-light);
             box-shadow: var(--shadow-sm);
             overflow: auto;
             display: flex;
@@ -7864,7 +7840,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            color: var(--color-bg);
+            color: var(--color-text-white);
             font-size: 16px;
             flex-shrink: 0;
             box-shadow: 0 2px 8px rgba(51, 112, 255, .3);
@@ -8707,7 +8683,7 @@
         .video-history-item-badge {
             padding: 0 5px;
             background: var(--color-primary);
-            color: var(--color-bg);
+            color: var(--color-text-white);
             border-radius: 3px;
             font-size: 9px;
             font-weight: 600;
@@ -9321,7 +9297,7 @@
 
         .photo-tab.active {
             background: var(--color-primary);
-            color: var(--color-bg);
+            color: var(--color-text-white);
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
         }
 
@@ -9381,7 +9357,7 @@
         .photo-masonry-item .photo-caption {
             padding: 8px 8px 0 8px;
             font-size: 12px;
-            color: var(--photo-text-secondary);
+            color: var(--t2);
             background: var(--color-bg);
             align-items: center;
             justify-content: center;
@@ -9445,7 +9421,7 @@
             right: 0;
             text-align: center;
             font-size: 12px;
-            color: var(--photo-text-secondary);
+            color: var(--t2);
         }
 
         /* 隐藏类 */
@@ -9503,7 +9479,7 @@
             border-radius: 50%;
             border: none;
             background: var(--color-primary);
-            color: var(--color-bg);
+            color: var(--color-text-white);
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -9531,7 +9507,7 @@
             border: none;
             border-radius: 24px;
             background: var(--color-primary);
-            color: var(--color-bg);
+            color: var(--color-text-white);
             font-size: 12px;
             cursor: pointer;
             transition: all var(--transition-normal);
@@ -9596,7 +9572,7 @@
         .git-left-panel {
             width: 20%;
             background: var(--color-bg);
-            border-right: 1px solid var(--git-border);
+            border-right: 1px solid var(--color-border);
             display: flex;
             flex-direction: column;
             overflow: hidden;
@@ -9607,7 +9583,7 @@
             font-size: 12px;
             font-weight: 600;
             color: var(--t1);
-            border-bottom: 1px solid var(--git-border);
+            border-bottom: 1px solid var(--color-border);
             flex-shrink: 0;
             display: flex;
             justify-content: space-between;
@@ -9711,8 +9687,8 @@
             z-index: 9999;
             width: 320px;
             height: auto;
-            background: #ffffff;
-            border: 1px solid var(--git-border);
+            background: var(--color-bg);
+            border: 1px solid var(--color-border);
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             padding: 12px;
@@ -9730,7 +9706,7 @@
         }
 
         .git-commit-hover-panel .git-hover-author {
-            color: var(--git-text-muted);
+            color: var(--t2);
             margin-bottom: 6px;
             line-height: 1.4;
         }
@@ -9743,7 +9719,7 @@
             white-space: pre-wrap;
             word-break: break-all;
             line-height: 1.5;
-            color: var(--git-text);
+            color: var(--color-text);
             height: auto;
         }
 
@@ -9758,7 +9734,7 @@
 
         .git-graph-meta {
             font-size: 11px;
-            color: var(--git-text-muted);
+            color: var(--t2);
             margin-top: 2px;
             display: flex;
             column-gap: 8px;
@@ -9775,7 +9751,7 @@
 
         .git-graph-refs {
             font-size: 11px;
-            color: var(--git-text-muted);
+            color: var(--t2);
             display: flex;
             column-gap: 8px;
             row-gap: 4px;
@@ -9796,7 +9772,7 @@
 
         .git-graph-ref.git-graph-ref-head {
             background: #e1efff;
-            color: var(--git-accent);
+            color: var(--color-primary);
             border-color: #b3d4ff;
         }
 
@@ -9830,7 +9806,7 @@
             border-radius: 6px;
             font-size: 12px;
             cursor: pointer;
-            color: var(--color-bg);
+            color: var(--color-text-white);
             transition: all .15s;
         }
 
@@ -9890,7 +9866,7 @@
             gap: 4px 12px;
             margin-bottom: 8px;
             font-size: 12px;
-            color: var(--git-text-muted);
+            color: var(--t2);
         }
 
         .git-detail-header span {
@@ -9902,7 +9878,7 @@
             white-space: pre-wrap;
             word-break: break-all;
             line-height: 1.5;
-            color: var(--git-text);
+            color: var(--color-text);
             overflow-y: auto;
             overflow-x: hidden;
             flex: 1;
@@ -9920,8 +9896,8 @@
         .git-file-tree thead th {
             padding: 6px 10px;
             font-weight: 600;
-            color: var(--git-text-muted);
-            border-bottom: 1px solid var(--git-border);
+            color: var(--t2);
+            border-bottom: 1px solid var(--color-border);
             font-size: 12px;
             text-align: left;
         }
@@ -9948,11 +9924,11 @@
         }
 
         .git-file-tree tbody tr:hover td {
-            background: var(--git-commit-hover);
+            background: var(--color-hover-subtle);
         }
 
         .git-file-tree tbody tr.git-file-active td {
-            background: var(--git-commit-active);
+            background: var(--color-hover-highlight);
         }
 
         .git-file-tree .git-file-icon {
@@ -9991,7 +9967,7 @@
         }
 
         .git-file-tree .git-file-num-empty {
-            color: var(--git-text-muted);
+            color: var(--t2);
             text-align: right;
         }
 
@@ -10017,7 +9993,7 @@
 
         .git-diff-header-title {
             font-size: 12px;
-            color: var(--git-text-muted);
+            color: var(--t2);
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -10036,7 +10012,7 @@
             font-size: 10px;
             font-weight: 500;
             cursor: pointer;
-            color: var(--color-bg);
+            color: var(--color-text-white);
             transition: all .15s;
             white-space: nowrap;
         }
@@ -10052,7 +10028,7 @@
 
         .git-diff-nav-indicator {
             font-size: 11px;
-            color: var(--git-text-muted);
+            color: var(--t2);
             min-width: 40px;
             text-align: center;
         }
@@ -10069,7 +10045,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            color: var(--git-text-muted);
+            color: var(--t2);
             font-size: 14px;
             pointer-events: none;
         }
@@ -10081,7 +10057,7 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            color: var(--git-text-muted);
+            color: var(--t2);
             gap: 8px;
             padding: 40px 20px;
         }
@@ -10116,7 +10092,7 @@
             flex: 1;
             min-width: 0;
             padding: 5px;
-            border: 1px solid var(--git-border);
+            border: 1px solid var(--color-border);
             border-radius: 4px;
             font-size: 11px;
             font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif;
@@ -10146,7 +10122,7 @@
         .git-commit-btn {
             padding: 4px 8px;
             background: var(--color-primary);
-            color: var(--color-bg);
+            color: var(--color-text-white);
             border: none;
             border-radius: 4px;
             font-size: 11px;
@@ -10997,7 +10973,7 @@
                         <div class="timeline-heatmap-legend">
                             <span>少</span>
                             <div class="timeline-legend-colors">
-                                <div class="timeline-legend-color" style="background:var(--heat-empty)"></div>
+                                <div class="timeline-legend-color" style="background:var(--color-bg-empty)"></div>
                                 <div class="timeline-legend-color" style="background:var(--heat-level1)"></div>
                                 <div class="timeline-legend-color" style="background:var(--heat-level2)"></div>
                                 <div class="timeline-legend-color" style="background:var(--heat-level3)"></div>
@@ -11915,7 +11891,7 @@
                 <div class="git-right-panel">
                     <div class="git-detail-area" id="gitDetailArea">
                         <div
-                            style="color: var(--git-text-muted); font-size: 13px; display: flex; align-items: center; justify-content: center; height: 100%;">
+                            style="color: var(--t2); font-size: 13px; display: flex; align-items: center; justify-content: center; height: 100%;">
                         </div>
                     </div>
                     <div class="git-diff-container" id="gitDiffContainer">
@@ -17645,8 +17621,8 @@
                 contentPanel.style.top = '0';
                 contentPanel.style.width = '50%';
                 contentPanel.style.height = height;
-                contentPanel.style.backgroundColor = '#ffffff';
-                contentPanel.style.borderLeft = '1px solid #d0d7de';
+                contentPanel.style.backgroundColor = 'var(--color-bg)';
+                contentPanel.style.borderLeft = '1px solid var(--color-border)';
                 contentPanel.style.overflowY = 'auto';
                 contentMain.appendChild(contentPanel);
                 const canvasContainer = contentMain.querySelector('.canvas-container');
@@ -18803,7 +18779,7 @@
 
             const canvas = await html2canvas(targetElement, {
                 scale: 2,
-                backgroundColor: '#ffffff',
+                backgroundColor: 'var(--color-bg)',
                 logging: false,
                 useCORS: true,
                 allowTaint: false,
@@ -21736,7 +21712,7 @@
                 <div class="bookmark-empty-hint">从浏览器导出书签为 HTML 文件后，点击下方按钮导入</div>
                 <div style="margin-top: 16px;">
                     <input type="file" id="bookmark-file-input" accept=".html,.htm" style="display:none" onchange="importBookmarkFile(this)">
-                    <button class="btn btn-primary" onclick="document.getElementById('bookmark-file-input').click()" style="padding: 6px 16px; font-size: 14px; border-radius: 6px; border: none; background: var(--color-primary); color: #fff; cursor: pointer;">📂 导入书签 HTML 文件</button>
+                    <button class="btn btn-primary" onclick="document.getElementById('bookmark-file-input').click()" style="padding: 6px 16px; font-size: 14px; border-radius: 6px; border: none; background: var(--color-primary); color: var(--color-text-white); cursor: pointer;">📂 导入书签 HTML 文件</button>
                  </div>
              </div>`;
         }
@@ -33431,7 +33407,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         function gitRenderDetail(commitIdx, fileStatsHtml) {
             const c = gitCommits[commitIdx];
             if (!c) return;
-            const fileTree = fileStatsHtml || '<div style="padding:12px;color:var(--git-text-muted);font-size:12px;">正在计算文件变更...</div>';
+            const fileTree = fileStatsHtml || '<div style="padding:12px;color:var(--t2);font-size:12px;">正在计算文件变更...</div>';
             gitDetailArea.innerHTML = `
                 <div class="git-detail-layout">
                     <div class="git-detail-left">
@@ -34152,7 +34128,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         // 渲染文件树表格
         function gitRenderFileTree(changedFiles, activeIdx, captures) {
             if (changedFiles.length === 0) {
-                return '<div style="padding:12px;color:var(--git-text-muted);font-size:12px;">无文件变更</div>';
+                return '<div style="padding:12px;color:var(--t2);font-size:12px;">无文件变更</div>';
             }
             let html = `
                 <div class="git-file-tree-scroll">
