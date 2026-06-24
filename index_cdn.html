@@ -112,6 +112,7 @@
             --color-danger-light: #ffebe9;
             --color-bg: #ffffff;
             --color-bg-secondary: #f6f8fa;
+            --color-bg-panel: #f8f9fa;
             --color-reg-mark-bg: #d4f5dd;
             --color-border: #d0d7de;
             --color-border-light: #eee;
@@ -1224,7 +1225,7 @@
             height: 28px;
             min-width: 100%;
             background: #007acc;
-            color: white;
+            color: var(--color-text-white);
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -1777,7 +1778,7 @@
             left: 1px;
             top: 50%;
             transform: translateY(-50%);
-            color: white;
+            color: var(--color-text-white);
             font-size: 8px;
             font-weight: bold;
             line-height: 1;
@@ -1849,7 +1850,7 @@
             left: 1px;
             top: 50%;
             transform: translateY(-50%);
-            color: white;
+            color: var(--color-text-white);
             font-size: 8px;
             font-weight: bold;
             line-height: 1;
@@ -1906,7 +1907,7 @@
 
         .kanban-card a.internal-link:hover {
             background-color: var(--color-primary, #0969da);
-            color: white;
+            color: var(--color-text-white);
         }
 
         .kanban-card p {
@@ -2393,7 +2394,7 @@
             text-align: center;
             border-radius: var(--radius-sm);
             background: #e24cdd;
-            color: white;
+            color: var(--color-text-white);
         }
 
         .json-result-list {
@@ -2508,7 +2509,7 @@
 
         .btn-active {
             background: #2980b9;
-            color: white;
+            color: var(--color-text-white);
         }
 
         .swagger-editor-standalone {
@@ -2603,7 +2604,7 @@
 
         .stat-card {
             flex: 1;
-            background: white;
+            background: var(--color-bg);
             padding: 16px;
             border-radius: 10px;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
@@ -2676,7 +2677,7 @@
 
         .heatmap-section,
         .chart-card {
-            background: white;
+            background: var(--color-bg);
             padding: 10px;
             border-radius: 12px;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
@@ -3331,7 +3332,7 @@
             position: relative;
             width: 70%;
             height: 70%;
-            background: white;
+            background: var(--color-bg);
             border-radius: 12px;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
             overflow: hidden;
@@ -3367,7 +3368,7 @@
             max-width: 500px;
             max-height: 60%;
             width: 90%;
-            background: white;
+            background: var(--color-bg);
             border-radius: 12px;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
             overflow: hidden;
@@ -3454,7 +3455,7 @@
             padding: 4px 8px;
             font-size: 12px;
             color: var(--color-text-secondary);
-            background-color: white;
+            background-color: var(--color-bg);
         }
 
         .ai-result-close {
@@ -3498,7 +3499,7 @@
             gap: 8px;
             position: sticky;
             top: 0;
-            background: white;
+            background: var(--color-bg);
             z-index: 10;
         }
 
@@ -3731,7 +3732,7 @@
 
         .tool-button {
             padding: 8px 10px;
-            background: white;
+            background: var(--color-bg);
             color: var(--color-text);
             border: none;
             border-radius: 8px;
@@ -3743,7 +3744,7 @@
         }
 
         .tool-button:hover {
-            color: white;
+            color: var(--color-text-white);
             background: var(--color-primary);
             ;
             transform: translateY(-1px);
@@ -4000,7 +4001,7 @@
             align-items: center;
             gap: 5px;
             padding: 5px 14px 4px 8px;
-            background: white;
+            background: var(--color-bg);
             border-bottom: 1px solid #e2e8f0;
             flex-wrap: nowrap;
             flex-shrink: 0;
@@ -4010,13 +4011,13 @@
             flex-shrink: 0;
             white-space: nowrap;
             background: var(--color-warning) !important;
-            color: white !important;
+            color: var(--color-text-white) !important;
             border-color: var(--color-warning) !important;
         }
 
         .mermaid-fixed-btn:hover {
             background: var(--color-warning-hover) !important;
-            color: white !important;
+            color: var(--color-text-white) !important;
             border-color: var(--color-warning-hover) !important;
         }
 
@@ -4057,7 +4058,7 @@
             height: 27px;
             padding: 0 8px;
             border: 1px solid #e2e8f0;
-            background: white;
+            background: var(--color-bg);
             border-radius: 5px;
             cursor: pointer;
             font-size: 13px;
@@ -4091,7 +4092,7 @@
 
         .mermaid-tab-btn.mermaid-active {
             background: var(--color-primary);
-            color: white;
+            color: var(--color-text-white);
             border-color: var(--color-primary);
         }
 
@@ -4134,12 +4135,12 @@
 
         .mermaid-export-btn {
             background: var(--color-primary);
-            color: white;
+            color: var(--color-text-white);
         }
 
         .mermaid-render-btn {
             background: var(--color-primary);
-            color: white;
+            color: var(--color-text-white);
         }
 
         .mermaid-export-btn:hover {
@@ -4161,7 +4162,7 @@
             position: absolute;
             top: calc(100% + 4px);
             right: 0;
-            background: white;
+            background: var(--color-bg);
             border: 1px solid #e2e8f0;
             border-radius: 8px;
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
@@ -4751,7 +4752,7 @@
                 2px 4px 12px rgba(0, 0, 0, 0.08),
                 2px 8px 24px rgba(0, 0, 0, 0.06);
             height: 178px;
-            background: white;
+            background: var(--color-bg);
             margin: 3px 3px 0 0;
             width: calc(100% - 20px);
             overflow: hidden;
@@ -4792,7 +4793,7 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            background: #f8f9fa;
+            background: var(--color-bg-panel);
             border-radius: 10px;
             padding: 6px 8px;
             min-width: 0;
@@ -4925,7 +4926,7 @@
             box-shadow: -2px 1px 2px rgba(0, 0, 0, 0.03),
                 -2px 4px 12px rgba(0, 0, 0, 0.08),
                 -2px 8px 24px rgba(0, 0, 0, 0.06);
-            background: white;
+            background: var(--color-bg);
             margin: 3px 3px 0 0;
             width: 950px;
             height: 150px;
@@ -5753,7 +5754,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            color: white;
+            color: var(--color-text-white);
             font-size: 13px;
         }
 
@@ -5883,7 +5884,7 @@
         .todo-btn-primary {
             padding: 5px 10px;
             background: var(--color-primary);
-            color: white;
+            color: var(--color-text-white);
             border: none;
             border-radius: var(--radius-sm);
             font-size: 13px;
@@ -6188,7 +6189,7 @@
         }
 
         .todo-mini-day.todo-selected.todo-has-event::after {
-            background: white;
+            background: var(--color-bg);
         }
 
         .todo-mini-day:hover {
@@ -6335,7 +6336,7 @@
 
         .todo-month-day.todo-today .todo-day-number {
             background: #3370FF;
-            color: white;
+            color: var(--color-text-white);
             width: 28px;
             height: 28px;
             display: flex;
@@ -6351,7 +6352,7 @@
         }
 
         .todo-month-day.todo-today.todo-weekend .todo-day-number {
-            color: white;
+            color: var(--color-text-white);
         }
 
         .todo-month-day.todo-rest-day {
@@ -6551,7 +6552,7 @@
 
         .todo-day-number-header.todo-today {
             background: var(--color-primary);
-            color: white;
+            color: var(--color-text-white);
         }
 
         .todo-time-slots {
@@ -6583,7 +6584,7 @@
             border-radius: var(--radius-sm);
             padding: 4px 8px;
             font-size: 12px;
-            color: white;
+            color: var(--color-text-white);
             cursor: pointer;
             overflow: hidden;
             font-weight: 500;
@@ -6816,7 +6817,7 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            color: white;
+            color: var(--color-text-white);
             font-size: 10px;
             font-weight: bold;
             text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -7074,7 +7075,7 @@
 
         .todo-reminder-btn-snooze {
             background: var(--color-primary);
-            color: white;
+            color: var(--color-text-white);
         }
 
         .todo-reminder-btn-snooze:hover {
@@ -7241,7 +7242,7 @@
 
         jmnodes.theme-self jmnode.root {
             background-color: var(--color-warning);
-            color: var(--color-text-white); 
+            color: var(--color-text-white);
             font-weight: 600;
             font-size: 15px;
             box-shadow: 1px 1px 1px 1px var(--color-warning) !important;
@@ -7304,7 +7305,7 @@
         .timeline-view-tab.timeline-active,
         .timeline-filter-chip.timeline-active {
             background: var(--color-primary);
-            color: white;
+            color: var(--color-text-white);
         }
 
         .timeline-search-box {
@@ -16546,7 +16547,7 @@
                         <div style="margin-bottom: 10px;">
                             <div style="margin-top: 2.5px; display: flex; gap: 8px; flex-wrap: wrap;">`;
                 sheetNames.forEach((sheetName, index) => {
-                    const activeClass = index === 0 ? 'background-color: var(--color-primary); color: white;' : 'background-color: var(--color-bg-secondary); color: var(--color-text);';
+                    const activeClass = index === 0 ? 'background-color: var(--color-primary); color: var(--color-text-white);' : 'background-color: var(--color-bg-secondary); color: var(--color-text);';
                     html += `<button
                         class="excel-sheet-btn btn btn-sm"
                         data-sheet="${index}"
@@ -21157,7 +21158,7 @@
                         const dayFiles = filesByDate[dateStr] || [];
                         const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
                         const weekDay = weekDays[new Date(dateStr).getDay()];
-                        let content = `<div style="font-weight:600; margin-bottom:5px;">📅 ${dateStr} (${weekDay})</div><div style="margin-bottom:5px;font-size:12px;">📄 共 ${count} 个文件</div>`;
+                        let content = `<div style="font-weight:500; margin-bottom:5px;">📅 ${dateStr} (${weekDay})</div><div style="margin-bottom:5px;font-size:12px;">📄 共 ${count} 个文件</div>`;
                         const dayFileCount = dayFiles.length;
                         if (dayFileCount > 0) {
                             content += `<div style="border-top:1px solid #eee; padding-top:5px; margin-top:3px;">`;
