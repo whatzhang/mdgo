@@ -10974,8 +10974,7 @@
                 <div class="timeline-search-box">
                     <i class="fas fa-search"></i>
                     <input type="text" id="timelineSearchInput" placeholder="搜索文件或路径">
-                    <span class="timeline-search-clear" id="timelineSearchClear"
-                        onclick="timelineSearchClearValue()">✕</span>
+                    <span class="timeline-search-clear" id="timelineSearchClear">✕</span>
                 </div>
                 <div class="timeline-stats-group">
                     <div class="timeline-stat-item"><span class="timeline-stat-number"
@@ -12191,18 +12190,25 @@
         };
         // 获取路径里的文件后缀名
         const getExt = (p) => p?.split(DOT).pop() || '';
-        const isDoc = (ext) => ['md', 'txt', 'mmd', 'csv', 'pdf', 'opml', 'drawio', 'excalidraw', 'puml', 'plantuml', 'html',
-            'mmd', 'mm', 'doc', 'docx', 'ppt', 'xls', 'xlsx', 'pptx', 'canvas'].includes(ext.toLowerCase());
-        const isCode = (ext) => ['ghostty', 'dockerfile', 'groovy', 'js', 'jsx', 'ts', 'tsx', 'vue', 'css', 'scss', 'less', 'sass', 'py', 'java', 'c', 'cpp', 'h', 'hpp', 'cs', 'go', 'rust', 'rb', 'php', 'swift',
+        const DOC_EXT_SET = new Set(['md', 'txt', 'mmd', 'csv', 'pdf', 'opml', 'drawio', 'excalidraw', 'puml', 'plantuml', 'html',
+            'mmd', 'mm', 'doc', 'docx', 'ppt', 'xls', 'xlsx', 'pptx', 'canvas']);
+        const isDoc = (ext) => DOC_EXT_SET.has(ext.toLowerCase());
+        const CODE_EXT_SET = new Set(['ghostty', 'dockerfile', 'groovy', 'js', 'jsx', 'ts', 'tsx', 'vue', 'css', 'scss', 'less', 'sass', 'py', 'java', 'c', 'cpp', 'h', 'hpp', 'cs', 'go', 'rust', 'rb', 'php', 'swift',
             'kt', 'scala', 'sh', 'bat', 'cmd', 'ps1', 'json', 'xml', 'yaml', 'yml', 'toml', 'ini', 'conf', 'env', 'sql', 'rst', 'log', 'properties', 'gradle', 'gitignore', 'jsm', 'mjs',
             'cjs', 'tsm', 'mts', 'cts', 'svelte', 'astro', 'styl', 'pcss', 'postcss', 'graphql', 'gql', 'prisma', 'proto', 'thrift', 'idl', 'asm', 's', 'asmx', 'fs', 'fsx', 'fsi', 'fsscript',
             'vb', 'vbs', 'pl', 'pm', 't', 'tt', 'pod', 'lua', 'r', 'R', 'matlab', 'm', 'psm1', 'psd1', 'ps1xml', 'xaml', 'axaml', 'resx', 'rs', 'sol', 'vy', 'move', 'aptos', 'sui', 'tsbuildinfo',
-        ].includes(ext.toLowerCase());
-        const isVideoFile = (ext) => ['mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'm3u8', 'mkv', 'mpd', 'ts', 'ogg', 'ogv', '3gp', '3g2', 'vob', 'rm', 'rmvb', 'asf', 'divx', 'm4v', 'f4v'].includes(ext.toLowerCase());
-        const isImage = (ext) => ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tiff', 'tif', 'heic', 'heif', 'raw', 'cr2', 'nef', 'orf', 'arw', 'dng', 'psd', 'ai'].includes(ext.toLowerCase());
-        const isPicImage = (ext) => ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext.toLowerCase());
-        const isRaw = (ext) => ['arw', 'raw', 'cr2', 'nef', 'dng', 'orf', 'raf', 'rw2', 'pef', 'srf', '3fr', 'erf'].includes(ext.toLowerCase());
-        const isSelectWork = (name) => ['md', 'html'].includes(getExt(name).toLowerCase());
+        ]);
+        const isCode = (ext) => CODE_EXT_SET.has(ext.toLowerCase());
+        const _VIDEO_EXT_SET = new Set(['mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'm3u8', 'mkv', 'mpd', 'ts', 'ogg', 'ogv', '3gp', '3g2', 'vob', 'rm', 'rmvb', 'asf', 'divx', 'm4v', 'f4v']);
+        const _IMAGE_EXT_SET = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tiff', 'tif', 'heic', 'heif', 'raw', 'cr2', 'nef', 'orf', 'arw', 'dng', 'psd', 'ai']);
+        const _PIC_IMAGE_EXT_SET = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico']);
+        const _RAW_EXT_SET = new Set(['arw', 'raw', 'cr2', 'nef', 'dng', 'orf', 'raf', 'rw2', 'pef', 'srf', '3fr', 'erf']);
+        const _SELECT_WORK_EXT_SET = new Set(['md', 'html']);
+        const isVideoFile = (ext) => _VIDEO_EXT_SET.has(ext.toLowerCase());
+        const isImage = (ext) => _IMAGE_EXT_SET.has(ext.toLowerCase());
+        const isPicImage = (ext) => _PIC_IMAGE_EXT_SET.has(ext.toLowerCase());
+        const isRaw = (ext) => _RAW_EXT_SET.has(ext.toLowerCase());
+        const isSelectWork = (name) => _SELECT_WORK_EXT_SET.has(getExt(name).toLowerCase());
         // 带大小限制的 LRU 缓存（Map 封装）
         class LRUCache {
             constructor(maxSize) {
@@ -12239,6 +12245,7 @@
         const setRootHandle = (handler) => rootDirectoryHandle = handler;  // 设置根目录句柄的函数
         const isRootHandleAvailable = () => !!getRootHandle(); // 检查根目录句柄是否可用的函数
         let allFilesCacheList = []; // 所有文件的缓存列表（包含路径、元数据等信息）
+        let _heatmapDayCountCache = null; // 热力图日计数缓存（Map<string,number>），allFilesCacheList 变更时清空
         let allFoldersCacheList = {}; // 所有目录的缓存列表（包含路径、元数据等信息）
         let currentActiveItem = null;       // 当前激活的文件项
         let currentFileHandle = null;       // 当前文件句柄
@@ -20324,15 +20331,42 @@
                 }
             }
             if (force) {
-                allFilesCacheList = [];
-                for (const key in data.files) {
-                    if (Array.isArray(data.files[key])) {
-                        allFilesCacheList.push(...data.files[key]);
-                    }
-                }
+                _fillFileCache(data.files);
+            } else if (allFilesCacheList.length === 0 && data && data.files) {
+                // 非强制模式（首次从缓存文件读取）也要填充 allFilesCacheList
+                _fillFileCache(data.files);
             }
             console.log(`[文件扫描] 总耗时: ${(performance.now() - _tStart).toFixed(0)}ms`);
             return data;
+        }
+
+        /** 将 data.files（对象或数组）拍平到 allFilesCacheList，并预计算 min/max mtime */
+        function _fillFileCache(files) {
+            allFilesCacheList = [];
+            if (Array.isArray(files)) {
+                allFilesCacheList.push(...files);
+            } else if (files && typeof files === 'object') {
+                for (const key in files) {
+                    if (Array.isArray(files[key])) {
+                        allFilesCacheList.push(...files[key]);
+                    }
+                }
+            } else {
+                console.warn('_fillFileCache: 未知的 files 格式', typeof files);
+            }
+            _heatmapDayCountCache = null;
+            // 预计算全部文件的最小/最大 mtime（比较 Unix 时间戳，避免创建大量 Date 对象）
+            if (allFilesCacheList.length > 0) {
+                let minTs = allFilesCacheList[0].mtime, maxTs = allFilesCacheList[0].mtime;
+                for (let i = 1; i < allFilesCacheList.length; i++) {
+                    const t = allFilesCacheList[i].mtime;
+                    if (t < minTs) minTs = t;
+                    if (t > maxTs) maxTs = t;
+                }
+                _timelineAllMinMax = { min: new Date(minTs * 1000), max: new Date(maxTs * 1000) };
+            } else {
+                _timelineAllMinMax = null;
+            }
         }
 
         async function heartbeat() {
@@ -24719,7 +24753,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         let timelineSelectedMonth = null;
         let timelineSelectedQuarter = null;
         let timelineSelectedYear = null;      // 年视图选中的年份
-        let timelineSelectedAll = false;      // 全部视图标记
 
         let defaultSelectionApplied = false;
         // 在全局作用域中保存需要移除的事件处理函数引用（在初始化时赋值）
@@ -24781,10 +24814,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             timelineSelectedMonth = null;
             timelineSelectedQuarter = null;
             timelineSelectedYear = null;
-            timelineSelectedAll = false;
             timelineCurrentView = 'day';
             timelineCurrentFilter = 'all';
             timelineSearchKeyword = '';
+            defaultSelectionApplied = false;
         }
 
         function getTodayStr() {
@@ -24815,11 +24848,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         function getMondayFromDate(dateStr) {
-            const d = new Date(dateStr);
-            const day = d.getDay();
+            // 使用本地时区解析，避免 ES6 下 new Date('YYYY-MM-DD') 按 UTC 解析导致的时区偏移
+            const [y, m, d] = dateStr.split('-').map(Number);
+            const date = new Date(y, m - 1, d);
+            const day = date.getDay();
             const diff = day === 0 ? 6 : day - 1;
-            const monday = new Date(d);
-            monday.setDate(d.getDate() - diff);
+            const monday = new Date(date);
+            monday.setDate(date.getDate() - diff);
             return formatDateLocal(monday);
         }
 
@@ -24841,62 +24876,85 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         // 核心筛选逻辑 (基于当前选中的时间段)
-        function timelineFilterFiles(files) {
-            let filtered = files;
-            if (timelineCurrentFilter === 'doc') filtered = filtered.filter(f => isDoc(f.ext));
-            else if (timelineCurrentFilter === 'code') filtered = filtered.filter(f => isCode(f.ext));
-            if (timelineSearchKeyword.trim()) {
-                const kw = timelineSearchKeyword.toLowerCase();
-                filtered = filtered.filter(f => f.name.toLowerCase().includes(kw) || f.path.toLowerCase().includes(kw));
-            }
+        /** 统一过滤+构建+统计：单次循环完成，避免链式 filter 产生中间数组 */
+        function _timelineFilterBuild(files) {
+            const kw = timelineSearchKeyword.trim().toLowerCase();
+            const filterDoc = timelineCurrentFilter === 'doc';
+            const filterCode = timelineCurrentFilter === 'code';
+            const hasKw = !!kw;
 
-            // 时间范围筛选 (根据当前视图 + 选中的具体时间块)
+            // 预计算时间范围边界（避免循环内 new Date）
+            let timeTest = null; // null = 不限制, (f) => bool
             if (timelineCurrentView === 'day' && timelineSelectedDay) {
-                filtered = filtered.filter(f => f.mtime_date_str === timelineSelectedDay);
+                const target = timelineSelectedDay;
+                timeTest = (f) => f.mtime_date_str === target;
             } else if (timelineCurrentView === 'week' && timelineSelectedWeekStart) {
-                const endDate = new Date(timelineSelectedWeekStart);
-                endDate.setDate(endDate.getDate() + 7);
-                const endDateStr = formatDateLocal(endDate);
-                filtered = filtered.filter(f => f.mtime_date_str >= timelineSelectedWeekStart && f.mtime_date_str < endDateStr);
+                const end = new Date(timelineSelectedWeekStart);
+                end.setDate(end.getDate() + 7);
+                const endStr = formatDateLocal(end);
+                const startStr = timelineSelectedWeekStart;
+                timeTest = (f) => f.mtime_date_str >= startStr && f.mtime_date_str < endStr;
             } else if (timelineCurrentView === 'month' && timelineSelectedMonth) {
                 const [y, m] = timelineSelectedMonth.split('-').map(Number);
-                filtered = filtered.filter(f => {
-                    const date = new Date(f.mtime * 1000);
-                    return date.getFullYear() === y && date.getMonth() === m - 1;
-                });
+                const lastDay = new Date(y, m, 0).getDate(); // 当月最后一天
+                const mm = String(m).padStart(2, '0');
+                timeTest = (f) => {
+                    const s = f.mtime_date_str;
+                    return s >= `${y}-${mm}-01` && s <= `${y}-${mm}-${lastDay}`;
+                };
             } else if (timelineCurrentView === 'quarter' && timelineSelectedQuarter) {
                 const [y, q] = timelineSelectedQuarter.split('-Q').map(Number);
-                const startMonth = (q - 1) * 3;
-                const endMonth = q * 3;
-                filtered = filtered.filter(f => {
-                    const date = new Date(f.mtime * 1000);
-                    const month = date.getMonth();
-                    return date.getFullYear() === y && month >= startMonth && month < endMonth;
-                });
+                const sm = String((q - 1) * 3 + 1).padStart(2, '0');
+                const em = String(q * 3).padStart(2, '0');
+                const lastDay = new Date(y, q * 3, 0).getDate(); // 季度末月最后一天
+                timeTest = (f) => f.mtime_date_str >= `${y}-${sm}-01` && f.mtime_date_str <= `${y}-${em}-${lastDay}`;
             } else if (timelineCurrentView === 'year' && timelineSelectedYear) {
-                filtered = filtered.filter(f => {
-                    const date = new Date(f.mtime * 1000);
-                    return date.getFullYear() === timelineSelectedYear;
-                });
-            } else if (timelineCurrentView === 'all') {
-                // 保持 filtered 不变
+                const y = timelineSelectedYear;
+                timeTest = (f) => f.mtime_date_str.startsWith(String(y));
             }
-            return filtered;
+            // 'all' 视图：timeTest 保持 null，不过滤
+
+            const items = [];
+            let docCount = 0, codeCount = 0;
+            const days = new Set();
+
+            for (let i = 0; i < files.length; i++) {
+                const f = files[i];
+                // 缓存类型判断结果，避免每个文件重复调用 isDoc/isCode 多次
+                const isDocFile = isDoc(f.ext);
+                const isCodeFile = !isDocFile && isCode(f.ext);
+                // 类型筛选
+                if (filterDoc && !isDocFile) continue;
+                if (filterCode && !isCodeFile) continue;
+                // 关键词筛选
+                if (hasKw && !f.name.toLowerCase().includes(kw) && !f.path.toLowerCase().includes(kw)) continue;
+                // 时间筛选
+                if (timeTest && !timeTest(f)) continue;
+
+                // 统计
+                if (isDocFile) docCount++;
+                else if (isCodeFile) codeCount++;
+                days.add(f.mtime_date_str);
+
+                // 构建 vis items
+                items.push({
+                    id: f.path,
+                    start: new Date(f.mtime * 1000),
+                    doc: isDocFile,
+                    code: isCodeFile,
+                    size_str: f.size_str,
+                    mtime_str: f.mtime_str,
+                    name: f.name,
+                });
+            }
+
+            return { items, docCount, codeCount, days: days.size };
         }
 
-        function timelineBuildItems(files) {
-            return files.map(file => {
-                const date = new Date(file.mtime * 1000);
-                const doc = isDoc(file.ext);
-                const code = isCode(file.ext);
-                return {
-                    id: file.path, start: date, doc: doc, code: code,
-                    size_str: file.size_str, mtime_str: file.mtime_str, name: file.name,
-                };
-            });
-        }
+        // 缓存 timelineSetWindow('all') 的最小/最大日期，避免每次全量遍历
+        let _timelineAllMinMax = null;
 
-        async function timelineSetWindow() {
+        function timelineSetWindow() {
             if (!timelineObj) return;
             let start, end;
             if (timelineCurrentView === 'day') {
@@ -24928,17 +24986,20 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 end = new Date(yr, 11, 31);
                 end.setHours(23, 59, 59);
             } else if (timelineCurrentView === 'all') {
-                // 全部视图：尝试将窗口设置为所有文件的最小最大时间范围
-                if (allFilesCacheList.length > 0) {
+                // 全部视图：使用缓存的 min/max，避免每次全量遍历
+                if (!_timelineAllMinMax && allFilesCacheList.length > 0) {
                     let minDate = new Date(allFilesCacheList[0].mtime * 1000);
                     let maxDate = new Date(allFilesCacheList[0].mtime * 1000);
-                    for (let f of allFilesCacheList) {
-                        let d = new Date(f.mtime * 1000);
+                    for (let i = 1; i < allFilesCacheList.length; i++) {
+                        const d = new Date(allFilesCacheList[i].mtime * 1000);
                         if (d < minDate) minDate = d;
                         if (d > maxDate) maxDate = d;
                     }
-                    start = minDate;
-                    end = maxDate;
+                    _timelineAllMinMax = { min: minDate, max: maxDate };
+                }
+                if (_timelineAllMinMax) {
+                    start = _timelineAllMinMax.min;
+                    end = _timelineAllMinMax.max;
                 } else {
                     start = new Date();
                     end = new Date();
@@ -24947,28 +25008,27 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (start && end) timelineObj.setWindow(start, end, { animation: false });
         }
 
-        async function timelineUpdate() {
+        function timelineUpdate() {
             if (!timelineObj) return;
-            const filtered = timelineFilterFiles(allFilesCacheList);
+            const { items, docCount, codeCount, days } = _timelineFilterBuild(allFilesCacheList);
             requestAnimationFrame(() => {
-                timelineObj.setItems(timelineBuildItems(filtered));
+                timelineObj.setItems(items);
                 timelineSetWindow();
-                requestAnimationFrame(() => timelineUpdateStats(filtered));
+                requestAnimationFrame(() => timelineUpdateStats(items.length, docCount, codeCount, days));
             });
         }
 
-        function timelineUpdateStats(files) {
-            document.getElementById('totalCount').innerText = files.length;
-            document.getElementById('docCount').innerText = files.filter(f => isDoc(f.ext)).length;
-            document.getElementById('codeCount').innerText = files.filter(f => isCode(f.ext)).length;
-            const days = new Set(files.map(f => f.mtime_date_str)).size;
+        function timelineUpdateStats(total, docCount, codeCount, days) {
+            document.getElementById('totalCount').innerText = total;
+            document.getElementById('docCount').innerText = docCount;
+            document.getElementById('codeCount').innerText = codeCount;
             document.getElementById('activeDays').innerText = days;
         }
 
-        function timelineInitTimeline() {
+        function timelineInitTimeline(onReady) {
             if (!document.getElementById('visTimeline')) return;
             if (typeof vis === 'undefined' || !vis.Timeline) {
-                setTimeout(timelineInitTimeline, 100);
+                setTimeout(() => timelineInitTimeline(onReady), 100);
                 return;
             }
             const options = {
@@ -25009,7 +25069,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 tooltip: { followMouse: true },
                 autoResize: false, editable: false,
                 locale: 'zh-cn',
-                order: (a, b) => a.mtime - b.mtime,
+                order: (a, b) => a.start - b.start,
                 // 自定义卡片 HTML
                 template: function (file) {
                     const badgeClass = file.doc ? '📄 文档' : (file.code ? '💻 代码' : '📎 其他');
@@ -25032,31 +25092,31 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (!itemId) return;
                 openFileFromPath(itemId)
             });
-            timelineUpdate();
+            if (onReady) onReady();
         }
 
         // 核心：构建热力图，并根据当前视图 + 选中的变量高亮对应方格或月份边框
         async function timelineBuildHeatmap() {
             const wrapper = document.getElementById('heatmapWrapper');
             wrapper.style.display = 'block';
-            const now = new Date(), y = now.getFullYear(), curM = now.getMonth();
-            const cnt = new Map();
-            allFilesCacheList.forEach(f => {
-                const d = f.mtime_date_str;
-                cnt.set(d, (cnt.get(d) || 0) + 1);
-            });
-            const getColor = c => {
-                if (c > 0 && c < 3) {
-                    return '#bfddff';
-                } else if (c >= 3 && c < 8) {
-                    return '#80bfff';
-                } else if (c >= 8 && c < 15) {
-                    return '#4d9fff';
-                } else if (c >= 15 && c < 30) {
-                    return '#1a80ff';
-                } else if (c >= 30) {
-                    return '#0066e6';
+            const now = new Date(), y = now.getFullYear();
+            // 优先使用缓存，避免全量遍历
+            let cnt = _heatmapDayCountCache;
+            if (!cnt) {
+                cnt = new Map();
+                for (let i = 0; i < allFilesCacheList.length; i++) {
+                    const d = allFilesCacheList[i].mtime_date_str;
+                    cnt.set(d, (cnt.get(d) || 0) + 1);
                 }
+                _heatmapDayCountCache = cnt;
+            }
+            const getColor = c => {
+                if (c <= 0) return null;
+                if (c < 3) return '#bfddff';
+                if (c < 8) return '#80bfff';
+                if (c < 15) return '#4d9fff';
+                if (c < 30) return '#1a80ff';
+                return '#0066e6';
             }
             const isLeap = y => (y % 4 === 0 && y % 100 !== 0) || (y % 400 === 0);
             const daysM = [31, isLeap(y) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
@@ -25193,7 +25253,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         // 修改点击逻辑：如果点击的项已经是选中状态，则不做任何操作（不取消选中，不刷新）
-        function timelineHeatmapDayClick(e) {
+        async function timelineHeatmapDayClick(e) {
             if (timelineCurrentView === 'month' || timelineCurrentView === 'quarter' || timelineCurrentView === 'year' || timelineCurrentView === 'all') return;
             const date = e.currentTarget.dataset.date;
             if (timelineCurrentView === 'day') {
@@ -25204,7 +25264,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 timelineSelectedMonth = null;
                 timelineSelectedQuarter = null;
                 timelineSelectedYear = null;
-                timelineSelectedAll = false;
             } else if (timelineCurrentView === 'week') {
                 const mondayStr = getMondayFromDate(date);
                 // 如果已经是同一周，不操作
@@ -25214,14 +25273,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 timelineSelectedMonth = null;
                 timelineSelectedQuarter = null;
                 timelineSelectedYear = null;
-                timelineSelectedAll = false;
             }
             timelineUpdate();
-            timelineBuildHeatmap();
+            await timelineBuildHeatmap();
         }
 
         // 月份/季度方块点击：如果已选中则无操作
-        function timelineMonthBlockClick(e) {
+        async function timelineMonthBlockClick(e) {
             if (timelineCurrentView === 'day' || timelineCurrentView === 'week') return;
             if (timelineCurrentView === 'year' || timelineCurrentView === 'all') return;
             const monthIndex = parseInt(e.currentTarget.dataset.monthIndex);
@@ -25234,7 +25292,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 timelineSelectedWeekStart = null;
                 timelineSelectedQuarter = null;
                 timelineSelectedYear = null;
-                timelineSelectedAll = false;
             } else if (timelineCurrentView === 'quarter') {
                 const quarter = Math.floor(monthIndex / 3) + 1;
                 const quarterStr = `${year}-Q${quarter}`;
@@ -25244,10 +25301,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 timelineSelectedWeekStart = null;
                 timelineSelectedMonth = null;
                 timelineSelectedYear = null;
-                timelineSelectedAll = false;
             }
             timelineUpdate();
-            timelineBuildHeatmap();
+            await timelineBuildHeatmap();
         }
 
         // 视图切换：清空并按照当前时间设置默认选中，不保留手动取消状态
@@ -25259,7 +25315,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             timelineSelectedMonth = null;
             timelineSelectedQuarter = null;
             timelineSelectedYear = null;
-            timelineSelectedAll = false;
             // 根据视图设置默认高亮（基于当前真实日期）
             if (view === 'day') {
                 timelineSelectedDay = getTodayStr();
@@ -25271,8 +25326,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 timelineSelectedQuarter = getCurrentQuarterStr();
             } else if (view === 'year') {
                 timelineSelectedYear = new Date().getFullYear();
-            } else if (view === 'all') {
-                timelineSelectedAll = true;
             }
             timelineUpdate();
             timelineBuildHeatmap().then(() => {
@@ -25320,9 +25373,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (isEmpty(allFilesCacheList)) {
                     await scanDashboardData();
                 }
-                timelineInitTimeline();
-                timelineBuildHeatmap();
-                // 在 timelineInit 函数内部，原先绑定事件的地方改为：
+                // timelineBuildHeatmap + timelineUpdate 由 timelineInitTimeline 回调统一触发
                 const s = document.getElementById('timelineSearchInput'), cl = document.getElementById('timelineSearchClear');
                 const upd = () => {
                     cl.style.display = s.value.trim() ? 'inline-block' : 'none';
@@ -25361,24 +25412,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     c.removeEventListener('click', _timelineFilterClickHandler);
                     c.addEventListener('click', _timelineFilterClickHandler);
                 });
-                // 等待 timelineObj 创建完毕后，应用默认高亮 (每天视图 + 今天高亮)
-                let waitRetries = 0;
-                const MAX_WAIT_RETRIES = 100; // 最多等待 10 秒
-                const waitForTimeline = setInterval(() => {
-                    waitRetries++;
-                    if (waitRetries >= MAX_WAIT_RETRIES) {
-                        clearInterval(waitForTimeline);
-                        return;
-                    }
-                    if (timelineObj && !defaultSelectionApplied) {
-                        clearInterval(waitForTimeline);
+                document.querySelectorAll('.timeline-view-tab').forEach(v => v.classList.remove('timeline-active'));
+                const defaultTab = document.querySelector('.timeline-view-tab[data-view="day"]');
+                if (defaultTab) defaultTab.classList.add('timeline-active');
+                // timelineInitTimeline 创建完毕后通过回调应用默认高亮
+                timelineInitTimeline(() => {
+                    if (!defaultSelectionApplied) {
                         defaultSelectionApplied = true;
-                        // 设置初始视图为“每天”，并高亮今天
-                        const activeTab = document.querySelector('.timeline-view-tab.timeline-active');
-                        const initView = activeTab ? activeTab.dataset.view : 'day';
-                        timelineChangeView(initView);
+                        timelineChangeView('day');
                     }
-                }, 100);
+                });
             } catch (err) {
                 console.error('初始化失败', err);
                 if (window.showNotification) showNotification(`加载失败: ${err.message}`, 'error');
