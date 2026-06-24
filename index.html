@@ -7137,7 +7137,6 @@
 
         .jm-node-markdown table {
             border-collapse: collapse;
-            margin: 4px 0;
             font-size: 13px;
         }
 
@@ -14983,19 +14982,17 @@
             }
 
             function parseOutline(outline) {
-                const head = outline.getAttribute("text") || outline.getAttribute("title") || '';
+                const head = outline.getAttribute("text") || outline.getAttribute("TEXT") || getMubuText(outline) || '';
                 const note = outline.getAttribute("_note") || outline.getAttribute("note") || '';
                 const images = outline.getAttribute("_mubu_images") || outline.getAttribute("images") || '';
                 const local_images = outline.getAttribute("_local_images") || '';
                 const mubu_note = outline.getAttribute("_mubu_note") || '';
-                const mubu_text = outline.getAttribute("_mubu_text") || '';
                 const node = {
                     head: escapeHtml(head),
                     note: note,
                     images: images,
                     local_images: local_images,
                     mubu_note: mubu_note,
-                    mubu_text: mubu_text,
                     children: []
                 };
                 const childOutlines = outline.querySelectorAll(':scope > outline');
@@ -15026,7 +15023,14 @@
                 if (!root.head) {
                     root.head = title;
                 }
-                return root;
+                return {
+                    head: title,
+                    note: '',
+                    images: '',
+                    local_images: '',
+                    mubu_note: '',
+                    children: [root]
+                };
             } else {
                 const rootNode = {
                     head: title,
@@ -15034,7 +15038,6 @@
                     images: '',
                     local_images: '',
                     mubu_note: '',
-                    mubu_text: '',
                     children: []
                 };
                 for (let i = 0; i < rootOutlines.length; i++) {
@@ -15065,7 +15068,6 @@
                     images: '',
                     mubu_note: '',
                     local_images: '',
-                    mubu_text: '',
                     children: []
                 };
                 const childNodes = node.querySelectorAll(':scope > node');
@@ -15096,7 +15098,6 @@
                     images: '',
                     mubu_note: '',
                     local_images: '',
-                    mubu_text: '',
                     children: []
                 };
                 for (let i = 0; i < rootNodes.length; i++) {
@@ -15122,26 +15123,20 @@
                 html += `<span class="mindmap-collapse-child"></span>`;
             }
             let text = '';
-            if (node.head.startsWith("|")) {
-                const mubu_text = decodeURIComponent(node.mubu_text);
-                html += mubu_text;
-                text = mubu_text.length > 10 ? mubu_text.substring(0, 10) + '...' : mubu_text;
+            let head = node.head?.trim() || '';
+            if (hasMarkdown(head)) {
+                const title = head;
+                html += markedMd(parseObsidianToHTML(normalizeMarkdownTable(head)));
+                text = title.length > 20 ? title.substring(0, 20) + '...' : title;
             } else {
-                if (node.images != "") {
-                    if (node.head != "") {
-                        const mubu_text = decodeURIComponent(node.mubu_text || node.head);
-                        html += getTitle(-1, mubu_text);
-                        text = mubu_text;
-                    }
-                    html += await getImage(node.local_images, node.images, nodeId);
-                } else {
-                    const mubu_text = decodeURIComponent(node.mubu_text || node.head);
-                    html += getTitle(level, mubu_text);
-                    text = mubu_text;
-                }
-                if (node.mubu_note) {
-                    html += getTitleNote(node.mubu_note, node.note);
-                }
+                html += getTitle(level, head);
+                text = head;
+            }
+            if (node.images != "") {
+                html += await getImage(node.local_images, node.images, nodeId);
+            }
+            if (node.mubu_note) {
+                html += getTitleNote(node.mubu_note, node.note);
             }
             if (level < 3) {
                 opmlTocData.push({ id: nodeId, text: text, level: level + 1 });
@@ -15196,15 +15191,15 @@
             return html;
         }
 
-        function getTitle(level, mubu_text) {
+        function getTitle(level, title) {
             if (level === 0) {
-                return `<span class="mindmap-node-content">${mubu_text}</span>`;
+                return `<span class="mindmap-node-content">${title}</span>`;
             } else if (level === -1) {
-                return `<span class="mindmap-node-content-z" style="font-size: 11px;margin-bottom: 8px;">${mubu_text}</span>`;
+                return `<span class="mindmap-node-content-z" style="font-size: 11px;margin-bottom: 8px;">${title}</span>`;
             } else if (level === 1) {
-                return `<span class="mindmap-node-content-1">${mubu_text}</span>`;
+                return `<span class="mindmap-node-content-1">${title}</span>`;
             } else {
-                return `<span class="mindmap-node-content-z">${mubu_text}</span>`;
+                return `<span class="mindmap-node-content-z">${title}</span>`;
             }
         }
         function getTitleNote(mubu_note, note) {
@@ -15490,6 +15485,7 @@
 
         async function convertToMindmap() {
             const text = await getFileContent(currentFileHandle);
+            tocContainer.style.display = 'none';
             if (currentFileName.endsWith('.opml')) {
                 await convertOpmlToMindmap(text);
             } else if (currentFileName.endsWith('.mm')) {
@@ -15582,7 +15578,7 @@
         }
 
         const customNodeRender = (jm, element, node) => {
-            const topic = node.topic || '';
+            let topic = node.topic?.trim() || '';
             const images = node.data && node.data.images || '';
             if (!topic) {
                 if (images === "") return false;
@@ -15592,15 +15588,8 @@
                 if (hasMarkdown(topic)) {
                     element.innerHTML = '';
                     element.classList.add('jm-node-markdown');
-                    // 先渲染纯文本作为初始内容，避免 jsMind 尺寸为零
-                    const plainText = topic.replace(/\*\*/g, '').replace(/`/g, '').replace(/~~/g, '').replace(/==/g, '').substring(0, 200);
-                    element.innerHTML = `<span>${escapeHtml(plainText)}</span>`;
-                    // markedParse 是 async 函数，异步更新渲染结果
-                    markedParse(parseObsidianToHTML(normalizeMarkdown(topic))).then(result => {
-                        if (element.isConnected) {
-                            element.innerHTML = result;
-                        }
-                    });
+                    let plainText = normalizeMarkdownTable(topic);
+                    element.innerHTML = markedMd(parseObsidianToHTML(plainText));
                     return true;
                 } else {
                     if (!local_images && !images) {
@@ -15626,7 +15615,7 @@
             return false;
         };
 
-        function normalizeMarkdown(text) {
+        function normalizeMarkdownTable(text) {
             if (!text) return text;
             let s = text.replace(/\\n/g, '\n');
             if (s.includes('\n')) return s;
@@ -15687,7 +15676,7 @@
         // OPML → jsMind 格式转换
         function parseOPMLToJsMind(xmlDoc) {
             function buildNode(outline, nodeId) {
-                var topic = outline.getAttribute('text') || outline.getAttribute('TEXT') || outline.getAttribute('title') || '';
+                var topic = outline.getAttribute('text') || outline.getAttribute('TEXT') || getMubuText(outline) || '';
                 const mubu_images = outline.getAttribute("_mubu_images") || outline.getAttribute("images") || '';
                 if (!topic) {
                     if (mubu_images === undefined || mubu_images === '') {
@@ -15724,11 +15713,15 @@
             if (rootOutlines.length === 0) throw new Error('无内容');
             let rootNode;
             if (rootOutlines.length === 1) {
-                rootNode = buildNode(rootOutlines[0], 'root');
-                if (!rootNode) {
+                const node = buildNode(rootOutlines[0], 'root_1');
+                if (!node) {
                     rootNode = { id: 'root', topic: title, children: [] };
-                } else if (!rootNode.topic) {
-                    rootNode.topic = title;
+                } else {
+                    rootNode = {
+                        id: 'root',
+                        topic: title,
+                        children: [node]
+                    };
                 }
             } else {
                 rootNode = {
@@ -15780,9 +15773,15 @@
             const rootNodes = mapElement.querySelectorAll(':scope > node');
             let rootNode;
             if (rootNodes.length === 1) {
-                rootNode = buildNode(rootNodes[0], 'root');
-                if (!rootNode) {
+                const node = buildNode(rootNodes[0], 'root-1');
+                if (!node) {
                     rootNode = { id: 'root', topic: title, children: [] };
+                } else {
+                    rootNode = {
+                        id: 'root',
+                        topic: title,
+                        children: [node]
+                    };
                 }
             } else {
                 rootNode = {
@@ -19224,9 +19223,17 @@
             itemEl.classList.toggle('checked', task.checked);
         }
 
-        async function markedParse(str) {
+        async function markedParse(str, doReplaceMedia = true) {
+            if (doReplaceMedia) {
+                return await replaceMediaUrl(markedMd(str), true);
+            } else {
+                return markedMd(str);
+            }
+        }
+
+        function markedMd(str) {
             try {
-                return await replaceMediaUrl(marked.parse(str), true);
+                return marked.parse(str);
             } catch (error) {
                 console.error('Markdown 解析错误:', error);
                 return str;
