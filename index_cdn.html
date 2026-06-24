@@ -12376,7 +12376,7 @@
         function initMonacoEditor() {
             if (!monacoInitPromise) {
                 monacoInitPromise = new Promise((resolve) => {
-                	require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs' } });
+                    require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs' } });
                     require(['vs/editor/editor.main'], () => {
                         initPrettierFormatProvider();
                         resolve();
@@ -20303,7 +20303,7 @@
             let data;
             try {
                 if (force) {
-                    if (isLocalVisit()) {
+                    if (isLocalVisit() || !hasBackendServer) {
                         data = await scanDirToIndexByLocal();
                     } else {
                         try {

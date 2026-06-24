@@ -20301,7 +20301,7 @@
             let data;
             try {
                 if (force) {
-                    if (isLocalVisit()) {
+                    if (isLocalVisit() || !hasBackendServer) {
                         data = await scanDirToIndexByLocal();
                     } else {
                         try {
