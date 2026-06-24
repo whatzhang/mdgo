@@ -10310,7 +10310,7 @@
         }
 
         .file-item-icon.file-item-icon-video {
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='red' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z'/%3E%3Cpolygon points='10 11 10 17 15 14' fill='#60A5FA' stroke='none'/%3E%3C/svg%3E") !important;
+            background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2024%2024'%20fill%3D'none'%20stroke%3D'%23f97316'%20stroke-width%3D'1.8'%20stroke-linecap%3D'round'%20stroke-linejoin%3D'round'%3E%3Cpath%20d%3D'M14%202H6a2%202%200%200%200-2%202v16a2%202%200%200%200%202%202h12a2%202%200%200%200%202-2V8l-6-6z'%2F%3E%3Cpolygon%20points%3D'10%2011%2010%2017%2015%2014'%20fill%3D'%23f97316'%20stroke%3D'none'%2F%3E%3C%2Fsvg%3E") !important;
         }
 
         .file-item-icon.file-item-icon-doc {
@@ -12873,7 +12873,7 @@
                 if (_treeClickTimer) { clearTimeout(_treeClickTimer); _treeClickTimer = null; }
                 if (e.isTrusted) saveScrollPosition();
                 const filePath = fileSpan.dataset.filePath;
-                treeDomItemCache.delete(relativePath);
+                treeDomItemCache.delete(filePath);
                 const fileHandle = await getFileHandleByPath(filePath);
                 const textSpan = fileSpan.querySelector('.file-item-text');
                 startRenameFile(fileHandle, filePath, fileSpan, textSpan);
@@ -12984,17 +12984,22 @@
             return fileText;
         }
 
+        // 大文件阈值：超过此大小的文件关闭 minimap 和 wordWrap 以降低渲染成本
+        const LARGE_EDITOR_SIZE = 10000 * 1024; // 10MB
+
         function createMonacoEditor(container, options) {
+            const content = options.value || '';
+            const isLarge = content.length > LARGE_EDITOR_SIZE;
             let editor = monaco.editor.create(container, {
-                value: options.value || '',
+                value: content,
                 language: options.language || 'plaintext',
                 theme: 'vs-dark',
-                automaticLayout: true, //容器大小变化时自动调整布局
+                automaticLayout: !isLarge, // 大文件关闭自动布局，减少 resize 重排
                 fixedOverflowWidgets: true, // 补全弹窗等浮层固定定位，防止被 overflow: hidden 的父容器裁切
-                minimap: options.minimap || { enabled: true },
+                minimap: isLarge ? { enabled: false } : (options.minimap || { enabled: true }),
                 fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, monospace',
                 fontSize: 13,
-                wordWrap: 'on',
+                wordWrap: isLarge ? 'off' : 'on',
                 fontLigatures: true, // 启用字体连字
                 lineNumbers: options.lineNumbers || 'on',
                 lineNumbersMinChars: options.lineNumbersMinChars || 5, // 最小行号字符宽度
@@ -14659,7 +14664,7 @@
             if (iconType) {
                 div.className = 'file-item-icon file-item-icon-' + iconType;
             } else {
-                div.className = 'file-item-icon file-item-icon-' + getFileTypeByExt(getExt(name));
+                div.className = 'file-item-icon';
             }
             return div;
         }
@@ -15543,7 +15548,7 @@
             if (typeof text !== 'string') return false;
             if (text.length < 2) return false;
             // 快速预检：多字符标记 + 管道符（表格强信号），避免 # $ > * _ - ` 等单字符误判
-            if (/```|~~|==|\*\*|__|\[.+?\]\(.+?\)|!\[.+?\]\(.+?\)|\[\[.+?\]\]|!\[\[.+?\]\]|\$\$|%%|<!--|-->|\|/.test(text)) return true;
+            if (/```|~~|==|\*\*|__|\[.+?\]\(.+?\)|!\[.+?\]\(.+?\)|\[\[.+?\]\]|!\[\[.+?\]\]|\$\$|%%|< !-- |-->|\|/.test(text)) return true;
             // 表格检测（至少 2 行以 | 开头结尾）
             const pipeLines = text.split('\n')
                 .filter(l => /^\s*\|.*\|\s*$/.test(l)).length;
@@ -16450,9 +16455,7 @@
                     </div>`;
                 setTimeout(() => fitSvgToScreen(), 50); // SVG初始自适应显示
             } else {
-                const arrayBuffer = await file.arrayBuffer();
-                const blob = new Blob([arrayBuffer]);
-                const imageUrl = URL.createObjectURL(blob);
+                const imageUrl = URL.createObjectURL(file);
                 currentObjectUrls.push(imageUrl);
                 contentMain.innerHTML = `
                     <div class="image-viewer-container">
@@ -23111,7 +23114,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         function disposeEditor(editor) {
             if (!editor) return false;
             try {
+                const model = editor.getModel();
                 editor.dispose();
+                if (model) {
+                    try { model.dispose(); } catch (_) { }
+                }
             } catch (error) {
                 console.error('销毁编辑器失败:', error);
             }
@@ -24618,8 +24625,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const dirs = node.children || [];
                 const rpath = pp || '';
                 const filesList = files[rpath];
-                // 目录和文件已在扫描阶段预排序，此处无需重复排序
-
                 // 文件直接添加到父级
                 if (filesList) {
                     for (let i = 0; i < filesList.length; i++) {
@@ -24629,7 +24634,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             name: fileEntry.name,
                             path: _buildPath(rpath, fileEntry.name),
                             depth: d,
-                            iconType: fileEntry.sub_type || getFileTypeByExt(fileEntry.ext)
+                            iconType: fileEntry.sub_type
                         });
                     }
                 }
@@ -30295,7 +30300,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             const url = URL.createObjectURL(file);
             currentVideoObjectUrl = url;
-            videoAddHistory(fileName, url, '', ext, relativePath);
+            // 本地视频：历史只保存 path，不保存 blob: URL（页面刷新后失效）
+            videoAddHistory(fileName, relativePath ? '' : url, '', ext, relativePath);
             videoPlayUrl(fileName, url, '', ext);
         }
 
@@ -30309,13 +30315,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
          */
         function videoAddHistory(title, url, poster, type, path = '') {
             const history = videoGetHistory();
-            // 去重：移除同 URL 的旧记录
-            const idx = history.findIndex(h => h.url === url);
+            // 去重：有 path 时按 path 去重（本地文件），否则按 url 去重（网络视频）
+            const dupKey = path || url;
+            const idx = history.findIndex(h => (h.path && h.path === path) || (!h.path && h.url === url));
             if (idx >= 0) history.splice(idx, 1);
             // 插入到最前面
             history.unshift({
-                title: title || url,
-                url: url,
+                title: title || (path || url),
+                // 本地文件（有 path）不保存 blob: URL，播放时通过 path 重建
+                url: path ? '' : url,
                 poster: poster || '',
                 type: type || 'mp4',
                 path: path,
@@ -30427,12 +30435,26 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             // 更新 Header 标题
             const titleEl = document.getElementById('video-header-title');
             if (titleEl) titleEl.textContent = title || '视频播放器';
-            // 空 URL 不做任何操作，保持当前播放器状态
-            if (!url) return;
             // 撤销旧 Blob URL（新 URL 会创建新的 Blob URL）
             if (currentVideoObjectUrl && url !== currentVideoObjectUrl) {
                 URL.revokeObjectURL(currentVideoObjectUrl);
                 currentVideoObjectUrl = null;
+            }
+
+            // 无 URL 但有 path：从本地文件重新创建 object URL
+            if (!url && path) {
+                try {
+                    const file = await getFile(await getFileHandleByPath(path));
+                    if (file) {
+                        url = URL.createObjectURL(file);
+                        currentVideoObjectUrl = url;
+                    }
+                } catch (e) { /* fall through */ }
+            }
+            // 仍无 URL → 无法播放
+            if (!url) {
+                showNotification('✗ 无法加载视频', 'error');
+                return;
             }
 
             if (path) {
@@ -30741,8 +30763,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         function videoInitClickOutside() {
             const container = document.getElementById('video-view-container');
             if (!container) return;
-            container.removeEventListener('mousedown', (e) => mousedownVideoPanel(e));
-            container.addEventListener('mousedown', (e) => mousedownVideoPanel(e));
+            container.removeEventListener('mousedown', mousedownVideoPanel);
+            container.addEventListener('mousedown', mousedownVideoPanel);
         }
 
         function openVideoPlayer() {
