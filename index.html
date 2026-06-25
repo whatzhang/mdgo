@@ -12351,7 +12351,7 @@
             { key: 'font-green', label: '绿色', color: '#16a34a', default: false },
             { key: 'font-purple', label: '紫色', color: '#9333ea', default: false },
         ];
-        // 高亮背景颜色（浅色系，柔和不刺眼
+        // 高亮背景颜色（浅色系，柔和不刺眼）
         const HIGHLIGHT_BG_COLORS = [
             { key: 'bg-yellow', label: '黄底', color: '#fef08a', default: true },
             { key: 'bg-green', label: '绿底', color: '#bbf7d0', default: false },
@@ -16437,9 +16437,9 @@
             await saveExistFileContent(newContent);
         }
 
-        async function saveExistFileContent(newContent, notify = true) {
+        async function saveExistFileContent(newContent, notify = true, fileHandle = null) {
             try {
-                await writeFileHandle(currentFileHandle, newContent);
+                await writeFileHandle(fileHandle || currentFileHandle, newContent);
                 originalContent = newContent;
                 if (notify) showNotification('✓ 文件保存成功', 'success');
             } catch (error) {
@@ -17575,7 +17575,7 @@
             // 空画布：以 (0, 0) 为中心，使用合理默认尺寸
             if (nodes.length === 0) {
                 minX = -400; minY = -300;
-                maxX = 400;  maxY = 300;
+                maxX = 400; maxY = 300;
             }
             const padding = 100;
             return {
@@ -17621,18 +17621,25 @@
                 .attr('class', 'canvas-edge-hit')
                 .attr('d', path)
                 .datum(edge)
-                .on('dblclick', function (event, d) {
+                .on('dblclick', async function (event, d) {
                     event.stopPropagation();
-                    deleteEdge(d.id);
+                    await deleteEdge(d.id);
                 });
 
             return edgeGroup;
         }
 
+        // 全局节点索引缓存（O(1) 查找，节点变更时更新）
+        let _nodeMapCache = new Map();
+
+        function rebuildNodeMap() {
+            _nodeMapCache = new Map(canvasData.nodes.map(n => [n.id, n]));
+        }
+
         function renderCanvasEdges(edges, nodes, group) {
             const edgesGroup = group.append('g').attr('class', 'canvas-edges');
-            // 建立 O(1) 节点索引
-            const nodeMap = new Map(nodes.map(n => [n.id, n]));
+            rebuildNodeMap();
+            const nodeMap = _nodeMapCache;
             edges.forEach(edge => {
                 createEdgeGroupElement(edge, edgesGroup, nodeMap);
             });
@@ -17684,7 +17691,10 @@
                 elements: excalidrawData.elements || [],
                 appState: {
                     viewBackgroundColor: excalidrawData.appState ? excalidrawData.appState.viewBackgroundColor : "#ffffff",
-                    zoom: { value: 1 }
+                    zoom: { value: 1 },
+                    activeTool: {
+                        type: "hand"
+                    }
                 },
                 files: excalidrawData.files || {}
             }
@@ -17737,7 +17747,13 @@
         async function renderEmbeddedExcalidraw(container, excalidrawData) {
             const Excalidraw = window.ExcalidrawLib && window.ExcalidrawLib.Excalidraw;
             if (!Excalidraw || !container) return false;
+            // 卸载旧 React root（防止重建时内存泄漏）
+            if (container._reactRoot) {
+                try { container._reactRoot.unmount(); } catch (e) { /* 忽略 */ }
+                container._reactRoot = null;
+            }
             let root = ReactDOM.createRoot(container);
+            container._reactRoot = root;
             root.render(
                 React.createElement(Excalidraw, {
                     excalidrawAPI: (api) => {
@@ -17755,7 +17771,10 @@
                         appState: {
                             viewBackgroundColor: excalidrawData.appState ? excalidrawData.appState.viewBackgroundColor : "#ffffff",
                             readOnly: true,
-                            zoom: { value: 1 }
+                            zoom: { value: 1 },
+                            activeTool: {
+                                type: "hand"
+                            }
                         },
                         files: excalidrawData.files || {}
                     },
@@ -17802,11 +17821,35 @@
             }, 200);
         }
 
-        async function renderEmbeddedCanvas(node, text, contentDiv) {
+        async function renderEmbeddedCanvas(node, text, contentDiv, _depth = 0) {
+            // 防止 .canvas 文件嵌套渲染导致无限递归
+            if (_depth > 1) {
+                contentDiv.html(`<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--t2);font-size:12px;">📊 嵌套画布（预览已折叠）</div>`);
+                return;
+            }
             const container = contentDiv.node();
+            // 保存父级 canvasData，避免 renderCanvasFile 覆盖全局状态
+            // （否则后续拖拽/连线等操作会把子画布数据写入父文件，导致数据损坏）
+            const parentCanvasData = canvasData;
             await renderCanvasFile(text, container);
+            // 恢复父级 canvasData 并重建节点索引缓存
+            canvasData = parentCanvasData;
+            rebuildNodeMap();
             const controls = container.querySelector('.image-controls');
             if (controls) controls.style.display = 'none';
+            // 禁用内嵌画布的鼠标事件，让事件穿透到父节点（否则无法拖拽节点）
+            const svgEl = container.querySelector('.canvas-svg');
+            if (svgEl) {
+                svgEl.style.pointerEvents = 'none';
+                // 同时移除 d3 zoom 行为，防止事件被拦截
+                const svg = d3.select(svgEl);
+                svg.on('.zoom', null);
+                svg.on('click', null);
+                svg.on('pointerdown', null);
+                svg.on('pointerup', null);
+                svg.on('mousedown', null);
+                svg.on('mouseup', null);
+            }
         }
 
         async function renderEmbeddedMarkdown(node, file, contentDiv) {
@@ -17906,7 +17949,7 @@
                                 }
                             }
                         } else if (node.file.endsWith('.canvas')) {
-                            await renderEmbeddedCanvas(node, text, contentDiv);
+                            await renderEmbeddedCanvas(node, text, contentDiv, 1);
                         }
                     } catch (error) {
                         console.error('加载预览失败:', error);
@@ -17957,9 +18000,9 @@
 
             // 出/入方向向量（垂直于边的方向，指向节点外部）
             const dirMap = {
-                right:  [1, 0],
-                left:   [-1, 0],
-                top:    [0, -1],
+                right: [1, 0],
+                left: [-1, 0],
+                top: [0, -1],
                 bottom: [0, 1],
             };
             const [fromDirX, fromDirY] = dirMap[edge.fromSide] || [1, 0];
@@ -17985,8 +18028,7 @@
         function updateEdgesForNode(nodeId) {
             const edgesGroup = d3.select('.canvas-edges');
             if (edgesGroup.empty()) return;
-            // 建立 O(1) 节点索引
-            const nodeMap = new Map(canvasData.nodes.map(n => [n.id, n]));
+            const nodeMap = _nodeMapCache; // 使用缓存 Map
             const edgeGroups = edgesGroup.selectAll('.canvas-edge-group');
             edgeGroups.each(function () {
                 const hitPath = d3.select(this).select('.canvas-edge-hit');
@@ -18005,13 +18047,24 @@
         // ---- 文件保存串行队列（避免竞态条件） ----
         let _saveQueue = Promise.resolve();
 
+        // 等待所有排队保存完成
+        async function flushSaveQueue() {
+            try { await _saveQueue; } catch (e) { /* 忽略已处理错误 */ }
+        }
+
         async function saveEdgesToFile(edges) {
             if (!currentFileHandle) return;
+            const fileHandle = currentFileHandle;
             _saveQueue = _saveQueue.then(async () => {
-                const text = await getFileContent(currentFileHandle);
-                let canvasDataLocal = JSON.parse(text);
-                canvasDataLocal.edges = edges;
-                await saveExistFileContent(JSON.stringify(canvasDataLocal));
+                try {
+                    const text = await getFileContent(fileHandle);
+                    let canvasDataLocal = JSON.parse(text);
+                    canvasDataLocal.edges = edges;
+                    await saveExistFileContent(JSON.stringify(canvasDataLocal), false, fileHandle);
+                } catch (err) {
+                    console.error('保存连线失败:', err);
+                    // 不重新 throw，避免 _saveQueue 链断裂导致后续保存丢失
+                }
             });
             await _saveQueue;
         }
@@ -18036,9 +18089,7 @@
         function addEdgeToCanvas(edge) {
             const edgesGroup = d3.select('.canvas-edges');
             if (edgesGroup.empty()) return;
-            // 建立 O(1) 节点索引
-            const nodeMap = new Map(canvasData.nodes.map(n => [n.id, n]));
-            createEdgeGroupElement(edge, edgesGroup, nodeMap);
+            createEdgeGroupElement(edge, edgesGroup, _nodeMapCache);
         }
 
         function removeEdgeFromCanvas(edgeId) {
@@ -18062,36 +18113,17 @@
 
             const EDGE_ZONE = 14;
             let resizeMode = null;
-            let hoveredEdge = null;
             let initX, initY, initW, initH;
 
-            // mousemove：更新光标 + 缓存悬停边缘
-            nodeGroup.on('mousemove', function (event) {
-                if (resizeMode) return;
-                const [mx, my] = d3.pointer(event, this);
-                const w = node.width, h = node.height;
-                const onRight  = mx > w - EDGE_ZONE;
-                const onLeft   = mx < EDGE_ZONE;
-                const onBottom = my > h - EDGE_ZONE;
-                const onTop    = my < EDGE_ZONE;
-
-                hoveredEdge = null;
-                let cursor = 'grab';
-                if (onRight && onBottom)      { hoveredEdge = 'se'; cursor = 'nwse-resize'; }
-                else if (onLeft && onBottom)  { hoveredEdge = 'sw'; cursor = 'nesw-resize'; }
-                else if (onRight && onTop)    { hoveredEdge = 'ne'; cursor = 'nesw-resize'; }
-                else if (onLeft && onTop)     { hoveredEdge = 'nw'; cursor = 'nwse-resize'; }
-                else if (onRight)             { hoveredEdge = 'e';  cursor = 'ew-resize'; }
-                else if (onLeft)              { hoveredEdge = 'w';  cursor = 'ew-resize'; }
-                else if (onBottom)            { hoveredEdge = 's';  cursor = 'ns-resize'; }
-                else if (onTop)               { hoveredEdge = 'n';  cursor = 'ns-resize'; }
-                d3.select(this).style('cursor', cursor);
-            });
+            // 在 DOM 上缓存节点尺寸（供委托的 mousemove 使用，避免闭包查找）
+            nodeGroup.node().__nodeW = node.width;
+            nodeGroup.node().__nodeH = node.height;
+            nodeGroup.node().__hoveredEdge = null;
 
             // 拖拽：缩放/移动统一处理（event.dx/dy 是增量值，非累计）
             const drag = d3.drag()
                 .on('start', function (event) {
-                    resizeMode = hoveredEdge;
+                    resizeMode = this.__hoveredEdge; // 读取委托 mousemove 缓存的边缘
                     initX = node.x; initY = node.y;
                     initW = node.width; initH = node.height;
                     // 在 DOM 元素上存储累计状态（跨 drag 事件帧持久化）
@@ -18138,30 +18170,35 @@
                     node.x = newX; node.y = newY;
                     node.width = newW; node.height = newH;
 
+                    // 更新 DOM 缓存尺寸（事件委托 mousemove 使用）
+                    this.__nodeW = newW;
+                    this.__nodeH = newH;
+
                     ng.attr('transform', `translate(${newX}, ${newY})`);
                     ng.select('.canvas-node-rect').attr('width', newW).attr('height', newH);
 
                     const fo = ng.select('foreignObject');
                     if (!fo.empty()) {
                         fo.attr('width', newW - (node.type === 'text' ? 20 : 0))
-                          .attr('height', newH - (node.type === 'text' ? 20 : 0));
+                            .attr('height', newH - (node.type === 'text' ? 20 : 0));
                     }
 
                     ng.selectAll('.canvas-connector-dot').each(function () {
                         const dot = d3.select(this);
                         const side = dot.attr('data-side');
-                        if (side === 'top')    dot.attr('cx', newW / 2).attr('cy', -2);
+                        if (side === 'top') dot.attr('cx', newW / 2).attr('cy', -2);
                         if (side === 'bottom') dot.attr('cx', newW / 2).attr('cy', newH + 2);
-                        if (side === 'left')   dot.attr('cx', -2).attr('cy', newH / 2);
-                        if (side === 'right')  dot.attr('cx', newW + 2).attr('cy', newH / 2);
+                        if (side === 'left') dot.attr('cx', -2).attr('cy', newH / 2);
+                        if (side === 'right') dot.attr('cx', newW + 2).attr('cy', newH / 2);
                     });
 
                     updateEdgesForNode(node.id);
                 })
-                .on('end', function (event) {
+                .on('end', async function (event) {
                     d3.select(this).style('cursor', 'grab').attr('opacity', 1);
                     if (currentFileHandle && (node.x !== initX || node.y !== initY || node.width !== initW || node.height !== initH)) {
-                        saveNodesToFile(canvasData.nodes);
+                        await saveNodesToFile(canvasData.nodes);
+                        rebuildNodeMap(); // 节点尺寸/位置变更后更新缓存
                     }
                     resizeMode = null;
                 });
@@ -18250,7 +18287,7 @@
             });
         }
 
-        function handleConnectorClick(nodeId, side) {
+        async function handleConnectorClick(nodeId, side) {
             if (!connectingFrom) {
                 // 开始连线
                 connectingFrom = { nodeId, side };
@@ -18264,7 +18301,7 @@
                 showNotification('不支持节点自连接，请选择其他节点', 'warning');
             } else {
                 // 完成连线
-                createConnectorEdge(connectingFrom.nodeId, connectingFrom.side, nodeId, side);
+                await createConnectorEdge(connectingFrom.nodeId, connectingFrom.side, nodeId, side);
                 cancelConnecting();
             }
         }
@@ -18329,10 +18366,57 @@
         }
         _ensureCanvasEscHandler();
 
+        // 节点光标委托处理器（挂载在父级 nodesGroup 上，避免每个节点独立注册 mousemove）
+        function _setupNodeCursorDelegation(nodesGroup) {
+            const EDGE_ZONE = 14;
+            nodesGroup.on('mousemove', function (event) {
+                // 找到鼠标所在的 .canvas-node 子元素
+                let target = event.target;
+                while (target && target !== this) {
+                    if (target.classList && target.classList.contains('canvas-node')) break;
+                    target = target.parentNode;
+                }
+                if (!target || target === this) {
+                    // 鼠标不在任何节点上，恢复所有节点光标
+                    d3.select(this).selectAll('.canvas-node').style('cursor', 'grab');
+                    return;
+                }
+                // 读取 DOM 缓存
+                const el = target;
+                const w = el.__nodeW || 200;
+                const h = el.__nodeH || 120;
+                // 使用 d3.pointer 获取相对坐标
+                const [mx, my] = d3.pointer(event, el);
+                const onRight  = mx > w - EDGE_ZONE;
+                const onLeft   = mx < EDGE_ZONE;
+                const onBottom = my > h - EDGE_ZONE;
+                const onTop    = my < EDGE_ZONE;
+
+                let hovered = null;
+                let cursor = 'grab';
+                if (onRight && onBottom)      { hovered = 'se'; cursor = 'nwse-resize'; }
+                else if (onLeft && onBottom)  { hovered = 'sw'; cursor = 'nesw-resize'; }
+                else if (onRight && onTop)    { hovered = 'ne'; cursor = 'nesw-resize'; }
+                else if (onLeft && onTop)     { hovered = 'nw'; cursor = 'nwse-resize'; }
+                else if (onRight)             { hovered = 'e';  cursor = 'ew-resize'; }
+                else if (onLeft)              { hovered = 'w';  cursor = 'ew-resize'; }
+                else if (onBottom)            { hovered = 's';  cursor = 'ns-resize'; }
+                else if (onTop)               { hovered = 'n';  cursor = 'ns-resize'; }
+
+                el.__hoveredEdge = hovered;
+                d3.select(el).style('cursor', cursor);
+            });
+        }
+
         async function renderCanvasNodes(nodes, group) {
             const nodesGroup = group.append('g').attr('class', 'canvas-nodes');
-            // 并行渲染所有节点，避免串行阻塞
-            await Promise.all(nodes.map(node => renderCanvasNode(node, nodesGroup)));
+            // 注册委托 mousemove（单例，全局一次）
+            _setupNodeCursorDelegation(nodesGroup);
+            // 串行渲染确保 DOM 顺序与数据一致
+            for (const node of nodes) {
+                await renderCanvasNode(node, nodesGroup);
+            }
+            rebuildNodeMap(); // 所有节点渲染完成后建立索引
         }
 
         function fitCanvasToContent(container, contentWidth, contentHeight, centerX, centerY, svg, zoom) {
@@ -18377,7 +18461,11 @@
         }
 
         async function renderCanvasFile(text, contentDiv, showSaveBtn = false) {
-            // TODO 
+            // 等待所有排队保存完成后再渲染新文件，防止数据串写
+            await flushSaveQueue();
+            // 确保 Esc 键盘监听器已注册（canvasDestroy 可能已移除）
+            _ensureCanvasEscHandler();
+            
             showCanvasControls(showSaveBtn);
             let canvasDataFromFile;
             try {
@@ -18691,6 +18779,7 @@
                 if (canvasContainer) {
                     canvasContainer.style.width = '100%';
                 }
+                adjustCanvasViewport(); // 面板关闭后重新适配画布视口
             }
             setControlsState({ editBtn: true, copyBtn: true });
         }
@@ -18819,24 +18908,37 @@
 
         async function saveNodeText(nodeId, newText) {
             if (!currentFileHandle) return;
-            // 有文件句柄时，保存到文件
-            const text = await getFileContent(currentFileHandle);
-            let canvasDataLocal = JSON.parse(text);
-            canvasDataLocal.nodes.forEach(node => {
-                if (node.id === nodeId) {
-                    node.text = newText;
+            const fileHandle = currentFileHandle; // 捕获当前文件句柄快照，防止切换文件后写入错误文件
+            _saveQueue = _saveQueue.then(async () => {
+                try {
+                    const text = await getFileContent(fileHandle);
+                    let canvasDataLocal = JSON.parse(text);
+                    canvasDataLocal.nodes.forEach(node => {
+                        if (node.id === nodeId) {
+                            node.text = newText;
+                        }
+                    });
+                    await saveExistFileContent(JSON.stringify(canvasDataLocal), true, fileHandle);
+                } catch (err) {
+                    console.error('保存节点文本失败:', err);
                 }
             });
-            await saveExistFileContent(JSON.stringify(canvasDataLocal));
+            await _saveQueue;
         }
 
         async function saveNodesToFile(nodes) {
             if (!currentFileHandle) return;
+            const fileHandle = currentFileHandle;
             _saveQueue = _saveQueue.then(async () => {
-                const text = await getFileContent(currentFileHandle);
-                let canvasDataLocal = JSON.parse(text);
-                canvasDataLocal.nodes = nodes;
-                await saveExistFileContent(JSON.stringify(canvasDataLocal));
+                try {
+                    const text = await getFileContent(fileHandle);
+                    let canvasDataLocal = JSON.parse(text);
+                    canvasDataLocal.nodes = nodes;
+                    await saveExistFileContent(JSON.stringify(canvasDataLocal), true, fileHandle);
+                } catch (err) {
+                    console.error('保存节点失败:', err);
+                    // 不重新 throw，避免 _saveQueue 链断裂导致后续保存丢失
+                }
             });
             await _saveQueue;
         }
@@ -25271,9 +25373,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             canvasData.nodes = canvasData.nodes.filter(n => n.id !== selectedCanvasNodeId);
             // 同时删除与该节点相关的边
             canvasData.edges = canvasData.edges.filter(e => e.fromNode !== selectedCanvasNodeId && e.toNode !== selectedCanvasNodeId);
-            // 保存并重新渲染
+            rebuildNodeMap(); // 更新节点索引
+            // 持久化（节点+边）
             if (currentFileHandle) {
-                saveNodesToFile(canvasData.nodes);
+                await saveNodesToFile(canvasData.nodes);
+                await saveEdgesToFile(canvasData.edges);
             }
             const contentPanel = document.getElementById('node-content-panel');
             if (contentPanel) {
