@@ -754,7 +754,6 @@
             word-wrap: break-word;
             overflow: hidden;
             text-overflow: ellipsis;
-            /* white-space: nowrap; */
         }
 
         .canvas-edge-path {
@@ -768,73 +767,77 @@
             fill: var(--color-text-secondary);
         }
 
-        /* 边编辑弹窗样式 */
-        .canvas-edge-path:hover {
+        /* 连线磁吸热区（宽透明描边，方便鼠标选中） */
+        .canvas-edge-hit {
+            fill: none;
+            stroke: transparent;
+            stroke-width: 16;
+            cursor: pointer;
+        }
+
+        .canvas-edge-group:hover .canvas-edge-path {
+            stroke: #3182f7;
             stroke-width: 3;
         }
 
-        .edge-popup {
-            min-width: 180px;
+        .canvas-connector-dot {
+            fill: #d0d7de;
+            stroke: #d0d7de;
+            stroke-width: 1;
+            cursor: crosshair;
+            transition: all 0.15s ease;
+            opacity: 0;
         }
 
-        .edge-popup-title {
-            font-weight: 600;
-            margin-bottom: 8px;
-            border-bottom: 1px solid #eee;
-            padding-bottom: 4px;
+        .canvas-node:hover .canvas-connector-dot,
+        .canvas-node.canvas-node-selected .canvas-connector-dot,
+        .canvas-svg.connecting-mode .canvas-connector-dot {
+            opacity: 0.7;
         }
 
-        .edge-popup-section {
-            margin-bottom: 6px;
+        .canvas-connector-dot:hover {
+            fill: var(--color-primary-light);
+            stroke: var(--color-primary);
+            stroke-width: 2;
+            opacity: 1 !important;
+            r: 7;
         }
 
-        .edge-popup-section label {
-            display: block;
-            font-size: 11px;
-            color: #666;
-            margin-bottom: 2px;
+        .canvas-connector-dot.connecting-active {
+            fill: var(--color-primary);
+            stroke: var(--color-primary);
+            opacity: 1 !important;
+            r: 7;
+            animation: connectorPulse 0.8s ease-in-out infinite;
         }
 
-        .edge-popup-section select {
-            width: 100%;
-            padding: 4px;
-            border: 1px solid #ddd;
-            border-radius: 3px;
+        @keyframes connectorPulse {
+            0%,
+            100% {
+                r: 6;
+            }
+            50% {
+                r: 8;
+            }
         }
 
-        .edge-popup-buttons {
-            display: flex;
-            gap: 6px;
-            justify-content: flex-end;
-            margin-top: 10px;
-            padding-top: 8px;
-            border-top: 1px solid #eee;
+        /* 连接模式光标 */
+        .canvas-svg.connecting-mode {
+            cursor: crosshair !important;
         }
 
-        .edge-popup-item {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 4px 0;
-            border-bottom: 1px solid #eee;
+        /* ---- 虚线流动动画 ---- */
+        @keyframes dashFlow {
+            to {
+                stroke-dashoffset: -40;
+            }
         }
 
-        .edge-popup-item:last-child {
-            border-bottom: none;
+        .canvas-edge-path.animated {
+            stroke-dasharray: 10 6;
+            animation: dashFlow 0.6s linear infinite;
         }
 
-        .edge-popup-item .edge-label {
-            flex: 1;
-            font-size: 12px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .edge-popup-item .btn-xs {
-            padding: 2px 6px;
-            font-size: 10px;
-        }
 
         .canvas-controls {
             position: fixed;
@@ -12336,9 +12339,9 @@
             { key: '书签', value: 'toggleFile("bookmarks")', display: true, fileProtocolDisplay: true },
             { key: '文件时间线', value: 'toggleFile("timeline")', display: true, fileProtocolDisplay: true },
             { key: 'Mermaid', value: 'toggleFile("mermaid")', display: true, fileProtocolDisplay: true },
-            { key: 'excalidraw白板', value: 'toggleFile("whiteboard")', display: true, fileProtocolDisplay: true },
+            { key: 'Excalidraw白板', value: 'toggleFile("whiteboard")', display: true, fileProtocolDisplay: true },
             { key: 'git记录', value: 'toggleFile("gitRecords")', display: true, fileProtocolDisplay: true },
-            { key: '白板', value: 'toggleFile("canvas")', display: true, fileProtocolDisplay: true },
+            { key: 'Canvas白板', value: 'toggleFile("canvas")', display: true, fileProtocolDisplay: true },
         ]
         // 高亮字体颜色（深色系，确保可读性）
         const HIGHLIGHT_FONT_COLORS = [
@@ -12348,7 +12351,7 @@
             { key: 'font-green', label: '绿色', color: '#16a34a', default: false },
             { key: 'font-purple', label: '紫色', color: '#9333ea', default: false },
         ];
-        // 高亮背景颜色（浅色系，柔和不刺眼）
+        // 高亮背景颜色（浅色系，柔和不刺眼
         const HIGHLIGHT_BG_COLORS = [
             { key: 'bg-yellow', label: '黄底', color: '#fef08a', default: true },
             { key: 'bg-green', label: '绿底', color: '#bbf7d0', default: false },
@@ -12582,6 +12585,7 @@
         let treeDomItemCache = new LRUCache(1000);  // 文件树 DOM 元素缓存（避免重复创建）
         // Canvas 白板相关函数
         let canvasData = { nodes: [], edges: [] };
+        let connectingFrom = null; // { nodeId, side } | null — 连线模式：已选中的起点连接点
 
         // ====== DOM 元素缓存（避免重复查询） ======
         const treeElement = document.getElementById('tree');
@@ -13446,12 +13450,12 @@
             }
         }
 
-        // 根据 Monaco language ID 返回对应的 Prettier parser 和插件
+        // 根据 Monaco language ID 返回对应的 Prettier parser 和插件 
         function getPrettierConfig(language) {
             const config = {
                 javascript: { parser: 'babel', plugins: [window.prettierPlugins?.babel, window.prettierPlugins?.estree] },
                 typescript: { parser: 'babel-ts', plugins: [window.prettierPlugins?.babel, window.prettierPlugins?.estree] },
-                json: { parser: null, plugins: [], fallback: true },  // JSON 使用 Monaco 内置格式化
+                json: { parser: null, plugins: [], fallback: true },  // 使用内置 JSON.stringify 格式化
                 html: { parser: 'html', plugins: [window.prettierPlugins?.html] },
                 xml: { parser: 'html', plugins: [window.prettierPlugins?.html] },
                 css: { parser: 'css', plugins: [window.prettierPlugins?.postcss] },
@@ -13472,6 +13476,16 @@
 
         // 调用 Prettier 格式化代码，不支持的语言返回 null
         async function formatCode(code, language) {
+            // JSON 特殊处理：使用原生 JSON.stringify（不依赖 Prettier）
+            if (language === 'json') {
+                try {
+                    const parsed = JSON.parse(code);
+                    return JSON.stringify(parsed, null, 4);
+                } catch (e) {
+                    showNotification('✗ JSON 格式无效: ' + e.message, 'error');
+                    return null;
+                }
+            }
             if (!window.prettier) {
                 console.warn('Prettier 未加载');
                 return null;
@@ -13534,9 +13548,16 @@
             const supportedLanguages = [
                 'javascript', 'typescript',
                 'html', 'xml', 'css', 'scss', 'less',
-                'markdown', 'yaml',
+                'markdown', 'yaml', 'json',
             ];
-            // fallback 语言不注册 provider：让 Monaco 使用内置格式化
+            // fallback 语言：注册通用缩进格式化器
+            const fallbackLanguages = [
+                'python', 'go', 'java', 'lua', 'shell', 'sql', 'powershell',
+                'ruby', 'rust', 'php', 'c', 'cpp', 'csharp', 'swift', 'kotlin',
+                'dockerfile', 'ini', 'bat', 'plaintext',
+            ];
+
+            // Prettier 支持的语言：注册 Prettier 格式化提供者
             supportedLanguages.forEach(lang => {
                 monaco.languages.registerDocumentFormattingEditProvider(lang, {
                     provideDocumentFormattingEdits: async (model) => {
@@ -13545,7 +13566,41 @@
                         if (formatted && formatted !== code) {
                             return [{ range: model.getFullModelRange(), text: formatted }];
                         }
-                        return undefined; // 无变更
+                        return undefined;
+                    }
+                });
+            });
+
+            // 通用缩进格式化（fallback 语言）：统一缩进、去除行尾空白
+            fallbackLanguages.forEach(lang => {
+                monaco.languages.registerDocumentFormattingEditProvider(lang, {
+                    provideDocumentFormattingEdits: async (model) => {
+                        const code = model.getValue();
+                        const options = model.getOptions();
+                        const tabSize = options.tabSize || 4;
+                        const insertSpaces = options.insertSpaces !== false;
+                        const indentChar = insertSpaces ? ' '.repeat(tabSize) : '\t';
+                        const lines = code.split('\n');
+                        const formatted = lines.map(line => {
+                            // 去除行尾空白
+                            let trimmed = line.replace(/\s+$/, '');
+                            // 计算前导空格/制表符数量，统一替换为配置的缩进字符
+                            const leading = trimmed.match(/^(\s*)/)[1];
+                            if (leading.length > 0) {
+                                // 统计前导空白中的空格和制表符
+                                const spaceCount = (leading.match(/ /g) || []).length;
+                                const tabCount = (leading.match(/\t/g) || []).length;
+                                const totalIndent = tabCount * tabSize + spaceCount;
+                                const indentLevel = Math.round(totalIndent / tabSize);
+                                const newIndent = indentChar.repeat(Math.max(0, indentLevel));
+                                trimmed = newIndent + trimmed.replace(/^\s+/, '');
+                            }
+                            return trimmed;
+                        }).join('\n');
+                        if (formatted !== code) {
+                            return [{ range: model.getFullModelRange(), text: formatted }];
+                        }
+                        return undefined;
                     }
                 });
             });
@@ -14021,7 +14076,8 @@
                     const { svg, zoom } = window.canvasState;
                     if (svg && zoom) {
                         svg.on('.zoom', null);
-                        svg.on('click', null);
+                        svg.on('pointerdown', null);
+                        svg.on('pointerup', null);
                     }
                 } catch (e) {
                     console.warn('清理 Canvas SVG 状态失败:', e);
@@ -14043,9 +14099,22 @@
                 canvasData = { nodes: [], edges: [] };
                 selectedCanvasNodeId = null;
                 pendingCanvasNodeType = null;
+                cancelConnecting(); // 确保退出连线模式
+                // 4.5. 移除 Esc 键盘监听器
+                if (_canvasEscHandler) {
+                    document.removeEventListener('keydown', _canvasEscHandler);
+                    _canvasEscHandler = null;
+                }
                 // 5. 清理模态框（如果存在）
                 const modal = document.getElementById('canvas-file-select-modal');
                 if (modal) modal.remove();
+                // 5.5. 清理 Object URL（释放图片 blob 内存）
+                if (currentObjectUrls && currentObjectUrls.length > 0) {
+                    currentObjectUrls.forEach(url => {
+                        try { URL.revokeObjectURL(url); } catch (e) { /* 忽略 */ }
+                    });
+                    currentObjectUrls.length = 0;
+                }
                 // 6. 隐藏底部工具栏
                 const bottomToolbar = document.getElementById('canvas-bottom-toolbar');
                 if (bottomToolbar) bottomToolbar.style.display = 'none';
@@ -17503,11 +17572,10 @@
                 maxX = Math.max(maxX, node.x + node.width);
                 maxY = Math.max(maxY, node.y + node.height);
             });
+            // 空画布：以 (0, 0) 为中心，使用合理默认尺寸
             if (nodes.length === 0) {
-                minX = -200;
-                minY = -100;
-                maxX = 200;
-                maxY = 100;
+                minX = -400; minY = -300;
+                maxX = 400;  maxY = 300;
             }
             const padding = 100;
             return {
@@ -17532,39 +17600,41 @@
             return zoom;
         }
 
+        // ---- 共享：创建单条连线 DOM 元素 ----
+        function createEdgeGroupElement(edge, edgesGroup, nodeMap) {
+            const fromNode = nodeMap.get(edge.fromNode);
+            const toNode = nodeMap.get(edge.toNode);
+            if (!fromNode || !toNode) return null;
+
+            const path = calculateEdgePath(fromNode, toNode, edge);
+            const edgeGroup = edgesGroup.append('g').attr('class', 'canvas-edge-group');
+
+            // 可见路径（下层，带箭头和动画）
+            edgeGroup.append('path')
+                .attr('class', 'canvas-edge-path animated')
+                .attr('d', path)
+                .attr('stroke', '#1f2328')
+                .attr('marker-end', 'url(#arrowhead)');
+
+            // 磁吸热区路径（上层，宽透明描边便于选中）
+            edgeGroup.append('path')
+                .attr('class', 'canvas-edge-hit')
+                .attr('d', path)
+                .datum(edge)
+                .on('dblclick', function (event, d) {
+                    event.stopPropagation();
+                    deleteEdge(d.id);
+                });
+
+            return edgeGroup;
+        }
+
         function renderCanvasEdges(edges, nodes, group) {
             const edgesGroup = group.append('g').attr('class', 'canvas-edges');
+            // 建立 O(1) 节点索引
+            const nodeMap = new Map(nodes.map(n => [n.id, n]));
             edges.forEach(edge => {
-                const fromNode = nodes.find(n => n.id === edge.fromNode);
-                const toNode = nodes.find(n => n.id === edge.toNode);
-                if (!fromNode || !toNode) return;
-                let startX = fromNode.x + fromNode.width / 2;
-                let startY = fromNode.y + fromNode.height / 2;
-                let endX = toNode.x + toNode.width / 2;
-                let endY = toNode.y + toNode.height / 2;
-                if (edge.fromSide === 'right') startX = fromNode.x + fromNode.width;
-                if (edge.fromSide === 'left') startX = fromNode.x;
-                if (edge.fromSide === 'top') startY = fromNode.y;
-                if (edge.fromSide === 'bottom') startY = fromNode.y + fromNode.height;
-                if (edge.toSide === 'right') endX = toNode.x + toNode.width;
-                if (edge.toSide === 'left') endX = toNode.x;
-                if (edge.toSide === 'top') endY = toNode.y;
-                if (edge.toSide === 'bottom') endY = toNode.y + toNode.height;
-                const dx = endX - startX;
-                const dy = endY - startY;
-                const controlPointX = startX + dx / 2;
-                const controlPointY = startY + dy / 2;
-                edgesGroup.append('path')
-                    .attr('class', 'canvas-edge-path')
-                    .attr('d', `M ${startX} ${startY} Q ${controlPointX} ${controlPointY} ${endX} ${endY}`)
-                    .attr('stroke', '#1f2328')
-                    .attr('marker-end', 'url(#arrowhead)')
-                    .attr('cursor', 'pointer')
-                    .datum(edge) // 绑定 edge 数据用于后续交互
-                    .on('click', function (event, d) {
-                        event.stopPropagation();
-                        showEdgePopup(event, d);
-                    });
+                createEdgeGroupElement(edge, edgesGroup, nodeMap);
             });
         }
         const selectCanvasNode = (id, nodeGroup) => {
@@ -17595,7 +17665,8 @@
                 .attr('x', 10)
                 .attr('y', 10)
                 .attr('width', node.width - 20)
-                .attr('height', node.height - 20);
+                .attr('height', node.height - 20)
+                .attr('overflow', 'hidden');
             foreignObject.append('xhtml:div')
                 .attr('class', 'canvas-node-text')
                 .style('width', '100%')
@@ -17769,7 +17840,8 @@
                     .attr('x', 0)
                     .attr('y', 0)
                     .attr('width', node.width)
-                    .attr('height', node.height);
+                    .attr('height', node.height)
+                    .attr('overflow', 'hidden');
                 const contentDiv = foreignObject.append('xhtml:div')
                     .style('width', '100%')
                     .style('height', '100%')
@@ -17803,7 +17875,8 @@
                     .attr('x', 0)
                     .attr('y', 0)
                     .attr('width', node.width)
-                    .attr('height', node.height);
+                    .attr('height', node.height)
+                    .attr('overflow', 'hidden');
                 const contentDiv = foreignObject.append('xhtml:div')
                     .style('width', '100%')
                     .style('height', '100%')
@@ -17847,7 +17920,8 @@
                     .attr('x', 10)
                     .attr('y', 10)
                     .attr('width', node.width - 20)
-                    .attr('height', node.height - 20);
+                    .attr('height', node.height - 20)
+                    .attr('overflow', 'hidden');
                 const contentDiv = foreignObject.append('xhtml:div')
                     .attr('class', 'canvas-node-text')
                     .style('width', '100%')
@@ -17865,270 +17939,231 @@
         }
 
         function calculateEdgePath(fromNode, toNode, edge) {
+            // 计算起点（所在边的中点）
             let startX = fromNode.x + fromNode.width / 2;
             let startY = fromNode.y + fromNode.height / 2;
-            let endX = toNode.x + toNode.width / 2;
-            let endY = toNode.y + toNode.height / 2;
             if (edge.fromSide === 'right') startX = fromNode.x + fromNode.width;
             if (edge.fromSide === 'left') startX = fromNode.x;
             if (edge.fromSide === 'top') startY = fromNode.y;
             if (edge.fromSide === 'bottom') startY = fromNode.y + fromNode.height;
+
+            // 计算终点（所在边的中点）
+            let endX = toNode.x + toNode.width / 2;
+            let endY = toNode.y + toNode.height / 2;
             if (edge.toSide === 'right') endX = toNode.x + toNode.width;
             if (edge.toSide === 'left') endX = toNode.x;
             if (edge.toSide === 'top') endY = toNode.y;
             if (edge.toSide === 'bottom') endY = toNode.y + toNode.height;
+
+            // 出/入方向向量（垂直于边的方向，指向节点外部）
+            const dirMap = {
+                right:  [1, 0],
+                left:   [-1, 0],
+                top:    [0, -1],
+                bottom: [0, 1],
+            };
+            const [fromDirX, fromDirY] = dirMap[edge.fromSide] || [1, 0];
+            const [toDirX, toDirY] = dirMap[edge.toSide] || [-1, 0];
+
             const dx = endX - startX;
             const dy = endY - startY;
-            const controlPointX = startX + dx / 2;
-            const controlPointY = startY + dy / 2;
-            return `M ${startX} ${startY} Q ${controlPointX} ${controlPointY} ${endX} ${endY}`;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance === 0) return `M ${startX} ${startY} L ${endX} ${endY}`;
+
+            // 控制点延伸距离：取总距离的 50%，上限 150px，保证近距离也不会太弯
+            const cpDist = Math.min(distance * 0.5, 150);
+
+            // 控制点沿出/入方向延伸，保证首尾段为水平/垂直直线，箭头方向正
+            const cp1x = startX + fromDirX * cpDist;
+            const cp1y = startY + fromDirY * cpDist;
+            const cp2x = endX + toDirX * cpDist;
+            const cp2y = endY + toDirY * cpDist;
+
+            return `M ${startX} ${startY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${endY}`;
         }
 
         function updateEdgesForNode(nodeId) {
             const edgesGroup = d3.select('.canvas-edges');
             if (edgesGroup.empty()) return;
-            const edgePaths = edgesGroup.selectAll('.canvas-edge-path');
-            edgePaths.each(function (d) {
-                const edge = d3.select(this).datum();
+            // 建立 O(1) 节点索引
+            const nodeMap = new Map(canvasData.nodes.map(n => [n.id, n]));
+            const edgeGroups = edgesGroup.selectAll('.canvas-edge-group');
+            edgeGroups.each(function () {
+                const hitPath = d3.select(this).select('.canvas-edge-hit');
+                const edge = hitPath.datum();
                 if (edge && (edge.fromNode === nodeId || edge.toNode === nodeId)) {
-                    const fromNode = canvasData.nodes.find(n => n.id === edge.fromNode);
-                    const toNode = canvasData.nodes.find(n => n.id === edge.toNode);
+                    const fromNode = nodeMap.get(edge.fromNode);
+                    const toNode = nodeMap.get(edge.toNode);
                     if (fromNode && toNode) {
                         const path = calculateEdgePath(fromNode, toNode, edge);
-                        d3.select(this).attr('d', path);
+                        d3.select(this).selectAll('path').attr('d', path);
                     }
                 }
             });
         }
 
-        function showNodeEdgesPopup(event, node) {
-            // 获取该节点关联的所有边
-            const connectedEdges = canvasData.edges.filter(e => e.fromNode === node.id || e.toNode === node.id);
-
-            // 如果没有连接的边，直接返回
-            if (connectedEdges.length === 0) {
-                return;
-            }
-
-            // 移除已存在的弹窗
-            const existing = document.getElementById('edge-popup');
-            if (existing) existing.remove();
-
-            const popup = document.createElement('div');
-            popup.id = 'edge-popup';
-            popup.className = 'edge-popup';
-            popup.innerHTML = `
-                <div class="edge-popup-title">连接列表</div>
-                <div class="edge-popup-section">
-                    ${connectedEdges.map(edge => {
-                const fromNode = canvasData.nodes.find(n => n.id === edge.fromNode);
-                const toNode = canvasData.nodes.find(n => n.id === edge.toNode);
-                const fromLabel = fromNode ? (fromNode.type === 'text' ? (fromNode.text || '').substring(0, 15) : fromNode.file) : edge.fromNode;
-                const toLabel = toNode ? (toNode.type === 'text' ? (toNode.text || '').substring(0, 15) : toNode.file) : edge.toNode;
-                return `<div class="edge-popup-item" data-edge-id="${edge.id}">
-                            <span class="edge-label">${fromLabel} → ${toLabel}</span>
-                            <button class="btn btn-xs btn-primary edge-edit-btn">编辑</button>
-                            <button class="btn btn-xs btn-danger edge-delete-btn">删除</button>
-                        </div>`;
-            }).join('')}
-                </div>
-            `;
-
-            // 定位弹窗
-            popup.style.position = 'fixed';
-            popup.style.left = event.pageX + 'px';
-            popup.style.top = event.pageY + 'px';
-            popup.style.zIndex = '10000';
-            popup.style.background = 'white';
-            popup.style.border = '1px solid #ddd';
-            popup.style.borderRadius = '4px';
-            popup.style.padding = '10px';
-            popup.style.boxShadow = '0 2px 10px rgba(0,0,0,0.1)';
-            popup.style.minWidth = '250px';
-
-            document.body.appendChild(popup);
-
-            // 绑定编辑按钮事件
-            popup.querySelectorAll('.edge-edit-btn').forEach(btn => {
-                btn.onclick = (e) => {
-                    const edgeId = e.target.closest('.edge-popup-item').dataset.edgeId;
-                    const edge = canvasData.edges.find(ed => ed.id === edgeId);
-                    popup.remove();
-                    if (edge) {
-                        // 在点击位置显示编辑弹窗
-                        showEdgePopup({ pageX: event.pageX + 150, pageY: event.pageY }, edge);
-                    }
-                };
-            });
-
-            // 绑定删除按钮事件
-            popup.querySelectorAll('.edge-delete-btn').forEach(btn => {
-                btn.onclick = (e) => {
-                    const edgeId = e.target.closest('.edge-popup-item').dataset.edgeId;
-                    deleteEdge(edgeId);
-                    popup.remove();
-                };
-            });
-
-            // 点击外部关闭
-            setTimeout(() => {
-                document.addEventListener('click', function closePopup(e) {
-                    if (!popup.contains(e.target)) {
-                        popup.remove();
-                        document.removeEventListener('click', closePopup);
-                    }
-                });
-            }, 10);
-        }
-
-        function showEdgePopup(event, edge) {
-            // 移除已存在的弹窗
-            const existing = document.getElementById('edge-popup');
-            if (existing) existing.remove();
-
-            const popup = document.createElement('div');
-            popup.id = 'edge-popup';
-            popup.className = 'edge-popup';
-            popup.innerHTML = `
-                <div class="edge-popup-title">编辑连接</div>
-                <div class="edge-popup-section">
-                    <label>起点节点:</label>
-                    <select id="edge-from-node">
-                        ${canvasData.nodes.map(n => `<option value="${n.id}" ${n.id === edge.fromNode ? 'selected' : ''}>${n.type === 'text' ? (n.text || '').substring(0, 20) : n.file}</option>`).join('')}
-                    </select>
-                </div>
-                <div class="edge-popup-section">
-                    <label>起点连接点:</label>
-                    <select id="edge-from-side">
-                        <option value="left" ${edge.fromSide === 'left' ? 'selected' : ''}>左</option>
-                        <option value="right" ${edge.fromSide === 'right' ? 'selected' : ''}>右</option>
-                        <option value="top" ${edge.fromSide === 'top' ? 'selected' : ''}>上</option>
-                        <option value="bottom" ${edge.fromSide === 'bottom' ? 'selected' : ''}>下</option>
-                    </select>
-                </div>
-                <div class="edge-popup-section">
-                    <label>终点节点:</label>
-                    <select id="edge-to-node">
-                        ${canvasData.nodes.map(n => `<option value="${n.id}" ${n.id === edge.toNode ? 'selected' : ''}>${n.type === 'text' ? (n.text || '').substring(0, 20) : n.file}</option>`).join('')}
-                    </select>
-                </div>
-                <div class="edge-popup-section">
-                    <label>终点连接点:</label>
-                    <select id="edge-to-side">
-                        <option value="left" ${edge.toSide === 'left' ? 'selected' : ''}>左</option>
-                        <option value="right" ${edge.toSide === 'right' ? 'selected' : ''}>右</option>
-                        <option value="top" ${edge.toSide === 'top' ? 'selected' : ''}>上</option>
-                        <option value="bottom" ${edge.toSide === 'bottom' ? 'selected' : ''}>下</option>
-                    </select>
-                </div>
-                <div class="edge-popup-buttons">
-                    <button id="edge-delete-btn" class="btn btn-danger btn-sm">删除</button>
-                    <button id="edge-save-btn" class="btn btn-primary btn-sm">保存</button>
-                </div>
-            `;
-
-            // 定位弹窗
-            popup.style.position = 'fixed';
-            popup.style.left = event.pageX + 'px';
-            popup.style.top = event.pageY + 'px';
-            popup.style.zIndex = '10000';
-            popup.style.background = 'white';
-            popup.style.border = '1px solid #ddd';
-            popup.style.borderRadius = '4px';
-            popup.style.padding = '10px';
-            popup.style.boxShadow = '0 2px 10px rgba(0,0,0,0.1)';
-
-            document.body.appendChild(popup);
-
-            // 保存按钮
-            document.getElementById('edge-save-btn').onclick = async () => {
-                edge.fromNode = document.getElementById('edge-from-node').value;
-                edge.fromSide = document.getElementById('edge-from-side').value;
-                edge.toNode = document.getElementById('edge-to-node').value;
-                edge.toSide = document.getElementById('edge-to-side').value;
-                if (currentFileHandle) {
-                    await saveEdgesToFile(canvasData.edges);
-                }
-                popup.remove();
-                await renderCanvasFile(JSON.stringify(canvasData), contentMain);
-            };
-
-            // 删除按钮
-            document.getElementById('edge-delete-btn').onclick = () => {
-                deleteEdge(edge.id);
-                popup.remove();
-            };
-
-            // 点击外部关闭
-            setTimeout(() => {
-                document.addEventListener('click', function closePopup(e) {
-                    if (!popup.contains(e.target)) {
-                        popup.remove();
-                        document.removeEventListener('click', closePopup);
-                    }
-                });
-            }, 10);
-        }
+        // ---- 文件保存串行队列（避免竞态条件） ----
+        let _saveQueue = Promise.resolve();
 
         async function saveEdgesToFile(edges) {
             if (!currentFileHandle) return;
-            const text = await getFileContent(currentFileHandle);
-            let canvasDataLocal = JSON.parse(text);
-            canvasDataLocal.edges = edges;
-            await saveExistFileContent(JSON.stringify(canvasDataLocal));
+            _saveQueue = _saveQueue.then(async () => {
+                const text = await getFileContent(currentFileHandle);
+                let canvasDataLocal = JSON.parse(text);
+                canvasDataLocal.edges = edges;
+                await saveExistFileContent(JSON.stringify(canvasDataLocal));
+            });
+            await _saveQueue;
         }
 
         async function deleteEdge(edgeId) {
-            if (!currentFileHandle) return;
-            const text = await getFileContent(currentFileHandle);
-            let canvasDataLocal = JSON.parse(text);
-            canvasDataLocal.edges = canvasDataLocal.edges.filter(e => e.id !== edgeId);
-            const newData = JSON.stringify(canvasDataLocal);
-            await saveExistFileContent(newData).then(async () => {
-                await renderCanvasFile(newData, contentMain);
+            // 从内存数据中移除
+            canvasData.edges = canvasData.edges.filter(e => e.id !== edgeId);
+
+            // 从 DOM 中增量移除（不触发全局刷新）
+            removeEdgeFromCanvas(edgeId);
+
+            // 持久化到文件
+            if (currentFileHandle) {
+                await saveEdgesToFile(canvasData.edges);
+            }
+
+            showNotification('连线已删除', 'success');
+        }
+
+        // ---- 连线增量 DOM 更新（避免全局重渲染导致闪跳） ----
+
+        function addEdgeToCanvas(edge) {
+            const edgesGroup = d3.select('.canvas-edges');
+            if (edgesGroup.empty()) return;
+            // 建立 O(1) 节点索引
+            const nodeMap = new Map(canvasData.nodes.map(n => [n.id, n]));
+            createEdgeGroupElement(edge, edgesGroup, nodeMap);
+        }
+
+        function removeEdgeFromCanvas(edgeId) {
+            const edgesGroup = d3.select('.canvas-edges');
+            if (edgesGroup.empty()) return;
+            edgesGroup.selectAll('.canvas-edge-group').each(function () {
+                const hitPath = d3.select(this).select('.canvas-edge-hit');
+                const edge = hitPath.datum();
+                if (edge && edge.id === edgeId) {
+                    d3.select(this).remove();
+                }
             });
         }
 
         async function renderCanvasNode(node, group) {
             const nodeGroup = group.append('g')
                 .attr('class', 'canvas-node')
+                .attr('data-node-id', node.id)
                 .attr('transform', `translate(${node.x}, ${node.y})`)
                 .style('cursor', 'grab');
 
-            let dragStartX = node.x;
-            let dragStartY = node.y;
+            const EDGE_ZONE = 14;
+            let resizeMode = null;
+            let hoveredEdge = null;
+            let initX, initY, initW, initH;
 
-            // 添加拖拽行为
+            // mousemove：更新光标 + 缓存悬停边缘
+            nodeGroup.on('mousemove', function (event) {
+                if (resizeMode) return;
+                const [mx, my] = d3.pointer(event, this);
+                const w = node.width, h = node.height;
+                const onRight  = mx > w - EDGE_ZONE;
+                const onLeft   = mx < EDGE_ZONE;
+                const onBottom = my > h - EDGE_ZONE;
+                const onTop    = my < EDGE_ZONE;
+
+                hoveredEdge = null;
+                let cursor = 'grab';
+                if (onRight && onBottom)      { hoveredEdge = 'se'; cursor = 'nwse-resize'; }
+                else if (onLeft && onBottom)  { hoveredEdge = 'sw'; cursor = 'nesw-resize'; }
+                else if (onRight && onTop)    { hoveredEdge = 'ne'; cursor = 'nesw-resize'; }
+                else if (onLeft && onTop)     { hoveredEdge = 'nw'; cursor = 'nwse-resize'; }
+                else if (onRight)             { hoveredEdge = 'e';  cursor = 'ew-resize'; }
+                else if (onLeft)              { hoveredEdge = 'w';  cursor = 'ew-resize'; }
+                else if (onBottom)            { hoveredEdge = 's';  cursor = 'ns-resize'; }
+                else if (onTop)               { hoveredEdge = 'n';  cursor = 'ns-resize'; }
+                d3.select(this).style('cursor', cursor);
+            });
+
+            // 拖拽：缩放/移动统一处理（event.dx/dy 是增量值，非累计）
             const drag = d3.drag()
                 .on('start', function (event) {
-                    dragStartX = node.x;
-                    dragStartY = node.y;
-                    d3.select(this).style('cursor', 'grabbing').attr('opacity', 0.8);
+                    resizeMode = hoveredEdge;
+                    initX = node.x; initY = node.y;
+                    initW = node.width; initH = node.height;
+                    // 在 DOM 元素上存储累计状态（跨 drag 事件帧持久化）
+                    this.__accDx = 0;
+                    this.__accDy = 0;
+
+                    const cursorMap = {
+                        e: 'ew-resize', w: 'ew-resize', s: 'ns-resize', n: 'ns-resize',
+                        se: 'nwse-resize', nw: 'nwse-resize', sw: 'nesw-resize', ne: 'nesw-resize'
+                    };
+                    d3.select(this)
+                        .style('cursor', resizeMode ? cursorMap[resizeMode] : 'grabbing')
+                        .attr('opacity', 0.85);
                 })
                 .on('drag', function (event) {
-                    const dx = event.dx;
-                    const dy = event.dy;
-                    const currentTransform = d3.select(this).attr('transform');
-                    const match = currentTransform.match(/translate\(([^,]+),\s*([^)]+)\)/);
-                    if (match) {
-                        const currentX = parseFloat(match[1]);
-                        const currentY = parseFloat(match[2]);
-                        const newX = currentX + dx;
-                        const newY = currentY + dy;
-                        d3.select(this).attr('transform', `translate(${newX}, ${newY})`);
-                        // 更新节点数据
-                        node.x = newX;
-                        node.y = newY;
-                        // 更新相关连线
+                    // 累加增量偏移（event.dx/dy 是每帧增量）
+                    this.__accDx += event.dx;
+                    this.__accDy += event.dy;
+                    const accDx = this.__accDx;
+                    const accDy = this.__accDy;
+
+                    const ng = d3.select(this);
+                    if (!resizeMode) {
+                        // ---- 移动模式 ----
+                        node.x = initX + accDx;
+                        node.y = initY + accDy;
+                        ng.attr('transform', `translate(${node.x}, ${node.y})`);
                         updateEdgesForNode(node.id);
+                        return;
                     }
+
+                    // ---- 缩放模式 ----
+                    let newW = initW, newH = initH, newX = initX, newY = initY;
+
+                    if (resizeMode.includes('e')) newW = initW + accDx;
+                    if (resizeMode.includes('w')) { newW = initW - accDx; newX = initX + accDx; }
+                    if (resizeMode.includes('s')) newH = initH + accDy;
+                    if (resizeMode.includes('n')) { newH = initH - accDy; newY = initY + accDy; }
+
+                    const MIN_W = 100, MIN_H = 80;
+                    if (newW < MIN_W) { newW = MIN_W; if (resizeMode.includes('w')) newX = initX + initW - MIN_W; }
+                    if (newH < MIN_H) { newH = MIN_H; if (resizeMode.includes('n')) newY = initY + initH - MIN_H; }
+
+                    node.x = newX; node.y = newY;
+                    node.width = newW; node.height = newH;
+
+                    ng.attr('transform', `translate(${newX}, ${newY})`);
+                    ng.select('.canvas-node-rect').attr('width', newW).attr('height', newH);
+
+                    const fo = ng.select('foreignObject');
+                    if (!fo.empty()) {
+                        fo.attr('width', newW - (node.type === 'text' ? 20 : 0))
+                          .attr('height', newH - (node.type === 'text' ? 20 : 0));
+                    }
+
+                    ng.selectAll('.canvas-connector-dot').each(function () {
+                        const dot = d3.select(this);
+                        const side = dot.attr('data-side');
+                        if (side === 'top')    dot.attr('cx', newW / 2).attr('cy', -2);
+                        if (side === 'bottom') dot.attr('cx', newW / 2).attr('cy', newH + 2);
+                        if (side === 'left')   dot.attr('cx', -2).attr('cy', newH / 2);
+                        if (side === 'right')  dot.attr('cx', newW + 2).attr('cy', newH / 2);
+                    });
+
+                    updateEdgesForNode(node.id);
                 })
                 .on('end', function (event) {
                     d3.select(this).style('cursor', 'grab').attr('opacity', 1);
-                    // 只有位置真正改变时才保存
-                    if (currentFileHandle && (node.x !== dragStartX || node.y !== dragStartY)) {
+                    if (currentFileHandle && (node.x !== initX || node.y !== initY || node.width !== initW || node.height !== initH)) {
                         saveNodesToFile(canvasData.nodes);
                     }
+                    resizeMode = null;
                 });
             nodeGroup.call(drag);
 
@@ -18141,13 +18176,163 @@
             } else if (node.type === 'image' || node.type === 'file') {
                 renderFileNode(node, nodeGroup);
             }
+
+            // ---- 渲染四个边的连接点（Figma/Miro 风格） ----
+            renderConnectorDots(nodeGroup, node);
         }
+
+        // ---- 增量更新节点 DOM 内容（避免全局重渲染闪跳） ----
+
+        async function refreshNodeContentInDOM(node) {
+            const nodeGroup = d3.select(`.canvas-node[data-node-id="${node.id}"]`);
+            if (nodeGroup.empty()) return;
+
+            nodeGroup.selectAll('foreignObject').remove();
+            nodeGroup.selectAll('.canvas-connector-dot').remove();
+
+            if (node.type === 'text') {
+                const foreignObject = nodeGroup.append('foreignObject')
+                    .attr('x', 10)
+                    .attr('y', 10)
+                    .attr('width', node.width - 20)
+                    .attr('height', node.height - 20)
+                    .attr('overflow', 'hidden');
+                const previewText = node.text || '';
+                const renderedText = previewText.trim()
+                    ? await markedParse(parseObsidianToHTML(previewText))
+                    : '<p style="color:var(--t2);text-align:center;font-size:13px;">点击编辑内容...</p>';
+                foreignObject.append('xhtml:div')
+                    .attr('class', 'canvas-node-text')
+                    .style('width', '100%')
+                    .style('height', '100%')
+                    .style('overflow', 'hidden')
+                    .style('color', '#1f2328')
+                    .style('fontFamily', '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif')
+                    .style('fontSize', '13px')
+                    .style('lineHeight', '1.4')
+                    .html(renderedText);
+            }
+
+            renderConnectorDots(nodeGroup, node);
+        }
+
+        function renderConnectorDots(nodeGroup, node) {
+            const sides = [
+                { side: 'top', cx: node.width / 2, cy: -2 },
+                { side: 'bottom', cx: node.width / 2, cy: node.height + 2 },
+                { side: 'left', cx: -2, cy: node.height / 2 },
+                { side: 'right', cx: node.width + 2, cy: node.height / 2 },
+            ];
+
+            sides.forEach(({ side, cx, cy }) => {
+                const dot = nodeGroup.append('circle')
+                    .attr('class', 'canvas-connector-dot')
+                    .attr('cx', cx)
+                    .attr('cy', cy)
+                    .attr('r', 5)
+                    .attr('data-node-id', node.id)
+                    .attr('data-side', side)
+                    .on('mousedown touchstart pointerdown', function (event) {
+                        // 阻止按下事件冒泡到 nodeGroup，避免触发节点拖拽
+                        event.stopPropagation();
+                        // 阻止浏览器默认行为（文本选中等）
+                        event.preventDefault();
+                    })
+                    .on('click', function (event) {
+                        event.stopPropagation();
+                        handleConnectorClick(node.id, side);
+                    });
+
+                // 如果该连接点正处于激活状态（连线起点），添加高亮类
+                if (connectingFrom && connectingFrom.nodeId === node.id && connectingFrom.side === side) {
+                    dot.classed('connecting-active', true);
+                }
+            });
+        }
+
+        function handleConnectorClick(nodeId, side) {
+            if (!connectingFrom) {
+                // 开始连线
+                connectingFrom = { nodeId, side };
+                setConnectingMode(true);
+                showNotification('已选择起点，请点击目标节点的连接点完成连线（按 Esc 取消）', 'info');
+            } else if (connectingFrom.nodeId === nodeId && connectingFrom.side === side) {
+                // 点击同一个连接点——取消连线
+                cancelConnecting();
+            } else if (connectingFrom.nodeId === nodeId) {
+                // 不允许自连接
+                showNotification('不支持节点自连接，请选择其他节点', 'warning');
+            } else {
+                // 完成连线
+                createConnectorEdge(connectingFrom.nodeId, connectingFrom.side, nodeId, side);
+                cancelConnecting();
+            }
+        }
+
+        function setConnectingMode(active) {
+            const svgEl = d3.select('.canvas-svg');
+            if (active) {
+                svgEl.classed('connecting-mode', true);
+                // 重新高亮当前起点连接点
+                d3.selectAll('.canvas-connector-dot').classed('connecting-active', function () {
+                    const el = d3.select(this);
+                    return connectingFrom
+                        && el.attr('data-node-id') === connectingFrom.nodeId
+                        && el.attr('data-side') === connectingFrom.side;
+                });
+            } else {
+                svgEl.classed('connecting-mode', false);
+                d3.selectAll('.canvas-connector-dot').classed('connecting-active', false);
+            }
+        }
+
+        function cancelConnecting() {
+            connectingFrom = null;
+            setConnectingMode(false);
+        }
+
+        async function createConnectorEdge(fromNodeId, fromSide, toNodeId, toSide) {
+            const newEdge = {
+                id: 'edge_' + Date.now(),
+                fromNode: fromNodeId,
+                fromSide: fromSide,
+                toNode: toNodeId,
+                toSide: toSide,
+                animated: true,
+            };
+
+            // 更新内存数据
+            canvasData.edges.push(newEdge);
+
+            // 增量添加到 DOM（不触发全局刷新）
+            addEdgeToCanvas(newEdge);
+
+            // 持久化到文件
+            if (currentFileHandle) {
+                await saveEdgesToFile(canvasData.edges);
+            }
+
+            showNotification('连线已创建', 'success');
+        }
+
+        // 键盘 Esc 取消连线（命名函数引用，可正确移除避免泄漏）
+        let _canvasEscHandler = null;
+        function _ensureCanvasEscHandler() {
+            if (_canvasEscHandler) return; // 已注册，避免重复
+            _canvasEscHandler = function (e) {
+                if (e.key === 'Escape' && connectingFrom) {
+                    cancelConnecting();
+                    showNotification('已取消连线', 'info');
+                }
+            };
+            document.addEventListener('keydown', _canvasEscHandler);
+        }
+        _ensureCanvasEscHandler();
 
         async function renderCanvasNodes(nodes, group) {
             const nodesGroup = group.append('g').attr('class', 'canvas-nodes');
-            for (const node of nodes) {
-                await renderCanvasNode(node, nodesGroup);
-            }
+            // 并行渲染所有节点，避免串行阻塞
+            await Promise.all(nodes.map(node => renderCanvasNode(node, nodesGroup)));
         }
 
         function fitCanvasToContent(container, contentWidth, contentHeight, centerX, centerY, svg, zoom) {
@@ -18230,9 +18415,21 @@
 
             const bounds = calculateCanvasBounds(nodes);
             const zoom = initCanvasZoom(svg, g);
-            svg.on('click', async () => {
-                await closeNodeContentPanel();
-                fitCanvasToContent(container, bounds.contentWidth, bounds.contentHeight, bounds.centerX, bounds.centerY, svg, zoom);
+
+            // SVG 空白区域点击：关闭面板 + 自适应缩放
+            // 注：D3 zoom 在 pointerdown 中调用 preventDefault()，会抑制后续
+            // mousedown / mouseup / click 等兼容事件。因此必须使用 pointer 事件。
+            let svgClickStart = null;
+            svg.on('pointerdown', function (event) { svgClickStart = { x: event.clientX, y: event.clientY }; });
+            svg.on('pointerup', async function (event) {
+                if (!svgClickStart) return;
+                const dx = Math.abs(event.clientX - svgClickStart.x);
+                const dy = Math.abs(event.clientY - svgClickStart.y);
+                svgClickStart = null;
+                if (dx < 4 && dy < 4) {
+                    await closeNodeContentPanel();
+                    fitCanvasToContent(container, bounds.contentWidth, bounds.contentHeight, bounds.centerX, bounds.centerY, svg, zoom);
+                }
             });
             const containerSelector = contentDiv.querySelector('.canvas-container');
             const contentMainContainer = contentMain.querySelector('.canvas-container');
@@ -18481,7 +18678,11 @@
                                 break;
                             }
                         }
-                        await renderCanvasFile(JSON.stringify(canvasData), contentMain);
+                        // 增量更新 DOM，避免全局重渲染闪跳
+                        const updatedNode = canvasData.nodes.find(n => n.id === nodeData.id);
+                        if (updatedNode) {
+                            await refreshNodeContentInDOM(updatedNode);
+                        }
                     }
                     destroyNodeEditor();
                 }
@@ -18631,10 +18832,13 @@
 
         async function saveNodesToFile(nodes) {
             if (!currentFileHandle) return;
-            const text = await getFileContent(currentFileHandle);
-            let canvasData = JSON.parse(text);
-            canvasData.nodes = nodes;
-            await saveExistFileContent(JSON.stringify(canvasData));
+            _saveQueue = _saveQueue.then(async () => {
+                const text = await getFileContent(currentFileHandle);
+                let canvasDataLocal = JSON.parse(text);
+                canvasDataLocal.nodes = nodes;
+                await saveExistFileContent(JSON.stringify(canvasDataLocal));
+            });
+            await _saveQueue;
         }
 
         async function reloadCanvasData() {
@@ -23870,6 +24074,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             'docker-compose.yaml': 'yaml'
         };
         const extensionLanguageMap = {
+            canvas: 'json',
             opml: 'xml',
             mm: 'xml',
             html: 'html',
