@@ -738,6 +738,12 @@
             stroke-width: 2;
         }
 
+        .canvas-node-selected .canvas-node-rect {
+            stroke: #0969da;
+            stroke-width: 3;
+            filter: drop-shadow(0 0 6px rgba(9, 105, 218, 0.4));
+        }
+
         .canvas-node-text {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
             font-size: 14px;
@@ -796,6 +802,31 @@
             margin-top: 10px;
             padding-top: 8px;
             border-top: 1px solid #eee;
+        }
+
+        .edge-popup-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .edge-popup-item:last-child {
+            border-bottom: none;
+        }
+
+        .edge-popup-item .edge-label {
+            flex: 1;
+            font-size: 12px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .edge-popup-item .btn-xs {
+            padding: 2px 6px;
+            font-size: 10px;
         }
 
         .canvas-controls {
@@ -11166,8 +11197,12 @@
                 清空
             </button>
         </div>
-        <!-- Canvas 白板工具栏（保存） -->
+        <!-- Canvas 白板工具栏（保存、新建节点、删除节点） -->
         <div id="canvas-top-right-controls" class="top-right-controls" style="display: none;">
+            <button id="canvas-add-node-btn" class="btn btn-success btn-sm" onclick="handleCanvasAddNode()"
+                style="margin-right:4px;">新建节点</button>
+            <button id="canvas-delete-node-btn" class="btn btn-danger btn-sm" onclick="handleCanvasDeleteNode()"
+                style="margin-right:4px;" disabled>删除节点</button>
             <div class="canvas-dropdown canvas-save-dropdown">
                 <button id="canvas-save-toggle" class="btn btn-primary btn-sm"
                     onclick="handleCanvasSaveToggleClick(event)">保存</button>
@@ -17622,6 +17657,86 @@
             });
         }
 
+        function showNodeEdgesPopup(event, node) {
+            // 获取该节点关联的所有边
+            const connectedEdges = canvasData.edges.filter(e => e.fromNode === node.id || e.toNode === node.id);
+
+            // 如果没有连接的边，直接返回
+            if (connectedEdges.length === 0) {
+                return;
+            }
+
+            // 移除已存在的弹窗
+            const existing = document.getElementById('edge-popup');
+            if (existing) existing.remove();
+
+            const popup = document.createElement('div');
+            popup.id = 'edge-popup';
+            popup.className = 'edge-popup';
+            popup.innerHTML = `
+                <div class="edge-popup-title">连接列表</div>
+                <div class="edge-popup-section">
+                    ${connectedEdges.map(edge => {
+                const fromNode = canvasData.nodes.find(n => n.id === edge.fromNode);
+                const toNode = canvasData.nodes.find(n => n.id === edge.toNode);
+                const fromLabel = fromNode ? (fromNode.type === 'text' ? (fromNode.text || '').substring(0, 15) : fromNode.file) : edge.fromNode;
+                const toLabel = toNode ? (toNode.type === 'text' ? (toNode.text || '').substring(0, 15) : toNode.file) : edge.toNode;
+                return `<div class="edge-popup-item" data-edge-id="${edge.id}">
+                            <span class="edge-label">${fromLabel} → ${toLabel}</span>
+                            <button class="btn btn-xs btn-primary edge-edit-btn">编辑</button>
+                            <button class="btn btn-xs btn-danger edge-delete-btn">删除</button>
+                        </div>`;
+            }).join('')}
+                </div>
+            `;
+
+            // 定位弹窗
+            popup.style.position = 'fixed';
+            popup.style.left = event.pageX + 'px';
+            popup.style.top = event.pageY + 'px';
+            popup.style.zIndex = '10000';
+            popup.style.background = 'white';
+            popup.style.border = '1px solid #ddd';
+            popup.style.borderRadius = '4px';
+            popup.style.padding = '10px';
+            popup.style.boxShadow = '0 2px 10px rgba(0,0,0,0.1)';
+            popup.style.minWidth = '250px';
+
+            document.body.appendChild(popup);
+
+            // 绑定编辑按钮事件
+            popup.querySelectorAll('.edge-edit-btn').forEach(btn => {
+                btn.onclick = (e) => {
+                    const edgeId = e.target.closest('.edge-popup-item').dataset.edgeId;
+                    const edge = canvasData.edges.find(ed => ed.id === edgeId);
+                    popup.remove();
+                    if (edge) {
+                        // 在点击位置显示编辑弹窗
+                        showEdgePopup({ pageX: event.pageX + 150, pageY: event.pageY }, edge);
+                    }
+                };
+            });
+
+            // 绑定删除按钮事件
+            popup.querySelectorAll('.edge-delete-btn').forEach(btn => {
+                btn.onclick = (e) => {
+                    const edgeId = e.target.closest('.edge-popup-item').dataset.edgeId;
+                    deleteEdge(edgeId);
+                    popup.remove();
+                };
+            });
+
+            // 点击外部关闭
+            setTimeout(() => {
+                document.addEventListener('click', function closePopup(e) {
+                    if (!popup.contains(e.target)) {
+                        popup.remove();
+                        document.removeEventListener('click', closePopup);
+                    }
+                });
+            }, 10);
+        }
+
         function showEdgePopup(event, edge) {
             // 移除已存在的弹窗
             const existing = document.getElementById('edge-popup');
@@ -17744,6 +17859,20 @@
                 .attr('transform', `translate(${node.x}, ${node.y})`)
                 .style('cursor', 'grab');
 
+            // 添加点击选择功能
+            nodeGroup.on('click', function (event) {
+                event.stopPropagation();
+                // 取消之前的选择
+                d3.selectAll('.canvas-node-selected').classed('canvas-node-selected', false);
+                // 选中当前节点
+                d3.select(this).classed('canvas-node-selected', true);
+                selectedCanvasNodeId = node.id;
+                updateDeleteNodeButtonState();
+
+                // 显示该节点关联的边
+                showNodeEdgesPopup(event, node);
+            });
+
             // 添加拖拽行为
             const drag = d3.drag()
                 .on('start', function (event) {
@@ -17837,13 +17966,15 @@
         }
 
         async function renderCanvasFile(text, contentDiv) {
-            let canvasData;
+            let canvasDataFromFile;
             try {
-                canvasData = JSON.parse(text);
+                canvasDataFromFile = JSON.parse(text);
             } catch (e) {
                 contentDiv.innerHTML = `<div style="color:#cf222e; padding:20px;">无效的 JSON Canvas 格式: ${escapeHtml(e.message)}</div>`;
                 return;
             }
+            // 更新全局 canvasData 变量
+            canvasData = canvasDataFromFile;
             const nodes = canvasData.nodes || [];
             const edges = canvasData.edges || [];
             contentDiv.innerHTML = `<div class="canvas-container"><svg class="canvas-svg"></svg></div>`;
@@ -24548,6 +24679,57 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             // 隐藏 canvas-top-right-controls (会重新显示)
             const canvasControls = document.getElementById('canvas-top-right-controls');
             if (canvasControls) canvasControls.style.display = 'none';
+        }
+
+        let selectedCanvasNodeId = null;
+
+        function handleCanvasAddNode() {
+            // 创建新节点
+            const newNode = {
+                id: 'node_' + Date.now(),
+                type: 'text',
+                text: '新节点\n\n点击编辑内容',
+                x: 100 + Math.random() * 200,
+                y: 100 + Math.random() * 200,
+                width: 200,
+                height: 120
+            };
+            canvasData.nodes.push(newNode);
+
+            // 重新渲染 canvas
+            if (currentFileHandle) {
+                saveNodesToFile(canvasData.nodes);
+            }
+            reloadCanvasDataWithoutPanel();
+
+            // 更新删除按钮状态
+            updateDeleteNodeButtonState();
+        }
+
+        function handleCanvasDeleteNode() {
+            if (!selectedCanvasNodeId) return;
+
+            // 从 canvasData 中删除节点
+            canvasData.nodes = canvasData.nodes.filter(n => n.id !== selectedCanvasNodeId);
+            // 同时删除与该节点相关的边
+            canvasData.edges = canvasData.edges.filter(e => e.fromNode !== selectedCanvasNodeId && e.toNode !== selectedCanvasNodeId);
+
+            // 保存并重新渲染
+            if (currentFileHandle) {
+                saveNodesToFile(canvasData.nodes);
+            }
+            reloadCanvasDataWithoutPanel();
+
+            // 重置选择状态
+            selectedCanvasNodeId = null;
+            document.getElementById('canvas-delete-node-btn').disabled = true;
+        }
+
+        function updateDeleteNodeButtonState() {
+            const deleteBtn = document.getElementById('canvas-delete-node-btn');
+            if (deleteBtn) {
+                deleteBtn.disabled = !selectedCanvasNodeId;
+            }
         }
 
         async function handleCanvasSaveToggleClick(e) {
