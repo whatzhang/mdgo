@@ -927,6 +927,7 @@
             border: 1px solid var(--color-primary);
             border-radius: var(--radius-md);
             font-weight: 400;
+            font-size: 13px;
             box-sizing: border-box;
         }
 
@@ -12279,7 +12280,6 @@
         let _treeClickTimer = null; // 文件树单击防抖计时器（事件委托共享）
         let treeDomItemCache = new LRUCache(1000);  // 文件树 DOM 元素缓存（避免重复创建）
 
-
         // ====== DOM 元素缓存（避免重复查询） ======
         const treeElement = document.getElementById('tree');
         const clearSearchBtn = document.getElementById('clear-search');
@@ -13359,7 +13359,7 @@
                 Promise.resolve(destroyExcalidraw()),
                 Promise.resolve(destroyJsMind()),
                 Promise.resolve(destroyMermaid()),
-                Promise.resolve(cleanupCanvasState()),
+                Promise.resolve(cleanupCanvasState(true)),
                 Promise.resolve(hiddenAiPanel()),
                 Promise.resolve(timelineDestroy()),
                 Promise.resolve(picLayoutDestroy()),
@@ -13708,7 +13708,7 @@
         }
 
         // 清理 d3 SVG 状态，释放 zoom 和 DOM
-        function cleanupCanvasState() {
+        function cleanupCanvasState(cleanDom = false) {
             if (window.canvasState) {
                 try {
                     const { svg, zoom } = window.canvasState;
@@ -13716,9 +13716,11 @@
                         svg.on('.zoom', null);
                         svg.on('click', null);
                     }
-                    const container = contentMain.querySelector('.canvas-container');
-                    if (container) {
-                        container.innerHTML = '';
+                    if (cleanDom) {
+                        const container = contentMain.querySelector('.canvas-container');
+                        if (container) {
+                            container.innerHTML = '';
+                        }
                     }
                 } catch (e) {
                     console.warn('清理 Canvas 状态失败:', e);
@@ -14243,8 +14245,12 @@
         }
 
         async function refreshTree() {
-            safeLocalStorageSet(BROWSER_REFRESHED_KEY, BROWSER_REFRESHED_VALUE);
-            await initTreeBrowser();
+            TimerManager.setTimeout('refreshTree', () => {
+                safeLocalStorageSet(BROWSER_REFRESHED_KEY, BROWSER_REFRESHED_VALUE);
+                initTreeBrowser().then(() => {
+                    showNotification('✓ 刷新成功', 'success');
+                });
+            }, 200);
         }
 
         function handleLevelChange(level) {
@@ -14317,21 +14323,20 @@
         }
 
         function filterFiles(keyword) {
-            const keywordLower = keyword.toLowerCase().trim();
-            clearSearchBtn.style.display = keywordLower ? 'flex' : 'none';
-            const isSearching = Boolean(keywordLower);
-            openDirBtn.disabled = isSearching;
-            refreshTreeBtn.disabled = isSearching;
-            openDirBtn.classList.toggle('btn-disabled', isSearching);
-            refreshTreeBtn.classList.toggle('btn-disabled', isSearching);
-            if (!keywordLower) {
-                resetSearchAndRestoreState();
-                return;
-            }
-            // 使用 TimerManager 防抖
             TimerManager.setTimeout('filterFiles', () => {
+                const keywordLower = keyword.toLowerCase().trim();
+                clearSearchBtn.style.display = keywordLower ? 'flex' : 'none';
+                const isSearching = Boolean(keywordLower);
+                openDirBtn.disabled = isSearching;
+                refreshTreeBtn.disabled = isSearching;
+                openDirBtn.classList.toggle('btn-disabled', isSearching);
+                refreshTreeBtn.classList.toggle('btn-disabled', isSearching);
+                if (!keywordLower) {
+                    resetSearchAndRestoreState();
+                    return;
+                }
                 executeSearch(keywordLower);
-            }, 150);
+            }, 200);
         }
 
         //重置搜索并恢复文件树状态 功能:清空搜索结果,恢复目录展开状态,选中最后一次点击的文件
@@ -17572,7 +17577,8 @@
                 fitCanvasToContent(container, bounds.contentWidth, bounds.contentHeight, bounds.centerX, bounds.centerY, svg, zoom);
             });
             const containerSelector = contentDiv.querySelector('.canvas-container');
-            if (containerSelector === contentMain.querySelector('.canvas-container')) {
+            const contentMainContainer = contentMain.querySelector('.canvas-container');
+            if (containerSelector === contentMainContainer) {
                 // 清理旧的 canvasState（如果存在 d3 zoom 监听器）
                 cleanupCanvasState();
                 window.canvasState = {
@@ -17612,16 +17618,16 @@
         }
 
         function createNodeContentPanel(height = '100%') {
-            let contentPanel = document.querySelector('.node-content-panel');
+            let contentPanel = document.getElementById('node-content-panel');
             if (!contentPanel) {
                 contentPanel = document.createElement('div');
-                contentPanel.className = 'node-content-panel';
+                contentPanel.id = 'node-content-panel';
                 contentPanel.style.position = 'absolute';
                 contentPanel.style.right = '0';
                 contentPanel.style.top = '0';
                 contentPanel.style.width = '50%';
                 contentPanel.style.height = height;
-                contentPanel.style.backgroundColor = 'var(--color-bg)';
+                contentPanel.style.backgroundColor = 'var(--color-bg-secondary)';
                 contentPanel.style.borderLeft = '1px solid var(--color-border)';
                 contentPanel.style.overflowY = 'auto';
                 contentMain.appendChild(contentPanel);
@@ -17793,7 +17799,7 @@
         }
 
         async function closeNodeContentPanel() {
-            const contentPanel = document.querySelector('.node-content-panel');
+            const contentPanel = document.getElementById('node-content-panel');
             if (contentPanel) {
                 if (currentNodeEditor && currentNodeEditor.getValue) {
                     const nodeData = JSON.parse(contentPanel.dataset.node);
@@ -17825,7 +17831,7 @@
 
         function editNodeContent(event, button) {
             event.stopPropagation();
-            const contentPanel = button.closest('.node-content-panel');
+            const contentPanel = button.closest('#node-content-panel');
             if (!contentPanel) return;
             const nodeData = JSON.parse(contentPanel.dataset.node);
             const nodeType = contentPanel.dataset.nodeType || 'text';
@@ -17879,7 +17885,7 @@
 
         async function saveNodeContent(event, button) {
             event.stopPropagation();
-            const contentPanel = button.closest('.node-content-panel');
+            const contentPanel = button.closest('#node-content-panel');
             if (!contentPanel) return;
             const nodeData = JSON.parse(contentPanel.dataset.node);
             const nodeType = contentPanel.dataset.nodeType || 'text';
@@ -17956,7 +17962,7 @@
             try {
                 if (!currentFileHandle) return;
                 // 保存右侧面板的状态
-                const contentPanel = document.querySelector('.node-content-panel');
+                const contentPanel = document.getElementById('node-content-panel');
                 const panelData = contentPanel ? {
                     nodeData: JSON.parse(contentPanel.dataset.node),
                     scrollTop: contentPanel.scrollTop
@@ -17967,8 +17973,13 @@
                 // 恢复右侧面板
                 if (panelData) {
                     setTimeout(() => {
-                        showCanvasNodeContent(panelData.nodeData);
-                        const newPanel = document.querySelector('.node-content-panel');
+                        const node = panelData.nodeData;
+                        if (node.type === 'text') {
+                            showCanvasNodeContent(node);
+                        } else if (node.type === 'file') {
+                            showNodeFileContent(node);
+                        }
+                        const newPanel = document.getElementById('node-content-panel');
                         if (newPanel) {
                             newPanel.scrollTop = panelData.scrollTop;
                         }
@@ -18615,7 +18626,7 @@
             }
             let cardBody = '';
             if (card.body) cardBody = (await markedParse(parseObsidianToHTML(card.body))).trim();
-            html += `<div class="kanban-card-body" style="font-size: 13px; line-height: 1;padding-left: 14px;"><div class="markdown-body">${cardBody}</div></div>`;
+            html += `<div class="kanban-card-body" style="font-size: 13px; line-height: 1;padding-left: 14px;"><div class="markdown-body" style="background-color: var(--color-bg);">${cardBody}</div></div>`;
             if (card.taskList && card.taskList.length > 0) {
                 html += '<div class="kanban-tasks">';
                 for (const task of card.taskList) {
