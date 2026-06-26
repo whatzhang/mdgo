@@ -1251,6 +1251,14 @@
             padding: 16px;
         }
 
+        #viewer-image:hover {
+            cursor: zoom-in;
+        }
+
+        #viewer-svg-wrapper:hover {
+            cursor: zoom-in;
+        }
+
         .image-controls {
             position: fixed;
             bottom: 30px;
@@ -10678,6 +10686,121 @@
             height: 13px;
             display: block;
         }
+
+        .net-search-box {
+            background: var(--color-bg);
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            padding: 0 5px;
+            transition: 0.2s;
+            box-shadow: var(--shadow-sm);
+            width: 160px;
+            height: 32px;
+        }
+
+        .net-search-box input {
+            flex: 1;
+            padding: 5px 5px;
+            border: none;
+            background: transparent;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+            font-size: 0.8rem;
+            font-weight: 400;
+            outline: none;
+            color: var(--color-black);
+            width: 100%;
+        }
+
+        .net-search-box input::placeholder {
+            color: var(--color-text-secondary);
+        }
+
+        .net-search-dropdown-wrap {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+        /* 悬停桥接：在按钮下方创建不可见热区，覆盖按钮到下拉菜单之间的间隙 */
+        .net-search-dropdown-wrap::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            height: 8px;
+        }
+
+        .net-search-btn {
+            background: var(--color-bg-secondary);
+            border: none;
+            border-radius: 6px;
+            width: 24px;
+            height: 24px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            transition: background 0.15s;
+            flex-shrink: 0;
+        }
+
+        .net-search-btn:hover {
+            background: var(--color-border);
+        }
+
+        .net-search-dropdown {
+            position: absolute;
+            top: 100%;
+            left: -5px;
+            margin-top: 8px;
+            min-width: 90px;
+            background: var(--color-bg);
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            box-shadow: var(--shadow-md);
+            z-index: 200;
+            overflow: hidden;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-4px);
+            transition: opacity 0.15s ease, visibility 0s linear 0.15s, transform 0.15s ease;
+            pointer-events: none;
+        }
+        .net-search-dropdown-wrap:hover .net-search-dropdown,
+        .net-search-dropdown:hover {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+            transition: opacity 0.15s ease, visibility 0s linear 0s, transform 0.15s ease;
+            pointer-events: auto;
+        }
+        .net-search-dropdown-item:first-child {
+            padding-top: 6px;
+        }
+        .net-search-dropdown-item:last-child {
+            padding-bottom: 6px;
+        }
+
+        .net-search-dropdown-item {
+            padding: 4px 8px;
+            font-size: 12px;
+            cursor: pointer;
+            color: var(--color-text);
+            white-space: nowrap;
+            transition: background 0.1s;
+        }
+
+        .net-search-dropdown-item:hover {
+            background: var(--color-bg-secondary);
+        }
+
+        .net-search-dropdown-item.active {
+            color: var(--color-primary);
+            font-weight: 500;
+        }
     </style>
 </head>
 
@@ -10788,7 +10911,8 @@
                             </button>
                             <button id="graph-reset-params-btn" title="重置参数" onclick="resetGraphParams()">
                                 <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
-                                    <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1115.6 12 3.6 3.6 0 0112 15.6z"/>
+                                    <path
+                                        d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1115.6 12 3.6 3.6 0 0112 15.6z" />
                                 </svg>
                             </button>
                             <button id="graph-pause-btn" title="暂停仿真" onclick="toggleGraphPause()">
@@ -10952,7 +11076,18 @@
             </div>
             <div class="heatmap-section">
                 <div class="chart-title" style="margin-bottom: 3px;">🛠️ 工具</div>
-                <div id="tools-buttons-container" class="tools-buttons-container" style="margin-bottom: 10px;">
+                <div id="tools-buttons-container" class="tools-buttons-container">
+                </div>
+                <div style="margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+                    <div class="net-search-box">
+                        <input type="text" id="net-search" autocomplete="on" placeholder="搜索..." onkeydown="if(event.key==='Enter'){event.preventDefault();doNetSearch();}">
+                        <div class="net-search-dropdown-wrap">
+                            <button class="net-search-btn" id="net-search-btn">🔍</button>
+                            <div class="net-search-dropdown" id="net-search-dropdown"></div>
+                        </div>
+                    </div>
+                    <div id="net-search-buttons" class="tools-buttons-container" style="display: none;">
+                    </div>
                 </div>
             </div>
             <div class="heatmap-section">
@@ -12478,11 +12613,15 @@
         ];
         // 搜索按钮配置
         const SEARCH_BTNS = [
-            { name: '全部', query: 'all' },
-            { name: 'google', query: 'https://www.google.com/search?q=' },
-            { name: 'baidu', query: 'https://www.baidu.com/s?ie=utf-8&wd=' },
-            { name: 'bing', query: 'https://www.bing.com/search?q=' },
-            { name: 'duckgo', query: 'https://duckduckgo.com/?q=' }
+            { name: '全部', query: 'all', display: false, selectDisplay: true },
+            { name: 'Google', query: 'https://www.google.com/search?q=', display: true, selectDisplay: true },
+            { name: '百度', query: 'https://www.baidu.com/s?ie=utf-8&wd=', display: true, selectDisplay: true },
+            { name: '必应', query: 'https://www.bing.com/search?q=', display: true, selectDisplay: true },
+            { name: 'DuckDuckGo', query: 'https://duckduckgo.com/?q=', display: true, selectDisplay: true },
+            { name: '知网', query: 'https://kns.cnki.net/kns8s/search?kw=', display: true, selectDisplay: false },
+            { name: '知乎', query: 'https://www.zhihu.com/search?type=content&q=', display: true, selectDisplay: false },
+            { name: '哔哩', query: 'https://search.bilibili.com/all?keyword=', display: true, selectDisplay: false },
+            { name: '豆瓣', query: 'https://www.douban.com/search?q=', display: true, selectDisplay: false }
         ]
 
         // ====== 系统常量 ======
@@ -12684,7 +12823,6 @@
         let autoSaveTimer = null; // 自动保存定时器
         let aiPanelVisible = false; // AI 面板可见性状态
         let swaggerEditor = null;   // Swagger 编辑器实例（全局单例，只创建一次）
-        let swaggerAutoSaveTimer = null;  // Swagger 自动保存定时器
         let graphqlReactRoot = null; // GraphQL React 实例根元素
         let _cardCheckboxDebounce = false; // GraphQL React 实例
         let graphqlInitialized = false; // 是否初始化了GraphQL Playground
@@ -12792,6 +12930,7 @@
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', async () => {
             await heartbeat();
+            initDashboard();
             await initAll();
         });
 
@@ -12883,7 +13022,7 @@
                 return;
             }
             hiddenAiPanel();
-            destroyEverything();
+            await destroyEverything();
             currentArtPlayer?.pause();
             aiFabContainer.style.display = 'block';
             if (type === 'newFile') {
@@ -13815,7 +13954,7 @@
             }
         }
 
-        function switchToView(targetContainer, displayValue) {
+        async function switchToView(targetContainer, displayValue) {
             displayValue = displayValue || 'block';
             targetContainer.style.display = displayValue;
             for (let i = 0; i < MAIN_VIEW_CONTAINERS.length; i++) {
@@ -13826,15 +13965,17 @@
             for (let i = 0; i < AUX_CONTROLS.length; i++) {
                 AUX_CONTROLS[i].style.display = 'none';
             }
-            destroyEverything();
+            // 等待所有子模块清理完成，避免清理尚未完成时新模块已开始渲染导致竞态
+            await Promise.resolve(destroyEverything());
         }
 
-        function destroyEverything() {
+        async function destroyEverything() {
             disposeAllCharts();
             cleanupObjectUrls();
             showTocToggleBtn(false);
-            // 并发清理各模块，避免逐个等待
-            Promise.allSettled([
+            hideMarkdownSelectionToolbar();
+            // 并发清理各模块，等待所有清理完成再返回，避免竞态
+            await Promise.allSettled([
                 Promise.resolve(destroyExcalidraw()),
                 Promise.resolve(destroyJsMind()),
                 Promise.resolve(destroyMermaid()),
@@ -16926,6 +17067,24 @@
             }
         }
 
+        const _image_controls = `
+            <div class="image-controls">
+                <button class="image-btn" onclick="zoomImage(0.2)" title="放大">
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
+                        <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                    </svg>
+                </button>
+                <button class="image-btn" onclick="zoomImage(-0.2)" title="缩小">
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
+                        <path d="M19 13H5v-2h14v2z"/>
+                    </svg>
+                </button>
+                <button class="image-btn reset" onclick="resetZoom()" title="重置">
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
+                        <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+                    </svg>
+                </button>
+            </div>`;
         // 渲染图片或SVG文件
         async function renderImageFile(file) {
             aiFabContainer.style.display = 'none';
@@ -16939,23 +17098,7 @@
                                 ${text}
                             </div>
                         </div>
-                        <div class="image-controls">
-                            <button class="image-btn" onclick="zoomImage(0.2)" title="放大">
-                                <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
-                                    <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
-                                </svg>
-                            </button>
-                            <button class="image-btn" onclick="zoomImage(-0.2)" title="缩小">
-                                <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
-                                    <path d="M19 13H5v-2h14v2z"/>
-                                </svg>
-                            </button>
-                            <button class="image-btn reset" onclick="resetZoom()" title="重置">
-                                <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
-                                    <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
-                                </svg>
-                            </button>
-                        </div>
+                        ${_image_controls}
                     </div>`;
                 setTimeout(() => fitSvgToScreen(), 50); // SVG初始自适应显示
             } else {
@@ -16964,25 +17107,18 @@
                 contentMain.innerHTML = `
                     <div class="image-viewer-container">
                         <img id="viewer-image" class="image" src="${imageUrl}" style="max-width: 100%; max-height: 100%; display: block; margin: 0; transition: transform 0.2s ease;" />
-                        <div class="image-controls">
-                            <button class="image-btn" onclick="zoomImage(0.2)" title="放大">
-                                <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
-                                    <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
-                                </svg>
-                            </button>
-                            <button class="image-btn" onclick="zoomImage(-0.2)" title="缩小">
-                                <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
-                                    <path d="M19 13H5v-2h14v2z"/>
-                                </svg>
-                            </button>
-                            <button class="image-btn reset" onclick="resetZoom()" title="重置">
-                                <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
-                                    <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
-                                </svg>
-                            </button>
-                        </div>
+                        ${_image_controls}
                     </div>`;
                 currentZoom = 1;// 重置缩放状态
+            }
+            // 绑定滚轮缩放: 仅鼠标悬停在图片区域内才缩放
+            const container = contentMain.querySelector('#viewer-image') || contentMain.querySelector('#viewer-svg-wrapper');
+            if (container) {
+                container.addEventListener('wheel', (e) => {
+                    e.preventDefault();
+                    const delta = e.deltaY > 0 ? -0.05 : 0.05;
+                    zoomImage(delta);
+                }, { passive: false });
             }
         }
 
@@ -17388,72 +17524,85 @@
             jsonTreeExpandAll();
         }
 
+        function swaggerEditorAdd(text) {
+            return SwaggerEditorBundle({
+                dom_id: '#content-common-container',
+                presets: [SwaggerEditorStandalonePreset],
+                layout: 'StandaloneLayout',
+                defaultModelRendering: 'model',
+                showExtensions: true,
+                showCommonExtensions: true,
+                tryItOutEnabled: true,
+                spec: text,
+                deepLinking: true,
+                docExpansion: 'list',
+                defaultModelsExpandDepth: 2,
+                defaultModelExpandDepth: 2
+            });
+        }
+
         async function renderSwaggerFile(text, fileName) {
-            switchToView(contentCommonContainer);
-            // 停止自动保存定时器，但不要销毁 Swagger Editor 实例
-            if (swaggerAutoSaveTimer) {
-                clearTimeout(swaggerAutoSaveTimer);
-                swaggerAutoSaveTimer = null;
-            }
+            await switchToView(contentCommonContainer);
+            TimerManager.clear('swaggerAutoSave');
+            // 快照捕获：锁定当前文件名和原始内容，闭包内不再依赖易变的全局变量
+            const capturedFileName = fileName;
+            let capturedOriginalContent = originalContent;
+
             if (!swaggerEditor) {
                 // 首次创建 Swagger Editor（只创建一次，后续复用）
-                swaggerEditor = SwaggerEditorBundle({
-                    dom_id: '#content-common-container',
-                    presets: [SwaggerEditorStandalonePreset],
-                    layout: 'StandaloneLayout',
-                    defaultModelRendering: 'model',
-                    showExtensions: true,
-                    showCommonExtensions: true,
-                    tryItOutEnabled: true,
-                    spec: text,
-                    deepLinking: true,
-                    docExpansion: 'list',
-                    defaultModelsExpandDepth: 2,
-                    defaultModelExpandDepth: 2
-                });
+                swaggerEditor = swaggerEditorAdd(text);
             } else {
-                // 复用已有实例，仅更新 spec
-                swaggerEditor.specActions.updateSpec(text);
+                // 复用已有实例，仅更新 spec（try-catch 保护）
+                try {
+                    swaggerEditor.specActions.updateSpec(text);
+                } catch (err) {
+                    console.error('Swagger Editor updateSpec 失败，销毁重建', err);
+                    try { swaggerEditor = null; } catch (e) { /* 忽略 */ }
+                    swaggerEditor = swaggerEditorAdd(text);
+                }
             }
-            // 缓存当前文件名，避免闭包捕获变量被后续修改
-            const swaggerFileName = fileName;
 
             async function autoSaveTick() {
-                if (!swaggerEditor || contentCommonContainer.style.display === 'none') {
-                    // 仅停掉定时器，不清除编辑器实例
+                // 检查编辑器实例和容器可见性（同时检测 display 和 offsetParent）
+                const container = contentCommonContainer;
+                if (!swaggerEditor || container.style.display === 'none' || container.offsetParent === null) {
+                    TimerManager.clear('swaggerAutoSave');
                     return;
                 }
-                // 检查当前文件名是否匹配，避免切换文件后写错内容
-                if (currentFileName !== swaggerFileName) {
+                // 检查文件名是否匹配，避免切换文件后写错内容
+                if (currentFileName !== capturedFileName) {
+                    TimerManager.clear('swaggerAutoSave');
                     return;
                 }
                 try {
-                    const aceEl = document.querySelector('#content-common-container .ace_editor')
-                        || document.querySelector('.ace_editor');
+                    // 仅限 #content-common-container 内的 ACE 编辑器，避免误匹配其他模块
+                    const aceEl = container.querySelector('.ace_editor');
                     if (aceEl && window.ace) {
                         let currentSpec = ace.edit(aceEl).getValue();
-                        if (currentSpec && currentSpec !== originalContent) {
+                        if (currentSpec && currentSpec !== capturedOriginalContent) {
+                            // 保存前再次确认文件名未变（double-check，防极低概率竞态）
+                            if (currentFileName !== capturedFileName) {
+                                TimerManager.clear('swaggerAutoSave');
+                                return;
+                            }
                             await saveExistFileContent(currentSpec);
-                            originalContent = currentSpec;
+                            capturedOriginalContent = currentSpec; // 更新快照，避免重复保存相同内容
                         }
+                    } else {
+                        console.warn('未找到 Swagger Editor 的 ACE 编辑器实例，无法自动保存');
+                        TimerManager.clear('swaggerAutoSave');
                     }
                 } catch (err) {
                     console.error('swagger 内容保存失败', err);
                 }
-                scheduleNext();
             }
-
-            const scheduleNext = () => {
-                swaggerAutoSaveTimer = setTimeout(autoSaveTick, 10000);
-            };
-            scheduleNext();
+            TimerManager.set('swaggerAutoSave', autoSaveTick, 5000);
         }
 
         // 停掉 Swagger 自动保存定时器（不销毁编辑器，避免插件冲突）
         async function destroySwaggerEditor() {
-            if (swaggerAutoSaveTimer) {
-                clearTimeout(swaggerAutoSaveTimer);
-                swaggerAutoSaveTimer = null;
+            if (TimerManager.has('swaggerAutoSave')) {
+                TimerManager.clear('swaggerAutoSave');
             }
         }
 
@@ -22737,6 +22886,53 @@
                 });
             });
         }
+        let _currentNetSearchQuery = SEARCH_BTNS[1].query;
+        let _currentNetSearchName = SEARCH_BTNS[1].name;
+
+        function selectNetSearch(el) {
+            _currentNetSearchQuery = el.dataset.query;
+            _currentNetSearchName = el.dataset.name;
+            document.querySelectorAll('.net-search-dropdown-item').forEach(i => i.classList.remove('active'));
+            el.classList.add('active');
+            doNetSearch();
+        }
+
+        function doNetSearch(query) {
+            const input = document.getElementById('net-search');
+            const key = input ? input.value.trim() : '';
+            const q = query || _currentNetSearchQuery;
+            window.open(`${q}${encodeURIComponent(key)}`, '_blank');
+        }
+        function initDashboard() {
+            let html = '';
+            DASHBOARD_BUTTON.forEach(b => {
+                if (b.display) {
+                    if (isLocalVisit() || !hasBackendServer) {
+                        if (b.fileProtocolDisplay && b.display) {
+                            html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
+                        }
+                    } else {
+                        if (b.display) {
+                            html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
+                        }
+                    }
+                }
+            });
+            dashboardButtons.innerHTML = html;
+            html = '';
+            // 渲染搜索下拉菜单（将搜索引擎按钮放入搜索框下拉）
+            const netSearchDropdown = document.getElementById('net-search-dropdown');
+            if (netSearchDropdown) {
+                SEARCH_BTNS.forEach(b => {
+                    if (b.display) {
+                        const isActive = b.name === 'Google';
+                        html += `<div class="net-search-dropdown-item${isActive ? ' active' : ''}" data-query="${b.query}" data-name="${b.name}" onclick="selectNetSearch(this)">${b.name}</div>`;
+                    }
+                });
+                netSearchDropdown.innerHTML = html;
+                html = '';
+            }
+        }
 
         async function toggleDashboardView(isFirst = false, data = null) {
             const _scanStart = performance.now();
@@ -22763,21 +22959,7 @@
                     }
                 }
             }
-            let html = '';
-            DASHBOARD_BUTTON.forEach(b => {
-                if (b.display) {
-                    if (isLocalVisit() || !hasBackendServer) {
-                        if (b.fileProtocolDisplay && b.display) {
-                            html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
-                        }
-                    } else {
-                        if (b.display) {
-                            html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
-                        }
-                    }
-                }
-            });
-            dashboardButtons.innerHTML = html;
+
             const timeDisplay = dashboardContainer.querySelector('#dashboard-time');
             if (timeDisplay) {
                 todoUpdateModalTime(timeDisplay);
@@ -27099,17 +27281,19 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 commentContainer.innerHTML = '';
                 displaySelectionToolbar([commentContainer]);
                 SEARCH_BTNS.forEach(item => {
-                    const btn = document.createElement('button');
-                    btn.type = 'button';
-                    btn.className = 'color-option-search';
-                    btn.dataset.type = 'search';
-                    btn.dataset.query = item.query;
-                    btn.textContent = item.name;
-                    btn.onclick = (e) => {
-                        e.stopPropagation();
-                        searchMarkdownSelectionText(item.query);
-                    };
-                    commentContainer.appendChild(btn);
+                    if (item.selectDisplay === true) {
+                        const btn = document.createElement('button');
+                        btn.type = 'button';
+                        btn.className = 'color-option-search';
+                        btn.dataset.type = 'search';
+                        btn.dataset.query = item.query;
+                        btn.textContent = item.name;
+                        btn.onclick = (e) => {
+                            e.stopPropagation();
+                            searchMarkdownSelectionText(item.query);
+                        };
+                        commentContainer.appendChild(btn);
+                    }
                 });
             } else if (selectedType === 'ai') {
                 commentContainer.innerHTML = '';
@@ -27415,7 +27599,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const key = markdownSelectionState.text;
             if (query === 'all') {
                 SEARCH_BTNS.forEach(item => {
-                    if (item.name !== 'all') window.open(`${item.query}${encodeURIComponent(key)}`, '_blank');
+                    if (item.selectDisplay === true && item.name !== 'all') window.open(`${item.query}${encodeURIComponent(key)}`, '_blank');
                 });
                 return;
             }
@@ -30485,7 +30669,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
             graphDataMap = { nodes: new Map(), nodesArray: [], edges: [], neighborsMap: new Map() };
             // 单次遍历构建 graphDataMap.nodes + 边对象化 + 重建 neighborsMap
-            const extGroupMap = new Map(); // 扩展名 → group 编号
+            const extGroupMap = new Map(); // 扩展名 → group 编号 
             let extGroupCounter = 0;
             const refEdges = [];
             const refNeighborsMap = new Map();
@@ -30499,7 +30683,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const ext = (nodeData.ext || '').toLowerCase();
                 let group = extGroupMap.get(ext);
                 if (group === undefined) {
-                    group = extGroupCounter++;
+                    group = (extGroupMap.size + 1) % GROUP_HUES.length;
                     extGroupMap.set(ext, group);
                 }
                 const depth = nodeData.depth || 1;
@@ -31206,20 +31390,29 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         async function refreshGraphData() {
-            if (graphMode === 'link') {
-                // 文档关联模式：扫描所有 Markdown 文件并重新构建
-                loadGraphParams();
-                const data = await scanMarkdownLinks();
-                if (data) {
-                    await saveLinkGraphData(data);
-                    processLinkGraphData(data);
-                    showNotification('✓ 文档关联图谱更新完成', 'success');
+            const refreshBtn = document.getElementById('graph-refresh-btn');
+            if (refreshBtn) refreshBtn.disabled = true;
+            try {
+                if (graphMode === 'link') {
+                    // 文档关联模式：扫描所有 Markdown 文件并重新构建
+                    loadGraphParams();
+                    const data = await scanMarkdownLinks();
+                    if (data) {
+                        await saveLinkGraphData(data);
+                        processLinkGraphData(data);
+                        showNotification('✓ 文档关联图谱更新完成', 'success');
+                    }
+                    return;
                 }
-                return;
+                // 文件图谱模式：原有逻辑
+                loadGraphParams();
+                startSimulation(true); // force = true: 强制重新遍历文件系统
+            } catch (err) {
+                console.error('refreshGraphData error:', err);
+                showNotification('✗ 图谱刷新失败: ' + err.message, 'error');
+            } finally {
+                if (refreshBtn) refreshBtn.disabled = false;
             }
-            // 文件图谱模式：原有逻辑
-            loadGraphParams();
-            startSimulation(true); // force = true: 强制重新遍历文件系统
         }
 
         function updateGraphParam(param) {
