@@ -1,8 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
 
-import psutil
-
 from service.system_service import scan_file_info, get_openresty_conf, reload_openresty_conf
 from service.config import PROJECT_ROOT, HOST, PORT, LOG_LEVEL
 from typing import Optional
@@ -119,8 +117,6 @@ async def hello_page():
     return _load_static_file(PROJECT_ROOT, "index_cdn.html")
 
 
-# ── 系统 API ──
-
 @app.get("/api/system/heartbeat")
 async def api_heartbeat():
     """心跳检测"""
@@ -220,46 +216,6 @@ async def serve_scan_files(full_path: str):
 
 
 if __name__ == "__main__":
-    import sys
-    import time
-    import threading
-
-
-    def _enforce_memory_limit(limit_bytes: int):
-        """
-        内存限制守护：定期检查进程 RSS，超过上限则 GC + 设置 rlimit 限制。
-        防止长时间运行后内存泄漏导致 OOM。
-        """
-        import gc
-
-        def _watch():
-            while True:
-                time.sleep(5)
-                try:
-                    proc = psutil.Process(os.getpid())
-                    mem = proc.memory_info()
-                    if mem.rss > limit_bytes:
-                        gc.collect()
-                        proc = psutil.Process(os.getpid())
-                        if proc.memory_info().rss > limit_bytes:
-                            if sys.platform != 'win32':
-                                import resource
-                                try:
-                                    cur_soft, cur_hard = resource.getrlimit(resource.RLIMIT_AS)
-                                    if limit_bytes < cur_soft:
-                                        resource.setrlimit(resource.RLIMIT_AS, (limit_bytes, cur_hard))
-                                except (ValueError, OSError):
-                                    pass
-                except Exception:
-                    pass
-
-        t = threading.Thread(target=_watch, daemon=True)
-        t.start()
-
-
-    # 限制进程最大内存为 50MB
-    _enforce_memory_limit(50 * 1024 * 1024)
-
     import uvicorn
 
     uvicorn.run(app, host=HOST, port=PORT)

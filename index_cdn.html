@@ -7602,6 +7602,10 @@
             display: none;
         }
 
+        .timeline-search-clear:hover {
+            color: var(--t0);
+        }
+
         .timeline-stats-group {
             display: flex;
             gap: 24px;
@@ -7829,6 +7833,67 @@
             z-index: 100;
         }
 
+        /* ——— 图谱模式切换开关 ——— */
+        .graph-mode-toggle {
+            position: absolute;
+            top: 14px;
+            right: 100px;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .graph-mode-toggle-label {
+            font-size: 12px;
+            color: var(--t1);
+            white-space: nowrap;
+        }
+
+        .graph-mode-switch {
+            position: relative;
+            display: inline-block;
+            width: 36px;
+            height: 20px;
+        }
+
+        .graph-mode-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .graph-mode-slider {
+            position: absolute;
+            cursor: pointer;
+            inset: 0;
+            background-color: #ccc;
+            border-radius: 20px;
+            transition: background-color 0.3s;
+        }
+
+        .graph-mode-slider::before {
+            content: "";
+            position: absolute;
+            height: 16px;
+            width: 16px;
+            left: 2px;
+            bottom: 2px;
+            background-color: #fff;
+            border-radius: 50%;
+            transition: transform 0.3s;
+        }
+
+        .graph-mode-switch input:checked+.graph-mode-slider {
+            background-color: #2da44e;
+        }
+
+        .graph-mode-switch input:checked+.graph-mode-slider::before {
+            transform: translateX(16px);
+        }
+
         /* ——— 工具栏容器与折叠 ——— */
         .graph-toolbar-container {
             position: relative;
@@ -7998,10 +8063,43 @@
 
         .graph-toolbar-filter-row input[type="text"] {
             width: 100%;
-            padding: 6px 8px;
+            padding: 3px 26px 3px 8px;
             font-size: 12px;
-            height: 45px;
+            height: 26px;
             box-sizing: border-box;
+        }
+
+        .graph-filter-wrap {
+            position: relative;
+            display: block;
+            width: 100%;
+        }
+
+        .graph-filter-clear {
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            margin: auto;
+            border: none;
+            background: none;
+            font-size: 16px;
+            cursor: pointer;
+            color: var(--t2);
+            z-index: 2;
+            width: 26px;
+            height: 26px;
+            line-height: 1;
+            text-align: center;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .graph-filter-clear:hover {
+            color: var(--t0);
         }
 
         .graph-toolbar-sliders {
@@ -10690,6 +10788,11 @@
                                         d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
                                 </svg>
                             </button>
+                            <button id="graph-reset-params-btn" title="重置参数" onclick="resetGraphParams()">
+                                <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
+                                    <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1115.6 12 3.6 3.6 0 0112 15.6z"/>
+                                </svg>
+                            </button>
                             <button id="graph-pause-btn" title="暂停仿真" onclick="toggleGraphPause()">
                                 <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"
                                     id="graph-pause-icon">
@@ -10699,15 +10802,20 @@
                         </div>
                     </div>
                     <div class="graph-toolbar-row graph-toolbar-filter-row">
-                        <input type="text" id="graph-filter-path" placeholder="筛选路径..." oninput="applyGraphFilter()">
+                        <span class="graph-filter-wrap">
+                            <input type="text" id="graph-filter-path" placeholder="筛选路径..."
+                                oninput="applyGraphFilter()">
+                            <button class="graph-filter-clear" id="graph-filter-clear" onclick="clearGraphFilter()"
+                                style="display:none">×</button>
+                        </span>
                     </div>
                     <div class="graph-toolbar-sliders">
                         <div class="graph-toolbar-slider-item">
                             <label>节点大小</label>
                             <span class="graph-toolbar-row-inline">
-                                <input type="range" id="graph-node-size" min="0.5" max="2.0" step="0.1" value="1.2"
+                                <input type="range" id="graph-node-size" min="0.5" max="2.0" step="0.1" value="0.8"
                                     oninput="updateGraphParam('nodeSize')">
-                                <span class="graph-toolbar-value" id="graph-node-size-value">1.2</span>
+                                <span class="graph-toolbar-value" id="graph-node-size-value">0.8</span>
                             </span>
                         </div>
                         <div class="graph-toolbar-slider-item">
@@ -10751,7 +10859,7 @@
                         <label class="graph-toolbar-checkbox"><input type="checkbox" id="graph-hide-edges"
                                 onchange="toggleGraphHideEdges()">隐藏边</label>
                         <label class="graph-toolbar-checkbox"><input type="checkbox" id="graph-show-neighbors"
-                                onchange="toggleGraphNeighbors()">显示邻居</label>
+                                onchange="toggleGraphNeighbors()" checked>显示邻居</label>
                     </div>
                     <div class="graph-toolbar-stats">
                         <span>节点 <b id="node-count">0</b></span>
@@ -10763,6 +10871,13 @@
                     title="收起面板">‹
                 </button>
             </div>
+            <label class="graph-mode-toggle" id="graph-mode-toggle" title="切换图谱模式">
+                <span class="graph-mode-toggle-label">文档关联</span>
+                <div class="graph-mode-switch">
+                    <input type="checkbox" id="graph-mode-checkbox" onchange="toggleGraphMode()">
+                    <span class="graph-mode-slider"></span>
+                </div>
+            </label>
             <button id="graph-refresh-btn" class="btn btn-primary btn-sm graph-refresh-btn"
                 onclick="refreshGraphData()">
                 更新图谱
@@ -12413,6 +12528,7 @@
         const INDEX_MARKERS_FILE = 'index_file_markers.json';
         const INDEX_OPER_FILE = 'index_operation.json';
         const INDEX_SCHEDULE_FILE = 'index_schedule.json';
+        const INDEX_LINK_GRAPH_FILE = 'index_link_graph.json';
 
         // 判断文件路径是否应显示代码而非渲染 HTML
         const isShowHtmlCode = (relativePath) => {
@@ -13737,7 +13853,8 @@
                 Promise.resolve(closeSystemMonitor()),
                 Promise.resolve(destroyRawViewer()),
                 Promise.resolve(destroyWordCloud()),
-                Promise.resolve(destroyFileGraph())
+                Promise.resolve(destroyFileGraph()),
+                Promise.resolve(disposeOpenRestyEditor())
             ]);
         }
 
@@ -17828,7 +17945,7 @@
         async function renderEmbeddedCanvas(node, text, contentDiv, _depth = 0) {
             // 防止 .canvas 文件嵌套渲染导致无限递归
             if (_depth > 1) {
-                contentDiv.html(`<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--t2);font-size:12px;">📊 嵌套画布（预览已折叠）</div>`);
+                contentDiv.html(`<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--t2);font-size:12px;">嵌套画布（预览已折叠）</div>`);
                 return;
             }
             const container = contentDiv.node();
@@ -21611,6 +21728,11 @@
                 }
             }
 
+            // 对每个目录下的文件列表排序（分桶排序 O(Σ nᵢ log nᵢ)，优于全量排序 O(n log n)）
+            for (const bucket of Object.values(fileListMap)) {
+                if (bucket.length > 1) bucket.sort(_naturalCompare);
+            }
+
             // 构建 folderTree：纯目录树（不包含文件），子节点聚合 file_num 向上累加
             // 在构建时对子目录排序，确保全局数据有序（tree、treemap、folderSize 等均受益）
             function _buildNode(dirNode) {
@@ -24356,7 +24478,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         let isMermaidFileDisplay = false;
         async function destroyMermaid() {
             if (monacoEditorMermaid) {
-                monacoEditorMermaid.setValue('');
+                disposeEditor(monacoEditorMermaid);
+                monacoEditorMermaid = null;
             }
             // 清除预览和错误显示
             if (previewElMermaid) {
@@ -30009,23 +30132,29 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         let graphCtx = null;  // 图谱上下文
         let graphWidth = 0;  // 图谱宽度
         let graphHeight = 0;  // 图谱高度
+        let graphCachedNodes = null;   // 缓存文件系统遍历节点（避免重复遍历）
+        let graphCachedEdges = null;   // 缓存文件系统遍历边
+        let graphCachedRootName = null; // 缓存时的根目录名称（用于失效判断）
+        let graphMode = 'file';        // 图谱模式: 'file'=文件图谱, 'link'=文档关联
+        let linkGraphCache = null;     // 文档关联图谱数据缓存（从 JSON 加载）
+        let _graphTraversing = false;  // 文件系统遍历中标志，防止并发遍历
 
         const DEFAULT_PARAMS = {
             centerStrength: 0.3,
             chargeStrength: -350,
             linkStrength: 0.5,
             linkDistance: 120,
-            nodeSize: 1.2,
+            nodeSize: 0.8,
             filterPath: '',
             showTags: true,
             showIsolated: true,
             hideEdges: false,
-            showNeighborsOnly: false
+            showNeighborsOnly: true
         };
 
         let graphParams = { ...DEFAULT_PARAMS };
 
-        async function destroyFileGraph() {
+        function destroyFileGraph() {
             // 停止图谱视图激活状态
             graphViewActive = false;
             // 清除聚焦状态
@@ -30047,8 +30176,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 graphInteraction.destroy();
                 graphInteraction = null;
             }
+            // 移除 resize 事件监听
+            window.removeEventListener('resize', resizeFileGraphCanvas);
             // 重置图谱数据
             graphDataMap = { nodes: new Map(), nodesArray: [], edges: [], neighborsMap: new Map() };
+            // 重置遍历缓存
+            graphCachedNodes = null;
+            graphCachedEdges = null;
+            graphCachedRootName = null;
+            // 重置图谱模式与缓存
+            graphMode = 'file';
+            linkGraphCache = null;
             // 重置其他状态变量
             isPaused = false;
             graphFps = 0;
@@ -30065,11 +30203,364 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         async function toggleGraphView() {
+            // 每次打开图谱默认文件视图
+            graphMode = 'file';
+            const checkbox = document.getElementById('graph-mode-checkbox');
+            if (checkbox) checkbox.checked = false;
             if (!graphCanvas) {
                 initGraphCanvas();
             }
             loadGraphParams();
             startSimulation();
+        }
+
+        // 切换图谱模式（文件图谱 ↔ 文档关联）
+        async function toggleGraphMode() {
+            const checkbox = document.getElementById('graph-mode-checkbox');
+            const isLinkMode = checkbox.checked;
+            graphMode = isLinkMode ? 'link' : 'file';
+
+            if (graphMode === 'link') {
+                // 切换到文档关联视图：优先从本地 JSON 加载
+                const data = await loadLinkGraphData();
+                if (data && data.nodes && data.nodes.length > 0) {
+                    linkGraphCache = data;
+                    processLinkGraphData(data);
+                } else {
+                    processLinkGraphData({ nodes: [], edges: [] });
+                }
+            } else {
+                // 切换回文件图谱视图：强制重新遍历（清除 link 模式对缓存的污染）
+                startSimulation(true);
+            }
+        }
+
+        // 扫描所有 Markdown 文件中的链接（[[wikilink]] 和 [...]()）
+        // 只读取 .md 文件内容来提取链接，但节点列表包含所有文件
+        async function scanMarkdownLinks() {
+            if (!isRootHandleAvailable()) {
+                showNotification('✗ 请先打开根目录', 'error');
+                return null;
+            }
+            if (!allFilesCacheList || allFilesCacheList.length === 0) {
+                showNotification('✗ 文件缓存为空，请先刷新文件树', 'error');
+                return null;
+            }
+            showNotification('正在扫描 Markdown 链接...', 'info');
+            const rootName = getRootHandle().name;
+            const allFiles = allFilesCacheList;
+
+            // 单次遍历：构建 allNodes、allPaths、mdFileInfos
+            const allNodes = [];
+            const allPaths = new Set();
+            const mdFileInfos = [];
+
+            for (let i = 0; i < allFiles.length; i++) {
+                const f = allFiles[i];
+                const filePath = f.path;
+                const fileName = f.name;
+                allNodes.push({ id: filePath, title: fileName, path: filePath, ext: f.ext });
+                allPaths.add(filePath);
+
+                if (f.ext === 'md') {
+                    mdFileInfos.push({ path: filePath, name: fileName });
+                }
+            }
+
+            if (mdFileInfos.length === 0) {
+                showNotification('未找到 Markdown 文件', 'warning');
+                return { nodes: allNodes, edges: [] };
+            }
+
+            // 并发批量读取 .md 文件内容并提取链接
+            const BATCH_SIZE = 50;
+            const allEdges = [];
+
+            for (let i = 0; i < mdFileInfos.length; i += BATCH_SIZE) {
+                const batch = mdFileInfos.slice(i, i + BATCH_SIZE);
+                const batchResults = await Promise.all(batch.map(async (mdFile) => {
+                    const localEdges = [];
+                    try {
+                        const fileHandle = await getFileHandleByPath(mdFile.path);
+                        if (!fileHandle) return localEdges;
+                        const content = await getFileContent(fileHandle);
+                        const sourcePath = mdFile.path;
+
+                        // 提取 [[wikilink]]
+                        const wikiLinkRegex = /\[\[([^\|#\]]+)(?:\|[^\]]+)?\]\]/g;
+                        let match;
+                        while ((match = wikiLinkRegex.exec(content)) !== null) {
+                            const linkTarget = match[1].trim();
+                            if (!linkTarget) continue;
+                            const resolvedPath = resolveLinkTargetAll(linkTarget, sourcePath, allPaths, allFiles);
+                            if (resolvedPath && resolvedPath !== sourcePath) {
+                                localEdges.push({ source: sourcePath, target: resolvedPath });
+                            }
+                        }
+
+                        // 提取 [...]() 标准 Markdown 链接
+                        const mdLinkRegex = /\[([^\]]*)\]\(([^\)]+)\)/g;
+                        while ((match = mdLinkRegex.exec(content)) !== null) {
+                            let linkTarget = match[2].trim();
+                            const hashIdx = linkTarget.indexOf('#');
+                            if (hashIdx !== -1) linkTarget = linkTarget.substring(0, hashIdx);
+                            if (!linkTarget) continue;
+                            const ext = getExt(linkTarget).toLowerCase();
+                            if (ext && ext !== 'md' && ext !== 'markdown') continue;
+                            const resolvedPath = resolveLinkTargetAll(linkTarget, sourcePath, allPaths, allFiles);
+                            if (resolvedPath && resolvedPath !== sourcePath) {
+                                localEdges.push({ source: sourcePath, target: resolvedPath });
+                            }
+                        }
+                    } catch (e) {
+                        console.warn(`读取文件失败: ${mdFile.path}`, e);
+                    }
+                    return localEdges;
+                }));
+
+                for (const result of batchResults) {
+                    allEdges.push(...result);
+                }
+            }
+
+            // 去重边
+            const edgeSet = new Set();
+            const uniqueEdges = allEdges.filter(e => {
+                const key = `${e.source}→${e.target}`;
+                if (edgeSet.has(key)) return false;
+                edgeSet.add(key);
+                return true;
+            });
+
+            showNotification(`✓ 扫描完成: ${mdFileInfos.length} 个文件, ${allNodes.length} 个节点, ${uniqueEdges.length} 条链接`, 'success');
+            return { nodes: allNodes, edges: uniqueEdges };
+        }
+
+        // 解析链接目标到实际文件路径（匹配所有文件，不限于 .md）
+        // 预计算文件名→路径映射，避免每次调用都做 O(n) 遍历
+        let _resolveNameCache = null;
+        let _resolveNameCacheVersion = 0;
+        function _ensureResolveNameCache(allFiles) {
+            if (_resolveNameCache && _resolveNameCacheVersion === allFiles.length) return;
+            const map = new Map();
+            for (let i = 0; i < allFiles.length; i++) {
+                const f = allFiles[i];
+                const name = f.name.replace(/\.\w+$/i, '').toLowerCase();
+                // 同名冲突时保留第一个（通常更准确）
+                if (!map.has(name)) map.set(name, f.path);
+            }
+            _resolveNameCache = map;
+            _resolveNameCacheVersion = allFiles.length;
+        }
+        function resolveLinkTargetAll(linkTarget, sourcePath, allPaths, allFiles) {
+            // 1. 直接匹配完整路径
+            const withExt = linkTarget.endsWith('.md') ? linkTarget : linkTarget + '.md';
+            if (allPaths.has(withExt)) return withExt;
+
+            // 2. 处理相对路径（相对于源文件所在目录）
+            const sourceDir = dirname(sourcePath);
+            if (sourceDir) {
+                const relPath = joinPath(sourceDir, withExt);
+                if (allPaths.has(relPath)) return relPath;
+            }
+
+            // 3+4. 按标题/文件名匹配（使用预计算缓存 O(1)）
+            const lowerTarget = linkTarget.toLowerCase();
+            const targetName = linkTarget.split('/').pop() || linkTarget;
+            const lowerName = targetName.toLowerCase().replace(/\.\w+$/i, '');
+            _ensureResolveNameCache(allFiles);
+            // 先按完整标题匹配
+            const byTitle = _resolveNameCache.get(lowerTarget);
+            if (byTitle) return byTitle;
+            // 再按文件名匹配
+            const byName = _resolveNameCache.get(lowerName);
+            if (byName) return byName;
+
+            return null;
+        }
+
+        // 从 JSON 文件加载文档关联图谱数据
+        async function loadLinkGraphData() {
+            try {
+                const fh = await getFileHandleByDirHandle(await getDataDir(), INDEX_LINK_GRAPH_FILE);
+                const text = await getFileContent(fh);
+                if (text.trim()) {
+                    const data = JSON.parse(text);
+                    if (data && data.nodes && data.nodes.length > 0) {
+                        return data;
+                    }
+                }
+            } catch (e) {
+                // 文件不存在或解析失败，返回 null
+            }
+            return null;
+        }
+
+        // 保存文档关联图谱数据到 JSON 文件
+        let _linkGraphWriteLock = Promise.resolve();
+        async function saveLinkGraphData(data) {
+            const prev = _linkGraphWriteLock;
+            let resolve;
+            _linkGraphWriteLock = new Promise(r => { resolve = r; });
+            await prev;
+            try {
+                const saveData = {
+                    version: 1,
+                    generatedAt: Date.now(),
+                    rootPath: isRootHandleAvailable() ? getRootHandle().name : '',
+                    nodes: data.nodes,
+                    edges: data.edges
+                };
+                await writeFileByDirHandle(await getDataDir(), INDEX_LINK_GRAPH_FILE, JSON.stringify(saveData));
+                linkGraphCache = data;
+            } catch (e) {
+                console.error('保存文档关联图谱数据失败:', e);
+                showNotification('✗ 保存图谱数据失败', 'error');
+            } finally {
+                resolve();
+            }
+        }
+
+        // 处理并渲染文档关联图谱数据
+        function processLinkGraphData(data) {
+            if (!data || !data.nodes || data.nodes.length === 0) {
+                // 清空数据，不调用 file 模式的 processAndStartSimulation（避免模式污染）
+                graphDataMap = { nodes: new Map(), nodesArray: [], edges: [], neighborsMap: new Map() };
+                if (graphLayout) { graphLayout.destroy(); graphLayout = null; }
+                if (graphRenderer) { graphRenderer.destroy(); graphRenderer = null; }
+                if (graphInteraction) { graphInteraction.destroy(); graphInteraction = null; }
+                document.getElementById('node-count').textContent = '0';
+                document.getElementById('edge-count').textContent = '0';
+                return;
+            }
+
+            const { nodes, edges } = data;
+
+            // 单次遍历：计算 degree + filterPath 过滤 + 构建 neighborsMap
+            const degree = new Map();
+            const neighborsMap = new Map();
+            const filterPath = graphParams.filterPath;
+            const filteredNodeIds = new Set();
+            for (let i = 0; i < nodes.length; i++) {
+                const n = nodes[i];
+                if (filterPath && !n.title.toLowerCase().includes(filterPath)) continue;
+                filteredNodeIds.add(n.id);
+                degree.set(n.id, 0);
+            }
+            const edgeArray = edges || [];
+            for (let i = 0; i < edgeArray.length; i++) {
+                const e = edgeArray[i];
+                if (!filteredNodeIds.has(e.source) || !filteredNodeIds.has(e.target)) continue;
+                degree.set(e.source, (degree.get(e.source) || 0) + 1);
+                degree.set(e.target, (degree.get(e.target) || 0) + 1);
+                if (!neighborsMap.has(e.source)) neighborsMap.set(e.source, new Set());
+                if (!neighborsMap.has(e.target)) neighborsMap.set(e.target, new Set());
+                neighborsMap.get(e.source).add(e.target);
+                neighborsMap.get(e.target).add(e.source);
+            }
+
+            // 过滤无连接节点 + filterPath
+            let filteredNodes = [];
+            let filteredEdges = [];
+            for (let i = 0; i < nodes.length; i++) {
+                if (filteredNodeIds.has(nodes[i].id)) filteredNodes.push(nodes[i]);
+            }
+            if (!graphParams.showIsolated) {
+                const connectedIds = new Set();
+                for (const [id, d] of degree) { if (d > 0) connectedIds.add(id); }
+                filteredNodes = [];
+                for (let i = 0; i < nodes.length; i++) {
+                    const n = nodes[i];
+                    if (filteredNodeIds.has(n.id) && connectedIds.has(n.id)) filteredNodes.push(n);
+                }
+                for (let i = 0; i < edgeArray.length; i++) {
+                    const e = edgeArray[i];
+                    if (connectedIds.has(e.source) && connectedIds.has(e.target)) filteredEdges.push(e);
+                }
+            } else {
+                filteredEdges = [];
+                for (let i = 0; i < edgeArray.length; i++) {
+                    const e = edgeArray[i];
+                    if (filteredNodeIds.has(e.source) && filteredNodeIds.has(e.target)) filteredEdges.push(e);
+                }
+            }
+
+            graphDataMap = { nodes: new Map(), nodesArray: [], edges: [], neighborsMap: new Map() };
+            // 单次遍历构建 graphDataMap.nodes + 边对象化 + 重建 neighborsMap
+            const extGroupMap = new Map(); // 扩展名 → group 编号
+            let extGroupCounter = 0;
+            const refEdges = [];
+            const refNeighborsMap = new Map();
+            for (let i = 0; i < filteredNodes.length; i++) {
+                const nodeData = filteredNodes[i];
+                const d = degree.get(nodeData.id) || 0;
+                const baseSize = nodeData.id === 'root'
+                    ? 55
+                    : Math.min(50, Math.round(5 + Math.sqrt(d) * 6));
+                // 按扩展名分组，相同后缀同一颜色
+                const ext = (nodeData.ext || '').toLowerCase();
+                let group = extGroupMap.get(ext);
+                if (group === undefined) {
+                    group = extGroupCounter++;
+                    extGroupMap.set(ext, group);
+                }
+                const depth = nodeData.depth || 1;
+                graphDataMap.nodes.set(nodeData.id, {
+                    id: nodeData.id,
+                    title: nodeData.title || nodeData.id.split('/').pop(),
+                    label: nodeData.title || nodeData.id.split('/').pop(),
+                    path: nodeData.path || nodeData.id,
+                    group, depth,
+                    type: 'doc',
+                    baseSize, size: baseSize * graphParams.nodeSize,
+                    _color: getGraphGroupColor(group, depth),
+                    _degree: d,  // 保存度，供 showIsolated 过滤用
+                });
+            }
+            graphDataMap.nodesArray = Array.from(graphDataMap.nodes.values());
+            for (let i = 0; i < filteredEdges.length; i++) {
+                const e = filteredEdges[i];
+                const src = graphDataMap.nodes.get(e.source);
+                const tgt = graphDataMap.nodes.get(e.target);
+                if (!src || !tgt) continue;
+                refEdges.push({ source: src, target: tgt });
+                if (!refNeighborsMap.has(src.id)) refNeighborsMap.set(src.id, new Set());
+                if (!refNeighborsMap.has(tgt.id)) refNeighborsMap.set(tgt.id, new Set());
+                refNeighborsMap.get(src.id).add(tgt.id);
+                refNeighborsMap.get(tgt.id).add(src.id);
+            }
+            graphDataMap.edges = refEdges;
+            graphDataMap.neighborsMap = refNeighborsMap;
+
+            finalizeGraphRender(true /* 强制重建 layout/renderer */);
+        }
+
+        /**
+         * 公共函数：完成 graphDataMap 组装后的最终步骤
+         * @param {boolean} forceRecreate - true=销毁重建, false=复用现有
+         */
+        function finalizeGraphRender(forceRecreate = false) {
+            if (forceRecreate) {
+                if (graphRenderer) graphRenderer.invalidateDataCaches();
+                if (graphLayout) { graphLayout.destroy(); graphLayout = null; }
+                graphRenderer = null;
+                graphInteraction = null;
+            }
+
+            if (!graphLayout) {
+                graphLayout = new GraphLayout(graphWidth, graphHeight);
+            }
+            if (!graphRenderer) {
+                graphRenderer = new GraphRenderer(graphCanvas);
+            }
+            if (!graphInteraction) {
+                graphInteraction = new InteractionController(graphCanvas, graphRenderer, graphLayout);
+            }
+            document.getElementById('node-count').textContent = graphDataMap.nodes.size;
+            document.getElementById('edge-count').textContent = graphDataMap.edges.length;
+            graphLayout.updateData(graphDataMap);
+            graphLayout.onTick(() => graphRenderer.requestRender());
+            graphRenderer.requestRender();
         }
 
         class GraphLayout {
@@ -30094,17 +30585,19 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     .force('collide', d3.forceCollide()
                         .radius(d => d.size + 12)
                         .strength(0.8))
-                    .alphaDecay(0.02);
+                    .alphaDecay(0.02)
+                    .on('end', () => {
+                        // simulation 自然停止时更新暂停按钮图标
+                        if (isPaused) return; // 手动暂停不覆盖
+                        updateGraphPauseButton(true);
+                    });
             }
 
             updateData(data) {
                 if (!data || !data.nodes || !data.edges) return;
                 const nodes = Array.from(data.nodes.values());
-                const edges = data.edges.map(e => ({
-                    ...e,
-                    source: typeof e.source === 'string' ? data.nodes.get(e.source) : e.source,
-                    target: typeof e.target === 'string' ? data.nodes.get(e.target) : e.target,
-                })).filter(e => e.source && e.target);
+                // edges 已预先解析为对象引用，直接使用
+                const edges = data.edges;
                 this.simulation.nodes(nodes);
                 this.simulation.force('link').links(edges);
                 this.simulation.alpha(1).restart();
@@ -30198,6 +30691,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 this.focusNodeId = null;  // 聚焦模式: 仅显示此节点及其邻居
                 this._cachedFocusSet = null;  // 聚焦邻居集合缓存
                 this._rafId = null;           // requestAnimationFrame ID
+                this._childrenMap = null;     // 预建 parent→children 映射（数据变更时重建）
+                this._parentMap = null;       // 预建 child→parent 映射
             }
 
             setViewport(viewport) {
@@ -30224,6 +30719,30 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 this.requestRender();
             }
 
+            // 数据变更时调用，使邻居缓存失效
+            invalidateDataCaches() {
+                this._childrenMap = null;
+                this._parentMap = null;
+                this._cachedFocusSet = null;
+            }
+
+            _ensureDataCaches() {
+                if (this._childrenMap && this._parentMap) return;
+                const edges = graphDataMap?.edges || [];
+                const childrenMap = new Map();
+                const parentMap = new Map();
+                for (let i = 0; i < edges.length; i++) {
+                    const e = edges[i];
+                    const sid = typeof e.source === 'object' ? e.source.id : e.source;
+                    const tid = typeof e.target === 'object' ? e.target.id : e.target;
+                    if (!childrenMap.has(sid)) childrenMap.set(sid, new Set());
+                    childrenMap.get(sid).add(tid);
+                    parentMap.set(tid, sid);
+                }
+                this._childrenMap = childrenMap;
+                this._parentMap = parentMap;
+            }
+
             _getFocusSet() {
                 if (this._cachedFocusSet !== null) return this._cachedFocusSet;
                 if (!this.focusNodeId) return null;
@@ -30242,34 +30761,24 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     // fallback: 遍历边
                     const neighbors = new Set();
                     const edges = graphDataMap?.edges || [];
-                    edges.forEach(e => {
+                    for (let i = 0; i < edges.length; i++) {
+                        const e = edges[i];
                         const sid = typeof e.source === 'object' ? e.source.id : e.source;
                         const tid = typeof e.target === 'object' ? e.target.id : e.target;
                         if (sid === nodeId) neighbors.add(tid);
                         if (tid === nodeId) neighbors.add(sid);
-                    });
+                    }
                     return neighbors;
                 }
-                // 完整模式: 返回父节点 + 所有递归子孙节点
-                const edges = graphDataMap?.edges || [];
-                const childrenMap = new Map(); // parent -> Set of children
-                const parentMap = new Map();    // child -> parent
-                edges.forEach(e => {
-                    const sid = typeof e.source === 'object' ? e.source.id : e.source;
-                    const tid = typeof e.target === 'object' ? e.target.id : e.target;
-                    if (!childrenMap.has(sid)) childrenMap.set(sid, new Set());
-                    childrenMap.get(sid).add(tid);
-                    parentMap.set(tid, sid);
-                });
+                // 完整模式: 使用预建缓存 O(k) where k = 子孙数，避免每帧重建 Map
+                this._ensureDataCaches();
                 const visible = new Set();
-                // 父节点
-                const parent = parentMap.get(nodeId);
+                const parent = this._parentMap.get(nodeId);
                 if (parent) visible.add(parent);
-                // 递归收集所有子孙
                 const queue = [nodeId];
                 while (queue.length > 0) {
                     const cur = queue.shift();
-                    const kids = childrenMap.get(cur);
+                    const kids = this._childrenMap.get(cur);
                     if (kids) {
                         kids.forEach(child => {
                             if (!visible.has(child)) {
@@ -30321,20 +30830,30 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
 
             renderEdges(bounds) {
+                this._visibleEdgeCount = 0;
                 if (graphParams.hideEdges) return;
                 const { ctx } = this;
                 const edges = graphDataMap?.edges || [];
                 const focusSet = this._getFocusSet();
-                edges.forEach(edge => {
-                    const source = typeof edge.source === 'object' ? edge.source : graphDataMap?.nodes.get(edge.source);
-                    const target = typeof edge.target === 'object' ? edge.target : graphDataMap?.nodes.get(edge.target);
-                    if (!source || !target || source.x === undefined || source.y === undefined || target.x === undefined || target.y === undefined) return;
+                const showIsolated = graphParams.showIsolated;
+                const filterPath = graphParams.filterPath;
+                let edgeCount = 0;
+                for (let i = 0; i < edges.length; i++) {
+                    const edge = edges[i];
+                    const source = edge.source;
+                    const target = edge.target;
+                    if (!source || !target || source.x === undefined || source.y === undefined || target.x === undefined || target.y === undefined) continue;
+                    // filterPath 过滤: 一端被过滤掉则不显示该边（防止无头连线）
+                    if (filterPath && (!source.title.toLowerCase().includes(filterPath) || !target.title.toLowerCase().includes(filterPath))) continue;
+                    // showIsolated=false 时跳过连接到孤立节点的边
+                    if (!showIsolated && (source._degree === 0 || target._degree === 0)) continue;
                     // 聚焦模式: 仅绘制两端均在可见集合内的边
                     if (focusSet !== null) {
-                        if (!focusSet.has(source.id) && source.id !== this.focusNodeId) return;
-                        if (!focusSet.has(target.id) && target.id !== this.focusNodeId) return;
+                        if (!focusSet.has(source.id) && source.id !== this.focusNodeId) continue;
+                        if (!focusSet.has(target.id) && target.id !== this.focusNodeId) continue;
                     }
-                    if (!this.isEdgeVisible(source, target, bounds)) return;
+                    if (!this.isEdgeVisible(source, target, bounds)) continue;
+                    edgeCount++;
                     // 聚焦模式下连线保持原色，非聚焦模式高亮关联连线
                     const isHighlighted = !this.focusNodeId && this.highlightedNode
                         && (source.id === this.highlightedNode.id || target.id === this.highlightedNode.id);
@@ -30342,9 +30861,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     ctx.moveTo(source.x, source.y);
                     ctx.lineTo(target.x, target.y);
                     if (isHighlighted) {
-                        ctx.strokeStyle = 'var(--color-primary-light)';
+                        ctx.strokeStyle = '#0969da';
                         ctx.lineWidth = 1.5;
-                        ctx.shadowColor = 'var(--color-primary-light)';
+                        ctx.shadowColor = '#0969da';
                         ctx.shadowBlur = 8;
                     } else {
                         ctx.strokeStyle = 'rgba(101, 109, 118, 0.55)';
@@ -30353,7 +30872,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                     ctx.stroke();
                     ctx.shadowBlur = 0;
-                });
+                }
+                // 缓存可见边数供 renderNodes 更新统计
+                this._visibleEdgeCount = edgeCount;
             }
 
             renderNodes(bounds) {
@@ -30361,8 +30882,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const allNodes = graphDataMap?.nodesArray || [];
                 const focusSet = this._getFocusSet();
                 const neighborsMap = graphDataMap?.neighborsMap;
+                const showIsolated = graphParams.showIsolated;
+                const filterPath = graphParams.filterPath;
+                let visibleNodeCount = 0;
+                let visibleEdgeCount = 0;
                 allNodes.forEach(node => {
                     if (node.x === undefined || node.y === undefined) return;
+                    // filterPath 过滤
+                    if (filterPath && !node.title.toLowerCase().includes(filterPath)) return;
+                    // showIsolated=false 时跳过孤立节点
+                    if (!showIsolated && node._degree === 0) return;
+                    visibleNodeCount++;
                     // 聚焦模式: 仅显示聚焦节点及其邻居
                     if (focusSet !== null && node.id !== this.focusNodeId && !focusSet.has(node.id)) return;
                     if (!this.isNodeVisible(node, bounds)) return;
@@ -30374,13 +30904,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     ctx.beginPath();
                     ctx.arc(node.x, node.y, node.size, 0, Math.PI * 2);
                     let fillColor;
-                    // root 节点单独配色, 醒目突出
+                    // root 节点单独配色, 醒目突出; 其他节点使用预计算颜色
                     if (node.id === 'root') {
-                        fillColor = isFocused || isHighlighted ? 'var(--color-primary-light)' : '#6e40c9';
+                        fillColor = isFocused || isHighlighted ? '#0969da' : '#6e40c9';
                     } else if (isFocused || isHighlighted) {
-                        fillColor = 'var(--color-primary-light)';
+                        fillColor = '#0969da';
                     } else {
-                        fillColor = getGraphGroupColor(node.group, node.depth);
+                        fillColor = node._color || getGraphGroupColor(node.group, node.depth);
                     }
                     ctx.fillStyle = fillColor;
                     if (isHighlighted || isFocused) {
@@ -30394,7 +30924,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         ctx.lineWidth = 2.5;
                         ctx.stroke();
                     }
-                    if (graphParams.showTags && (viewport.k > 0.5 || (this.focusNodeId && (isFocused || isNeighbor)))) {
+                    if (graphParams.showTags && (viewport.k > 0.5 || (this.focusNodeId && viewport.k > 0.2 && (isFocused || isNeighbor)))) {
                         ctx.fillStyle = (isHighlighted || isFocused) ? 'red' : '#646a73';
                         ctx.font = `${Math.max(6, 8 / viewport.k)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif`;
                         ctx.textAlign = 'center';
@@ -30402,6 +30932,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         ctx.fillText(node.title, node.x, node.y + node.size + 18);
                     }
                 });
+                // 更新统计（仅在非聚焦模式下更新）
+                if (!this.focusNodeId) {
+                    const nodeCountEl = document.getElementById('node-count');
+                    const edgeCountEl = document.getElementById('edge-count');
+                    if (nodeCountEl) nodeCountEl.textContent = visibleNodeCount;
+                    if (edgeCountEl) edgeCountEl.textContent = this._visibleEdgeCount ?? graphDataMap?.edges?.length ?? 0;
+                }
             }
 
             isNodeVisible(node, bounds) {
@@ -30464,11 +31001,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 this.layout = layout;
                 this.draggingNode = null;
                 this.didDrag = false;
+                this._lastMoveTime = 0;  // 鼠标移动节流
                 this.zoomBehavior = d3.zoom()
                     .scaleExtent([0.1, 5])
+                    .filter(event => !event.button && !event.ctrlKey && event.type !== 'dblclick')
                     .on('zoom', (event) => {
                         const viewport = event.transform;
+                        this.canvas.style.cursor = 'move';
                         this.renderer.setViewport({ x: viewport.x, y: viewport.y, k: viewport.k });
+                    })
+                    .on('end', () => {
+                        this.canvas.style.cursor = 'default';
                     });
                 d3.select(canvas).call(this.zoomBehavior);
                 this._boundOnMouseDown = this.onMouseDown.bind(this);
@@ -30496,6 +31039,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const node = this.layout.getNodeAt(x, y, candidateNodes, viewport);
                 this.didDrag = false;
                 if (node) {
+                    event.stopPropagation();
                     if (this.zoomBehavior) {
                         d3.select(this.canvas).on('.zoom', null);
                     }
@@ -30507,6 +31051,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
 
             onMouseMove(event) {
+                const now = performance.now();
+                if (now - this._lastMoveTime < 16) return; // 节流 ~60fps
+                this._lastMoveTime = now;
                 const [x, y] = [event.offsetX, event.offsetY];
                 const viewport = this.getCurrentViewport();
                 const allNodes = graphDataMap?.nodesArray || [];
@@ -30537,6 +31084,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
             onClick(event) {
                 if (this.didDrag) return;
+                // 点击节点时先暂停仿真，避免布局运动干扰选中状态
+                if (!isPaused && this.layout) {
+                    this.layout.togglePause();
+                    updateGraphPauseButton(true);
+                }
                 const [x, y] = [event.offsetX, event.offsetY];
                 const viewport = this.getCurrentViewport();
                 const allNodes = graphDataMap?.nodesArray || [];
@@ -30581,15 +31133,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        // 色相均匀覆盖 360° 色环, 确保红/蓝/黄/绿等均有代表
-        const GROUP_HUES = [220, 0, 55, 120, 180, 25, 80, 145, 200, 270, 40, 100, 160, 230, 290, 10, 70, 130, 190, 340];
+        const GROUP_HUES = [
+            25, 210, 335, 100, 170, 290,  // 红橙、靛蓝、紫红、黄绿、青绿、蓝紫
+            50, 140, 230, 355, 75, 160     // 琥珀、草绿、钴蓝、粉红、黄绿、碧蓝
+        ];
 
         function getGraphGroupColor(group, depth) {
             const hue = GROUP_HUES[group % GROUP_HUES.length];
             const d = depth || 0;
-            // depth=0(root)深色; depth=1高饱和强区分; 更深层级递减
-            const s = Math.max(22, 76 - d * 10);
-            const l = Math.min(66, 28 + d * 9);
+            const s = Math.max(55, 68 - d * 4);
+            const l = Math.max(38, 50 - d * 4);
+            // 色相、饱和度、亮度
             return `hsl(${hue}, ${s}%, ${l}%)`;
         }
 
@@ -30632,12 +31186,42 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         function applyGraphFilter() {
             graphParams.filterPath = document.getElementById('graph-filter-path').value.trim().toLowerCase();
-            rebuildGraph();
+            const clearBtn = document.getElementById('graph-filter-clear');
+            if (clearBtn) {
+                clearBtn.style.display = graphParams.filterPath ? 'block' : 'none';
+            }
+            if (graphRenderer) {
+                graphRenderer.requestRender();
+            }
+        }
+
+        function clearGraphFilter() {
+            const input = document.getElementById('graph-filter-path');
+            input.value = '';
+            const clearBtn = document.getElementById('graph-filter-clear');
+            if (clearBtn) clearBtn.style.display = 'none';
+            graphParams.filterPath = '';
+            if (graphRenderer) {
+                graphRenderer.requestRender();
+            }
+            input.focus();
         }
 
         async function refreshGraphData() {
+            if (graphMode === 'link') {
+                // 文档关联模式：扫描所有 Markdown 文件并重新构建
+                loadGraphParams();
+                const data = await scanMarkdownLinks();
+                if (data) {
+                    await saveLinkGraphData(data);
+                    processLinkGraphData(data);
+                    showNotification('✓ 文档关联图谱更新完成', 'success');
+                }
+                return;
+            }
+            // 文件图谱模式：原有逻辑
             loadGraphParams();
-            startSimulation();
+            startSimulation(true); // force = true: 强制重新遍历文件系统
         }
 
         function updateGraphParam(param) {
@@ -30669,14 +31253,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             saveGraphParams();
         }
 
-        function rebuildGraph() {
-            graphParams.showIsolated = document.getElementById('graph-show-isolated').checked;
-            startSimulation();
-        }
-
         function toggleGraphIsolated() {
             graphParams.showIsolated = document.getElementById('graph-show-isolated').checked;
-            rebuildGraph();
+            saveGraphParams();
+            // 直接重新渲染，不重建 simulation（避免画面跳动）
+            if (graphRenderer) {
+                graphRenderer.requestRender();
+            }
         }
 
         function toggleGraphLabels() {
@@ -30698,23 +31281,37 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         function toggleGraphNeighbors() {
             graphParams.showNeighborsOnly = document.getElementById('graph-show-neighbors').checked;
             saveGraphParams();
-            if (graphRenderer && graphRenderer.focusNodeId) {
+            if (graphRenderer) {
+                graphRenderer._cachedFocusSet = null;
                 graphRenderer.requestRender();
             }
         }
 
-        function startSimulation() {
+        function startSimulation(force = false) {
             if (!isRootHandleAvailable()) {
                 showNotification('✗ 请先打开根目录', 'error');
                 return;
             }
+            const rootName = getRootHandle().name;
+            // 如果根目录未变且已有缓存，直接复用（避免重复遍历文件系统）
+            if (!force && graphCachedNodes && graphCachedEdges && graphCachedRootName === rootName) {
+                processAndStartSimulation(graphCachedNodes, graphCachedEdges);
+                return;
+            }
+            // 清空旧缓存
+            graphCachedNodes = null;
+            graphCachedEdges = null;
+            graphCachedRootName = null;
+            // 重置渲染器的邻居缓存（数据将变更）
+            if (graphRenderer) graphRenderer.invalidateDataCaches();
+
             let nodes = [];
             let edges = [];
             const groupMap = new Map();
             let groupCounter = 0;
             nodes.push({
                 id: 'root',
-                title: getRootHandle().name,
+                title: rootName,
                 path: '',
                 size: 100,
                 group: 0,
@@ -30722,6 +31319,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             });
             groupMap.set('root', 0);
             groupCounter++;
+
+            // 并发保护：正在遍历时忽略后续调用
+            if (_graphTraversing) {
+                showNotification('正在构建图谱，请稍候...', 'info');
+                return;
+            }
+            _graphTraversing = true;
 
             async function traverseDirectory(dirHandle, parentPath) {
                 for await (const entry of dirHandle.values()) {
@@ -30760,14 +31364,25 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
 
             (async () => {
-                await traverseDirectory(getRootHandle(), '');
-                createDirectoryTreeEdges(nodes, edges);
-                processAndStartSimulation(nodes, edges);
+                try {
+                    await traverseDirectory(getRootHandle(), '');
+                    createDirectoryTreeEdges(nodes, edges);
+                    // 缓存遍历结果，后续 rebuild/refresh 直接复用
+                    graphCachedNodes = nodes;
+                    graphCachedEdges = edges;
+                    graphCachedRootName = rootName;
+                    processAndStartSimulation(nodes, edges);
+                } finally {
+                    _graphTraversing = false;
+                }
             })();
         }
 
         function createDirectoryTreeEdges(nodes, edges) {
-            const nodeMap = new Map(nodes.map(n => [n.id, n]));
+            const nodeMap = new Map();
+            for (let i = 0; i < nodes.length; i++) {
+                nodeMap.set(nodes[i].id, nodes[i]);
+            }
             nodeMap.forEach((node, nodeId) => {
                 if (nodeId === 'root') return;
                 const lastSlash = nodeId.lastIndexOf(SLASH);
@@ -30782,39 +31397,60 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         function processAndStartSimulation(nodes, edges) {
-            const filteredNodeIds = new Set();
-            nodes.forEach(n => {
-                if (graphParams.filterPath && !n.path.toLowerCase().includes(graphParams.filterPath)) return;
-                filteredNodeIds.add(n.id);
-            });
-            nodes = nodes.filter(n => filteredNodeIds.has(n.id));
-            edges = edges.filter(e => filteredNodeIds.has(e.source) && filteredNodeIds.has(e.target));
+            // 单次遍历完成：filterPath 过滤、degree 计算、filteredNodes/Edges 构建
             const degree = new Map();
-            nodes.forEach(n => degree.set(n.id, 0));
-            edges.forEach(e => {
+            const filteredNodeIds = new Set();
+            for (let i = 0; i < nodes.length; i++) {
+                const n = nodes[i];
+                if (graphParams.filterPath && !n.title.toLowerCase().includes(graphParams.filterPath)) continue;
+                filteredNodeIds.add(n.id);
+                degree.set(n.id, 0);
+            }
+            let filteredEdges = [];
+            for (let i = 0; i < edges.length; i++) {
+                const e = edges[i];
+                if (!filteredNodeIds.has(e.source) || !filteredNodeIds.has(e.target)) continue;
+                filteredEdges.push(e);
                 degree.set(e.source, (degree.get(e.source) || 0) + 1);
                 degree.set(e.target, (degree.get(e.target) || 0) + 1);
-            });
+            }
             if (!graphParams.showIsolated) {
-                const connectedIds = new Set(
-                    nodes
-                        .filter(n => (degree.get(n.id) || 0) > 0)
-                        .map(n => n.id)
-                );
-                nodes = nodes.filter(n => connectedIds.has(n.id));
-                edges = edges.filter(e => connectedIds.has(e.source) && connectedIds.has(e.target));
+                const connectedIds = new Set();
+                for (const [id, d] of degree) {
+                    if (d > 0) connectedIds.add(id);
+                }
+                const filteredDegree = new Map();
+                const keepNodes = [];
+                for (let i = 0; i < nodes.length; i++) {
+                    const n = nodes[i];
+                    if (!filteredNodeIds.has(n.id)) continue;
+                    if (connectedIds.has(n.id)) {
+                        keepNodes.push(n);
+                        filteredDegree.set(n.id, degree.get(n.id) || 0);
+                    }
+                }
+                nodes = keepNodes;
+                const tempDegree = filteredDegree;
+                filteredEdges = filteredEdges.filter(e => connectedIds.has(e.source) && connectedIds.has(e.target));
+                // 替换 degree 引用为过滤后的版本
+                degree.clear();
+                for (const [id, d] of tempDegree) degree.set(id, d);
+            } else {
+                nodes = nodes.filter(n => filteredNodeIds.has(n.id));
             }
 
-            // 构建节点数据，根节点视觉最大
+            // 单次遍历构建 neighborsMap + graphDataMap.nodes
             const neighborsMap = new Map();
-            edges.forEach(e => {
+            for (let i = 0; i < filteredEdges.length; i++) {
+                const e = filteredEdges[i];
                 if (!neighborsMap.has(e.source)) neighborsMap.set(e.source, new Set());
                 if (!neighborsMap.has(e.target)) neighborsMap.set(e.target, new Set());
                 neighborsMap.get(e.source).add(e.target);
                 neighborsMap.get(e.target).add(e.source);
-            });
-            graphDataMap = { nodes: new Map(), nodesArray: [], edges: edges, neighborsMap: neighborsMap };
-            nodes.forEach(nodeData => {
+            }
+            graphDataMap = { nodes: new Map(), nodesArray: [], edges: filteredEdges, neighborsMap };
+            for (let i = 0; i < nodes.length; i++) {
+                const nodeData = nodes[i];
                 const d = degree.get(nodeData.id) || 0;
                 const baseSize = nodeData.id === 'root'
                     ? 55
@@ -30829,23 +31465,29 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     type: 'file',
                     baseSize: baseSize,
                     size: baseSize * graphParams.nodeSize,
+                    _color: getGraphGroupColor(nodeData.group, nodeData.depth || 0),
+                    _degree: d,  // 保存度，供 showIsolated 过滤用
                 });
-            });
+            }
             graphDataMap.nodesArray = Array.from(graphDataMap.nodes.values());
-            if (!graphLayout) {
-                graphLayout = new GraphLayout(graphWidth, graphHeight);
+            // 边中的 source/target 解析为节点对象引用 + 重建 neighborsMap
+            const refEdges = [];
+            const refNeighborsMap = new Map();
+            for (let i = 0; i < filteredEdges.length; i++) {
+                const e = filteredEdges[i];
+                const srcNode = graphDataMap.nodes.get(e.source);
+                const tgtNode = graphDataMap.nodes.get(e.target);
+                if (!srcNode || !tgtNode) continue;
+                refEdges.push({ source: srcNode, target: tgtNode });
+                const sid = srcNode.id, tid = tgtNode.id;
+                if (!refNeighborsMap.has(sid)) refNeighborsMap.set(sid, new Set());
+                if (!refNeighborsMap.has(tid)) refNeighborsMap.set(tid, new Set());
+                refNeighborsMap.get(sid).add(tid);
+                refNeighborsMap.get(tid).add(sid);
             }
-            if (!graphRenderer) {
-                graphRenderer = new GraphRenderer(graphCanvas);
-            }
-            if (!graphInteraction) {
-                graphInteraction = new InteractionController(graphCanvas, graphRenderer, graphLayout);
-            }
-            document.getElementById('node-count').textContent = graphDataMap.nodes.size;
-            document.getElementById('edge-count').textContent = graphDataMap.edges.length;
-            graphLayout.updateData(graphDataMap);
-            graphLayout.onTick(() => graphRenderer.requestRender());
-            graphRenderer.requestRender();
+            graphDataMap.edges = refEdges;
+            graphDataMap.neighborsMap = refNeighborsMap;
+            finalizeGraphRender(false /* 复用现有 layout/renderer */);
         }
 
         async function saveGraphParams() {
@@ -30957,11 +31599,63 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
+        function resetGraphParams() {
+            // 清空 localStorage 中的保存参数
+            localStorage.removeItem(GRAPH_PARAMS_KEY);
+            // 重置筛选输入框
+            const filterInput = document.getElementById('graph-filter-path');
+            if (filterInput) {
+                filterInput.value = '';
+            }
+            graphParams.filterPath = '';
+            const clearBtn = document.getElementById('graph-filter-clear');
+            if (clearBtn) clearBtn.style.display = 'none';
+            // 重置为默认值
+            Object.keys(DEFAULT_PARAMS).forEach(key => {
+                graphParams[key] = DEFAULT_PARAMS[key];
+                const paramKebab = key.replace(/([A-Z])/g, '-$1').toLowerCase();
+                const elem = document.getElementById('graph-' + paramKebab);
+                const valueElem = document.getElementById('graph-' + paramKebab + '-value');
+                if (elem) {
+                    if (elem.type === 'checkbox') {
+                        elem.checked = DEFAULT_PARAMS[key];
+                    } else {
+                        elem.value = DEFAULT_PARAMS[key];
+                    }
+                }
+                if (valueElem) {
+                    if (key === 'nodeSize' || key === 'linkStrength' || key === 'centerStrength') {
+                        valueElem.textContent = DEFAULT_PARAMS[key].toFixed(1);
+                    } else {
+                        valueElem.textContent = DEFAULT_PARAMS[key].toFixed(0);
+                    }
+                }
+            });
+            // 更新布局参数
+            if (graphLayout) {
+                graphLayout.updateParams(graphParams);
+            }
+            // 更新节点大小
+            if (graphParams.nodeSize) {
+                updateGraphAllNodeSizes(graphDataMap.nodes);
+            }
+            // 重新渲染
+            if (graphRenderer) {
+                graphRenderer.requestRender();
+            }
+            showNotification('✓ 参数已重置为默认值', 'success');
+        }
+
         function toggleGraphPause() {
-            const pauseBtn = document.getElementById('graph-pause-btn');
-            const pauseIcon = document.getElementById('graph-pause-icon');
             if (!graphLayout) return;
             const paused = graphLayout.togglePause();
+            updateGraphPauseButton(paused);
+        }
+
+        function updateGraphPauseButton(paused) {
+            const pauseBtn = document.getElementById('graph-pause-btn');
+            const pauseIcon = document.getElementById('graph-pause-icon');
+            if (!pauseBtn || !pauseIcon) return;
             if (paused) {
                 pauseIcon.innerHTML = '<path d="M8 5v14l11-7z"/>';
                 pauseBtn.title = '继续仿真';
@@ -35894,6 +36588,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         async function openGitPageByFile(relativePath) {
             if (!relativePath) return;
             await openGitPageCore(relativePath);
+        }
+
+        function disposeOpenRestyEditor() {
+            if (openrestyEditor) {
+                disposeEditor(openrestyEditor);
+                openrestyEditor = null;
+            }
         }
     </script>
 </body>
