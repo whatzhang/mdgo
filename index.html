@@ -10695,9 +10695,10 @@
             align-items: center;
             padding: 0 5px;
             transition: 0.2s;
-            box-shadow: var(--shadow-sm);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transition: all 0.2s ease;
             width: 160px;
-            height: 32px;
+            height: 34px;
         }
 
         .net-search-box input {
@@ -10722,6 +10723,7 @@
             display: flex;
             align-items: center;
         }
+
         /* 悬停桥接：在按钮下方创建不可见热区，覆盖按钮到下拉菜单之间的间隙 */
         .net-search-dropdown-wrap::after {
             content: '';
@@ -10736,8 +10738,8 @@
             background: var(--color-bg-secondary);
             border: none;
             border-radius: 6px;
-            width: 24px;
-            height: 24px;
+            width: 26px;
+            height: 26px;
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -10769,6 +10771,7 @@
             transition: opacity 0.15s ease, visibility 0s linear 0.15s, transform 0.15s ease;
             pointer-events: none;
         }
+
         .net-search-dropdown-wrap:hover .net-search-dropdown,
         .net-search-dropdown:hover {
             opacity: 1;
@@ -10777,9 +10780,11 @@
             transition: opacity 0.15s ease, visibility 0s linear 0s, transform 0.15s ease;
             pointer-events: auto;
         }
+
         .net-search-dropdown-item:first-child {
             padding-top: 6px;
         }
+
         .net-search-dropdown-item:last-child {
             padding-bottom: 6px;
         }
@@ -11077,17 +11082,6 @@
             <div class="heatmap-section">
                 <div class="chart-title" style="margin-bottom: 3px;">🛠️ 工具</div>
                 <div id="tools-buttons-container" class="tools-buttons-container">
-                </div>
-                <div style="margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
-                    <div class="net-search-box">
-                        <input type="text" id="net-search" autocomplete="on" placeholder="搜索..." onkeydown="if(event.key==='Enter'){event.preventDefault();doNetSearch();}">
-                        <div class="net-search-dropdown-wrap">
-                            <button class="net-search-btn" id="net-search-btn">🔍</button>
-                            <div class="net-search-dropdown" id="net-search-dropdown"></div>
-                        </div>
-                    </div>
-                    <div id="net-search-buttons" class="tools-buttons-container" style="display: none;">
-                    </div>
                 </div>
             </div>
             <div class="heatmap-section">
@@ -22904,7 +22898,14 @@
             window.open(`${q}${encodeURIComponent(key)}`, '_blank');
         }
         function initDashboard() {
-            let html = '';
+            let html = `
+                <div class="net-search-box" id="tools-buttons-search">
+                    <input type="text" id="net-search" autocomplete="off" placeholder="搜索..." onkeydown="if(event.key==='Enter'){event.preventDefault();doNetSearch();}">
+                    <div class="net-search-dropdown-wrap">
+                        <button class="net-search-btn" id="net-search-btn">🔍</button>
+                        <div class="net-search-dropdown" id="net-search-dropdown"></div>
+                    </div>
+                </div>`;
             DASHBOARD_BUTTON.forEach(b => {
                 if (b.display) {
                     if (isLocalVisit() || !hasBackendServer) {
