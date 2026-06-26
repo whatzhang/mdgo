@@ -812,10 +812,12 @@
         }
 
         @keyframes connectorPulse {
+
             0%,
             100% {
                 r: 6;
             }
+
             50% {
                 r: 8;
             }
@@ -11206,7 +11208,7 @@
                     <div class="timeline-view-tab" data-view="month">每月</div>
                     <div class="timeline-view-tab" data-view="quarter">每季度</div>
                     <div class="timeline-view-tab" data-view="year">每年</div>
-                    <div class="timeline-view-tab" data-view="all">全部</div>
+                    <!-- <div class="timeline-view-tab" data-view="all">全部</div> -->
                 </div>
                 <div class="timeline-filters-group">
                     <div class="timeline-filter-chip timeline-active" data-filter="all">全部</div>
@@ -11367,20 +11369,20 @@
         <div id="canvas-bottom-toolbar" class="canvas-bottom-toolbar" style="display: none;">
             <div class="canvas-node-type-btn" onclick="handleCanvasAddNode('text')" title="空白文本">
                 <svg viewBox="0 0 24 24" width="24" height="24">
-                    <path fill="var(--color-warning)"
+                    <path fill="var(--color-primary)"
                         d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11z" />
                 </svg>
             </div>
             <div class="canvas-node-type-btn" onclick="handleCanvasAddNode('image')" title="图片">
                 <svg viewBox="0 0 24 24" width="24" height="24">
-                    <path fill="var(--color-warning)"
+                    <path fill="var(--color-primary)"
                         d="M 6.5 2 C 5.12 2 4 3.12 4 4.5 L 4 19.5 C 4 20.879 5.121 22 6.5 22 L 17.5 22 C 18.879 22 20 20.879 20 19.5 L 20 9 L 14 9 C 13.45 9 13 8.55 13 8 L 13 2 L 6.5 2 z M 15 2.5859375 L 15 7 L 19.414062 7 L 15 2.5859375 z M 15 10.5 C 15.828 10.5 16.5 11.172 16.5 12 C 16.5 12.828 15.828 13.5 15 13.5 C 14.172 13.5 13.5 12.828 13.5 12 C 13.5 11.172 14.172 10.5 15 10.5 z M 7.9726562 14.152344 C 8.2314062 14.152344 8.4892344 14.247047 8.6777344 14.435547 L 11.935547 17.693359 C 12.130547 17.888359 12.386578 17.986328 12.642578 17.986328 C 12.898578 17.986328 13.154609 17.888359 13.349609 17.693359 C 13.740609 17.302359 13.740609 16.670297 13.349609 16.279297 L 12.849609 15.777344 L 13.242188 15.380859 C 13.430188 15.190859 13.683172 15.085938 13.951172 15.085938 C 14.219172 15.085938 14.471156 15.189906 14.660156 15.378906 L 18 18.720703 L 18 19.5 C 18 19.775 17.775 20 17.5 20 L 6.5 20 C 6.225 20 6 19.775 6 19.5 L 6 15.701172 L 7.2636719 14.435547 C 7.4541719 14.247047 7.7139063 14.152344 7.9726562 14.152344 z">
                     </path>
                 </svg>
             </div>
             <div class="canvas-node-type-btn" onclick="handleCanvasAddNode('file')" title="文件">
                 <svg viewBox="0 0 24 24" width="24" height="24">
-                    <path fill="var(--color-warning)"
+                    <path fill="var(--color-primary)"
                         d="M 6.5 2 C 5.121 2 4 3.122 4 4.5 L 4 19.5 C 4 20.878 5.121 22 6.5 22 L 17.5 22 C 18.879 22 20 20.878 20 19.5 L 20 9 L 14 9 C 13.447 9 13 8.552 13 8 L 13 2 L 6.5 2 z M 15 2.5859375 L 15 7 L 19.414062 7 L 15 2.5859375 z M 9 11 L 15 11 C 15.553 11 16 11.447 16 12 C 16 12.553 15.553 13 15 13 L 9 13 C 8.447 13 8 12.553 8 12 C 8 11.447 8.447 11 9 11 z M 9 14 L 15 14 C 15.553 14 16 14.447 16 15 C 16 15.553 15.553 16 15 16 L 9 16 C 8.447 16 8 15.553 8 15 C 8 14.447 8.447 14 9 14 z M 9 17 L 13 17 C 13.553 17 14 17.447 14 18 C 14 18.553 13.553 19 13 19 L 9 19 C 8.447 19 8 18.553 8 18 C 8 17.447 8.447 17 9 17 z">
                     </path>
                 </svg>
@@ -12326,7 +12328,7 @@
             FORMAT: { key: '格式化', color: '#f22431ff' },
         };
         const DASHBOARD_BUTTON = [
-            { key: '行为记录分析', value: 'analyzeFileOs()', display: true, fileProtocolDisplay: false },
+            { key: '行为记录分析', value: 'analyzeFileOs()', display: false, fileProtocolDisplay: false },
             { key: 'GraphiQL', value: 'toggleFile("graphiQL")', display: true, fileProtocolDisplay: false },
             { key: 'GraphQLPlayground', value: 'toggleFile("graphQLPlayground")', display: true, fileProtocolDisplay: true },
             { key: 'OpenResty', value: 'toggleFile("openRestyEditor")', display: true, fileProtocolDisplay: false },
@@ -18387,21 +18389,21 @@
                 const h = el.__nodeH || 120;
                 // 使用 d3.pointer 获取相对坐标
                 const [mx, my] = d3.pointer(event, el);
-                const onRight  = mx > w - EDGE_ZONE;
-                const onLeft   = mx < EDGE_ZONE;
+                const onRight = mx > w - EDGE_ZONE;
+                const onLeft = mx < EDGE_ZONE;
                 const onBottom = my > h - EDGE_ZONE;
-                const onTop    = my < EDGE_ZONE;
+                const onTop = my < EDGE_ZONE;
 
                 let hovered = null;
                 let cursor = 'grab';
-                if (onRight && onBottom)      { hovered = 'se'; cursor = 'nwse-resize'; }
-                else if (onLeft && onBottom)  { hovered = 'sw'; cursor = 'nesw-resize'; }
-                else if (onRight && onTop)    { hovered = 'ne'; cursor = 'nesw-resize'; }
-                else if (onLeft && onTop)     { hovered = 'nw'; cursor = 'nwse-resize'; }
-                else if (onRight)             { hovered = 'e';  cursor = 'ew-resize'; }
-                else if (onLeft)              { hovered = 'w';  cursor = 'ew-resize'; }
-                else if (onBottom)            { hovered = 's';  cursor = 'ns-resize'; }
-                else if (onTop)               { hovered = 'n';  cursor = 'ns-resize'; }
+                if (onRight && onBottom) { hovered = 'se'; cursor = 'nwse-resize'; }
+                else if (onLeft && onBottom) { hovered = 'sw'; cursor = 'nesw-resize'; }
+                else if (onRight && onTop) { hovered = 'ne'; cursor = 'nesw-resize'; }
+                else if (onLeft && onTop) { hovered = 'nw'; cursor = 'nwse-resize'; }
+                else if (onRight) { hovered = 'e'; cursor = 'ew-resize'; }
+                else if (onLeft) { hovered = 'w'; cursor = 'ew-resize'; }
+                else if (onBottom) { hovered = 's'; cursor = 'ns-resize'; }
+                else if (onTop) { hovered = 'n'; cursor = 'ns-resize'; }
 
                 el.__hoveredEdge = hovered;
                 d3.select(el).style('cursor', cursor);
@@ -18465,7 +18467,7 @@
             await flushSaveQueue();
             // 确保 Esc 键盘监听器已注册（canvasDestroy 可能已移除）
             _ensureCanvasEscHandler();
-            
+
             showCanvasControls(showSaveBtn);
             let canvasDataFromFile;
             try {
@@ -35341,9 +35343,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 showNotification('✗ 没有暂存的更改可以提交', 'warning');
                 return;
             }
-            const gitCommitBtn = document.getElementById('gitCommitBtn');
-            const notification = showNotification('提交中...', 'info', 0);
+            let notification = null;
             try {
+                notification = showNotification('提交中...', 'info', 0);
+                const gitCommitBtn = document.getElementById('gitCommitBtn');
                 gitCommitBtn.disabled = true;
                 const authorName = safeLocalStorageGet('git_author_name') || 'mdgo';
                 const authorEmail = safeLocalStorageGet('git_author_email') || 'mdgo@local';
@@ -35363,7 +35366,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 showNotification(`✗ 提交失败: ${e.message}`, 'error');
             } finally {
                 gitCommitBtn.disabled = false;
-                notification.remove();
+                if (notification) notification.dismiss();
             }
         }
 
