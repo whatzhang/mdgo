@@ -13508,7 +13508,7 @@
                 return;
             }
             hiddenAiPanel();
-            await destroyEverything();
+            await Promise.resolve(destroyEverything());
             currentArtPlayer?.pause();
             aiFabContainer.style.display = 'block';
             if (type === 'newFile') {
@@ -25941,9 +25941,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         hideGlobalLoading(true);
                     }
                 }, async () => {
+                    await clearOldData();
                     currentRootPath = '';
                     setRootHandle(null);
-                    await clearOldData();
                     treeElement.innerHTML = '';
                     showNotification('必须输入物理路径，否则系统无法正常运行！', 'error');
                     openDir();
@@ -25954,6 +25954,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         async function clearOldData() {
+            await Promise.resolve(destroyEverything());
             // 清理本地存储数据
             safeLocalStorageRemove(LAST_FILE_KEY);
             safeLocalStorageRemove(EXPANDED_STATE_KEY);

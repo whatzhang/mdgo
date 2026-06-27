@@ -13506,7 +13506,7 @@
                 return;
             }
             hiddenAiPanel();
-            await destroyEverything();
+            await Promise.resolve(destroyEverything());
             currentArtPlayer?.pause();
             aiFabContainer.style.display = 'block';
             if (type === 'newFile') {
@@ -25939,9 +25939,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         hideGlobalLoading(true);
                     }
                 }, async () => {
+                    await clearOldData();
                     currentRootPath = '';
                     setRootHandle(null);
-                    await clearOldData();
                     treeElement.innerHTML = '';
                     showNotification('必须输入物理路径，否则系统无法正常运行！', 'error');
                     openDir();
@@ -25952,6 +25952,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         async function clearOldData() {
+            await Promise.resolve(destroyEverything());
             // 清理本地存储数据
             safeLocalStorageRemove(LAST_FILE_KEY);
             safeLocalStorageRemove(EXPANDED_STATE_KEY);
@@ -37682,7 +37683,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (!pomodoroGetSettings().soundOn) return;
             playSound();
         }
-        
+
         // 请求桌面通知权限
         if ('Notification' in window && Notification.permission === 'default') {
             showNotification('请允许桌面通知以接收番茄钟提醒', 'info', 3000);
