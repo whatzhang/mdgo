@@ -11454,7 +11454,12 @@
         <div id="dashboard-container" class="dashboard-container" style="display: none;">
             <div class="page-header">
                 <div>
-                    <div class="page-title">mdgo 👏</div>
+                    <div class="page-title">mdgo <svg viewBox="0 0 24 24" width="20" height="20" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                            style="vertical-align:-3px;">
+                            <path d="M7 10l5 5 5-5" />
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                        </svg></div>
                     <div class="page-subtitle">本地文档知识库 <a href="https://github.com/whatzhang/mdgo" target="_blank"
                             style="color: var(--orange);">[github]</a>
                         <span id="dashboard-time" class="dashboard-time"></span>
@@ -11469,49 +11474,80 @@
             </div>
             <div class="stats-grid">
                 <div class="stat-card">
-                    <div class="stat-icon blue">📄</div>
+                    <div class="stat-icon blue"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" />
+                            <line x1="16" y1="13" x2="8" y2="13" />
+                            <line x1="16" y1="17" x2="8" y2="17" />
+                            <polyline points="10 9 9 9 8 9" />
+                        </svg></div>
                     <div class="stat-info">
                         <div class="stat-value" id="totalFiles">0</div>
                         <div class="stat-label">总文件数</div>
                     </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-icon green">📁</div>
+                    <div class="stat-icon green"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                        </svg></div>
                     <div class="stat-info">
                         <div class="stat-value" id="totalFolders">0</div>
                         <div class="stat-label">总文件夹数</div>
                     </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-icon orange">💾</div>
+                    <div class="stat-icon orange"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                            <polyline points="17 21 17 13 7 13 7 21" />
+                            <polyline points="7 3 7 8 15 8" />
+                        </svg></div>
                     <div class="stat-info">
                         <div class="stat-value" id="totalSpace">0</div>
                         <div class="stat-label">总占用空间</div>
                     </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-icon purple">🔥</div>
+                    <div class="stat-icon purple"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                            <path d="M15 5l4 4" />
+                        </svg></div>
                     <div class="stat-info">
                         <div class="stat-value" id="todayEdit">0</div>
                         <div class="stat-label">今日修改文件</div>
                     </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-icon cyan">🆕</div>
+                    <div class="stat-icon cyan"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10" />
+                            <line x1="12" y1="8" x2="12" y2="16" />
+                            <line x1="8" y1="12" x2="16" y2="12" />
+                        </svg></div>
                     <div class="stat-info">
                         <div class="stat-value" id="todayAdd">0</div>
                         <div class="stat-label">今日新增文件</div>
                     </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-icon red">🗑️</div>
+                    <div class="stat-icon red"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        </svg></div>
                     <div class="stat-info">
                         <div class="stat-value" id="deletedCount">0</div>
                         <div class="stat-label">垃圾箱文件</div>
                     </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-icon yellow">👁️</div>
+                    <div class="stat-icon yellow"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                            <circle cx="12" cy="12" r="3" />
+                        </svg></div>
                     <div class="stat-info">
                         <div class="stat-value" id="todayViewCount">0</div>
                         <div class="stat-label">今日浏览文件</div>
@@ -11519,14 +11555,26 @@
                 </div>
             </div>
             <div class="heatmap-section">
-                <div class="chart-title" style="margin-bottom: 3px;">🛠️ 工具</div>
+                <div class="chart-title" style="margin-bottom: 3px;"><svg viewBox="0 0 24 24" width="16" height="16"
+                        fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                        stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
+                        <path
+                            d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+                    </svg>工具</div>
                 <div id="tools-buttons-container" class="tools-buttons-container">
                 </div>
             </div>
             <div class="heatmap-section">
                 <div class="heatmap-container">
                     <div class="heatmap-left">
-                        <div class="chart-title">📅 每日新增文件热力图</div>
+                        <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                                style="vertical-align:-2px;margin-right:4px;">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                                <line x1="16" y1="2" x2="16" y2="6" />
+                                <line x1="8" y1="2" x2="8" y2="6" />
+                                <line x1="3" y1="10" x2="21" y2="10" />
+                            </svg>每日新增文件热力图</div>
                         <div id="file-sum-heatmap" class="file-sum-heatmap"></div>
                     </div>
                     <div class="heatmap-right">
@@ -11540,12 +11588,26 @@
                                 </div>
                                 <div class="monitor-body">
                                     <div class="monitor-item">
-                                        <div class="monitor-label">🔖 侧面板</div>
+                                        <div class="monitor-label"><svg viewBox="0 0 24 24" width="14" height="14"
+                                                fill="none" stroke="currentColor" stroke-width="1.8"
+                                                stroke-linecap="round" stroke-linejoin="round"
+                                                style="vertical-align:-2px;margin-right:4px;">
+                                                <rect x="3" y="3" width="7" height="18" rx="1" />
+                                                <rect x="14" y="3" width="7" height="7" rx="1" />
+                                                <rect x="14" y="14" width="7" height="7" rx="1" />
+                                            </svg>侧面板</div>
                                         <div id="fileSumTreeGauge" class="monitor-chart"></div>
                                         <div class="monitor-sub" id="treeLoadTime"></div>
                                     </div>
                                     <div class="monitor-item">
-                                        <div class="monitor-label">📚️ 主面板</div>
+                                        <div class="monitor-label"><svg viewBox="0 0 24 24" width="14" height="14"
+                                                fill="none" stroke="currentColor" stroke-width="1.8"
+                                                stroke-linecap="round" stroke-linejoin="round"
+                                                style="vertical-align:-2px;margin-right:4px;">
+                                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                                <line x1="3" y1="9" x2="21" y2="9" />
+                                                <line x1="9" y1="21" x2="9" y2="9" />
+                                            </svg>主面板</div>
                                         <div id="fileSumScanGauge" class="monitor-chart"></div>
                                         <div class="monitor-sub" id="fileScanTime"></div>
                                     </div>
@@ -11625,23 +11687,75 @@
                                 </div>
                                 <div class="monitor-body">
                                     <div class="monitor-item">
-                                        <div class="monitor-label">💻 CPU</div>
+                                        <div class="monitor-label"><svg viewBox="0 0 24 24" width="14" height="14"
+                                                fill="none" stroke="currentColor" stroke-width="1.8"
+                                                stroke-linecap="round" stroke-linejoin="round"
+                                                style="vertical-align:-2px;margin-right:4px;">
+                                                <rect x="4" y="4" width="16" height="16" rx="2" ry="2" />
+                                                <rect x="9" y="9" width="6" height="6" />
+                                                <line x1="9" y1="1" x2="9" y2="4" />
+                                                <line x1="15" y1="1" x2="15" y2="4" />
+                                                <line x1="9" y1="20" x2="9" y2="23" />
+                                                <line x1="15" y1="20" x2="15" y2="23" />
+                                                <line x1="20" y1="9" x2="23" y2="9" />
+                                                <line x1="20" y1="14" x2="23" y2="14" />
+                                                <line x1="1" y1="9" x2="4" y2="9" />
+                                                <line x1="1" y1="14" x2="4" y2="14" />
+                                            </svg>CPU</div>
                                         <div id="cpuGauge" class="monitor-chart"></div>
                                         <div class="monitor-sub" id="cpuCores"></div>
                                     </div>
                                     <div class="monitor-item">
-                                        <div class="monitor-label">📊 内存</div>
+                                        <div class="monitor-label"><svg viewBox="0 0 24 24" width="14" height="14"
+                                                fill="none" stroke="currentColor" stroke-width="1.8"
+                                                stroke-linecap="round" stroke-linejoin="round"
+                                                style="vertical-align:-2px;margin-right:4px;">
+                                                <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                                                <line x1="8" y1="21" x2="16" y2="21" />
+                                                <line x1="12" y1="17" x2="12" y2="21" />
+                                            </svg>内存</div>
                                         <div id="memGauge" class="monitor-chart"></div>
                                         <div class="monitor-sub" id="memDetail"></div>
                                     </div>
                                     <div class="monitor-item">
-                                        <div class="monitor-label">🌐 网络</div>
+                                        <div class="monitor-label"><svg viewBox="0 0 24 24" width="14" height="14"
+                                                fill="none" stroke="currentColor" stroke-width="1.8"
+                                                stroke-linecap="round" stroke-linejoin="round"
+                                                style="vertical-align:-2px;margin-right:4px;">
+                                                <circle cx="12" cy="12" r="10" />
+                                                <line x1="2" y1="12" x2="22" y2="12" />
+                                                <path
+                                                    d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                                            </svg>网络</div>
                                         <div class="monitor-network">
-                                            <div class="net-row"><span>⬇ 下载</span><span id="netRecv">0 B/s</span></div>
-                                            <div class="net-row"><span>⬆ 上传</span><span id="netSent">0 B/s</span></div>
+                                            <div class="net-row"><span><svg viewBox="0 0 24 24" width="12" height="12"
+                                                        fill="none" stroke="currentColor" stroke-width="1.8"
+                                                        stroke-linecap="round" stroke-linejoin="round"
+                                                        style="vertical-align:-2px;margin-right:3px;">
+                                                        <polyline points="17 1 21 5 17 9" />
+                                                        <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                                                        <polyline points="7 23 3 19 7 15" />
+                                                        <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+                                                    </svg>下载</span><span id="netRecv">0 B/s</span></div>
+                                            <div class="net-row"><span><svg viewBox="0 0 24 24" width="12" height="12"
+                                                        fill="none" stroke="currentColor" stroke-width="1.8"
+                                                        stroke-linecap="round" stroke-linejoin="round"
+                                                        style="vertical-align:-2px;margin-right:3px;">
+                                                        <polyline points="17 1 21 5 17 9" />
+                                                        <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                                                        <polyline points="7 23 3 19 7 15" />
+                                                        <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+                                                    </svg>上传</span><span id="netSent">0 B/s</span></div>
                                         </div>
                                         <div class="monitor-divider"></div>
-                                        <div class="monitor-label" style="margin-top:4px;">📡 磁盘</div>
+                                        <div class="monitor-label" style="margin-top:4px;"><svg viewBox="0 0 24 24"
+                                                width="14" height="14" fill="none" stroke="currentColor"
+                                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                                                style="vertical-align:-2px;margin-right:4px;">
+                                                <ellipse cx="12" cy="5" rx="9" ry="3" />
+                                                <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+                                                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+                                            </svg>磁盘</div>
                                         <div class="monitor-disk">
                                             <div class="disk-bar">
                                                 <div class="disk-bar-fill" id="diskBarFill"></div>
@@ -11664,74 +11778,152 @@
                 </div>
                 <div class="chart-card">
                     <div class="activity-column">
-                        <div class="chart-title">✏️ 最近修改</div>
+                        <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                                style="vertical-align:-2px;margin-right:4px;">
+                                <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                            </svg>最近修改</div>
                         <div id="editList" class="editList"></div>
                     </div>
                 </div>
                 <div class="chart-card">
                     <div class="activity-column">
-                        <div class="chart-title">📂 操作记录</div>
+                        <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                                style="vertical-align:-2px;margin-right:4px;">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                <line x1="9" y1="9" x2="19" y2="9" />
+                                <line x1="9" y1="13" x2="19" y2="13" />
+                                <line x1="9" y1="17" x2="19" y2="17" />
+                                <circle cx="6" cy="9" r="0.5" fill="currentColor" />
+                                <circle cx="6" cy="13" r="0.5" fill="currentColor" />
+                                <circle cx="6" cy="17" r="0.5" fill="currentColor" />
+                            </svg>操作记录</div>
                         <div id="operationList" class="operationList"></div>
                     </div>
                 </div>
                 <div class="chart-card">
                     <div class="activity-column">
-                        <div class="chart-title">🔥 最近活跃</div>
+                        <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                                style="vertical-align:-2px;margin-right:4px;">
+                                <path
+                                    d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" />
+                            </svg>最近活跃</div>
                         <div id="viewRankList" class="viewRankList"></div>
                     </div>
                 </div>
             </div>
             <div class="charts-grid">
                 <div class="chart-card">
-                    <div class="chart-title">📊 文件类型分布</div>
+                    <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                            style="vertical-align:-2px;margin-right:4px;">
+                            <line x1="18" y1="20" x2="18" y2="10" />
+                            <line x1="12" y1="20" x2="12" y2="4" />
+                            <line x1="6" y1="20" x2="6" y2="14" />
+                        </svg>文件类型分布</div>
                     <div id="nestChart" class="chart-container"></div>
                 </div>
                 <div class="chart-card">
-                    <div class="chart-title">📄 文件尾缀统计分布</div>
+                    <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                            style="vertical-align:-2px;margin-right:4px;">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
+                            <line x1="16" y1="13" x2="8" y2="13" />
+                            <line x1="16" y1="17" x2="8" y2="17" />
+                            <polyline points="10 9 9 9 8 9" />
+                        </svg>文件尾缀统计分布</div>
                     <div id="extChart" class="chart-container"></div>
                 </div>
             </div>
             <div class="charts-grid">
                 <div class="chart-card">
-                    <div class="chart-title">🔄 文件生命周期分布(7d)</div>
+                    <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                            style="vertical-align:-2px;margin-right:4px;">
+                            <polyline points="1 4 1 10 7 10" />
+                            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                        </svg>文件生命周期分布(7d)</div>
                     <div id="lifeChart" class="chart-container chart-container--pie"></div>
                 </div>
                 <div class="chart-card">
-                    <div class="chart-title">📈 每月新增文件趋势</div>
+                    <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                            style="vertical-align:-2px;margin-right:4px;">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                        </svg>每月新增文件趋势</div>
                     <div id="monthTrendChart" class="chart-container chart-container--bar"></div>
                 </div>
             </div>
             <div class="charts-grid">
                 <div class="chart-card">
-                    <div class="chart-title">📊 文件夹大小 TOP10</div>
+                    <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                            style="vertical-align:-2px;margin-right:4px;">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                            <line x1="12" y1="11" x2="12" y2="17" />
+                            <polyline points="9 14 12 11 15 14" />
+                        </svg>文件夹大小 TOP10</div>
                     <div id="folderSizeChart" class="chart-container chart-container--bar"></div>
                 </div>
                 <div class="chart-card">
-                    <div class="chart-title">📁 文件大小分布</div>
+                    <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                            style="vertical-align:-2px;margin-right:4px;">
+                            <polyline points="21 8 21 21 3 21 3 8" />
+                            <rect x="1" y="3" width="22" height="5" />
+                            <line x1="10" y1="12" x2="14" y2="12" />
+                        </svg>文件大小分布</div>
                     <div id="fileSizeChart" class="chart-container chart-container--pie"></div>
                 </div>
             </div>
             <div class="charts-grid single-column">
                 <div class="chart-card">
-                    <div class="chart-title">🔢 文件后缀 TOP20</div>
+                    <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                            style="vertical-align:-2px;margin-right:4px;">
+                            <polyline points="4 7 4 4 20 4 20 7" />
+                            <line x1="9" y1="20" x2="15" y2="20" />
+                            <line x1="12" y1="4" x2="12" y2="20" />
+                        </svg>文件后缀 TOP20</div>
                     <div id="extRankChart" class="chart-container chart-container--bar"></div>
                 </div>
             </div>
             <div class="charts-grid single-column">
                 <div class="chart-card">
-                    <div class="chart-title">📁 文件夹关系</div>
+                    <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                            style="vertical-align:-2px;margin-right:4px;">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                            <line x1="12" y1="11" x2="12" y2="17" />
+                            <line x1="9" y1="14" x2="15" y2="14" />
+                        </svg>文件夹关系</div>
                     <div id="folderChart" class="chart-container chart-container--tree"></div>
                 </div>
             </div>
             <div class="charts-grid single-column">
                 <div class="chart-card">
-                    <div class="chart-title">📦 矩形树图 - 按文件大小</div>
+                    <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                            style="vertical-align:-2px;margin-right:4px;">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                            <line x1="3" y1="9" x2="21" y2="9" />
+                            <line x1="9" y1="3" x2="9" y2="21" />
+                        </svg>矩形树图 - 按文件大小</div>
                     <div id="treemapChart" class="chart-container chart-container--treemap"></div>
                 </div>
             </div>
             <div class="charts-grid single-column">
                 <div class="chart-card">
-                    <div class="chart-title">📦 矩形树图 - 按文件数量</div>
+                    <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                            style="vertical-align:-2px;margin-right:4px;">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                            <line x1="12" y1="3" x2="12" y2="21" />
+                            <line x1="3" y1="12" x2="21" y2="12" />
+                        </svg>矩形树图 - 按文件数量</div>
                     <div id="treemapCountChart" class="chart-container chart-container--treemap"></div>
                 </div>
             </div>
@@ -13508,67 +13700,53 @@
             hiddenAiPanel();
             await Promise.resolve(destroyEverything());
             currentArtPlayer?.pause();
-            aiFabContainer.style.display = 'block';
+            aiFabContainer.style.display = 'none';
             if (type === 'newFile') {
                 newFile(newFileName);
             } else if (type === 'noteGraph') {
-                aiFabContainer.style.display = 'none';
                 openNoteGraph();
             } else if (type === 'bookmarks') {
-                aiFabContainer.style.display = 'none';
                 toggleBookmarkView()
             } else if (type === 'dashboard') {
+                aiFabContainer.style.display = 'block';
                 toggleDashboardView()
             } else if (type === 'randomOpen') {
+                aiFabContainer.style.display = 'block';
                 randomOpen();
             } else if (type === 'renderFile') {
+                aiFabContainer.style.display = 'block';
                 await renderFile(relativePath, fileSpan, event);
             } else if (type === 'graphiQL') {
-                aiFabContainer.style.display = 'none';
                 openGraphiQL();
             } else if (type === 'graphQLPlayground') {
-                aiFabContainer.style.display = 'none';
                 openGraphQLPlayground();
             } else if (type === 'openRestyEditor') {
                 openOpenRestyEditor();
             } else if (type === 'mermaid') {
-                aiFabContainer.style.display = 'none';
                 renderMermaidFile();
             } else if (type === 'whiteboard') {
-                aiFabContainer.style.display = 'none';
                 openWhiteboard();
             } else if (type === 'canvas') {
-                aiFabContainer.style.display = 'none';
                 openCanvasFile();
             } else if (type === 'timeline') {
-                aiFabContainer.style.display = 'none';
                 openTimeline();
             } else if (type === 'regexTest') {
-                aiFabContainer.style.display = 'none';
                 openRegexTest();
             } else if (type === 'calendar') {
-                aiFabContainer.style.display = 'none';
                 openCalendar();
             } else if (type === 'cron') {
-                aiFabContainer.style.display = 'none';
                 openCron();
             } else if (type === 'video') {
-                aiFabContainer.style.display = 'none';
                 openVideoPlayer();
             } else if (type === 'raw') {
-                aiFabContainer.style.display = 'none';
                 openRawFile();
             } else if (type === 'urlEncoder') {
-                aiFabContainer.style.display = 'none';
                 openUrlEncoderFile();
             } else if (type === 'wordCloud') {
-                aiFabContainer.style.display = 'none';
                 openWordCloudFile();
             } else if (type === 'gitRecords') {
-                aiFabContainer.style.display = 'none';
                 openGitPage();
             } else if (type === 'pomodoro') {
-                aiFabContainer.style.display = 'none';
                 openPomodoro();
             }
             lastToggle = type;
@@ -22054,6 +22232,7 @@
             return dashboardCharts[chartInstance];
         }
 
+
         async function scanDashboardData(force = false) {
             const _tStart = performance.now();
             let data;
@@ -22434,7 +22613,6 @@
             });
             return result;
         }
-
         async function renderDashboard(param = null) {
             let data = {
                 "stats": {
@@ -23396,7 +23574,6 @@
         let _currentNetSearchQuery = SEARCH_BTNS[1].query;
         let _currentNetSearchName = SEARCH_BTNS[1].name;
         let _currentNetSearchHasKey = SEARCH_BTNS[1].hasKey;
-
         function selectNetSearch(el) {
             if (!el.dataset.query) return;
             if (el.dataset.active === true || el.dataset.active === 'true') {
@@ -23420,7 +23597,8 @@
                 <div class="net-search-box" id="tools-buttons-search">
                     <input type="text" id="net-search" autocomplete="off" placeholder="搜索..." onkeydown="if(event.key==='Enter'){event.preventDefault();doNetSearch();}">
                     <div class="net-search-dropdown-wrap">
-                        <button class="net-search-btn" id="net-search-btn">🔍</button>
+                        <button class="net-search-btn" id="net-search-btn">
+                            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg></button>
                         <div class="net-search-dropdown" id="net-search-dropdown"></div>
                     </div>
                 </div>`;
@@ -23458,7 +23636,6 @@
                     }
                 });
                 netSearchDropdown.innerHTML = html;
-                html = '';
             }
         }
 
@@ -25919,7 +26096,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (!dirHandle) return;
                 setRootHandle(dirHandle)
                 const root = safeLocalStorageGet("ROOT_DIR");
-                showNotification('输入物理路径用以后续相关操作！', 'error', 3000);
+                showNotification('输入物理路径用以后续相关操作！', 'info', 3000);
                 showInputModal('请输入物理路径', root || currentRootPath, async (path) => {
                     let trimmedPath = path.trim();
                     //去除路径末尾的斜杠，兼容 windows 和 linux 系统
@@ -25996,7 +26173,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                     return true;
                 }
-                showNotification('目录权限已过期，请重新选择目录并授予读写权限！', 'error', 3000);
+                showNotification('目录权限已过期，请重新选择目录并授予读写权限！', 'info', 3000);
                 return false;
             }
             return false;
@@ -26570,7 +26747,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (queryStatus === 'granted') {
                     return true;
                 }
-                showNotification('请点击以授予目录读写权限，用以完整功能操作！', 'error', 3000);
+                showNotification('请点击以授予目录读写权限，用以完整功能操作！', 'info', 3000);
                 const requestStatus = await handle.requestPermission(options);
                 return requestStatus === 'granted';
             } catch (e) {
@@ -30962,7 +31139,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 showNotification('✗ 文件缓存为空，请先刷新文件树', 'error');
                 return null;
             }
-            showNotification('正在扫描 Markdown 链接...', 'info');
             const rootName = getRootHandle().name;
             const allFiles = allFilesCacheList;
 
@@ -37635,21 +37811,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             }
             const s = pomodoroGetSettings();
-            if (s.desktopNotify && 'Notification' in window) {
-                if (Notification.permission === 'granted') {
-                    new Notification('番茄时钟', {
-                        body: pomodoroState.mode === 'pomodoro' ? '专注完成！休息一下吧' : '休息结束！准备开始工作'
-                    });
-                } else if (Notification.permission === 'default') {
-                    Notification.requestPermission().then(perm => {
-                        if (perm === 'granted') {
-                            new Notification('番茄时钟', {
-                                body: pomodoroState.mode === 'pomodoro' ? '专注完成！休息一下吧' : '休息结束！准备开始工作'
-                            });
-                        }
-                    });
-                }
-            }
+            showNotification(pomodoroState.mode === 'pomodoro' ? '专注完成！休息一下吧' : '休息结束！准备开始工作', 'info');
         }
         // ========== UI 更新 ==========
         function pomodoroUpdateUI() {
@@ -37682,12 +37844,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         function pomodoroPlaySound() {
             if (!pomodoroGetSettings().soundOn) return;
             playSound();
-        }
-
-        // 请求桌面通知权限
-        if ('Notification' in window && Notification.permission === 'default') {
-            showNotification('请允许桌面通知以接收番茄钟提醒', 'info', 3000);
-            Notification.requestPermission();
         }
 
         function playSound() {
