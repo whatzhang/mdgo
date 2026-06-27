@@ -16963,10 +16963,20 @@
             return false;
         }
         // 相对图片路径转换为本地路径
-        const buildLocalImgSrc = (src, normalizedRootPath) => {
+        const buildLocalImgSrc = (src, normalizedRootPath, photoDirPath) => {
             // 归一化路径
-            let relativePath = currentActiveItem ? currentActiveItem.dataset.filePath : '';
-            const htmlDir = dirname(relativePath);
+            let htmlDir = '';
+            if (photoDirPath) {
+                const normalizedPhotoDirPath = normalizePath(photoDirPath);
+                const normalizedSrc = normalizePath(src);
+                if (normalizedSrc.startsWith(normalizedPhotoDirPath)) {
+                    return normalizedSrc;
+                }
+                htmlDir = normalizedPhotoDirPath;
+            } else {
+                let relativePath = currentActiveItem ? currentActiveItem.dataset.filePath : '';
+                htmlDir = dirname(relativePath);
+            }
             let fullPath;
             if (src.startsWith(SLASH)) {
                 // 绝对路径（从 rootHandle 根目录开始）
@@ -17006,13 +17016,13 @@
             }
         }
         // 本地 file:// 模式：图片路径全转本地绝对路径
-        function buildLocalImg(text, isFullText = false) {
+        function buildLocalImg(text, isFullText = false, photoDirPath = '') {
             const normalizedRootPath = normalizePath(currentRootPath);
             if (!isFullText) {
                 if (isContinueImg(text)) return text;
                 let localSrc = dealWithAbsolutePath(text, normalizedRootPath);
                 if (localSrc === text) {
-                    localSrc = joinPath(normalizedRootPath, buildLocalImgSrc(localSrc, normalizedRootPath));
+                    localSrc = joinPath(normalizedRootPath, buildLocalImgSrc(localSrc, normalizedRootPath, photoDirPath));
                 } else {
                     localSrc = joinPath(normalizedRootPath, localSrc);
                 }
@@ -17026,7 +17036,7 @@
                     } else {
                         localSrc = dealWithAbsolutePath(src, normalizedRootPath);
                         if (localSrc === src) {
-                            localSrc = joinPath(normalizedRootPath, buildLocalImgSrc(localSrc, normalizedRootPath));
+                            localSrc = joinPath(normalizedRootPath, buildLocalImgSrc(localSrc, normalizedRootPath, photoDirPath));
                         } else {
                             localSrc = joinPath(normalizedRootPath, localSrc);
                         }
@@ -17036,13 +17046,13 @@
             }
         }
         // HTTP 模式：图片转 base64 内嵌
-        async function buildHttpImg(text, isFullText = false) {
+        async function buildHttpImg(text, isFullText = false, photoDirPath = '') {
             const normalizedRootPath = normalizePath(currentRootPath);
             if (!isFullText) {
                 if (isContinueImg(text)) return text;
                 let localSrc = dealWithAbsolutePath(text, normalizedRootPath);
                 if (localSrc === text) {
-                    localSrc = buildLocalImgSrc(text, normalizedRootPath);
+                    localSrc = buildLocalImgSrc(text, normalizedRootPath, photoDirPath);
                 }
                 localSrc = await readFileAsBase64(localSrc);
                 return localSrc || text;
@@ -17059,7 +17069,7 @@
                     if (isContinueImg(m.src)) return { oldStr: m.fullMatch, newStr: m.fullMatch };
                     let localSrc = dealWithAbsolutePath(m.src, normalizedRootPath);
                     if (localSrc === m.src) {
-                        localSrc = buildLocalImgSrc(m.src, normalizedRootPath);
+                        localSrc = buildLocalImgSrc(m.src, normalizedRootPath, photoDirPath);
                     }
                     localSrc = await readFileAsBase64(localSrc);
                     if (!localSrc || localSrc === m.src) return { oldStr: m.fullMatch, newStr: m.fullMatch };
@@ -34403,6 +34413,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         let photoSwitchTimer = null;
         // resize 防抖定时器
         let photoResizeTimer = null;
+        let photoLayoutDirPath = ''; // 当前目录路径
         // 散落布局 resize 处理（带防抖）
         async function photoHandleResize() {
             if (photoResizeTimer) {
@@ -34410,7 +34421,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             photoResizeTimer = setTimeout(async () => {
                 if (photoCurrentLayout === 'scatter' && photoScatterPositions.size > 0) {
-                    await photoRenderScatter(false, true); // 跳过动画
+                    await photoRenderScatter(false, true, photoLayoutDirPath); // 跳过动画
                 }
             }, PHOTO_RESIZE_DEBOUNCE_DELAY);
         }
@@ -34438,8 +34449,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             </div>`;
             const { dirHandle, dirParentHandle } = await getDirHandleByDirPath(relPath);
             currentPhotoDirHandle = dirHandle;
+            photoLayoutDirPath = relPath;
             await getPhotoFromDirHandle(relPath);
-            await photoRenderMasonry(true);
+            await photoRenderMasonry(true, relPath);
             photoRenderedLayouts['masonry'] = true;
             const dom = document.querySelector('.photo-main');
             bindImagePreview(dom, true);
@@ -34471,6 +34483,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 clearTimeout(photoResizeTimer);
                 photoResizeTimer = null;
             }
+            photoLayoutDirPath = '';
         }
         // 切换布局 - 懒加载渲染
         async function photoSwitchLayout(name, triggerEl) {
@@ -34492,8 +34505,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
                     // 懒加载：只有未渲染过才渲染
                     if (!photoRenderedLayouts[name]) {
-                        if (name === 'masonry') await photoRenderMasonry(true);
-                        else if (name === 'scatter') await photoRenderScatter(true);
+                        if (name === 'masonry') await photoRenderMasonry(true, photoLayoutDirPath);
+                        else if (name === 'scatter') await photoRenderScatter(true, false, photoLayoutDirPath);
                         photoRenderedLayouts[name] = true;
                     }
                 } catch (e) {
@@ -34515,7 +34528,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             currentPhotoDirData = fileList.map((h, i) => ({ id: i, title: h.nameFull, url: h.path }));
         }
         // 图片瀑布流布局
-        async function photoRenderMasonry(isFirstPage = false) {
+        async function photoRenderMasonry(isFirstPage = false, relPath = '') {
             const container = document.getElementById('photo-masonry-container');
             const startIdx = photoMasonryPage * PHOTO_MASONRY_PAGE_SIZE;
             const endIdx = Math.min(startIdx + PHOTO_MASONRY_PAGE_SIZE, currentPhotoDirData.length);
@@ -34549,7 +34562,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 // 保存原始 URL 用于预览导航
                 img.dataset.originUrl = p.url;
                 // 设置图片源
-                const src = await photoLoadFromLocal(p.url);
+                const src = await photoLoadFromLocal(p.url, false, relPath);
                 img.src = src;
             }
 
@@ -34566,20 +34579,20 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 loadMoreBtn.textContent = '加载更多';
                 loadMoreBtn.onclick = async () => {
                     photoMasonryPage++;
-                    await photoRenderMasonry();
+                    await photoRenderMasonry(false, relPath);
                 };
                 loadMoreContainer.appendChild(loadMoreBtn);
             }
             // 根据是否有更多内容显示/隐藏按钮
             loadMoreBtn.style.display = hasMore ? '' : 'none';
         }
-        async function photoLoadFromLocal(text, isAllFile = false) {
+        async function photoLoadFromLocal(text, isAllFile = false, photoDirPath = '') {
             // 存在后端服务, 更改绝对路径
             if (hasBackendServer) return buildLocalAbsoluteImg(text, isAllFile);
             // 本地访问, 构建本地图片路径
-            if (isLocalVisit()) return buildLocalImg(text, isAllFile);
+            if (isLocalVisit()) return buildLocalImg(text, isAllFile, photoDirPath);
             // http访问, 无后端服务
-            if (isHttpVisit()) return await buildHttpImg(text, isAllFile);
+            if (isHttpVisit()) return await buildHttpImg(text, isAllFile, photoDirPath);
             return text;
         }
         // 图片散落布局的位置算法
@@ -34614,7 +34627,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
         // 随机散落布局的入口与翻页
-        async function photoRenderScatter(isFirstPage = false, skipAnimation = false) {
+        async function photoRenderScatter(isFirstPage = false, skipAnimation = false, relPath = '') {
             const container = document.getElementById('photo-scatter-container');
             const pageSize = PHOTO_SCATTER_PAGE_SIZE;
             const totalPages = Math.ceil(currentPhotoDirData.length / pageSize);
@@ -34635,7 +34648,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const imagePromises = [];
             for (let i = 0; i < count; i++) {
                 const p = currentPhotoDirData[startIdx + i];
-                imagePromises.push(photoLoadFromLocal(p.url));
+                imagePromises.push(photoLoadFromLocal(p.url, false, relPath));
             }
             const imageSrcs = await Promise.all(imagePromises);
 
@@ -34710,7 +34723,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             prevBtn.onclick = async () => {
                 if (photoScatterPage > 0) {
                     photoScatterPage--;
-                    await photoRenderScatter();
+                    await photoRenderScatter(false, false, photoLayoutDirPath);
                 }
             };
             nextBtn.onclick = async () => {
@@ -34718,7 +34731,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const currentTotalPages = Math.ceil(currentPhotoDirData.length / PHOTO_SCATTER_PAGE_SIZE);
                 if (photoScatterPage < currentTotalPages - 1) {
                     photoScatterPage++;
-                    await photoRenderScatter();
+                    await photoRenderScatter(false, false, photoLayoutDirPath);
                 }
             };
         }
