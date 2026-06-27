@@ -12509,10 +12509,10 @@
         // nginx 配置地址
         const NGINX_CONF_PATH = '/usr/local/etc/openresty/sites/index.conf';
         // 文件树中忽略的目录
-        const DIR_BLACKLIST = [".", ".obsidian", ".venv", ".vscode", ".git", "assets", ".trae", ".claude", ".idea",
+        const DIR_BLACKLIST = [".", "$", ".obsidian", ".venv", ".vscode", ".git", "assets", ".trae", ".claude", ".idea",
             'node_modules', 'vendor', 'dist', 'build', 'out', 'target', '__pycache__'];
         // 文件树中忽略的文件后缀
-        const FILE_BLACKLIST = ['.', '.bobconfig', '.itermexport', '.DS_Store', '.gitignore', '.rayconfig'];
+        const FILE_BLACKLIST = ['.', '$', '.bobconfig', '.itermexport', '.DS_Store', '.gitignore', '.rayconfig'];
         // 随机打开功能的目录过滤
         const RANDOM_DIR_WHITELIST = ["pic"];
         const RANDOM_DIR_BLACKLIST = ['note/moc', 'note/templates', 'deleted', 'data', 'code'];
@@ -31639,38 +31639,43 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             _graphTraversing = true;
 
             async function traverseDirectory(dirHandle, parentPath) {
-                for await (const entry of dirHandle.values()) {
-                    const name = entry.name;
-                    const entryPath = _buildPath(parentPath, name);
-                    let topDir = entryPath.split(SLASH)[0];
-                    let group = groupMap.get(topDir);
-                    if (group === undefined) {
-                        group = groupCounter++;
-                        groupMap.set(topDir, group);
+                try {
+                    for await (const entry of dirHandle.values()) {
+                        const name = entry.name;
+                        const entryPath = _buildPath(parentPath, name);
+                        let topDir = entryPath.split(SLASH)[0];
+                        let group = groupMap.get(topDir);
+                        if (group === undefined) {
+                            group = groupCounter++;
+                            groupMap.set(topDir, group);
+                        }
+                        const depth = entryPath.split(SLASH).length;
+                        if (entry.kind === 'directory') {
+                            if (isSkipFile(entryPath) || isSkipDir(name)) continue;
+                            nodes.push({
+                                id: entryPath,
+                                title: name,
+                                path: entryPath,
+                                size: 0,
+                                group: group,
+                                depth: depth
+                            });
+                            await traverseDirectory(entry, entryPath);
+                        } else {
+                            if (isSkipFile(name)) continue;
+                            nodes.push({
+                                id: entryPath,
+                                title: name,
+                                path: entryPath,
+                                size: 1,
+                                group: group,
+                                depth: depth
+                            });
+                        }
                     }
-                    const depth = entryPath.split(SLASH).length;
-                    if (entry.kind === 'directory') {
-                        if (isSkipFile(entryPath) || isSkipDir(name)) continue;
-                        nodes.push({
-                            id: entryPath,
-                            title: name,
-                            path: entryPath,
-                            size: 0,
-                            group: group,
-                            depth: depth
-                        });
-                        await traverseDirectory(entry, entryPath);
-                    } else {
-                        if (isSkipFile(name)) continue;
-                        nodes.push({
-                            id: entryPath,
-                            title: name,
-                            path: entryPath,
-                            size: 1,
-                            group: group,
-                            depth: depth
-                        });
-                    }
+                } catch (e) {
+                    // 跳过无法访问的目录（如 Windows 系统保护目录、权限受限目录等）
+                    console.warn('跳过不可访问的目录:', parentPath, e.message);
                 }
             }
 
@@ -31683,6 +31688,20 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     graphCachedEdges = edges;
                     graphCachedRootName = rootName;
                     processAndStartSimulation(nodes, edges);
+                } catch (e) {
+                    if (e.name === 'NoModificationAllowedError') {
+                        showNotification('✗ 部分目录无法访问（文件系统受限），图谱可能不完整', 'warning');
+                        // 至少用已收集的节点生成图谱
+                        if (nodes.length > 0) {
+                            createDirectoryTreeEdges(nodes, edges);
+                            graphCachedNodes = nodes;
+                            graphCachedEdges = edges;
+                            graphCachedRootName = rootName;
+                            processAndStartSimulation(nodes, edges);
+                        }
+                    } else {
+                        showNotification('✗ 构建图谱时出错: ' + e.message, 'error');
+                    }
                 } finally {
                     _graphTraversing = false;
                 }

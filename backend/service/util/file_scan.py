@@ -80,7 +80,7 @@ _EXT_TYPE_MAP = {
 
 # 需要跳过的目录列表（编译为元组以加速前缀匹配）
 _IGNORE_DIRS_TUPLE = tuple(
-    os.path.normpath(d).replace("\\", "/") for d in [".",
+    os.path.normpath(d).replace("\\", "/") for d in [".", "$",
                                                      ".obsidian", ".venv", ".vscode", ".git", "assets",
                                                      ".trae", ".claude", ".idea",
                                                      ".mdgo",
@@ -88,7 +88,7 @@ _IGNORE_DIRS_TUPLE = tuple(
                                                      "__pycache__"
                                                      ]
 )
-_IGNORE_FILENAMES = (".", ".bobconfig", ".itermexport",
+_IGNORE_FILENAMES = (".", "$", ".bobconfig", ".itermexport",
                      ".gitignore", ".DS_Store", ".rayconfig")
 
 
@@ -243,7 +243,8 @@ def scan_files(base_dir):
             "mtime_date_str": mtime_str[:10],
             "path": rel_path,
         }
-        fileListMap.setdefault(rel_root, []).append(file_info)  # 将文件信息添加到对应路径的列表中
+        fileListMap.setdefault(rel_root, []).append(
+            file_info)  # 将文件信息添加到对应路径的列表中
 
         # 逐层构建目录树（按路径分段）
         path_parts = rel_path.split('/')
@@ -346,7 +347,8 @@ def scan_files(base_dir):
 
 def _get_cache_paths(base_dir):
     """获取扫描结果和缓存快照的文件路径"""
-    output_file = os.path.join(base_dir, '.mdgo', 'data', 'index_file_scan_data.json')
+    output_file = os.path.join(
+        base_dir, '.mdgo', 'data', 'index_file_scan_data.json')
     cache_file = os.path.join(base_dir, '.mdgo', 'data', _CACHE_SNAPSHOT_FILE)
     return output_file, cache_file
 
@@ -361,7 +363,8 @@ def scan_file_info(base_dir=None, force=False):
       3. 无变更 → 直接返回缓存（毫秒级）
       4. 有变更 → 只扫描变更的文件，合并到缓存中
     """
-    output_file = os.path.join(base_dir, '.mdgo', 'data', 'index_file_scan_data.json')
+    output_file = os.path.join(
+        base_dir, '.mdgo', 'data', 'index_file_scan_data.json')
     logger.info("📊 执行全量扫描..." if force else "📊 首次扫描，执行全量扫描...")
     result = scan_files(base_dir)
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
@@ -370,7 +373,6 @@ def scan_file_info(base_dir=None, force=False):
     logger.info(f"✅ 全量扫描完成！数据已保存到 {output_file}")
 
     return result
-
 
 
 if __name__ == '__main__':
