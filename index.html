@@ -2848,7 +2848,7 @@
         }
 
         .page-title {
-            font-size: 26px;
+            font-size: 30px;
             font-weight: 700;
             margin-bottom: 6px;
             color: var(--color-warning, var(--color-primary-light));
@@ -10689,7 +10689,7 @@
 
         .net-search-box {
             background: var(--color-bg);
-            border: 1px solid var(--color-border);
+            border: 1px solid var(--color-border-light);
             border-radius: 8px;
             display: flex;
             align-items: center;
@@ -11457,7 +11457,8 @@
                     <div class="page-title">mdgo <svg viewBox="0 0 24 24" width="20" height="20" fill="none"
                             stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
                             style="vertical-align:-3px;">
-                            <path d="M7 10l5 5 5-5" />
+                            <line x1="16" y1="13" x2="8" y2="13" />
+                            <polyline points="10 9 9 9 8 9" />
                             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                         </svg></div>
                     <div class="page-subtitle">本地文档知识库 <a href="https://github.com/whatzhang/mdgo" target="_blank"
@@ -31095,36 +31096,63 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             graphHeight = 0;
         }
 
+        // 辅助函数：启用/禁用图谱控件
+        function setGraphControlsDisabled(disabled) {
+            const checkbox = document.getElementById('graph-mode-checkbox');
+            const refreshBtn = document.getElementById('graph-refresh-btn');
+            if (checkbox) checkbox.disabled = disabled;
+            if (refreshBtn) refreshBtn.disabled = disabled;
+        }
+
         async function toggleGraphView() {
-            // 每次打开图谱默认文件视图
             graphMode = 'file';
             const checkbox = document.getElementById('graph-mode-checkbox');
-            if (checkbox) checkbox.checked = false;
-            if (!graphCanvas) {
-                initGraphCanvas();
+            const refreshBtn = document.getElementById('graph-refresh-btn');
+            if (checkbox) { checkbox.checked = false; checkbox.disabled = true; }
+            if (refreshBtn) { refreshBtn.disabled = true; }
+            try {
+                if (!graphCanvas) {
+                    initGraphCanvas();
+                }
+                loadGraphParams();
+                await startSimulation();
+            } finally {
+                if (checkbox) { checkbox.disabled = false; }
+                if (refreshBtn) { refreshBtn.disabled = false; }
             }
-            loadGraphParams();
-            startSimulation();
         }
 
         // 切换图谱模式（文件图谱 ↔ 文档关联）
         async function toggleGraphMode() {
             const checkbox = document.getElementById('graph-mode-checkbox');
+            const refreshBtn = document.getElementById('graph-refresh-btn');
+            if (!checkbox || !refreshBtn) return;
             const isLinkMode = checkbox.checked;
-            graphMode = isLinkMode ? 'link' : 'file';
-
-            if (graphMode === 'link') {
-                // 切换到文档关联视图：优先从本地 JSON 加载
-                const data = await loadLinkGraphData();
-                if (data && data.nodes && data.nodes.length > 0) {
-                    linkGraphCache = data;
-                    processLinkGraphData(data);
+            const prevMode = graphMode;
+            checkbox.disabled = true;
+            refreshBtn.disabled = true;
+            try {
+                graphMode = isLinkMode ? 'link' : 'file';
+                if (graphMode === 'link') {
+                    // 切换到文档关联视图：优先从本地 JSON 加载
+                    const data = await loadLinkGraphData();
+                    if (data && data.nodes && data.nodes.length > 0) {
+                        linkGraphCache = data;
+                        processLinkGraphData(data);
+                    } else {
+                        await refreshGraphData();
+                    }
                 } else {
-                    processLinkGraphData({ nodes: [], edges: [] });
+                    // 切换回文件图谱视图：强制重新遍历（清除 link 模式对缓存的污染）
+                    await startSimulation(true);
                 }
-            } else {
-                // 切换回文件图谱视图：强制重新遍历（清除 link 模式对缓存的污染）
-                startSimulation(true);
+            } catch (e) {
+                // 操作失败时恢复之前的模式，避免模式与显示不一致
+                graphMode = prevMode;
+                throw e;
+            } finally {
+                checkbox.disabled = false;
+                refreshBtn.disabled = false;
             }
         }
 
@@ -32100,8 +32128,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         async function refreshGraphData() {
-            const refreshBtn = document.getElementById('graph-refresh-btn');
-            if (refreshBtn) refreshBtn.disabled = true;
+            setGraphControlsDisabled(true);
             try {
                 if (graphMode === 'link') {
                     // 文档关联模式：扫描所有 Markdown 文件并重新构建
@@ -32116,12 +32143,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
                 // 文件图谱模式：原有逻辑
                 loadGraphParams();
-                startSimulation(true); // force = true: 强制重新遍历文件系统
+                await startSimulation(true); // force = true: 强制重新遍历文件系统
             } catch (err) {
                 console.error('refreshGraphData error:', err);
                 showNotification('✗ 图谱刷新失败: ' + err.message, 'error');
             } finally {
-                if (refreshBtn) refreshBtn.disabled = false;
+                setGraphControlsDisabled(false);
             }
         }
 
@@ -32188,7 +32215,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        function startSimulation(force = false) {
+        async function startSimulation(force = false) {
             if (!isRootHandleAvailable()) {
                 showNotification('✗ 请先打开根目录', 'error');
                 return;
@@ -32199,10 +32226,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 processAndStartSimulation(graphCachedNodes, graphCachedEdges);
                 return;
             }
-            // 清空旧缓存
-            graphCachedNodes = null;
-            graphCachedEdges = null;
-            graphCachedRootName = null;
             // 重置渲染器的邻居缓存（数据将变更）
             if (graphRenderer) graphRenderer.invalidateDataCaches();
 
@@ -32227,6 +32250,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 return;
             }
             _graphTraversing = true;
+            // 并发锁已获取后再清空缓存，避免竞态条件下清空被另一个协程依赖的缓存
+            graphCachedNodes = null;
+            graphCachedEdges = null;
+            graphCachedRootName = null;
 
             async function traverseDirectory(dirHandle, parentPath) {
                 try {
@@ -32269,33 +32296,31 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             }
 
-            (async () => {
-                try {
-                    await traverseDirectory(getRootHandle(), '');
-                    createDirectoryTreeEdges(nodes, edges);
-                    // 缓存遍历结果，后续 rebuild/refresh 直接复用
-                    graphCachedNodes = nodes;
-                    graphCachedEdges = edges;
-                    graphCachedRootName = rootName;
-                    processAndStartSimulation(nodes, edges);
-                } catch (e) {
-                    if (e.name === 'NoModificationAllowedError') {
-                        showNotification('✗ 部分目录无法访问（文件系统受限），图谱可能不完整', 'warning');
-                        // 至少用已收集的节点生成图谱
-                        if (nodes.length > 0) {
-                            createDirectoryTreeEdges(nodes, edges);
-                            graphCachedNodes = nodes;
-                            graphCachedEdges = edges;
-                            graphCachedRootName = rootName;
-                            processAndStartSimulation(nodes, edges);
-                        }
-                    } else {
-                        showNotification('✗ 构建图谱时出错: ' + e.message, 'error');
+            try {
+                await traverseDirectory(getRootHandle(), '');
+                createDirectoryTreeEdges(nodes, edges);
+                // 缓存遍历结果，后续 rebuild/refresh 直接复用
+                graphCachedNodes = nodes;
+                graphCachedEdges = edges;
+                graphCachedRootName = rootName;
+                processAndStartSimulation(nodes, edges);
+            } catch (e) {
+                if (e.name === 'NoModificationAllowedError') {
+                    showNotification('✗ 部分目录无法访问（文件系统受限），图谱可能不完整', 'warning');
+                    // 至少用已收集的节点生成图谱
+                    if (nodes.length > 0) {
+                        createDirectoryTreeEdges(nodes, edges);
+                        graphCachedNodes = nodes;
+                        graphCachedEdges = edges;
+                        graphCachedRootName = rootName;
+                        processAndStartSimulation(nodes, edges);
                     }
-                } finally {
-                    _graphTraversing = false;
+                } else {
+                    showNotification('✗ 构建图谱时出错: ' + e.message, 'error');
                 }
-            })();
+            } finally {
+                _graphTraversing = false;
+            }
         }
 
         function createDirectoryTreeEdges(nodes, edges) {
