@@ -10766,7 +10766,6 @@
             border-radius: 8px;
             box-shadow: var(--shadow-md);
             z-index: 200;
-            overflow: hidden;
             opacity: 0;
             visibility: hidden;
             transform: translateY(-4px);
@@ -10785,10 +10784,12 @@
 
         .net-search-dropdown-item:first-child {
             padding-top: 6px;
+            border-radius: 8px 8px 0 0;
         }
 
         .net-search-dropdown-item:last-child {
             padding-bottom: 6px;
+            border-radius: 0 0 8px 8px;
         }
 
         .net-search-dropdown-item {
@@ -10798,6 +10799,7 @@
             color: var(--color-text);
             white-space: nowrap;
             transition: background 0.1s;
+            position: relative;
         }
 
         .net-search-dropdown-item:hover {
@@ -10807,6 +10809,49 @@
         .net-search-dropdown-item.active {
             color: var(--color-primary);
             font-weight: 500;
+        }
+
+        /* 有子按钮的父项右侧箭头 */
+        .net-search-dropdown-item.has-sub::after {
+            content: '›';
+            position: absolute;
+            right: 6px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 14px;
+            color: var(--color-text-secondary);
+        }
+
+        .net-search-dropdown-item.has-sub:hover::after {
+            color: var(--color-primary);
+        }
+
+        /* 子面板 — 鼠标 hover 父项时在右侧弹出 */
+        .net-search-sub-panel {
+            position: absolute;
+            left: 100%;
+            top: -6px;
+            min-width: 120px;
+            background: var(--color-bg);
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            box-shadow: var(--shadow-md);
+            z-index: 210;
+            overflow: hidden;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateX(-4px);
+            transition: opacity 0.15s ease, visibility 0s linear 0.15s, transform 0.15s ease;
+            pointer-events: none;
+        }
+
+        .net-search-dropdown-item.has-sub:hover .net-search-sub-panel,
+        .net-search-sub-panel:hover {
+            opacity: 1;
+            visibility: visible;
+            transform: translateX(0);
+            transition: opacity 0.15s ease, visibility 0s linear 0s, transform 0.15s ease;
+            pointer-events: auto;
         }
     </style>
 </head>
@@ -12609,15 +12654,65 @@
         ];
         // 搜索按钮配置
         const SEARCH_BTNS = [
-            { name: '全部', query: 'all', display: false, selectDisplay: true },
-            { name: 'Google', query: 'https://www.google.com/search?q=', display: true, selectDisplay: true },
-            { name: '百度', query: 'https://www.baidu.com/s?ie=utf-8&wd=', display: true, selectDisplay: true },
-            { name: '必应', query: 'https://www.bing.com/search?q=', display: true, selectDisplay: true },
-            { name: 'DuckDuckGo', query: 'https://duckduckgo.com/?q=', display: true, selectDisplay: true },
-            { name: '知网', query: 'https://kns.cnki.net/kns8s/search?kw=', display: true, selectDisplay: false },
-            { name: '知乎', query: 'https://www.zhihu.com/search?type=content&q=', display: true, selectDisplay: false },
-            { name: '哔哩', query: 'https://search.bilibili.com/all?keyword=', display: true, selectDisplay: false },
-            { name: '豆瓣', query: 'https://www.douban.com/search?q=', display: true, selectDisplay: false }
+            { name: '全部', query: 'all', hasKey: false, display: false, selectDisplay: true, active: false },
+            { name: 'Google', query: 'https://www.google.com/search?q=', hasKey: true, display: true, selectDisplay: true, active: true },
+            { name: 'DuckGo', query: 'https://duckduckgo.com/?q=', hasKey: true, display: true, selectDisplay: true, active: true },
+            { name: '百度', query: 'https://www.baidu.com/s?ie=utf-8&wd=', hasKey: true, display: true, selectDisplay: true, active: true },
+            { name: '必应', query: 'https://www.bing.com/search?q=', hasKey: true, display: true, selectDisplay: true, active: true },
+            { name: 'GitHub', query: 'https://github.com/search?q=', hasKey: true, display: true, selectDisplay: false, active: false },
+            {
+                name: 'AI', query: '', hasKey: false, display: true, selectDisplay: false, active: false, subBtns: [
+                    { name: 'ChatGPT', query: 'https://chatgpt.com/?prompt=', hasKey: true, display: true, active: false },
+                    { name: 'Claude', query: 'https://claude.ai/', hasKey: false, display: true, active: false },
+                    { name: 'DeepSeek', query: 'https://chat.deepseek.com/', hasKey: false, display: true, active: false },
+                    { name: 'Gemini', query: 'https://gemini.google.com', hasKey: false, display: true, active: false },
+                    { name: 'duck.ai', query: 'https://duck.ai/chat', hasKey: false, display: true, active: false },
+                    { name: '豆包', query: 'https://www.doubao.com/', hasKey: false, display: true, active: false },
+                    { name: '千问', query: 'https://chat.qwen.ai/', hasKey: false, display: true, active: false },
+                    { name: 'Kimi', query: 'https://www.kimi.com/', hasKey: false, display: true, active: false },
+                    { name: 'Mimo', query: 'https://aistudio.xiaomimimo.com', hasKey: false, display: true, active: false },
+                    { name: '智谱', query: 'https://chatglm.cn/', hasKey: false, display: true, active: false },
+                    { name: 'Grok', query: 'https://grok.com/', hasKey: false, display: true, active: false },
+                    { name: 'Perplexity', query: 'https://www.perplexity.ai', hasKey: false, display: true, active: false },
+                    { name: 'BingAI', query: 'https://copilot.microsoft.com/', hasKey: false, display: true, active: false },
+                ]
+            },
+            {
+                name: 'Q/A', query: '', hasKey: false, display: true, selectDisplay: false, active: false, subBtns: [
+                    { name: 'V2EX', query: 'https://www.v2ex.com/', hasKey: false, display: true, active: false },
+                    { name: 'Reddit', query: 'https://www.reddit.com/search/?q=', hasKey: true, display: true, active: false },
+                    { name: '知乎', query: 'https://www.zhihu.com/search?type=content&q=', hasKey: true, display: true, active: false },
+                    { name: 'StackOverflow', query: 'https://stackoverflow.com/search?q=', hasKey: true, display: true, active: false },
+                    { name: 'CSDN', query: 'https://so.csdn.net/so/search/s.do?q=', hasKey: true, display: true, active: false },
+                    { name: '知网', query: 'https://kns.cnki.net/kns8s/search?kw=', hasKey: true, display: true, active: false },
+                    { name: 'SegmentFault', query: 'https://segmentfault.com/search?q=', hasKey: true, display: true, active: false },
+                    { name: '开源中国', query: 'https://www.oschina.net/search?scope=project&q=', hasKey: true, display: true, active: false },
+                ]
+            },
+            {
+                name: '源/库', query: '', hasKey: false, display: true, selectDisplay: false, active: false, subBtns: [
+                    { name: 'npm镜像', query: 'http://npmmirror.com/', hasKey: false, display: true, active: false },
+                    { name: 'npm', query: 'https://www.npmjs.com/search?q=', hasKey: true, display: true, active: false },
+                    { name: 'Maven', query: 'https://mvnrepository.com/search?q=', hasKey: true, display: true, active: false },
+                    { name: 'PyPI', query: 'https://pypi.org/search/?q=', hasKey: true, display: true, active: false },
+                    { name: 'RubyGems', query: 'https://rubygems.org/search?query=', hasKey: true, display: true, active: false },
+                    { name: 'GoPkg', query: 'https://pkg.go.dev/search?q=', hasKey: true, display: true, active: false },
+                    { name: 'DockerHub', query: 'https://hub.docker.com/search?q=', hasKey: true, display: true, active: false },
+                    { name: 'ArtifactHub', query: 'https://artifacthub.io/packages/search?ts_query_web=', hasKey: true, display: true, active: false },
+                    { name: 'jsDelivr', query: 'https://www.jsdelivr.com/?query=', hasKey: true, display: true, active: false },
+                    { name: '阿里云镜像', query: 'https://developer.aliyun.com/mirror/?keyword=', hasKey: true, display: true, active: false },
+                    { name: 'DNS', query: 'https://dnsdaquan.com/', hasKey: false, display: true, active: false },
+                ]
+            },
+            {
+                name: '生活', query: '', hasKey: false, display: true, selectDisplay: false, active: false, subBtns: [
+                    { name: '哔哩', query: 'https://search.bilibili.com/all?keyword=', hasKey: true, display: true, active: false },
+                    { name: '小红书', query: 'https://www.xiaohongshu.com/explore/', hasKey: false, display: true, active: false },
+                    { name: '豆瓣', query: 'https://www.douban.com/search?q=', hasKey: true, display: true, active: false },
+                    { name: '淘宝', query: 'https://s.taobao.com/search?q=', hasKey: true, display: true, active: false },
+                    { name: '京东', query: 'https://search.jd.com/Search?keyword=', hasKey: true, display: true, active: false },
+                ]
+            },
         ]
 
         // ====== 系统常量 ======
@@ -22884,20 +22979,25 @@
         }
         let _currentNetSearchQuery = SEARCH_BTNS[1].query;
         let _currentNetSearchName = SEARCH_BTNS[1].name;
+        let _currentNetSearchHasKey = SEARCH_BTNS[1].hasKey;
 
         function selectNetSearch(el) {
-            _currentNetSearchQuery = el.dataset.query;
-            _currentNetSearchName = el.dataset.name;
-            document.querySelectorAll('.net-search-dropdown-item').forEach(i => i.classList.remove('active'));
-            el.classList.add('active');
-            doNetSearch();
+            if (!el.dataset.query) return;
+            if (el.dataset.active === 'true') {
+                _currentNetSearchQuery = el.dataset.query;
+                _currentNetSearchName = el.dataset.name;
+                _currentNetSearchHasKey = el.dataset.hasKey;
+                document.querySelectorAll('.net-search-dropdown-item').forEach(i => i.classList.remove('active'));
+                el.classList.add('active');
+            }
+            doNetSearch(el.dataset.query, el.dataset.name, el.dataset.hasKey);
         }
 
-        function doNetSearch(query) {
+        function doNetSearch(query = _currentNetSearchQuery, name = _currentNetSearchName, hasKey = _currentNetSearchHasKey) {
             const input = document.getElementById('net-search');
             const key = input ? input.value.trim() : '';
-            const q = query || _currentNetSearchQuery;
-            window.open(`${q}${encodeURIComponent(key)}`, '_blank');
+            const hasKeyFlag = hasKey === 'true';
+            window.open(`${query}${hasKeyFlag ? encodeURIComponent(key) : ''}`, '_blank');
         }
         function initDashboard() {
             let html = `
@@ -22929,7 +23029,16 @@
                 SEARCH_BTNS.forEach(b => {
                     if (b.display) {
                         const isActive = b.name === 'Google';
-                        html += `<div class="net-search-dropdown-item${isActive ? ' active' : ''}" data-query="${b.query}" data-name="${b.name}" onclick="selectNetSearch(this)">${b.name}</div>`;
+                        if (b.subBtns && b.subBtns.length > 0) {
+                            // 有子按钮：父项作为容器，hover 时右侧弹出子面板
+                            let subHtml = '';
+                            b.subBtns.forEach(sub => {
+                                subHtml += `<div class="net-search-dropdown-item" data-query="${sub.query}" data-name="${sub.name}" data-has-key="${sub.hasKey}" data-active="false" onclick="selectNetSearch(this)">${sub.name}</div>`;
+                            });
+                            html += `<div class="net-search-dropdown-item has-sub" data-query="${b.query}" data-name="${b.name}" data-has-key="${b.hasKey}" data-active="${b.active}">${b.name}<div class="net-search-sub-panel">${subHtml}</div></div>`;
+                        } else {
+                            html += `<div class="net-search-dropdown-item${isActive ? ' active' : ''}" data-query="${b.query}" data-name="${b.name}" data-has-key="${b.hasKey}" data-active="${b.active}" onclick="selectNetSearch(this)">${b.name}</div>`;
+                        }
                     }
                 });
                 netSearchDropdown.innerHTML = html;
@@ -27284,7 +27393,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 commentContainer.innerHTML = '';
                 displaySelectionToolbar([commentContainer]);
                 SEARCH_BTNS.forEach(item => {
-                    if (item.selectDisplay === true) {
+                    if (item.selectDisplay) {
                         const btn = document.createElement('button');
                         btn.type = 'button';
                         btn.className = 'color-option-search';
@@ -27602,7 +27711,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const key = markdownSelectionState.text;
             if (query === 'all') {
                 SEARCH_BTNS.forEach(item => {
-                    if (item.selectDisplay === true && item.name !== 'all') window.open(`${item.query}${encodeURIComponent(key)}`, '_blank');
+                    if (item.selectDisplay && item.name !== 'all') window.open(`${item.query}${encodeURIComponent(key)}`, '_blank');
                 });
                 return;
             }
