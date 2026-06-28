@@ -13189,6 +13189,7 @@
             { key: '📁 新建目录', name: "新建目录", click: "createDirByParentDir" },
             { key: '📄 新建文件', name: "untitled.txt", click: "createFileByParentDir" },
             { key: '🌄 图片墙', name: "图片墙", click: "picLayoutDisplay" },
+            { key: '🔗 文档图谱', name: "文档图谱", click: "dirGraphDisplay" },
             { key: '📚️ 文件词云', name: "文件词云", click: "openWordCloudFile" },
             { key: '标记', name: "标记", click: "markDir" },
         ]
@@ -13530,6 +13531,23 @@
         let treeDomItemCache = new LRUCache(1000);  // 文件树 DOM 元素缓存（避免重复创建）
         // Canvas 白板相关函数
         let canvasData = { nodes: [], edges: [] };
+        // Canvas 图片节点加载并发限制（避免 20 张大图同时解码导致 CPU 飙升）
+        const _CANVAS_IMG_CONCURRENCY = 4;
+        let _canvasImgQueue = [];
+        let _canvasImgInFlight = 0;
+        async function _canvasImgProcessQueue() {
+            while (_canvasImgInFlight < _CANVAS_IMG_CONCURRENCY && _canvasImgQueue.length > 0) {
+                const task = _canvasImgQueue.shift();
+                _canvasImgInFlight++;
+                try { await task(); } catch (e) { console.error('canvas 图片加载失败:', e); }
+                _canvasImgInFlight = Math.max(0, _canvasImgInFlight - 1);
+                _canvasImgProcessQueue();
+            }
+        }
+        function _canvasImgEnqueue(fn) {
+            _canvasImgQueue.push(fn);
+            _canvasImgProcessQueue();
+        }
         let connectingFrom = null; // { nodeId, side } | null — 连线模式：已选中的起点连接点
 
         // ====== DOM 元素缓存（避免重复查询） ======
@@ -14564,13 +14582,19 @@
             }
         }
 
-        async function initTreeBrowser() {
-            if (await initFromStorage()) return true;
+        function initPageNone() {
+            switchToView(contentMain);
+            treeElement.innerHTML = '';
             contentMain.innerHTML = `<div style="color:var(--color-text-secondary); text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh; width:100%; box-sizing:border-box;">
                                 <div style="text-align:center;">
                                 ⚠️ 点击左上方按钮，请打开本地目录
                                 </div>
                             </div>`;
+        }
+
+        async function initTreeBrowser() {
+            if (await initFromStorage()) return true;
+            initPageNone();
             openDir();
             return false;
         }
@@ -15046,6 +15070,10 @@
                 }
                 // 4. 清理 canvas 相关的全局状态
                 canvasData = { nodes: [], edges: [] };
+                _nodeMapCache = new Map();
+                _saveQueue = Promise.resolve();
+                _canvasImgQueue = [];
+                _canvasImgInFlight = 0;
                 selectedCanvasNodeId = null;
                 pendingCanvasNodeType = null;
                 cancelConnecting(); // 确保退出连线模式
@@ -16293,6 +16321,8 @@
                         picLayoutDisplay(dirPathStr);
                     } else if (action.click === 'openWordCloudFile') {
                         openWordCloudFile(dirPathStr);
+                    } else if (action.click === 'dirGraphDisplay') {
+                        dirGraphDisplay(dirPathStr);
                     }
                 }));
             }
@@ -18716,6 +18746,7 @@
                 .attr('class', 'canvas-edge-path animated')
                 .attr('d', path)
                 .attr('stroke', '#1f2328')
+                .attr('stroke-width', '1.3')
                 .attr('marker-end', 'url(#arrowhead)');
 
             // 磁吸热区路径（上层，宽透明描边便于选中）
@@ -18923,37 +18954,6 @@
             }, 200);
         }
 
-        async function renderEmbeddedCanvas(node, text, contentDiv, _depth = 0) {
-            // 防止 .canvas 文件嵌套渲染导致无限递归
-            if (_depth > 1) {
-                contentDiv.html(`<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--t2);font-size:12px;">嵌套画布（预览已折叠）</div>`);
-                return;
-            }
-            const container = contentDiv.node();
-            // 保存父级 canvasData，避免 renderCanvasFile 覆盖全局状态
-            // （否则后续拖拽/连线等操作会把子画布数据写入父文件，导致数据损坏）
-            const parentCanvasData = canvasData;
-            await renderCanvasFile(text, container);
-            // 恢复父级 canvasData 并重建节点索引缓存
-            canvasData = parentCanvasData;
-            rebuildNodeMap();
-            const controls = container.querySelector('.image-controls');
-            if (controls) controls.style.display = 'none';
-            // 禁用内嵌画布的鼠标事件，让事件穿透到父节点（否则无法拖拽节点）
-            const svgEl = container.querySelector('.canvas-svg');
-            if (svgEl) {
-                svgEl.style.pointerEvents = 'none';
-                // 同时移除 d3 zoom 行为，防止事件被拦截
-                const svg = d3.select(svgEl);
-                svg.on('.zoom', null);
-                svg.on('click', null);
-                svg.on('pointerdown', null);
-                svg.on('pointerup', null);
-                svg.on('mousedown', null);
-                svg.on('mouseup', null);
-            }
-        }
-
         async function renderEmbeddedMarkdown(node, file, contentDiv) {
             try {
                 const fileHandle = await getEmbedNodeFileHandleByPath(node.file);
@@ -18998,8 +18998,8 @@
                     .style('display', 'flex')
                     .style('align-items', 'center')
                     .style('justify-content', 'center');
-                // 异步加载图片
-                (async () => {
+                // 异步加载图片（受并发限制，最多同时加载 4 张，避免 CPU 飙升）
+                _canvasImgEnqueue(async () => {
                     try {
                         const fileHandle = await getEmbedNodeFileHandleByPath(node.file);
                         if (!fileHandle) {
@@ -19009,13 +19009,14 @@
                         const file = await getFile(fileHandle);
                         const blobUrl = URL.createObjectURL(file);
                         currentObjectUrls.push(blobUrl);
-                        contentDiv.html(`<img src="${blobUrl}" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:4px;" />`);
+                        contentDiv.html(`<img src="${blobUrl}" loading="lazy" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:4px;" />`);
                     } catch (error) {
                         console.error('加载图片预览失败:', error);
                         contentDiv.html(`<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:#cf222e;font-size:12px;">加载失败</div>`);
                     }
-                })();
+                });
             } else if (node.file.endsWith('.canvas') || node.file.endsWith('.excalidraw')) {
+                // 嵌套 canvas/excalidraw 节点：仅显示文件名+文件图标，不递归渲染
                 const foreignObject = nodeGroup.append('foreignObject')
                     .attr('x', 0)
                     .attr('y', 0)
@@ -19027,39 +19028,14 @@
                     .style('height', '100%')
                     .style('overflow', 'hidden')
                     .style('border-radius', '8px')
-                    .style('background', '#fff');
-                (async () => {
-                    try {
-                        const fileHandle = await getEmbedNodeFileHandleByPath(node.file);
-                        if (!fileHandle) {
-                            let icon = '📊';
-                            if (node.file.endsWith('.excalidraw')) icon = '🎨';
-                            contentDiv.html(`<div style="display:flex;align-items:center;gap:6px;color:#cf222e;font-weight:500;word-break:break-all;padding:8px;">${icon} 无法加载 ${escapeHtml(node.file)}</div>`);
-                            return;
-                        }
-                        const text = await getFileContent(fileHandle);
-                        if (node.file.endsWith('.excalidraw')) {
-                            const uuid = crypto.randomUUID();
-                            contentDiv.html(`<div id="canvas-node-excalidraw-${uuid}" style="width:100%;height:100%;"></div>`);
-                            const container = contentDiv.node().querySelector(`#canvas-node-excalidraw-${uuid}`);
-                            if (container) {
-                                try {
-                                    let excalidrawData = JSON.parse(text);
-                                    renderEmbeddedExcalidraw(container, excalidrawData);
-                                } catch (e) {
-                                    contentDiv.html(`<div style="color:#cf222e; padding:8px;">无效的 Excalidraw 格式: ${escapeHtml(e.message)}</div>`);
-                                }
-                            }
-                        } else if (node.file.endsWith('.canvas')) {
-                            await renderEmbeddedCanvas(node, text, contentDiv, 1);
-                        }
-                    } catch (error) {
-                        console.error('加载预览失败:', error);
-                        let icon = '📊';
-                        if (node.file.endsWith('.excalidraw')) icon = '🎨';
-                        contentDiv.html(`<div style="display:flex;align-items:center;gap:6px;color:#cf222e;font-weight:500;word-break:break-all;padding:8px;">${icon} ${escapeHtml(node.file)}</div>`);
-                    }
-                })();
+                    .style('background', '#fff')
+                    .style('display', 'flex')
+                    .style('align-items', 'center')
+                    .style('justify-content', 'center')
+                    .style('font-size', '13px')
+                    .style('color', '#656d76');
+                const icon = node.file.endsWith('.excalidraw') ? '🎨' : '📊';
+                contentDiv.html(`<div style="text-align:center;padding:8px;word-break:break-all;">${icon}<br>${escapeHtml(basename(node.file) || node.file)}</div>`);
             } else if (node.file.endsWith('.md')) {
                 const foreignObject = nodeGroup.append('foreignObject')
                     .attr('x', 10)
@@ -19580,6 +19556,11 @@
             canvasData = canvasDataFromFile;
             const nodes = canvasData.nodes || [];
             const edges = canvasData.edges || [];
+            // 清理当前 container 的 object URLs（<img> 将被销毁，释放 blob 内存）
+            if (currentObjectUrls && currentObjectUrls.length > 0) {
+                currentObjectUrls.forEach(url => { try { URL.revokeObjectURL(url); } catch (e) { /* 忽略 */ } });
+                currentObjectUrls.length = 0;
+            }
             contentDiv.innerHTML = `<div class="canvas-container"><svg class="canvas-svg"></svg></div>`;
             const container = contentDiv.querySelector('.canvas-container');
             const containerWidth = container.clientWidth || 800;
@@ -19594,13 +19575,13 @@
             const defs = svg.append('defs');
             defs.append('marker')
                 .attr('id', 'arrowhead')
-                .attr('markerWidth', '10')
-                .attr('markerHeight', '7')
-                .attr('refX', '9')
-                .attr('refY', '3.5')
+                .attr('markerWidth', '7')
+                .attr('markerHeight', '5')
+                .attr('refX', '6')
+                .attr('refY', '2.5')
                 .attr('orient', 'auto')
                 .append('polygon')
-                .attr('points', '0 0, 10 3.5, 0 7')
+                .attr('points', '0 0, 7 2.5, 0 5')
                 .attr('fill', '#1f2328');
 
             const bounds = calculateCanvasBounds(nodes);
@@ -26252,38 +26233,46 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     mode: 'readwrite',
                 });
                 if (!dirHandle) return;
+                initPageNone();
                 setRootHandle(dirHandle)
-                const root = safeLocalStorageGet("ROOT_DIR");
                 showNotification('输入物理路径用以后续相关操作！', 'info', 3000);
-                showInputModal('请输入物理路径', root || currentRootPath, async (path) => {
-                    let trimmedPath = path.trim();
-                    //去除路径末尾的斜杠，兼容 windows 和 linux 系统
-                    currentRootPath = trimmedPath.replace(/[\/\\]+$/, '');
-                    showGlobalLoading('正在扫描目录文件...');
-                    try {
-                        await clearOldData();
-                        treeElement.innerHTML = '';
-                        safeLocalStorageSet("ROOT_DIR", currentRootPath);
-                        safeLocalStorageSet(PERMISSION_TIME_KEY, Date.now().toString());
-                        await idbPut(DIRECTORY_STORE_NAME, 'handles', 'default', dirHandle);
-                        await initAll();
-                    } catch (e) {
-                        console.error('初始化目录失败', e);
-                        showNotification('✗ 扫描目录失败: ' + e.message, 'error');
-                    } finally {
-                        hideGlobalLoading(true);
-                    }
-                }, async () => {
-                    await clearOldData();
-                    currentRootPath = '';
-                    setRootHandle(null);
-                    treeElement.innerHTML = '';
-                    showNotification('必须输入物理路径，否则系统无法正常运行！', 'error');
-                    openDir();
-                });
+                await inputAbsolutePath(dirHandle)
             } catch (err) {
                 console.error('用户取消了选择或无权限', err);
             }
+        }
+
+        async function inputAbsolutePath(dirHandle) {
+            const root = safeLocalStorageGet("ROOT_DIR");
+            showInputModal('请输入物理路径', root || currentRootPath, async (path) => {
+                let trimmedPath = path.trim();
+                //去除路径末尾的斜杠，兼容 windows 和 linux 系统
+                currentRootPath = trimmedPath.replace(/[\/\\]+$/, '');
+                if (!currentRootPath.endsWith(dirHandle.name)) {
+                    showNotification('输入的物理路径与选择的目录不匹配，请重新选择目录或输入正确的物理路径！', 'error');
+                    inputAbsolutePath(dirHandle)
+                    return;
+                }
+                showGlobalLoading('正在扫描目录文件...');
+                try {
+                    await clearOldData();
+                    safeLocalStorageSet("ROOT_DIR", currentRootPath);
+                    safeLocalStorageSet(PERMISSION_TIME_KEY, Date.now().toString());
+                    await idbPut(DIRECTORY_STORE_NAME, 'handles', 'default', dirHandle);
+                    await initAll();
+                } catch (e) {
+                    console.error('初始化目录失败', e);
+                    showNotification('✗ 扫描目录失败: ' + e.message, 'error');
+                } finally {
+                    hideGlobalLoading(true);
+                }
+            }, async () => {
+                await clearOldData();
+                currentRootPath = '';
+                setRootHandle(null);
+                showNotification('必须输入物理路径，否则系统无法正常运行！', 'error');
+                openDir();
+            });
         }
 
         async function clearOldData() {
@@ -26373,14 +26362,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }, 0);
         }
 
-        function openCanvasFile() {
-            //TODO
+        function openCanvasFile(canvasData = { nodes: [], edges: [] }) {
             // 先清理旧的 canvas 状态
             cleanupCanvasState(true);
             // 设置标志
             currentFileHandle = null;
-            // 创建空白 canvas 数据
-            canvasData = { nodes: [], edges: [] };
             // 切换到 canvas 视图
             switchToView(contentMain);
             // 渲染空白 canvas
@@ -26406,6 +26392,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
+        function addNodeToCanvas(node) {
+            const nodesGroup = d3.select('.canvas-nodes');
+            if (nodesGroup.empty()) return;
+            renderCanvasNode(node, nodesGroup);
+            rebuildNodeMap();
+        }
+
         function createCanvasNode(type, fileData) {
             const newNode = {
                 id: 'node_' + Date.now(),
@@ -26427,15 +26420,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
 
             canvasData.nodes.push(newNode);
+            rebuildNodeMap();
 
-            // 重新渲染 canvas
+            // 增量添加 DOM（不触发全局重渲染）
+            addNodeToCanvas(newNode);
+
+            // 持久化到文件
             if (currentFileHandle) {
-                saveNodesToFile(canvasData.nodes).then(async () => {
-                    await renderCanvasFile(JSON.stringify(canvasData), contentMain);
-                });
-            } else {
-                // 对于新canvas，直接重新渲染，传入true保持保存按钮可见
-                renderCanvasFile(JSON.stringify(canvasData), contentMain, true);
+                saveNodesToFile(canvasData.nodes);
             }
         }
 
@@ -26539,31 +26531,63 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return '';
         }
 
+        function removeNodeFromCanvas(nodeId) {
+            // 移除节点 DOM
+            d3.selectAll(`.canvas-node[data-node-id="${nodeId}"]`).remove();
+            // 移除关联的连线 DOM（一次性筛选，避免 while(true) 低效遍历）
+            d3.selectAll('.canvas-edge-group').filter(function () {
+                const edge = d3.select(this).select('.canvas-edge-hit').datum();
+                return edge && (edge.fromNode === nodeId || edge.toNode === nodeId);
+            }).remove();
+            // 关闭节点内容面板（如有未保存内容则自动保存）
+            const contentPanel = document.getElementById('node-content-panel');
+            if (contentPanel && contentPanel.dataset.nodeId === nodeId) {
+                closeNodeContentPanel();
+            }
+            // 更新节点计数（如果存在）
+            const nodeCountEl = document.getElementById('node-count');
+            if (nodeCountEl) {
+                const n = parseInt(nodeCountEl.textContent) || 0;
+                nodeCountEl.textContent = Math.max(0, n - 1);
+            }
+            // 更新 window.canvasState 的边界（删除全部节点后避免 adjustCanvasViewport 使用旧边界）
+            if (window.canvasState && canvasData.nodes.length === 0) {
+                const emptyBounds = calculateCanvasBounds([]);
+                window.canvasState.contentWidth = emptyBounds.contentWidth;
+                window.canvasState.contentHeight = emptyBounds.contentHeight;
+                window.canvasState.centerX = emptyBounds.centerX;
+                window.canvasState.centerY = emptyBounds.centerY;
+            }
+        }
+
         async function handleCanvasDeleteNode() {
             if (!selectedCanvasNodeId) {
                 showNotification('请选择要删除的节点', 'warning');
                 return;
             }
+            // 如果正处于连线模式，取消连线状态避免残留
+            if (connectingFrom) {
+                cancelConnecting();
+            }
+            const nodeId = selectedCanvasNodeId;
             // 从 canvasData 中删除节点
-            canvasData.nodes = canvasData.nodes.filter(n => n.id !== selectedCanvasNodeId);
+            canvasData.nodes = canvasData.nodes.filter(n => n.id !== nodeId);
             // 同时删除与该节点相关的边
-            canvasData.edges = canvasData.edges.filter(e => e.fromNode !== selectedCanvasNodeId && e.toNode !== selectedCanvasNodeId);
+            canvasData.edges = canvasData.edges.filter(e => e.fromNode !== nodeId && e.toNode !== nodeId);
             rebuildNodeMap(); // 更新节点索引
             // 持久化（节点+边）
             if (currentFileHandle) {
                 await saveNodesToFile(canvasData.nodes);
                 await saveEdgesToFile(canvasData.edges);
+            } else {
+                // 新画布虽无文件句柄，但标记数据已变更供后续保存感知
+                canvasData._dirty = true;
             }
-            const contentPanel = document.getElementById('node-content-panel');
-            if (contentPanel) {
-                if (contentPanel.dataset.nodeId && selectedCanvasNodeId === contentPanel.dataset.nodeId) {
-                    contentPanel.style.display = 'none';
-                    contentPanel.remove();
-                }
-            }
+            // 增量删除 DOM（不重新渲染整张画布）
+            removeNodeFromCanvas(nodeId);
             // 重置选择状态
             selectedCanvasNodeId = null;
-            renderCanvasFile(JSON.stringify(canvasData), contentMain);
+            updateDeleteNodeButtonState();
         }
 
         function updateDeleteNodeButtonState() {
@@ -37755,8 +37779,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 long: getVal('pomoLong'),
                 autoBreak: isOn('pomoAutoBreak'),
                 autoPomodoro: isOn('pomoAutoPomodoro'),
-                desktopNotify: isOn('pomoDesktopNotify'),
-                soundOn: isOn('pomoSound')
             };
         }
 
@@ -37790,11 +37812,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     </div>
                 </div>
                 <div class="pomodoro-controls">
-                    <button class="pomodoro-btn pomodoro-btn-secondary" onclick="pomodoroReset();pomodoroPlaySound()">
+                    <button class="pomodoro-btn pomodoro-btn-secondary" onclick="pomodoroReset();paySound()">
                         <svg class="pomodoro-btn-icon" viewBox="0 0 24 24" width="20" height="20"><path d="M12 4V1L8 5l4 4V6a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z"/></svg>
                         重置
                     </button>
-                    <button class="pomodoro-btn pomodoro-btn-primary" id="pomoStartBtn" onclick="pomodoroToggle();pomodoroPlaySound()">
+                    <button class="pomodoro-btn pomodoro-btn-primary" id="pomoStartBtn" onclick="pomodoroToggle();paySound()">
                         <svg class="pomodoro-btn-icon" id="pomoStartIcon" viewBox="0 0 24 24" width="20" height="20"><path d="M8 5v14l11-7z"/></svg>
                         <span id="pomoStartText">开始</span>
                     </button>
@@ -37827,14 +37849,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             <span class="pomodoro-toggle-label">自动开始专注</span>
                             <div class="pomodoro-toggle-switch" id="pomoAutoPomodoro" onclick="pomodoroToggleSwitch(this)"></div>
                         </div>
-                        <div class="pomodoro-toggle-row">
-                            <span class="pomodoro-toggle-label">桌面通知</span>
-                            <div class="pomodoro-toggle-switch on" id="pomoDesktopNotify" onclick="pomodoroToggleSwitch(this)"></div>
-                        </div>
-                        <div class="pomodoro-toggle-row">
-                            <span class="pomodoro-toggle-label">提示音</span>
-                            <div class="pomodoro-toggle-switch on" id="pomoSound" onclick="pomodoroToggleSwitch(this)"></div>
-                        </div>
+
                     </div>
                 </div>
             </div>`;
@@ -37969,7 +37984,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 pomodoroState.streak++;
                 pomodoroSaveState();
                 showNotification('🎉 专注完成！休息一下吧', 'success');
-                pomodoroPlaySound();
+                paySound();
                 if (pomodoroGetSettings().autoBreak) {
                     pomodoroState.pendingAutoId = setTimeout(() => {
                         pomodoroState.pendingAutoId = null;
@@ -37982,7 +37997,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             } else {
                 pomodoroSaveState();
                 showNotification('☕ 休息结束！准备开始工作', 'info');
-                pomodoroPlaySound();
+                paySound();
                 if (pomodoroGetSettings().autoPomodoro) {
                     pomodoroState.pendingAutoId = setTimeout(() => {
                         pomodoroState.pendingAutoId = null;
@@ -37995,7 +38010,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const s = pomodoroGetSettings();
             showNotification(pomodoroState.mode === 'pomodoro' ? '专注完成！休息一下吧' : '休息结束！准备开始工作', 'info');
         }
-        // ========== UI 更新 ==========
         function pomodoroUpdateUI() {
             const m = Math.floor(pomodoroState.timeLeft / 60);
             const s = pomodoroState.timeLeft % 60;
@@ -38022,13 +38036,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             pomodoroApplySettings();
         }
 
-        // ========== 提示音 ==========
-        function pomodoroPlaySound() {
-            if (!pomodoroGetSettings().soundOn) return;
-            playSound();
-        }
-
-        function playSound() {
+        function paySound() {
             try {
                 const ctx = new (window.AudioContext || window.webkitAudioContext)();
                 [523.25, 659.25, 783.99, 1046.50].forEach((freq, idx) => {
@@ -38046,6 +38054,189 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     osc.stop(t + 0.45);
                 });
             } catch (_) { }
+        }
+
+        async function dirGraphDisplay(relPath) {
+            if (!relPath) return;
+            switchToView(contentMain);
+            aiFabContainer.style.display = 'none';
+            const { dirHandle, dirParentHandle } = await getDirHandleByDirPath(relPath);
+            if (!dirHandle) {
+                showNotification(`目录 ${relPath} 不存在`, 'error');
+                return;
+            }
+            const children = [];
+            const entries = await getDirectoryEntries(dirHandle);
+            let index = 1;
+            for (const entry of entries) {
+                const name = entry.name
+                if (entry.kind === 'file' &&
+                    (name.endsWith('.md')|| name.endsWith('.canvas')|| name.endsWith('.excalidraw') || isPicImage(getExt(name)))) {
+                    if (index > 20) {
+                        showNotification('⚠️ 目录下文件过多，最多显示前20个文件', 'warning');
+                        break;
+                    }
+                    const path = joinPath(relPath, entry.rawEntry.name);
+                    children.push({ name: name, id: `node_${index}`, path: path });
+                    index++;
+                }
+            }
+            const canvasData = generateCanvasFolderJSON({
+                folderName: basename(relPath),
+                children
+            });
+            openCanvasFile(canvasData);
+        }
+
+        function generateCanvasFolderJSON({
+            folderName,
+            children, // [{ name: string, id?: string, path: string }]
+            canvasCenter = { x: 600, y: 400 }, // 中心点在画布坐标系的坐标
+            NODE_W = 200,
+            NODE_H = 200,
+            CENTER_W = 100,      // 中心节点宽度
+            CENTER_H = 70,       // 中心节点高度
+            initialPadding = 120, // 中心节点到第一圈节点的间距
+            ringGap = 120,       // 相邻圈层之间的间距
+            nodeGap = 60,        // 同一圈层中节点之间的间距
+        } = {}) {
+            const cx = canvasCenter.x;
+            const cy = canvasCenter.y;
+            const n = children.length;
+            // 如果没有子节点，直接返回中心节点
+            if (n === 0) {
+                return {
+                    nodes: [{
+                        id: "node_center",
+                        type: 'text',
+                        text: `<span style="display:inline-block; width:100%;height:auto; font-weight:bold; font-size:16px; color:blue; text-align:center;"> ${folderName}</span>`,
+                        x: cx - CENTER_W / 2,
+                        y: cy - CENTER_H / 2,
+                        width: CENTER_W,
+                        height: CENTER_H,
+                    }],
+                    edges: []
+                };
+            }
+            const uid = (() => {
+                let t = 0;
+                return (p) => `${p}_${++t}_${Math.random().toString(16).slice(2)}`;
+            })();
+            function rayAabbIntersection(tx, ty, rectCx, rectCy, halfW, halfH) {
+                const dx = tx - rectCx;
+                const dy = ty - rectCy;
+                const absDx = Math.abs(dx) || 1e-9;
+                const absDy = Math.abs(dy) || 1e-9;
+                const tX = halfW / absDx;
+                const tY = halfH / absDy;
+                const t = Math.min(tX, tY);
+                return { x: rectCx + dx * t, y: rectCy + dy * t };
+            }
+            function pickSide(pointX, pointY, rectCx, rectCy, halfW, halfH) {
+                const leftX = rectCx - halfW;
+                const rightX = rectCx + halfW;
+                const topY = rectCy - halfH;
+                const bottomY = rectCy + halfH;
+
+                const dl = Math.abs(leftX - pointX);
+                const dr = Math.abs(rightX - pointX);
+                const dt = Math.abs(topY - pointY);
+                const db = Math.abs(bottomY - pointY);
+
+                const min = Math.min(dl, dr, dt, db);
+                if (min === dl) return "left";
+                if (min === dr) return "right";
+                if (min === dt) return "top";
+                return "bottom";
+            }
+            // 根据半径和节点宽度，计算当前圈层最多能容纳多少个节点（保证不重叠）
+            function getRingCapacity(radius, size, gap) {
+                const chord = size + gap; // 两个节点中心点之间的最小距离
+                if (chord >= 2 * radius) return 1;
+                const angle = Math.asin(chord / (2 * radius));
+                return Math.max(1, Math.floor(Math.PI / angle));
+            }
+            const nodes = [];
+            const edges = [];
+            const halfW = NODE_W / 2;
+            const halfH = NODE_H / 2;
+            const centerHalfW = CENTER_W / 2;
+            const centerHalfH = CENTER_H / 2;
+            // 当前圈层的半径，从内向外扩展
+            let currentRadius = Math.max(centerHalfW, centerHalfH) + Math.max(halfW, halfH) + initialPadding;
+            // center node（左上角坐标）
+            const centerId = uid("node");
+            nodes.push({
+                id: centerId,
+                type: 'text',
+                text: `<span style="display:inline-block; width:100%; height:auto; font-weight:bold; font-size:16px; color:#2b2f36; text-align:center;"> ${folderName}</span>`,
+                x: cx - centerHalfW,
+                y: cy - centerHalfH,
+                width: CENTER_W,
+                height: CENTER_H,
+            });
+            // 拷贝一份数据进行分圈处理
+            let remainingChildren = [...children];
+            let ringIndex = 0;
+
+            while (remainingChildren.length > 0) {
+                // 计算当前圈层容量
+                const capacity = getRingCapacity(currentRadius, Math.max(NODE_W, NODE_H), nodeGap);
+                const nodesInThisRing = Math.min(remainingChildren.length, capacity);
+                const ringChildren = remainingChildren.splice(0, nodesInThisRing);
+                // 奇偶圈层交错排布，使外圈节点对准内圈节点的缝隙，像蜂窝一样
+                const angleOffset = (ringIndex % 2 === 1) ? (Math.PI / nodesInThisRing) : 0;
+                for (let i = 0; i < nodesInThisRing; i++) {
+                    const child = ringChildren[i];
+                    const childId = child.id ?? uid("node");
+                    // 均分当前圈的角度，从顶部开始，顺时针
+                    const angle = (2 * Math.PI * i) / nodesInThisRing - Math.PI / 2 + angleOffset;
+                    const childCenterX = cx + currentRadius * Math.cos(angle);
+                    const childCenterY = cy + currentRadius * Math.sin(angle);
+                    const childX = childCenterX - halfW;
+                    const childY = childCenterY - halfH;
+                    nodes.push({
+                        id: childId,
+                        type: 'file',
+                        file: child.path,
+                        x: childX,
+                        y: childY,
+                        width: NODE_W,
+                        height: NODE_H,
+                    });
+                    // 计算中心节点边界交点
+                    const fromIntersection = rayAabbIntersection(
+                        childCenterX,
+                        childCenterY,
+                        cx,
+                        cy,
+                        centerHalfW,
+                        centerHalfH
+                    );
+                    // 计算子节点边界交点
+                    const toIntersection = rayAabbIntersection(
+                        cx,
+                        cy,
+                        childCenterX,
+                        childCenterY,
+                        halfW,
+                        halfH
+                    );
+                    const fromSide = pickSide(fromIntersection.x, fromIntersection.y, cx, cy, centerHalfW, centerHalfH);
+                    const toSide = pickSide(toIntersection.x, toIntersection.y, childCenterX, childCenterY, halfW, halfH);
+                    edges.push({
+                        id: uid("edge"),
+                        fromNode: centerId,
+                        fromSide,
+                        toNode: childId,
+                        toSide,
+                    });
+                }
+                // 计算下一圈的半径
+                currentRadius += Math.max(NODE_W, NODE_H) + ringGap;
+                ringIndex++;
+            }
+            return { nodes, edges };
         }
     </script>
 </body>
