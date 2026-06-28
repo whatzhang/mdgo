@@ -748,7 +748,6 @@
 
         .canvas-node-text {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-            line-height: 1.4;
             font-size: 0.8rem;
             white-space: pre-wrap;
             word-wrap: break-word;
@@ -11250,6 +11249,16 @@
                 grid-template-columns: 1fr;
             }
         }
+
+        .center-div {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            height: 100%;
+            box-sizing: border-box;
+            background-color: var(--color-bg);
+        }
     </style>
 </head>
 
@@ -13528,7 +13537,7 @@
         let _cachedLastFile = null;    // createFileItem 预缓存：最后一次打开的文件路径
         let _browserRefreshed = false;   // createFileItem 预缓存：是否浏览器刷新场景
         let _treeClickTimer = null; // 文件树单击防抖计时器（事件委托共享）
-        let treeDomItemCache = new LRUCache(1000);  // 文件树 DOM 元素缓存（避免重复创建）
+        let treeDomItemCache = new LRUCache(50000);  // 文件树 DOM 元素缓存（避免重复创建）
         // Canvas 白板相关函数
         let canvasData = { nodes: [], edges: [] };
         // Canvas 图片节点加载并发限制（避免 20 张大图同时解码导致 CPU 飙升）
@@ -13651,35 +13660,21 @@
             treeDomItemCache.clear();
         });
 
-        // 应用初始化入口：文件树就绪后并发启动各模块
         async function initAll() {
-            if (!await initTreeBrowser()) return;
-            // 并发执行所有初始化操作，提升启动性能
+            if (!await initTreeBrowser()) return; // 初始化文件树
             await Promise.all([
-                // 初始化WebSocket连接
-                Promise.resolve(wsConnect()),
-                // 初始化AI相关组件
-                Promise.resolve(initAiActionRow()),
-                // 初始化AI面板切换按钮
-                Promise.resolve(initAIPanelToggle()),
-                // 初始化AI结果设置
-                Promise.resolve(initAIResultSettings()),
-                // 初始化新文件下拉菜单
-                Promise.resolve(initNewFileDropdown()),
-                // 初始化AI结果弹窗
-                Promise.resolve(initAiResultModal()),
-                // 初始化Markdown选择工具栏
-                Promise.resolve(initMarkdownSelectionToolbar()),
-                // 初始化定时任务组件
-                Promise.resolve(startScheduledTask(10)),
-                // 初始化系统监控
-                Promise.resolve(initSystemMonitor()),
-                // 初始化侧边栏切换按钮
-                Promise.resolve(initSidebarToggle()),
-                // 初始化日历日程
-                Promise.resolve(todoEarlyInit()),
-                // 初始化编辑器
-                Promise.resolve(initMonacoEditor())
+                Promise.resolve(wsConnect()), // 初始化WebSocket连接
+                Promise.resolve(initAiActionRow()), // 初始化AI相关组件
+                Promise.resolve(initAIPanelToggle()), // 初始化AI面板切换按钮
+                Promise.resolve(initAIResultSettings()),// 初始化AI结果设置
+                Promise.resolve(initNewFileDropdown()), // 初始化新文件下拉菜单
+                Promise.resolve(initAiResultModal()), // 初始化AI结果弹窗
+                Promise.resolve(initMarkdownSelectionToolbar()),// 初始化Markdown选择工具栏
+                Promise.resolve(startScheduledTask(10)),// 初始化定时任务组件
+                Promise.resolve(initSystemMonitor()),// 初始化系统监控
+                Promise.resolve(initSidebarToggle()),// 初始化侧边栏切换按钮
+                Promise.resolve(todoEarlyInit()),// 初始化日历日程
+                Promise.resolve(initMonacoEditor())// 初始化编辑器
             ]);
         }
 
@@ -14772,7 +14767,7 @@
                         const parentDom = document.querySelector('[data-dir-key="' + dirPath + '"]');
                         if (parentDom) {
                             const depth = +parentDom.dataset.depth || 0;
-                            const dirEntry = createDirectoryEntry(handle.name, depth + 1, newRelativePath);
+                            const dirEntry = createDirectoryEntry(handle.name, depth + 1, newRelativePath, true);
                             // 插入到最后一个子目录后面，保持目录按顺序排列
                             const lastDir = parentDom.querySelector(':scope > details:last-of-type');
                             if (lastDir && lastDir.nextSibling) {
@@ -15211,7 +15206,7 @@
                     for (const entry of entries) {
                         if (entry.kind === 'directory') {
                             const newPath = currentPath ? joinPath(currentPath, entry.name) : entry.name;
-                            if (isSkipDir(newPath)) continue;
+                            if (isSkipDir(entry.name) || isSkipDir(newPath)) continue;
                             const child = await collectDirTree(entry.rawEntry, newPath);
                             node.children.push(child);
                         }
@@ -15775,7 +15770,7 @@
                 if (dirKey && preSearchExpandedStates.has(dirKey)) {
                     detail.open = preSearchExpandedStates.get(dirKey);
                 } else if (dirKey) {
-                    detail.open = getDirExpandedState(dirKey);
+                    detail.open = getDirExpandedState(dirKey) || false;
                 } else {
                     detail.open = false;
                 }
@@ -15905,11 +15900,13 @@
             for (const nodeData of treeData) {
                 if (nodeData.kind === 'directory') {
                     const dirKey = nodeData.path;
+                    const isOpen = nodeData.open;
+                    const depth = nodeData.depth;
                     let cachedDir = treeDomItemCache.get(dirKey);
                     if (cachedDir) {
                         fragment.appendChild(cachedDir.details);
                     } else {
-                        cachedDir = createDirectoryEntry(nodeData.name, nodeData.depth, nodeData.path);
+                        cachedDir = createDirectoryEntry(nodeData.name, depth, nodeData.path, isOpen);
                         if (!cachedDir) continue;
                         fragment.appendChild(cachedDir.details);
                         treeDomItemCache.set(dirKey, cachedDir);
@@ -15923,19 +15920,17 @@
             }
 
             // 批量并发：限制单批 100 个，避免大目录下过多并发 Promise 导致 OOM
-            const fileItems = await _batchProcess(fileEntries,
-                (nd) => {
-                    const fileKey = nd.path;
-                    let cachedFile = treeDomItemCache.get(fileKey);
-                    if (cachedFile) {
-                        return cachedFile;
-                    }
-                    const fileItem = createFileItem(nd.name, nd.path, nd.depth, nd.iconType);
-                    treeDomItemCache.set(fileKey, fileItem);
-                    return fileItem;
-                });
-            const dirResults = await _batchProcess(dirEntries,
-                (de) => renderTreeFromData(de.children, de.details));
+            const fileItems = await _batchProcess(fileEntries, (nd) => {
+                const fileKey = nd.path;
+                let cachedFile = treeDomItemCache.get(fileKey);
+                if (cachedFile) {
+                    return cachedFile;
+                }
+                const fileItem = createFileItem(nd.name, nd.path, nd.depth, nd.iconType);
+                treeDomItemCache.set(fileKey, fileItem);
+                return fileItem;
+            });
+            await _batchProcess(dirEntries, (de) => renderTreeFromData(de.children, de.details));
 
             // 文件项也收集进 fragment，最终单次挂载到 container，避免 n 次 DOM 重排
             for (const fileItem of fileItems) {
@@ -15954,20 +15949,15 @@
 
         function _flushExpandedState() {
             if (!currentRootPath) return;
-            const states = JSON.parse(safeLocalStorageGet(EXPANDED_STATE_KEY) || '{}');
-            if (!states[currentRootPath]) {
-                states[currentRootPath] = {};
-            }
-            // 合并所有待保存的更新
-            Object.assign(states[currentRootPath], _pendingExpandedUpdates);
-            Object.assign(_expandedStateCache, _pendingExpandedUpdates); // 同步更新缓存
-            safeLocalStorageSet(EXPANDED_STATE_KEY, JSON.stringify(states));
+            // 只保存当前打开的目录的折叠状态，K 为目录路径，V 为是否展开
+            Object.assign(_expandedStateCache, _pendingExpandedUpdates);
+            safeLocalStorageSet(EXPANDED_STATE_KEY, JSON.stringify(_expandedStateCache));
             _pendingExpandedUpdates = {};
         }
 
         function _loadExpandedStateCache() {
-            const states = JSON.parse(safeLocalStorageGet(EXPANDED_STATE_KEY) || '{}');
-            _expandedStateCache = states[currentRootPath] || {};
+            const saved = safeLocalStorageGet(EXPANDED_STATE_KEY);
+            _expandedStateCache = saved ? JSON.parse(saved) : {};
         }
 
         function saveDirExpandedState(dirKey, isExpanded) {
@@ -15983,7 +15973,7 @@
 
         // 读取目录展开状态（带内存缓存，避免频繁读 localStorage）
         function getDirExpandedState(dirKey) {
-            return _expandedStateCache[dirKey] || false;
+            return _expandedStateCache[dirKey];
         }
 
         // 层级选择缓存和防抖
@@ -16235,7 +16225,7 @@
         }
 
         //递归生成目录树 功能:生成目录树结构,支持排序、状态保存和恢复
-        function createDirectoryEntry(name, depth, dirPath) {
+        function createDirectoryEntry(name, depth, dirPath, isOpen) {
             const dirPathStr = normalizePath(dirPath);
             if (isSkipDir(name) || isSkipDir(dirPathStr)) return null;
             const details = document.createElement('details');
@@ -16374,9 +16364,7 @@
                 markerDiv.style.background = _cachedDirMarker.hex;
                 markerDiv.style.display = 'flex';
             }
-            if (getDirExpandedState(dirPathStr)) {
-                details.open = true;
-            }
+            details.open = isOpen || false;
             details.addEventListener('toggle', () => {
                 if (fileSearchInput && fileSearchInput.value.trim()) return;
                 saveDirExpandedState(dirPathStr, details.open);
@@ -18764,7 +18752,6 @@
 
         // 全局节点索引缓存（O(1) 查找，节点变更时更新）
         let _nodeMapCache = new Map();
-
         function rebuildNodeMap() {
             _nodeMapCache = new Map(canvasData.nodes.map(n => [n.id, n]));
         }
@@ -18777,21 +18764,23 @@
                 createEdgeGroupElement(edge, edgesGroup, nodeMap);
             });
         }
-        const selectCanvasNode = (id, nodeGroup) => {
+        const selectCanvasNode = (id, nodeGroup, path) => {
             d3.selectAll('.canvas-node-selected').classed('canvas-node-selected', false);
             nodeGroup.classed('canvas-node-selected', true);
             selectedCanvasNodeId = id;
             updateDeleteNodeButtonState();
+            const dom = document.getElementById('selectedNodeFilePath');
+            if (dom) dom.textContent = `📝 ${escapeHtml(path)}`;
         }
         async function renderTextNode(node, nodeGroup) {
             nodeGroup.on('click', (event) => {
                 event.stopPropagation();
                 // 选中节点
-                selectCanvasNode(node.id, nodeGroup);
+                selectCanvasNode(node.id, nodeGroup, null);
             });
             nodeGroup.on('dblclick', (event) => {
                 event.stopPropagation();
-                selectCanvasNode(node.id, nodeGroup);
+                selectCanvasNode(node.id, nodeGroup, null);
                 // 显示节点内容编辑面板
                 showCanvasNodeContent(node).then(() => {
                     if (!node.text) {
@@ -18799,8 +18788,8 @@
                     }
                 });
             });
-            const previewText = node.text || '';
-            const renderedText = previewText.trim() ? await markedParse(parseObsidianToHTML(previewText)) : '<p style="color:var(--t2);text-align:center;font-size:13px;">点击编辑内容...</p>';
+            const previewText = node.text?.trim() || '';
+            const renderedText = previewText ? `<div class="markdown-body" style="background-color: var(--color-bg);" id="md_nd_${node.id}">${await markedMd(parseObsidianToHTML(previewText))}</div>` : '<p style="color:var(--t2);text-align:center;font-size:13px;">点击编辑内容...</p>';
             const foreignObject = nodeGroup.append('foreignObject')
                 .attr('x', 10)
                 .attr('y', 10)
@@ -18817,6 +18806,9 @@
                 .style('fontSize', '13px')
                 .style('lineHeight', '1.4')
                 .html(renderedText);
+            if (renderedText) {
+                postProcessCodeAndDiagrams(document.getElementById(`md_nd_${node.id}`));
+            }
         }
 
         function renderExcalidrawElement(container, excalidrawData) {
@@ -18958,52 +18950,47 @@
             try {
                 const fileHandle = await getEmbedNodeFileHandleByPath(node.file);
                 if (!fileHandle) {
-                    contentDiv.html(`<div style="display:flex;align-items:center;gap:6px;color:#cf222e;font-weight:500;">📝 无法加载 ${escapeHtml(basename(node.file) || node.file)}</div>`);
+                    contentDiv.html(`<div style="display:flex;align-items:center;gap:6px;color:#cf222e;font-weight:500;">无法加载文件！ ${escapeHtml(node.file)}</div>`);
                     return;
                 }
                 const previewText = await getFileContent(fileHandle);
                 const renderedText = await markedParse(parseObsidianToHTML(previewText));
-                contentDiv.html(renderedText);
+                contentDiv.html(`<div class="markdown-body" style="zoom: 0.5; background-color: var(--color-bg);" id="md_nd_${node.id}">${renderedText}</div>`);
             } catch (error) {
                 console.error('加载 markdown 预览失败:', error);
-                contentDiv.html(`<div style="display:flex;align-items:center;gap:6px;color:#cf222e;font-weight:500;">📝 ${escapeHtml(basename(node.file) || node.file)}</div>`);
+                contentDiv.html(`<div style="display:flex;align-items:center;gap:6px;color:#cf222e;font-weight:500;">无法加载文件！ ${escapeHtml(node.file)}</div>`);
             }
         }
 
         function renderFileNode(node, nodeGroup) {
             nodeGroup.on('click', (event) => {
                 event.stopPropagation();
-                selectCanvasNode(node.id, nodeGroup);
+                selectCanvasNode(node.id, nodeGroup, node.file);
             });
             nodeGroup.on('dblclick', (event) => {
                 event.stopPropagation();
-                selectCanvasNode(node.id, nodeGroup);
+                selectCanvasNode(node.id, nodeGroup, node.file);
                 showNodeFileContent(node);
             });
+            const foreignObject = nodeGroup.append('foreignObject')
+                .attr('x', 10)
+                .attr('y', 10)
+                .attr('width', node.width - 20)
+                .attr('height', node.height - 20)
+                .attr('overflow', 'hidden');
             if (isPicImage(getExt(node.file))) {
-                const foreignObject = nodeGroup.append('foreignObject')
-                    .attr('x', 0)
-                    .attr('y', 0)
-                    .attr('width', node.width)
-                    .attr('height', node.height)
-                    .attr('overflow', 'hidden');
                 const contentDiv = foreignObject.append('xhtml:div')
-                    .style('width', '100%')
-                    .style('height', '100%')
+                    .attr('class', 'center-div')
                     .style('overflow', 'hidden')
                     .style('border-radius', '8px')
                     .style('padding', '8px')
-                    .style('box-sizing', 'border-box')
                     .style('background', 'white')
-                    .style('display', 'flex')
-                    .style('align-items', 'center')
-                    .style('justify-content', 'center');
                 // 异步加载图片（受并发限制，最多同时加载 4 张，避免 CPU 飙升）
                 _canvasImgEnqueue(async () => {
                     try {
                         const fileHandle = await getEmbedNodeFileHandleByPath(node.file);
                         if (!fileHandle) {
-                            contentDiv.html(`<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:#cf222e;font-size:12px;">无法加载图片</div>`);
+                            contentDiv.html(`<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:#cf222e;font-size:12px;">无法加载图片！${escapeHtml(node.file)}</div>`);
                             return;
                         }
                         const file = await getFile(fileHandle);
@@ -19012,50 +18999,31 @@
                         contentDiv.html(`<img src="${blobUrl}" loading="lazy" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:4px;" />`);
                     } catch (error) {
                         console.error('加载图片预览失败:', error);
-                        contentDiv.html(`<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:#cf222e;font-size:12px;">加载失败</div>`);
+                        contentDiv.html(`<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:#cf222e;font-size:12px;">加载失败！${escapeHtml(node.file)}</div>`);
                     }
                 });
-            } else if (node.file.endsWith('.canvas') || node.file.endsWith('.excalidraw')) {
-                // 嵌套 canvas/excalidraw 节点：仅显示文件名+文件图标，不递归渲染
-                const foreignObject = nodeGroup.append('foreignObject')
-                    .attr('x', 0)
-                    .attr('y', 0)
-                    .attr('width', node.width)
-                    .attr('height', node.height)
-                    .attr('overflow', 'hidden');
+            } else if (node.file.endsWith('.mmd')) {
                 const contentDiv = foreignObject.append('xhtml:div')
-                    .style('width', '100%')
-                    .style('height', '100%')
+                    .attr('class', 'center-div')
                     .style('overflow', 'hidden')
-                    .style('border-radius', '8px')
-                    .style('background', '#fff')
-                    .style('display', 'flex')
-                    .style('align-items', 'center')
-                    .style('justify-content', 'center')
-                    .style('font-size', '13px')
-                    .style('color', '#656d76');
-                const icon = node.file.endsWith('.excalidraw') ? '🎨' : '📊';
-                contentDiv.html(`<div style="text-align:center;padding:8px;word-break:break-all;">${icon}<br>${escapeHtml(basename(node.file) || node.file)}</div>`);
-            } else if (node.file.endsWith('.md')) {
-                const foreignObject = nodeGroup.append('foreignObject')
-                    .attr('x', 10)
-                    .attr('y', 10)
-                    .attr('width', node.width - 20)
-                    .attr('height', node.height - 20)
-                    .attr('overflow', 'hidden');
-                const contentDiv = foreignObject.append('xhtml:div')
-                    .attr('class', 'canvas-node-text')
-                    .style('width', '100%')
-                    .style('height', '100%')
-                    .style('overflow', 'hidden')
-                    .style('color', '#1f2328')
-                    .style('fontFamily', '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif')
-                    .style('fontSize', '13px')
-                    .style('lineHeight', '1.4')
                     .html(`<div style="color:#8b9496;">⌛ 加载中...</div>`);
                 (async () => {
-                    await renderEmbeddedMarkdown(node, null, contentDiv);
+                    await embedNodeMmd(node.file, null, contentDiv, null);
                 })();
+            } else if (node.file.endsWith('.md')) {
+                const contentDiv = foreignObject.append('xhtml:div')
+                    .html(`<div style="color:#8b9496;">⌛ 加载中...</div>`);
+                (async () => {
+                    await renderEmbeddedMarkdown(node, null, contentDiv).then(() => {
+                        postProcessCodeAndDiagrams(document.getElementById(`md_nd_${node.id}`));
+                    });
+                })();
+            } else {
+                const contentDiv = foreignObject.append('xhtml:div')
+                    .attr('class', 'canvas-node-text')
+                    .style('color', '#1f2328')
+                    .style('background-color', 'var(--color-bg)')
+                    .html(`<div style="color:var(--color-warning);display:inline-block; width:100%; text-align:center;" title="📄 ${escapeHtml(node.file)}">📄 ${escapeHtml(basename(node.file) || node.file)}</div>`);
             }
         }
 
@@ -19150,19 +19118,14 @@
         async function deleteEdge(edgeId) {
             // 从内存数据中移除
             canvasData.edges = canvasData.edges.filter(e => e.id !== edgeId);
-
             // 从 DOM 中增量移除（不触发全局刷新）
             removeEdgeFromCanvas(edgeId);
-
             // 持久化到文件
             if (currentFileHandle) {
                 await saveEdgesToFile(canvasData.edges);
             }
-
             showNotification('连线已删除', 'success');
         }
-
-        // ---- 连线增量 DOM 更新（避免全局重渲染导致闪跳） ----
 
         function addEdgeToCanvas(edge) {
             const edgesGroup = d3.select('.canvas-edges');
@@ -19188,16 +19151,13 @@
                 .attr('data-node-id', node.id)
                 .attr('transform', `translate(${node.x}, ${node.y})`)
                 .style('cursor', 'grab');
-
             const EDGE_ZONE = 14;
             let resizeMode = null;
             let initX, initY, initW, initH;
-
             // 在 DOM 上缓存节点尺寸（供委托的 mousemove 使用，避免闭包查找）
             nodeGroup.node().__nodeW = node.width;
             nodeGroup.node().__nodeH = node.height;
             nodeGroup.node().__hoveredEdge = null;
-
             // 拖拽：缩放/移动统一处理（event.dx/dy 是增量值，非累计）
             const drag = d3.drag()
                 .on('start', function (event) {
@@ -19207,7 +19167,6 @@
                     // 在 DOM 元素上存储累计状态（跨 drag 事件帧持久化）
                     this.__accDx = 0;
                     this.__accDy = 0;
-
                     const cursorMap = {
                         e: 'ew-resize', w: 'ew-resize', s: 'ns-resize', n: 'ns-resize',
                         se: 'nwse-resize', nw: 'nwse-resize', sw: 'nesw-resize', ne: 'nesw-resize'
@@ -19222,7 +19181,6 @@
                     this.__accDy += event.dy;
                     const accDx = this.__accDx;
                     const accDy = this.__accDy;
-
                     const ng = d3.select(this);
                     if (!resizeMode) {
                         // ---- 移动模式 ----
@@ -19232,35 +19190,31 @@
                         updateEdgesForNode(node.id);
                         return;
                     }
-
                     // ---- 缩放模式 ----
                     let newW = initW, newH = initH, newX = initX, newY = initY;
-
                     if (resizeMode.includes('e')) newW = initW + accDx;
                     if (resizeMode.includes('w')) { newW = initW - accDx; newX = initX + accDx; }
                     if (resizeMode.includes('s')) newH = initH + accDy;
                     if (resizeMode.includes('n')) { newH = initH - accDy; newY = initY + accDy; }
-
-                    const MIN_W = 100, MIN_H = 80;
+                    // 最小尺寸下限：不低于 40px，且不低于初始尺寸（允许用户缩回原始大小）
+                    const MIN_W = Math.min(100, initW);
+                    const MIN_H = Math.min(80, initH);
                     if (newW < MIN_W) { newW = MIN_W; if (resizeMode.includes('w')) newX = initX + initW - MIN_W; }
                     if (newH < MIN_H) { newH = MIN_H; if (resizeMode.includes('n')) newY = initY + initH - MIN_H; }
-
                     node.x = newX; node.y = newY;
                     node.width = newW; node.height = newH;
-
                     // 更新 DOM 缓存尺寸（事件委托 mousemove 使用）
                     this.__nodeW = newW;
                     this.__nodeH = newH;
-
                     ng.attr('transform', `translate(${newX}, ${newY})`);
                     ng.select('.canvas-node-rect').attr('width', newW).attr('height', newH);
-
                     const fo = ng.select('foreignObject');
                     if (!fo.empty()) {
-                        fo.attr('width', newW - (node.type === 'text' ? 20 : 0))
-                            .attr('height', newH - (node.type === 'text' ? 20 : 0));
+                        // text 节点 foreignObject 在 (10,10) 偏移处；file/image/md 节点同样在 (10,10) 偏移处
+                        const padding = (node.type === 'text' || node.type === 'image' || node.type === 'file') ? 20 : 0;
+                        fo.attr('width', Math.max(0, newW - padding))
+                            .attr('height', Math.max(0, newH - padding));
                     }
-
                     ng.selectAll('.canvas-connector-dot').each(function () {
                         const dot = d3.select(this);
                         const side = dot.attr('data-side');
@@ -19269,7 +19223,6 @@
                         if (side === 'left') dot.attr('cx', -2).attr('cy', newH / 2);
                         if (side === 'right') dot.attr('cx', newW + 2).attr('cy', newH / 2);
                     });
-
                     updateEdgesForNode(node.id);
                 })
                 .on('end', async function (event) {
@@ -19281,7 +19234,6 @@
                     resizeMode = null;
                 });
             nodeGroup.call(drag);
-
             nodeGroup.append('rect')
                 .attr('class', 'canvas-node-rect')
                 .attr('width', node.width)
@@ -19291,20 +19243,14 @@
             } else if (node.type === 'image' || node.type === 'file') {
                 renderFileNode(node, nodeGroup);
             }
-
-            // ---- 渲染四个边的连接点（Figma/Miro 风格） ----
             renderConnectorDots(nodeGroup, node);
         }
-
-        // ---- 增量更新节点 DOM 内容（避免全局重渲染闪跳） ----
 
         async function refreshNodeContentInDOM(node) {
             const nodeGroup = d3.select(`.canvas-node[data-node-id="${node.id}"]`);
             if (nodeGroup.empty()) return;
-
             nodeGroup.selectAll('foreignObject').remove();
             nodeGroup.selectAll('.canvas-connector-dot').remove();
-
             if (node.type === 'text') {
                 const foreignObject = nodeGroup.append('foreignObject')
                     .attr('x', 10)
@@ -19327,7 +19273,6 @@
                     .style('lineHeight', '1.4')
                     .html(renderedText);
             }
-
             renderConnectorDots(nodeGroup, node);
         }
 
@@ -19561,7 +19506,11 @@
                 currentObjectUrls.forEach(url => { try { URL.revokeObjectURL(url); } catch (e) { /* 忽略 */ } });
                 currentObjectUrls.length = 0;
             }
-            contentDiv.innerHTML = `<div class="canvas-container"><svg class="canvas-svg"></svg></div>`;
+            contentDiv.innerHTML = `
+                <div class="canvas-container">
+                    <svg class="canvas-svg"></svg>
+                </div>
+                <span id="selectedNodeFilePath" style="position: absolute; bottom: 20px; left: 10px; font-size:12px;font-weight:500;color:var(--color-primary);z-index: 3004;"></span>`;
             const container = contentDiv.querySelector('.canvas-container');
             const containerWidth = container.clientWidth || 800;
             const containerHeight = container.clientHeight || 600;
@@ -19588,8 +19537,6 @@
             const zoom = initCanvasZoom(svg, g);
 
             // SVG 空白区域点击：关闭面板 + 自适应缩放
-            // 注：D3 zoom 在 pointerdown 中调用 preventDefault()，会抑制后续
-            // mousedown / mouseup / click 等兼容事件。因此必须使用 pointer 事件。
             let svgClickStart = null;
             svg.on('pointerdown', function (event) { svgClickStart = { x: event.clientX, y: event.clientY }; });
             svg.on('pointerup', async function (event) {
@@ -19709,7 +19656,7 @@
                 openCanvasImageFile(node.file);
                 return;
             }
-            if (node.file.endsWith('.canvas') || node.file.endsWith('.excalidraw')) {
+            if (node.file.endsWith('.canvas') || node.file.endsWith('.excalidraw') || node.file.endsWith('.mmd')) {
                 openCanvasLinkedFile(node.file);
                 return;
             }
@@ -19724,9 +19671,6 @@
                     const htmlContent = await markedParse(parseObsidianToHTML(text));
                     contentPanel.innerHTML = `
                         <div class="canvas-edit-controls" id="canvas-edit-controls">
-                            <span style="font-size:13px;font-weight:500;color:var(--color-primary-light);">
-                                📝 ${escapeHtml(node.file)}
-                            </span>
                             <button class="btn btn-primary btn-sm" data-node-id="${node.id}" onclick="editNodeContent(event, this)">
                                 编辑内容
                             </button>
@@ -19739,17 +19683,11 @@
                     contentPanel.dataset.fileContent = encodeURIComponent(text);
                     postProcessMarkdown(contentPanel)
                 } catch (error) {
-                    contentPanel.innerHTML = `
-                         <div class="canvas-edit-controls" id="canvas-edit-controls">
-                             <span style="font-size:13px;font-weight:500;color:var(--color-primary-light);">
-                                 📝 ${escapeHtml(node.file)} (只读)
-                             </span>
-                         </div>
-                         <div style="color:#cf222e; padding:20px;">加载文件失败: ${escapeHtml(error.message)}</div>`;
+                    contentPanel.innerHTML = `<div style="color:#cf222e; padding:20px;">加载文件失败: ${escapeHtml(error.message)}</div>`;
                 }
                 setTimeout(adjustCanvasViewport, 30);
+                setControlsState({ copyBtn: false });
             }
-            setControlsState({ copyBtn: false });
         }
 
         async function openCanvasImageFile(filePath) {
@@ -19765,6 +19703,39 @@
             } catch (error) {
                 console.error('打开图片失败:', error);
                 showNotification('✗ 打开图片失败: ' + error.message, 'error');
+            }
+        }
+
+        async function embedNodeMmd(filePath, text, contentDiv, dom) {
+            let html = '';
+            try {
+                let mermaidCode = text || '';
+                if (contentDiv) {
+                    const fileHandle = await getEmbedNodeFileHandleByPath(filePath);
+                    if (!fileHandle) {
+                        contentDiv.html(`<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:#cf222e;font-size:12px;">无法加载图片！${escapeHtml(filePath)}</div>`);
+                        return;
+                    }
+                    mermaidCode = await getFileContent(fileHandle);
+                }
+                try {
+                    await mermaid.parse(mermaidCode);
+                    const { svg } = await mermaid.render("mermaid_mmd_node" + crypto.randomUUID(), mermaidCode);
+                    html = `<div style="display:flex; justify-content:center; align-items:center; width:100%; height:100%; box-sizing:border-box;">${svg}</div>`;
+                } catch (err) {
+                    const eMermaid = extractErrorMessageMermaid(err);
+                    html = `<div style="color:#cf222e;">渲染出错: ${escMermaid(eMermaid)}</div>`;
+                }
+            } catch (error) {
+                console.error('加载 mmd 文件失败:', error);
+                html = `<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:#cf222e;font-size:12px;">加载文件失败！ ${escapeHtml(filePath)}</div>`;
+            } finally {
+                if (contentDiv) {
+                    contentDiv.html(html);
+                }
+                if (dom) {
+                    dom.innerHTML = html;
+                }
             }
         }
 
@@ -19800,7 +19771,16 @@
                 if (filePath.endsWith('.excalidraw')) {
                     await renderExcalidrawFile(fileText, container, true);
                 } else if (filePath.endsWith('.canvas')) {
+                    // 保存当前父 canvas 数据，renderCanvasFile 会覆盖全局 canvasData
+                    const parentCanvasData = canvasData;
                     await renderCanvasFile(fileText, container);
+                    // 恢复父 canvas 数据，避免关闭模态框后移动节点时连线断开
+                    canvasData = parentCanvasData;
+                    rebuildNodeMap();
+                } else if (filePath.endsWith('.mmd')) {
+                    await embedNodeMmd(filePath, fileText, null, container);
+                } else {
+                    await renderExcalidrawFile(fileText, container, true);
                 }
                 modal.onclick = (e) => {
                     if (e.target === modal) {
@@ -20478,6 +20458,14 @@
             requestAnimationFrame(function () {
                 window.dispatchEvent(new Event('resize'));
             });
+            // 主页面为canvas 时 resize
+            if (canvasData && canvasData.nodes && canvasData.nodes.length > 0) {
+                const canvasContainer = contentMain.querySelector('.canvas-container');
+                if (canvasContainer) {
+                    canvasContainer.style.width = sidebarVisible ? '' : '100%';
+                    adjustCanvasViewport();
+                }
+            }
         }
 
         function showTocToggleBtn(visible) {
@@ -22517,7 +22505,7 @@
             const stack = [{ handle: rootHandle, relPath: '', depth: 0 }];
             while (stack.length > 0) {
                 const { handle: dirHandle, relPath: relRoot, depth } = stack.pop();
-                if (depth > MAX_DIR_DEPTH || isSkipDir(relRoot)) continue;
+                if (depth > MAX_DIR_DEPTH || isSkipDir(dirHandle.name) || isSkipDir(relRoot)) continue;
                 let entries = [];
                 try {
                     for await (const entry of dirHandle.values()) {
@@ -22531,6 +22519,7 @@
                     if (isSkipFile(name)) continue;
                     if (entry.kind === 'directory') {
                         const childRel = joinPath(relRoot, name);
+                        if (isSkipDir(name) || isSkipDir(relRoot)) continue;
                         dirs.push({ entry, childRel });
                     } else {
                         const childRel = joinPath(relRoot, name);
@@ -26852,8 +26841,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         // 列出目录下的所有文件和子目录
         async function getDirectoryEntries(dirHandle) {
             const entries = [];
+            let path = dirHandle.name;
             for await (const rawEntry of dirHandle.values()) {
-                entries.push({ kind: rawEntry.kind, name: rawEntry.name, rawEntry: rawEntry });
+                const name = rawEntry.name;
+                const paths = joinPath(path, name);
+                if (rawEntry.kind === 'directory') {
+                    joinPath(path, name)
+                    if (isSkipDir(name) || isSkipDir(paths)) continue;
+                } else {
+                    if (isSkipFile(name)) continue;
+                }
+                entries.push({ kind: rawEntry.kind, name: name, rawEntry: rawEntry, path: paths });
             }
             return entries;
         }
@@ -27068,11 +27066,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             let opsCount = 0;
 
             while (stack.length > 0) {
-                // 每处理 200 个节点让出主线程，保持 UI 响应
-                if (++opsCount % 200 === 0) {
-                    await yieldToMain();
-                }
-
                 const { node, depth: d, parentPath: pp, parentChildren } = stack.pop();
                 if (d > maxDepth) continue;
 
@@ -27103,6 +27096,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         name: dirNode.name,
                         path: entryPath,
                         depth: d,
+                        open: getDirExpandedState(entryPath),
                         children: childList
                     });
                     stack.push({ node: dirNode, depth: d + 1, parentPath: entryPath, parentChildren: childList });
@@ -27126,6 +27120,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         name: dirEntry.name,
                         path: entryPath,
                         depth: depth,
+                        open: getDirExpandedState(entryPath),
                         children: childTreeData
                     };
                 });
@@ -32449,7 +32444,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         }
                         const depth = entryPath.split(SLASH).length;
                         if (entry.kind === 'directory') {
-                            if (isSkipFile(entryPath) || isSkipDir(name)) continue;
+                            if (isSkipDir(name) || isSkipDir(entryPath)) continue;
                             nodes.push({
                                 id: entryPath,
                                 title: name,
@@ -35191,7 +35186,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 var nameStr = fileName.split(DOT)?.[0]
                 fileList.push({ name: nameStr, nameFull: fileName, value: fileSize, path: relPath ? joinPath(relPath, fileName) : fileName });
             } else {
-                if (depth > MAX_DIR_DEPTH || isSkipDir(relPath)) return [];
+                if (depth > MAX_DIR_DEPTH || isSkipDir(fileName) || isSkipDir(relPath)) return [];
                 for await (const child of handle.values()) {
                     const childRelPath = child.kind === 'file' ? relPath : joinPath(relPath, child.name);
                     const childList = await getCustomFileList(child, depth + 1, childRelPath, callback);
@@ -38070,14 +38065,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             let index = 1;
             for (const entry of entries) {
                 const name = entry.name
-                if (entry.kind === 'file' &&
-                    (name.endsWith('.md')|| name.endsWith('.canvas')|| name.endsWith('.excalidraw') || isPicImage(getExt(name)))) {
+                if (entry.kind === 'file') {
                     if (index > 20) {
                         showNotification('⚠️ 目录下文件过多，最多显示前20个文件', 'warning');
                         break;
                     }
-                    const path = joinPath(relPath, entry.rawEntry.name);
-                    children.push({ name: name, id: `node_${index}`, path: path });
+                    const path = joinPath(relPath, name);
+                    const isfile = name.endsWith('.md') || name.endsWith('.mmd') || isPicImage(getExt(name));
+                    children.push({ name: name, id: `node_${index}`, path: path, isfile: !isfile });
                     index++;
                 }
             }
@@ -38090,19 +38085,29 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         function generateCanvasFolderJSON({
             folderName,
-            children, // [{ name: string, id?: string, path: string }]
-            canvasCenter = { x: 600, y: 400 }, // 中心点在画布坐标系的坐标
+            children, // [{ name: string, id?: string, path: string, isfile?: boolean }]
+            canvasCenter = { x: 600, y: 400 },
             NODE_W = 200,
             NODE_H = 200,
-            CENTER_W = 100,      // 中心节点宽度
-            CENTER_H = 70,       // 中心节点高度
-            initialPadding = 120, // 中心节点到第一圈节点的间距
-            ringGap = 120,       // 相邻圈层之间的间距
-            nodeGap = 60,        // 同一圈层中节点之间的间距
+            CENTER_W = 200,
+            CENTER_H = 70,
+            initialPadding = 120,
+            ringGap = 120,
+            nodeGap = 60,
+            FILE_H = 40,
         } = {}) {
             const cx = canvasCenter.x;
             const cy = canvasCenter.y;
             const n = children.length;
+            // ========== 工具：根据 child 获取节点实际尺寸 ==========
+            function getNodeDims(child) {
+                const isfile = !!child.isfile;
+                return {
+                    w: NODE_W,
+                    h: isfile ? FILE_H : NODE_H,
+                    isfile,
+                };
+            }
             // 如果没有子节点，直接返回中心节点
             if (n === 0) {
                 return {
@@ -38137,34 +38142,40 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const rightX = rectCx + halfW;
                 const topY = rectCy - halfH;
                 const bottomY = rectCy + halfH;
-
                 const dl = Math.abs(leftX - pointX);
                 const dr = Math.abs(rightX - pointX);
                 const dt = Math.abs(topY - pointY);
                 const db = Math.abs(bottomY - pointY);
-
                 const min = Math.min(dl, dr, dt, db);
                 if (min === dl) return "left";
                 if (min === dr) return "right";
                 if (min === dt) return "top";
                 return "bottom";
             }
-            // 根据半径和节点宽度，计算当前圈层最多能容纳多少个节点（保证不重叠）
-            function getRingCapacity(radius, size, gap) {
-                const chord = size + gap; // 两个节点中心点之间的最小距离
+            // 弦长取决于"投影到切线方向的尺寸"，简化为用该圈中最大尺寸估算。
+            function getRingCapacity(radius, maxW, maxH, gap) {
+                // 用对角线投影近似，取 max(maxW, maxH) 作为弦长估计
+                const chord = Math.max(maxW, maxH) + gap;
                 if (chord >= 2 * radius) return 1;
                 const angle = Math.asin(chord / (2 * radius));
                 return Math.max(1, Math.floor(Math.PI / angle));
             }
             const nodes = [];
             const edges = [];
-            const halfW = NODE_W / 2;
-            const halfH = NODE_H / 2;
             const centerHalfW = CENTER_W / 2;
             const centerHalfH = CENTER_H / 2;
-            // 当前圈层的半径，从内向外扩展
-            let currentRadius = Math.max(centerHalfW, centerHalfH) + Math.max(halfW, halfH) + initialPadding;
-            // center node（左上角坐标）
+            // 预处理：为每个 child 计算尺寸
+            const enriched = children.map(c => ({
+                ...c,
+                _dims: getNodeDims(c),
+            }));
+            // 当前圈层半径：用全局最大节点尺寸做初始值，保证任何节点都放得下
+            const globalMaxHalfW = NODE_W / 2;
+            const globalMaxHalfH = NODE_H / 2;
+            let currentRadius =
+                Math.max(centerHalfW, centerHalfH) +
+                Math.max(globalMaxHalfW, globalMaxHalfH) +
+                initialPadding;
             const centerId = uid("node");
             nodes.push({
                 id: centerId,
@@ -38175,36 +38186,66 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 width: CENTER_W,
                 height: CENTER_H,
             });
-            // 拷贝一份数据进行分圈处理
-            let remainingChildren = [...children];
+            // 分圈处理
+            let remainingChildren = [...enriched];
             let ringIndex = 0;
-
             while (remainingChildren.length > 0) {
-                // 计算当前圈层容量
-                const capacity = getRingCapacity(currentRadius, Math.max(NODE_W, NODE_H), nodeGap);
-                const nodesInThisRing = Math.min(remainingChildren.length, capacity);
-                const ringChildren = remainingChildren.splice(0, nodesInThisRing);
-                // 奇偶圈层交错排布，使外圈节点对准内圈节点的缝隙，像蜂窝一样
+                // 先试探性计算当前圈容量（用全局最大尺寸做保守估计）
+                let capacity = getRingCapacity(
+                    currentRadius,
+                    NODE_W,
+                    NODE_H,
+                    nodeGap
+                );
+                // 取出本圈节点
+                let nodesInThisRing = Math.min(remainingChildren.length, capacity);
+                let ringChildren = remainingChildren.slice(0, nodesInThisRing);
+                // 如果本圈全是 file 节点（高度小），可以适当收紧半径
+                const ringMaxHalfH = Math.max(...ringChildren.map(c => c._dims.h / 2));
+                const ringMaxHalfW = Math.max(...ringChildren.map(c => c._dims.w / 2));
+                // 重新计算本圈"理想半径"：中心节点边缘 + 本圈最大半尺寸 + padding
+                const idealRadius =
+                    Math.max(centerHalfW, centerHalfH) +
+                    Math.max(ringMaxHalfW, ringMaxHalfH) +
+                    initialPadding +
+                    ringIndex * (Math.max(NODE_W, NODE_H) + ringGap);
+                // 取较大者，确保既不重叠也不过分稀疏
+                const effectiveRadius = Math.max(currentRadius, idealRadius);
+                // 用实际尺寸重新计算容量（可能容纳更多）
+                const refinedCapacity = getRingCapacity(
+                    effectiveRadius,
+                    Math.max(...ringChildren.map(c => c._dims.w)),
+                    Math.max(...ringChildren.map(c => c._dims.h)),
+                    nodeGap
+                );
+                // 如果精算后容量更大，尝试多放几个节点
+                if (refinedCapacity > nodesInThisRing && remainingChildren.length > nodesInThisRing) {
+                    nodesInThisRing = Math.min(remainingChildren.length, refinedCapacity);
+                    ringChildren = remainingChildren.slice(0, nodesInThisRing);
+                }
+                // 确认取出
+                remainingChildren.splice(0, nodesInThisRing);
+                // 奇偶圈层交错排布
                 const angleOffset = (ringIndex % 2 === 1) ? (Math.PI / nodesInThisRing) : 0;
                 for (let i = 0; i < nodesInThisRing; i++) {
                     const child = ringChildren[i];
                     const childId = child.id ?? uid("node");
-                    // 均分当前圈的角度，从顶部开始，顺时针
+                    const { w: childW, h: childH, isfile } = child._dims;
+                    const childHalfW = childW / 2;
+                    const childHalfH = childH / 2;
+                    // 均分角度，从顶部开始顺时针
                     const angle = (2 * Math.PI * i) / nodesInThisRing - Math.PI / 2 + angleOffset;
-                    const childCenterX = cx + currentRadius * Math.cos(angle);
-                    const childCenterY = cy + currentRadius * Math.sin(angle);
-                    const childX = childCenterX - halfW;
-                    const childY = childCenterY - halfH;
+                    const childCenterX = cx + effectiveRadius * Math.cos(angle);
+                    const childCenterY = cy + effectiveRadius * Math.sin(angle);
                     nodes.push({
                         id: childId,
                         type: 'file',
                         file: child.path,
-                        x: childX,
-                        y: childY,
-                        width: NODE_W,
-                        height: NODE_H,
+                        x: childCenterX - childHalfW,
+                        y: childCenterY - childHalfH,
+                        width: childW,
+                        height: childH,
                     });
-                    // 计算中心节点边界交点
                     const fromIntersection = rayAabbIntersection(
                         childCenterX,
                         childCenterY,
@@ -38213,17 +38254,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         centerHalfW,
                         centerHalfH
                     );
-                    // 计算子节点边界交点
                     const toIntersection = rayAabbIntersection(
                         cx,
                         cy,
                         childCenterX,
                         childCenterY,
-                        halfW,
-                        halfH
+                        childHalfW,  // 实际半宽
+                        childHalfH,  // 实际半高
                     );
                     const fromSide = pickSide(fromIntersection.x, fromIntersection.y, cx, cy, centerHalfW, centerHalfH);
-                    const toSide = pickSide(toIntersection.x, toIntersection.y, childCenterX, childCenterY, halfW, halfH);
+                    const toSide = pickSide(toIntersection.x, toIntersection.y, childCenterX, childCenterY, childHalfW, childHalfH);
                     edges.push({
                         id: uid("edge"),
                         fromNode: centerId,
@@ -38232,12 +38272,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         toSide,
                     });
                 }
-                // 计算下一圈的半径
-                currentRadius += Math.max(NODE_W, NODE_H) + ringGap;
+                // 下一圈半径递增
+                currentRadius = effectiveRadius + Math.max(NODE_W, NODE_H) + ringGap;
                 ringIndex++;
             }
             return { nodes, edges };
         }
+
     </script>
 </body>
 
