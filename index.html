@@ -1244,15 +1244,20 @@
             position: relative;
             width: 100%;
             height: 100%;
+            box-sizing: border-box;
             display: flex;
             align-items: flex-start;
             justify-content: flex-start;
-            overflow: auto;
-            padding: 16px;
+            overflow: hidden;
         }
 
         #viewer-image:hover {
             cursor: zoom-in;
+        }
+
+        #viewer-image.dragging,
+        #viewer-svg-wrapper.dragging {
+            cursor: grabbing !important;
         }
 
         #viewer-svg-wrapper:hover {
@@ -13095,15 +13100,15 @@
         const LOCAL_LLM_CONTEXT_LENGTH = 10000;
         // nginx 配置地址
         const NGINX_CONF_PATH = '/usr/local/etc/openresty/sites/index.conf';
-        // 文件树中忽略的目录
+        // 文件树中忽略的目录前缀
         const DIR_BLACKLIST = [".", "$", ".obsidian", ".venv", ".vscode", ".git", "assets", ".trae", ".claude", ".idea",
             'node_modules', 'vendor', 'dist', 'build', 'out', 'target', '__pycache__'];
-        // 文件树中忽略的文件后缀
+        // 文件树中忽略的文件前缀
         const FILE_BLACKLIST = ['.', '$', '.bobconfig', '.itermexport', '.DS_Store', '.gitignore', '.rayconfig'];
         // 随机打开功能的目录过滤
         const RANDOM_DIR_WHITELIST = ["pic"];
         const RANDOM_DIR_BLACKLIST = ['note/moc', 'note/templates', 'deleted', 'data', 'code'];
-        // code 目录下的 .html 文件显示代码而非渲染
+        // 显示渲染而非代码的目录前缀
         const HTML_CODE_SHOW_BLACKLIST = ["note"];
 
         // AI 助手预设 Prompt 配置，每个 key 对应一种处理模式
@@ -13113,7 +13118,7 @@
                 display: true,
                 ext: ".md",
                 systemPrompt: '你是一名专业的信息提炼专家。你的任务是阅读用户提供的内容，提取核心观点和关键信息，输出结构清晰、语言精练的总结。规则：1.用简洁的语言概括主旨，去掉冗余修饰和重复表述。2.保留所有关键数据、结论和重要观点。3.如果内容有明确的结构层次，总结时也应体现层次。4.输出纯总结内容，不加"以下是总结"等引导语，不添加任何解释性文字或评论。',
-                value: '对文件内容进行简洁总结，保留主要观点和核心要点。',
+                value: '对文件内容进行简洁总结，保留主要观点和核心要点，去掉冗余信息和重复表述，使其更易于理解和记忆',
                 title: '总结结果'
             },
             analyze: {
@@ -13121,7 +13126,7 @@
                 display: true,
                 ext: ".md",
                 systemPrompt: '你是一名深度分析专家，擅长解读文本、代码和数据。你的任务是对用户提供的内容进行全面分析，揭示其深层含义、逻辑结构和关键要点。规则：1.对于文本内容：解读核心论点、论证逻辑、隐含前提和潜在影响。2.对于代码内容：总结功能用途、实现原理、架构设计和潜在改进点。3.对于数据内容：识别趋势、异常值和关键洞察。4.分析应有条理，按重要性递减排列。5.输出纯分析内容，不加"以下是分析"等引导语，不添加任何多余的解释性文字。',
-                value: '解读分析文件内容，解释其含义、背景和关键点，如果是代码，总结代码的功能和实现原理。',
+                value: '解读分析文件内容，解释其含义、背景和关键点，如果是代码，总结代码的功能和实现原理，如果是数据，分析数据的趋势和洞察',
                 title: '分析结果'
             },
             reformat: {
@@ -13129,7 +13134,7 @@
                 display: true,
                 ext: ".md",
                 systemPrompt: '你是一名专业的文档排版专家。你的任务是对用户提供的内容进行格式优化，使其结构清晰、层次分明、易于阅读。规则：1.保留原文所有核心内容和措辞，不增删实质信息。2.修复标题层级关系，确保序号连贯且逻辑正确（如1.→1.1→1.1.1）。3.合理使用段落分隔，每个独立主题或论点单独成段。4.优化列表格式，适合用列表的地方转为有序/无序列表。5.对齐同类内容的格式风格，统一标点和缩进。6.输出纯排版结果，不加"以下是排版结果"等引导语，不添加任何额外的解释性文字。',
-                value: '对文件内容进行重新排版，优化格式，使标题序号顺序正确，不改变原有核心内容，使其更易读。',
+                value: '对文件内容进行重新排版，优化格式，使标题序号顺序正确，不改变原有核心内容，使其更易读，更清晰',
                 title: '重新排版结果'
             },
             mermaid: {
@@ -13137,7 +13142,7 @@
                 display: true,
                 ext: ".mmd",
                 systemPrompt: '你是一名专业的 Mermaid 图表工程师。请严格遵守以下规范生成 Mermaid 代码。\n【任务】根据用户的描述，生成语法正确、可直接在 Mermaid Live Editor / GitHub / Notion 中渲染的图表代码，代码语法严格遵循下面的不同图形的语法规则约束\n【支持的图表类型及关键语法约束】\n1. 流程图 (flowchart TD/LR/BT/RL)：\n   - 节点：A["文字"]，连接：-->（实线箭头）、---（实线）、-.->（虚线）、==>（粗箭头）\n   - 子图：subgraph "标题" ... end\n   - 样式：style A fill:#fff,stroke:#333\n2. 时序图 (sequenceDiagram)：\n   - 参与者：participant A / actor A\n   - 箭头：->>、-->>、->、-->>、-x、--x\n   - 激活：activate/deactivate，循环：loop ... end，备选：alt ... else ... end\n3. 类图 (classDiagram)：\n   - 类：class A { +字段:类型 +方法() }\n   - 关系：<|--、*--、o--、-->、..>\n4. 状态图 (stateDiagram-v2)：\n   - 状态：[ * ] 起始/终止，state "描述" as ID\n   - 转换：-->，条件：-->|条件文本|\n   - 注意：若状态描述包含冒号，使用 state "描述" as ID\n5. 甘特图 (gantt)：\n   - 必须包含 title 和 dateFormat\n   - 任务段：任务名 : 状态, 起点, 终点 （状态可选 done/active/crit，不加方括号）\n   - 示例：任务A : done, 2024-01-01, 2024-01-10\n6. ER图 (erDiagram)：\n   - 实体：ENTITY { 属性类型 属性名 }\n   - 关系：||--o{ 表示一对多，关系文本写在中间行\n7. 用户旅程图 (journey)：\n   - 标题：title，区段：section 区段名\n   - 任务：任务名: 评分: 角色1, 角色2\n8. Git图 (gitGraph)：\n   - 分支：branch 分支名，检出：checkout 分支名\n   - 提交：commit [id: "ID"] 或 commit "描述"\n9. 思维导图 (mindmap)：\n   - 必须使用纯缩进结构，禁止出现任何箭头（如 -->、---）和 subgraph 关键字\n   - 所有节点统一使用方括号 ["文本"]（包括根节点和各级子节点）\n   - 示例：\n     mindmap\n       ["根节点"]\n         ["子节点1"]\n           ["孙节点"]\n10. 饼图 (pie)：\n    - 标题：title，数据：分区名 : 数值\n11. 时间线 (timeline)：\n    - 标题：title，区段：section 区段名\n    - 事件：事件名 : 描述\n12. 看板 (kanban)：\n    - 列定义：列名[ "显示名" ]（如 Todo[ "待办" ]）\n    - 卡片：在列下方缩进写 [ "卡片内容" ]\n    - 示例：\n      kanban\n        Todo[ "待办" ]\n          [ "任务1" ]\n          [ "任务2" ]\n        Doing[ "进行中" ]\n13. 四象限图 (quadrantChart)：\n    - 标题：title，x轴：x-axis 左值 --> 右值，y轴：y-axis 底值 --> 顶值\n    - 象限：quadrant-1 区域描述，点：点 "名称" 在 [x, y]\n14. 桑基图 (sankey-beta)：\n    - 节点：节点列表，流动：源节点 --> 目标节点 : 流量值\n15. XY图表 (xychart-beta)：\n    - 标题：title，x轴：x-axis [值列表]，y轴：y-axis "单位"\n    - 数据：line [数据数组] 或 bar [数据数组]\n16. 块状图 (block-beta)：\n    - 布局声明：block-beta，列数：columns 数值\n    - 块定义：块名["标签"]，连接：-->，空格/换行控制布局\n17. 架构图 (architecture-beta)：\n    - 服务：service 名称(标签)，组：group 名称\n    - 连接：名称:连接类型 --> 名称\n18. 数据包图 (packet-beta)：\n    - 数据包定义：packet 名称 行数\n    - 字段：字段名: 位数\n【通用规则】\n- 代码必须包裹在 \`\`\`mermaid 代码块中，代码块前后不得有任何解释性文字、引导语或额外说明。\n- 第一行必须声明图表类型（如 flowchart TD 或 mindmap）。\n- 节点 ID 使用英文字母数字组合，显示文字用双引号包裹（如 A["显示文字"]）。\n- 双引号内的文字可包含中文、英文、括号、逗号等，无需转义。\n- 禁止未闭合的引号或方括号。\n- 所有节点必须有标签文字，禁止空节点。\n- 层级关系清晰，避免过多交叉连线。节点数超过15个建议使用子图分组（mindmap 除外）。\n- 样式颜色使用十六进制值，示例：style A fill:#e6f3ff,stroke:#333。\n- 不得嵌入任何版权素材、品牌标识或水印。\n【输出格式】\n- 只输出包含 Mermaid 代码块的原始结果。\n- 不添加任何注释、解释、引导语（如“以下是总结”、“根据您提供的”等）。\n- 直接输出代码块，不要有任何多余文字',
-                value: '解读分析文件内容，根据分析结果输出合适的 mermaid 图形代码',
+                value: '解读分析文件内容，根据分析结果输出合适的 mermaid 图形代码，并严格遵守 Mermaid 语法规范，确保代码可直接渲染',
                 title: 'Mermaid 图'
             },
             drawio: {
@@ -13145,7 +13150,7 @@
                 display: true,
                 ext: ".drawio",
                 systemPrompt: `你是一名专业的 draw.io (diagrams.net) 图表工程师。请严格遵守以下规范生成可导入 draw.io 的 XML 代码：\n【任务】根据用户的描述，生成完整的 draw.io XML 文件内容，可直接保存为 .drawio 或 .xml 文件并在 draw.io 中打开渲染。\n【输出格式要求】1.输出必须是完整的 XML 文档，包含 <mxfile> 和 <diagram> 根节点。2.图表内容包裹在 <mxGraphModel> 内，包含 <root> 节点。3.必须包含两个基础节点（id="0" 和 id="1"），它们是 draw.io 的保留根节点。4.每个图形元素使用 <mxCell> 标签定义，包含 id、value、style、vertex/edge、parent 等属性。5.连线使用 edge="1" 的 <mxCell>，通过 source 和 target 属性指定连接的节点 ID。\n【样式规范】节点 style 属性使用分号分隔的键值对。常用形状：ellipse（椭圆）、rhombus（菱形/判断）、cylinder（圆柱/数据库）、hexagon（六边形）、arrowRight（箭头）。配色使用柔和的商务色系：蓝色系 fillColor=#dae8fc;strokeColor=#6c8ebf，绿色系 fillColor=#d5e8d4;strokeColor=#82b366，橙色系 fillColor=#ffe6cc;strokeColor=#d6b656，红色系 fillColor=#f8cecc;strokeColor=#b85450。连线样式：edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;。字体大小统一12-14px，使用 html=1 启用HTML标签。\n【布局要求】节点尺寸统一（如 width=160 height=60），同级节点水平或垂直对齐，节点间距保持一致（建议水平间距80-100，垂直间距60-80），画布默认大小800x600根据内容动态调整。\n【质量要求】所有ID必须唯一且递增。每个连线必须有合法的source和target。XML必须格式良好（well-formed），可直接解析。生成的代码可在draw.io中零修改直接打开。\n【商业适用性】输出的XML代码为原始创作，用户可自由用于商业用途。不嵌入任何外部图片资源或品牌元素。图表风格专业、简洁，适合商业报告和技术文档。\n\n重要：1.输出代码不添加任何注释和说明\n2.不加"以下是总结、根据您提供的"等引导语，不添加任何解释性文字或评论，直接输出结果不要废话`,
-                value: '解读分析文件内容，根据分析结果输出合适的 Drawio 图形代码',
+                value: '解读分析文件内容，根据分析结果输出合适的 Drawio 图形代码，并严格遵守 Drawio XML 语法规范，确保代码可直接导入渲染',
                 title: 'Drawio 图'
             },
             excalidraw: {
@@ -13153,7 +13158,7 @@
                 display: true,
                 ext: ".excalidraw",
                 systemPrompt: `你是一名专业的 Excalidraw 图表工程师。请严格遵守以下规范生成 Excalidraw JSON 代码：\n【任务】根据用户的描述，生成完整的 Excalidraw JSON 文件内容，可直接在 Excalidraw (excalidraw.com) 中通过"粘贴到画布"或"导入"功能加载渲染。\n【输出格式要求】1.输出必须是完整合法的 JSON 对象，包含顶层键：type、version、source、elements、appState、files。2.type 固定为 "excalidraw"，version 固定为 2，source 固定为 "https://excalidraw.com"。3.elements 为数组，包含所有图形元素。4.每个元素必须包含以下必需字段：id（唯一字符串）、type（rectangle|ellipse|diamond|line|arrow|text）、x/y（左上角坐标）、width/height（尺寸）、strokeColor（描边颜色十六进制）、backgroundColor（填充颜色，"transparent"表示透明）、fillStyle（hachure|cross-hatch|solid）、strokeWidth（1|2|4）、roughness（0精细|1中等|2手绘）、opacity（0-100）、angle（0弧度）、seed（随机整数）、version（版本号整数）、versionNonce（随机整数）、isDeleted（false）、boundElements（null或数组）、updated（时间戳）、link（null）、locked（false）、groupIds（空数组）。\n【文字元素特殊要求】type为"text"的元素额外需要：text（文字内容）、fontSize（建议16-28）、fontFamily（1手绘体|2等宽体|3衬线体|5默认体）、textAlign（left|center|right）、verticalAlign（top|middle）、baseline（约fontSize的0.7倍）、containerId（null或所属形状id）、originalText（与text相同）、lineHeight（1.25）。\n【箭头/连线元素要求】type为"arrow"或"line"的元素额外需要：points（[[0,0],[dx,dy],...]数组）、startBinding/endBinding（null或{elementId,focus,gap}）、startArrowhead/endArrowhead（null|arrow|dot|triangle）、lastCommittedPoint（null）。\n【风格规范】推荐roughness:1（保持手绘风格），推荐fillStyle:"hachure"（经典斜线填充）。配色方案：标题强调strokeColor="#1e1e1e"backgroundColor="#a5d8ff"，流程节点strokeColor="#1864ab"backgroundColor="#d0ebff"，判断节点strokeColor="#e67700"backgroundColor="#ffec99"，终止节点strokeColor="#2f9e44"backgroundColor="#d8f5a2"，警告错误strokeColor="#c92a2a"backgroundColor="#ffc9c9"。元素尺寸建议：标准节点160x60，判断菱形140x100，标题fontSize 28，正文fontSize 16-20。坐标系统从(0,0)开始，建议内容起始位置(200,100)。appState配置：{"viewBackgroundColor":"#ffffff","gridSize":null}。\n【质量要求】所有id必须唯一。绑定关系必须双向一致（形状的boundElements包含文字id，文字的containerId指向形状id）。JSON必须合法可解析，无尾逗号无注释。生成的JSON可在excalidraw.com中直接导入并正确渲染。seed和versionNonce使用随机正整数确保渲染一致性。\n【商业适用性】输出的JSON代码为原始创作，用户可自由用于商业用途。不嵌入外部图片或品牌素材。图表风格保持Excalidraw特色的手绘美感，同时信息结构专业清晰。\n\n重要：1.输出代码不添加任何注释和说明\n2.不加"以下是总结、根据您提供的"等引导语，不添加任何解释性文字或评论，直接输出结果不要废话`,
-                value: '解读分析文件内容，根据分析结果输出合适的 Excalidraw 图形代码',
+                value: '解读分析文件内容，根据分析结果输出合适的 Excalidraw 图形代码，并严格遵守 Excalidraw JSON 语法规范，确保代码可直接导入渲染',
                 title: 'Excalidraw 图'
             },
             operation: {
@@ -13168,7 +13173,7 @@
         // 新建文件的模板列表
         const NEW_FILES = [
             { key: '日记', name: "diary.md", ext: ".md" },
-            { key: '文件', name: "untitled.txt", ext: ".md" },
+            { key: '文本', name: "untitled.txt", ext: ".txt" },
             { key: '目录', name: "新建目录" },
             { key: 'md', name: "untitled.md", ext: ".md" },
             { key: 'json', name: "untitled.json", ext: ".json" },
@@ -13177,7 +13182,6 @@
             { key: 'html', name: "untitled.html", ext: ".html" },
             { key: 'py', name: "untitled.py", ext: ".py" },
             { key: 'java', name: "untitled.java", ext: ".java" },
-            { key: 'txt', name: "untitled.txt", ext: ".txt" },
             { key: 'sql', name: "untitled.sql", ext: ".sql" },
         ]
         // 右键菜单中的快捷操作
@@ -13467,6 +13471,14 @@
         let currentActiveItem = null;       // 当前激活的文件项
         let currentFileHandle = null;       // 当前文件句柄
         let currentZoom = 1;                // 当前图片缩放比例
+        let currentTranslateX = 0;           // 当前图片平移 X
+        let currentTranslateY = 0;           // 当前图片平移 Y
+        let isDragging = false;              // 是否正在拖拽
+        let dragStartX = 0;                  // 拖拽起始 X
+        let dragStartY = 0;                  // 拖拽起始 Y
+        let dragTranslateX = 0;              // 拖拽起始 translateX
+        let dragTranslateY = 0;              // 拖拽起始 translateY
+        let _imageDragEventsInited = false;  // 全局图片拖拽事件是否已初始化
         let currentJsMind = null;           // jsMind 实例
         let markdownSelectionState = { range: null, text: '' }; // Markdown 选区浮动工具栏状态
         let preSearchExpandedStates = new Map(); // 保存搜索前的展开状态
@@ -14635,9 +14647,19 @@
             await Promise.resolve(destroyEverything());
         }
 
+        function cleanupImageDragEvents() {
+            isDragging = false;
+            _imageDragEventsInited = false;
+            document.removeEventListener('mousemove', _onImageMouseMove);
+            document.removeEventListener('mouseup', _onImageMouseUp);
+            window.removeEventListener('resize', _onImageResize);
+            _cleanupImageListeners();
+        }
+
         async function destroyEverything() {
             disposeAllCharts();
             cleanupObjectUrls();
+            cleanupImageDragEvents();
             showTocToggleBtn(false);
             hideMarkdownSelectionToolbar();
             // 并发清理各模块，等待所有清理完成再返回，避免竞态
@@ -15517,28 +15539,60 @@
             showNotification(`🎲 随机打开: ${fileName}`, 'success');
         }
 
-        function zoomImage(delta) {
+        function applyImageTransform(element) {
+            if (!element) return;
+            element.style.transform = `translate(${currentTranslateX}px, ${currentTranslateY}px) scale(${currentZoom})`;
+        }
+
+        // 以鼠标位置为中心缩放
+        function zoomImage(delta, mouseX, mouseY) {
             const element = document.getElementById('viewer-image') || document.getElementById('viewer-svg-wrapper');
             if (!element) return;
+            const oldZoom = currentZoom;
             currentZoom = Math.max(0.2, Math.min(5, currentZoom + delta));
-            element.style.transform = `scale(${currentZoom})`;
+            const ratio = currentZoom / oldZoom;
+            if (mouseX !== undefined && mouseY !== undefined) {
+                const container = document.getElementById('image-viewer-container');
+                if (container) {
+                    const rect = container.getBoundingClientRect();
+                    // 鼠标在容器内的相对位置
+                    const cx = mouseX - rect.left;
+                    const cy = mouseY - rect.top;
+                    currentTranslateX = cx - (cx - currentTranslateX) * ratio;
+                    currentTranslateY = cy - (cy - currentTranslateY) * ratio;
+                }
+            } else {
+                const container = document.getElementById('image-viewer-container');
+                if (container) {
+                    const cx = container.clientWidth / 2;
+                    const cy = container.clientHeight / 2;
+                    currentTranslateX = cx - (cx - currentTranslateX) * ratio;
+                    currentTranslateY = cy - (cy - currentTranslateY) * ratio;
+                }
+            }
+            applyImageTransform(element);
         }
 
         function resetZoom() {
-            const element = document.getElementById('viewer-image') || document.getElementById('viewer-svg');
-            if (!element) return;
             if (document.getElementById('viewer-svg-wrapper')) {
                 fitSvgToScreen();
+            } else if (document.getElementById('viewer-image')) {
+                fitImageToContainer();
             } else {
                 currentZoom = 1;
-                element.style.transform = `scale(${currentZoom})`;
+                currentTranslateX = 0;
+                currentTranslateY = 0;
+                const element = document.getElementById('viewer-image') || document.getElementById('viewer-svg');
+                if (element) {
+                    applyImageTransform(element);
+                }
             }
         }
 
         function fitSvgToScreen() {
             const wrapper = document.getElementById('viewer-svg-wrapper');
             const svg = document.getElementById('viewer-svg');
-            const container = document.querySelector('.image-viewer-container');
+            const container = document.getElementById('image-viewer-container');
             if (!wrapper || !svg || !container) return;
             const containerWidth = container.clientWidth - 40;
             const containerHeight = container.clientHeight - 40;
@@ -15563,7 +15617,24 @@
             const scaleX = containerWidth / svgWidth;
             const scaleY = containerHeight / svgHeight;
             currentZoom = Math.min(scaleX, scaleY, 1);
-            wrapper.style.transform = `scale(${currentZoom})`;
+            currentTranslateX = 0;
+            currentTranslateY = 0;
+            applyImageTransform(wrapper);
+        }
+
+        function fitImageToContainer() {
+            const img = document.getElementById('viewer-image');
+            const container = document.getElementById('image-viewer-container');
+            if (!img || !container || !img.naturalWidth) return;
+            const cw = container.clientWidth;
+            const ch = container.clientHeight;
+            if (cw <= 0 || ch <= 0) return;
+            const scaleX = cw / img.naturalWidth;
+            const scaleY = ch / img.naturalHeight;
+            currentZoom = Math.min(scaleX, scaleY, 1);
+            currentTranslateX = (cw - img.naturalWidth * currentZoom) / 2;
+            currentTranslateY = (ch - img.naturalHeight * currentZoom) / 2;
+            applyImageTransform(img);
         }
 
         async function refreshTree() {
@@ -15663,15 +15734,12 @@
 
         //重置搜索并恢复文件树状态 功能:清空搜索结果,恢复目录展开状态,选中最后一次点击的文件
         function resetSearchAndRestoreState() {
-            // 移除搜索隐藏类（一次回流恢复所有节点的显示）
             const hiddenEls = treeElement.querySelectorAll('.search-hidden');
             for (let i = 0; i < hiddenEls.length; i++) {
                 hiddenEls[i].classList.remove('search-hidden');
             }
-            // 移除无匹配提示
             const noMatchTip = treeElement.querySelector('.no-match-tip');
             if (noMatchTip) noMatchTip.remove();
-            // 恢复展开状态
             const details = treeElement.querySelectorAll('details');
             for (let i = 0; i < details.length; i++) {
                 const detail = details[i];
@@ -15726,10 +15794,8 @@
             for (let i = 0; i < details.length; i++) {
                 details[i].classList.add('search-hidden');
             }
-            // 用 Set 去重父级 details，避免重复操作
             const parentsToShow = new Set();
             let hasMatch = false;
-            // 匹配文件
             for (let i = 0; i < fileItems.length; i++) {
                 const item = fileItems[i];
                 if (item.textContent.toLowerCase().includes(keywordLower)) {
@@ -16610,7 +16676,7 @@
             // 隐藏散落分页按钮
             const pager = document.getElementById('photo-scatter-pager');
             const pagerDisplay = pager ? pager.style.display : 'none';
-            if (pager) pager.style.display = 'none';
+            if (pager) { photoLayoutDirPath = ''; pager.style.display = 'none'; }
 
             const modal = document.createElement('div');
             modal.style.cssText = `position: fixed;top: 0;left: 0;width: 100%;height: 100%; background: rgba(15, 23, 42, 0.42);backdrop-filter: blur(4px);-webkit-backdrop-filter: blur(4px);display: flex;justify-content: center;align-items: center; z-index: 10000;cursor: pointer;opacity: 0;transition: opacity 0.03s ease;`;
@@ -16635,7 +16701,7 @@
             const actualImg = new Image();
             // 渲染图片函数（用于初始加载和切换图片时调用）
             const renderImage = async (imgUrl) => {
-                const fullUrl = await photoLoadFromLocal(imgUrl);
+                const fullUrl = await photoLoadFromLocal(imgUrl, false, photoLayoutDirPath);
                 actualImg.src = fullUrl;
             };
             actualImg.onload = () => {
@@ -16666,7 +16732,7 @@
             };
             let currentUrl = originUrl || imgSrc;
             // 首次加载也用 photoLoadFromLocal 转换
-            photoLoadFromLocal(currentUrl).then(src => {
+            photoLoadFromLocal(currentUrl, false, photoLayoutDirPath).then(src => {
                 actualImg.src = src;
             });
             const controls = document.createElement('div');
@@ -17765,12 +17831,12 @@
         // 渲染图片或SVG文件
         async function renderImageFile(file) {
             aiFabContainer.style.display = 'none';
+            cleanupObjectUrls();
             if (file.name.endsWith('.svg')) {
                 const text = await file.text();
-                // 使用 sandbox iframe 安全渲染 SVG 文件，防止 SVG 内嵌脚本
                 contentMain.innerHTML = `
-                    <div class="image-viewer-container" style="padding: 20px; position: relative; z-index: 10; width: 100%; height: 100%; box-sizing: border-box; overflow: auto;">
-                        <div id="viewer-svg-wrapper" style="display: inline-block; transform-origin: top left; transition: transform 0.2s ease;">
+                    <div id="image-viewer-container" class="image-viewer-container" style="padding: 20px; position: relative; z-index: 10; width: 100%; height: 100%; box-sizing: border-box; overflow: auto;">
+                        <div id="viewer-svg-wrapper" style="display: inline-block; transform-origin: 0 0;">
                             <div id="viewer-svg" class="svg-container" style="display: block;">
                                 ${text}
                             </div>
@@ -17782,20 +17848,111 @@
                 const imageUrl = URL.createObjectURL(file);
                 currentObjectUrls.push(imageUrl);
                 contentMain.innerHTML = `
-                    <div class="image-viewer-container">
-                        <img id="viewer-image" class="image" src="${imageUrl}" style="max-width: 100%; max-height: 100%; display: block; margin: 0; transition: transform 0.2s ease;" />
+                    <div id="image-viewer-container" class="image-viewer-container">
+                        <img id="viewer-image" class="image" src="${imageUrl}" style="display: block; margin: 0; transform-origin: 0 0; opacity: 0;" />
                         ${_image_controls}
                     </div>`;
-                currentZoom = 1;// 重置缩放状态
+                currentZoom = 1;
+                currentTranslateX = 0;
+                currentTranslateY = 0;
             }
-            // 绑定滚轮缩放: 仅鼠标悬停在图片区域内才缩放
+            _cleanupImageListeners();
             const container = contentMain.querySelector('#viewer-image') || contentMain.querySelector('#viewer-svg-wrapper');
-            if (container) {
-                container.addEventListener('wheel', (e) => {
-                    e.preventDefault();
-                    const delta = e.deltaY > 0 ? -0.05 : 0.05;
-                    zoomImage(delta);
-                }, { passive: false });
+            const containerDiv = document.getElementById('image-viewer-container');
+            if (container && containerDiv) {
+                container.style.transition = 'none';
+                container.addEventListener('wheel', _onImageWheel, { passive: false });
+                container.addEventListener('dblclick', _onImageDblClick);
+                container.addEventListener('mousedown', _onImageMouseDown);
+                containerDiv.addEventListener('click', _onImageContainerClick);
+            }
+            const initialImg = document.getElementById('viewer-image');
+            if (initialImg) {
+                if (initialImg.complete && initialImg.naturalWidth > 0) {
+                    requestAnimationFrame(_onImageInitialFit);
+                } else {
+                    initialImg.addEventListener('load', _onImageInitialFit);
+                }
+            }
+            if (!_imageDragEventsInited) {
+                _imageDragEventsInited = true;
+                document.addEventListener('mousemove', _onImageMouseMove);
+                document.addEventListener('mouseup', _onImageMouseUp);
+                window.addEventListener('resize', _onImageResize);
+            }
+        }
+
+        function _onImageResize() {
+            if (document.getElementById('viewer-svg-wrapper')) {
+                fitSvgToScreen();
+            } else if (document.getElementById('viewer-image')) {
+                fitImageToContainer();
+            }
+        }
+        function _onImageInitialFit() {
+            if (document.getElementById('viewer-image')) {
+                fitImageToContainer();
+                const img = document.getElementById('viewer-image');
+                if (img) img.style.opacity = '1';
+            }
+        }
+        function _onImageWheel(e) {
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? -0.05 : 0.05;
+            zoomImage(delta, e.clientX, e.clientY);
+        }
+        function _onImageDblClick(e) {
+            e.preventDefault();
+            zoomImage(0.5, e.clientX, e.clientY);
+        }
+        function _onImageMouseDown(e) {
+            if (e.button !== 0) return;
+            isDragging = true;
+            dragStartX = e.clientX;
+            dragStartY = e.clientY;
+            dragTranslateX = currentTranslateX;
+            dragTranslateY = currentTranslateY;
+            const el = document.getElementById('viewer-image') || document.getElementById('viewer-svg-wrapper');
+            if (el) el.style.cursor = 'grabbing';
+            e.preventDefault();
+        }
+        function _onImageMouseMove(e) {
+            if (!isDragging) return;
+            const dx = e.clientX - dragStartX;
+            const dy = e.clientY - dragStartY;
+            currentTranslateX = dragTranslateX + dx;
+            currentTranslateY = dragTranslateY + dy;
+            const element = document.getElementById('viewer-image') || document.getElementById('viewer-svg-wrapper');
+            if (element) {
+                applyImageTransform(element);
+            }
+        }
+        function _onImageMouseUp() {
+            if (!isDragging) return;
+            isDragging = false;
+            const el = document.getElementById('viewer-image') || document.getElementById('viewer-svg-wrapper');
+            if (el) { el.style.cursor = ''; el.classList.remove('dragging'); }
+        }
+        function _onImageContainerClick(e) {
+            if (e.target === e.currentTarget) {
+                e.preventDefault();
+                resetZoom();
+            }
+        }
+        function _cleanupImageListeners() {
+            const oldImg = document.querySelector('#viewer-image');
+            if (oldImg) {
+                oldImg.removeEventListener('load', _onImageInitialFit);
+            }
+            const oldContainer = document.querySelector('#viewer-image') || document.querySelector('#viewer-svg-wrapper');
+            if (oldContainer) {
+                oldContainer.removeEventListener('wheel', _onImageWheel);
+                oldContainer.removeEventListener('dblclick', _onImageDblClick);
+                oldContainer.removeEventListener('mousedown', _onImageMouseDown);
+            }
+            const oldContainerDiv = document.getElementById('image-viewer-container');
+            if (oldContainerDiv) {
+                oldContainerDiv.removeEventListener('click', _onImageContainerClick);
             }
         }
 
@@ -26293,7 +26450,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             // 过滤图片或文件
             const files = allFilesCacheList.filter(f => {
                 if (isImage) {
-                    const ext = (f.name || f.path || '').toLowerCase().split('.').pop();
+                    const ext = (f.name || f.path || '').toLowerCase().split(DOT).pop();
                     return ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp'].includes(ext);
                 }
                 return true;
@@ -31286,7 +31443,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
             // 3+4. 按标题/文件名匹配（使用预计算缓存 O(1)）
             const lowerTarget = linkTarget.toLowerCase();
-            const targetName = linkTarget.split('/').pop() || linkTarget;
+            const targetName = linkTarget.split(SLASH).pop() || linkTarget;
             const lowerName = targetName.toLowerCase().replace(/\.\w+$/i, '');
             _ensureResolveNameCache(allFiles);
             // 先按完整标题匹配
@@ -31427,8 +31584,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const depth = nodeData.depth || 1;
                 graphDataMap.nodes.set(nodeData.id, {
                     id: nodeData.id,
-                    title: nodeData.title || nodeData.id.split('/').pop(),
-                    label: nodeData.title || nodeData.id.split('/').pop(),
+                    title: nodeData.title || nodeData.id.split(SLASH).pop(),
+                    label: nodeData.title || nodeData.id.split(SLASH).pop(),
                     path: nodeData.path || nodeData.id,
                     group, depth,
                     type: 'doc',
