@@ -11320,8 +11320,7 @@
         </div>
         <div id="sidebar-search-header">
             <div id="file-tree-search-box">
-                <input type="text" id="file-search" placeholder="🔍 搜索文件..." oninput="filterFiles(this.value)"
-                    onkeydown="handleSearchKeydown(event)">
+                <input type="text" id="file-search" placeholder="按下回车搜索文件..." onkeydown="handleSearchKeydown(event)">
                 <button id="clear-search" onclick="clearSearch()" style="display: none;">✕</button>
             </div>
         </div>
@@ -13323,13 +13322,11 @@
         const SLASH = '/';
         const MAX_FILE_SIZE = 50 * 1024 * 1024; // 5MB - 大文件限制
         const MAX_DIR_DEPTH = 20; // 最大目录深度
-        const SCROLL_RESTORE_DELAY = 200; // 滚动恢复延迟(ms)
         const DELETED_INDEX_EXPIRE_DAYS = 30; // 删除索引过期天数
         // ====== localStorage 键名 ======
         const LAST_FILE_KEY = "last_opened_File_path";           // 最后打开的文件路径
         const EXPANDED_STATE_KEY = 'directory_expanded_states'; // 目录展开状态
         const LEVEL_SELECTION_KEY = 'level_selection';         // 级别选择状态
-        const SCROLL_POSITION_KEY = 'scroll_position';         // 滚动位置状态
         const VIEW_SUM_KEY = 'index_view_sum';         // 浏览记录键名
         const VIEW_OPER_RECORDS_KEY = 'index_view_records';         // 浏览记录键名
         const TOC_VISIBLE_KEY = 'toc_visible_state';     // TOC 目录可见性状态键名
@@ -13477,9 +13474,8 @@
         const getRootHandle = () => rootDirectoryHandle;  // 获取根目录句柄的函数
         const setRootHandle = (handler) => rootDirectoryHandle = handler;  // 设置根目录句柄的函数
         const isRootHandleAvailable = () => !!getRootHandle(); // 检查根目录句柄是否可用的函数
-        let allFilesCacheList = []; // 所有文件的缓存列表（包含路径、元数据等信息）
-        let _heatmapDayCountCache = null; // 热力图日计数缓存（Map<string,number>），allFilesCacheList 变更时清空
         let _scanData = null; // 完整扫描数据缓存 { folderTree, files, stats }，供懒加载文件树按目录查询
+        let _scanFileList = []; // 扫描文件列表缓存，依赖 _scanData
         const LAZY_LOAD_DEPTH = 2; // 文件树懒加载初始渲染深度
         let currentActiveItem = null;       // 当前激活的文件项
         let currentFileHandle = null;       // 当前文件句柄
@@ -13494,7 +13490,6 @@
         let _imageDragEventsInited = false;  // 全局图片拖拽事件是否已初始化
         let currentJsMind = null;           // jsMind 实例
         let markdownSelectionState = { range: null, text: '' }; // Markdown 选区浮动工具栏状态
-        let preSearchExpandedStates = new Map(); // 保存搜索前的展开状态
         // 编辑模式相关变量
         let currentEditor = null;           // Monaco 编辑器实例
         let originalContent = '';           // 原始文件内容
@@ -13686,46 +13681,37 @@
             if (treeElement) {
                 const _treeStart = performance.now();
                 _scanData = data; // 完整扫描数据（files 为对象格式，folderTree 为目录树）
-                _fillFileCache(data.files); // 从 _scanData.files 派生 allFilesCacheList（单一数据源）
+                _scanFileList = []; // 初始化扫描文件列表缓存
                 _buildFolderNodeMap(data.folderTree); // 预建路径→节点索引，O(1) 查找
-                _markersMap = null;
+                _markersMap = null; // 清空 markers 缓存，首次 readMarkers 时加载
                 _cachedLastFile = safeLocalStorageGet(LAST_FILE_KEY);
                 _browserRefreshed = BROWSER_REFRESHED_VALUE === safeLocalStorageGet(BROWSER_REFRESHED_KEY);
-                _loadExpandedStateCache();
+                _loadExpandedStateCache(); // 加载目录展开状态缓存
                 await readMarkers();
-                let treeData = [];
-                let _useLazy = true;
-                try {
-                    treeData = await buildTreeDataFromScan(data.folderTree, data.files);
-                } catch (e) {
-                    console.error('构建文件树数据失败，回退到全量遍历:', e);
-                    _useLazy = false;
-                    treeData = await getTreeData(dirHandle, 0, '');
-                }
-                // 回退模式下禁用懒加载（_scanData 不完整）
-                if (!_useLazy) _scanData = null;
+                let treeData = await buildTreeDataFromScan(data.folderTree, data.files);
                 await renderTreeFromData(treeData, treeElement);
-                // 自动打开上次最后打开的文件：仅在当前正在查看文件时恢复（不在 Dashboard 等工具页面时）
-                const autoClickPath = lastToggle === 'renderFile'
-                    ? (_pendingAutoClickFile || (_browserRefreshed && _cachedLastFile ? _cachedLastFile : null))
-                    : null;
+                // 恢复上次文件在树中的选中状态（高亮），仅在查看文件页面时才自动打开内容
+                const lastFilePath = _pendingAutoClickFile || (_browserRefreshed && _cachedLastFile ? _cachedLastFile : null);
                 _pendingAutoClickFile = null;
-                if (autoClickPath) {
-                    let fileSpan = treeElement.querySelector(`.file-item[data-file-path="${CSS.escape(autoClickPath)}"]`);
+                if (lastFilePath) {
+                    let fileSpan = treeElement.querySelector(`.file-item[data-file-path="${CSS.escape(lastFilePath)}"]`);
                     if (!fileSpan && _scanData) {
-                        fileSpan = await expandPathToFile(autoClickPath);
+                        fileSpan = await expandPathToFile(lastFilePath);
                     }
                     if (fileSpan) {
                         fileSpan.classList.add('active-file');
                         currentActiveItem = fileSpan;
-                        clickFileSpan(autoClickPath, fileSpan, false);
+                        // 仅在查看文件页面时才自动打开文件内容，Dashboard 等工具页只高亮不切换
+                        if (lastToggle === 'renderFile') {
+                            clickFileSpan(lastFilePath, fileSpan, false);
+                        }
+                        setTimeout(() => {
+                            fileSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }, 250);
                     }
                 }
                 _treeLoadDuration = Math.round(performance.now() - _treeStart);
                 safeLocalStorageSet(TREE_LOAD_TIME_KEY, _treeLoadDuration.toString());
-                setTimeout(() => {
-                    treeElement.scrollTop = getScrollPosition();
-                }, SCROLL_RESTORE_DELAY);
                 await initTreeDelegation();
             }
         }
@@ -13810,9 +13796,6 @@
             currentActiveItem = fileSpan;
             safeLocalStorageSet(LAST_FILE_KEY, relativePath);
             // event.isTrusted 为 true 表示事件由用户真实操作产生（如真实点击）, false 表示事件由代码程序化触发（如 element.click()）
-            if (event && event.isTrusted) {
-                saveScrollPosition();
-            }
             //判断文件类型是否为支持的，不是则不打开
             const ext = getExt(relativePath);
             if (checkFileExt(ext)) {
@@ -14142,7 +14125,6 @@
                 e.stopPropagation();
                 e.preventDefault();
                 if (_treeClickTimer) { clearTimeout(_treeClickTimer); _treeClickTimer = null; }
-                if (e.isTrusted) saveScrollPosition();
                 const filePath = fileSpan.dataset.filePath;
                 const fileHandle = await getFileHandleByPath(filePath);
                 const textSpan = fileSpan.querySelector('.file-item-text');
@@ -15581,19 +15563,35 @@
 
         async function randomOpen() {
             hideAllViewContainers();
-            // 从 allFilesCacheList（派生自 _scanData.files）中筛选候选文件，覆盖全部目录含懒加载
-            const candidates = [];
-            for (const f of allFilesCacheList) {
-                if (isRandomDir(f.path, getExt(f.path))) candidates.push(f.path);
-            }
-            if (candidates.length === 0) {
+            let flg = true;
+            const list = getScanFileList(_scanData)
+            if (!list || list.length === 0) {
                 showNotification('⚠️ 没有符合条件的文件', 'error');
                 return;
             }
-            const chosen = candidates[Math.floor(Math.random() * candidates.length)];
-            const fileSpan = await expandPathToFile(chosen);
-            if (fileSpan) clickFileSpan(chosen, fileSpan, false);
-            showNotification(`🎲 随机打开: ${basename(chosen)}`, 'success');
+            let i = 0;
+            while (true) {
+                try {
+                    const randomIndex = (Math.random() * list.length) | 0;
+                    const node = list[randomIndex];
+                    if (isRandomDir(node.path, getExt(node.name))) {
+                        const fileSpan = await expandPathToFile(node.path);
+                        if (fileSpan) {
+                            clickFileSpan(node.path, fileSpan, false);
+                            showNotification(`🎲 随机打开: ${escapeHtml(node.path)}`, 'success', 1000);
+                            return;
+                        }
+                    }
+                    i++;
+                    if (i > 50) {
+                        showNotification('⚠️ 没有符合条件的文件', 'error');
+                        return;
+                    }
+                } catch (e) {
+                    console.error('扫描文件失败:', e);
+                    return;
+                }
+            }
         }
 
         function applyImageTransform(element) {
@@ -15694,11 +15692,13 @@
             applyImageTransform(img);
         }
 
-        async function refreshTree() {
+        async function refreshTree(showNoti = true) {
             TimerManager.setTimeout('refreshTree', () => {
                 safeLocalStorageSet(BROWSER_REFRESHED_KEY, BROWSER_REFRESHED_VALUE);
                 initTreeBrowser().then(() => {
-                    showNotification('✓ 刷新成功', 'success');
+                    if (showNoti) {
+                        showNotification('✓ 刷新成功', 'success');
+                    }
                 });
             }, 200);
         }
@@ -15790,231 +15790,107 @@
             return /\.(dockerfile|groovy|js|jsx|ts|tsx|vue|html|css|scss|less|sass|py|java|c|cpp|h|hpp|cs|go|rust|rb|php|swift|kt|scala|sh|bat|cmd|ps1|json|xml|yaml|yml|toml|ini|conf|env|sql|md|rst|log|properties|gradle|gitignore|jsm|mjs|cjs|tsm|mts|cts|svelte|astro|htm|xhtml|styl|pcss|postcss|graphql|gql|prisma|proto|thrift|idl|asm|s|asmx|fs|fsx|fsi|fsscript|vb|vbs|pl|pm|t|tt|pod|lua|r|R|matlab|m|psm1|psd1|ps1xml|xaml|axaml|resx|rs|sol|vy|move|aptos|sui|tsbuildinfo|puml|plantuml|map)$/i.test(filename);
         }
 
+        let treeElementHtml = null;
         function filterFiles(keyword) {
-            TimerManager.setTimeout('filterFiles', () => {
-                const keywordLower = keyword.toLowerCase().trim();
-                clearSearchBtn.style.display = keywordLower ? 'flex' : 'none';
-                const isSearching = Boolean(keywordLower);
-                openDirBtn.disabled = isSearching;
-                refreshTreeBtn.disabled = isSearching;
-                openDirBtn.classList.toggle('btn-disabled', isSearching);
-                refreshTreeBtn.classList.toggle('btn-disabled', isSearching);
-                if (!keywordLower) {
-                    resetSearchAndRestoreState();
-                    return;
-                }
-                executeSearch(keywordLower);
-            }, 200);
+            const keywordLower = keyword.toLowerCase().trim();
+            clearSearchBtn.style.display = keywordLower ? 'flex' : 'none';
+            const isSearching = Boolean(keywordLower);
+            refreshTreeBtn.disabled = isSearching;
+            refreshTreeBtn.classList.toggle('btn-disabled', isSearching);
+            if (!keywordLower) {
+                refreshTree(false);
+                return;
+            }
+            executeSearch(keywordLower);
         }
 
-        //重置搜索并恢复文件树状态 功能:清空搜索结果,恢复目录展开状态,选中最后一次点击的文件
-        async function resetSearchAndRestoreState() {
-            const hiddenEls = treeElement.querySelectorAll('.search-hidden');
-            for (let i = 0; i < hiddenEls.length; i++) {
-                hiddenEls[i].classList.remove('search-hidden');
+        async function executeSearch(keyword) {
+            let list = getScanFileList(_scanData);
+            list = list.filter(node => node.name.toLowerCase().includes(keyword))
+                .sort((a, b) => a.name.localeCompare(b.name));
+
+            treeElement.innerHTML = '';
+            if (list.length === 0) {
+                treeElement.innerHTML = '<div style="color:var(--color-text-secondary); text-align:center; padding: 20px;">未找到匹配的文件</div>';
+                return;
             }
-            const noMatchTip = treeElement.querySelector('.no-match-tip');
-            if (noMatchTip) noMatchTip.remove();
-            const details = treeElement.querySelectorAll('details');
-            for (let i = 0; i < details.length; i++) {
-                const detail = details[i];
-                const dirKey = detail.dataset.dirKey;
-                if (dirKey && preSearchExpandedStates.has(dirKey)) {
-                    detail.open = preSearchExpandedStates.get(dirKey);
-                } else if (dirKey) {
-                    detail.open = getDirExpandedState(dirKey) || false;
-                } else {
-                    detail.open = false;
-                }
-            }
-            preSearchExpandedStates.clear();
-            // 恢复选中的文件
-            const lastFilePath = safeLocalStorageGet(LAST_FILE_KEY);
-            if (!lastFilePath) return;
-            const fileItems = treeElement.querySelectorAll('.file-item');
-            for (let i = 0; i < fileItems.length; i++) {
-                fileItems[i].classList.remove('active-file');
-            }
-            const lastFileItem = Array.from(fileItems).find(item =>
-                item.dataset.filePath === lastFilePath
-            );
-            if (lastFileItem) {
-                lastFileItem.classList.add('active-file');
-                currentActiveItem = lastFileItem;
-                let parent = lastFileItem.parentElement;
-                while (parent) {
-                    if (parent.tagName === 'DETAILS') {
-                        parent.open = true;
+            const dirTree = { __files: [], __subdirs: new Map() };
+            for (const node of list) {
+                const parts = node.path.split(SLASH);
+                let cursor = dirTree;
+
+                for (let i = 0; i < parts.length - 1; i++) {
+                    const dirName = parts[i];
+                    let nextCursor = cursor.__subdirs.get(dirName);
+                    if (!nextCursor) {
+                        nextCursor = { __files: [], __subdirs: new Map() };
+                        cursor.__subdirs.set(dirName, nextCursor);
                     }
-                    parent = parent.parentElement;
+                    cursor = nextCursor;
                 }
-                clickFileSpan(lastFilePath, lastFileItem);
-            } else if (_scanData && _scanData.files) {
-                // 文件 DOM 不在树上（可能在懒加载目录中），展开路径后重试
-                const fileSpan = await expandPathToFile(lastFilePath);
-                if (fileSpan) {
-                    fileSpan.classList.add('active-file');
-                    currentActiveItem = fileSpan;
-                    clickFileSpan(lastFilePath, fileSpan);
-                }
+                cursor.__files.push(node);
             }
+            const fragment = document.createDocumentFragment();
+            await _renderSearchTree(dirTree, '', 0, fragment);
+            treeElement.appendChild(fragment);
         }
 
-        // 文件搜索：按关键词筛选并高亮匹配项，同时扫描懒加载目录中的文件
-        function executeSearch(keywordLower) {
-            const fileItems = treeElement.querySelectorAll('.file-item');
-            const details = treeElement.querySelectorAll('details');
-            // 保存搜索前的展开状态（仅首次）
-            if (preSearchExpandedStates.size === 0) {
-                for (let i = 0; i < details.length; i++) {
-                    const dirKey = details[i].dataset.dirKey;
-                    if (dirKey) preSearchExpandedStates.set(dirKey, details[i].open);
-                }
-            }
-            // 先全部隐藏（通过 CSS 类，避免多次回流）
-            for (let i = 0; i < fileItems.length; i++) {
-                fileItems[i].classList.add('search-hidden');
-            }
-            for (let i = 0; i < details.length; i++) {
-                details[i].classList.add('search-hidden');
-            }
-            const parentsToShow = new Set();
-            const lazyDirsToLoad = new Set(); // 需要先加载的懒加载目录
-            let hasMatch = false;
-
-            // 1) 扫描已渲染的 DOM 文件项
-            for (let i = 0; i < fileItems.length; i++) {
-                const item = fileItems[i];
-                if (item.textContent.toLowerCase().includes(keywordLower)) {
-                    hasMatch = true;
-                    item.classList.remove('search-hidden');
-                    let parent = item.parentElement;
-                    while (parent) {
-                        if (parent.tagName === 'DETAILS') {
-                            parentsToShow.add(parent);
-                        }
-                        parent = parent.parentElement;
-                    }
-                }
+        // 递归渲染搜索结果的目录树
+        async function _renderSearchTree(dirNode, dirPath, depth, container) {
+            // 获取子目录名并按字母排序
+            const subDirs = [...dirNode.__subdirs.keys()].sort((a, b) => a.localeCompare(b));
+            for (const dirName of subDirs) {
+                // 优化字符串拼接，避免不必要的函数调用
+                const childPath = dirPath ? `${dirPath}${SLASH}${dirName}` : dirName;
+                const entry = createDirectoryEntry(dirName, depth, childPath, true);
+                if (!entry) continue;
+                await _renderSearchTree(dirNode.__subdirs.get(dirName), childPath, depth + 1, entry.details);
+                container.appendChild(entry.details);
             }
 
-            // 2) 扫描 _scanData.files 中尚未渲染的懒加载目录文件
-            if (_scanData && _scanData.files) {
-                // 预建 dirMap：O(n) 一次性收集所有 details[data-dir-key]，后续 O(1) 查找
-                const dirMap = new Map();
-                for (const d of treeElement.querySelectorAll('details[data-dir-key]')) {
-                    dirMap.set(d.dataset.dirKey, d);
-                }
-                const files = _scanData.files;
-                if (Array.isArray(files)) {
-                    for (const fe of files) {
-                        if (!fe.name.toLowerCase().includes(keywordLower)) continue;
-                        hasMatch = true;
-                        const dirPath = dirname(fe.path);
-                        const parts = normalizePath(dirPath).split(SLASH).filter(Boolean);
-                        for (let k = 0; k <= parts.length; k++) {
-                            const ancestorPath = parts.slice(0, k).join(SLASH);
-                            const ancestorDetail = dirMap.get(ancestorPath);
-                            if (ancestorDetail) {
-                                parentsToShow.add(ancestorDetail);
-                                if (ancestorDetail.dataset.lazy === 'true') lazyDirsToLoad.add(ancestorDetail);
-                            }
-                        }
-                    }
-                } else {
-                    for (const dirPath of Object.keys(files)) {
-                        const dirFiles = files[dirPath];
-                        if (!dirFiles) continue;
-                        let dirHasMatch = false;
-                        for (const fe of dirFiles) {
-                            if (fe.name.toLowerCase().includes(keywordLower)) { dirHasMatch = true; break; }
-                        }
-                        if (!dirHasMatch) continue;
-                        hasMatch = true;
-                        const parts = normalizePath(dirPath).split(SLASH).filter(Boolean);
-                        for (let k = 0; k <= parts.length; k++) {
-                            const ancestorPath = parts.slice(0, k).join(SLASH);
-                            const ancestorDetail = dirMap.get(ancestorPath);
-                            if (ancestorDetail) {
-                                parentsToShow.add(ancestorDetail);
-                                if (ancestorDetail.dataset.lazy === 'true') lazyDirsToLoad.add(ancestorDetail);
-                            }
-                        }
+            // 再渲染当前目录下的匹配文件
+            const files = dirNode.__files;
+            if (files.length > 0) {
+                const fileItems = await _batchProcess(files, (node) => {
+                    return createFileItem(node.name, node.path, depth, node.sub_type);
+                });
+                const tempFrag = document.createDocumentFragment();
+                for (let i = 0; i < fileItems.length; i++) {
+                    if (fileItems[i]) {
+                        tempFrag.appendChild(fileItems[i]);
                     }
                 }
-            }
-
-            // 3) 匹配目录名（已渲染的 DOM）
-            for (let i = 0; i < details.length; i++) {
-                const summary = details[i].querySelector('summary');
-                if (!summary) continue;
-                if (summary.textContent.toLowerCase().includes(keywordLower)) {
-                    hasMatch = true;
-                    parentsToShow.add(details[i]);
-                    // 展开该目录下所有子文件
-                    const childFiles = details[i].querySelectorAll('.file-item');
-                    for (let j = 0; j < childFiles.length; j++) {
-                        childFiles[j].classList.remove('search-hidden');
-                    }
-                }
-            }
-
-            // 4) 优先加载懒加载目录，再显示展开
-            (async () => {
-                for (const detail of lazyDirsToLoad) {
-                    if (detail.dataset.lazyLoaded !== '1' && detail.dataset.lazyLoaded !== 'loading') {
-                        const dirPath = detail.dataset.dirKey;
-                        const depth = parseInt(detail.dataset.depth) || 0;
-                        await loadDirChildrenLazy(dirPath, depth, detail);
-                    }
-                }
-                // 统一显示所有需要展开的父级 details（只触发一次回流）
-                for (const detail of parentsToShow) {
-                    detail.classList.remove('search-hidden');
-                    detail.open = true;
-                }
-                // 加载完成后再次扫描新渲染的文件项
-                const newFileItems = treeElement.querySelectorAll('.file-item');
-                for (let i = 0; i < newFileItems.length; i++) {
-                    const item = newFileItems[i];
-                    if (item.textContent.toLowerCase().includes(keywordLower)) {
-                        item.classList.remove('search-hidden');
-                    }
-                }
-            })();
-
-            // 同步部分：显示已渲染的匹配目录
-            for (const detail of parentsToShow) {
-                if (!lazyDirsToLoad.has(detail)) {
-                    detail.classList.remove('search-hidden');
-                    detail.open = true;
-                }
-            }
-
-            // 移除旧的无匹配提示
-            const existingTip = treeElement.querySelector('.no-match-tip');
-            if (existingTip) existingTip.remove();
-            // 无匹配提示
-            if (!hasMatch) {
-                const noMatch = document.createElement('div');
-                noMatch.className = 'no-match-tip';
-                noMatch.style.padding = '20px';
-                noMatch.style.color = 'var(--color-text-secondary)';
-                noMatch.style.textAlign = 'center';
-                noMatch.textContent = '🔍 没有找到匹配的文件或目录';
-                treeElement.appendChild(noMatch);
+                container.appendChild(tempFrag);
             }
         }
 
+        let doSearch = false;
         function clearSearch() {
             fileSearchInput.value = '';
+            doSearch = false;
             filterFiles('');
         }
 
         function handleSearchKeydown(event) {
-            if ((event.key === 'Delete' || event.key === 'Backspace') && event.target.value === '') {
+            const value = event.target.value.trim();
+            if (event.key === 'Backspace' && value === '') {
                 event.preventDefault();
-                filterFiles('');
+                clearSearch();
+                return;
+            }
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                fileSearchInput.value = '';
+               if(doSearch) {
+                   clearSearch();
+               }
+                return;
+            }
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                doSearch = true;
+                filterFiles(value);
+                return;
             }
         }
 
@@ -16178,33 +16054,6 @@
             const states = JSON.parse(safeLocalStorageGet(LEVEL_SELECTION_KEY) || '{}');
             _levelSelectionCache = states[currentRootPath] || 'all';
             return _levelSelectionCache;
-        }
-
-        // 滚动位置缓存和防抖
-        let _scrollPositionCache = {};
-        let _pendingScrollUpdate = null;
-        let _scrollPositionTimer = null;
-        const _SCROLL_POSITION_DEBOUNCE = 500;
-
-        function _flushScrollPosition() {
-            if (!currentRootPath || _pendingScrollUpdate === null) return;
-            const states = JSON.parse(safeLocalStorageGet(SCROLL_POSITION_KEY) || '{}');
-            states[currentRootPath] = _pendingScrollUpdate;
-            safeLocalStorageSet(SCROLL_POSITION_KEY, JSON.stringify(states));
-            _pendingScrollUpdate = null;
-        }
-
-        function saveScrollPosition() {
-            if (!currentRootPath) return;
-            if (treeElement) {
-                const scrollTop = treeElement.scrollTop;
-                _scrollPositionCache = scrollTop;
-                _pendingScrollUpdate = scrollTop;
-                if (_scrollPositionTimer) {
-                    clearTimeout(_scrollPositionTimer);
-                }
-                _scrollPositionTimer = setTimeout(_flushScrollPosition, _SCROLL_POSITION_DEBOUNCE);
-            }
         }
 
         function getScrollPosition() {
@@ -22575,43 +22424,20 @@
                     };
                 }
             }
-            // allFilesCacheList 由 _scanData.files 统一派生，此处为独立 dashboard 使用场景预填充
             if (force) {
-                _fillFileCache(data.files);
-            } else if (allFilesCacheList.length === 0 && data && data.files) {
-                _fillFileCache(data.files);
+                _scanData = data;
+                _scanFileList = [];
             }
             console.log(`[文件扫描] 总耗时: ${(performance.now() - _tStart).toFixed(0)}ms`);
             return data;
         }
 
-        /** 将 data.files（对象或数组）拍平到 allFilesCacheList，并预计算 min/max mtime */
-        function _fillFileCache(files) {
-            allFilesCacheList = [];
-            if (Array.isArray(files)) {
-                allFilesCacheList.push(...files);
-            } else if (files && typeof files === 'object') {
-                for (const key in files) {
-                    if (Array.isArray(files[key])) {
-                        allFilesCacheList.push(...files[key]);
-                    }
-                }
-            } else {
-                console.warn('_fillFileCache: 未知的 files 格式', typeof files);
+        function getScanFileList(data) {
+            if (!isEmpty(_scanFileList)) return _scanFileList;
+            if (data && data.files) {
+                return Object.values(data.files).flatMap(list => list);
             }
-            _heatmapDayCountCache = null;
-            // 预计算全部文件的最小/最大 mtime（比较 Unix 时间戳，避免创建大量 Date 对象）
-            if (allFilesCacheList.length > 0) {
-                let minTs = allFilesCacheList[0].mtime, maxTs = allFilesCacheList[0].mtime;
-                for (let i = 1; i < allFilesCacheList.length; i++) {
-                    const t = allFilesCacheList[i].mtime;
-                    if (t < minTs) minTs = t;
-                    if (t > maxTs) maxTs = t;
-                }
-                _timelineAllMinMax = { min: new Date(minTs * 1000), max: new Date(maxTs * 1000) };
-            } else {
-                _timelineAllMinMax = null;
-            }
+            return [];
         }
 
         async function heartbeat() {
@@ -23107,8 +22933,9 @@
             const todayStart = new Date().setHours(0, 0, 0, 0);
             const tomorrowStart = todayStart + DAY_MS;
 
-            for (let i = 0; i < allFilesCacheList.length; i++) {
-                const f = allFilesCacheList[i];
+            const allFilesList = getScanFileList(_scanData)
+            for (let i = 0; i < allFilesList.length; i++) {
+                const f = allFilesList[i];
                 // ===== 统一反序列化，避免重复 new Date(x * 1000) =====
                 const createTs = f.ctime * 1000;
                 const editTs = f.mtime * 1000;
@@ -23205,8 +23032,8 @@
 
             // 后处理：线性扫描取 Top10（O(n)，避免全排序）
             let top10 = [];
-            for (let i = 0; i < allFilesCacheList.length; i++) {
-                const f = allFilesCacheList[i];
+            for (let i = 0; i < allFilesList.length; i++) {
+                const f = allFilesList[i];
                 const mtime = f.mtime;
                 if (top10.length < 10) {
                     top10.push(f);
@@ -23256,8 +23083,6 @@
                 docCount, codeCount, imgCount
             };
         }
-
-        // prepareHeatmapData 已合并到 renderDashStats 单次遍历中，不再需要独立函数
 
         // 板块3：渲染热力图
         async function renderDashHeatmap(heatmapData) {
@@ -26464,6 +26289,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             _browserRefreshed = false;   // createFileItem 预缓存：是否浏览器刷新场景
             _pendingAutoClickFile = null; // 待自动打开的文件路径
             _scanData = null; // 扫描数据缓存
+            _scanFileList = []; // 扫描文件列表缓存
             _folderNodeMap = null; // 目录节点索引缓存
             safeLocalStorageSet(BROWSER_REFRESHED_KEY, BROWSER_REFRESHED_KEY);
             // 清理目录句柄数据库
@@ -26610,7 +26436,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const title = isImage ? '选择图片' : '选择文件';
 
             // 过滤图片或文件
-            const files = allFilesCacheList.filter(f => {
+            const files = getScanFileList(_scanData).filter(f => {
                 if (isImage) {
                     const ext = (f.name || f.path || '').toLowerCase().split(DOT).pop();
                     return ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp'].includes(ext);
@@ -27343,39 +27169,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return result;
         }
 
-        async function getTreeData(dirHandle, depth = 0, parentPath = '', maxDepth = MAX_DIR_DEPTH) {
-            if (depth > maxDepth) return [];
-            const { dirs, files } = await _getEntries(dirHandle, parentPath);
-            _sortEntries(dirs, files);
-            const treeData = [];
-            if (dirs.length > 0) {
-                const childPromises = dirs.map(async (dirEntry) => {
-                    const entryPath = _buildPath(parentPath, dirEntry.name);
-                    const childTreeData = await getTreeData(dirEntry.rawEntry, depth + 1, entryPath, maxDepth);
-                    return {
-                        kind: 'directory',
-                        name: dirEntry.name,
-                        path: entryPath,
-                        depth: depth,
-                        open: getDirExpandedState(entryPath),
-                        children: childTreeData
-                    };
-                });
-                const childResults = await Promise.all(childPromises);
-                treeData.push(...childResults);
-            }
-            for (const fileEntry of files) {
-                treeData.push({
-                    kind: 'file',
-                    name: fileEntry.name,
-                    path: _buildPath(parentPath, fileEntry.name),
-                    depth: depth,
-                    iconType: getFileTypeByExt(getExt(fileEntry.name))
-                });
-            }
-            return treeData;
-        }
-
         // ---- 看板/日历等模块的全局状态 ----
         let timelineCurrentView = 'day';      // day / week / month / quarter / year / all
         let timelineCurrentFilter = 'all';
@@ -27637,32 +27430,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 start = new Date(yr, 0, 1);
                 end = new Date(yr, 11, 31);
                 end.setHours(23, 59, 59);
-            } else if (timelineCurrentView === 'all') {
-                // 全部视图：使用缓存的 min/max，避免每次全量遍历
-                if (!_timelineAllMinMax && allFilesCacheList.length > 0) {
-                    let minDate = new Date(allFilesCacheList[0].mtime * 1000);
-                    let maxDate = new Date(allFilesCacheList[0].mtime * 1000);
-                    for (let i = 1; i < allFilesCacheList.length; i++) {
-                        const d = new Date(allFilesCacheList[i].mtime * 1000);
-                        if (d < minDate) minDate = d;
-                        if (d > maxDate) maxDate = d;
-                    }
-                    _timelineAllMinMax = { min: minDate, max: maxDate };
-                }
-                if (_timelineAllMinMax) {
-                    start = _timelineAllMinMax.min;
-                    end = _timelineAllMinMax.max;
-                } else {
-                    start = new Date();
-                    end = new Date();
-                }
             }
             if (start && end) timelineObj.setWindow(start, end, { animation: false });
         }
 
         function timelineUpdate() {
             if (!timelineObj) return;
-            const { items, docCount, codeCount, days } = _timelineFilterBuild(allFilesCacheList);
+            const { items, docCount, codeCount, days } = _timelineFilterBuild(getScanFileList(_scanData));
             requestAnimationFrame(() => {
                 timelineObj.setItems(items);
                 timelineSetWindow();
@@ -27753,14 +27527,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             wrapper.style.display = 'block';
             const now = new Date(), y = now.getFullYear();
             // 优先使用缓存，避免全量遍历
-            let cnt = _heatmapDayCountCache;
-            if (!cnt) {
-                cnt = new Map();
-                for (let i = 0; i < allFilesCacheList.length; i++) {
-                    const d = allFilesCacheList[i].mtime_date_str;
-                    cnt.set(d, (cnt.get(d) || 0) + 1);
-                }
-                _heatmapDayCountCache = cnt;
+            let cnt = new Map();
+            const allFilesList = getScanFileList(_scanData);
+            for (let i = 0; i < allFilesList.length; i++) {
+                const d = allFilesList[i].mtime_date_str;
+                cnt.set(d, (cnt.get(d) || 0) + 1);
             }
             const getColor = c => {
                 if (c <= 0) return null;
@@ -28022,9 +27793,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         async function timelineInit() {
             try {
-                if (isEmpty(allFilesCacheList)) {
-                    await scanDashboardData();
-                }
                 // timelineBuildHeatmap + timelineUpdate 由 timelineInitTimeline 回调统一触发
                 const s = document.getElementById('timelineSearchInput'), cl = document.getElementById('timelineSearchClear');
                 const upd = () => {
@@ -31576,12 +31344,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 showNotification('✗ 请先打开根目录', 'error');
                 return null;
             }
-            if (!allFilesCacheList || allFilesCacheList.length === 0) {
+            const allFiles = getScanFileList(_scanData);
+            if (!allFiles || allFiles.length === 0) {
                 showNotification('✗ 文件缓存为空，请先刷新文件树', 'error');
                 return null;
             }
             const rootName = getRootHandle().name;
-            const allFiles = allFilesCacheList;
 
             // 单次遍历：构建 allNodes、allPaths、mdFileInfos
             const allNodes = [];
