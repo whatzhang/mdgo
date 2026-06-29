@@ -64,7 +64,7 @@ for mount_path, directory, mount_name in [
     else:
         logging.warning("静态挂载被跳过，因为路径不存在: %s", directory)
 
-# 用户动态扫描目录（通过 /api/system/scan 设置）
+# 用户动态扫描目录（通过 /api/system/mount 设置）
 DYNAMIC_SCAN_PATH = None
 
 
@@ -117,10 +117,18 @@ async def hello_page():
     return _load_static_file(PROJECT_ROOT, "index_cdn.html")
 
 
-@app.get("/api/system/heartbeat")
-async def api_heartbeat():
-    """心跳检测"""
+@app.get("/api/system/health")
+async def api_health():
+    """健康检查（无状态、幂等）"""
     return {"success": True, "message": "healthy", "code": 200}
+
+
+@app.get("/api/system/mount")
+async def api_mount(dir: str = Query(..., description="要挂载的扫描目录绝对路径")):
+    """设置动态扫描目录"""
+    if dynamic_mount_directory(dir) is False:
+        return {"success": False, "message": "无效的扫描目录", "code": 500}
+    return {"success": True, "message": "挂载成功", "code": 200}
 
 
 @app.get("/api/system/openresty/conf")
@@ -140,7 +148,7 @@ async def api_reload_openresty_conf(body: dict = Body(...)):
 # ── WebSocket 统一推送通道 ──
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket 实时推送（监控指标、心跳、日程提醒）"""
+    """WebSocket 实时推送（监控指标）"""
     await ws_manager.connect(websocket)
     try:
         while True:

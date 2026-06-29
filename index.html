@@ -13639,9 +13639,9 @@
 
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', async () => {
-            await heartbeat();
             initDashboard();
             await initAll();
+            await mountDir();
         });
 
         window.addEventListener('beforeunload', function (e) {
@@ -15555,7 +15555,7 @@
         async function randomOpen() {
             hideAllViewContainers();
             let flg = true;
-            const list = getScanFileList(_scanData)
+            const list = getScanFileList();
             if (!list || list.length === 0) {
                 showNotification('⚠️ 没有符合条件的文件', 'error');
                 return;
@@ -15802,7 +15802,7 @@
         }
 
         async function executeSearch(keyword) {
-            let list = getScanFileList(_scanData);
+            let list = getScanFileList();
             list = list.filter(node => node.name.toLowerCase().includes(keyword))
                 .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -22421,26 +22421,30 @@
             return data;
         }
 
-        function getScanFileList(data) {
+        function getScanFileList() {
             if (!isEmpty(_scanFileList)) return _scanFileList;
-            if (data && data.files) {
-                return Object.values(data.files).flatMap(list => list);
+            if (_scanData && _scanData.files) {
+                _scanFileList = Object.values(_scanData.files).flatMap(list => list);
+                return _scanFileList;
             }
             return [];
         }
 
-        async function heartbeat() {
+        async function mountDir() {
+            // 未选择目录时不发送请求
+            if (!currentRootPath) return;
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 300);
+            const timeoutId = setTimeout(() => controller.abort(), 400);
             try {
-                response = await fetch('/api/system/heartbeat', { signal: controller.signal });
+                const response = await fetch(`/api/system/mount?dir=${encodeURIComponent(currentRootPath)}`, { signal: controller.signal });
                 const data = await response.json();
                 if (data.success) {
                     hasBackendServer = true;
                     return data;
                 }
-            } catch (e) {
-                clearTimeout(timeoutId);
+                hasBackendServer = false;
+                console.warn('后端挂载失败:', data.message);
+            } catch {
                 hasBackendServer = false;
             } finally {
                 clearTimeout(timeoutId);
@@ -22934,7 +22938,7 @@
             const todayStart = new Date().setHours(0, 0, 0, 0);
             const tomorrowStart = todayStart + DAY_MS;
 
-            const allFilesList = getScanFileList(_scanData)
+            const allFilesList = getScanFileList();
             for (let i = 0; i < allFilesList.length; i++) {
                 const f = allFilesList[i];
                 // ===== 统一反序列化，避免重复 new Date(x * 1000) =====
@@ -26192,6 +26196,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     safeLocalStorageSet("ROOT_DIR", currentRootPath);
                     safeLocalStorageSet(PERMISSION_TIME_KEY, Date.now().toString());
                     await idbPut(DIRECTORY_STORE_NAME, 'handles', 'default', dirHandle);
+                    await mountDir();
                     await initAll();
                 } catch (e) {
                     console.error('初始化目录失败', e);
@@ -26373,7 +26378,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const title = isImage ? '选择图片' : '选择文件';
 
             // 过滤图片或文件
-            const files = getScanFileList(_scanData).filter(f => {
+            const files = getScanFileList().filter(f => {
                 if (isImage) {
                     const ext = (f.name || f.path || '').toLowerCase().split(DOT).pop();
                     return ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp'].includes(ext);
@@ -27373,7 +27378,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         function timelineUpdate() {
             if (!timelineObj) return;
-            const { items, docCount, codeCount, days } = _timelineFilterBuild(getScanFileList(_scanData));
+            const { items, docCount, codeCount, days } = _timelineFilterBuild(getScanFileList());
             requestAnimationFrame(() => {
                 timelineObj.setItems(items);
                 timelineSetWindow();
@@ -27465,7 +27470,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const now = new Date(), y = now.getFullYear();
             // 优先使用缓存，避免全量遍历
             let cnt = new Map();
-            const allFilesList = getScanFileList(_scanData);
+            const allFilesList = getScanFileList();
             for (let i = 0; i < allFilesList.length; i++) {
                 const d = allFilesList[i].mtime_date_str;
                 cnt.set(d, (cnt.get(d) || 0) + 1);
@@ -28537,9 +28542,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             systemMonitorMemChart = memChart;
         }
 
-        // ════════════════════════════════════════════════════════════════
-        // 统一 WebSocket 客户端 (替代所有 EventSource SSE 连接)
-        // ════════════════════════════════════════════════════════════════
         let _wsClient = null;
         let _wsReconnectCount = 0;
         const _wsMaxReconnect = 3;
@@ -31204,6 +31206,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             graphFps = 0;
             graphFrameCount = 0;
             graphLastFrameTime = performance.now();
+            // 清除待处理的筛选防抖
+            clearTimeout(_graphFilterDebounceId);
+            _graphFilterDebounceId = null;
             // 重置画布上下文
             if (graphCanvas) {
                 graphCtx = null;
@@ -31281,7 +31286,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 showNotification('✗ 请先打开根目录', 'error');
                 return null;
             }
-            const allFiles = getScanFileList(_scanData);
+            const allFiles = getScanFileList();
             if (!allFiles || allFiles.length === 0) {
                 showNotification('✗ 文件缓存为空，请先刷新文件树', 'error');
                 return null;
@@ -31369,7 +31374,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 return true;
             });
 
-            showNotification(`✓ 扫描完成: ${mdFileInfos.length} 个文件, ${allNodes.length} 个节点, ${uniqueEdges.length} 条链接`, 'success');
             return { nodes: allNodes, edges: uniqueEdges };
         }
 
@@ -31542,16 +31546,18 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     extGroupMap.set(ext, group);
                 }
                 const depth = nodeData.depth || 1;
+                const nodeTitle = nodeData.title || nodeData.id.split(SLASH).pop();
                 graphDataMap.nodes.set(nodeData.id, {
                     id: nodeData.id,
-                    title: nodeData.title || nodeData.id.split(SLASH).pop(),
-                    label: nodeData.title || nodeData.id.split(SLASH).pop(),
+                    title: nodeTitle,
+                    label: nodeTitle,
                     path: nodeData.path || nodeData.id,
                     group, depth,
                     type: 'doc',
                     baseSize, size: baseSize * graphParams.nodeSize,
                     _color: getGraphGroupColor(group, depth),
-                    _degree: d,  // 保存度，供 showIsolated 过滤用
+                    _degree: d,
+                    _titleLower: nodeTitle.toLowerCase(),
                 });
             }
             graphDataMap.nodesArray = Array.from(graphDataMap.nodes.values());
@@ -31867,21 +31873,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
 
             renderEdges(bounds) {
-                this._visibleEdgeCount = 0;
                 if (graphParams.hideEdges) return;
                 const { ctx } = this;
                 const edges = graphDataMap?.edges || [];
                 const focusSet = this._getFocusSet();
                 const showIsolated = graphParams.showIsolated;
-                const filterPath = graphParams.filterPath;
-                let edgeCount = 0;
                 for (let i = 0; i < edges.length; i++) {
                     const edge = edges[i];
                     const source = edge.source;
                     const target = edge.target;
                     if (!source || !target || source.x === undefined || source.y === undefined || target.x === undefined || target.y === undefined) continue;
-                    // filterPath 过滤: 一端被过滤掉则不显示该边（防止无头连线）
-                    if (filterPath && (!source.title.toLowerCase().includes(filterPath) || !target.title.toLowerCase().includes(filterPath))) continue;
                     // showIsolated=false 时跳过连接到孤立节点的边
                     if (!showIsolated && (source._degree === 0 || target._degree === 0)) continue;
                     // 聚焦模式: 仅绘制两端均在可见集合内的边
@@ -31890,7 +31891,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         if (!focusSet.has(target.id) && target.id !== this.focusNodeId) continue;
                     }
                     if (!this.isEdgeVisible(source, target, bounds)) continue;
-                    edgeCount++;
                     // 聚焦模式下连线保持原色，非聚焦模式高亮关联连线
                     const isHighlighted = !this.focusNodeId && this.highlightedNode
                         && (source.id === this.highlightedNode.id || target.id === this.highlightedNode.id);
@@ -31910,8 +31910,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     ctx.stroke();
                     ctx.shadowBlur = 0;
                 }
-                // 缓存可见边数供 renderNodes 更新统计
-                this._visibleEdgeCount = edgeCount;
             }
 
             renderNodes(bounds) {
@@ -31920,19 +31918,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const focusSet = this._getFocusSet();
                 const neighborsMap = graphDataMap?.neighborsMap;
                 const showIsolated = graphParams.showIsolated;
-                const filterPath = graphParams.filterPath;
-                let visibleNodeCount = 0;
-                let visibleEdgeCount = 0;
-                allNodes.forEach(node => {
-                    if (node.x === undefined || node.y === undefined) return;
-                    // filterPath 过滤
-                    if (filterPath && !node.title.toLowerCase().includes(filterPath)) return;
+                for (let i = 0; i < allNodes.length; i++) {
+                    const node = allNodes[i];
+                    if (node.x === undefined || node.y === undefined) continue;
                     // showIsolated=false 时跳过孤立节点
-                    if (!showIsolated && node._degree === 0) return;
-                    visibleNodeCount++;
+                    if (!showIsolated && node._degree === 0) continue;
                     // 聚焦模式: 仅显示聚焦节点及其邻居
-                    if (focusSet !== null && node.id !== this.focusNodeId && !focusSet.has(node.id)) return;
-                    if (!this.isNodeVisible(node, bounds)) return;
+                    if (focusSet !== null && node.id !== this.focusNodeId && !focusSet.has(node.id)) continue;
+                    if (!this.isNodeVisible(node, bounds)) continue;
                     const isFocused = this.focusNodeId && node.id === this.focusNodeId;
                     const isNeighbor = this.focusNodeId
                         ? (focusSet && focusSet.has(node.id))
@@ -31968,13 +31961,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         ctx.textBaseline = 'middle';
                         ctx.fillText(node.title, node.x, node.y + node.size + 18);
                     }
-                });
-                // 更新统计（仅在非聚焦模式下更新）
-                if (!this.focusNodeId) {
-                    const nodeCountEl = document.getElementById('node-count');
-                    const edgeCountEl = document.getElementById('edge-count');
-                    if (nodeCountEl) nodeCountEl.textContent = visibleNodeCount;
-                    if (edgeCountEl) edgeCountEl.textContent = this._visibleEdgeCount ?? graphDataMap?.edges?.length ?? 0;
                 }
             }
 
@@ -32075,13 +32061,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
                 const node = this.layout.getNodeAt(x, y, candidateNodes, viewport);
                 this.didDrag = false;
+                // 记录鼠标按下时的画布坐标（用于拖拽阈值判断）
+                this._dragStartCanvas = node ? this.layout.screenToCanvas(x, y, viewport) : null;
                 if (node) {
                     event.stopPropagation();
                     if (this.zoomBehavior) {
                         d3.select(this.canvas).on('.zoom', null);
                     }
                     this.draggingNode = node;
-                    this.layout.fixNode(node, ...this.layout.screenToCanvas(x, y, viewport));
+                    // 不在 mousedown 时固定节点 — 避免点击时画面抖动
                     this.renderer.setHighlightedNode(node);
                     this.canvas.style.cursor = 'grabbing';
                 }
@@ -32101,8 +32089,18 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     candidateNodes = allNodes.filter(n => neighborIds.has(n.id));
                 }
                 if (this.draggingNode) {
-                    this.didDrag = true;
-                    this.layout.fixNode(this.draggingNode, ...this.layout.screenToCanvas(x, y, viewport));
+                    // 仅在实际拖拽（移动超过 3px 阈值）时才固定节点，避免纯点击产生晃动
+                    if (!this.didDrag) {
+                        const [cx, cy] = this.layout.screenToCanvas(x, y, viewport);
+                        const [sx, sy] = this._dragStartCanvas || [cx, cy];
+                        const dx = cx - sx, dy = cy - sy;
+                        if (Math.sqrt(dx * dx + dy * dy) < 3) return;
+                        this.didDrag = true;
+                        // 首次固定使用 mousedown 时的画布坐标，避免节点跳动
+                        this.layout.fixNode(this.draggingNode, sx, sy);
+                    } else {
+                        this.layout.fixNode(this.draggingNode, ...this.layout.screenToCanvas(x, y, viewport));
+                    }
                 } else {
                     const node = this.layout.getNodeAt(x, y, candidateNodes, viewport);
                     this.canvas.style.cursor = node ? 'grab' : 'move';
@@ -32111,7 +32109,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
             onMouseUp() {
                 if (this.draggingNode) {
-                    this.layout.releaseNode(this.draggingNode);
+                    // 仅在实际拖拽过时才释放固定，纯点击不触发释放
+                    if (this.didDrag) {
+                        this.layout.releaseNode(this.draggingNode);
+                    }
                     this.draggingNode = null;
                 }
                 if (this.zoomBehavior) {
@@ -32221,15 +32222,34 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
+        /** 路径筛选防抖定时器 */
+        let _graphFilterDebounceId = null;
+        /** 图谱重建锁，防止并发重建 */
+        let _graphRebuilding = false;
+
+        /** 安全地重建图谱（串行化防并发） */
+        function _safeRebuildGraph(nodes, edges) {
+            if (_graphRebuilding || !nodes || !edges) return;
+            _graphRebuilding = true;
+            try {
+                if (graphRenderer) graphRenderer.invalidateDataCaches();
+                processAndStartSimulation(nodes, edges);
+            } finally {
+                _graphRebuilding = false;
+            }
+        }
+
         function applyGraphFilter() {
             graphParams.filterPath = document.getElementById('graph-filter-path').value.trim().toLowerCase();
             const clearBtn = document.getElementById('graph-filter-clear');
             if (clearBtn) {
                 clearBtn.style.display = graphParams.filterPath ? 'block' : 'none';
             }
-            if (graphRenderer) {
-                graphRenderer.requestRender();
-            }
+            // 防抖重建：输入停止 200ms 后从缓存节点重建（带 filterPath 过滤）
+            clearTimeout(_graphFilterDebounceId);
+            _graphFilterDebounceId = setTimeout(() => {
+                _safeRebuildGraph(graphCachedNodes, graphCachedEdges);
+            }, 200);
         }
 
         function clearGraphFilter() {
@@ -32238,9 +32258,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const clearBtn = document.getElementById('graph-filter-clear');
             if (clearBtn) clearBtn.style.display = 'none';
             graphParams.filterPath = '';
-            if (graphRenderer) {
-                graphRenderer.requestRender();
-            }
+            clearTimeout(_graphFilterDebounceId);
+            _graphFilterDebounceId = null;
+            // 立即重建：回到无过滤状态
+            _safeRebuildGraph(graphCachedNodes, graphCachedEdges);
             input.focus();
         }
 
@@ -32254,13 +32275,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     if (data) {
                         await saveLinkGraphData(data);
                         processLinkGraphData(data);
-                        showNotification('✓ 文档关联图谱更新完成', 'success');
+                        showNotification(`✓ 文档关联图谱更新完成: ${data.nodes.length} 个节点, ${data.edges.length} 条链接`, 'success');
                     }
                     return;
                 }
                 // 文件图谱模式：原有逻辑
                 loadGraphParams();
                 await startSimulation(true); // force = true: 强制重新遍历文件系统
+                showNotification(`✓ 文件图谱更新完成: ${graphDataMap.nodes.size} 个节点, ${graphDataMap.edges.length} 条连线`, 'success');
             } catch (err) {
                 console.error('refreshGraphData error:', err);
                 showNotification('✗ 图谱刷新失败: ' + err.message, 'error');
@@ -32301,10 +32323,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         function toggleGraphIsolated() {
             graphParams.showIsolated = document.getElementById('graph-show-isolated').checked;
             saveGraphParams();
-            // 直接重新渲染，不重建 simulation（避免画面跳动）
-            if (graphRenderer) {
-                graphRenderer.requestRender();
-            }
+            // 重建数据（使计数和 degree 过滤与显示一致）
+            _safeRebuildGraph(graphCachedNodes, graphCachedEdges);
         }
 
         function toggleGraphLabels() {
@@ -32338,18 +32358,57 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 return;
             }
             const rootName = getRootHandle().name;
-            // 如果根目录未变且已有缓存，直接复用（避免重复遍历文件系统）
+            // 如果根目录未变且已有缓存，直接复用（避免重复构造）
             if (!force && graphCachedNodes && graphCachedEdges && graphCachedRootName === rootName) {
                 processAndStartSimulation(graphCachedNodes, graphCachedEdges);
                 return;
             }
+
+            // 检查扫描数据是否可用
+            if (!_scanData || !_scanData.files || !_scanData.folderTree) {
+                showNotification('✗ 扫描数据不可用，请先刷新文件树', 'error');
+                return;
+            }
+
             // 重置渲染器的邻居缓存（数据将变更）
             if (graphRenderer) graphRenderer.invalidateDataCaches();
 
+            // 并发保护
+            if (_graphTraversing) {
+                showNotification('正在构建图谱，请稍候...', 'info');
+                return;
+            }
+            _graphTraversing = true;
+            graphCachedNodes = null;
+            graphCachedEdges = null;
+            graphCachedRootName = null;
+
+            try {
+                const { nodes, edges } = buildGraphFromScanData(rootName);
+                graphCachedNodes = nodes;
+                graphCachedEdges = edges;
+                graphCachedRootName = rootName;
+                processAndStartSimulation(nodes, edges);
+            } catch (e) {
+                showNotification('✗ 构建图谱时出错: ' + e.message, 'error');
+            } finally {
+                _graphTraversing = false;
+            }
+        }
+
+        /**
+         * 从缓存的 _scanData 构造图谱节点与边，避免实时文件系统遍历。
+         * 输出格式与原有 traverseDirectory 方式完全兼容。
+         * @param {string} rootName - 根目录名称
+         * @returns {{ nodes: Array, edges: Array }}
+         */
+        function buildGraphFromScanData(rootName) {
             let nodes = [];
             let edges = [];
             const groupMap = new Map();
             let groupCounter = 0;
+
+            // 根节点
             nodes.push({
                 id: 'root',
                 title: rootName,
@@ -32361,83 +32420,49 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             groupMap.set('root', 0);
             groupCounter++;
 
-            // 并发保护：正在遍历时忽略后续调用
-            if (_graphTraversing) {
-                showNotification('正在构建图谱，请稍候...', 'info');
-                return;
+            // 辅助: 分配 group 并推入节点
+            function addNode(id, title, path, size, depth) {
+                const topDir = path.split(SLASH)[0];
+                let group = groupMap.get(topDir);
+                if (group === undefined) {
+                    group = groupCounter++;
+                    groupMap.set(topDir, group);
+                }
+                nodes.push({ id: id, title: title, path: path, size: size, group: group, depth: depth });
             }
-            _graphTraversing = true;
-            // 并发锁已获取后再清空缓存，避免竞态条件下清空被另一个协程依赖的缓存
-            graphCachedNodes = null;
-            graphCachedEdges = null;
-            graphCachedRootName = null;
 
-            async function traverseDirectory(dirHandle, parentPath) {
-                try {
-                    for await (const entry of dirHandle.values()) {
-                        const name = entry.name;
-                        const entryPath = _buildPath(parentPath, name);
-                        let topDir = entryPath.split(SLASH)[0];
-                        let group = groupMap.get(topDir);
-                        if (group === undefined) {
-                            group = groupCounter++;
-                            groupMap.set(topDir, group);
-                        }
-                        const depth = entryPath.split(SLASH).length;
-                        if (entry.kind === 'directory') {
-                            if (isSkipDir(name) || isSkipDir(entryPath)) continue;
-                            nodes.push({
-                                id: entryPath,
-                                title: name,
-                                path: entryPath,
-                                size: 0,
-                                group: group,
-                                depth: depth
-                            });
-                            await traverseDirectory(entry, entryPath);
-                        } else {
-                            if (isSkipFile(name)) continue;
-                            nodes.push({
-                                id: entryPath,
-                                title: name,
-                                path: entryPath,
-                                size: 1,
-                                group: group,
-                                depth: depth
-                            });
-                        }
+            // 1. 从 folderTree 递归提取所有目录节点（迭代栈避免递归栈溢出）
+            const folderTree = _scanData.folderTree;
+            if (folderTree) {
+                const stack = [];
+                for (const child of (folderTree.children || [])) {
+                    stack.push({ node: child, dirPath: child.name });
+                }
+                while (stack.length > 0) {
+                    const { node, dirPath } = stack.pop();
+                    if (isSkipDir(node.name) || isSkipDir(dirPath)) continue;
+                    const depth = dirPath.split(SLASH).length;
+                    addNode(dirPath, node.name, dirPath, 0, depth);
+                    for (const child of (node.children || [])) {
+                        stack.push({ node: child, dirPath: _buildPath(dirPath, child.name) });
                     }
-                } catch (e) {
-                    // 跳过无法访问的目录（如 Windows 系统保护目录、权限受限目录等）
-                    console.warn('跳过不可访问的目录:', parentPath, e.message);
                 }
             }
 
-            try {
-                await traverseDirectory(getRootHandle(), '');
-                createDirectoryTreeEdges(nodes, edges);
-                // 缓存遍历结果，后续 rebuild/refresh 直接复用
-                graphCachedNodes = nodes;
-                graphCachedEdges = edges;
-                graphCachedRootName = rootName;
-                processAndStartSimulation(nodes, edges);
-            } catch (e) {
-                if (e.name === 'NoModificationAllowedError') {
-                    showNotification('✗ 部分目录无法访问（文件系统受限），图谱可能不完整', 'warning');
-                    // 至少用已收集的节点生成图谱
-                    if (nodes.length > 0) {
-                        createDirectoryTreeEdges(nodes, edges);
-                        graphCachedNodes = nodes;
-                        graphCachedEdges = edges;
-                        graphCachedRootName = rootName;
-                        processAndStartSimulation(nodes, edges);
-                    }
-                } else {
-                    showNotification('✗ 构建图谱时出错: ' + e.message, 'error');
-                }
-            } finally {
-                _graphTraversing = false;
+            // 2. 从 _scanData.files 提取所有文件节点
+            const allFiles = getScanFileList();
+            for (let i = 0; i < allFiles.length; i++) {
+                const f = allFiles[i];
+                const filePath = f.path;
+                if (isSkipFile(f.name)) continue;
+                const depth = filePath.split(SLASH).length;
+                addNode(filePath, f.name, filePath, 1, depth);
             }
+
+            // 3. 按路径生成父子边
+            createDirectoryTreeEdges(nodes, edges);
+
+            return { nodes: nodes, edges: edges };
         }
 
         function createDirectoryTreeEdges(nodes, edges) {
@@ -32445,8 +32470,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             for (let i = 0; i < nodes.length; i++) {
                 nodeMap.set(nodes[i].id, nodes[i]);
             }
-            nodeMap.forEach((node, nodeId) => {
-                if (nodeId === 'root') return;
+            for (const [nodeId] of nodeMap) {
+                if (nodeId === 'root') continue;
                 const lastSlash = nodeId.lastIndexOf(SLASH);
                 const parentPath = lastSlash === -1 ? 'root' : nodeId.substring(0, lastSlash);
                 if (nodeMap.has(parentPath)) {
@@ -32455,7 +32480,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         target: nodeId
                     });
                 }
-            });
+            }
         }
 
         function processAndStartSimulation(nodes, edges) {
@@ -32464,7 +32489,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const filteredNodeIds = new Set();
             for (let i = 0; i < nodes.length; i++) {
                 const n = nodes[i];
-                if (graphParams.filterPath && !n.title.toLowerCase().includes(graphParams.filterPath)) continue;
+                // 优先使用预计算的 _titleLower（若节点已预计算），避免重复 toLowerCase
+                const titleLower = n._titleLower || n.title.toLowerCase();
+                if (graphParams.filterPath && !titleLower.includes(graphParams.filterPath)) continue;
                 filteredNodeIds.add(n.id);
                 degree.set(n.id, 0);
             }
@@ -32501,16 +32528,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 nodes = nodes.filter(n => filteredNodeIds.has(n.id));
             }
 
-            // 单次遍历构建 neighborsMap + graphDataMap.nodes
-            const neighborsMap = new Map();
-            for (let i = 0; i < filteredEdges.length; i++) {
-                const e = filteredEdges[i];
-                if (!neighborsMap.has(e.source)) neighborsMap.set(e.source, new Set());
-                if (!neighborsMap.has(e.target)) neighborsMap.set(e.target, new Set());
-                neighborsMap.get(e.source).add(e.target);
-                neighborsMap.get(e.target).add(e.source);
-            }
-            graphDataMap = { nodes: new Map(), nodesArray: [], edges: filteredEdges, neighborsMap };
+            graphDataMap = { nodes: new Map(), nodesArray: [], edges: filteredEdges, neighborsMap: null };
             for (let i = 0; i < nodes.length; i++) {
                 const nodeData = nodes[i];
                 const d = degree.get(nodeData.id) || 0;
@@ -32528,11 +32546,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     baseSize: baseSize,
                     size: baseSize * graphParams.nodeSize,
                     _color: getGraphGroupColor(nodeData.group, nodeData.depth || 0),
-                    _degree: d,  // 保存度，供 showIsolated 过滤用
+                    _degree: d,
+                    _titleLower: nodeData.title.toLowerCase(),
                 });
             }
             graphDataMap.nodesArray = Array.from(graphDataMap.nodes.values());
-            // 边中的 source/target 解析为节点对象引用 + 重建 neighborsMap
+            // 边中的 source/target 解析为节点对象引用 + 构建 neighborsMap
             const refEdges = [];
             const refNeighborsMap = new Map();
             for (let i = 0; i < filteredEdges.length; i++) {
@@ -32701,8 +32720,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (graphParams.nodeSize) {
                 updateGraphAllNodeSizes(graphDataMap.nodes);
             }
-            // 重新渲染
-            if (graphRenderer) {
+            // 筛选已重置，从缓存节点重建图谱（无筛选）；缓存不可用时回退到重新渲染
+            if (graphCachedNodes && graphCachedEdges) {
+                _safeRebuildGraph(graphCachedNodes, graphCachedEdges);
+            } else if (graphRenderer) {
                 graphRenderer.requestRender();
             }
             showNotification('✓ 参数已重置为默认值', 'success');
@@ -34893,12 +34914,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             );
         }
 
-        var _wordCloudTimer = null; // 词云自动重新布局定时器
         var _wordCloudResizeHandler = null; // 词云 resize 事件处理器引用
         var _wordCloudLoading = false; // 重入锁
-
         function _occlusion(svg, against) {
             against = against || 'text';
+            // 使用 d3.sort 按 priority 降序（高 priority 优先可见）
             var nodes = d3.sort(svg.selectAll(against), function (node) {
                 return +(node.getAttribute('data-priority') || 0);
             }).reverse().map(function (node) {
@@ -34914,188 +34934,275 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return visible;
         }
 
-        async function openWordCloudFile(dirPath = '') {
-            // 重入锁：上一次没跑完就跳过
+        function _getWordCloudFiles(dirPath) {
+            var allFiles = getScanFileList();
+            if (!allFiles || allFiles.length === 0) return [];
+            var prefix = dirPath ? dirPath + SLASH : '';
+            var results = [];
+            for (var i = 0; i < allFiles.length; i++) {
+                var f = allFiles[i];
+                if (f.path && (!prefix || f.path.startsWith(prefix))) {
+                    results.push(f);
+                }
+            }
+            return results;
+        }
+
+        function _buildWordCloudItems(fileList) {
+            if (!fileList || fileList.length === 0) return [];
+
+            // 单次遍历：求 maxSize、minSize，同时构建 items
+            var maxSize = 0, minSize = Infinity;
+            var items = new Array(fileList.length);
+            for (var i = 0; i < fileList.length; i++) {
+                var f = fileList[i];
+                var val = f.value || 0;
+                if (val > maxSize) maxSize = val;
+                if (val > 0 && val < minSize) minSize = val;
+                // name 去后缀（由扫描缓存提供，直接用 f.name）
+                items[i] = { name: f.name, value: val, path: f.path || '', size: 0 };
+            }
+            if (maxSize <= 0) maxSize = 1;
+            if (!minSize || minSize <= 0 || minSize === Infinity) minSize = 1;
+
+            // 3. 对数映射字号（整体缩小 1/4）
+            var minFontSize = 10, maxFontSize = 30;
+            var logMax = Math.log(maxSize);
+            var logMin = Math.log(minSize);
+            var logRange = logMax - logMin || 1;
+
+            for (var j = 0; j < items.length; j++) {
+                var v = items[j].value || 1;
+                var scale = (Math.log(v) - logMin) / logRange;
+                items[j].size = Math.round(minFontSize + (maxFontSize - minFontSize) * scale);
+            }
+
+            // 4. 如果字号范围太窄（< 8px 差异），改用百分位映射
+            var actualMin = maxFontSize, actualMax = minFontSize;
+            for (var k = 0; k < items.length; k++) {
+                var s = items[k].size;
+                if (s < actualMin) actualMin = s;
+                if (s > actualMax) actualMax = s;
+            }
+            if (actualMax - actualMin < 8 && items.length > 1) {
+                // 按 value 升序计算百分位字号，再按原始位置放回，不改变 items 顺序
+                var sortedIdx = items.map(function (_, idx) { return idx; });
+                sortedIdx.sort(function (a, b) { return (items[a].value || 0) - (items[b].value || 0); });
+                var n = items.length;
+                for (var m = 0; m < n; m++) {
+                    var idx = sortedIdx[m];
+                    items[idx].size = Math.round(minFontSize + (maxFontSize - minFontSize) * (m / (n - 1 || 1)));
+                }
+            }
+
+            return items;
+        }
+
+        // 生成词云 SVG text 元素的颜色（确定性预生成调色板，避免重复 Math.random）
+        var _wcColorPalette = null;
+        function _getWcColor(index) {
+            if (!_wcColorPalette) {
+                // 预生成 500 色调色板，HSL 均匀分布
+                _wcColorPalette = new Array(500);
+                for (var i = 0; i < 500; i++) {
+                    var h = (i * 137.508) % 360; // 黄金角分布，视觉均匀
+                    var s = 40 + (i % 3) * 10;    // 40%, 50%, 60%
+                    var l = 30 + (i % 5) * 4;     // 30%~46%
+                    _wcColorPalette[i] = 'hsl(' + (h | 0) + ',' + s + '%,' + l + '%)';
+                }
+            }
+            return _wcColorPalette[index % 500];
+        }
+
+        // 词云分页状态
+        var _wcAllItems = [];       // 全量排序后的 items
+        var _wcPageIndex = 0;       // 当前页码（从 0 开始）
+        var _wcPageSize = 400;      // 每页条数
+        function _renderWordCloud(items, isNewPage) {
+            if (!wordViewContainer) return;
+            var width = wordViewContainer.clientWidth || 900;
+            var height = wordViewContainer.clientHeight || 600;
+
+            // 复用或创建 SVG 包装层，避免清除按钮
+            var wrap = document.getElementById('wc-svg-wrap');
+            if (!wrap) {
+                wrap = document.createElement('div');
+                wrap.id = 'wc-svg-wrap';
+                wrap.style.cssText = 'width:100%;height:100%;';
+                wordViewContainer.appendChild(wrap);
+            }
+            wrap.innerHTML = '';
+
+            // 注入词云 CSS（只注入一次）
+            if (!document.getElementById('occlusion-wordcloud-css')) {
+                var styleEl = document.createElement('style');
+                styleEl.id = 'occlusion-wordcloud-css';
+                styleEl.textContent = 'svg.wc-svg{cursor:pointer;}' +
+                    'svg.wc-svg text.occluded{opacity:0.06!important;animation:wc-blip 4s ease-in-out infinite!important;}' +
+                    'svg.wc-svg text.wc-visible{animation:wc-breathe 3s ease-in-out infinite;}' +
+                    'svg.wc-svg text.wc-hover{transition:font-weight .15s;font-weight:700!important;}' +
+                    '@keyframes wc-breathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}' +
+                    '@keyframes wc-blip{0%,85%,100%{opacity:.06!important}88%{opacity:.25!important}91%{opacity:.06!important}94%{opacity:.2!important}}';
+                wordViewContainer.appendChild(styleEl);
+            }
+
+            var svg = d3.select(wrap)
+                .append('svg')
+                .attr('width', width)
+                .attr('height', height)
+                .attr('viewBox', [0, 0, width, height])
+                .attr('class', 'wc-svg')
+                .attr('style', 'max-width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;');
+
+            var priority = 0;
+            var PAD = 20;
+            var marginX = PAD, rangeX = width - PAD * 2;
+            var marginY = PAD, rangeY = height - PAD * 2;
+
+            var textSelection = svg.selectAll('text')
+                .data(items)
+                .join('text')
+                .text(function (d) { return d.name; })
+                .attr('text-anchor', 'middle')
+                .attr('x', function () { return (marginX + rangeX * Math.random()) | 0; })
+                .attr('y', function () { return (marginY + rangeY * Math.random()) | 0; })
+                .style('font-size', function (d) { return d.size + 'px'; })
+                .style('font-weight', function (d) { return d.size > 20 ? 'bold' : 'normal'; })
+                .attr('fill', function (_, i) { return _getWcColor(i); })
+                .style('opacity', 0.82)
+                .attr('data-priority', null)
+                .attr('data-original-opacity', 0.82)
+                .attr('data-original-font-size', function (d) { return d.size; })
+                .on('mouseover', function () {
+                    var self = d3.select(this);
+                    self.classed('wc-hover', true);
+                    var orig = parseFloat(self.attr('data-original-font-size'));
+                    self.style('font-size', (orig * 1.25) + 'px');
+                    self.attr('fill', '#e74c3c').raise().style('opacity', 1);
+                    svg.call(_occlusion);
+                })
+                .on('mouseout', function () {
+                    var self = d3.select(this);
+                    self.classed('wc-hover', false);
+                    var isPinned = +(self.attr('data-priority') || 0) > 0;
+                    self.attr('fill', isPinned ? '#2c3e50' : (self.attr('data-original-fill') || self.attr('fill')))
+                        .style('opacity', isPinned ? 1 : parseFloat(self.attr('data-original-opacity')))
+                        .style('font-size', self.attr('data-original-font-size') + 'px');
+                    svg.call(_occlusion);
+                })
+                .on('click', function (event, d) {
+                    var node = d3.select(this);
+                    var cur = +node.attr('data-priority');
+                    if (cur) {
+                        node.attr('data-priority', null).style('fill', null);
+                    } else {
+                        node.attr('data-priority', ++priority).style('fill', '#2c3e50');
+                    }
+                    svg.call(_occlusion);
+                    openFileFromPath(d.path);
+                })
+                .each(function () {
+                    var el = d3.select(this);
+                    var originalFill = el.attr('fill');
+                    if (originalFill) el.attr('data-original-fill', originalFill);
+                });
+
+            textSelection.classed('wc-visible', true);
+            svg.call(_occlusion);
+            _updateWordCloudNavBtn();
+        }
+
+        /** 更新分页导航按钮状态 */
+        function _updateWordCloudNavBtn() {
+            var prevBtn = document.getElementById('wc-prev-btn');
+            var nextBtn = document.getElementById('wc-next-btn');
+            var infoEl = document.getElementById('wc-page-info');
+            if (!prevBtn || !nextBtn || !infoEl) return;
+            var total = _wcAllItems.length;
+            var totalPages = Math.ceil(total / _wcPageSize);
+            var shown = Math.min((_wcPageIndex + 1) * _wcPageSize, total);
+            infoEl.textContent = (_wcPageIndex + 1) + '/' + totalPages + ' 页 (' + shown + '/' + total + ' 条)';
+            prevBtn.disabled = _wcPageIndex <= 0;
+            nextBtn.disabled = shown >= total;
+        }
+
+        async function openWordCloudFile(dirPath) {
             if (_wordCloudLoading) return;
             _wordCloudLoading = true;
             try {
-                // 清除旧实例的定时器和事件监听
                 destroyWordCloud();
                 switchToView(wordViewContainer, 'flex');
                 aiFabContainer.style.display = 'none';
-                // 显示 loading 效果
                 wordViewContainer.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;min-height:80vh;gap:16px;"><div class="raw-spinner"></div><span style="color:var(--color-text-secondary);font-size:14px">正在生成词云…</span></div>';
-                // 收集文件名列表和文件大小（限制最大条目数，防止大目录卡死）
-                let handle = await getRootHandle();
-                if (dirPath) {
-                    const { dirHandle, dirParentHandle } = await getDirHandleByDirPath(dirPath);
-                    handle = dirHandle;
-                }
-                var fileList = await getCustomFileList(handle, 0, dirPath);
-                if (!fileList || fileList.length === 0) {
+
+                // 全量获取并打乱顺序，使大小文件在各页均匀分布
+                var allFiles = _getWordCloudFiles(dirPath || '');
+                if (allFiles.length === 0) {
                     wordViewContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;width:100%;min-height:80vh;color:var(--color-text-secondary);font-size:14px">未找到文档文件</div>';
                     return;
                 }
-                // 取文件大小最大的前 MAX_WORD_COUNT 条，控制 _occlusion O(n²) 规模
-                var MAX_WORD_COUNT = 300;
-                if (fileList.length > MAX_WORD_COUNT) {
-                    fileList.sort(function (a, b) { return (b.value || 0) - (a.value || 0); });
-                    fileList = fileList.slice(0, MAX_WORD_COUNT);
+                // Fisher-Yates 洗牌，打乱文件大小顺序
+                for (var ri = allFiles.length - 1; ri > 0; ri--) {
+                    var rj = Math.floor(Math.random() * (ri + 1));
+                    var rt = allFiles[ri]; allFiles[ri] = allFiles[rj]; allFiles[rj] = rt;
                 }
-                // 根据文件大小映射字号（对数缩放 + 百分位兜底）
-                // value 为文件字节大小，数值越大，字体越大
-                var sizes = fileList.map(function (f) { return f.value || 0; });
-                var maxSize = Math.max.apply(null, sizes);
-                var minSize = Math.min.apply(null, sizes.filter(function (v) { return v > 0; }));
-                if (maxSize <= 0) maxSize = 1;
-                if (!minSize || minSize <= 0) minSize = 1;
-                var minFontSize = 13;
-                var maxFontSize = 40;
-                // 对数缩放：log(0) = -Infinity，确保 minSize >= 1
-                var logMax = Math.log(maxSize);
-                var logMin = Math.log(minSize);
-                var logRange = logMax - logMin || 1; // 防除零
-                var items = fileList.map(function (f) {
-                    var val = f.value || 0;
-                    if (val <= 0) val = 1;
-                    // 对数映射：文件大小跨数量级时线性/ sqrt 都会失效，log 才能拉开差距
-                    var scale = (Math.log(val) - logMin) / logRange;
-                    var fontSize = Math.round(minFontSize + (maxFontSize - minFontSize) * scale);
-                    return { name: f.name, size: fontSize, value: f.value, path: f.path || '' };
-                });
+                _wcAllItems = _buildWordCloudItems(allFiles);
+                _wcPageIndex = 0;
 
-                // 如果字号范围太窄（< 8px 差异），改用百分位映射保证视觉层次
-                var itemSizes = items.map(function (it) { return it.size; });
-                var actualMin = Math.min.apply(null, itemSizes);
-                var actualMax = Math.max.apply(null, itemSizes);
-                if (actualMax - actualMin < 8 && items.length > 1) {
-                    // 按 value 排序，用百分位映射字号
-                    var sorted = items.slice().sort(function (a, b) { return (a.value || 0) - (b.value || 0); });
-                    var n = sorted.length;
-                    sorted.forEach(function (item, i) {
-                        item.size = Math.round(minFontSize + (maxFontSize - minFontSize) * (i / (n - 1 || 1)));
-                    });
-                }
-                var width = wordViewContainer.clientWidth || 900;
-                var height = wordViewContainer.clientHeight || 600;
-                // 清除 loading，准备渲染词云
+                // 取第一页
+                var pageItems = _wcAllItems.slice(0, _wcPageSize);
+                // 清除 loading（wrap 尚不存在，直接清空容器）
                 wordViewContainer.innerHTML = '';
-                // 注入词云 CSS（遮挡 + 动画关键帧）
-                var styleEl = document.createElement('style');
-                styleEl.id = 'occlusion-wordcloud-css';
-                styleEl.textContent = 'svg.cursor-pointer { cursor: pointer; }\
-                    svg text.occluded { opacity: 0.06 !important; animation: wc-blip 4s ease-in-out infinite !important; }\
-                    svg text.wc-visible { animation: wc-breathe 3s ease-in-out infinite; }\
-                    svg text.wc-hover { transition: font-weight 0.15s; font-weight: bold !important; }\
-                    @keyframes wc-breathe {\
-                        0%,100% { transform: translateY(0px); }\
-                        50% { transform: translateY(-3px); }\
-                    }\
-                    @keyframes wc-blip {\
-                        0%,85%,100% { opacity: 0.06 !important; }\
-                        88% { opacity: 0.25 !important; }\
-                        91% { opacity: 0.06 !important; }\
-                        94% { opacity: 0.2 !important; }\
-                    }';
-                wordViewContainer.appendChild(styleEl);
-                // 创建 SVG
-                var svg = d3.select(wordViewContainer)
-                    .append('svg')
-                    .attr('width', width)
-                    .attr('height', height)
-                    .attr('viewBox', [0, 0, width, height])
-                    .attr('style', 'max-width:100%;height:100%;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;');
-                var priority = 0;
-                var cx = width / 2;
-                var cy = height / 2;
-                var textSelection = svg.selectAll('text')
-                    .data(items)
-                    .join('text')
-                    .text(function (d) { return d.name; })
-                    .attr('text-anchor', 'middle')
-                    // 直接随机位置（无入场动画）
-                    .attr('x', function () { return (width * 0.05 + width * 0.9 * Math.random()) | 0; })
-                    .attr('y', function () { return (height * 0.05 + height * 0.9 * Math.random()) | 0; })
-                    .style('font-size', function (d) { return d.size + 'px'; })
-                    .style('font-weight', function (d) { return d.size > 20 ? 'bold' : 'normal'; })
-                    .attr('fill', function () {
-                        var h = Math.floor(Math.random() * 360);
-                        var s = 40 + Math.floor(Math.random() * 30);
-                        var l = 25 + Math.floor(Math.random() * 25);
-                        return 'hsl(' + h + ',' + s + '%,' + l + '%)';
-                    })
-                    .style('opacity', 0.82)
-                    .attr('data-priority', null)
-                    .attr('data-original-opacity', 0.82)
-                    .attr('data-original-font-size', function (d) { return d.size; })
-                    .on('mouseover', function () {
-                        var self = d3.select(this);
-                        self.classed('wc-hover', true);
-                        self.style('font-size', function () {
-                            var orig = parseFloat(self.attr('data-original-font-size'));
-                            return (orig * 1.25) + 'px';
-                        });
-                        self.attr('fill', '#e74c3c').raise().style('opacity', 1);
-                        svg.call(_occlusion);
-                    })
-                    .on('mouseout', function () {
-                        var self = d3.select(this);
-                        self.classed('wc-hover', false);
-                        // 已固定（pinned）的词保持固定色
-                        var isPinned = +(self.attr('data-priority') || 0) > 0;
-                        self.attr('fill', isPinned ? '#2c3e50' : (self.attr('data-original-fill') || self.attr('fill')))
-                            .style('opacity', isPinned ? 1 : parseFloat(self.attr('data-original-opacity')))
-                            .style('font-size', self.attr('data-original-font-size') + 'px');
-                        svg.call(_occlusion);
-                    })
-                    .on('click', function (event, d) {
-                        var node = d3.select(this);
-                        var cur = +node.attr('data-priority');
-                        if (cur) {
-                            node.attr('data-priority', null).style('fill', null);
-                        } else {
-                            node.attr('data-priority', ++priority).style('fill', '#2c3e50');
-                        }
-                        svg.call(_occlusion);
-                        // 打开对应的文件
-                        openFileFromPath(d.path);
-                    })
-                    .each(function () {
-                        var el = d3.select(this);
-                        var originalFill = el.attr('fill');
-                        if (originalFill) el.attr('data-original-fill', originalFill);
-                    });
+                _renderWordCloud(pageItems);
 
-                // 可见文字添加呼吸动画类
-                textSelection.classed('wc-visible', true);
+                // 添加分页按钮组
+                var navBar = document.createElement('div');
+                navBar.id = 'wc-nav-bar';
+                navBar.style.cssText = 'position:absolute;top:10px;right:10px;z-index:100;display:flex;align-items:center;gap:6px;';
 
-                // 初次调用 occlusion 计算可见性
-                svg.call(_occlusion);
-                const resizeSvg = () => {
-                    // 重新读取容器尺寸，适应侧边栏开/关后的布局变化
-                    var w = wordViewContainer.clientWidth || 900;
-                    var h = wordViewContainer.clientHeight || 600;
-                    svg.attr('width', w).attr('height', h).attr('viewBox', [0, 0, w, h]);
-                    svg.selectAll('text')
-                        .attr('x', function () { return (w * 0.05 + w * 0.9 * Math.random()) | 0; })
-                        .attr('y', function () { return (h * 0.05 + h * 0.9 * Math.random()) | 0; })
-                        .attr('data-priority', null)
-                        .style('fill', function () {
-                            return d3.select(this).attr('data-original-fill');
-                        });
-                    svg.call(_occlusion);
+                var prevBtn = document.createElement('button');
+                prevBtn.id = 'wc-prev-btn';
+                prevBtn.className = 'git-diff-nav-btn';
+                prevBtn.textContent = '上一页';
+                prevBtn.onclick = function () {
+                    if (_wcPageIndex <= 0) return;
+                    _wcPageIndex--;
+                    var start = _wcPageIndex * _wcPageSize;
+                    var page = _wcAllItems.slice(start, start + _wcPageSize);
+                    _renderWordCloud(page);
                 };
-                // 添加重置按钮
-                var resetBtn = document.createElement('button');
-                resetBtn.className = 'btn btn-primary btn-sm';
-                resetBtn.textContent = '🔄 重新布局';
-                resetBtn.style.cssText = 'position:fixed;top:10px;right:10px;z-index:100;';
-                resetBtn.onclick = resizeSvg
-                wordViewContainer.appendChild(resetBtn);
-                // 每隔 3 秒自动重新布局
-                _wordCloudTimer = setInterval(resizeSvg, 5000);
-                _wordCloudResizeHandler = resizeSvg;
-                window.addEventListener('resize', resizeSvg);
+
+                var infoEl = document.createElement('span');
+                infoEl.id = 'wc-page-info';
+                infoEl.style.cssText = 'font-size:12px;color:var(--t1);white-space:nowrap;min-width:100px;text-align:center;';
+
+                var nextBtn = document.createElement('button');
+                nextBtn.id = 'wc-next-btn';
+                nextBtn.className = 'git-diff-nav-btn';
+                nextBtn.textContent = '下一页';
+                nextBtn.onclick = function () {
+                    var total = _wcAllItems.length;
+                    var shown = (_wcPageIndex + 1) * _wcPageSize;
+                    if (shown >= total) return;
+                    _wcPageIndex++;
+                    var start = _wcPageIndex * _wcPageSize;
+                    var page = _wcAllItems.slice(start, start + _wcPageSize);
+                    _renderWordCloud(page);
+                };
+
+                navBar.appendChild(prevBtn);
+                navBar.appendChild(infoEl);
+                navBar.appendChild(nextBtn);
+                wordViewContainer.appendChild(navBar);
+                _updateWordCloudNavBtn();
+
+                // resize 时重新布局当前页
+                _wordCloudResizeHandler = function () {
+                    var start = _wcPageIndex * _wcPageSize;
+                    var page = _wcAllItems.slice(start, start + _wcPageSize);
+                    if (page.length > 0) _renderWordCloud(page);
+                };
+                window.addEventListener('resize', _wordCloudResizeHandler);
             } catch (error) {
                 destroyWordCloud();
                 console.error('词云生成失败:', error);
@@ -35104,39 +35211,45 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 _wordCloudLoading = false;
             }
         }
-        /** 销毁词云：清理定时器、事件监听 */
         function destroyWordCloud() {
-            if (_wordCloudTimer) { clearInterval(_wordCloudTimer); _wordCloudTimer = null; }
             if (_wordCloudResizeHandler) { window.removeEventListener('resize', _wordCloudResizeHandler); _wordCloudResizeHandler = null; }
+            // 清理 DOM 残留
+            var navBar = document.getElementById('wc-nav-bar');
+            if (navBar) navBar.remove();
+            var wrap = document.getElementById('wc-svg-wrap');
+            if (wrap) wrap.remove();
+            var css = document.getElementById('occlusion-wordcloud-css');
+            if (css) css.remove();
+            _wcColorPalette = null;
+            _wcAllItems = [];
+            _wcPageIndex = 0;
         }
-        async function getCustomFileList(handle, depth = 0, relPath,
-            callback = (str) => { return !isDoc(getExt(str)) && !/[\u4e00-\u9fa5]/.test(str) }) {
-            if (!handle || (handle.kind === 'file' && depth === 0)) return [];
-            var fileName = handle.name
-            var fileList = [];
-            if (handle.kind === 'file') {
-                if (isSkipFile(fileName)) return [];
-                if (callback(fileName)) return [];
-                var fileSize = 0;
-                try {
-                    var file = await handle.getFile();
-                    fileSize = file.size || 0;
-                } catch (e) {
-                    console.warn('读取文件大小失败:', fileName, e);
-                }
-                var nameStr = fileName.split(DOT)?.[0]
-                fileList.push({ name: nameStr, nameFull: fileName, value: fileSize, path: relPath ? joinPath(relPath, fileName) : fileName });
-            } else {
-                if (depth > MAX_DIR_DEPTH || isSkipDir(fileName) || isSkipDir(relPath)) return [];
-                for await (const child of handle.values()) {
-                    const childRelPath = child.kind === 'file' ? relPath : joinPath(relPath, child.name);
-                    const childList = await getCustomFileList(child, depth + 1, childRelPath, callback);
-                    if (!isEmpty(childList)) {
-                        fileList = fileList.concat(childList);
-                    }
-                }
+       
+        async function getCustomFileList(relPath, callback) {
+            return _getCustomFileListFromCache(relPath || '', callback);
+        }
+
+        function _getCustomFileListFromCache(relPath, callback, maxCount) {
+            var allFiles = getScanFileList();
+            if (!allFiles || allFiles.length === 0) return [];
+            var prefix = relPath ? relPath + SLASH : '';
+            var results = [];
+            var hasCallback = typeof callback === 'function';
+            for (var i = 0; i < allFiles.length; i++) {
+                var f = allFiles[i];
+                if (!f.path) continue;
+                if (prefix && !f.path.startsWith(prefix)) continue;
+                if (isSkipFile(f.name)) continue;
+                if (hasCallback && callback(f.name)) continue;
+                results.push({
+                    name: f.name.split(DOT)?.[0] || f.name,
+                    nameFull: f.name,
+                    value: f.value || 0,
+                    path: f.path
+                });
+                if (maxCount && results.length >= maxCount) break;
             }
-            return fileList;
+            return results;
         }
         let photoCurrentLayout = 'masonry'; // 当前布局
         let photoRenderedLayouts = {}; // 已渲染的布局
@@ -35270,11 +35383,26 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 showNotification('✗ 目录不存在', 'error');
                 return;
             }
-            const judgePic = (str) => {
-                return !isPicImage(getExt(str));
-            };
-            var fileList = await getCustomFileList(currentPhotoDirHandle, 0, relPath, judgePic);
-            currentPhotoDirData = fileList.map((h, i) => ({ id: i, title: h.nameFull, url: h.path }));
+            // 优先从 _scanData 缓存获取（O(n) 单次遍历），避免递归遍历文件系统
+            const allFiles = getScanFileList();
+            if (allFiles.length > 0) {
+                const prefix = relPath ? relPath + SLASH : '';
+                currentPhotoDirData = [];
+                let id = 0;
+                for (let i = 0; i < allFiles.length; i++) {
+                    const f = allFiles[i];
+                    if (f.path.startsWith(prefix) && isPicImage(f.ext)) {
+                        currentPhotoDirData.push({ id: id++, title: f.name, url: f.path });
+                    }
+                }
+            } else {
+                // 降级：_scanData 缓存不可用时，走文件系统递归遍历
+                const judgePic = (str) => {
+                    return !isPicImage(getExt(str));
+                };
+                var fileList = await getCustomFileList(relPath, judgePic);
+                currentPhotoDirData = fileList.map((h, i) => ({ id: i, title: h.nameFull, url: h.path }));
+            }
         }
         // 图片瀑布流布局
         async function photoRenderMasonry(isFirstPage = false, relPath = '') {
