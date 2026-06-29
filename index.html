@@ -882,26 +882,28 @@
         }
 
         .canvas-save-menu {
-            display: none;
             position: absolute;
             left: 0;
             top: 100%;
-            background: white;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            z-index: 3000;
-            min-width: 250px;
-            max-height: 400px;
-            overflow: auto;
+            background: var(--color-bg);
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transition: all 0.2s ease;
+            display: none;
+            min-width: 240px;
+            max-height: 350px;
+            overflow-y: auto;
+            z-index: 200;
+            padding: 0;
+        }
+
+        .canvas-save-menu::-webkit-scrollbar {
+            width: 0px;
         }
 
         .canvas-save-menu.canvas-open {
             display: block;
-        }
-
-        .canvas-directory-tree {
-            padding: 8px;
         }
 
         /* Canvas 底部节点类型选择工具栏 */
@@ -4850,7 +4852,6 @@
         }
 
         .mermaid-directory-tree {
-            padding: 6px 0;
             height: auto;
         }
 
@@ -4888,17 +4889,20 @@
         }
 
         .mermaid-directory-search-wrapper {
-            padding: 6px 12px;
+            padding: 12px 12px;
             flex-shrink: 0;
             position: sticky;
             top: 0;
             background: var(--color-bg);
             z-index: 10;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
 
         .mermaid-directory-search-box {
             position: relative;
-            width: 100%;
+            flex: 1;
         }
 
         .mermaid-directory-search-input {
@@ -5015,9 +5019,7 @@
             background: #e8f0fe;
         }
 
-        .mermaid-directory-children {
-            margin-left: 16px;
-        }
+        .mermaid-directory-children {}
 
         .dashboard-tag {
             padding: 2px 10px;
@@ -11334,7 +11336,7 @@
         </div>
         <div id="sidebar-search-header">
             <div id="file-tree-search-box">
-                <input type="text" id="file-search" placeholder="按下回车搜索文件..." onkeydown="handleSearchKeydown(event)">
+                <input type="text" id="file-search" placeholder="🔍 按下回车搜索文件..." onkeydown="handleSearchKeydown(event)">
                 <button id="clear-search" onclick="clearSearch()" style="display: none;">✕</button>
             </div>
         </div>
@@ -12241,11 +12243,11 @@
         </div>
         <!-- Canvas 白板工具栏（保存） -->
         <div id="canvas-top-left-controls" class="top-left-controls" style="display: none;">
-            <div class="canvas-dropdown canvas-save-dropdown">
+            <div class="canvas-save-dropdown">
                 <button id="canvas-save-toggle" class="btn btn-primary btn-sm"
                     onclick="handleCanvasSaveToggleClick(event)">保存</button>
-                <div id="canvas-save-menu" class="canvas-dropdown-menu canvas-save-menu">
-                    <div id="canvas-save-directory-tree" class="canvas-directory-tree"></div>
+                <div id="canvas-save-menu" class="canvas-save-menu">
+                    <div id="canvas-save-directory-tree"></div>
                 </div>
             </div>
         </div>
@@ -13470,9 +13472,9 @@
         let _scanData = null; // 完整扫描数据缓存 { folderTree, files, stats }，供懒加载文件树按目录查询
         let _scanFileList = []; // 扫描文件列表缓存，依赖 _scanData
         const LAZY_LOAD_DEPTH = 2; // 文件树懒加载初始渲染深度
-        let currentActiveItem = null;       // 当前激活的文件项
-        let currentFileHandle = null;       // 当前文件句柄
-        let currentZoom = 1;                // 当前图片缩放比例
+        let currentActiveItem = null;        // 当前激活的文件项
+        let currentFileHandle = null;        // 当前文件句柄
+        let currentZoom = 1;                 // 当前图片缩放比例
         let currentTranslateX = 0;           // 当前图片平移 X
         let currentTranslateY = 0;           // 当前图片平移 Y
         let isDragging = false;              // 是否正在拖拽
@@ -13481,7 +13483,7 @@
         let dragTranslateX = 0;              // 拖拽起始 translateX
         let dragTranslateY = 0;              // 拖拽起始 translateY
         let _imageDragEventsInited = false;  // 全局图片拖拽事件是否已初始化
-        let currentJsMind = null;           // jsMind 实例
+        let currentJsMind = null;            // jsMind 实例
         let markdownSelectionState = { range: null, text: '' }; // Markdown 选区浮动工具栏状态
         // 编辑模式相关变量
         let currentEditor = null;           // Monaco 编辑器实例
@@ -13497,43 +13499,44 @@
         let jsonPathResultMatches = [];     // jsonpath查找到的结果反向查找并标记节点
         let openrestyEditor = null;         // OpenResty 编辑器实例
         let isNewFileClickListenerActive = false;  // 新建文件点击监听器是否激活
-        let dashboardCharts = {};   // 存储 ECharts 实例的对象，键为容器 ID，值为对应的 ECharts 实例
-        let chartsResizeBound = false;  // 是否已绑定窗口 resize 事件以调整图表大小
-        let currentObjectUrls = []; // 跟踪当前的 object URLs 用于清理
-        let currentVideoObjectUrl = null; // 当前视频 Blob URL（单独管理，避免大文件堆积）
-        let currentArtPlayer = null; // 当前 ArtPlayer 实例
-        let currentHls = null; // 当前 Hls 解码器实例（切换时需要销毁）
-        let currentFlv = null; // 当前 flvjs 解码器实例（切换时需要销毁）
-        let tocVisible = true; // TOC 目录可见性状态
-        let sidebarVisible = true; // 文件菜单侧边栏可见性状态
-        let aiHistory = [];  // AI 历史记录数组
-        let excalidrawAPI = null; // excalidraw 实例
-        let rootExcalidraw = null; // 根目录的 excalidraw 实例
-        let autoSaveTimer = null; // 自动保存定时器
-        let aiPanelVisible = false; // AI 面板可见性状态
-        let swaggerEditor = null;   // Swagger 编辑器实例（全局单例，只创建一次）
-        let graphqlReactRoot = null; // GraphQL React 实例根元素
-        let _cardCheckboxDebounce = false; // GraphQL React 实例
-        let graphqlInitialized = false; // 是否初始化了GraphQL Playground
+        let dashboardCharts = {};           // 存储 ECharts 实例的对象，键为容器 ID，值为对应的 ECharts 实例
+        let chartsResizeBound = false;      // 是否已绑定窗口 resize 事件以调整图表大小
+        let currentObjectUrls = [];         // 跟踪当前的 object URLs 用于清理
+        let currentVideoObjectUrl = null;   // 当前视频 Blob URL（单独管理，避免大文件堆积）
+        let currentArtPlayer = null;        // 当前 ArtPlayer 实例
+        let currentHls = null;              // 当前 Hls 解码器实例（切换时需要销毁）
+        let currentFlv = null;              // 当前 flvjs 解码器实例（切换时需要销毁）
+        let tocVisible = true;              // TOC 目录可见性状态
+        let sidebarVisible = true;          // 文件菜单侧边栏可见性状态
+        let aiHistory = [];                 // AI 历史记录数组
+        let excalidrawAPI = null;           // excalidraw 实例
+        let rootExcalidraw = null;          // 根目录的 excalidraw 实例
+        let autoSaveTimer = null;           // 自动保存定时器
+        let aiPanelVisible = false;         // AI 面板可见性状态
+        let swaggerEditor = null;           // Swagger 编辑器实例（全局单例，只创建一次）
+        let graphqlReactRoot = null;        // GraphQL React 实例根元素
+        let _cardCheckboxDebounce = false;  // GraphQL React 实例
+        let graphqlInitialized = false;     // 是否初始化了GraphQL Playground
         // 系统监控相关
-        let systemMonitorCpuChart = null; // CPU 仪表盘 ECharts 实例
-        let systemMonitorMemChart = null; // 内存仪表盘 ECharts 实例
+        let systemMonitorCpuChart = null;   // CPU 仪表盘 ECharts 实例
+        let systemMonitorMemChart = null;   // 内存仪表盘 ECharts 实例
         // 图片布局相关
-        let currentPhotoDirData = [];    // 当前目录图片数据
-        let _treeLoadDuration = null; // 文件树加载耗时(ms)
-        let _fileScanDuration = null; // 文件扫描耗时(ms)
+        let currentPhotoDirData = [];       // 当前目录图片数据
+        let _treeLoadDuration = null;       // 文件树加载耗时(ms)
+        let _fileScanDuration = null;       // 文件扫描耗时(ms)
         // 左侧文件树
-        let _markersMap = null; // markers 缓存（Map，首次 readMarkers 时加载）
-        let _cachedLastFile = null;    // createFileItem 预缓存：最后一次打开的文件路径
-        let _browserRefreshed = false;   // createFileItem 预缓存：是否浏览器刷新场景
-        let _pendingAutoClickFile = null; // 待自动打开的文件路径（createFileItem 发现匹配后暂存，renderDirectory 末尾统一执行）
-        let _treeClickTimer = null; // 文件树单击防抖计时器（事件委托共享）
+        let _markersMap = null;             // markers 缓存（Map，首次 readMarkers 时加载）
+        let _cachedLastFile = null;         // createFileItem 预缓存：最后一次打开的文件路径
+        let _browserRefreshed = false;      // createFileItem 预缓存：是否浏览器刷新场景
+        let _pendingAutoClickFile = null;   // 待自动打开的文件路径（createFileItem 发现匹配后暂存，renderDirectory 末尾统一执行）
+        let _treeClickTimer = null;         // 文件树单击防抖计时器（事件委托共享）
         // Canvas 白板相关函数
         let canvasData = { nodes: [], edges: [] };
         // Canvas 图片节点加载并发限制（避免 20 张大图同时解码导致 CPU 飙升）
         const _CANVAS_IMG_CONCURRENCY = 4;
-        let _canvasImgQueue = [];
-        let _canvasImgInFlight = 0;
+        let _canvasImgQueue = [];           // 待加载的图片任务队列
+        let _canvasImgInFlight = 0;         // 当前正在加载的图片数量
+        let currentCvsDirPath = null;       // 邮件文档图谱的目录地址 
         async function _canvasImgProcessQueue() {
             while (_canvasImgInFlight < _CANVAS_IMG_CONCURRENCY && _canvasImgQueue.length > 0) {
                 const task = _canvasImgQueue.shift();
@@ -13727,56 +13730,56 @@
                 return;
             }
             hiddenAiPanel();
-            await Promise.resolve(destroyEverything());
             currentArtPlayer?.pause();
             aiFabContainer.style.display = 'none';
             if (type === 'newFile') {
                 newFile(newFileName);
             } else if (type === 'noteGraph') {
-                openNoteGraph();
+                await openNoteGraph();
             } else if (type === 'bookmarks') {
-                toggleBookmarkView()
+                await toggleBookmarkView()
             } else if (type === 'dashboard') {
                 aiFabContainer.style.display = 'block';
-                toggleDashboardView()
+                await toggleDashboardView()
             } else if (type === 'randomOpen') {
                 aiFabContainer.style.display = 'block';
-                randomOpen();
+                await randomOpen();
             } else if (type === 'renderFile') {
                 aiFabContainer.style.display = 'block';
                 await renderFile(relativePath, fileSpan);
             } else if (type === 'graphiQL') {
-                openGraphiQL();
+                await openGraphiQL();
             } else if (type === 'graphQLPlayground') {
-                openGraphQLPlayground();
+                await openGraphQLPlayground();
             } else if (type === 'openRestyEditor') {
-                openOpenRestyEditor();
+                await openOpenRestyEditor();
             } else if (type === 'mermaid') {
-                renderMermaidFile();
+                await renderMermaidFile();
             } else if (type === 'whiteboard') {
-                openWhiteboard();
+                await openWhiteboard();
             } else if (type === 'canvas') {
-                openCanvasFile();
+                currentCvsDirPath = null;
+                await openCanvasFile();
             } else if (type === 'timeline') {
-                openTimeline();
+                await openTimeline();
             } else if (type === 'regexTest') {
-                openRegexTest();
+                await openRegexTest();
             } else if (type === 'calendar') {
-                openCalendar();
+                await openCalendar();
             } else if (type === 'cron') {
-                openCron();
+                await openCron();
             } else if (type === 'video') {
-                openVideoPlayer();
+                await openVideoPlayer();
             } else if (type === 'raw') {
-                openRawFile();
+                await openRawFile();
             } else if (type === 'urlEncoder') {
-                openUrlEncoderFile();
+                await openUrlEncoderFile();
             } else if (type === 'wordCloud') {
-                openWordCloudFile();
+                await openWordCloudFile();
             } else if (type === 'gitRecords') {
-                openGitPage();
+                await openGitPage();
             } else if (type === 'pomodoro') {
-                openPomodoro();
+                await openPomodoro();
             }
             lastToggle = type;
         }
@@ -13814,7 +13817,9 @@
             const fileName = file.name;
             await cleanupCommonIframe();
             if (!editEnable(fileName)) {
-                switchToView(contentMain);
+                await switchToView(contentMain);
+            } else {
+                await destroyEverything();
             }
             topRightBtnDisplay(fileName);
             previewFileText = '';
@@ -13871,7 +13876,7 @@
             }
             const fileText = currentEditor ? currentEditor.getValue() : originalContent;
             await destroyEditor(currentEditor ? false : true, true);
-            switchToView(contentMain);
+            await switchToView(contentMain);
             setControlsState({
                 topControls: true,
                 editBtn: true,
@@ -13911,7 +13916,7 @@
         async function enterEditMode(isOtherFile = false, text = '') {
             if (!currentFileHandle) return;
             destroyEditor(true);
-            switchToView(contentEdit, 'flex');
+            await switchToView(contentEdit, 'flex');
             let initialContent = previewFileText || text || originalContent;
             contentEdit.innerHTML = '<div class="editor-container"><div class="editor-header">📝 编辑模式 - '
                 + currentFileName + '</div><div id="editor-inner" style="width:100%;height:calc(100% - 65px);overflow: hidden;"></div>'
@@ -13967,7 +13972,7 @@
                 return;
             }
             await destroyEditor(false, true);
-            switchToView(contentEdit, 'flex');
+            await switchToView(contentEdit, 'flex');
             contentEdit.innerHTML = '';
             const editorInnerDiv = document.createElement('div');
             editorInnerDiv.id = 'live-preview-editor';
@@ -14587,8 +14592,8 @@
             }
         }
 
-        function initPageNone() {
-            switchToView(contentMain);
+        async function initPageNone() {
+            await switchToView(contentMain);
             treeElement.innerHTML = '';
             contentMain.innerHTML = `<div style="color:var(--color-text-secondary); text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh; width:100%; box-sizing:border-box;">
                                 <div style="text-align:center;">
@@ -14599,7 +14604,7 @@
 
         async function initTreeBrowser() {
             if (await initFromStorage()) return true;
-            initPageNone();
+            await initPageNone();
             openDir();
             return false;
         }
@@ -14647,7 +14652,7 @@
             }
         }
 
-        function disposeAllCharts() {
+        async function disposeAllCharts() {
             Object.values(dashboardCharts).forEach(c => {
                 if (c && c.dispose) try {
                     c.dispose();
@@ -14677,10 +14682,10 @@
                 AUX_CONTROLS[i].style.display = 'none';
             }
             // 等待所有子模块清理完成，避免清理尚未完成时新模块已开始渲染导致竞态
-            await Promise.resolve(destroyEverything());
+            await destroyEverything();
         }
 
-        function cleanupImageDragEvents() {
+        async function cleanupImageDragEvents() {
             isDragging = false;
             _imageDragEventsInited = false;
             document.removeEventListener('mousemove', _onImageMouseMove);
@@ -14690,13 +14695,13 @@
         }
 
         async function destroyEverything() {
-            disposeAllCharts();
             cleanupObjectUrls();
-            cleanupImageDragEvents();
             showTocToggleBtn(false);
-            hideMarkdownSelectionToolbar();
             // 并发清理各模块，等待所有清理完成再返回，避免竞态
             await Promise.allSettled([
+                Promise.resolve(disposeAllCharts()),
+                Promise.resolve(cleanupImageDragEvents()),
+                Promise.resolve(hideMarkdownSelectionToolbar()),
                 Promise.resolve(destroyExcalidraw()),
                 Promise.resolve(destroyJsMind()),
                 Promise.resolve(destroyMermaid()),
@@ -14704,7 +14709,7 @@
                 Promise.resolve(hiddenAiPanel()),
                 Promise.resolve(timelineDestroy()),
                 Promise.resolve(picLayoutDestroy()),
-                Promise.resolve(cleanupKanbanPan()),
+                Promise.resolve(cleanupKanban()),
                 Promise.resolve(destroySwaggerEditor()),
                 Promise.resolve(destroyGraphQLPlayground()),
                 Promise.resolve(cleanupCommonIframe()),
@@ -14875,7 +14880,7 @@
             if (!fileName || fileName === '') {
                 return;
             }
-            switchToView(contentEdit, 'flex');
+            await switchToView(contentEdit, 'flex');
             isDiary = fileName === 'diary.md';
             if (isDiary) {
                 fileName = new Date().toLocaleDateString().replace(/\//g, '-') + '.md';
@@ -15106,9 +15111,11 @@
                 // 6. 隐藏底部工具栏
                 const bottomToolbar = document.getElementById('canvas-bottom-toolbar');
                 if (bottomToolbar) bottomToolbar.style.display = 'none';
-                // 7. 隐藏 canvas 控制按钮
+                // 7. 隐藏 canvas 控制按钮并关闭保存菜单
                 const canvasControls = document.getElementById('canvas-top-left-controls');
                 if (canvasControls) canvasControls.style.display = 'none';
+                const canvasSaveMenu = document.getElementById('canvas-save-menu');
+                if (canvasSaveMenu) canvasSaveMenu.classList.remove('canvas-open');
             }
         }
 
@@ -15186,6 +15193,11 @@
             if (newFileSaveMenu) {
                 newFileSaveMenu.classList.remove('mermaid-open');
             }
+            // canvas 保存菜单点击外部关闭
+            const canvasSaveMenu = document.getElementById('canvas-save-menu');
+            if (canvasSaveMenu) {
+                canvasSaveMenu.classList.remove('canvas-open');
+            }
             // 新建文件 drpdown 点击外部关闭
             closeNewFilePanelOnClick();
         });
@@ -15195,7 +15207,6 @@
             if (!newFileSaveDirectoryTree) return;
             await renderDirectoryTree({
                 container: newFileSaveDirectoryTree,
-                rootDirHandle: getRootHandle(),
                 onSave: doSaveToFolder,
                 getDefaultFileName: () => 'untitled.' + (newFileExt || 'txt'),
                 getContent: () => currentEditor.getValue(),
@@ -15204,31 +15215,23 @@
         }
 
         async function renderDirectoryTree(config) {
-            const { container, rootDirHandle, onSave, getDefaultFileName, getContent, closeMenu } = config;
+            const { container, onSave, getDefaultFileName, getContent, closeMenu } = config;
             let allDirectoryTree = [];
             let debounceTimer = null;
 
-            async function collectDirTree(dirHandle, currentPath = '') {
-                const rawHandle = dirHandle instanceof FileEntry ? dirHandle.rawEntry : dirHandle;
-                const handleName = dirHandle instanceof FileEntry ? dirHandle.name : dirHandle.name;
+            // 从 _scanData.folderTree 缓存构建目录树（避免实时调用 File System API）
+            function buildTreeFromFolderTree(folderNode, parentPath = '', isRoot = true) {
+                const currentPath = isRoot ? '' : joinPath(parentPath, folderNode.name);
                 const node = {
-                    name: handleName,
-                    handle: rawHandle,
+                    name: folderNode.name,
+                    handle: null, // 延迟获取，仅保存时按 path 解析
                     path: currentPath,
                     children: []
                 };
-                try {
-                    const entries = await getDirectoryEntries(rawHandle);
-                    for (const entry of entries) {
-                        if (entry.kind === 'directory') {
-                            const newPath = currentPath ? joinPath(currentPath, entry.name) : entry.name;
-                            if (isSkipDir(entry.name) || isSkipDir(newPath)) continue;
-                            const child = await collectDirTree(entry.rawEntry, newPath);
-                            node.children.push(child);
-                        }
+                if (folderNode.children && folderNode.children.length > 0) {
+                    for (const child of folderNode.children) {
+                        node.children.push(buildTreeFromFolderTree(child, currentPath, false));
                     }
-                } catch (e) {
-                    console.error('Collect directory failed:', e);
                 }
                 return node;
             }
@@ -15265,7 +15268,7 @@
                     });
                 }
 
-                // 保存按钮点击
+                // 保存按钮点击（延迟获取目录句柄）
                 saveBtn.addEventListener('click', async (e) => {
                     e.stopPropagation();
                     const defaultName = getDefaultFileName();
@@ -15274,7 +15277,8 @@
                         if (!fileName) return;
                         if (closeMenu) closeMenu();
                         try {
-                            await onSave(node.handle, node.path, fileName, content, true);
+                            const { dirHandle } = await getDirHandleByDirPath(node.path);
+                            await onSave(dirHandle, node.path, fileName, content, true);
                         } catch (err) {
                             console.error('Save failed:', err);
                         }
@@ -15304,10 +15308,28 @@
                         <div class="mermaid-directory-search-box">
                             <input type="text" class="mermaid-directory-search-input" placeholder="🔍 搜索目录..." value="${escapeHtml(preserveFocus ? focusValue : filterText)}">
                             <button class="mermaid-directory-search-clear" style="${(preserveFocus ? focusValue : filterText) ? 'display: flex;' : 'display: none;'}">✕</button>
-                        </div>`;
+                        </div>${currentCvsDirPath ? '<button id="canvas-save-dir" class="btn btn-primary btn-sm" style="flex-shrink:0;font-size: 12px;">当前目录</button>' : ''}`;
                 container.appendChild(searchWrapper);
                 const searchInput = searchWrapper.querySelector('.mermaid-directory-search-input');
                 const clearBtn = searchWrapper.querySelector('.mermaid-directory-search-clear');
+                const canvasSaveDir = searchWrapper.querySelector('#canvas-save-dir');
+                if (canvasSaveDir) {
+                    canvasSaveDir.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        const defaultName = getDefaultFileName();
+                        const content = getContent();
+                        showInputModal('请输入文件名(含扩展名)', defaultName, async (fileName) => {
+                            if (!fileName) return;
+                            if (closeMenu) closeMenu();
+                            try {
+                                const { dirHandle } = await getDirHandleByDirPath(currentCvsDirPath);
+                                await onSave(dirHandle, currentCvsDirPath, fileName, content, true);
+                            } catch (err) {
+                                console.error('保存失败:', err);
+                            }
+                        });
+                    });
+                }
                 searchInput.addEventListener('input', (e) => {
                     e.stopPropagation();
                     const val = e.target.value;
@@ -15384,7 +15406,8 @@
                                 if (!fileName) return;
                                 if (closeMenu) closeMenu();
                                 try {
-                                    await onSave(node.handle, node.path, fileName, content, true);
+                                    const { dirHandle } = await getDirHandleByDirPath(node.path);
+                                    await onSave(dirHandle, node.path, fileName, content, true);
                                 } catch (err) {
                                     console.error('Save failed:', err);
                                 }
@@ -15402,7 +15425,11 @@
             }
 
             try {
-                allDirectoryTree = await collectDirTree(rootDirHandle);
+                if (!_scanData || !_scanData.folderTree) {
+                    container.innerHTML = '<div class="mermaid-directory-item" style="color: #e53935; cursor: default; padding-left: 16px;">扫描数据不可用，请先刷新文件扫描</div>';
+                    return;
+                }
+                allDirectoryTree = buildTreeFromFolderTree(_scanData.folderTree);
                 renderFilteredTree('');
             } catch (e) {
                 console.error('获取文件目录树异常', e);
@@ -15548,6 +15575,7 @@
 
         async function randomOpen() {
             hideAllViewContainers();
+            await destroyEverything();
             let flg = true;
             const list = getScanFileList();
             if (!list || list.length === 0) {
@@ -17260,7 +17288,7 @@
                 await saveCurrentEditContent(currentContent);
             }
             destroyEditor(true);
-            switchToView(contentMain);
+            await switchToView(contentMain);
             setControlsState({
                 topControls: true,
                 editBtn: true,
@@ -18788,7 +18816,7 @@
             selectedCanvasNodeId = id;
             updateDeleteNodeButtonState();
             const dom = document.getElementById('selectedNodeFilePath');
-            if (dom) dom.textContent = `📝 ${escapeHtml(path)}`;
+            if (dom && path) dom.textContent = `📝 ${escapeHtml(path)}`;
         }
         async function renderTextNode(node, nodeGroup) {
             nodeGroup.on('click', (event) => {
@@ -20039,7 +20067,7 @@
                     await renderCanvasFile(text, contentMain);
                 } else {
                     // 对于新canvas，直接使用内存中的数据重新渲染
-                    await renderCanvasFile(JSON.stringify(canvasData), contentMain);
+                    await renderCanvasFile(JSON.stringify(canvasData), contentMain, true);
                 }
                 // 恢复右侧面板
                 if (panelData) {
@@ -20069,7 +20097,7 @@
                     await renderCanvasFile(text, contentMain);
                 } else {
                     // 对于新canvas，直接使用内存中的数据重新渲染
-                    await renderCanvasFile(JSON.stringify(canvasData), contentMain);
+                    await renderCanvasFile(JSON.stringify(canvasData), contentMain, true);
                 }
             } catch (error) {
                 console.error('重新加载白板数据失败:', error);
@@ -20854,7 +20882,7 @@
         async function enterOriginalMarkdown() {
             const fileText = currentEditor ? currentEditor.getValue() : originalContent;
             await destroyEditor(currentEditor ? false : true, true);
-            switchToView(contentMain);
+            await switchToView(contentMain);
             setControlsState({
                 topControls: true,
                 editBtn: true,
@@ -20938,7 +20966,7 @@
 
         // 渲染看板到 content-main
         async function renderKanbanToContent(kanbanData) {
-            switchToView(contentMain);
+            await switchToView(contentMain);
             // 隐藏原有内容和目录
             contentMain.innerHTML = '';
             tocContainer.style.display = 'none';
@@ -21718,7 +21746,7 @@
                         removeFromDeletedIndex(entryName);
                         recordOperation(entryName, relativePath, OPERATION_TYPES.DELETE_PERMANENT);
                         if (fileSpan) fileSpan.remove();
-                        deletedEmpty(relativePath, `✓ 文件 "${entryName}" 已永久删除`);
+                        await deletedEmpty(relativePath, `✓ 文件 "${entryName}" 已永久删除`);
                         showNotification(`✓ 文件 "${entryName}" 已永久删除`, 'success');
                     }
                 });
@@ -21745,10 +21773,10 @@
             }
         }
 
-        function deletedEmpty(relativePath, message) {
+        async function deletedEmpty(relativePath, message) {
             if (relativePath === safeLocalStorageGet(LAST_FILE_KEY)) {
                 safeLocalStorageRemove(LAST_FILE_KEY);
-                switchToView(contentMain);
+                await switchToView(contentMain);
                 contentMain.innerHTML = `<div style="color:var(--color-text-secondary); text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh;">${message}</div>`;
                 setControlsState({ topControls: false });
                 aiFabContainer.style.display = 'none';
@@ -21759,7 +21787,7 @@
             try {
                 const target = await moveFileToDeleted(entry, relativePath);
                 recordOperation(entry.name, relativePath, OPERATION_TYPES.DELETE);
-                deletedEmpty(relativePath, `📄 文件已移动到垃圾箱：${DELETED_DIR_NAME}目录 `);
+                await deletedEmpty(relativePath, `📄 文件已移动到垃圾箱：${DELETED_DIR_NAME}目录 `);
                 showNotification(`✓ 文件已移动到 ${DELETED_DIR_NAME}目录`, 'success');
                 return target;
             } catch (error) {
@@ -23669,7 +23697,7 @@
 
         async function toggleDashboardView(isFirst = false, data = null) {
             const _scanStart = performance.now();
-            switchToView(dashboardContainer);
+            await switchToView(dashboardContainer);
             aiFabContainer.style.display = 'block';
             const larkCheckbox = document.querySelector('.ai-result-sw-lark input');
             if (larkCheckbox) larkCheckbox.checked = false;
@@ -23724,8 +23752,8 @@
             safeLocalStorageSet(FILE_SCAN_TIME_KEY, _fileScanDuration.toString());
         }
 
-        function toggleBookmarkView(html = '') {
-            switchToView(contentCommonContainer);
+        async function toggleBookmarkView(html = '') {
+            await switchToView(contentCommonContainer);
             if (html === '') {
                 loadBookmarks();
             } else {
@@ -24901,8 +24929,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             overlay.addEventListener('click', closeAIResultModal);
         }
 
-        function openGraphQLPlayground() {
-            switchToView(graphqlPlaygroundContainer);
+        async function openGraphQLPlayground() {
+            await switchToView(graphqlPlaygroundContainer);
             if (graphqlInitialized) return;
             if (typeof window.GraphQLPlayground !== 'undefined') {
                 window.GraphQLPlayground.init(graphqlPlaygroundContainer, {
@@ -24942,8 +24970,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        function openGraphiQL() {
-            switchToView(graphqlContainer);
+        async function openGraphiQL() {
+            await switchToView(graphqlContainer);
             const defaultQuery = `query {
   heartbeat {
     status
@@ -24971,8 +24999,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             );
         }
 
-        function openOpenRestyEditor() {
-            switchToView(openrestyEditorContainer);
+        async function openOpenRestyEditor() {
+            await switchToView(openrestyEditorContainer);
             let html = `<div style="color:var(--color-text-secondary); text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh; width:100%; box-sizing:border-box;">
                                                 <div style="text-align:center;">
                                                     ⚠️ 获取配置失败: errorMsg
@@ -25353,7 +25381,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
         async function renderMermaidFile(fileText = '') {
             isMermaidFileDisplay = false;
-            switchToView(mermaidAppContainer);
+            await switchToView(mermaidAppContainer);
             if (fileText) {
                 isMermaidFileDisplay = true;
             }
@@ -25772,7 +25800,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         async function loadSaveDirectoryTreeMermaid() {
             await renderDirectoryTree({
                 container: saveDirectoryTreeMermaid,
-                rootDirHandle: getRootHandle(),
                 onSave: doSaveToFolder,
                 getDefaultFileName: () => 'untitled.mmd',
                 getContent: () => monacoEditorMermaid.getValue(),
@@ -26064,7 +26091,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     mode: 'readwrite',
                 });
                 if (!dirHandle) return;
-                initPageNone();
+                await initPageNone();
                 setRootHandle(dirHandle)
                 showNotification('输入物理路径用以后续相关操作！', 'info', 3000);
                 await inputAbsolutePath(dirHandle)
@@ -26103,7 +26130,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         async function clearOldData() {
-            await Promise.resolve(destroyEverything());
+            await destroyEverything();
             // 清理本地存储数据
             safeLocalStorageRemove(LAST_FILE_KEY);
             safeLocalStorageRemove(EXPANDED_STATE_KEY);
@@ -26153,8 +26180,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return false;
         }
 
-        function openWhiteboard() {
-            switchToView(contentCommonContainer);
+        async function openWhiteboard() {
+            await switchToView(contentCommonContainer);
             const { Excalidraw, serializeAsJSON, restore, exportToBlob } = window.ExcalidrawLib;
             if (!Excalidraw || !contentCommonContainer) return false;
             rootExcalidraw = ReactDOM.createRoot(contentCommonContainer);
@@ -26189,15 +26216,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }, 0);
         }
 
-        function openCanvasFile(canvasData = { nodes: [], edges: [] }) {
+        async function openCanvasFile(canvasData = { nodes: [], edges: [] }) {
+            await destroyEverything();
             // 先清理旧的 canvas 状态
             cleanupCanvasState(true);
             // 设置标志
             currentFileHandle = null;
             // 切换到 canvas 视图
-            switchToView(contentMain);
+            await switchToView(contentMain);
             // 渲染空白 canvas
-            renderCanvasFile(JSON.stringify(canvasData), contentMain, true);
+            await renderCanvasFile(JSON.stringify(canvasData), contentMain, true);
         }
 
         function showCanvasControls(isCreate = false) {
@@ -26447,7 +26475,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             });
             await renderDirectoryTree({
                 container: container,
-                rootDirHandle: getRootHandle(),
                 onSave: doSaveCanvasToFolder,
                 getDefaultFileName: () => 'untitled.canvas',
                 getContent: () => content,
@@ -26495,7 +26522,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             };
             await renderDirectoryTree({
                 container: directoryTree,
-                rootDirHandle: getRootHandle(),
                 onSave: onSave,
                 getDefaultFileName: getDefaultFileName,
                 getContent: getContent,
@@ -27036,8 +27062,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         let _timelineViewTabClickHandler = null;   // 保存视图 tab 的点击处理函数（或复用全局函数）
         let _timelineFilterClickHandler = null;     // 保存筛选 chip 的点击处理函数
         async function openTimeline() {
-            switchToView(timelineAppContainer, 'flex');
-            timelineInit();
+            await switchToView(timelineAppContainer, 'flex');
+            await timelineInit();
         }
 
         // 重写后的销毁函数
@@ -28587,9 +28613,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         /* ==================== 正则表达式应用逻辑 ==================== */
-        function openRegexTest() {
-            destroyEditor(true);
-            switchToView(regexTestContainer);
+        async function openRegexTest() {
+            await destroyEditor(true);
+            await switchToView(regexTestContainer);
             initRegexApp();
         }
 
@@ -29682,8 +29708,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         /* ==================== 日历应用逻辑 ==================== */
-        function openCalendar() {
-            switchToView(calendarContainer);
+        async function openCalendar() {
+            await switchToView(calendarContainer);
             // 尝试从 localStorage 加载农历缓存
             _loadLunarCache();
             // 异步加载当年节假日数据（优先 localStorage）
@@ -31016,9 +31042,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             _todoEarlyInitialized = true;
         }
         // 打开关系图谱视图
-        function openNoteGraph() {
-            switchToView(graphViewContainer, 'flex');
-            toggleGraphView();
+        async function openNoteGraph() {
+            await switchToView(graphViewContainer, 'flex');
+            await toggleGraphView();
         }
 
         // 知识关系图谱（D3 force 布局）
@@ -32649,8 +32675,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        function openCron() {
-            switchToView(cronViewContainer);
+        async function openCron() {
+            await switchToView(cronViewContainer);
             cron_render();
         }
 
@@ -33236,7 +33262,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         let videoCurrentDash = null;        // dash.js 实例
         // 打开视屏播放器
         async function openVideoFile(ext, fileName, relativePath = '') {
-            switchToView(videoViewContainer, 'flex');
+            await switchToView(videoViewContainer, 'flex');
             videoInitClickOutside()
             const file = await getFile(currentFileHandle);
             if (currentVideoObjectUrl) {
@@ -33307,7 +33333,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }).join('');
         }
         // 从历史记录播放
-        function videoPlayFromHistory(index) {
+        async function videoPlayFromHistory(index) {
             const history = videoGetHistory();
             const item = history[index];
             if (!item) return;
@@ -33316,7 +33342,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             history.unshift(item);
             videoSaveHistory(history);
             videoRenderHistory();
-            switchToView(videoViewContainer, 'flex');
+            await switchToView(videoViewContainer, 'flex');
             document.getElementById('video-history-panel').style.display = 'none';
             videoPlayUrl(item.title, item.url, item.poster, item.type, item.path).then(() => {
                 selectFileSpan(item.path, true)
@@ -33639,7 +33665,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         /** 确认添加网络视频并播放 */
-        function confirmAddVideoUrl() {
+        async function confirmAddVideoUrl() {
             const titleInput = document.getElementById('video-url-title');
             const urlInput = document.getElementById('video-url-input');
             const url = urlInput.value.trim();
@@ -33654,7 +33680,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             // 隐藏面板
             document.getElementById('video-url-panel').style.display = 'none';
             // 播放
-            switchToView(videoViewContainer, 'flex');
+            await switchToView(videoViewContainer, 'flex');
             videoPlayUrl(title, url, '', type);
         }
 
@@ -33712,10 +33738,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             container.addEventListener('mousedown', mousedownVideoPanel);
         }
 
-        function openVideoPlayer() {
-            switchToView(videoViewContainer, 'flex');
+        async function openVideoPlayer() {
+            await switchToView(videoViewContainer, 'flex');
             videoInitClickOutside()
-            videoRenderHistory();
+            await videoRenderHistory();
         }
 
         /** 弹出系统文件选择器，让用户打开本地视频文件 */
@@ -34725,12 +34751,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 window.rawDestroy();
             }
         }
-        function openRawFile() {
-            switchToView(contentMain);
+        async function openRawFile() {
+            await switchToView(contentMain);
             renderRawFile();
         }
-        function openUrlEncoderFile() {
-            switchToView(contentMain);
+        async function openUrlEncoderFile() {
+            await switchToView(contentMain);
             renderUrlEncoderFile();
         }
         function renderUrlEncoderFile() {
@@ -35031,8 +35057,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (_wordCloudLoading) return;
             _wordCloudLoading = true;
             try {
-                destroyWordCloud();
-                switchToView(wordViewContainer, 'flex');
+                await switchToView(wordViewContainer, 'flex');
                 aiFabContainer.style.display = 'none';
                 wordViewContainer.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;min-height:80vh;gap:16px;"><div class="raw-spinner"></div><span style="color:var(--color-text-secondary);font-size:14px">正在生成词云…</span></div>';
 
@@ -35190,7 +35215,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
         async function picLayoutDisplay(relPath) {
             if (!relPath) return;
-            switchToView(contentMain);
+            await switchToView(contentMain);
             aiFabContainer.style.display = 'none';
             contentMain.innerHTML = `
             <div class="photo-layout-container">
@@ -35221,7 +35246,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             // 添加 resize 监听，侧边栏切换时重新计算散落位置
             window.addEventListener('resize', photoHandleResize);
         }
-        function cleanupKanbanPan() {
+        function cleanupKanban() {
             const container = document.getElementById('kanban-container');
             if (container && container._panCleanup) {
                 container._panCleanup();
@@ -35571,8 +35596,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return new Date(ts * 1000).toLocaleString('zh-CN');
         }
         // 打开 Git 页面
-        function openGitPage() {
-            openGitPageCore(null);
+        async function openGitPage() {
+            await openGitPageCore(null);
         }
         async function destroyGitViewData() {
             // 销毁 diff 编辑器
@@ -37633,7 +37658,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         // 打开 Git 页面（通用）
         async function openGitPageCore(fileFilter = null) {
-            switchToView(gitRecordsContainer, 'flex');
+            await switchToView(gitRecordsContainer, 'flex');
             const loadingElement = document.getElementById('git-loading');
             const mainElement = document.getElementById('git-main');
             loadingElement.style.display = 'flex';
@@ -37748,9 +37773,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         // ========== 渲染 UI ==========
-        function openPomodoro() {
-            destroyPomodoro();
-            switchToView(contentMain);
+        async function openPomodoro() {
+            await switchToView(contentMain);
             aiFabContainer.style.display = 'none';
             pomodoroLoadState();
             const cfg = {
@@ -38023,13 +38047,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         async function dirGraphDisplay(relPath) {
             if (!relPath) return;
-            switchToView(contentMain);
+            await switchToView(contentMain);
             aiFabContainer.style.display = 'none';
+            //保存面板里的文件树选中当前目录
             const { dirHandle, dirParentHandle } = await getDirHandleByDirPath(relPath);
             if (!dirHandle) {
                 showNotification(`目录 ${relPath} 不存在`, 'error');
                 return;
             }
+            currentCvsDirPath = relPath;
             const children = [];
             const entries = await getDirectoryEntries(dirHandle);
             let index = 1;
@@ -38050,7 +38076,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 folderName: basename(relPath),
                 children
             });
-            openCanvasFile(canvasData);
+            await openCanvasFile(canvasData);
         }
 
         function generateCanvasFolderJSON({
