@@ -167,7 +167,7 @@ def _scan_scandir(base_dir, on_file, on_dir=None):
         dirs = []
         files = []
         for entry in entries:
-            name = entry.name
+            name = entry.name.replace('/', '／')
             if should_ignore_file(name):
                 continue
             try:
@@ -185,14 +185,15 @@ def _scan_scandir(base_dir, on_file, on_dir=None):
                 files.append(entry)
 
         for d_entry in dirs:
-            d_rel = f"{rel_root}/{d_entry.name}" if rel_root else d_entry.name
+            d_name = d_entry.name.replace('/', '／')
+            d_rel = f"{rel_root}/{d_name}" if rel_root else d_name
             stack.append((d_entry.path, d_rel))
             if on_dir:
                 on_dir(d_rel)
             total_folders += 1
 
         for f_entry in files:
-            name = f_entry.name
+            name = f_entry.name.replace('/', '／')
             ext = (os.path.splitext(name)[1][1:]).lower()
 
             try:

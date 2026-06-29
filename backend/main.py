@@ -1,7 +1,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 
-from service.system_service import scan_file_info, get_openresty_conf, reload_openresty_conf
+from service.system_service import get_openresty_conf, reload_openresty_conf
 from service.config import PROJECT_ROOT, HOST, PORT, LOG_LEVEL
 from typing import Optional
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, StreamingResponse
 import json
 import logging
-from fastapi import FastAPI, Request, Query, Body, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Query, Body, WebSocket, WebSocketDisconnect
 import os
 from strawberry.fastapi import GraphQLRouter
 from service.graphql_schema import schema
@@ -121,18 +121,6 @@ async def hello_page():
 async def api_heartbeat():
     """心跳检测"""
     return {"success": True, "message": "healthy", "code": 200}
-
-
-@app.get("/api/system/scan")
-async def api_scan_file_info(dir: Optional[str] = Query(None),
-                             force: bool = Query(False)):
-    """扫描指定目录的文件信息（支持增量扫描）"""
-    result = scan_file_info(dir_path=dir, force=force)
-    if dir:
-        if dynamic_mount_directory(dir) and isinstance(result, dict):
-            result["data"]["mount_path"] = "/"
-            result["data"]["scan_root"] = DYNAMIC_SCAN_PATH
-    return result
 
 
 @app.get("/api/system/openresty/conf")

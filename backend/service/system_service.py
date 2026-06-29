@@ -3,21 +3,6 @@ import subprocess
 import tempfile
 import time
 
-from service.util.file_scan import scan_file_info as scan_file_info_impl
-
-
-def scan_file_info(dir_path=None, force=False):
-    """
-    扫描指定目录的文件信息。
-    force=True 时强制全量扫描，否则走增量模式。
-    """
-    if dir_path is None:
-        return {"success": False, "message": "目录不能为空", "code": 500}
-    try:
-        return {"code": 200, "data": scan_file_info_impl(base_dir=dir_path, force=force), "success": True}
-    except Exception as e:
-        return {"success": False, "message": str(e), "code": 500}
-
 
 def get_openresty_conf(conf_path):
     """读取 OpenResty 配置文件内容"""

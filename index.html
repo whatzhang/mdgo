@@ -22477,27 +22477,27 @@
             while (stack.length > 0) {
                 const { handle: dirHandle, relPath: relRoot, depth } = stack.pop();
                 if (depth > MAX_DIR_DEPTH || isSkipDir(dirHandle.name) || isSkipDir(relRoot)) continue;
-                let entries = [];
+
+                const dirs = [];
                 try {
+                    // 优化：直接遍历处理，无中间 entries 数组
                     for await (const entry of dirHandle.values()) {
-                        entries.push(entry);
+                        // 文件夹/文件名中的斜杠和反斜杠替换为下横杠，避免破坏路径结构
+                        const name = entry.name.replace(/[\/\\]/g, '_');
+                        if (entry.kind === 'directory') {
+                            if (isSkipDir(name) || isSkipDir(relRoot)) continue;
+                            // 优化：内联路径拼接，避免 joinPath 的多次 regex + map + filter
+                            const childRel = relRoot ? relRoot + SLASH + name : name;
+                            dirs.push({ entry, childRel });
+                        } else {
+                            if (isSkipFile(name)) continue;
+                            const childRel = relRoot ? relRoot + SLASH + name : name;
+                            fileEntryList.push({ entry, childRel });
+                        }
                     }
                 } catch (e) { continue; }
 
-                const dirs = [];
-                for (const entry of entries) {
-                    const name = entry.name;
-                    if (isSkipFile(name)) continue;
-                    if (entry.kind === 'directory') {
-                        const childRel = joinPath(relRoot, name);
-                        if (isSkipDir(name) || isSkipDir(relRoot)) continue;
-                        dirs.push({ entry, childRel });
-                    } else {
-                        const childRel = joinPath(relRoot, name);
-                        fileEntryList.push({ entry, childRel });
-                    }
-                }
-                // 子目录入栈
+                // 子目录逆序入栈（保持 DFS 顺序）
                 for (let i = dirs.length - 1; i >= 0; i--) {
                     stack.push({ handle: dirs[i].entry, relPath: dirs[i].childRel, depth: depth + 1 });
                 }
@@ -22508,11 +22508,40 @@
             }
 
             // ====== 阶段2：Worker 池并发读取文件元数据（与遍历解耦，最大化 I/O 并行度） ======
-            const fileList = [];
+            const totalFileCount = fileEntryList.length;
+            // 优化：预分配数组，消除 push() 的动态扩容开销
+            const fileList = new Array(totalFileCount);
             let totalFiles = 0;
             let totalSize = 0;
-            const BATCH = 50;
-            const MAX_WORKERS = 4;
+            const BATCH = 100;
+            const MAX_WORKERS = 8;
+
+            // 优化：格式化结果缓存 — 相同时间戳的文件共享格式字符串
+            const _timeStrCache = new Map();
+            const _fmtTimeFast = (ts) => {
+                let s = _timeStrCache.get(ts);
+                if (s !== undefined) return s;
+                const d = new Date(ts * 1000);
+                const pad = (n) => String(n).padStart(2, '0');
+                s = d.getFullYear() + '-' +
+                    pad(d.getMonth() + 1) + '-' +
+                    pad(d.getDate()) + ' ' +
+                    pad(d.getHours()) + ':' +
+                    pad(d.getMinutes()) + ':' +
+                    pad(d.getSeconds());
+                _timeStrCache.set(ts, s);
+                return s;
+            };
+
+            // 优化：用整数比较链替代 Math.log/Math.pow，2万次调用可省 ~30ms
+            const _fmtSize = (bytes) => {
+                if (bytes <= 0) return '0 B';
+                if (bytes < 1024) return bytes + ' B';
+                if (bytes < 1048576) return (bytes / 1024).toFixed(2) + ' KB';
+                if (bytes < 1073741824) return (bytes / 1048576).toFixed(2) + ' MB';
+                if (bytes < 1099511627776) return (bytes / 1073741824).toFixed(2) + ' GB';
+                return (bytes / 1099511627776).toFixed(2) + ' TB';
+            };
 
             const _fileTypeFn = (ext) => _EXT_TYPE_MAP[ext] || '其他';
 
@@ -22527,60 +22556,60 @@
                     const mtimeMs = (file.lastModified && file.lastModified > 0) ? file.lastModified : nowMs;
                     const mtimeSec = Math.floor(mtimeMs / 1000);
                     return {
-                        name, ext: extLower, childRel, sizeBytes,
-                        ctimeSec: mtimeSec, mtimeSec,
+                        name, ext: extLower, path: childRel,
+                        size: sizeBytes, ctime: mtimeSec, mtime: mtimeSec,
                         fileType: _fileTypeFn(extLower),
                         subType: getFileTypeByExt(extLower)
                     };
                 } catch (e) { return null; }
             }
 
-            function _addOneResult(r) {
-                if (!r) return;
-                const { name, ext, childRel, sizeBytes, ctimeSec, mtimeSec, fileType, subType } = r;
-                const timeStr = _formatTimeFast(mtimeSec);
-                fileList.push({
-                    "name": name, "ext": ext,
-                    "file_type": fileType, "sub_type": subType,
-                    "size": sizeBytes, "size_str": formatSize(sizeBytes),
-                    "ctime": ctimeSec, "mtime": mtimeSec,
-                    "ctime_str": timeStr, "mtime_str": timeStr,
-                    "ctime_date_str": timeStr.slice(0, 10),
-                    "mtime_date_str": timeStr.slice(0, 10),
-                    "path": childRel,
-                });
-                totalFiles++;
-                totalSize += sizeBytes;
-            }
-
-            // Worker 池并发处理批次
-            const totalBatches = Math.ceil(fileEntryList.length / BATCH);
+            const totalBatches = Math.ceil(totalFileCount / BATCH);
             let nextBatchIdx = 0;
             let completedBatches = 0;
+            let writePos = 0;
 
             async function _batchWorker() {
                 while (nextBatchIdx < totalBatches) {
                     const idx = nextBatchIdx++;
                     const start = idx * BATCH;
-                    const batch = fileEntryList.slice(start, start + BATCH);
+                    const end = Math.min(start + BATCH, totalFileCount);
+                    const batch = fileEntryList.slice(start, end);
                     const results = await Promise.all(batch.map(_processOneFile));
                     for (let i = 0; i < results.length; i++) {
-                        _addOneResult(results[i]);
+                        const r = results[i];
+                        if (!r) continue;
+                        const timeStr = _fmtTimeFast(r.mtime);
+                        // 优化：直接写入预分配数组 writePos 位置
+                        fileList[writePos++] = {
+                            "name": r.name, "ext": r.ext,
+                            "file_type": r.fileType, "sub_type": r.subType,
+                            "size": r.size, "size_str": _fmtSize(r.size),
+                            "ctime": r.ctime, "mtime": r.mtime,
+                            "ctime_str": timeStr, "mtime_str": timeStr,
+                            "ctime_date_str": timeStr.slice(0, 10),
+                            "mtime_date_str": timeStr.slice(0, 10),
+                            "path": r.path,
+                        };
+                        totalFiles++;
+                        totalSize += r.size;
                     }
                     completedBatches++;
-                    // 每完成 2 批让出主线程一次
-                    if (completedBatches % 2 === 0) {
+                    // 每完成 4 批让出主线程一次
+                    if (completedBatches % 4 === 0) {
                         await yieldToMain();
                     }
                 }
             }
 
-            const workers = [];
             const workerCount = Math.min(MAX_WORKERS, totalBatches);
+            const workers = [];
             for (let i = 0; i < workerCount; i++) {
                 workers.push(_batchWorker());
             }
             await Promise.all(workers);
+            // 优化：截断数组至实际写入量（读失败的文件会留下空洞）
+            fileList.length = writePos;
 
             // ====== 阶段3：构建 fileListMap 和 folderTree（单次遍历，减少字符串操作） ======
             const fileListMap = {};
@@ -22601,13 +22630,16 @@
                     fileListMap[fdir] = [f];
                 }
 
-                // 构建 dirMap（逐级拆分文件路径，目录段加入 dirMap 并聚合统计）
-                const pathParts = fpath.split(SLASH);
-                pathParts.pop(); // 移除文件名，仅保留目录部分
+                // 优化：手动 indexOf 迭代构建 dirMap，避免 split() 分配临时数组（2万+文件可省大量 GC）
                 let parentPath = '';
-                for (let pi = 0; pi < pathParts.length; pi++) {
-                    const part = pathParts[pi];
-                    const currentPath = pi === 0 ? part : (parentPath + SLASH + part);
+                let start = 0;
+                const dirEnd = lastSlash >= 0 ? lastSlash : 0;
+
+                while (start < dirEnd) {
+                    const nextSlash = fpath.indexOf(SLASH, start);
+                    const end = (nextSlash === -1 || nextSlash >= dirEnd) ? dirEnd : nextSlash;
+                    const part = fpath.slice(start, end);
+                    const currentPath = parentPath ? parentPath + SLASH + part : part;
 
                     let dirNode = dirMap[currentPath];
                     if (!dirNode) {
@@ -22625,16 +22657,16 @@
                     if (f.ctime < dirNode.ctime) dirNode.ctime = f.ctime;
                     if (f.mtime > dirNode.mtime) dirNode.mtime = f.mtime;
                     parentPath = currentPath;
+                    start = end + 1;
                 }
 
                 // 文件计数
-                const parentDirPath = lastSlash >= 0 ? fpath.slice(0, lastSlash) : '';
-                if (dirMap[parentDirPath]) {
-                    dirMap[parentDirPath].fileNum += 1;
+                if (dirMap[fdir]) {
+                    dirMap[fdir].fileNum += 1;
                 }
                 dirMap[''].fileNum += 1;
 
-                if ((fi + 1) % 3000 === 0) {
+                if ((fi + 1) % 5000 === 0) {
                     await yieldToMain();
                 }
             }
@@ -22642,21 +22674,26 @@
             // 补充空目录到 dirMap
             for (const dirPath of allDirPaths) {
                 if (dirMap[dirPath]) continue;
-                const parts = dirPath.split(SLASH);
                 let parentPath = '';
-                for (let pi = 0; pi < parts.length; pi++) {
-                    const currentPath = pi === 0 ? parts[0] : (parentPath + SLASH + parts[pi]);
+                let start = 0;
+                const len = dirPath.length;
+                while (start < len) {
+                    const nextSlash = dirPath.indexOf(SLASH, start);
+                    const end = nextSlash === -1 ? len : nextSlash;
+                    const part = dirPath.slice(start, end);
+                    const currentPath = parentPath ? parentPath + SLASH + part : part;
                     if (!dirMap[currentPath]) {
-                        dirMap[currentPath] = { name: parts[pi], children: [], size: 0, ctime: 0, mtime: 0, fileNum: 0 };
+                        dirMap[currentPath] = { name: part, children: [], size: 0, ctime: 0, mtime: 0, fileNum: 0 };
                         if (!childSetMap[parentPath]) {
                             childSetMap[parentPath] = new Set();
                         }
-                        if (!childSetMap[parentPath].has(parts[pi])) {
-                            childSetMap[parentPath].add(parts[pi]);
+                        if (!childSetMap[parentPath].has(part)) {
+                            childSetMap[parentPath].add(part);
                             dirMap[parentPath].children.push(dirMap[currentPath]);
                         }
                     }
                     parentPath = currentPath;
+                    start = end + 1;
                 }
             }
 
@@ -24981,43 +25018,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         {
                             name: '示例查询',
                             endpoint: GRAPHQL_ENDPOINT,
-                            query: `{
-  scanFileInfo (dir: "${currentRootPath}" ){
-    scanTime
-    baseDir
-    stats {
-      totalFiles
-      totalFolders
-      totalSizeStr
-    }
-    files {
-      name
-      path
-      fileType
-      sizeStr
-    }
-    folderTree {
-      name
-      fileNum
-      sizeStr
-      children {
-        name
-        fileNum
-        sizeStr
-        children {
-          name
-          fileNum
-          sizeStr
-        }
-      }
-    }
+                            query: `query {
+  heartbeat {
+    status
+    timestamp
+    service
   }
-}`,
-                        }, {
-                            name: '心跳检测',
-                            endpoint: GRAPHQL_ENDPOINT,
-                            query: `{
-  health
 }`,
                         }
                     ],
@@ -25045,36 +25051,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         function openGraphiQL() {
             switchToView(graphqlContainer);
-            const defaultQuery = `{
-  scanFileInfo (dir: "${currentRootPath}" ){
-    scanTime
-    baseDir
-    stats {
-      totalFiles
-      totalFolders
-      totalSizeStr
-    }
-    files {
-      name
-      path
-      fileType
-      sizeStr
-    }
-    folderTree {
-      name
-      fileNum
-      sizeStr
-      children {
-        name
-        fileNum
-        sizeStr
-        children {
-          name
-          fileNum
-          sizeStr
-        }
-      }
-    }
+            const defaultQuery = `query {
+  heartbeat {
+    status
+    timestamp
+    service
   }
 }`;
             graphqlReactRoot = ReactDOM.createRoot(graphqlContainer);
@@ -26254,7 +26235,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             idbDeleteDatabase(DIRECTORY_STORE_NAME);
         }
 
-        // 从 localStorage 加载上次的目录句柄并校验权限
         async function initFromStorage() {
             const storedHandle = await idbGet(DIRECTORY_STORE_NAME, 'handles', 'default');
             if (storedHandle) {
@@ -26266,7 +26246,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         return false;
                     }
                     const data = await scanDashboardData(true)
-                    // 并行执行：renderDirectory 和 toggleDashboardView 同时进行
                     if (BROWSER_REFRESHED_KEY === safeLocalStorageGet(BROWSER_REFRESHED_KEY)) {
                         await Promise.all([renderDirectory(storedHandle, data), toggleDashboardView(true, data)]);
                     } else {
