@@ -13715,7 +13715,7 @@
 
         let previewFileText = ''; // 当前预览的文件内容（用于判断是否需要重新渲染）
         let lastToggle = 'none';  // 记录上一次打开的功能类型，默认为 'none'
-        async function toggleFile(type, newFileName = '', relativePath = '', fileSpan = null, event = null) {
+        async function toggleFile(type, newFileName = '', relativePath = '', fileSpan = null,) {
             if (!isRootHandleAvailable()) {
                 showNotification('✗ 请先打开根目录', 'error');
                 return;
@@ -13748,7 +13748,7 @@
                 randomOpen();
             } else if (type === 'renderFile') {
                 aiFabContainer.style.display = 'block';
-                await renderFile(relativePath, fileSpan, event);
+                await renderFile(relativePath, fileSpan);
             } else if (type === 'graphiQL') {
                 openGraphiQL();
             } else if (type === 'graphQLPlayground') {
@@ -13785,14 +13785,13 @@
             lastToggle = type;
         }
 
-        async function renderFile(relativePath = '', fileSpan, event) {
+        async function renderFile(relativePath = '', fileSpan) {
             const larkCheckbox = document.querySelector('.ai-result-sw-lark input');
             if (larkCheckbox) larkCheckbox.checked = true;
             if (currentActiveItem) currentActiveItem.classList.remove('active-file');
             fileSpan.classList.add('active-file');
             currentActiveItem = fileSpan;
             safeLocalStorageSet(LAST_FILE_KEY, relativePath);
-            // event.isTrusted 为 true 表示事件由用户真实操作产生（如真实点击）, false 表示事件由代码程序化触发（如 element.click()）
             //判断文件类型是否为支持的，不是则不打开
             const ext = getExt(relativePath);
             if (checkFileExt(ext)) {
@@ -14096,22 +14095,17 @@
                 if (!fileSpan) return;
                 // 若点击的是更多菜单按钮或颜色选择器，不触发文件打开
                 if (event.target.closest('.file-item-more-menu') || event.target.closest('.marker-color-picker')) return;
-                if (_treeClickTimer) { clearTimeout(_treeClickTimer); _treeClickTimer = null; return; }
-                _treeClickTimer = setTimeout(async () => {
-                    try {
-                        const filePath = fileSpan.dataset.filePath;
-                        currentFileHandle = await getFileHandleByPath(filePath);
-                        if (!currentFileHandle) {
-                            showNotification(`✗ 无法找到文件: ${filePath}`, 'error');
-                            return;
-                        }
-                        await toggleFile('renderFile', '', filePath, fileSpan, event);
-                    } catch (e) {
-                        console.error('文件切换失败:', e);
-                    } finally {
-                        _treeClickTimer = null;
+                try {
+                    const filePath = fileSpan.dataset.filePath;
+                    currentFileHandle = await getFileHandleByPath(filePath);
+                    if (!currentFileHandle) {
+                        showNotification(`✗ 无法找到文件: ${filePath}`, 'error');
+                        return;
                     }
-                }, 100);
+                    await toggleFile('renderFile', '', filePath, fileSpan);
+                } catch (e) {
+                    console.error('文件切换失败:', e);
+                }
             };
             treeElement.addEventListener('click', _treeClickHandler);
 
@@ -15572,9 +15566,15 @@
                     const randomIndex = (Math.random() * list.length) | 0;
                     const node = list[randomIndex];
                     if (isRandomDir(node.path, getExt(node.name))) {
-                        const fileSpan = await expandPathToFile(node.path);
+                        //临时创建一个文件span，模拟点击打开文件
+                        const fileSpan = await createFileItem(node.name, node.path, node.depth, 'doc');
                         if (fileSpan) {
-                            clickFileSpan(node.path, fileSpan, false);
+                            currentFileHandle = await getFileHandleByPath(node.path);
+                            if (!currentFileHandle) {
+                                showNotification(`✗ 无法找到文件: ${node.path}`, 'error');
+                                return;
+                            }
+                            await toggleFile('renderFile', '', node.path, fileSpan);
                             showNotification(`🎲 随机打开: ${escapeHtml(node.path)}`, 'success', 1000);
                             return;
                         }
@@ -22392,15 +22392,7 @@
             let data;
             try {
                 if (force) {
-                    if (isLocalVisit() || !hasBackendServer) {
-                        data = await scanDirToIndexByLocal();
-                    } else {
-                        try {
-                            data = await scanDirToIndex();
-                        } catch (e) {
-                            data = await scanDirToIndexByLocal();
-                        }
-                    }
+                    data = await scanDirToIndexByLocal();
                 } else {
                     data = (await getAssetsData(INDEX_FILE_SCAN_DATA_FILE)).data;
                 }
@@ -22452,31 +22444,6 @@
                 hasBackendServer = false;
             } finally {
                 clearTimeout(timeoutId);
-            }
-        }
-
-        async function scanDirToIndex() {
-            let url = `/api/system/scan?dir=${encodeURI(currentRootPath)}`;
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 1000);
-            let response;
-            try {
-                response = await fetch(url, { signal: controller.signal });
-            } catch (e) {
-                clearTimeout(timeoutId);
-                if (e.name === 'AbortError') {
-                    console.error('✗ 请求超时，后端服务无响应, url:', url, e);
-                }
-                throw e;
-            } finally {
-                clearTimeout(timeoutId);
-            }
-            const data = await response.json();
-            if (data.success) {
-                return data.data;
-            } else {
-                showNotification('✗ 配置失败: ' + data.message, 'error');
-                throw new Error(data.message);
             }
         }
 
