@@ -1326,11 +1326,11 @@
 
         .top-left-controls {
             position: absolute;
-            top: 5px;
+            top: 7px;
             left: 10px;
             display: flex;
             gap: 10px;
-            z-index: 1000;
+            z-index: 6000;
             align-items: center;
         }
 
@@ -14693,12 +14693,20 @@
             window.removeEventListener('resize', _onImageResize);
             _cleanupImageListeners();
         }
+        // 清理一些各自组件无法清理的逻辑
+        async function cleanupData() {
+            const canvasControls = document.getElementById('canvas-top-left-controls');
+            if (canvasControls) canvasControls.style.display = 'none';
+            const canvasSaveMenu = document.getElementById('canvas-save-menu');
+            if (canvasSaveMenu) canvasSaveMenu.classList.remove('canvas-open');
+        }
 
         async function destroyEverything() {
             cleanupObjectUrls();
             showTocToggleBtn(false);
             // 并发清理各模块，等待所有清理完成再返回，避免竞态
             await Promise.allSettled([
+                Promise.resolve(cleanupData()),
                 Promise.resolve(disposeAllCharts()),
                 Promise.resolve(cleanupImageDragEvents()),
                 Promise.resolve(hideMarkdownSelectionToolbar()),
@@ -15111,11 +15119,7 @@
                 // 6. 隐藏底部工具栏
                 const bottomToolbar = document.getElementById('canvas-bottom-toolbar');
                 if (bottomToolbar) bottomToolbar.style.display = 'none';
-                // 7. 隐藏 canvas 控制按钮并关闭保存菜单
-                const canvasControls = document.getElementById('canvas-top-left-controls');
-                if (canvasControls) canvasControls.style.display = 'none';
-                const canvasSaveMenu = document.getElementById('canvas-save-menu');
-                if (canvasSaveMenu) canvasSaveMenu.classList.remove('canvas-open');
+
             }
         }
 
@@ -15308,7 +15312,7 @@
                         <div class="mermaid-directory-search-box">
                             <input type="text" class="mermaid-directory-search-input" placeholder="🔍 搜索目录..." value="${escapeHtml(preserveFocus ? focusValue : filterText)}">
                             <button class="mermaid-directory-search-clear" style="${(preserveFocus ? focusValue : filterText) ? 'display: flex;' : 'display: none;'}">✕</button>
-                        </div>${currentCvsDirPath ? '<button id="canvas-save-dir" class="btn btn-primary btn-sm" style="flex-shrink:0;font-size: 12px;">当前目录</button>' : ''}`;
+                        </div>${currentCvsDirPath ? '<button id="canvas-save-dir" class="btn btn-sm" style="flex-shrink:0;font-size: 12px;" title="保存到当前打开目录">💾</button>' : ''}`;
                 container.appendChild(searchWrapper);
                 const searchInput = searchWrapper.querySelector('.mermaid-directory-search-input');
                 const clearBtn = searchWrapper.querySelector('.mermaid-directory-search-clear');
