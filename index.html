@@ -1127,6 +1127,12 @@
             font-size: 13px;
         }
 
+        .btn-ss {
+            height: 24px;
+            padding: 4px 8px;
+            font-size: 12px;
+        }
+
         #open-btn,
         #refresh-btn,
         #level-select,
@@ -10400,7 +10406,7 @@
         }
 
         .git-diff-nav-btn {
-            padding: 3px 10px;
+            padding: 3px 6px;
             background: var(--color-primary);
             border-radius: 4px;
             font-size: 10px;
@@ -11615,6 +11621,8 @@
                                 <div class="monitor-header">
                                     <span>监控</span>
                                     <p>
+                                        <span class="monitor-uptime" id="fileScanTime">文件扫盘时长：加载中...</span>
+                                        <span class="monitor-uptime">｜</span>
                                         <span class="monitor-uptime" id="permissionTime">授权时长：加载中...</span>
                                     </p>
                                 </div>
@@ -11640,8 +11648,8 @@
                                                 <line x1="3" y1="9" x2="21" y2="9" />
                                                 <line x1="9" y1="21" x2="9" y2="9" />
                                             </svg>主面板</div>
-                                        <div id="fileSumScanGauge" class="monitor-chart"></div>
-                                        <div class="monitor-sub" id="fileScanTime"></div>
+                                        <div id="dashboardLoadGauge" class="monitor-chart"></div>
+                                        <div class="monitor-sub" id="dashboardLoadTime"></div>
                                     </div>
                                     <div class="monitor-item">
                                         <div class="monitor-label" style="margin-top:4px;">
@@ -13511,7 +13519,6 @@
         let aiHistory = [];                 // AI 历史记录数组
         let excalidrawAPI = null;           // excalidraw 实例
         let rootExcalidraw = null;          // 根目录的 excalidraw 实例
-        let autoSaveTimer = null;           // 自动保存定时器
         let aiPanelVisible = false;         // AI 面板可见性状态
         let swaggerEditor = null;           // Swagger 编辑器实例（全局单例，只创建一次）
         let graphqlReactRoot = null;        // GraphQL React 实例根元素
@@ -13523,6 +13530,7 @@
         // 图片布局相关
         let currentPhotoDirData = [];       // 当前目录图片数据
         let _treeLoadDuration = null;       // 文件树加载耗时(ms)
+        let _dashboardLoadDuration = null;       // 仪表盘加载耗时(ms)
         let _fileScanDuration = null;       // 文件扫描耗时(ms)
         // 左侧文件树
         let _markersMap = null;             // markers 缓存（Map，首次 readMarkers 时加载）
@@ -13638,9 +13646,9 @@
 
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', async () => {
+            await mountDir();
             initDashboard();
             await initAll();
-            await mountDir();
         });
 
         window.addEventListener('beforeunload', function (e) {
@@ -18896,27 +18904,18 @@
                         saveFileButton: false,
                         loadButton: false,
                         exportButton: false
-                    },
-                    onChange: (elements, appState, files) => {
-                        clearTimeout(autoSaveTimer);
-                        autoSaveTimer = setTimeout(() => {
-                            const json = serializeAsJSON(elements, appState, files, "local");
-                            if (originalContent && !originalContent === json) {
-                                saveExistFileContent(json);
-                                showNotification('已自动保存成功', 'success');
-                            }
-                        }, 5000);
-                    },
+                    }
                 })
             );
             setTimeout(() => {
                 window.addEventListener('keydown', handleBBSaveShortcutNoCreate, true);
-                const menuBtn = contentCommonContainer.querySelector(".dropdown-menu-button.main-menu-trigger.zen-mode-transition");
+                const menuBtn = container.querySelector(".dropdown-menu-button.main-menu-trigger.zen-mode-transition");
                 if (menuBtn) {
+                    menuBtn.setAttribute("showPanel", "no");
                     menuBtn.removeEventListener("click", handleBBMenuClick);
                     menuBtn.addEventListener("click", handleBBMenuClick);
                 }
-            }, 10);
+            }, 200);
         }
 
         async function renderEmbeddedExcalidraw(container, excalidrawData) {
@@ -22443,7 +22442,8 @@
                 _scanData = data;
                 _scanFileList = [];
             }
-            console.log(`[文件扫描] 总耗时: ${(performance.now() - _tStart).toFixed(0)}ms`);
+            _fileScanDuration = Math.round(performance.now() - _tStart);
+            console.log(`[文件扫描] 总耗时: ${_fileScanDuration}ms`);
             return data;
         }
 
@@ -22458,9 +22458,9 @@
 
         async function mountDir() {
             // 未选择目录时不发送请求
-            if (!currentRootPath) return;
+            if (!currentRootPath || isLocalVisit()) return;
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 400);
+            const timeoutId = setTimeout(() => controller.abort(), 50);
             try {
                 const response = await fetch(`/api/system/mount?dir=${encodeURIComponent(currentRootPath)}`, { signal: controller.signal });
                 const data = await response.json();
@@ -22822,17 +22822,21 @@
                 image: stats.imgCount || 0
             };
             // 并行启动所有板块渲染
-            const sections = [
+            await Promise.all([
                 renderFileSumPanel(data, fileTypeCounts),
                 renderDashHeatmap(heatmapData),
                 renderDashActivity(sortedByMtimeTop10, viewData),
-                renderDashCharts(stats, data)
-            ];
-            await Promise.all(sections);
-            if (!chartsResizeBound) {
-                window.addEventListener('resize', resizeDashboardCharts);
-                chartsResizeBound = true;
-            }
+
+            ]);
+            requestAnimationFrame(() => {
+                setTimeout(async () => {
+                    await renderDashCharts(stats, data)
+                    if (!chartsResizeBound) {
+                        window.addEventListener('resize', resizeDashboardCharts);
+                        chartsResizeBound = true;
+                    }
+                }, 0);
+            });
             btn.disabled = false;
             btn.innerText = '扫描数据';
         }
@@ -22841,6 +22845,15 @@
         async function renderFileSumPanel(data, typeCounts = null) {
             if (hasBackendServer) return;
             const now = Date.now();
+            //扫描文件时长
+            const scanFileTime = document.getElementById('fileScanTime');
+            if (scanFileTime) {
+                if (_fileScanDuration) {
+                    scanFileTime.textContent = '文件扫盘时长：' + _fileScanDuration + 'ms';
+                } else {
+                    scanFileTime.textContent = '文件扫盘时长：--';
+                }
+            }
             // 授权时长
             const permEl = document.getElementById('permissionTime');
             if (permEl) {
@@ -22860,12 +22873,12 @@
                 // 渲染仪表盘
                 renderFileSumGauge('fileSumTreeGauge', dur, 3000);
             }
-            // 文件扫描时长
-            const scanEl = document.getElementById('fileScanTime');
+            // dashboard 加载时长
+            const scanEl = document.getElementById('dashboardLoadTime');
             if (scanEl) {
-                const dur = _fileScanDuration || parseInt(safeLocalStorageGet(FILE_SCAN_TIME_KEY)) || 0;
+                const dur = _dashboardLoadDuration || parseInt(safeLocalStorageGet(FILE_SCAN_TIME_KEY)) || 0;
                 scanEl.textContent = dur ? formatMs(dur) + SLASH + formatMs(3000) : '--';
-                renderFileSumGauge('fileSumScanGauge', dur, 3000);
+                renderFileSumGauge('dashboardLoadGauge', dur, 3000);
             }
             // 文档/代码/图片占比（使用预计算计数，避免重复遍历）
             const total = data.stats.total_files || 1;
@@ -23411,20 +23424,14 @@
 
         // 板块5：分帧渲染所有图表
         async function renderDashCharts(stats, data) {
-            const {
-                typeMap,
-                extMap,
-                docExtMap,
-                monthCreateTrend,
-                fileSizeRangeMap
-            } = stats;
+            const { typeMap, extMap, docExtMap, monthCreateTrend, fileSizeRangeMap } = stats;
             const monthKeys = Object.keys(monthCreateTrend).sort();
             const extRankList = Object.entries(extMap)
                 .map(([n, v]) => ({ name: n, value: v }))
                 .sort((a, b) => b.value - a.value)
                 .slice(0, 20);
 
-            // ===== 轻量图表(前7个): 立即渲染 =====
+            // ===== 轻量图表(前5个): 立即渲染 =====
             const getLevelOption = () => [
                 { itemStyle: { borderWidth: 0, gapWidth: 5 } },
                 { itemStyle: { gapWidth: 1 } },
@@ -23523,115 +23530,122 @@
             // ===== 重量图表(树图+treemap): 延迟到首帧之后渲染, 避免阻塞主线程 =====
             await new Promise((resolve) => {
                 requestAnimationFrame(() => {
-                    setTimeout(() => {
-                        // 树数据构建: 单次遍历同时生成 countTree(按文件数) 和 sizeTree(按大小)，O(n) 替代原来的 O(2n)
+                    setTimeout(async () => {
+                        // 优化：合并克隆与计算，一步到位生成 ECharts 所需的带有累加 value 的树结构
                         const buildBothTrees = (node) => {
                             if (!node || typeof node !== 'object') return { count: null, size: null };
                             const countCloned = {};
                             const sizeCloned = {};
-                            for (const key of Object.keys(node)) {
-                                if (key === 'children' && Array.isArray(node.children)) {
-                                    const countChildren = [], sizeChildren = [];
-                                    node.children.forEach(child => {
-                                        const { count, size } = buildBothTrees(child);
-                                        if (count) countChildren.push(count);
-                                        if (size) sizeChildren.push(size);
-                                    });
-                                    if (countChildren.length > 0) countCloned.children = countChildren;
-                                    if (sizeChildren.length > 0) sizeCloned.children = sizeChildren;
-                                } else if (key !== 'value' && key !== 'file_num') {
+                            let countSum = 0;
+                            let sizeSum = 0;
+                            const countChildren = [];
+                            const sizeChildren = [];
+                            if (Array.isArray(node.children)) {
+                                for (const child of node.children) {
+                                    const { count, size } = buildBothTrees(child);
+                                    if (count) {
+                                        countChildren.push(count);
+                                        countSum += count.value || 0;
+                                    }
+                                    if (size) {
+                                        sizeChildren.push(size);
+                                        sizeSum += size.value || 0;
+                                    }
+                                }
+                            }
+                            // 复制其他属性 (剔除 value 和 file_num 防止污染)
+                            for (const key in node) {
+                                if (key !== 'children' && key !== 'value' && key !== 'file_num') {
                                     countCloned[key] = sizeCloned[key] = node[key];
                                 }
                             }
                             countCloned.file_num = sizeCloned.file_num = node.file_num || 0;
-                            countCloned.value = node.file_num || 0;
-                            sizeCloned.value = node.size || 0;
+                            // 如果有子节点，value 是子节点的总和；如果没有，用自身的 file_num/size
+                            countCloned.value = countChildren.length > 0 ? countSum : (node.file_num || 0);
+                            sizeCloned.value = sizeChildren.length > 0 ? sizeSum : (node.size || 0);
+
+                            if (countChildren.length > 0) countCloned.children = countChildren;
+                            if (sizeChildren.length > 0) sizeCloned.children = sizeChildren;
+
                             return { count: countCloned, size: sizeCloned };
                         };
-                        const recalcTreemapValues = (node) => {
-                            if (!node.children || node.children.length === 0) return node.value || 0;
-                            node.value = node.children.reduce((sum, child) => sum + recalcTreemapValues(child), 0);
-                            return node.value;
-                        };
+
                         const { count: countTree, size: sizeTree } = data.folderTree
                             ? buildBothTrees(data.folderTree)
                             : { count: null, size: null };
-                        if (countTree) recalcTreemapValues(countTree);
 
-                        const heavyCharts = [
-                            {
-                                id: 'folderChart', option: {
-                                    tooltip: {
-                                        trigger: 'item', triggerOn: 'mousemove',
-                                        formatter: (p) => {
-                                            const n = p.data;
-                                            return `<div style="font-weight:600;margin-bottom:6px;">📁 ${n.name}</div>` +
-                                                (n.size_str ? `<div style="font-size:12px;">📊 大小: ${n.size_str}</div>` : '');
-                                        }
-                                    },
-                                    series: [{
-                                        type: 'tree', data: [data.folderTree], top: '5%', left: '10%', bottom: '5%', right: '10%',
-                                        symbolSize: 10, initialTreeDepth: 50,
-                                        lineStyle: { width: 1.5, color: '#ccc' },
-                                        itemStyle: { color: '#4a90e2', borderWidth: 0 },
-                                        label: { show: true, position: 'left', fontSize: 11, color: '#333', backgroundColor: '#f8f9fa', borderRadius: 3, padding: [4, 8] },
-                                        leaves: { label: { position: 'right', backgroundColor: '#e6f0fa' }, itemStyle: { color: '#0969da' } },
-                                        emphasis: { focus: 'descendant', itemStyle: { color: '#0550ae' } },
-                                        expandAndCollapse: true, animationDuration: 600
-                                    }]
+                        // 1. 渲染文件目录树
+                        const folderChart = initChart('folderChart', 'folderChart');
+                        folderChart.setOption({
+                            tooltip: {
+                                trigger: 'item', triggerOn: 'mousemove',
+                                formatter: (p) => {
+                                    const n = p.data;
+                                    return `<div style="font-weight:600;margin-bottom:6px;">📁 ${n.name}</div>` +
+                                        (n.size_str ? `<div style="font-size:12px;">📊 大小: ${n.size_str}</div>` : '');
                                 }
                             },
-                            {
-                                id: 'treemapChart', option: {
-                                    tooltip: {
-                                        formatter: (info) => {
-                                            const parts = [];
-                                            for (let i = 1; i < info.treePathInfo.length; i++) parts.push(info.treePathInfo[i].name);
-                                            return '📦&nbsp;' + escapeHtml(parts.join(SLASH)) + '<br>📊&nbsp;' + info.data.size_str;
-                                        }
-                                    },
-                                    series: [{
-                                        type: 'treemap', roam: false, visibleMin: 300,
-                                        label: { show: true, formatter: '{b}' },
-                                        itemStyle: { borderColor: '#fff' },
-                                        levels: getLevelOption(),
-                                        name: sizeTree ? sizeTree.name : '',
-                                        data: sizeTree ? sizeTree.children : [],
-                                        animationDuration: 600
-                                    }]
+                            series: [{
+                                type: 'tree', data: [data.folderTree], top: '5%', left: '10%', bottom: '5%', right: '10%',
+                                symbolSize: 10, initialTreeDepth: 50,
+                                lineStyle: { width: 1.5, color: '#ccc' },
+                                itemStyle: { color: '#4a90e2', borderWidth: 0 },
+                                label: { show: true, position: 'left', fontSize: 11, color: '#333', backgroundColor: '#f8f9fa', borderRadius: 3, padding: [4, 8] },
+                                leaves: { label: { position: 'right', backgroundColor: '#e6f0fa' }, itemStyle: { color: '#0969da' } },
+                                emphasis: { focus: 'descendant', itemStyle: { color: '#0550ae' } },
+                                expandAndCollapse: true, animationDuration: 600
+                            }]
+                        });
+                        await yieldToMain(); // 渲染完交还主线程
+
+                        // 2. 渲染大小 Treemap
+                        const treemapChart = initChart('treemapChart', 'treemapChart');
+                        treemapChart.setOption({
+                            tooltip: {
+                                formatter: (info) => {
+                                    const parts = [];
+                                    for (let i = 1; i < info.treePathInfo.length; i++) parts.push(info.treePathInfo[i].name);
+                                    return '📦&nbsp;' + escapeHtml(parts.join(SLASH)) + '<br>📊&nbsp;' + info.data.size_str;
                                 }
                             },
-                            {
-                                id: 'treemapCountChart', option: {
-                                    tooltip: {
-                                        formatter: (info) => {
-                                            const parts = [];
-                                            for (let i = 1; i < info.treePathInfo.length; i++) parts.push(info.treePathInfo[i].name);
-                                            return '📦&nbsp;' + escapeHtml(parts.join(SLASH)) + '<br>📊&nbsp;' + info.data.file_num;
-                                        }
-                                    },
-                                    series: [{
-                                        type: 'treemap', roam: false, visibleMin: 300,
-                                        label: { show: true, formatter: '{b}' },
-                                        itemStyle: { borderColor: '#fff' },
-                                        levels: getLevelOption(),
-                                        name: countTree ? countTree.name : '',
-                                        data: countTree ? countTree.children : [],
-                                        animationDuration: 600
-                                    }]
+                            series: [{
+                                type: 'treemap', roam: false, visibleMin: 300,
+                                label: { show: true, formatter: '{b}' },
+                                itemStyle: { borderColor: '#fff' },
+                                levels: getLevelOption(),
+                                name: sizeTree ? sizeTree.name : '',
+                                data: sizeTree ? sizeTree.children : [],
+                                animationDuration: 600
+                            }]
+                        });
+                        await yieldToMain(); // 渲染完交还主线程
+
+                        // 3. 渲染数量 Treemap
+                        const treemapCountChart = initChart('treemapCountChart', 'treemapCountChart');
+                        treemapCountChart.setOption({
+                            tooltip: {
+                                formatter: (info) => {
+                                    const parts = [];
+                                    for (let i = 1; i < info.treePathInfo.length; i++) parts.push(info.treePathInfo[i].name);
+                                    return '📦&nbsp;' + escapeHtml(parts.join(SLASH)) + '<br>📊&nbsp;' + info.data.file_num;
                                 }
-                            }
-                        ];
-                        heavyCharts.forEach(({ id, option }) => {
-                            const chart = initChart(id, id);
-                            chart.setOption(option);
+                            },
+                            series: [{
+                                type: 'treemap', roam: false, visibleMin: 300,
+                                label: { show: true, formatter: '{b}' },
+                                itemStyle: { borderColor: '#fff' },
+                                levels: getLevelOption(),
+                                name: countTree ? countTree.name : '',
+                                data: countTree ? countTree.children : [],
+                                animationDuration: 600
+                            }]
                         });
                         resolve();
                     }, 0);
                 });
             });
         }
-        let _currentNetSearchQuery = SEARCH_BTNS[1].query;
+        let _currentNetSearchQuery = SEARCH_BTNS[1].query; // 默认选中第二个搜索引擎（Google）
         let _currentNetSearchName = SEARCH_BTNS[1].name;
         let _currentNetSearchHasKey = SEARCH_BTNS[1].hasKey;
         function selectNetSearch(el) {
@@ -23715,14 +23729,6 @@
             } else {
                 monitorPanel.style.display = 'none';
                 fileSumPanel.style.display = 'flex';
-                if (!isIdle()) {
-                    const now = Date.now();
-                    const permEl = document.getElementById('permissionTime');
-                    if (permEl) {
-                        const permTs = parseInt(safeLocalStorageGet(PERMISSION_TIME_KEY)) || 0;
-                        permEl.textContent = permTs ? '授权时长：' + formatDuration(Math.floor((now - permTs) / 1000)) : '授权时长：--';
-                    }
-                }
             }
 
             const timeDisplay = dashboardContainer.querySelector('#dashboard-time');
@@ -23744,7 +23750,7 @@
                     showNotification('✓ 数据扫描刷新成功', 'success');
                 } else {
                     try {
-                        // 点击"刷新"按钮 → 使用增量扫描（后端自动判断）
+                        // 点击"刷新"按钮 → 读取已有缓存文件数据
                         const data = await scanDashboardData(false);
                         await renderDashboard(data);
                     } catch (e) {
@@ -23752,8 +23758,8 @@
                     }
                 }
             }
-            _fileScanDuration = Math.round(performance.now() - _scanStart);
-            safeLocalStorageSet(FILE_SCAN_TIME_KEY, _fileScanDuration.toString());
+            _dashboardLoadDuration = Math.round(performance.now() - _scanStart);
+            safeLocalStorageSet(FILE_SCAN_TIME_KEY, _dashboardLoadDuration.toString());
         }
 
         async function toggleBookmarkView(html = '') {
@@ -26170,6 +26176,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     if (!currentRootPath) {
                         return false;
                     }
+                    await mountDir();
                     const data = await scanDashboardData(true)
                     if (BROWSER_REFRESHED_KEY === safeLocalStorageGet(BROWSER_REFRESHED_KEY)) {
                         await Promise.all([renderDirectory(storedHandle, data), toggleDashboardView(true, data)]);
@@ -26201,10 +26208,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                 })
             );
+            changeExcalidrawToolBtn(contentCommonContainer);
+        }
+
+        function changeExcalidrawToolBtn(container) {
             setTimeout(() => {
                 window.addEventListener('keydown', handleBBSaveShortcut, true);
-                const menuBtn = contentCommonContainer.querySelector(".dropdown-menu-button.main-menu-trigger.zen-mode-transition");
+                const menuBtn = container.querySelector(".dropdown-menu-button.main-menu-trigger.zen-mode-transition");
                 if (menuBtn) {
+                    menuBtn.setAttribute("showPanel", "yes");
                     menuBtn.removeEventListener("click", handleBBMenuClick);
                     menuBtn.addEventListener("click", handleBBMenuClick);
                 }
@@ -26214,9 +26226,45 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         function handleBBMenuClick(e) {
+            const btn = e.currentTarget;
+            const displaySave = btn.getAttribute("showPanel");
             setTimeout(() => {
-                const links = document.querySelector('.dropdown-menu-group');
-                if (links) links.style.display = 'none';
+                const dropdownMenu = document.querySelector('div[data-testid="dropdown-menu"]');
+                if (dropdownMenu) {
+                    const links = dropdownMenu.querySelector('.dropdown-menu-group');
+                    if (links) links.style.display = 'none';
+                    const helpButton = dropdownMenu.querySelector('button[data-testid="help-menu-item"]');
+                    if (helpButton) helpButton.style.display = 'none';
+                    const exportButton = dropdownMenu.querySelector('button[data-testid="json-export-button"]');
+                    if (exportButton) {
+                        const button = dropdownMenu.querySelector('button[data-testid="json-save-button"]');
+                        if (button) button.remove();
+                        clonedButton = exportButton.cloneNode(true);
+                        clonedButton.setAttribute('data-testid', 'json-save-button');
+                        clonedButton.setAttribute('aria-label', '保存');
+                        clonedButton.setAttribute('title', '保存');
+                        clonedButton.addEventListener('click', async () => {
+                            if (displaySave && displaySave === 'yes') {
+                                saveWhiteboardChoosePath();
+                            } else {
+                                saveWhiteboardNoChoosePath();
+                            }
+                        });
+                        const textElement = clonedButton.querySelector('.dropdown-menu-item__text');
+                        if (textElement) textElement.textContent = '保存';
+                        const shortcutElement = clonedButton.querySelector('.dropdown-menu-item__shortcut');
+                        if (shortcutElement) { shortcutElement.textContent = 'Cmd/Ctrl + S'; } else {
+                            if (textElement) {
+                                const shortcutDiv = document.createElement('div');
+                                shortcutDiv.className = 'dropdown-menu-item__shortcut';
+                                shortcutDiv.textContent = 'Cmd/Ctrl + S';
+                                textElement.after(shortcutDiv);
+                            }
+                        }
+                        exportButton.before(clonedButton);
+                        exportButton.style.display = 'none';
+                    }
+                }
             }, 0);
         }
 
@@ -26491,22 +26539,27 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             document.getElementById('canvas-save-menu').classList.remove('canvas-open');
         }
 
-        let currentWhiteboardContent = '';
-
+        let currentWhiteboardContent = ''; // 当前白板内容（JSON 字符串）
         function handleBBSaveShortcut(e) {
             if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') {
                 e.preventDefault();
                 e.stopImmediatePropagation();
-                const elements = excalidrawAPI.getSceneElements();
-                const appState = excalidrawAPI.getAppState();
-                const files = excalidrawAPI.getFiles();
-                currentWhiteboardContent = window.ExcalidrawLib.serializeAsJSON(elements, appState, files, "local");
-                showWhiteboardSaveModal();
+                saveWhiteboardChoosePath().catch(err => {
+                    console.error('保存白板失败', err);
+                    showNotification('✗ 保存白板失败: ' + err.message, 'error');
+                });
             }
+        }
+        async function saveWhiteboardChoosePath() {
+            if (!excalidrawAPI) return;
+            const elements = excalidrawAPI.getSceneElements();
+            const appState = excalidrawAPI.getAppState();
+            const files = excalidrawAPI.getFiles();
+            currentWhiteboardContent = window.ExcalidrawLib.serializeAsJSON(elements, appState, files, "local");
+            await showWhiteboardSaveModal();
         }
 
         let currentSaveModalConfig = null;
-
         async function showSaveModal(config) {
             const {
                 title = '保存文件',
@@ -26555,12 +26608,19 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') {
                 e.preventDefault();
                 e.stopImmediatePropagation();
-                const elements = excalidrawAPI.getSceneElements();
-                const appState = excalidrawAPI.getAppState();
-                const files = excalidrawAPI.getFiles();
-                const sceneJSON = window.ExcalidrawLib.serializeAsJSON(elements, appState, files, "local");
-                saveExistFileContent(sceneJSON);
+                saveWhiteboardNoChoosePath().catch(err => {
+                    console.error('保存白板失败', err);
+                    showNotification('✗ 保存白板失败: ' + err.message, 'error');
+                });
             }
+        }
+
+        async function saveWhiteboardNoChoosePath() {
+            const elements = excalidrawAPI.getSceneElements();
+            const appState = excalidrawAPI.getAppState();
+            const files = excalidrawAPI.getFiles();
+            const sceneJSON = window.ExcalidrawLib.serializeAsJSON(elements, appState, files, "local");
+            saveExistFileContent(sceneJSON);
         }
 
         async function destroyExcalidraw() {
@@ -26568,61 +26628,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 await rootExcalidraw.unmount();
                 rootExcalidraw = null;
                 excalidrawAPI = null;
-                autoSaveTimer = null;
+                currentWhiteboardContent = '';
                 document.removeEventListener("click", handleBBMenuClick);
                 window.removeEventListener('keydown', handleBBSaveShortcut, true);
                 window.removeEventListener('keydown', handleBBSaveShortcutNoCreate, true);
             }
         }
-
-        class FileEntry {
-            constructor(rawEntry, adapterType = 'local') {
-                this._rawEntry = rawEntry;
-                this._adapterType = adapterType;
-            }
-
-            get rawEntry() {
-                return this._rawEntry;
-            }
-
-            get adapterType() {
-                return this._adapterType;
-            }
-
-            get kind() {
-                return this._getKind();
-            }
-
-            get name() {
-                return this._getName();
-            }
-
-            isDirectory() {
-                return this.kind === 'directory';
-            }
-
-            isFile() {
-                return this.kind === 'file';
-            }
-
-            _getKind() {
-                if (!this._rawEntry) return 'file';
-                if (this._adapterType === 'local') return this._rawEntry.kind;
-                const kind = this._rawEntry.type || this._rawEntry.kind;
-                if (kind === 'directory' || kind === 'dir') return 'directory';
-                if (kind === 'file') return 'file';
-                return 'file';
-            }
-
-            _getName() {
-                if (!this._rawEntry) return '';
-                if (this._adapterType === 'local') {
-                    return this._rawEntry.name;
-                }
-                return this._rawEntry.name || this._rawEntry.filename || '';
-            }
-        }
-
         // File System Access API 封装：打开/读取/写入文件
         function getFileName(fileHandle) {
             return fileHandle.name;
@@ -26757,11 +26768,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const parentPath = pathParts.length > 0 ? `${pathParts.join(SLASH)}` : '';
             return { currentHandle: currentHandle, parentPath: parentPath, fileName: fileName };
         }
+        // 根据文件路径获取文件句柄
         async function getFileHandleByPath(path) {
             const { currentHandle, fileName } = await getFileParentHandleByFilePath(path);
             if (!currentHandle || !fileName) return null;
             return await getFileHandleByDirHandle(currentHandle, fileName);
         }
+        // 根据文件路径获取嵌入节点的文件句柄
         async function getEmbedNodeFileHandleByPath(filePath) {
             const parts = normalizePath(filePath).split(SLASH).filter(Boolean);
             if (parts.length === 0) return await getFileHandleByDirHandle(getRootHandle(), filePath);
@@ -26804,7 +26817,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        // IndexedDB 通用增删改查
         // 打开 IndexedDB（自动建表）
         function idbOpen(dbName, storeName) {
             return new Promise((resolve, reject) => {
@@ -26846,19 +26858,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             } catch { /* 静默忽略 */ }
         }
 
-        // 删 IndexedDB 单条
-        async function idbDelete(dbName, storeName, key) {
-            try {
-                const db = await idbOpen(dbName, storeName);
-                return new Promise((resolve, reject) => {
-                    const tx = db.transaction(storeName, 'readwrite');
-                    tx.objectStore(storeName).delete(key);
-                    tx.oncomplete = () => resolve();
-                    tx.onerror = () => reject(tx.error);
-                });
-            } catch { /* 静默忽略 */ }
-        }
-
         // 删整个 IndexedDB 库
         function idbDeleteDatabase(dbName) {
             return new Promise((resolve) => {
@@ -26868,26 +26867,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     req.onerror = () => resolve();
                 } catch { resolve(); }
             });
-        }
-
-        // 检查 IndexedDB 是否存在且有数据
-        async function idbHasData(dbName) {
-            try {
-                const db = await new Promise((resolve, reject) => {
-                    const req = indexedDB.open(dbName);
-                    req.onsuccess = () => resolve(req.result);
-                    req.onerror = () => reject(req.error);
-                });
-                const storeNames = Array.from(db.objectStoreNames);
-                if (storeNames.length === 0) return false;
-                return new Promise((resolve) => {
-                    const tx = db.transaction(storeNames, 'readonly');
-                    const store = tx.objectStore(storeNames[0]);
-                    const countReq = store.count();
-                    countReq.onsuccess = () => resolve(countReq.result > 0);
-                    countReq.onerror = () => resolve(false);
-                });
-            } catch { return false; }
         }
 
         // 自然排序：中文拼音 + 数字按数值比较（file2 < file10）+ 大小写不敏感
@@ -26951,30 +26930,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return files.filter(f => dirname(f.path) === dirPath);
         }
 
-        async function _getEntries(dirHandle, parentPath = '') {
-            const dirs = [];
-            const files = [];
-            for await (const rawEntry of dirHandle.values()) {
-                const name = rawEntry.name;
-                if (rawEntry.kind === 'directory') {
-                    const entryPath = _buildPath(parentPath, name);
-                    if (!isSkipDir(entryPath) && !isSkipDir(name)) {
-                        dirs.push({ name, rawEntry });
-                    }
-                } else {
-                    if (!isSkipFile(name)) {
-                        files.push({ name, rawEntry });
-                    }
-                }
-            }
-            return { dirs, files };
-        }
-
-        function _sortEntries(dirs, files) {
-            dirs.sort(_naturalCompare);
-            files.sort(_naturalCompare);
-        }
-
         async function buildTreeDataFromScan(folderTree, files, depth = 0, parentPath = '', maxDepth = MAX_DIR_DEPTH, lazyDepth = LAZY_LOAD_DEPTH) {
             // 迭代栈遍历，避免深层目录递归导致栈溢出
             // lazyDepth: 超过此深度且未展开的目录标记 lazy=true，不递归构建子节点
@@ -26994,13 +26949,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 // 文件直接添加到父级
                 if (filesList) {
                     for (let i = 0; i < filesList.length; i++) {
-                        const fileEntry = filesList[i];
+                        const entry = filesList[i];
                         parentChildren.push({
                             kind: 'file',
-                            name: fileEntry.name,
-                            path: _buildPath(rpath, fileEntry.name),
+                            name: entry.name,
+                            path: _buildPath(rpath, entry.name),
                             depth: d,
-                            iconType: fileEntry.sub_type
+                            iconType: entry.sub_type
                         });
                     }
                 }
@@ -30617,7 +30572,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             todoRenderAll();
             _ensureHolidayData(todoCurrentDate.getFullYear());
         }
-        // 弹窗实时时间更新
+        // 实时时间更新
         function todoUpdateModalTime(el) {
             const now = new Date();
             const year = now.getFullYear();
@@ -35092,7 +35047,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
                 var prevBtn = document.createElement('button');
                 prevBtn.id = 'wc-prev-btn';
-                prevBtn.className = 'git-diff-nav-btn';
+                prevBtn.className = 'btn btn-primary btn-ss';
                 prevBtn.textContent = '上一页';
                 prevBtn.onclick = function () {
                     if (_wcPageIndex <= 0) return;
@@ -35108,7 +35063,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
                 var nextBtn = document.createElement('button');
                 nextBtn.id = 'wc-next-btn';
-                nextBtn.className = 'git-diff-nav-btn';
+                nextBtn.className = 'btn btn-primary btn-ss';
                 nextBtn.textContent = '下一页';
                 nextBtn.onclick = function () {
                     var total = _wcAllItems.length;
