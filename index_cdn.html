@@ -7862,6 +7862,7 @@
 
         /* ——— 图谱模式切换开关 ——— */
         .graph-mode-toggle {
+            display: flex;
             position: absolute;
             top: 14px;
             right: 100px;
@@ -13204,7 +13205,8 @@
             { key: '📁 新建目录', name: "新建目录", click: "createDirByParentDir" },
             { key: '📄 新建文件', name: "untitled.txt", click: "createFileByParentDir" },
             { key: '🌄 图片墙', name: "图片墙", click: "picLayoutDisplay" },
-            { key: '🔗 文档图谱', name: "文档图谱", click: "dirGraphDisplay" },
+            { key: '🌐 文件图谱', name: '文件图谱', click: 'openNoteGraph' },
+            { key: '🔗 文档白板', name: "文档白板", click: "dirGraphDisplay" },
             { key: '📚️ 文件词云', name: "文件词云", click: "openWordCloudFile" },
             { key: '标记', name: "标记", click: "markDir" },
         ]
@@ -13755,7 +13757,6 @@
                 aiFabContainer.style.display = 'block';
                 await randomOpen();
             } else if (type === 'renderFile') {
-                aiFabContainer.style.display = 'block';
                 await renderFile(relativePath, fileSpan);
             } else if (type === 'graphiQL') {
                 await openGraphiQL();
@@ -13927,6 +13928,7 @@
             if (!currentFileHandle) return;
             destroyEditor(true);
             await switchToView(contentEdit, 'flex');
+            aiFabContainer.style.display = 'none';
             let initialContent = previewFileText || text || originalContent;
             contentEdit.innerHTML = '<div class="editor-container"><div class="editor-header">📝 编辑模式 - '
                 + currentFileName + '</div><div id="editor-inner" style="width:100%;height:calc(100% - 65px);overflow: hidden;"></div>'
@@ -16367,6 +16369,8 @@
                         openWordCloudFile(dirPathStr);
                     } else if (action.click === 'dirGraphDisplay') {
                         dirGraphDisplay(dirPathStr);
+                    } else if (action.click === 'openNoteGraph') {
+                        openNoteGraph(dirPathStr);
                     }
                 }));
             }
@@ -17598,6 +17602,7 @@
 
         let mdIsKanban = false; // 是否为看板格式
         async function renderMarkdownFile(text) {
+            aiFabContainer.style.display = 'block';
             mdIsKanban = false;
             if (isObsidianKanban(text)) {
                 mdIsKanban = true;
@@ -17618,13 +17623,13 @@
         }
 
         async function renderHTMLFile(text, relativePath) {
+            if (isBookmarkHtml(text)) {
+                toggleBookmarkView(text);
+                return;
+            }
             if (isShowHtmlCode(relativePath)) {
                 setControlsState({ previewBtn: false });
                 enterEditMode(false, text);
-                return;
-            }
-            if (isBookmarkHtml(text)) {
-                toggleBookmarkView(text);
                 return;
             }
             htmlCanBePng = true;
@@ -31003,9 +31008,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             _todoEarlyInitialized = true;
         }
         // 打开关系图谱视图
-        async function openNoteGraph() {
+        async function openNoteGraph(dirPath = getRootHandle().name) {
             await switchToView(graphViewContainer, 'flex');
-            await toggleGraphView();
+            await toggleGraphView(dirPath);
         }
 
         // 知识关系图谱（D3 force 布局）
@@ -31026,6 +31031,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         let graphCachedEdges = null;   // 缓存文件系统遍历边
         let graphCachedRootName = null; // 缓存时的根目录名称（用于失效判断）
         let graphMode = 'file';        // 图谱模式: 'file'=文件图谱, 'link'=文档关联
+        let graphRootPath = null;  // 图谱根目录路径（用于文件图谱模式）
         let linkGraphCache = null;     // 文档关联图谱数据缓存（从 JSON 加载）
         let _graphTraversing = false;  // 文件系统遍历中标志，防止并发遍历
 
@@ -31076,6 +31082,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             graphCachedRootName = null;
             // 重置图谱模式与缓存
             graphMode = 'file';
+            graphRootPath = null;
             linkGraphCache = null;
             // 重置链接解析缓存（避免不同目录但文件数相同时复用脏缓存）
             _resolveNameCache = null;
@@ -31118,8 +31125,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        async function toggleGraphView() {
+        async function toggleGraphView(dirPath = getRootHandle().name) {
             graphMode = 'file';
+            graphRootPath = dirPath;
+            const allFile = getRootHandle().name === graphRootPath;
+            const label = document.getElementById('graph-mode-toggle');
+            if (allFile) {
+                label.style.display = 'flex';
+            } else {
+                label.style.display = 'none';
+            }
             setGraphControlsDisabled(true);
             const checkbox = document.getElementById('graph-mode-checkbox');
             if (checkbox) checkbox.checked = false;
@@ -31416,7 +31431,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const nodeData = nodes[i];
                 if (!keepFlags.get(nodeData.id)) continue;
                 const d = degree.get(nodeData.id) || 0;
-                const baseSize = nodeData.id === 'root'
+                const baseSize = (nodeData.id === 'root' || nodeData.size === -100)
                     ? 55
                     : Math.min(50, Math.round(5 + Math.sqrt(d) * 6));
                 const ext = (nodeData.ext || '').toLowerCase();
@@ -31433,11 +31448,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 graphDataMap.nodes.set(nodeData.id, {
                     id: nodeData.id,
                     title: nodeTitle,
-                    label: nodeTitle,
-                    path: nodeData.path || nodeData.id,
                     group, depth,
                     type: 'doc',
-                    baseSize, size: baseSize * graphParams.nodeSize,
+                    baseSize : baseSize, 
+                    size: baseSize * graphParams.nodeSize,
                     _color: getGraphGroupColor(group, depth),
                     _degree: d,
                     _titleLower: nodeTitle.toLowerCase(),
@@ -32069,11 +32083,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return `hsl(${hue}, ${s}%, ${l}%)`;
         }
 
-        function incrementGraphNodeBaseSize(nodes, id) {
-            const node = nodes.get(id);
-            if (node) node.baseSize = Math.min(node.baseSize + 2, 50);
-        }
-
         function updateGraphAllNodeSizes(nodes) {
             nodes.forEach(node => {
                 node.size = node.baseSize * graphParams.nodeSize;
@@ -32249,7 +32258,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 showNotification('✗ 请先打开根目录', 'error');
                 return;
             }
-            const rootName = getRootHandle().name;
+            const allFile = getRootHandle().name === graphRootPath;
+            const rootName = allFile ? graphRootPath : dirname(graphRootPath);
             // 如果根目录未变且已有缓存，直接复用（避免重复构造）
             if (!force && graphCachedNodes && graphCachedEdges && graphCachedRootName === rootName) {
                 processAndStartSimulation(graphCachedNodes, graphCachedEdges);
@@ -32276,7 +32286,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             graphCachedRootName = null;
 
             try {
-                const { nodes, edges } = buildGraphFromScanData(rootName);
+                const { nodes, edges } = buildGraphFromScanData(rootName, allFile);
                 graphCachedNodes = nodes;
                 graphCachedEdges = edges;
                 graphCachedRootName = rootName;
@@ -32292,63 +32302,143 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
          * 从缓存的 _scanData 构造图谱节点与边，避免实时文件系统遍历。
          * 输出格式与原有 traverseDirectory 方式完全兼容。
          * @param {string} rootName - 根目录名称
+         * @param {boolean} allFile - 是否为全盘扫描模式（根目录即为根节点）
          * @returns {{ nodes: Array, edges: Array }}
          */
-        function buildGraphFromScanData(rootName) {
+        function buildGraphFromScanData(rootName, allFile = true) {
             let nodes = [];
             let edges = [];
             const groupMap = new Map();
             let groupCounter = 0;
 
-            // 根节点
-            nodes.push({
-                id: 'root',
-                title: rootName,
-                path: '',
-                size: 100,
-                group: 0,
-                depth: 0
-            });
-            groupMap.set('root', 0);
-            groupCounter++;
-
-            // 辅助: 分配 group 并推入节点
             function addNode(id, title, path, size, depth) {
                 const topDir = path.split(SLASH)[0];
+                add(id, title, path, size, depth, topDir);
+            }
+            function addNodeDir(id, title, path, size, depth) {
+                const idx = path.lastIndexOf(SLASH);
+                const topDir = idx === -1 ? '' : path.slice(0, idx);
+                add(id, title, path, size, depth, topDir);
+            }
+            function add(id, title, path, size, depth, topDir) {
                 let group = groupMap.get(topDir);
                 if (group === undefined) {
                     group = groupCounter++;
                     groupMap.set(topDir, group);
                 }
-                nodes.push({ id: id, title: title, path: path, size: size, group: group, depth: depth });
+                nodes.push({ id: id, title: title, size: size, group: group, depth: depth });
             }
 
-            // 1. 从 folderTree 递归提取所有目录节点（迭代栈避免递归栈溢出）
-            const folderTree = _scanData.folderTree;
-            if (folderTree) {
-                const stack = [];
-                for (const child of (folderTree.children || [])) {
-                    stack.push({ node: child, dirPath: child.name });
-                }
-                while (stack.length > 0) {
-                    const { node, dirPath } = stack.pop();
-                    if (isSkipDir(node.name) || isSkipDir(dirPath)) continue;
-                    const depth = dirPath.split(SLASH).length;
-                    addNode(dirPath, node.name, dirPath, 0, depth);
-                    for (const child of (node.children || [])) {
-                        stack.push({ node: child, dirPath: _buildPath(dirPath, child.name) });
+            if (allFile) {
+                // 根节点
+                nodes.push({
+                    id: 'root',
+                    title: rootName,
+                    size: -100,
+                    group: 0,
+                    depth: 0
+                });
+                groupMap.set('root', 0);
+                groupCounter++;
+                // 1. 从 folderTree 递归提取所有目录节点（迭代栈避免递归栈溢出）
+                const folderTree = _scanData.folderTree;
+                if (folderTree) {
+                    const stack = [];
+                    for (const child of (folderTree.children || [])) {
+                        stack.push({ node: child, dirPath: child.name });
+                    }
+                    while (stack.length > 0) {
+                        const { node, dirPath } = stack.pop();
+                        if (isSkipDir(node.name) || isSkipDir(dirPath)) continue;
+                        const depth = dirPath.split(SLASH).length;
+                        addNode(dirPath, node.name, dirPath, 0, depth);
+                        for (const child of (node.children || [])) {
+                            stack.push({ node: child, dirPath: _buildPath(dirPath, child.name) });
+                        }
                     }
                 }
-            }
 
-            // 2. 从 _scanData.files 提取所有文件节点
-            const allFiles = getScanFileList();
-            for (let i = 0; i < allFiles.length; i++) {
-                const f = allFiles[i];
-                const filePath = f.path;
-                if (isSkipFile(f.name)) continue;
-                const depth = filePath.split(SLASH).length;
-                addNode(filePath, f.name, filePath, 1, depth);
+                // 2. 从 _scanData.files 提取所有文件节点
+                const allFiles = getScanFileList();
+                for (let i = 0; i < allFiles.length; i++) {
+                    const f = allFiles[i];
+                    const filePath = f.path;
+                    if (isSkipFile(f.name)) continue;
+                    const depth = filePath.split(SLASH).length;
+                    addNode(filePath, f.name, filePath, 1, depth);
+                }
+            } else {
+                // 辅助函数：在 folderTree 中递归查找指定路径的节点
+                function findNodeByPath(rootNode, targetPath) {
+                    if (!rootNode) return null;
+                    const parts = targetPath.split(SLASH);
+                    let current = rootNode;
+                    let startIdx = 0;
+                    // 如果根节点名与路径第一段匹配，则从第二段开始向下找
+                    if (current.name === parts[0]) {
+                        startIdx = 1;
+                    }
+                    for (let i = startIdx; i < parts.length; i++) {
+                        let found = false;
+                        for (const child of (current.children || [])) {
+                            if (child.name === parts[i]) {
+                                current = child;
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found) return null;
+                    }
+                    return current;
+                }
+                const targetNode = findNodeByPath(_scanData.folderTree, graphRootPath);
+                if (targetNode) {
+                    // 1. 从目标节点开始，提取所有子目录节点并构造 edges
+                    const stack = [];
+                    // 将目标根节点本身添加进 nodes
+                    groupMap.set(graphRootPath, 0);
+                    groupCounter++;
+                    addNodeDir(graphRootPath, targetNode.name, graphRootPath, -100, 0);
+                    // 将直接子节点推入栈
+                    for (const child of (targetNode.children || [])) {
+                        stack.push({ node: child, dirPath: _buildPath(graphRootPath, child.name), parentPath: graphRootPath });
+                    }
+                    while (stack.length > 0) {
+                        const { node, dirPath, parentPath } = stack.pop();
+                        if (isSkipDir(node.name) || isSkipDir(dirPath)) continue;
+                        const depth = dirPath.split(SLASH).length;
+                        addNodeDir(dirPath, node.name, dirPath, 0, depth);
+                        // 构造 目录 -> 目录 的 edge
+                        if (parentPath) {
+                            edges.push({ from: parentPath, to: dirPath });
+                        }
+                        // 继续遍历更深层目录
+                        for (const child of (node.children || [])) {
+                            stack.push({ node: child, dirPath: _buildPath(dirPath, child.name), parentPath: dirPath });
+                        }
+                    }
+
+                    // 2. 从 _scanData.files 提取该路径下的所有文件节点并构造 edges
+                    const fileMap = _scanData.files
+                    if (fileMap) {
+                        for (const [filePath, list] of Object.entries(fileMap)) {
+                            // 过滤出属于 graphRootPath 下的文件
+                            if (filePath === graphRootPath || filePath.startsWith(graphRootPath)) {
+                                for (const f of list) {
+                                    if (isSkipFile(f.name)) continue;
+                                    const fileFullPath = f.path;
+                                    const depth = fileFullPath.split(SLASH).length;
+                                    // 修复：使用 fileFullPath 作为 id 和 path
+                                    addNodeDir(fileFullPath, f.name, fileFullPath, f.size || 1, depth);
+                                    // filePath 就是该文件所在的父目录
+                                    if (filePath) {
+                                        edges.push({ from: filePath, to: fileFullPath });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // 3. 按路径生成父子边
@@ -32424,14 +32514,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             for (let i = 0; i < nodes.length; i++) {
                 const nodeData = nodes[i];
                 const d = degree.get(nodeData.id) || 0;
-                const baseSize = nodeData.id === 'root'
+                const baseSize = (nodeData.id === 'root' || nodeData.size === -100)
                     ? 55
                     : Math.min(50, Math.round(5 + Math.sqrt(d) * 6));
                 graphDataMap.nodes.set(nodeData.id, {
                     id: nodeData.id,
                     title: nodeData.title,
-                    label: nodeData.title,
-                    path: nodeData.path,
                     group: nodeData.group,
                     depth: nodeData.depth || 0,
                     type: 'file',
