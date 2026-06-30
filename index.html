@@ -11408,7 +11408,7 @@
                     <div class="graph-toolbar-row graph-toolbar-filter-row">
                         <span class="graph-filter-wrap">
                             <input type="text" id="graph-filter-path" placeholder="筛选路径..."
-                                oninput="applyGraphFilter()">
+                                onkeydown="handleGraphFilterKeydown(event)">
                             <button class="graph-filter-clear" id="graph-filter-clear" onclick="clearGraphFilter()"
                                 style="display:none">×</button>
                         </span>
@@ -15897,15 +15897,13 @@
             }
         }
 
-        let doSearch = false;
         function clearSearch() {
             fileSearchInput.value = '';
-            doSearch = false;
             filterFiles('');
         }
 
         function handleSearchKeydown(event) {
-            const value = event.target.value.trim();
+            const value = event.target.value;
             if (event.key === 'Backspace' && value === '') {
                 event.preventDefault();
                 clearSearch();
@@ -15914,14 +15912,11 @@
             if (event.key === 'Escape') {
                 event.preventDefault();
                 fileSearchInput.value = '';
-                if (doSearch) {
-                    clearSearch();
-                }
+                clearSearch();
                 return;
             }
             if (event.key === 'Enter') {
                 event.preventDefault();
-                doSearch = true;
                 filterFiles(value);
                 return;
             }
@@ -31017,7 +31012,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         let graphLastFrameTime = performance.now();  // 上一帧时间
         let graphFrameCount = 0;   // 帧计数
         let graphFps = 0;   // 帧率
-        let isPaused = false;  // 是否暂停动画
         let graphLayout = null;  // 图谱布局
         let graphRenderer = null;  // 图谱渲染器
         let graphInteraction = null;  // 图谱交互
@@ -31087,8 +31081,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             _resolveNameCacheVersion = 0;
             // 重置参数为默认值
             graphParams = { ...DEFAULT_PARAMS };
-            // 重置其他状态变量
-            isPaused = false;
             graphFps = 0;
             graphFrameCount = 0;
             graphLastFrameTime = performance.now();
@@ -31395,82 +31387,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
 
             const { nodes, edges } = data;
-            const filterPath = graphParams.filterPath;
-            const showIsolated = graphParams.showIsolated;
-            const edgeArray = edges || [];
-
-            // 第一次遍历：filterPath 过滤 + degree 初始化 + keepFlags + degree 累积
-            const degree = new Map();
-            const keepFlags = new Map();
-            for (let i = 0; i < nodes.length; i++) {
-                const n = nodes[i];
-                if (filterPath && !n.title.toLowerCase().includes(filterPath)) continue;
-                degree.set(n.id, 0);
-                // showIsolated=false 时默认排除，等边遍历确认；showIsolated=true 时直接保留
-                keepFlags.set(n.id, showIsolated);
-            }
-            for (let i = 0; i < edgeArray.length; i++) {
-                const e = edgeArray[i];
-                if (!keepFlags.has(e.source) || !keepFlags.has(e.target)) continue;
-                degree.set(e.source, (degree.get(e.source) || 0) + 1);
-                degree.set(e.target, (degree.get(e.target) || 0) + 1);
-                if (!showIsolated) {
-                    keepFlags.set(e.source, true);
-                    keepFlags.set(e.target, true);
-                }
-            }
-
-            // 第二次遍历：节点对象构建 + 边对象引用化 + neighborsMap 重建
-            graphDataMap = { nodes: new Map(), nodesArray: [], edges: [], neighborsMap: new Map() };
             const extGroupMap = new Map();
-            const refEdges = [];
-            const refNeighborsMap = new Map();
-            for (let i = 0; i < nodes.length; i++) {
-                const nodeData = nodes[i];
-                if (!keepFlags.get(nodeData.id)) continue;
-                const d = degree.get(nodeData.id) || 0;
-                const baseSize = (nodeData.id === 'root' || nodeData.size === -100)
-                    ? 55
-                    : Math.min(50, Math.round(5 + Math.sqrt(d) * 6));
-                const ext = (nodeData.ext || '').toLowerCase();
-                let group = extGroupMap.get(ext);
-                if (group === undefined) {
-                    group = (extGroupMap.size + 1) % GROUP_HUES.length;
-                    extGroupMap.set(ext, group);
-                }
-                const depth = nodeData.depth || 1;
-                // 内联 split(SLASH).pop()：避免临时数组
+            const getNodeTitle = (nodeData) => {
                 const rawId = nodeData.id;
                 const lastSlash = rawId.lastIndexOf(SLASH);
-                const nodeTitle = nodeData.title || (lastSlash === -1 ? rawId : rawId.substring(lastSlash + 1));
-                graphDataMap.nodes.set(nodeData.id, {
-                    id: nodeData.id,
-                    title: nodeTitle,
-                    group, depth,
-                    type: 'doc',
-                    baseSize : baseSize, 
-                    size: baseSize * graphParams.nodeSize,
-                    _color: getGraphGroupColor(group, depth),
-                    _degree: d,
-                    _titleLower: nodeTitle.toLowerCase(),
-                });
-            }
-            graphDataMap.nodesArray = Array.from(graphDataMap.nodes.values());
-            for (let i = 0; i < edgeArray.length; i++) {
-                const e = edgeArray[i];
-                if (!keepFlags.get(e.source) || !keepFlags.get(e.target)) continue;
-                const src = graphDataMap.nodes.get(e.source);
-                const tgt = graphDataMap.nodes.get(e.target);
-                if (!src || !tgt) continue;
-                refEdges.push({ source: src, target: tgt });
-                if (!refNeighborsMap.has(src.id)) refNeighborsMap.set(src.id, new Set());
-                if (!refNeighborsMap.has(tgt.id)) refNeighborsMap.set(tgt.id, new Set());
-                refNeighborsMap.get(src.id).add(tgt.id);
-                refNeighborsMap.get(tgt.id).add(src.id);
-            }
-            graphDataMap.edges = refEdges;
-            graphDataMap.neighborsMap = refNeighborsMap;
-
+                return nodeData.title || (lastSlash === -1 ? rawId : rawId.substring(lastSlash + 1));
+            };
+            graphDataMap = buildGraphDataMap(nodes, edges || [], {
+                type: 'doc',
+                extGroupMap,
+                getNodeTitle,
+            });
             finalizeGraphRender(true /* 强制重建 layout/renderer */);
         }
 
@@ -31506,10 +31433,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             constructor(width, height) {
                 this.width = width;
                 this.height = height;
+                this.isPaused = false;
                 this.initSimulation();
             }
 
             initSimulation() {
+                this._simulationEnding = false; // 防止 on('end') 与 togglePause 并发冲突
                 this.simulation = d3.forceSimulation()
                     .force('link', d3.forceLink()
                         .id(d => d.id)
@@ -31526,9 +31455,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         .strength(0.8))
                     .alphaDecay(0.02)
                     .on('end', () => {
-                        // simulation 自然停止时更新暂停按钮图标
-                        if (isPaused) return; // 手动暂停不覆盖
+                        // 状态机判断：如果用户已手动暂停（isPaused=true），
+                        // 或仿真 alpha 仍 > 0（刚被 restart），则不改变暂停状态
+                        if (this._simulationEnding) return;
+                        this._simulationEnding = true;
+                        if (this.simulation && this.simulation.alpha() > 0) {
+                            this._simulationEnding = false;
+                            return;
+                        }
+                        this.isPaused = true;
                         updateGraphPauseButton(true);
+                        this._simulationEnding = false;
                     });
             }
 
@@ -31554,9 +31491,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
 
             onTick(callback) {
-                this.simulation.on('tick', null);
                 this.simulation.on('tick', () => {
-                    if (!isPaused && callback) callback();
+                    if (callback) callback();
                 });
             }
 
@@ -31564,13 +31500,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (!node) return;
                 node.fx = x;
                 node.fy = y;
-                this.simulation.alpha(0.3).restart();
+                if (!this.simulation.alphaTarget()) {
+                    this.simulation.alphaTarget(0.3).restart();
+                }
             }
 
             releaseNode(node) {
                 if (!node) return;
                 node.fx = null;
                 node.fy = null;
+                this.simulation.alphaTarget(0);
             }
 
             getNodeAt(x, y, nodes, viewport) {
@@ -31599,18 +31538,33 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 this.simulation.force('y').y(height / 2);
                 this.simulation.alpha(0.3).restart();
             }
-
             togglePause() {
-                isPaused = !isPaused;
-                if (!isPaused) {
-                    this.simulation.alpha(0.3).restart();
+                if (this.isPaused) {
+                    this.resume();
+                } else {
+                    this.pause();
                 }
-                return isPaused;
+                return this.isPaused;
             }
-
+            pause() {
+                if (this.simulation) {
+                    this.simulation.stop();
+                    this.isPaused = true;
+                    this._simulationEnding = false;
+                }
+            }
+            resume() {
+                if (this.simulation) {
+                    this.simulation.alpha(0.3).restart();
+                    this.isPaused = false;
+                    this._simulationEnding = false;
+                }
+            }
             destroy() {
                 if (this.simulation) {
                     this.simulation.stop();
+                    this.simulation.on('tick', null);
+                    this.simulation.on('end', null);
                     this.simulation.nodes([]);
                     this.simulation.force('link').links([]);
                 }
@@ -31672,8 +31626,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const parentMap = new Map();
                 for (let i = 0; i < edges.length; i++) {
                     const e = edges[i];
-                    const sid = typeof e.source === 'object' ? e.source.id : e.source;
-                    const tid = typeof e.target === 'object' ? e.target.id : e.target;
+                    // 边数据已在 buildGraphDataMap 中被预处理为对象引用，直接访问 .id
+                    const sid = e.source.id;
+                    const tid = e.target.id;
                     if (!childrenMap.has(sid)) childrenMap.set(sid, new Set());
                     childrenMap.get(sid).add(tid);
                     parentMap.set(tid, sid);
@@ -31921,6 +31876,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 this.draggingNode = null;
                 this.didDrag = false;
                 this._lastMoveTime = 0;  // 鼠标移动节流
+                this._pendingMove = null;  // 被节流丢弃的待处理移动事件
                 this.zoomBehavior = d3.zoom()
                     .scaleExtent([0.1, 5])
                     .filter(event => !event.button && !event.ctrlKey && event.type !== 'dblclick')
@@ -31960,10 +31916,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 // 记录鼠标按下时的画布坐标（用于拖拽阈值判断）
                 this._dragStartCanvas = node ? this.layout.screenToCanvas(x, y, viewport) : null;
                 if (node) {
+                    // 使用 stopPropagation 阻止事件传给 d3.zoom，避免解绑和重新绑定的隐患
                     event.stopPropagation();
-                    if (this.zoomBehavior) {
-                        d3.select(this.canvas).on('.zoom', null);
-                    }
                     this.draggingNode = node;
                     // 不在 mousedown 时固定节点 — 避免点击时画面抖动
                     this.renderer.setHighlightedNode(node);
@@ -31973,9 +31927,22 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
             onMouseMove(event) {
                 const now = performance.now();
-                if (now - this._lastMoveTime < 16) return; // 节流 ~60fps
+                // 节流 ~60fps：记录最后一次被丢弃的位置，下一帧补发
+                if (now - this._lastMoveTime < 16) {
+                    this._pendingMove = { x: event.offsetX, y: event.offsetY };
+                    return;
+                }
                 this._lastMoveTime = now;
-                const [x, y] = [event.offsetX, event.offsetY];
+                // 如果上一帧有挂起的移动事件，优先使用最新的挂起位置
+                let x, y;
+                if (this._pendingMove) {
+                    x = this._pendingMove.x;
+                    y = this._pendingMove.y;
+                    this._pendingMove = null;
+                } else {
+                    x = event.offsetX;
+                    y = event.offsetY;
+                }
                 const viewport = this.getCurrentViewport();
                 const allNodes = graphDataMap?.nodesArray || [];
                 let candidateNodes = allNodes;
@@ -32011,18 +31978,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                     this.draggingNode = null;
                 }
-                if (this.zoomBehavior) {
-                    d3.select(this.canvas).call(this.zoomBehavior);
-                }
+                // zoom 不再需要重新绑定（onMouseDown 不再解绑）
             }
 
             onClick(event) {
                 if (this.didDrag) return;
-                // 点击节点时先暂停仿真，避免布局运动干扰选中状态
-                if (!isPaused && this.layout) {
-                    this.layout.togglePause();
-                    updateGraphPauseButton(true);
-                }
                 const [x, y] = [event.offsetX, event.offsetY];
                 const viewport = this.getCurrentViewport();
                 const allNodes = graphDataMap?.nodesArray || [];
@@ -32134,8 +32094,28 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        function applyGraphFilter() {
-            graphParams.filterPath = document.getElementById('graph-filter-path').value.trim().toLowerCase();
+        function handleGraphFilterKeydown(event) {
+            const value = event.target.value;
+            if (event.key === 'Backspace' && value === '') {
+                event.preventDefault();
+                clearGraphFilter();
+                return;
+            }
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                fileSearchInput.value = '';
+                clearGraphFilter();
+                return;
+            }
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                applyGraphFilter(value);
+                return;
+            }
+        }
+
+        function applyGraphFilter(value) {
+            graphParams.filterPath = value.trim().toLowerCase();
             const clearBtn = document.getElementById('graph-filter-clear');
             if (clearBtn) {
                 clearBtn.style.display = graphParams.filterPath ? 'block' : 'none';
@@ -32208,7 +32188,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             graphParams[param] = value;
             if (param === 'nodeSize') {
-                updateGraphAllNodeSizes(graphDataMap.nodes);
+                updateGraphAllNodeSizes(graphDataMap.nodesArray);
             }
             if (graphLayout) {
                 graphLayout.updateParams(graphParams);
@@ -32303,28 +32283,38 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
          * @param {boolean} allFile - 是否为全盘扫描模式（根目录即为根节点）
          * @returns {{ nodes: Array, edges: Array }}
          */
+        /** 计算路径的深度（SLASH 出现次数） */
+        function _pathDepth(p) {
+            let count = 0, idx = -1;
+            while ((idx = p.indexOf(SLASH, idx + 1)) !== -1) count++;
+            return count;
+        }
+
+        /** 获取路径的顶级目录（第一个 SLASH 前的部分） */
+        function _topDir(p) {
+            const idx = p.indexOf(SLASH);
+            return idx === -1 ? p : p.substring(0, idx);
+        }
+
+        /** 获取路径的父目录（最后一个 SLASH 前的部分） */
+        function _parentDir(p) {
+            const idx = p.lastIndexOf(SLASH);
+            return idx === -1 ? '' : p.substring(0, idx);
+        }
+
         function buildGraphFromScanData(rootName, allFile = true) {
             let nodes = [];
             let edges = [];
             const groupMap = new Map();
             let groupCounter = 0;
 
-            function addNode(id, title, path, size, depth) {
-                const topDir = path.split(SLASH)[0];
-                add(id, title, path, size, depth, topDir);
-            }
-            function addNodeDir(id, title, path, size, depth) {
-                const idx = path.lastIndexOf(SLASH);
-                const topDir = idx === -1 ? '' : path.slice(0, idx);
-                add(id, title, path, size, depth, topDir);
-            }
             function add(id, title, path, size, depth, topDir) {
                 let group = groupMap.get(topDir);
                 if (group === undefined) {
                     group = groupCounter++;
                     groupMap.set(topDir, group);
                 }
-                nodes.push({ id: id, title: title, size: size, group: group, depth: depth });
+                nodes.push({ id, title, size, group, depth });
             }
 
             if (allFile) {
@@ -32343,15 +32333,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (folderTree) {
                     const stack = [];
                     for (const child of (folderTree.children || [])) {
-                        stack.push({ node: child, dirPath: child.name });
+                        stack.push({ node: child, dirPath: child.name, depth: 1 });
                     }
                     while (stack.length > 0) {
-                        const { node, dirPath } = stack.pop();
+                        const { node, dirPath, depth } = stack.pop();
                         if (isSkipDir(node.name) || isSkipDir(dirPath)) continue;
-                        const depth = dirPath.split(SLASH).length;
-                        addNode(dirPath, node.name, dirPath, 0, depth);
+                        add(dirPath, node.name, dirPath, 0, depth, _topDir(dirPath));
+                        const nextDepth = depth + 1;
                         for (const child of (node.children || [])) {
-                            stack.push({ node: child, dirPath: _buildPath(dirPath, child.name) });
+                            stack.push({ node: child, dirPath: _buildPath(dirPath, child.name), depth: nextDepth });
                         }
                     }
                 }
@@ -32360,10 +32350,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const allFiles = getScanFileList();
                 for (let i = 0; i < allFiles.length; i++) {
                     const f = allFiles[i];
-                    const filePath = f.path;
                     if (isSkipFile(f.name)) continue;
-                    const depth = filePath.split(SLASH).length;
-                    addNode(filePath, f.name, filePath, 1, depth);
+                    const depth = _pathDepth(f.path);
+                    add(f.path, f.name, f.path, 1, depth, _topDir(f.path));
                 }
             } else {
                 // 辅助函数：在 folderTree 中递归查找指定路径的节点
@@ -32396,23 +32385,23 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     // 将目标根节点本身添加进 nodes
                     groupMap.set(graphRootPath, 0);
                     groupCounter++;
-                    addNodeDir(graphRootPath, targetNode.name, graphRootPath, -100, 0);
+                    add(graphRootPath, targetNode.name, graphRootPath, -100, 0, _parentDir(graphRootPath));
                     // 将直接子节点推入栈
                     for (const child of (targetNode.children || [])) {
-                        stack.push({ node: child, dirPath: _buildPath(graphRootPath, child.name), parentPath: graphRootPath });
+                        stack.push({ node: child, dirPath: _buildPath(graphRootPath, child.name), parentPath: graphRootPath, depth: 1 });
                     }
                     while (stack.length > 0) {
-                        const { node, dirPath, parentPath } = stack.pop();
+                        const { node, dirPath, parentPath, depth } = stack.pop();
                         if (isSkipDir(node.name) || isSkipDir(dirPath)) continue;
-                        const depth = dirPath.split(SLASH).length;
-                        addNodeDir(dirPath, node.name, dirPath, 0, depth);
+                        add(dirPath, node.name, dirPath, 0, depth, _parentDir(dirPath));
                         // 构造 目录 -> 目录 的 edge
                         if (parentPath) {
                             edges.push({ from: parentPath, to: dirPath });
                         }
                         // 继续遍历更深层目录
+                        const nextDepth = depth + 1;
                         for (const child of (node.children || [])) {
-                            stack.push({ node: child, dirPath: _buildPath(dirPath, child.name), parentPath: dirPath });
+                            stack.push({ node: child, dirPath: _buildPath(dirPath, child.name), parentPath: dirPath, depth: nextDepth });
                         }
                     }
 
@@ -32425,9 +32414,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                 for (const f of list) {
                                     if (isSkipFile(f.name)) continue;
                                     const fileFullPath = f.path;
-                                    const depth = fileFullPath.split(SLASH).length;
-                                    // 修复：使用 fileFullPath 作为 id 和 path
-                                    addNodeDir(fileFullPath, f.name, fileFullPath, f.size || 1, depth);
+                                    // 使用 _pathDepth 计算深度而非 split
+                                    const depth = _pathDepth(fileFullPath);
+                                    add(fileFullPath, f.name, fileFullPath, f.size || 1, depth, _parentDir(fileFullPath));
                                     // filePath 就是该文件所在的父目录
                                     if (filePath) {
                                         edges.push({ from: filePath, to: fileFullPath });
@@ -32442,7 +32431,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             // 3. 按路径生成父子边
             createDirectoryTreeEdges(nodes, edges);
 
-            return { nodes: nodes, edges: edges };
+            return { nodes, edges };
         }
 
         function createDirectoryTreeEdges(nodes, edges) {
@@ -32463,79 +32452,108 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        function processAndStartSimulation(nodes, edges) {
-            // 单次遍历完成：filterPath 过滤、degree 计算、filteredNodes/Edges 构建
+        /**
+         * 通用数据构建函数：过滤、degree 计算、节点对象构建、边引用化、neighborsMap 构建
+         * @param {Array} rawNodes - 原始节点数组（含 id, title, group, depth 等字段）
+         * @param {Array} rawEdges - 原始边数组（含 source, target 为节点 id 字符串）
+         * @param {Object} options - 可选配置 { type, extGroupMap, getNodeTitle }
+         * @returns {Object} graphDataMap
+         */
+        function buildGraphDataMap(rawNodes, rawEdges, options = {}) {
+            const { type = 'file', extGroupMap = null, getNodeTitle = null } = options;
+            const filterPath = graphParams.filterPath;
+            const showIsolated = graphParams.showIsolated;
+
+            // 第一步：filterPath 过滤 + degree 初始化 + 边累积 degree
             const degree = new Map();
             const filteredNodeIds = new Set();
-            for (let i = 0; i < nodes.length; i++) {
-                const n = nodes[i];
-                // 优先使用预计算的 _titleLower（若节点已预计算），避免重复 toLowerCase
+            for (let i = 0; i < rawNodes.length; i++) {
+                const n = rawNodes[i];
                 const titleLower = n._titleLower || n.title.toLowerCase();
-                if (graphParams.filterPath && !titleLower.includes(graphParams.filterPath)) continue;
+                if (filterPath && !titleLower.includes(filterPath)) continue;
                 filteredNodeIds.add(n.id);
                 degree.set(n.id, 0);
             }
             let filteredEdges = [];
-            for (let i = 0; i < edges.length; i++) {
-                const e = edges[i];
+            for (let i = 0; i < rawEdges.length; i++) {
+                const e = rawEdges[i];
                 if (!filteredNodeIds.has(e.source) || !filteredNodeIds.has(e.target)) continue;
                 filteredEdges.push(e);
                 degree.set(e.source, (degree.get(e.source) || 0) + 1);
                 degree.set(e.target, (degree.get(e.target) || 0) + 1);
             }
-            if (!graphParams.showIsolated) {
+
+            // 第二步：showIsolated 过滤
+            let finalNodes = rawNodes;
+            if (!showIsolated) {
                 const connectedIds = new Set();
                 for (const [id, d] of degree) {
                     if (d > 0) connectedIds.add(id);
                 }
                 const filteredDegree = new Map();
                 const keepNodes = [];
-                for (let i = 0; i < nodes.length; i++) {
-                    const n = nodes[i];
+                for (let i = 0; i < rawNodes.length; i++) {
+                    const n = rawNodes[i];
                     if (!filteredNodeIds.has(n.id)) continue;
                     if (connectedIds.has(n.id)) {
                         keepNodes.push(n);
                         filteredDegree.set(n.id, degree.get(n.id) || 0);
                     }
                 }
-                nodes = keepNodes;
-                const tempDegree = filteredDegree;
+                finalNodes = keepNodes;
                 filteredEdges = filteredEdges.filter(e => connectedIds.has(e.source) && connectedIds.has(e.target));
-                // 替换 degree 引用为过滤后的版本
                 degree.clear();
-                for (const [id, d] of tempDegree) degree.set(id, d);
+                for (const [id, d] of filteredDegree) degree.set(id, d);
             } else {
-                nodes = nodes.filter(n => filteredNodeIds.has(n.id));
+                finalNodes = rawNodes.filter(n => filteredNodeIds.has(n.id));
             }
 
-            graphDataMap = { nodes: new Map(), nodesArray: [], edges: filteredEdges, neighborsMap: null };
-            for (let i = 0; i < nodes.length; i++) {
-                const nodeData = nodes[i];
+            // 第三步：构建 graphDataMap 节点 + 边引用化 + neighborsMap
+            const nodesMap = new Map();
+            const refNeighborsMap = new Map();
+            for (let i = 0; i < finalNodes.length; i++) {
+                const nodeData = finalNodes[i];
                 const d = degree.get(nodeData.id) || 0;
                 const baseSize = (nodeData.id === 'root' || nodeData.size === -100)
                     ? 55
                     : Math.min(50, Math.round(5 + Math.sqrt(d) * 6));
-                graphDataMap.nodes.set(nodeData.id, {
+                let group, depth, nodeTitle;
+                if (extGroupMap) {
+                    // 文档关联图谱模式：按 ext 分组
+                    const ext = (nodeData.ext || '').toLowerCase();
+                    group = extGroupMap.get(ext);
+                    if (group === undefined) {
+                        group = (extGroupMap.size + 1) % GROUP_HUES.length;
+                        extGroupMap.set(ext, group);
+                    }
+                    depth = nodeData.depth || 1;
+                    nodeTitle = getNodeTitle
+                        ? getNodeTitle(nodeData)
+                        : (nodeData.title || nodeData.id);
+                } else {
+                    // 文件图谱模式：使用预计算 group/depth
+                    group = nodeData.group;
+                    depth = nodeData.depth || 0;
+                    nodeTitle = nodeData.title;
+                }
+                nodesMap.set(nodeData.id, {
                     id: nodeData.id,
-                    title: nodeData.title,
-                    group: nodeData.group,
-                    depth: nodeData.depth || 0,
-                    type: 'file',
-                    baseSize: baseSize,
+                    title: nodeTitle,
+                    group, depth,
+                    type,
+                    baseSize,
                     size: baseSize * graphParams.nodeSize,
-                    _color: getGraphGroupColor(nodeData.group, nodeData.depth || 0),
+                    _color: getGraphGroupColor(group, depth),
                     _degree: d,
-                    _titleLower: nodeData.title.toLowerCase(),
+                    _titleLower: nodeTitle.toLowerCase(),
                 });
             }
-            graphDataMap.nodesArray = Array.from(graphDataMap.nodes.values());
-            // 边中的 source/target 解析为节点对象引用 + 构建 neighborsMap
+            const nodesArray = Array.from(nodesMap.values());
             const refEdges = [];
-            const refNeighborsMap = new Map();
             for (let i = 0; i < filteredEdges.length; i++) {
                 const e = filteredEdges[i];
-                const srcNode = graphDataMap.nodes.get(e.source);
-                const tgtNode = graphDataMap.nodes.get(e.target);
+                const srcNode = nodesMap.get(e.source);
+                const tgtNode = nodesMap.get(e.target);
                 if (!srcNode || !tgtNode) continue;
                 refEdges.push({ source: srcNode, target: tgtNode });
                 const sid = srcNode.id, tid = tgtNode.id;
@@ -32544,9 +32562,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 refNeighborsMap.get(sid).add(tid);
                 refNeighborsMap.get(tid).add(sid);
             }
-            graphDataMap.edges = refEdges;
-            graphDataMap.neighborsMap = refNeighborsMap;
-            finalizeGraphRender(false /* 复用现有 layout/renderer */);
+            return { nodes: nodesMap, nodesArray, edges: refEdges, neighborsMap: refNeighborsMap };
+        }
+
+        function processAndStartSimulation(nodes, edges) {
+            graphDataMap = buildGraphDataMap(nodes, edges, { type: 'file' });
+            finalizeGraphRender(false);
         }
 
         async function saveGraphParams() {
@@ -32598,6 +32619,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             } catch (e) {
                 console.warn('加载参数失败，使用默认值', e);
+            }
+            // 同步参数到物理引擎和渲染器，保证 UI 控件与实际表现强一致
+            if (graphLayout) {
+                graphLayout.updateParams(graphParams);
+            }
+            if (graphRenderer) {
+                graphRenderer.requestRender();
             }
         }
 
@@ -32696,7 +32724,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             // 更新节点大小
             if (graphParams.nodeSize) {
-                updateGraphAllNodeSizes(graphDataMap.nodes);
+                updateGraphAllNodeSizes(graphDataMap.nodesArray);
             }
             // 根据当前模式重建图谱（无筛选）
             _rebuildCurrentGraph();
