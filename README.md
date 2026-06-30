@@ -1,8 +1,13 @@
-## mdgo - 本地文档知识库
+<div align="center">
 
-一款轻量级本地知识库工具，支持 Markdown、HTML、思维导图、OPML 文档的预览编辑，提供丰富的文件格式支持、图表工具、系统监控和 AI 辅助功能。
+# 📚 mdgo · 本地文档知识库
 
-![](css_js/snipaste.png) 
+**一款轻量级、零依赖的本地知识库工具，把 Markdown、图表、图片、思维导图、白板、OPML、简单AI辅助全部装进一个浏览器标签页。**
+</div>
+
+<div align="center">
+  <img src="css_js/snipaste.png" alt="mdgo 预览" width="90%" />
+</div>
 
 ### 文件格式支持
 
