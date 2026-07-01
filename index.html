@@ -4291,7 +4291,7 @@
             display: flex;
             align-items: center;
             gap: 5px;
-            padding: 5px 14px 4px 8px;
+            padding: 5.5px 14px 4px 8px;
             background: var(--color-bg);
             border-bottom: 1px solid #e2e8f0;
             flex-wrap: nowrap;
@@ -4322,11 +4322,20 @@
             flex-shrink: 1;
             min-width: 0;
             max-width: 68%;
-            -webkit-overflow-scrolling: touch;
         }
 
         .mermaid-toolbar-left::-webkit-scrollbar {
             height: 3px;
+        }
+        .mermaid-toolbar-left::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .mermaid-toolbar-left::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 1px;
+        }
+        .mermaid-toolbar-left::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
         }
 
         .mermaid-toolbar-right {
@@ -13239,7 +13248,7 @@
             { key: 'Mermaid', value: 'toggleFile("mermaid")', display: true, fileProtocolDisplay: true },
             { key: 'Excalidraw白板', value: 'toggleFile("whiteboard")', display: true, fileProtocolDisplay: true },
             { key: 'git记录', value: 'toggleFile("gitRecords")', display: true, fileProtocolDisplay: true },
-            { key: 'Canvas白板', value: 'toggleFile("canvas")', display: true, fileProtocolDisplay: true },
+            { key: 'Canvas文档白板', value: 'toggleFile("canvas")', display: true, fileProtocolDisplay: true },
             { key: '番茄钟', value: 'toggleFile("pomodoro")', display: true, fileProtocolDisplay: true },
         ]
         // 高亮字体颜色（深色系，确保可读性）
@@ -18033,7 +18042,7 @@
         }
 
         function isBookmarkHtml(html) {
-            return html.includes('NETSCAPE-Bookmark-file');
+            return html.substring(0, 200).includes('NETSCAPE-Bookmark-file');
         }
 
         function renderDrawioFile(text) {
@@ -23587,7 +23596,7 @@
                             },
                             series: [{
                                 type: 'tree', data: [data.folderTree], top: '5%', left: '10%', bottom: '5%', right: '10%',
-                                symbolSize: 10, initialTreeDepth: 50,
+                                symbolSize: 10, initialTreeDepth: 3, expandAndCollapse: true,
                                 lineStyle: { width: 1.5, color: '#ccc' },
                                 itemStyle: { color: '#4a90e2', borderWidth: 0 },
                                 label: { show: true, position: 'left', fontSize: 11, color: '#333', backgroundColor: '#f8f9fa', borderRadius: 3, padding: [4, 8] },
@@ -31521,9 +31530,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             }
 
-            getNodeAt(x, y, nodes, viewport) {
-                if (!nodes || !viewport) return null;
-                const [canvasX, canvasY] = this.screenToCanvas(x, y, viewport);
+            getNodeAt(canvasX, canvasY, nodes) {
+                if (!nodes) return null;
                 // 逆序查找，确保最上层节点优先被选中
                 for (let i = nodes.length - 1; i >= 0; i--) {
                     const node = nodes[i];
@@ -31533,10 +31541,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     if (Math.sqrt(dx * dx + dy * dy) < node.size) return node;
                 }
                 return null;
-            }
-
-            screenToCanvas(sx, sy, viewport) {
-                return [(sx - viewport.x) / viewport.k, (sy - viewport.y) / viewport.k];
             }
 
             resize(width, height) {
@@ -31592,6 +31596,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 this._rafId = null;
                 this._childrenMap = null;
                 this._parentMap = null;
+                this._viewportKey = '';
+                this._cachedVisibleBounds = { left: 0, top: 0, right: 0, bottom: 0 };
             }
 
             setViewport(viewport) {
@@ -31708,18 +31714,25 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             render() {
                 const { ctx, width, height, viewport } = this;
                 if (!ctx) return;
-                ctx.save();
+                // 修复漂移：每帧使用 setTransform 重置矩阵，避免 save/restore 在异常情况下矩阵污染
+                ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
                 ctx.clearRect(0, 0, width, height);
                 ctx.fillStyle = '#ffffff';
                 ctx.fillRect(0, 0, width, height);
                 ctx.translate(viewport.x, viewport.y);
                 ctx.scale(viewport.k, viewport.k);
-                const [left, top] = this.screenToCanvas(0, 0);
-                const [right, bottom] = this.screenToCanvas(width, height);
-                const visibleBounds = { left, top, right, bottom };
+                // 性能优化：缓存可见区域，仅 viewport 变更时重新计算
+                const vpKey = `${viewport.x.toFixed(2)},${viewport.y.toFixed(2)},${viewport.k.toFixed(4)}`;
+                let visibleBounds;
+                if (vpKey !== this._viewportKey) {
+                    this._viewportKey = vpKey;
+                    const [left, top] = this.screenToCanvas(0, 0);
+                    const [right, bottom] = this.screenToCanvas(width, height);
+                    this._cachedVisibleBounds = { left, top, right, bottom };
+                }
+                visibleBounds = this._cachedVisibleBounds;
                 this.renderEdges(visibleBounds);
                 this.renderNodes(visibleBounds);
-                ctx.restore();
                 this.updateFPS();
             }
 
@@ -31887,9 +31900,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     .scaleExtent([0.1, 5])
                     .filter(event => {
                         if (event.type === 'mousedown' || event.type === 'touchstart' || event.type === 'pointerdown') {
-                            const [x, y] = [event.offsetX, event.offsetY];
-                            const viewport = this.getCurrentViewport();
-                            const node = this.layout.getNodeAt(x, y, graphDataMap?.nodesArray || [], viewport);
+                            const [cx, cy] = this.renderer.screenToCanvas(event.offsetX, event.offsetY);
+                            const node = this.layout.getNodeAt(cx, cy, graphDataMap?.nodesArray || []);
                             if (node) return false; // 点中节点，不触发 zoom
                         }
                         return !event.button && !event.ctrlKey && event.type !== 'dblclick';
@@ -31917,8 +31929,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
 
             onMouseDown(event) {
-                const [x, y] = [event.offsetX, event.offsetY];
-                const viewport = this.getCurrentViewport();
+                const [cx, cy] = this.renderer.screenToCanvas(event.offsetX, event.offsetY);
                 const allNodes = graphDataMap?.nodesArray || [];
 
                 let candidateNodes = allNodes;
@@ -31928,9 +31939,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     candidateNodes = allNodes.filter(n => neighborIds.has(n.id));
                 }
 
-                const node = this.layout.getNodeAt(x, y, candidateNodes, viewport);
+                const node = this.layout.getNodeAt(cx, cy, candidateNodes);
                 this.didDrag = false;
-                this._dragStartCanvas = node ? this.layout.screenToCanvas(x, y, viewport) : null;
+                this._dragStartCanvas = node ? [cx, cy] : null;
 
                 if (node) {
                     event.stopPropagation();
@@ -31942,9 +31953,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
             // 修复节流丢帧：使用 requestAnimationFrame 平滑更新位置
             onMouseMove(event) {
-                const [x, y] = [event.offsetX, event.offsetY];
-                this._currentMouseX = x;
-                this._currentMouseY = y;
+                this._currentMouseX = event.offsetX;
+                this._currentMouseY = event.offsetY;
 
                 if (this.draggingNode) {
                     if (!this._dragRafId) {
@@ -31952,8 +31962,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             this._dragRafId = null;
                             if (!this.draggingNode) return;
 
-                            const viewport = this.getCurrentViewport();
-                            const [cx, cy] = this.layout.screenToCanvas(this._currentMouseX, this._currentMouseY, viewport);
+                            const [cx, cy] = this.renderer.screenToCanvas(this._currentMouseX, this._currentMouseY);
 
                             if (!this.didDrag) {
                                 const [sx, sy] = this._dragStartCanvas || [cx, cy];
@@ -31965,7 +31974,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                 this.layout.fixNode(this.draggingNode, cx, cy);
                             }
 
-                            // 【新增逻辑】：若处于暂停状态，手动更新节点坐标并请求重绘
+                            // 若处于暂停状态，手动更新节点坐标并请求重绘
                             if (this.layout.isPaused) {
                                 this.draggingNode.x = cx;
                                 this.draggingNode.y = cy;
@@ -31982,7 +31991,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (now - this._lastMoveTime < 16) return;
                 this._lastMoveTime = now;
 
-                const viewport = this.getCurrentViewport();
+                const [cx, cy] = this.renderer.screenToCanvas(event.offsetX, event.offsetY);
                 const allNodes = graphDataMap?.nodesArray || [];
                 let candidateNodes = allNodes;
                 if (this.renderer.focusNodeId !== null) {
@@ -31991,7 +32000,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     candidateNodes = allNodes.filter(n => neighborIds.has(n.id));
                 }
 
-                const node = this.layout.getNodeAt(x, y, candidateNodes, viewport);
+                const node = this.layout.getNodeAt(cx, cy, candidateNodes);
                 this.canvas.style.cursor = node ? 'grab' : 'move';
             }
 
@@ -32010,8 +32019,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
             onClick(event) {
                 if (this.didDrag) return;
-                const [x, y] = [event.offsetX, event.offsetY];
-                const viewport = this.getCurrentViewport();
+                const [cx, cy] = this.renderer.screenToCanvas(event.offsetX, event.offsetY);
                 const allNodes = graphDataMap?.nodesArray || [];
 
                 let candidateNodes = allNodes;
@@ -32021,7 +32029,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     candidateNodes = allNodes.filter(n => neighborIds.has(n.id));
                 }
 
-                const node = this.layout.getNodeAt(x, y, candidateNodes, viewport);
+                const node = this.layout.getNodeAt(cx, cy, candidateNodes);
                 if (node) {
                     if (this.renderer.focusNodeId === node.id) {
                         this.renderer.clearFocus();
@@ -32036,8 +32044,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
 
             getCurrentViewport() {
-                const transform = d3.zoomTransform(this.canvas);
-                return { x: transform.x, y: transform.y, k: transform.k };
+                // 修复漂移：使用 renderer.viewport 作为唯一数据源，而非 d3.zoomTransform(canvas)
+                // 避免 rAF 渲染帧与 zoom 事件之间的时序不一致导致双坐标系累积误差
+                return this.renderer.viewport;
             }
 
             destroy() {
