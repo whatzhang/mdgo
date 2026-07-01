@@ -33,6 +33,7 @@
     <!-- 大体积库（JSON 树、思维导图、Excel、D3、Excalidraw 等） -->
     <script src="https://cdn.jsdelivr.net/gh/summerstyle/jsonTreeViewer/libs/jsonTree/jsonTree.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsmind@0.9.1/es6/jsmind.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsmind@0.9.1/es6/jsmind.draggable-node.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
     <script src="https://cdn.jsdelivr.net/npm/plantuml-encoder@1.4.0/dist/plantuml-encoder.min.js"></script>
@@ -4329,13 +4330,16 @@
         .mermaid-toolbar-left::-webkit-scrollbar {
             height: 3px;
         }
+
         .mermaid-toolbar-left::-webkit-scrollbar-track {
             background: transparent;
         }
+
         .mermaid-toolbar-left::-webkit-scrollbar-thumb {
             background: #cbd5e1;
             border-radius: 1px;
         }
+
         .mermaid-toolbar-left::-webkit-scrollbar-thumb:hover {
             background: #94a3b8;
         }
@@ -11295,6 +11299,58 @@
             box-sizing: border-box;
             background-color: var(--color-bg);
         }
+
+        /* 快捷键帮助面板 */
+        .jsmind-help-panel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            background: var(--color-bg);
+            border-radius: var(--radius-xxl);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+            padding: 16px;
+            width: 450px;
+            height: auto;
+            overflow-y: hidden;
+            z-index: 1000;
+            opacity: 1;
+            pointer-events: all;
+            transform: translate(-50%, -50%) scale(1);
+        }
+
+        .jsmind-help-panel h2 {
+            font-size: 18px;
+            margin-bottom: 16px;
+            color: var(--color-text);
+        }
+
+        .jsmind-help-section {
+            margin-bottom: 14px;
+        }
+
+        .jsmind-help-section h3 {
+            font-size: 13px;
+            color: var(--t2);
+            margin-bottom: 8px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .jsmind-help-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            font-size: 13px;
+        }
+
+        .jsmind-help-item kbd {
+            background: #f5f5f5;
+            border: 1px solid #d9d9d9;
+            border-radius: 3px;
+            padding: 2px 6px;
+            font-family: monospace;
+            font-size: 12px;
+        }
     </style>
 </head>
 
@@ -13251,6 +13307,7 @@
             { key: 'Excalidraw白板', value: 'toggleFile("whiteboard")', display: true, fileProtocolDisplay: true },
             { key: 'git记录', value: 'toggleFile("gitRecords")', display: true, fileProtocolDisplay: true },
             { key: 'Canvas文档白板', value: 'toggleFile("canvas")', display: true, fileProtocolDisplay: true },
+            { key: '思维导图', value: 'toggleFile("mindMap")', display: true, fileProtocolDisplay: true },
             { key: '番茄钟', value: 'toggleFile("pomodoro")', display: true, fileProtocolDisplay: true },
         ]
         // 高亮字体颜色（深色系，确保可读性）
@@ -13504,7 +13561,7 @@
         let dragTranslateX = 0;              // 拖拽起始 translateX
         let dragTranslateY = 0;              // 拖拽起始 translateY
         let _imageDragEventsInited = false;  // 全局图片拖拽事件是否已初始化
-        let currentJsMind = null;            // jsMind 实例
+        let jsMindHandle = null;            // jsMind 实例
         let markdownSelectionState = { range: null, text: '' }; // Markdown 选区浮动工具栏状态
         // 编辑模式相关变量
         let currentEditor = null;           // Monaco 编辑器实例
@@ -13800,6 +13857,8 @@
                 await openGitPage();
             } else if (type === 'pomodoro') {
                 await openPomodoro();
+            } else if (type === 'mindMap') {
+                await openMindMap();
             }
             lastToggle = type;
         }
@@ -15071,18 +15130,15 @@
 
         // 销毁 jsMind，释放 Canvas/DOM
         function destroyJsMind() {
-            if (currentJsMind) {
-                try {
-                    // jsMind 没有标准 dispose 方法，清空容器内容以释放 DOM
-                    const container = document.getElementById('content-main');
-                    if (container) {
-                        const mindNodes = container.querySelectorAll('.jsmind');
-                        mindNodes.forEach(el => el.innerHTML = '');
-                    }
-                } catch (e) {
-                    console.warn('销毁 jsMind 失败:', e);
+            if (jsMindHandle) {
+                // jsMind 没有标准 dispose 方法，清空容器内容以释放 DOM
+                const container = document.getElementById('jsmind_container');
+                if (container) {
+                    container.innerHTML = '';
                 }
-                currentJsMind = null;
+                document.removeEventListener('keydown', jsMindHandle.handleGlobalKeydown);
+                jsMindHandle.destroy();
+                jsMindHandle = null;
             }
         }
 
@@ -16686,7 +16742,7 @@
 
         function collapse1Level(targetLevel) {
             if (targetLevel === "") return;
-            if (currentJsMind) {
+            if (jsMindHandle) {
                 collapseJsMindToLevel(targetLevel - 1);
             } else {
                 collapseOutlineToLevel(targetLevel);
@@ -16694,7 +16750,7 @@
         }
 
         function expandAll() {
-            currentJsMind ? expandAllJsMind() : expandAllOutline();
+            jsMindHandle ? expandAllJsMind() : expandAllOutline();
         }
 
         function collapseOutlineToLevel(targetLevel) {
@@ -16729,28 +16785,28 @@
         }
 
         function collapseJsMindToLevel(targetLevel) {
-            if (!currentJsMind) return;
-            const root = currentJsMind.get_root();
+            if (!jsMindHandle) return;
+            const root = jsMindHandle.get_root();
             collapseNodeRecursive(root, 0, targetLevel);
         }
 
         function collapseNodeRecursive(node, currentLevel, targetLevel) {
             const children = node.children;
             if (!children || children.length === 0) return;
-            currentLevel >= targetLevel ? currentJsMind.collapse_node(node.id) : currentJsMind.expand_node(node.id);
+            currentLevel >= targetLevel ? jsMindHandle.collapse_node(node.id) : jsMindHandle.expand_node(node.id);
             children.forEach(child => {
                 collapseNodeRecursive(child, currentLevel + 1, targetLevel);
             });
         }
 
         function expandAllJsMind() {
-            if (!currentJsMind) return;
-            const root = currentJsMind.get_root();
+            if (!jsMindHandle) return;
+            const root = jsMindHandle.get_root();
             expandNodeRecursive(root);
         }
 
         function expandNodeRecursive(node) {
-            currentJsMind.expand_node(node.id);
+            jsMindHandle.expand_node(node.id);
             if (node.children) {
                 node.children.forEach(child => {
                     expandNodeRecursive(child);
@@ -16939,12 +16995,12 @@
         }
 
         async function goOpmlBack() {
-            currentJsMind = null;
+            jsMindHandle.destroy();
             renderOPMLFile(await getFileContent(currentFileHandle));
         }
 
         async function goMmBack() {
-            currentJsMind = null;
+            jsMindHandle.destroy();
             const text = await getFileContent(currentFileHandle);
             const rootNode = parseFreeMind(text);
             const { html, opmlTocData } = await renderMindmapNodeAsync(rootNode, 0);
@@ -16970,41 +17026,514 @@
             }
         }
 
-        //使用jsMind渲染思维导图
-        function renderJsMind(jsMindData) {
+        async function openMindMap() {
+            await switchToView(contentMain);
             try {
-                contentMain.innerHTML = '';
-                const div = document.createElement('div');
-                div.className = 'jsmind-container';
-                div.id = 'jsmind_container';
-                contentMain.appendChild(div);
-                const options = {
-                    container: 'jsmind_container',
-                    theme: 'self',
-                    mode: 'full',
-                    editable: false,
-                    support_html: true,
-                    zoom: {
-                        min: 0.5,
-                        max: 2.0,
-                        ratio: 1.0
-                    },
-                    view: {
-                        engine: 'canvas',
-                        line_width: 1.5,
-                        line_color: '#d2d2d7',
-                        node_overflow: 'wrap',
-                        zoom: { min: 0.5, max: 2.0, step: 0.1 },
-                        custom_node_render: customNodeRender,
-                    }
-                };
-                const jm = new jsMind(options);
-                currentJsMind = jm;
-                jm.show(jsMindData);
+                jsMindCreate(null, true);
             } catch (error) {
-                console.error('jsMind渲染失败:', error);
-                contentMain.innerHTML = '<div style="color:#d73a49; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh;">❌ 渲染失败:' + error.message + '</div>';
+                console.error('jsmind 初始化失败:', error);
+                if(jsMindHandle){ jsMindHandle.destroy();jsMindHandle=null;}
+                contentMain.innerHTML = '<div style="color:#d73a49; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh;">❌ 初始化失败:' + error.message + '</div>';
+            } 
+            setControlsState({
+                topControls: true,
+                opmlBtns: true,
+                editBtn: true,
+                saveBtn: false,
+                previewBtn: false,
+                copyBtn: true,
+                formatBtn: false
+            });
+        }
+
+        function jsMindCreate(data = null, ismmFile) {
+            contentMain.innerHTML = '';
+            const div = document.createElement('div');
+            div.className = 'jsmind-container';
+            div.id = 'jsmind_container';
+            div.innerHTML += `<button id="jsmind-help" class="btn btn-sm" style="position: absolute;top: 9px;left: 10px;display: flex; z-index: 6000;padding: 0;width: 20px; height: 20px;" onclick="handleHelpClick(event)">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="12" cy="12" r="10" stroke="#666" stroke-width="2"/>
+                            <path d="M9.2 9.2C9.2 7.7 10.4 6.5 12 6.5C13.6 6.5 14.8 7.7 14.8 9.2C14.8 10.8 12 11 12 12.8V13.5" stroke="#666" stroke-width="2" stroke-linecap="round"/>
+                            <circle cx="12" cy="17" r="1.3" fill="#666"/>
+                        </svg>
+                    </button>`;
+            contentMain.appendChild(div);
+            const options = {
+                container: 'jsmind_container',
+                theme: 'self',
+                editable: true,
+                mode: 'full',
+                support_html: true,
+                zoom: {
+                    min: 0.5,
+                    max: 2.0,
+                    ratio: 1.0
+                },
+                view: {
+                    engine: 'canvas',
+                    line_width: 1.5,
+                    line_color: '#d2d2d7',
+                    line_style: 'curved',
+                    node_overflow: 'wrap',
+                    zoom: { min: 0.5, max: 2.0, step: 0.1 },
+                    custom_node_render: customNodeRender,
+                },
+                layout: {
+                    hspace: 30,
+                    vspace: 20,
+                    pspace: 13
+                },
+                shortcut: {
+                    enable: false
+                }
+            };
+            const jm = new jsMind(options);
+            jsMindHandle = new JsMindHandle(jm, data, ismmFile);
+            jsMindHandle.add_event_listener();
+            // 全局键盘监听
+            document.removeEventListener('keydown', jsMindHandle.handleGlobalKeydown);
+            document.addEventListener('keydown', jsMindHandle.handleGlobalKeydown);
+        }
+
+        function renderJsMind(jsMindData, ismmFile) {
+            jsMindCreate(jsMindData, ismmFile);
+        }
+
+        class JsMindHandle {
+            constructor(jm, data = null, ismmFile = true) {
+                this.jm = jm;
+                this.handleGlobalKeydown = this.handleGlobalKeydown.bind(this);
+                this.ismmFile = ismmFile;
+                if (!data) {
+                    let d = {
+                        meta: {
+                            name: '思维导图',
+                            author: 'zhangy',
+                            version: '1.0'
+                        },
+                        format: 'node_tree',
+                        data: {
+                            id: 'root',
+                            topic: '思维导图',
+                            isroot: true,
+                            direction: 'center',
+                            expanded: true,
+                            children: [],
+                            data: { heading: 0, color: '' }
+                        }
+                    };
+                    this.data = d;
+                    this.isNew = true;
+                    this.show(d);
+                }
+                else {
+                    this.data = data;
+                    this.isNew = false;
+                    this.show(data);
+                }
             }
+            show(data) {
+                this.jm.show(data);
+            }
+            destroy() {
+                this.jm = null;
+                this.selectedNodeId = null;
+                this.editingNodeId = null;
+            }
+            setSelectedNodeId(nodeId) {
+                this.selectedNodeId = nodeId;
+            }
+            setEditingNodeId(nodeId) {
+                this.editingNodeId = nodeId;
+            }
+            selectNode(nodeId) {
+                this.jm.select_node(nodeId);
+                this.setSelectedNodeId(nodeId);
+            }
+            selectRootNode() {
+                this.jm.select_node(this.jm.get_root());
+                this.setSelectedNodeId(this.jm.get_root().id);
+            }
+            add_event_listener() {
+                const self = this;
+                this.jm.add_event_listener(function (type, data) {
+                    if (type === jsMind.event_type.select) {
+                        self.selectedNodeId = data.node.id;
+                    }
+                });
+            }
+            get_root() {
+                return this.jm.get_root();
+            }
+            collapse_node(nodeId) {
+                this.jm.collapse_node(nodeId);
+            }
+            expand_node(nodeId) {
+                this.jm.expand_node(nodeId);
+            }
+            handleGlobalKeydown(e) {
+                // Mac 兼容：Cmd (metaKey) 或 Ctrl
+                const mod = e.metaKey || e.ctrlKey;
+                // Cmd/Ctrl+S - 保存
+                if (e.key === 's' && mod && !e.shiftKey && !e.altKey) {
+                    e.preventDefault();
+                    this.jsmind_save();
+                    return;
+                }
+                // Cmd/Ctrl+Shift+P - 保存为图片
+                if (e.key === 'p' && e.shiftKey && mod && !e.altKey) {
+                    e.preventDefault();
+                    this.jsmind_saveAsImage();
+                    return;
+                }
+                // 如果正在编辑节点，不拦截
+                if (this.jm && this.jm.view && this.jm.view.is_editing()) return;
+                const node = this.jm.get_selected_node();
+                if (!node) return;
+                // Tab - 添加子节点 / 缩进
+                if (e.key === 'Tab' && !e.shiftKey && !mod && !e.altKey) {
+                    e.preventDefault();
+                    this.jsmind_handleAddChild(this.jm, e);
+                    return;
+                }
+                // Shift+Tab - 插入父节点 / 提升
+                if (e.key === 'Tab' && e.shiftKey && !mod && !e.altKey) {
+                    e.preventDefault();
+                    this.jsmind_insertParentNode();
+                    return;
+                }
+                // Enter - 添加同级节点
+                if (e.key === 'Enter' && !e.shiftKey && !mod && !e.altKey) {
+                    e.preventDefault();
+                    this.jsmind_handleAddBrother(this.jm, e);
+                    return;
+                }
+                // Shift+Enter - 添加同级节点（上方）/ 添加备注
+                if (e.key === 'Enter' && e.shiftKey && !mod && !e.altKey) {
+                    e.preventDefault();
+                    this.jsmind_addNote();
+                    return;
+                }
+                // Backspace/Delete - 删除节点
+                if (e.key === 'Backspace' || e.key === 'Delete') {
+                    e.preventDefault();
+                    this.jsmind_handleDelNode(this.jm, e);
+                    return;
+                }
+                // Cmd/Ctrl+D - 复制节点
+                if (e.key === 'd' && mod && !e.shiftKey && !e.altKey) {
+                    e.preventDefault();
+                    this.jsmind_duplicateNode();
+                    return;
+                }
+                // Cmd/Ctrl+. - 展开/折叠
+                if (e.key === '.' && mod && !e.shiftKey && !e.altKey) {
+                    e.preventDefault();
+                    this.jsmind_handleToggle(this.jm, e);
+                    return;
+                }
+                // Cmd/Ctrl+Shift+. - 展开/折叠同级
+                if (e.key === '.' && mod && e.shiftKey && !e.altKey) {
+                    e.preventDefault();
+                    this.jsmind_toggleSiblings();
+                    return;
+                }
+                // Cmd/Ctrl+Alt+Shift+. - 全部展开/折叠
+                if (e.key === '.' && mod && e.altKey && e.shiftKey) {
+                    e.preventDefault();
+                    this.jsmind_toggleAll();
+                    return;
+                }
+                // Cmd/Ctrl+Alt+1/2/3 - 展开至层级
+                if (e.key >= '1' && e.key <= '3' && mod && e.altKey && !e.shiftKey) {
+                    e.preventDefault();
+                    this.jsmind_expandToDepth(parseInt(e.key));
+                    return;
+                }
+                // Cmd/Ctrl+Shift+↑/↓ - 移动节点
+                if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && mod && e.shiftKey && !e.altKey) {
+                    e.preventDefault();
+                    if (e.key === 'ArrowUp') this.jsmind_moveNodeUp();
+                    else this.jsmind_moveNodeDown();
+                    return;
+                }
+                // Cmd/Ctrl+] - 聚焦
+                if (e.key === ']' && mod && !e.shiftKey && !e.altKey) {
+                    e.preventDefault();
+                    this.jsmind_focusMode();
+                    return;
+                }
+                // Cmd/Ctrl+[ - 退出聚焦
+                if (e.key === '[' && mod && !e.shiftKey && !e.altKey) {
+                    e.preventDefault();
+                    this.jsmind_exitFocusMode();
+                    return;
+                }
+                // Alt+D/R/Y/G/B/P - 颜色
+                if (e.altKey && !mod && !e.shiftKey) {
+                    const colorMap = { 'd': '', 'r': 'red', 'y': 'yellow', 'g': 'green', 'b': 'blue', 'p': 'purple' };
+                    if (colorMap[e.key.toLowerCase()]) {
+                        e.preventDefault();
+                        this.jsmind_setNodeColor(colorMap[e.key.toLowerCase()]);
+                        return;
+                    }
+                }
+            }
+            jsmind_saveAsImage() {
+                this.jm.shoot();
+            }
+            jsmind_save() {
+                if (!this.ismmFile) return;
+                const result = this.jm.get_data('freemind');
+                const text = result.data;
+                if (this.isNew) {
+                    showSaveModal({
+                        title: '保存思维导图',
+                        getDefaultFileName: () => 'untitled.mm',
+                        getContent: () => text,
+                        onSave: doSaveToFolder
+                    });
+                } else {
+                    if (text !== originalContent) {
+                        saveCurrentEditContent(text);
+                    }
+                }
+            }
+            getID() {
+                return 'node_' + Date.now();
+            }
+            jsmind_handleAddChild(e) {
+                const node = this.jm.get_selected_node();
+                if (!node) return;
+                const newId = this.getID();
+                this.jm.add_node(node, newId, '新节点', { heading: 0, color: '' });
+                this.jm.select_node(newId);
+                setTimeout(() => this.jm.begin_edit(newId), 50);
+            }
+            jsmind_handleAddBrother(e) {
+                const node = this.jm.get_selected_node();
+                if (!node || node.isroot) {
+                    if (node && node.isroot) this.jsmind_handleAddChild(e);
+                    return;
+                }
+                const parent = this.jm.get_node(node.parent);
+                const newId = this.getID();
+                this.jm.insert_node_after(node, newId, '新兄弟节点', { heading: 0, color: '' });
+                this.jm.select_node(newId);
+                setTimeout(() => this.jm.begin_edit(newId), 50);
+            }
+            jsmind_handleEditNode(e) {
+                const node = this.jm.get_selected_node();
+                if (node) {
+                    this.jm.begin_edit(node);
+                    this.setSelectedNodeId(node.id);
+                }
+            }
+            jsmind_handleDelNode(e) {
+                const node = this.jm.get_selected_node();
+                if (!node || node.isroot) {
+                    showNotification('✗ 不能删除根节点', 'warning', 1000);
+                    return;
+                }
+                this.jm.remove_node(node);
+            }
+            jsmind_handleToggle(e) {
+                const node = this.jm.get_selected_node();
+                if (node) {
+                    this.jm.toggle_node(node);
+                }
+            }
+            jsmind_handleLeft(e) {
+                this.jm.select_node(this.jm.find_node_before(this.jm.get_selected_node()));
+            }
+            jsmind_handleRight(e) {
+                this.jm.select_node(this.jm.find_node_after(this.jm.get_selected_node()));
+            }
+            jsmind_handleUp(e) {
+                this.jm.select_node(this.jm.find_node_before(this.jm.get_selected_node()));
+            }
+            jsmind_handleDown(e) {
+                this.jm.select_node(this.jm.find_node_after(this.jm.get_selected_node()));
+            }
+            jsmind_insertParentNode(e) {
+                const node = this.jm.get_selected_node();
+                if (!node || node.isroot) return;
+                const parent = this.jm.get_node(node.parent);
+                const newId = this.getID();
+                const newParent = this.jm.add_node(parent, newId, '新父节点', { heading: 0, color: '' });
+                this.jm.move_node(node, null, newId, jsMind.direction.right);
+                this.jm.select_node(newId);
+                setTimeout(() => this.jm.begin_edit(newId), 50);
+            }
+            // 复制节点
+            jsmind_duplicateNode() {
+                const node = this.jm.get_selected_node();
+                if (!node || node.isroot) {
+                    showNotification('✗ 不能复制根节点', 'warning', 1000);
+                    return;
+                }
+                const parent = this.jm.get_node(node.parent);
+                const newId = this.getID();
+                // 深拷贝节点数据
+                const jsmind_cloneNodeData = (src) => ({
+                    id: 'node_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+                    topic: src.topic,
+                    expanded: src.expanded,
+                    data: JSON.parse(JSON.stringify(src.data || {})),
+                    children: (src.children || []).map(jsmind_cloneNodeData)
+                });
+                const cloned = jsmind_cloneNodeData(node);
+                // 修正id
+                cloned.id = newId;
+                this.jm.add_node(parent, newId, cloned.topic, cloned.data);
+                // 递归添加子节点
+                const jsmind_addChildren = (parentId, children) => {
+                    children.forEach(child => {
+                        this.jm.add_node(parentId, child.id, child.topic, child.data);
+                        if (child.children && child.children.length > 0) {
+                            jsmind_addChildren(child.id, child.children);
+                        }
+                    });
+                };
+                jsmind_addChildren(newId, cloned.children || []);
+                this.jm.select_node(newId);
+            }
+            // 节点上移
+            jsmind_moveNodeUp() {
+                const node = this.jm.get_selected_node();
+                if (!node || node.isroot) return;
+
+                const parent = this.jm.get_node(node.parent);
+                const siblings = parent.children;
+                const idx = siblings.indexOf(node);
+                if (idx <= 0) return;
+                // 交换位置
+                const prevNode = siblings[idx - 1];
+                this.jm.move_node(node, prevNode.id, parent.id, jsMind.direction.right);
+                this.jm.select_node(node);
+            }
+            // 节点下移
+            jsmind_moveNodeDown() {
+                const node = this.jm.get_selected_node();
+                if (!node || node.isroot) return;
+                const parent = this.jm.get_node(node.parent);
+                const siblings = parent.children;
+                const idx = siblings.indexOf(node);
+                if (idx >= siblings.length - 1) return;
+                const nextNode = siblings[idx + 1];
+                // 先移除再插入到下一个节点之后
+                const topic = node.topic;
+                const data = node.data;
+                this.jm.remove_node(node);
+                this.jm.insert_node_after(nextNode, node.id, topic, data);
+                this.jm.select_node(node);
+            }
+            // 展开/折叠同级
+            jsmind_toggleSiblings() {
+                const node = this.jm.get_selected_node();
+                if (!node || node.isroot) return;
+                const parent = this.jm.get_node(node.parent);
+                const siblings = parent.children;
+                const anyExpanded = siblings.some(s => s.expanded);
+                siblings.forEach(s => {
+                    if (anyExpanded) this.jm.collapse_node(s);
+                    else this.jm.expand_node(s);
+                });
+            }
+            // 全部展开/折叠
+            jsmind_toggleAll() {
+                const allExpanded = this.jsmind_checkAllExpanded(this.jm.get_root());
+                if (allExpanded) {
+                    this.jm.collapse_all();
+                } else {
+                    this.jm.expand_all();
+                }
+            }
+            jsmind_checkAllExpanded(node) {
+                if (!node.expanded && node.children && node.children.length > 0) return false;
+                if (node.children) {
+                    for (let child of node.children) {
+                        if (!this.jsmind_checkAllExpanded(child)) return false;
+                    }
+                }
+                return true;
+            }
+            // 展开至指定层级
+            jsmind_expandToDepth(depth) {
+                this.jm.collapse_all();
+                this.jsmind_expandNodeToDepth(this.jm.get_root(), 0, depth);
+            }
+            jsmind_expandNodeToDepth(node, currentDepth, targetDepth) {
+                if (currentDepth < targetDepth) {
+                    this.jm.expand_node(node);
+                    if (node.children) {
+                        node.children.forEach(child => {
+                            this.jsmind_expandNodeToDepth(child, currentDepth + 1, targetDepth);
+                        });
+                    }
+                }
+            }
+            // 设置节点颜色
+            jsmind_setNodeColor(color) {
+                const node = this.jm.get_selected_node();
+                if (!node) return;
+                if (!node.data) node.data = {};
+                node.data.color = color;
+                this.jm.update_node(node.id, node.topic);
+            }
+        }
+
+        function handleHelpClick(e) {
+            e.stopPropagation();
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-overlay';
+            overlay.innerHTML = `
+            <div class="jsmind-help-panel" id="jsmind-helpPanel">
+                <button class="btn btn-sm" id="jsmind-helpClose" style=" position: absolute;top: 16px;right: 16px;cursor: pointer;color: var(--t0);font-size: 16px;height: 24px;width: 24px;">×</button>
+                <h2>快捷键说明</h2>
+                <div class="jsmind-help-section">
+                    <h3>保存</h3>
+                    <div class="jsmind-help-item"><span>保存</span><kbd>Ctrl/Cmd + S</kbd></div>
+                    <div class="jsmind-help-item"><span>保存为图片</span><kbd>Ctrl/Cmd + Shift + P</kbd></div>
+                </div>
+                <div class="jsmind-help-section">
+                    <h3>节点创建</h3>
+                    <div class="jsmind-help-item"><span>添加子节点</span><kbd>Tab</kbd></div>
+                    <div class="jsmind-help-item"><span>添加同级节点（下方）</span><kbd>Enter</kbd></div>
+                    <div class="jsmind-help-item"><span>添加同级节点（上方）</span><kbd>Shift + Enter</kbd></div>
+                    <div class="jsmind-help-item"><span>插入父节点</span><kbd>Shift + Tab</kbd></div>
+                    <div class="jsmind-help-item"><span>复制节点</span><kbd>Ctrl/Cmd + D</kbd></div>
+                </div>
+                <div class="jsmind-help-section">
+                    <h3>节点编辑</h3>
+                    <div class="jsmind-help-item"><span>编辑节点</span>双击节点</div>
+                    <div class="jsmind-help-item"><span>删除节点</span><kbd>Backspace | Delete</kbd></div>
+                </div>
+                <div class="jsmind-help-section">
+                    <h3>层级与移动</h3>
+                    <div class="jsmind-help-item"><span>向上移动主题</span><kbd>Ctrl/Cmd + Shift + ↑</kbd></div>
+                    <div class="jsmind-help-item"><span>向下移动主题</span><kbd>Ctrl/Cmd + Shift + ↓</kbd></div>
+                </div>
+                <div class="jsmind-help-section">
+                    <h3>展开/折叠</h3>
+                    <div class="jsmind-help-item"><span>展开/折叠当前节点</span><kbd>Ctrl/Cmd + .</kbd></div>
+                    <div class="jsmind-help-item"><span>展开/折叠同级主题</span><kbd>Ctrl/Cmd + Shift + .</kbd></div>
+                    <div class="jsmind-help-item"><span>展开至指定层级</span><kbd>Ctrl/Cmd + Alt/Option + 1/2/3</kbd></div>
+                    <div class="jsmind-help-item"><span>全部展开/折叠</span><kbd>Ctrl/Cmd + Alt/Option + Shift + .</kbd></div>
+                </div>
+                <div class="jsmind-help-section">
+                    <h3>样式</h3>
+                    <div class="jsmind-help-item"><span>文字颜色</span><kbd>Alt + D/R/Y/G/B/P</kbd></div>
+                </div>
+            </div>`;
+            document.body.appendChild(overlay);
+            function close() {
+                overlay.remove();
+            }
+            // 关闭按钮点击事件
+            overlay.querySelector('#jsmind-helpClose').addEventListener('click', close);
+            overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
         }
 
         // 检测文本是否包含 Markdown 格式
@@ -17112,11 +17641,12 @@
             try {
                 const parser = new DOMParser();
                 const xmlDoc = parser.parseFromString(text, "text/xml");
-                renderJsMind(parseOPMLToJsMind(xmlDoc));
+                renderJsMind(parseOPMLToJsMind(xmlDoc), false);
             } catch (error) {
-                console.error('转换失败:', error);
-                contentMain.innerHTML = '<div style="color:#d73a49; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh;">❌ 转换失败:' + error.message + '</div>';
-            }
+                console.error('解析文件失败:', error);
+                if(jsMindHandle){ jsMindHandle.destroy();jsMindHandle=null;}
+                contentMain.innerHTML = '<div style="color:#d73a49; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh;">❌ 解析文件失败:' + error.message + '</div>';
+            } 
         }
 
         //转换FreeMind (.mm)文件为思维导图 读取FreeMind文件,解析后调用公共jsMind渲染函数
@@ -17124,10 +17654,16 @@
             try {
                 const parser = new DOMParser();
                 const xmlDoc = parser.parseFromString(text, "text/xml");
-                renderJsMind(parseFreeMindToJsMind(xmlDoc));
+                try {
+                    renderJsMind({ format: 'freemind', data: xmlDoc }, true);
+                } catch (error) {
+                    console.warn(`FreeMind jsMind 解析失败， 尝试自定义解析, ${error.message}`);
+                    renderJsMind(parseFreeMindToJsMind(xmlDoc), true);
+                }
             } catch (error) {
-                console.error('转换失败:', error);
-                contentMain.innerHTML = '<div style="color:#d73a49; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh;">❌ 转换失败:' + error.message + '</div>';
+                console.error('解析文件失败:', error);
+                if(jsMindHandle){ jsMindHandle.destroy();jsMindHandle=null;}
+                contentMain.innerHTML = '<div style="color:#d73a49; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh;">❌ 解析文件失败:' + error.message + '</div>';
             }
         }
 
@@ -17145,9 +17681,13 @@
                 const node = {
                     id: nodeId,
                     topic: topic,
+                    isroot: false,
+                    direction: 'right',
+                    expanded: true,
                     images: mubu_images || '',
                     local_images: outline.getAttribute("_local_images") || '',
-                    children: []
+                    children: [],
+                    data: { heading: 0, color: '' }
                 };
                 const children = outline.querySelectorAll(':scope > outline');
                 children.forEach((o, i) => {
@@ -17178,14 +17718,22 @@
                     rootNode = {
                         id: 'root',
                         topic: title,
-                        children: [node]
+                        isroot: true,
+                        direction: 'center',
+                        expanded: true,
+                        children: [node],
+                        data: { heading: 0, color: '' }
                     };
                 }
             } else {
                 rootNode = {
                     id: 'root',
                     topic: title,
-                    children: []
+                    isroot: true,
+                    direction: 'center',
+                    expanded: true,
+                    children: [],
+                    data: { heading: 0, color: '' }
                 };
                 rootOutlines.forEach((o, i) => {
                     const childNode = buildNode(o, `root_${i}`);
@@ -17207,17 +17755,22 @@
         function parseFreeMindToJsMind(xmlDoc) {
             function buildNode(node, nodeId) {
                 const text = node.getAttribute('TEXT') || node.getAttribute('text') || getMubuText(node) || '';
+                const id = node.getAttribute('ID') || node.getAttribute('id') || nodeId;
                 if (text === '') {
                     return null;
                 }
                 const jsNode = {
-                    id: nodeId,
+                    id: id,
                     topic: text,
-                    children: []
+                    isroot: false,
+                    direction: 'right',
+                    expanded: true,
+                    children: [],
+                    data: { heading: 0, color: '' }
                 };
                 const childNodes = node.querySelectorAll(':scope > node');
                 childNodes.forEach((child, i) => {
-                    const childNode = buildNode(child, `${nodeId}_${i}`);
+                    const childNode = buildNode(child, `${id}_${i}`);
                     if (childNode) {
                         jsNode.children.push(childNode);
                     }
@@ -17235,17 +17788,17 @@
                 if (!node) {
                     rootNode = { id: 'root', topic: title, children: [] };
                 } else {
-                    rootNode = {
-                        id: 'root',
-                        topic: title,
-                        children: [node]
-                    };
+                    rootNode = node;
                 }
             } else {
                 rootNode = {
                     id: 'root',
                     topic: title,
-                    children: []
+                    isroot: true,
+                    direction: 'center',
+                    expanded: true,
+                    children: [],
+                    data: { heading: 0, color: '' }
                 };
                 rootNodes.forEach((child, i) => {
                     const childNode = buildNode(child, `root_${i}`);
