@@ -11495,6 +11495,46 @@
             font-family: monospace;
             font-size: 12px;
         }
+
+        .mind-jsmind-toolbar {
+            position: absolute;
+            left: 20px;
+            bottom: 20px;
+            background: var(--color-bg);
+            padding: 8px 5px;
+            border-radius: 4px;
+            box-shadow: var(--shadow-sm);
+            z-index: 6000;
+            display: grid;
+            gap: 5px;
+            justify-items: center;
+        }
+
+        .mind-jsmind-toolbar span {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            border-radius: 3px;
+            cursor: pointer;
+            color: var(--color-text);
+            transition: color 0.15s, background-color 0.15s;
+        }
+
+        .mind-jsmind-toolbar span:hover {
+            color: var(--color-accent, #0969da);
+            background-color: var(--color-bg-secondary);
+        }
+
+        .mind-jsmind-toolbar span:active {
+            background-color: var(--color-border);
+        }
+
+        .mind-jsmind-toolbar span.active {
+            color: var(--color-accent, #0969da);
+            background-color: var(--color-accent-subtle, #ddf4ff);
+        }
     </style>
 </head>
 
@@ -15289,6 +15329,9 @@
 
         // 销毁 jsMind，释放 Canvas/DOM
         function destroyJsMind() {
+            // 始终清理文档级监听器，即使 jsMindHandle 为 null（可能在初始化中途失败）
+            if (_jsmindPanCleanup) { _jsmindPanCleanup(); _jsmindPanCleanup = null; }
+            if (_jsmindClickCleanup) { _jsmindClickCleanup(); _jsmindClickCleanup = null; }
             if (jsMindHandle) {
                 // jsMind 没有标准 dispose 方法，清空容器内容以释放 DOM
                 const container = document.getElementById('jsmind_container');
@@ -15297,10 +15340,6 @@
                 }
                 // 移除全局键盘监听
                 document.removeEventListener('keydown', jsMindHandle.handleGlobalKeydown);
-                // 移除 panning 相关 document 监听器
-                if (_jsmindPanCleanup) { _jsmindPanCleanup(); _jsmindPanCleanup = null; }
-                // 移除右键菜单关闭用的 document click 监听器
-                if (_jsmindClickCleanup) { _jsmindClickCleanup(); _jsmindClickCleanup = null; }
                 jsMindHandle.destroy();
                 jsMindHandle = null;
             }
@@ -17160,13 +17199,13 @@
 
         async function goOpmlBack() {
             mmModel = 'opml';
-            if (jsMindHandle) { jsMindHandle.destroy(); jsMindHandle = null; }
+            destroyJsMind();
             renderOPMLFile(await getFileContent(currentFileHandle));
         }
 
         async function goMmBack() {
             mmModel = 'mm';
-            if (jsMindHandle) { jsMindHandle.destroy(); jsMindHandle = null; }
+            destroyJsMind();
             const text = await getFileContent(currentFileHandle);
             const rootNode = parseFreeMind(text);
             const { html, opmlTocData } = await renderMindmapNodeAsync(rootNode, 0);
@@ -17175,6 +17214,7 @@
         }
 
         async function convertToMindmap() {
+            destroyJsMind();
             mmModel = 'mm';
             const text = await getFileContent(currentFileHandle);
             tocContainer.style.display = 'none';
@@ -17221,16 +17261,35 @@
 
         async function jsMindCreate(data = null, ismmFile) {
             contentMain.innerHTML = '';
+            let html = '';
             const div = document.createElement('div');
             div.className = 'jsmind-container';
             div.id = 'jsmind_container';
-            div.innerHTML += `<button id="jsmind-help" class="btn btn-sm" style="position: absolute;top: 9px;left: 10px;display: flex; z-index: 1000;padding: 0;width: 20px; height: 20px;background: var(--color-bg-secondary);" onclick="handleHelpClick(event)">
+            html += `<button id="jsmind-help" class="btn btn-sm" style="position: absolute;top: 9px;left: 10px;display: flex; z-index: 1000;padding: 0;width: 20px; height: 20px;background: var(--color-bg-secondary);" onclick="handleHelpClick(event)">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <circle cx="12" cy="12" r="10" stroke="#2b2f36" stroke-width="2"/>
                             <path d="M9.2 9.2C9.2 7.7 10.4 6.5 12 6.5C13.6 6.5 14.8 7.7 14.8 9.2C14.8 10.8 12 11 12 12.8V13.5" stroke="#2b2f36" stroke-width="2" stroke-linecap="round"/>
                             <circle cx="12" cy="17" r="1.3" fill="#2b2f36"/>
                         </svg>
                     </button>`;
+            html += `<div class="mind-jsmind-toolbar">
+                        <span id="tbltl-left">
+                            <svg t="1750169375313" width="16" height="16" viewBox="0 0 1024 1024" version="1.1">
+                                <path d="M639 463.30000001L639 285.1c0-36.90000001-26.4-68.5-61.3-68.5l-150.2 0c-1.5 0-3 0.1-4.5 0.3-10.2-38.7-45.5-67.3-87.5-67.3-50 0-90.5 40.5-90.5 90.5s40.5 90.5 90.5 90.5c42 0 77.3-28.6 87.5-67.39999999 1.4 0.3 2.9 0.4 4.5 0.39999999L577.7 263.6c6.8 0 14.3 8.9 14.3 21.49999999l0 427.00000001c0 12.7-7.40000001 21.5-14.30000001 21.5l-150.19999999 0c-1.5 0-3 0.2-4.5 0.4-10.2-38.8-45.5-67.3-87.5-67.3-50 0-90.5 40.5-90.5 90.4 0 49.9 40.5 90.6 90.5 90.59999999 42 0 77.3-28.6 87.5-67.39999999 1.4 0.2 2.9 0.4 4.49999999 0.4L577.7 780.7c34.80000001 0 61.3-31.6 61.3-68.50000001L639 510.3l79.1 0c10.4 38.5 45.49999999 67 87.4 67 50 0 90.5-40.5 90.5-90.5s-40.5-90.5-90.5-90.5c-41.79999999 0-77.00000001 28.4-87.4 67L639 463.30000001z" fill="currentColor" p-id="1776"></path>
+                            </svg>
+                        </span>
+                        <span id="tblts-side"> 
+                            <svg t="1750169394918" width="15" height="15" viewBox="0 0 1024 1024" version="1.1">
+                                <path d="M851.91168 328.45312c-59.97056 0-108.6208 48.47104-108.91264 108.36992l-137.92768 38.4a109.14304 109.14304 0 0 0-63.46752-46.58688l1.39264-137.11872c47.29344-11.86816 82.31936-54.66624 82.31936-105.64096 0-60.15488-48.76288-108.91776-108.91776-108.91776s-108.91776 48.76288-108.91776 108.91776c0 49.18784 32.60928 90.75712 77.38368 104.27392l-1.41312 138.87488a109.19936 109.19936 0 0 0-63.50336 48.55808l-138.93632-39.48544 0.01024-0.72704c0-60.15488-48.76288-108.91776-108.91776-108.91776s-108.91776 48.75776-108.91776 108.91776c0 60.15488 48.76288 108.91264 108.91776 108.91264 39.3984 0 73.91232-20.92032 93.03552-52.2496l139.19232 39.552-0.00512 0.2304c0 25.8304 9.00096 49.5616 24.02816 68.23424l-90.14272 132.63872a108.7488 108.7488 0 0 0-34.2528-5.504c-60.15488 0-108.91776 48.768-108.91776 108.91776 0 60.16 48.76288 108.91776 108.91776 108.91776 60.16 0 108.92288-48.75776 108.92288-108.91776 0-27.14624-9.9328-51.968-26.36288-71.04l89.04704-131.03104a108.544 108.544 0 0 0 37.6832 6.70208 108.672 108.672 0 0 0 36.48512-6.272l93.13792 132.57216a108.48256 108.48256 0 0 0-24.69888 69.0688c0 60.16 48.768 108.92288 108.91776 108.92288 60.16 0 108.91776-48.76288 108.91776-108.92288 0-60.14976-48.75776-108.91776-108.91776-108.91776a108.80512 108.80512 0 0 0-36.69504 6.3488l-93.07136-132.48a108.48768 108.48768 0 0 0 24.79616-72.22784l136.09984-37.888c18.99008 31.93856 53.84192 53.3504 93.69088 53.3504 60.16 0 108.92288-48.75776 108.92288-108.91264-0.00512-60.15488-48.77312-108.92288-108.92288-108.92288z" fill="currentColor" p-id="2022"></path>
+                            </svg>
+                        </span>
+                        <span id="tbltr-right">
+                            <svg t="1750169667709" width="16" height="16" viewBox="0 0 1024 1024" version="1.1">
+                                <path d="M385 560.69999999L385 738.9c0 36.90000001 26.4 68.5 61.3 68.5l150.2 0c1.5 0 3-0.1 4.5-0.3 10.2 38.7 45.5 67.3 87.5 67.3 50 0 90.5-40.5 90.5-90.5s-40.5-90.5-90.5-90.5c-42 0-77.3 28.6-87.5 67.39999999-1.4-0.3-2.9-0.4-4.5-0.39999999L446.3 760.4c-6.8 0-14.3-8.9-14.3-21.49999999l0-427.00000001c0-12.7 7.40000001-21.5 14.30000001-21.5l150.19999999 0c1.5 0 3-0.2 4.5-0.4 10.2 38.8 45.5 67.3 87.5 67.3 50 0 90.5-40.5 90.5-90.4 0-49.9-40.5-90.6-90.5-90.59999999-42 0-77.3 28.6-87.5 67.39999999-1.4-0.2-2.9-0.4-4.49999999-0.4L446.3 243.3c-34.80000001 0-61.3 31.6-61.3 68.50000001L385 513.7l-79.1 0c-10.4-38.5-45.49999999-67-87.4-67-50 0-90.5 40.5-90.5 90.5s40.5 90.5 90.5 90.5c41.79999999 0 77.00000001-28.4 87.4-67L385 560.69999999z" fill="currentColor" p-id="3038"></path>
+                            </svg>
+                        </span>
+                    </div>`
+            div.innerHTML = html;
             contentMain.appendChild(div);
             const options = {
                 container: 'jsmind_container',
@@ -17289,6 +17348,8 @@
                 }
             };
             document.addEventListener('click', _clickCloseMenu);
+            // 覆盖前先调用旧的清理函数，防止重复注册导致监听器泄漏
+            if (_jsmindClickCleanup) _jsmindClickCleanup();
             _jsmindClickCleanup = () => {
                 document.removeEventListener('click', _clickCloseMenu);
             };
@@ -17348,12 +17409,40 @@
             document.addEventListener('mousedown', _panOnDown, true);
             document.addEventListener('mousemove', _panOnMove);
             document.addEventListener('mouseup', _panOnUp);
-            // 保存清理函数供 destroyJsMind 使用
+            // 覆盖前先调用旧的清理函数，防止重复注册导致监听器泄漏
+            if (_jsmindPanCleanup) _jsmindPanCleanup();
             _jsmindPanCleanup = () => {
                 document.removeEventListener('mousedown', _panOnDown, true);
                 document.removeEventListener('mousemove', _panOnMove);
                 document.removeEventListener('mouseup', _panOnUp);
             };
+            // 工具栏布局切换按钮
+            const tblRight = document.getElementById('tbltr-right');
+            const tblSide = document.getElementById('tblts-side');
+            const tblLeft = document.getElementById('tbltl-left');
+            const setActiveBtn = (dir) => {
+                [tblRight, tblSide, tblLeft].forEach(b => b && b.classList.remove('active'));
+                if (dir === 'right' && tblRight) tblRight.classList.add('active');
+                else if (dir === 'left' && tblLeft) tblLeft.classList.add('active');
+                else if (tblSide) tblSide.classList.add('active');
+            };
+            if (tblRight) tblRight.addEventListener('click', () => { if (jsMindHandle) { jsMindHandle.jsMindSetLayout('right'); setActiveBtn('right'); } });
+            if (tblSide) tblSide.addEventListener('click', () => { if (jsMindHandle) { jsMindHandle.jsMindSetLayout('side'); setActiveBtn('side'); } });
+            if (tblLeft) tblLeft.addEventListener('click', () => { if (jsMindHandle) { jsMindHandle.jsMindSetLayout('left'); setActiveBtn('left'); } });
+            // 从数据中检测初始布局方向
+            const detectLayout = () => {
+                if (!data || !data.data) return 'side';
+                const root = data.data;
+                if (!root.children || root.children.length === 0) return 'side';
+                const firstDir = root.children[0].direction;
+                if (!firstDir) return 'side';
+                // 检查是否所有子节点方向一致
+                const allSame = root.children.every(c => c.direction === firstDir);
+                return allSame ? firstDir : 'side';
+            };
+            setActiveBtn(detectLayout());
+            // 初始化时同步 monkey-patch，确保从文件打开的布局模式下新增节点方向正确
+            if (jsMindHandle) jsMindHandle._patchNextChildDirection(detectLayout());
         }
 
         async function renderJsMind(jsMindData, ismmFile) {
@@ -17399,6 +17488,7 @@
                 this.jm = jm;
                 this.handleGlobalKeydown = this.handleGlobalKeydown.bind(this);
                 this.ismmFile = ismmFile;
+                this._origCalcNextChildDir = null; // 保存原始 calculate_next_child_direction
                 this._removeContextMenuBound = (e) => {
                     const menu = document.querySelector('.jsmind-context-menu');
                     if (menu && !menu.contains(e.target)) menu.remove();
@@ -17524,9 +17614,9 @@
                 if (!cancel && nodeId && newTopic !== null && newTopic !== '') {
                     const node = this.jm.get_node(nodeId);
                     if (node && node.topic !== newTopic) {
-                        // 不能先设置 node.topic，否则 update_node 内部的 topic 对比会判定"未变化"而跳过布局
                         this.jm.update_node(nodeId, newTopic);
                     }
+                    this.jm.select_node(nodeId);
                 }
             }
             show(data) {
@@ -17613,10 +17703,9 @@
                     this.jsmind_handleAddBrother(this.jm, e);
                     return;
                 }
-                // Shift+Enter - 添加同级节点（上方）/ 添加备注
+                // Shift+Enter - 添加备注（暂未实现，预留快捷键）
                 if (e.key === 'Enter' && e.shiftKey && !mod && !e.altKey) {
                     e.preventDefault();
-                    this.jsmind_addNote();
                     return;
                 }
                 // Backspace/Delete - 删除节点（输入框内不拦截）
@@ -17664,16 +17753,14 @@
                     else this.jsmind_moveNodeDown();
                     return;
                 }
-                // Cmd/Ctrl+] - 聚焦
+                // Cmd/Ctrl+] - 聚焦（预留）
                 if (e.key === ']' && mod && !e.shiftKey && !e.altKey) {
                     e.preventDefault();
-                    this.jsmind_focusMode();
                     return;
                 }
-                // Cmd/Ctrl+[ - 退出聚焦
+                // Cmd/Ctrl+[ - 退出聚焦（预留）
                 if (e.key === '[' && mod && !e.shiftKey && !e.altKey) {
                     e.preventDefault();
-                    this.jsmind_exitFocusMode();
                     return;
                 }
                 // Alt+D/R/Y/G/B/P - 颜色
@@ -17732,7 +17819,6 @@
                     if (node && node.isroot) this.jsmind_handleAddChild(e);
                     return;
                 }
-                const parent = this.jm.get_node(node.parent);
                 const newId = this.getID();
                 this.jm.insert_node_after(node, newId, '新兄弟节点', { heading: 0, color: '' });
                 this.jm.select_node(newId);
@@ -17770,7 +17856,7 @@
             }
             jsmind_handleDown(e) {
                 this.jm.select_node(this.jm.find_node_after(this.jm.get_selected_node()));
-            }
+            } 
             jsmind_insertParentNode(e) {
                 const node = this.jm.get_selected_node();
                 if (!node || node.isroot) return;
@@ -17956,6 +18042,69 @@
                 if (old) old.remove();
                 document.removeEventListener('click', this._removeContextMenuBound);
             }
+            // 切换布局方向：'right'（全部右侧）、'left'（全部左侧）、'side'（两侧分布）
+            jsMindSetLayout(direction) {
+                // 深拷贝数据，避免修改 jsMind 内部引用导致 show 跳过重新布局
+                const raw = this.jm.get_data('node_tree');
+                if (!raw || !raw.data) return;
+                const data = JSON.parse(JSON.stringify(raw));
+                const root = data.data;
+                // 递归设置子节点的 direction
+                const walk = (node, parentDir) => {
+                    if (direction === 'side') {
+                        if (node === root) {
+                            node.direction = 'center';
+                        } else {
+                            // 非根节点继承父节点方向
+                            node.direction = parentDir;
+                        }
+                    } else {
+                        node.direction = direction;
+                    }
+                    if (node.children) {
+                        node.children.forEach((child, idx) => {
+                            if (node === root && direction === 'side') {
+                                // 两侧布局：根的直接子节点交替分配 left/right
+                                walk(child, (idx % 2 === 0) ? 'right' : 'left');
+                            } else {
+                                walk(child, node.direction);
+                            }
+                        });
+                    }
+                };
+                walk(root, null);
+                // 保存当前选中节点，show() 后会丢失
+                const selNode = this.jm.get_selected_node();
+                const selId = selNode ? selNode.id : null;
+                this.jm.show(data);
+                // 恢复选中状态
+                if (selId) this.jm.select_node(selId);
+                this.add_event_listener();
+                // 确保后续新增节点沿用当前布局方向
+                this._patchNextChildDirection(direction);
+                // 更新工具栏激活状态
+                ['tbltl-left', 'tblts-side', 'tbltr-right'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.classList.remove('active');
+                });
+                const map = { right: 'tbltr-right', left: 'tbltl-left', side: 'tblts-side' };
+                const activeEl = document.getElementById(map[direction]);
+                if (activeEl) activeEl.classList.add('active');
+            }
+            // 修改 calculate_next_child_direction，确保新增子节点按当前布局方向排列
+            _patchNextChildDirection(direction) {
+                if (!this.jm || !this.jm.layout) return;
+                // 每次重新绑定原始方法，避免 show() 重建 layout 后引用失效
+                this._origCalcNextChildDir = this.jm.layout.calculate_next_child_direction.bind(this.jm.layout);
+                if (direction === 'right') {
+                    this.jm.layout.calculate_next_child_direction = () => 1; // Direction.right = 1
+                } else if (direction === 'left') {
+                    this.jm.layout.calculate_next_child_direction = () => -1; // Direction.left = -1
+                } else {
+                    // side 模式恢复 jsMind 原始交替分配逻辑
+                    this.jm.layout.calculate_next_child_direction = this._origCalcNextChildDir;
+                }
+            }
         }
 
         function handleHelpClick(e) {
@@ -18131,7 +18280,7 @@
                 await renderJsMind(await parseOPMLToJsMind(xmlDoc), false);
             } catch (error) {
                 console.error('解析文件失败:', error);
-                if (jsMindHandle) { jsMindHandle.destroy(); jsMindHandle = null; }
+                destroyJsMind();
                 contentMain.innerHTML = '<div style="color:#d73a49; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh;">❌ 解析文件失败:' + error.message + '</div>';
             }
         }
@@ -18144,7 +18293,7 @@
                 await renderJsMind(await parseFreeMindToJsMind(xmlDoc), true);
             } catch (error) {
                 console.error('解析文件失败:', error);
-                if (jsMindHandle) { jsMindHandle.destroy(); jsMindHandle = null; }
+                destroyJsMind();
                 contentMain.innerHTML = '<div style="color:#d73a49; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh;">❌ 解析文件失败:' + error.message + '</div>';
             }
         }
@@ -18243,11 +18392,14 @@
                 if (text === '') {
                     return null;
                 }
+                // 读取 POSITION 属性：left → 'left'，其余默认 'right'
+                const position = node.getAttribute('POSITION');
+                const dir = (position === 'left') ? 'left' : 'right';
                 const jsNode = {
                     id: id,
                     topic: text,
                     isroot: false,
-                    direction: 'right',
+                    direction: dir,
                     expanded: true,
                     children: [],
                     data: { heading: 0, color: '' }
