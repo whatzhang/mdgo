@@ -1449,9 +1449,9 @@
             cursor: pointer;
             font-weight: normal;
             font-size: 11px;
-            color: var(--t3);
+            color: var(--t2);
             background-color: var(--color-bg-secondary);
-            margin: 2px 2px 2px 4px;
+            margin: 2px 2px 2px 10px;
             padding: 6px;
             border-radius: 4px;
             height: auto;
@@ -1481,7 +1481,7 @@
         }
 
         .mindmap-collapse {
-            display: inline-block;
+            display: inline-flex;
             width: 14px;
             height: 14px;
             margin-right: 2px;
@@ -1491,7 +1491,7 @@
         }
 
         .mindmap-collapse-child {
-            display: inline-block;
+            display: inline-flex;
             width: 3px;
         }
 
@@ -16715,7 +16715,7 @@
                 const local_images = outline.getAttribute("_local_images") || '';
                 const mubu_note = outline.getAttribute("_mubu_note") || '';
                 const node = {
-                    head: escapeHtml(head),
+                    head: head,
                     note: note,
                     images: images,
                     local_images: local_images,
@@ -16837,7 +16837,7 @@
             }
         }
 
-        async function renderMindmapNodeAsync(node, level) {
+        async function buidlOPMLNode(node, level) {
             let opmlTocData = [];
             const isRoot = level === 0;
             const hasChildren = node.children && node.children.length > 0;
@@ -16859,19 +16859,19 @@
                 html += getTitle(level, head);
                 text = head;
             }
-            if (node.images != "") {
-                html += await getImage(node.local_images, node.images, nodeId);
-            }
-            if (node.mubu_note) {
+            if (node.mubu_note || node.note) {
                 html += getTitleNote(node.mubu_note, node.note);
             }
+            if (node.images || node.local_images) {
+                html += await getImage(node.local_images, node.images, nodeId, true);
+            }
             if (level < 3) {
-                opmlTocData.push({ id: nodeId, text: text, level: level + 1 });
+                opmlTocData.push({ id: nodeId, text: escapeHtml(text), level: level + 1 });
             }
             if (hasChildren) {
                 html += `<div id="${nodeId}" class="mindmap-children">`;
                 for (const child of node.children) {
-                    const childResult = await renderMindmapNodeAsync(child, level + 1);
+                    const childResult = await buidlOPMLNode(child, level + 1);
                     html += childResult.html;
                     opmlTocData = opmlTocData.concat(childResult.opmlTocData);
                 }
@@ -16887,9 +16887,9 @@
                 const localImages = decodeURIComponent(local_images);
                 //转成 json数组 [{"id":"EKP9PMa76l","oh":314,"ow":1260,"uri":"document_image/9645325_c4f14b6e-a533-4e1e-f6b0-53b635a449b7.png","w":573}]
                 const localBj = JSON.parse(localImages);
-                //判断是否有图片
+                //判断是否有图片 
                 if (localBj.length > 0) {
-                    html += `<div style="display: flex; flex-wrap: wrap;">`;
+                    html += `<div style="display: inline-flex; flex-wrap: wrap;">`;
                     for (let i = 0; i < localBj.length; i++) {
                         let imgSrc = localBj[i].uri;
                         imgSrc = await replaceMediaUrl(imgSrc);
@@ -16905,7 +16905,7 @@
                     //判断是否有图片
                     if (bj.length > 0) {
                         //显示在一行 https://api2.mubu.com/v3/document_image/
-                        html += `<div style="display: flex; flex-wrap: wrap;">`;
+                        html += `<div style="display: inline-flex; flex-wrap: wrap;">`;
                         for (let i = 0; i < bj.length; i++) {
                             const imgSrc = `https://api2.mubu.com/v3/${bj[i].uri}`;
                             const imgId = `${bj[i].id}${nodeId}-${Math.random().toString(36).slice(2)}`;
@@ -16931,7 +16931,7 @@
         }
         function getTitleNote(mubu_note, note) {
             const text = decodeURIComponent(mubu_note || note);
-            return `<br><div class="mindmap-node-note">${text}</div>`;
+            return `<div class="mindmap-node-note">${text}</div>`;
         }
         function toggleNode(nodeId) {
             const node = document.getElementById(nodeId);
@@ -17207,7 +17207,7 @@
             destroyJsMind();
             const text = await getFileContent(currentFileHandle);
             const rootNode = parseFreeMind(text);
-            const { html, opmlTocData } = await renderMindmapNodeAsync(rootNode, 0);
+            const { html, opmlTocData } = await buidlOPMLNode(rootNode, 0);
             contentMain.innerHTML = `<div class="mindmap-container">${html}</div>`;
             generateTOC('', 'opml', opmlTocData);
         }
@@ -17855,7 +17855,7 @@
             }
             jsmind_handleDown(e) {
                 this.jm.select_node(this.jm.find_node_after(this.jm.get_selected_node()));
-            } 
+            }
             jsmind_insertParentNode(e) {
                 const node = this.jm.get_selected_node();
                 if (!node || node.isroot) return;
@@ -18456,22 +18456,27 @@
         }
         // 渲染OPML文件(思维导图)
         async function renderOPMLFile(text) {
-            mmModel = 'opml';
-            const rootNode = parseOPML(text);
-            const { html, opmlTocData } = await renderMindmapNodeAsync(rootNode, 0);
-            contentMain.innerHTML = `<div class="mindmap-container">${html}</div>`;
-            setControlsState({
-                topControls: true,
-                opmlBtns: true,
-                editBtn: true,
-                saveBtn: false,
-                previewBtn: false,
-                copyBtn: true,
-                formatBtn: false,
-                jmSaveBtn: false,
-                jmImgBtn: true,
-            });
-            generateTOC('', 'opml', opmlTocData);
+            try {
+                mmModel = 'opml';
+                const rootNode = parseOPML(text);
+                const { html, opmlTocData } = await buidlOPMLNode(rootNode, 0);
+                contentMain.innerHTML = `<div class="mindmap-container">${html}</div>`;
+                setControlsState({
+                    topControls: true,
+                    opmlBtns: true,
+                    editBtn: true,
+                    saveBtn: false,
+                    previewBtn: false,
+                    copyBtn: true,
+                    formatBtn: false,
+                    jmSaveBtn: false,
+                    jmImgBtn: true,
+                });
+                generateTOC('', 'opml', opmlTocData);
+            } catch (error) {
+                console.error('解析文件失败:', error);
+                contentMain.innerHTML = '<div style="color:#d73a49; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh;">❌ 解析文件失败:' + error.message + '</div>';
+            }
         }
 
         // 渲染FreeMind (.mm)文件(思维导图)
