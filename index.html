@@ -1488,11 +1488,18 @@
             text-align: left;
             cursor: pointer;
             font-weight: bold;
+            color: var(--color-warning);
         }
 
         .mindmap-collapse-child {
             display: inline-flex;
-            width: 3px;
+            width: 10px;
+            height: 10px;
+            margin-right: 2px;
+            text-align: left;
+            cursor: pointer;
+            font-weight: bold;
+            color: var(--color-warning);
         }
 
         .mindmap-child table {
@@ -7476,7 +7483,9 @@
         /* ==================== jmnode  ==================== */
         jmnode {
             font-size: 13px !important;
-            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-word;
+            line-height: 1.4;
         }
 
         .jm-node-markdown {
@@ -7590,6 +7599,11 @@
             cursor: pointer;
             display: block;
             margin: 2px;
+        }
+
+        jmnode.jsmind-draggable-shadow-node img {
+            max-width: 135px !important;
+            max-height: 110px !important;
         }
 
         .jm-node-img .mindmap-node-content-z {
@@ -11534,6 +11548,14 @@
             color: var(--color-accent, #0969da);
             background-color: var(--color-accent-subtle, #ddf4ff);
         }
+
+        .canvas-file-item:hover {
+            background-color: var(--color-bg-secondary, #f6f8fa);
+        }
+
+        .canvas-file-item:hover .mind-img-thumb {
+            opacity: 0.85;
+        }
     </style>
 </head>
 
@@ -15328,18 +15350,25 @@
 
         // 销毁 jsMind，释放 Canvas/DOM
         function destroyJsMind() {
+            // 关闭右键菜单（如果打开）
+            const ctxMenu = document.querySelector('.jsmind-context-menu');
+            if (ctxMenu) ctxMenu.remove();
+            // 关闭帮助面板（如果打开）
+            const helpOverlay = document.querySelector('.modal-overlay');
+            if (helpOverlay && helpOverlay.querySelector('.jsmind-help-panel')) helpOverlay.remove();
             // 始终清理文档级监听器，即使 jsMindHandle 为 null（可能在初始化中途失败）
             if (_jsmindPanCleanup) { _jsmindPanCleanup(); _jsmindPanCleanup = null; }
             if (_jsmindClickCleanup) { _jsmindClickCleanup(); _jsmindClickCleanup = null; }
             if (jsMindHandle) {
-                // jsMind 没有标准 dispose 方法，清空容器内容以释放 DOM
+                // 先调用 destroy() 清理自定义编辑状态（textarea 尚在 DOM 中）
+                jsMindHandle.destroy();
+                // 再清空容器 DOM
                 const container = document.getElementById('jsmind_container');
                 if (container) {
                     container.innerHTML = '';
                 }
                 // 移除全局键盘监听
                 document.removeEventListener('keydown', jsMindHandle.handleGlobalKeydown);
-                jsMindHandle.destroy();
                 jsMindHandle = null;
             }
         }
@@ -16783,58 +16812,8 @@
             if (parseError) {
                 throw new Error('FreeMind XML解析失败: ' + parseError.textContent);
             }
-
-            function parseNode(node) {
-                const text = node.getAttribute("TEXT") || node.getAttribute("text") || node.getAttribute("title") || '';
-                if (text === '') {
-                    return null;
-                }
-                const parsedNode = {
-                    head: text,
-                    note: '',
-                    images: '',
-                    mubu_note: '',
-                    local_images: '',
-                    children: []
-                };
-                const childNodes = node.querySelectorAll(':scope > node');
-                for (let i = 0; i < childNodes.length; i++) {
-                    const childNode = parseNode(childNodes[i]);
-                    if (childNode) {
-                        parsedNode.children.push(childNode);
-                    }
-                }
-                return parsedNode;
-            }
-
-            const mapElement = xmlDoc.getElementsByTagName("map")[0];
-            if (!mapElement) {
-                return { head: 'FreeMind', children: [] };
-            }
-            const title = mapElement.getAttribute("title") || 'FreeMind';
-            const rootNodes = mapElement.querySelectorAll(':scope > node');
-            if (rootNodes.length === 0) {
-                return { head: title, children: [] };
-            }
-            if (rootNodes.length === 1) {
-                return parseNode(rootNodes[0]);
-            } else {
-                const rootNode = {
-                    head: title,
-                    note: '',
-                    images: '',
-                    mubu_note: '',
-                    local_images: '',
-                    children: []
-                };
-                for (let i = 0; i < rootNodes.length; i++) {
-                    const childNode = parseNode(rootNodes[i]);
-                    if (childNode) {
-                        rootNode.children.push(childNode);
-                    }
-                }
-                return rootNode;
-            }
+            const rtn = parseFreeMindToJsMind(xmlDoc);
+            return rtn.data;
         }
 
         async function buidlOPMLNode(node, level) {
@@ -16847,7 +16826,7 @@
             if (hasChildren) {
                 html += `<span class="mindmap-collapse" id = "mindmap-collapse-${nodeId}" onclick="toggleNode('${nodeId}')">▼</span>`;
             } else {
-                html += `<span class="mindmap-collapse-child"></span>`;
+                html += `<span class="mindmap-collapse-child">∘</span>`;
             }
             let text = '';
             let head = node.head?.trim() || '';
@@ -16885,15 +16864,27 @@
             let html = "";
             if (local_images) {
                 const localImages = decodeURIComponent(local_images);
-                //转成 json数组 [{"id":"EKP9PMa76l","oh":314,"ow":1260,"uri":"document_image/9645325_c4f14b6e-a533-4e1e-f6b0-53b635a449b7.png","w":573}]
-                const localBj = JSON.parse(localImages);
-                //判断是否有图片 
-                if (localBj.length > 0) {
+                // 兼容新旧格式：JSON数组或纯相对路径字符串
+                let imgList = [];
+                try {
+                    const parsed = JSON.parse(localImages);
+                    if (Array.isArray(parsed)) {
+                        imgList = parsed;
+                    } else if (typeof parsed === 'object' && parsed.uri) {
+                        imgList = [parsed];
+                    }
+                } catch (e) {
+                    // 纯路径字符串（如assets/mind_pic/uuid.png）
+                    if (typeof localImages === 'string' && localImages.trim()) {
+                        imgList = [{ uri: localImages.trim() }];
+                    }
+                }
+                if (imgList.length > 0) {
                     html += `<div style="display: inline-flex; flex-wrap: wrap;">`;
-                    for (let i = 0; i < localBj.length; i++) {
-                        let imgSrc = localBj[i].uri;
-                        imgSrc = await replaceMediaUrl(imgSrc);
-                        const imgId = `${localBj[i].id}${nodeId}-${Math.random().toString(36).slice(2)}`;
+                    for (let i = 0; i < imgList.length; i++) {
+                        let imgSrc = imgList[i].uri;
+                        imgSrc = await replaceMediaUrl(imgSrc, false);
+                        const imgId = `${imgList[i].id || 'img'}${nodeId}-${Math.random().toString(36).slice(2)}`;
                         html += `<img src="${imgSrc}" id="${imgId}" ${style ? 'style="width: auto;height: auto;max-height: 150px; max-width: 100%; cursor: pointer;"' : ''} onclick="showImageModal('${imgSrc}')">`;
                     }
                     html += `</div>`;
@@ -17206,7 +17197,7 @@
             mmModel = 'mm';
             destroyJsMind();
             const text = await getFileContent(currentFileHandle);
-            const rootNode = parseFreeMind(text);
+            const rootNode = await parseFreeMind(text);
             const { html, opmlTocData } = await buidlOPMLNode(rootNode, 0);
             contentMain.innerHTML = `<div class="mindmap-container">${html}</div>`;
             generateTOC('', 'opml', opmlTocData);
@@ -17304,7 +17295,7 @@
                 view: {
                     engine: 'canvas',
                     line_width: 1.5,
-                    line_color: '#d2d2d7',
+                    line_color: '#a6a6ac',
                     line_style: 'curved',
                     // custom_line_render: elbowLineRender, // 直角折线
                     node_overflow: 'wrap',
@@ -17321,13 +17312,25 @@
                 }
             };
             const jm = new jsMind(options);
+            const container = document.getElementById('jsmind_container');
             jsMindHandle = new JsMindHandle(jm, data, ismmFile);
             jsMindHandle.add_event_listener();
             // 全局键盘监听
             document.removeEventListener('keydown', jsMindHandle.handleGlobalKeydown);
             document.addEventListener('keydown', jsMindHandle.handleGlobalKeydown);
             // 右键菜单——仅点击到节点（jmnode）时显示
-            const container = document.getElementById('jsmind_container');
+            // 事件委托：处理节点双击（统一进入编辑模式）
+            container.addEventListener('dblclick', function (e) {
+                const nodeEl = e.target.closest && e.target.closest('jmnode');
+                if (!nodeEl) return;
+                const nodeId = nodeEl.getAttribute('nodeid');
+                if (!nodeId || !jsMindHandle || !jsMindHandle.jm) return;
+                const node = jsMindHandle.jm.get_node(nodeId);
+                if (!node) return;
+                // 双击节点进入编辑（含图片节点）
+                jsMindHandle.jm.begin_edit(node);
+                jsMindHandle.setSelectedNodeId(node.id);
+            });
             container.addEventListener('contextmenu', (e) => {
                 // jmnode 是 jsMind 节点 DOM 元素（z-index:2），在 canvas(z-index:1) 上方
                 // 仅当右键目标为节点时才弹出面板，空白区域只阻止默认菜单
@@ -17442,6 +17445,7 @@
             setActiveBtn(detectLayout());
             // 初始化时同步 monkey-patch，确保从文件打开的布局模式下新增节点方向正确
             if (jsMindHandle) jsMindHandle._patchNextChildDirection(detectLayout());
+
         }
 
         async function renderJsMind(jsMindData, ismmFile) {
@@ -17488,6 +17492,7 @@
                 this.handleGlobalKeydown = this.handleGlobalKeydown.bind(this);
                 this.ismmFile = ismmFile;
                 this._origCalcNextChildDir = null; // 保存原始 calculate_next_child_direction
+                this._isProcessingImage = false; // 图片粘贴处理中标志，抑制 blur 回调
                 this._removeContextMenuBound = (e) => {
                     const menu = document.querySelector('.jsmind-context-menu');
                     if (menu && !menu.contains(e.target)) menu.remove();
@@ -17513,19 +17518,35 @@
                     this.data = d;
                     this.isNew = true;
                     this.show(d);
+                    this._initCustomEdit();
                 }
                 else {
                     this.data = data;
                     this.isNew = false;
                     this.show(data);
+                    this._initCustomEdit();
                 }
-                this._initCustomEdit();
             }
             _initCustomEdit() {
                 const self = this;
                 const jm = this.jm;
                 // 保存原始的 begin_edit
                 const _origBeginEdit = jm.begin_edit.bind(jm);
+                // Monkey-patch view.update_node：限制图片节点尺寸，防止拖拽时异常放大
+                // 根因：update_node 直接读取 element.clientWidth/Height 存入缓存，图片异步加载后 clientWidth 变大
+                if (jm.view && jm.view.update_node) {
+                    const _origUpdateNode = jm.view.update_node.bind(jm.view);
+                    jm.view.update_node = function (node) {
+                        _origUpdateNode(node);
+                        // 图片节点强制钳制缓存的宽高，阻止后续渲染使用过大的尺寸
+                        const el = node._data && node._data.view && node._data.view.element;
+                        if (el && el.classList.contains('jm-node-img')) {
+                            const vd = node._data.view;
+                            if (vd.width > 135) vd.width = 135;
+                            if (vd.height > 110) vd.height = 110;
+                        }
+                    };
+                }
                 // 覆盖 begin_edit：用自定义 textarea 替代原生
                 jm.begin_edit = function (node) {
                     const container = document.getElementById('jsmind_container');
@@ -17542,12 +17563,19 @@
                     ta.setAttribute('data-node-id', node.id);
                     // 读取节点当前尺寸作为初始宽高
                     const nodeRect = nodeEl.getBoundingClientRect();
+                    const direction = node.direction;// 1  right, -1 left, 0 center
+                    if (direction === 1) {
+                        ta.style.setProperty('left', '-4px');
+                        ta.style.setProperty('top', '-20px');
+                    } else {
+                        ta.style.setProperty('right', '-4px');
+                        ta.style.setProperty('top', '-20px');
+                    }
                     // 覆盖整个节点（含边框），避免原节点边框露出
                     ta.style.setProperty('position', 'absolute');
-                    ta.style.setProperty('left', '-1px');
-                    ta.style.setProperty('top', '-1px');
-                    ta.style.setProperty('width', 'calc(100% + 4px)');
-                    ta.style.setProperty('min-height', 'calc(100% + 2px)');
+                    ta.style.setProperty('min-width', '150px');
+                    ta.style.setProperty('width', 'calc(100% + 6px)');
+                    ta.style.setProperty('min-height', '45px');
                     Object.assign(ta.style, {
                         zIndex: '100',
                         boxSizing: 'border-box',
@@ -17563,6 +17591,8 @@
                         lineHeight: '1.5',
                         resize: 'both',
                         overflow: 'hidden',
+                        userSelect: 'text',
+                        WebkitUserSelect: 'text',
                         boxShadow: '0 0 0 3px rgba(74,144,217,0.12)',
                         wordBreak: 'break-word',
                         whiteSpace: 'pre-wrap',
@@ -17592,9 +17622,27 @@
                             self._endCustomEdit(true);
                         }
                     });
+                    // 图片粘贴处理
+                    ta.addEventListener('paste', function (e) {
+                        const clipboardData = e.clipboardData || window.clipboardData;
+                        if (!clipboardData) return;
+                        const items = clipboardData.items;
+                        for (let i = 0; i < items.length; i++) {
+                            if (items[i].type.indexOf('image') !== -1) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const file = items[i].getAsFile();
+                                if (file) {
+                                    self._handleImagePaste(file, node, ta);
+                                }
+                                return;
+                            }
+                        }
+                    });
                     // 失焦保存
                     ta.addEventListener('blur', function () {
                         setTimeout(() => {
+                            if (self._isProcessingImage) return; // 图片粘贴处理中，跳过
                             if (self._customEditTA === ta) {
                                 self._endCustomEdit(false);
                             }
@@ -17786,18 +17834,18 @@
             }
             jsmind_save() {
                 if (!this.ismmFile) return;
-                const result = this.jm.get_data('freemind');
-                const text = result.data;
+                const result = this.jm.get_data('node_tree');
+                const rtn = exportToFreeMind(result);
                 if (this.isNew) {
                     showSaveModal({
                         title: '保存思维导图',
                         getDefaultFileName: () => 'untitled.mm',
-                        getContent: () => text,
+                        getContent: () => rtn,
                         onSave: doSaveToFolder
                     });
                 } else {
-                    if (text !== originalContent) {
-                        saveCurrentEditContent(text);
+                    if (rtn !== originalContent) {
+                        saveCurrentEditContent(rtn);
                     }
                 }
             }
@@ -17808,7 +17856,7 @@
                 const node = this.jm.get_selected_node();
                 if (!node) return;
                 const newId = this.getID();
-                this.jm.add_node(node, newId, '新节点', { heading: 0, color: '' });
+                this.jm.add_node(node, newId, '', { heading: 0, color: '' });
                 this.jm.select_node(newId);
                 setTimeout(() => this.jm.begin_edit(newId), 50);
             }
@@ -17819,7 +17867,7 @@
                     return;
                 }
                 const newId = this.getID();
-                this.jm.insert_node_after(node, newId, '新兄弟节点', { heading: 0, color: '' });
+                this.jm.insert_node_after(node, newId, '', { heading: 0, color: '' });
                 this.jm.select_node(newId);
                 setTimeout(() => this.jm.begin_edit(newId), 50);
             }
@@ -17861,7 +17909,7 @@
                 if (!node || node.isroot) return;
                 const parent = this.jm.get_node(node.parent);
                 const newId = this.getID();
-                const newParent = this.jm.add_node(parent, newId, '新父节点', { heading: 0, color: '' });
+                const newParent = this.jm.add_node(parent, newId, '', { heading: 0, color: '' });
                 this.jm.move_node(node, null, newId, jsMind.direction.right);
                 this.jm.select_node(newId);
                 setTimeout(() => this.jm.begin_edit(newId), 50);
@@ -17994,6 +18042,9 @@
                 menu.className = 'jsmind-context-menu';
                 menu.style.left = Math.min(e.clientX, window.innerWidth - 220) + 'px';
                 menu.style.top = Math.min(e.clientY, window.innerHeight - 360) + 'px';
+                // 获取当前节点是否有图片
+                const node = this.jm.get_selected_node();
+                const hasImage = node && node.data && (node.data.local_images || node.data.images);
                 // 按帮助中的分类组织菜单项：分组 + 分隔线 + 右侧快捷键
                 const groups = [
                     {
@@ -18012,6 +18063,19 @@
                         ]
                     },
                     {
+                        label: '图片',
+                        items: [
+                            { label: '新增图片', shortcut: '', action: () => { const n = this.jm.get_selected_node(); if (n) { this._showImageSelectModal(n); } this._removeContextMenu(); } },
+                        ]
+                    },
+                    hasImage ? {
+                        label: '图片操作',
+                        items: [
+                            { label: '删除图片', shortcut: '', action: () => { const n = this.jm.get_selected_node(); if (n) { const p = n.data && n.data.local_images; if (p) this._deleteNodeImage(n, p); } this._removeContextMenu(); } },
+                            { label: '更换图片', shortcut: '', action: () => { const n = this.jm.get_selected_node(); if (n) { this._showImageSelectModal(n); } this._removeContextMenu(); } },
+                        ]
+                    } : null,
+                    {
                         label: '展开/折叠',
                         items: [
                             { label: '展开/折叠当前节点', shortcut: 'Ctrl/Cmd+.', action: () => { this.jsmind_handleToggle(); this._removeContextMenu(); } },
@@ -18019,7 +18083,7 @@
                         ]
                     },
                 ];
-                groups.forEach((group, gi) => {
+                groups.filter(Boolean).forEach((group, gi) => {
                     if (gi > 0) {
                         const sep = document.createElement('div');
                         sep.className = 'jsmind-context-separator';
@@ -18105,6 +18169,174 @@
                 }
             }
         }
+
+        // 从粘贴的图片文件保存到assets/mind_pic/ 并返回相对路径
+        JsMindHandle.prototype._savePastedImage = async function (file) {
+            try {
+                const rootHandle = getRootHandle();
+                if (!rootHandle) { showNotification('请先打开根目录', 'error'); return null; }
+                // 确保assets/mind_pic/ 目录存在
+                const assetsDir = await getOrCreateDirectory(rootHandle, 'assets');
+                const mindDir = await getOrCreateDirectory(assetsDir, 'mind_pic');
+                // 生成 UUID 文件名
+                const uuid = crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 9));
+                const ext = file.name?.split('.').pop()?.toLowerCase() || 'png';
+                const fileName = uuid + '.' + ext;
+                // 读取文件内容并写入
+                const arrayBuffer = await file.arrayBuffer();
+                await writeFileByDirHandle(mindDir, fileName, arrayBuffer);
+                return 'assets/mind_pic/' + fileName;
+            } catch (err) {
+                console.error('保存图片失败:', err);
+                showNotification('✗ 保存图片失败: ' + err.message, 'error');
+                return null;
+            }
+        };
+        // 处理图片粘贴：保存图片并更新节点
+        JsMindHandle.prototype._handleImagePaste = async function (file, node, textarea) {
+            // 防止 blur 回调在此期间触发另一个 _endCustomEdit
+            if (this._isProcessingImage) return;
+            this._isProcessingImage = true;
+            try {
+                const relativePath = await this._savePastedImage(file);
+                if (!relativePath) return;
+                // 更新节点数据中的 local_images
+                if (!node.data) node.data = {};
+                node.data.local_images = relativePath;
+                this.jm.update_node(node.id, node.topic);
+                // 手动清理编辑状态，不依赖 _endCustomEdit
+                if (this._customEditTA) {
+                    const ta = this._customEditTA;
+                    this._customEditTA = null;
+                    ta.remove();
+                }
+                this.editingNodeId = null;
+                showNotification('✓ 图片已粘贴: ' + relativePath, 'success');
+            } finally {
+                this._isProcessingImage = false;
+            }
+        };
+        // 删除节点图片及对应文件
+        JsMindHandle.prototype._deleteNodeImage = async function (node, imgPath) {
+            try {
+                // 删除文件
+                if (imgPath) {
+                    try {
+                        const fileHandle = await getFileHandleByPath(imgPath);
+                        if (fileHandle) {
+                            await deleteFile(fileHandle);
+                        }
+                    } catch (e) {
+                        console.warn('无法删除图片文件:', imgPath, e);
+                    }
+                }
+                // 获取数据树并直接修改，避免 jsMind 内部缓存导致删除不生效
+                const mindData = this.jm.get_data('node_tree');
+                // 递归查找并清空目标节点的 local_images
+                const cleanNode = (nd) => {
+                    if (nd.id === node.id) {
+                        if (nd.data) {
+                            delete nd.data.local_images;
+                            delete nd.data.images;
+                        }
+                        delete nd.local_images;
+                        return true;
+                    }
+                    if (nd.children) {
+                        for (const c of nd.children) {
+                            if (cleanNode(c)) return true;
+                        }
+                    }
+                    return false;
+                };
+                cleanNode(mindData.data);
+                this.jm.show(JSON.parse(JSON.stringify(mindData)));
+                showNotification('✓ 图片已删除', 'success');
+            } catch (err) {
+                console.error('删除图片失败:', err);
+                showNotification('✗ 删除图片失败: ' + err.message, 'error');
+            }
+        };
+        // 显示图片选择模态框（改造 showCanvasFileSelectModal，复用 UI 样式）
+        JsMindHandle.prototype._showImageSelectModal = function (node) {
+            const existing = document.getElementById('canvas-file-select-modal');
+            if (existing) existing.remove();
+
+            // 过滤图片文件（从整个扫描文件列表中选）
+            const files = getScanFileList().filter(f => isPicImage(getExt(f.name)));
+
+            const modal = document.createElement('div');
+            modal.id = 'canvas-file-select-modal';
+            modal.className = 'canvas-modal';
+            modal.innerHTML = `
+                <div class="canvas-modal-content" style="width: 500px; max-height: 75vh;">
+                    <div class="canvas-modal-header">
+                        <span>选择图片</span>
+                        <button class="canvas-modal-close" onclick="document.getElementById('canvas-file-select-modal').remove()">&times;</button>
+                    </div>
+                    <div class="canvas-modal-search">
+                        <input type="text" id="canvas-file-search" placeholder="搜索图片..." oninput="filterCanvasFileList()">
+                    </div>
+                    <div class="canvas-modal-list" id="canvas-file-list" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 8px; overflow-y: auto; max-height: 50vh;">
+                        ${files.map(f => {
+                const filePath = (f.path && f.path.trim()) ? f.path : (f.name || '');
+                const fileName = f.name || filePath;
+                return `<div class="canvas-file-item" data-path="${filePath}" data-name="${fileName}" style="display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px; border-radius: 6px; cursor: pointer; border: 1px solid var(--color-border, #d0d7de); overflow: hidden;">
+                                <div class="mind-img-thumb" style="width: 100%; height: 80px; background-size: cover; background-position: center; background-repeat: no-repeat; border-radius: 4px;"></div>
+                                <span class="canvas-file-name" style="font-size: 11px; color: var(--color-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; text-align: center;">${fileName}</span>
+                            </div>`;
+            }).join('')}
+                    </div>
+                </div>
+            `;
+            modal.style.cssText = 'position:fixed;left:0;top:0;width:100%;height:100%;background-color:rgba(0,0,0,0.5);z-index:10001;display:flex;justify-content:center;align-items:center;';
+            document.body.appendChild(modal);
+
+            // 异步加载缩略图
+            const self = this;
+            modal.querySelectorAll('.canvas-file-item').forEach(async (item) => {
+                const filePath = item.dataset.path;
+                try {
+                    const fileHandle = await getFileHandleByPath(filePath);
+                    if (fileHandle) {
+                        const file = await getFile(fileHandle);
+                        const url = URL.createObjectURL(file);
+                        const thumb = item.querySelector('.mind-img-thumb');
+                        if (thumb) thumb.style.backgroundImage = `url(${url})`;
+                        // 清理 Object URL
+                        item._objUrl = url;
+                    }
+                } catch (e) { /* 忽略加载失败 */ }
+                // 绑定选中事件
+                item.onclick = async () => {
+                    if (node) {
+                        // 更新节点 local_images 为相对路径
+                        const imgRelativePath = filePath;
+                        if (node.data) {
+                            node.data.local_images = imgRelativePath;
+                        } else {
+                            node.data = { local_images: imgRelativePath };
+                        }
+                        self.jm.update_node(node.id, node.topic);
+                        // 清理缩略图 Object URLs
+                        modal.querySelectorAll('.canvas-file-item').forEach(i => {
+                            if (i._objUrl) URL.revokeObjectURL(i._objUrl);
+                        });
+                        modal.remove();
+                        showNotification('✓ 图片已设置到节点', 'success');
+                    }
+                };
+            });
+            // 点击背景关闭
+            modal.onclick = (e) => {
+                if (e.target === modal) {
+                    modal.querySelectorAll('.canvas-file-item').forEach(i => {
+                        if (i._objUrl) URL.revokeObjectURL(i._objUrl);
+                    });
+                    modal.remove();
+                }
+            };
+        };
 
         function handleHelpClick(e) {
             e.stopPropagation();
@@ -18276,7 +18508,7 @@
             try {
                 const parser = new DOMParser();
                 const xmlDoc = parser.parseFromString(text, "text/xml");
-                await renderJsMind(await parseOPMLToJsMind(xmlDoc), false);
+                await renderJsMind(parseOPMLToJsMind(xmlDoc), false);
             } catch (error) {
                 console.error('解析文件失败:', error);
                 destroyJsMind();
@@ -18289,7 +18521,7 @@
             try {
                 const parser = new DOMParser();
                 const xmlDoc = parser.parseFromString(text, "text/xml");
-                await renderJsMind(await parseFreeMindToJsMind(xmlDoc), true);
+                await renderJsMind(parseFreeMindToJsMind(xmlDoc), true);
             } catch (error) {
                 console.error('解析文件失败:', error);
                 destroyJsMind();
@@ -18297,9 +18529,9 @@
             }
         }
 
-        // OPML → jsMind 格式转换
-        async function parseOPMLToJsMind(xmlDoc) {
-            async function buildNode(outline, nodeId) {
+        // OPML → jsMind 格式转换（同步版本，无 I/O 操作无需 async）
+        function parseOPMLToJsMind(xmlDoc) {
+            function buildNode(outline, nodeId) {
                 var topic = outline.getAttribute('text') || outline.getAttribute('TEXT') || getMubuText(outline) || '';
                 const mubu_images = outline.getAttribute("_mubu_images") || outline.getAttribute("images") || '';
                 if (!topic) {
@@ -18322,7 +18554,7 @@
                 const children = outline.querySelectorAll(':scope > outline');
                 for (let i = 0; i < children.length; i++) {
                     const o = children[i];
-                    const childNode = await buildNode(o, `${nodeId}_${i}`);
+                    const childNode = buildNode(o, `${nodeId}_${i}`);
                     if (childNode) node.children.push(childNode);
                 }
                 return node;
@@ -18342,7 +18574,7 @@
             if (rootOutlines.length === 0) throw new Error('无内容');
             let rootNode;
             if (rootOutlines.length === 1) {
-                const node = await buildNode(rootOutlines[0], 'root_1');
+                const node = buildNode(rootOutlines[0], 'root_1');
                 if (!node) {
                     rootNode = { id: 'root', topic: title, children: [] };
                 } else {
@@ -18368,7 +18600,7 @@
                 };
                 for (let i = 0; i < rootOutlines.length; i++) {
                     const o = rootOutlines[i];
-                    const childNode = await buildNode(o, `root_${i}`);
+                    const childNode = buildNode(o, `root_${i}`);
                     if (childNode) rootNode.children.push(childNode);
                 }
             }
@@ -18382,51 +18614,117 @@
                 data: rootNode
             };
         }
+        // 辅助函数：提取富文本内容（兼容 FreeMind 的 richcontent）
+        function extractRichText(node, type) {
+            const richContent = node.querySelector(`:scope > richcontent[type="${type}"], :scope > richcontent[TYPE="${type}"]`);
+            if (!richContent) return '';
 
-        //FreeMind (.mm) → jsMind 格式转换
-        async function parseFreeMindToJsMind(xmlDoc) {
-            async function buildNode(node, nodeId) {
-                const text = node.getAttribute('TEXT') || node.getAttribute('text') || getMubuText(node) || '';
-                const id = node.getAttribute('ID') || node.getAttribute('id') || nodeId;
-                if (text === '') {
-                    return null;
+            // 克隆节点避免污染原 DOM
+            const clone = richContent.cloneNode(true);
+
+            // 将 HTML 块级元素和 br 转换为换行符
+            const blockTags = clone.querySelectorAll('p, br, div, li, h1, h2, h3');
+            blockTags.forEach(tag => {
+                if (tag.tagName.toLowerCase() === 'br') {
+                    tag.replaceWith('\n');
+                } else {
+                    tag.insertAdjacentText('beforebegin', '\n');
                 }
-                // 读取 POSITION 属性：left → 'left'，其余默认 'right'
+            });
+
+            // 提取纯文本并清理多余空行
+            let text = clone.textContent || '';
+            return text.replace(/\n{3,}/g, '\n\n').trim();
+        }
+
+        function buildFreeMindNode(node, nodeId, isRoot = false) {
+            // 1. 提取文本：优先 TEXT 属性，其次富文本 richcontent
+            let text = node.getAttribute('TEXT') || node.getAttribute('text') || getMubuText(node) || extractRichText(node, 'NODE') || '';
+
+            // 2. 提取备注
+            const note = extractRichText(node, 'NOTE');
+
+            // 3. 提取链接、颜色、背景色等原生属性
+            const link = node.getAttribute('LINK') || '';
+            const color = node.getAttribute('COLOR') || '';
+            const bgColor = node.getAttribute('BACKGROUND_COLOR') || '';
+            const folded = node.getAttribute('FOLDED') === 'true'; // 是否折叠
+
+            if (!text && !note && !isRoot) return null;
+
+            const id = node.getAttribute('ID') || node.getAttribute('id') || nodeId;
+            let images = node.getAttribute('images') || decodeURIComponent(node.getAttribute('_local_images') || '') || '';
+            const noteStr = node.getAttribute("_note") || node.getAttribute("note") || note || '';
+
+            // 4. 方向控制：根节点居中，子节点根据 POSITION 判断
+            let dir = 'right';
+            if (isRoot) {
+                dir = 'center';
+            } else {
                 const position = node.getAttribute('POSITION');
-                const dir = (position === 'left') ? 'left' : 'right';
-                const jsNode = {
-                    id: id,
-                    topic: text,
-                    isroot: false,
-                    direction: dir,
-                    expanded: true,
-                    children: [],
-                    data: { heading: 0, color: '' }
-                };
-                const childNodes = node.querySelectorAll(':scope > node');
-                for (let i = 0; i < childNodes.length; i++) {
-                    const child = childNodes[i];
-                    const childNode = await buildNode(child, `${id}_${i}`);
-                    if (childNode) {
-                        jsNode.children.push(childNode);
-                    }
-                }
-                return jsNode;
+                if (position === 'left') dir = 'left';
+                else if (position === 'right') dir = 'right';
             }
 
+            // 5. 提取 FreeMind 内置图标 (例如 button_ok, idea 等)
+            const icons = [];
+            const iconNodes = node.querySelectorAll(':scope > icon');
+            iconNodes.forEach(iconNode => {
+                const builtin = iconNode.getAttribute('BUILTIN');
+                if (builtin) icons.push(builtin);
+            });
+            const topicStr = !text ? note : text
+            // 组装 jsMind 节点数据
+            const jsNode = {
+                id: id,
+                topic: topicStr,
+                head: topicStr,
+                note: noteStr,
+                isroot: isRoot,
+                direction: dir,
+                local_images: images,
+                expanded: !folded, // FreeMind 的 FOLDED="true" 表示折叠，jsMind 的 expanded 表示展开
+                children: [],
+                data: {
+                    heading: 0,
+                    color: color,
+                    backgroundColor: bgColor,
+                    note: note,
+                    link: link,
+                    icons: icons,
+                    local_images: images // 同时在 data 中冗余一份，供 _handleImagePaste 等统一路径使用
+                }
+            };
+
+            // 6. 递归处理子节点
+            const childNodes = node.querySelectorAll(':scope > node');
+            for (let i = 0; i < childNodes.length; i++) {
+                const child = childNodes[i];
+                const childNode = buildFreeMindNode(child, `${id}_${i}`, false);
+                if (childNode) {
+                    jsNode.children.push(childNode);
+                }
+            }
+
+            return jsNode;
+        }
+
+        function parseFreeMindToJsMind(xmlDoc) {
             const mapElement = xmlDoc.getElementsByTagName('map')[0];
             if (!mapElement) throw new Error('无效的 FreeMind 文件');
+
             const title = mapElement.getAttribute('title') || 'FreeMind';
             const rootNodes = mapElement.querySelectorAll(':scope > node');
             let rootNode;
+
             if (rootNodes.length === 1) {
-                const node = await buildNode(rootNodes[0], 'root-1');
-                if (!node) {
-                    rootNode = { id: 'root', topic: title, children: [] };
-                } else {
-                    rootNode = node;
+                // 真正的单根思维导图
+                rootNode = buildFreeMindNode(rootNodes[0], 'root-1', true);
+                if (!rootNode) {
+                    rootNode = { id: 'root', topic: title, isroot: true, direction: 'center', children: [] };
                 }
             } else {
+                // 如果存在多个顶级节点，创建一个虚拟的根节点包裹它们
                 rootNode = {
                     id: 'root',
                     topic: title,
@@ -18434,16 +18732,17 @@
                     direction: 'center',
                     expanded: true,
                     children: [],
-                    data: { heading: 0, color: '' }
+                    data: { heading: 0, color: '', backgroundColor: '' }
                 };
                 for (let i = 0; i < rootNodes.length; i++) {
                     const child = rootNodes[i];
-                    const childNode = await buildNode(child, `root_${i}`);
+                    const childNode = buildFreeMindNode(child, `root_${i}`, false);
                     if (childNode) {
                         rootNode.children.push(childNode);
                     }
                 }
             }
+
             return {
                 meta: {
                     name: title,
@@ -18454,6 +18753,141 @@
                 data: rootNode
             };
         }
+
+
+        function exportToFreeMind(mindData) {
+            // 1. XML 属性转义：处理特殊字符
+            function escapeAttr(str) {
+                if (!str) return '';
+                return String(str)
+                    .replace(/&/g, '&amp;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
+            }
+
+            // 2. XML 文本内容转义（用于 richcontent 内部）
+            function escapeText(str) {
+                if (!str) return '';
+                return String(str)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
+            }
+
+            // 3. 将 topic 中的换行符转为 FreeMind 可识别的 &#10; 实体
+            function escapeTopic(str) {
+                if (!str) return '';
+                return escapeAttr(str).replace(/\n/g, '&#10;');
+            }
+
+            // 4. 递归构建单个节点的 XML 字符串
+            function buildNodeXml(node, isRoot, depth) {
+                const indent = '    '.repeat(depth + 1);
+                const childIndent = '    '.repeat(depth + 2);
+
+                // 基础属性
+                const id = escapeAttr(node.id || '');
+                const topic = escapeTopic(node.topic || '');
+
+                let attrs = `ID="${id}"`;
+
+                // 根节点不写 POSITION；非根节点根据 direction 映射
+                if (!isRoot) {
+                    const dir = node.direction || 'right';
+                    attrs += ` POSITION="${dir}"`;
+                }
+
+                // topic 始终写入 TEXT 属性（换行用 &#10; 保留）
+                if (topic) {
+                    attrs += ` TEXT="${topic}"`;
+                }
+
+                // 折叠状态：jsMind expanded=false → FreeMind FOLDED="true"
+                if (node.expanded === false) {
+                    attrs += ` FOLDED="true"`;
+                }
+                //图片
+                const imgPath = node.local_images || (node.data && node.data.local_images) || '';
+                if (imgPath) {
+                    attrs += ` _local_images="${encodeURIComponent(imgPath)}"`;
+                }
+                // 颜色属性
+                const data = node.data || {};
+                if (data.color) {
+                    attrs += ` COLOR="${escapeAttr(data.color)}"`;
+                }
+                if (data.backgroundColor) {
+                    attrs += ` BACKGROUND_COLOR="${escapeAttr(data.backgroundColor)}"`;
+                }
+
+                // 超链接
+                if (data.link) {
+                    attrs += ` LINK="${escapeAttr(data.link)}"`;
+                }
+
+                // 收集子元素：icons、note、child nodes
+                const childElements = [];
+
+                // 图标映射
+                const icons = data.icons || [];
+                for (const icon of icons) {
+                    childElements.push(`${childIndent}<icon BUILTIN="${escapeAttr(icon)}"/>`);
+                }
+
+                // 备注映射为 richcontent TYPE="NOTE"
+                if (data.note) {
+                    const noteHtml = buildRichContentHtml(data.note);
+                    childElements.push(`${childIndent}<richcontent TYPE="NOTE">\n${noteHtml}\n${childIndent}</richcontent>`);
+                }
+
+                // 递归处理子节点
+                const children = node.children || [];
+                for (let i = 0; i < children.length; i++) {
+                    const child = children[i];
+                    if (!child) continue;
+                    const childXml = buildNodeXml(child, false, depth + 1);
+                    childElements.push(childXml);
+                }
+
+                // 拼装节点 XML
+                if (childElements.length === 0) {
+                    return `${indent}<node ${attrs}/>`;
+                } else {
+                    return `${indent}<node ${attrs}>\n${childElements.join('\n')}\n${indent}</node>`;
+                }
+            }
+
+            // 5. 构造备注的 HTML 内容（richcontent 内部结构）
+            function buildRichContentHtml(noteText) {
+                const lines = String(noteText).split('\n');
+                const paragraphs = lines
+                    .map(line => `            <p>${escapeText(line)}</p>`)
+                    .join('\n');
+                return `        <html>\n            <head/>\n            <body>\n${paragraphs}\n            </body>\n        </html>`;
+            }
+
+            // ===== 主流程 =====
+            const meta = mindData.meta || {};
+            const mapName = escapeAttr(meta.name || 'FreeMind');
+            const rootNode = mindData.data;
+
+            if (!rootNode) {
+                throw new Error('数据中缺少根节点 data');
+            }
+
+            const rootXml = buildNodeXml(rootNode, true, 0);
+
+            const xml =
+                `<?xml version="1.0" encoding="UTF-8"?>\n` +
+                `<map version="0.9.0">\n` +
+                `${rootXml}\n` +
+                `</map>`;
+
+            return xml;
+        }
+
+
         // 渲染OPML文件(思维导图)
         async function renderOPMLFile(text) {
             try {
