@@ -17903,7 +17903,7 @@
                 const node = this.jm.get_selected_node();
                 if (!node) return;
                 const newId = this.getID();
-                this.jm.add_node(node, newId, '', { heading: 0, color: '' });
+                this.jm.add_node(node, newId, '新节点', { heading: 0, color: '' });
                 this.jm.select_node(newId);
                 setTimeout(() => this.jm.begin_edit(newId), 50);
             }
@@ -17914,7 +17914,7 @@
                     return;
                 }
                 const newId = this.getID();
-                this.jm.insert_node_after(node, newId, '', { heading: 0, color: '' });
+                this.jm.insert_node_after(node, newId, '新节点', { heading: 0, color: '' });
                 this.jm.select_node(newId);
                 setTimeout(() => this.jm.begin_edit(newId), 50);
             }
@@ -17956,7 +17956,7 @@
                 if (!node || node.isroot) return;
                 const parent = this.jm.get_node(node.parent);
                 const newId = this.getID();
-                const newParent = this.jm.add_node(parent, newId, '', { heading: 0, color: '' });
+                const newParent = this.jm.add_node(parent, newId, '新节点', { heading: 0, color: '' });
                 this.jm.move_node(node, null, newId, jsMind.direction.right);
                 this.jm.select_node(newId);
                 setTimeout(() => this.jm.begin_edit(newId), 50);
@@ -18233,7 +18233,7 @@
                 // 读取文件内容并写入
                 const arrayBuffer = await file.arrayBuffer();
                 await writeFileByDirHandle(mindDir, fileName, arrayBuffer);
-                return 'assets/mind_pic/' + fileName;
+                return joinPath(currentRootPath, 'assets/mind_pic', fileName);
             } catch (err) {
                 console.error('保存图片失败:', err);
                 showNotification('✗ 保存图片失败: ' + err.message, 'error');
@@ -18366,7 +18366,7 @@
                 // 绑定选中事件
                 item.onclick = async () => {
                     if (node) {
-                        const imgRelativePath = filePath;
+                        const imgRelativePath = joinPath(currentRootPath, filePath);
                         if (node.data) {
                             node.data.local_images = imgRelativePath;
                         } else {
