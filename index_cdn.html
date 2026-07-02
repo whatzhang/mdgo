@@ -667,6 +667,19 @@
             width: 4px !important;
         }
 
+        #content-main::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        #content-main::-webkit-scrollbar-thumb {
+            background: var(--color-border, #d0d7de);
+            border-radius: 2px;
+        }
+
+        #content-main::-webkit-scrollbar-thumb:hover {
+            background: var(--color-text-tertiary);
+        }
+
         #content-main-edit {
             flex: 1;
             overflow-y: auto;
@@ -1328,7 +1341,7 @@
             top: 5px;
             right: 10px;
             display: flex;
-            gap: 10px;
+            gap: 8px;
             z-index: 100;
             align-items: center;
         }
@@ -1355,6 +1368,7 @@
 
         .opml-original-buttons {
             display: none;
+            gap: 8px;
         }
 
         .mindmap-container {
@@ -1364,13 +1378,44 @@
         }
 
         .mindmap-container::-webkit-scrollbar {
-            display: none;
+            width: 4px;
+        }
+
+        .mindmap-container::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .mindmap-container::-webkit-scrollbar-thumb {
+            background: var(--color-border, #d0d7de);
+            border-radius: 2px;
+        }
+
+        .mindmap-container::-webkit-scrollbar-thumb:hover {
+            background: var(--color-text-tertiary);
+        }
+
+        .jsmind-inner::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+
+        .jsmind-inner::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .jsmind-inner::-webkit-scrollbar-thumb {
+            background: var(--color-border, #d0d7de);
+            border-radius: 2px;
+        }
+
+        .jsmind-inner::-webkit-scrollbar-thumb:hover {
+            background: var(--color-text-tertiary);
         }
 
         .mindmap-node {
             position: relative;
             margin: 5px 0;
-            padding: 7px 0 7px 7px;
+            padding: 7px 7px 7px 7px;
             border-radius: var(--radius-md);
             box-shadow: var(--shadow-sm);
         }
@@ -3516,9 +3561,17 @@
             width: 4px;
         }
 
+        .ai-history-list::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
         .ai-history-list::-webkit-scrollbar-thumb {
-            background: rgba(0, 0, 0, 0.1);
+            background: var(--color-border, #d0d7de);
             border-radius: 2px;
+        }
+
+        .ai-history-list::-webkit-scrollbar-thumb:hover {
+            background: var(--color-text-tertiary);
         }
 
         .ai-history-item {
@@ -4328,7 +4381,7 @@
         }
 
         .mermaid-toolbar-left::-webkit-scrollbar {
-            height: 3px;
+            height: 4px;
         }
 
         .mermaid-toolbar-left::-webkit-scrollbar-track {
@@ -4336,12 +4389,12 @@
         }
 
         .mermaid-toolbar-left::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 1px;
+            background: var(--color-border, #d0d7de);
+            border-radius: 2px;
         }
 
         .mermaid-toolbar-left::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8;
+            background: var(--color-text-tertiary);
         }
 
         .mermaid-toolbar-right {
@@ -4657,12 +4710,20 @@
         }
 
         .mermaid-error-body pre::-webkit-scrollbar {
-            width: 5px;
+            width: 4px;
+        }
+
+        .mermaid-error-body pre::-webkit-scrollbar-track {
+            background: transparent;
         }
 
         .mermaid-error-body pre::-webkit-scrollbar-thumb {
-            background: #f0b0b0;
-            border-radius: 3px;
+            background: var(--color-border, #d0d7de);
+            border-radius: 2px;
+        }
+
+        .mermaid-error-body pre::-webkit-scrollbar-thumb:hover {
+            background: var(--color-text-tertiary);
         }
 
         /* ═══ Status Bar ═══ */
@@ -5351,8 +5412,8 @@
 
         .spinner {
             display: inline-block;
-            width: 14px;
-            height: 14px;
+            width: 13px;
+            height: 13px;
             border: 2px solid rgba(255, 255, 255, 0.3);
             border-radius: 50%;
             border-top-color: var(--color-bg);
@@ -5470,13 +5531,17 @@
             height: 4px !important;
         }
 
+        #regex-test-container ::-webkit-scrollbar-track {
+            background: transparent !important;
+        }
+
         #regex-test-container ::-webkit-scrollbar-thumb {
-            background: #bbb !important;
+            background: var(--color-border, #d0d7de) !important;
             border-radius: 2px !important;
         }
 
-        #regex-test-container ::-webkit-scrollbar-track {
-            background: transparent !important;
+        #regex-test-container ::-webkit-scrollbar-thumb:hover {
+            background: var(--color-text-tertiary) !important;
         }
 
         .regex-card-input {
@@ -7696,6 +7761,19 @@
             height: 4px;
         }
 
+        .timeline-months-heatmap::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .timeline-months-heatmap::-webkit-scrollbar-thumb {
+            background: var(--color-border, #d0d7de);
+            border-radius: 2px;
+        }
+
+        .timeline-months-heatmap::-webkit-scrollbar-thumb:hover {
+            background: var(--color-text-tertiary);
+        }
+
         .timeline-month-block {
             background: var(--color-bg);
             border: 1px solid var(--color-border-light);
@@ -9654,6 +9732,19 @@
             height: 4px;
         }
 
+        .jsmind-container::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .jsmind-container::-webkit-scrollbar-thumb {
+            background: var(--color-border, #d0d7de);
+            border-radius: 2px;
+        }
+
+        .jsmind-container::-webkit-scrollbar-thumb:hover {
+            background: var(--color-text-tertiary);
+        }
+
         /* 思维导图右键菜单 */
         .jsmind-context-menu {
             position: fixed;
@@ -10069,13 +10160,17 @@
             height: 4px;
         }
 
+        .git-records-container *::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
         .git-records-container *::-webkit-scrollbar-thumb {
-            background: #c9cdd4;
+            background: var(--color-border, #d0d7de);
             border-radius: 2px;
         }
 
-        .git-records-container *::-webkit-scrollbar-track {
-            background: transparent;
+        .git-records-container *::-webkit-scrollbar-thumb:hover {
+            background: var(--color-text-tertiary);
         }
 
         .git-graph-layers {
@@ -12296,7 +12391,7 @@
                 </button>
                 <button id="jsmind-image-btn" class="btn btn-warning btn-sm" onclick="jsMindSaveImage()"
                     style="display:none;">
-                    保存为图片
+                    导出为图片
                 </button>
                 <button id="opml-collapse-btn-1" class="btn btn-warning btn-sm" onclick="collapse1Level(2)">
                     一级
@@ -13686,6 +13781,7 @@
             _canvasImgProcessQueue();
         }
         let connectingFrom = null; // { nodeId, side } | null — 连线模式：已选中的起点连接点
+        let mmModel = ''; // 当前思维导图模型类型（opml 或 mm）
 
         // ====== DOM 元素缓存（避免重复查询） ======
         const treeElement = document.getElementById('tree');
@@ -13733,6 +13829,8 @@
         const videoViewContainer = document.getElementById('video-view-container');
         const wordViewContainer = document.getElementById('word-view-container');
         const gitRecordsContainer = document.getElementById('git-records-container');
+        const jmSaveBtn = document.getElementById('jsmind-save-btn');
+        const jmImgBtn = document.getElementById('jsmind-image-btn');
 
         // 所有主视图容器的集合（切换视图时隐藏其他容器用）
         const MAIN_VIEW_CONTAINERS = [
@@ -15185,6 +15283,10 @@
             if (historyPanel) historyPanel.style.display = 'none';
         }
 
+        // ===== 思维导图 panning / click 监听器清理引用 =====
+        let _jsmindPanCleanup = null;   // 清理 panning 相关的 document 监听器
+        let _jsmindClickCleanup = null; // 清理右键菜单关闭用的 document click 监听器
+
         // 销毁 jsMind，释放 Canvas/DOM
         function destroyJsMind() {
             if (jsMindHandle) {
@@ -15193,15 +15295,15 @@
                 if (container) {
                     container.innerHTML = '';
                 }
+                // 移除全局键盘监听
                 document.removeEventListener('keydown', jsMindHandle.handleGlobalKeydown);
+                // 移除 panning 相关 document 监听器
+                if (_jsmindPanCleanup) { _jsmindPanCleanup(); _jsmindPanCleanup = null; }
+                // 移除右键菜单关闭用的 document click 监听器
+                if (_jsmindClickCleanup) { _jsmindClickCleanup(); _jsmindClickCleanup = null; }
                 jsMindHandle.destroy();
                 jsMindHandle = null;
             }
-            // 隐藏保存/保存为图片按钮
-            const saveBtn = document.getElementById('jsmind-save-btn');
-            const imgBtn = document.getElementById('jsmind-image-btn');
-            if (saveBtn) saveBtn.style.display = 'none';
-            if (imgBtn) imgBtn.style.display = 'none';
         }
 
         // 清理 Canvas 相关状态（关闭白板或切换文件时调用）
@@ -17057,14 +17159,14 @@
         }
 
         async function goOpmlBack() {
-            jsMindHandle.destroy();
-            jsMindHandle = null;
+            mmModel = 'opml';
+            if (jsMindHandle) { jsMindHandle.destroy(); jsMindHandle = null; }
             renderOPMLFile(await getFileContent(currentFileHandle));
         }
 
         async function goMmBack() {
-            jsMindHandle.destroy();
-            jsMindHandle = null;
+            mmModel = 'mm';
+            if (jsMindHandle) { jsMindHandle.destroy(); jsMindHandle = null; }
             const text = await getFileContent(currentFileHandle);
             const rootNode = parseFreeMind(text);
             const { html, opmlTocData } = await renderMindmapNodeAsync(rootNode, 0);
@@ -17073,16 +17175,21 @@
         }
 
         async function convertToMindmap() {
+            mmModel = 'mm';
             const text = await getFileContent(currentFileHandle);
             tocContainer.style.display = 'none';
             if (currentFileName.endsWith('.opml')) {
+                setControlsState({ jmSaveBtn: false, jmImgBtn: true, });
                 await convertOpmlToMindmap(text);
             } else if (currentFileName.endsWith('.mm')) {
+                setControlsState({ jmSaveBtn: true, jmImgBtn: true, });
                 await convertMmToMindmap(text);
             }
         }
 
         async function goBackToOutline() {
+            mmModel = 'opml';
+            setControlsState({ jmSaveBtn: false, jmImgBtn: true, });
             if (currentFileName.endsWith('.opml')) {
                 await goOpmlBack();
             } else if (currentFileName.endsWith('.mm')) {
@@ -17093,21 +17200,23 @@
         async function openMindMap() {
             await switchToView(contentMain);
             try {
-                await ajsMindCreate(null, true);
+                await jsMindCreate(null, true);
+                setControlsState({
+                    topControls: true,
+                    opmlBtns: true,
+                    editBtn: false,
+                    saveBtn: false,
+                    previewBtn: false,
+                    copyBtn: false,
+                    formatBtn: false,
+                    jmSaveBtn: true,
+                    jmImgBtn: true,
+                });
             } catch (error) {
                 console.error('jsmind 初始化失败:', error);
-                if (jsMindHandle) { jsMindHandle.destroy(); jsMindHandle = null; }
+                destroyJsMind();
                 contentMain.innerHTML = '<div style="color:#d73a49; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh;">❌ 初始化失败:' + error.message + '</div>';
             }
-            setControlsState({
-                topControls: true,
-                opmlBtns: true,
-                editBtn: false,
-                saveBtn: false,
-                previewBtn: false,
-                copyBtn: false,
-                formatBtn: false
-            });
         }
 
         async function jsMindCreate(data = null, ismmFile) {
@@ -17115,7 +17224,7 @@
             const div = document.createElement('div');
             div.className = 'jsmind-container';
             div.id = 'jsmind_container';
-            div.innerHTML += `<button id="jsmind-help" class="btn btn-sm" style="position: absolute;top: 9px;left: 10px;display: flex; z-index: 1000;padding: 0;width: 20px; height: 20px;background: var(--color-bg);" onclick="handleHelpClick(event)">
+            div.innerHTML += `<button id="jsmind-help" class="btn btn-sm" style="position: absolute;top: 9px;left: 10px;display: flex; z-index: 1000;padding: 0;width: 20px; height: 20px;background: var(--color-bg-secondary);" onclick="handleHelpClick(event)">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <circle cx="12" cy="12" r="10" stroke="#2b2f36" stroke-width="2"/>
                             <path d="M9.2 9.2C9.2 7.7 10.4 6.5 12 6.5C13.6 6.5 14.8 7.7 14.8 9.2C14.8 10.8 12 11 12 12.8V13.5" stroke="#2b2f36" stroke-width="2" stroke-linecap="round"/>
@@ -17159,11 +17268,6 @@
             // 全局键盘监听
             document.removeEventListener('keydown', jsMindHandle.handleGlobalKeydown);
             document.addEventListener('keydown', jsMindHandle.handleGlobalKeydown);
-            // 显示保存/保存为图片按钮
-            const saveBtn = document.getElementById('jsmind-save-btn');
-            const imgBtn = document.getElementById('jsmind-image-btn');
-            if (saveBtn) saveBtn.style.display = 'inline-flex';
-            if (imgBtn) imgBtn.style.display = 'inline-flex';
             // 右键菜单——仅点击到节点（jmnode）时显示
             const container = document.getElementById('jsmind_container');
             container.addEventListener('contextmenu', (e) => {
@@ -17177,13 +17281,17 @@
                     jsMindHandle._removeContextMenu();
                 }
             });
-            // 点击其他区域关闭右键菜单
-            document.addEventListener('click', (e) => {
+            // 点击其他区域关闭右键菜单（由 _jsmindClickCleanup 管理清理）
+            const _clickCloseMenu = (e) => {
                 if (!e.target.closest('.jsmind-context-menu')) {
                     const menu = document.querySelector('.jsmind-context-menu');
                     if (menu) menu.remove();
                 }
-            });
+            };
+            document.addEventListener('click', _clickCloseMenu);
+            _jsmindClickCleanup = () => {
+                document.removeEventListener('click', _clickCloseMenu);
+            };
             // 右键长按空白区域拖动画布
             // 使用 document 级 capture 阶段捕获 mousedown，确保在 jsMind canvas 处理器之前拦截
             let isPanning = false;
@@ -17216,9 +17324,7 @@
                     }
                 }, 200);
             };
-            // capture: true —— 在 jsMind 内部处理器之前拦截 mousedown
-            document.addEventListener('mousedown', _panOnDown, true);
-            document.addEventListener('mousemove', (e) => {
+            const _panOnMove = (e) => {
                 if (!isPanning || !panMousedown) return;
                 e.preventDefault();
                 const dx = e.clientX - panStartX;
@@ -17226,8 +17332,8 @@
                 const scrollEl = _panGetScrollEl();
                 scrollEl.scrollLeft = panScrollLeft - dx;
                 scrollEl.scrollTop = panScrollTop - dy;
-            });
-            document.addEventListener('mouseup', () => {
+            };
+            const _panOnUp = () => {
                 if (panTimer) { clearTimeout(panTimer); panTimer = null; }
                 if (isPanning) {
                     isPanning = false;
@@ -17237,7 +17343,17 @@
                     container.style.userSelect = '';
                 }
                 panMousedown = false;
-            });
+            };
+            // capture: true —— 在 jsMind 内部处理器之前拦截 mousedown
+            document.addEventListener('mousedown', _panOnDown, true);
+            document.addEventListener('mousemove', _panOnMove);
+            document.addEventListener('mouseup', _panOnUp);
+            // 保存清理函数供 destroyJsMind 使用
+            _jsmindPanCleanup = () => {
+                document.removeEventListener('mousedown', _panOnDown, true);
+                document.removeEventListener('mousemove', _panOnMove);
+                document.removeEventListener('mouseup', _panOnUp);
+            };
         }
 
         async function renderJsMind(jsMindData, ismmFile) {
@@ -17248,8 +17364,34 @@
         function jsMindSave() {
             if (jsMindHandle) jsMindHandle.jsmind_save();
         }
-        function jsMindSaveImage() {
-            if (jsMindHandle) jsMindHandle.jsmind_saveAsImage();
+        let _jsmindIsExporting = false;
+        async function jsMindSaveImage() {
+            if (_jsmindIsExporting) return;
+            _jsmindIsExporting = true;
+            jmImgBtn.disabled = true;
+            jmImgBtn.style.alignItems = 'center';
+            jmImgBtn.innerHTML = '<span class="spinner"></span>导出中...';
+            void jmImgBtn.offsetHeight;
+            await new Promise(resolve => setTimeout(resolve, 0));
+            try {
+                if (!mmModel) return;
+                if (mmModel === 'opml') {
+                    let title = currentFileName;
+                    title = title.replace(/\.\w+$/, '.png');
+                    const container = contentMain.querySelector('.mindmap-container');
+                    await buildPng(container, title);
+                } else {
+                    if (jsMindHandle) jsMindHandle.jsmind_saveAsImage();
+                }
+                showNotification('图片导出成功！', 'success');
+            } catch (err) {
+                console.error('导出图片失败:', err);
+                showNotification(`导出失败: ${err.message}`, 'error');
+            } finally {
+                _jsmindIsExporting = false;
+                jmImgBtn.disabled = false;
+                jmImgBtn.innerHTML = '导出为图片';
+            }
         }
 
         class JsMindHandle {
@@ -17315,7 +17457,7 @@
                     ta.style.setProperty('position', 'absolute');
                     ta.style.setProperty('left', '-1px');
                     ta.style.setProperty('top', '-1px');
-                    ta.style.setProperty('width', 'calc(100% + 2px)');
+                    ta.style.setProperty('width', 'calc(100% + 4px)');
                     ta.style.setProperty('min-height', 'calc(100% + 2px)');
                     Object.assign(ta.style, {
                         zIndex: '100',
@@ -17392,6 +17534,11 @@
             }
             destroy() {
                 this._endCustomEdit(true);
+                // 清理右键菜单关闭监听器
+                if (this._removeContextMenuBound) {
+                    document.removeEventListener('click', this._removeContextMenuBound);
+                    this._removeContextMenuBound = null;
+                }
                 this.jm = null;
                 this.selectedNodeId = null;
                 this.editingNodeId = null;
@@ -17472,8 +17619,10 @@
                     this.jsmind_addNote();
                     return;
                 }
-                // Backspace/Delete - 删除节点
+                // Backspace/Delete - 删除节点（输入框内不拦截）
                 if (e.key === 'Backspace' || e.key === 'Delete') {
+                    const tag = (e.target.tagName || '').toLowerCase();
+                    if (tag === 'input' || tag === 'textarea' || e.target.isContentEditable) return;
                     e.preventDefault();
                     this.jsmind_handleDelNode(this.jm, e);
                     return;
@@ -17537,16 +17686,17 @@
                     }
                 }
             }
-            jsmind_saveAsImage() {
+            async jsmind_saveAsImage() {
                 const container = document.getElementById('jsmind_container');
                 if (!container) return;
-                const canvas = container.querySelector('canvas');
                 let targetFileName = currentFileName;
                 targetFileName = targetFileName.replace(/\.\w+$/, '.png');
                 const title = targetFileName || (this.jm.get_root().topic + '.png');
-                (async () => {
+                try {
                     await buildPng(container, title);
-                })();
+                } catch (err) {
+                    console.error('思维导图导出图片失败:', err);
+                }
             }
             jsmind_save() {
                 if (!this.ismmFile) return;
@@ -17566,7 +17716,7 @@
                 }
             }
             getID() {
-                return 'node_' + Date.now();
+                return 'node_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
             }
             jsmind_handleAddChild(e) {
                 const node = this.jm.get_selected_node();
@@ -17687,12 +17837,15 @@
                 const idx = siblings.indexOf(node);
                 if (idx >= siblings.length - 1) return;
                 const nextNode = siblings[idx + 1];
-                // 先移除再插入到下一个节点之后
+                // 先保存引用，避免 remove_node 后 children 数组变动导致 nextNode 失效
+                const nextId = nextNode.id;
+                const parentId = parent.id;
+                const nodeId = node.id;
                 const topic = node.topic;
                 const data = node.data;
                 this.jm.remove_node(node);
-                this.jm.insert_node_after(nextNode, node.id, topic, data);
-                this.jm.select_node(node);
+                this.jm.insert_node_after(nextId, nodeId, topic, data);
+                this.jm.select_node(this.jm.get_node(nodeId));
             }
             // 展开/折叠同级
             jsmind_toggleSiblings() {
@@ -17796,7 +17949,7 @@
                     });
                 });
                 document.body.appendChild(menu);
-                // 点击其他地方关闭（由全局 click 监听器处理）
+                // 点击其他地方关闭（由全局 _jsmindClickCleanup 管理）
             }
             _removeContextMenu() {
                 const old = document.querySelector('.jsmind-context-menu');
@@ -18150,9 +18303,9 @@
                 data: rootNode
             };
         }
-
         // 渲染OPML文件(思维导图)
         async function renderOPMLFile(text) {
+            mmModel = 'opml';
             const rootNode = parseOPML(text);
             const { html, opmlTocData } = await renderMindmapNodeAsync(rootNode, 0);
             contentMain.innerHTML = `<div class="mindmap-container">${html}</div>`;
@@ -18163,13 +18316,16 @@
                 saveBtn: false,
                 previewBtn: false,
                 copyBtn: true,
-                formatBtn: false
+                formatBtn: false,
+                jmSaveBtn: false,
+                jmImgBtn: true,
             });
             generateTOC('', 'opml', opmlTocData);
         }
 
         // 渲染FreeMind (.mm)文件(思维导图)
         async function renderFreeMindFile(fileText) {
+            mmModel = 'mm';
             // FreeMind (.mm) 默认直接使用 jsMind 思维导图显示
             await convertMmToMindmap(fileText);
             setControlsState({
@@ -18179,7 +18335,9 @@
                 saveBtn: false,
                 previewBtn: false,
                 copyBtn: true,
-                formatBtn: false
+                formatBtn: false,
+                jmSaveBtn: true,
+                jmImgBtn: true,
             });
         }
 
@@ -21798,18 +21956,97 @@
             if (!targetElement) {
                 throw new Error('目标元素为空');
             }
-            const canvas = await html2canvas(targetElement, {
-                scale: 3,
-                backgroundColor: '#ffffff',
-                logging: false,
-                useCORS: true,
-                allowTaint: false,
-                width: targetElement.scrollWidth,
-                height: targetElement.scrollHeight,
-                onclone: (clonedDoc, element) => {
-                    element.style.padding = '15px 30px 15px 30px';
-                }
+
+            // ---- 保存/恢复样式工具函数 ----
+            const _saveStyles = (el) => ({
+                overflow: el.style.overflow,
+                overflowX: el.style.overflowX,
+                overflowY: el.style.overflowY,
+                maxHeight: el.style.maxHeight,
+                maxWidth: el.style.maxWidth,
+                height: el.style.height,
+                width: el.style.width,
+                minHeight: el.style.minHeight,
             });
+            const _restoreStyles = (el, s) => {
+                el.style.overflow = s.overflow;
+                el.style.overflowX = s.overflowX;
+                el.style.overflowY = s.overflowY;
+                el.style.maxHeight = s.maxHeight;
+                el.style.maxWidth = s.maxWidth;
+                el.style.height = s.height;
+                el.style.width = s.width;
+                el.style.minHeight = s.minHeight;
+            };
+
+            // ---- 第一步：修改真实 DOM，解除所有裁剪、展开到完整尺寸 ----
+            const savedElements = [];
+            const collectAndFix = (el) => {
+                const cs = window.getComputedStyle(el);
+                const hasConstraint = cs.overflow !== 'visible' || cs.overflowX !== 'visible'
+                    || cs.overflowY !== 'visible' || cs.maxHeight !== 'none' || cs.maxWidth !== 'none';
+                if (hasConstraint || el === targetElement) {
+                    savedElements.push({ el, saved: _saveStyles(el) });
+                    el.style.overflow = 'visible';
+                    el.style.overflowX = 'visible';
+                    el.style.overflowY = 'visible';
+                    el.style.maxHeight = 'none';
+                    el.style.maxWidth = 'none';
+                }
+                for (let i = 0; i < el.children.length; i++) {
+                    collectAndFix(el.children[i]);
+                }
+            };
+            // 修复祖先
+            const savedAncestors = [];
+            let parent = targetElement.parentElement;
+            while (parent && parent !== document.body && parent !== document.documentElement) {
+                savedAncestors.push({ el: parent, saved: _saveStyles(parent) });
+                parent.style.overflow = 'visible';
+                parent.style.overflowX = 'visible';
+                parent.style.overflowY = 'visible';
+                parent.style.maxHeight = 'none';
+                parent.style.maxWidth = 'none';
+                parent = parent.parentElement;
+            }
+            // 修复目标自身及所有后代
+            collectAndFix(targetElement);
+            // 展开目标元素到完整内容尺寸
+            targetElement.style.height = targetElement.scrollHeight + 'px';
+            targetElement.style.width = targetElement.scrollWidth + 'px';
+            targetElement.style.minHeight = targetElement.scrollHeight + 'px';
+            // 强制重排使修改生效
+            void targetElement.offsetHeight;
+
+            // 再次读取完整尺寸（修复后可能变化）
+            const finalW = targetElement.scrollWidth;
+            const finalH = targetElement.scrollHeight;
+
+            // ---- 第二步：截图（此时真实 DOM 已完全展开，JS 设置的尺寸均保留） ----
+            let canvas;
+            try {
+                canvas = await html2canvas(targetElement, {
+                    scale: 3,
+                    backgroundColor: '#ffffff',
+                    logging: false,
+                    useCORS: true,
+                    allowTaint: false,
+                    width: finalW,
+                    height: finalH,
+                    onclone: (clonedDoc, element) => {
+                        element.style.margin = '30px';
+                    }
+                });
+            } finally {
+                // ---- 第三步：恢复所有原始样式 ----
+                for (let i = savedElements.length - 1; i >= 0; i--) {
+                    _restoreStyles(savedElements[i].el, savedElements[i].saved);
+                }
+                for (let i = savedAncestors.length - 1; i >= 0; i--) {
+                    _restoreStyles(savedAncestors[i].el, savedAncestors[i].saved);
+                }
+            }
+
             name = name ? name.replace(/\.\w+$/, '.png') : 'export.png';
             const link = document.createElement('a');
             link.download = name;
@@ -21823,7 +22060,8 @@
             if (isExporting) return;
             isExporting = true;
             mdImageBtn.disabled = true;
-            mdImageBtn.innerHTML = '<span class="spinner"></span> 导出中...';
+            mdImageBtn.style.alignItems = 'center';
+            mdImageBtn.innerHTML = '<span class="spinner"></span>导出中...';
             void mdImageBtn.offsetHeight;
             // 使用 setTimeout 0 确保按钮状态已渲染后再执行耗时操作
             await new Promise(resolve => setTimeout(resolve, 0));
@@ -25682,6 +25920,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
          * @param {boolean} [opts.opmlBtns] - OPML/MM 按钮组
          * @param {boolean} [opts.aiFab] - AI 悬浮按钮
          * @param {boolean} [opts.mdImageBtn] - 导出为图片按钮
+         * @param {boolean} [opts.livePreviewBtn] - 实时预览按钮
+         * @param {boolean} [opts.formatBtn] - 格式化按钮
+         * @param {boolean} [opts.jmSaveBtn] - JM 保存按钮
+         * @param {boolean} [opts.jmImgBtn] - JM 导出图片
          */
         function setControlsState(opts = {}) {
             if (opts.topControls !== undefined) topRightControls.style.display = opts.topControls ? 'flex' : 'none';
@@ -25693,10 +25935,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (opts.plantumlBtn !== undefined) plantumlBtn.style.display = opts.plantumlBtn ? 'inline-flex' : 'none';
             if (opts.plantumlSvgBtn !== undefined) plantumlSvgBtn.style.display = opts.plantumlSvgBtn ? 'inline-flex' : 'none';
             if (opts.copyBtn !== undefined) copyClipboardBtn.style.display = opts.copyBtn ? 'inline-flex' : 'none';
-            if (opts.opmlBtns !== undefined) opmlOriginalButtons.style.display = opts.opmlBtns ? 'inline' : 'none';
+            if (opts.opmlBtns !== undefined) opmlOriginalButtons.style.display = opts.opmlBtns ? 'inline-flex' : 'none';
             if (opts.mdImageBtn !== undefined) mdImageBtn.style.display = opts.mdImageBtn ? 'inline-flex' : 'none';
             if (opts.livePreviewBtn !== undefined) livePreviewBtn.style.display = opts.livePreviewBtn ? 'inline-flex' : 'none';
             if (opts.formatBtn !== undefined) formatBtn.style.display = opts.formatBtn ? 'inline-flex' : 'none';
+            if (opts.jmSaveBtn !== undefined) jmSaveBtn.style.display = opts.jmSaveBtn ? 'inline-flex' : 'none';
+            if (opts.jmImgBtn !== undefined) jmImgBtn.style.display = opts.jmImgBtn ? 'inline-flex' : 'none';
         }
 
         async function showAIResultModal(action, titles, content, fileName, filePath) {
