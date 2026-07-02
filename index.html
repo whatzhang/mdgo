@@ -17194,7 +17194,7 @@
         }
 
         async function goMmBack() {
-            mmModel = 'mm';
+            mmModel = 'opml';
             destroyJsMind();
             const text = await getFileContent(currentFileHandle);
             const rootNode = await parseFreeMind(text);
@@ -17313,12 +17313,14 @@
             };
             const jm = new jsMind(options);
             const container = document.getElementById('jsmind_container');
+            // 先清理旧的键盘事件监听器
+            if (jsMindHandle && jsMindHandle.handleGlobalKeydown) {
+                document.removeEventListener('keydown', jsMindHandle.handleGlobalKeydown);
+            }
             jsMindHandle = new JsMindHandle(jm, data, ismmFile);
             jsMindHandle.add_event_listener();
             // 全局键盘监听
-            document.removeEventListener('keydown', jsMindHandle.handleGlobalKeydown);
             document.addEventListener('keydown', jsMindHandle.handleGlobalKeydown);
-            // 右键菜单——仅点击到节点（jmnode）时显示
             // 事件委托：处理节点双击（统一进入编辑模式）
             container.addEventListener('dblclick', function (e) {
                 const nodeEl = e.target.closest && e.target.closest('jmnode');
@@ -17327,12 +17329,10 @@
                 if (!nodeId || !jsMindHandle || !jsMindHandle.jm) return;
                 const node = jsMindHandle.jm.get_node(nodeId);
                 if (!node) return;
-                // 双击节点进入编辑（含图片节点）
                 jsMindHandle.jm.begin_edit(node);
                 jsMindHandle.setSelectedNodeId(node.id);
             });
             container.addEventListener('contextmenu', (e) => {
-                // jmnode 是 jsMind 节点 DOM 元素（z-index:2），在 canvas(z-index:1) 上方
                 // 仅当右键目标为节点时才弹出面板，空白区域只阻止默认菜单
                 if (e.target.closest && e.target.closest('jmnode')) {
                     e.preventDefault();
@@ -17473,7 +17473,7 @@
                     const container = contentMain.querySelector('.mindmap-container');
                     await buildPng(container, title);
                 } else {
-                    if (jsMindHandle) jsMindHandle.jsmind_saveAsImage();
+                    if (jsMindHandle) await jsMindHandle.jsmind_saveAsImage();
                 }
                 showNotification('图片导出成功！', 'success');
             } catch (err) {
@@ -17532,8 +17532,6 @@
                 const jm = this.jm;
                 // 保存原始的 begin_edit
                 const _origBeginEdit = jm.begin_edit.bind(jm);
-                // Monkey-patch view.update_node：限制图片节点尺寸，防止拖拽时异常放大
-                // 根因：update_node 直接读取 element.clientWidth/Height 存入缓存，图片异步加载后 clientWidth 变大
                 if (jm.view && jm.view.update_node) {
                     const _origUpdateNode = jm.view.update_node.bind(jm.view);
                     jm.view.update_node = function (node) {
@@ -17547,7 +17545,6 @@
                         }
                     };
                 }
-                // 覆盖 begin_edit：用自定义 textarea 替代原生
                 jm.begin_edit = function (node) {
                     const container = document.getElementById('jsmind_container');
                     // 通过 nodeid 属性查找节点 DOM 元素
@@ -17564,18 +17561,23 @@
                     // 读取节点当前尺寸作为初始宽高
                     const nodeRect = nodeEl.getBoundingClientRect();
                     const direction = node.direction;// 1  right, -1 left, 0 center
-                    if (direction === 1) {
-                        ta.style.setProperty('left', '-4px');
-                        ta.style.setProperty('top', '-20px');
-                    } else {
-                        ta.style.setProperty('right', '-4px');
-                        ta.style.setProperty('top', '-20px');
-                    }
-                    // 覆盖整个节点（含边框），避免原节点边框露出
+                    const nodeStyle = window.getComputedStyle(nodeEl);
+                    const nodePaddingTop = parseFloat(nodeStyle.paddingTop) || 10;
+                    const nodePaddingBottom = parseFloat(nodeStyle.paddingBottom) || 10;
+                    const nodePaddingLeft = parseFloat(nodeStyle.paddingLeft) || 10;
+                    const nodePaddingRight = parseFloat(nodeStyle.paddingRight) || 10;
+                    const nodeBorderTop = parseFloat(nodeStyle.borderTopWidth) || 0;
+                    const nodeBorderBottom = parseFloat(nodeStyle.borderBottomWidth) || 0;
+                    const nodeBorderLeft = parseFloat(nodeStyle.borderLeftWidth) || 0;
+                    const nodeBorderRight = parseFloat(nodeStyle.borderRightWidth) || 0;
+                    const offset = Math.max(nodePaddingTop, nodePaddingBottom, nodePaddingLeft, nodePaddingRight, nodeBorderTop, nodeBorderBottom, nodeBorderLeft, nodeBorderRight);
+                    ta.style.setProperty('left', -(offset + 2) + 'px');
+                    ta.style.setProperty('right', -(offset + 2) + 'px');
+                    ta.style.setProperty('top', -(offset + 2) + 'px');
+                    ta.style.setProperty('bottom', -(offset + 2) + 'px');
                     ta.style.setProperty('position', 'absolute');
-                    ta.style.setProperty('min-width', '150px');
-                    ta.style.setProperty('width', 'calc(100% + 6px)');
-                    ta.style.setProperty('min-height', '45px');
+                    ta.style.setProperty('width', 'auto');
+                    ta.style.setProperty('height', 'auto');
                     Object.assign(ta.style, {
                         zIndex: '100',
                         boxSizing: 'border-box',
@@ -17639,6 +17641,13 @@
                             }
                         }
                     });
+                    // 阻止鼠标事件触发节点拖动（在捕获阶段拦截）
+                    ta.addEventListener('mousedown', function (e) {
+                        e.stopPropagation();
+                    }, true);
+                    ta.addEventListener('mouseup', function (e) {
+                        e.stopPropagation();
+                    }, true);
                     // 失焦保存
                     ta.addEventListener('blur', function () {
                         setTimeout(() => {
@@ -17676,6 +17685,8 @@
                     document.removeEventListener('click', this._removeContextMenuBound);
                     this._removeContextMenuBound = null;
                 }
+                this._selectEventListener = null;
+                this._selectEventListenerRegistered = false;
                 this.jm = null;
                 this.selectedNodeId = null;
                 this.editingNodeId = null;
@@ -17695,12 +17706,15 @@
                 this.setSelectedNodeId(this.jm.get_root().id);
             }
             add_event_listener() {
+                if (this._selectEventListenerRegistered) return;
                 const self = this;
-                this.jm.add_event_listener(function (type, data) {
+                this._selectEventListener = function (type, data) {
                     if (type === jsMind.event_type.select) {
                         self.selectedNodeId = data.node.id;
                     }
-                });
+                };
+                this.jm.add_event_listener(this._selectEventListener);
+                this._selectEventListenerRegistered = true;
             }
             get_root() {
                 return this.jm.get_root();
@@ -17820,14 +17834,45 @@
                     }
                 }
             }
+            _getJsMindBounds() {
+                const container = document.getElementById('jsmind_container');
+                if (!container) return null;
+                const nodes = container.querySelectorAll('jmnode');
+                if (nodes.length === 0) return null;
+
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                const containerRect = container.getBoundingClientRect();
+
+                nodes.forEach(node => {
+                    const rect = node.getBoundingClientRect();
+                    const relX = rect.left - containerRect.left;
+                    const relY = rect.top - containerRect.top;
+                    minX = Math.min(minX, relX);
+                    minY = Math.min(minY, relY);
+                    maxX = Math.max(maxX, relX + rect.width);
+                    maxY = Math.max(maxY, relY + rect.height);
+                });
+
+                const padding = 50;
+                return {
+                    x: Math.max(0, minX - padding),
+                    y: Math.max(0, minY - padding),
+                    width: Math.max(container.offsetWidth, maxX - minX + padding * 2),
+                    height: Math.max(container.offsetHeight, maxY - minY + padding * 2)
+                };
+            }
+
             async jsmind_saveAsImage() {
                 const container = document.getElementById('jsmind_container');
                 if (!container) return;
+                const bounds = this._getJsMindBounds();
+                const innerContainer = container.querySelector('.jsmind-inner');
+                const targetElement = innerContainer || container;
                 let targetFileName = currentFileName;
                 targetFileName = targetFileName.replace(/\.\w+$/, '.png');
                 const title = targetFileName || (this.jm.get_root().topic + '.png');
                 try {
-                    await buildPng(container, title);
+                    await buildPng(targetElement, title, bounds);
                 } catch (err) {
                     console.error('思维导图导出图片失败:', err);
                 }
@@ -17849,8 +17894,10 @@
                     }
                 }
             }
+            _idCounter = 0;
             getID() {
-                return 'node_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+                this._idCounter = (this._idCounter || 0) + 1;
+                return 'node_' + Date.now() + '_' + this._idCounter + '_' + Math.random().toString(36).substr(2, 9);
             }
             jsmind_handleAddChild(e) {
                 const node = this.jm.get_selected_node();
@@ -17924,8 +17971,9 @@
                 const parent = this.jm.get_node(node.parent);
                 const newId = this.getID();
                 // 深拷贝节点数据
+                const self = this;
                 const jsmind_cloneNodeData = (src) => ({
-                    id: 'node_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+                    id: self.getID(),
                     topic: src.topic,
                     expanded: src.expanded,
                     data: JSON.parse(JSON.stringify(src.data || {})),
@@ -18272,7 +18320,7 @@
                 <div class="canvas-modal-content" style="width: 500px; max-height: 75vh;">
                     <div class="canvas-modal-header">
                         <span>选择图片</span>
-                        <button class="canvas-modal-close" onclick="document.getElementById('canvas-file-select-modal').remove()">&times;</button>
+                        <button class="canvas-modal-close">&times;</button>
                     </div>
                     <div class="canvas-modal-search">
                         <input type="text" id="canvas-file-search" placeholder="搜索图片..." oninput="filterCanvasFileList()">
@@ -18292,6 +18340,15 @@
             modal.style.cssText = 'position:fixed;left:0;top:0;width:100%;height:100%;background-color:rgba(0,0,0,0.5);z-index:10001;display:flex;justify-content:center;align-items:center;';
             document.body.appendChild(modal);
 
+            const cleanupAndRemove = () => {
+                modal.querySelectorAll('.canvas-file-item').forEach(i => {
+                    if (i._objUrl) URL.revokeObjectURL(i._objUrl);
+                });
+                modal.remove();
+            };
+
+            modal.querySelector('.canvas-modal-close').addEventListener('click', cleanupAndRemove);
+
             // 异步加载缩略图
             const self = this;
             modal.querySelectorAll('.canvas-file-item').forEach(async (item) => {
@@ -18303,14 +18360,12 @@
                         const url = URL.createObjectURL(file);
                         const thumb = item.querySelector('.mind-img-thumb');
                         if (thumb) thumb.style.backgroundImage = `url(${url})`;
-                        // 清理 Object URL
                         item._objUrl = url;
                     }
                 } catch (e) { /* 忽略加载失败 */ }
                 // 绑定选中事件
                 item.onclick = async () => {
                     if (node) {
-                        // 更新节点 local_images 为相对路径
                         const imgRelativePath = filePath;
                         if (node.data) {
                             node.data.local_images = imgRelativePath;
@@ -18318,11 +18373,7 @@
                             node.data = { local_images: imgRelativePath };
                         }
                         self.jm.update_node(node.id, node.topic);
-                        // 清理缩略图 Object URLs
-                        modal.querySelectorAll('.canvas-file-item').forEach(i => {
-                            if (i._objUrl) URL.revokeObjectURL(i._objUrl);
-                        });
-                        modal.remove();
+                        cleanupAndRemove();
                         showNotification('✓ 图片已设置到节点', 'success');
                     }
                 };
@@ -18330,10 +18381,7 @@
             // 点击背景关闭
             modal.onclick = (e) => {
                 if (e.target === modal) {
-                    modal.querySelectorAll('.canvas-file-item').forEach(i => {
-                        if (i._objUrl) URL.revokeObjectURL(i._objUrl);
-                    });
-                    modal.remove();
+                    cleanupAndRemove();
                 }
             };
         };
@@ -18458,11 +18506,16 @@
                     html += `<span class="mindmap-node-content-z" style="font-size: 11px;margin-bottom: 8px;">${topic}</span>`;
                 element.classList.add('jm-node-img');
                 element.innerHTML = html;
-                // 异步加载图片
-                getImage(local_images, images, node.id, false).then(imgHtml => {
-                    if (element.isConnected) {
-                        element.innerHTML = html + imgHtml;
-                    }
+                // 异步加载图片 - 添加竞态条件防护
+                const nodeId = node.id;
+                getImage(local_images, images, nodeId, false).then(imgHtml => {
+                    if (!element.isConnected) return;
+                    const currentNode = jm.get_node(nodeId);
+                    if (!currentNode) return;
+                    const currentLocalImages = currentNode.data && currentNode.data.local_images || '';
+                    const currentImages = currentNode.data && currentNode.data.images || '';
+                    if (currentLocalImages !== local_images || currentImages !== images) return;
+                    element.innerHTML = html + imgHtml;
                 });
                 return true;
             }
@@ -22542,101 +22595,93 @@
             await renderOriginalMarkdown(fileText);
         }
 
-        async function buildPng(targetElement, name) {
+        async function buildPng(targetElement, name, bounds = null) {
             if (!targetElement) {
                 throw new Error('目标元素为空');
             }
 
-            // ---- 保存/恢复样式工具函数 ----
-            const _saveStyles = (el) => ({
-                overflow: el.style.overflow,
-                overflowX: el.style.overflowX,
-                overflowY: el.style.overflowY,
-                maxHeight: el.style.maxHeight,
-                maxWidth: el.style.maxWidth,
-                height: el.style.height,
-                width: el.style.width,
-                minHeight: el.style.minHeight,
-            });
-            const _restoreStyles = (el, s) => {
-                el.style.overflow = s.overflow;
-                el.style.overflowX = s.overflowX;
-                el.style.overflowY = s.overflowY;
-                el.style.maxHeight = s.maxHeight;
-                el.style.maxWidth = s.maxWidth;
-                el.style.height = s.height;
-                el.style.width = s.width;
-                el.style.minHeight = s.minHeight;
-            };
+            const cs = window.getComputedStyle(targetElement);
+            const useBounds = bounds && bounds.width && bounds.height;
+            const shadowPadding = 50;
+            const fullWidth = (useBounds ? bounds.width : targetElement.scrollWidth) + shadowPadding * 2;
+            const fullHeight = (useBounds ? bounds.height : targetElement.scrollHeight) + shadowPadding * 2;
+            const originalCanvas = targetElement.querySelector('canvas.jsmind');
+            const canvas = await html2canvas(targetElement, {
+                scale: 2,
+                backgroundColor: '#ffffff',
+                logging: false,
+                useCORS: true,
+                allowTaint: false,
+                width: fullWidth,
+                height: fullHeight,
+                x: useBounds && bounds.x !== undefined ? bounds.x - shadowPadding : 0,
+                y: useBounds && bounds.y !== undefined ? bounds.y - shadowPadding : 0,
+                onclone: (clonedDoc, clonedElement) => {
+                    clonedElement.style.width = fullWidth + 'px';
+                    clonedElement.style.height = fullHeight + 'px';
+                    clonedElement.style.minWidth = fullWidth + 'px';
+                    clonedElement.style.minHeight = fullHeight + 'px';
+                    clonedElement.style.margin = '20px';
+                    clonedElement.style.padding = shadowPadding + 'px';
+                    clonedElement.style.boxSizing = 'border-box';
+                    clonedElement.style.overflow = 'visible';
 
-            // ---- 第一步：修改真实 DOM，解除所有裁剪、展开到完整尺寸 ----
-            const savedElements = [];
-            const collectAndFix = (el) => {
-                const cs = window.getComputedStyle(el);
-                const hasConstraint = cs.overflow !== 'visible' || cs.overflowX !== 'visible'
-                    || cs.overflowY !== 'visible' || cs.maxHeight !== 'none' || cs.maxWidth !== 'none';
-                if (hasConstraint || el === targetElement) {
-                    savedElements.push({ el, saved: _saveStyles(el) });
-                    el.style.overflow = 'visible';
-                    el.style.overflowX = 'visible';
-                    el.style.overflowY = 'visible';
-                    el.style.maxHeight = 'none';
-                    el.style.maxWidth = 'none';
-                }
-                for (let i = 0; i < el.children.length; i++) {
-                    collectAndFix(el.children[i]);
-                }
-            };
-            // 修复祖先
-            const savedAncestors = [];
-            let parent = targetElement.parentElement;
-            while (parent && parent !== document.body && parent !== document.documentElement) {
-                savedAncestors.push({ el: parent, saved: _saveStyles(parent) });
-                parent.style.overflow = 'visible';
-                parent.style.overflowX = 'visible';
-                parent.style.overflowY = 'visible';
-                parent.style.maxHeight = 'none';
-                parent.style.maxWidth = 'none';
-                parent = parent.parentElement;
-            }
-            // 修复目标自身及所有后代
-            collectAndFix(targetElement);
-            // 展开目标元素到完整内容尺寸
-            targetElement.style.height = targetElement.scrollHeight + 'px';
-            targetElement.style.width = targetElement.scrollWidth + 'px';
-            targetElement.style.minHeight = targetElement.scrollHeight + 'px';
-            // 强制重排使修改生效
-            void targetElement.offsetHeight;
-
-            // 再次读取完整尺寸（修复后可能变化）
-            const finalW = targetElement.scrollWidth;
-            const finalH = targetElement.scrollHeight;
-
-            // ---- 第二步：截图（此时真实 DOM 已完全展开，JS 设置的尺寸均保留） ----
-            let canvas;
-            try {
-                canvas = await html2canvas(targetElement, {
-                    scale: 3,
-                    backgroundColor: '#ffffff',
-                    logging: false,
-                    useCORS: true,
-                    allowTaint: false,
-                    width: finalW,
-                    height: finalH,
-                    onclone: (clonedDoc, element) => {
-                        element.style.margin = '30px';
+                    const jsmindCanvas = clonedElement.querySelector('canvas.jsmind');
+                    if (jsmindCanvas && originalCanvas) {
+                        const newWidth = fullWidth;
+                        const newHeight = fullHeight;
+                        const oldWidth = jsmindCanvas.width;
+                        const oldHeight = jsmindCanvas.height;
+                        jsmindCanvas.style.width = newWidth + 'px';
+                        jsmindCanvas.style.height = newHeight + 'px';
+                        const ctx = jsmindCanvas.getContext('2d', { willReadFrequently: true });
+                        const tempCanvas = document.createElement('canvas');
+                        tempCanvas.width = oldWidth;
+                        tempCanvas.height = oldHeight;
+                        tempCanvas.getContext('2d', { willReadFrequently: true }).drawImage(jsmindCanvas, 0, 0);
+                        jsmindCanvas.width = newWidth;
+                        jsmindCanvas.height = newHeight;
+                        ctx.drawImage(tempCanvas, 0, 0);
                     }
-                });
-            } finally {
-                // ---- 第三步：恢复所有原始样式 ----
-                for (let i = savedElements.length - 1; i >= 0; i--) {
-                    _restoreStyles(savedElements[i].el, savedElements[i].saved);
-                }
-                for (let i = savedAncestors.length - 1; i >= 0; i--) {
-                    _restoreStyles(savedAncestors[i].el, savedAncestors[i].saved);
-                }
-            }
 
+                    let parent = clonedElement.parentElement;
+                    while (parent && parent !== clonedDoc.body && parent !== clonedDoc.documentElement) {
+                        const parentStyle = clonedDoc.defaultView.getComputedStyle(parent);
+                        if (parentStyle.overflow !== 'visible' || parentStyle.overflowX !== 'visible' || parentStyle.overflowY !== 'visible') {
+                            parent.style.overflow = 'visible';
+                            parent.style.overflowX = 'visible';
+                            parent.style.overflowY = 'visible';
+                        }
+                        if (parentStyle.maxHeight !== 'none') {
+                            parent.style.maxHeight = 'none';
+                        }
+                        if (parentStyle.maxWidth !== 'none') {
+                            parent.style.maxWidth = 'none';
+                        }
+                        if (parentStyle.height !== 'auto' && parentStyle.height !== '') {
+                            parent.style.height = 'auto';
+                        }
+                        if (parentStyle.width !== 'auto' && parentStyle.width !== '') {
+                            parent.style.width = 'auto';
+                        }
+                        parent = parent.parentElement;
+                    }
+
+                    const cloneBody = clonedDoc.body;
+                    cloneBody.style.margin = '0';
+                    cloneBody.style.padding = '0';
+                    cloneBody.style.overflow = 'visible';
+                    cloneBody.style.backgroundColor = backgroundColor;
+
+                    const cloneHtml = clonedDoc.documentElement;
+                    cloneHtml.style.margin = '0';
+                    cloneHtml.style.padding = '0';
+                    cloneHtml.style.overflow = 'visible';
+                }
+            });
+            if (!canvas || !canvas.width || !canvas.height) {
+                throw new Error('画布生成失败，尺寸为空');
+            }
             name = name ? name.replace(/\.\w+$/, '.png') : 'export.png';
             const link = document.createElement('a');
             link.download = name;
@@ -22644,8 +22689,7 @@
             link.click();
         }
 
-        let isExporting = false;
-
+        let isExporting = false; // 导出状态
         async function mdToImage() {
             if (isExporting) return;
             isExporting = true;
@@ -22653,7 +22697,6 @@
             mdImageBtn.style.alignItems = 'center';
             mdImageBtn.innerHTML = '<span class="spinner"></span>导出中...';
             void mdImageBtn.offsetHeight;
-            // 使用 setTimeout 0 确保按钮状态已渲染后再执行耗时操作
             await new Promise(resolve => setTimeout(resolve, 0));
             try {
                 let fileName = currentFileName;
@@ -22678,6 +22721,19 @@
                     }
                 } else if (fileName.endsWith('.csv')) {
                     targetElement = contentMain.querySelector('#csv-sheet-table');
+                } else if (fileName.endsWith('.drawio')) {
+                    showNotification('Drawio 文件无法通过此方式导出图片，请使用 Drawio 内置导出功能', 'warning');
+                    return;
+                } else if (fileName.endsWith('.mmd')) {
+                    targetElement = mermaidAppContainer.querySelector('#mermaid-preview');
+                } else if (fileName.endsWith('.excalidraw')) {
+                    targetElement = contentMain.querySelector('#excalidraw-container');
+                } else if (fileName.endsWith('.canvas')) {
+                    targetElement = contentMain.querySelector('.canvas-container');
+                }
+                if (!targetElement) {
+                    showNotification('未找到可导出的内容', 'error');
+                    return;
                 }
                 await buildPng(targetElement, fileName);
                 showNotification('图片导出成功！', 'success');
@@ -27496,7 +27552,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     const actualHeight = img.height || img.naturalHeight || 600;
                     c.width = actualWidth * s;
                     c.height = actualHeight * s;
-                    const xMermaid = c.getContext("2d");
+                    const xMermaid = c.getContext("2d", { willReadFrequently: true });
                     xMermaid.scale(s, s);
                     xMermaid.fillStyle = "#fff";
                     xMermaid.fillRect(0, 0, actualWidth, actualHeight);
@@ -27522,7 +27578,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const actualHeight = img.height || img.naturalHeight || 600;
                 c.width = actualWidth * s;
                 c.height = actualHeight * s;
-                const x = c.getContext("2d");
+                const x = c.getContext("2d", { willReadFrequently: true });
                 x.scale(s, s);
                 if (fmtMermaid === "jpg") {
                     x.fillStyle = "#fff";
@@ -31038,7 +31094,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 var serializer = new XMLSerializer();
                 var svgStr = serializer.serializeToString(svgEl);
                 var canvas = document.createElement('canvas');
-                var ctx = canvas.getContext('2d');
+                var ctx = canvas.getContext('2d', { willReadFrequently: true });
                 var img = new Image();
                 img.onload = function () {
                     canvas.width = img.width * 2;
@@ -33306,7 +33362,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         class GraphRenderer {
             constructor(canvas) {
                 this.canvas = canvas;
-                this.ctx = canvas.getContext('2d');
+                this.ctx = canvas.getContext('2d', { willReadFrequently: true });
                 this.dpr = Math.max(window.devicePixelRatio || 1, 2);
                 this.width = canvas.width / this.dpr;
                 this.height = canvas.height / this.dpr;
@@ -33803,7 +33859,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         function initGraphCanvas() {
             graphCanvas = document.getElementById('graph-canvas');
-            graphCtx = graphCanvas.getContext('2d');
+            graphCtx = graphCanvas.getContext('2d', { willReadFrequently: true });
             resizeFileGraphCanvas();
             window.removeEventListener('resize', resizeFileGraphCanvas);
             window.addEventListener('resize', resizeFileGraphCanvas);
@@ -37765,7 +37821,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             canvasEl.height = Math.ceil(totalHeight * dpr);
             canvasEl.style.width = totalWidth + 'px';
             canvasEl.style.height = totalHeight + 'px';
-            const ctx = canvasEl.getContext('2d');
+            const ctx = canvasEl.getContext('2d', { willReadFrequently: true });
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // 重置变换矩阵再 scale
             ctx.clearRect(0, 0, totalWidth, totalHeight);
             for (const branch of gitGraphInstance.branches) branch.drawCanvas(ctx, -1);
