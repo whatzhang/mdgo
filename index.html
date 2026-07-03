@@ -2411,6 +2411,7 @@
             background: transparent;
             font-size: 11px;
             color: var(--t1);
+            font-weight: 600;
             cursor: pointer;
             text-align: center;
             transition: background 0.15s, border-color 0.15s;
@@ -7530,6 +7531,24 @@
             background: var(--color-text-tertiary) !important;
         }
 
+        .jsmind-custom-edit ::-webkit-scrollbar {
+            width: 3px !important;
+            height: 3px !important;
+        }
+
+        .jsmind-custom-edit ::-webkit-scrollbar-track {
+            background: transparent !important;
+        }
+
+        .jsmind-custom-edit ::-webkit-scrollbar-thumb {
+            background: var(--color-border, #d0d7de) !important;
+            border-radius: 2px !important;
+        }
+
+        .jsmind-custom-edit ::-webkit-scrollbar-thumb:hover {
+            background: var(--color-text-tertiary) !important;
+        }
+
         .jm-node-img {
             display: flex;
             flex-direction: column;
@@ -7619,16 +7638,19 @@
             border-color: #d9e1e8;
             padding: 10px;
             box-shadow: 1px 1px 1px 1px #b1b1b1 !important;
+            z-index: 100;
         }
 
         jmnodes.theme-self jmnode:hover {
             border: 1px solid var(--color-success);
             box-shadow: 1px 1px 1px 1px var(--color-success) !important;
+            z-index: 200;
         }
 
         jmnodes.theme-self jmnode.selected {
             border: 1px solid var(--color-primary);
             box-shadow: 1px 1px 1px 1px var(--color-primary) !important;
+            z-index: 200;
         }
 
         jmnodes.theme-self jmnode.root {
@@ -15084,6 +15106,7 @@
                             fileExists = false;
                         }
                         if (fileExists) {
+                            await navigateToDir(newRelativePath, false);
                             showNotification(`⚠️ 目录已存在: ${newRelativePath}`, 'warning');
                             return;
                         }
@@ -15102,11 +15125,12 @@
                             } else {
                                 parentDom.appendChild(dirEntry.details);
                             }
-                            // 展开父目录
+                            // 展开父目录   
                             if (!parentDom.open) {
                                 parentDom.open = true;
                                 saveDirExpandedState(dirPath, true);
                             }
+                            await navigateToDir(newRelativePath, false);
                             recordOperation(dirName, newRelativePath, OPERATION_TYPES.CREATE);
                             showNotification(`✓ 已创建目录: ${newRelativePath}`, 'success');
                         }
@@ -15130,6 +15154,7 @@
                             fileExists = false;
                         }
                         if (fileExists) {
+                            await openFileFromPath(newRelativePath);
                             showNotification(`⚠️ 文件已存在: ${newRelativePath}`, 'warning');
                             return;
                         }
@@ -15233,10 +15258,10 @@
                 } catch (e) {
                     fileExists = false;
                 }
+                const newRelativeParentPath = dirPath ? dirPath : '';
+                const newRelativePath = newRelativeParentPath ? joinPath(newRelativeParentPath, fileName) : fileName;
                 const doSave = async (fileExists = false) => {
                     const fileHandle = await writeFileByDirHandle(dirHandle, fileName, content);
-                    const newRelativeParentPath = dirPath ? dirPath : '';
-                    const newRelativePath = newRelativeParentPath ? joinPath(newRelativeParentPath, fileName) : fileName;
                     safeLocalStorageSet(LAST_FILE_KEY, newRelativePath);
                     if (newRelativeParentPath) {
                         // 确保目标目录已加载（懒加载目录需先展开）
@@ -15262,6 +15287,7 @@
                     showNotification(`✓ 文件已保存: ${newRelativePath}`, 'success');
                 };
                 if (fileExists) {
+                    await navigateToFile(newRelativePath);
                     showConfirmModal('文件冲突', `目标路径已存在同名文件 "${fileName}"，保存将覆盖该文件，是否继续？`, async (confirmed) => {
                         if (!confirmed) return;
                         await doSave(true);
@@ -17550,10 +17576,10 @@
             initOverrideMethods() {
                 this.overrideUpdateNode();
             }
+            //思维导图编辑
             _initCustomEdit() {
                 const self = this;
                 const jm = this.jm;
-                // 保存原始的 begin_edit
                 const _origBeginEdit = jm.begin_edit.bind(jm);
                 jm.begin_edit = async function (node) {
                     const container = document.getElementById('jsmind_container');
@@ -17588,7 +17614,6 @@
                     ta.style.setProperty('position', 'absolute');
                     ta.style.setProperty('width', 'auto');
                     ta.style.setProperty('height', 'auto');
-                    ta.style.setProperty('z-index', '100');
                     if (nodeRect.width < 150) {
                         if (direction === 1) {
                             ta.style.setProperty('right', -(offset + 2 + 150) + 'px');
@@ -17599,14 +17624,14 @@
                     Object.assign(ta.style, {
                         zIndex: '100',
                         boxSizing: 'border-box',
-                        padding: '8px 10px',
+                        padding: '20px',
                         margin: '0',
                         border: '1.5px solid var(--color-primary, #4A90D9)',
-                        borderRadius: '5px',
+                        borderRadius: '7px',
                         outline: 'none',
                         background: 'var(--color-bg, #fff)',
                         color: 'var(--color-text, #333)',
-                        fontSize: (node.isroot ? 16 : 13) + 'px',
+                        fontSize: '13px',
                         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
                         lineHeight: '1.5',
                         resize: 'both',
@@ -17666,7 +17691,6 @@
                     ta.addEventListener('mouseup', function (e) {
                         e.stopPropagation();
                     }, true);
-                    // 失焦保存
                     ta.addEventListener('blur', function () {
                         setTimeout(async () => {
                             if (self._isProcessingImage) return; // 图片粘贴处理中，跳过
@@ -18359,8 +18383,8 @@
                     if (node.topic === basename(imgPath)) {
                         node.topic = '';
                     }
-                    node.data.local_images = ''; 
-                    delete node.data.images; 
+                    node.data.local_images = '';
+                    delete node.data.images;
                     this.jm.update_node(node.id, node.topic, { ...node.data });
                 }
                 showNotification('✓ 图片已删除', 'success');
@@ -18421,7 +18445,7 @@
                 const value = textarea.value.trim();
                 if (!node.data) node.data = {};
                 node.data.note = value;
-                this.jm.update_node(node.id, node.topic, { ...node.data }); 
+                this.jm.update_node(node.id, node.topic, { ...node.data });
                 showNotification('✓ 备注已更新', 'success');
                 close();
             });
@@ -18612,31 +18636,93 @@
 
         // 检测文本是否包含 Markdown 格式
         function hasMarkdown(text) {
-            if (!text) return false;
-            if (typeof text !== 'string') return false;
-            if (text.length < 2) return false;
-            // 快速预检：多字符标记 + 管道符（表格强信号），避免 # $ > * _ - ` 等单字符误判
-            if (/```|~~|==|\*\*|__|\[.+?\]\(.+?\)|!\[.+?\]\(.+?\)|\[\[.+?\]\]|!\[\[.+?\]\]|\$\$|%%|< !-- |-->|\|/.test(text)) return true;
-            // 表格检测（至少 2 行以 | 开头结尾）
-            const pipeLines = text.split('\n')
-                .filter(l => /^\s*\|.*\|\s*$/.test(l)).length;
-            if (pipeLines >= 2) return true;
-            const patterns = [
-                /^\s{0,3}#{1,6}\s+\S+/m,           // 标题
-                /^\s{0,3}[-*+]\s+\S+/m,            // 无序列表
-                /^\s{0,3}\d{1,3}\.\s+\S+/m,        // 有序列表
-                /^\s*>\s+\S+/m,                     // 引用
-                /^\s*[-*]\s\[[ xX]\]\s+/m,          // task list（修复：$$ → []）
-                /`[^`\n]+`/,                        // 行内代码
-                /\*\*[^*\n]+\*\*/,                  // 粗体
-                /(?:^|\s)(\*[^*\n]+\*|_[^_\n]+_)(?=\s|$)/, // 斜体
-                /^\s*>\s*\[!\w+\]/m,                // Callout（修复：$$ → []）
-                /^---\n[\s\S]*?\n---/,              // FrontMatter
-                /^\|.+\|\s*\n\|[-: ]+\|/m,          // Markdown Table
-                /^\s*([-*_]){3,}\s*$/m,             // Horizontal Rule
-                /(^|\s)#[\w\u4e00-\u9fa5/_-]+/u     // Tag（Unicode 模式）
-            ];
-            return patterns.some(pattern => pattern.test(text));
+            if (!text || typeof text !== 'string') return false;
+            const len = text.length;
+            if (len < 3) return false;
+            // 快速排除：无 Markdown 元字符
+            if (!/[*_`#>\[\]!\-|~]/.test(text)) return false;
+            const MAX_LINES = 5000, MAX_LINE_LEN = 4096;
+            let pos = 0, lineCount = 0, potentialTableHeader = false;
+            // 弱信号计数器（引入交叉验证）
+            let weakSignals = { bold: 0, italic: 0, code: 0, strike: 0, link: 0 };
+            const regex = {
+                header: /^\s{0,3}#{1,6}\s+\S/,
+                list: /^\s{0,3}[-*+]\s+\S/,
+                numList: /^\s{0,3}\d{1,3}\.\s+\S/,
+                quote: /^\s*>\s+\S/,
+                codeBlock: /^\s*(`{3,}|~{3,})/,
+                hr: /^\s*([-*_])(?:\s*\1){2,}\s*$/,
+                task: /^\s*[-*+]\s+\[[ xX]\]\s+/,
+                tableDivider: /^\s*\|?[:\s-]+\|[:\s-|]*\s*$/, // 修复范围 bug
+                // 严格行内正则（增加词边界）
+                inlineLink: /!?\[[^\]\n]+\]\([^)\n]+\)/,
+                inlineCode: /`[^`\s\n][^`\n]*`/,
+                boldStar: /(?:^|[^A-Za-z0-9_*])\*\*[^*\s\n][^*\n]*\*\*(?:[^A-Za-z0-9_*]|$)/,
+                boldUnder: /(?:^|[^A-Za-z0-9_])__(?!_)[^_\s\n][^_\n]*__(?:[^A-Za-z0-9_]|$)/,
+                italicStar: /(?:^|[^A-Za-z0-9_*])\*(?!\*)[^*\s\n][^*\n]*\*(?:[^A-Za-z0-9_*]|$)/,
+                italicUnder: /(?:^|[^A-Za-z0-9_])_(?!_)[^_\s\n][^_\n]*_(?:[^A-Za-z0-9_]|$)/,
+                strike: /~~[^~\s\n][^~\n]*~~/
+            };
+            const checkWeak = (pattern, key) => {
+                if (pattern.test(line)) {
+                    weakSignals[key]++;
+                    // 链接是强信号，直接返回
+                    if (key === 'link') return true;
+                    // 同一行内多类别达到阈值，提前返回
+                    const categories = Object.values(weakSignals).filter(v => v > 0).length;
+                    const total = Object.values(weakSignals).reduce((a, b) => a + b, 0);
+                    if (categories >= 2 && total >= 2) return true;
+                    if (total >= 4) return true;
+                }
+                return false;
+            };
+            while (pos < len && lineCount < MAX_LINES) {
+                lineCount++;
+                let nextNL = text.indexOf('\n', pos);
+                if (nextNL === -1) nextNL = len;
+                const lineEnd = (nextNL - pos) > MAX_LINE_LEN ? pos + MAX_LINE_LEN : nextNL;
+                const line = text.substring(pos, lineEnd);
+                pos = nextNL + 1;
+                if (line.length < 2) { potentialTableHeader = false; continue; }
+                const trimmed = line.trimStart();
+                if (trimmed.length === 0) { potentialTableHeader = false; continue; }
+                const fc = trimmed[0];
+                // 块级强信号（保持你的 O(1) 分流）
+                if (fc === '#') { if (regex.header.test(line)) return true; }
+                else if (fc === '-' || fc === '*' || fc === '+') {
+                    if (regex.task.test(line)) return true;
+                    if (regex.list.test(line)) return true;
+                    if (regex.hr.test(line)) return true;
+                } else if (fc === '>') { if (regex.quote.test(line)) return true; }
+                else if (fc === '`' || fc === '~') { if (regex.codeBlock.test(line)) return true; }
+                else if (fc >= '0' && fc <= '9') { if (regex.numList.test(line)) return true; }
+                else if (fc === '_') { if (regex.hr.test(line)) return true; }
+                // 表格状态机
+                if (line.includes('|')) {
+                    if (potentialTableHeader && regex.tableDivider.test(line)) return true;
+                    potentialTableHeader = /^\s*\|.+\|\s*$/.test(line);
+                } else { potentialTableHeader = false; }
+                // 行内弱信号（计数器模式，不立即返回）
+                if (line.includes('[') && checkWeak(regex.inlineLink, 'link')) return true;
+                if (line.includes('`') && checkWeak(regex.inlineCode, 'code')) return true;
+                if (line.includes('*')) {
+                    if (checkWeak(regex.boldStar, 'bold')) return true;
+                    if (checkWeak(regex.italicStar, 'italic')) return true;
+                }
+                if (line.includes('_')) {
+                    if (checkWeak(regex.boldUnder, 'bold')) return true;
+                    if (checkWeak(regex.italicUnder, 'italic')) return true;
+                }
+                if (line.includes('~') && checkWeak(regex.strike, 'strike')) return true;
+            }
+
+            if (len > pos && lineCount >= MAX_LINES) {
+                const tail = text.substring(len - Math.min(8192, len - pos));
+                return /^\s{0,3}#{1,6}\s+\S/m.test(tail) ||
+                    /^\s{0,3}[-*+]\s+\S/m.test(tail) ||
+                    /`[^`\s\n][^`\n]*`/m.test(tail);
+            }
+            return false;
         }
         // 直角折线
         const elbowLineRender = ({ ctx, start_point: sp, end_point: ep }) => {
@@ -19256,20 +19342,22 @@
         async function checkFileExists(targetFileName) {
             const lastFilePath = safeLocalStorageGet(LAST_FILE_KEY);
             if (!lastFilePath) {
-                return false;
+                return { exists: false, path: '' };
             }
+            let newRelativePath = '';
             try {
                 const parts = normalizePath(lastFilePath).split(SLASH).filter(p => p);
                 let currentDir = getRootHandle();
                 // 遍历到目标文件所在的目录（去掉最后一个文件名部分）
                 for (let i = 0; i < parts.length - 1; i++) {
                     currentDir = await getDirectoryHandle(currentDir, parts[i]);
+                    newRelativePath = joinPath(newRelativePath, parts[i]);
                 }
                 // 检查目标文件是否存在
                 await getFileHandleByDirHandle(currentDir, targetFileName);
-                return true;
+                return { exists: true, path: newRelativePath };
             } catch (error) {
-                return false;
+                return { exists: false, path: '' };
             }
         }
 
@@ -19280,8 +19368,9 @@
             }
             let targetFileName = currentFileName;
             targetFileName = targetFileName.replace(/\.\w+$/, '.svg');
-            const exists = await checkFileExists(targetFileName);
+            const { exists, path } = await checkFileExists(targetFileName);
             if (exists) {
+                await navigateToFile(path);
                 showConfirmModal('确认覆盖', `文件 ${targetFileName} 已存在,是否覆盖?`, (confirmed) => {
                     if (confirmed) {
                         saveSvgToFolder(cachedPlantUMLSVG, targetFileName);
@@ -22640,9 +22729,10 @@
             } else {
                 html = `<div class="card-title ${card.checked ? 'checked' : ''}">${html}</div>`;
             }
-            let cardBody = '';
-            if (card.body) cardBody = (await markedParse(parseObsidianToHTML(card.body))).trim();
-            html += `<div class="kanban-card-body" style="font-size: 13px; line-height: 1;padding-left: 14px;"><div class="markdown-body" style="background-color: var(--color-bg);">${cardBody}</div></div>`;
+            if (card.body) {
+                let cardBody = (await markedParse(parseObsidianToHTML(card.body))).trim();
+                html += `<div class="kanban-card-body" style="font-size: 13px; line-height: 1;padding-left: 14px;"><div class="markdown-body" style="background-color: var(--color-bg);">${cardBody}</div></div>`;
+            }
             if (card.taskList && card.taskList.length > 0) {
                 html += '<div class="kanban-tasks">';
                 for (const task of card.taskList) {
@@ -22838,11 +22928,11 @@
                         const oldHeight = jsmindCanvas.height;
                         jsmindCanvas.style.width = newWidth + 'px';
                         jsmindCanvas.style.height = newHeight + 'px';
-                        const ctx = jsmindCanvas.getContext('2d', { willReadFrequently: true });
+                        const ctx = jsmindCanvas.getContext('2d');
                         const tempCanvas = document.createElement('canvas');
                         tempCanvas.width = oldWidth;
                         tempCanvas.height = oldHeight;
-                        tempCanvas.getContext('2d', { willReadFrequently: true }).drawImage(jsmindCanvas, 0, 0);
+                        tempCanvas.getContext('2d').drawImage(jsmindCanvas, 0, 0);
                         jsmindCanvas.width = newWidth;
                         jsmindCanvas.height = newHeight;
                         ctx.drawImage(tempCanvas, 0, 0);
@@ -23895,6 +23985,7 @@
                         showNotification(`✓ 文件已还原: ${originalPath}`, 'success');
                     };
                     if (fileExists) {
+                        await navigateToFile(originalPath);
                         showConfirmModal('文件冲突', `原路径已存在同名文件 "${fileName}"，还原将覆盖该文件，是否继续？`, async (confirmed) => {
                             if (!confirmed) return;
                             await doRestore(true);
@@ -24198,6 +24289,8 @@
             if (months < 12) return months + '月前';
             return years + '年前';
         }
+        const _dirIconSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="#e8a735"><path d="M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v2h20V8c0-1.1-.9-2-2-2z"/><path d="M2 10h20v10c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V10z"/></svg>';
+        const _fileIconSvg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='14' height='14' fill='none' stroke='#0077ff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z'/><path d='M9 12h6'/><path d='M9 16h4'/> </svg>";
         function renderMarkerList(items, listEl) {
             if (!items || items.length === 0) {
                 listEl.innerHTML = '<div class="marker-empty">暂无标记</div>';
@@ -24216,8 +24309,7 @@
                 }) : '';
 
                 const isDir = i.type === 'dir';
-                const icon = isDir ? '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="#e8a735"><path d="M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v2h20V8c0-1.1-.9-2-2-2z"/><path d="M2 10h20v10c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V10z"/></svg>'
-                    : "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='14' height='14' fill='none' stroke='#0077ff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z'/><path d='M9 12h6'/><path d='M9 16h4'/> </svg>";
+                const icon = isDir ? _dirIconSvg : _fileIconSvg;
                 const id = 'marker_' + _pathToId(np);
                 // 使用 data-path 属性存储路径，避免 onclick 属性中的转义问题
                 const onClickClear = `event.stopPropagation();clearMarker(this.getAttribute('data-path'))`;
@@ -25696,7 +25788,7 @@
                 netSearchDropdown.innerHTML = html;
             }
         }
-
+        //首页面板
         async function toggleDashboardView(isFirst = false, data = null) {
             const _scanStart = performance.now();
             await switchToView(dashboardContainer);
@@ -26183,6 +26275,7 @@
         }
 
         async function openFileFromPath(filePath) {
+            if (!filePath) return;
             const normalizedPath = normalizePath(filePath);
             let targetItem = treeElement.querySelector(`.file-item[data-file-path="${normalizedPath}"]`);
             if (!targetItem) {
@@ -26197,13 +26290,30 @@
                 return;
             } else {
                 //递归查看是否需要展开目录，如果父目录未展开，展开父目录
-                expandPathToFileParent(targetItem);
-                clickFileSpan(normalizedPath, targetItem);
+                await expandPathToFileParent(targetItem);
+                targetItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                targetItem.click();
                 showNotification('已打开文件: ' + filePath, 'success');
             }
         }
 
-        async function navigateToDir(dirPath) {
+        async function navigateToFile(filePath) {
+            if (!filePath) return;
+            const normalizedPath = normalizePath(filePath);
+            let targetItem = treeElement.querySelector(`.file-item[data-file-path="${normalizedPath}"]`);
+            if (!targetItem) {
+                targetItem = await expandPathToFile(normalizedPath);
+                if (!targetItem) return;
+            } else {
+                //递归查看是否需要展开目录，如果父目录未展开，展开父目录
+                await expandPathToFileParent(targetItem);
+            }
+            targetItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            targetItem.style.background = '#ffe0a0';
+            setTimeout(() => { targetItem.style.removeProperty('background'); }, 1500);
+        }
+
+        async function navigateToDir(dirPath, isNotify = true) {
             const np = normalizePath(dirPath);
             const selector = `[data-dir-key="${CSS.escape(np)}"]`;
             let targetDetails = treeElement.querySelector(selector);
@@ -26216,7 +26326,7 @@
                 return;
             }
             // 先展开所有父级目录（确保目标目录在视图中可见）
-            expandPathToFileParent(targetDetails);
+            await expandPathToFileParent(targetDetails);
             // 展开目标目录自身
             if (!targetDetails.open) {
                 targetDetails.open = true;
@@ -26228,7 +26338,7 @@
                 summary.style.background = '#ffe0a0';
                 setTimeout(() => { summary.style.background = ''; }, 1500);
             }
-            showNotification('已定位目录: ' + np, 'success');
+            if (isNotify) showNotification('已定位目录: ' + np, 'success');
         }
         async function expandPathToFileParent(targetItem) {
             let parent = targetItem.parentElement;
@@ -26857,6 +26967,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     fileExists = false;
                 }
                 if (fileExists) {
+                    await navigateToFile(joinPath(dirPath, fileName));
                     showConfirmModal('文件冲突', `目标路径已存在同名文件 "${fileName}"，保存将覆盖该文件，是否继续？`, async (confirmed) => {
                         if (!confirmed) return;
                         await doSaveAIResult(dirHandle, dirPath, fileName, content, true);
@@ -27756,7 +27867,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     const actualHeight = img.height || img.naturalHeight || 600;
                     c.width = actualWidth * s;
                     c.height = actualHeight * s;
-                    const xMermaid = c.getContext("2d", { willReadFrequently: true });
+                    const xMermaid = c.getContext("2d");
                     xMermaid.scale(s, s);
                     xMermaid.fillStyle = "#fff";
                     xMermaid.fillRect(0, 0, actualWidth, actualHeight);
@@ -27782,7 +27893,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const actualHeight = img.height || img.naturalHeight || 600;
                 c.width = actualWidth * s;
                 c.height = actualHeight * s;
-                const x = c.getContext("2d", { willReadFrequently: true });
+                const x = c.getContext("2d");
                 x.scale(s, s);
                 if (fmtMermaid === "jpg") {
                     x.fillStyle = "#fff";
@@ -31308,7 +31419,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 var serializer = new XMLSerializer();
                 var svgStr = serializer.serializeToString(svgEl);
                 var canvas = document.createElement('canvas');
-                var ctx = canvas.getContext('2d', { willReadFrequently: true });
+                var ctx = canvas.getContext('2d');
                 var img = new Image();
                 img.onload = function () {
                     canvas.width = img.width * 2;
@@ -33576,7 +33687,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         class GraphRenderer {
             constructor(canvas) {
                 this.canvas = canvas;
-                this.ctx = canvas.getContext('2d', { willReadFrequently: true });
+                this.ctx = canvas.getContext('2d');
                 this.dpr = Math.max(window.devicePixelRatio || 1, 2);
                 this.width = canvas.width / this.dpr;
                 this.height = canvas.height / this.dpr;
@@ -34073,7 +34184,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         function initGraphCanvas() {
             graphCanvas = document.getElementById('graph-canvas');
-            graphCtx = graphCanvas.getContext('2d', { willReadFrequently: true });
+            graphCtx = graphCanvas.getContext('2d');
             resizeFileGraphCanvas();
             window.removeEventListener('resize', resizeFileGraphCanvas);
             window.addEventListener('resize', resizeFileGraphCanvas);
@@ -38035,7 +38146,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             canvasEl.height = Math.ceil(totalHeight * dpr);
             canvasEl.style.width = totalWidth + 'px';
             canvasEl.style.height = totalHeight + 'px';
-            const ctx = canvasEl.getContext('2d', { willReadFrequently: true });
+            const ctx = canvasEl.getContext('2d');
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // 重置变换矩阵再 scale
             ctx.clearRect(0, 0, totalWidth, totalHeight);
             for (const branch of gitGraphInstance.branches) branch.drawCanvas(ctx, -1);
