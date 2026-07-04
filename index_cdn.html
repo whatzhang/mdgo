@@ -12575,6 +12575,9 @@
             <button id="new-file-clear-btn" class="btn btn-success btn-sm" onclick="newFileClear()">
                 清空
             </button>
+            <button id="new-file-copy-btn" class="btn btn-warning btn-sm" onclick="copyEditorCode()">
+                复制
+            </button>
         </div>
         <!-- Canvas 白板工具栏（保存） -->
         <div id="canvas-top-left-controls" class="top-left-controls" style="display: none;">
@@ -13568,6 +13571,7 @@
             { key: 'Canvas文档白板', value: 'toggleFile("canvas")', display: true, fileProtocolDisplay: true },
             { key: '思维导图', value: 'toggleFile("mindMap")', display: true, fileProtocolDisplay: true },
             { key: '番茄钟', value: 'toggleFile("pomodoro")', display: true, fileProtocolDisplay: true },
+            { key: '临时编辑器', value: 'toggleFile("tempEditor")', display: true, fileProtocolDisplay: true },
         ]
         // 高亮字体颜色（深色系，确保可读性）
         const HIGHLIGHT_FONT_COLORS = [
@@ -13891,6 +13895,7 @@
         }
         let connectingFrom = null; // { nodeId, side } | null — 连线模式：已选中的起点连接点
         let mmModel = ''; // 当前思维导图模型类型（opml 或 mm）
+        let isTempEditor = false; // 是否为临时编辑器
 
         // ====== DOM 元素缓存（避免重复查询） ======
         const treeElement = document.getElementById('tree');
@@ -14061,9 +14066,11 @@
                 showNotification('✗ 请先打开根目录', 'error');
                 return;
             }
+            if (lastToggle === 'tempEditor') saveTempEditorValue();
             previewFileText = '';
             let destroyForce = lastToggle === 'newFile'
                 || lastToggle === 'openRestyEditor'
+                || lastToggle === 'tempEditor'
                 || (lastToggle === 'randomOpen' && type === 'randomOpen');
             let diffSave = lastToggle === 'renderFile'
                 || lastToggle === 'randomOpen';
@@ -14116,12 +14123,14 @@
             } else if (type === 'wordCloud') {
                 await openWordCloudFile();
             } else if (type === 'gitRecords') {
-                await openGitPage();
+                await openGitPageCore(null);
             } else if (type === 'pomodoro') {
                 await openPomodoro();
+            } else if (type === 'tempEditor') {
+                await openTempEditor();
             } else if (type === 'mindMap') {
                 await openMindMap();
-            } else if (type === 'picLayoutDisplay') {
+            } else if (type === 'picLayoutDisplay') {  //目录右键
                 await picLayoutDisplay(data.dirPathStr);
             } else if (type === 'openWordCloudFile') {
                 await openWordCloudFile(data.dirPathStr);
@@ -14129,6 +14138,14 @@
                 await dirGraphDisplay(data.dirPathStr);
             } else if (type === 'openNoteGraph') {
                 await openNoteGraph(data.dirPathStr);
+            } else if (type === 'restoreFile') {  //文件右键
+                await restoreFile(data.relativePath, data.fileSpan);
+            } else if (type === 'deleteFile') {  //文件右键
+                await deleteFileTreeItem(data.relativePath, data.isForever, data.fileSpan);
+            } else if (type === 'fileGitRecord') {  //文件右键
+                await openGitPageCore(data.relativePath);
+            } else if (type === 'copyFile') {  //文件右键
+                await copyCurrentFile(data.relativePath);
             }
             lastToggle = type;
         }
@@ -15096,7 +15113,7 @@
 
         async function copyToClipboard() {
             if (!currentFileHandle) {
-                console.error('currentFileHandle is null');
+                //临时
                 return;
             }
             try {
@@ -15248,7 +15265,6 @@
         }
 
         let isDiary = false;
-
         async function newFile(fileName) {
             if (!fileName || fileName === '') {
                 return;
@@ -15333,11 +15349,12 @@
                     const confirmed = await showConfirmModalAsync('文件冲突', `目标路径已存在同名文件 "${fileName}"，保存将覆盖该文件，是否继续？`);
                     if (confirmed) {
                         await doSave(true);
+                        closeSaveFolderPanel();
                     }
                 } else {
                     await doSave();
+                    closeSaveFolderPanel();
                 }
-                closeSaveFolderPanel();
             } catch (error) {
                 console.error('保存文件失败:' + fileName, error);
                 showNotification('✗ 保存失败: ' + error.message, 'error');
@@ -15535,10 +15552,23 @@
         }
 
         async function newFileClear() {
-            if (!currentEditor) {
-                return;
-            }
+            if (!currentEditor) return;
             currentEditor.setValue('');
+        }
+
+        async function copyEditorCode() {
+            if (!currentEditor) return;
+            const code = currentEditor.getValue();
+            if (code) {
+                try {
+                    await navigator.clipboard.writeText(code);
+                    showNotification('✓ 已复制到剪贴板', 'success');
+                } catch (e) {
+                    showNotification('✗ 复制失败，请手动复制', 'error');
+                }
+            } else {
+                showNotification('✗ 当前编辑器为空', 'warning');
+            }
         }
 
         function closeSaveFolderPanel() {
@@ -16543,23 +16573,20 @@
             if (inDeleted) {
                 dropdown.appendChild(_ddItem('🔄 还原文件', async (e) => {
                     e.stopPropagation();
-                    const fileHandle = await getFileHandleByPath(np);
-                    await restoreFile(fileHandle, relativePath, fileSpan);
+                    await toggleFile('restoreFile', { relativePath: relativePath, fileSpan: fileSpan });
                 }));
                 dropdown.appendChild(_ddItem('🗑️ 永久删除', async (e) => {
                     e.stopPropagation();
-                    const fileHandle = await getFileHandleByPath(np);
-                    await deleteFileTreeItem(fileHandle, relativePath, true, fileSpan);
+                    await toggleFile('deleteFile', { relativePath: relativePath, isForever: true, fileSpan: fileSpan });
                 }));
             } else {
                 dropdown.appendChild(_ddItem('📄 复制文件', async (e) => {
                     e.stopPropagation();
-                    const fileHandle = await getFileHandleByPath(np);
-                    await copyCurrentFile(fileHandle, relativePath);
+                    await toggleFile('copyFile', { relativePath: relativePath });
                 }));
                 dropdown.appendChild(_ddItem('🗂️ git记录', async (e) => {
                     e.stopPropagation();
-                    await openGitPageByFile(relativePath);
+                    await toggleFile('fileGitRecord', { relativePath: relativePath });
                 }));
                 dropdown.appendChild(_ddItem('🔗 相对路径', async (e) => {
                     e.stopPropagation();
@@ -16571,8 +16598,7 @@
                 }));
                 dropdown.appendChild(_ddItem('🗑️ 删除文件', async (e) => {
                     e.stopPropagation();
-                    const fileHandle = await getFileHandleByPath(np);
-                    await deleteFileTreeItem(fileHandle, relativePath, false, fileSpan);
+                    await toggleFile('deleteFile', { relativePath: relativePath, isForever: false, fileSpan: fileSpan });
                 }));
                 // 颜色选择器
                 const crPicker = document.createElement('div');
@@ -21275,6 +21301,9 @@
                     const svgG = nodesGroup ? nodesGroup.parentNode : null;
                     if (!svgG) return;
 
+                    // 标记该节点正在被拖拽（用于 drag.end 中判断是否需要恢复层级）
+                    nodeEl.__wasDragging = true;
+
                     // 1. 将关联连线从 canvas-edges 移到 svgG（放在节点之前，节点会在连线之上）
                     const edgesGroup = svgG.querySelector('.canvas-edges');
                     if (edgesGroup) {
@@ -21362,8 +21391,9 @@
                         .attr('opacity', 1)
                         .classed('canvas-node-dragging', false);
 
-                    const svgG = nodeEl.parentNode;
-                    if (svgG && svgG.classList && !svgG.classList.contains('canvas-nodes')) {
+                    if (nodeEl.__wasDragging) {
+                        nodeEl.__wasDragging = false;
+                        const svgG = nodeEl.parentNode;
                         const edgesGroup = svgG.querySelector('.canvas-edges');
                         const nodesGroup = svgG.querySelector('.canvas-nodes');
 
@@ -23433,7 +23463,10 @@
             initKanbanDrag();
             initKanbanCheckboxClick(cardsContainer);
             initKanbanMoreMenu(cardsContainer);
-            saveKanbanContent(kanbanSnapshot, fileHandle);
+            saveKanbanContent(kanbanSnapshot, fileHandle).catch(err => {
+                console.error('保存看板失败:', err);
+                showNotification('✗ 保存失败: ' + err.message, 'error');
+            });
             postProcessCodeAndDiagrams(cardsContainer);
         }
 
@@ -23487,7 +23520,10 @@
             initKanbanDrag();
             initKanbanCheckboxClick(cardsContainer);
             initKanbanMoreMenu(cardsContainer);
-            saveKanbanContent(kanbanSnapshot, fileHandle);
+            saveKanbanContent(kanbanSnapshot, fileHandle).catch(err => {
+                console.error('保存看板失败:', err);
+                showNotification('✗ 保存失败: ' + err.message, 'error');
+            });
             postProcessCodeAndDiagrams(cardsContainer);
         }
 
@@ -23754,7 +23790,10 @@
             });
             currentKanban = newColumns;
             updateAllColumnElementIndices();
-            saveKanbanContent(currentKanban, fileHandle);
+            saveKanbanContent(currentKanban, fileHandle).catch(err => {
+                console.error('保存看板失败:', err);
+                showNotification('✗ 保存失败: ' + err.message, 'error');
+            });
         }
 
         // 从 DOM 更新列顺序(列拖拽)
@@ -23777,7 +23816,10 @@
             }
             currentKanban = newColumns;
             updateAllColumnElementIndices();
-            saveKanbanContent(currentKanban, fileHandle);
+            saveKanbanContent(currentKanban, fileHandle).catch(err => {
+                console.error('保存看板失败:', err);
+                showNotification('✗ 保存失败: ' + err.message, 'error');
+            });
         }
 
         // 从 kanbanData 生成 Markdown
@@ -23935,14 +23977,24 @@
             }
             currentKanban[colIndex].cards.splice(cardIndex, 1);
             archiveColumn.cards.push(cardToArchive);
-            saveCurrentKanban();
+            try {
+                await saveCurrentKanban();
+            } catch (err) {
+                console.error('保存看板失败:', err);
+                showNotification('✗ 保存失败: ' + err.message, 'error');
+            }
             await renderKanbanToContent(currentKanban);
             showNotification('✓ 卡片已归档', 'success');
         }
 
         // 复制当前文件为新文件,新文件名 = 原文件名_copy.扩展名
-        async function copyCurrentFile(entry, relativePath) {
+        async function copyCurrentFile(relativePath) {
             try {
+                const entry = await getFileHandleByPath(relativePath);
+                if (!entry) {
+                    showNotification('✗ 复制失败: 找不到文件', 'error');
+                    return;
+                }
                 const fileName = getFileName(entry);
                 const lastDot = fileName.lastIndexOf(DOT);
                 let newFileName;
@@ -23994,7 +24046,8 @@
             }
         }
 
-        async function deleteFileTreeItem(entry, relativePath, isForever = false, fileSpan) {
+        async function deleteFileTreeItem(relativePath, isForever = false, fileSpan) {
+            const entry = await getFileHandleByPath(relativePath);
             if (!entry) {
                 showNotification('✗ 删除失败: 找不到文件句柄', 'error');
                 return;
@@ -24034,7 +24087,6 @@
                                     if (fileItem) deletedDirDom.appendChild(fileItem);
                                 }
                                 if (isCurrentViewFile) toggleDashboardView(false)
-                                showNotification(`✓ 文件已移动到垃圾箱`, 'success');
                             }
                         });
                     }
@@ -24125,12 +24177,18 @@
         }
 
         async function removeFromDeletedIndex(deletedFileName) {
-            let rtn = await getAssetsData(INDEX_DELETED_FILE);
-            delete rtn.data[deletedFileName];
-            writeFileHandle(rtn.fileHandle, JSON.stringify(rtn.data));
+            try {
+                let rtn = await getAssetsData(INDEX_DELETED_FILE);
+                delete rtn.data[deletedFileName];
+                await writeFileHandle(rtn.fileHandle, JSON.stringify(rtn.data));
+            } catch (e) {
+                console.error('更新删除索引失败:', e);
+            }
         }
 
-        async function restoreFile(entry, relativePath, fileSpan) {
+        async function restoreFile(relativePath, fileSpan) {
+            const entry = await getFileHandleByPath(relativePath);
+            if (!entry) { showNotification('✗ 文件不存在', 'error'); return; }
             const entryName = getFileName(entry);
             showConfirmModal('确认还原', `确定要还原文件 "${entryName}" 吗?`, async (confirmed) => {
                 if (!confirmed) return;
@@ -24644,7 +24702,10 @@
                 return;
             }
             currentKanban[colIndex].cards.splice(cardIndex, 1);
-            saveCurrentKanban();
+            saveCurrentKanban().catch(err => {
+                console.error('保存看板失败:', err);
+                showNotification('✗ 保存失败: ' + err.message, 'error');
+            });
             renderKanbanToContent(currentKanban);
             showNotification('✓ 卡片已删除', 'success');
         }
@@ -28638,7 +28699,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
             // 持久化到文件
             if (currentFileHandle) {
-                saveNodesToFile(canvasData.nodes);
+                saveNodesToFile(canvasData.nodes).catch(err => {
+                    console.error('保存节点失败:', err);
+                    showNotification('✗ 保存失败: ' + err.message, 'error');
+                });
             }
         }
 
@@ -28951,7 +29015,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
         // ===== 全局文件保存队列系统（per-file 串行化，避免竞态） =====
-        const _fileSaveQueues = new Map();
+        const _fileSaveQueues = new WeakMap();
         function _getFileSaveQueue(fileHandle) {
             let queue = _fileSaveQueues.get(fileHandle);
             if (!queue) {
@@ -28962,14 +29026,22 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
         function enqueueFileWrite(fileHandle, writeOperation) {
             const queue = _getFileSaveQueue(fileHandle);
-            const next = queue
-                .then(() => writeOperation())
-                .catch(err => {
+            let resolveResult, rejectResult;
+            const resultPromise = new Promise((resolve, reject) => {
+                resolveResult = resolve;
+                rejectResult = reject;
+            });
+            const next = queue.then(async () => {
+                try {
+                    const result = await writeOperation();
+                    resolveResult(result);
+                } catch (err) {
                     console.error(`写入队列失败 (${fileHandle.name}):`, err);
-                    // 吃掉错误使队列继续运行，后续写入不会断裂
-                });
+                    rejectResult(err);
+                }
+            });
             _fileSaveQueues.set(fileHandle, next);
-            return next;
+            return resultPromise;
         }
         function enqueueFileAtomic(fileHandle, operation) {
             return enqueueFileWrite(fileHandle, operation);
@@ -28977,7 +29049,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         async function flushFileSaveQueue(fileHandle) {
             const queue = _fileSaveQueues.get(fileHandle);
             if (queue) {
-                try { await queue; } catch (e) { /* 忽略已处理错误 */ }
+                try { await queue; } catch (e) { }
             }
         }
         function cleanupFileSaveQueue(fileHandle) {
@@ -29124,9 +29196,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
         // 根据文件路径获取文件句柄
         async function getFileHandleByPath(path) {
-            const { currentHandle, fileName } = await getFileParentHandleByFilePath(path);
-            if (!currentHandle || !fileName) return null;
-            return await getFileHandleByDirHandle(currentHandle, fileName);
+            try {
+                const { currentHandle, fileName } = await getFileParentHandleByFilePath(path);
+                if (!currentHandle || !fileName) return null;
+                return await getFileHandleByDirHandle(currentHandle, fileName);
+            } catch (e) {
+                return null;
+            }
         }
         // 根据文件路径获取嵌入节点的文件句柄
         async function getEmbedNodeFileHandleByPath(filePath) {
@@ -37879,10 +37955,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (!ts || ts < 0) return '';
             return new Date(ts * 1000).toLocaleString('zh-CN');
         }
-        // 打开 Git 页面
-        async function openGitPage() {
-            await openGitPageCore(null);
-        }
+
         async function destroyGitViewData() {
             // 销毁 diff 编辑器
             gitDisposeDiffEditor();
@@ -39987,12 +40060,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        // 根据文件打开 Git 页面（只显示该文件的提交）
-        async function openGitPageByFile(relativePath) {
-            if (!relativePath) return;
-            await openGitPageCore(relativePath);
-        }
-
         function disposeOpenRestyEditor() {
             if (openrestyEditor) {
                 disposeEditor(openrestyEditor);
@@ -40558,6 +40625,47 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return { nodes, edges };
         }
 
+        async function openTempEditor() {
+            await switchToView(contentEdit, 'flex');
+            isDiary = false;
+            isTempEditor = true;
+            contentEdit.innerHTML = '<div class="editor-container"><div class="editor-header">📝 临时编辑器</div><div id="editor-inner" style="width:100%;height:calc(100% - 65px);overflow: hidden;"></div>'
+                + `<div id="editor-footer" class="editor-footer">
+                        <div class="status-left">
+                            <span id="status-size"></span>
+                            <span id="status-file"></span>
+                            <span id="status-language"></span>
+                            <span id="status-selection"></span>
+                        </div>
+                        <div class="status-right">
+                            <span id="status-cursor"></span>
+                            <span id="status-indent"></span>
+                            <span id="status-encoding"></span>
+                            <span id="status-eol"></span>
+                        </div></div></div>`;
+            const savedContent = safeLocalStorageGet('tempEditorContent');
+            const savedLanguage = safeLocalStorageGet('tempEditorLanguage');
+            const editorInner = document.getElementById('editor-inner');
+            initMonacoEditor().then(() => {
+                currentEditor = createMonacoEditor(editorInner, {
+                    value: savedContent || '',
+                    language: savedLanguage || 'plaintext',
+                });
+                updateStatus(currentEditor, contentEdit, '', true);
+                currentEditor.focus();
+            });
+            setControlsState({
+                topControls: false,
+                newFileControls: true,
+            });
+        }
+        function saveTempEditorValue() {
+            if (!currentEditor) return;
+            safeLocalStorageSet('tempEditorContent', currentEditor.getValue());
+            try {
+                safeLocalStorageSet('tempEditorLanguage', currentEditor.getModel().getLanguageId());
+            } catch (e) { }
+        }
     </script>
 </body>
 
