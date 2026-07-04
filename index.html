@@ -746,11 +746,23 @@
             cursor: grab;
         }
 
+        .canvas-node-dragging {
+            cursor: grabbing !important;
+            filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.18));
+        }
+
+        .canvas-node-dragging .canvas-node-rect {
+            stroke: var(--color-primary);
+            stroke-width: 2;
+            filter: drop-shadow(0 4px 12px rgba(9, 105, 218, 0.25));
+        }
+
         .canvas-node-rect {
             fill: var(--color-bg);
             rx: 8;
             ry: 8;
             filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.12));
+            transition: stroke 0.15s ease, stroke-width 0.15s ease, filter 0.15s ease;
         }
 
         .canvas-node:hover .canvas-node-rect {
@@ -784,10 +796,12 @@
             stroke: var(--color-text-secondary);
             stroke-width: 1.5;
             stroke-linecap: round;
+            transition: stroke 0.15s ease, stroke-width 0.15s ease;
         }
 
         .canvas-edge-arrow {
             fill: var(--color-text-secondary);
+            transition: fill 0.15s ease;
         }
 
         /* 连线磁吸热区（宽透明描边，方便鼠标选中） */
@@ -796,12 +810,16 @@
             stroke: transparent;
             stroke-width: 16;
             cursor: pointer;
-            pointer-events: none;
+            pointer-events: stroke;
         }
 
         .canvas-edge-group:hover .canvas-edge-path {
             stroke: #3182f7;
             stroke-width: 2.25;
+        }
+
+        .canvas-edge-group:hover .canvas-edge-arrow {
+            fill: #3182f7;
         }
 
         .canvas-connector-dot {
@@ -20823,23 +20841,24 @@
             const path = calculateEdgePath(fromNode, toNode, edge);
             const edgeGroup = edgesGroup.append('g').attr('class', 'canvas-edge-group');
 
-            // 可见路径（带箭头和动画，双击删除连线）
+            // 可见路径（带箭头和动画）
             edgeGroup.append('path')
                 .attr('class', 'canvas-edge-path animated')
                 .attr('d', path)
                 .attr('stroke', '#1f2328')
                 .attr('stroke-width', '0.975')
                 .attr('marker-end', 'url(#arrowhead)')
+                .style('pointer-events', 'none');
+
+            // 磁吸热区路径（宽透明描边便于选中，负责接收鼠标事件）
+            edgeGroup.append('path')
+                .attr('class', 'canvas-edge-hit')
+                .attr('d', path)
+                .datum(edge)
                 .on('dblclick', async function (event) {
                     event.stopPropagation();
                     await deleteEdge(edge.id);
                 });
-
-            // 磁吸热区路径（宽透明描边便于选中，不拦截鼠标事件）
-            edgeGroup.append('path')
-                .attr('class', 'canvas-edge-hit')
-                .attr('d', path)
-                .datum(edge);
 
             return edgeGroup;
         }
@@ -20867,21 +20886,8 @@
             if (dom && path) dom.textContent = `📝 ${escapeHtml(path)}`;
         }
         async function renderTextNode(node, nodeGroup) {
-            nodeGroup.on('click', (event) => {
-                event.stopPropagation();
-                // 选中节点
-                selectCanvasNode(node.id, nodeGroup, null);
-            });
-            nodeGroup.on('dblclick', (event) => {
-                event.stopPropagation();
-                selectCanvasNode(node.id, nodeGroup, null);
-                // 显示节点内容编辑面板
-                showCanvasNodeContent(node).then(() => {
-                    if (!node.text && !dirGraphDisplayFlag) {
-                        document.getElementById('content-panel-btn').click();
-                    }
-                });
-            });
+            // 点击/双击处理已迁移到 drag.end（通过累计偏移检测点击），
+            // 避免 D3 drag 抑制原生 click 事件导致节点无法选中。
             const previewText = node.text?.trim() || '';
             let renderedText = '';
             if (node.isRoot) {
@@ -21051,15 +21057,7 @@
         }
 
         async function renderFileNode(node, nodeGroup) {
-            nodeGroup.on('click', (event) => {
-                event.stopPropagation();
-                selectCanvasNode(node.id, nodeGroup, node.file);
-            });
-            nodeGroup.on('dblclick', (event) => {
-                event.stopPropagation();
-                selectCanvasNode(node.id, nodeGroup, node.file);
-                showNodeFileContent(node);
-            });
+            // 点击/双击处理已迁移到 drag.end
             const foreignObject = nodeGroup.append('foreignObject')
                 .attr('x', 10)
                 .attr('y', 10)
@@ -21147,28 +21145,49 @@
             const cpDist = Math.min(distance * 0.5, 150);
 
             // 控制点沿出/入方向延伸，保证首尾段为水平/垂直直线，箭头方向正
-            const cp1x = startX + fromDirX * cpDist;
-            const cp1y = startY + fromDirY * cpDist;
-            const cp2x = endX + toDirX * cpDist;
-            const cp2y = endY + toDirY * cpDist;
+            let cp1x = startX + fromDirX * cpDist;
+            let cp1y = startY + fromDirY * cpDist;
+            let cp2x = endX + toDirX * cpDist;
+            let cp2y = endY + toDirY * cpDist;
+
+            // 沿连线垂直方向偏移控制点，避免同一方向多条连线（如文档白板内圈外圈）重叠
+            if (distance > 1) {
+                const idStr = String(edge.fromNode) + '|' + String(edge.toNode);
+                let hash = 0;
+                for (let c = 0; c < idStr.length; c++) {
+                    hash = ((hash << 5) - hash) + idStr.charCodeAt(c);
+                    hash |= 0;
+                }
+                const dir = (hash % 3) - 1; // -1, 0, 1
+                if (dir !== 0) {
+                    const perpOffset = 16 * dir;
+                    const nx = -dy / distance; // 垂直方向
+                    const ny = dx / distance;
+                    cp1x += nx * perpOffset;
+                    cp1y += ny * perpOffset;
+                    cp2x += nx * perpOffset;
+                    cp2y += ny * perpOffset;
+                }
+            }
 
             return `M ${startX} ${startY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${endY}`;
         }
 
         function updateEdgesForNode(nodeId) {
-            const edgesGroup = d3.select('.canvas-edges');
-            if (edgesGroup.empty()) return;
-            const nodeMap = _nodeMapCache; // 使用缓存 Map
-            const edgeGroups = edgesGroup.selectAll('.canvas-edge-group');
-            edgeGroups.each(function () {
-                const hitPath = d3.select(this).select('.canvas-edge-hit');
-                const edge = hitPath.datum();
+            const nodeMap = _nodeMapCache;
+            // 在当前 canvas-group 内查找所有 edge-group（包括拖拽时被移出 canvas-edges 的）
+            const canvasGroup = document.querySelector('.canvas-group');
+            const edgeGroups = canvasGroup
+                ? canvasGroup.querySelectorAll('.canvas-edge-group')
+                : document.querySelectorAll('.canvas-edge-group');
+            edgeGroups.forEach(el => {
+                const edge = d3.select(el).select('.canvas-edge-hit').datum();
                 if (edge && (edge.fromNode === nodeId || edge.toNode === nodeId)) {
                     const fromNode = nodeMap.get(edge.fromNode);
                     const toNode = nodeMap.get(edge.toNode);
                     if (fromNode && toNode) {
                         const path = calculateEdgePath(fromNode, toNode, edge);
-                        d3.select(this).selectAll('path').attr('d', path);
+                        d3.select(el).selectAll('path').attr('d', path);
                     }
                 }
             });
@@ -21250,25 +21269,31 @@
             // 拖拽：缩放/移动统一处理（event.dx/dy 是增量值，非累计）
             const drag = d3.drag()
                 .on('start', function (event) {
-                    // 拖拽时将当前节点在同级节点中移至最上层（保持在 canvas-nodes 内，不破坏事件委托）
-                    const parentNode = this.parentNode;
-                    if (parentNode) {
-                        parentNode.appendChild(this);
+                    const nodeEl = this;
+                    const nodesGroup = nodeEl.parentNode;
+                    const svgG = nodesGroup ? nodesGroup.parentNode : null;
+                    if (!svgG) return;
+
+                    // 1. 将关联连线从 canvas-edges 移到 svgG（放在节点之前，节点会在连线之上）
+                    const edgesGroup = svgG.querySelector('.canvas-edges');
+                    if (edgesGroup) {
+                        edgesGroup.querySelectorAll('.canvas-edge-group').forEach(el => {
+                            const edge = d3.select(el).select('.canvas-edge-hit').datum();
+                            if (edge && (edge.fromNode === node.id || edge.toNode === node.id)) {
+                                svgG.insertBefore(el, nodesGroup.nextSibling);
+                            }
+                        });
                     }
-                    // 拖拽时将连线图层提到节点之上，确保看清连线连接关系
-                    const svgG = parentNode ? parentNode.parentNode : null;
-                    if (svgG) {
-                        const edgesGroup = svgG.querySelector('.canvas-edges');
-                        const nodesGroup = svgG.querySelector('.canvas-nodes');
-                        if (edgesGroup && nodesGroup) {
-                            // edgesGroup 若当前在 nodesGroup 之下，将其移到后面（上层）
-                            svgG.appendChild(edgesGroup);
-                        }
-                    }
-                    resizeMode = this.__hoveredEdge; // 读取委托 mousemove 缓存的边缘
+
+                    // 2. 将被拖拽节点从 canvas-nodes 移到 svgG 最顶层
+                    svgG.appendChild(nodeEl);
+
+                    // 3. 给拖拽中的节点添加样式类
+                    d3.select(nodeEl).classed('canvas-node-dragging', true);
+
+                    resizeMode = this.__hoveredEdge;
                     initX = node.x; initY = node.y;
                     initW = node.width; initH = node.height;
-                    // 在 DOM 元素上存储累计状态（跨 drag 事件帧持久化）
                     this.__accDx = 0;
                     this.__accDy = 0;
                     const cursorMap = {
@@ -21277,7 +21302,7 @@
                     };
                     d3.select(this)
                         .style('cursor', resizeMode ? cursorMap[resizeMode] : 'grabbing')
-                        .attr('opacity', 0.85);
+                        .attr('opacity', 0.9);
                 })
                 .on('drag', function (event) {
                     // 累加增量偏移（event.dx/dy 是每帧增量）
@@ -21330,20 +21355,69 @@
                     updateEdgesForNode(node.id);
                 })
                 .on('end', async function (event) {
-                    d3.select(this).style('cursor', 'grab').attr('opacity', 1);
-                    // 拖拽结束，将连线图层移回节点之下（恢复默认层级）
-                    const svgG = this.parentNode ? this.parentNode.parentNode : null;
-                    if (svgG) {
+                    const nodeEl = this;
+                    d3.select(nodeEl)
+                        .style('cursor', 'grab')
+                        .attr('opacity', 1)
+                        .classed('canvas-node-dragging', false);
+
+                    const svgG = nodeEl.parentNode;
+                    if (svgG && svgG.classList && !svgG.classList.contains('canvas-nodes')) {
                         const edgesGroup = svgG.querySelector('.canvas-edges');
                         const nodesGroup = svgG.querySelector('.canvas-nodes');
+
+                        // 1. 将关联连线移回 edgesGroup
+                        if (edgesGroup) {
+                            Array.from(svgG.children).forEach(el => {
+                                if (el.matches && el.matches('.canvas-edge-group')) {
+                                    edgesGroup.appendChild(el);
+                                }
+                            });
+                        }
+
+                        // 2. 将节点移回 nodesGroup 末尾（保持在其他节点之上）
+                        if (nodesGroup) {
+                            nodesGroup.appendChild(nodeEl);
+                        }
+
+                        // 3. 确保整体层级正确：edgesGroup 在 nodesGroup 之前（下层）
                         if (edgesGroup && nodesGroup) {
-                            // 无条件确保 edgesGroup 在 nodesGroup 之前（下层）
-                            svgG.insertBefore(edgesGroup, nodesGroup);
+                            const pos = nodesGroup.compareDocumentPosition(edgesGroup);
+                            if (pos & Node.DOCUMENT_POSITION_FOLLOWING) {
+                                svgG.insertBefore(edgesGroup, nodesGroup);
+                            }
+                        }
+                    }
+
+                    // 通过累计偏移判断是否点击（无拖拽），D3 drag 会抑制原生 click 事件
+                    const totalDx = Math.abs(this.__accDx || 0);
+                    const totalDy = Math.abs(this.__accDy || 0);
+                    if (!resizeMode && totalDx < 5 && totalDy < 5) {
+                        const now = Date.now();
+                        const dt = now - (this.__lastClickTime || 0);
+                        this.__lastClickTime = now;
+                        if (dt < 350) {
+                            // 双击：显示内容面板
+                            if (node.type === 'text') {
+                                selectCanvasNode(node.id, d3.select(this), null);
+                                await showCanvasNodeContent(node);
+                                if (!node.text && !dirGraphDisplayFlag) {
+                                    const btn = document.getElementById('content-panel-btn');
+                                    if (btn) btn.click();
+                                }
+                            } else if (node.type === 'image' || node.type === 'file') {
+                                selectCanvasNode(node.id, d3.select(this), node.file);
+                                await showNodeFileContent(node);
+                            }
+                        } else {
+                            // 单击：选中节点
+                            const path = (node.type === 'image' || node.type === 'file') ? node.file : null;
+                            selectCanvasNode(node.id, d3.select(this), path);
                         }
                     }
                     if (currentFileHandle && (node.x !== initX || node.y !== initY || node.width !== initW || node.height !== initH)) {
                         await saveNodesToFile(canvasData.nodes);
-                        rebuildNodeMap(); // 节点尺寸/位置变更后更新缓存
+                        rebuildNodeMap();
                     }
                     resizeMode = null;
                 });
@@ -21714,7 +21788,7 @@
                 renderEmbeddedExcalidraw(container, excalidrawData);
             } else {
                 renderExcalidrawElement(container, excalidrawData);
-            } 
+            }
         }
 
         function createNodeContentPanel(height = '100%') {
@@ -34047,9 +34121,39 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     const isHighlighted = !this.focusNodeId && this.highlightedNode
                         && (source.id === this.highlightedNode.id || target.id === this.highlightedNode.id);
 
+                    // 计算连线中点，并沿垂直方向偏移，避免同一方向的多条连线重叠
+                    const midX = (source.x + target.x) / 2;
+                    const midY = (source.y + target.y) / 2;
+                    const dx = target.x - source.x;
+                    const dy = target.y - source.y;
+                    const len = Math.sqrt(dx * dx + dy * dy);
+                    const offsetPx = 18;
+                    let cpX = midX, cpY = midY;
+                    if (len > 1) {
+                        // 根据 source+target id 生成确定性偏移，确保相同连线始终一致
+                        const idStr = String(source.id) + '|' + String(target.id);
+                        let hash = 0;
+                        for (let c = 0; c < idStr.length; c++) {
+                            hash = ((hash << 5) - hash) + idStr.charCodeAt(c);
+                            hash |= 0;
+                        }
+                        const dir = (hash % 3) - 1; // -1, 0, 1
+                        if (dir !== 0) {
+                            // 垂直方向（顺时针旋转90度）
+                            const nx = -dy / len;
+                            const ny = dx / len;
+                            cpX = midX + nx * offsetPx * dir;
+                            cpY = midY + ny * offsetPx * dir;
+                        }
+                    }
+
                     ctx.beginPath();
                     ctx.moveTo(source.x, source.y);
-                    ctx.lineTo(target.x, target.y);
+                    if (cpX !== midX || cpY !== midY) {
+                        ctx.quadraticCurveTo(cpX, cpY, target.x, target.y);
+                    } else {
+                        ctx.lineTo(target.x, target.y);
+                    }
                     if (isHighlighted) {
                         ctx.strokeStyle = '#0969da';
                         ctx.lineWidth = 1.5;
