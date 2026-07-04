@@ -13812,6 +13812,7 @@
         let currentNodeEditor = null;       // 当前节点编辑器实例
         // 全局看板状态
         let currentKanban = null;           // 当前看板实例
+        let currentKanbanFileHandle = null; // 当前看板对应的文件句柄（防止保存时切换文件写错）
         let sortableInstances = [];         // 可排序实例数组
         let kanbanMoreMenuInitialized = false; // 是否初始化看板更多菜单
         let currentJsonTree = null;            // 当前 JSON 树实例
@@ -14242,7 +14243,7 @@
             } else if (fileName.endsWith('.mm')) {
                 await renderFreeMindFile(fileText);
             } else if (fileName.endsWith('.svg')) {
-                await renderImageFile(file);
+                await renderImageFile(new File([fileText], fileName, { type: 'image/svg+xml' }));
             } else if (fileName.endsWith('.csv')) {
                 await renderCSVFile(fileText);
             } else if (fileName.endsWith('.canvas')) {
@@ -14668,12 +14669,14 @@
                 text: markdownSelectionState.text,
             };
             const { range, text } = capturedState;
+            const fileHandle = currentFileHandle;
+            const fileName = currentFileName;
             if (!range.commonAncestorContainer || !range.commonAncestorContainer.isConnected) {
                 showNotification('清除失败，请重新选择文本', 'error');
                 return;
             }
             try {
-                const isHtmlFile = currentFileName && currentFileName.endsWith('.html');
+                const isHtmlFile = fileName && fileName.endsWith('.html');
                 // 确定 span 查找范围：MD 在 .markdown-body，HTML 在 iframe body
                 let searchRoot;
                 if (isHtmlFile) {
@@ -14740,9 +14743,11 @@
                 }
                 // 第4步：保存文件
                 if (actualRemoved > 0) {
-                    await saveExistFileContent(newContent, false);
-                    originalContent = newContent;
-                    recordOperation(currentFileName, relativePath, OPERATION_TYPES.ANNOTATION);
+                    await saveExistFileContent(newContent, false, fileHandle);
+                    if (!fileHandle || fileHandle === currentFileHandle) {
+                        originalContent = newContent;
+                    }
+                    recordOperation(fileName, relativePath, OPERATION_TYPES.ANNOTATION);
                 }
                 showNotification(`✓ 已清除 ${actualRemoved} 处高亮/标注`, 'success');
                 hideMarkdownSelectionToolbar();
@@ -15284,7 +15289,6 @@
                     const fileHandle = await writeFileByDirHandle(dirHandle, fileName, content);
                     safeLocalStorageSet(LAST_FILE_KEY, newRelativePath);
                     if (newRelativeParentPath) {
-                        // 确保目标目录已加载（懒加载目录需先展开）
                         const dom = await _ensureLazyDirLoaded(newRelativeParentPath);
                         if (dom) {
                             if (!fileExists) {
@@ -15308,10 +15312,10 @@
                 };
                 if (fileExists) {
                     await navigateToFile(newRelativePath);
-                    showConfirmModal('文件冲突', `目标路径已存在同名文件 "${fileName}"，保存将覆盖该文件，是否继续？`, async (confirmed) => {
-                        if (!confirmed) return;
+                    const confirmed = await showConfirmModalAsync('文件冲突', `目标路径已存在同名文件 "${fileName}"，保存将覆盖该文件，是否继续？`);
+                    if (confirmed) {
                         await doSave(true);
-                    });
+                    }
                 } else {
                     await doSave();
                 }
@@ -15414,8 +15418,8 @@
                 if (container) {
                     container.innerHTML = '';
                 }
-                // 移除全局键盘监听
-                document.removeEventListener('keydown', jsMindHandle.handleGlobalKeydown);
+                // 移除全局键盘监听（捕获阶段，与注册阶段一致）
+                document.removeEventListener('keydown', jsMindHandle.handleGlobalKeydown, true);
                 jsMindHandle = null;
             }
         }
@@ -15436,6 +15440,11 @@
                 }
                 window.canvasState = null;
             }
+            // 清理 document 级 pointerup 备份监听器
+            if (window._svgPointerUpCleanup) {
+                document.removeEventListener('pointerup', window._svgPointerUpCleanup);
+                window._svgPointerUpCleanup = null;
+            }
             // 2. 清理 DOM（canvas 容器）
             if (cleanDom) {
                 const container = contentMain.querySelector('.canvas-container');
@@ -15450,7 +15459,9 @@
                 // 4. 清理 canvas 相关的全局状态
                 canvasData = { nodes: [], edges: [] };
                 _nodeMapCache = new Map();
-                _saveQueue = Promise.resolve();
+                if (currentFileHandle) {
+                    cleanupFileSaveQueue(currentFileHandle);
+                }
                 _canvasImgQueue = [];
                 _canvasImgInFlight = 0;
                 selectedCanvasNodeId = null;
@@ -17379,12 +17390,12 @@
             const container = document.getElementById('jsmind_container');
             // 先清理旧的键盘事件监听器
             if (jsMindHandle && jsMindHandle.handleGlobalKeydown) {
-                document.removeEventListener('keydown', jsMindHandle.handleGlobalKeydown);
+                document.removeEventListener('keydown', jsMindHandle.handleGlobalKeydown, true);
             }
             jsMindHandle = new JsMindHandle(jm, data, ismmFile);
             jsMindHandle.add_event_listener();
-            // 全局键盘监听
-            document.addEventListener('keydown', jsMindHandle.handleGlobalKeydown);
+            // 全局键盘监听（捕获阶段，确保在 jsMind 内部 handler 之前拦截自定义快捷键）
+            document.addEventListener('keydown', jsMindHandle.handleGlobalKeydown, true);
             // 事件委托：处理节点双击（统一进入编辑模式）
             container.addEventListener('dblclick', async function (e) {
                 const nodeEl = e.target.closest && e.target.closest('jmnode');
@@ -17517,8 +17528,8 @@
         }
 
         // 全局辅助函数：保存思维导图
-        function jsMindSave() {
-            if (jsMindHandle) jsMindHandle.jsmind_save();
+        async function jsMindSave() {
+            if (jsMindHandle) await jsMindHandle.jsmind_save();
         }
         let _jsmindIsExporting = false;
         async function jsMindSaveImage() {
@@ -17832,7 +17843,10 @@
                 // Cmd/Ctrl+S - 保存
                 if (e.key === 's' && mod && !e.shiftKey && !e.altKey) {
                     e.preventDefault();
-                    this.jsmind_save();
+                    this.jsmind_save().catch(err => {
+                        console.error('保存思维导图失败:', err);
+                        showNotification('✗ 保存失败: ' + err.message, 'error');
+                    });
                     return;
                 }
                 // Cmd/Ctrl+Shift+P - 保存为图片
@@ -17981,8 +17995,10 @@
                     console.error('思维导图导出图片失败:', err);
                 }
             }
-            jsmind_save() {
+            async jsmind_save() {
                 if (!this.ismmFile) return;
+                const fileHandle = currentFileHandle;
+                if (!fileHandle) return;
                 const result = this.jm.get_data('node_tree');
                 const rtn = exportToFreeMind(result);
                 if (this.isNew) {
@@ -17994,7 +18010,7 @@
                     });
                 } else {
                     if (rtn !== originalContent) {
-                        saveExistFileContent(rtn, true);
+                        await saveExistFileContent(rtn, true, fileHandle);
                     } else {
                         showNotification('✓ 文件没有变动', 'success');
                     }
@@ -19295,9 +19311,11 @@
         let cachedPlantUMLSource = '';   // 已缓存的源码内容
         let cachedPlantUMLSVG = '';      // 缓存的渲染结果SVG
         async function enterPlantUMLSvg() {
-            let text = currentEditor.getValue();
+            const fileHandle = currentFileHandle;
+            const text = currentEditor.getValue();
             if (text !== originalContent) {
-                await saveCurrentEditContent(currentContent);
+                await saveCurrentEditContent(text, fileHandle);
+                if (fileHandle !== currentFileHandle) return; // 保存期间切换了文件，放弃后续操作
             }
             destroyEditor(true);
             await switchToView(contentMain);
@@ -19389,13 +19407,12 @@
             const { exists, path } = await checkFileExists(targetFileName);
             if (exists) {
                 await navigateToFile(path);
-                showConfirmModal('确认覆盖', `文件 ${targetFileName} 已存在,是否覆盖?`, (confirmed) => {
-                    if (confirmed) {
-                        saveSvgToFolder(cachedPlantUMLSVG, targetFileName);
-                    }
-                });
+                const confirmed = await showConfirmModalAsync('确认覆盖', `文件 ${targetFileName} 已存在,是否覆盖?`);
+                if (confirmed) {
+                    await saveSvgToFolder(cachedPlantUMLSVG, targetFileName);
+                }
             } else {
-                saveSvgToFolder(cachedPlantUMLSVG, targetFileName);
+                await saveSvgToFolder(cachedPlantUMLSVG, targetFileName);
             }
         }
 
@@ -19492,9 +19509,11 @@
             if (!currentEditor || !currentFileHandle) return;
             const currentContent = currentEditor.getValue();
             if (currentContent !== originalContent) {
-                await saveCurrentEditContent(currentContent);
-                let relativePath = currentActiveItem ? currentActiveItem.dataset.filePath : '';
-                recordOperation(currentFileName, relativePath, OPERATION_TYPES.SAVE);
+                const fileHandle = currentFileHandle;
+                const fileName = currentFileName;
+                const relativePath = currentActiveItem ? currentActiveItem.dataset.filePath : '';
+                await saveCurrentEditContent(currentContent, fileHandle);
+                recordOperation(fileName, relativePath, OPERATION_TYPES.SAVE);
             } else {
                 showNotification('内容无变化', 'warning');
             }
@@ -19504,15 +19523,20 @@
             await saveFileOnly();
         }
 
-        async function saveCurrentEditContent(newContent) {
-            if (!currentFileHandle || !newContent) return;
-            await saveExistFileContent(newContent);
+        async function saveCurrentEditContent(newContent, fileHandle = null) {
+            const targetHandle = fileHandle || currentFileHandle;
+            if (!targetHandle || !newContent) return;
+            await saveExistFileContent(newContent, true, targetHandle);
         }
 
         async function saveExistFileContent(newContent, notify = true, fileHandle = null) {
             try {
-                await writeFileHandle(fileHandle || currentFileHandle, newContent);
-                originalContent = newContent;
+                const targetHandle = fileHandle || currentFileHandle;
+                if (!targetHandle) throw new Error('没有可写入的文件句柄');
+                await writeFileHandle(targetHandle, newContent);
+                if (targetHandle === currentFileHandle) {
+                    originalContent = newContent;
+                }
                 if (notify) showNotification('✓ 文件保存成功', 'success');
             } catch (error) {
                 console.error('保存文件失败:', error);
@@ -20466,8 +20490,9 @@
         async function renderSwaggerFile(text, fileName) {
             await switchToView(contentCommonContainer);
             TimerManager.clear('swaggerAutoSave');
-            // 快照捕获：锁定当前文件名和原始内容，闭包内不再依赖易变的全局变量
+            // 快照捕获：锁定当前文件名、文件句柄和原始内容，闭包内不再依赖易变的全局变量
             const capturedFileName = fileName;
+            const capturedFileHandle = currentFileHandle;
             let capturedOriginalContent = originalContent;
 
             if (!swaggerEditor) {
@@ -20507,7 +20532,7 @@
                                 TimerManager.clear('swaggerAutoSave');
                                 return;
                             }
-                            await saveExistFileContent(currentSpec);
+                            await saveExistFileContent(currentSpec, true, capturedFileHandle);
                             capturedOriginalContent = currentSpec; // 更新快照，避免重复保存相同内容
                         }
                     } else {
@@ -21150,29 +21175,33 @@
             });
         }
 
-        // ---- 文件保存串行队列（避免竞态条件） ----
-        let _saveQueue = Promise.resolve();
-
+        // ---- 文件保存串行队列（已迁移到全局 _fileSaveQueues，保留兼容接口） ----
         // 等待所有排队保存完成
         async function flushSaveQueue() {
-            try { await _saveQueue; } catch (e) { /* 忽略已处理错误 */ }
+            if (currentFileHandle) {
+                await flushFileSaveQueue(currentFileHandle);
+            }
         }
 
         async function saveEdgesToFile(edges) {
             if (!currentFileHandle) return;
             const fileHandle = currentFileHandle;
-            _saveQueue = _saveQueue.then(async () => {
-                try {
+            try {
+                await enqueueFileAtomic(fileHandle, async () => {
                     const text = await getFileContent(fileHandle);
                     let canvasDataLocal = JSON.parse(text);
                     canvasDataLocal.edges = edges;
-                    await saveExistFileContent(JSON.stringify(canvasDataLocal), false, fileHandle);
-                } catch (err) {
-                    console.error('保存连线失败:', err);
-                    // 不重新 throw，避免 _saveQueue 链断裂导致后续保存丢失
-                }
-            });
-            await _saveQueue;
+                    const newContent = JSON.stringify(canvasDataLocal);
+                    await _writeToFileHandle(fileHandle, newContent);
+                    if (fileHandle === currentFileHandle) {
+                        originalContent = newContent;
+                    }
+                });
+                showNotification('✓ 保存连线成功', 'success');
+            } catch (err) {
+                console.error('保存连线失败:', err);
+                showNotification('✗ 保存连线失败: ' + err.message, 'error');
+            }
         }
 
         async function deleteEdge(edgeId) {
@@ -21227,16 +21256,15 @@
                     if (parentNode) {
                         parentNode.appendChild(this);
                     }
-                    // 同时将此节点关联的连线也移至最上层
-                    const edgesGroup = d3.select('.canvas-edges');
-                    if (!edgesGroup.empty()) {
-                        const edgesGroupNode = edgesGroup.node();
-                        edgesGroup.selectAll('.canvas-edge-group').each(function () {
-                            const edge = d3.select(this).select('.canvas-edge-hit').datum();
-                            if (edge && (edge.fromNode === node.id || edge.toNode === node.id)) {
-                                edgesGroupNode.appendChild(this);
-                            }
-                        });
+                    // 拖拽时将连线图层提到节点之上，确保看清连线连接关系
+                    const svgG = parentNode ? parentNode.parentNode : null;
+                    if (svgG) {
+                        const edgesGroup = svgG.querySelector('.canvas-edges');
+                        const nodesGroup = svgG.querySelector('.canvas-nodes');
+                        if (edgesGroup && nodesGroup) {
+                            // edgesGroup 若当前在 nodesGroup 之下，将其移到后面（上层）
+                            svgG.appendChild(edgesGroup);
+                        }
                     }
                     resizeMode = this.__hoveredEdge; // 读取委托 mousemove 缓存的边缘
                     initX = node.x; initY = node.y;
@@ -21304,6 +21332,16 @@
                 })
                 .on('end', async function (event) {
                     d3.select(this).style('cursor', 'grab').attr('opacity', 1);
+                    // 拖拽结束，将连线图层移回节点之下（恢复默认层级）
+                    const svgG = this.parentNode ? this.parentNode.parentNode : null;
+                    if (svgG) {
+                        const edgesGroup = svgG.querySelector('.canvas-edges');
+                        const nodesGroup = svgG.querySelector('.canvas-nodes');
+                        if (edgesGroup && nodesGroup) {
+                            // 无条件确保 edgesGroup 在 nodesGroup 之前（下层）
+                            svgG.insertBefore(edgesGroup, nodesGroup);
+                        }
+                    }
                     if (currentFileHandle && (node.x !== initX || node.y !== initY || node.width !== initW || node.height !== initH)) {
                         await saveNodesToFile(canvasData.nodes);
                         rebuildNodeMap(); // 节点尺寸/位置变更后更新缓存
@@ -21615,12 +21653,25 @@
 
             // SVG 空白区域点击：关闭面板 + 自适应缩放
             let svgClickStart = null;
-            svg.on('pointerdown', function (event) { svgClickStart = { x: event.clientX, y: event.clientY }; });
+            svg.on('pointerdown', function (event) {
+                svgClickStart = { x: event.clientX, y: event.clientY };
+                // 每次 pointerdown 重新注册 document 级 pointerup，拖拽到 SVG 外释放时清理状态
+                if (window._svgPointerUpCleanup) {
+                    document.removeEventListener('pointerup', window._svgPointerUpCleanup);
+                }
+                window._svgPointerUpCleanup = () => { svgClickStart = null; };
+                document.addEventListener('pointerup', window._svgPointerUpCleanup);
+            });
             svg.on('pointerup', async function (event) {
                 if (!svgClickStart) return;
                 const dx = Math.abs(event.clientX - svgClickStart.x);
                 const dy = Math.abs(event.clientY - svgClickStart.y);
                 svgClickStart = null;
+                // pointerup 已在 SVG 内触发，清理 document 级备份监听器
+                if (window._svgPointerUpCleanup) {
+                    document.removeEventListener('pointerup', window._svgPointerUpCleanup);
+                    window._svgPointerUpCleanup = null;
+                }
                 if (dx < 4 && dy < 4) {
                     await closeNodeContentPanel();
                     fitCanvasToContent(container, bounds.contentWidth, bounds.contentHeight, bounds.centerX, bounds.centerY, svg, zoom);
@@ -21642,8 +21693,8 @@
                     centerY: bounds.centerY
                 };
             }
-            await renderCanvasNodes(nodes, g);
             renderCanvasEdges(edges, nodes, g);
+            await renderCanvasNodes(nodes, g);
             const fitFn = () => fitCanvasToContent(container, bounds.contentWidth, bounds.contentHeight, bounds.centerX, bounds.centerY, svg, zoom);
             addCanvasControls(contentDiv, svg, zoom, fitFn);
             setTimeout(fitFn, 100);
@@ -21664,7 +21715,7 @@
                 renderEmbeddedExcalidraw(container, excalidrawData);
             } else {
                 renderExcalidrawElement(container, excalidrawData);
-            }
+            } 
         }
 
         function createNodeContentPanel(height = '100%') {
@@ -22047,9 +22098,9 @@
 
         async function saveNodeText(nodeId, newText) {
             if (!currentFileHandle) return;
-            const fileHandle = currentFileHandle; // 捕获当前文件句柄快照，防止切换文件后写入错误文件
-            _saveQueue = _saveQueue.then(async () => {
-                try {
+            const fileHandle = currentFileHandle;
+            try {
+                await enqueueFileAtomic(fileHandle, async () => {
                     const text = await getFileContent(fileHandle);
                     let canvasDataLocal = JSON.parse(text);
                     canvasDataLocal.nodes.forEach(node => {
@@ -22057,29 +22108,38 @@
                             node.text = newText;
                         }
                     });
-                    await saveExistFileContent(JSON.stringify(canvasDataLocal), true, fileHandle);
-                } catch (err) {
-                    console.error('保存节点文本失败:', err);
-                }
-            });
-            await _saveQueue;
+                    const newContent = JSON.stringify(canvasDataLocal);
+                    await _writeToFileHandle(fileHandle, newContent);
+                    if (fileHandle === currentFileHandle) {
+                        originalContent = newContent;
+                    }
+                });
+                showNotification('✓ 节点保存成功', 'success');
+            } catch (err) {
+                console.error('保存节点文本失败:', err);
+                showNotification('✗ 保存节点失败: ' + err.message, 'error');
+            }
         }
 
         async function saveNodesToFile(nodes) {
             if (!currentFileHandle) return;
             const fileHandle = currentFileHandle;
-            _saveQueue = _saveQueue.then(async () => {
-                try {
+            try {
+                await enqueueFileAtomic(fileHandle, async () => {
                     const text = await getFileContent(fileHandle);
                     let canvasDataLocal = JSON.parse(text);
                     canvasDataLocal.nodes = nodes;
-                    await saveExistFileContent(JSON.stringify(canvasDataLocal), true, fileHandle);
-                } catch (err) {
-                    console.error('保存节点失败:', err);
-                    // 不重新 throw，避免 _saveQueue 链断裂导致后续保存丢失
-                }
-            });
-            await _saveQueue;
+                    const newContent = JSON.stringify(canvasDataLocal);
+                    await _writeToFileHandle(fileHandle, newContent);
+                    if (fileHandle === currentFileHandle) {
+                        originalContent = newContent;
+                    }
+                });
+                showNotification('✓ 节点保存成功', 'success');
+            } catch (err) {
+                console.error('保存节点失败:', err);
+                showNotification('✗ 保存节点失败: ' + err.message, 'error');
+            }
         }
 
         async function reloadCanvasData() {
@@ -23099,6 +23159,7 @@
                 });
             }
             currentKanban = kanbanData;
+            currentKanbanFileHandle = currentFileHandle;
             if (!kanbanData || kanbanData.length === 0) {
                 contentMain.innerHTML = '<div class="kanban-empty">⚠️ 这不是一个有效的看板文件</div>';
                 return;
@@ -23151,24 +23212,36 @@
             });
         }
 
-        function handleCardCheckboxClick(e) {
+        async function handleCardCheckboxClick(e) {
             if (_cardCheckboxDebounce) return;
             const cardTitle = e.target.closest('.card-title');
             if (cardTitle && !cardTitle.classList.contains('null-checked')) {
                 _cardCheckboxDebounce = true;
+                const kanban = currentKanban;
+                const fileHandle = currentKanbanFileHandle;
                 toggleCardCheckbox(this);
-                saveExistFileContent(generateKanbanMarkdown(currentKanban));
+                try {
+                    await saveKanbanContent(kanban, fileHandle);
+                } catch (err) {
+                    console.error('看板卡片保存失败:', err);
+                }
                 setTimeout(() => {
                     _cardCheckboxDebounce = false;
                 }, 300);
             }
         }
 
-        function handleTaskCheckboxClick(e) {
+        async function handleTaskCheckboxClick(e) {
             if (!this.classList.contains('null-checked')) {
                 e.stopPropagation();
+                const kanban = currentKanban;
+                const fileHandle = currentKanbanFileHandle;
                 toggleTaskListItemCheckbox(this);
-                saveExistFileContent(generateKanbanMarkdown(currentKanban));
+                try {
+                    await saveKanbanContent(kanban, fileHandle);
+                } catch (err) {
+                    console.error('看板任务保存失败:', err);
+                }
             }
         }
 
@@ -23264,6 +23337,8 @@
             if (!currentKanban || !currentKanban[colIndex] || !cardsContainer) {
                 return;
             }
+            const kanbanSnapshot = currentKanban;
+            const fileHandle = currentKanbanFileHandle;
             const cardData = parseKanbanCard(preParseKanbanCard(content));
             if (!cardData || cardData.length === 0) {
                 return;
@@ -23284,7 +23359,7 @@
             initKanbanDrag();
             initKanbanCheckboxClick(cardsContainer);
             initKanbanMoreMenu(cardsContainer);
-            saveExistFileContent(generateKanbanMarkdown(currentKanban));
+            saveKanbanContent(kanbanSnapshot, fileHandle);
             postProcessCodeAndDiagrams(cardsContainer);
         }
 
@@ -23293,6 +23368,8 @@
                 console.error('editCardToColumn: 无效的参数');
                 return;
             }
+            const kanbanSnapshot = currentKanban;
+            const fileHandle = currentKanbanFileHandle;
             const cardData = parseKanbanCard(preParseKanbanCard(content));
             if (!cardData || cardData.length === 0) {
                 return;
@@ -23336,7 +23413,7 @@
             initKanbanDrag();
             initKanbanCheckboxClick(cardsContainer);
             initKanbanMoreMenu(cardsContainer);
-            saveExistFileContent(generateKanbanMarkdown(currentKanban));
+            saveKanbanContent(kanbanSnapshot, fileHandle);
             postProcessCodeAndDiagrams(cardsContainer);
         }
 
@@ -23575,6 +23652,7 @@
         // 从 DOM 更新数据顺序(卡片拖拽)
         function updateKanbanOrder() {
             if (!currentKanban) return;
+            const fileHandle = currentKanbanFileHandle;
             const originalColumns = currentKanban.slice();
             const newColumns = [];
             document.querySelectorAll('.kanban-column').forEach((colEl) => {
@@ -23602,12 +23680,13 @@
             });
             currentKanban = newColumns;
             updateAllColumnElementIndices();
-            saveExistFileContent(generateKanbanMarkdown(currentKanban));
+            saveKanbanContent(currentKanban, fileHandle);
         }
 
         // 从 DOM 更新列顺序(列拖拽)
         function updateKanbanColumnOrder() {
             if (!currentKanban) return;
+            const fileHandle = currentKanbanFileHandle;
             const originalColumns = currentKanban.slice();
             const newColumns = [];
             document.querySelectorAll('.kanban-column').forEach((colEl) => {
@@ -23624,7 +23703,7 @@
             }
             currentKanban = newColumns;
             updateAllColumnElementIndices();
-            saveExistFileContent(generateKanbanMarkdown(currentKanban));
+            saveKanbanContent(currentKanban, fileHandle);
         }
 
         // 从 kanbanData 生成 Markdown
@@ -24496,10 +24575,19 @@
             showNotification('✓ 卡片已删除', 'success');
         }
 
-        function saveCurrentKanban() {
-            if (!currentKanban) return;
-            const markdown = generateKanbanMarkdown(currentKanban);
-            saveExistFileContent(markdown);
+        async function saveKanbanContent(kanban, fileHandle) {
+            if (!kanban || !fileHandle) return;
+            const markdown = generateKanbanMarkdown(kanban);
+            await saveExistFileContent(markdown, true, fileHandle);
+        }
+
+        async function saveCurrentKanban() {
+            try {
+                await saveKanbanContent(currentKanban, currentKanbanFileHandle);
+            } catch (err) {
+                console.error('保存看板失败:', err);
+                showNotification('✗ 保存看板失败: ' + err.message, 'error');
+            }
         }
 
         function formatSize(bytes) {
@@ -27007,10 +27095,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
                 if (fileExists) {
                     await navigateToFile(joinPath(dirPath, fileName));
-                    showConfirmModal('文件冲突', `目标路径已存在同名文件 "${fileName}"，保存将覆盖该文件，是否继续？`, async (confirmed) => {
-                        if (!confirmed) return;
+                    const confirmed = await showConfirmModalAsync('文件冲突', `目标路径已存在同名文件 "${fileName}"，保存将覆盖该文件，是否继续？`);
+                    if (confirmed) {
                         await doSaveAIResult(dirHandle, dirPath, fileName, content, true);
-                    });
+                    }
                 } else {
                     await doSaveAIResult(dirHandle, dirPath, fileName, content);
                 }
@@ -27255,10 +27343,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     if (currentContent && currentContent.trim()) {
                         if (diffSave) {
                             if (currentContent !== originalContent) {
+                                const fileHandle = currentFileHandle;
                                 const confirmed = await showConfirmModalAsync('确认保存', '是否保存当前编辑内容?');
                                 if (confirmed) {
                                     previewFileText = '';
-                                    await saveCurrentEditContent(currentContent);
+                                    await saveCurrentEditContent(currentContent, fileHandle);
                                 } else {
                                     previewFileText = currentContent;
                                     disposeEditor(currentEditor);
@@ -28005,8 +28094,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 return;
             }
             if (isMermaidFileDisplay && currentFileHandle) {
-                await writeFileHandle(currentFileHandle, monacoEditorMermaid.getValue());
-                showNotification('✓ 文件保存成功', 'success');
+                const fileHandle = currentFileHandle;
+                const content = monacoEditorMermaid.getValue();
+                await saveExistFileContent(content, true, fileHandle);
                 return;
             }
             if (saveMenuMermaid.classList.contains("mermaid-open")) {
@@ -28448,7 +28538,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         function createCanvasNode(type, fileData) {
             const newNode = {
-                id: 'node_' + Date.now(), 
+                id: 'node_' + Date.now(),
                 type: type,
                 x: 30 + Math.random() * 200,
                 y: 30 + Math.random() * 200,
@@ -28766,11 +28856,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         async function saveWhiteboardNoChoosePath() {
+            const fileHandle = currentFileHandle;
+            if (!fileHandle) return;
             const elements = excalidrawAPI.getSceneElements();
             const appState = excalidrawAPI.getAppState();
             const files = excalidrawAPI.getFiles();
             const sceneJSON = window.ExcalidrawLib.serializeAsJSON(elements, appState, files, "local");
-            saveExistFileContent(sceneJSON);
+            await saveExistFileContent(sceneJSON, true, fileHandle);
         }
 
         async function destroyExcalidraw() {
@@ -28784,6 +28876,40 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 window.removeEventListener('keydown', handleBBSaveShortcutNoCreate, true);
             }
         }
+        // ===== 全局文件保存队列系统（per-file 串行化，避免竞态） =====
+        const _fileSaveQueues = new Map();
+        function _getFileSaveQueue(fileHandle) {
+            let queue = _fileSaveQueues.get(fileHandle);
+            if (!queue) {
+                queue = Promise.resolve();
+                _fileSaveQueues.set(fileHandle, queue);
+            }
+            return queue;
+        }
+        function enqueueFileWrite(fileHandle, writeOperation) {
+            const queue = _getFileSaveQueue(fileHandle);
+            const next = queue
+                .then(() => writeOperation())
+                .catch(err => {
+                    console.error(`写入队列失败 (${fileHandle.name}):`, err);
+                    // 吃掉错误使队列继续运行，后续写入不会断裂
+                });
+            _fileSaveQueues.set(fileHandle, next);
+            return next;
+        }
+        function enqueueFileAtomic(fileHandle, operation) {
+            return enqueueFileWrite(fileHandle, operation);
+        }
+        async function flushFileSaveQueue(fileHandle) {
+            const queue = _fileSaveQueues.get(fileHandle);
+            if (queue) {
+                try { await queue; } catch (e) { /* 忽略已处理错误 */ }
+            }
+        }
+        function cleanupFileSaveQueue(fileHandle) {
+            _fileSaveQueues.delete(fileHandle);
+        }
+
         // File System Access API 封装：打开/读取/写入文件
         function getFileName(fileHandle) {
             return fileHandle.name;
@@ -28846,15 +28972,19 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 throw e;
             }
         }
-        // 写入文件
+        // 写入文件（通过目录句柄），自动进入该文件的保存队列
         async function writeFileByDirHandle(parentDirHandle, fileName, content) {
             const fileHandle = await parentDirHandle.getFileHandle(fileName, { create: true });
-            await _writeToFileHandle(fileHandle, content);
+            await enqueueFileWrite(fileHandle, async () => {
+                await _writeToFileHandle(fileHandle, content);
+            });
             return fileHandle;
         }
-        // 写入已打开的文件句柄
+        // 写入已打开的文件句柄，自动进入该文件的保存队列
         async function writeFileHandle(fileHandle, content) {
-            await _writeToFileHandle(fileHandle, content);
+            await enqueueFileWrite(fileHandle, async () => {
+                await _writeToFileHandle(fileHandle, content);
+            });
         }
         // 获取目录句柄，不存在则创建
         async function getOrCreateDirectory(parentDirHandle, dirName) {
@@ -30301,11 +30431,21 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             if (type === 'annotation') {
                 hideMarkdownSelectionToolbar();
-                showInputModal('请输入批注内容', '', (comment) => {
-                    _doCreateMarkdownTextMark(type, comment, capturedState);
+                showInputModal('请输入批注内容', '', async (comment) => {
+                    try {
+                        await _doCreateMarkdownTextMark(type, comment, capturedState);
+                    } catch (e) {
+                        console.error('创建批注失败:', e);
+                        showNotification('✗ 创建批注失败: ' + e.message, 'error');
+                    }
                 });
             } else {
-                _doCreateMarkdownTextMark(type, '', capturedState);
+                try {
+                    await _doCreateMarkdownTextMark(type, '', capturedState);
+                } catch (e) {
+                    console.error('创建高亮失败:', e);
+                    showNotification('✗ 创建高亮失败: ' + e.message, 'error');
+                }
             }
         }
 
@@ -30398,6 +30538,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         async function _doCreateMarkdownTextMark(type, comment, capturedState) {
             const { range, text } = capturedState;
+            const fileHandle = currentFileHandle;
+            const fileName = currentFileName;
+            const original = originalContent;
             if (!range.commonAncestorContainer || !range.commonAncestorContainer.isConnected) {
                 console.warn('标记文本失败: 选区已失效');
                 showNotification('标记失败，请重新选择文本', 'error');
@@ -30405,7 +30548,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             try {
                 const isAnnotation = type === 'annotation';
-                if (originalContent.indexOf(text) === -1) {
+                if (original.indexOf(text) === -1) {
                     showNotification('✗ 原文中未找到所选文字，无法' + (type === 'annotation' ? '标注' : '高亮'), 'error');
                     return;
                 }
@@ -30431,11 +30574,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 // 保存文件：preview 模式下仅修改 DOM，不写文件
                 if (previewFileText) return;
                 // 利用 DOM 锚点精确替换（上下文匹配），降级时回退到首次匹配
-                const replaced = _replaceTextAtDOMAnchor(markEl, text, html, originalContent);
-                const textMark = (replaced !== null) ? replaced : originalContent.replace(text, html);
-                await saveExistFileContent(textMark, false);
+                const replaced = _replaceTextAtDOMAnchor(markEl, text, html, original);
+                const textMark = (replaced !== null) ? replaced : original.replace(text, html);
+                await saveExistFileContent(textMark, false, fileHandle);
+                if (!fileHandle || fileHandle === currentFileHandle) {
+                    originalContent = textMark;
+                }
                 let relativePath = currentActiveItem ? currentActiveItem.dataset.filePath : '';
-                recordOperation(currentFileName, relativePath, OPERATION_TYPES.ANNOTATION);
+                recordOperation(fileName, relativePath, OPERATION_TYPES.ANNOTATION);
                 // 标注 tooltip：MD 在 contentMain，HTML 在 iframe
                 const tippyRoot = (ownerDoc !== document) ? ownerDoc.body : contentMain;
                 dealWithTippy(tippyRoot);
