@@ -56,7 +56,7 @@
     <script src="https://unpkg.com/prettier@3.5.3/plugins/markdown.js"></script>
     <script src="https://unpkg.com/prettier@3.5.3/plugins/yaml.js"></script>
     <script src="https://unpkg.com/prettier@3.5.3/plugins/graphql.js"></script>
-    <script src="https://unpkg.com/prettier@3.5.3/plugins/xml.js"></script>
+
 
     <!-- 视频播放库（artplayer/hls/dash/flv）：也是 UMD define，必须在 Monaco loader 之前加载 -->
     <script src="https://cdn.jsdelivr.net/npm/artplayer@4.5.6/dist/artplayer.min.js"></script>
@@ -13638,13 +13638,13 @@
                 name: '源/库', query: '', hasKey: false, display: true, selectDisplay: false, active: false, subBtns: [
                     { name: 'npm镜像', query: 'http://npmmirror.com/', hasKey: false, display: true, active: false },
                     { name: 'npm', query: 'https://www.npmjs.com/search?q=', hasKey: true, display: true, active: false },
+                    { name: 'jsDelivr', query: 'https://www.jsdelivr.com/?query=', hasKey: true, display: true, active: false },
                     { name: 'Maven', query: 'https://mvnrepository.com/search?q=', hasKey: true, display: true, active: false },
                     { name: 'PyPI', query: 'https://pypi.org/search/?q=', hasKey: true, display: true, active: false },
                     { name: 'RubyGems', query: 'https://rubygems.org/search?query=', hasKey: true, display: true, active: false },
                     { name: 'GoPkg', query: 'https://pkg.go.dev/search?q=', hasKey: true, display: true, active: false },
                     { name: 'DockerHub', query: 'https://hub.docker.com/search?q=', hasKey: true, display: true, active: false },
                     { name: 'ArtifactHub', query: 'https://artifacthub.io/packages/search?ts_query_web=', hasKey: true, display: true, active: false },
-                    { name: 'jsDelivr', query: 'https://www.jsdelivr.com/?query=', hasKey: true, display: true, active: false },
                     { name: '阿里云镜像', query: 'https://developer.aliyun.com/mirror/?keyword=', hasKey: true, display: true, active: false },
                     { name: 'DNS', query: 'https://dnsdaquan.com/', hasKey: false, display: true, active: false },
                 ]
@@ -17475,8 +17475,8 @@
                     line_color: '#a6a6ac',
                     line_style: 'curved',
                     node_overflow: 'wrap',
-                    hmargin: 3000,
-                    vmargin: 3000,
+                    hmargin: 500,
+                    vmargin: 500,
                     draggable: true,
                     hide_scrollbars_when_draggable: true,
                     zoom: { min: 0.5, max: 2.0, step: 0.1 },
@@ -18839,11 +18839,10 @@
                 italicUnder: /(?:^|[^A-Za-z0-9_])_(?!_)[^_\s\n][^_\n]*_(?:[^A-Za-z0-9_]|$)/,
                 strike: /~~[^~\s\n][^~\n]*~~/
             };
-            const checkWeak = (pattern, key) => {
+            const checkWeak = (pattern, key, line) => {
                 if (pattern.test(line)) {
                     weakSignals[key]++;
                     if (key === 'link') return true;
-                    // 组合判定逻辑
                     const categories = Object.values(weakSignals).filter(v => v > 0).length;
                     const total = Object.values(weakSignals).reduce((a, b) => a + b, 0);
                     if (categories >= 2 && total >= 2) return true;
@@ -18882,17 +18881,17 @@
                     potentialTableHeader = false;
                 }
                 // 行内弱信号
-                if (line.includes('[') && checkWeak(regex.inlineLink, 'link')) return true;
-                if (line.includes('`') && checkWeak(regex.inlineCode, 'code')) return true;
+                if (line.includes('[') && checkWeak(regex.inlineLink, 'link', line)) return true;
+                if (line.includes('`') && checkWeak(regex.inlineCode, 'code', line)) return true;
                 if (line.includes('*')) {
-                    if (checkWeak(regex.boldStar, 'bold')) return true;
-                    if (checkWeak(regex.italicStar, 'italic')) return true;
+                    if (checkWeak(regex.boldStar, 'bold', line)) return true;
+                    if (checkWeak(regex.italicStar, 'italic', line)) return true;
                 }
                 if (line.includes('_')) {
-                    if (checkWeak(regex.boldUnder, 'bold')) return true;
-                    if (checkWeak(regex.italicUnder, 'italic')) return true;
+                    if (checkWeak(regex.boldUnder, 'bold', line)) return true;
+                    if (checkWeak(regex.italicUnder, 'italic', line)) return true;
                 }
-                if (line.includes('~') && checkWeak(regex.strike, 'strike')) return true;
+                if (line.includes('~') && checkWeak(regex.strike, 'strike', line)) return true;
             }
             if (len > pos && lineCount >= MAX_LINES) {
                 const tail = text.substring(len - Math.min(8192, len - pos));
