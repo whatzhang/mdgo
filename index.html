@@ -12571,6 +12571,9 @@
                     <div id="new-file-save-directory-tree" class="mermaid-directory-tree"></div>
                 </div>
             </div>
+            <button id="format-btn" class="btn btn-success btn-sm" onclick="formatEditorValue()">
+                格式化
+            </button>
             <button id="new-file-clear-btn" class="btn btn-success btn-sm" onclick="newFileClear()">
                 清空
             </button>
@@ -13972,7 +13975,7 @@
                 monacoInitPromise = new Promise((resolve) => {
                     require.config({ paths: { 'vs': 'css_js/cdn/monaco-editor/min/vs' } });
                     require(['vs/editor/editor.main'], () => {
-                        initPrettierFormatProvider();
+                        initFormatProviders();
                         resolve();
                     });
                 });
@@ -14316,9 +14319,6 @@
                     </div></div></div>`;
             const editorInner = document.getElementById('editor-inner');
             const isKanban = isObsidianKanban(initialContent);
-            if (currentFileName.endsWith('.json')) {
-                initialContent = initialContent ? JSON.stringify(JSON.parse(initialContent)) : '';
-            }
             initMonacoEditor().then(() => {
                 currentEditor = createMonacoEditor(editorInner, {
                     value: initialContent,
@@ -14338,12 +14338,7 @@
                 formatBtn: false,
                 opmlBtns: false
             });
-            // 检查当前语言是否支持格式化
-            const editorLang = getMonacoLanguage(currentFileName);
-            const fmtCfg = getPrettierConfig(editorLang);
-            if (fmtCfg.parser || fmtCfg.fallback) {
-                formatBtn.style.display = 'inline-flex';
-            }
+            formatBtn.style.display = 'inline-flex';
         }
 
         async function enterLivePreviewMode() {
@@ -14424,12 +14419,7 @@
                 editBtn: true,
                 formatBtn: false
             });
-            // 实时预览模式下也支持格式化
-            const editorLang = getMonacoLanguage(currentFileName);
-            const fmtCfg = getPrettierConfig(editorLang);
-            if (fmtCfg.parser || fmtCfg.fallback) {
-                formatBtn.style.display = 'inline-flex';
-            }
+            formatBtn.style.display = 'inline-flex';
         }
 
         // ====== 空闲检测：5 分钟无操作判定为空闲 ======
@@ -14629,24 +14619,27 @@
         function createMonacoEditor(container, options) {
             const content = options.value || '';
             const isLarge = content.length > LARGE_EDITOR_SIZE;
+            const tabSize = options.tabSize || 4;
             let editor = monaco.editor.create(container, {
                 value: content,
                 language: options.language || 'plaintext',
                 theme: 'vs-dark',
-                automaticLayout: !isLarge, // 大文件关闭自动布局，减少 resize 重排
-                fixedOverflowWidgets: true, // 补全弹窗等浮层固定定位，防止被 overflow: hidden 的父容器裁切
+                automaticLayout: !isLarge,
+                fixedOverflowWidgets: true,
                 minimap: isLarge ? { enabled: false } : (options.minimap || { enabled: true }),
                 fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, monospace',
                 fontSize: 13,
-                wordWrap: isLarge ? 'off' : 'on',
-                fontLigatures: true, // 启用字体连字
+                wordWrap: 'off',
+                fontLigatures: true,
                 lineNumbers: options.lineNumbers || 'on',
-                lineNumbersMinChars: options.lineNumbersMinChars || 5, // 最小行号字符宽度
-                roundedSelection: true, // 选区背景使用圆角
-                scrollBeyondLastLine: false,  //是否允许滚动到最后一行之后
+                lineNumbersMinChars: options.lineNumbersMinChars || 5,
+                roundedSelection: true,
+                scrollBeyondLastLine: false,
                 readOnly: false,
-                tabSize: 4,
-                unfoldOnClickAfterEndOfLine: true, // 点击行尾自动展开折叠区域
+                tabSize: tabSize,
+                insertSpaces: options.insertSpaces !== false,
+                detectIndentation: false,
+                unfoldOnClickAfterEndOfLine: true,
                 scrollbar: options.scrollbar || {
                     vertical: 'auto',
                     horizontal: 'hidden',
@@ -14655,44 +14648,14 @@
                     scrollByPage: true
                 },
                 unicodeHighlight: {
-                    ambiguousCharacters: false, // 不高亮 ambiguous 字符
-                    invisibleCharacters: true, // 高亮不可见字符
-                    nonBasicASCII: false // 不高亮非基本 ASCII 字符
+                    ambiguousCharacters: false,
+                    invisibleCharacters: true,
+                    nonBasicASCII: false
                 }
 
             });
             editor.focus();
             return editor;
-        }
-
-        function formatEditorValue() {
-            if (!currentEditor) return;
-            const content = currentEditor.getValue();
-            const language = currentEditor.getModel().getLanguageId();
-            const cfg = getPrettierConfig(language);
-            let relativePath = currentActiveItem ? currentActiveItem.dataset.filePath : '';
-            // fallback 语言或未知语言：使用 Monaco 内置格式化
-            if (cfg.fallback || !cfg.parser) {
-                const result = formatWithMonacoIndentation();
-                if (result === '__MONACO_FORMAT_SCHEDULED__') {
-                    recordOperation(currentFileName, relativePath, OPERATION_TYPES.FORMAT);
-                    showNotification('✓ 格式化完成（Monaco 内置）', 'success');
-                } else {
-                    showNotification('✗ 该语言不支持格式化', 'warning');
-                }
-                return;
-            }
-            formatCode(content, language).then(formatted => {
-                if (formatted && formatted !== content) {
-                    currentEditor.setValue(formatted);
-                    recordOperation(currentFileName, relativePath, OPERATION_TYPES.FORMAT);
-                    showNotification('✓ 格式化完成', 'success');
-                } else if (formatted === content) {
-                    showNotification('内容已经是格式化后的', 'info');
-                } else {
-                    showNotification('✗ 不支持该语言格式化（Prettier 插件缺失）', 'warning');
-                }
-            });
         }
 
         // 清除选中文本的高亮/标注：解除 span 包裹，保留文本
@@ -14791,160 +14754,247 @@
             }
         }
 
-        // 根据 Monaco language ID 返回对应的 Prettier parser 和插件 
+        // Prettier 支持的语言配置（统一管理，避免重复）
+        const PRETTIER_LANG_CONFIG = {
+            javascript: { parser: 'babel', pluginKeys: ['babel', 'estree'] },
+            typescript: { parser: 'babel-ts', pluginKeys: ['babel', 'estree'] },
+            html: { parser: 'html', pluginKeys: ['html'] },
+            css: { parser: 'css', pluginKeys: ['postcss'] },
+            scss: { parser: 'scss', pluginKeys: ['postcss'] },
+            less: { parser: 'less', pluginKeys: ['postcss'] },
+            markdown: { parser: 'markdown', pluginKeys: ['markdown'] },
+            yaml: { parser: 'yaml', pluginKeys: ['yaml'] },
+            graphql: { parser: 'graphql', pluginKeys: ['graphql'] },
+        };
+
         function getPrettierConfig(language) {
-            const config = {
-                javascript: { parser: 'babel', plugins: [window.prettierPlugins?.babel, window.prettierPlugins?.estree] },
-                typescript: { parser: 'babel-ts', plugins: [window.prettierPlugins?.babel, window.prettierPlugins?.estree] },
-                json: { parser: null, plugins: [], fallback: true },  // 使用内置 JSON.stringify 格式化
-                html: { parser: 'html', plugins: [window.prettierPlugins?.html] },
-                xml: { parser: 'html', plugins: [window.prettierPlugins?.html] },
-                css: { parser: 'css', plugins: [window.prettierPlugins?.postcss] },
-                scss: { parser: 'scss', plugins: [window.prettierPlugins?.postcss] },
-                less: { parser: 'less', plugins: [window.prettierPlugins?.postcss] },
-                markdown: { parser: 'markdown', plugins: [window.prettierPlugins?.markdown] },
-                yaml: { parser: 'yaml', plugins: [window.prettierPlugins?.yaml] },
-                python: { parser: null, plugins: [], fallback: true },  // Standalone 不含 python parser
-                go: { parser: null, plugins: [], fallback: true },  // Standalone 不含 go parser
-                java: { parser: null, plugins: [], fallback: true },  // Standalone 不含 java parser
-                lua: { parser: null, plugins: [], fallback: true },  // Prettier 不支持 Lua
-                shell: { parser: null, plugins: [], fallback: true },  // Prettier 不支持 shell
-                sql: { parser: null, plugins: [], fallback: true },  // Prettier 不支持 SQL
-                powershell: { parser: null, plugins: [], fallback: true }   // Prettier 不支持 bat/ps1
-            };
-            return config[language] || { parser: null, plugins: [], fallback: true };  // 未知语言走 Monaco 内置格式化
+            const cfg = PRETTIER_LANG_CONFIG[language];
+            if (!cfg) return { parser: null, plugins: [] };
+            const plugins = cfg.pluginKeys.map(key => window.prettierPlugins?.[key]).filter(Boolean);
+            return { parser: cfg.parser, plugins };
         }
 
-        // 调用 Prettier 格式化代码，不支持的语言返回 null
-        async function formatCode(code, language) {
-            // JSON 特殊处理：使用原生 JSON.stringify（不依赖 Prettier）
-            if (language === 'json') {
-                try {
-                    const parsed = JSON.parse(code);
-                    return JSON.stringify(parsed, null, 4);
-                } catch (e) {
-                    showNotification('✗ JSON 格式无效: ' + e.message, 'error');
-                    return null;
+        function hasPrettierSupport(language) {
+            const cfg = PRETTIER_LANG_CONFIG[language];
+            if (!cfg || !window.prettier || !window.prettierPlugins) return false;
+            return cfg.pluginKeys.every(key => window.prettierPlugins[key]);
+        }
+
+        function formatWithBasicIndentation(code, options = {}) {
+            if (code == null) return '';
+            if (typeof code !== 'string') return String(code);
+            const tabSize = options.tabSize || 4;
+            const insertSpaces = options.insertSpaces !== false;
+            const indentChar = insertSpaces ? ' '.repeat(tabSize) : '\t';
+            const lines = code.split('\n');
+            let emptyLineStreak = 0;
+            const formatted = [];
+            for (const line of lines) {
+                const trimmedEnd = line.replace(/\s+$/, '');
+                if (trimmedEnd === '') {
+                    emptyLineStreak++;
+                    if (emptyLineStreak <= 2) formatted.push('');
+                    continue;
                 }
-            }
-            if (!window.prettier) {
-                console.warn('Prettier 未加载');
-                return null;
-            }
-            const cfg = getPrettierConfig(language);
-            // 如果 Prettier 不支持但有 fallback 标记，使用 Monaco 内置缩进格式化
-            if (!cfg.parser) {
-                if (cfg.fallback) {
-                    return formatWithMonacoIndentation(code, language);
+                emptyLineStreak = 0;
+                const match = trimmedEnd.match(/^(\s*)([\s\S]*)$/);
+                if (!match) {
+                    formatted.push(trimmedEnd);
+                    continue;
                 }
-                return null;
-            }
-            if (cfg.plugins.some(p => !p)) return null; // parser 插件未加载
-            try {
-                return await window.prettier.format(code, {
-                    parser: cfg.parser,
-                    plugins: cfg.plugins.filter(Boolean),
-                    tabWidth: 4,
-                    semi: true,
-                    singleQuote: true,
-                    trailingComma: 'es5',
-                    printWidth: 100,
-                    proseWrap: 'never',
-                });
-            } catch (e) {
-                console.error('Prettier 格式化失败:', e);
-                showNotification('✗ 格式化失败: ' + e.message, 'error');
-                return null;
-            }
-        }
-
-        // Monaco 内置格式化（降级方案，用于 Prettier 不支持的语言）
-        function formatWithMonacoIndentation() {
-            if (!currentEditor) return null;
-            try {
-                const model = currentEditor.getModel();
-                if (!model) return null;
-                // 使用 Monaco 内置的格式化 action（异步执行，无法获取格式化后文本）
-                currentEditor.trigger('format', 'editor.action.formatDocument', null);
-                return '__MONACO_FORMAT_SCHEDULED__';
-            } catch (e) {
-                console.error('Monaco 缩进格式化失败:', e);
-                return null;
-            }
-        }
-
-        // 给 Prettier 支持的语言注册格式化提供者，让 Shift+Alt+F 生效
-        // fallback 语言（Java/Lua/Shell/SQL 等）走 Monaco 内置格式化
-        function initPrettierFormatProvider() {
-            if (!window.prettier || !window.monaco) {
-                // Prettier 或 Monaco 尚未就绪，延迟 500ms 重试（最多重试 10 次）
-                if (!initPrettierFormatProvider._retries) initPrettierFormatProvider._retries = 0;
-                if (++initPrettierFormatProvider._retries <= 10) {
-                    setTimeout(initPrettierFormatProvider, 500);
+                const leadingWhitespace = match[1];
+                const textContent = match[2];
+                if (leadingWhitespace.length > 0) {
+                    const visualSpaces = leadingWhitespace.replace(/\t/g, ' '.repeat(tabSize));
+                    const indentLevel = Math.floor(visualSpaces.length / tabSize);
+                    const newIndent = indentChar.repeat(Math.max(0, indentLevel));
+                    formatted.push(newIndent + textContent);
                 } else {
-                    console.warn('Prettier 或 Monaco 加载超时，格式化功能可能不可用');
+                    formatted.push(textContent);
+                }
+            }
+            while (formatted.length > 0 && formatted[formatted.length - 1] === '') {
+                formatted.pop();
+            }
+            return formatted.join('\n');
+        }
+
+        let _lastFormatError = null;
+        async function executeFormat(code, language, editorOptions = {}) {
+            if (code == null || !code.trim()) {
+                return code == null ? '' : code;
+            }
+            _lastFormatError = null;
+            try {
+                if (language === 'json') {
+                    const parsed = JSON.parse(code);
+                    return JSON.stringify(parsed, null, editorOptions.tabSize || 4);
+                } else if (language === 'xml') {
+                    return formatXMLNative(code, editorOptions);
+                }
+                if (hasPrettierSupport(language)) {
+                    const cfg = PRETTIER_LANG_CONFIG[language];
+                    const plugins = cfg.pluginKeys.map(key => window.prettierPlugins[key]);
+                    const formatOptions = {
+                        parser: cfg.parser,
+                        plugins: plugins,
+                        tabWidth: editorOptions.tabSize || 4,
+                        useTabs: editorOptions.insertSpaces === false,
+                        printWidth: 100,
+                    };
+                    if (language === 'javascript' || language === 'typescript') {
+                        formatOptions.semi = true;
+                        formatOptions.singleQuote = true;
+                        formatOptions.trailingComma = 'es5';
+                    } else if (language === 'markdown') {
+                        formatOptions.proseWrap = 'never';
+                    }
+                    return await window.prettier.format(code, formatOptions);
+                }
+                return formatWithBasicIndentation(code, editorOptions);
+            } catch (e) {
+                console.error(`格式化失败 [${language}]:`, e);
+                _lastFormatError = e;
+                if (typeof showNotification === 'function') {
+                    showNotification(`✗ 格式化失败: ${e.message.split('\n')[0]}`, 'error');
+                }
+                return null;
+            }
+        }
+        const RegisteredLanguages = new Set();
+        function initFormatProviders() {
+            if (!window.monaco || !window.prettier) {
+                if (!initFormatProviders._retries) initFormatProviders._retries = 0;
+                if (++initFormatProviders._retries <= 10) {
+                    setTimeout(initFormatProviders, 500);
+                } else {
+                    console.warn('Monaco 或 Prettier 加载超时，格式化功能使用降级方案');
+                    if (window.monaco) {
+                        registerAllFormatProviders();
+                    }
                 }
                 return;
             }
-            const supportedLanguages = [
-                'javascript', 'typescript',
-                'html', 'xml', 'css', 'scss', 'less',
-                'markdown', 'yaml', 'json',
-            ];
-            // fallback 语言：注册通用缩进格式化器
-            const fallbackLanguages = [
-                'python', 'go', 'java', 'lua', 'shell', 'sql', 'powershell',
-                'ruby', 'rust', 'php', 'c', 'cpp', 'csharp', 'swift', 'kotlin',
-                'dockerfile', 'ini', 'bat', 'plaintext',
-            ];
+            registerAllFormatProviders();
+        }
 
-            // Prettier 支持的语言：注册 Prettier 格式化提供者
-            supportedLanguages.forEach(lang => {
-                monaco.languages.registerDocumentFormattingEditProvider(lang, {
+        function registerAllFormatProviders() {
+            if (!window.monaco) return;
+            const allLanguages = window.monaco.languages.getLanguages().map(l => l.id);
+            allLanguages.forEach(lang => {
+                if (RegisteredLanguages.has(lang)) return;
+                RegisteredLanguages.add(lang);
+                window.monaco.languages.registerDocumentFormattingEditProvider(lang, {
                     provideDocumentFormattingEdits: async (model) => {
                         const code = model.getValue();
-                        const formatted = await formatCode(code, lang);
-                        if (formatted && formatted !== code) {
+                        const modelOpts = model.getOptions();
+                        const fmtOpts = {
+                            tabSize: modelOpts.tabSize,
+                            insertSpaces: modelOpts.insertSpaces
+                        };
+                        const formatted = await executeFormat(code, lang, fmtOpts);
+                        if (formatted !== null && formatted !== code) {
                             return [{ range: model.getFullModelRange(), text: formatted }];
                         }
-                        return undefined;
+                        return [];
                     }
                 });
             });
+        }
 
-            // 通用缩进格式化（fallback 语言）：统一缩进、去除行尾空白
-            fallbackLanguages.forEach(lang => {
-                monaco.languages.registerDocumentFormattingEditProvider(lang, {
-                    provideDocumentFormattingEdits: async (model) => {
-                        const code = model.getValue();
-                        const options = model.getOptions();
-                        const tabSize = options.tabSize || 4;
-                        const insertSpaces = options.insertSpaces !== false;
-                        const indentChar = insertSpaces ? ' '.repeat(tabSize) : '\t';
-                        const lines = code.split('\n');
-                        const formatted = lines.map(line => {
-                            // 去除行尾空白
-                            let trimmed = line.replace(/\s+$/, '');
-                            // 计算前导空格/制表符数量，统一替换为配置的缩进字符
-                            const leading = trimmed.match(/^(\s*)/)[1];
-                            if (leading.length > 0) {
-                                // 统计前导空白中的空格和制表符
-                                const spaceCount = (leading.match(/ /g) || []).length;
-                                const tabCount = (leading.match(/\t/g) || []).length;
-                                const totalIndent = tabCount * tabSize + spaceCount;
-                                const indentLevel = Math.round(totalIndent / tabSize);
-                                const newIndent = indentChar.repeat(Math.max(0, indentLevel));
-                                trimmed = newIndent + trimmed.replace(/^\s+/, '');
-                            }
-                            return trimmed;
-                        }).join('\n');
-                        if (formatted !== code) {
-                            return [{ range: model.getFullModelRange(), text: formatted }];
-                        }
-                        return undefined;
+        async function formatEditorValue() {
+            if (!currentEditor) return;
+            const model = currentEditor.getModel();
+            if (!model) return;
+            const oldContent = model.getValue();
+            let relativePath = currentActiveItem ? currentActiveItem.dataset.filePath : '';
+            try {
+                const result = await currentEditor.getAction('editor.action.formatDocument').run();
+                if (_lastFormatError) return;
+                const newContent = model.getValue();
+                if (newContent !== oldContent) {
+                    if (typeof recordOperation === 'function') {
+                        recordOperation(currentFileName, relativePath, OPERATION_TYPES.FORMAT);
                     }
-                });
-            });
+                    if (typeof showNotification === 'function') {
+                        showNotification('✓ 格式化完成', 'success');
+                    }
+                } else {
+                    if (typeof showNotification === 'function') {
+                        showNotification('内容已经是格式化后的', 'info');
+                    }
+                }
+            } catch (e) {
+                console.error('触发格式化 Action 失败:', e);
+                if (typeof showNotification === 'function') {
+                    showNotification('✗ 格式化失败', 'error');
+                }
+            }
+        }
+
+        function formatXMLNative(code, options = {}) {
+            if (!code || !code.trim()) return code;
+            const tabSize = options.tabSize || 4;
+            const insertSpaces = options.insertSpaces !== false;
+            const indentChar = insertSpaces ? ' '.repeat(tabSize) : '\t';
+            try {
+                let formatted = '';
+                let padLevel = 0;
+                // 核心正则：匹配注释、CDATA、声明、闭合标签、自闭合标签、开始标签; 极其轻量，避开 .* 贪婪匹配，防止 ReDoS
+                const tagReg = /(< !--[\s\S ]* ?-->| <!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S ]*?\?>|<\/[^>]+>|<[^>]+?\/>|<[^>]+>)/g;
+                let lastIndex = 0;
+                let match;
+                while ((match = tagReg.exec(code)) !== null) {
+                    const tag = match[0];
+                    const index = match.index;
+                    // 1. 提取两个标签之间的文本（节点内容）
+                    // 满足要求：只格式化缩进，对节点里面的内容不做处理
+                    let text = code.slice(lastIndex, index);
+                    // 如果包含实质内容，保持原样追加（不破坏内部换行或空格）
+                    if (text.trim() !== '') {
+                        formatted += text;
+                    }
+                    // 更新指针
+                    lastIndex = tagReg.lastIndex;
+                    // 2. 判断当前标签类型并决定换行与缩进
+                    if (tag.startsWith('<!--') || tag.startsWith('<![CDATA[') || tag.startsWith('<?')) {
+                        // 注释、CDATA、XML 声明：不改变缩进结构，直接换行输出
+                        if (formatted && !formatted.endsWith('\n')) formatted += '\n';
+                        formatted += indentChar.repeat(padLevel) + tag + '\n';
+                    }
+                    else if (tag.startsWith('</')) {
+                        // 结束标签：先退回缩进，再换行输出
+                        padLevel = Math.max(0, padLevel - 1);
+                        // 优化：如果前一个字符不是换行，说明标签内部有文本内容（如 <tag>text</tag>）
+                        // 此时不换行，直接闭合；否则（属于多行结构）需要缩进换行
+                        if (formatted.endsWith('\n')) {
+                            formatted += indentChar.repeat(padLevel) + tag + '\n';
+                        } else {
+                            formatted += tag + '\n';
+                        }
+                    }
+                    else if (tag.endsWith('/>')) {
+                        // 自闭合标签：换行输出，缩进不变
+                        if (formatted && !formatted.endsWith('\n')) formatted += '\n';
+                        formatted += indentChar.repeat(padLevel) + tag + '\n';
+                    }
+                    else {
+                        // 普通开始标签：换行输出，后续行缩进加 1
+                        if (formatted && !formatted.endsWith('\n')) formatted += '\n';
+                        formatted += indentChar.repeat(padLevel) + tag + '\n';
+                        padLevel++;
+                    }
+                }
+                // 补齐尾部可能剩余的文本
+                if (lastIndex < code.length) {
+                    const tail = code.slice(lastIndex);
+                    if (tail.trim() !== '') formatted += tail;
+                }
+                return formatted.trim();
+            } catch (e) {
+                console.error('原生 XML 格式化失败:', e);
+                return null;
+            }
         }
 
         async function updateLivePreviewContent(content, container) {
@@ -15432,7 +15482,6 @@
         // ===== 思维导图 panning / click 监听器清理引用 =====
         let _jsmindPanCleanup = null;   // 清理 panning 相关的 document 监听器
         let _jsmindClickCleanup = null; // 清理右键菜单关闭用的 document click 监听器
-
         // 销毁 jsMind，释放 Canvas/DOM
         async function destroyJsMind() {
             // 关闭右键菜单（如果打开）
@@ -15604,11 +15653,15 @@
             }
         }
 
-        document.addEventListener('click', () => {
+        document.addEventListener('click', (e) => {
             // mermaid dropdown 点击外部关闭
             const newFileSaveMenu = document.getElementById('new-file-save-menu');
-            if (newFileSaveMenu) {
-                newFileSaveMenu.classList.remove('mermaid-open');
+            const newFileSaveBtn = document.getElementById('new-file-save-btn');
+            if (newFileSaveMenu && newFileSaveMenu.classList.contains('mermaid-open')) {
+                if (!newFileSaveMenu.contains(e.target) &&
+                    !(newFileSaveBtn && newFileSaveBtn.contains(e.target))) {
+                    newFileSaveMenu.classList.remove('mermaid-open');
+                }
             }
             // canvas 保存菜单点击外部关闭
             const canvasSaveMenu = document.getElementById('canvas-save-menu');
@@ -18882,7 +18935,12 @@
                 element.classList.add('jm-node-with-note');
                 let html = '<div class="jm-node-card">';
                 if (topic) html += `<div class="jm-node-topic">${escapeHtml(topic)}</div>`;
-                html += `<div class="jm-node-note">${escapeHtml(note)}</div>`;
+                if (hasMarkdown(note)) {
+                    const md = markedMd(parseObsidianToHTML(normalizeMarkdownTable(note)));
+                    html += `<div class="jm-node-note"><div class="markdown-body" style="zoom: 0.8;white-space: normal !important;background-color: var(--color-bg);">${md}</div></div>`;
+                } else {
+                    html += `<div class="jm-node-note">${escapeHtml(note)}</div>`;
+                }
                 html += '</div>';
                 element.innerHTML = html;
                 return true;
@@ -40624,6 +40682,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return { nodes, edges };
         }
 
+        const languagesToDetect = ['python', 'java', 'json', 'yaml', 'markdown', 'sql', 'html', 'xml'];
         async function openTempEditor() {
             await switchToView(contentEdit, 'flex');
             isDiary = false;
@@ -40645,25 +40704,46 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const savedContent = safeLocalStorageGet('tempEditorContent');
             const savedLanguage = safeLocalStorageGet('tempEditorLanguage');
             const editorInner = document.getElementById('editor-inner');
-            initMonacoEditor().then(() => {
-                currentEditor = createMonacoEditor(editorInner, {
-                    value: savedContent || '',
-                    language: savedLanguage || 'plaintext',
-                });
-                updateStatus(currentEditor, contentEdit, '', true);
-                currentEditor.focus();
-            });
             setControlsState({
                 topControls: false,
                 newFileControls: true,
+            });
+            initMonacoEditor().then(() => {
+                let language = 'plaintext';
+                if (savedContent && savedLanguage) {
+                    language = savedLanguage;
+                }
+                currentEditor = createMonacoEditor(editorInner, {
+                    value: savedContent || '',
+                    language: language,
+                });
+                updateStatus(currentEditor, contentEdit, '', true);
+                currentEditor.focus();
+                let debounceTimer = null;
+                currentEditor.onDidChangeModelContent(() => {
+                    clearTimeout(debounceTimer);
+                    debounceTimer = setTimeout(() => {
+                        autoDetectLanguage();
+                    }, 2000);
+                });
+                function autoDetectLanguage() {
+                    const text = currentEditor.getValue();
+                    if (!text.trim()) return;
+                    const result = hljs.highlightAuto(text, languagesToDetect);
+                    if (result.language) {
+                        const currentLang = currentEditor.getModel().getLanguageId();
+                        if (currentLang !== result.language) {
+                            monaco.editor.setModelLanguage(currentEditor.getModel(), result.language);
+                            updateStatus(currentEditor, contentEdit, '', true);
+                            safeLocalStorageSet('tempEditorLanguage', result.language);
+                        }
+                    }
+                }
             });
         }
         function saveTempEditorValue() {
             if (!currentEditor) return;
             safeLocalStorageSet('tempEditorContent', currentEditor.getValue());
-            try {
-                safeLocalStorageSet('tempEditorLanguage', currentEditor.getModel().getLanguageId());
-            } catch (e) { }
         }
 
     </script>
