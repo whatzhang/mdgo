@@ -9,75 +9,77 @@
     <link rel="icon" type="image/svg+xml"
         href="data:image/svg+xml;charset=utf-8;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiMxYTU2ZGIiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjM2I4MmY2Ii8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIOWchuinkuaWueW9ouiDjOaZryAtLT4KICA8cmVjdCB4PSIyIiB5PSIyIiB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHJ4PSIxNCIgcnk9IjE0IiBmaWxsPSJ1cmwoI2JnKSIvPgogIDwhLS0g5bem5L6n5Lmm6ISK57q/IC0tPgogIDxyZWN0IHg9IjE4IiB5PSIxMiIgd2lkdGg9IjQiIGhlaWdodD0iNDAiIHJ4PSIxLjUiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjkiLz4KICA8IS0tIOWPs+S+p+S5pumhtSAoM+adoeaoque6v+S7o+ihqOWkmuWxguaWh+ahoykgLS0+CiAgPHJlY3QgeD0iMjYiIHk9IjE1IiB3aWR0aD0iMjAiIGhlaWdodD0iNSIgcng9IjIiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjg1Ii8+CiAgPHJlY3QgeD0iMjYiIHk9IjI0IiB3aWR0aD0iMTYiIGhlaWdodD0iNCIgcng9IjIiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjY1Ii8+CiAgPHJlY3QgeD0iMjYiIHk9IjMyIiB3aWR0aD0iMTgiIGhlaWdodD0iNCIgcng9IjIiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjc1Ii8+CiAgPHJlY3QgeD0iMjYiIHk9IjQwIiB3aWR0aD0iMTQiIGhlaWdodD0iNSIgcng9IjIiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjYiLz4KICA8IS0tIOW6lemDqOWwj+agh+etvi/kuabnrb4gLS0+CiAgPHJlY3QgeD0iMjIiIHk9IjUwIiB3aWR0aD0iOCIgaGVpZ2h0PSIzIiByeD0iMS41IiBmaWxsPSJ3aGl0ZSIgb3BhY2l0eT0iMC41NSIvPgo8L3N2Zz4=">
     <!-- 第三方 CSS 库：编辑器、代码高亮、Markdown 渲染、GraphQL、思维导图等 -->
-    <link rel="stylesheet" href="./css_js/cdn/atom-one-dark.min.css" />
-    <link rel="stylesheet" href="./css_js/cdn/jsonTree.css" />
-    <link rel="stylesheet" href="./css_js/cdn/editor.main.css" />
-    <link rel="stylesheet" href="./css_js/cdn/swagger-editor.min.css" />
-    <link rel="stylesheet" href="./css_js/cdn/github-markdown-light.min.css" />
-    <link rel="stylesheet" href="./css_js/cdn/atom-one-dark.min.css" />
-    <link rel="stylesheet" href="./css_js/cdn/mono-font.css" />
-    <link rel="stylesheet" href="./css_js/cdn/graphiql.min.css" />
-    <link rel="stylesheet" href="./css_js/cdn/tippy.css" />
-    <link rel="stylesheet" href="./css_js/cdn/jsmind.css" />
+    <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/atom-one-dark.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/summerstyle/jsonTreeViewer/libs/jsonTree/jsonTree.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs/editor/editor.main.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-editor-dist@4.14.8/swagger-editor.min.css" />
+    <!-- 关键 CSS（页面核心功能依赖） -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5/github-markdown-light.min.css" />
+    <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/atom-one-dark.min.css" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono&display=swap" />
+    <link rel="stylesheet" href="https://unpkg.com/graphiql@3.0.6/graphiql.min.css" />
+    <link rel="stylesheet" href="https://unpkg.com/tippy.js@6/dist/tippy.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jsmind@0.9.1/style/jsmind.css" />
 
     <!-- 核心 JS 库（同步加载，体积小） -->
-    <script src="./css_js/cdn/marked.min.js"></script>
-    <script src="./css_js/cdn/highlight.min.js"></script>
-    <script src="./css_js/cdn/Sortable.min.js"></script>
-    <script src="./css_js/cdn/mermaid.min.js"></script>
-    <script src="./css_js/cdn/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
 
     <!-- 大体积库（JSON 树、思维导图、Excel、D3、Excalidraw 等） -->
-    <script src="./css_js/cdn/jsonTree.js"></script>
-    <script src="./css_js/cdn/jsmind.js"></script>
-    <script src="./css_js/cdn/jsmind.draggable-node.js"></script>
-
-    <script src="./css_js/cdn/xlsx.full.min.js"></script>
-    <script src="./css_js/cdn/d3@7.js"></script>
-    <script src="./css_js/cdn/plantuml-encoder.min.js"></script>
-    <script src="./css_js/cdn/react.production.min.js"></script>
-    <script src="./css_js/cdn/react-dom.production.min.js"></script>
-    <script src="./css_js/cdn/excalidraw-assets/locales/zh-CN-json-069c304b5011429be615.js"></script>
-    <script src="./css_js/cdn/excalidraw-assets/vendor-677e88ca78c86bddf13d.js"></script>
-    <script src="./css_js/cdn/excalidraw.production.min.js"></script>
-
-    <script src="./css_js/cdn/d3-force.min.js"></script>
-    <script src="./css_js/cdn/swagger-editor-standalone-preset.min.js"></script>
-    <script src="./css_js/cdn/swagger-editor-bundle.js"></script>
-    <script src="./css_js/cdn/graphql-playground.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/summerstyle/jsonTreeViewer/libs/jsonTree/jsonTree.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsmind@0.9.1/es6/jsmind.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsmind@0.9.1/es6/jsmind.draggable-node.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/plantuml-encoder@1.4.0/dist/plantuml-encoder.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- excalidraw -->
+    <script src="https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@0.17.6/dist/excalidraw.production.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3-force@3.0.0/dist/d3-force.min.js"></script>
+    <script
+        src="https://cdn.jsdelivr.net/npm/swagger-editor-dist@4.14.8/swagger-editor-standalone-preset.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/swagger-editor-dist@4.14.8/swagger-editor-bundle.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/graphql-playground-react@1.7.28/build/static/js/middleware.js"></script>
 
     <!-- Prettier: 必须在 Monaco 之前同步加载，避免 AMD define 冲突 -->
-    <script src="./css_js/cdn/prettier/standalone.js"></script>
-    <script src="./css_js/cdn/prettier/parser-babel.js"></script>
-    <script src="./css_js/cdn/prettier/parser-estree.js"></script>
-    <script src="./css_js/cdn/prettier/parser-html.js"></script>
-    <script src="./css_js/cdn/prettier/parser-postcss.js"></script>
-    <script src="./css_js/cdn/prettier/parser-markdown.js"></script>
-    <script src="./css_js/cdn/prettier/parser-yaml.js"></script>
-    <script src="./css_js/cdn/prettier/parser-graphql.js"></script>
+    <script src="https://unpkg.com/prettier@3.5.3/standalone.js"></script>
+    <script src="https://unpkg.com/prettier@3.5.3/plugins/babel.js"></script>
+    <script src="https://unpkg.com/prettier@3.5.3/plugins/estree.js"></script>
+    <script src="https://unpkg.com/prettier@3.5.3/plugins/html.js"></script>
+    <script src="https://unpkg.com/prettier@3.5.3/plugins/postcss.js"></script>
+    <script src="https://unpkg.com/prettier@3.5.3/plugins/markdown.js"></script>
+    <script src="https://unpkg.com/prettier@3.5.3/plugins/yaml.js"></script>
+    <script src="https://unpkg.com/prettier@3.5.3/plugins/graphql.js"></script>
+    <script src="https://unpkg.com/prettier@3.5.3/plugins/xml.js"></script>
 
     <!-- 视频播放库（artplayer/hls/dash/flv）：也是 UMD define，必须在 Monaco loader 之前加载 -->
-    <script src="./css_js/cdn/artplayer.min.js"></script>
-    <script src="./css_js/cdn/hls.min.js"></script>
-    <script src="./css_js/cdn/dash.all.min.js"></script>
-    <script src="./css_js/cdn/flv.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/artplayer@4.5.6/dist/artplayer.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dashjs@4.7.4/dist/dash.all.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flv.js@1.6.2/dist/flv.min.js"></script>
 
     <!-- Moment.js + vis-timeline（moment 必须在前） -->
-    <script src="./css_js/cdn/moment.min.js"></script>
-    <script src="./css_js/cdn/zh-cn.js"></script>
+    <script src="https://unpkg.com/moment@2.30.1/min/moment.min.js"></script>
+    <script src="https://unpkg.com/moment@2.30.1/locale/zh-cn.js"></script>
     <script>moment.locale('zh-cn');</script>
-    <script src="./css_js/cdn/vis-timeline-graph2d.min.js"></script>
-    <script src="./css_js/cdn/popperjs.js"></script>
-    <script src="./css_js/cdn/tippy.js@6.js"></script>
-    <script src="./css_js/cdn/html2canvas-pro.min.js"></script>
-    <script src="./css_js/cdn/isomorphic-git.min.js"></script>
-    <script src="./css_js/cdn/jsonpath.min.js"></script>
+    <script src="https://unpkg.com/vis-timeline/standalone/umd/vis-timeline-graph2d.min.js"></script>
+    <script src="https://unpkg.com/@popperjs/core@2"></script>
+    <script src="https://unpkg.com/tippy.js@6"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas-pro@2.0.4/dist/html2canvas-pro.min.js"></script>
+    <script src="https://unpkg.com/isomorphic-git@1.25.10/index.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsonpath@1.3.0/jsonpath.min.js"></script>
 
     <!-- cronstrue：cron 表达式解析，内置中文 -->
-    <script src="./css_js/cdn/cronstrue-i18n.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/cronstrue@3.14.0/dist/cronstrue-i18n.min.js"></script>
     <!-- GraphiQL（UMD，必须在 define 清理前加载） -->
-    <script src="./css_js/cdn/graphiql.min.js"></script>
-    <script src="./css_js/cdn/regulex.js"></script>
+    <script src="https://unpkg.com/graphiql@3.0.6/graphiql.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/regulex@0.0.5/dist/regulex.js"></script>
     <script>
         // 抢先加载 regulex 模块并缓存，避免后面 almond.js 劫持 define 导致加载失败
         try {
@@ -90,11 +92,11 @@
         window.requirejs = undefined;
     </script>
     <!-- lunar（农历 JS）：必须在 define 清理之后加载，否则 UMD 走 AMD 路径不挂全局变量 -->
-    <script src="./css_js/cdn/lunar.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lunar-javascript@1.7.7/lunar.min.js"></script>
     <!-- Monaco Editor 加载器 -->
-    <script src="./css_js/cdn/monaco-editor-loader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs/loader.js"></script>
     <!-- ECharts 词云扩展 -->
-    <script src="./css_js/cdn/echarts-wordcloud.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts-wordcloud@2/dist/echarts-wordcloud.min.js"></script>
 
     <style>
         :root {
@@ -7572,13 +7574,20 @@
             background: var(--color-text-tertiary) !important;
         }
 
-        .jm-node-img {
+        .jm-node-custom,
+        .jm-node-img,
+        .jm-node-with-note {
             display: flex;
             flex-direction: column;
-            align-items: center;
-            gap: 4px;
+            align-items: stretch;
             overflow: visible;
             padding: 10px;
+            min-width: 120px;
+            box-sizing: border-box;
+        }
+
+        .jm-node-custom.jm-node-has-image,
+        .jm-node-img {
             min-width: 180px;
             min-height: 140px;
         }
@@ -7586,13 +7595,12 @@
         .jm-node-card {
             display: flex;
             flex-direction: column;
+            gap: 8px;
             background: linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%);
             border-radius: 8px;
-            max-width: 600px;
-        }
-
-        .jm-node-img .jm-node-card {
-            min-width: 180px;
+            max-width: 1000px;
+            width: 100%;
+            box-sizing: border-box;
         }
 
         .jm-node-topic {
@@ -7600,7 +7608,6 @@
             color: var(--jm-text, #1d1d1f);
             line-height: 1.4;
             word-break: break-word;
-            margin-bottom: 8px;
             text-align: left;
         }
 
@@ -7609,19 +7616,18 @@
             justify-content: center;
             align-items: center;
             width: 100%;
-            min-height: 60px;
+            min-height: 100px;
             border-radius: 8px;
             background: rgba(0, 0, 0, 0.02);
             overflow: hidden;
         }
 
         .jm-node-img img,
-        .jm-node-image-wrapper img {
-            max-width: 160px;
-            max-height: 100px;
-            width: auto;
-            height: auto;
-            object-fit: contain;
+        .jm-node-image-wrapper img,
+        .jm-node-custom img {
+            width: 160px;
+            height: 100px;
+            object-fit: cover;
             cursor: pointer;
             display: block;
             border-radius: 6px;
@@ -7629,7 +7635,8 @@
         }
 
         .jm-node-img img:hover,
-        .jm-node-image-wrapper img:hover {
+        .jm-node-image-wrapper img:hover,
+        .jm-node-custom img:hover {
             transform: scale(1.02);
         }
 
@@ -7644,7 +7651,6 @@
             background: rgba(0, 0, 0, 0.03);
             padding: 6px 8px;
             border-radius: 6px;
-            margin-top: 8px;
             line-height: 1.35;
             word-break: break-word;
             white-space: pre-wrap;
@@ -13973,7 +13979,7 @@
         function initMonacoEditor() {
             if (!monacoInitPromise) {
                 monacoInitPromise = new Promise((resolve) => {
-                    require.config({ paths: { 'vs': 'css_js/cdn/monaco-editor/min/vs' } });
+                    require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs' } });
                     require(['vs/editor/editor.main'], () => {
                         initFormatProviders();
                         resolve();
@@ -17468,8 +17474,11 @@
                     line_width: 1.5,
                     line_color: '#a6a6ac',
                     line_style: 'curved',
-                    // custom_line_render: elbowLineRender, // 直角折线
                     node_overflow: 'wrap',
+                    hmargin: 3000,
+                    vmargin: 3000,
+                    draggable: true,
+                    hide_scrollbars_when_draggable: true,
                     zoom: { min: 0.5, max: 2.0, step: 0.1 },
                     custom_node_render: customNodeRender,
                 },
@@ -17480,6 +17489,9 @@
                 },
                 shortcut: {
                     enable: false
+                },
+                default_event_handle: {
+                    enable_mousewheel_handle: false
                 }
             };
             const jm = new jsMind(options);
@@ -17693,9 +17705,36 @@
                 }
                 this._initCustomEdit();
                 this.initOverrideMethods();
+                this._initWheelZoom();
             }
             initOverrideMethods() {
                 this.overrideUpdateNode();
+            }
+            _initWheelZoom() {
+                const jm = this.jm;
+                const container = document.getElementById('jsmind_container');
+                if (!container || !jm || !jm.view) return;
+                const inner = container.querySelector('.jsmind-inner');
+                if (!inner) return;
+                let lastZoomTime = 0;
+                const self = this;
+                function handleWheel(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const now = Date.now();
+                    if (now - lastZoomTime < 10) return;
+                    lastZoomTime = now;
+                    const step = jm.view.opts.zoom.step || 0.1;
+                    const currentZoom = jm.view.zoom_current;
+                    let targetZoom;
+                    if (e.deltaY < 0) {
+                        targetZoom = currentZoom + step;
+                    } else {
+                        targetZoom = currentZoom - step;
+                    }
+                    jm.view.set_zoom(targetZoom, e);
+                }
+                inner.addEventListener('wheel', handleWheel, { passive: false, capture: true });
             }
             //思维导图编辑
             _initCustomEdit() {
@@ -17889,6 +17928,12 @@
             };
             show(data) {
                 this.jm.show(data);
+                const root = this.jm.get_root();
+                if (root && this.jm.view && typeof this.jm.view.center_node === 'function') {
+                    setTimeout(() => {
+                        this.jm.view.center_node(root);
+                    }, 0);
+                }
             }
             async destroy() {
                 await this._endCustomEdit(true);
@@ -18047,30 +18092,34 @@
                 }
             }
             _getJsMindBounds() {
-                const container = document.getElementById('jsmind_container');
-                if (!container) return null;
-                const nodes = container.querySelectorAll('jmnode');
-                if (nodes.length === 0) return null;
+                if (!this.jm || !this.jm.mind || !this.jm.layout) return null;
+                const nodes = this.jm.mind.nodes;
+                if (!nodes) return null;
 
                 let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-                const containerRect = container.getBoundingClientRect();
 
-                nodes.forEach(node => {
-                    const rect = node.getBoundingClientRect();
-                    const relX = rect.left - containerRect.left;
-                    const relY = rect.top - containerRect.top;
-                    minX = Math.min(minX, relX);
-                    minY = Math.min(minY, relY);
-                    maxX = Math.max(maxX, relX + rect.width);
-                    maxY = Math.max(maxY, relY + rect.height);
-                });
+                for (const nodeId in nodes) {
+                    const node = nodes[nodeId];
+                    if (!node._data || !node._data.view) continue;
+                    const viewData = node._data.view;
+                    const absX = viewData.abs_x || 0;
+                    const absY = viewData.abs_y || 0;
+                    const w = viewData.width || 0;
+                    const h = viewData.height || 0;
+                    minX = Math.min(minX, absX);
+                    minY = Math.min(minY, absY);
+                    maxX = Math.max(maxX, absX + w);
+                    maxY = Math.max(maxY, absY + h);
+                }
+
+                if (!isFinite(minX)) return null;
 
                 const padding = 50;
                 return {
                     x: Math.max(0, minX - padding),
                     y: Math.max(0, minY - padding),
-                    width: Math.max(container.offsetWidth, maxX - minX + padding * 2),
-                    height: Math.max(container.offsetHeight, maxY - minY + padding * 2)
+                    width: maxX - minX + padding * 2,
+                    height: maxY - minY + padding * 2
                 };
             }
 
@@ -18878,43 +18927,49 @@
             const hasImage = local_images !== '' || images !== '';
             const hasNote = note !== '';
             const isMd = nodeData.isMarkdown || false;
-            // 无内容时返回 false，使用默认渲染
             if (!topic && !hasImage && !hasNote) {
                 return false;
             }
-            // 统一清理之前的自定义类名，避免类型切换时残留
-            element.classList.remove('jm-node-markdown', 'jm-node-img', 'jm-node-with-note');
-            // Markdown 内容处理
-            if (topic && isMd) {
+            element.classList.remove('jm-node-markdown', 'jm-node-img', 'jm-node-with-note', 'jm-node-custom');
+            if (topic && isMd && !hasImage && !hasNote) {
                 element.innerHTML = '';
                 element.classList.add('jm-node-markdown');
                 const md = nodeData.markdown || '';
                 element.innerHTML = `<div class="markdown-body" style="zoom: 0.9;background-color: var(--color-bg);">${md}</div>`;
                 return true;
             }
-            // 图片节点处理
+            if (!hasImage && !hasNote) {
+                return false;
+            }
+            element.innerHTML = '';
+            element.classList.add('jm-node-custom');
+            if (hasImage) element.classList.add('jm-node-has-image');
+            if (hasNote) element.classList.add('jm-node-has-note');
+            let html = '<div class="jm-node-card">';
+            if (topic) {
+                html += `<div class="jm-node-topic">${escapeHtml(topic)}</div>`;
+            }
             if (hasImage) {
-                element.innerHTML = '';
-                element.classList.add('jm-node-img');
-                // 构建节点 HTML 结构
-                let html = '<div class="jm-node-card">';
-                // 主题文本
-                if (topic) html += `<div class="jm-node-topic">${escapeHtml(topic)}</div>`;
-                // 图片容器
                 html += '<div class="jm-node-image-wrapper"></div>';
-                // 备注（note）
-                if (hasNote) html += `<div class="jm-node-note">${escapeHtml(note)}</div>`;
-                html += '</div>';
-                element.innerHTML = html;
-                // 应用自定义颜色
-                if (nodeColor) {
-                    const card = element.querySelector('.jm-node-card');
-                    if (card) {
-                        card.style.borderColor = nodeColor;
-                        card.style.boxShadow = `0 2px 8px ${nodeColor}22, 0 4px 16px ${nodeColor}11`;
-                    }
+            }
+            if (hasNote) {
+                if (hasMarkdown(note)) {
+                    const md = markedMd(parseObsidianToHTML(normalizeMarkdownTable(note)));
+                    html += `<div class="jm-node-note"><div class="markdown-body" style="zoom: 0.8;white-space: normal !important;">${md}</div></div>`;
+                } else {
+                    html += `<div class="jm-node-note">${escapeHtml(note)}</div>`;
                 }
-                // 异步加载图片
+            }
+            html += '</div>';
+            element.innerHTML = html;
+            if (nodeColor) {
+                const card = element.querySelector('.jm-node-card');
+                if (card) {
+                    card.style.borderColor = nodeColor;
+                    card.style.boxShadow = `0 2px 8px ${nodeColor}22, 0 4px 16px ${nodeColor}11`;
+                }
+            }
+            if (hasImage) {
                 const nodeId = node.id;
                 const imageWrapper = element.querySelector('.jm-node-image-wrapper');
                 getImage(local_images, images, nodeId, false).then(imgHtml => {
@@ -18927,25 +18982,8 @@
                     if (currentLocalImages !== local_images || currentImages !== images) return;
                     imageWrapper.innerHTML = imgHtml;
                 });
-                return true;
             }
-            // 只有文本和备注的节点
-            if (hasNote) {
-                element.innerHTML = '';
-                element.classList.add('jm-node-with-note');
-                let html = '<div class="jm-node-card">';
-                if (topic) html += `<div class="jm-node-topic">${escapeHtml(topic)}</div>`;
-                if (hasMarkdown(note)) {
-                    const md = markedMd(parseObsidianToHTML(normalizeMarkdownTable(note)));
-                    html += `<div class="jm-node-note"><div class="markdown-body" style="zoom: 0.8;white-space: normal !important;background-color: var(--color-bg);">${md}</div></div>`;
-                } else {
-                    html += `<div class="jm-node-note">${escapeHtml(note)}</div>`;
-                }
-                html += '</div>';
-                element.innerHTML = html;
-                return true;
-            }
-            return false;
+            return true;
         };
 
         function normalizeMarkdownTable(text) {
@@ -40745,7 +40783,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (!currentEditor) return;
             safeLocalStorageSet('tempEditorContent', currentEditor.getValue());
         }
-
     </script>
 </body>
 
