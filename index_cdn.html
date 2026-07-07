@@ -7522,12 +7522,17 @@
         }
 
         /* ==================== jmnode  ==================== */
+        .jmnode-overflow-wrap jmnodes {
+            min-width: 800px;
+        }
+
         jmnode {
             font-size: 13px !important;
             white-space: pre-wrap;
             word-break: break-word;
             line-height: 1.4;
             border-radius: 7px !important;
+            max-width: 800px !important;
         }
 
         .jm-node-markdown {
@@ -7596,10 +7601,8 @@
             display: flex;
             flex-direction: column;
             gap: 8px;
-            background: linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%);
+            background: var(--color-bg, #fff);
             border-radius: 8px;
-            max-width: 1000px;
-            width: 100%;
             box-sizing: border-box;
         }
 
@@ -12501,6 +12504,10 @@
                     style="display:none;">
                     保存
                 </button>
+                <button id="jsmind-save-opml-btn" class="btn btn-warning btn-sm" onclick="jsMindSaveOpml()"
+                    style="display:none;">
+                    保存为Outline格式
+                </button>
                 <button id="jsmind-image-btn" class="btn btn-warning btn-sm" onclick="jsMindSaveImage()"
                     style="display:none;">
                     导出为图片
@@ -13952,6 +13959,7 @@
         const wordViewContainer = document.getElementById('word-view-container');
         const gitRecordsContainer = document.getElementById('git-records-container');
         const jmSaveBtn = document.getElementById('jsmind-save-btn');
+        const jmSaveOpmlBtn = document.getElementById('jsmind-save-opml-btn');
         const jmImgBtn = document.getElementById('jsmind-image-btn');
 
         // 所有主视图容器的集合（切换视图时隐藏其他容器用）
@@ -17386,20 +17394,21 @@
             const text = await getFileContent(currentFileHandle);
             tocContainer.style.display = 'none';
             if (currentFileName.endsWith('.opml')) {
-                setControlsState({ jmSaveBtn: false, jmImgBtn: true, });
+                setControlsState({ jmSaveBtn: false, jmSaveOpmlBtn: false, jmImgBtn: true, });
                 await convertOpmlToMindmap(text);
             } else if (currentFileName.endsWith('.mm')) {
-                setControlsState({ jmSaveBtn: true, jmImgBtn: true, });
+                setControlsState({ jmSaveBtn: true, jmSaveOpmlBtn: true, jmImgBtn: true, });
                 await convertMmToMindmap(text);
             }
         }
 
         async function goBackToOutline() {
             mmModel = 'opml';
-            setControlsState({ jmSaveBtn: false, jmImgBtn: true, });
+            setControlsState({ jmSaveBtn: false, jmSaveOpmlBtn: false, jmImgBtn: true, });
             if (currentFileName.endsWith('.opml')) {
                 await goOpmlBack();
             } else if (currentFileName.endsWith('.mm')) {
+                setControlsState({ jmSaveOpmlBtn: true });
                 await goMmBack();
             }
         }
@@ -17417,6 +17426,7 @@
                     copyBtn: false,
                     formatBtn: false,
                     jmSaveBtn: true,
+                    jmSaveOpmlBtn: true,
                     jmImgBtn: true,
                 });
             } catch (error) {
@@ -17483,8 +17493,8 @@
                     custom_node_render: customNodeRender,
                 },
                 layout: {
-                    hspace: 30,
-                    vspace: 20,
+                    hspace: 40, // 节点间水平间距
+                    vspace: 25, // 节点间垂直间距
                     pspace: 13
                 },
                 shortcut: {
@@ -17633,6 +17643,9 @@
 
         async function renderJsMind(jsMindData, ismmFile) {
             await jsMindCreate(jsMindData, ismmFile);
+        }
+        async function jsMindSaveOpml() {
+            if (jsMindHandle) await jsMindHandle.jsmind_saveAsOpml();
         }
 
         // 全局辅助函数：保存思维导图
@@ -17979,6 +17992,8 @@
             }
             handleGlobalKeydown(e) {
                 if (!this.jm) return;
+                // 如果备注输入框打开，不拦截任何按键（让 textarea 内部事件正常处理）
+                if (document.querySelector('.note-modal-overlay')) return;
                 // Mac 兼容：Cmd (metaKey) 或 Ctrl
                 const mod = e.metaKey || e.ctrlKey;
                 // Cmd/Ctrl+S - 保存
@@ -17988,12 +18003,6 @@
                         console.error('保存思维导图失败:', err);
                         showNotification('✗ 保存失败: ' + err.message, 'error');
                     });
-                    return;
-                }
-                // Cmd/Ctrl+Shift+P - 保存为图片
-                if (e.key === 'p' && e.shiftKey && mod && !e.altKey) {
-                    e.preventDefault();
-                    this.jsmind_saveAsImage();
                     return;
                 }
                 // 如果正在编辑节点，不拦截（包括自定义编辑和原生编辑）
@@ -18139,6 +18148,19 @@
                     showNotification('✗ 思维导图导出图片失败', 'error', 2000);
                     console.error('思维导图导出图片失败:', err);
                 }
+            }
+            async jsmind_saveAsOpml() {
+                if (!this.ismmFile) return;
+                const fileHandle = currentFileHandle;
+                if (!fileHandle) return;
+                const result = this.jm.get_data('node_tree');
+                const rtn = exportFreeMindToOpml(result);
+                showSaveModal({
+                    title: '保存思维导图为 OPML',
+                    getDefaultFileName: () => 'untitled.opml',
+                    getContent: () => rtn,
+                    onSave: doSaveToFolder
+                });
             }
             async jsmind_save() {
                 if (!this.ismmFile) return;
@@ -18763,13 +18785,11 @@
                 <div class="jsmind-help-section">
                     <h3>保存</h3>
                     <div class="jsmind-help-item"><span>保存</span><kbd>Ctrl/Cmd + S</kbd></div>
-                    <div class="jsmind-help-item"><span>保存为图片</span><kbd>Ctrl/Cmd + Shift + P</kbd></div>
                 </div>
                 <div class="jsmind-help-section">
                     <h3>节点创建</h3>
                     <div class="jsmind-help-item"><span>添加子节点</span><kbd>Tab</kbd></div>
-                    <div class="jsmind-help-item"><span>添加同级节点（下方）</span><kbd>Enter</kbd></div>
-                    <div class="jsmind-help-item"><span>添加同级节点（上方）</span><kbd>Shift + Enter</kbd></div>
+                    <div class="jsmind-help-item"><span>添加同级节点</span><kbd>Enter</kbd></div>
                     <div class="jsmind-help-item"><span>插入父节点</span><kbd>Shift + Tab</kbd></div>
                     <div class="jsmind-help-item"><span>复制节点</span><kbd>Ctrl/Cmd + D</kbd></div>
                 </div>
@@ -18777,6 +18797,7 @@
                     <h3>节点编辑</h3>
                     <div class="jsmind-help-item"><span>编辑节点</span>双击节点</div>
                     <div class="jsmind-help-item"><span>删除节点</span><kbd>Backspace | Delete</kbd></div>
+                    <div class="jsmind-help-item"><span>添加备注</span><kbd>Shift + Enter</kbd></div>
                 </div>
                 <div class="jsmind-help-section">
                     <h3>层级与移动</h3>
@@ -19045,6 +19066,85 @@
             }
         }
 
+        function exportFreeMindToOpml(jsMindData) {
+            function escapeAttr(str) {
+                if (!str) return '';
+                return String(str)
+                    .replace(/&/g, '&amp;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
+            }
+            function escapeTopic(str) {
+                if (!str) return '';
+                return escapeAttr(str).replace(/\n/g, '&#10;');
+            }
+            function buildOutlineXml(node, depth) {
+                const indent = '    '.repeat(depth + 1);
+                const childIndent = '    '.repeat(depth + 2);
+                // 基础属性
+                const id = escapeAttr(node.id || '');
+                const topic = escapeTopic(node.topic || '');
+                const data = node.data || {};
+                let attrs = '';
+                if (topic) attrs += ` TEXT="${topic}"`;
+                if (id) attrs += ` ID="${id}"`;
+                if (data.link) attrs += ` LINK="${escapeAttr(data.link)}"`;
+                if (data.color) attrs += ` COLOR="${escapeAttr(data.color)}"`;
+                if (data.backgroundColor) attrs += ` BACKGROUND_COLOR="${escapeAttr(data.backgroundColor)}"`;
+                const noteText = node.note || data.note || '';
+                if (noteText) attrs += ` NOTE="${escapeAttr(noteText)}"`;
+                const imgPath = node.local_images || data.local_images || '';
+                if (imgPath) {
+                    const encodedImg = encodeURIComponent(imgPath);
+                    attrs += ` _local_images="${escapeAttr(encodedImg)}"`;
+                }
+                if (node.expanded === false) attrs += ` _folded="true"`;
+                const children = node.children || [];
+                if (children.length === 0) {
+                    return `${indent}<outline${attrs}/>`;
+                } else {
+                    const childOutlines = children
+                        .filter(child => child)
+                        .map(child => buildOutlineXml(child, depth + 1))
+                        .join('\n');
+                    return `${indent}<outline${attrs}>\n${childOutlines}\n${indent}</outline>`;
+                }
+            }
+            const meta = jsMindData.meta || {};
+            const title = escapeAttr(meta.name || '思维导图');
+            const rootNode = jsMindData.data;
+            if (!rootNode) {
+                throw new Error('数据中缺少根节点 data');
+            }
+            let bodyContent = '';
+            if (rootNode.isroot) {
+                const children = rootNode.children || [];
+                if (children.length > 0) {
+                    bodyContent = children
+                        .filter(child => child)
+                        .map(child => buildOutlineXml(child, 0))
+                        .join('\n');
+                } else {
+                    bodyContent = buildOutlineXml({ ...rootNode, isroot: false }, 0);
+                }
+            } else {
+                bodyContent = buildOutlineXml(rootNode, 0);
+            }
+            const xml = `<?xml version="1.0" encoding="UTF-8"?>\n` +
+                `<opml version="2.0">\n` +
+                `  <head>\n` +
+                `    <title>${title}</title>\n` +
+                `    <dateCreated>${new Date().toISOString()}</dateCreated>\n` +
+                `    <dateModified>${new Date().toISOString()}</dateModified>\n` +
+                `  </head>\n` +
+                `  <body>\n` +
+                `${bodyContent}\n` +
+                `  </body>\n` +
+                `</opml>`;
+            return xml;
+        }
+
         // OPML → jsMind 格式转换（同步版本，无 I/O 操作无需 async）
         async function parseOPMLToJsMind(xmlDoc) {
             async function buildNode(outline, nodeId) {
@@ -19055,7 +19155,7 @@
 
                 var topic = outline.getAttribute('text') || outline.getAttribute('TEXT') || getMubuText(outline) || '';
                 var images = outline.getAttribute("_local_images") || outline.getAttribute("_mubu_images") || outline.getAttribute("images") || '';
-                const note = outline.getAttribute("_note") || outline.getAttribute("note") || outline.getAttribute("_mubu_note") || '';
+                const note = outline.getAttribute("_NOTE") || outline.getAttribute("NOTE") || outline.getAttribute("_note") || outline.getAttribute("note") || outline.getAttribute("_mubu_note") || '';
                 try { if (images) images = decodeURIComponent(images); } catch { console.error('解码图片失败:', images); }
                 if (!topic && images) {
                     topic = '图片';
@@ -19181,7 +19281,7 @@
             const bgColor = node.getAttribute('BACKGROUND_COLOR') || node.getAttribute('backgroundColor') || node.getAttribute('background') || '';
             const folded = (node.getAttribute('FOLDED') || node.getAttribute('folded')) === 'true'; // 是否折叠
             const id = node.getAttribute('ID') || node.getAttribute('id') || nodeId;
-            let localImagesAttr = node.getAttribute('_local_images') || '';
+            let localImagesAttr = node.getAttribute('_local_images') || node.getAttribute('_mubu_images') || '';
             let images = node.getAttribute('images') || '';
             try { if (localImagesAttr) images = images || decodeURIComponent(localImagesAttr); } catch { images = images || localImagesAttr; }
             const noteStr = node.getAttribute("_note") || node.getAttribute("note") || node.getAttribute("NOTE") || note || '';
@@ -19316,39 +19416,19 @@
                 const id = escapeAttr(node.id || '');
                 const topic = escapeTopic(node.topic || '');
                 let attrs = `ID="${id}"`;
-                // 根节点不写 POSITION；非根节点根据 direction 映射
                 if (!isRoot) {
                     const dir = node.direction || 'right';
                     attrs += ` POSITION="${dir}"`;
                 }
-                // topic 始终写入 TEXT 属性（换行用 &#10; 保留）
-                if (topic) {
-                    attrs += ` TEXT="${topic}"`;
-                }
-                // 折叠状态：jsMind expanded=false → FreeMind FOLDED="true"
-                if (node.expanded === false) {
-                    attrs += ` FOLDED="true"`;
-                }
-                if (node.note) {
-                    attrs += ` NOTE="${escapeAttr(node.note)}"`;
-                }
-                //图片
+                if (topic) attrs += ` TEXT="${topic}"`;
+                if (node.expanded === false) attrs += ` FOLDED="true"`;
+                if (node.note) attrs += ` NOTE="${escapeAttr(node.note)}"`;
                 const imgPath = node.local_images || (node.data && node.data.local_images) || '';
-                if (imgPath) {
-                    attrs += ` _local_images="${encodeURIComponent(imgPath)}"`;
-                }
-                // 颜色属性
+                if (imgPath) attrs += ` _local_images="${encodeURIComponent(imgPath)}"`;
                 const data = node.data || {};
-                if (data.color) {
-                    attrs += ` COLOR="${escapeAttr(data.color)}"`;
-                }
-                if (data.backgroundColor) {
-                    attrs += ` BACKGROUND_COLOR="${escapeAttr(data.backgroundColor)}"`;
-                }
-                // 超链接
-                if (data.link) {
-                    attrs += ` LINK="${escapeAttr(data.link)}"`;
-                }
+                if (data.color) attrs += ` COLOR="${escapeAttr(data.color)}"`;
+                if (data.backgroundColor) attrs += ` BACKGROUND_COLOR="${escapeAttr(data.backgroundColor)}"`;
+                if (data.link) attrs += ` LINK="${escapeAttr(data.link)}"`;
                 // 收集子元素：icons、note、child nodes
                 const childElements = [];
                 // 图标映射
@@ -19414,6 +19494,7 @@
                     copyBtn: true,
                     formatBtn: false,
                     jmSaveBtn: false,
+                    jmSaveOpmlBtn: false,
                     jmImgBtn: true,
                 });
                 generateTOC('', 'opml', opmlTocData);
@@ -19437,6 +19518,7 @@
                 copyBtn: true,
                 formatBtn: false,
                 jmSaveBtn: true,
+                jmSaveOpmlBtn: true,
                 jmImgBtn: true,
             });
         }
@@ -27254,6 +27336,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
          * @param {boolean} [opts.formatBtn] - 格式化按钮
          * @param {boolean} [opts.jmSaveBtn] - JM 保存按钮
          * @param {boolean} [opts.jmImgBtn] - JM 导出图片
+         * @param {boolean} [opts.jmSaveOpmlBtn] - JM 保存为 OPML 按钮
          */
         function setControlsState(opts = {}) {
             if (opts.topControls !== undefined) topRightControls.style.display = opts.topControls ? 'flex' : 'none';
@@ -27271,6 +27354,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (opts.formatBtn !== undefined) formatBtn.style.display = opts.formatBtn ? 'inline-flex' : 'none';
             if (opts.jmSaveBtn !== undefined) jmSaveBtn.style.display = opts.jmSaveBtn ? 'inline-flex' : 'none';
             if (opts.jmImgBtn !== undefined) jmImgBtn.style.display = opts.jmImgBtn ? 'inline-flex' : 'none';
+            if (opts.jmSaveOpmlBtn !== undefined) jmSaveOpmlBtn.style.display = opts.jmSaveOpmlBtn ? 'inline-flex' : 'none';
         }
 
         async function showAIResultModal(action, titles, content, fileName, filePath) {
