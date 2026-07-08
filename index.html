@@ -1458,8 +1458,7 @@
         /* 幕布大纲风格样式 */
         .mindmap-node {
             position: relative;
-            margin: 1px 0;
-            padding: 4px 0 4px 0;
+            margin: 3px 0 3px 0;
             border-radius: 4px;
             display: flex;
             flex-direction: column;
@@ -1467,15 +1466,25 @@
 
         .mindmap-root {
             font-size: 13px;
-            padding: 8px 0 8px 0;
-            margin-bottom: 4px;
+            padding: 4px 0 4px 0;
         }
-        /* OPML 大纲视图选中高亮 */
-        .mindmap-node.opml-selected > .mindmap-main-row {
-            outline: 2px solid var(--color-border, #d0d7de);
-            outline-offset: 2px;
-            border-radius: var(--radius-md, 6px);
-            background-color: rgba(0, 0, 0, 0.04);
+
+        .mindmap-node.opml-selected>.mindmap-main-row {
+            outline: 1px solid var(--color-primary);
+            outline-offset: 1px;
+            border-radius: var(--radius-sm, 4px);
+            background-color: rgba(0, 0, 0, 0.02);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transition: all 0.2s ease;
+        }
+
+        .mindmap-main-row:hover {
+            outline: 1px solid var(--color-success);
+            outline-offset: 1px;
+            border-radius: var(--radius-sm, 4px);
+            background-color: rgba(0, 0, 0, 0.02);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transition: all 0.2s ease;
         }
 
         .mindmap-child {
@@ -1487,6 +1496,7 @@
             flex-direction: row;
             align-items: flex-start;
             width: 100%;
+            margin: 3px 0 3px 0;
         }
 
         .mindmap-children {
@@ -1523,6 +1533,7 @@
             flex: 1;
             min-width: 0;
             padding-left: 2px;
+            gap: 4px;
         }
 
         .mindmap-head-row {
@@ -1537,6 +1548,7 @@
 
         .mindmap-images-row {
             width: 100%;
+            margin: 4px 0;
         }
 
         .mindmap-node-content {
@@ -1545,6 +1557,8 @@
             color: var(--color-danger);
             font-weight: 600;
             font-size: 15px;
+            white-space: pre-wrap;
+            word-break: break-word;
         }
 
         .mindmap-node-content-1 {
@@ -13705,21 +13719,21 @@
             { key: 'GraphiQL', value: 'toggleFile("graphiQL")', display: true, fileProtocolDisplay: false },
             { key: 'GraphQLPlayground', value: 'toggleFile("graphQLPlayground")', display: true, fileProtocolDisplay: true },
             { key: 'OpenResty', value: 'toggleFile("openRestyEditor")', display: true, fileProtocolDisplay: false },
+            { key: '番茄钟', value: 'toggleFile("pomodoro")', display: true, fileProtocolDisplay: true },
             { key: '正则表达式', value: 'toggleFile("regexTest")', display: true, fileProtocolDisplay: true },
             { key: 'Cron', value: 'toggleFile("cron")', display: true, fileProtocolDisplay: true },
             { key: '视频播放器', value: 'toggleFile("video")', display: true, fileProtocolDisplay: true },
             { key: 'Raw查看', value: 'toggleFile("raw")', display: true, fileProtocolDisplay: true },
             { key: 'url编解码', value: 'toggleFile("urlEncoder")', display: true, fileProtocolDisplay: true },
-            { key: '文件词云', value: 'toggleFile("wordCloud")', display: true, fileProtocolDisplay: true },
             { key: '书签', value: 'toggleFile("bookmarks")', display: true, fileProtocolDisplay: true },
+            { key: '文件词云', value: 'toggleFile("wordCloud")', display: true, fileProtocolDisplay: true },
             { key: '文件时间线', value: 'toggleFile("timeline")', display: true, fileProtocolDisplay: true },
+            { key: 'git记录', value: 'toggleFile("gitRecords")', display: true, fileProtocolDisplay: true },
             { key: 'Mermaid', value: 'toggleFile("mermaid")', display: true, fileProtocolDisplay: true },
             { key: 'Excalidraw白板', value: 'toggleFile("whiteboard")', display: true, fileProtocolDisplay: true },
-            { key: 'git记录', value: 'toggleFile("gitRecords")', display: true, fileProtocolDisplay: true },
             { key: 'Canvas文档白板', value: 'toggleFile("canvas")', display: true, fileProtocolDisplay: true },
             { key: '思维导图', value: 'toggleFile("mindMap")', display: true, fileProtocolDisplay: true },
             { key: '大纲笔记', value: 'toggleFile("opmlOutline")', display: true, fileProtocolDisplay: true },
-            { key: '番茄钟', value: 'toggleFile("pomodoro")', display: true, fileProtocolDisplay: true },
             { key: '临时编辑器', value: 'toggleFile("tempEditor")', display: true, fileProtocolDisplay: true },
         ]
         // 高亮字体颜色（深色系，确保可读性）
@@ -14049,8 +14063,8 @@
         // 视图切换缓存：避免来回切换时反复转换导致数据丢失
         let _viewCache = { opmlXml: null, jsMindData: null };
         function _cacheCurrentViewData() {
-            if (opmlHandle) { try { _viewCache.opmlXml = opmlHandle._serializeTree(); } catch (e) {} }
-            if (jsMindHandle?.jm) { try { _viewCache.jsMindData = jsMindHandle.jm.get_data('node_tree'); } catch (e) {} }
+            if (opmlHandle) { try { _viewCache.opmlXml = opmlHandle._serializeTree(); } catch (e) { } }
+            if (jsMindHandle?.jm) { try { _viewCache.jsMindData = jsMindHandle.jm.get_data('node_tree'); } catch (e) { } }
         }
         function _clearViewCache() { _viewCache = { opmlXml: null, jsMindData: null }; }
 
@@ -17618,7 +17632,7 @@
             if (isOpmlSource) {
                 let jsMindFullData = null;
                 if (jsMindHandle?.jm && mmModel === 'mm') {
-                    try { jsMindFullData = jsMindHandle.jm.get_data('node_tree'); } catch (e) {}
+                    try { jsMindFullData = jsMindHandle.jm.get_data('node_tree'); } catch (e) { }
                 }
                 await destroyOPML();
                 await destroyJsMind();
@@ -17634,7 +17648,7 @@
             if (isMmSource) {
                 let jsMindFullData = null;
                 if (jsMindHandle?.jm) {
-                    try { jsMindFullData = jsMindHandle.jm.get_data('node_tree'); } catch (e) {}
+                    try { jsMindFullData = jsMindHandle.jm.get_data('node_tree'); } catch (e) { }
                 }
                 await destroyOPML();
                 await destroyJsMind();
@@ -19067,11 +19081,7 @@
             };
         };
 
-        // ===== OPML 大纲视图编辑器（参考 JsMindHandle，支持内联编辑 + 快捷键） =====
         class OPMLHandle {
-            /**
-             * @param {string} opmlText - OPML XML 原始文本
-             */
             constructor(opmlText, readonly = false) {
                 this._root = null;               // 内部树根节点
                 this._selectedNodeId = null;     // 当前选中节点 ID
@@ -19084,8 +19094,6 @@
                 this.handleGlobalKeydown = this.handleGlobalKeydown.bind(this);
                 this._buildTree(opmlText);
             }
-            // ---- 数据层 ----
-            /** 解析 OPML 文本，构建内部树（每个节点加 id + _parent） */
             _buildTree(opmlText) {
                 const parsed = parseOPML(opmlText);
                 let idCounter = 0;
@@ -19108,9 +19116,7 @@
                 };
                 this._root = _walk(parsed, null);
             }
-            /** 获取当前树根节点（用于外部转换） */
             getTreeData() { return this._root; }
-            /** 根据 ID 查找节点 */
             _findNode(id, node = this._root) {
                 if (node.id === id) return node;
                 for (const c of node.children) {
@@ -19119,12 +19125,9 @@
                 }
                 return null;
             }
-            /** 获取选中节点 */
             _getSelected() {
                 return this._selectedNodeId ? this._findNode(this._selectedNodeId) : this._root;
             }
-            // ---- 渲染层 ----
-            /** 渲染整棵树到指定容器 */
             async render(container) {
                 this._container = container;
                 container.innerHTML = '';
@@ -19138,9 +19141,7 @@
                 container.appendChild(wrapper);
                 this._initEventDelegation(wrapper);
                 this._selectNode(this._root.id);
-                // 只读模式不注册键盘监听（键盘处理由外部 renderOPMLFile/outlineViewModel 负责）
             }
-            /** 递归渲染单个节点 HTML */
             async _renderNodeHtml(node, level) {
                 const hasChildren = node.children && node.children.length > 0;
                 const isRoot = level === 0;
@@ -19183,7 +19184,6 @@
                 html += `</div>`;
                 return html;
             }
-            /** 全量重渲染（结构大变时使用，如全部展开/折叠至层级） */
             async _rebuildDOM() {
                 if (!this._container) return;
                 const wrapper = this._container.querySelector('.mindmap-container');
@@ -19195,7 +19195,6 @@
                 wrapper.appendChild(spacer);
                 if (selId) this._selectNode(selId);
             }
-            // ---- 事件委托 ----
             _initEventDelegation(wrapper) {
                 // 单击：选中节点
                 wrapper.addEventListener('click', (e) => {
@@ -19254,20 +19253,22 @@
                 ta.className = 'jsmind-custom-edit';
                 ta.value = node.head || '';
                 ta.setAttribute('data-node-id', nodeId);
+                ta.setAttribute('rows', 3);
                 Object.assign(ta.style, {
-                    position: 'absolute', left: '0', right: '0', top: '0', bottom: '0',
+                    position: 'absolute', left: '0', right: '0', top: '-6px',
                     width: '100%', minWidth: '200px',
                     zIndex: '100', boxSizing: 'border-box',
+                    resize: 'vertical', overflow: 'hidden',
                     padding: '8px 10px', margin: '0',
-                    border: '1.5px solid var(--color-primary, #4A90D9)',
+                    border: '1px solid var(--color-primary, #4A90D9)',
                     borderRadius: '6px', outline: 'none',
                     background: 'var(--color-bg, #fff)',
                     color: 'var(--color-text, #333)',
                     fontSize: '13px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
-                    lineHeight: '1.5', resize: 'none', overflow: 'hidden',
-                    userSelect: 'text', WebkitUserSelect: 'text',
+                    lineHeight: '1.5', userSelect: 'text', WebkitUserSelect: 'text',
                     boxShadow: '0 0 0 3px rgba(74,144,217,0.12)',
                     wordBreak: 'break-word', whiteSpace: 'pre-wrap',
+
                 });
                 headRow.style.position = 'relative';
                 headRow.appendChild(ta);
@@ -19691,30 +19692,42 @@
                 const hasImage = !!(node && (node.local_images || node.images));
                 const hasNote = !!(node && (node.note || node.mubu_note));
                 const groups = [
-                    { label: '节点创建', items: [
-                        { label: '添加子节点', shortcut: 'Tab', action: () => { this._addChild(this._selectedNodeId); this._removeContextMenu(); } },
-                        { label: '添加同级节点', shortcut: 'Enter', action: () => { this._addSibling(this._selectedNodeId); this._removeContextMenu(); } },
-                        { label: '插入父节点', shortcut: 'Shift+Tab', action: () => { this._insertParent(this._selectedNodeId); this._removeContextMenu(); } },
-                    ]},
-                    { label: '节点编辑', items: [
-                        { label: '复制节点', shortcut: 'Ctrl/Cmd+D', action: () => { this._duplicateNode(this._selectedNodeId); this._removeContextMenu(); } },
-                        { label: '删除节点', shortcut: 'Backspace/Del', action: () => { this._deleteNode(this._selectedNodeId); this._removeContextMenu(); } },
-                    ]},
-                    { label: '文本编辑', items: [
-                        { label: hasNote ? '编辑备注' : '新增备注', shortcut: 'Shift+Enter', action: () => { this._showNoteModal(this._selectedNodeId); this._removeContextMenu(); } },
-                        { label: '删除备注', shortcut: '', action: () => { this._deleteNote(); this._removeContextMenu(); } },
-                    ]},
-                    { label: '图片', items: [
-                        { label: '新增图片', shortcut: '', action: () => { this._showImageSelectModal(); this._removeContextMenu(); } },
-                    ]},
-                    hasImage ? { label: '图片操作', items: [
-                        { label: '删除图片', shortcut: '', action: () => { this._deleteNodeImage(); this._removeContextMenu(); } },
-                        { label: '更换图片', shortcut: '', action: () => { this._showImageSelectModal(); this._removeContextMenu(); } },
-                    ]} : null,
-                    { label: '展开/折叠', items: [
-                        { label: '展开/折叠当前节点', shortcut: 'Ctrl/Cmd+.', action: () => { this._toggle(this._selectedNodeId); this._removeContextMenu(); } },
-                        { label: '展开/折叠同级主题', shortcut: 'Ctrl/Cmd+Shift+.', action: () => { this._toggleSiblings(this._selectedNodeId); this._removeContextMenu(); } },
-                    ]},
+                    {
+                        label: '节点创建', items: [
+                            { label: '添加子节点', shortcut: 'Tab', action: () => { this._addChild(this._selectedNodeId); this._removeContextMenu(); } },
+                            { label: '添加同级节点', shortcut: 'Enter', action: () => { this._addSibling(this._selectedNodeId); this._removeContextMenu(); } },
+                            { label: '插入父节点', shortcut: 'Shift+Tab', action: () => { this._insertParent(this._selectedNodeId); this._removeContextMenu(); } },
+                        ]
+                    },
+                    {
+                        label: '节点编辑', items: [
+                            { label: '复制节点', shortcut: 'Ctrl/Cmd+D', action: () => { this._duplicateNode(this._selectedNodeId); this._removeContextMenu(); } },
+                            { label: '删除节点', shortcut: 'Backspace/Del', action: () => { this._deleteNode(this._selectedNodeId); this._removeContextMenu(); } },
+                        ]
+                    },
+                    {
+                        label: '文本编辑', items: [
+                            { label: hasNote ? '编辑备注' : '新增备注', shortcut: 'Shift+Enter', action: () => { this._showNoteModal(this._selectedNodeId); this._removeContextMenu(); } },
+                            { label: '删除备注', shortcut: '', action: () => { this._deleteNote(); this._removeContextMenu(); } },
+                        ]
+                    },
+                    {
+                        label: '图片', items: [
+                            { label: '新增图片', shortcut: '', action: () => { this._showImageSelectModal(); this._removeContextMenu(); } },
+                        ]
+                    },
+                    hasImage ? {
+                        label: '图片操作', items: [
+                            { label: '删除图片', shortcut: '', action: () => { this._deleteNodeImage(); this._removeContextMenu(); } },
+                            { label: '更换图片', shortcut: '', action: () => { this._showImageSelectModal(); this._removeContextMenu(); } },
+                        ]
+                    } : null,
+                    {
+                        label: '展开/折叠', items: [
+                            { label: '展开/折叠当前节点', shortcut: 'Ctrl/Cmd+.', action: () => { this._toggle(this._selectedNodeId); this._removeContextMenu(); } },
+                            { label: '展开/折叠同级主题', shortcut: 'Ctrl/Cmd+Shift+.', action: () => { this._toggleSiblings(this._selectedNodeId); this._removeContextMenu(); } },
+                        ]
+                    },
                 ];
                 groups.filter(Boolean).forEach((group, gi) => {
                     if (gi > 0) { const sep = document.createElement('div'); sep.className = 'jsmind-context-separator'; menu.appendChild(sep); }
@@ -19834,13 +19847,13 @@
                         <div class="canvas-modal-search"><input type="text" id="canvas-file-search" placeholder="搜索图片..." oninput="filterCanvasFileList()"></div>
                         <div class="canvas-modal-list" id="canvas-file-list" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:8px;overflow-y:auto;max-height:50vh;">
                             ${files.map(f => {
-                                const fp = (f.path && f.path.trim()) ? f.path : (f.name || '');
-                                const fn = f.name || fp;
-                                return `<div class="canvas-file-item" data-path="${fp}" data-name="${fn}" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px;border-radius:6px;cursor:pointer;border:1px solid var(--color-border,#d0d7de);overflow:hidden;">
+                    const fp = (f.path && f.path.trim()) ? f.path : (f.name || '');
+                    const fn = f.name || fp;
+                    return `<div class="canvas-file-item" data-path="${fp}" data-name="${fn}" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px;border-radius:6px;cursor:pointer;border:1px solid var(--color-border,#d0d7de);overflow:hidden;">
                                     <div class="mind-img-thumb" style="width:100%;height:80px;background-size:cover;background-position:center;background-repeat:no-repeat;border-radius:4px;"></div>
                                     <span class="canvas-file-name" style="font-size:11px;color:var(--color-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%;text-align:center;">${fn}</span>
                                 </div>`;
-                            }).join('')}
+                }).join('')}
                         </div>
                     </div>`;
                 modal.style.cssText = 'position:fixed;left:0;top:0;width:100%;height:100%;background-color:rgba(0,0,0,0.5);z-index:10001;display:flex;justify-content:center;align-items:center;';
@@ -19893,7 +19906,7 @@
                                 item.querySelector('.mind-img-thumb').style.backgroundImage = `url(${url})`;
                                 item._objUrl = url;
                             }
-                        } catch (_) {}
+                        } catch (_) { }
                         thumbInFlight--;
                         loadThumb();
                     })();
@@ -19911,8 +19924,8 @@
                 try {
                     let p = imgPath;
                     if (p.startsWith(currentRootPath)) p = p.replace(currentRootPath + SLASH, '');
-                    getFileHandleByPath(p).then(fh => { if (fh) deleteFile(fh); }).catch(() => {});
-                } catch (_) {}
+                    getFileHandleByPath(p).then(fh => { if (fh) deleteFile(fh); }).catch(() => { });
+                } catch (_) { }
                 node.local_images = ''; node.images = '';
                 // 更新 DOM
                 const nodeEl = this._container?.querySelector(`.mindmap-node[data-node-id="${node.id}"]`);
@@ -19962,7 +19975,7 @@
             }
             /** 将内部树序列化为 OPML 2.0 XML 字符串 */
             _serializeTree() {
-                const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\r\n|\r|\n/g, '&#10;');
                 const _serialize = (node, depth) => {
                     const indent = '    '.repeat(depth);
                     let attrs = '';
