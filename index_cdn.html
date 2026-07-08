@@ -10921,6 +10921,21 @@
         }
 
         /* ── Staging / Changes List ── */
+        .git-status-loading,
+        .git-status-error {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px;
+            font-size: 13px;
+            color: var(--color-text-secondary);
+            text-align: center;
+        }
+
+        .git-status-error {
+            color: var(--color-danger);
+        }
+
         .git-status-item {
             display: flex;
             align-items: center;
@@ -39444,7 +39459,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             gitDiffChanges = [];
             gitWorkingStatus = { staged: [], unstaged: [] };
             gitViewActive = false; // 标记离开 Git 视图，阻止后台回调操作失效 DOM
-            gitStatusCache = { matrix: null, staged: null, unstaged: null, time: 0 }; // 清空状态缓存
+            gitStatusCache = { staged: null, unstaged: null, time: 0 }; // 清空状态缓存
             _statusInFlight = null; // 清理进行中的 statusMatrix
             _gitRenderDepth = 0; // 清理渲染嵌套计数
             // 清理 FS 适配器内部的目录句柄缓存
@@ -40463,24 +40478,35 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         // ==================== Git 工作区状态管理 ====================
         let gitWorkingStatus = { staged: [], unstaged: [] };
+        let gitFileStatusMap = new Map(); // 文件状态Map：key=filepath, value={status, head, workdir, stage, staged}
         let _gitStatusTimer = null;
         /** 解析 .gitignore 文件内容，返回匹配函数 */
         function gitignoreParse(content) {
             const patterns = [];
             if (!content) return { ignores: () => false };
             const lines = content.split(/\r?\n/);
-            for (let line of lines) {
-                line = line.trim();
-                // 跳过空行和注释
-                if (!line || line.startsWith('#')) continue;
-                // 处理否定模式
+            for (let rawLine of lines) {
+                // 去除行尾空格（git 规范：未转义的行尾空格被忽略）
+                // 但保留转义空格（\ 后跟空格）
+                let line = rawLine.replace(/(^|[^\\])((\\\\)*) +$/, '$1$2').trimEnd();
+                // 空行跳过
+                if (!line) continue;
+                // 处理 \# 和 \! 转义（反斜杠转义的 # 和 ! 是字面量字符）
+                // 先检查是否是转义的 # 或 !
+                let escaped = false;
+                if (/^\\[#!]/.test(line)) {
+                    line = line.substring(1); // 去掉反斜杠
+                    escaped = true;
+                }
+                // 注释行（# 开头），但转义的 \# 不算注释
+                if (!escaped && line.startsWith('#')) continue;
+                // 处理否定模式（! 开头），但转义的 \! 不算否定
                 let negate = false;
-                if (line.startsWith('!')) {
+                if (!escaped && line.startsWith('!')) {
                     negate = true;
-                    line = line.substring(1).trim();
+                    line = line.substring(1).trimStart();
                     if (!line) continue;
                 }
-                // 转义特殊正则字符（* ? . + 等在 gitignore 中有特殊含义）
                 let isDirOnly = line.endsWith(SLASH);
                 if (isDirOnly) line = line.slice(0, -1);
                 // 如果包含 /（非末尾），则匹配完整路径；否则匹配文件名
@@ -40492,7 +40518,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 let i = 0;
                 while (i < line.length) {
                     const ch = line[i];
-                    if (ch === '*') {
+                    if (ch === '\\' && i + 1 < line.length) {
+                        // 反斜杠转义下一个字符
+                        const next = line[i + 1];
+                        if ('.+^${}()|[]\\'.includes(next)) {
+                            regexStr += '\\' + next;
+                        } else {
+                            regexStr += next; // 其他字符直接保留（gitignore 中 \ 只转义特殊字符）
+                        }
+                        i += 2;
+                    } else if (ch === '*') {
                         // 检查 ** 或 **/
                         if (line[i + 1] === '*') {
                             if (line[i + 2] === SLASH || i + 2 >= line.length) {
@@ -40516,12 +40551,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             regexStr += line.substring(i, j + 1);
                             i = j + 1;
                         } else {
-                            // 未闭合的 [，当作普通字符转义
                             regexStr += '\\[';
                             i++;
                         }
                     } else {
-                        // 转义正则特殊字符（但 [ ] 已在上面处理，此处不转义）
+                        // 转义正则特殊字符
                         if ('.+^${}()|\\'.includes(ch)) {
                             regexStr += '\\' + ch;
                         } else {
@@ -40592,7 +40626,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         // ── 状态缓存（避免短时间内重复 statusMatrix 调用）──
-        let gitStatusCache = { matrix: null, staged: null, unstaged: null, time: 0 };
+        let gitStatusCache = { staged: null, unstaged: null, time: 0 };
         let _gitHandleCache = new LRUCache(500); // FS 适配器内部目录句柄 LRU 缓存（createGitFsAdapter 中初始化）
         const GIT_STATUS_CACHE_TTL = 10000; // 缓存有效期 10 秒（statusMatrix 开销大，适当延长）
 
@@ -40607,20 +40641,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 try { return await _statusInFlight; } catch { /* 上一次失败，继续发起新请求 */ }
             }
             const promise = (async () => {
-                // 并行加载 statusMatrix 和 gitignore 匹配器
-                const [matrix, matcher] = await Promise.all([
-                    window.git.statusMatrix({ fs: gitFs, dir: SLASH }),
-                    gitignoreGetMatcher()
-                ]);
+                // statusMatrix 内部已调用 GitIgnoreManager.isIgnored() 过滤 ignored 文件，
+                // 无需额外加载 gitignore 匹配器做二次过滤。
+                const matrix = await window.git.statusMatrix({ fs: gitFs, dir: SLASH });
                 const staged = [];
                 const unstaged = [];
-                let ignoredCount = 0;
+                
                 for (const [filepath, head, workdir, stage] of matrix) {
                     if (filepath === DOT || filepath === '') continue;
-                    // 对未跟踪文件（head===0 && stage===0 && workdir!==0）应用 .gitignore 过滤
-                    if (head === 0 && stage === 0 && workdir !== 0) {
-                        if (matcher.ignores(filepath)) { ignoredCount++; continue; }
-                    }
                     // 是否已暂存（stage!=head 表示索引与 HEAD 有差异）
                     const isStaged =
                         (head === 0 && (stage === 2 || stage === 3)) ||
@@ -40650,13 +40678,44 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         unstaged.push({ filepath, status, head, workdir, stage });
                     }
                 }
-                // 缓存结果
-                gitStatusCache = { matrix, staged: [...staged], unstaged: [...unstaged], time: now };
-
-                // 对 [1,2,1] 文件做 OID 二次校验（异步非阻塞，完成后自动刷新列表）
-                const verifyOidFiles = unstaged.filter(f => f.head === 1 && f.workdir === 2 && f.stage === 1);
-                if (verifyOidFiles.length > 0) {
-                    gitVerifyOidAsync(verifyOidFiles, unstaged);
+                
+                // 对 [1,0,1] 文件做存在性验证（statusMatrix 误判为已删除但文件实际存在）
+                // 使用 stat 替代 readFile 避免读取整个文件内容，显著减少 I/O 开销。
+                const deletedFiles = unstaged.filter(f => f.head === 1 && f.workdir === 0 && f.stage === 1);
+                if (deletedFiles.length > 0) {
+                    const batchSize = 20; // 适当增大批次，stat 调用极轻量
+                    for (let i = 0; i < deletedFiles.length; i += batchSize) {
+                        const batch = deletedFiles.slice(i, i + batchSize);
+                        await Promise.all(batch.map(async (f) => {
+                            try {
+                                await gitFs.lstat(SLASH + f.filepath);
+                                f._remove = true; // 文件存在 → 误判
+                            } catch { /* 文件确实不存在，保留删除状态 */ }
+                        }));
+                    }
+                    // 从 unstaged 列表中移除误判文件
+                    for (let i = unstaged.length - 1; i >= 0; i--) {
+                        if (unstaged[i]._remove) {
+                            gitFileStatusMap.delete(unstaged[i].filepath);
+                            unstaged.splice(i, 1);
+                        }
+                    }
+                }
+                
+                // [1,2,1] OID 误判已从根源修复：FS 适配器 readFile 正确实现了 autocrlf
+                // 换行符归一化，statusMatrix 的 WORKDIR OID 计算与 git blob OID 一致，
+                // 不再需要昂贵的 readBlob + hashBlob + 逐字节比对。直接信任 statusMatrix 结果。
+                
+                // 缓存结果（不存 matrix 避免大数组占用内存，仅保留 staged/unstaged/time）
+                gitStatusCache = { staged: [...staged], unstaged: [...unstaged], time: now };
+                
+                // 填充文件状态Map（用于增量更新）
+                gitFileStatusMap.clear();
+                for (const item of staged) {
+                    gitFileStatusMap.set(item.filepath, { ...item, staged: true });
+                }
+                for (const item of unstaged) {
+                    gitFileStatusMap.set(item.filepath, { ...item, staged: false });
                 }
                 return { staged, unstaged };
             })();
@@ -40671,7 +40730,77 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        /** 异步 OID 校验：后台执行，发现误判后自动刷新列表 */
+        /** 同步 OID 校验：立即执行，移除误判的文件（用于初始化加载） */
+        async function gitVerifyOidFileSync(verifyOidFiles, unstagedList) {
+            if (verifyOidFiles.length === 0) return;
+            
+            try {
+                const headOid = await window.git.resolveRef({ fs: gitFs, dir: SLASH, ref: 'HEAD' });
+                const normalizeLF = (buf) => {
+                    try {
+                        const text = new TextDecoder('utf-8', { fatal: false }).decode(buf);
+                        return new TextEncoder().encode(text.replace(/\r\n/g, '\n').replace(/\r/g, '\n'));
+                    } catch { return buf; }
+                };
+                
+                // 并行校验，最多同时 10 个文件
+                const batchSize = 10;
+                for (let i = 0; i < verifyOidFiles.length; i += batchSize) {
+                    const batch = verifyOidFiles.slice(i, i + batchSize);
+                    await Promise.all(batch.map(async (f) => {
+                        try {
+                            const [headBlob, rawContent] = await Promise.all([
+                                window.git.readBlob({ fs: gitFs, dir: SLASH, oid: headOid, filepath: f.filepath }),
+                                gitFs.readFile(SLASH + f.filepath, {})
+                            ]);
+                            const rawHash = await window.git.hashBlob({ object: rawContent });
+                            
+                            // OID 匹配：内容完全相同
+                            if (headBlob.oid === rawHash.oid) {
+                                f._remove = true; // 标记为误判，需要移除
+                                return;
+                            }
+                            
+                            // 长度不同：一定是真有改动
+                            if (headBlob.blob.byteLength !== rawContent.byteLength) {
+                                return; // 真实修改，保留
+                            }
+                            
+                            // 归一化换行符后比较
+                            const normGit = normalizeLF(headBlob.blob);
+                            const normDisk = normalizeLF(rawContent);
+                            if (normGit.byteLength !== normDisk.byteLength) {
+                                return; // 真实修改，保留
+                            }
+                            
+                            // 逐字节比较
+                            const a = new Uint8Array(normGit), b = new Uint8Array(normDisk);
+                            for (let j = 0; j < a.length; j++) {
+                                if (a[j] !== b[j]) {
+                                    return; // 真实修改，保留
+                                }
+                            }
+                            
+                            // 归一化后内容相同：换行符误判，移除
+                            f._remove = true;
+                        } catch (e) {
+                            console.warn('OID校验失败:', f.filepath, e);
+                        }
+                    }));
+                }
+                
+                // 从unstaged列表中移除误判的文件
+                for (let i = unstagedList.length - 1; i >= 0; i--) {
+                    if (unstagedList[i]._remove) {
+                        unstagedList.splice(i, 1);
+                    }
+                }
+            } catch (e) {
+                console.warn('同步 OID 校验失败:', e.message || e);
+            }
+        }
+
+        /** 异步 OID 校验：后台执行，发现误判后自动刷新列表（已废弃，使用同步版本） */
         async function gitVerifyOidAsync(verifyOidFiles, currentUnstaged) {
             try {
                 const headOid = await window.git.resolveRef({ fs: gitFs, dir: SLASH, ref: 'HEAD' });
@@ -40787,6 +40916,80 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 });
             }
         }
+        
+        // ==================== 方案5：增量状态管理 ====================
+        /** 增量更新单个文件状态（不重新计算statusMatrix） */
+        function gitUpdateSingleFileStatus(filepath, newStatus) {
+            const oldStatus = gitFileStatusMap.get(filepath);
+            if (oldStatus) {
+                // 更新Map中的状态
+                gitFileStatusMap.set(filepath, { ...oldStatus, ...newStatus });
+            } else {
+                // 新文件，添加到Map
+                gitFileStatusMap.set(filepath, { filepath, ...newStatus });
+            }
+            
+            // 同步更新缓存列表
+            const staged = [];
+            const unstaged = [];
+            for (const [fp, status] of gitFileStatusMap) {
+                if (status.staged) {
+                    staged.push({ filepath: fp, status: status.status, head: status.head, workdir: status.workdir, stage: status.stage });
+                } else {
+                    unstaged.push({ filepath: fp, status: status.status, head: status.head, workdir: status.workdir, stage: status.stage });
+                }
+            }
+            gitStatusCache.staged = staged;
+            gitStatusCache.unstaged = unstaged;
+            gitStatusCache.time = Date.now();
+        }
+        
+        /** 批量增量更新多个文件状态 */
+        function gitUpdateMultipleFilesStatus(updates) {
+            for (const { filepath, newStatus } of updates) {
+                gitUpdateSingleFileStatus(filepath, newStatus);
+            }
+        }
+        
+        /** 从状态Map中移除文件（文件被删除或提交） */
+        function gitRemoveFileFromStatusMap(filepath) {
+            gitFileStatusMap.delete(filepath);
+            
+            // 同步更新缓存列表
+            const staged = [];
+            const unstaged = [];
+            for (const [fp, status] of gitFileStatusMap) {
+                if (status.staged) {
+                    staged.push({ filepath: fp, status: status.status, head: status.head, workdir: status.workdir, stage: status.stage });
+                } else {
+                    unstaged.push({ filepath: fp, status: status.status, head: status.head, workdir: status.workdir, stage: status.stage });
+                }
+            }
+            gitStatusCache.staged = staged;
+            gitStatusCache.unstaged = unstaged;
+            gitStatusCache.time = Date.now();
+        }
+        
+        /** 从状态Map渲染列表（快速更新UI） */
+        function gitRenderStatusListsFromMap() {
+            const staged = [];
+            const unstaged = [];
+            for (const [fp, status] of gitFileStatusMap) {
+                if (status.staged) {
+                    staged.push({ filepath: fp, status: status.status, head: status.head, workdir: status.workdir, stage: status.stage });
+                } else {
+                    unstaged.push({ filepath: fp, status: status.status, head: status.head, workdir: status.workdir, stage: status.stage });
+                }
+            }
+            gitRenderStatusList('gitAddList', 'gitAddListEmpty', 'gitStagedCount', staged, 'staged');
+            gitRenderStatusList('gitChangedList', 'gitChangedListEmpty', 'gitChangedCount', unstaged, 'unstaged');
+        }
+        
+        /** 清空状态缓存和Map（提交后需要） */
+        function gitClearStatusCache() {
+            gitStatusCache = { staged: null, unstaged: null, time: 0 };
+            gitFileStatusMap.clear();
+        }
 
         /** 刷新暂存/更改列表 */
         async function gitUpdateStatusLists(forceRefresh = false) {
@@ -40795,33 +40998,94 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             gitRenderStatusList('gitChangedList', 'gitChangedListEmpty', 'gitChangedCount', gitWorkingStatus.unstaged, 'unstaged');
         }
 
-        /** 暂存文件 */
+        /** 异步刷新暂存/更改列表（不阻塞主流程） */
+        async function gitUpdateStatusListsAsync(forceRefresh = false) {
+            // 先显示加载状态
+            const addListEl = document.getElementById('gitAddList');
+            const changedListEl = document.getElementById('gitChangedList');
+            if (addListEl) addListEl.innerHTML = '<div class="git-status-loading">⏳ 加载中...</div>';
+            if (changedListEl) changedListEl.innerHTML = '<div class="git-status-loading">⏳ 加载中...</div>';
+
+            // 异步加载状态
+            try {
+                await gitUpdateStatusLists(forceRefresh);
+            } catch (e) {
+                console.error('gitUpdateStatusListsAsync error:', e);
+                if (addListEl) addListEl.innerHTML = '<div class="git-status-error">⚠️ 加载失败</div>';
+                if (changedListEl) changedListEl.innerHTML = '<div class="git-status-error">⚠️ 加载失败</div>';
+            }
+        }
+
+        /** 暂存文件（优化版：增量更新状态） */
         async function gitStageFile(filepath) {
             if (!gitFs) return;
             try {
                 await window.git.add({ fs: gitFs, dir: SLASH, filepath });
                 showNotification(`✓ 已暂存: ${filepath}`, 'success');
-                await gitUpdateStatusLists(true);
+                
+                // 方案1：智能缓存更新 - 只更新当前文件状态，不重新验证所有文件
+                const oldStatus = gitFileStatusMap.get(filepath);
+                if (oldStatus) {
+                    // 已有记录：更新状态为已暂存
+                    gitUpdateSingleFileStatus(filepath, { 
+                        staged: true, 
+                        stage: 2, // stage=2 表示已暂存
+                        workdir: oldStatus.workdir 
+                    });
+                } else {
+                    // 新文件（untracked）：添加为已暂存的新文件
+                    gitUpdateSingleFileStatus(filepath, {
+                        status: 'added',
+                        head: 0,
+                        workdir: 2,
+                        stage: 2,
+                        staged: true
+                    });
+                }
+                
+                // 快速渲染UI（不调用gitUpdateStatusLists）
+                gitRenderStatusListsFromMap();
             } catch (e) {
                 console.error('gitStageFile error filepath=' + filepath, e);
                 showNotification(`✗ 暂存失败: ${e.message}`, 'error');
             }
         }
 
-        /** 取消暂存文件 */
+        /** 取消暂存文件（优化版：增量更新状态） */
         async function gitUnstageFile(filepath) {
             if (!gitFs) return;
             try {
                 await window.git.resetIndex({ fs: gitFs, dir: SLASH, filepath });
                 showNotification(`✓ 已取消暂存: ${filepath}`, 'success');
-                await gitUpdateStatusLists(true);
+                
+                // 方案1：智能缓存更新 - 只更新当前文件状态
+                const oldStatus = gitFileStatusMap.get(filepath);
+                if (oldStatus) {
+                    // 更新状态为未暂存
+                    gitUpdateSingleFileStatus(filepath, {
+                        staged: false,
+                        stage: 1, // stage=1 表示未暂存（与HEAD一致）
+                        workdir: oldStatus.workdir
+                    });
+                    
+                    // 如果文件已被删除（workdir=0），需要特殊处理
+                    if (oldStatus.workdir === 0) {
+                        gitUpdateSingleFileStatus(filepath, {
+                            status: 'removed',
+                            staged: false
+                        });
+                    }
+                }
+                
+                // 快速渲染UI
+                gitRenderStatusListsFromMap();
             } catch (e) {
                 console.error('gitUnstageFile error:', e);
                 showNotification(`✗ 取消暂存失败: ${e.message}`, 'error');
             }
         }
 
-        /** 放弃文件更改（新增文件直接删除，已跟踪文件还原到 HEAD 版本） */
+        /** 放弃文件更改（优化版：增量更新状态） */
         async function gitDiscardFile(filepath, status) {
             if (!gitFs) return;
             const isNewFile = status === 'added';
@@ -40843,14 +41107,139 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             });
                         });
                         showNotification(`✓ 已删除文件: ${filepath}`, 'success');
+                        
+                        // 方案1：智能缓存更新 - 直接从状态Map中移除文件
+                        gitRemoveFileFromStatusMap(filepath);
+                        gitRenderStatusListsFromMap();
                     } else {
                         await window.git.checkout({ fs: gitFs, dir: SLASH, filepaths: [filepath], force: true });
                         showNotification(`✓ 已放弃更改: ${filepath}`, 'success');
+                        
+                        // 方案1：智能缓存更新 - 从状态Map中移除文件（文件已恢复到HEAD状态，无变更）
+                        gitRemoveFileFromStatusMap(filepath);
+                        gitRenderStatusListsFromMap();
                     }
-                    await gitUpdateStatusLists(true);
                 } catch (e) {
                     console.error('gitDiscardFile error:', e);
                     showNotification(`✗ ${isNewFile ? '删除' : '放弃更改'}失败: ${e.message}`, 'error');
+                }
+            });
+        }
+        
+        // ==================== 方案2：批量操作支持 ====================
+        /** 批量暂存多个文件 */
+        async function gitStageMultipleFiles(filepaths) {
+            if (!gitFs || filepaths.length === 0) return;
+            try {
+                const notification = showNotification(`正在暂存 ${filepaths.length} 个文件...`, 'info', 0);
+                
+                // 并行执行暂存操作
+                const batchSize = 10;
+                const updates = [];
+                for (let i = 0; i < filepaths.length; i += batchSize) {
+                    const batch = filepaths.slice(i, i + batchSize);
+                    await Promise.all(batch.map(async (filepath) => {
+                        try {
+                            await window.git.add({ fs: gitFs, dir: SLASH, filepath });
+                            updates.push({ filepath, newStatus: { staged: true, stage: 2 } });
+                        } catch (e) {
+                            console.warn(`暂存失败: ${filepath}`, e);
+                        }
+                    }));
+                }
+                
+                // 批量更新状态Map
+                gitUpdateMultipleFilesStatus(updates);
+                gitRenderStatusListsFromMap();
+                
+                notification.dismiss();
+                showNotification(`✓ 已暂存 ${updates.length} 个文件`, 'success');
+            } catch (e) {
+                console.error('gitStageMultipleFiles error:', e);
+                showNotification(`✗ 批量暂存失败: ${e.message}`, 'error');
+            }
+        }
+        
+        /** 批量取消暂存多个文件 */
+        async function gitUnstageMultipleFiles(filepaths) {
+            if (!gitFs || filepaths.length === 0) return;
+            try {
+                const notification = showNotification(`正在取消暂存 ${filepaths.length} 个文件...`, 'info', 0);
+                
+                // 并行执行取消暂存操作
+                const batchSize = 10;
+                const updates = [];
+                for (let i = 0; i < filepaths.length; i += batchSize) {
+                    const batch = filepaths.slice(i, i + batchSize);
+                    await Promise.all(batch.map(async (filepath) => {
+                        try {
+                            await window.git.resetIndex({ fs: gitFs, dir: SLASH, filepath });
+                            updates.push({ filepath, newStatus: { staged: false, stage: 1 } });
+                        } catch (e) {
+                            console.warn(`取消暂存失败: ${filepath}`, e);
+                        }
+                    }));
+                }
+                
+                // 批量更新状态Map
+                gitUpdateMultipleFilesStatus(updates);
+                gitRenderStatusListsFromMap();
+                
+                notification.dismiss();
+                showNotification(`✓ 已取消暂存 ${updates.length} 个文件`, 'success');
+            } catch (e) {
+                console.error('gitUnstageMultipleFiles error:', e);
+                showNotification(`✗ 批量取消暂存失败: ${e.message}`, 'error');
+            }
+        }
+        
+        /** 批量放弃更改（谨慎操作） */
+        async function gitDiscardMultipleFiles(files) {
+            if (!gitFs || files.length === 0) return;
+            
+            const msg = `确定要放弃 ${files.length} 个文件的更改吗？此操作不可撤销。`;
+            showConfirmModal('确认批量放弃更改', msg, async (confirmed) => {
+                if (!confirmed) return;
+                
+                try {
+                    const notification = showNotification(`正在放弃 ${files.length} 个文件更改...`, 'info', 0);
+                    
+                    // 并行执行放弃更改操作
+                    const batchSize = 10;
+                    const removedFiles = [];
+                    for (let i = 0; i < files.length; i += batchSize) {
+                        const batch = files.slice(i, i + batchSize);
+                        await Promise.all(batch.map(async ({ filepath, status }) => {
+                            try {
+                                const isNewFile = status === 'added';
+                                if (isNewFile) {
+                                    await new Promise((resolve, reject) => {
+                                        gitFs.unlink(SLASH + filepath, (err) => {
+                                            if (err && err.code !== 'ENOENT') reject(err);
+                                            else resolve();
+                                        });
+                                    });
+                                } else {
+                                    await window.git.checkout({ fs: gitFs, dir: SLASH, filepaths: [filepath], force: true });
+                                }
+                                removedFiles.push(filepath);
+                            } catch (e) {
+                                console.warn(`放弃更改失败: ${filepath}`, e);
+                            }
+                        }));
+                    }
+                    
+                    // 批量从状态Map中移除文件
+                    for (const filepath of removedFiles) {
+                        gitRemoveFileFromStatusMap(filepath);
+                    }
+                    gitRenderStatusListsFromMap();
+                    
+                    notification.dismiss();
+                    showNotification(`✓ 已放弃 ${removedFiles.length} 个文件更改`, 'success');
+                } catch (e) {
+                    console.error('gitDiscardMultipleFiles error:', e);
+                    showNotification(`✗ 批量放弃更改失败: ${e.message}`, 'error');
                 }
             });
         }
@@ -40956,6 +41345,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         /** 执行提交 */
+        // ==================== 方案3+4：提交优化和延迟刷新 ====================
         async function gitDoCommit() {
             if (!gitFs) {
                 showNotification('✗ 请先打开 Git 仓库', 'error');
@@ -40968,12 +41358,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (msgInput) msgInput.focus();
                 return;
             }
-            // 检查是否有暂存文件
-            const status = await gitGetWorkingStatus();
-            if (status.staged.length === 0) {
+            
+            // 方案3：提交前不重新验证 - 直接从缓存读取暂存文件数量
+            const now = Date.now();
+            const hasValidCache = gitStatusCache.staged && (now - gitStatusCache.time) < GIT_STATUS_CACHE_TTL;
+            const stagedCount = hasValidCache ? gitStatusCache.staged.length : gitFileStatusMap.values().filter(s => s.staged).length;
+            
+            if (stagedCount === 0) {
                 showNotification('✗ 没有暂存的更改可以提交', 'warning');
                 return;
             }
+            
             let notification = null;
             try {
                 notification = showNotification('提交中...', 'info', 0);
@@ -40981,17 +41376,32 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 gitCommitBtn.disabled = true;
                 const authorName = safeLocalStorageGet('git_author_name') || 'mdgo';
                 const authorEmail = safeLocalStorageGet('git_author_email') || 'mdgo@local';
+                
+                // 执行提交
                 const sha = await window.git.commit({
                     fs: gitFs,
                     dir: SLASH,
                     message,
                     author: { name: authorName, email: authorEmail },
                 });
+                
                 showNotification(`✓ 提交成功: ${sha.slice(0, 7)}`, 'success');
                 if (msgInput) msgInput.value = '';
-                await gitUpdateStatusLists(true);
-                // 刷新提交历史
-                await gitLoadRepo(gitFileFilter || null);
+                
+                // 方案3：提交后只清空缓存（不重新验证）
+                gitClearStatusCache();
+                
+                // 方案4：延迟刷新提交历史（异步执行，不阻塞用户）
+                setTimeout(async () => {
+                    try {
+                        await gitLoadRepo(gitFileFilter || null);
+                        // 刷新状态列表（延迟加载，避免阻塞）
+                        await gitUpdateStatusListsAsync();
+                    } catch (e) {
+                        console.warn('延迟刷新失败:', e);
+                    }
+                }, 100); // 100ms后异步刷新
+                
             } catch (e) {
                 console.error('gitDoCommit error:', e);
                 showNotification(`✗ 提交失败: ${e.message}`, 'error');
@@ -41210,6 +41620,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 };
             }
 
+            /** 换行符归一化：CRLF / CR → LF，解决 autocrlf 导致的 OID 误判 */
+            function _normalizeLF(buffer) {
+                try {
+                    const text = new TextDecoder('utf-8', { fatal: false }).decode(buffer);
+                    // 仅当确实存在 CR 时才做替换，避免不必要的编解码开销
+                    if (text.indexOf('\r') === -1) return buffer;
+                    return new TextEncoder().encode(text.replace(/\r\n/g, '\n').replace(/\r/g, '\n'));
+                } catch { return buffer; }
+            }
+
             return {
                 readFile(filePath, opts, cb) {
                     if (typeof opts === 'function') { cb = opts; opts = {}; }
@@ -41221,7 +41641,19 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         try {
                             const fileHandle = await getFileHandleByDirHandle(parentHandle, name);
                             const isUtf8 = opts === 'utf8' || (opts && opts.encoding === 'utf8');
-                            return isUtf8 ? await getFileContent(fileHandle) : new Uint8Array(await getFileByBuffer(fileHandle));
+                            // 处理 autocrlf：当 isomorphic-git 的 GitWalkerFs 传入 { autocrlf: true } 时，
+                            // 将 CRLF/CR 归一化为 LF，确保 OID 计算与 git 存储的 blob OID 一致，
+                            // 从根源上消除 statusMatrix 的 [1,2,1] 误判（假修改）。
+                            const doAutocrlf = opts && opts.autocrlf;
+                            if (isUtf8) {
+                                const text = await getFileContent(fileHandle);
+                                if (doAutocrlf && text.indexOf('\r') !== -1) {
+                                    return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+                                }
+                                return text;
+                            }
+                            const buf = new Uint8Array(await getFileByBuffer(fileHandle));
+                            return doAutocrlf ? _normalizeLF(buf) : buf;
                         } catch (e) {
                             if (e.name === 'NotFoundError') throw _enoent(filePath);
                             throw e;
@@ -41354,8 +41786,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             gitShowDiffPlaceholder('⚠️ 选择一个文件查看差异对比');
             // 渲染提交图和提交列表
             gitRenderGraphAndList();
-            // 刷新暂存/更改列表
-            gitUpdateStatusLists();
+            // 异步加载暂存/更改列表（不阻塞主流程）
+            gitUpdateStatusListsAsync();
             // 自动选中最新提交并展开第一个变更文件
             if (gitCommits.length > 0) {
                 gitHandleCommitClick(0, () => {
@@ -41484,6 +41916,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             mainElement.style.display = 'none';
             await destroyGitViewData();
             gitViewActive = true; // 标记进入 Git 视图
+            
+            // 验证根目录句柄是否有效
+            const rootHandle = getRootHandle();
+            if (!rootHandle) {
+                showNotification('✗ 请先打开一个目录', 'error');
+                loadingElement.innerHTML = '<div style="text-align:center;">⚠️ 请先打开一个目录!</div>';
+                return;
+            }
+            
             const cachedGitHandle = await idbGet(DIRECTORY_STORE_NAME, 'handles', 'gitHandle');
             const cachedGitHandleRepo = await idbGet(DIRECTORY_STORE_NAME, 'handles', 'gitHandleRepo');
             const rootName = getRootHandle().name;
