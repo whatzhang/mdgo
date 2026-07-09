@@ -1457,10 +1457,8 @@
             background: var(--color-text-tertiary);
         }
 
-        /* 幕布大纲风格样式 */
         .mindmap-node {
             position: relative;
-            margin: 3px 0 3px 0;
             border-radius: 4px;
             display: flex;
             flex-direction: column;
@@ -1476,17 +1474,6 @@
             outline-offset: 1px;
             border-radius: var(--radius-sm, 4px);
             background-color: rgba(0, 0, 0, 0.02);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            transition: all 0.2s ease;
-        }
-
-        .mindmap-main-row:hover {
-            outline: 1px solid var(--color-success);
-            outline-offset: 1px;
-            border-radius: var(--radius-sm, 4px);
-            background-color: rgba(0, 0, 0, 0.02);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            transition: all 0.2s ease;
         }
 
         .mindmap-child {
@@ -1575,7 +1562,6 @@
         .mindmap-node-content-2 {
             cursor: pointer;
             color: var(--color-text);
-            font-weight: 600;
             white-space: pre-wrap;
             word-break: break-word;
             line-height: 22px;
@@ -1583,7 +1569,6 @@
 
         .mindmap-node-content-z {
             cursor: pointer;
-            font-weight: normal;
             color: var(--color-text);
             white-space: pre-wrap;
             word-break: break-word;
@@ -1592,7 +1577,6 @@
 
         .mindmap-node-note {
             cursor: pointer;
-            font-weight: normal;
             font-size: 11px;
             color: var(--jm-text-2, #6e6e73);
             background: rgba(0, 0, 0, 0.03);
@@ -17757,14 +17741,9 @@
                 editable: !readonly,
                 mode: 'full',
                 support_html: true,
-                zoom: {
-                    min: 0.5,
-                    max: 2.0,
-                    ratio: 1.0
-                },
                 view: {
                     engine: 'canvas',
-                    line_width: 1.5,
+                    line_width: 1.3,
                     line_color: '#a6a6ac',
                     line_style: 'curved',
                     node_overflow: 'wrap',
@@ -17772,7 +17751,7 @@
                     vmargin: 500,
                     draggable: true,
                     hide_scrollbars_when_draggable: true,
-                    zoom: { min: 0.5, max: 2.0, step: 0.1 },
+                    zoom: { min: 0.7, max: 2.0, step: 0.1 },
                     custom_node_render: customNodeRender,
                 },
                 layout: {
@@ -18299,19 +18278,24 @@
                 if (!inner) return;
                 let lastZoomTime = 0;
                 const self = this;
+                //获取 opts.zoom参数
+                const zoom = jm.view.opts.zoom;
+                //获取 opts.zoom.step参数
+                const step = zoom.step || 0.1;
+                const min = zoom.min || 0.7;
+                const max = zoom.max || 2.0;
                 function handleWheel(e) {
                     e.preventDefault();
                     e.stopPropagation();
                     const now = Date.now();
                     if (now - lastZoomTime < 10) return;
                     lastZoomTime = now;
-                    const step = jm.view.opts.zoom.step || 0.1;
                     const currentZoom = jm.view.zoom_current;
                     let targetZoom;
                     if (e.deltaY < 0) {
-                        targetZoom = currentZoom + step;
+                        targetZoom = Math.min(max, currentZoom + step);
                     } else {
-                        targetZoom = currentZoom - step;
+                        targetZoom = Math.max(min, currentZoom - step);
                     }
                     jm.view.set_zoom(targetZoom, e);
                 }
@@ -18573,8 +18557,8 @@
             }
             handleGlobalKeydown(e) {
                 if (!this.jm || mmModel !== 'mm') return;
-                // 如果备注输入框打开，不拦截任何按键（让 textarea 内部事件正常处理）
                 if (document.querySelector('.note-modal-overlay')) return;
+                if (e.target.closest('.input-modal-input')) return;
                 // 先匹配公共快捷键
                 const action = TreeShortcuts.match(e);
                 // Cmd/Ctrl+S - 保存（即使正在编辑也要响应，走 saveFileOnly 统一分发）
@@ -19681,6 +19665,7 @@
             handleGlobalKeydown(e) {
                 if (!this._container || mmModel !== 'opml') return;
                 if (document.querySelector('.note-modal-overlay')) return;
+                if (e.target.closest('.input-modal-input')) return;
                 const action = TreeShortcuts.match(e);
                 // Ctrl+S 始终可用（只读视图也可以保存）
                 if (action === 'SAVE') {
