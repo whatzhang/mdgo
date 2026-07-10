@@ -1,7 +1,7 @@
 [package]
 name = "mdgo"
 version = "1.0.0"
-description = "本地文档知识库"
+description = "mdgo"
 authors = ["whatzhang"]
 edition = "2024"
 

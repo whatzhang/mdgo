@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-cli/config.schema.json",
-  "productName": "本地文档知识库",
+  "productName": "mdgo",
   "version": "1.0.0",
   "identifier": "com.mdgo.app",
   "build": {
