@@ -231,3 +231,13 @@ backend/server.pid
 backend/server.log
 backend/server_*.log
 data/
+*.log
+
+# Node.js 依赖
+node_modules/
+# Tauri 前端构建输出
+tauri/dist/
+# Tauri Rust 构建输出
+tauri/src-tauri/target/
+# Vite 构建输出
+.vite/

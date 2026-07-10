@@ -1,13 +1,14 @@
-<!DOCTYPE html
-    PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-CN">
+<!DOCTYPE html>
+<html lang="zh-CN">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>本地文档知识库</title>
+    <!-- Tauri 适配层（必须在所有业务逻辑之前加载） -->
+    <script type="module" src="tauri/src/adapters/index.js"></script>
     <link rel="icon" type="image/svg+xml"
-        href="data:image/svg+xml;charset=utf-8;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiMxYTU2ZGIiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjM2I4MmY2Ii8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIOWchuinkuaWueW9ouiDjOaZryAtLT4KICA8cmVjdCB4PSIyIiB5PSIyIiB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHJ4PSIxNCIgcnk9IjE0IiBmaWxsPSJ1cmwoI2JnKSIvPgogIDwhLS0g5bem5L6n5Lmm6ISK57q/IC0tPgogIDxyZWN0IHg9IjE4IiB5PSIxMiIgd2lkdGg9IjQiIGhlaWdodD0iNDAiIHJ4PSIxLjUiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjkiLz4KICA8IS0tIOWPs+S+p+S5pumhtSAoM+adoeaoque6v+S7o+ihqOWkmuWxguaWh+ahoykgLS0+CiAgPHJlY3QgeD0iMjYiIHk9IjE1IiB3aWR0aD0iMjAiIGhlaWdodD0iNSIgcng9IjIiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjg1Ii8+CiAgPHJlY3QgeD0iMjYiIHk9IjI0IiB3aWR0aD0iMTYiIGhlaWdodD0iNCIgcng9IjIiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjY1Ii8+CiAgPHJlY3QgeD0iMjYiIHk9IjMyIiB3aWR0aD0iMTgiIGhlaWdodD0iNCIgcng9IjIiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjc1Ii8+CiAgPHJlY3QgeD0iMjYiIHk9IjQwIiB3aWR0aD0iMTQiIGhlaWdodD0iNSIgcng9IjIiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjYiLz4KICA8IS0tIOW6lemDqOWwj+agh+etvi/kuabnrb4gLS0+CiAgPHJlY3QgeD0iMjIiIHk9IjUwIiB3aWR0aD0iOCIgaGVpZ2h0PSIzIiByeD0iMS41IiBmaWxsPSJ3aGl0ZSIgb3BhY2l0eT0iMC41NSIvPgo8L3N2Zz4=">
+        href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiMxYTU2ZGIiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjM2I4MmY2Ii8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8cmVjdCB4PSIyIiB5PSIyIiB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHJ4PSIxNCIgcnk9IjE0IiBmaWxsPSJ1cmwoI2JnKSIvPgogIDxyZWN0IHg9IjE4IiB5PSIxMiIgd2lkdGg9IjQiIGhlaWdodD0iNDAiIHJ4PSIyIiBmaWxsPSJ3aGl0ZSIgb3BhY2l0eT0iMSIvPgogIDxyZWN0IHg9IjI2IiB5PSIxMiIgd2lkdGg9IjIwIiBoZWlnaHQ9IjQiIHJ4PSIyIiBmaWxsPSJ3aGl0ZSIgb3BhY2l0eT0iMC45Ii8+CiAgPHJlY3QgeD0iMjYiIHk9IjIxIiB3aWR0aD0iMTciIGhlaWdodD0iNCIgcng9IjIiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjgiLz4KICA8cmVjdCB4PSIyNiIgeT0iMzAiIHdpZHRoPSIxNCIgaGVpZ2h0PSI0IiByeD0iMiIgZmlsbD0id2hpdGUiIG9wYWNpdHk9IjAuNyIvPgogIDxyZWN0IHg9IjI2IiB5PSIzOSIgd2lkdGg9IjExIiBoZWlnaHQ9IjQiIHJ4PSIyIiBmaWxsPSJ3aGl0ZSIgb3BhY2l0eT0iMC42Ii8+CiAgPHJlY3QgeD0iMjYiIHk9IjQ4IiB3aWR0aD0iOCIgaGVpZ2h0PSI0IiByeD0iMiIgZmlsbD0id2hpdGUiIG9wYWNpdHk9IjAuNSIvPgo8L3N2Zz4=">
     <!-- 第三方 CSS 库：编辑器、代码高亮、Markdown 渲染、GraphQL、思维导图等 -->
     <link rel="stylesheet" href="./css_js/cdn/atom-one-dark.min.css" />
     <link rel="stylesheet" href="./css_js/cdn/jsonTree.css" />
@@ -114,7 +115,7 @@
             --color-danger-hover: #992222;
             --color-danger-light: #ffebe9;
             --color-bg: #ffffff;
-            --color-bg-secondary: #f6f8fa;
+            --color-bg-secondary: #fafafa;
             --color-bg-panel: #f8f9fa;
             --color-reg-mark-bg: #d4f5dd;
             --color-border: #d0d7de;
@@ -186,6 +187,16 @@
             --jm-accent: var(--color-note);
         }
 
+        html {
+            font-size: 16px;
+        }
+
+        @media (max-width: 1300px) {
+            html {
+                font-size: 14px;
+            }
+        }
+
         body {
             display: flex;
             margin: 0;
@@ -197,7 +208,7 @@
             width: 18%;
             overflow: hidden;
             border-right: 1px solid var(--color-border);
-            padding: 6px 3px 6px 5px;
+            padding: 6px;
             background: var(--color-bg-secondary);
             flex-shrink: 0;
             display: flex;
@@ -209,9 +220,42 @@
             justify-content: flex-start;
             align-items: center;
             gap: 3px;
-            padding-bottom: 5px;
-            margin-bottom: 3px;
-            flex-shrink: 0;
+            flex-shrink: 1;
+            overflow-x: auto;
+            overflow-y: hidden;
+            flex-wrap: nowrap;
+            padding-bottom: 3px;
+            width: auto;
+            border: none;
+            border-radius: var(--radius-sm);
+        }
+
+        #sidebar-header::-webkit-scrollbar {
+            height: 4px;
+        }
+
+        #sidebar-header::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        #sidebar-header::-webkit-scrollbar-thumb {
+            background: var(--color-border, #d0d7de);
+            border-radius: 2px;
+        }
+
+        #sidebar-header::-webkit-scrollbar-thumb:hover {
+            background: var(--color-text-tertiary);
+        }
+
+        #sidebar-header>* {
+            flex: 1 0 0%;
+            min-width: 2.25rem;
+            box-sizing: border-box;
+        }
+
+        #sidebar-header svg {
+            width: 1.125rem;
+            height: 1.125rem;
         }
 
         #tree {
@@ -219,7 +263,6 @@
             flex: 1;
             overflow-y: auto;
             min-height: 0;
-            padding: 0 2px;
         }
 
         #tree> :last-child {
@@ -268,7 +311,6 @@
             text-decoration: line-through;
         }
 
-        /* 搜索模式：隐藏不匹配的节点 */
         .file-item.search-hidden,
         details.search-hidden {
             display: none !important;
@@ -893,13 +935,13 @@
         }
 
         .canvas-control-btn {
-            width: 36px;
-            height: 36px;
+            width: 2.25rem;
+            height: 2.25rem;
             border: none;
-            border-radius: 8px;
+            border-radius: 0.5rem;
             background: var(--color-primary);
             color: var(--color-text-white);
-            font-size: 16px;
+            font-size: 1rem;
             font-weight: bold;
             cursor: pointer;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
@@ -952,7 +994,7 @@
         /* Canvas 底部节点类型选择工具栏 */
         .canvas-bottom-toolbar {
             position: absolute;
-            bottom: 20px;
+            bottom: 15px;
             left: 50%;
             transform: translateX(-50%);
             display: flex;
@@ -982,8 +1024,8 @@
         }
 
         .canvas-node-type-btn svg {
-            width: 28px;
-            height: 28px;
+            width: 1.5rem;
+            height: 1.5rem;
         }
 
         .canvas-toolbar-separator {
@@ -1101,13 +1143,20 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            padding: 5px 10px;
+            height: 1.75rem;
+            padding: 0.313rem 0.625rem;
             border: none;
             border-radius: var(--radius-md);
             font-weight: bold;
+            font-size: 0.813rem;
             cursor: pointer;
             box-shadow: var(--shadow-sm);
             transition: background-color var(--transition-normal), transform var(--transition-normal), box-shadow var(--transition-normal);
+        }
+
+        .btn svg {
+            width: 1.125rem;
+            height: 1.125rem;
         }
 
         .btn:hover {
@@ -1165,28 +1214,17 @@
         }
 
         .btn-sm {
-            height: 28px;
-            padding: 6px 10px;
-            font-size: 13px;
+            height: 1.65rem;
+            padding: 0.275rem 0.625rem;
+            font-size: 0.813rem;
         }
 
         .btn-ss {
-            height: 24px;
-            padding: 4px 8px;
-            font-size: 12px;
+            height: 1.5rem;
+            padding: 0.25rem 0.5rem;
+            font-size: 0.75rem;
         }
 
-        #open-btn,
-        #refresh-btn,
-        #level-select,
-        #new-file-btn,
-        #graph-btn,
-        #bookmark-btn,
-        #random-open-btn {
-            height: 100%;
-        }
-
-        #level-select,
         #new-file-btn {
             border: none;
             border-radius: var(--radius-md);
@@ -1195,19 +1233,16 @@
             box-shadow: var(--shadow-sm);
             transition: background-color var(--transition-normal), transform var(--transition-normal), box-shadow var(--transition-normal);
             padding: 5px 2px 5px 2px;
-            width: 35px;
             appearance: none;
             text-align: center;
             font-size: 0.75rem !important;
         }
 
-        #level-select,
         #new-file-btn:hover {
             transform: translateY(-1px);
             box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
         }
 
-        #level-select,
         #new-file-btn:active {
             transform: translateY(0);
             box-shadow: var(--shadow-sm);
@@ -1217,8 +1252,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            margin-bottom: 5px;
-            padding-right: 3px;
+            margin: 5px 0 5px 0;
         }
 
         #file-tree-search-box {
@@ -1228,32 +1262,54 @@
             display: flex;
             align-items: center;
             position: relative;
+            border: 1px solid var(--color-primary);
+            border-radius: var(--radius-md);
+            overflow: hidden;
         }
 
         #file-search {
             width: 100%;
-            height: 100%;
-            padding: 5px 10px;
-            border: 1px solid var(--color-primary);
-            border-radius: var(--radius-md);
+            height: 23px;
+            padding: 3px 8px;
+            border: none;
             font-weight: 400;
             font-size: 13px;
             box-sizing: border-box;
+            background: transparent;
+            outline: none;
+        }
+
+        #file-tree-search-box #level-select {
+            height: 100%;
+            padding: 0 8px;
+            border: none;
+            border-left: 1px solid var(--color-border);
+            background: transparent;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            appearance: none;
+            color: var(--color-text);
+            min-width: 40px;
+            outline: none;
+        }
+
+        #file-tree-search-box #level-select:focus {
+            outline: none;
         }
 
         #file-search:focus {
             outline: none;
+        }
+
+        #file-tree-search-box:focus-within {
             border-color: var(--color-primary);
             box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.1);
         }
 
         #clear-search {
-            position: absolute;
-            right: 6px;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 18px;
-            height: 18px;
+            width: 14px;
+            height: 14px;
             border: none;
             background: var(--color-text-tertiary);
             color: var(--color-text-white);
@@ -1261,6 +1317,10 @@
             font-size: 11px;
             cursor: pointer;
             display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 4px;
+            flex-shrink: 0;
             align-items: center;
             justify-content: center;
             padding: 0;
@@ -1321,7 +1381,7 @@
 
         .image-controls {
             position: fixed;
-            bottom: 30px;
+            bottom: 20px;
             right: 30px;
             display: flex;
             gap: 10px;
@@ -1329,13 +1389,13 @@
         }
 
         .image-btn {
-            width: 30px;
-            height: 30px;
+            width: 1.8rem;
+            height: 1.8rem;
             border-radius: 50%;
             border: none;
             background: var(--color-primary);
             color: var(--color-text-white);
-            font-size: 15px;
+            font-size: 0.938rem;
             font-weight: bold;
             cursor: pointer;
             box-shadow: var(--shadow-md);
@@ -1691,14 +1751,14 @@
             z-index: 10;
             font-size: 14px;
             box-sizing: border-box;
-            height: 37px;
+            height: 33px;
             width: 100%;
             color: rgb(237, 5, 237);
             font-weight: bold;
         }
 
         .editor-footer {
-            height: 28px;
+            height: 25px;
             min-width: 100%;
             background: #007acc;
             color: var(--color-text-white);
@@ -1818,14 +1878,13 @@
             gap: 2px;
             padding: 4px;
             background: var(--color-bg);
-            border: 1px solid var(--color-border);
             border-radius: 6px;
             animation: popIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
             transform-origin: bottom center;
             user-select: none;
             white-space: nowrap;
             opacity: 0;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
             transition: all 0.2s ease;
             z-index: 1000;
             width: auto;
@@ -1852,14 +1911,14 @@
             border: none;
             background: transparent;
             cursor: pointer;
-            padding: 2px 6px;
-            border-radius: 6px;
-            font-size: 13px;
+            padding: 0.125rem 0.375rem;
+            border-radius: 0.375rem;
+            font-size: 0.813rem;
             color: var(--color-text);
             display: inline-flex;
             align-items: center;
+            justify-content: center;
             gap: 2px;
-            font-family: inherit;
         }
 
         .markdown-selection-btn:hover {
@@ -1948,13 +2007,14 @@
 
         .color-option-search {
             width: auto;
-            height: 15px;
-            font-size: 13px;
+            height: 0.9375rem;
+            padding: 0.125rem 0.175rem;
+            border-radius: 0.375rem;
+            font-size: 0.813rem;
             background-color: transparent;
             color: var(--color-text);
             border: none;
             cursor: pointer;
-            padding: 8px 1px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -2402,9 +2462,9 @@
 
         .kanban-add-btn {
             width: 100%;
-            height: 40px;
-            padding: 8px 12px;
-            margin-top: 12px;
+            height: 2.5rem;
+            padding: 0.5rem 0.75rem;
+            margin-top: 0.75rem;
             border: 1px dashed var(--color-border, #d0d7de);
             border-radius: 8px;
             background-color: #f2f4f6;
@@ -2990,8 +3050,8 @@
         }
 
         .json-btn {
-            padding: 4px 8px;
-            font-size: 12px;
+            padding: 0.25rem 0.5rem;
+            font-size: 0.75rem;
         }
 
         .btn-active {
@@ -3044,7 +3104,7 @@
             height: 100vh;
             color: var(--color-text);
             overflow-y: auto;
-            padding: 3px 15px 15px 15px;
+            padding: 3px 10px 10px 10px;
             background: var(--color-bg-secondary);
         }
 
@@ -3086,7 +3146,7 @@
             display: flex;
             gap: 15px;
             margin-bottom: 15px;
-            flex-wrap: nowrap;
+            flex-wrap: wrap;
         }
 
         .stat-card {
@@ -3153,7 +3213,7 @@
         }
 
         .stat-value {
-            font-size: 20px;
+            font-size: 1.3rem;
             font-weight: 700;
         }
 
@@ -3187,6 +3247,7 @@
             display: flex;
             gap: 8px;
             align-items: flex-start;
+            flex-wrap: wrap;
         }
 
         .heatmap-section .heatmap-left {
@@ -3197,7 +3258,7 @@
 
         .heatmap-section .heatmap-right {
             flex: 1;
-            min-width: 200px;
+            min-width: 300px;
         }
 
         .charts-grid {
@@ -3211,10 +3272,13 @@
         }
 
         .chart-title {
-            font-size: 16px;
+            font-size: 1rem;
             font-weight: 600;
             margin-bottom: 12px;
             color: var(--color-text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .activity-section {
@@ -3250,12 +3314,6 @@
 
         .operationList::-webkit-scrollbar {
             width: 0px;
-        }
-
-        .chart-title {
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
         }
 
         .marker-list {
@@ -3629,8 +3687,8 @@
 
         .ai-action-btn-split {
             display: flex;
-            height: 25px;
-            border-radius: 8px;
+            height: 1.563rem;
+            border-radius: 0.5rem;
             overflow: hidden;
             box-shadow: 0 1px 3px rgba(0, 122, 245, 0.2);
             margin-left: auto;
@@ -3639,11 +3697,11 @@
         }
 
         .ai-action-btn-left {
-            padding: 0 8px;
+            padding: 0 0.5rem;
             background-color: #007af5;
             color: var(--color-text-white);
             border: none;
-            font-size: 12px;
+            font-size: 0.75rem;
             font-weight: 500;
             cursor: pointer;
             display: flex;
@@ -3657,11 +3715,11 @@
         }
 
         .ai-action-btn-right {
-            padding: 0 10px;
+            padding: 0 0.625rem;
             color: var(--color-text-white);
             background-color: var(--color-success);
             border: none;
-            font-size: 11px;
+            font-size: 0.688rem;
             font-weight: 500;
             cursor: pointer;
             display: flex;
@@ -3887,11 +3945,11 @@
         }
 
         .whiteboard-save-close {
-            width: 28px;
-            height: 28px;
+            width: 1.75rem;
+            height: 1.75rem;
             border: none;
             background: transparent;
-            border-radius: 6px;
+            border-radius: 0.375rem;
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -4226,7 +4284,7 @@
         }
 
         .tool-button {
-            padding: 8px 10px;
+            padding: 6px 10px;
             background: var(--color-bg);
             color: var(--color-text);
             border: none;
@@ -4562,13 +4620,13 @@
 
         /* ═══ 统一按钮 ═══ */
         .mermaid-tb {
-            height: 27px;
-            padding: 0 8px;
+            height: 1.688rem;
+            padding: 0 0.5rem;
             border: 1px solid #e2e8f0;
             background: var(--color-bg);
-            border-radius: 5px;
+            border-radius: 0.313rem;
             cursor: pointer;
-            font-size: 13px;
+            font-size: 0.813rem;
             font-weight: 500;
             color: var(--color-text, black);
             display: inline-flex;
@@ -4980,14 +5038,14 @@
             background: rgba(0, 0, 0, 0.06);
             border: none;
             color: #555;
-            width: 32px;
-            height: 32px;
-            border-radius: 8px;
+            width: 2rem;
+            height: 2rem;
+            border-radius: 0.5rem;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 18px;
+            font-size: 1.125rem;
             line-height: 1;
             transition: all 0.15s;
         }
@@ -5267,9 +5325,9 @@
             box-shadow: 2px 1px 2px rgba(0, 0, 0, 0.03),
                 2px 4px 12px rgba(0, 0, 0, 0.08),
                 2px 8px 24px rgba(0, 0, 0, 0.06);
-            height: 178px;
+            height: 175px;
             background: var(--color-bg);
-            margin: 3px 3px 0 0;
+            margin: 3px;
             width: calc(100% - 20px);
             overflow: hidden;
         }
@@ -5303,6 +5361,7 @@
             gap: 8px;
             flex: 1;
             min-height: 0;
+            flex-wrap: wrap;
         }
 
         .monitor-item {
@@ -5475,11 +5534,9 @@
             border-color: var(--color-border);
         }
 
-        /* 隐藏快捷键提示图标  */
         button[aria-label="Open short keys dialog"] {
             display: none !important;
         }
-
 
         .kanban-search-box {
             position: relative;
@@ -5541,11 +5598,11 @@
         }
 
         .kanban-action-btn-right {
-            padding: 0 5px;
+            padding: 0 0.313rem;
             color: var(--color-text-white);
             background-color: var(--color-success);
             border: none;
-            font-size: 11px;
+            font-size: 0.688rem;
             font-weight: 500;
             cursor: pointer;
             display: flex;
@@ -5702,7 +5759,8 @@
             display: flex;
             flex-direction: row;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
+            flex-wrap: wrap;
         }
 
         .regex-box {
@@ -5752,10 +5810,9 @@
         .regex-flags {
             display: flex;
             gap: 5px;
-            flex-shrink: 0;
         }
 
-        .regex-flags label {
+        .regex-input-body label {
             display: inline-flex;
             align-items: center;
             gap: 2px;
@@ -5770,15 +5827,15 @@
             transition: 0.15s;
         }
 
-        .regex-flags label:hover {
+        .regex-input-body label:hover {
             background: #e8eef5;
         }
 
-        .regex-flags input[type="checkbox"] {
+        .regex-input-body input[type="checkbox"] {
             accent-color: var(--color-primary);
         }
 
-        .regex-flags label:has(input:checked) {
+        .regex-input-body label:has(input:checked) {
             background: #dbeafe;
             color: var(--color-primary);
             border-color: #93c5fd;
@@ -6286,8 +6343,8 @@
         }
 
         .todo-btn-icon {
-            width: 26px;
-            height: 26px;
+            width: 1.625rem;
+            height: 1.625rem;
             border: 1px solid var(--color-border);
             background: var(--color-bg);
             border-radius: var(--radius-sm);
@@ -6311,8 +6368,8 @@
         }
 
         .todo-btn-icon-sm {
-            width: 24px;
-            height: 24px;
+            width: 1.5rem;
+            height: 1.5rem;
         }
 
         .todo-header-right {
@@ -7842,31 +7899,31 @@
         .timeline-navbar {
             background: var(--color-bg-secondary);
             border-bottom: 1px solid var(--color-border-light);
-            padding: 2px 5px;
-            height: 38px;
+            padding: 0.225rem 0.313rem;
+            min-height: 1.75rem;
             display: flex;
             align-items: center;
-            gap: 15px;
+            gap: 0.938rem;
             flex-shrink: 0;
             background: rgba(255, 255, 255, 0.96);
             backdrop-filter: blur(8px);
             z-index: 20;
-            font-size: 13px;
+            font-size: 0.813rem;
         }
 
         .timeline-view-tabs,
         .timeline-filters-group {
             display: flex;
-            gap: 6px;
+            gap: 4px;
             background: #f1f4f9;
             padding: 3px;
-            border-radius: 15px;
+            border-radius: 6px;
         }
 
         .timeline-view-tab,
         .timeline-filter-chip {
-            padding: 3px 10px;
-            border-radius: 15px;
+            padding: 3px 8px;
+            border-radius: 6px;
             font-size: 13px;
             font-weight: 500;
             cursor: pointer;
@@ -7888,11 +7945,11 @@
             display: flex;
             align-items: center;
             background: #f1f4f9;
-            border-radius: 10px;
-            padding: 3px 14px;
-            height: 25px;
-            gap: 8px;
-            width: 300px;
+            border-radius: 0.625rem;
+            padding: 0.188rem 0.875rem;
+            height: 1.563rem;
+            gap: 0.5rem;
+            width: 20%;
             flex-shrink: 0;
         }
 
@@ -7917,11 +7974,11 @@
 
         .timeline-stats-group {
             display: flex;
-            gap: 24px;
+            gap: 12px;
             margin-left: auto;
             background: #f1f4f9;
             padding: 5px 20px;
-            border-radius: 40px;
+            border-radius: 6px;
             font-size: 13px;
         }
 
@@ -7934,7 +7991,7 @@
         .timeline-stat-number {
             font-weight: 700;
             color: var(--text-primary);
-            font-size: 15px;
+            font-size: 0.938rem;
         }
 
         .timeline-heatmap-container {
@@ -8314,16 +8371,16 @@
 
         .graph-toolbar-buttons button {
             width: auto;
-            height: 28px;
+            height: 1.75rem;
             border: 1px solid var(--color-border);
             background: var(--color-bg-secondary);
-            border-radius: 4px;
+            border-radius: 0.25rem;
             cursor: pointer;
-            font-size: 13px;
+            font-size: 0.813rem;
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 4px 6px;
+            padding: 0.25rem 0.375rem;
             box-sizing: border-box;
         }
 
@@ -8728,7 +8785,7 @@
         }
 
         .cron-copy-btn {
-            padding: 7px 12px;
+            padding: 0.438rem 0.75rem;
             border-radius: var(--radius-md);
             border: 1px solid var(--color-border);
             background: var(--color-bg);
@@ -9143,15 +9200,13 @@
             position: relative;
         }
 
-        /* ── 视频 Header Bar ── */
         .video-header-bar {
             height: 40px;
             background: var(--color-bg-secondary);
-            /* border-bottom: 1px solid var(--color-border); */
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 0 16px;
+            padding: 0 10px;
             flex-shrink: 0;
         }
 
@@ -9789,8 +9844,7 @@
 
         .urlEncoder-content {
             display: block;
-            max-width: 1100px;
-            width: 100%;
+            width: 90%;
         }
 
         .urlEncoder-card {
@@ -9858,9 +9912,9 @@
         }
 
         .btn-lg {
-            padding: 6px 15px;
+            padding: 0.375rem 0.438rem;
             font-weight: normal;
-            font-size: 13px;
+            font-size: 0.8rem;
         }
 
         .markdown-body {
@@ -11100,7 +11154,7 @@
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             transition: all 0.2s ease;
             width: 160px;
-            height: 34px;
+            height: 30px;
         }
 
         .net-search-box input {
@@ -11139,9 +11193,9 @@
         .net-search-btn {
             background: var(--color-bg-secondary);
             border: none;
-            border-radius: 6px;
-            width: 26px;
-            height: 26px;
+            border-radius: 0.375rem;
+            width: 1.625rem;
+            height: 1.625rem;
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -11763,50 +11817,43 @@
     <!-- ====== 左侧文件树侧边栏 ====== -->
     <div id="sidebar">
         <div id="sidebar-header">
-            <button id="open-btn" class="btn btn-primary" onclick="openDir()" title="打开文件夹">
+            <button id="open-btn" class="btn btn-sm btn-primary" onclick="openDir()" title="打开文件夹">
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                     <path
                         d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z" />
                 </svg>
             </button>
-            <button id="refresh-btn" class="btn btn-primary" onclick="refreshTree()" title="刷新">
+            <button id="refresh-btn" class="btn btn-sm btn-primary" onclick="refreshTree()" title="刷新">
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                     <path
                         d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
                 </svg>
             </button>
-            <select id="level-select" class="btn btn-primary" onchange="handleLevelChange(this.value)" title="层级选择">
-                <option value="">层级</option>
-                <option value="all">全部</option>
-                <option value="0">1级</option>
-                <option value="1">2级</option>
-                <option value="2">3级</option>
-                <option value="3">4级</option>
-            </select>
-            <button id="new-file-btn" class="btn btn-primary" onclick="toggleNewFileModal(event)" title="新建文件">
+            <button id="new-file-btn" class="btn btn-sm btn-primary" onclick="toggleNewFileModal(event)" title="新建文件">
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                     <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
                 </svg>
             </button>
-            <button id="graph-btn" class="btn btn-primary" onclick="toggleFile('noteGraph')" title="文件图谱">
+            <button id="graph-btn" class="btn btn-sm btn-primary" onclick="toggleFile('noteGraph')" title="文件图谱">
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                     <path
                         d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
                 </svg>
             </button>
-            <button id="calendar-btn" class="btn btn-primary" onclick="toggleFile('calendar')" title="日历日程">
+            <button id="calendar-btn" class="btn btn-sm btn-primary" onclick="toggleFile('calendar')" title="日历日程">
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                     <path
                         d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H5V10h14v8zM7 12h5v5H7v-5z" />
                 </svg>
             </button>
-            <button id="random-open-btn" class="btn btn-success" onclick="toggleFile('randomOpen')" title="随机打开文件">
+            <button id="random-open-btn" class="btn btn-sm btn-success" onclick="toggleFile('randomOpen')"
+                title="随机打开文件">
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                     <path
                         d="M19 5v14H5V5h14m0-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 6h-2V7h2v2zm-4 0H8V7h2v2zm8 4h-2v-2h2v2zm-4 0h-2v-2h2v2z" />
                 </svg>
             </button>
-            <button id="dashboard-btn" class="btn btn-warning" onclick="toggleFile('dashboard')" title="统计面板">
+            <button id="dashboard-btn" class="btn btn-sm btn-warning" onclick="toggleFile('dashboard')" title="统计面板">
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                     <path
                         d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z" />
@@ -11817,6 +11864,14 @@
             <div id="file-tree-search-box">
                 <input type="text" id="file-search" placeholder="🔍 按下回车搜索文件..." onkeydown="handleSearchKeydown(event)">
                 <button id="clear-search" onclick="clearSearch()" style="display: none;">✕</button>
+                <select id="level-select" onchange="handleLevelChange(this.value)" title="层级选择">
+                    <option value="">层级</option>
+                    <option value="all">全部</option>
+                    <option value="0">1级</option>
+                    <option value="1">2级</option>
+                    <option value="2">3级</option>
+                    <option value="3">4级</option>
+                </select>
             </div>
         </div>
         <div id="new-file-dropdown-panel" class="new-file-dropdown-panel">
@@ -11954,8 +12009,7 @@
                     <span class="graph-mode-slider"></span>
                 </div>
             </label>
-            <button id="graph-refresh-btn" class="btn btn-primary btn-sm graph-refresh-btn"
-                onclick="refreshGraphData()">
+            <button id="graph-refresh-btn" class="btn btn-primary graph-refresh-btn" onclick="refreshGraphData()">
                 更新图谱
             </button>
             <canvas id="graph-canvas" class="graph-canvas"></canvas>
@@ -12027,7 +12081,7 @@
                         </svg></div>
                     <div class="stat-info">
                         <div class="stat-value" id="todayEdit">0</div>
-                        <div class="stat-label">今日修改文件</div>
+                        <div class="stat-label">今日修改</div>
                     </div>
                 </div>
                 <div class="stat-card">
@@ -12039,7 +12093,7 @@
                         </svg></div>
                     <div class="stat-info">
                         <div class="stat-value" id="todayAdd">0</div>
-                        <div class="stat-label">今日新增文件</div>
+                        <div class="stat-label">今日新增</div>
                     </div>
                 </div>
                 <div class="stat-card">
@@ -12050,7 +12104,7 @@
                         </svg></div>
                     <div class="stat-info">
                         <div class="stat-value" id="deletedCount">0</div>
-                        <div class="stat-label">垃圾箱文件</div>
+                        <div class="stat-label">垃圾箱</div>
                     </div>
                 </div>
                 <div class="stat-card">
@@ -12061,7 +12115,7 @@
                         </svg></div>
                     <div class="stat-info">
                         <div class="stat-value" id="todayViewCount">0</div>
-                        <div class="stat-label">今日浏览文件</div>
+                        <div class="stat-label">今日浏览</div>
                     </div>
                 </div>
             </div>
@@ -12093,11 +12147,11 @@
                             <div class="monitor-panel" id="file-sum-panel" style="display: none">
                                 <div class="monitor-header">
                                     <span>监控</span>
-                                    <p>
+                                    <span>
                                         <span class="monitor-uptime" id="fileScanTime">文件扫盘时长：加载中...</span>
                                         <span class="monitor-uptime">｜</span>
                                         <span class="monitor-uptime" id="permissionTime">授权时长：加载中...</span>
-                                    </p>
+                                    </span>
                                 </div>
                                 <div class="monitor-body">
                                     <div class="monitor-item">
@@ -12190,13 +12244,13 @@
                             <div class="monitor-panel" id="monitor-panel" style="display: none">
                                 <div class="monitor-header">
                                     <span>监控</span>
-                                    <p>
+                                    <span>
                                         <span class="monitor-uptime" id="serviceMem"></span>
                                         <span class="monitor-uptime">｜</span>
                                         <span class="monitor-uptime" id="serviceUptime">服务Live:加载中...</span>
                                         <span class="monitor-uptime">｜</span>
                                         <span class="monitor-uptime" id="monitorUptime">电脑Live: 加载中...</span>
-                                    </p>
+                                    </span>
                                 </div>
                                 <div class="monitor-body">
                                     <div class="monitor-item">
@@ -12583,7 +12637,6 @@
                     <div class="timeline-filter-chip" data-filter="code">💻 代码</div>
                 </div>
                 <div class="timeline-search-box">
-                    <i class="fas fa-search"></i>
                     <input type="text" id="timelineSearchInput" placeholder="搜索文件或路径">
                     <span class="timeline-search-clear" id="timelineSearchClear">✕</span>
                 </div>
@@ -12667,12 +12720,10 @@
                 <button id="opml-collapse-btn-3" class="btn btn-warning btn-sm" onclick="collapse1Level(4)">
                     三级
                 </button>
-                <button id="opml-collapse-btn-4" class="btn btn-warning btn-sm" onclick="collapse1Level(5)">
-                    四级
-                </button>
                 <select id="opml-level-select" class="btn btn-warning btn-sm" onchange="collapse1Level(this.value)"
                     title="层级选择">
                     <option value="" selected>选择</option>
+                    <option value="5">四级</option>
                     <option value="6">五级</option>
                     <option value="7">六级</option>
                     <option value="8">七级</option>
@@ -12871,13 +12922,11 @@
                             autocomplete="off" placeholder="输入正则表达式">
                         <span class="regex-slash" id="regex-flags-preview">/g</span>
                     </div>
-                    <div class="regex-flags">
-                        <label><input type="checkbox" id="regex-flag-i" name="flag" value="i"> i(忽略大小写)</label>
-                        <label><input type="checkbox" id="regex-flag-g" name="flag" value="g" checked> g(全局匹配)</label>
-                        <label><input type="checkbox" id="regex-flag-m" name="flag" value="m"> m(多行匹配)</label>
-                        <label><input type="checkbox" id="regex-flag-u" name="flag" value="u"> u(Unicode 匹配)</label>
-                        <label><input type="checkbox" id="regex-flag-y" name="flag" value="y"> y(粘性匹配)</label>
-                    </div>
+                    <label><input type="checkbox" id="regex-flag-i" name="flag" value="i"> i(忽略大小写)</label>
+                    <label><input type="checkbox" id="regex-flag-g" name="flag" value="g" checked> g(全局匹配)</label>
+                    <label><input type="checkbox" id="regex-flag-m" name="flag" value="m"> m(多行匹配)</label>
+                    <label><input type="checkbox" id="regex-flag-u" name="flag" value="u"> u(Unicode 匹配)</label>
+                    <label><input type="checkbox" id="regex-flag-y" name="flag" value="y"> y(粘性匹配)</label>
                 </div>
                 <div class="regex-input-body" style="margin-top: 0px;padding-top: 0px;">
                     <div class="regex-box">
@@ -13878,6 +13927,7 @@
         let hasBackendServer = false;
         const isLocalVisit = () => window.location.protocol === 'file:';
         const isHttpVisit = () => window.location.protocol === 'http:' || window.location.protocol === 'https:';
+        const isTauriVisit = () => typeof window.__TAURI__ !== 'undefined' && !!window.__TAURI__?.core?.invoke;
         const replaceMediaUrl = async (text, isAllFile) => photoLoadFromLocal(text, isAllFile);
         const isInDeletedDir = (relativePath) => {
             const p = normalizePath(relativePath || '');
@@ -14021,9 +14071,6 @@
         let graphqlReactRoot = null;        // GraphQL React 实例根元素
         let _cardCheckboxDebounce = false;  // GraphQL React 实例
         let graphqlInitialized = false;     // 是否初始化了GraphQL Playground
-        // 系统监控相关
-        let systemMonitorCpuChart = null;   // CPU 仪表盘 ECharts 实例
-        let systemMonitorMemChart = null;   // 内存仪表盘 ECharts 实例
         // 图片布局相关
         let currentPhotoDirData = [];       // 当前目录图片数据
         let _treeLoadDuration = null;       // 文件树加载耗时(ms)
@@ -14469,15 +14516,8 @@
             }
         }
 
-        async function enterEditMode(isOtherFile = false, text = '') {
-            if (!currentFileHandle) return;
-            destroyEditor(true);
-            await switchToView(contentEdit, 'flex');
-            aiFabContainer.style.display = 'none';
-            let initialContent = previewFileText || text || originalContent;
-            contentEdit.innerHTML = '<div class="editor-container"><div class="editor-header">📝 编辑模式 - '
-                + currentFileName + '</div><div id="editor-inner" style="width:100%;height:calc(100% - 65px);overflow: hidden;"></div>'
-                + `<div id="editor-footer" class="editor-footer">
+        function createEditorFooter() {
+            return `<div id="editor-footer" class="editor-footer">
                     <div class="status-left">
                         <span id="status-size"></span>
                         <span id="status-file"></span>
@@ -14489,7 +14529,25 @@
                         <span id="status-indent"></span>
                         <span id="status-encoding"></span>
                         <span id="status-eol"></span>
-                    </div></div></div>`;
+                    </div>
+                </div>`;
+        }
+
+        function createEditorContainer(headerLabel, innerId = 'editor-inner', containerStyle = '', headerStyle = '') {
+            return `<div class="editor-container"${containerStyle ? ` style="${containerStyle}"` : ''}>
+                <div class="editor-header"${headerStyle ? ` style="${headerStyle}"` : ''}>${headerLabel}</div>
+                <div id="${innerId}" style="width:100%;height:calc(100% - 58px);overflow: hidden;"></div>
+                ${createEditorFooter()}
+            </div>`;
+        }
+
+        async function enterEditMode(isOtherFile = false, text = '') {
+            if (!currentFileHandle) return;
+            destroyEditor(true);
+            await switchToView(contentEdit, 'flex');
+            aiFabContainer.style.display = 'none';
+            let initialContent = previewFileText || text || originalContent;
+            contentEdit.innerHTML = createEditorContainer('📝 编辑模式 - ' + currentFileName);
             const editorInner = document.getElementById('editor-inner');
             const isKanban = isObsidianKanban(initialContent);
             initMonacoEditor().then(() => {
@@ -14530,24 +14588,7 @@
             editorInnerDiv.style.height = '100%';
             editorInnerDiv.style.display = 'flex';
             editorInnerDiv.innerHTML =
-                `<div class="editor-container" style="height: 100%;">
-                    <div class="editor-header" style="height: 30px;">📝 编辑预览模式 - ${currentFileName}</div>
-                    <div id="editor-inner-live" style="width:100%;height:calc(100% - 58px);"></div>
-                    <div id="editor-footer" class="editor-footer">
-                        <div class="status-left">
-                            <span id="status-size"></span>
-                            <span id="status-file"></span>
-                            <span id="status-language"></span>
-                            <span id="status-selection"></span>
-                        </div>
-                        <div class="status-right">
-                            <span id="status-cursor"></span>
-                            <span id="status-indent"></span>
-                            <span id="status-encoding"></span>
-                            <span id="status-eol"></span>
-                        </div>
-                    </div>
-                </div>`;
+                createEditorContainer('📝 编辑预览模式 - ' + currentFileName, 'editor-inner-live', 'height: 100%;', 'height: 30px;');
             const previewInnerDiv = document.createElement('div');
             previewInnerDiv.id = 'content-live-preview ';
             previewInnerDiv.classList.add('content-live-preview');
@@ -15497,21 +15538,7 @@
             if (isDiary) {
                 fileName = new Date().toLocaleDateString().replace(/\//g, '-') + '.md';
             }
-            contentEdit.innerHTML = '<div class="editor-container"><div class="editor-header">📝 编辑模式 - ' + fileName
-                + '</div><div id="editor-inner" style="width:100%;height:calc(100% - 65px);overflow: hidden;"></div>'
-                + `<div id="editor-footer" class="editor-footer">
-                        <div class="status-left">
-                            <span id="status-size"></span>
-                            <span id="status-file"></span>
-                            <span id="status-language"></span>
-                            <span id="status-selection"></span>
-                        </div>
-                        <div class="status-right">
-                            <span id="status-cursor"></span>
-                            <span id="status-indent"></span>
-                            <span id="status-encoding"></span>
-                            <span id="status-eol"></span>
-                        </div></div></div>`;
+            contentEdit.innerHTML = createEditorContainer('📝 编辑模式 - ' + fileName);
             const editorInner = document.getElementById('editor-inner');
             const parts = fileName.split(DOT);
             const ext = parts.length > 1 ? parts.pop().toLowerCase() : '';
@@ -16501,7 +16528,7 @@
 
             treeElement.innerHTML = '';
             if (list.length === 0) {
-                treeElement.innerHTML = '<div style="color:var(--color-text-secondary); text-align:center; padding: 20px;">未找到匹配的文件</div>';
+                treeElement.innerHTML = '<div style="color:var(--color-text-secondary);padding-top: 20px; text-align:center;font-size: 13px;">未找到匹配的文件</div>';
                 return;
             }
             const dirTree = { __files: [], __subdirs: new Map() };
@@ -21025,9 +21052,10 @@
             const iframe = document.createElement('iframe');
             iframe.id = 'temp-html-frame';
             iframe.style.width = '100%';
-            iframe.style.height = '100%';
-            iframe.style.border = '0';
-            iframe.style.scrollbarWidth = 'none';
+            iframe.style.height = 'calc(100% - 4px)';
+            // iframe.style.border = '0';
+            // iframe.style.scrollbarWidth = 'none';
+            iframe.style.overflow = 'hidden';
             contentMain.textContent = '';
             contentMain.appendChild(iframe);
             let iframeLoaded = false;
@@ -21195,6 +21223,11 @@
             }
         }
         async function readFileAsBase64(fullPath) {
+            // Tauri 快路径：直接构造绝对路径 + invoke，绕过 handle 遍历
+            if (isTauriVisit()) {
+                const absPath = joinPath(getRootHandle().path, normalizePath(fullPath));
+                return await readTauriFileAsBase64(absPath);
+            }
             try {
                 const fileHandle = await getFileHandleByPath(fullPath);
                 if (!fileHandle) return null;
@@ -21210,6 +21243,58 @@
                 return null;
             }
         }
+        // Tauri 模式：通过 invoke 直接读取文件为 base64（绕过 handle 遍历，更可靠）
+        async function readTauriFileAsBase64(absPath) {
+            try {
+                const { invoke } = window.__TAURI__.core;
+                const content = await invoke('read_file_binary', { path: absPath });
+                const blob = new Blob([new Uint8Array(content)]);
+                return await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = () => reject(reader.error);
+                    reader.readAsDataURL(blob);
+                });
+            } catch (e) {
+                console.warn(`Tauri 图片读取失败: ${absPath}`, e);
+                return null;
+            }
+        }
+        // Tauri 模式：将 HTML/Markdown/OPML 中的图片相对路径转为 base64
+        async function buildTauriImg(text, isFullText = false, photoDirPath = '') {
+            const normalizedRootPath = normalizePath(currentRootPath);
+            const resolveToAbsolute = (src) => {
+                const localSrc = buildLocalImgSrc(src, normalizedRootPath, photoDirPath);
+                return joinPath(normalizedRootPath, localSrc);
+            };
+            if (!isFullText) {
+                if (isContinueImg(text)) return text;
+                const absPath = resolveToAbsolute(text);
+                const dataUrl = await readTauriFileAsBase64(absPath);
+                return dataUrl || text;
+            } else {
+                const matches = [];
+                let match;
+                IMG_SRC_REGEX.lastIndex = 0;
+                while ((match = IMG_SRC_REGEX.exec(text)) !== null) {
+                    matches.push({ fullMatch: match[0], before: match[1], src: match[2], after: match[3] });
+                }
+                if (matches.length === 0) return text;
+                const replacements = await Promise.all(matches.map(async (m) => {
+                    if (isContinueImg(m.src)) return { oldStr: m.fullMatch, newStr: m.fullMatch };
+                    const absPath = resolveToAbsolute(m.src);
+                    const dataUrl = await readTauriFileAsBase64(absPath);
+                    if (!dataUrl) return { oldStr: m.fullMatch, newStr: m.fullMatch };
+                    return { oldStr: m.fullMatch, newStr: `<img${m.before}src="${dataUrl}"${m.after}>` };
+                }));
+                let result = text;
+                for (const r of replacements) {
+                    result = result.replace(r.oldStr, r.newStr);
+                }
+                return result;
+            }
+        }
+
         const dealWithAbsolutePath = (src, normalizedRootPath) => {
             const isLocal = normalizePath(src).startsWith(normalizedRootPath);
             if (isLocal) {
@@ -23436,24 +23521,7 @@
                     <div class="canvas-edit-controls">
                         <button class="btn btn-success btn-sm" onclick="saveNodeContent(event, this)">显示</button>
                     </div>
-                    <div class="editor-container" style="height: 100%;">
-                        <div class="editor-header">${headerLabel}</div>
-                        <div id="node-editor-inner" style="width:100%;height:calc(100% - 65px);overflow: hidden;"></div>
-                        <div id="editor-footer" class="editor-footer">
-                            <div class="status-left">
-                                <span id="status-size"></span>
-                                <span id="status-file"></span>
-                                <span id="status-language"></span>
-                                <span id="status-selection"></span>
-                            </div>
-                            <div class="status-right">
-                                <span id="status-cursor"></span>
-                                <span id="status-indent"></span>
-                                <span id="status-encoding"></span>
-                                <span id="status-eol"></span>
-                            </div>
-                        </div>
-                    </div>`;
+                    ${createEditorContainer(headerLabel, 'node-editor-inner', 'height: 100%;')}`;
             // 状态对象独立于 DOM，innerHTML 替换不影响 _nodePanelState，无需重写
             const gen = _panelGeneration;
             setTimeout(() => {
@@ -25834,11 +25902,11 @@
                 if (name === 'all') {
                     tab.style.background = '#424C50' + '33';
                     tab.style.borderLeft = `4px solid #424C50`;
-                    tab.textContent = `全部 (${(groups.all || []).length})`;
+                    tab.textContent = `全部 ${(groups.all || []).length}`;
                 } else {
                     tab.style.background = MARKER_COLORS[idx] + '33';
                     tab.style.borderLeft = `4px solid ${MARKER_COLORS[idx]}`;
-                    tab.textContent = `${colorNamesCN[idx]} (${(groups[name] || []).length})`;
+                    tab.textContent = `${colorNamesCN[idx]} ${(groups[name] || []).length}`;
                 }
                 if (name === _activeMarkerTab) tab.classList.add('active');
                 tab.onclick = async () => {
@@ -25994,16 +26062,39 @@
             }
             const { currentHandle, parentPath } = pathResult;
             const newRelativePath = parentPath ? joinPath(parentPath, newName) : newName;
-            const content = await getFileByBuffer(entry);
-            const newFileHandle = await getFileHandleByDirHandle(currentHandle, newName, { create: true });
-            try {
-                await writeFileHandle(newFileHandle, content);
-            } catch (error) {
-                console.error('写入新文件失败:', error);
-                showNotification('✗ 重命名失败: ' + error.message, 'error');
-                return;
+
+            // Tauri 模式：使用 Rust 后端的原子 rename（无需复制+删除）
+            if (isTauriVisit()) {
+                const rootPath = getRootHandle().path;
+                const src = joinPath(rootPath, relativePath);
+                const dst = joinPath(rootPath, newRelativePath);
+                try {
+                    await window.__TAURI__.core.invoke('rename', { src, dst });
+                } catch (error) {
+                    showNotification('✗ 重命名失败: ' + error, 'error');
+                    return;
+                }
+            } else {
+                // 浏览器模式（File System Access API）：复制内容 → 写入新文件 → 删除旧文件
+                const content = await getFileByBuffer(entry);
+                const newFileHandle = await getFileHandleByDirHandle(currentHandle, newName, { create: true });
+                try {
+                    await writeFileHandle(newFileHandle, content);
+                } catch (error) {
+                    console.error('写入新文件失败:', error);
+                    showNotification('✗ 重命名失败: ' + error.message, 'error');
+                    return;
+                }
+                try {
+                    await deleteFileByName(currentHandle, originalName);
+                } catch (error) {
+                    console.error('删除旧文件失败:', error);
+                    showNotification('✗ 重命名失败(无法删除旧文件): ' + error.message, 'error');
+                    return;
+                }
             }
-            // 阶段2: 更新所有索引文件（在删除旧文件之前,确保任一失败可回滚）
+
+            // 更新索引文件
             const idxOk = await Promise.all([
                 updateFilePathInMarkers(relativePath, newRelativePath),
                 updateFileNameInAIHistory(relativePath, newName, newRelativePath),
@@ -26014,14 +26105,8 @@
             if (hasFailed) {
                 showNotification('✗ 重命名成功但索引更新失败，请刷新目录', 'error');
             }
-            // 阶段3: 删除旧文件并更新UI
-            try {
-                await deleteFileByName(currentHandle, originalName);
-            } catch (error) {
-                console.error('删除旧文件失败:', error);
-                showNotification('✗ 重命名失败(无法删除旧文件): ' + error.message, 'error');
-                return;
-            }
+
+            // 更新 UI
             fileSpan.dataset.filePath = newRelativePath;
             const span = fileSpan.querySelector('.file-name');
             span.textContent = newName;
@@ -26085,7 +26170,6 @@
             dashboardCharts[chartInstance] = echarts.init(document.getElementById(domId));
             return dashboardCharts[chartInstance];
         }
-
 
         async function scanDashboardData(force = false) {
             const _tStart = performance.now();
@@ -26256,9 +26340,17 @@
                 const ext = getExt(name);
                 const extLower = ext.toLowerCase();
                 try {
-                    const file = await entry.getFile();
-                    const sizeBytes = file.size;
-                    const mtimeMs = (file.lastModified && file.lastModified > 0) ? file.lastModified : nowMs;
+                    let sizeBytes, mtimeMs;
+                    // Tauri 模式：使用 getFileMeta() 只读元数据，不加载文件内容
+                    if (entry.getFileMeta) {
+                        const meta = await entry.getFileMeta();
+                        sizeBytes = meta.size;
+                        mtimeMs = (meta.modified && meta.modified > 0) ? meta.modified * 1000 : nowMs;
+                    } else {
+                        const file = await entry.getFile();
+                        sizeBytes = file.size;
+                        mtimeMs = (file.lastModified && file.lastModified > 0) ? file.lastModified : nowMs;
+                    }
                     const mtimeSec = Math.floor(mtimeMs / 1000);
                     return {
                         name, ext: extLower, path: childRel,
@@ -26594,6 +26686,7 @@
             };
             const chart = initChart(id, id);
             chart.setOption(option);
+
         }
 
         function updateDataBar(barId, percentId, ratio, colorClass) {
@@ -27353,7 +27446,7 @@
                 </div>`;
             DASHBOARD_BUTTON.forEach(b => {
                 if (b.display) {
-                    if (isLocalVisit() || !hasBackendServer) {
+                    if (isLocalVisit() || isTauriVisit() || !hasBackendServer) {
                         if (b.fileProtocolDisplay && b.display) {
                             html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
                         }
@@ -28782,20 +28875,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         <button class="btn btn-success btn-sm" onclick="applyOpenRestyConfig()">配置生效</button>
                     </div>
                     <div id="openresty-editor-area" style="width:100%;height:100%;overflow: hidden;"></div>
-                    <div id="editor-footer" class="editor-footer">
-                        <div class="status-left">
-                            <span id="status-size"></span>
-                            <span id="status-file"></span>
-                            <span id="status-language"></span>
-                            <span id="status-selection"></span>
-                        </div>
-                        <div class="status-right">
-                            <span id="status-cursor"></span>
-                            <span id="status-indent"></span>
-                            <span id="status-encoding"></span>
-                            <span id="status-eol"></span>
-                        </div>
-                    </div>`;
+                    ${createEditorFooter()}`;
             const editorArea = document.getElementById('openresty-editor-area');
             if (!editorArea) return;
             editorArea.innerHTML = '';
@@ -29833,9 +29913,30 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 });
                 if (!dirHandle) return;
                 await initPageNone();
-                setRootHandle(dirHandle)
-                showNotification('输入物理路径用以后续相关操作！', 'info', 3000);
-                await inputAbsolutePath(dirHandle)
+                setRootHandle(dirHandle);
+                // Tauri 模式：dirHandle.path 包含物理路径，跳过手动输入
+                if (dirHandle.path) {
+                    currentRootPath = dirHandle.path.replace(/[\/\\]+$/, '');
+                    showGlobalLoading('正在扫描目录文件...');
+                    try {
+                        await clearOldData();
+                        safeLocalStorageSet("ROOT_DIR", currentRootPath);
+                        safeLocalStorageSet(PERMISSION_TIME_KEY, Date.now().toString());
+                        // TauriDirectoryHandle 是类实例，IndexedDB 序列化会丢失方法
+                        // 改为存储可序列化的路径信息，读取时重建
+                        await idbPut(DIRECTORY_STORE_NAME, 'handles', 'default', { __tauriDirHandle: true, path: dirHandle.path });
+                        await mountDir();
+                        await initAll();
+                    } catch (e) {
+                        console.error('初始化目录失败', e);
+                        showNotification('✗ 扫描目录失败: ' + e.message, 'error');
+                    } finally {
+                        hideGlobalLoading(true);
+                    }
+                } else {
+                    showNotification('输入物理路径用以后续相关操作！', 'info', 3000);
+                    await inputAbsolutePath(dirHandle);
+                }
             } catch (err) {
                 console.error('用户取消了选择或无权限', err);
             }
@@ -29898,26 +29999,51 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         async function initFromStorage() {
-            const storedHandle = await idbGet(DIRECTORY_STORE_NAME, 'handles', 'default');
-            if (storedHandle) {
-                const hasPermission = await verifyPermission(storedHandle);
-                if (hasPermission) {
-                    setRootHandle(storedHandle)
-                    currentRootPath = safeLocalStorageGet("ROOT_DIR");
-                    if (!currentRootPath) {
-                        return false;
-                    }
+            // Tauri 模式：从 localStorage 恢复上次打开的目录，不弹选择框
+            if (window.__tauriFs) {
+                const savedPath = safeLocalStorageGet("ROOT_DIR");
+                if (savedPath) {
+                    currentRootPath = savedPath;
+                    const handle = new window.__tauriFs.TauriDirectoryHandle(savedPath);
+                    setRootHandle(handle);
                     await mountDir();
-                    const data = await scanDashboardData(true)
+                    const data = await scanDashboardData(true);
                     if (BROWSER_REFRESHED_KEY === safeLocalStorageGet(BROWSER_REFRESHED_KEY)) {
-                        await Promise.all([renderDirectory(storedHandle, data), toggleDashboardView(true, data)]);
+                        await Promise.all([renderDirectory(handle, data), toggleDashboardView(true, data)]);
                     } else {
-                        await renderDirectory(storedHandle, data);
+                        await renderDirectory(handle, data);
                     }
                     return true;
                 }
-                showNotification('目录权限已过期，请重新选择目录并授予读写权限！', 'info', 3000);
-                return false;
+            }
+
+            const storedHandle = await idbGet(DIRECTORY_STORE_NAME, 'handles', 'default');
+            if (storedHandle) {
+                let handle = storedHandle;
+                const isTauriMode = storedHandle.__tauriDirHandle && storedHandle.path && window.__tauriFs;
+                if (isTauriMode) {
+                    handle = new window.__tauriFs.TauriDirectoryHandle(storedHandle.path);
+                }
+                if (!isTauriMode) {
+                    const hasPermission = await verifyPermission(handle);
+                    if (!hasPermission) {
+                        showNotification('目录权限已过期，请重新选择目录并授予读写权限！', 'info', 3000);
+                        return false;
+                    }
+                }
+                setRootHandle(handle)
+                currentRootPath = safeLocalStorageGet("ROOT_DIR");
+                if (!currentRootPath) {
+                    return false;
+                }
+                await mountDir();
+                const data = await scanDashboardData(true)
+                if (BROWSER_REFRESHED_KEY === safeLocalStorageGet(BROWSER_REFRESHED_KEY)) {
+                    await Promise.all([renderDirectory(handle, data), toggleDashboardView(true, data)]);
+                } else {
+                    await renderDirectory(handle, data);
+                }
+                return true;
             }
             return false;
         }
@@ -30500,6 +30626,20 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
         // 获取目录句柄，不存在则创建
         async function getOrCreateDirectory(parentDirHandle, dirName) {
+            // Tauri 快路径：直接构造绝对路径，不存在则创建
+            if (isTauriVisit()) {
+                const parentPath = parentDirHandle.path || parentDirHandle._path;
+                const absPath = joinPath(parentPath, dirName);
+                try {
+                    const exists = await window.__TAURI__.core.invoke('exists', { path: absPath });
+                    if (!exists) {
+                        await window.__TAURI__.core.invoke('create_dir', { path: absPath });
+                    }
+                } catch {
+                    await window.__TAURI__.core.invoke('create_dir', { path: absPath });
+                }
+                return new window.__tauriFs.TauriDirectoryHandle(absPath);
+            }
             try {
                 return await getDirectoryHandle(parentDirHandle, dirName);
             } catch (e) {
@@ -30511,13 +30651,31 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
         // 列出目录下的所有文件和子目录
         async function getDirectoryEntries(dirHandle) {
+            // Tauri 快路径：直接 invoke read_dir，批量处理
+            if (isTauriVisit()) {
+                const dirPath = dirHandle.path || dirHandle._path;
+                const entries = await window.__TAURI__.core.invoke('read_dir', { path: dirPath });
+                const dirName = dirHandle.name;
+                return entries
+                    .filter(e => {
+                        const name = e.name;
+                        if (e.kind === 'directory') return !isSkipDir(name) && !isSkipDir(joinPath(dirName, name));
+                        return !isSkipFile(name);
+                    })
+                    .map(e => ({
+                        kind: e.kind, name: e.name,
+                        rawEntry: e.kind === 'directory'
+                            ? new window.__tauriFs.TauriDirectoryHandle(e.path)
+                            : new window.__tauriFs.TauriFileHandle(e.path),
+                        path: joinPath(dirName, e.name)
+                    }));
+            }
             const entries = [];
             let path = dirHandle.name;
             for await (const rawEntry of dirHandle.values()) {
                 const name = rawEntry.name;
                 const paths = joinPath(path, name);
                 if (rawEntry.kind === 'directory') {
-                    joinPath(path, name)
                     if (isSkipDir(name) || isSkipDir(paths)) continue;
                 } else {
                     if (isSkipFile(name)) continue;
@@ -30529,6 +30687,26 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         // 根据路径获取目录句柄
         async function getDirHandleByDirPath(dirPath) {
             if (!dirPath) return { dirHandle: getRootHandle(), dirParentHandle: null };
+            // Tauri 快路径：直接构造绝对路径，单次 IPC
+            if (isTauriVisit()) {
+                const normalized = normalizePath(dirPath);
+                const parts = normalized.split(SLASH).filter(p => p);
+                const absPath = joinPath(getRootHandle().path, normalized);
+                try {
+                    const exists = await window.__TAURI__.core.invoke('exists', { path: absPath });
+                    if (!exists) throw new Error(`目录不存在: ${dirPath}`);
+                } catch (e) {
+                    console.warn(`目录不存在: ${dirPath}`, e);
+                    throw new Error(`目录不存在: ${dirPath}`);
+                }
+                const parentPath = parts.length > 1
+                    ? joinPath(getRootHandle().path, parts.slice(0, -1).join(SLASH))
+                    : getRootHandle().path;
+                return {
+                    dirHandle: new window.__tauriFs.TauriDirectoryHandle(absPath),
+                    dirParentHandle: new window.__tauriFs.TauriDirectoryHandle(parentPath)
+                };
+            }
             const pathParts = normalizePath(dirPath).split(SLASH).filter(p => p);
             let dirHandle = getRootHandle();
             let dirParentHandle = getRootHandle();
@@ -30545,6 +30723,23 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
         // 根据文件路径找到其父目录句柄
         async function getFileParentHandleByFilePath(path) {
+            // Tauri 快路径：直接构造父目录绝对路径，单次 IPC
+            if (isTauriVisit()) {
+                const normalized = normalizePath(path);
+                const parts = normalized.split(SLASH).filter(p => p);
+                const fileName = parts.pop();
+                const parentRelPath = parts.join(SLASH);
+                const parentAbsPath = parentRelPath ? joinPath(getRootHandle().path, parentRelPath) : getRootHandle().path;
+                try {
+                    const exists = await window.__TAURI__.core.invoke('exists', { path: parentAbsPath });
+                    if (!exists) return null;
+                    return {
+                        currentHandle: new window.__tauriFs.TauriDirectoryHandle(parentAbsPath),
+                        parentPath: parentRelPath,
+                        fileName: fileName
+                    };
+                } catch { return null; }
+            }
             const pathParts = normalizePath(path).split(SLASH).filter(p => p);
             const fileName = pathParts[pathParts.length - 1];
             pathParts.pop();
@@ -30562,6 +30757,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
         // 根据文件路径获取文件句柄
         async function getFileHandleByPath(path) {
+            // Tauri 快路径：直接构造绝对路径 + 单次 exists 检查
+            if (isTauriVisit()) {
+                const absPath = joinPath(getRootHandle().path, normalizePath(path));
+                try {
+                    const exists = await window.__TAURI__.core.invoke('exists', { path: absPath });
+                    return exists ? new window.__tauriFs.TauriFileHandle(absPath) : null;
+                } catch { return null; }
+            }
             try {
                 const { currentHandle, fileName } = await getFileParentHandleByFilePath(path);
                 if (!currentHandle || !fileName) return null;
@@ -32149,8 +32352,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         function initSystemMonitor() {
             closeSystemMonitor();
-            const cpuChart = echarts.init(document.getElementById('cpuGauge'));
-            const memChart = echarts.init(document.getElementById('memGauge'));
             const cpuOption = {
                 series: [{
                     type: 'gauge',
@@ -32173,7 +32374,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         formatter: '{value}%',
                         offsetCenter: ['7%', '50%']
                     },
-                    data: [{ value: 0 }]
+                    data: [{ value: 0.15 }]
                 }]
             };
 
@@ -32199,33 +32400,19 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         formatter: '{value}%',
                         offsetCenter: ['7%', '50%']
                     },
-                    data: [{ value: 0 }]
+                    data: [{ value: 0.15 }]
                 }]
             };
+            const cpuChart = initChart('cpuGauge', 'cpuGauge');
             cpuChart.setOption(cpuOption);
+
+            const memChart = initChart('memGauge', 'memGauge');
             memChart.setOption(memOption);
 
-            function formatBytes(bytes) {
-                if (bytes === 0) return '0 B';
-                const k = 1024;
-                const sizes = ['B', 'KB', 'MB', 'GB'];
-                const i = Math.floor(Math.log(bytes) / Math.log(k));
-                return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-            }
-
-            const cpuCores = document.getElementById('cpuCores');
-            const memDetail = document.getElementById('memDetail');
-            const netRecv = document.getElementById('netRecv');
-            const netSent = document.getElementById('netSent');
-            const diskBar = document.getElementById('diskBarFill');
-            const diskPercent = document.getElementById('diskPercent');
-            const monitorUptime = document.getElementById('monitorUptime');
-            const serviceUptime = document.getElementById('serviceUptime');
-            const serviceMem = document.getElementById('serviceMem');
-
-            // 保存 ECharts 实例引用
-            systemMonitorCpuChart = cpuChart;
-            systemMonitorMemChart = memChart;
+            const data = '{ "type": "metrics", "data": { "cpu": { "percent": 7.1, "core_count": 16 }, "memory": { "total": 34359738368, "used": 17646141440, "available": 12969197568, "percent": 62.3 }, "network": { "sent_rate": 12090.0, "recv_rate": 9858.0, "total_sent": 38688850944, "total_recv": 47047570432 }, "disk": { "total": 3801256189952, "used": 517228974080, "free": 1909302853632, "percent": 13.6 }, "uptime": 2406553, "service": { "rss": 71573504, "vms": 37405925376, "uptime": 973007 } } }';
+            _handleWsMetrics(JSON.parse(data));
+            cpuChart.resize();
+            memChart.resize();
         }
 
         let _wsClient = null;
@@ -32243,10 +32430,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const d = data.data || data;
             if (!d || !d.cpu) return;
             // 系统监控已关闭（离开仪表盘视图）→ 跳过所有 DOM 更新
-            if (!systemMonitorCpuChart || !systemMonitorMemChart) return;
-
-            const cpuChart = systemMonitorCpuChart;
-            const memChart = systemMonitorMemChart;
+            const cpuChart = dashboardCharts['cpuGauge'];
+            const memChart = dashboardCharts['memGauge'];
+            if (!cpuChart || !memChart) return;
 
             cpuChart.setOption({ series: [{ data: [{ value: d.cpu.percent }] }] });
             const cpuCores = document.getElementById('cpuCores');
@@ -32302,7 +32488,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         // 连接 WebSocket（仅 http 模式下生效）
         function wsConnect() {
-            if (isLocalVisit()) return;
+            if (isLocalVisit() || isTauriVisit()) return;
             wsDisconnect();
             try {
                 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -32373,13 +32559,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         // 关闭系统监控：断开 SSE + 销毁 ECharts
         function closeSystemMonitor() {
-            if (systemMonitorCpuChart) {
-                systemMonitorCpuChart.dispose();
-                systemMonitorCpuChart = null;
+            const cpuChart = dashboardCharts['cpuGauge'];
+            const memChart = dashboardCharts['memGauge'];
+            if (cpuChart) {
+                cpuChart.dispose();
+                dashboardCharts['cpuGauge'] = null;
             }
-            if (systemMonitorMemChart) {
-                systemMonitorMemChart.dispose();
-                systemMonitorMemChart = null;
+            if (memChart) {
+                memChart.dispose();
+                dashboardCharts['memGauge'] = null;
             }
         }
 
@@ -32403,7 +32591,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             var copyResultBtn = document.getElementById('regex-result-copy-btn');
             var testText = document.getElementById('regex-test-text');
             var flagsPreview = document.getElementById('regex-flags-preview');
-            var flagCheckboxes = document.querySelectorAll('.regex-flags input[name="flag"]');
+            var flagCheckboxes = document.querySelectorAll('.regex-input-body input[name="flag"]');
             var errorBar = document.getElementById('regex-error');
             var matchPanel = document.getElementById('regex-match-panel');
             var matchBody = document.getElementById('regex-match-body');
@@ -39116,6 +39304,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             loadMoreBtn.style.display = hasMore ? '' : 'none';
         }
         async function photoLoadFromLocal(text, isAllFile = false, photoDirPath = '') {
+            // Tauri 模式：使用 invoke 直接读取文件为 base64
+            if (isTauriVisit()) return await buildTauriImg(text, isAllFile, photoDirPath);
             // 存在后端服务, 更改绝对路径
             if (hasBackendServer) return buildLocalAbsoluteImg(text, isAllFile);
             // 本地访问, 构建本地图片路径
@@ -42422,20 +42612,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             await switchToView(contentEdit, 'flex');
             isDiary = false;
             isTempEditor = true;
-            contentEdit.innerHTML = '<div class="editor-container"><div class="editor-header">📝 临时编辑器</div><div id="editor-inner" style="width:100%;height:calc(100% - 65px);overflow: hidden;"></div>'
-                + `<div id="editor-footer" class="editor-footer">
-                        <div class="status-left">
-                            <span id="status-size"></span>
-                            <span id="status-file"></span>
-                            <span id="status-language"></span>
-                            <span id="status-selection"></span>
-                        </div>
-                        <div class="status-right">
-                            <span id="status-cursor"></span>
-                            <span id="status-indent"></span>
-                            <span id="status-encoding"></span>
-                            <span id="status-eol"></span>
-                        </div></div></div>`;
+            contentEdit.innerHTML = createEditorContainer('📝 临时编辑器');
             const savedContent = safeLocalStorageGet('tempEditorContent');
             const savedLanguage = safeLocalStorageGet('tempEditorLanguage');
             const editorInner = document.getElementById('editor-inner');

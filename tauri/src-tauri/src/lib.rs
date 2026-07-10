@@ -1,0 +1,24 @@
+mod commands;
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_store::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![
+            commands::fs::read_dir_recursive,
+            commands::fs::read_dir,
+            commands::fs::read_file,
+            commands::fs::read_file_binary,
+            commands::fs::write_file,
+            commands::fs::write_file_binary,
+            commands::fs::delete,
+            commands::fs::rename,
+            commands::fs::create_dir,
+            commands::fs::exists,
+            commands::fs::get_file_meta,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
