@@ -13,9 +13,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TAURI_DIR="$SCRIPT_DIR/tauri"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+TAURI_DIR="$SCRIPT_DIR"
 TAURI_SRC="$TAURI_DIR/src-tauri"
-BACKEND_DIR="$SCRIPT_DIR/backend"
+BACKEND_DIR="$PROJECT_DIR/backend"
 
 # 颜色输出
 RED='\033[0;31m'
