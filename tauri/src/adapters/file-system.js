@@ -18,13 +18,45 @@
   const { invoke } = window.__TAURI__.core;
   const { open, save } = window.__TAURI__.dialog;
 
+  const PATH_SPLIT_RE = /[/\\]/;
+  const SLASH = '/';
+
+  function _basename(path) {
+    return path.split(PATH_SPLIT_RE).pop() || '/';
+  }
+
+  function _joinPath(parent, child) {
+    if (!parent) return child;
+    if (!child) return parent;
+    const p = parent.replace(/[/\\]+$/, '');
+    const c = child.replace(/^[/\\]+/, '');
+    return p + SLASH + c;
+  }
+
+  function _buildFilters(options) {
+    const filters = [];
+    if (options && options.types) {
+      for (const t of options.types) {
+        if (t.accept) {
+          for (const [mime, exts] of Object.entries(t.accept)) {
+            filters.push({
+              name: t.description || mime,
+              extensions: exts.map(e => e.replace(/^\./, '')),
+            });
+          }
+        }
+      }
+    }
+    return filters.length > 0 ? filters : undefined;
+  }
+
   // =====================================================
   // 虚拟文件句柄 — 兼容 FileSystemFileHandle
   // =====================================================
   class TauriFileHandle {
     constructor(filePath) {
       this._path = filePath;
-      this.name = filePath.split(/[/\\]/).pop();
+      this.name = _basename(filePath);
       this.kind = 'file';
     }
 
@@ -34,7 +66,7 @@
       const content = await invoke('read_file_binary', { path: this._path });
       const blob = new Blob([new Uint8Array(content)]);
       blob.name = this.name;
-      blob.lastModified = meta.modified * 1000;
+      blob.lastModified = (meta.modified && meta.modified > 0) ? meta.modified * 1000 : Date.now();
       return blob;
     }
 
@@ -68,53 +100,110 @@
       this._position = 0;
       this._buffer = null;
       this._isOpen = true;
+      this._isBinary = false;
+      this._chunks = [];
+      this._totalLength = 0;
+    }
+
+    _mergeBuffer() {
+      const strBuf = this._buffer;
+      const chunks = this._chunks;
+      if (this._isBinary) {
+        this._buffer = new Uint8Array(this._totalLength);
+        let offset = 0;
+        if (typeof strBuf === 'string') {
+          const enc = new TextEncoder().encode(strBuf);
+          this._buffer.set(enc, offset);
+          offset += enc.length;
+        }
+        for (let i = 0; i < chunks.length; i++) {
+          this._buffer.set(chunks[i], offset);
+          offset += chunks[i].length;
+        }
+      } else {
+        this._buffer = strBuf + chunks.join('');
+      }
+      this._chunks = [];
+      this._totalLength = 0;
+    }
+
+    _appendString(str) {
+      if (this._isBinary) {
+        const enc = new TextEncoder().encode(str);
+        this._appendBytes(enc);
+        return;
+      }
+      if (this._chunks.length > 0) {
+        this._mergeBuffer();
+      }
+      if (this._buffer === null) {
+        this._buffer = str;
+      } else {
+        this._buffer += str;
+      }
+      this._position += str.length;
+    }
+
+    _appendBytes(bytes) {
+      if (!this._isBinary) {
+        if (this._buffer !== null || this._chunks.length > 0) {
+          this._mergeBuffer();
+        }
+        this._isBinary = true;
+        this._chunks.push(bytes);
+        this._totalLength += bytes.length;
+      } else {
+        this._chunks.push(bytes);
+        this._totalLength += bytes.length;
+      }
+      this._position += bytes.length;
     }
 
     async write(data) {
       if (!this._isOpen) throw new TypeError('Stream is closed');
       if (typeof data === 'string') {
-        // 直接写字符串
-        if (this._buffer === null) {
-          this._buffer = data;
-        } else {
-          this._buffer += data;
-        }
-        this._position += data.length;
+        this._appendString(data);
       } else if (data instanceof Blob) {
         const text = await data.text();
-        return this.write(text);
+        this._appendString(text);
       } else if (data instanceof Uint8Array) {
-        // 暂不支持二进制分片写入，一次性写入
-        if (this._buffer === null) {
-          this._buffer = new TextDecoder().decode(data);
-        }
+        this._appendBytes(data);
       } else if (data && data.type === 'write') {
-        // FileSystemWriteChunkType: { type: 'write', position, data }
         if (data.position !== undefined) this._position = data.position;
-        return this.write(data.data);
+        await this.write(data.data);
       } else if (data && data.type === 'seek') {
         this._position = data.position;
       } else if (data && data.type === 'truncate') {
-        if (this._buffer !== null && typeof this._buffer === 'string') {
-          this._buffer = this._buffer.slice(0, data.size);
-        }
+        await this.truncate(data.size);
       }
     }
 
     async close() {
       if (!this._isOpen) return;
       this._isOpen = false;
-      if (this._buffer !== null && typeof this._buffer === 'string') {
-        await invoke('write_file', { path: this._path, content: this._buffer });
-      } else if (this._buffer !== null && this._buffer instanceof Uint8Array) {
+      if (this._chunks.length > 0 || this._buffer !== null) {
+        this._mergeBuffer();
+      }
+      if (this._buffer === null) {
+        await invoke('write_file', { path: this._path, content: '' });
+        return;
+      }
+      if (this._isBinary) {
         await invoke('write_file_binary', { path: this._path, content: Array.from(this._buffer) });
+      } else {
+        await invoke('write_file', { path: this._path, content: this._buffer });
       }
     }
 
     async truncate(size) {
-      if (this._buffer !== null && typeof this._buffer === 'string') {
+      if (this._buffer === null && this._chunks.length === 0) return;
+      this._mergeBuffer();
+      if (this._isBinary) {
+        this._buffer = this._buffer.slice(0, size);
+      } else {
         this._buffer = this._buffer.slice(0, size);
       }
+      if (this._position > size) this._position = size;
     }
 
     async seek(position) {
@@ -128,7 +217,7 @@
   class TauriDirectoryHandle {
     constructor(dirPath) {
       this._path = dirPath.replace(/[/\\]+$/, '');
-      this.name = this._path.split(/[/\\]/).pop() || '/';
+      this.name = _basename(this._path);
       this.kind = 'directory';
     }
 
@@ -151,7 +240,7 @@
 
     /** 获取目录句柄 */
     async getDirectoryHandle(name, options) {
-      const subPath = this._path + '/' + name;
+      const subPath = _joinPath(this._path, name);
       if (options && options.create) {
         await invoke('create_dir', { path: subPath });
       } else {
@@ -163,9 +252,8 @@
 
     /** 获取文件句柄 */
     async getFileHandle(name, options) {
-      const filePath = this._path + '/' + name;
+      const filePath = _joinPath(this._path, name);
       if (options && options.create) {
-        // 创建空文件
         const exists = await invoke('exists', { path: filePath });
         if (!exists) {
           await invoke('write_file', { path: filePath, content: '' });
@@ -179,8 +267,9 @@
 
     /** 删除子目录/文件 */
     async removeEntry(name, options) {
-      const targetPath = this._path + '/' + name;
-      await invoke('delete', { path: targetPath });
+      const targetPath = _joinPath(this._path, name);
+      const recursive = options && options.recursive;
+      await invoke('delete', { path: targetPath, recursive: !!recursive });
     }
 
     /** 查询权限 */
@@ -218,23 +307,11 @@
 
   /** 替换 showOpenFilePicker */
   window.showOpenFilePicker = async function (options) {
-    const filters = [];
-    if (options && options.types) {
-      for (const t of options.types) {
-        if (t.accept) {
-          for (const [mime, exts] of Object.entries(t.accept)) {
-            filters.push({
-              name: t.description || mime,
-              extensions: exts.map(e => e.replace(/^\./, '')),
-            });
-          }
-        }
-      }
-    }
+    const filters = _buildFilters(options);
     const selected = await open({
       directory: false,
-      multiple: options && options.multiple,
-      filters: filters.length > 0 ? filters : undefined,
+      multiple: !!(options && options.multiple),
+      filters: filters,
       title: '选择文件',
     });
     if (!selected) {
@@ -246,21 +323,9 @@
 
   /** 替换 showSaveFilePicker */
   window.showSaveFilePicker = async function (options) {
-    const filters = [];
-    if (options && options.types) {
-      for (const t of options.types) {
-        if (t.accept) {
-          for (const [mime, exts] of Object.entries(t.accept)) {
-            filters.push({
-              name: t.description || mime,
-              extensions: exts.map(e => e.replace(/^\./, '')),
-            });
-          }
-        }
-      }
-    }
+    const filters = _buildFilters(options);
     const selected = await save({
-      filters: filters.length > 0 ? filters : undefined,
+      filters: filters,
       title: '保存文件',
     });
     if (!selected) {

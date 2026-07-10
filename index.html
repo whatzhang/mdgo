@@ -984,7 +984,7 @@
         }
 
         .canvas-save-menu::-webkit-scrollbar {
-            width: 0px;
+            display: none;
         }
 
         .canvas-save-menu.canvas-open {
@@ -3109,8 +3109,7 @@
         }
 
         .dashboard-container::-webkit-scrollbar {
-            width: 0px;
-            height: 0px;
+            display: none;
         }
 
         .page-header {
@@ -3313,7 +3312,7 @@
         }
 
         .operationList::-webkit-scrollbar {
-            width: 0px;
+            display: none;
         }
 
         .marker-list {
@@ -3322,7 +3321,7 @@
         }
 
         .marker-list::-webkit-scrollbar {
-            width: 0px;
+            display: none;
         }
 
         .activity-column-title {
@@ -3973,8 +3972,7 @@
         }
 
         .whiteboard-save-content::-webkit-scrollbar {
-            width: 0px;
-            height: 0px;
+            display: none;
         }
 
         .whiteboard-save-directory-tree {
@@ -4040,8 +4038,7 @@
         }
 
         .ai-result-content::-webkit-scrollbar {
-            width: 0px;
-            height: 0px;
+            display: none;
         }
 
         .bookmark-header {
@@ -4813,8 +4810,7 @@
         }
 
         .mermaid-preview-area::-webkit-scrollbar {
-            width: 0px;
-            height: 0px;
+            display: none;
         }
 
         #mermaid-preview {
@@ -5135,8 +5131,7 @@
         }
 
         .mermaid-save-menu::-webkit-scrollbar {
-            width: 0px;
-            height: 0px;
+            display: none;
         }
 
         .mermaid-directory-tree {
@@ -5682,8 +5677,7 @@
         }
 
         .content-live-preview::-webkit-scrollbar {
-            width: 0px;
-            height: 0px;
+            display: none;
         }
 
         .live-preview-container {
@@ -21188,39 +21182,48 @@
         // HTTP 模式：图片转 base64 内嵌
         async function buildHttpImg(text, isFullText = false, photoDirPath = '') {
             const normalizedRootPath = normalizePath(currentRootPath);
+            const resolveSrc = async (src) => {
+                let localSrc = dealWithAbsolutePath(src, normalizedRootPath);
+                if (localSrc === src) {
+                    localSrc = buildLocalImgSrc(src, normalizedRootPath, photoDirPath);
+                }
+                return await readFileAsBase64(localSrc);
+            };
+            return await _replaceImgWithBase64(text, isFullText, resolveSrc);
+        }
+        // 公共方法：将文本中的图片替换为 base64（resolveFn 负责将 src 转为 data URL，失败返回 null）
+        async function _replaceImgWithBase64(text, isFullText, resolveFn) {
             if (!isFullText) {
                 if (isContinueImg(text)) return text;
-                let localSrc = dealWithAbsolutePath(text, normalizedRootPath);
-                if (localSrc === text) {
-                    localSrc = buildLocalImgSrc(text, normalizedRootPath, photoDirPath);
-                }
-                localSrc = await readFileAsBase64(localSrc);
-                return localSrc || text;
-            } else {
-                // 先收集所有图片 src，并行读取为 base64
-                const matches = [];
-                let match;
-                IMG_SRC_REGEX.lastIndex = 0;
-                while ((match = IMG_SRC_REGEX.exec(text)) !== null) {
-                    matches.push({ fullMatch: match[0], before: match[1], src: match[2], after: match[3] });
-                }
-                if (matches.length === 0) return text;
-                const replacements = await Promise.all(matches.map(async (m) => {
-                    if (isContinueImg(m.src)) return { oldStr: m.fullMatch, newStr: m.fullMatch };
-                    let localSrc = dealWithAbsolutePath(m.src, normalizedRootPath);
-                    if (localSrc === m.src) {
-                        localSrc = buildLocalImgSrc(m.src, normalizedRootPath, photoDirPath);
-                    }
-                    localSrc = await readFileAsBase64(localSrc);
-                    if (!localSrc || localSrc === m.src) return { oldStr: m.fullMatch, newStr: m.fullMatch };
-                    return { oldStr: m.fullMatch, newStr: `<img${m.before}src="${localSrc}"${m.after}>` };
-                }));
-                let result = text;
-                for (const r of replacements) {
-                    result = result.replace(r.oldStr, r.newStr);
-                }
-                return result;
+                const dataUrl = await resolveFn(text);
+                return dataUrl || text;
             }
+            const matches = [];
+            let match;
+            IMG_SRC_REGEX.lastIndex = 0;
+            while ((match = IMG_SRC_REGEX.exec(text)) !== null) {
+                matches.push({ fullMatch: match[0], before: match[1], src: match[2], after: match[3] });
+            }
+            if (matches.length === 0) return text;
+            const replacements = await Promise.all(matches.map(async (m) => {
+                if (isContinueImg(m.src)) return { oldStr: m.fullMatch, newStr: m.fullMatch };
+                const dataUrl = await resolveFn(m.src);
+                if (!dataUrl) return { oldStr: m.fullMatch, newStr: m.fullMatch };
+                return { oldStr: m.fullMatch, newStr: `<img${m.before}src="${dataUrl}"${m.after}>` };
+            }));
+            let result = text;
+            for (const r of replacements) {
+                result = result.replace(r.oldStr, r.newStr);
+            }
+            return result;
+        }
+        function _blobToDataURL(blob) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(reader.error);
+                reader.readAsDataURL(blob);
+            });
         }
         async function readFileAsBase64(fullPath) {
             // Tauri 快路径：直接构造绝对路径 + invoke，绕过 handle 遍历
@@ -21232,12 +21235,7 @@
                 const fileHandle = await getFileHandleByPath(fullPath);
                 if (!fileHandle) return null;
                 const file = await fileHandle.getFile();
-                return new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = () => resolve(reader.result);
-                    reader.onerror = () => reject(reader.error);
-                    reader.readAsDataURL(file);
-                });
+                return await _blobToDataURL(file);
             } catch (e) {
                 console.warn(`本地图片读取失败: ${fullPath}`, e);
                 return null;
@@ -21248,13 +21246,7 @@
             try {
                 const { invoke } = window.__TAURI__.core;
                 const content = await invoke('read_file_binary', { path: absPath });
-                const blob = new Blob([new Uint8Array(content)]);
-                return await new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = () => resolve(reader.result);
-                    reader.onerror = () => reject(reader.error);
-                    reader.readAsDataURL(blob);
-                });
+                return await _blobToDataURL(new Blob([new Uint8Array(content)]));
             } catch (e) {
                 console.warn(`Tauri 图片读取失败: ${absPath}`, e);
                 return null;
@@ -21263,36 +21255,11 @@
         // Tauri 模式：将 HTML/Markdown/OPML 中的图片相对路径转为 base64
         async function buildTauriImg(text, isFullText = false, photoDirPath = '') {
             const normalizedRootPath = normalizePath(currentRootPath);
-            const resolveToAbsolute = (src) => {
+            const resolveSrc = async (src) => {
                 const localSrc = buildLocalImgSrc(src, normalizedRootPath, photoDirPath);
-                return joinPath(normalizedRootPath, localSrc);
+                return await readTauriFileAsBase64(joinPath(normalizedRootPath, localSrc));
             };
-            if (!isFullText) {
-                if (isContinueImg(text)) return text;
-                const absPath = resolveToAbsolute(text);
-                const dataUrl = await readTauriFileAsBase64(absPath);
-                return dataUrl || text;
-            } else {
-                const matches = [];
-                let match;
-                IMG_SRC_REGEX.lastIndex = 0;
-                while ((match = IMG_SRC_REGEX.exec(text)) !== null) {
-                    matches.push({ fullMatch: match[0], before: match[1], src: match[2], after: match[3] });
-                }
-                if (matches.length === 0) return text;
-                const replacements = await Promise.all(matches.map(async (m) => {
-                    if (isContinueImg(m.src)) return { oldStr: m.fullMatch, newStr: m.fullMatch };
-                    const absPath = resolveToAbsolute(m.src);
-                    const dataUrl = await readTauriFileAsBase64(absPath);
-                    if (!dataUrl) return { oldStr: m.fullMatch, newStr: m.fullMatch };
-                    return { oldStr: m.fullMatch, newStr: `<img${m.before}src="${dataUrl}"${m.after}>` };
-                }));
-                let result = text;
-                for (const r of replacements) {
-                    result = result.replace(r.oldStr, r.newStr);
-                }
-                return result;
-            }
+            return await _replaceImgWithBase64(text, isFullText, resolveSrc);
         }
 
         const dealWithAbsolutePath = (src, normalizedRootPath) => {
@@ -26217,7 +26184,7 @@
 
         async function mountDir() {
             // 未选择目录时不发送请求
-            if (!currentRootPath || isLocalVisit()) return;
+            if (!currentRootPath || isLocalVisit() || isTauriVisit()) return;
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 50);
             try {
@@ -26274,9 +26241,8 @@
                         // 文件夹/文件名中的斜杠和反斜杠替换为下横杠，避免破坏路径结构
                         const name = entry.name.replace(/[\/\\]/g, '_');
                         if (entry.kind === 'directory') {
-                            if (isSkipDir(name) || isSkipDir(relRoot)) continue;
-                            // 优化：内联路径拼接，避免 joinPath 的多次 regex + map + filter
                             const childRel = relRoot ? relRoot + SLASH + name : name;
+                            if (isSkipDir(name) || isSkipDir(childRel)) continue;
                             dirs.push({ entry, childRel });
                         } else {
                             if (isSkipFile(name)) continue;
@@ -26341,8 +26307,7 @@
                 const extLower = ext.toLowerCase();
                 try {
                     let sizeBytes, mtimeMs;
-                    // Tauri 模式：使用 getFileMeta() 只读元数据，不加载文件内容
-                    if (entry.getFileMeta) {
+                    if (isTauriVisit()) {
                         const meta = await entry.getFileMeta();
                         sizeBytes = meta.size;
                         mtimeMs = (meta.modified && meta.modified > 0) ? meta.modified * 1000 : nowMs;
@@ -29999,53 +29964,36 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         async function initFromStorage() {
-            // Tauri 模式：从 localStorage 恢复上次打开的目录，不弹选择框
-            if (window.__tauriFs) {
-                const savedPath = safeLocalStorageGet("ROOT_DIR");
-                if (savedPath) {
-                    currentRootPath = savedPath;
-                    const handle = new window.__tauriFs.TauriDirectoryHandle(savedPath);
-                    setRootHandle(handle);
-                    await mountDir();
-                    const data = await scanDashboardData(true);
-                    if (BROWSER_REFRESHED_KEY === safeLocalStorageGet(BROWSER_REFRESHED_KEY)) {
-                        await Promise.all([renderDirectory(handle, data), toggleDashboardView(true, data)]);
-                    } else {
-                        await renderDirectory(handle, data);
-                    }
-                    return true;
+            const savedPath = safeLocalStorageGet("ROOT_DIR");
+            if (!savedPath) return false;
+
+            const storedHandle = await idbGet(DIRECTORY_STORE_NAME, 'handles', 'default');
+            const isTauriMode = window.__tauriFs && (!!savedPath || (storedHandle && storedHandle.__tauriDirHandle && storedHandle.path));
+
+            let handle;
+            if (isTauriMode) {
+                const tauriPath = (storedHandle && storedHandle.__tauriDirHandle) ? storedHandle.path : savedPath;
+                handle = new window.__tauriFs.TauriDirectoryHandle(tauriPath);
+            } else {
+                if (!storedHandle) return false;
+                handle = storedHandle;
+                const hasPermission = await verifyPermission(handle);
+                if (!hasPermission) {
+                    showNotification('目录权限已过期，请重新选择目录并授予读写权限！', 'info', 3000);
+                    return false;
                 }
             }
 
-            const storedHandle = await idbGet(DIRECTORY_STORE_NAME, 'handles', 'default');
-            if (storedHandle) {
-                let handle = storedHandle;
-                const isTauriMode = storedHandle.__tauriDirHandle && storedHandle.path && window.__tauriFs;
-                if (isTauriMode) {
-                    handle = new window.__tauriFs.TauriDirectoryHandle(storedHandle.path);
-                }
-                if (!isTauriMode) {
-                    const hasPermission = await verifyPermission(handle);
-                    if (!hasPermission) {
-                        showNotification('目录权限已过期，请重新选择目录并授予读写权限！', 'info', 3000);
-                        return false;
-                    }
-                }
-                setRootHandle(handle)
-                currentRootPath = safeLocalStorageGet("ROOT_DIR");
-                if (!currentRootPath) {
-                    return false;
-                }
-                await mountDir();
-                const data = await scanDashboardData(true)
-                if (BROWSER_REFRESHED_KEY === safeLocalStorageGet(BROWSER_REFRESHED_KEY)) {
-                    await Promise.all([renderDirectory(handle, data), toggleDashboardView(true, data)]);
-                } else {
-                    await renderDirectory(handle, data);
-                }
-                return true;
+            setRootHandle(handle);
+            currentRootPath = savedPath;
+            await mountDir();
+            const data = await scanDashboardData(true);
+            if (BROWSER_REFRESHED_KEY === safeLocalStorageGet(BROWSER_REFRESHED_KEY)) {
+                await Promise.all([renderDirectory(handle, data), toggleDashboardView(true, data)]);
+            } else {
+                await renderDirectory(handle, data);
             }
-            return false;
+            return true;
         }
 
         async function openWhiteboard() {
@@ -30656,19 +30604,25 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const dirPath = dirHandle.path || dirHandle._path;
                 const entries = await window.__TAURI__.core.invoke('read_dir', { path: dirPath });
                 const dirName = dirHandle.name;
-                return entries
-                    .filter(e => {
-                        const name = e.name;
-                        if (e.kind === 'directory') return !isSkipDir(name) && !isSkipDir(joinPath(dirName, name));
-                        return !isSkipFile(name);
-                    })
-                    .map(e => ({
-                        kind: e.kind, name: e.name,
+                const result = [];
+                for (let i = 0; i < entries.length; i++) {
+                    const e = entries[i];
+                    const name = e.name;
+                    const fullPath = dirName ? dirName + SLASH + name : name;
+                    if (e.kind === 'directory') {
+                        if (isSkipDir(name) || isSkipDir(fullPath)) continue;
+                    } else {
+                        if (isSkipFile(name)) continue;
+                    }
+                    result.push({
+                        kind: e.kind, name: name,
                         rawEntry: e.kind === 'directory'
                             ? new window.__tauriFs.TauriDirectoryHandle(e.path)
                             : new window.__tauriFs.TauriFileHandle(e.path),
-                        path: joinPath(dirName, e.name)
-                    }));
+                        path: fullPath
+                    });
+                }
+                return result;
             }
             const entries = [];
             let path = dirHandle.name;
@@ -32409,8 +32363,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const memChart = initChart('memGauge', 'memGauge');
             memChart.setOption(memOption);
 
-            const data = '{ "type": "metrics", "data": { "cpu": { "percent": 7.1, "core_count": 16 }, "memory": { "total": 34359738368, "used": 17646141440, "available": 12969197568, "percent": 62.3 }, "network": { "sent_rate": 12090.0, "recv_rate": 9858.0, "total_sent": 38688850944, "total_recv": 47047570432 }, "disk": { "total": 3801256189952, "used": 517228974080, "free": 1909302853632, "percent": 13.6 }, "uptime": 2406553, "service": { "rss": 71573504, "vms": 37405925376, "uptime": 973007 } } }';
-            _handleWsMetrics(JSON.parse(data));
             cpuChart.resize();
             memChart.resize();
         }
