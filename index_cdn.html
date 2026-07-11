@@ -1161,12 +1161,10 @@
         }
 
         .btn:hover {
-            transform: translateY(-1px);
             box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
         }
 
         .btn:active {
-            transform: translateY(0);
             box-shadow: var(--shadow-sm);
         }
 
@@ -1240,7 +1238,6 @@
         }
 
         #new-file-btn:hover {
-            transform: translateY(-1px);
             box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
         }
 
@@ -1425,7 +1422,7 @@
         }
 
         .top-right-controls {
-            position: fixed;
+            position: absolute;
             top: 5px;
             right: 10px;
             display: flex;
@@ -2682,7 +2679,6 @@
         }
 
         .input-modal-btn:hover {
-            transform: translateY(-1px);
             box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
         }
 
@@ -2752,7 +2748,6 @@
         }
 
         .confirm-modal-btn:hover {
-            transform: translateY(-1px);
             box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
         }
 
@@ -2808,7 +2803,6 @@
         }
 
         .open-panel-btn:hover {
-            transform: translateY(-1px);
             box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
         }
 
@@ -4299,7 +4293,6 @@
         .tool-button:hover {
             color: var(--color-text-white);
             background: var(--color-primary);
-            transform: translateY(-1px);
             box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
         }
 
@@ -4434,7 +4427,6 @@
         }
 
         .marker-tab-btn:hover {
-            transform: translateY(-1px);
             box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
         }
 
@@ -5173,7 +5165,7 @@
         }
 
         .mermaid-directory-search-wrapper {
-            padding: 12px 12px;
+            padding: 8px 8px;
             flex-shrink: 0;
             position: sticky;
             top: 0;
@@ -7166,7 +7158,6 @@
         }
 
         .todo-week-event:hover {
-            transform: translateY(-1px);
             box-shadow: var(--todo-shadow);
             z-index: 10;
         }
@@ -8642,7 +8633,6 @@
         }
 
         .cron-switch:hover {
-            transform: translateY(-1px);
             box-shadow: 0 3px 6px rgba(0, 0, 0, 0.12);
         }
 
@@ -8800,7 +8790,6 @@
         .cron-copy-btn:hover {
             border-color: var(--color-primary);
             color: var(--color-primary);
-            transform: translateY(-1px);
             box-shadow: 0 3px 6px rgba(0, 0, 0, 0.12);
         }
 
@@ -8861,7 +8850,6 @@
         .cron-builder-tab:hover {
             color: var(--t0);
             background: rgba(0, 0, 0, .02);
-            transform: translateY(-1px);
         }
 
         .cron-builder-tab.active {
@@ -8922,7 +8910,6 @@
 
         .cron-form-pill:hover {
             color: var(--t1);
-            transform: translateY(-1px);
             box-shadow: 0 3px 6px rgba(0, 0, 0, 0.12);
         }
 
@@ -9022,7 +9009,6 @@
             border-color: var(--color-primary);
             color: var(--color-primary);
             background: var(--color-primary-bg2);
-            transform: translateY(-1px);
             box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
         }
 
@@ -9060,7 +9046,6 @@
         .cron-form-quick-select:hover {
             color: var(--color-primary);
             border-color: var(--color-primary);
-            transform: translateY(-1px);
         }
 
         .cron-form-quick-select:active {
@@ -9127,7 +9112,6 @@
             border-color: var(--color-primary);
             color: var(--color-primary);
             background: var(--color-primary-bg);
-            transform: translateY(-1px);
             box-shadow: 0 3px 6px rgba(0, 0, 0, 0.12);
         }
 
@@ -11802,8 +11786,12 @@
             background-color: var(--color-bg-secondary, #f6f8fa);
         }
 
-        .canvas-file-item:hover .mind-img-thumb {
+        .canvas-file-item:hover .file-img-thumb {
             opacity: 0.85;
+        }
+
+        #opml-level-select:focus {
+            outline: none;
         }
     </style>
 </head>
@@ -15752,7 +15740,7 @@
                     _canvasEscHandler = null;
                 }
                 // 5. 清理模态框（如果存在）
-                const modal = document.getElementById('canvas-file-select-modal');
+                const modal = document.getElementById('file-select-modal');
                 if (modal) modal.remove();
                 // 5.5. 清理 Object URL（释放图片 blob 内存）
                 if (currentObjectUrls && currentObjectUrls.length > 0) {
@@ -17691,6 +17679,7 @@
                 _clearViewCache();
                 await jsMindCreate(null, true);
                 setMindmapControls({ readonly: false, isNew: true });
+                setControlsState({ editBtn: false });
                 if (opmlMindmapBtn) opmlMindmapBtn.style.display = 'none';
                 if (opmlBackBtn) opmlBackBtn.style.display = 'none';
             } catch (error) {
@@ -17714,6 +17703,7 @@
                 await opmlHandle.render(contentMain);
                 document.addEventListener('keydown', opmlHandle.handleGlobalKeydown, true);
                 setOPMLControls({ readonly: false, isNew: true });
+                setControlsState({ editBtn: false });
                 if (opmlMindmapBtn) opmlMindmapBtn.style.display = 'none';
                 if (opmlBackBtn) opmlBackBtn.style.display = 'none';
             } catch (error) {
@@ -18120,76 +18110,17 @@
             },
 
             /**
-             * 显示图片选择模态框
+             * 显示图片选择模态框（复用统一文件选择模态框）
              * @param {object} api - 适配接口
              * @param {function} api.onSelect - (filePath: string) => Promise<void> 选中图片后的回调
              */
             showImageSelectModal(api) {
-                const existing = document.getElementById('canvas-file-select-modal');
-                if (existing) existing.remove();
-                const files = getScanFileList().filter(f => isPicImage(getExt(f.name)));
-                const modal = document.createElement('div');
-                modal.id = 'canvas-file-select-modal';
-                modal.className = 'canvas-modal';
-                modal.innerHTML = `
-                    <div class="canvas-modal-content" style="width:500px;max-height:75vh;">
-                        <div class="canvas-modal-header"><span>选择图片</span><button class="canvas-modal-close">&times;</button></div>
-                        <div class="canvas-modal-search"><input type="text" id="canvas-file-search" placeholder="搜索图片..." oninput="filterCanvasFileList()"></div>
-                        <div class="canvas-modal-list" id="canvas-file-list" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:8px;overflow-y:auto;max-height:50vh;">
-                            ${files.map(f => {
-                    const fp = (f.path && f.path.trim()) ? f.path : (f.name || '');
-                    const fn = f.name || fp;
-                    return `<div class="canvas-file-item" data-path="${fp}" data-name="${fn}" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px;border-radius:6px;cursor:pointer;border:1px solid var(--color-border,#d0d7de);overflow:hidden;">
-                                    <div class="mind-img-thumb" style="width:100%;height:80px;background-size:cover;background-position:center;background-repeat:no-repeat;border-radius:4px;"></div>
-                                    <span class="canvas-file-name" style="font-size:11px;color:var(--color-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%;text-align:center;">${fn}</span>
-                                </div>`;
-                }).join('')}
-                        </div>
-                    </div>`;
-                modal.style.cssText = 'position:fixed;left:0;top:0;width:100%;height:100%;background-color:rgba(0,0,0,0.5);z-index:10001;display:flex;justify-content:center;align-items:center;';
-                document.body.appendChild(modal);
-                let modalClosed = false;
-                const cleanup = () => {
-                    if (modalClosed) return; modalClosed = true;
-                    document.removeEventListener('keydown', escH);
-                    modal.querySelectorAll('.canvas-file-item').forEach(i => { if (i._objUrl) URL.revokeObjectURL(i._objUrl); });
-                    modal.remove();
-                };
-                const escH = (ev) => { if (ev.key === 'Escape') cleanup(); };
-                document.addEventListener('keydown', escH);
-                modal.querySelector('.canvas-modal-close').addEventListener('click', cleanup);
-                modal.querySelectorAll('.canvas-file-item').forEach(item => {
-                    item.onclick = async () => {
-                        const fp = item.dataset.path;
-                        await api.onSelect(fp);
-                        cleanup();
-                    };
+                showFileSelectModal({
+                    type: 'image',
+                    onSelect: (fp) => {
+                        api.onSelect(fp);
+                    }
                 });
-                // 异步加载缩略图（并发限制 4 个）
-                let thumbInFlight = 0;
-                const loadThumb = () => {
-                    const remaining = Array.from(modal.querySelectorAll('.canvas-file-item:not(._thumbQueued)'));
-                    if (remaining.length === 0 || thumbInFlight >= 4) return;
-                    const item = remaining[0]; item.classList.add('_thumbQueued');
-                    thumbInFlight++;
-                    (async () => {
-                        try {
-                            const fh = await getFileHandleByPath(item.dataset.path);
-                            if (fh && !modalClosed) {
-                                const f = await getFile(fh);
-                                if (modalClosed) return;
-                                const url = URL.createObjectURL(f);
-                                item.querySelector('.mind-img-thumb').style.backgroundImage = `url(${url})`;
-                                item._objUrl = url;
-                            }
-                        } catch (_) { }
-                        thumbInFlight--;
-                        loadThumb();
-                    })();
-                    loadThumb();
-                };
-                loadThumb(); loadThumb(); loadThumb(); loadThumb();
-                modal.onclick = (ev) => { if (ev.target === modal) cleanup(); };
             },
 
             /**
@@ -19185,7 +19116,6 @@
                 wrapper.appendChild(spacer);
                 container.appendChild(wrapper);
                 this._initEventDelegation(wrapper);
-                this._selectNode(this._root.id);
             }
             async _renderNodeHtml(node, level) {
                 const hasChildren = node.children && node.children.length > 0;
@@ -21048,8 +20978,6 @@
             iframe.id = 'temp-html-frame';
             iframe.style.width = '100%';
             iframe.style.height = 'calc(100% - 4px)';
-            // iframe.style.border = '0';
-            // iframe.style.scrollbarWidth = 'none';
             iframe.style.overflow = 'hidden';
             contentMain.textContent = '';
             contentMain.appendChild(iframe);
@@ -21057,12 +20985,10 @@
             iframe.onload = () => {
                 if (iframeLoaded) return;
                 iframeLoaded = true;
-                // 检查 iframe 是否还在 DOM 中（防止切换视图后访问已移除的 iframe）
                 if (!document.body.contains(iframe)) return;
                 const doc = iframe.contentDocument || iframe.contentWindow?.document;
                 if (!doc) return;
                 buildHtmlToc(doc, htmlText);
-                // 绑定 iframe 内的选区事件（支持文本高亮/标注）
                 _bindIframeSelectionEvents();
                 const style = doc.createElement('style');
                 style.textContent = 'img{cursor:zoom-in;}';
@@ -24255,9 +24181,6 @@
             }
             target.removeEventListener('click', imgHandler);
             target.addEventListener('click', imgHandler);
-            target.querySelectorAll('img').forEach(img => {
-                img.style.cursor = 'zoom-in';
-            });
         }
 
         function isObsidianKanban(content) {
@@ -30101,7 +30024,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 createCanvasNode('text', null);
             } else if (type === 'image' || type === 'file') {
                 pendingCanvasNodeType = type;
-                showCanvasFileSelectModal(type);
+                showFileSelectModal({
+                    type: type,
+                    onSelect: (fp, fn) => {
+                        const fileData = { path: fp, name: fn };
+                        createCanvasNode(type, fileData);
+                        pendingCanvasNodeType = null;
+                    }
+                });
             }
         }
 
@@ -30147,15 +30077,21 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        function showCanvasFileSelectModal(type) {
+        /**
+         * 通用文件/图片选择模态框
+         * @param {object} options
+         * @param {'image'|'file'} options.type - 选择类型：'image' 显示缩略图网格，'file' 显示图标列表
+         * @param {function} options.onSelect - (filePath: string, fileName: string) => void 选中回调
+         */
+        function showFileSelectModal(options) {
+            const { type = 'image', onSelect = () => { } } = options || {};
+            const isImage = type === 'image';
+
             // 移除已存在的模态框
-            const existing = document.getElementById('canvas-file-select-modal');
+            const existing = document.getElementById('file-select-modal');
             if (existing) existing.remove();
 
-            const isImage = type === 'image';
-            const title = isImage ? '选择图片' : '选择文件';
-
-            // 过滤图片或文件
+            // 过滤文件列表
             const files = getScanFileList().filter(f => {
                 if (isImage) {
                     const ext = (f.name || f.path || '').toLowerCase().split(DOT).pop();
@@ -30164,78 +30100,116 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 return true;
             });
 
-            const modal = document.createElement('div');
-            modal.id = 'canvas-file-select-modal';
-            modal.className = 'canvas-modal';
-            modal.innerHTML = `
-                <div class="canvas-modal-content" style="width: 400px; max-height: 70vh;">
-                    <div class="canvas-modal-header">
-                        <span>${title}</span>
-                        <button class="canvas-modal-close" onclick="closeCanvasFileSelectModal()">&times;</button>
-                    </div>
-                    <div class="canvas-modal-search">
-                        <input type="text" id="canvas-file-search" placeholder="搜索..." oninput="filterCanvasFileList()">
-                    </div>
-                    <div class="canvas-modal-list" id="canvas-file-list" style="display: flex; flex-direction: column; gap: 2px; padding: 4px;">
-                        ${files.map(f => {
-                const filePath = (f.path && f.path.trim()) ? f.path : (f.name || '');
-                const fileName = f.name || filePath;
-                return `<div class="canvas-file-item" data-path="${filePath}" data-name="${fileName}" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 6px; cursor: pointer;">
-                                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style="flex-shrink: 0; color: ${isImage ? 'var(--color-primary-light)' : '#656d76'};">
-                                    ${isImage ? '<path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>' : '<path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/>'}
-                                </svg>
-                                <span class="canvas-file-name" style="font-size: 13px; color: #1f2328; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${fileName}</span>
-                            </div>`;
-            }).join('')}
-                    </div>
-                </div>
-            `;
+            const title = isImage ? '选择图片' : '选择文件';
 
-            modal.style.position = 'fixed';
-            modal.style.left = '0';
-            modal.style.top = '0';
-            modal.style.width = '100%';
-            modal.style.height = '100%';
-            modal.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-            modal.style.zIndex = '10001';
-            modal.style.display = 'flex';
-            modal.style.justifyContent = 'center';
-            modal.style.alignItems = 'center';
+            const modal = document.createElement('div');
+            modal.id = 'file-select-modal';
+            modal.className = 'canvas-modal';
+            modal.style.cssText = 'position:fixed;left:0;top:0;width:100%;height:100%;background-color:rgba(0,0,0,0.5);z-index:10001;display:flex;justify-content:center;align-items:center;';
+
+            if (isImage) {
+                // 图片模式：网格布局 + 缩略图
+                modal.innerHTML = `
+                    <div class="canvas-modal-content" style="width:500px;max-height:75vh;">
+                        <div class="canvas-modal-header"><span>${title}</span><button class="canvas-modal-close">&times;</button></div>
+                        <div class="canvas-modal-search"><input type="text" id="file-select-search" placeholder="搜索图片..." oninput="filterFileSelectList()"></div>
+                        <div class="canvas-modal-list" id="file-select-list" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:8px;overflow-y:auto;max-height:50vh;">
+                            ${files.map(f => {
+                    const fp = (f.path && f.path.trim()) ? f.path : (f.name || '');
+                    const fn = f.name || fp;
+                    return `<div class="canvas-file-item" data-path="${fp}" data-name="${fn}" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px;border-radius:6px;cursor:pointer;border:1px solid var(--color-border,#d0d7de);overflow:hidden;">
+                                    <div class="file-img-thumb" style="width:100%;height:80px;background-size:cover;background-position:center;background-repeat:no-repeat;border-radius:4px;"></div>
+                                    <span class="canvas-file-name" style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%;text-align:center;">${fn}</span>
+                                </div>`;
+                }).join('')}
+                        </div>
+                    </div>`;
+            } else {
+                // 文件模式：图标列表
+                modal.innerHTML = `
+                    <div class="canvas-modal-content" style="width:400px;max-height:70vh;">
+                        <div class="canvas-modal-header"><span>${title}</span><button class="canvas-modal-close">&times;</button></div>
+                        <div class="canvas-modal-search"><input type="text" id="file-select-search" placeholder="搜索..." oninput="filterFileSelectList()"></div>
+                        <div class="canvas-modal-list" id="file-select-list">
+                            ${files.map(f => {
+                    const fp = (f.path && f.path.trim()) ? f.path : (f.name || '');
+                    const fn = f.name || fp;
+                    return `<div class="canvas-file-item" data-path="${fp}" data-name="${fn}">
+                                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style="flex-shrink:0;color:#656d76;">
+                                        <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/>
+                                    </svg>
+                                    <span class="canvas-file-name" style="margin-left:10px;">${fn}</span>
+                                </div>`;
+                }).join('')}
+                        </div>
+                    </div>`;
+            }
 
             document.body.appendChild(modal);
+            let modalClosed = false;
 
-            // 绑定点击事件
+            const cleanup = () => {
+                if (modalClosed) return;
+                modalClosed = true;
+                document.removeEventListener('keydown', escH);
+                if (isImage) {
+                    modal.querySelectorAll('.canvas-file-item').forEach(i => { if (i._objUrl) URL.revokeObjectURL(i._objUrl); });
+                }
+                modal.remove();
+            };
+
+            const escH = (ev) => { if (ev.key === 'Escape') cleanup(); };
+            document.addEventListener('keydown', escH);
+
+            modal.querySelector('.canvas-modal-close').addEventListener('click', cleanup);
+
             modal.querySelectorAll('.canvas-file-item').forEach(item => {
                 item.onclick = () => {
-                    const path = item.dataset.path;
-                    const name = item.dataset.name;
-                    const fileData = { path, name };
-                    createCanvasNode(type, fileData);
-                    closeCanvasFileSelectModal();
+                    const fp = item.dataset.path;
+                    const fn = item.dataset.name;
+                    onSelect(fp, fn);
+                    cleanup();
                 };
             });
 
-            // 点击背景关闭
-            modal.onclick = (e) => {
-                if (e.target === modal) {
-                    closeCanvasFileSelectModal();
-                }
-            };
+            // 图片模式：异步加载缩略图（并发限制 4 个）
+            if (isImage) {
+                let thumbInFlight = 0;
+                const loadThumb = () => {
+                    const remaining = Array.from(modal.querySelectorAll('.canvas-file-item:not(._thumbQueued)'));
+                    if (remaining.length === 0 || thumbInFlight >= 4) return;
+                    const item = remaining[0]; item.classList.add('_thumbQueued');
+                    thumbInFlight++;
+                    (async () => {
+                        try {
+                            const fh = await getFileHandleByPath(item.dataset.path);
+                            if (fh && !modalClosed) {
+                                const f = await fh.getFile();
+                                if (modalClosed) return;
+                                const url = URL.createObjectURL(f);
+                                const thumb = item.querySelector('.file-img-thumb');
+                                if (thumb) thumb.style.backgroundImage = `url(${url})`;
+                                item._objUrl = url;
+                            }
+                        } catch (_) { }
+                        thumbInFlight--;
+                        loadThumb();
+                    })();
+                    loadThumb();
+                };
+                loadThumb(); loadThumb(); loadThumb(); loadThumb();
+            }
+
+            modal.onclick = (ev) => { if (ev.target === modal) cleanup(); };
         }
 
-        function closeCanvasFileSelectModal() {
-            const modal = document.getElementById('canvas-file-select-modal');
-            if (modal) modal.remove();
-            pendingCanvasNodeType = null;
-        }
-
-        function filterCanvasFileList() {
-            const searchInput = document.getElementById('canvas-file-search');
+        function filterFileSelectList() {
+            const searchInput = document.getElementById('file-select-search');
+            if (!searchInput) return;
             const searchTerm = searchInput.value.toLowerCase();
-            const items = document.querySelectorAll('.canvas-file-item');
-            items.forEach(item => {
+            document.querySelectorAll('#file-select-list .canvas-file-item').forEach(item => {
                 const name = item.dataset.name.toLowerCase();
-                item.style.display = name.includes(searchTerm) ? 'flex' : 'none';
+                item.style.display = name.includes(searchTerm) ? '' : 'none';
             });
         }
 
@@ -39892,6 +39866,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             break;
                         }
                     }
+                    // 安全检查：如果遍历完所有顶点仍未找到连接点，必须标记父提交已处理，避免 while 死循环
+                    if (!found) {
+                        vertex.registerParentProcessed();
+                    }
                 } else {
                     // 普通分支：找到路径到其分支上的父提交
                     const branch = new GitBranch(this._getAvailableColour(startAt));
@@ -40085,16 +40063,19 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 // ref 目录中：文件名为分支/标签名，子目录用于嵌套分支（如 feature/）
                 const collectRefPaths = async (dirPath, prefix) => {
                     const result = [];
-                    const entries = await listDir(dirPath);
-                    for (const name of entries) {
-                        const fullPath = dirPath + SLASH + name;
-                        // 尝试作为 ref 文件读取：成功→加入结果，失败→作为子目录递归
-                        const hash = await readRefFile(fullPath);
-                        if (hash) {
-                            result.push({ path: fullPath, name: prefix + name });
-                        } else {
-                            const child = await collectRefPaths(fullPath, prefix + name + SLASH);
+                    const entries = await new Promise((resolve, reject) => {
+                        gitFs.readdirDetail(dirPath, (err, entries) => {
+                            if (err) reject(err); else resolve(entries);
+                        });
+                    }).catch(() => []);
+                    for (const entry of entries) {
+                        const fullPath = dirPath + SLASH + entry.name;
+                        if (entry.kind === 'directory') {
+                            const child = await collectRefPaths(fullPath, prefix + entry.name + SLASH);
                             result.push(...child);
+                        } else {
+                            const hash = await readRefFile(fullPath);
+                            if (hash) result.push({ path: fullPath, name: prefix + entry.name });
                         }
                     }
                     return result;
@@ -41737,6 +41718,24 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         return names;
                     })(), cb);
                 },
+                /** 带类型信息的 readdir（非标准扩展），返回 [{name, kind}]，用于 gitParseRefs 避免多余 IPC */
+                readdirDetail(dirPath, cb) {
+                    const { isGit, rel } = _route(dirPath);
+                    const np = rel || DOT;
+                    return _dual((async () => {
+                        let handle = _baseHandle(isGit);
+                        if (np !== DOT) {
+                            handle = await _walkPath(handle, np, isGit);
+                            if (!handle) throw _enoent(dirPath);
+                        }
+                        const entries = await getDirectoryEntries(handle);
+                        // 工作区目录同样排除 .git
+                        if (!isGit) {
+                            return entries.filter(e => e.name !== '.git').map(e => ({ name: e.name, kind: e.kind }));
+                        }
+                        return entries.map(e => ({ name: e.name, kind: e.kind }));
+                    })(), cb);
+                },
                 mkdir(dirPath, cb) {
                     const { isGit, rel } = _route(dirPath);
                     const np = rel || DOT;
@@ -41949,6 +41948,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 <div class="raw-spinner"></div>
                 <span style="color:var(--color-text-secondary);font-size:14px">正在解析git提交记录…</span>`;
             mainElement.style.display = 'none';
+            // 让出事件循环，确保 loading 动画渲染后再执行后续重操作
+            await new Promise(r => setTimeout(r, 16));
             await destroyGitViewData();
             gitViewActive = true; // 标记进入 Git 视图
 
