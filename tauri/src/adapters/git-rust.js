@@ -124,11 +124,7 @@
                     blob: new Uint8Array(result.blob)
                 };
             } catch (error) {
-                // 文件不存在于该 commit 中返回 null（如未跟踪文件、新增文件等）
-                if (error && error.includes('exists')) {
-                    return null;
-                }
-                throw error;
+                return null;
             }
         },
 
