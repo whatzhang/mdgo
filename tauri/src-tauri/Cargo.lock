@@ -1683,6 +1683,7 @@ dependencies = [
 name = "mdgo"
 version = "1.0.0"
 dependencies = [
+ "base64 0.22.1",
  "mime_guess",
  "serde",
  "serde_json",

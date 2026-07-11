@@ -18,6 +18,16 @@ pub fn run() {
             commands::fs::create_dir,
             commands::fs::exists,
             commands::fs::get_file_meta,
+            commands::git::git_log,
+            commands::git::git_status_matrix,
+            commands::git::git_checkout,
+            commands::git::git_parse_refs,
+            commands::git::git_diff_tree,
+            commands::git::git_read_blob,
+            commands::git::git_add,
+            commands::git::git_reset,
+            commands::git::git_commit,
+            commands::git::git_resolve_ref,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

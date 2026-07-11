@@ -43,5 +43,12 @@
     console.error('[TauriAdapter] 加载存储适配器失败:', e);
   }
 
+  try {
+    await import('./git-rust.js');
+    console.log('[TauriAdapter] Git Rust 适配器已加载');
+  } catch (e) {
+    console.error('[TauriAdapter] 加载 Git Rust 适配器失败:', e);
+  }
+
   console.log('[TauriAdapter] 所有适配器初始化完成');
 })();
