@@ -1078,7 +1078,7 @@
         }
 
         .canvas-modal-search {
-            padding: 12px 16px;
+            padding: 12px 8px;
             border-bottom: 1px solid #eee;
         }
 
@@ -4542,7 +4542,7 @@
             display: flex;
             align-items: center;
             gap: 5px;
-            padding: 5.5px 14px 4px 8px;
+            padding: 5px 14px 4px 8px;
             background: var(--color-bg);
             border-bottom: 1px solid #e2e8f0;
             flex-wrap: nowrap;
@@ -4616,7 +4616,7 @@
             cursor: pointer;
             font-size: 0.813rem;
             font-weight: 500;
-            color: var(--color-text, black);
+           color: var(--t1);
             display: inline-flex;
             align-items: center;
             justify-content: center;
@@ -6283,13 +6283,12 @@
         }
 
         .todo-header {
-            height: 40px;
             background: var(--color-bg);
             border-bottom: 1px solid var(--color-border-light);
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 0 19px 0 5px;
+            padding: 4px 5px 4px 5px;
             flex-shrink: 0;
         }
 
@@ -6309,15 +6308,15 @@
         }
 
         .todo-logo-icon {
-            width: 60px;
-            height: 28px;
+            height: 1.75rem;
+            padding: 0 0.6rem;
             background: var(--color-primary);
             border-radius: var(--radius-sm);
             display: flex;
             align-items: center;
             justify-content: center;
             color: var(--color-text-white);
-            font-size: 13px;
+             font-size: 0.813rem;
         }
 
         .todo-date-nav {
@@ -6330,6 +6329,8 @@
         .todo-btn-icon {
             width: 1.625rem;
             height: 1.625rem;
+            font-size: 0.813rem;
+            font-weight: 600;
             border: 1px solid var(--color-border);
             background: var(--color-bg);
             border-radius: var(--radius-sm);
@@ -6347,7 +6348,11 @@
         }
 
         .todo-btn-today {
-            font-size: 13px;
+           font-size: 0.813rem;
+            font-weight: 600;
+            align-items: center;
+            text-align: center;
+            justify-content: center;
             width: auto;
             padding: 0 10px;
         }
@@ -6359,7 +6364,7 @@
 
         .todo-header-right {
             display: flex;
-            gap: 13px;
+            gap:  0.813rem;
             align-items: center;
         }
 
@@ -6407,7 +6412,7 @@
         }
 
         .todo-current-date {
-            font-size: 13px;
+            font-size: 0.813rem;
             font-weight: 600;
             min-width: 112px;
             text-align: center;
@@ -6422,15 +6427,19 @@
         }
 
         .todo-view-btn {
-            padding: 5px 15px;
+            height: 1.65rem;
+            padding: 0.275rem 0.625rem;
             border: none;
             background: transparent;
-            color: var(--color-text-secondary);
-            font-size: 13px;
+            color: var(--t3);
             cursor: pointer;
             border-radius: var(--radius-sm);
             transition: all 0.2s;
-            font-weight: 500;
+            font-size: 0.813rem;
+            font-weight: 600;
+            align-items: center;
+            text-align: center;
+            justify-content: center;
         }
 
         .todo-view-btn.todo-active {
@@ -6444,18 +6453,22 @@
         }
 
         .todo-btn-primary {
-            padding: 5px 10px;
+            height: 1.65rem;
+            padding: 0.275rem 0.625rem;
+            font-size: 0.813rem;
             background: var(--color-primary);
             color: var(--color-text-white);
             border: none;
             border-radius: var(--radius-sm);
-            font-size: 13px;
-            font-weight: 500;
+            font-weight: 600;
             cursor: pointer;
             display: flex;
             align-items: center;
             gap: 5px;
             transition: background 0.2s;
+            align-items: center;
+            text-align: center;
+            justify-content: center;
         }
 
         .todo-btn-primary:hover {
@@ -6465,15 +6478,15 @@
         /* 主体布局 */
         .todo-main-container {
             display: flex;
-            height: calc(100vh - 45px);
+            height: calc(100vh - 2.25rem);
         }
 
         /* 侧边栏 */
         .todo-sidebar {
-            width: 280px;
+            width: 17.5rem;
             background: var(--color-bg);
             border-right: 1px solid var(--color-border-light);
-            padding: 20px;
+            padding: 0.9rem;
             display: flex;
             flex-direction: column;
             overflow: hidden;
@@ -6481,7 +6494,7 @@
         }
 
         .todo-mini-calendar {
-            margin-bottom: 24px;
+            margin-bottom: 1rem;
             flex-shrink: 0;
         }
 
@@ -6503,11 +6516,11 @@
 
         .todo-schedule-tab {
             flex: 1;
-            padding: 6px 12px;
+            padding: 0.3625rem 0.125rem;
             background: transparent;
             border: none;
             cursor: pointer;
-            font-size: 12px;
+            font-size: 0.813rem;
             font-weight: 500;
             color: #6b7280;
             position: relative;
@@ -6543,8 +6556,9 @@
         }
 
         .todo-display-time {
-            font-size: 12px;
-            color: var(--color-text-secondary);
+            font-size: 0.813rem;
+            font-weight: normal;
+            color: var(--t2);
         }
 
         .todo-schedule-content::-webkit-scrollbar {
@@ -6554,7 +6568,7 @@
         .todo-history-filters {
             display: flex;
             flex-wrap: wrap;
-            gap: 8px;
+            gap: 0.5rem;
             padding: 2px 0;
             flex-shrink: 0;
             position: sticky;
@@ -6565,11 +6579,11 @@
         }
 
         .todo-filter-label {
-            font-size: 11px;
-            color: #6b7280;
+            font-size: 0.68rem;
+            color: var(--t2);
             display: flex;
             align-items: center;
-            gap: 3px;
+            gap: 0.19rem;
         }
 
         .todo-filter-label input[type="date"] {
@@ -6578,7 +6592,7 @@
             border: 1px solid #d1d5db;
             border-radius: 4px;
             outline: none;
-            width: 100px;
+            width: 6.25rem;
         }
 
         .todo-filter-label-input {
@@ -6621,22 +6635,26 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 12px;
+            margin-bottom: 0.71rem;  
             font-weight: 600;
-            font-size: 13px;
+            font-size: 0.813rem;
+        }
+        #todo-miniCalendarMonth{
+            padding-left:  0.5rem;
         }
 
         .todo-mini-calendar-grid {
             display: grid;
             grid-template-columns: repeat(7, 1fr);
-            gap: 2px;
+            gap: 0.125rem;
             text-align: center;
         }
 
         .todo-mini-calendar-grid .todo-day-label {
-            font-size: 12px;
+            font-size: 0.75rem;
+            line-height: 1.25;
             color: var(--color-text);
-            padding: 4px;
+            padding: 0.24rem;
             font-weight: 500;
         }
 
@@ -6646,18 +6664,17 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            font-size: 13px;
+          font-size: 0.813rem;
             border-radius: var(--radius-sm);
             cursor: pointer;
             position: relative;
-            gap: 1px;
-            padding: 2px 0;
+            gap: 0.0625rem;
             border: 1px solid transparent;
         }
 
         .todo-mini-day-number {
-            font-size: 12px;
-            line-height: 1.2;
+            font-size: 0.75rem;
+            line-height: 1.25;
             color: var(--color-text);
         }
 
@@ -6693,14 +6710,14 @@
         }
 
         .todo-mini-lunar {
-            font-size: 8px;
+            font-size: 0.5rem;
             color: var(--color-text-tertiary);
             line-height: 1;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
             max-width: 100%;
-            padding: 0 1px;
+            padding: 0 0.0625rem;
         }
 
         .todo-rest-day .todo-mini-lunar .todo-rest-tag {
@@ -6773,10 +6790,10 @@
         }
 
         .todo-event-item {
-            padding: 10px 12px;
+            padding: 0.625rem 0.75rem;
             background: var(--todo-bg);
             border-radius: var(--radius-lg);
-            margin-bottom: 8px;
+            margin-bottom: 0.5rem;
             border-left: 3px solid var(--color-primary);
             cursor: pointer;
             transition: all 0.2s;
@@ -6784,17 +6801,17 @@
 
         .todo-event-item:hover {
             background: var(--todo-primary-light);
-            transform: translateX(2px);
+            transform: translateX(0.125rem);
         }
 
         .todo-event-time {
-            font-size: 12px;
+            font-size: 0.75rem;
             color: var(--color-text-tertiary);
-            margin-bottom: 4px;
+            margin-bottom: 0.25rem;
         }
 
         .todo-event-title {
-            font-size: 13px;
+            font-size: 0.8125rem;
             font-weight: 500;
             color: var(--color-text);
             white-space: nowrap;
@@ -6824,7 +6841,8 @@
             display: flex;
             flex-direction: column;
             background: var(--color-bg);
-            overflow: hidden;
+            overflow: auto;
+            padding:0.25rem;
         }
 
         /* 月视图 */
@@ -6838,12 +6856,16 @@
             display: grid;
             grid-template-columns: repeat(7, 1fr);
             border-bottom: 1px solid var(--color-border-light);
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            background: var(--color-bg);
         }
 
         .todo-weekday-cell {
-            padding: 12px;
+            padding: 0.75rem;
             text-align: center;
-            font-size: 14px;
+            font-size: 0.875rem;
             color: var(--color-text-secondary);
             font-weight: 500;
         }
@@ -6858,16 +6880,14 @@
         .todo-month-day {
             border-right: 1px solid var(--color-border-light);
             border-bottom: 1px solid var(--color-border-light);
-            padding: 8px;
+            padding: 0.3rem;
             cursor: pointer;
             position: relative;
             transition: background 0.15s;
-            max-height: calc((100vh - 175px) / 5);
         }
 
         .todo-month-div {
             overflow-y: auto !important;
-            max-height: calc((100vh - 175px) / 5 - 43px);
         }
 
         .todo-month-div::-webkit-scrollbar {
@@ -6899,14 +6919,14 @@
         .todo-month-day.todo-today .todo-day-number {
             background: #3370FF;
             color: var(--color-text-white);
-            width: 28px;
-            height: 28px;
+            width: 1.75rem;
+            height: 1.75rem;
             display: flex;
             align-items: center;
             justify-content: center;
             border-radius: 50%;
             font-weight: 600;
-            margin: 0 auto 2px;
+            margin: 0 auto 0.125rem;
         }
 
         .todo-month-day.todo-weekend .todo-day-number {
@@ -6930,9 +6950,9 @@
         }
 
         .todo-day-number {
-            font-size: 14px;
+            font-size: 0.875rem;
             color: var(--color-text);
-            margin-bottom: 4px;
+            margin-bottom: 0.25rem;
             text-align: center;
             white-space: nowrap;
             display: block;
@@ -6940,7 +6960,7 @@
 
         .todo-lunar-label {
             display: block;
-            font-size: 10px;
+            font-size: 0.625rem;
             color: var(--color-text-tertiary);
             line-height: 1.2;
             white-space: nowrap;
@@ -6967,10 +6987,10 @@
         }
 
         .todo-month-event {
-            font-size: 12px;
-            padding: 2px 6px;
+            font-size: 0.75rem;
+            padding: 0.125rem 0.375rem;
             border-radius: var(--radius-sm);
-            margin-bottom: 2px;
+            margin-bottom: 0.125rem;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -7009,7 +7029,7 @@
 
         /* Cron 虚拟事件样式 */
         .todo-month-event.todo-cron-event {
-            font-size: 11px;
+            font-size: 0.6875rem;
             opacity: 0.85;
             border-left: 2px solid currentColor;
         }
@@ -7086,18 +7106,19 @@
 
         .todo-day-column-header {
             text-align: center;
-            padding: 8px;
-            font-size: 14px;
+            padding: 0.5rem;
+            font-size: 0.875rem;
             display: flex;
+            flex: 1;
             align-items: center;
             justify-content: center;
             flex-direction: row;
-            gap: 8px;
+            gap: 0.5rem;
         }
 
         .todo-day-name {
             color: var(--color-text-secondary);
-            font-size: 14px;
+            font-size: 0.875rem;
             font-weight: 500;
         }
 
@@ -7249,7 +7270,7 @@
         }
 
         .todo-modal-header {
-            padding: 12px 15px;
+            padding: 1.1rem 1rem  0.625rem 1rem;
             border-bottom: 1px solid var(--color-border-light);
             display: flex;
             justify-content: space-between;
@@ -7257,19 +7278,19 @@
         }
 
         .todo-modal-title {
-            font-size: 17px;
+            font-size: 1rem;
             font-weight: 600;
             color: var(--color-primary);
         }
 
         .todo-modal-title-time {
-            font-size: 12px;
-            color: var(--color-text-tertiary);
+            font-size: 0.75rem;
+            color: var(--t2);
         }
 
         .todo-modal-close {
-            width: 27px;
-            height: 27px;
+            width: 1rem;
+            height: 1rem;
             border: none;
             background: transparent;
             cursor: pointer;
@@ -7277,8 +7298,8 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            color: var(--color-text-tertiary);
-            font-size: 17px;
+            color: var(--t2);
+            font-size: 1.5rem;
         }
 
         .todo-modal-close:hover {
@@ -7287,36 +7308,38 @@
         }
 
         .todo-modal-body {
-            padding: 8px 15px 2px 15px;
+            padding: 0.5rem 1rem 0 1rem;
+        }
+
+        .todo-modal-body .todo-form-group:last-child {
+            margin-bottom: 0;
         }
 
         .todo-form-group {
-            margin-bottom: 13px;
+            margin-bottom: 0.8125rem;
         }
 
         .todo-form-label {
             display: block;
-            font-size: 13px;
+            font-size: 0.8125rem;
             font-weight: 500;
-            margin-bottom: 7px;
+            margin-bottom: 0.5rem;
             color: var(--color-text);
         }
 
-        .todo-form-input,
-        .todo-form-select {
+        .todo-form-input{
             width: 100%;
-            padding: 8px 10px;
+            padding:0.25rem 0.5rem;
             border: 1px solid var(--color-border);
             border-radius: var(--radius-sm);
-            font-size: 13px;
+            font-size:  0.8125rem;
             font-family: inherit;
             transition: border-color 0.2s, box-shadow 0.2s;
             background: var(--color-bg);
             box-sizing: border-box;
         }
 
-        .todo-form-input:focus,
-        .todo-form-select:focus {
+        .todo-form-input:focus{
             outline: none;
             border-color: var(--color-primary);
             box-shadow: 0 0 0 3px rgba(51, 112, 255, 0.1);
@@ -7330,13 +7353,13 @@
 
         .todo-color-picker {
             display: flex;
-            gap: 7px;
-            margin-top: 7px;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
         }
 
         .todo-color-option {
-            width: 15px;
-            height: 15px;
+            width: 1rem;
+            height: 1rem;
             border-radius: 50%;
             cursor: pointer;
             border: 2px solid transparent;
@@ -7379,25 +7402,26 @@
             left: 50%;
             transform: translate(-50%, -50%);
             color: var(--color-text-white);
-            font-size: 10px;
+            font-size: 0.625rem;
             font-weight: bold;
             text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
         }
 
         .todo-modal-footer {
-            padding: 5px 20px 15px 20px;
+            padding: 0.65rem 1rem 1.2rem 1rem;
             display: flex;
             justify-content: flex-end;
             gap: 10px;
         }
 
         .todo-btn-secondary {
-            padding: 5px 12px;
+          height: 1.65rem;
+    padding: 0.275rem 0.625rem;
+    font-size: 0.813rem;
             border: 1px solid var(--color-border);
             background: var(--color-bg);
             color: var(--color-text);
             border-radius: var(--radius-sm);
-            font-size: 12px;
             cursor: pointer;
             transition: all 0.2s;
         }
@@ -7407,15 +7431,17 @@
         }
 
         .todo-btn-danger {
-            padding: 5px 12px;
+           height: 1.65rem;
+    padding: 0.275rem 0.625rem;
+    font-size: 0.813rem;
             border: 1px solid transparent;
-            background: transparent;
-            color: #EF4444;
+             color: var(--color-danger);
             border-radius: var(--radius-sm);
-            font-size: 14px;
             cursor: pointer;
             margin-right: auto;
             background: #FEF2F2;
+            align-items: center;
+            justify-content: center;
         }
 
         .todo-btn-danger:hover {
@@ -7425,12 +7451,12 @@
         /* Cron 表达式区域 */
         .todo-cron-row {
             display: flex;
-            gap: 8px;
+            gap: 0.5rem;
             align-items: center;
         }
 
         .todo-cron-preview {
-            font-size: 12px;
+            font-size:0.625rem;
             color: var(--color-text-secondary);
             white-space: nowrap;
             min-width: 80px;
@@ -7441,19 +7467,19 @@
             display: flex;
             flex-wrap: wrap;
             gap: 4px;
-            margin-top: 12px;
+            margin-top :0.625rem;
             align-items: center;
         }
 
         .todo-cron-preset-label {
-            font-size: 12px;
+            font-size: 0.625rem;
             color: var(--color-text-tertiary);
             margin-right: 2px;
         }
 
         .todo-cron-btn {
-            padding: 2px 8px;
-            font-size: 11px;
+            padding: 0.2rem 0.5rem;
+            font-size: 0.75rem;
             border: 1px solid var(--color-border);
             background: var(--todo-bg);
             color: var(--color-text-secondary);
@@ -7461,6 +7487,8 @@
             cursor: pointer;
             transition: all 0.15s;
             white-space: nowrap;
+          align-items: center;
+            justify-content: center;
         }
 
         .todo-cron-btn:hover {
@@ -7504,8 +7532,8 @@
         /* 空状态 */
         .todo-empty-state {
             text-align: center;
-            padding: 40px;
-            font-size: 13px;
+            padding: 2.2rem;
+            font-size: 0.8125rem;
             color: var(--color-text-tertiary);
         }
 
@@ -23834,38 +23862,100 @@
             showTocToggleBtn(true);
         }
 
-        // 提取 Markdown 中的标题（跳过代码块内的 #）
         function extractMarkdownHeadings(markdownText) {
             const headings = [];
-            const lines = markdownText.split('\n');
             let idCounter = 1;
-            let inCodeBlock = false;
-            let inIndentedCodeBlock = false;
-            for (let i = 0; i < lines.length; i++) {
-                const line = lines[i];
-                if (line.startsWith('```')) {
-                    inCodeBlock = !inCodeBlock;
-                    if (inCodeBlock) inIndentedCodeBlock = false;
-                    continue;
+            const len = markdownText.length;
+            let i = 0;
+            // 代码块状态
+            let inFencedCodeBlock = false;
+            let fenceChar = 0;     // 记录是 '`' (96) 还是 '~' (126)
+            let fenceLength = 0;   // 记录开启标志的长度
+            while (i < len) {
+                // 1. 寻找当前行的结束位置 (比 split 快无数倍)
+                let nextNewline = markdownText.indexOf('\n', i);
+                if (nextNewline === -1) nextNewline = len;
+                let lineEnd = nextNewline;
+                // 兼容 Windows CRLF (\r\n)
+                if (lineEnd > i && markdownText.charCodeAt(lineEnd - 1) === 13) {
+                    lineEnd--;
                 }
-                if (inCodeBlock) continue;
-                if (line.length > 0 && (line.startsWith('    ') || line.startsWith('\t'))) {
-                    const prevLine = i > 0 ? lines[i - 1] : '';
-                    if (prevLine.trim() === '' && !inIndentedCodeBlock) {
-                        inIndentedCodeBlock = true;
+                // 2. 统计行首空格 (CommonMark 规范：标题最多允许 3 个前导空格)
+                let c = i;
+                let spaceCount = 0;
+                while (c < lineEnd && markdownText.charCodeAt(c) === 32 && spaceCount < 4) {
+                    c++;
+                    spaceCount++;
+                }
+                // 如果前导空格 >= 4 或遇到 Tab (charCode === 9)，属于缩进区块，直接跳过当前行
+                if (spaceCount < 4 && c < lineEnd && markdownText.charCodeAt(c) !== 9) {
+                    const charCode = markdownText.charCodeAt(c);
+                    // 3. 处理代码块标记 (Fenced Code Blocks: ``` 或 ~~~)
+                    if (charCode === 96 /* ` */ || charCode === 126 /* ~ */) {
+                        let fenceStart = c;
+                        while (c < lineEnd && markdownText.charCodeAt(c) === charCode) {
+                            c++;
+                        }
+                        const count = c - fenceStart;
+                        // 规范：代码块标记至少需要 3 个字符
+                        if (count >= 3) {
+                            if (!inFencedCodeBlock) {
+                                inFencedCodeBlock = true;
+                                fenceChar = charCode;
+                                fenceLength = count;
+                            } else if (charCode === fenceChar && count >= fenceLength) {
+                                // 规范：闭合标记长度必须 >= 起始标记长度
+                                inFencedCodeBlock = false;
+                            }
+                            i = nextNewline + 1;
+                            continue; // 标记行本身不可能是标题，直接下一行
+                        }
                     }
-                    if (inIndentedCodeBlock) continue;
-                } else if (inIndentedCodeBlock && line.trim() === '') {
-                    continue;
-                } else if (inIndentedCodeBlock) {
-                    inIndentedCodeBlock = false;
+                    // 4. 提取标题
+                    if (!inFencedCodeBlock && charCode === 35 /* # */) {
+                        let hashCount = 0;
+                        while (c < lineEnd && markdownText.charCodeAt(c) === 35 && hashCount < 7) {
+                            c++;
+                            hashCount++;
+                        }
+                        // 规范：1-6个 #，且必须紧跟空格或行尾
+                        if (hashCount >= 1 && hashCount <= 6) {
+                            // 判断 # 后是否是空格 (32) 或直接到行尾
+                            if (c === lineEnd || markdownText.charCodeAt(c) === 32) {
+                                // 跳过 # 后面的空格
+                                while (c < lineEnd && markdownText.charCodeAt(c) === 32) {
+                                    c++;
+                                }
+                                // 去除尾部空格
+                                let endText = lineEnd;
+                                while (endText > c && markdownText.charCodeAt(endText - 1) === 32) {
+                                    endText--;
+                                }
+                                // 提取文本内容 (底层共享字符串内存，极速)
+                                let text = markdownText.substring(c, endText);
+                                // 处理 CommonMark 的闭合标题格式 (例如： "## 标题 ##")
+                                let textLen = text.length;
+                                let hashEnd = textLen;
+                                while (hashEnd > 0 && text.charCodeAt(hashEnd - 1) === 35) {
+                                    hashEnd--;
+                                }
+                                // 如果尾部有 # 且 # 之前是空格，则剔除
+                                if (hashEnd < textLen && hashEnd > 0 && text.charCodeAt(hashEnd - 1) === 32) {
+                                    text = text.substring(0, hashEnd).trimEnd();
+                                } else if (hashEnd === 0) {
+                                    // 针对 "##" 这种空标题
+                                    text = "";
+                                }
+                                headings.push({
+                                    level: hashCount,
+                                    text: text,
+                                    id: `heading-${idCounter++}`
+                                });
+                            }
+                        }
+                    }
                 }
-                const headingMatch = line.match(/^(#{1,6})\s+(.*)$/);
-                if (!headingMatch) continue;
-                const level = headingMatch[1].length;
-                const text = headingMatch[2].trim();
-                const id = `heading-${idCounter++}`;
-                headings.push({ level, text, id });
+                i = nextNewline + 1;
             }
             return headings;
         }
@@ -30073,13 +30163,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         /**
-        /** 图片缩略图缓存（路径 → blobUrl，跨模态框复用） */
-        const _imageThumbCache = new Map();
-
         /**
          * 通用文件/图片选择模态框
          * @param {object} options
-         * @param {'image'|'file'} options.type - 选择类型：'image' 显示缩略图网格，'file' 显示图标列表
+         * @param {'image'|'file'} options.type - 选择类型：'image' 显示文件名列表，'file' 显示图标列表
          * @param {function} options.onSelect - (filePath: string, fileName: string) => void 选中回调
          */
         function showFileSelectModal(options) {
@@ -30107,18 +30194,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             modal.style.cssText = 'position:fixed;left:0;top:0;width:100%;height:100%;background-color:rgba(0,0,0,0.5);z-index:10001;display:flex;justify-content:center;align-items:center;';
 
             if (isImage) {
-                // 图片模式：网格布局 + 缩略图
+                // 图片模式：两列文件名列表（不显示缩略图）
                 modal.innerHTML = `
                     <div class="canvas-modal-content" style="width:500px;max-height:75vh;">
                         <div class="canvas-modal-header"><span>${title}</span><button class="canvas-modal-close">&times;</button></div>
                         <div class="canvas-modal-search"><input type="text" id="file-select-search" placeholder="搜索图片..." oninput="filterFileSelectList()"></div>
-                        <div class="canvas-modal-list" id="file-select-list" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:8px;overflow-y:auto;max-height:50vh;">
+                        <div class="canvas-modal-list" id="file-select-list" style="display:grid;grid-template-columns:repeat(2,1fr);gap:4px;padding:8px;overflow-y:auto;max-height:50vh;">
                             ${files.map(f => {
                     const fp = (f.path && f.path.trim()) ? f.path : (f.name || '');
                     const fn = f.name || fp;
-                    return `<div class="canvas-file-item" data-path="${fp}" data-name="${fn}" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px;border-radius:6px;cursor:pointer;border:1px solid var(--color-border,#d0d7de);overflow:hidden;">
-                                    <div class="file-img-thumb" style="width:100%;height:80px;background-size:cover;background-position:center;background-repeat:no-repeat;border-radius:4px;"></div>
-                                    <span class="canvas-file-name" style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%;text-align:center;">${fn}</span>
+                    return `<div class="canvas-file-item" data-path="${fp}" data-name="${fn}" style="display:flex;align-items:center;padding:6px 10px;border-radius:4px;cursor:pointer;border:1px solid var(--color-border,#d0d7de);overflow:hidden;">
+                                    <span class="canvas-file-name" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${fn}</span>
                                 </div>`;
                 }).join('')}
                         </div>
@@ -30146,16 +30232,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
             document.body.appendChild(modal);
             let modalClosed = false;
-            let _thumbObserver = null;
 
             const cleanup = () => {
                 if (modalClosed) return;
                 modalClosed = true;
                 document.removeEventListener('keydown', escH);
-                if (isImage) {
-                    if (_thumbObserver) _thumbObserver.disconnect();
-                    modal.querySelectorAll('.canvas-file-item').forEach(i => { if (i._objUrl) URL.revokeObjectURL(i._objUrl); });
-                }
                 modal.remove();
             };
 
@@ -30172,64 +30253,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     cleanup();
                 };
             });
-
-            // 图片模式：异步加载缩略图（懒加载 + 缓存 + 高并发）
-            if (isImage) {
-                let thumbInFlight = 0;
-                const MAX_CONCURRENT = 8;
-                const pendingQueue = [];
-                const listEl = modal.querySelector('#file-select-list');
-                let observer = null;
-
-                // IntersectionObserver：仅加载可视区域的缩略图
-                observer = new IntersectionObserver((entries) => {
-                    for (const entry of entries) {
-                        if (entry.isIntersecting) {
-                            const item = entry.target;
-                            observer.unobserve(item);
-                            if (thumbInFlight < MAX_CONCURRENT) {
-                                loadThumbnail(item);
-                            } else {
-                                pendingQueue.push(item);
-                            }
-                        }
-                    }
-                }, { root: listEl, rootMargin: '400px' });
-                _thumbObserver = observer;
-
-                modal.querySelectorAll('.canvas-file-item').forEach(item => observer.observe(item));
-
-                async function loadThumbnail(item) {
-                    thumbInFlight++;
-                    try {
-                        const path = item.dataset.path;
-                        // 优先使用缓存：避免重复读取文件
-                        const cached = _imageThumbCache.get(path);
-                        if (cached) {
-                            const thumb = item.querySelector('.file-img-thumb');
-                            if (thumb) thumb.style.backgroundImage = `url(${cached})`;
-                            // 不设 _objUrl 防止 cleanup 误回收
-                        } else {
-                            const fh = await getFileHandleByPath(path);
-                            if (fh && !modalClosed) {
-                                const f = await fh.getFile();
-                                if (modalClosed) return;
-                                const url = URL.createObjectURL(f);
-                                _imageThumbCache.set(path, url);
-                                const thumb = item.querySelector('.file-img-thumb');
-                                if (thumb) thumb.style.backgroundImage = `url(${url})`;
-                                item._objUrl = url;
-                            }
-                        }
-                    } catch (_) { }
-                    thumbInFlight--;
-                    // 处理队列中下一个待加载项
-                    if (pendingQueue.length > 0 && !modalClosed) {
-                        const next = pendingQueue.shift();
-                        loadThumbnail(next);
-                    }
-                }
-            }
 
             modal.onclick = (ev) => { if (ev.target === modal) cleanup(); };
         }
