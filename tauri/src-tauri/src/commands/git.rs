@@ -253,8 +253,9 @@ fn parse_commit_line(line: &str) -> Result<CommitInfo, String> {
 /// 获取文件状态矩阵（兼容 isomorphic-git 格式）
 #[tauri::command]
 pub fn git_status_matrix(dir: String) -> Result<Vec<FileStatusEntry>, String> {
+    // 使用 -z 参数输出 NUL 分隔的格式，避免 Git 对中文等非 ASCII 路径加引号
     let output = Command::new("git")
-        .args(&["status", "--porcelain=v1"])
+        .args(&["status", "--porcelain=v1", "-z"])
         .current_dir(&dir)
         .output()
         .map_err(|e| format!("执行 git status 失败: {}", e))?;
@@ -265,16 +266,46 @@ pub fn git_status_matrix(dir: String) -> Result<Vec<FileStatusEntry>, String> {
 
     let mut result = Vec::new();
 
-    // 解析输出
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
-        if line.len() < 3 {
+    // 解析 NUL 分隔的输出
+    // 格式: XY\0path\0XY\0path\0...
+    // 注意：-z 模式下路径不会加引号
+    let stdout = &output.stdout;
+    let mut start = 0;
+    while start < stdout.len() {
+        // 跳过末尾的空 NUL（如果输出以 NUL 结尾）
+        if stdout[start] == 0 {
+            break;
+        }
+
+        // 找到第一个 NUL（分隔 XY 状态和路径）
+        let nul1 = match stdout[start..].iter().position(|&b| b == 0) {
+            Some(pos) => start + pos,
+            None => break,
+        };
+
+        if nul1 - start < 2 {
+            // 状态码至少需要 2 字节
+            start = nul1 + 1;
             continue;
         }
 
-        let index_status = line.chars().next().unwrap_or(' ');
-        let workdir_status = line.chars().nth(1).unwrap_or(' ');
-        let filepath = &line[3..];
+        let index_status = stdout[start] as char;
+        let workdir_status = stdout[start + 1] as char;
+
+        // 路径从 NUL 后面开始，到下一个 NUL 或末尾结束
+        let path_start = nul1 + 1;
+        let path_end = stdout[path_start..].iter().position(|&b| b == 0)
+            .map(|pos| path_start + pos)
+            .unwrap_or(stdout.len());
+
+        let filepath_bytes = &stdout[path_start..path_end];
+        let filepath = String::from_utf8_lossy(filepath_bytes);
+
+        // 跳过空路径
+        if filepath.is_empty() {
+            start = path_end + 1;
+            continue;
+        }
 
         // 兼容 isomorphic-git statusMatrix 格式 (head, workdir, stage)
         // git status --porcelain=v1: XY filename (X=index, Y=worktree)
@@ -303,6 +334,9 @@ pub fn git_status_matrix(dir: String) -> Result<Vec<FileStatusEntry>, String> {
         };
 
         result.push((filepath.to_string(), head, workdir, stage));
+
+        // 跳到下一个条目
+        start = path_end + 1;
     }
 
     Ok(result)

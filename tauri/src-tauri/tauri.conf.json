@@ -7,7 +7,7 @@
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "rm -rf ../dist ../.vite && npm run build"
+    "beforeBuildCommand": "node -e \"require('fs').rmSync('../dist',{recursive:true,force:true});require('fs').rmSync('../.vite',{recursive:true,force:true})\" && npm run build"
   },
   "app": {
     "windows": [
