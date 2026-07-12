@@ -124,6 +124,10 @@ if errorlevel 1 (
     echo [WARN]  vite dependency not found in package.json, trying to continue...
 )
 
+REM 清理构建缓存，确保使用最新代码
+if exist "dist" rmdir /s /q "dist"
+if exist "%PROJECT_DIR%\.vite" rmdir /s /q "%PROJECT_DIR%\.vite"
+
 call npx vite build
 if errorlevel 1 (
     echo [ERROR] Frontend build failed

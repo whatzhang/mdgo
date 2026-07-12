@@ -53,8 +53,12 @@ check_frontend() {
   if [ ! -d "node_modules" ]; then
     npm install
   fi
+  # 清理构建缓存，确保使用最新代码
+  rm -rf dist
+  rm -rf "$PROJECT_DIR/.vite"
   npx vite build
   ok "前端构建成功 → $TAURI_DIR/dist/"
+
 }
 
 # ------------------------------------------------------------------------------

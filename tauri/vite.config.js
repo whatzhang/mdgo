@@ -9,7 +9,7 @@ export default defineConfig({
     viteStaticCopy({
       targets: [
         {
-          src: "css_js/**",
+          src: ["css_js/**", "!css_js/snipaste.png"],
           dest: ".",
         },
       ],

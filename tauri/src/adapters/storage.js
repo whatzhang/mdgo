@@ -47,7 +47,12 @@
     }, SAVE_DEBOUNCE_MS);
   }
 
-  (async () => {
+  /**
+   * 暴露就绪 Promise，供 initFromStorage 等关键初始化逻辑等待。
+   * 因为 localStorage Proxy 的 getItem 是同步读取 memStorage，
+   * 而 memStorage 需要从 Tauri Store 异步加载，直接读取可能返回 null。
+   */
+  window.__tauriStorageReady = (async () => {
     try {
       const store = await _getStore();
       const keys = await store.keys();
