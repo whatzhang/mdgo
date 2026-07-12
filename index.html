@@ -14815,7 +14815,7 @@
                 minimap: isLarge ? { enabled: false } : (options.minimap || { enabled: true }),
                 fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, monospace',
                 fontSize: 13,
-                wordWrap: 'off',
+                wordWrap: options.wordWrap || 'on',
                 fontLigatures: true,
                 lineNumbers: options.lineNumbers || 'on',
                 lineNumbersMinChars: options.lineNumbersMinChars || 5,
