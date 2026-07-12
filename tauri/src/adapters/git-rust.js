@@ -87,16 +87,16 @@
         /**
          * 获取提交的文件变更（对比 parent commit）
          * @param {String} dir - 仓库路径
-         * @param {String} commit_oid - 提交 hash
-         * @param {String|null} parent_oid - 父提交 hash
+         * @param {String} commitOid - 提交 hash
+         * @param {String|null} parentOid - 父提交 hash
          * @returns {Promise<Array>} - 文件变更列表 [{path, status}, ...]
          */
-        async diffTree(dir, commit_oid, parent_oid) {
+        async diffTree(dir, commitOid, parentOid) {
             try {
                 const changes = await invoke('git_diff_tree', {
                     dir,
-                    commitOid: commit_oid,
-                    parentOid: parent_oid,
+                    commitOid,
+                    parentOid,
                 });
                 return changes;
             } catch (error) {
@@ -162,17 +162,17 @@
          * 提交暂存（git commit）
          * @param {String} dir - 仓库路径
          * @param {String} message - 提交信息
-         * @param {String} author_name - 作者名称
-         * @param {String} author_email - 作者邮箱
+         * @param {String} authorName - 作者名称
+         * @param {String} authorEmail - 作者邮箱
          * @returns {Promise<String>} - 提交 SHA
          */
-        async commit(dir, message, author_name, author_email) {
+        async commit(dir, message, authorName, authorEmail) {
             try {
                 const sha = await invoke('git_commit', {
                     dir,
                     message,
-                    authorName: author_name,
-                    authorEmail: author_email,
+                    authorName,
+                    authorEmail,
                 });
                 return sha;
             } catch (error) {
@@ -184,12 +184,12 @@
         /**
          * 解析引用（获取 commit hash）
          * @param {String} dir - 仓库路径
-         * @param {String} ref_name - 引用名称
+         * @param {String} refName - 引用名称
          * @returns {Promise<String>} - commit hash
          */
-        async resolveRef(dir, ref_name) {
+        async resolveRef(dir, refName) {
             try {
-                const sha = await invoke('git_resolve_ref', { dir, refName: ref_name });
+                const sha = await invoke('git_resolve_ref', { dir, refName });
                 return sha;
             } catch (error) {
                 console.error('[GitRust] resolveRef error:', error);

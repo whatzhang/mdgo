@@ -1222,6 +1222,7 @@
             height: 1.5rem;
             padding: 0.25rem 0.5rem;
             font-size: 0.75rem;
+            font-weight: 500;
         }
 
         #new-file-btn {
@@ -10029,7 +10030,6 @@
             background-image: url(data:image/svg+xml;charset=utf-8;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiB3aWR0aD0iMTEiIGhlaWdodD0iMjIiPjxkZWZzPjxsaW5lYXJHcmFkaWVudCBpZD0iYSI+PHN0b3Agb2Zmc2V0PSIwIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLW9wYWNpdHk9IjAiLz48L2xpbmVhckdyYWRpZW50PjxyYWRpYWxHcmFkaWVudCB4bGluazpocmVmPSIjYSIgY3g9IjkuNzM5IiBjeT0iOS43MTYiIGZ4PSI5LjczOSIgZnk9IjkuNzE2IiByPSIzLjcwOSIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiLz48L2RlZnM+PGcgc3Ryb2tlPSIjMDAwIiBmaWxsPSJub25lIj48ZyB0cmFuc2Zvcm09InRyYW5zbGF0ZSgtMTI5LjUgLTMzMy44NjIpIHRyYW5zbGF0ZSgwIC4xODgpIj48cmVjdCB0cmFuc2Zvcm09Im1hdHJpeCguOTYyIDAgMCAuOTcxIDQuOTQzIDExLjU0OCkiIHJ5PSIyIiByeD0iMiIgeT0iMzMyLjM2MiIgeD0iMTMwIiBoZWlnaHQ9IjEwLjMzNyIgd2lkdGg9IjEwLjQzMiIgb3BhY2l0eT0iLjUiLz48Zz48cGF0aCBkPSJNMTMyIDMzOS4xNzVoNiIgb3BhY2l0eT0iLjUiLz48cGF0aCBkPSJNMTM1IDMzNi4xNzV2NiIgb3BhY2l0eT0iLjUiLz48L2c+PC9nPjxnIHRyYW5zZm9ybT0idHJhbnNsYXRlKC0xMjkuNSAtMzMzLjg2MikiPjxyZWN0IHdpZHRoPSIxMC40MzIiIGhlaWdodD0iMTAuMzM3IiB4PSIxMzAiIHk9IjMzMi4zNjIiIHJ4PSIyIiByeT0iMiIgdHJhbnNmb3JtPSJtYXRyaXgoLjk2MiAwIDAgLjk3MSA0Ljk0MyAyMi43MzYpIiBvcGFjaXR5PSIuNSIvPjxwYXRoIGQ9Ik0xMzIgMzUwLjM2Mmg2IiBvcGFjaXR5PSIuNSIvPjwvZz48L2c+PC9zdmc+);
         }
 
-        /* ── 照片布局 ── */
         .photo-layout-container {
             display: block;
             width: 100%;
@@ -10038,6 +10038,7 @@
             color: var(--color-text);
             overflow-y: auto;
             overflow-x: hidden;
+            position: relative;
         }
 
         .photo-main {
@@ -10051,11 +10052,11 @@
         }
 
         .photo-layout-tabs {
-            position: absolute;
-            top: 5px;
-            right: 10px;
+            position: fixed;
+            right: 12px;
+            top: 4px;
             z-index: 100;
-            display: block;
+            display: inline-flex;
             gap: 6px;
             background: var(--color-bg);
             padding: 4px;
@@ -10064,17 +10065,18 @@
         }
 
         .photo-tab {
-            padding: 4px 12px;
+            height: clamp(1.4rem, 1.8vw, 1.65rem);
+            padding: 0 clamp(6px, 1vw, 12px);
             border: none;
             background: transparent;
             color: var(--color-text);
-            font-size: 13px;
-            font-weight: 500;
+            font-size: clamp(11px, 1.1vw, 0.813rem);
             font-weight: 500;
             border-radius: 8px;
             cursor: pointer;
             transition: all 0.2s;
             white-space: nowrap;
+            line-height: 1;
         }
 
         .photo-tab:hover {
@@ -10089,26 +10091,8 @@
 
         /* ========== 布局1: 瀑布流 Masonry ========== */
         .photo-masonry {
-            column-count: 5;
-            column-gap: 16px;
-        }
-
-        @media (max-width: 1200px) {
-            .photo-masonry {
-                column-count: 3;
-            }
-        }
-
-        @media (max-width: 768px) {
-            .photo-masonry {
-                column-count: 2;
-            }
-        }
-
-        @media (max-width: 480px) {
-            .photo-masonry {
-                column-count: 1;
-            }
+            column-count: 4;
+            column-gap: 12px;
         }
 
         .photo-masonry-item {
@@ -10210,10 +10194,10 @@
             color: var(--t2);
         }
 
-        /* 隐藏类 */
         .photo-layout {
             display: none;
             padding: 16px;
+            padding-bottom: 0;
         }
 
         .photo-layout.active {
@@ -10237,31 +10221,33 @@
             }
         }
 
-        /* ========== 图片墙分页 ========== */
-        #photo-scatter-pager {
+        .photo-pager {
             position: fixed;
-            bottom: 20px;
-            right: 20px;
+            bottom: 10px;
+            right: 12px;
             display: flex;
             align-items: center;
-            gap: 10px;
+            justify-content: center;
+            gap: clamp(6px, 1vw, 12px);
             z-index: 9999;
             background: var(--color-bg);
-            padding: 6px 10px;
+            padding: 4px;
             border-radius: 20px;
             box-shadow: var(--shadow-lg);
+            width: fit-content;
         }
 
         .photo-pager-info {
-            font-size: 13px;
+            font-size: clamp(11px, 1vw, 13px);
             color: var(--color-text-secondary);
-            min-width: 60px;
+            min-width: clamp(40px, 6vw, 70px);
             text-align: center;
+            white-space: nowrap;
         }
 
         .photo-pager-btn {
-            width: 32px;
-            height: 32px;
+            width: clamp(1.4rem, 2vw, 1.8rem);
+            height: clamp(1.4rem, 2vw, 1.8rem);
             border-radius: 50%;
             border: none;
             background: var(--color-primary);
@@ -10271,6 +10257,12 @@
             align-items: center;
             justify-content: center;
             transition: all var(--transition-normal);
+            flex-shrink: 0;
+        }
+
+        .photo-pager-btn svg {
+            width: clamp(12px, 1.2vw, 16px);
+            height: clamp(12px, 1.2vw, 16px);
         }
 
         .photo-pager-btn:hover:not(:disabled) {
@@ -10288,25 +10280,9 @@
             cursor: not-allowed;
         }
 
-        .photo-loadmore-btn {
-            padding: 8px 24px;
-            border: none;
-            border-radius: 24px;
-            background: var(--color-primary);
-            color: var(--color-text-white);
-            font-size: 12px;
-            cursor: pointer;
-            transition: all var(--transition-normal);
-        }
-
-        .photo-loadmore-btn:hover {
-            background: var(--color-primary-hover);
-            transform: scale(1.05);
-        }
-
         /* 散落图片翻页动画 */
-        .photo-scatter-item {
-            opacity: 0;
+        .photo-scatter-item.animate-fall {
+            animation: photoFallIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
         }
 
         @keyframes photoFallIn {
@@ -10332,10 +10308,6 @@
                 opacity: 1;
                 transform: translateY(0) rotate(var(--fall-rotation, 5deg));
             }
-        }
-
-        .photo-scatter-item.animate-fall {
-            animation: photoFallIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
         }
 
         /* ========== Git 应用 ========== */
@@ -11791,6 +11763,25 @@
 
         #opml-level-select:focus {
             outline: none;
+        }
+
+        /* ========== 统一所有滚动条样式（4px 宽、tree 风格） ========== */
+        *::-webkit-scrollbar {
+            width: 4px !important;
+            height: 4px !important;
+        }
+
+        *::-webkit-scrollbar-track {
+            background: transparent !important;
+        }
+
+        *::-webkit-scrollbar-thumb {
+            background: var(--color-border, #d0d7de) !important;
+            border-radius: 2px !important;
+        }
+
+        *::-webkit-scrollbar-thumb:hover {
+            background: var(--color-text-tertiary) !important;
         }
     </style>
 </head>
@@ -13527,7 +13518,7 @@
                 <div class="video-history-panel-header">
                     <span class="video-history-panel-title">播放历史</span>
                     <div class="video-history-panel-actions">
-                        <button class="btn btn-sm" onclick="clearVideoHistory()" title="清空历史">清空</button>
+                        <button class="btn btn-ss" onclick="clearVideoHistory()" title="清空历史">清空</button>
                         <button class="video-history-panel-close" onclick="toggleVideoHistory()">✕</button>
                     </div>
                 </div>
@@ -30077,6 +30068,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         /**
+        /** 图片缩略图缓存（路径 → blobUrl，跨模态框复用） */
+        const _imageThumbCache = new Map();
+
+        /**
          * 通用文件/图片选择模态框
          * @param {object} options
          * @param {'image'|'file'} options.type - 选择类型：'image' 显示缩略图网格，'file' 显示图标列表
@@ -30146,12 +30141,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
             document.body.appendChild(modal);
             let modalClosed = false;
+            let _thumbObserver = null;
 
             const cleanup = () => {
                 if (modalClosed) return;
                 modalClosed = true;
                 document.removeEventListener('keydown', escH);
                 if (isImage) {
+                    if (_thumbObserver) _thumbObserver.disconnect();
                     modal.querySelectorAll('.canvas-file-item').forEach(i => { if (i._objUrl) URL.revokeObjectURL(i._objUrl); });
                 }
                 modal.remove();
@@ -30171,32 +30168,62 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 };
             });
 
-            // 图片模式：异步加载缩略图（并发限制 4 个）
+            // 图片模式：异步加载缩略图（懒加载 + 缓存 + 高并发）
             if (isImage) {
                 let thumbInFlight = 0;
-                const loadThumb = () => {
-                    const remaining = Array.from(modal.querySelectorAll('.canvas-file-item:not(._thumbQueued)'));
-                    if (remaining.length === 0 || thumbInFlight >= 4) return;
-                    const item = remaining[0]; item.classList.add('_thumbQueued');
+                const MAX_CONCURRENT = 8;
+                const pendingQueue = [];
+                const listEl = modal.querySelector('#file-select-list');
+                let observer = null;
+
+                // IntersectionObserver：仅加载可视区域的缩略图
+                observer = new IntersectionObserver((entries) => {
+                    for (const entry of entries) {
+                        if (entry.isIntersecting) {
+                            const item = entry.target;
+                            observer.unobserve(item);
+                            if (thumbInFlight < MAX_CONCURRENT) {
+                                loadThumbnail(item);
+                            } else {
+                                pendingQueue.push(item);
+                            }
+                        }
+                    }
+                }, { root: listEl, rootMargin: '400px' });
+                _thumbObserver = observer;
+
+                modal.querySelectorAll('.canvas-file-item').forEach(item => observer.observe(item));
+
+                async function loadThumbnail(item) {
                     thumbInFlight++;
-                    (async () => {
-                        try {
-                            const fh = await getFileHandleByPath(item.dataset.path);
+                    try {
+                        const path = item.dataset.path;
+                        // 优先使用缓存：避免重复读取文件
+                        const cached = _imageThumbCache.get(path);
+                        if (cached) {
+                            const thumb = item.querySelector('.file-img-thumb');
+                            if (thumb) thumb.style.backgroundImage = `url(${cached})`;
+                            // 不设 _objUrl 防止 cleanup 误回收
+                        } else {
+                            const fh = await getFileHandleByPath(path);
                             if (fh && !modalClosed) {
                                 const f = await fh.getFile();
                                 if (modalClosed) return;
                                 const url = URL.createObjectURL(f);
+                                _imageThumbCache.set(path, url);
                                 const thumb = item.querySelector('.file-img-thumb');
                                 if (thumb) thumb.style.backgroundImage = `url(${url})`;
                                 item._objUrl = url;
                             }
-                        } catch (_) { }
-                        thumbInFlight--;
-                        loadThumb();
-                    })();
-                    loadThumb();
-                };
-                loadThumb(); loadThumb(); loadThumb(); loadThumb();
+                        }
+                    } catch (_) { }
+                    thumbInFlight--;
+                    // 处理队列中下一个待加载项
+                    if (pendingQueue.length > 0 && !modalClosed) {
+                        const next = pendingQueue.shift();
+                        loadThumbnail(next);
+                    }
+                }
             }
 
             modal.onclick = (ev) => { if (ev.target === modal) cleanup(); };
@@ -37113,15 +37140,26 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         async function openVideoFile(ext, fileName, relativePath = '') {
             await switchToView(videoViewContainer, 'flex');
             videoInitClickOutside()
-            const file = await getFile(currentFileHandle);
-            if (currentVideoObjectUrl) {
-                URL.revokeObjectURL(currentVideoObjectUrl);
-                currentVideoObjectUrl = null;
+            let url;
+            // Tauri 模式：使用 asset:// 协议直接流式加载，避免 IPC 完整传输大文件
+            if (isTauriVisit() && relativePath) {
+                try {
+                    const absPath = joinPath(getRootHandle().path, normalizePath(relativePath));
+                    url = window.__TAURI__.core.convertFileSrc(absPath);
+                } catch (e) {
+                    console.warn('convertFileSrc 失败，回退到 Blob URL', e);
+                }
             }
-            const url = URL.createObjectURL(file);
-            currentVideoObjectUrl = url;
-            // 本地视频：历史只保存 path，不保存 blob: URL（页面刷新后失效）
-            videoAddHistory(fileName, relativePath ? '' : url, '', ext, relativePath);
+            if (!url) {
+                const file = await getFile(currentFileHandle);
+                if (currentVideoObjectUrl) {
+                    URL.revokeObjectURL(currentVideoObjectUrl);
+                    currentVideoObjectUrl = null;
+                }
+                url = URL.createObjectURL(file);
+                currentVideoObjectUrl = url;
+            }
+            videoAddHistory(fileName, isTauriVisit() && url ? url : '', '', ext, relativePath);
             videoPlayUrl(fileName, url, '', ext);
         }
 
@@ -37260,38 +37298,28 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 URL.revokeObjectURL(currentVideoObjectUrl);
                 currentVideoObjectUrl = null;
             }
-
             // 无 URL 但有 path：从本地文件重新创建 object URL
             if (!url && path) {
-                try {
-                    const file = await getFile(await getFileHandleByPath(path));
-                    if (file) {
-                        url = URL.createObjectURL(file);
-                        currentVideoObjectUrl = url;
-                    }
-                } catch (e) { /* fall through */ }
+                if (isTauriVisit()) {
+                    try {
+                        const absPath = joinPath(getRootHandle().path, normalizePath(path));
+                        url = window.__TAURI__.core.convertFileSrc(absPath);
+                    } catch (e) { /* fall through */ }
+                }
+                if (!url) {
+                    try {
+                        const file = await getFile(await getFileHandleByPath(path));
+                        if (file) {
+                            url = URL.createObjectURL(file);
+                            currentVideoObjectUrl = url;
+                        }
+                    } catch (e) { /* fall through */ }
+                }
             }
-            // 仍无 URL → 无法播放
             if (!url) {
                 showNotification('✗ 无法加载视频', 'error');
                 return;
             }
-
-            if (path) {
-                try {
-                    const file = await getFile(await getFileHandleByPath(path));
-                    if (!file) {
-                        showNotification('✗ 无法加载视频文件', 'error');
-                        return;
-                    }
-                    url = URL.createObjectURL(file);
-                    currentVideoObjectUrl = url;
-                } catch (e) {
-                    showNotification('✗ 无法加载视频文件', 'error');
-                    return;
-                }
-            }
-
             const detectedType = type || videoDetectType(url);
             if (currentArtPlayer) {
                 // 复用已有播放器实例：停止统计、清理编解码器、切换源
@@ -37301,9 +37329,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 currentArtPlayer.poster = poster || '';
                 currentArtPlayer.switchUrl(url, title);
                 if (currentArtPlayer.video) {
+                    currentArtPlayer.video.preload = 'auto';
                     currentArtPlayer.video.load();
                 }
-                currentArtPlayer.pause();
+                currentArtPlayer.play();
             } else {
                 // 首次创建播放器实例（仅创建一次，后续复用）
                 const artplayer = new Artplayer({
@@ -37314,7 +37343,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     poster: poster || '',
                     theme: '#165bfa',
                     volume: 0.5,
-                    autoplay: false,
+                    autoplay: true,
                     autoMini: true,
                     pip: true,
                     screenshot: true,
@@ -39018,11 +39047,61 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             return results;
         }
+        // ── 图片墙专用高性能加载 ──
+        const _photoWallCache = new Map(); // cacheKey → blobUrl/dataUrl
+        /** 清理图片墙缓存（释放 blob URL，防止内存泄露） */
+        function photoClearCache() {
+            for (const val of _photoWallCache.values()) {
+                if (typeof val === 'string' && val.startsWith('blob:')) {
+                    URL.revokeObjectURL(val);
+                }
+            }
+            _photoWallCache.clear();
+        }
+        const _getMimeTypeFromName = (() => {
+            const map = {
+                'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+                'gif': 'image/gif', 'svg': 'image/svg+xml', 'webp': 'image/webp',
+                'bmp': 'image/bmp', 'ico': 'image/x-icon',
+                'avif': 'image/avif', 'tiff': 'image/tiff', 'tif': 'image/tiff',
+            };
+            return (name) => map[name.split('.').pop()?.toLowerCase()] || '';
+        })();
+        /** Tauri 模式：直接读二进制 → blob URL（跳过 FileReader/base64，省去 33% 体积膨胀和编解码开销） */
+        async function readTauriFileAsBlobUrl(absPath) {
+            try {
+                const { invoke } = window.__TAURI__.core;
+                const content = await invoke('read_file_binary', { path: absPath });
+                const mimeType = _getMimeTypeFromName(absPath);
+                const blob = new Blob([new Uint8Array(content)], mimeType ? { type: mimeType } : undefined);
+                return URL.createObjectURL(blob);
+            } catch (e) {
+                console.warn(`Tauri 图片读取失败: ${absPath}`, e);
+                return null;
+            }
+        }
+        /** 图片墙专用加载（带跨路径缓存），优先 blob URL，其它模式 fallback 到原逻辑 */
+        async function photoLoadForWall(url, relPath) {
+            const cacheKey = relPath ? `${relPath}|${url}` : url;
+            if (_photoWallCache.has(cacheKey)) return _photoWallCache.get(cacheKey);
+            let src = null;
+            if (isTauriVisit()) {
+                const normalizedRootPath = normalizePath(currentRootPath);
+                const localSrc = buildLocalImgSrc(url, normalizedRootPath, relPath);
+                const absPath = joinPath(normalizedRootPath, localSrc);
+                src = await readTauriFileAsBlobUrl(absPath);
+            } else {
+                src = await photoLoadFromLocal(url, false, relPath);
+            }
+            if (src) _photoWallCache.set(cacheKey, src);
+            return src;
+        }
+
         let photoCurrentLayout = 'masonry'; // 当前布局
         let photoRenderedLayouts = {}; // 已渲染的布局
         let currentPhotoDirHandle = null;  // 当前目录句柄
-        const PHOTO_MASONRY_PAGE_SIZE = 30; // 瀑布流每页数量
-        const PHOTO_SCATTER_PAGE_SIZE = 15; // 散落每页数量
+        const PHOTO_MASONRY_PAGE_SIZE = 12; // 瀑布流每页数量
+        const PHOTO_SCATTER_PAGE_SIZE = 10; // 散落每页数量
         const PHOTO_SCATTER_ANIMATION_DELAY = 50; // 散落动画延迟间隔(ms)
         const PHOTO_SCATTER_COLLISION_ATTEMPTS = 100; // 散落位置碰撞检测最大尝试次数
         const PHOTO_SCATTER_COLLISION_MARGIN = 15; // 散落位置碰撞检测边距
@@ -39067,7 +39146,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     <!-- 瀑布流 -->
                     <div class="photo-layout active" id="photo-layout-masonry">
                         <div class="photo-masonry" id="photo-masonry-container"></div>
-                        <div id="photo-masonry-loadmore-container" style="display: flex; justify-content: center; padding: 20px 0;"></div>
+                        <div class="photo-pager" id="photo-masonry-pager"></div>
                     </div>
                     <!-- 散落 -->
                     <div class="photo-layout" id="photo-layout-scatter">
@@ -39101,15 +39180,23 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             photoScatterPositions.clear();
             photoMasonryPage = 0;
             photoScatterPage = 0;
-            const pager = document.getElementById('photo-scatter-pager');
-            if (pager) pager.remove();
-            const loadMoreBtn = document.getElementById('photo-masonry-loadmore');
-            if (loadMoreBtn) loadMoreBtn.remove();
+            // 清理缓存（释放 blob URL）
+            photoClearCache();
+            // 移除分页器
+            const pagerIds = ['photo-scatter-pager', 'photo-masonry-pager'];
+            for (const id of pagerIds) {
+                const el = document.getElementById(id);
+                if (el) el.remove();
+            }
+            // 取消所有延时的定时器
             window.removeEventListener('resize', photoHandleResize);
-            // 清理 resize 防抖定时器
             if (photoResizeTimer) {
                 clearTimeout(photoResizeTimer);
                 photoResizeTimer = null;
+            }
+            if (photoSwitchTimer) {
+                clearTimeout(photoSwitchTimer);
+                photoSwitchTimer = null;
             }
             photoLayoutDirPath = '';
         }
@@ -39125,10 +39212,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     if (targetEl) targetEl.classList.add('active');
                     photoCurrentLayout = name;
 
-                    // 显示/隐藏散落分页按钮
-                    const pager = document.getElementById('photo-scatter-pager');
-                    if (pager) {
-                        pager.style.display = name === 'scatter' ? 'flex' : 'none';
+                    // 显示/隐藏对应的分页按钮
+                    const scatterPager = document.getElementById('photo-scatter-pager');
+                    if (scatterPager) {
+                        scatterPager.style.display = name === 'scatter' ? 'flex' : 'none';
+                    }
+                    const masonryPager = document.getElementById('photo-masonry-pager');
+                    if (masonryPager) {
+                        masonryPager.style.display = name === 'masonry' ? 'flex' : 'none';
                     }
 
                     // 懒加载：只有未渲染过才渲染
@@ -39173,6 +39264,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         // 图片瀑布流布局
         async function photoRenderMasonry(isFirstPage = false, relPath = '') {
             const container = document.getElementById('photo-masonry-container');
+            const totalPages = Math.ceil(currentPhotoDirData.length / PHOTO_MASONRY_PAGE_SIZE);
             const startIdx = photoMasonryPage * PHOTO_MASONRY_PAGE_SIZE;
             const endIdx = Math.min(startIdx + PHOTO_MASONRY_PAGE_SIZE, currentPhotoDirData.length);
             const pageData = currentPhotoDirData.slice(startIdx, endIdx);
@@ -39182,17 +39274,20 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 photoMasonryPage = 0;
             }
 
+            container.innerHTML = '';
+
+            // 先创建所有 DOM 元素（同步），再并行加载图片
+            const items = [];
             for (const p of pageData) {
                 const div = document.createElement('div');
                 div.className = 'photo-masonry-item';
 
                 const img = document.createElement('img');
                 img.alt = p.title;
-                img.loading = 'lazy';
                 img.decoding = 'async';
                 // 图片加载完成后淡入显示
                 img.onload = () => div.classList.add('loaded');
-                img.onerror = () => div.classList.add('loaded'); // 加载失败也显示
+                img.onerror = () => div.classList.add('loaded');
 
                 const caption = document.createElement('div');
                 caption.className = 'photo-caption';
@@ -39202,32 +39297,62 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 div.appendChild(caption);
                 container.appendChild(div);
 
-                // 保存原始 URL 用于预览导航
                 img.dataset.originUrl = p.url;
-                // 设置图片源
-                const src = await photoLoadFromLocal(p.url, false, relPath);
-                img.src = src;
+                items.push({ img, url: p.url });
             }
 
-            // 显示加载更多按钮
-            const loadMoreContainer = document.getElementById('photo-masonry-loadmore-container');
-            let loadMoreBtn = document.getElementById('photo-masonry-loadmore');
-            const hasMore = endIdx < currentPhotoDirData.length;
+            // 并行分批加载图片（告别顺序 await，性能提升显著）
+            const BATCH_SIZE = 6;
+            for (let i = 0; i < items.length; i += BATCH_SIZE) {
+                const batch = items.slice(i, i + BATCH_SIZE);
+                await Promise.all(batch.map(item =>
+                    photoLoadForWall(item.url, relPath).then(src => {
+                        if (src) item.img.src = src;
+                    })
+                ));
+            }
 
-            // 始终保持按钮存在，只切换显示/隐藏状态
-            if (!loadMoreBtn) {
-                loadMoreBtn = document.createElement('button');
-                loadMoreBtn.id = 'photo-masonry-loadmore';
-                loadMoreBtn.className = 'photo-loadmore-btn';
-                loadMoreBtn.textContent = '加载更多';
-                loadMoreBtn.onclick = async () => {
+            // 渲染分页
+            renderPhotoMasonryPager(startIdx + 1, endIdx, totalPages, currentPhotoDirData.length);
+        }
+
+        function renderPhotoMasonryPager(start, end, totalPages, totalCount) {
+            let pager = document.getElementById('photo-masonry-pager');
+            const currentPage = photoMasonryPage + 1;
+
+            const newPager = pager.cloneNode(false);
+            newPager.id = 'photo-masonry-pager';
+            newPager.innerHTML = `
+                <button class="photo-pager-btn" id="photo-masonry-prev" title="上一页" ${currentPage <= 1 ? 'disabled' : ''}>
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                        <path d="M15 18l-6-6 6-6v12z"/>
+                    </svg>
+                </button>
+                <span class="photo-pager-info">${start}-${end} / ${totalCount}</span>
+                <button class="photo-pager-btn" id="photo-masonry-next" title="下一页" ${currentPage >= totalPages ? 'disabled' : ''}>
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                        <path d="M9 18l6-6-6-6v12z"/>
+                    </svg>
+                </button>
+            `;
+
+            pager.parentNode.replaceChild(newPager, pager);
+
+            const prevBtn = document.getElementById('photo-masonry-prev');
+            const nextBtn = document.getElementById('photo-masonry-next');
+            prevBtn.onclick = async () => {
+                if (photoMasonryPage > 0) {
+                    photoMasonryPage--;
+                    await photoRenderMasonry(false, photoLayoutDirPath);
+                }
+            };
+            nextBtn.onclick = async () => {
+                const currentTotalPages = Math.ceil(currentPhotoDirData.length / PHOTO_MASONRY_PAGE_SIZE);
+                if (photoMasonryPage < currentTotalPages - 1) {
                     photoMasonryPage++;
-                    await photoRenderMasonry(false, relPath);
-                };
-                loadMoreContainer.appendChild(loadMoreBtn);
-            }
-            // 根据是否有更多内容显示/隐藏按钮
-            loadMoreBtn.style.display = hasMore ? '' : 'none';
+                    await photoRenderMasonry(false, photoLayoutDirPath);
+                }
+            };
         }
         async function photoLoadFromLocal(text, isAllFile = false, photoDirPath = '') {
             // Tauri 模式：使用 invoke 直接读取文件为 base64
@@ -39289,13 +39414,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             // 每次渲染都重新计算随机位置
             photoComputeScatterPositions(count);
 
-            // 并行加载所有图片
-            const imagePromises = [];
-            for (let i = 0; i < count; i++) {
-                const p = currentPhotoDirData[startIdx + i];
-                imagePromises.push(photoLoadFromLocal(p.url, false, relPath));
-            }
-            const imageSrcs = await Promise.all(imagePromises);
+            // 并行加载所有图片（利用 _photoWallCache 跨模式复用）
+            const imageSrcs = await Promise.all(
+                Array.from({ length: count }, (_, i) =>
+                    photoLoadForWall(currentPhotoDirData[startIdx + i].url, relPath)
+                )
+            );
 
             const fragment = document.createDocumentFragment();
             for (let i = 0; i < count; i++) {
@@ -39314,7 +39438,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     --fall-rotation: ${pos.rotation}deg;
                 `;
                 div.innerHTML = `
-                    <img src="${imageSrcs[i]}" alt="${p.title}" loading="lazy" decoding="async" data-origin-url="${p.url}">
+                    <img src="${imageSrcs[i]}" alt="${p.title}" decoding="async" data-origin-url="${p.url}">
                     <div class="photo-polaroid-text">${p.title}</div>
                 `;
                 // 添加落体动画
@@ -39338,6 +39462,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (!pager) {
                 pager = document.createElement('div');
                 pager.id = 'photo-scatter-pager';
+                pager.className = 'photo-pager';
                 document.querySelector('.photo-layout-container').appendChild(pager);
             }
             const currentPage = photoScatterPage + 1;
@@ -39346,13 +39471,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const newPager = pager.cloneNode(false);
             newPager.id = 'photo-scatter-pager';
             newPager.innerHTML = `
-                <button class="image-btn photo-pager-btn" id="photo-scatter-prev" title="上一页" ${currentPage <= 1 ? 'disabled' : ''}>
+                <button class="photo-pager-btn" id="photo-scatter-prev" title="上一页" ${currentPage <= 1 ? 'disabled' : ''}>
                     <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
                         <path d="M15 18l-6-6 6-6v12z"/>
                     </svg>
                 </button>
                 <span class="photo-pager-info">${start}-${end} / ${totalCount}</span>
-                <button class="image-btn photo-pager-btn" id="photo-scatter-next" title="下一页" ${currentPage >= totalPages ? 'disabled' : ''}>
+                <button class="photo-pager-btn" id="photo-scatter-next" title="下一页" ${currentPage >= totalPages ? 'disabled' : ''}>
                     <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
                         <path d="M9 18l6-6-6-6v12z"/>
                     </svg>
@@ -40766,9 +40891,21 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 try { return await _statusInFlight; } catch { /* 上一次失败，继续发起新请求 */ }
             }
             const promise = (async () => {
-                // statusMatrix 内部已调用 GitIgnoreManager.isIgnored() 过滤 ignored 文件，
-                // 无需额外加载 gitignore 匹配器做二次过滤。
-                const matrix = await window.git.statusMatrix({ fs: gitFs, dir: SLASH });
+                // 加载 .gitignore 匹配器，用于过滤被忽略的文件
+                // statusMatrix 本身不会自动过滤 .gitignore，需要手动传入 filter
+                const gitignoreMatcher = await gitignoreGetMatcher();
+                const matrix = await window.git.statusMatrix({
+                    fs: gitFs,
+                    dir: SLASH,
+                    filter: (filepath) => {
+                        if (filepath === DOT || filepath === '') return false;
+                        // 过滤掉 .git 目录下的文件
+                        if (filepath.startsWith('.git/') || filepath === '.git') return false;
+                        // 过滤掉被 .gitignore 忽略的文件
+                        if (gitignoreMatcher && gitignoreMatcher.ignores(filepath)) return false;
+                        return true;
+                    },
+                });
                 const staged = [];
                 const unstaged = [];
 
@@ -42147,72 +42284,89 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             mainElement.style.display = 'none';
             // 让出事件循环，确保 loading 动画渲染后再执行后续重操作
             await new Promise(r => setTimeout(r, 16));
-            await destroyGitViewData();
-            gitViewActive = true; // 标记进入 Git 视图
 
-            // 验证根目录句柄是否有效
-            const rootHandle = getRootHandle();
-            if (!rootHandle) {
-                showNotification('✗ 请先打开一个目录', 'error');
-                loadingElement.innerHTML = '<div style="text-align:center;">⚠️ 请先打开一个目录!</div>';
-                return;
-            }
+            // 安全网：30 秒后强制隐藏 loading（防止 IPC 挂起等异常导致 loading 永远显示）
+            const forceHideTimer = setTimeout(() => {
+                loadingElement.style.display = 'none';
+                mainElement.style.display = 'flex';
+            }, 30000);
 
-            const cachedGitHandle = await idbGet(DIRECTORY_STORE_NAME, 'handles', 'gitHandle');
-            const cachedGitHandleRepo = await idbGet(DIRECTORY_STORE_NAME, 'handles', 'gitHandleRepo');
-            const rootName = getRootHandle().name;
-            if (cachedGitHandle && cachedGitHandleRepo === rootName) {
-                rootGitHandle = cachedGitHandle;
-            } else {
-                try {
-                    rootGitHandle = await getDirectoryHandle(getRootHandle(), '.git');
-                } catch {
-                    showNotification('所选目录不包含.git子目录，请选择git仓库的根目录', 'error');
-                    loadingElement.innerHTML = `
-                            <div style="text-align:center;">
-                                ⚠️ 所选目录不包含.git子目录，请选择git仓库的根目录!
-                            </div>`;
+            try {
+                await destroyGitViewData();
+                gitViewActive = true; // 标记进入 Git 视图
+
+                // 验证根目录句柄是否有效
+                const rootHandle = getRootHandle();
+                if (!rootHandle) {
+                    showNotification('✗ 请先打开一个目录', 'error');
+                    loadingElement.innerHTML = '<div style="text-align:center;">⚠️ 请先打开一个目录!</div>';
                     return;
                 }
-                await idbPut(DIRECTORY_STORE_NAME, 'handles', 'gitHandle', rootGitHandle);
-                await idbPut(DIRECTORY_STORE_NAME, 'handles', 'gitHandleRepo', rootName);
-            }
-            gitRepoPathHint = getRootHandle().name;
 
-            // 确定 Git 仓库路径（Tauri 模式使用 currentRootPath，浏览器模式使用 SLASH）
-            const gitRepoDir = window.__TAURI__ ? currentRootPath : SLASH;
+                const cachedGitHandle = await idbGet(DIRECTORY_STORE_NAME, 'handles', 'gitHandle');
+                const cachedGitHandleRepo = await idbGet(DIRECTORY_STORE_NAME, 'handles', 'gitHandleRepo');
+                const rootName = getRootHandle().name;
+                if (cachedGitHandle && cachedGitHandleRepo === rootName) {
+                    rootGitHandle = cachedGitHandle;
+                } else {
+                    try {
+                        rootGitHandle = await getDirectoryHandle(getRootHandle(), '.git');
+                    } catch {
+                        showNotification('所选目录不包含.git子目录，请选择git仓库的根目录', 'error');
+                        loadingElement.innerHTML = `
+                                <div style="text-align:center;">
+                                    ⚠️ 所选目录不包含.git子目录，请选择git仓库的根目录!
+                                </div>`;
+                        return;
+                    }
+                    await idbPut(DIRECTORY_STORE_NAME, 'handles', 'gitHandle', rootGitHandle);
+                    await idbPut(DIRECTORY_STORE_NAME, 'handles', 'gitHandleRepo', rootName);
+                }
+                gitRepoPathHint = getRootHandle().name;
 
-            // 模式检测：Tauri 模式使用 Rust gix，其他模式使用 isomorphic-git
-            if (window.__TAURI__ && window.GitRustAdapter) {
-                gitFs = null; // Tauri 模式不需要 fs 适配器
-                window.gitImpl = window.GitRustAdapter;
-            } else {
-                gitFs = createGitFsAdapter(rootGitHandle, getRootHandle());
-                window.gitImpl = {
-                    async log(options) {
-                        return window.git.log(options); // 原调用（带 fs）
-                    },
-                    async statusMatrix(options) {
-                        return window.git.statusMatrix(options);
-                    },
-                    async checkout(options) {
-                        return window.git.checkout(options);
-                    },
-                    parseRefs: gitParseRefs,
-                };
-            }
+                // 确定 Git 仓库路径（Tauri 模式使用 currentRootPath，浏览器模式使用 SLASH）
+                const gitRepoDir = window.__TAURI__ ? currentRootPath : SLASH;
 
-            // 保存 gitRepoDir 到全局变量，供后续调用使用
-            window.gitRepoDir = gitRepoDir;
-            showNotification('正在解析 Git 历史...', 'info', 1000);
-            try {
+                // 模式检测：Tauri 模式使用 Rust gix，其他模式使用 isomorphic-git
+                if (window.__TAURI__ && window.GitRustAdapter) {
+                    gitFs = null; // Tauri 模式不需要 fs 适配器
+                    window.gitImpl = window.GitRustAdapter;
+                } else {
+                    gitFs = createGitFsAdapter(rootGitHandle, getRootHandle());
+                    window.gitImpl = {
+                        async log(options) {
+                            return window.git.log(options); // 原调用（带 fs）
+                        },
+                        async statusMatrix(options) {
+                            return window.git.statusMatrix(options);
+                        },
+                        async checkout(options) {
+                            return window.git.checkout(options);
+                        },
+                        parseRefs: gitParseRefs,
+                    };
+                }
+
+                // 保存 gitRepoDir 到全局变量，供后续调用使用
+                window.gitRepoDir = gitRepoDir;
+
+                showNotification('正在解析 Git 历史...', 'info', 1000);
                 gitFileFilter = fileFilter;
-                await gitLoadRepo(fileFilter);
+
+                // 为 gitLoadRepo 添加超时保护
+                const TIMEOUT_MS = 25000; // 25 秒超时
+                await Promise.race([
+                    gitLoadRepo(fileFilter),
+                    new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error('Git 加载超时，请检查仓库是否完整或 git 命令是否可用')), TIMEOUT_MS)
+                    ),
+                ]);
             } catch (err) {
                 gitFs = null;
                 showNotification(`${gitEscapeHtml(err.message || '未知错误')}, 请检查仓库是否完整`, 'error');
                 gitGraphCanvas.style.display = 'none';
             } finally {
+                clearTimeout(forceHideTimer);
                 loadingElement.style.display = 'none';
                 mainElement.style.display = 'flex';
             }

@@ -3,6 +3,7 @@ import { viteStaticCopy } from "vite-plugin-static-copy";
 
 export default defineConfig({
   clearScreen: false,
+  base: "./",
   root: "..",
   plugins: [
     viteStaticCopy({

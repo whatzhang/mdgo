@@ -8,7 +8,7 @@
 (async () => {
   try {
     const [
-      { invoke },
+      { invoke, convertFileSrc },
       { open, save },
       { Store }
     ] = await Promise.all([
@@ -18,7 +18,7 @@
     ]);
 
     window.__TAURI__ = {
-      core: { invoke },
+      core: { invoke, convertFileSrc },
       dialog: { open, save },
       pluginStore: { Store },
     };

@@ -64,10 +64,44 @@
     async getFile() {
       const meta = await invoke('get_file_meta', { path: this._path });
       const content = await invoke('read_file_binary', { path: this._path });
-      const blob = new Blob([new Uint8Array(content)]);
+      const mimeType = this._getMimeType(this.name);
+      const blob = new Blob([new Uint8Array(content)], mimeType ? { type: mimeType } : undefined);
       blob.name = this.name;
       blob.lastModified = (meta.modified && meta.modified > 0) ? meta.modified * 1000 : Date.now();
       return blob;
+    }
+
+    /** 根据文件扩展名获取 MIME 类型 */
+    _getMimeType(name) {
+      const ext = name.split('.').pop().toLowerCase();
+      const map = {
+        'png': 'image/png',
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'gif': 'image/gif',
+        'svg': 'image/svg+xml',
+        'webp': 'image/webp',
+        'bmp': 'image/bmp',
+        'ico': 'image/x-icon',
+        'tiff': 'image/tiff',
+        'tif': 'image/tiff',
+        'avif': 'image/avif',
+        'heic': 'image/heic',
+        'heif': 'image/heif',
+        // 视频 MIME
+        'mp4': 'video/mp4',
+        'webm': 'video/webm',
+        'ogg': 'video/ogg',
+        'ogv': 'video/ogg',
+        'mov': 'video/quicktime',
+        'avi': 'video/x-msvideo',
+        'wmv': 'video/x-ms-wmv',
+        'flv': 'video/x-flv',
+        'mkv': 'video/x-matroska',
+        'm4v': 'video/x-m4v',
+        '3gp': 'video/3gpp',
+      };
+      return map[ext] || '';
     }
 
     /** 只获取文件元数据，不读取文件内容（用于扫描等高性能场景） */
@@ -166,8 +200,11 @@
       } else if (data instanceof Blob) {
         const text = await data.text();
         this._appendString(text);
-      } else if (data instanceof Uint8Array) {
-        this._appendBytes(data);
+      } else if (data instanceof ArrayBuffer) {
+        this._appendBytes(new Uint8Array(data));
+      } else if (ArrayBuffer.isView(data)) {
+        const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+        this._appendBytes(bytes);
       } else if (data && data.type === 'write') {
         if (data.position !== undefined) this._position = data.position;
         await this.write(data.data);
