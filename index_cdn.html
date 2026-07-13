@@ -11832,6 +11832,7 @@
         .setting-btn-primary:hover {
             background: var(--color-primary-hover);
         }
+
         #setting-currentRootPath:placeholder-shown {
             border-color: var(--red);
         }
@@ -16895,7 +16896,7 @@
                     e.stopPropagation();
                     await toggleFile('fileGitRecord', { relativePath: fileSpan.dataset.filePath });
                 }));
-                dropdown.appendChild(_ddItem('🔗 相对路径', async (e) => { 
+                dropdown.appendChild(_ddItem('🔗 相对路径', async (e) => {
                     e.stopPropagation();
                     await copyCurrentFilePath(fileSpan.dataset.filePath, true);
                 }));
@@ -27475,7 +27476,7 @@
                         html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
                     } else if (serverDisplay && b.serverDisplay) {
                         html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
-                    } else if (httpLocal) {
+                    } else if (httpLocal && b.fileProtocolDisplay) {
                         html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
                     }
                 }
@@ -29028,6 +29029,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             'docker-compose.yaml': 'yaml'
         };
         const extensionLanguageMap = {
+            ghostty: 'ini',
             iml: 'xml',
             canvas: 'json',
             opml: 'xml',
@@ -29944,37 +29946,50 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
                 return;
             }
+            let dirHandle = null;
             try {
-                const dirHandle = await window.showDirectoryPicker({
+                dirHandle = await window.showDirectoryPicker({
                     mode: 'readwrite',
                 });
-                if (!dirHandle) return;
-                await initPageNone();
-                setRootHandle(dirHandle);
-                // Tauri 模式：dirHandle.path 包含物理路径，跳过手动输入
-                if (dirHandle.path) {
-                    currentRootPath = dirHandle.path.replace(/[\/\\]+$/, '');
-                    showGlobalLoading('正在扫描目录文件...');
-                    try {
-                        await clearOldData();
-                        safeLocalStorageSet("ROOT_DIR", currentRootPath);
-                        safeLocalStorageSet(PERMISSION_TIME_KEY, Date.now().toString());
-                        // TauriDirectoryHandle 是类实例，IndexedDB 序列化会丢失方法
-                        // 改为存储可序列化的路径信息，读取时重建
-                        await idbPut(DIRECTORY_STORE_NAME, 'handles', 'default', { __tauriDirHandle: true, path: dirHandle.path });
-                        await mountDir();
-                        await initAll();
-                    } catch (e) {
-                        console.error('初始化目录失败', e);
-                        showNotification('✗ 扫描目录失败: ' + e.message, 'error');
-                    } finally {
-                        hideGlobalLoading(true);
-                    }
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    showNotification('必须选择一个目录!', 'warning');
+                    openDir();
+                    return;
                 } else {
-                    openSetting(true);
+                    console.error('选择目录发生错误:', error);
+                    throw error;
                 }
-            } catch (err) {
-                console.error('用户取消了选择或无权限', err);
+            }
+
+            await initPageNone();
+            if (/^([a-zA-Z]:[\\/]?|\\|\/\/?)$/.test(dirHandle.name)) {
+                showNotification('✗ 目录路径不能为盘符路径, 重新选择目录！', 'warning');
+                openDir();
+                return;
+            }
+            setRootHandle(dirHandle);
+            // Tauri 模式：dirHandle.path 包含物理路径，跳过手动输入
+            if (dirHandle.path) {
+                currentRootPath = dirHandle.path.replace(/[\/\\]+$/, '');
+                showGlobalLoading('正在扫描目录文件...');
+                try {
+                    await clearOldData();
+                    safeLocalStorageSet("ROOT_DIR", currentRootPath);
+                    safeLocalStorageSet(PERMISSION_TIME_KEY, Date.now().toString());
+                    // TauriDirectoryHandle 是类实例，IndexedDB 序列化会丢失方法
+                    // 改为存储可序列化的路径信息，读取时重建
+                    await idbPut(DIRECTORY_STORE_NAME, 'handles', 'default', { __tauriDirHandle: true, path: dirHandle.path });
+                    await mountDir();
+                    await initAll();
+                } catch (e) {
+                    console.error('初始化目录失败', e);
+                    showNotification('✗ 扫描目录失败: ' + e.message, 'error');
+                } finally {
+                    hideGlobalLoading(true);
+                }
+            } else {
+                openSetting(true);
             }
         }
 
@@ -43093,12 +43108,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         nginxDisplay = true;
                     } else if (serverDisplay && nginxRestyButton.serverDisplay) {
                         nginxDisplay = true;
-                    } else if (httpLocal) {
-                        nginxDisplay = true;    
-                    } 
+                    } else if (httpLocal && nginxRestyButton.fileProtocolDisplay) {
+                        nginxDisplay = true;
+                    }
                 }
             }
-            const rootDirPath = safeLocalStorageGet("ROOT_DIR")|| currentRootPath;
+            const rootDirPath = safeLocalStorageGet("ROOT_DIR") || currentRootPath;
             const overlay = document.createElement('div');
             overlay.className = 'setting-modal-overlay';
             const inputId = (id) => 'setting-' + id;
@@ -43252,23 +43267,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             setupTagAdd(inputId('htmlShowBlacklistInput'), inputId('htmlShowBlacklist'), htmlShowItems);
 
             // ---------- 关闭 ----------
-            let closed = false;
-           async function closeModal( isSaveAfter = false) {
-                 if(isInit){
-                    const dirDom = document.getElementById(inputId('currentRootPath'))
-                    let trimmedPath = dirDom.value.trim();
-                    if(!trimmedPath){
-                        showNotification('请输入所选目录路径!', 'warning');
-                        return;
-                    }
-                     if(!isSaveAfter){
+            async function closeModal(isSaveAfter = false) {
+                if (isInit) {
+                    if (!isSaveAfter) {
                         await clearOldData();
                         currentRootPath = '';
+                        closeModal(true);
+                        openDir();
                         return;
                     }
-                 }
-                if (closed) return;
-                closed = true;
+                }
                 document.removeEventListener('keydown', onKeydown);
                 // 销毁 tippy 实例，防止 DOM 引用泄露
                 if (tippyInstances && tippyInstances.destroy) {
@@ -43303,15 +43311,19 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         showNotification('✗ 上下文长度不能小于 1000', 'warning');
                         return;
                     }
-                    if(isInit){
-                       const dirDom = document.getElementById(inputId('currentRootPath'))
+                    if (isInit) {
+                        const dirDom = document.getElementById(inputId('currentRootPath'))
                         let trimmedPath = dirDom.value.trim();
-                        if(!trimmedPath){
+                        if (!trimmedPath) {
                             showNotification('请输入所选目录路径!', 'warning');
                             return;
                         }
                         //去除路径末尾的斜杠，兼容 windows 和 linux 系统
                         currentRootPath = trimmedPath.replace(/[\/\\]+$/, '');
+                        //验证路径是否合法
+                        if (!await checkDirPath()) {
+                            return;
+                        }
                         showGlobalLoading('正在扫描目录文件...');
                         await clearOldData();
                         safeLocalStorageSet("ROOT_DIR", currentRootPath);
@@ -43350,8 +43362,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 } catch (e) {
                     showNotification('✗ 保存设置参数失败', 'error');
                     console.error('保存设置参数失败:', e);
-                 } finally {
-                    if(isInit) hideGlobalLoading(true);
+                } finally {
+                    if (isInit) hideGlobalLoading(true);
                 }
             });
             // Escape 键关闭
@@ -43359,6 +43371,18 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (e.key === 'Escape') { closeModal(false); }
             }
             document.addEventListener('keydown', onKeydown);
+        }
+        async function checkDirPath() {
+            //windows不能选盘符的目录
+            if (/^([a-zA-Z]:[\\/]?|\\|\/\/?)$/.test(currentRootPath)) {
+                showNotification('✗ 目录路径不能为盘符路径！', 'warning');
+                return false
+            }
+            if (!currentRootPath.endsWith(getRootHandle().name)) {
+                showNotification('✗ 目录路径不正确', 'warning');
+                return false
+            }
+            return true;
         }
         async function loadSetting() {
             try {
