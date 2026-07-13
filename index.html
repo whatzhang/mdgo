@@ -1661,12 +1661,12 @@
             top: 0;
             left: 0;
             z-index: 10;
-            font-size: 14px;
+            font-size: 0.875rem;
             box-sizing: border-box;
             height: 33px;
             width: 100%;
             color: rgb(237, 5, 237);
-            font-weight: bold;
+            font-weight: 600;
         }
 
         .editor-footer {
@@ -1678,8 +1678,8 @@
             align-items: center;
             justify-content: space-between;
             padding: 0 10px;
-            font-size: 12px;
-            font-weight: bold;
+            font-size: 0.75rem;
+            font-weight: 600;
             font-family: 'Segoe UI',
                 sans-serif;
             user-select: none;
@@ -4186,7 +4186,8 @@
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             transition: all 0.2s ease;
-            text-align: center;
+            display: inline-flex;
+            align-items: center;
             justify-content: center;
         }
 
@@ -7513,6 +7514,7 @@
         .todo-reminder-btn-close {
             background: var(--todo-bg);
             color: var(--color-text);
+            font-weight: 500;
         }
 
         .todo-reminder-btn-close:hover {
@@ -11615,7 +11617,7 @@
             border: none;
             background: none;
             cursor: pointer;
-            font-size: 1.25rem;
+            font-size: 1rem;
             color: var(--color-text-secondary);
             padding: 0.25rem;
             line-height: 1;
@@ -11699,7 +11701,6 @@
 
         .setting-text:focus {
             border-color: var(--color-primary);
-            box-shadow: 0 0 0 0.125rem rgba(9, 105, 218, 0.2);
         }
 
         .setting-number {
@@ -11829,6 +11830,9 @@
 
         .setting-btn-primary:hover {
             background: var(--color-primary-hover);
+        }
+        #setting-currentRootPath:placeholder-shown {
+            border-color: var(--red);
         }
     </style>
 </head>
@@ -14039,7 +14043,7 @@
             get size() { return this._map.size; }
         }
         // ====== 文件树状态 ======
-        let currentRootPath = '/Users/zhang/gitrepositories/resource'; // 当前目录的完整路径(用于生成唯一标识)
+        let currentRootPath = ''; // 当前目录的完整路径(用于生成唯一标识)
         let rootDirectoryHandle = null;     // 根目录句柄
         const getRootHandle = () => rootDirectoryHandle;  // 获取根目录句柄的函数
         const setRootHandle = (handler) => rootDirectoryHandle = handler;  // 设置根目录句柄的函数
@@ -14684,6 +14688,7 @@
         let _treeClickHandler = null;
         let _treeDblClickHandler = null;
         let _treeToggleHandler = null;
+        let _lastFileClick = { path: '', time: 0 }; // 防抖：防止双击时打开文件两次
         async function initTreeDelegation() {
             // 先移除旧 handler（使用稳定引用），再绑定新 handler
             if (_treeClickHandler) {
@@ -14701,8 +14706,12 @@
                 if (!fileSpan) return;
                 // 若点击的是更多菜单按钮或颜色选择器，不触发文件打开
                 if (event.target.closest('.file-item-more-menu') || event.target.closest('.marker-color-picker')) return;
+                const filePath = fileSpan.dataset.filePath;
+                // 防抖：300ms 内重复点击同一文件只执行一次
+                const now = Date.now();
+                if (_lastFileClick.path === filePath && now - _lastFileClick.time < 300) return;
+                _lastFileClick = { path: filePath, time: now };
                 try {
-                    const filePath = fileSpan.dataset.filePath;
                     currentFileHandle = await getFileHandleByPath(filePath);
                     if (!currentFileHandle) {
                         showNotification(`✗ 无法找到文件: ${filePath}`, 'error');
@@ -15507,7 +15516,9 @@
                         let fileItem = null;
                         if (parentDom) {
                             const depth = +parentDom.dataset.depth || 0;
-                            fileItem = await createFileItem(fileName, newRelativePath, depth + 1);
+                            const ext = getExt(fileName);
+                            const iconType = ext ? getFileTypeByExt(ext) : '';
+                            fileItem = await createFileItem(fileName, newRelativePath, depth + 1, iconType);
                             if (fileItem) {
                                 parentDom.appendChild(fileItem);
                                 // 展开父目录
@@ -15518,7 +15529,9 @@
                             }
                         } else {
                             const tree = document.getElementById('tree');
-                            fileItem = await createFileItem(fileName, fileName, 0);
+                            const ext = getExt(fileName);
+                            const iconType = ext ? getFileTypeByExt(ext) : '';
+                            fileItem = await createFileItem(fileName, fileName, 0, iconType);
                             if (fileItem) tree.appendChild(fileItem);
                         }
                         if (fileItem) {
@@ -15595,7 +15608,9 @@
                         const dom = await _ensureLazyDirLoaded(newRelativeParentPath);
                         if (dom) {
                             if (!fileExists) {
-                                const fileItem = await createFileItem(fileName, newRelativePath, +dom.dataset.depth + 1);
+                                const ext = getExt(fileName);
+                                const iconType = ext ? getFileTypeByExt(ext) : '';
+                                const fileItem = await createFileItem(fileName, newRelativePath, +dom.dataset.depth + 1, iconType);
                                 if (fileItem) dom.appendChild(fileItem);
                             }
                             const fileSpan = document.querySelector('.file-item[data-file-path="' + newRelativePath + '"]');
@@ -15604,7 +15619,9 @@
                     } else {
                         const tree = document.getElementById('tree');
                         if (!fileExists) {
-                            const fileItem = await createFileItem(fileName, fileName, 0);
+                            const ext = getExt(fileName);
+                            const iconType = ext ? getFileTypeByExt(ext) : '';
+                            const fileItem = await createFileItem(fileName, fileName, 0, iconType);
                             if (fileItem) tree.appendChild(fileItem);
                         }
                     }
@@ -16862,32 +16879,32 @@
             if (inDeleted) {
                 dropdown.appendChild(_ddItem('🔄 还原文件', async (e) => {
                     e.stopPropagation();
-                    await toggleFile('restoreFile', { relativePath: relativePath, fileSpan: fileSpan });
+                    await toggleFile('restoreFile', { relativePath: fileSpan.dataset.filePath, fileSpan: fileSpan });
                 }));
                 dropdown.appendChild(_ddItem('🗑️ 永久删除', async (e) => {
                     e.stopPropagation();
-                    await toggleFile('deleteFile', { relativePath: relativePath, isForever: true, fileSpan: fileSpan });
+                    await toggleFile('deleteFile', { relativePath: fileSpan.dataset.filePath, isForever: true, fileSpan: fileSpan });
                 }));
             } else {
                 dropdown.appendChild(_ddItem('📄 复制文件', async (e) => {
                     e.stopPropagation();
-                    await toggleFile('copyFile', { relativePath: relativePath });
+                    await toggleFile('copyFile', { relativePath: fileSpan.dataset.filePath });
                 }));
                 dropdown.appendChild(_ddItem('🗂️ git记录', async (e) => {
                     e.stopPropagation();
-                    await toggleFile('fileGitRecord', { relativePath: relativePath });
+                    await toggleFile('fileGitRecord', { relativePath: fileSpan.dataset.filePath });
                 }));
-                dropdown.appendChild(_ddItem('🔗 相对路径', async (e) => {
+                dropdown.appendChild(_ddItem('🔗 相对路径', async (e) => { 
                     e.stopPropagation();
-                    await copyCurrentFilePath(relativePath, true);
+                    await copyCurrentFilePath(fileSpan.dataset.filePath, true);
                 }));
                 dropdown.appendChild(_ddItem('🖇️ 绝对路径', async (e) => {
                     e.stopPropagation();
-                    await copyCurrentFilePath(relativePath, false);
+                    await copyCurrentFilePath(fileSpan.dataset.filePath, false);
                 }));
                 dropdown.appendChild(_ddItem('🗑️ 删除文件', async (e) => {
                     e.stopPropagation();
-                    await toggleFile('deleteFile', { relativePath: relativePath, isForever: false, fileSpan: fileSpan });
+                    await toggleFile('deleteFile', { relativePath: fileSpan.dataset.filePath, isForever: false, fileSpan: fileSpan });
                 }));
                 // 颜色选择器
                 const crPicker = document.createElement('div');
@@ -25428,7 +25445,9 @@
                     if (existingItem) existingItem.remove();
                     const depth = newRelativeParentPath ?
                         (parseInt(dirDom.dataset.depth) || 0) + 1 : 0;
-                    const fileItem = await createFileItem(newFileName, newRelativePath, depth);
+                    const ext = getExt(newFileName);
+                    const iconType = ext ? getFileTypeByExt(ext) : '';
+                    const fileItem = await createFileItem(newFileName, newRelativePath, depth, iconType);
                     if (fileItem) {
                         if (dirDom.tagName === 'DETAILS' && !dirDom.open) {
                             dirDom.open = true;
@@ -29862,7 +29881,23 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         function openDir() {
-            showOpenPanel('打开本地目录', openLocalDir);
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-overlay';
+            overlay.innerHTML = `<div class="open-panel">
+                            <div class="open-panel-title">打开本地目录</div>
+                            <div class="open-panel-buttons">
+                                <button class="open-panel-btn open-panel-btn-confirm">选择</button>
+                            </div>
+                        </div>`;
+            document.body.appendChild(overlay);
+            const confirmBtn = overlay.querySelector('.open-panel-btn-confirm');
+            function close() {
+                overlay.remove();
+            }
+            confirmBtn.addEventListener('click', async () => {
+                close();
+                await openLocalDir();
+            });
         }
 
         function showOpenPanel(title, callback) {
@@ -29878,11 +29913,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             document.body.appendChild(overlay);
             const confirmBtn = overlay.querySelector('.open-panel-btn-confirm');
             const cancelBtn = overlay.querySelector('.open-panel-btn-cancel');
-
             function close() {
                 overlay.remove();
             }
-
             cancelBtn.addEventListener('click', close);
             overlay.addEventListener('click', (e) => {
                 if (e.target === overlay) close();
@@ -29937,41 +29970,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         hideGlobalLoading(true);
                     }
                 } else {
-                    showNotification('输入物理路径用以后续相关操作！', 'info', 3000);
-                    await inputAbsolutePath(dirHandle);
+                    openSetting(true);
                 }
             } catch (err) {
                 console.error('用户取消了选择或无权限', err);
             }
-        }
-
-        async function inputAbsolutePath(dirHandle) {
-            const root = safeLocalStorageGet("ROOT_DIR");
-            showInputModal('请输入物理路径', root || currentRootPath, async (path) => {
-                let trimmedPath = path.trim();
-                //去除路径末尾的斜杠，兼容 windows 和 linux 系统
-                currentRootPath = trimmedPath.replace(/[\/\\]+$/, '');
-                showGlobalLoading('正在扫描目录文件...');
-                try {
-                    await clearOldData();
-                    safeLocalStorageSet("ROOT_DIR", currentRootPath);
-                    safeLocalStorageSet(PERMISSION_TIME_KEY, Date.now().toString());
-                    await idbPut(DIRECTORY_STORE_NAME, 'handles', 'default', dirHandle);
-                    await mountDir();
-                    await initAll();
-                } catch (e) {
-                    console.error('初始化目录失败', e);
-                    showNotification('✗ 扫描目录失败: ' + e.message, 'error');
-                } finally {
-                    hideGlobalLoading(true);
-                }
-            }, async () => {
-                await clearOldData();
-                currentRootPath = '';
-                setRootHandle(null);
-                showNotification('必须输入物理路径，否则系统无法正常运行！', 'error');
-                openDir();
-            });
         }
 
         async function clearOldData() {
@@ -43054,12 +43057,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             safeLocalStorageSet('tempEditorContent', currentEditor.getValue());
         }
         //系统设置
-        function openSetting() {
+        function openSetting(isInit = false) {
             if (!isRootHandleAvailable()) return;
-            // 防止重复打开
             if (document.querySelector('.setting-modal-overlay')) return;
-
-            // ---------- 辅助：标签列表 ----------
             function createTagList(container, items, onChange) {
                 function render() {
                     container.innerHTML = '';
@@ -43097,7 +43097,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     } 
                 }
             }
-
+            const rootDirPath = safeLocalStorageGet("ROOT_DIR")|| currentRootPath;
             const overlay = document.createElement('div');
             overlay.className = 'setting-modal-overlay';
             const inputId = (id) => 'setting-' + id;
@@ -43108,6 +43108,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         <button class="setting-modal-close">✕</button>
                     </div>
                     <div class="setting-modal-body">
+                    ${isInit ? `
+                        <div class="setting-section">
+                            <div class="setting-section-title">所选目录路径</div>
+                            <div class="setting-section-body">
+                                <div class="setting-row">
+                                    <label>目录路径</label>
+                                    <input class="setting-text" id="${inputId('currentRootPath')}" value="${escapeHtml(rootDirPath)}" placeholder="请输入目录路径...">
+                                </div>
+                            </div>
+                        </div>
+                    ` : ''}
                         <div class="setting-section">
                             <div class="setting-section-title">后端服务</div>
                             <div class="setting-section-body">
@@ -43199,27 +43210,20 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     </div>
                 </div>
             `;
-
             document.body.appendChild(overlay);
-
-            // 帮助提示
             const tippyInstances = tippy(overlay.querySelectorAll('.setting-help'), {
                 theme: 'custom',
                 content: (ref) => ref.getAttribute('data-tippy-content'),
             });
-
-            // ---------- 初始化 ----------
             // 标签列表
             const dirBlacklistItems = [...DIR_BLACKLIST];
             const fileBlacklistItems = [...FILE_BLACKLIST];
             const randomDirItems = [...RANDOM_DIR_BLACKLIST];
             const htmlShowItems = [...HTML_CODE_SHOW_BLACKLIST];
-
             createTagList(document.getElementById(inputId('dirBlacklist')), dirBlacklistItems);
             createTagList(document.getElementById(inputId('fileBlacklist')), fileBlacklistItems);
             createTagList(document.getElementById(inputId('randomDirBlacklist')), randomDirItems);
             createTagList(document.getElementById(inputId('htmlShowBlacklist')), htmlShowItems);
-
             // 标签添加逻辑
             function setupTagAdd(inputIdName, listIdName, items) {
                 const input = document.getElementById(inputIdName);
@@ -43248,7 +43252,20 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
             // ---------- 关闭 ----------
             let closed = false;
-            function closeModal() {
+           async function closeModal( isSaveAfter = false) {
+                 if(isInit){
+                    const dirDom = document.getElementById(inputId('currentRootPath'))
+                    let trimmedPath = dirDom.value.trim();
+                    if(!trimmedPath){
+                        showNotification('请输入所选目录路径!', 'warning');
+                        return;
+                    }
+                     if(!isSaveAfter){
+                        await clearOldData();
+                        currentRootPath = '';
+                        return;
+                    }
+                 }
                 if (closed) return;
                 closed = true;
                 document.removeEventListener('keydown', onKeydown);
@@ -43260,18 +43277,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
                 overlay.remove();
             }
-            overlay.querySelector('.setting-modal-close').addEventListener('click', closeModal);
-            document.getElementById(inputId('cancel')).addEventListener('click', closeModal);
-            overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+            overlay.querySelector('.setting-modal-close').addEventListener('click', () => closeModal(false));
+            document.getElementById(inputId('cancel')).addEventListener('click', () => closeModal(false));
+            overlay.addEventListener('click', async (e) => { if (e.target === overlay) await closeModal(false); });
 
-            // ---------- 保存 ----------
             document.getElementById(inputId('save')).addEventListener('click', async () => {
                 try {
-                    // 输入校验
                     const graphqlVal = document.getElementById(inputId('graphql')).value.trim();
                     const llmEndpointVal = document.getElementById(inputId('llmEndpoint')).value.trim();
                     const llmContextVal = document.getElementById(inputId('llmContext')).value.trim();
-
                     // URL 格式校验
                     const urlPattern = /^https?:\/\/.+/i;
                     if (graphqlVal && !urlPattern.test(graphqlVal)) {
@@ -43282,14 +43296,29 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         showNotification('✗ LLM API 端点格式不正确，需以 http:// 或 https:// 开头', 'warning');
                         return;
                     }
-
                     // 上下文长度校验
                     const contextLength = parseInt(llmContextVal, 10);
                     if (isNaN(contextLength) || contextLength < 1000) {
                         showNotification('✗ 上下文长度不能小于 1000', 'warning');
                         return;
                     }
-
+                    if(isInit){
+                       const dirDom = document.getElementById(inputId('currentRootPath'))
+                        let trimmedPath = dirDom.value.trim();
+                        if(!trimmedPath){
+                            showNotification('请输入所选目录路径!', 'warning');
+                            return;
+                        }
+                        //去除路径末尾的斜杠，兼容 windows 和 linux 系统
+                        currentRootPath = trimmedPath.replace(/[\/\\]+$/, '');
+                        showGlobalLoading('正在扫描目录文件...');
+                        await clearOldData();
+                        safeLocalStorageSet("ROOT_DIR", currentRootPath);
+                        safeLocalStorageSet(PERMISSION_TIME_KEY, Date.now().toString());
+                        await idbPut(DIRECTORY_STORE_NAME, 'handles', 'default', getRootHandle());
+                        await mountDir();
+                        await initAll();
+                    }
                     GRAPHQL_ENDPOINT = graphqlVal;
                     NGINX_CONF_PATH = document.getElementById(inputId('nginx')).value.trim();
                     LOCAL_LLM_ENDPOINT = llmEndpointVal;
@@ -43314,19 +43343,19 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         htmlCodeShowBlacklist: HTML_CODE_SHOW_BLACKLIST
                     }, null, 4);
                     await writeFileByDirHandle(await getDataDir(), SETTING_FILE, settingsJson);
-                    closeModal();
+                    await closeModal(true);
                     const data = await scanDashboardData(true);
                     await Promise.all([renderDirectory(getRootHandle(), data), toggleDashboardView(true, data)]);
-                    showNotification('✓ 系统设置已保存', 'success');
                 } catch (e) {
-                    showNotification('✗ 保存设置文件失败', 'error');
-                    console.error('保存设置文件失败:', e);
+                    showNotification('✗ 保存设置参数失败', 'error');
+                    console.error('保存设置参数失败:', e);
+                 } finally {
+                    if(isInit) hideGlobalLoading(true);
                 }
             });
-
             // Escape 键关闭
             function onKeydown(e) {
-                if (e.key === 'Escape') { closeModal(); }
+                if (e.key === 'Escape') { closeModal(false); }
             }
             document.addEventListener('keydown', onKeydown);
         }

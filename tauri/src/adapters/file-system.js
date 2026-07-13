@@ -60,6 +60,11 @@
       this.kind = 'file';
     }
 
+    /** 删除文件 */
+    async remove() {
+      await invoke('delete', { path: this._path });
+    }
+
     /** 获取 File 对象（模拟） */
     async getFile() {
       const meta = await invoke('get_file_meta', { path: this._path });
@@ -245,6 +250,14 @@
 
     async seek(position) {
       this._position = position;
+    }
+
+    /** 中止写入（丢弃未保存的数据） */
+    async abort() {
+      this._isOpen = false;
+      this._chunks = [];
+      this._buffer = null;
+      this._totalLength = 0;
     }
   }
 
