@@ -230,23 +230,6 @@
             border-radius: var(--radius-sm);
         }
 
-        #sidebar-header::-webkit-scrollbar {
-            height: 4px;
-        }
-
-        #sidebar-header::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        #sidebar-header::-webkit-scrollbar-thumb {
-            background: var(--color-border, #d0d7de);
-            border-radius: 2px;
-        }
-
-        #sidebar-header::-webkit-scrollbar-thumb:hover {
-            background: var(--color-text-tertiary);
-        }
-
         #sidebar-header>* {
             flex: 1 0 0%;
             min-width: 2.25rem;
@@ -272,23 +255,6 @@
         #tree>details:last-child,
         #tree>.file-item:last-child {
             margin-bottom: 0;
-        }
-
-        #tree::-webkit-scrollbar {
-            width: 4px;
-        }
-
-        #tree::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        #tree::-webkit-scrollbar-thumb {
-            background: var(--color-border, #d0d7de);
-            border-radius: 2px;
-        }
-
-        #tree::-webkit-scrollbar-thumb:hover {
-            background: var(--color-text-tertiary);
         }
 
         .file-item {
@@ -707,23 +673,6 @@
             flex: 1;
             overflow-y: auto;
             background: var(--color-bg-secondary);
-        }
-
-        #content-main::-webkit-scrollbar {
-            width: 4px !important;
-        }
-
-        #content-main::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        #content-main::-webkit-scrollbar-thumb {
-            background: var(--color-border, #d0d7de);
-            border-radius: 2px;
-        }
-
-        #content-main::-webkit-scrollbar-thumb:hover {
-            background: var(--color-text-tertiary);
         }
 
         #content-main-edit {
@@ -1288,7 +1237,7 @@
             cursor: pointer;
             appearance: none;
             color: var(--color-text);
-            min-width: 40px;
+            min-width: 2.75rem;
             outline: none;
         }
 
@@ -1476,41 +1425,6 @@
         .mindmap-container td {
             word-wrap: break-word;
             overflow-wrap: break-word;
-        }
-
-        .mindmap-container::-webkit-scrollbar {
-            width: 4px;
-        }
-
-        .mindmap-container::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        .mindmap-container::-webkit-scrollbar-thumb {
-            background: var(--color-border, #d0d7de);
-            border-radius: 2px;
-        }
-
-        .mindmap-container::-webkit-scrollbar-thumb:hover {
-            background: var(--color-text-tertiary);
-        }
-
-        .jsmind-inner::-webkit-scrollbar {
-            width: 4px;
-            height: 4px;
-        }
-
-        .jsmind-inner::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        .jsmind-inner::-webkit-scrollbar-thumb {
-            background: var(--color-border, #d0d7de);
-            border-radius: 2px;
-        }
-
-        .jsmind-inner::-webkit-scrollbar-thumb:hover {
-            background: var(--color-text-tertiary);
         }
 
         .mindmap-node {
@@ -3440,20 +3354,20 @@
 
         .ai-fab-container {
             position: absolute;
-            top: 65px;
-            right: 10px;
+            top: 3.45rem;
+            right: 0.625rem;
             transform: translateY(-50%);
             z-index: 2000;
             display: flex;
             flex-direction: column;
             align-items: flex-end;
-            gap: 5px;
+            gap: 0.3125rem;
         }
 
         .ai-fab-button {
-            width: 35px;
-            height: 35px;
-            border-radius: 8px;
+            width: 2.125rem;
+            height: 2.125rem;
+            border-radius: 0.5rem;
             background: var(--color-bg);
             overflow: hidden;
             display: flex;
@@ -3757,23 +3671,6 @@
             overflow-y: auto;
             scrollbar-width: thin;
             scrollbar-color: rgba(0, 0, 0, 0.1) transparent;
-        }
-
-        .ai-history-list::-webkit-scrollbar {
-            width: 4px;
-        }
-
-        .ai-history-list::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        .ai-history-list::-webkit-scrollbar-thumb {
-            background: var(--color-border, #d0d7de);
-            border-radius: 2px;
-        }
-
-        .ai-history-list::-webkit-scrollbar-thumb:hover {
-            background: var(--color-text-tertiary);
         }
 
         .ai-history-item {
@@ -4579,23 +4476,6 @@
             max-width: 68%;
         }
 
-        .mermaid-toolbar-left::-webkit-scrollbar {
-            height: 4px;
-        }
-
-        .mermaid-toolbar-left::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        .mermaid-toolbar-left::-webkit-scrollbar-thumb {
-            background: var(--color-border, #d0d7de);
-            border-radius: 2px;
-        }
-
-        .mermaid-toolbar-left::-webkit-scrollbar-thumb:hover {
-            background: var(--color-text-tertiary);
-        }
-
         .mermaid-toolbar-right {
             margin-left: auto;
             display: flex;
@@ -4904,23 +4784,6 @@
             word-break: break-all;
             max-height: 70%;
             overflow-y: auto;
-        }
-
-        .mermaid-error-body pre::-webkit-scrollbar {
-            width: 4px;
-        }
-
-        .mermaid-error-body pre::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        .mermaid-error-body pre::-webkit-scrollbar-thumb {
-            background: var(--color-border, #d0d7de);
-            border-radius: 2px;
-        }
-
-        .mermaid-error-body pre::-webkit-scrollbar-thumb:hover {
-            background: var(--color-text-tertiary);
         }
 
         /* ═══ Status Bar ═══ */
@@ -5719,25 +5582,6 @@
             scrollbar-width: none;
         }
 
-        /* #regex-test-container 内部所有可滚动子元素的滚动条宽度设为 4px */
-        #regex-test-container ::-webkit-scrollbar {
-            width: 4px !important;
-            height: 4px !important;
-        }
-
-        #regex-test-container ::-webkit-scrollbar-track {
-            background: transparent !important;
-        }
-
-        #regex-test-container ::-webkit-scrollbar-thumb {
-            background: var(--color-border, #d0d7de) !important;
-            border-radius: 2px !important;
-        }
-
-        #regex-test-container ::-webkit-scrollbar-thumb:hover {
-            background: var(--color-text-tertiary) !important;
-        }
-
         .regex-card-input {
             margin: 0 16px;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
@@ -6466,13 +6310,12 @@
             border-radius: var(--radius-sm);
             font-weight: 600;
             cursor: pointer;
-            display: flex;
+            display: inline-flex;
             align-items: center;
+            justify-content: center;
+            line-height: 1;
             gap: 5px;
             transition: background 0.2s;
-            align-items: center;
-            text-align: center;
-            justify-content: center;
         }
 
         .todo-btn-primary:hover {
@@ -6591,17 +6434,18 @@
         }
 
         .todo-filter-label input[type="date"] {
-            font-size: 11px;
+            font-size: 0.68rem;
             padding: 2px 4px;
             border: 1px solid #d1d5db;
             border-radius: 4px;
             outline: none;
             width: 6.25rem;
+            color: var(--t2);
         }
 
         .todo-filter-label-input {
-            font-size: 11px;
-            color: #6b7280;
+            font-size: 0.68rem;
+            color: var(--t2);
             display: flex;
             align-items: center;
             gap: 3px;
@@ -6613,12 +6457,13 @@
         }
 
         .todo-filter-label-input input[type="text"] {
-            font-size: 11px;
+            font-size: 0.75rem;
             padding: 5px 6px;
             border: 1px solid #d1d5db;
             border-radius: 4px;
             outline: none;
             width: 100%;
+            color: var(--t2);
         }
 
         .todo-filter-label-input input[type="text"]:focus {
@@ -7294,8 +7139,8 @@
         }
 
         .todo-modal-close {
-            width: 1rem;
-            height: 1rem;
+            width: 1.7rem;
+            height: 1.7rem;
             border: none;
             background: transparent;
             cursor: pointer;
@@ -7305,6 +7150,7 @@
             justify-content: center;
             color: var(--t2);
             font-size: 1.5rem;
+            font-weight: normal;
         }
 
         .todo-modal-close:hover {
@@ -7334,7 +7180,7 @@
 
         .todo-form-input {
             width: 100%;
-            padding: 0.25rem 0.5rem;
+            padding: 0.5rem 0.5rem;
             border: 1px solid var(--color-border);
             border-radius: var(--radius-sm);
             font-size: 0.8125rem;
@@ -7363,8 +7209,8 @@
         }
 
         .todo-color-option {
-            width: 1rem;
-            height: 1rem;
+            width: 0.85rem;
+            height: 0.85rem;
             border-radius: 50%;
             cursor: pointer;
             border: 2px solid transparent;
@@ -7428,6 +7274,10 @@
             color: var(--color-text);
             border-radius: var(--radius-sm);
             cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
             transition: all 0.2s;
         }
 
@@ -7445,8 +7295,10 @@
             cursor: pointer;
             margin-right: auto;
             background: #FEF2F2;
+            display: inline-flex;
             align-items: center;
             justify-content: center;
+            line-height: 1;
         }
 
         .todo-btn-danger:hover {
@@ -7472,12 +7324,12 @@
             display: flex;
             flex-wrap: wrap;
             gap: 4px;
-            margin-top: 0.625rem;
+            margin-top: 0.8125rem;
             align-items: center;
         }
 
         .todo-cron-preset-label {
-            font-size: 0.625rem;
+            font-size: 0.75rem;
             color: var(--color-text-tertiary);
             margin-right: 2px;
         }
@@ -7716,42 +7568,6 @@
             min-height: 200px !important;
             overflow: auto;
             box-sizing: border-box;
-        }
-
-        .jm-node-markdown ::-webkit-scrollbar {
-            width: 3px !important;
-            height: 3px !important;
-        }
-
-        .jm-node-markdown ::-webkit-scrollbar-track {
-            background: transparent !important;
-        }
-
-        .jm-node-markdown ::-webkit-scrollbar-thumb {
-            background: var(--color-border, #d0d7de) !important;
-            border-radius: 2px !important;
-        }
-
-        .jm-node-markdown ::-webkit-scrollbar-thumb:hover {
-            background: var(--color-text-tertiary) !important;
-        }
-
-        .jsmind-custom-edit ::-webkit-scrollbar {
-            width: 3px !important;
-            height: 3px !important;
-        }
-
-        .jsmind-custom-edit ::-webkit-scrollbar-track {
-            background: transparent !important;
-        }
-
-        .jsmind-custom-edit ::-webkit-scrollbar-thumb {
-            background: var(--color-border, #d0d7de) !important;
-            border-radius: 2px !important;
-        }
-
-        .jsmind-custom-edit ::-webkit-scrollbar-thumb:hover {
-            background: var(--color-text-tertiary) !important;
         }
 
         .jm-node-custom,
@@ -8028,23 +7844,6 @@
             gap: 10px;
             overflow-x: auto;
             padding-bottom: 8px;
-        }
-
-        .timeline-months-heatmap::-webkit-scrollbar {
-            height: 4px;
-        }
-
-        .timeline-months-heatmap::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        .timeline-months-heatmap::-webkit-scrollbar-thumb {
-            background: var(--color-border, #d0d7de);
-            border-radius: 2px;
-        }
-
-        .timeline-months-heatmap::-webkit-scrollbar-thumb:hover {
-            background: var(--color-text-tertiary);
         }
 
         .timeline-month-block {
@@ -9990,24 +9789,6 @@
             background: var(--color-bg-secondary);
         }
 
-        .jsmind-container::-webkit-scrollbar {
-            width: 4px;
-            height: 4px;
-        }
-
-        .jsmind-container::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        .jsmind-container::-webkit-scrollbar-thumb {
-            background: var(--color-border, #d0d7de);
-            border-radius: 2px;
-        }
-
-        .jsmind-container::-webkit-scrollbar-thumb:hover {
-            background: var(--color-text-tertiary);
-        }
-
         /* 思维导图右键菜单 */
         .jsmind-context-menu {
             position: fixed;
@@ -10369,7 +10150,7 @@
         }
 
         .git-left-header {
-            padding: 2px 10px;
+            padding: 2px 6px;
             font-size: 12px;
             font-weight: 600;
             color: var(--t1);
@@ -10387,24 +10168,6 @@
             overflow-x: auto;
             position: relative;
             padding: 3px;
-        }
-
-        .git-records-container *::-webkit-scrollbar {
-            width: 4px;
-            height: 4px;
-        }
-
-        .git-records-container *::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        .git-records-container *::-webkit-scrollbar-thumb {
-            background: var(--color-border, #d0d7de);
-            border-radius: 2px;
-        }
-
-        .git-records-container *::-webkit-scrollbar-thumb:hover {
-            background: var(--color-text-tertiary);
         }
 
         .git-graph-layers {
@@ -10844,7 +10607,6 @@
             pointer-events: none;
         }
 
-        /* ── Empty State ── */
         .git-empty-state {
             flex: 1;
             display: flex;
@@ -10865,9 +10627,8 @@
             font-size: 13px;
         }
 
-        /* ── Commit Input & Button ── */
         .git-commit-header {
-            padding: 6px 10px 3px 10px;
+            padding: 6px;
             flex-shrink: 0;
             display: flex;
             flex-direction: column;
@@ -10878,7 +10639,7 @@
         .git-commit-input-row {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
             width: 100%;
         }
 
@@ -10957,7 +10718,7 @@
         .git-status-item {
             display: flex;
             align-items: center;
-            padding: 1px 8px 1px 8px;
+            padding: 1px 6px 1px 6px;
             gap: 6px;
             cursor: pointer;
             transition: background 0.1s;
@@ -13471,7 +13232,7 @@
                         <div class="todo-form-group">
                             <label class="todo-form-label">备注</label>
                             <textarea class="todo-form-input" id="todo-eventDesc" rows="6"
-                                placeholder="添加备注（可选）"></textarea>
+                                placeholder="添加备注..."></textarea>
                         </div>
                     </div>
                     <div class="todo-modal-footer">
@@ -14890,7 +14651,6 @@
             }
             try {
                 const isHtmlFile = fileName && fileName.endsWith('.html');
-                // 确定 span 查找范围：MD 在 .markdown-body，HTML 在 iframe body
                 let searchRoot;
                 if (isHtmlFile) {
                     const iframe = document.getElementById('temp-html-frame');
@@ -17223,7 +16983,7 @@
             if (head) {
                 if (hasMarkdown(head)) {
                     const title = head;
-                    html += `<div class="markdown-body" style="zoom: 0.9;background-color: #F8F8FF;padding: 0;">${await markedParse(parseObsidianToHTML(normalizeMarkdownTable(head)))}</div>`;
+                    html += `<div class="markdown-body" style="zoom: 0.9;">${await markedParse(parseObsidianToHTML(normalizeMarkdownTable(head)))}</div>`;
                     text = title.length > 20 ? title.substring(0, 20) + '...' : title;
                 } else {
                     html += getTitle(level, head);
@@ -17333,7 +17093,7 @@
             try { text = decodeURIComponent(mubu_note) || note; } catch { text = mubu_note || note || ''; }
             if (hasMarkdown(text)) {
                 const md = markedMd(parseObsidianToHTML(normalizeMarkdownTable(text)));
-                return `<div class="mindmap-node-note"><div class="markdown-body" style="zoom: 0.8;white-space: normal !important;padding: 0;">${md}</div></div>`;
+                return `<div class="mindmap-node-note"><div class="markdown-body" style="zoom: 0.8;white-space: normal !important;">${md}</div></div>`;
             } else {
                 return `<div class="mindmap-node-note">${text}</div>`;
             }
@@ -19161,7 +18921,7 @@
                 html += `<div class="mindmap-head-row">`;
                 if (head) {
                     if (hasMarkdown(head)) {
-                        html += `<div class="markdown-body" style="zoom:0.9;background-color:#F8F8FF;padding:0;">${await markedParse(parseObsidianToHTML(normalizeMarkdownTable(head)))}</div>`;
+                        html += `<div class="markdown-body" style="zoom:0.9;">${await markedParse(parseObsidianToHTML(normalizeMarkdownTable(head)))}</div>`;
                     } else {
                         html += getTitle(level, head);
                     }
@@ -19346,7 +19106,7 @@
                         if (headRow) {
                             if (newHead) {
                                 if (hasMarkdown(newHead)) {
-                                    headRow.innerHTML = `<div class="markdown-body" style="zoom:0.9;background-color:#F8F8FF;padding:0;">${await markedParse(parseObsidianToHTML(normalizeMarkdownTable(newHead)))}</div>`;
+                                    headRow.innerHTML = `<div class="markdown-body" style="zoom:0.9;">${await markedParse(parseObsidianToHTML(normalizeMarkdownTable(newHead)))}</div>`;
                                 } else {
                                     const level = parseInt(this._container.querySelector(`.mindmap-node[data-node-id="${nodeId}"]`)?.dataset.level || '0', 10);
                                     headRow.innerHTML = getTitle(level, newHead);
@@ -20076,7 +19836,7 @@
                 element.innerHTML = '';
                 element.classList.add('jm-node-markdown');
                 const md = nodeData.markdown || '';
-                element.innerHTML = `<div class="markdown-body" style="zoom: 0.9;background-color: var(--color-bg);">${md}</div>`;
+                element.innerHTML = `<div class="markdown-body" style="zoom: 0.9;">${md}</div>`;
                 return true;
             }
             if (!hasImage && !hasNote) {
@@ -22274,7 +22034,7 @@
             if (node.isRoot) {
                 renderedText = `<div id="md_nd_${node.id}" class="center-div">${previewText}</div>`
             } else {
-                renderedText = previewText ? `<div class="markdown-body" style="background-color: var(--color-bg);" id="md_nd_${node.id}">${await markedParse(parseObsidianToHTML(previewText))}</div>` : '<p style="color:var(--t2);text-align:center;font-size:13px;">点击编辑内容...</p>';
+                renderedText = previewText ? `<div class="markdown-body" id="md_nd_${node.id}">${await markedParse(parseObsidianToHTML(previewText))}</div>` : '<p style="color:var(--t2);text-align:center;font-size:13px;">点击编辑内容...</p>';
             }
             const foreignObject = nodeGroup.append('foreignObject')
                 .attr('x', 10)
@@ -22430,7 +22190,7 @@
                 }
                 const previewText = await getFileContent(fileHandle);
                 const renderedText = await markedParse(parseObsidianToHTML(previewText));
-                contentDiv.html(`<div class="markdown-body" style="zoom: 0.6; background-color: var(--color-bg);" id="md_nd_${node.id}">${renderedText}</div>`);
+                contentDiv.html(`<div class="markdown-body" style="zoom: 0.6;" id="md_nd_${node.id}">${renderedText}</div>`);
             } catch (error) {
                 console.error('加载 markdown 预览失败:', error);
                 contentDiv.html(`<div style="display:flex;align-items:center;gap:6px;color:#cf222e;font-weight:500;">无法加载文件！ ${escapeHtml(node.file)}</div>`);
@@ -23229,7 +22989,7 @@
                         编辑内容
                     </button>
                 </div>
-                <div class="markdown-body" style="padding: 8px 8px;background-color:var(--color-bg);">${htmlContent}</div>`;
+                <div class="markdown-body" style="padding: 8px 8px;">${htmlContent}</div>`;
             setControlsState({ copyBtn: false });
             setNodePanelState({ node, nodeType: 'text', filePath: '', fileContent: '' });
             const gen = _panelGeneration;
@@ -23263,7 +23023,7 @@
                                 编辑内容
                             </button>
                         </div>
-                        <div class="markdown-body" style="padding: 8px 8px;background-color:var(--color-bg);">${htmlContent}</div>`;
+                        <div class="markdown-body" style="padding: 8px 8px;">${htmlContent}</div>`;
                     setNodePanelState({ node, nodeType: 'file', filePath: node.file, fileContent: text });
                     const gen = _panelGeneration;
                     postProcessMarkdown(contentPanel).then(result => {
@@ -23479,7 +23239,7 @@
                                     编辑内容
                                 </button> 
                             </div>
-                            <div class="markdown-body" style="padding: 8px 8px;background-color:var(--color-bg);">${htmlContent}</div>`;
+                            <div class="markdown-body" style="padding: 8px 8px;">${htmlContent}</div>`;
                     setNodePanelState({ fileContent: text });
                     destroyNodeEditor();
                     postProcessMarkdown(contentPanel);
@@ -23998,7 +23758,6 @@
         }
 
         function addHeadingIDs(headings) {
-            // 先在全局查找 .markdown-body，如果没有则在 contentMain 内查找
             let markdownBody = document.querySelector('.markdown-body');
             if (!markdownBody) {
                 markdownBody = contentMain.querySelector('.markdown-body');
@@ -24317,7 +24076,7 @@
             }
             if (card.body) {
                 let cardBody = (await markedParse(parseObsidianToHTML(card.body))).trim();
-                html += `<div class="kanban-card-body" style="font-size: 13px; line-height: 1;padding-left: 14px;"><div class="markdown-body" style="background-color: var(--color-bg);">${cardBody}</div></div>`;
+                html += `<div class="kanban-card-body" style="font-size: 13px; line-height: 1;padding-left: 14px;"><div class="markdown-body">${cardBody}</div></div>`;
             }
             if (card.taskList && card.taskList.length > 0) {
                 html += '<div class="kanban-tasks">';
@@ -24706,14 +24465,16 @@
             const cardTitle = e.target.closest('.card-title');
             if (cardTitle && !cardTitle.classList.contains('null-checked')) {
                 _cardCheckboxDebounce = true;
-                const kanban = currentKanban;
-                const fileHandle = currentKanbanFileHandle;
-                toggleCardCheckbox(this);
-                try {
-                    await saveKanbanContent(kanban, fileHandle);
-                } catch (err) {
-                    console.error('看板卡片保存失败:', err);
-                }
+                TimerManager.setTimeout('kanbanCardToggle', async () => {
+                    const kanban = currentKanban;
+                    const fileHandle = currentKanbanFileHandle;
+                    toggleCardCheckbox(this);
+                    try {
+                        await saveKanbanContent(kanban, fileHandle, false);
+                    } catch (err) {
+                        console.error('看板卡片保存失败:', err);
+                    }
+                }, 250);
                 setTimeout(() => {
                     _cardCheckboxDebounce = false;
                 }, 300);
@@ -24921,11 +24682,9 @@
                 showNotification('每次只能打开一个卡片输入框！', 'warning');
                 return;
             }
-            const cardEl = e.target;
-            if (!cardEl.classList.contains('kanban-card')) {
-                console.warn('handleCardEdit: 无效的参数,不是卡片元素');
-                return;
-            }
+            // 取消 click 触发的延迟勾选，避免双击时勾选卡片
+            TimerManager.clearTimeout('kanbanCardToggle');
+            const cardEl = e.currentTarget;
             const content = cardEl.dataset.content;
             const cardIndex = parseInt(cardEl.dataset.cardIndex);
             const colIndex = parseInt(cardEl.dataset.colIndex);
@@ -26112,10 +25871,10 @@
             showNotification('✓ 卡片已删除', 'success');
         }
 
-        async function saveKanbanContent(kanban, fileHandle) {
+        async function saveKanbanContent(kanban, fileHandle, notify = true) {
             if (!kanban || !fileHandle) return;
             const markdown = generateKanbanMarkdown(kanban);
-            await saveExistFileContent(markdown, true, fileHandle);
+            await saveExistFileContent(markdown, notify, fileHandle);
         }
 
         async function saveCurrentKanban() {
@@ -28621,7 +28380,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             try {
                 const htmlContent = await markedParse(parseObsidianToHTML(content));
-                contentEl.innerHTML = `<div class="markdown-body" style="height: 100%; width: 100%; overflow: auto;">${htmlContent}</div>`;
+                contentEl.innerHTML = `<div class="markdown-body" style="zoom: 0.85; height: 100%; overflow: auto;">${htmlContent}</div>`;
                 postProcessMarkdown(contentEl);
             } catch (error) {
                 console.error('Markdown解析失败:', error);
@@ -39201,6 +38960,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (container && container._panCleanup) {
                 container._panCleanup();
             }
+            // 取消正在等待的防抖勾选
+            TimerManager.clearTimeout('kanbanCardToggle');
+            _cardCheckboxDebounce = false;
+            // 恢复编辑中的卡片（如果有）
+            clearKanbanEditConext();
+            // 清理看板数据
+            kanbanMoreMenuInitialized = false;
+            currentKanban = null;
+            currentKanbanFileHandle = null;
         }
 
         async function picLayoutDestroy() {
