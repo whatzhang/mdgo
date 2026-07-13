@@ -27447,6 +27447,7 @@
             const fileProtocol = isLocalVisit();
             const isTauri = isTauriVisit();
             const serverDisplay = hasBackendServer && !fileProtocol && !isTauri;
+            const httpLocal = !fileProtocol && !isTauri && !serverDisplay;
             DASHBOARD_BUTTON.forEach(b => {
                 if (b.display) {
                     if (fileProtocol && b.fileProtocolDisplay) {
@@ -27454,6 +27455,8 @@
                     } else if (isTauri && b.tauriDisplay) {
                         html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
                     } else if (serverDisplay && b.serverDisplay) {
+                        html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
+                    } else if (httpLocal) {
                         html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
                     }
                 }
@@ -43079,6 +43082,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const fileProtocol = isLocalVisit();
             const isTauri = isTauriVisit();
             const serverDisplay = hasBackendServer && !fileProtocol && !isTauri;
+            const httpLocal = !fileProtocol && !isTauri && !serverDisplay;
             let nginxDisplay = false;
             const nginxRestyButton = DASHBOARD_BUTTON.find(b => b.key === 'OpenResty')
             if (nginxRestyButton) {
@@ -43089,7 +43093,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         nginxDisplay = true;
                     } else if (serverDisplay && nginxRestyButton.serverDisplay) {
                         nginxDisplay = true;
-                    }
+                    } else if (httpLocal) {
+                        nginxDisplay = true;    
+                    } 
                 }
             }
 
