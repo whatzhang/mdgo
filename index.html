@@ -27474,7 +27474,7 @@
                         html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
                     } else if (serverDisplay && b.serverDisplay) {
                         html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
-                    } else if (httpLocal) {
+                     } else if (httpLocal && b.fileProtocolDisplay) {
                         html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
                     }
                 }
@@ -29027,6 +29027,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             'docker-compose.yaml': 'yaml'
         };
         const extensionLanguageMap = {
+            ghostty: 'ini',
             iml: 'xml',
             canvas: 'json',
             opml: 'xml',
@@ -29943,12 +29944,28 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
                 return;
             }
-            try {
-                const dirHandle = await window.showDirectoryPicker({
-                    mode: 'readwrite',
-                });
-                if (!dirHandle) return;
+             let dirHandle = null;
+                try {
+                    dirHandle = await window.showDirectoryPicker({
+                        mode: 'readwrite',
+                    });
+                } catch (error) {
+                    if (error.name === 'AbortError') {
+                        showNotification('必须选择一个目录!', 'warning');
+                        openDir();
+                       return;
+                    } else {
+                        console.error('选择目录发生错误:', error);
+                        throw error;
+                    }
+                }
+
                 await initPageNone();
+               if (/^([a-zA-Z]:[\\/]?|\\|\/\/?)$/.test(dirHandle.name)) {
+                    showNotification('✗ 目录路径不能为盘符路径, 重新选择目录！', 'warning');
+                    openDir();
+                    return;
+               }
                 setRootHandle(dirHandle);
                 // Tauri 模式：dirHandle.path 包含物理路径，跳过手动输入
                 if (dirHandle.path) {
@@ -29972,9 +29989,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 } else {
                     openSetting(true);
                 }
-            } catch (err) {
-                console.error('用户取消了选择或无权限', err);
-            }
         }
 
         async function clearOldData() {
@@ -43092,7 +43106,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         nginxDisplay = true;
                     } else if (serverDisplay && nginxRestyButton.serverDisplay) {
                         nginxDisplay = true;
-                    } else if (httpLocal) {
+                    } else if (httpLocal && nginxRestyButton.fileProtocolDisplay) {
                         nginxDisplay = true;    
                     } 
                 }
@@ -43251,23 +43265,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             setupTagAdd(inputId('htmlShowBlacklistInput'), inputId('htmlShowBlacklist'), htmlShowItems);
 
             // ---------- 关闭 ----------
-            let closed = false;
            async function closeModal( isSaveAfter = false) {
                  if(isInit){
-                    const dirDom = document.getElementById(inputId('currentRootPath'))
-                    let trimmedPath = dirDom.value.trim();
-                    if(!trimmedPath){
-                        showNotification('请输入所选目录路径!', 'warning');
-                        return;
-                    }
                      if(!isSaveAfter){
                         await clearOldData();
                         currentRootPath = '';
+                        closeModal(true);
+                        openDir();
                         return;
                     }
                  }
-                if (closed) return;
-                closed = true;
                 document.removeEventListener('keydown', onKeydown);
                 // 销毁 tippy 实例，防止 DOM 引用泄露
                 if (tippyInstances && tippyInstances.destroy) {
@@ -43311,6 +43318,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         }
                         //去除路径末尾的斜杠，兼容 windows 和 linux 系统
                         currentRootPath = trimmedPath.replace(/[\/\\]+$/, '');
+                        //验证路径是否合法
+                        if(!await checkDirPath()){                         
+                            return;
+                        }
                         showGlobalLoading('正在扫描目录文件...');
                         await clearOldData();
                         safeLocalStorageSet("ROOT_DIR", currentRootPath);
@@ -43359,6 +43370,19 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             document.addEventListener('keydown', onKeydown);
         }
+       async function checkDirPath(){
+            //windows不能选盘符的目录
+            if (/^([a-zA-Z]:[\\/]?|\\|\/\/?)$/.test(currentRootPath)) {
+                showNotification('✗ 目录路径不能为盘符路径！', 'warning');
+                return false
+            }
+            if( !currentRootPath.endsWith(getRootHandle().name)) {
+                showNotification('✗ 目录路径不正确', 'warning');
+                return false
+            }
+            return true;
+        }
+       
         async function loadSetting() {
             try {
                 const fh = await getFileHandleByDirHandle(await getDataDir(), SETTING_FILE);
