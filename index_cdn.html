@@ -11577,6 +11577,260 @@
         *::-webkit-scrollbar-thumb:hover {
             background: var(--color-text-tertiary) !important;
         }
+
+        /* ===== 系统设置模态框 ===== */
+        .setting-modal-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 7000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.4);
+        }
+
+        .setting-modal {
+            background: var(--color-bg);
+            border-radius: 0.625rem;
+            width: 90%;
+            max-width: 50rem;
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 0.5rem 2rem rgba(0, 0, 0, 0.25);
+            font-size: 0.813rem;
+            color: var(--color-text);
+        }
+
+        .setting-modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem 1.25rem;
+            border-bottom: 0.063rem solid var(--color-border);
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .setting-modal-close {
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 1.25rem;
+            color: var(--color-text-secondary);
+            padding: 0.25rem;
+            line-height: 1;
+        }
+
+        .setting-modal-close:hover {
+            color: var(--color-text);
+        }
+
+        .setting-modal-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .setting-section {
+            border: 0.063rem solid var(--color-border);
+            border-radius: 0.5rem;
+        }
+
+        .setting-section-title {
+            background: var(--color-bg-secondary);
+            padding: 0.5rem 0.75rem;
+            font-weight: 600;
+            font-size: 0.813rem;
+            border-bottom: 0.063rem solid var(--color-border);
+            border-radius: 0.5rem 0.5rem 0 0;
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+        }
+
+        .setting-help {
+            cursor: help;
+            font-size: 0.875rem;
+            color: var(--color-text-tertiary);
+            line-height: 1;
+            transition: color 0.15s;
+        }
+
+        .setting-help:hover {
+            color: var(--color-primary);
+        }
+
+        .setting-section-body {
+            padding: 0.75rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.625rem;
+        }
+
+        .setting-row {
+            display: flex;
+            align-items: center;
+            gap: 0.625rem;
+        }
+
+        .setting-row label {
+            flex-shrink: 0;
+            width: 6rem;
+            font-size: 0.75rem;
+            color: var(--color-text-secondary);
+            text-align: right;
+        }
+
+        .setting-text {
+            flex: 1;
+            height: 1.75rem;
+            padding: 0 0.5rem;
+            border: 0.063rem solid var(--color-border);
+            border-radius: 0.25rem;
+            font-size: 0.813rem;
+            background: var(--color-bg);
+            color: var(--color-text);
+            outline: none;
+            box-sizing: border-box;
+        }
+
+        .setting-text:focus {
+            border-color: var(--color-primary);
+            box-shadow: 0 0 0 0.125rem rgba(9, 105, 218, 0.2);
+        }
+
+        .setting-number {
+            width: 5rem;
+            height: 1.75rem;
+            padding: 0 0.5rem;
+            border: 0.063rem solid var(--color-border);
+            border-radius: 0.25rem;
+            font-size: 0.813rem;
+            background: var(--color-bg);
+            color: var(--color-text);
+            outline: none;
+            box-sizing: border-box;
+            text-align: center;
+        }
+
+        .setting-number:focus {
+            border-color: var(--color-primary);
+            box-shadow: 0 0 0 0.125rem rgba(9, 105, 218, 0.2);
+        }
+
+        /* Tag list */
+        .setting-tag-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.375rem;
+            align-items: center;
+        }
+
+        .setting-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            background: var(--color-bg-secondary);
+            border: 0.063rem solid var(--color-border);
+            border-radius: 0.25rem;
+            padding: 0.125rem 0.375rem;
+            font-size: 0.75rem;
+            line-height: 1.4;
+        }
+
+        .setting-tag-remove {
+            border: none;
+            background: none;
+            cursor: pointer;
+            color: var(--color-text-secondary);
+            font-size: 0.75rem;
+            padding: 0;
+            line-height: 1;
+        }
+
+        .setting-tag-remove:hover {
+            color: var(--color-danger);
+        }
+
+        .setting-tag-add-row {
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+            margin-top: 0.25rem;
+        }
+
+        .setting-tag-input {
+            flex: 1;
+            max-width: 12rem;
+            height: 1.5rem;
+            padding: 0 0.375rem;
+            border: 0.063rem solid var(--color-border);
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            background: var(--color-bg);
+            color: var(--color-text);
+            outline: none;
+            box-sizing: border-box;
+        }
+
+        .setting-tag-input:focus {
+            border-color: var(--color-primary);
+        }
+
+        .setting-tag-add-btn {
+            height: 1.5rem;
+            padding: 0 0.5rem;
+            border: 0.063rem solid var(--color-primary);
+            border-radius: 0.25rem;
+            background: var(--color-primary);
+            color: var(--color-text-white);
+            font-size: 0.75rem;
+            cursor: pointer;
+            line-height: 1.5rem;
+            white-space: nowrap;
+        }
+
+        .setting-tag-add-btn:hover {
+            background: var(--color-primary-hover);
+        }
+
+        .setting-modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.625rem;
+            padding: 0.75rem 1.25rem;
+            border-top: 0.063rem solid var(--color-border);
+        }
+
+        .setting-btn {
+            height: 1.75rem;
+            padding: 0 1rem;
+            border-radius: 0.25rem;
+            font-size: 0.813rem;
+            cursor: pointer;
+            border: 0.063rem solid var(--color-border);
+            background: var(--color-bg);
+            color: var(--color-text);
+            transition: all 0.15s;
+        }
+
+        .setting-btn:hover {
+            background: var(--color-bg-secondary);
+        }
+
+        .setting-btn-primary {
+            background: var(--color-primary);
+            color: var(--color-text-white);
+            border-color: var(--color-primary);
+        }
+
+        .setting-btn-primary:hover {
+            background: var(--color-primary-hover);
+        }
     </style>
 </head>
 
@@ -11601,7 +11855,7 @@
                     <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
                 </svg>
             </button>
-            <button id="graph-btn" class="btn btn-sm btn-primary" onclick="toggleFile('setting')" title="设置">
+            <button id="graph-btn" class="btn btn-sm btn-primary" onclick="openSetting()" title="设置">
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                     <path
                         d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94L14.4 2.81a.488.488 0 00-.48-.41H9.6c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.488.488 0 00-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.63-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z" />
@@ -13411,24 +13665,24 @@
 
     <script>
         // ====== 后端服务地址 ======
-        const GRAPHQL_ENDPOINT = 'http://localhost:8091/graphql';
-        const HOLIDAY_API = 'https://timor.tech/api/holiday/year/'; // 节假日接口，拼接年份使用
+        let GRAPHQL_ENDPOINT = 'http://localhost:8091/graphql';
+        let HOLIDAY_API = 'https://timor.tech/api/holiday/year/'; // 节假日接口，拼接年份使用
         // ====== 本地 LLM 配置 ======
-        const LOCAL_LLM_ENDPOINT = 'http://192.168.31.152:12345/v1/chat/completions';
-        const LOCAL_LLM_TOKEN = 'c17f18e31adb10978d3a9cd0d6743d30a067af602a8789e7';
-        const LOCAL_LLM_MODEL = 'gemma-4-e4b-it';
-        const LOCAL_LLM_CONTEXT_LENGTH = 10000;
+        let LOCAL_LLM_ENDPOINT = 'http://192.168.31.152:12345/v1/chat/completions';
+        let LOCAL_LLM_TOKEN = 'c17f18e31adb10978d3a9cd0d6743d30a067af602a8789e7';
+        let LOCAL_LLM_MODEL = 'gemma-4-e4b-it';
+        let LOCAL_LLM_CONTEXT_LENGTH = 10000;
         // nginx 配置地址
-        const NGINX_CONF_PATH = '/usr/local/etc/openresty/sites/index.conf';
+        let NGINX_CONF_PATH = '/usr/local/etc/openresty/sites/index.conf';
         // 文件树中忽略的目录前缀
-        const DIR_BLACKLIST = [".", "$", ".obsidian", ".venv", ".vscode", ".git", "assets", ".trae", ".claude", ".idea",
+        let DIR_BLACKLIST = [".", "$", ".obsidian", ".venv", ".vscode", ".git", "assets", ".trae", ".claude", ".idea",
             'node_modules', 'vendor', 'dist', 'build', 'out', 'target', '__pycache__'];
         // 文件树中忽略的文件前缀
-        const FILE_BLACKLIST = ['.', '$', '.bobconfig', '.itermexport', '.DS_Store', '.gitignore', '.rayconfig'];
+        let FILE_BLACKLIST = ['.', '$', '.bobconfig', '.itermexport', '.DS_Store', '.gitignore', '.rayconfig'];
         // 随机打开功能的目录过滤
-        const RANDOM_DIR_BLACKLIST = ['note/moc', 'note/templates', 'deleted', 'data', 'code'];
+        let RANDOM_DIR_BLACKLIST = ['note/moc', 'note/templates', 'deleted', 'data', 'code'];
         // 显示渲染而非代码的目录前缀
-        const HTML_CODE_SHOW_BLACKLIST = ["note"];
+        let HTML_CODE_SHOW_BLACKLIST = ["note"];
 
         // AI 助手预设 Prompt 配置，每个 key 对应一种处理模式
         const PROMPTS = {
@@ -13529,28 +13783,30 @@
             ANNOTATION: { key: '文本标注', color: '#6f25d7ff' },
             FORMAT: { key: '格式化', color: '#f22431ff' },
         };
-        const DASHBOARD_BUTTON = [
-            { key: '行为记录分析', value: 'analyzeFileOs()', display: false, fileProtocolDisplay: false },
-            { key: 'GraphiQL', value: 'toggleFile("graphiQL")', display: true, fileProtocolDisplay: false },
-            { key: 'GraphQLPlayground', value: 'toggleFile("graphQLPlayground")', display: true, fileProtocolDisplay: true },
-            { key: 'OpenResty', value: 'toggleFile("openRestyEditor")', display: true, fileProtocolDisplay: false },
-            { key: '番茄钟', value: 'toggleFile("pomodoro")', display: true, fileProtocolDisplay: true },
-            { key: '正则表达式', value: 'toggleFile("regexTest")', display: true, fileProtocolDisplay: true },
-            { key: 'Cron', value: 'toggleFile("cron")', display: true, fileProtocolDisplay: true },
-            { key: '视频播放器', value: 'toggleFile("video")', display: true, fileProtocolDisplay: true },
-            { key: 'Raw查看', value: 'toggleFile("raw")', display: true, fileProtocolDisplay: true },
-            { key: 'url编解码', value: 'toggleFile("urlEncoder")', display: true, fileProtocolDisplay: true },
-            { key: '书签', value: 'toggleFile("bookmarks")', display: true, fileProtocolDisplay: true },
-            { key: '文件词云', value: 'toggleFile("wordCloud")', display: true, fileProtocolDisplay: true },
-            { key: '文件时间线', value: 'toggleFile("timeline")', display: true, fileProtocolDisplay: true },
-            { key: 'git记录', value: 'toggleFile("gitRecords")', display: true, fileProtocolDisplay: true },
-            { key: '文件图谱', value: 'toggleFile("noteGraph")', display: true, fileProtocolDisplay: true },
-            { key: 'Mermaid', value: 'toggleFile("mermaid")', display: true, fileProtocolDisplay: true },
-            { key: 'Excalidraw白板', value: 'toggleFile("whiteboard")', display: true, fileProtocolDisplay: true },
-            { key: 'Canvas文档白板', value: 'toggleFile("canvas")', display: true, fileProtocolDisplay: true },
-            { key: '思维导图', value: 'toggleFile("mindMap")', display: true, fileProtocolDisplay: true },
-            { key: '大纲笔记', value: 'toggleFile("opmlOutline")', display: true, fileProtocolDisplay: true },
-            { key: '临时编辑器', value: 'toggleFile("tempEditor")', display: true, fileProtocolDisplay: true },
+        let DASHBOARD_BUTTON = [
+            { key: '行为记录分析', value: 'analyzeFileOs()', display: false, fileProtocolDisplay: false, tauriDisplay: false, serverDisplay: false },
+            { key: 'GraphiQL', value: 'toggleFile("graphiQL")', display: true, fileProtocolDisplay: false, tauriDisplay: false, serverDisplay: true },
+            { key: 'GraphQLPlayground', value: 'toggleFile("graphQLPlayground")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
+            { key: 'OpenResty', value: 'toggleFile("openRestyEditor")', display: true, fileProtocolDisplay: false, tauriDisplay: false, serverDisplay: true },
+            { key: '番茄钟', value: 'toggleFile("pomodoro")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
+            { key: '正则表达式', value: 'toggleFile("regexTest")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
+            { key: '正则表达式', value: 'toggleFile("regexTest")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
+            { key: 'Cron', value: 'toggleFile("cron")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
+            { key: '视频播放器', value: 'toggleFile("video")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
+            { key: 'Raw查看', value: 'toggleFile("raw")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
+            { key: 'url编解码', value: 'toggleFile("urlEncoder")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
+            { key: '书签', value: 'toggleFile("bookmarks")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
+            { key: '文件词云', value: 'toggleFile("wordCloud")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
+            { key: '文件时间线', value: 'toggleFile("timeline")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
+            { key: 'git记录', value: 'toggleFile("gitRecords")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
+            { key: '文件图谱', value: 'toggleFile("noteGraph")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
+            { key: 'Mermaid', value: 'toggleFile("mermaid")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
+            { key: 'Excalidraw白板', value: 'toggleFile("whiteboard")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
+            { key: 'Canvas文档白板', value: 'toggleFile("canvas")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
+            { key: '思维导图', value: 'toggleFile("mindMap")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
+            { key: '大纲笔记', value: 'toggleFile("opmlOutline")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
+            { key: '临时编辑器', value: 'toggleFile("tempEditor")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
+            { key: '文件时间线', value: 'toggleFile("timeline")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
         ]
         // 高亮字体颜色（深色系，确保可读性）
         const HIGHLIGHT_FONT_COLORS = [
@@ -13635,9 +13891,9 @@
         const DOT = '.';
         const DOUBLE_DOT = '..';
         const SLASH = '/';
-        const MAX_FILE_SIZE = 50 * 1024 * 1024; // 5MB - 大文件限制
+        const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB - 大文件限制
         const MAX_DIR_DEPTH = 20; // 最大目录深度
-        const DELETED_INDEX_EXPIRE_DAYS = 30; // 删除索引过期天数
+        const DELETED_INDEX_EXPIRE_DAYS = 365; // 删除索引过期天数
         // ====== localStorage 键名 ======
         const LAST_FILE_KEY = "last_opened_File_path";           // 最后打开的文件路径
         const EXPANDED_STATE_KEY = 'directory_expanded_states'; // 目录展开状态
@@ -13669,6 +13925,7 @@
         const INDEX_OPER_FILE = 'index_operation.json';
         const INDEX_SCHEDULE_FILE = 'index_schedule.json';
         const INDEX_LINK_GRAPH_FILE = 'index_link_graph.json';
+        const SETTING_FILE = 'setting.json';
 
         // 判断文件路径是否应显示代码而非渲染 HTML
         const isShowHtmlCode = (relativePath) => {
@@ -17807,11 +18064,11 @@
                 // Ctrl/Cmd+D - 复制节点
                 if (e.key === 'd' && mod && !shift && !alt) return 'DUPLICATE';
                 // Ctrl/Cmd+. - 展开/折叠
-                if (e.key === '.' && mod && !shift && !alt) return 'TOGGLE';
+                if (e.key === DOT && mod && !shift && !alt) return 'TOGGLE';
                 // Ctrl/Cmd+Shift+. - 展开/折叠同级
-                if (e.key === '.' && mod && shift && !alt) return 'TOGGLE_SIBLINGS';
+                if (e.key === DOT && mod && shift && !alt) return 'TOGGLE_SIBLINGS';
                 // Ctrl/Cmd+Alt+Shift+. - 全部展开/折叠
-                if (e.key === '.' && mod && alt && shift) return 'TOGGLE_ALL';
+                if (e.key === DOT && mod && alt && shift) return 'TOGGLE_ALL';
                 // Ctrl/Cmd+Alt+1/2/3 - 展开至层级
                 if (e.key >= '1' && e.key <= '3' && mod && alt && !shift) return 'EXPAND_TO_DEPTH';
                 // Ctrl/Cmd+Shift+↑/↓ - 移动节点
@@ -17925,7 +18182,7 @@
                 if (!imgPath) return;
                 try {
                     let p = imgPath;
-                    if (p.startsWith(currentRootPath)) p = p.replace(currentRootPath + '/', '');
+                    if (p.startsWith(currentRootPath)) p = p.replace(currentRootPath + SLASH, '');
                     const fh = await getFileHandleByPath(p).catch(() => null);
                     if (fh) await deleteFile(fh).catch(() => { });
                 } catch (_) { }
@@ -18749,8 +19006,8 @@
                 const mindDir = await getOrCreateDirectory(assetsDir, 'mind_pic');
                 // 生成 UUID 文件名
                 const uuid = crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 9));
-                const ext = file.name?.split('.').pop()?.toLowerCase() || 'png';
-                const fileName = uuid + '.' + ext;
+                const ext = file.name?.split(DOT).pop()?.toLowerCase() || 'png';
+                const fileName = uuid + DOT + ext;
                 // 读取文件内容并写入
                 const arrayBuffer = await file.arrayBuffer();
                 await writeFileByDirHandle(mindDir, fileName, arrayBuffer);
@@ -19129,8 +19386,8 @@
                     const assetsDir = await getOrCreateDirectory(rootHandle, 'assets');
                     const mindDir = await getOrCreateDirectory(assetsDir, 'mind_pic');
                     const uuid = crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 9));
-                    const ext = file.name?.split('.').pop()?.toLowerCase() || 'png';
-                    const fileName = uuid + '.' + ext;
+                    const ext = file.name?.split(DOT).pop()?.toLowerCase() || 'png';
+                    const fileName = uuid + DOT + ext;
                     const arrayBuffer = await file.arrayBuffer();
                     await writeFileByDirHandle(mindDir, fileName, arrayBuffer);
                     const path = joinPath(currentRootPath, 'assets/mind_pic', fileName);
@@ -25955,13 +26212,18 @@
             return [];
         }
 
-        async function mountDir() {
+        async function mountDir(setting) {
             // 未选择目录时不发送请求
             if (!currentRootPath || isLocalVisit() || isTauriVisit()) return;
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 50);
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
             try {
-                const response = await fetch(`/api/system/mount?dir=${encodeURIComponent(currentRootPath)}`, { signal: controller.signal });
+                const response = await fetch('/api/system/mount', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ dir: currentRootPath, setting: setting || null }),
+                    signal: controller.signal
+                });
                 const data = await response.json();
                 if (data.success) {
                     hasBackendServer = true;
@@ -27182,16 +27444,17 @@
                         <div class="net-search-dropdown" id="net-search-dropdown"></div>
                     </div>
                 </div>`;
+            const fileProtocol = isLocalVisit();
+            const isTauri = isTauriVisit();
+            const serverDisplay = hasBackendServer && !fileProtocol && !isTauri;
             DASHBOARD_BUTTON.forEach(b => {
                 if (b.display) {
-                    if (isLocalVisit() || isTauriVisit() || !hasBackendServer) {
-                        if (b.fileProtocolDisplay && b.display) {
-                            html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
-                        }
-                    } else {
-                        if (b.display) {
-                            html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
-                        }
+                    if (fileProtocol && b.fileProtocolDisplay) {
+                        html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
+                    } else if (isTauri && b.tauriDisplay) {
+                        html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
+                    } else if (serverDisplay && b.serverDisplay) {
+                        html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
                     }
                 }
             });
@@ -29736,7 +29999,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         async function initFromStorage() {
-            // Tauri 模式下等待存储适配器从磁盘加载完成
             if (window.__tauriStorageReady) {
                 await window.__tauriStorageReady;
             }
@@ -29759,10 +30021,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     return false;
                 }
             }
-
-            setRootHandle(handle);
-            currentRootPath = savedPath;
-            await mountDir();
+            if (!currentRootPath || !isRootHandleAvailable() || currentRootPath !== savedPath) {
+                setRootHandle(handle);
+                currentRootPath = savedPath;
+                const setting = await loadSetting();
+                await mountDir(setting);
+            }
             const data = await scanDashboardData(true);
             await Promise.all([renderDirectory(handle, data), toggleDashboardView(true, data)]);
             return true;
@@ -34946,7 +35210,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             const hashIdx = linkTarget.indexOf('#');
                             if (hashIdx !== -1) linkTarget = linkTarget.substring(0, hashIdx);
                             if (!linkTarget) continue;
-                            const lastDot = linkTarget.lastIndexOf('.');
+                            const lastDot = linkTarget.lastIndexOf(DOT);
                             const ext = lastDot === -1 ? '' : linkTarget.substring(lastDot + 1).toLowerCase();
                             if (ext && ext !== 'md' && ext !== 'markdown') continue;
                             const resolvedId = resolveLinkTargetAll(linkTarget, mdFile.path, allPaths, allFiles);
@@ -38717,7 +38981,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             var total = _wcAllItems.length;
             var totalPages = Math.ceil(total / _wcPageSize);
             var shown = Math.min((_wcPageIndex + 1) * _wcPageSize, total);
-            infoEl.textContent = (_wcPageIndex + 1) + '/' + totalPages + ' 页 (' + shown + '/' + total + ' 条)';
+            infoEl.textContent = (_wcPageIndex + 1) + SLASH + totalPages + ' 页 (' + shown + SLASH + total + ' 条)';
             prevBtn.disabled = _wcPageIndex <= 0;
             nextBtn.disabled = shown >= total;
         }
@@ -38856,7 +39120,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 'bmp': 'image/bmp', 'ico': 'image/x-icon',
                 'avif': 'image/avif', 'tiff': 'image/tiff', 'tif': 'image/tiff',
             };
-            return (name) => map[name.split('.').pop()?.toLowerCase()] || '';
+            return (name) => map[name.split(DOT).pop()?.toLowerCase()] || '';
         })();
         /** Tauri 模式：直接读二进制 → blob URL（跳过 FileReader/base64，省去 33% 体积膨胀和编解码开销） */
         async function readTauriFileAsBlobUrl(absPath) {
@@ -41154,7 +41418,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     try {
                         if (isNewFile) {
                             const { invoke } = window.__TAURI__.core;
-                            await invoke('delete', { path: window.gitRepoDir + '/' + filepath });
+                            await invoke('delete', { path: window.gitRepoDir + SLASH + filepath });
                             showNotification(`✓ 已删除文件: ${filepath}`, 'success');
                         } else {
                             await window.GitRustAdapter.checkout({
@@ -41340,7 +41604,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     let modifiedContent = '';
                     try {
                         const { invoke } = window.__TAURI__.core;
-                        modifiedContent = await invoke('read_file', { path: window.gitRepoDir + '/' + filepath });
+                        modifiedContent = await invoke('read_file', { path: window.gitRepoDir + SLASH + filepath });
                     } catch (e) { /* 文件可能已删除 */ }
                     await gitShowDiffInline(originalContent, modifiedContent, filepath);
                 } catch (e) {
@@ -42786,6 +43050,317 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         function saveTempEditorValue() {
             if (!currentEditor) return;
             safeLocalStorageSet('tempEditorContent', currentEditor.getValue());
+        }
+        //系统设置
+        function openSetting() {
+            if (!isRootHandleAvailable()) return;
+            // 防止重复打开
+            if (document.querySelector('.setting-modal-overlay')) return;
+
+            // ---------- 辅助：标签列表 ----------
+            function createTagList(container, items, onChange) {
+                function render() {
+                    container.innerHTML = '';
+                    items.forEach((item, i) => {
+                        const tag = document.createElement('span');
+                        tag.className = 'setting-tag';
+                        tag.innerHTML = escapeHtml(item) + '<button class="setting-tag-remove" data-index="' + i + '">✕</button>';
+                        tag.querySelector('.setting-tag-remove').addEventListener('click', () => {
+                            items.splice(i, 1);
+                            render();
+                            typeof onChange === 'function' && onChange(items);
+                        });
+                        container.appendChild(tag);
+                    });
+                }
+                render();
+            }
+            //nginx 配置
+            const fileProtocol = isLocalVisit();
+            const isTauri = isTauriVisit();
+            const serverDisplay = hasBackendServer && !fileProtocol && !isTauri;
+            let nginxDisplay = false;
+            const nginxRestyButton = DASHBOARD_BUTTON.find(b => b.key === 'OpenResty')
+            if (nginxRestyButton) {
+                if (nginxRestyButton.display) {
+                    if (fileProtocol && nginxRestyButton.fileProtocolDisplay) {
+                        nginxDisplay = true;
+                    } else if (isTauri && nginxRestyButton.tauriDisplay) {
+                        nginxDisplay = true;
+                    } else if (serverDisplay && nginxRestyButton.serverDisplay) {
+                        nginxDisplay = true;
+                    }
+                }
+            }
+
+            const overlay = document.createElement('div');
+            overlay.className = 'setting-modal-overlay';
+            const inputId = (id) => 'setting-' + id;
+            overlay.innerHTML = `
+                <div class="setting-modal">
+                    <div class="setting-modal-header">
+                        <span>系统设置</span>
+                        <button class="setting-modal-close">✕</button>
+                    </div>
+                    <div class="setting-modal-body">
+                        <div class="setting-section">
+                            <div class="setting-section-title">后端服务</div>
+                            <div class="setting-section-body">
+                                <div class="setting-row">
+                                    <label>GraphQL 地址</label>
+                                    <input class="setting-text" id="${inputId('graphql')}" value="${escapeHtml(GRAPHQL_ENDPOINT)}">
+                                </div>
+                                <div class="setting-row" ${nginxDisplay ? '' : 'style="display: none;"'}>
+                                    <label>Nginx 路径</label>
+                                    <input class="setting-text" id="${inputId('nginx')}" value="${escapeHtml(NGINX_CONF_PATH)}">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="setting-section">
+                            <div class="setting-section-title">本地 LLM</div>
+                            <div class="setting-section-body">
+                                <div class="setting-row">
+                                    <label>API 端点</label>
+                                    <input class="setting-text" id="${inputId('llmEndpoint')}" value="${escapeHtml(LOCAL_LLM_ENDPOINT)}">
+                                </div>
+                                <div class="setting-row">
+                                    <label>Token</label>
+                                    <input class="setting-text" id="${inputId('llmToken')}" value="${escapeHtml(LOCAL_LLM_TOKEN)}">
+                                </div>
+                                <div class="setting-row">
+                                    <label>模型名称</label>
+                                    <input class="setting-text" id="${inputId('llmModel')}" value="${escapeHtml(LOCAL_LLM_MODEL)}">
+                                </div>
+                                <div class="setting-row">
+                                    <label>上下文长度</label>
+                                    <input class="setting-number" id="${inputId('llmContext')}" type="number" min="1000" max="100000" step="1000" value="${LOCAL_LLM_CONTEXT_LENGTH}">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="setting-section">
+                            <div class="setting-section-title">文件树过滤 <span class="setting-help" data-tippy-content="配置系统中需要隐藏的目录和文件黑名单，匹配前缀的目录或文件将不会显示在系统中。格式为：打开目录内的子目录/子目录或文件/...">ⓘ</span></div>
+                            <div class="setting-section-body">
+                                <div class="setting-row" style="align-items:flex-start;">
+                                    <label>目录黑名单</label>
+                                    <div style="flex:1;">
+                                        <div class="setting-tag-list" id="${inputId('dirBlacklist')}"></div>
+                                        <div class="setting-tag-add-row">
+                                            <input class="setting-tag-input" id="${inputId('dirBlacklistInput')}" placeholder="输入目录前缀">
+                                            <button class="setting-tag-add-btn">添加</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="setting-row" style="align-items:flex-start;">
+                                    <label>文件黑名单</label>
+                                    <div style="flex:1;">
+                                        <div class="setting-tag-list" id="${inputId('fileBlacklist')}"></div>
+                                        <div class="setting-tag-add-row">
+                                            <input class="setting-tag-input" id="${inputId('fileBlacklistInput')}" placeholder="输入文件前缀">
+                                            <button class="setting-tag-add-btn">添加</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="setting-section">
+                            <div class="setting-section-title">其他过滤 <span class="setting-help" data-tippy-content="1.随机打开文件时，不会打开排除的目录的文件；2.HTML 渲染目录配置路径内的 HTML 文件正常渲染，其他目录默认打开代码">ⓘ</span></div>
+                            <div class="setting-section-body">
+                                <div class="setting-row" style="align-items:flex-start;">
+                                    <label>随机打开排除</label>
+                                    <div style="flex:1;">
+                                        <div class="setting-tag-list" id="${inputId('randomDirBlacklist')}"></div>
+                                        <div class="setting-tag-add-row">
+                                            <input class="setting-tag-input" id="${inputId('randomDirBlacklistInput')}" placeholder="输入目录路径">
+                                            <button class="setting-tag-add-btn">添加</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="setting-row" style="align-items:flex-start;">
+                                    <label>HTML 渲染目录</label>
+                                    <div style="flex:1;">
+                                        <div class="setting-tag-list" id="${inputId('htmlShowBlacklist')}"></div>
+                                        <div class="setting-tag-add-row">
+                                            <input class="setting-tag-input" id="${inputId('htmlShowBlacklistInput')}" placeholder="输入目录前缀">
+                                            <button class="setting-tag-add-btn">添加</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="setting-modal-footer">
+                        <button class="setting-btn" id="${inputId('cancel')}">取消</button>
+                        <button class="setting-btn setting-btn-primary" id="${inputId('save')}">保存</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(overlay);
+
+            // 帮助提示
+            const tippyInstances = tippy(overlay.querySelectorAll('.setting-help'), {
+                theme: 'custom',
+                content: (ref) => ref.getAttribute('data-tippy-content'),
+            });
+
+            // ---------- 初始化 ----------
+            // 标签列表
+            const dirBlacklistItems = [...DIR_BLACKLIST];
+            const fileBlacklistItems = [...FILE_BLACKLIST];
+            const randomDirItems = [...RANDOM_DIR_BLACKLIST];
+            const htmlShowItems = [...HTML_CODE_SHOW_BLACKLIST];
+
+            createTagList(document.getElementById(inputId('dirBlacklist')), dirBlacklistItems);
+            createTagList(document.getElementById(inputId('fileBlacklist')), fileBlacklistItems);
+            createTagList(document.getElementById(inputId('randomDirBlacklist')), randomDirItems);
+            createTagList(document.getElementById(inputId('htmlShowBlacklist')), htmlShowItems);
+
+            // 标签添加逻辑
+            function setupTagAdd(inputIdName, listIdName, items) {
+                const input = document.getElementById(inputIdName);
+                const addBtn = input.nextElementSibling;
+                function addItem() {
+                    let val = input.value.trim();
+                    if (!val) { showNotification('请输入内容', 'warning'); return; }
+                    // 统一格式：去除首尾斜杠，防止空片段
+                    val = val.replace(/^\/+|\/+$/g, '');
+                    if (!val) { showNotification('请输入有效内容', 'warning'); return; }
+                    const exists = items.some(item => item.toLowerCase() === val.toLowerCase());
+                    if (exists) { showNotification('该项已存在', 'warning'); return; }
+                    items.push(val);
+                    createTagList(document.getElementById(listIdName), items);
+                    input.value = '';
+                    input.focus();
+                }
+                addBtn.addEventListener('click', addItem);
+                input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addItem(); } });
+            }
+
+            setupTagAdd(inputId('dirBlacklistInput'), inputId('dirBlacklist'), dirBlacklistItems);
+            setupTagAdd(inputId('fileBlacklistInput'), inputId('fileBlacklist'), fileBlacklistItems);
+            setupTagAdd(inputId('randomDirBlacklistInput'), inputId('randomDirBlacklist'), randomDirItems);
+            setupTagAdd(inputId('htmlShowBlacklistInput'), inputId('htmlShowBlacklist'), htmlShowItems);
+
+            // ---------- 关闭 ----------
+            let closed = false;
+            function closeModal() {
+                if (closed) return;
+                closed = true;
+                document.removeEventListener('keydown', onKeydown);
+                // 销毁 tippy 实例，防止 DOM 引用泄露
+                if (tippyInstances && tippyInstances.destroy) {
+                    tippyInstances.destroy();
+                } else if (tippyInstances && Array.isArray(tippyInstances)) {
+                    tippyInstances.forEach(t => t.destroy());
+                }
+                overlay.remove();
+            }
+            overlay.querySelector('.setting-modal-close').addEventListener('click', closeModal);
+            document.getElementById(inputId('cancel')).addEventListener('click', closeModal);
+            overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+
+            // ---------- 保存 ----------
+            document.getElementById(inputId('save')).addEventListener('click', async () => {
+                try {
+                    // 输入校验
+                    const graphqlVal = document.getElementById(inputId('graphql')).value.trim();
+                    const llmEndpointVal = document.getElementById(inputId('llmEndpoint')).value.trim();
+                    const llmContextVal = document.getElementById(inputId('llmContext')).value.trim();
+
+                    // URL 格式校验
+                    const urlPattern = /^https?:\/\/.+/i;
+                    if (graphqlVal && !urlPattern.test(graphqlVal)) {
+                        showNotification('✗ GraphQL 地址格式不正确，需以 http:// 或 https:// 开头', 'warning');
+                        return;
+                    }
+                    if (llmEndpointVal && !urlPattern.test(llmEndpointVal)) {
+                        showNotification('✗ LLM API 端点格式不正确，需以 http:// 或 https:// 开头', 'warning');
+                        return;
+                    }
+
+                    // 上下文长度校验
+                    const contextLength = parseInt(llmContextVal, 10);
+                    if (isNaN(contextLength) || contextLength < 1000) {
+                        showNotification('✗ 上下文长度不能小于 1000', 'warning');
+                        return;
+                    }
+
+                    GRAPHQL_ENDPOINT = graphqlVal;
+                    NGINX_CONF_PATH = document.getElementById(inputId('nginx')).value.trim();
+                    LOCAL_LLM_ENDPOINT = llmEndpointVal;
+                    LOCAL_LLM_TOKEN = document.getElementById(inputId('llmToken')).value.trim();
+                    LOCAL_LLM_MODEL = document.getElementById(inputId('llmModel')).value.trim();
+                    LOCAL_LLM_CONTEXT_LENGTH = contextLength;
+                    DIR_BLACKLIST = dirBlacklistItems;
+                    FILE_BLACKLIST = fileBlacklistItems;
+                    RANDOM_DIR_BLACKLIST = randomDirItems;
+                    HTML_CODE_SHOW_BLACKLIST = htmlShowItems;
+                    // 持久化设置到 .mdgo/setting.json
+                    const settingsJson = JSON.stringify({
+                        graphqlEndpoint: GRAPHQL_ENDPOINT,
+                        nginxConfPath: NGINX_CONF_PATH,
+                        localLlmEndpoint: LOCAL_LLM_ENDPOINT,
+                        localLlmToken: LOCAL_LLM_TOKEN,
+                        localLlmModel: LOCAL_LLM_MODEL,
+                        localLlmContextLength: LOCAL_LLM_CONTEXT_LENGTH,
+                        dirBlacklist: DIR_BLACKLIST,
+                        fileBlacklist: FILE_BLACKLIST,
+                        randomDirBlacklist: RANDOM_DIR_BLACKLIST,
+                        htmlCodeShowBlacklist: HTML_CODE_SHOW_BLACKLIST
+                    }, null, 4);
+                    await writeFileByDirHandle(await getDataDir(), SETTING_FILE, settingsJson);
+                    closeModal();
+                    const data = await scanDashboardData(true);
+                    await Promise.all([renderDirectory(getRootHandle(), data), toggleDashboardView(true, data)]);
+                    showNotification('✓ 系统设置已保存', 'success');
+                } catch (e) {
+                    showNotification('✗ 保存设置文件失败', 'error');
+                    console.error('保存设置文件失败:', e);
+                }
+            });
+
+            // Escape 键关闭
+            function onKeydown(e) {
+                if (e.key === 'Escape') { closeModal(); }
+            }
+            document.addEventListener('keydown', onKeydown);
+        }
+        async function loadSetting() {
+            try {
+                const fh = await getFileHandleByDirHandle(await getDataDir(), SETTING_FILE);
+                const text = await getFileContent(fh);
+                const setting = JSON.parse(text);
+                //赋值设置
+                GRAPHQL_ENDPOINT = setting.graphqlEndpoint;
+                NGINX_CONF_PATH = setting.nginxConfPath;
+                LOCAL_LLM_ENDPOINT = setting.localLlmEndpoint;
+                LOCAL_LLM_TOKEN = setting.localLlmToken;
+                LOCAL_LLM_MODEL = setting.localLlmModel;
+                LOCAL_LLM_CONTEXT_LENGTH = setting.localLlmContextLength;
+                DIR_BLACKLIST = setting.dirBlacklist;
+                FILE_BLACKLIST = setting.fileBlacklist;
+                RANDOM_DIR_BLACKLIST = setting.randomDirBlacklist;
+                HTML_CODE_SHOW_BLACKLIST = setting.htmlCodeShowBlacklist;
+                return setting;
+            } catch (e) {
+                console.error('加载设置文件失败:', e);
+                //获取默认设置
+                return getDefaultSetting();
+            }
+        }
+        function getDefaultSetting() {
+            return {
+                graphqlEndpoint: GRAPHQL_ENDPOINT,
+                nginxConfPath: NGINX_CONF_PATH,
+                localLlmEndpoint: LOCAL_LLM_ENDPOINT,
+                localLlmToken: LOCAL_LLM_TOKEN,
+                localLlmModel: LOCAL_LLM_MODEL,
+                localLlmContextLength: LOCAL_LLM_CONTEXT_LENGTH,
+                dirBlacklist: DIR_BLACKLIST,
+                fileBlacklist: FILE_BLACKLIST,
+                randomDirBlacklist: RANDOM_DIR_BLACKLIST,
+                htmlCodeShowBlacklist: HTML_CODE_SHOW_BLACKLIST
+            };
         }
     </script>
 </body>

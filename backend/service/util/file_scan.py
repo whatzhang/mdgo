@@ -91,23 +91,60 @@ _IGNORE_DIRS_TUPLE = tuple(
 _IGNORE_FILENAMES = (".", "$", ".bobconfig", ".itermexport",
                      ".gitignore", ".DS_Store", ".rayconfig")
 
+# ===================== 动态黑名单缓存（从设置中注入） =====================
+# 由后端 mount API 在接收到前端设置后调用 set_blacklists() 注入
+_DYNAMIC_DIR_BLACKLIST = []   # 目录黑名单（前缀匹配）
+_DYNAMIC_FILE_BLACKLIST = []  # 文件黑名单（前缀匹配）
+
+
+def set_blacklists(dir_blacklist=None, file_blacklist=None):
+    """从设置中注入动态黑名单，空列表或 None 表示全量扫描"""
+    global _DYNAMIC_DIR_BLACKLIST, _DYNAMIC_FILE_BLACKLIST
+    # 过滤非字符串元素，避免后续 startswith() 崩溃
+    raw_dirs = dir_blacklist or []
+    raw_files = file_blacklist or []
+    _DYNAMIC_DIR_BLACKLIST = [d for d in raw_dirs if isinstance(d, str)]
+    _DYNAMIC_FILE_BLACKLIST = [f for f in raw_files if isinstance(f, str)]
+    filtered_dirs = len(raw_dirs) - len(_DYNAMIC_DIR_BLACKLIST)
+    filtered_files = len(raw_files) - len(_DYNAMIC_FILE_BLACKLIST)
+    if filtered_dirs or filtered_files:
+        logger.warning(
+            f"⚠️ 黑名单中存在非字符串元素已过滤：目录 {filtered_dirs} 条，文件 {filtered_files} 条"
+        )
+    logger.info(
+        f"🔧 动态黑名单已更新：目录黑名单 {len(_DYNAMIC_DIR_BLACKLIST)} 条，"
+        f"文件黑名单 {len(_DYNAMIC_FILE_BLACKLIST)} 条"
+    )
+
 
 def should_ignore_file(file_name):
-    """检查文件名是否应该被跳过（如 .DS_Store、.gitignore）"""
-    return file_name.startswith(_IGNORE_FILENAMES)
+    """检查文件名是否应该被跳过（内置规则 + 动态文件黑名单）"""
+    if file_name.startswith(_IGNORE_FILENAMES):
+        return True
+    # 动态文件黑名单前缀匹配
+    for prefix in _DYNAMIC_FILE_BLACKLIST:
+        if file_name.startswith(prefix):
+            return True
+    return False
+
+
+def should_ignore_dir(relative_path):
+    """判断目录是否在忽略列表中（内置规则 + 动态目录黑名单，前缀匹配）"""
+    normalized = relative_path.replace("\\", "/")
+    if '__pycache__' in normalized:
+        return True
+    if normalized.startswith(_IGNORE_DIRS_TUPLE):
+        return True
+    # 动态目录黑名单前缀匹配
+    for prefix in _DYNAMIC_DIR_BLACKLIST:
+        if normalized.startswith(prefix):
+            return True
+    return False
 
 
 # 文件大小格式化常量
 _SIZE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB']
 _SIZE_DIVISORS = [1, 1024, 1024 ** 2, 1024 ** 3, 1024 ** 4]
-
-
-def should_ignore_dir(relative_path):
-    """判断目录是否在忽略列表中（前缀匹配），如 node_modules、.git"""
-    normalized = relative_path.replace("\\", "/")
-    if '__pycache__' in normalized:
-        return True
-    return normalized.startswith(_IGNORE_DIRS_TUPLE)
 
 
 def format_size(bytes_size):

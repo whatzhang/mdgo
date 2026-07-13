@@ -15,6 +15,7 @@ from strawberry.fastapi import GraphQLRouter
 from service.graphql_schema import schema
 from service.websocket_service import ws_manager, ws_heartbeat_loop, ws_metrics_loop
 from service.system_monitor_service import metrics_stream
+from service.util.file_scan import set_blacklists
 
 # 配置日志级别，默认 warning（覆盖 uvicorn/fastapi 的日志避免太吵）
 LOG_LEVEL_VALUE = getattr(logging, LOG_LEVEL.upper(), logging.INFO)
@@ -123,12 +124,40 @@ async def api_health():
     return {"success": True, "message": "healthy", "code": 200}
 
 
-@app.get("/api/system/mount")
-async def api_mount(dir: str = Query(..., description="要挂载的扫描目录绝对路径")):
-    """设置动态扫描目录"""
-    if dynamic_mount_directory(dir) is False:
-        return {"success": False, "message": "无效的扫描目录", "code": 500}
-    return {"success": True, "message": "挂载成功", "code": 200}
+@app.post("/api/system/mount")
+async def api_mount(data: dict = Body(...)):
+    """设置动态扫描目录及扫描配置（POST 方式，同时接收目录路径和设置）"""
+    dir_path = data.get('dir', '')
+    setting = data.get('setting')
+
+    if not dir_path or not isinstance(dir_path, str):
+        return JSONResponse(
+            content={"success": False, "message": "缺少目录参数或参数类型错误", "code": 400},
+            status_code=400,
+        )
+
+    if dynamic_mount_directory(dir_path) is False:
+        return JSONResponse(
+            content={"success": False, "message": "无效的扫描目录", "code": 400},
+            status_code=400,
+        )
+
+    if setting:
+        logging.info(f"收到扫描配置: {json.dumps(setting, ensure_ascii=False)}")
+        # 将黑名单注入 file_scan 模块，后续扫描基于此过滤
+        set_blacklists(
+            dir_blacklist=setting.get('dirBlacklist'),
+            file_blacklist=setting.get('fileBlacklist')
+        )
+    else:
+        logging.info("未收到扫描配置，执行全量扫描")
+        # 清空动态黑名单（全量扫描）
+        set_blacklists()
+
+    return JSONResponse(
+        content={"success": True, "message": "挂载成功", "code": 200},
+        status_code=200,
+    )
 
 
 @app.get("/api/system/openresty/conf")
