@@ -21945,9 +21945,8 @@
         function _initSwaggerEditor(spec) {
             if (!swaggerEditor) {
                 swaggerEditor = swaggerEditorAdd(spec);
-            } else {
-                swaggerEditor.specActions.updateSpec(spec);
             }
+            swaggerEditor.specActions.updateSpec(spec);
         }
 
         /** 从 Swagger Editor 的 ACE 编辑器中获取当前内容（公共方法） */

@@ -13708,7 +13708,7 @@
         // 随机打开功能的目录
         let RANDOM_DIR_BLACKLIST = ['note/moc/', 'note/templates/', 'deleted/', 'data/', 'code/'];
         // 显示渲染而非代码的目录
-        let HTML_CODE_SHOW_BLACKLIST = ["note/"]; 
+        let HTML_CODE_SHOW_BLACKLIST = ["note/"];
         // 编译后的黑名单规则（由 compileAllRules 在启动和保存时生成）
         let DIR_RULES = [];
         let FILE_RULES = [];
@@ -21935,9 +21935,6 @@
                     }
                 }
             }
-            if (window._swaggerSaveHandler) {
-                window.removeEventListener('keydown', window._swaggerSaveHandler, true);
-            }
             window.addEventListener('keydown', handleSwaggerSave, true);
             window._swaggerSaveHandler = handleSwaggerSave;
         }
@@ -21946,9 +21943,8 @@
         function _initSwaggerEditor(spec) {
             if (!swaggerEditor) {
                 swaggerEditor = swaggerEditorAdd(spec);
-            } else {
-                swaggerEditor.specActions.updateSpec(spec);
             }
+            swaggerEditor.specActions.updateSpec(spec);
         }
 
         /** 从 Swagger Editor 的 ACE 编辑器中获取当前内容（公共方法） */
@@ -22129,9 +22125,6 @@ components:
                         showNotification('✗ 保存失败: ' + err.message, 'error');
                     }
                 }
-            }
-            if (window._swaggerDemoSaveHandler) {
-                window.removeEventListener('keydown', window._swaggerDemoSaveHandler, true);
             }
             window.addEventListener('keydown', handleSwaggerDemoSave, true);
             window._swaggerDemoSaveHandler = handleSwaggerDemoSave;
