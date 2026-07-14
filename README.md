@@ -9,7 +9,8 @@
   <img src="css_js/snipaste.png" alt="mdgo 预览" width="90%" />
 </div>
 
-> [!NOTE] 使用说明
+> [!NOTE] 
+> 使用说明
 
 1. 直接访问（推荐）：[https://whatzhang.github.io/mdgo/](https://whatzhang.github.io/mdgo/)
 2. 直接浏览器打开  
@@ -21,7 +22,8 @@
     - Windows: `tauri/build.bat build`  
    安装包输出路径：`tauri/src-tauri/target/release/bundle`
 
-> [!TIP] 功能与工具
+> [!TIP] 
+> 功能与工具
 
 - Mermaid 图表：支持流程图、时序图、类图、状态图、甘特图、ER 图、用户旅程图、Git 图、思维导图、饼图、时间线、看板、四象限图、桑基图、XY 图表、块状图、架构图、数据包图等
 - draw.io 图表：支持 draw.io 图表预览与编辑
