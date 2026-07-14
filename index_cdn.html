@@ -4170,6 +4170,8 @@
 
         #content-common-container {
             display: flex;
+            justify-content: center;
+            align-items: center;
             width: 100%;
             height: 100%;
             overflow-y: auto;
@@ -4178,12 +4180,12 @@
         .tools-buttons-container {
             display: flex;
             gap: 10px;
-            flex-wrap: wrap;
+            flex-wrap: wrap; 
         }
 
         .tool-button {
             padding: 6px 10px;
-            background: var(--color-bg);
+            background: var(--color-bg); 
             color: var(--color-text);
             border: none;
             border-radius: 8px;
@@ -4208,7 +4210,6 @@
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
         }
 
-        /* graphql-样式 */
         .graphql-container {
             width: 100%;
             height: 100%;
@@ -9018,7 +9019,7 @@
         }
 
         .video-header-bar {
-            height: 40px;
+            height: 30px;
             background: var(--color-bg-secondary);
             display: flex;
             align-items: center;
@@ -9298,7 +9299,7 @@
 
         /* ── 视频 Footer Bar ── */
         .video-footer-bar {
-            height: 30px;
+            height: 25px;
             background: var(--color-bg);
             border-top: 1px solid var(--color-border);
             display: flex;
@@ -9306,6 +9307,7 @@
             justify-content: space-between;
             padding: 0 16px;
             font-size: 12px;
+            line-height: 1;
             color: var(--t3);
             flex-shrink: 0;
         }
@@ -15255,7 +15257,7 @@
         async function initPageNone() {
             await switchToView(contentMain);
             treeElement.innerHTML = '';
-            contentMain.innerHTML = `<div style="color:var(--color-text-secondary);text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh; width:100%; box-sizing:border-box; font-size: 0.8125rem;">
+            contentMain.innerHTML = `<div style="color:var(--color-text-secondary);text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh; width:100%; box-sizing:border-box; font-size: 0.875rem;">
                                 <div style="text-align:center;">
                                 ⚠️ 点击左上方按钮，打开本地目录
                                 </div>
@@ -15331,8 +15333,7 @@
         }
 
         async function switchToView(targetContainer, displayValue) {
-            displayValue = displayValue || 'block';
-            targetContainer.style.display = displayValue;
+            targetContainer.style.display = displayValue || '';
             for (let i = 0; i < MAIN_VIEW_CONTAINERS.length; i++) {
                 if (MAIN_VIEW_CONTAINERS[i] !== targetContainer) {
                     MAIN_VIEW_CONTAINERS[i].style.display = 'none';
@@ -15812,7 +15813,7 @@
 
         async function checkFileExt(ext) {
             if (!ext || (!isDoc(ext) && !isCode(ext) && !isVideoFile(ext) && !isImage(ext) && !isRaw(ext))) {
-                contentMain.innerHTML = `<div style="color:var(--color-text-secondary); text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh; width:100%; box-sizing:border-box; font-size: 0.8125rem;">
+                contentMain.innerHTML = `<div style="color:var(--color-text-secondary); text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh; width:100%; box-sizing:border-box; font-size: 0.875rem;">
                                     <div style="text-align:center;">
                                         ⚠️ 文件类型不支持, 请使用其他工具查看
                                     </div>
@@ -15826,7 +15827,7 @@
         function checkFileSizeExceedsLimit(size) {
             if (size > MAX_FILE_SIZE) {
                 const fileSizeMB = (size / 1024 / 1024).toFixed(2);
-                contentMain.innerHTML = `<div style="color:var(--color-text-secondary); text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh; width:100%; box-sizing:border-box; font-size: 0.8125rem;">
+                contentMain.innerHTML = `<div style="color:var(--color-text-secondary); text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh; width:100%; box-sizing:border-box; font-size: 0.875rem;">
                                     <div style="text-align:center;">
                                         ⚠️ 文件过大 (${fileSizeMB}MB)，请使用其他工具查看
                                     </div>
@@ -27572,9 +27573,9 @@
             return `<div class="bookmark-empty">
                 <div class="bookmark-empty-icon">🔖</div>
                 <div class="bookmark-empty-hint">从浏览器导出书签为 HTML 文件后，点击下方按钮导入</div>
-                <div style="margin-top: 16px;">
+                <div style="margin-top: 0.875rem;">
                     <input type="file" id="bookmark-dashboard-import-btn" accept=".html,.htm" style="display:none" onchange="importBookmarkToMdgo(this)">
-                    <button class="btn btn-primary" onclick="document.getElementById('bookmark-dashboard-import-btn').click()" style="padding: 6px 16px; font-size: 14px; border-radius: 6px; border: none; background: var(--color-primary); color: var(--color-text-white); cursor: pointer;">📂 导入书签 HTML 文件</button>
+                    <button class="btn btn-sm btn-primary" onclick="document.getElementById('bookmark-dashboard-import-btn').click()">📂 导入书签 HTML 文件</button>
                  </div>
              </div>`;
         }
@@ -28864,7 +28865,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         async function openOpenRestyEditor() {
             await switchToView(openrestyEditorContainer);
-            let html = `<div style="color:var(--color-text-secondary); text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh; width:100%; box-sizing:border-box; font-size: 0.8125rem;">
+            let html = `<div style="color:var(--color-text-secondary); text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh; width:100%; box-sizing:border-box; font-size: 0.875rem;">
                                                 <div style="text-align:center;">
                                                     ⚠️ 获取配置失败: errorMsg
                                                 </div>
@@ -34312,7 +34313,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const el = document.createElement('div');
             el.className = `todo-week-event todo-${todoE.color}${isCronVirtual ? ' todo-cron-event' : ''}`;
             el.style.top = `${startHour * 60}px`;
-            el.style.height = `${Math.max(duration * 60, 20)}px`;
+            el.style.height = `${Math.max(duration * 60, 20)}px`; 
             // 重叠布局 - 并排显示时左右各留 4px 间隙
             if (todoE._layoutWidth !== undefined && todoE._layoutWidth < 1) {
                 const gapPx = 4;
@@ -34747,7 +34748,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             el.classList.add('todo-selected');
             todoSelectedColor = el.dataset.color;
         }
-        // 保存事件
         function todoSaveEvent() {
             const eventTitle = todo$('todo-eventTitle');
             const eventDesc = todo$('todo-eventDesc');

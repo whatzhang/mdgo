@@ -52,6 +52,8 @@ pub fn git_diff_tree(
     parent_oid: Option<String>,
 ) -> Result<Vec<FileChange>, String> {
     let mut args = vec![
+        "-c".to_string(),
+        "core.quotepath=false".to_string(),
         "diff-tree".to_string(),
         "--no-commit-id".to_string(),
         "--name-status".to_string(),
@@ -255,7 +257,7 @@ fn parse_commit_line(line: &str) -> Result<CommitInfo, String> {
 pub fn git_status_matrix(dir: String) -> Result<Vec<FileStatusEntry>, String> {
     // 使用 -z 参数输出 NUL 分隔的格式，避免 Git 对中文等非 ASCII 路径加引号
     let output = Command::new("git")
-        .args(&["status", "--porcelain=v1", "-z"])
+        .args(&["-c", "core.quotepath=false", "status", "--porcelain=v1", "-z"])
         .current_dir(&dir)
         .output()
         .map_err(|e| format!("执行 git status 失败: {}", e))?;
@@ -267,43 +269,37 @@ pub fn git_status_matrix(dir: String) -> Result<Vec<FileStatusEntry>, String> {
     let mut result = Vec::new();
 
     // 解析 NUL 分隔的输出
-    // 格式: XY\0path\0XY\0path\0...
-    // 注意：-z 模式下路径不会加引号
+    // 实际格式: XY<space>path<NUL>                     (普通条目)
+    //          XY<space>orig<NUL>new<NUL>              (重命名/复制条目)
+    //  -z 模式只是用 NUL 替换了 LF，路径前没有多余的 NUL
     let stdout = &output.stdout;
     let mut start = 0;
     while start < stdout.len() {
-        // 跳过末尾的空 NUL（如果输出以 NUL 结尾）
         if stdout[start] == 0 {
             break;
         }
 
-        // 找到第一个 NUL（分隔 XY 状态和路径）
-        let nul1 = match stdout[start..].iter().position(|&b| b == 0) {
+        // 找到本条目结束的 NUL（总是在 path 后面）
+        let entry_end = match stdout[start..].iter().position(|&b| b == 0) {
             Some(pos) => start + pos,
             None => break,
         };
 
-        if nul1 - start < 2 {
-            // 状态码至少需要 2 字节
-            start = nul1 + 1;
+        if entry_end - start < 2 {
+            start = entry_end + 1;
             continue;
         }
 
         let index_status = stdout[start] as char;
         let workdir_status = stdout[start + 1] as char;
 
-        // 路径从 NUL 后面开始，到下一个 NUL 或末尾结束
-        let path_start = nul1 + 1;
-        let path_end = stdout[path_start..].iter().position(|&b| b == 0)
-            .map(|pos| path_start + pos)
-            .unwrap_or(stdout.len());
-
-        let filepath_bytes = &stdout[path_start..path_end];
+        // 路径从 XY + 空格之后开始，到 entry_end 结束
+        let path_start = start + 3;
+        let filepath_bytes = &stdout[path_start..entry_end];
         let filepath = String::from_utf8_lossy(filepath_bytes);
 
-        // 跳过空路径
         if filepath.is_empty() {
-            start = path_end + 1;
+            start = entry_end + 1;
             continue;
         }
 
@@ -311,6 +307,26 @@ pub fn git_status_matrix(dir: String) -> Result<Vec<FileStatusEntry>, String> {
         // git status --porcelain=v1: XY filename (X=index, Y=worktree)
         // head: 0(不在HEAD), 1(在HEAD)
         // workdir/stage: 0(不存在), 1(与HEAD/索引一致), 2(已修改), 3(新增)
+        // 处理重命名/复制（R/C）：格式为 XY<space>orig<NUL>new<NUL>
+        if index_status == 'R' || index_status == 'C' {
+            // 新路径在 entry_end(NUL) 之后
+            let new_start = entry_end + 1;
+            let new_end = stdout[new_start..].iter().position(|&b| b == 0)
+                .map(|pos| new_start + pos)
+                .unwrap_or(stdout.len());
+
+            let new_path = String::from_utf8_lossy(&stdout[new_start..new_end]);
+
+            // 旧路径被删除
+            result.push((filepath.to_string(), 1, 1, 0));
+            // 新路径被添加
+            result.push((new_path.to_string(), 0, 2, 3));
+
+            // 跳到 new_path 的 NUL 之后
+            start = new_end + 1;
+            continue;
+        }
+
         let (head, workdir, stage) = match (index_status, workdir_status) {
             // 'M ' = 已暂存修改（索引有变更，工作区与HEAD一致）
             ('M', ' ') => (1, 1, 2),
@@ -336,7 +352,7 @@ pub fn git_status_matrix(dir: String) -> Result<Vec<FileStatusEntry>, String> {
         result.push((filepath.to_string(), head, workdir, stage));
 
         // 跳到下一个条目
-        start = path_end + 1;
+        start = entry_end + 1;
     }
 
     Ok(result)
