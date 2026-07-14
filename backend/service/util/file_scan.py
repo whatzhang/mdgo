@@ -1,6 +1,7 @@
 import json
 import logging
 import math
+import re
 import os
 import sys
 import time
@@ -78,68 +79,152 @@ _EXT_TYPE_MAP = {
     'glyphs': '字体', 'glyphs2': '字体',
 }
 
-# 需要跳过的目录列表（编译为元组以加速前缀匹配）
-_IGNORE_DIRS_TUPLE = tuple(
-    os.path.normpath(d).replace("\\", "/") for d in [".", "$",
-                                                     ".obsidian", ".venv", ".vscode", ".git", "assets",
-                                                     ".trae", ".claude", ".idea",
-                                                     ".mdgo",
-                                                     "node_modules", "vendor", "dist", "build", "out", "target",
-                                                     "__pycache__"
-                                                     ]
-)
-_IGNORE_FILENAMES = (".", "$", ".bobconfig", ".itermexport",
-                     ".gitignore", ".DS_Store", ".rayconfig")
+# ===================== 默认黑名单（与 JS 前端默认值保持一致） =====================
+# 即 index.html 中的：
+#   DIR_BLACKLIST   = ['.*/', '$*/', 'assets/', 'node_modules/', 'vendor/', 'dist/', 'build/', 'target/', '__pycache__/']
+#   FILE_BLACKLIST  = ['.*', '$*', '*.tmp', '*.log', '!.gitignore']
+_DEFAULT_DIR_BLACKLIST = [
+    '.*/', '$*/', 'assets/', 'node_modules/', 'vendor/',
+    'dist/', 'build/', 'target/', '__pycache__/',
+]
+_DEFAULT_FILE_BLACKLIST = [
+    '.*', '$*', '*.tmp', '*.log', '!.gitignore',
+]
 
 # ===================== 动态黑名单缓存（从设置中注入） =====================
 # 由后端 mount API 在接收到前端设置后调用 set_blacklists() 注入
-_DYNAMIC_DIR_BLACKLIST = []   # 目录黑名单（前缀匹配）
-_DYNAMIC_FILE_BLACKLIST = []  # 文件黑名单（前缀匹配）
+# 初始化为默认值，后续由 set_blacklists 按需覆盖
+_DYNAMIC_DIR_BLACKLIST = []   # 目录黑名单（原始 pattern 列表）
+_DYNAMIC_FILE_BLACKLIST = []  # 文件黑名单（原始 pattern 列表）
+
+# 编译后的规则缓存（由 set_blacklists 生成）
+_DYNAMIC_DIR_RULES = []
+_DYNAMIC_FILE_RULES = []
+
+
+def _compile_ignore_patterns(patterns):
+    """将 .gitignore 风格 pattern 列表编译为规则列表"""
+    rules = []
+    for raw in patterns:
+        pattern = raw.strip()
+        if not pattern or pattern.startswith('#'):
+            continue
+        negate = False
+        if pattern.startswith('!'):
+            negate = True
+            pattern = pattern[1:]
+        dir_only = False
+        if pattern.endswith('/'):
+            dir_only = True
+            pattern = pattern[:-1]
+        anchored = pattern.startswith('/')
+        if anchored:
+            pattern = pattern[1:]
+        has_slash = '/' in pattern
+        regex_str = ''
+        i = 0
+        while i < len(pattern):
+            ch = pattern[i]
+            if ch == '*':
+                if i + 1 < len(pattern) and pattern[i + 1] == '*':
+                    if i + 2 < len(pattern) and pattern[i + 2] == '/':
+                        regex_str += '(.+/)?'
+                        i += 3
+                        continue
+                    regex_str += '.+'
+                    i += 2
+                    continue
+                regex_str += '[^/]*'
+                i += 1
+            elif ch == '?':
+                regex_str += '[^/]'
+                i += 1
+            elif ch == '.':
+                regex_str += '\\.'
+                i += 1
+            elif ch == '[':
+                j = i + 1
+                regex_str += '['
+                if j < len(pattern) and pattern[j] == '!':
+                    regex_str += '^'
+                    j += 1
+                if j < len(pattern) and pattern[j] == ']':
+                    regex_str += ']'
+                    j += 1
+                while j < len(pattern) and pattern[j] != ']':
+                    c = pattern[j]
+                    if c in '.+(){}|\\^$':
+                        regex_str += '\\' + c
+                    else:
+                        regex_str += c
+                    j += 1
+                if j < len(pattern):
+                    regex_str += ']'
+                    j += 1
+                i = j
+            elif ch in '+(){}|\\^$':
+                regex_str += '\\' + ch
+                i += 1
+            else:
+                regex_str += ch
+                i += 1
+        if anchored or has_slash:
+            regex_str = '^' + regex_str + '$'
+        else:
+            regex_str = '(^|.*/)' + regex_str + '$'
+        rules.append({
+            'regex': re.compile(regex_str),
+            'negate': negate,
+            'dir_only': dir_only
+        })
+    return rules
+
+
+def _test_ignore(compiled, relative_path, is_dir):
+    """测试一个相对路径是否匹配编译后的规则（last-matching-rule-wins）"""
+    path = relative_path.replace('\\', '/').rstrip('/')
+    matched = False
+    for rule in compiled:
+        if rule['dir_only'] and not is_dir:
+            continue
+        if rule['regex'].search(path):
+            matched = not rule['negate']
+    return matched
 
 
 def set_blacklists(dir_blacklist=None, file_blacklist=None):
-    """从设置中注入动态黑名单，空列表或 None 表示全量扫描"""
-    global _DYNAMIC_DIR_BLACKLIST, _DYNAMIC_FILE_BLACKLIST
-    # 过滤非字符串元素，避免后续 startswith() 崩溃
-    raw_dirs = dir_blacklist or []
-    raw_files = file_blacklist or []
-    _DYNAMIC_DIR_BLACKLIST = [d for d in raw_dirs if isinstance(d, str)]
-    _DYNAMIC_FILE_BLACKLIST = [f for f in raw_files if isinstance(f, str)]
-    filtered_dirs = len(raw_dirs) - len(_DYNAMIC_DIR_BLACKLIST)
-    filtered_files = len(raw_files) - len(_DYNAMIC_FILE_BLACKLIST)
-    if filtered_dirs or filtered_files:
-        logger.warning(
-            f"⚠️ 黑名单中存在非字符串元素已过滤：目录 {filtered_dirs} 条，文件 {filtered_files} 条"
-        )
+    """从设置中注入动态黑名单并编译为规则。
+
+    - ``None`` → 使用与 JS 前端一致的默认值
+    - ``[]`` → 全量扫描（用户显式清空）
+    """
+    global _DYNAMIC_DIR_BLACKLIST, _DYNAMIC_FILE_BLACKLIST, _DYNAMIC_DIR_RULES, _DYNAMIC_FILE_RULES
+    if dir_blacklist is None:
+        dir_blacklist = list(_DEFAULT_DIR_BLACKLIST)
+    if file_blacklist is None:
+        file_blacklist = list(_DEFAULT_FILE_BLACKLIST)
+    # 过滤非字符串元素
+    dir_blacklist = [str(x) for x in dir_blacklist]
+    file_blacklist = [str(x) for x in file_blacklist]
+    _DYNAMIC_DIR_BLACKLIST = dir_blacklist
+    _DYNAMIC_FILE_BLACKLIST = file_blacklist
+    # 编译为规则
+    _DYNAMIC_DIR_RULES = _compile_ignore_patterns(_DYNAMIC_DIR_BLACKLIST)
+    _DYNAMIC_FILE_RULES = _compile_ignore_patterns(_DYNAMIC_FILE_BLACKLIST)
     logger.info(
         f"🔧 动态黑名单已更新：目录黑名单 {len(_DYNAMIC_DIR_BLACKLIST)} 条，"
         f"文件黑名单 {len(_DYNAMIC_FILE_BLACKLIST)} 条"
     )
 
 
-def should_ignore_file(file_name):
-    """检查文件名是否应该被跳过（内置规则 + 动态文件黑名单）"""
-    if file_name.startswith(_IGNORE_FILENAMES):
-        return True
-    # 动态文件黑名单前缀匹配
-    for prefix in _DYNAMIC_FILE_BLACKLIST:
-        if file_name.startswith(prefix):
-            return True
-    return False
+def should_ignore_file(relative_path):
+    """检查文件相对路径是否应该被跳过（仅使用编译后的动态文件黑名单）"""
+    return _test_ignore(_DYNAMIC_FILE_RULES, relative_path, False)
 
 
 def should_ignore_dir(relative_path):
-    """判断目录是否在忽略列表中（内置规则 + 动态目录黑名单，前缀匹配）"""
-    normalized = relative_path.replace("\\", "/")
-    if '__pycache__' in normalized:
-        return True
-    if normalized.startswith(_IGNORE_DIRS_TUPLE):
-        return True
-    # 动态目录黑名单前缀匹配
-    for prefix in _DYNAMIC_DIR_BLACKLIST:
-        if normalized.startswith(prefix):
-            return True
-    return False
+    """判断目录相对路径是否在忽略列表中（仅使用编译后的动态目录黑名单）"""
+    return _test_ignore(_DYNAMIC_DIR_RULES, relative_path, True)
 
 
 # 文件大小格式化常量
@@ -205,7 +290,8 @@ def _scan_scandir(base_dir, on_file, on_dir=None):
         files = []
         for entry in entries:
             name = entry.name.replace('/', '／')
-            if should_ignore_file(name):
+            child_rel = f"{rel_root}/{name}" if rel_root else name
+            if should_ignore_file(child_rel):
                 continue
             try:
                 is_dir = entry.is_dir(follow_symlinks=False)
@@ -213,7 +299,6 @@ def _scan_scandir(base_dir, on_file, on_dir=None):
                 continue
 
             if is_dir:
-                child_rel = f"{rel_root}/{name}" if rel_root else name
                 if should_ignore_dir(child_rel):
                     ignored_dirs_total += 1
                     continue
