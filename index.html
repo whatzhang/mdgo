@@ -4183,6 +4183,12 @@
             overflow-y: auto;
         }
 
+        #swagger-editor-container {
+            width: 100%;
+            height: 100%;
+            overflow-y: auto;
+        }
+
         .tools-buttons-container {
             display: flex;
             gap: 10px;
@@ -11933,8 +11939,10 @@
         <div id="content-main-edit" class="content-main-edit" style="display: none;"></div>
         <!-- 展示模式（渲染后的内容） -->
         <div id="content-main" style="display: block;"></div>
-        <!-- 通用容器（Swagger/书签/白板等） -->
+        <!-- 通用容器（书签/白板等） -->
         <div id="content-common-container" style="display: none;"></div>
+        <!-- Swagger 专用容器（隔离 innerHTML 覆盖） -->
+        <div id="swagger-editor-container" style="display: none;"></div>
         <!-- 关系图谱 -->
         <div id="graph-view-container" style="display: none;width: 100%; height: 100%;">
             <div class="graph-toolbar-container">
@@ -13699,7 +13707,7 @@
         // 随机打开功能的目录
         let RANDOM_DIR_BLACKLIST = ['note/moc/', 'note/templates/', 'deleted/', 'data/', 'code/'];
         // 显示渲染而非代码的目录
-        let HTML_CODE_SHOW_BLACKLIST = ["note/"];
+        let HTML_CODE_SHOW_BLACKLIST = ["note/"]; 
         // 编译后的黑名单规则（由 compileAllRules 在启动和保存时生成）
         let DIR_RULES = [];
         let FILE_RULES = [];
@@ -13778,7 +13786,6 @@
             { key: 'canvas', name: 'untitled.canvas', ext: ".canvas", custom: true, param: 'canvas' },
             { key: '白板', name: 'untitled.excalidraw', ext: ".excalidraw", custom: true, param: 'whiteboard' },
             { key: 'mermaid', name: 'untitled.mmd', ext: ".mmd", custom: true, param: 'mermaid' },
-
         ]
         // 右键菜单中的快捷操作
         const NEW_DIR = [
@@ -13810,6 +13817,7 @@
             { key: 'GraphiQL', value: 'toggleFile("graphiQL")', display: true, fileProtocolDisplay: false, tauriDisplay: false, serverDisplay: true },
             { key: 'GraphQLPlayground', value: 'toggleFile("graphQLPlayground")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
             { key: 'OpenResty', value: 'toggleFile("openRestyEditor")', display: true, fileProtocolDisplay: false, tauriDisplay: false, serverDisplay: true },
+            { key: 'Swagger', value:'toggleFile("swaggerDemo")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
             { key: '番茄钟', value: 'toggleFile("pomodoro")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
             { key: '正则表达式', value: 'toggleFile("regexTest")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
             { key: 'Cron', value: 'toggleFile("cron")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
@@ -14168,6 +14176,7 @@
         const copyClipboardBtn = document.getElementById('copy-clipboard-btn');
         const newFileDropdownPanel = document.getElementById('new-file-dropdown-panel');
         const contentCommonContainer = document.getElementById('content-common-container');
+        const swaggerEditorContainer = document.getElementById('swagger-editor-container');
         const dashboardContainer = document.getElementById('dashboard-container');
         const dashboardButtons = document.getElementById('tools-buttons-container');
         const graphqlContainer = document.getElementById('graphql-container');
@@ -14199,7 +14208,8 @@
             graphqlContainer, openrestyEditorContainer, graphViewContainer,
             iframeCommonContainer, mermaidAppContainer, timelineAppContainer,
             graphqlPlaygroundContainer, regexTestContainer, calendarContainer,
-            cronViewContainer, videoViewContainer, wordViewContainer, gitRecordsContainer
+            cronViewContainer, videoViewContainer, wordViewContainer, gitRecordsContainer,
+            swaggerEditorContainer
         ];
 
         const AUX_CONTROLS = [
@@ -14346,6 +14356,8 @@
                 await openGraphQLPlayground();
             } else if (type === 'openRestyEditor') {
                 await openOpenRestyEditor();
+            } else if (type === 'swaggerDemo') {
+                await openSwaggerDemo();
             } else if (type === 'mermaid') {
                 await renderMermaidFile();
             } else if (type === 'whiteboard') {
@@ -15338,7 +15350,7 @@
         }
 
         async function switchToView(targetContainer, displayValue) {
-            targetContainer.style.display = displayValue || '';
+            targetContainer.style.display = displayValue || 'block';
             for (let i = 0; i < MAIN_VIEW_CONTAINERS.length; i++) {
                 if (MAIN_VIEW_CONTAINERS[i] !== targetContainer) {
                     MAIN_VIEW_CONTAINERS[i].style.display = 'none';
@@ -21872,85 +21884,266 @@
         }
 
         function swaggerEditorAdd(text) {
-            return SwaggerEditorBundle({
-                dom_id: '#content-common-container',
-                presets: [SwaggerEditorStandalonePreset],
-                layout: 'StandaloneLayout',
-                defaultModelRendering: 'model',
-                showExtensions: true,
-                showCommonExtensions: true,
-                tryItOutEnabled: true,
-                spec: text,
-                deepLinking: true,
-                docExpansion: 'list',
-                defaultModelsExpandDepth: 2,
-                defaultModelExpandDepth: 2
-            });
+            // 保存/恢复全局 define，避免 Monaco AMD Loader 的 define 干扰 Swagger Editor 的 UMD 模块
+            const savedDefine = window.define;
+            try {
+                window.define = undefined;
+                return SwaggerEditorBundle({
+                    dom_id: '#swagger-editor-container',
+                    presets: [SwaggerEditorStandalonePreset],
+                    layout: 'StandaloneLayout',
+                    defaultModelRendering: 'model',
+                    showExtensions: true,
+                    showCommonExtensions: true,
+                    tryItOutEnabled: true,
+                    spec: text,
+                    deepLinking: true,
+                    docExpansion: 'list',
+                    defaultModelsExpandDepth: 2,
+                    defaultModelExpandDepth: 2
+                });
+            } finally {
+                window.define = savedDefine;
+            }
         }
 
         async function renderSwaggerFile(text, fileName) {
-            await switchToView(contentCommonContainer);
-            TimerManager.clear('swaggerAutoSave');
-            // 快照捕获：锁定当前文件名、文件句柄和原始内容，闭包内不再依赖易变的全局变量
+            await switchToView(swaggerEditorContainer);
             const capturedFileName = fileName;
             const capturedFileHandle = currentFileHandle;
-            let capturedOriginalContent = originalContent;
+            let capturedOriginalContent = text;
 
-            if (!swaggerEditor) {
-                // 首次创建 Swagger Editor（只创建一次，后续复用）
-                swaggerEditor = swaggerEditorAdd(text);
-            } else {
-                // 复用已有实例，仅更新 spec（try-catch 保护）
-                try {
-                    swaggerEditor.specActions.updateSpec(text);
-                } catch (err) {
-                    console.error('Swagger Editor updateSpec 失败，销毁重建', err);
-                    try { swaggerEditor = null; } catch (e) { /* 忽略 */ }
-                    swaggerEditor = swaggerEditorAdd(text);
-                }
-            }
+            _initSwaggerEditor(text);
 
-            async function autoSaveTick() {
-                // 检查编辑器实例和容器可见性（同时检测 display 和 offsetParent）
-                const container = contentCommonContainer;
-                if (!swaggerEditor || container.style.display === 'none' || container.offsetParent === null) {
-                    TimerManager.clear('swaggerAutoSave');
-                    return;
-                }
-                // 检查文件名是否匹配，避免切换文件后写错内容
-                if (currentFileName !== capturedFileName) {
-                    TimerManager.clear('swaggerAutoSave');
-                    return;
-                }
-                try {
-                    // 仅限 #content-common-container 内的 ACE 编辑器，避免误匹配其他模块
-                    const aceEl = container.querySelector('.ace_editor');
-                    if (aceEl && window.ace) {
-                        let currentSpec = ace.edit(aceEl).getValue();
+            async function handleSwaggerSave(e) {
+                const isMod = e.metaKey || e.ctrlKey;
+                if (e.key === 's' && isMod && !e.shiftKey && !e.altKey) {
+                    e.preventDefault();
+                    if (currentFileName !== capturedFileName) return;
+                    try {
+                        const currentSpec = _getSwaggerSpec();
                         if (currentSpec && currentSpec !== capturedOriginalContent) {
-                            // 保存前再次确认文件名未变（double-check，防极低概率竞态）
-                            if (currentFileName !== capturedFileName) {
-                                TimerManager.clear('swaggerAutoSave');
-                                return;
-                            }
                             await saveExistFileContent(currentSpec, true, capturedFileHandle);
-                            capturedOriginalContent = currentSpec; // 更新快照，避免重复保存相同内容
+                            capturedOriginalContent = currentSpec;
+                        } else {
+                            showNotification('内容无变化', 'warning');
                         }
-                    } else {
-                        console.warn('未找到 Swagger Editor 的 ACE 编辑器实例，无法自动保存');
-                        TimerManager.clear('swaggerAutoSave');
+                    } catch (err) {
+                        console.error('swagger 内容保存失败', err);
+                        showNotification('✗ 保存失败: ' + err.message, 'error');
                     }
-                } catch (err) {
-                    console.error('swagger 内容保存失败', err);
                 }
             }
-            TimerManager.set('swaggerAutoSave', autoSaveTick, 5000);
+            if (window._swaggerSaveHandler) {
+                window.removeEventListener('keydown', window._swaggerSaveHandler, true);
+            }
+            window.addEventListener('keydown', handleSwaggerSave, true);
+            window._swaggerSaveHandler = handleSwaggerSave;
         }
 
-        // 停掉 Swagger 自动保存定时器（不销毁编辑器，避免插件冲突）
+        /** 初始化或更新 Swagger Editor（单例模式，用 updateSpec 更新内容避免 Worker 重建） */
+        function _initSwaggerEditor(spec) {
+            if (!swaggerEditor) {
+                swaggerEditor = swaggerEditorAdd(spec);
+            } else {
+                swaggerEditor.specActions.updateSpec(spec);
+            }
+        }
+
+        /** 从 Swagger Editor 的 ACE 编辑器中获取当前内容（公共方法） */
+        function _getSwaggerSpec() {
+            const aceEl = swaggerEditorContainer.querySelector('.ace_editor');
+            return (aceEl && window.ace) ? ace.edit(aceEl).getValue() : '';
+        }
+
+        const SWAGGER_DEMO_SPEC = `openapi: "3.0.0"
+info:
+  title: 示例 API 文档
+  description: 这是一个 Swagger 示例，包含常用的 HTTP 方法
+  version: "1.0.0"
+servers:
+  - url: http://127.0.0.1:8080
+    description: 测试环境
+paths:
+  /users:
+    get:
+      summary: 获取用户列表
+      description: 返回所有用户的列表，支持分页
+      parameters:
+        - name: page
+          in: query
+          description: 页码
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          description: 每页数量
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: 成功返回用户列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  \$ref: '#/components/schemas/User'
+    post:
+      summary: 创建新用户
+      description: 创建一个新的用户账户
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              \$ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: 用户创建成功
+          content:
+            application/json:
+              schema:
+                \$ref: '#/components/schemas/User'
+        '400':
+          description: 请求参数错误
+  /users/{userId}:
+    get:
+      summary: 获取用户详情
+      description: 根据用户 ID 获取指定用户的详细信息
+      parameters:
+        - name: userId
+          in: path
+          description: 用户 ID
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 成功返回用户信息
+          content:
+            application/json:
+              schema:
+                \$ref: '#/components/schemas/User'
+        '404':
+          description: 用户不存在
+    put:
+      summary: 更新用户信息
+      description: 更新指定用户的全部信息
+      parameters:
+        - name: userId
+          in: path
+          description: 用户 ID
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              \$ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '200':
+          description: 用户信息更新成功
+          content:
+            application/json:
+              schema:
+                \$ref: '#/components/schemas/User'
+        '404':
+          description: 用户不存在
+    delete:
+      summary: 删除用户
+      description: 根据用户 ID 删除指定用户
+      parameters:
+        - name: userId
+          in: path
+          description: 用户 ID
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: 用户删除成功（无返回内容）
+        '404':
+          description: 用户不存在
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: 用户 ID
+        name:
+          type: string
+          description: 用户名
+        email:
+          type: string
+          format: email
+          description: 邮箱
+        createdAt:
+          type: string
+          format: date-time
+          description: 创建时间
+    CreateUserRequest:
+      type: object
+      required:
+        - name
+        - email
+      properties:
+        name:
+          type: string
+          description: 用户名
+        email:
+          type: string
+          format: email
+          description: 邮箱
+`;
+
+        async function openSwaggerDemo() {
+            await switchToView(swaggerEditorContainer);
+            _initSwaggerEditor(SWAGGER_DEMO_SPEC);
+            setControlsState({ topControls: false, newFileControls: false, editBtn: false, previewBtn: false, saveBtn: false });
+
+            async function handleSwaggerDemoSave(e) {
+                const isMod = e.metaKey || e.ctrlKey;
+                if (e.key === 's' && isMod && !e.shiftKey && !e.altKey) {
+                    e.preventDefault();
+                    try {
+                        const currentSpec = _getSwaggerSpec();
+                        if (!currentSpec) return;
+                        await showSaveModal({
+                            title: '保存 Swagger 文件',
+                            getDefaultFileName: () => 'api.yaml',
+                            getContent: () => currentSpec,
+                            onSave: doSaveToFolder
+                        });
+                    } catch (err) {
+                        console.error('swagger 内容保存失败', err);
+                        showNotification('✗ 保存失败: ' + err.message, 'error');
+                    }
+                }
+            }
+            if (window._swaggerDemoSaveHandler) {
+                window.removeEventListener('keydown', window._swaggerDemoSaveHandler, true);
+            }
+            window.addEventListener('keydown', handleSwaggerDemoSave, true);
+            window._swaggerDemoSaveHandler = handleSwaggerDemoSave;
+        }
+
         async function destroySwaggerEditor() {
-            if (TimerManager.has('swaggerAutoSave')) {
-                TimerManager.clear('swaggerAutoSave');
+            if (window._swaggerSaveHandler) {
+                window.removeEventListener('keydown', window._swaggerSaveHandler, true);
+                window._swaggerSaveHandler = null;
+            }
+            if (window._swaggerDemoSaveHandler) {
+                window.removeEventListener('keydown', window._swaggerDemoSaveHandler, true);
+                window._swaggerDemoSaveHandler = null;
             }
         }
 
@@ -29036,7 +29229,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             'tsconfig.json': 'json',
             'jsconfig.json': 'json',
             'cargo.toml': 'ini',
-            'requirements.txt': 'plaintext',
+            'requirements.txt': 'shell',
             'nginx.conf': 'shell',
             'kustomization.yaml': 'yaml',
             'docker-compose.yml': 'yaml',
@@ -43573,6 +43766,48 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     regexStr = '(^|.*/)' + regexStr + '$';
                 }
                 rules.push({ regex: new RegExp(regexStr, ''), negate, dirOnly });
+                // 以 / 结尾的目录模式也匹配该目录下的所有文件/子目录
+                if (dirOnly) {
+                    const filePattern = anchored
+                        ? pattern + '/**'
+                        : '**/' + pattern + '/**';
+                    let fileRegexStr = '';
+                    let fi = 0;
+                    while (fi < filePattern.length) {
+                        const ch = filePattern[fi];
+                        if (ch === '*') {
+                            if (fi + 1 < filePattern.length && filePattern[fi + 1] === '*') {
+                                if (fi + 2 < filePattern.length && filePattern[fi + 2] === '/') {
+                                    fileRegexStr += '(.+/)?'; fi += 3; continue;
+                                }
+                                fileRegexStr += '.+'; fi += 2; continue;
+                            }
+                            fileRegexStr += '[^/]*'; fi++;
+                        } else if (ch === '?') {
+                            fileRegexStr += '[^/]'; fi++;
+                        } else if (ch === '.') {
+                            fileRegexStr += '\\.'; fi++;
+                        } else if (ch === '[') {
+                            let j = fi + 1;
+                            fileRegexStr += '[';
+                            if (j < filePattern.length && filePattern[j] === '!') { fileRegexStr += '^'; j++; }
+                            if (j < filePattern.length && filePattern[j] === ']') { fileRegexStr += ']'; j++; }
+                            while (j < filePattern.length && filePattern[j] !== ']') {
+                                const c = filePattern[j];
+                                fileRegexStr += '.+(){}|\\^$'.includes(c) ? '\\' + c : c;
+                                j++;
+                            }
+                            if (j < filePattern.length) { fileRegexStr += ']'; j++; }
+                            fi = j;
+                        } else if ('+(){}|\\^$'.includes(ch)) {
+                            fileRegexStr += '\\' + ch; fi++;
+                        } else {
+                            fileRegexStr += ch; fi++;
+                        }
+                    }
+                    fileRegexStr = '^' + fileRegexStr + '$';
+                    rules.push({ regex: new RegExp(fileRegexStr, ''), negate, dirOnly: false });
+                }
             }
             return rules;
         }
