@@ -121,7 +121,7 @@
                 });
 
                 return {
-                    blob: new Uint8Array(result.blob)
+                    blob: new Uint8Array(result.blob),
                 };
             } catch (error) {
                 return null;

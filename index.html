@@ -3972,7 +3972,7 @@
         }
 
         .bookmark-header {
-            padding: 5px 0 0 10px;
+            padding: 5px 10px;
             display: flex;
             justify-content: flex-start;
             align-items: center;
@@ -3985,7 +3985,7 @@
 
         .bookmark-refresh-btn {
             margin-left: auto;
-            margin-right: 0.75rem;
+            margin-right: 0;
         }
 
         .bookmark-title {
@@ -4019,7 +4019,7 @@
         }
 
         .bookmark-tree {
-            background: var(--color-bg);
+            background: var(--color-bg-secondary);
             border-radius: var(--radius-lg);
             padding: 0.25rem;
             box-shadow: var(--shadow-sm);
@@ -29032,7 +29032,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             'package-lock.json': 'json',
             'tsconfig.json': 'json',
             'jsconfig.json': 'json',
-            'cargo.toml': 'yaml',
+            'cargo.toml': 'ini',
             'requirements.txt': 'plaintext',
             'nginx.conf': 'shell',
             'kustomization.yaml': 'yaml',
@@ -29082,11 +29082,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             rb: 'ruby',
             php: 'php',
             cs: 'csharp',
-            kt: 'kotlin',
-            kts: 'kotlin',
+            kt: 'java',
+            kts: 'java',
             scala: 'scala',
             swift: 'swift',
-            dart: 'dart',
+            dart: 'javascript',
             lua: 'lua',
             pl: 'perl',
             r: 'r',
@@ -29110,9 +29110,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             sqlite: 'sql',
             dockerfile: 'dockerfile',
             nginx: 'shell',
-            tf: 'terraform',
-            hcl: 'terraform',
-            proto: 'protobuf',
+            proto: 'plaintext',
             csv: 'plaintext',
             tsv: 'plaintext',
             log: 'plaintext',
@@ -35064,6 +35062,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         let graphRootPath = null;  // 图谱根目录路径
         let linkGraphCache = null;     // 文档关联图谱数据缓存
         let _graphTraversing = false;  // 文件系统遍历中标志
+        let _savedNodePositions = null;  // 重建时保留节点位置
 
         // 数字 ID 生成器
         let _nodeIdCounter = 0;
@@ -35090,6 +35089,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (graphRenderer) { graphRenderer.destroy(); graphRenderer = null; }
             if (graphInteraction) { graphInteraction.destroy(); graphInteraction = null; }
             window.removeEventListener('resize', resizeFileGraphCanvas);
+
             graphDataMap = { nodes: new Map(), nodesArray: [], edges: [], neighborsMap: new Map() };
             graphCachedNodes = null;
             graphCachedEdges = null;
@@ -35106,6 +35106,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             clearTimeout(_graphFilterDebounceId);
             _graphFilterDebounceId = null;
             _graphRebuilding = false;
+            _graphTraversing = false;
+            _savedNodePositions = null;
             if (graphCanvas) { graphCtx = null; graphCanvas = null; }
             graphWidth = 0;
             graphHeight = 0;
@@ -35147,6 +35149,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (!checkbox || !refreshBtn) return;
             const isLinkMode = checkbox.checked;
             const prevMode = graphMode;
+            _savedNodePositions = null;
             setGraphControlsDisabled(true);
             try {
                 graphMode = isLinkMode ? 'link' : 'file';
@@ -35364,6 +35367,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (graphInteraction) { graphInteraction.destroy(); graphInteraction = null; }
                 document.getElementById('node-count').textContent = '0';
                 document.getElementById('edge-count').textContent = '0';
+                if (graphCtx) {
+                    const dpr = Math.max(window.devicePixelRatio || 1, 2);
+                    graphCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                    graphCtx.clearRect(0, 0, graphWidth, graphHeight);
+                }
                 return;
             }
 
@@ -35464,10 +35472,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         function finalizeGraphRender(forceRecreate = false) {
             if (forceRecreate) {
-                if (graphRenderer) graphRenderer.invalidateDataCaches();
+                if (graphRenderer) { graphRenderer.destroy(); graphRenderer = null; }
                 if (graphLayout) { graphLayout.destroy(); graphLayout = null; }
-                graphRenderer = null;
-                graphInteraction = null;
+                if (graphInteraction) { graphInteraction.destroy(); graphInteraction = null; }
             }
 
             if (!graphLayout) graphLayout = new GraphLayout(graphWidth, graphHeight);
@@ -35477,6 +35484,20 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             document.getElementById('node-count').textContent = graphDataMap.nodes.size;
             document.getElementById('edge-count').textContent = graphDataMap.edges.length;
 
+            const nodes = Array.from(graphDataMap.nodes.values());
+            const cols = Math.ceil(Math.sqrt(nodes.length));
+            let gridIdx = 0;
+            nodes.forEach((node) => {
+                const saved = _savedNodePositions && _savedNodePositions.get(node.id);
+                if (saved) {
+                    node.x = saved.x;
+                    node.y = saved.y;
+                } else {
+                    node.x = (gridIdx % cols) * 50 - (cols * 25) + graphWidth / 2;
+                    node.y = Math.floor(gridIdx / cols) * 50 - (cols * 25) + graphHeight / 2;
+                    gridIdx++;
+                }
+            });
             graphLayout.updateData(graphDataMap);
             graphLayout.onTick(() => graphRenderer.requestRender());
             graphRenderer.requestRender();
@@ -35487,6 +35508,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 this.width = width;
                 this.height = height;
                 this.isPaused = false;
+                this.nodes = [];
+                this.edges = [];
+                this._rafId = null;
+                this._tickCount = 0;
+                this._maxTicks = 500;
+                this._renderCallback = null;
                 this.initSimulation();
             }
 
@@ -35505,24 +35532,74 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     .force('collide', d3.forceCollide()
                         .radius(d => d.size + 12)
                         .strength(0.8))
-                    .alphaDecay(0.02)
-                    .on('end', () => {
+                    .alphaDecay(0.008);
+                // Phase 1: 停止自动仿真，手动 rAF 控制
+                this.simulation.stop();
+                this.simulation.alpha(0.3);
+            }
+
+            _startRAFLoop() {
+                if (this._rafId) return;
+                this._tickCount = 0;
+                const loop = () => {
+                    if (this.isPaused) {
+                        this._rafId = null;
+                        return;
+                    }
+                    if (!this.simulation || this.simulation.alpha() < 0.001 || this._tickCount >= this._maxTicks) {
+                        if (this.simulation) this.simulation.stop();
+                        this._rafId = null;
                         this.isPaused = true;
                         updateGraphPauseButton(true);
-                    });
+                        // 仿真收敛后缓存节点位置，供下次重建时恢复
+                        if (graphDataMap && graphDataMap.nodesArray) {
+                            _savedNodePositions = new Map();
+                            for (const n of graphDataMap.nodesArray) {
+                                if (n.x !== undefined) _savedNodePositions.set(n.id, { x: n.x, y: n.y });
+                            }
+                        }
+                        if (this._renderCallback) this._renderCallback();
+                        return;
+                    }
+                    this.simulation.tick(1);
+                    this._tickCount++;
+                    if (this._renderCallback) this._renderCallback();
+                    this._rafId = requestAnimationFrame(loop);
+                };
+                this._rafId = requestAnimationFrame(loop);
             }
+
             updateData(data) {
                 if (!data || !data.nodes || !data.edges) return;
                 const nodes = Array.from(data.nodes.values());
                 const edges = data.edges;
-                this.simulation.nodes(nodes);
-                this.simulation.force('link').links(edges);
-                this.simulation.alpha(1).restart();
+                this.nodes = nodes;
+                this.edges = edges;
+
+                const hasPositions = nodes.length > 0 && nodes[0].x !== undefined && (nodes[0].x !== 0 || nodes[0].y !== 0);
+                if (!hasPositions) {
+                    const cols = Math.ceil(Math.sqrt(nodes.length));
+                    nodes.forEach((node, i) => {
+                        node.x = (i % cols) * 50 - (cols * 25);
+                        node.y = Math.floor(i / cols) * 50 - (cols * 25);
+                    });
+                }
+
                 this.isPaused = false;
                 updateGraphPauseButton(false);
+
+                // rAF 模式
+                if (!this.simulation) {
+                    this.initSimulation();
+                }
+                this.simulation.nodes(nodes);
+                this.simulation.force('link').links(edges);
+                this.simulation.alpha(0.3);
+                this._startRAFLoop();
             }
 
             updateParams(params) {
+                if (!this.simulation) return;
                 this.simulation.force('x').strength(params.centerStrength);
                 this.simulation.force('y').strength(params.centerStrength);
                 this.simulation.force('charge').strength(params.chargeStrength);
@@ -35531,20 +35608,21 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 linkForce.distance(params.linkDistance);
                 this.simulation.force('collide').radius(d => d.size + 12);
                 this.simulation.alpha(0.3).restart();
+                // 重启 rAF 循环，让画面重新动起来
+                this.isPaused = false;
+                updateGraphPauseButton(false);
+                this._startRAFLoop();
             }
 
             onTick(callback) {
-                this.simulation.on('tick', () => {
-                    if (callback) callback();
-                });
+                this._renderCallback = callback;
             }
 
             fixNode(node, x, y) {
                 if (!node) return;
                 node.fx = x;
                 node.fy = y;
-                // 仅在未暂停时重启物理引擎
-                if (!this.isPaused) {
+                if (!this.isPaused && this.simulation) {
                     if (this.simulation.alphaTarget() === 0) {
                         this.simulation.alphaTarget(0.3).restart();
                     }
@@ -35555,14 +35633,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (!node) return;
                 node.fx = null;
                 node.fy = null;
-                if (!this.isPaused) {
+                if (!this.isPaused && this.simulation) {
                     this.simulation.alphaTarget(0);
                 }
             }
 
             getNodeAt(canvasX, canvasY, nodes) {
                 if (!nodes) return null;
-                // 逆序查找，确保最上层节点优先被选中
                 for (let i = nodes.length - 1; i >= 0; i--) {
                     const node = nodes[i];
                     if (node.x === undefined || node.y === undefined) continue;
@@ -35576,9 +35653,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             resize(width, height) {
                 this.width = width;
                 this.height = height;
+                if (!this.simulation) return;
                 this.simulation.force('x').x(width / 2);
                 this.simulation.force('y').y(height / 2);
+                this.isPaused = false;
+                updateGraphPauseButton(false);
                 this.simulation.alpha(0.3).restart();
+                this._startRAFLoop();
             }
 
             togglePause() {
@@ -35588,20 +35669,28 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
 
             pause() {
-                if (this.simulation) {
-                    this.simulation.stop();
-                    this.isPaused = true;
+                this.isPaused = true;
+                if (this.simulation) this.simulation.stop();
+                if (this._rafId) {
+                    cancelAnimationFrame(this._rafId);
+                    this._rafId = null;
                 }
             }
 
             resume() {
+                this.isPaused = false;
+                updateGraphPauseButton(false);
                 if (this.simulation) {
                     this.simulation.alpha(0.3).restart();
-                    this.isPaused = false;
+                    this._startRAFLoop();
                 }
             }
 
             destroy() {
+                if (this._rafId) {
+                    cancelAnimationFrame(this._rafId);
+                    this._rafId = null;
+                }
                 if (this.simulation) {
                     this.simulation.stop();
                     this.simulation.on('tick', null);
@@ -35609,6 +35698,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     this.simulation.nodes([]);
                     this.simulation.force('link').links([]);
                 }
+                this.nodes = [];
+                this.edges = [];
+                this._renderCallback = null;
             }
         }
 
@@ -35773,67 +35865,46 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const focusSet = this._getFocusSet();
                 const showIsolated = graphParams.showIsolated;
 
+                // 批量 Path 绘制: 所有普通边并入同一条 path，单次 stroke
+                ctx.beginPath();
+                const highlightEdges = []; // 缓存高亮边
                 for (let i = 0; i < edges.length; i++) {
                     const edge = edges[i];
                     const source = edge.source;
                     const target = edge.target;
                     if (source.x === undefined || target.x === undefined) continue;
-
                     if (!showIsolated && (source._degree === 0 || target._degree === 0)) continue;
-
                     if (focusSet !== null) {
                         if (!focusSet.has(source.id) && source.id !== this.focusNodeId) continue;
                         if (!focusSet.has(target.id) && target.id !== this.focusNodeId) continue;
                     }
-
                     if (!this.isEdgeVisible(source, target, bounds)) continue;
 
                     const isHighlighted = !this.focusNodeId && this.highlightedNode
                         && (source.id === this.highlightedNode.id || target.id === this.highlightedNode.id);
 
-                    // 计算连线中点，并沿垂直方向偏移，避免同一方向的多条连线重叠
-                    const midX = (source.x + target.x) / 2;
-                    const midY = (source.y + target.y) / 2;
-                    const dx = target.x - source.x;
-                    const dy = target.y - source.y;
-                    const len = Math.sqrt(dx * dx + dy * dy);
-                    const offsetPx = 18;
-                    let cpX = midX, cpY = midY;
-                    if (len > 1) {
-                        // 根据 source+target id 生成确定性偏移，确保相同连线始终一致
-                        const idStr = String(source.id) + '|' + String(target.id);
-                        let hash = 0;
-                        for (let c = 0; c < idStr.length; c++) {
-                            hash = ((hash << 5) - hash) + idStr.charCodeAt(c);
-                            hash |= 0;
-                        }
-                        const dir = (hash % 3) - 1; // -1, 0, 1
-                        if (dir !== 0) {
-                            // 垂直方向（顺时针旋转90度）
-                            const nx = -dy / len;
-                            const ny = dx / len;
-                            cpX = midX + nx * offsetPx * dir;
-                            cpY = midY + ny * offsetPx * dir;
-                        }
+                    if (isHighlighted) {
+                        highlightEdges.push({ source, target });
+                        continue;
                     }
 
+                    ctx.moveTo(source.x, source.y);
+                    ctx.lineTo(target.x, target.y);
+                }
+                ctx.strokeStyle = 'rgba(101, 109, 118, 0.55)';
+                ctx.lineWidth = 0.6;
+                ctx.stroke();
+
+                // 单独绘制高亮边
+                for (let i = 0; i < highlightEdges.length; i++) {
+                    const { source, target } = highlightEdges[i];
                     ctx.beginPath();
                     ctx.moveTo(source.x, source.y);
-                    if (cpX !== midX || cpY !== midY) {
-                        ctx.quadraticCurveTo(cpX, cpY, target.x, target.y);
-                    } else {
-                        ctx.lineTo(target.x, target.y);
-                    }
-                    if (isHighlighted) {
-                        ctx.strokeStyle = '#0969da';
-                        ctx.lineWidth = 1.5;
-                        ctx.shadowColor = '#0969da';
-                        ctx.shadowBlur = 8;
-                    } else {
-                        ctx.strokeStyle = 'rgba(101, 109, 118, 0.55)';
-                        ctx.lineWidth = 0.6;
-                        ctx.shadowBlur = 0;
-                    }
+                    ctx.lineTo(target.x, target.y);
+                    ctx.strokeStyle = '#0969da';
+                    ctx.lineWidth = 1.5;
+                    ctx.shadowColor = '#0969da';
+                    ctx.shadowBlur = 8;
                     ctx.stroke();
                     ctx.shadowBlur = 0;
                 }
@@ -35939,6 +36010,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
                 this.ctx = null;
                 this.canvas = null;
+                this.highlightedNode = null;
+                this.focusNodeId = null;
+                this._cachedFocusSet = null;
+                this._cachedVisibleBounds = null;
             }
         }
 
@@ -35958,6 +36033,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 // 修复 zoom 冲突：使用 filter 阻止点中节点时的 zoom 事件
                 this.zoomBehavior = d3.zoom()
                     .scaleExtent([0.1, 5])
+                    .wheelDelta(event => -event.deltaY * (event.deltaMode ? 120 : 1) / 2000)
                     .filter(event => {
                         if (event.type === 'mousedown' || event.type === 'touchstart' || event.type === 'pointerdown') {
                             const [cx, cy] = this.renderer.screenToCanvas(event.offsetX, event.offsetY);
@@ -36117,6 +36193,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 this.canvas.removeEventListener('mouseup', this._boundOnMouseUp);
                 this.canvas.removeEventListener('mouseleave', this._boundOnMouseUp);
                 this.canvas.removeEventListener('click', this._boundOnClick);
+                this.draggingNode = null;
+                this.renderer = null;
+                this.layout = null;
+                this._boundOnMouseDown = null;
+                this._boundOnMouseMove = null;
+                this._boundOnMouseUp = null;
+                this._boundOnClick = null;
             }
         }
         // 12种高区分度色相：红、靛蓝、橙、纯紫、正黄、玫红、黄绿、正绿、青绿、天青、洋红
@@ -36223,6 +36306,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         async function _doRefreshGraphData() {
+            _savedNodePositions = null;
+            if (!graphCanvas) initGraphCanvas();
             if (graphMode === 'link') {
                 loadGraphParams();
                 const data = await scanMarkdownLinks();
