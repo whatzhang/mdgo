@@ -16,8 +16,7 @@
    - `index.html` → 依赖本地 js/css 文件  
    - `index_cdn.html` → 依赖网络 CDN
 3. 本地运行：启动后端服务 `backend/main.py`，然后访问 `http://localhost:8091`
-4. 打包应用  
-   运行打包命令：  
+4. 打包应用 
     - Linux/macOS: `tauri/build.sh build`  
     - Windows: `tauri/build.bat build`  
    安装包输出路径：`tauri/src-tauri/target/release/bundle`

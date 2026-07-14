@@ -1263,15 +1263,14 @@
             background: var(--color-text-tertiary);
             color: var(--color-text-white);
             border-radius: 50%;
-            font-size: 11px;
+            font-size: 0.625rem;
+            line-height: 1;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
             margin-right: 4px;
             flex-shrink: 0;
-            align-items: center;
-            justify-content: center;
             padding: 0;
             line-height: 1;
             transition: background-color var(--transition-normal);
@@ -1969,6 +1968,14 @@
 
         .ob-callout-title {
             font-weight: 600;
+        }
+
+        .ob-callout-content > :last-child {
+            margin-bottom: 0;
+        }
+
+        .ob-callout-content > :first-child {
+            margin-top: 4px;
         }
 
         .ob-callout-note,
@@ -13806,7 +13813,6 @@
             { key: 'OpenResty', value: 'toggleFile("openRestyEditor")', display: true, fileProtocolDisplay: false, tauriDisplay: false, serverDisplay: true },
             { key: '番茄钟', value: 'toggleFile("pomodoro")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
             { key: '正则表达式', value: 'toggleFile("regexTest")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '正则表达式', value: 'toggleFile("regexTest")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
             { key: 'Cron', value: 'toggleFile("cron")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
             { key: '视频播放器', value: 'toggleFile("video")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
             { key: 'Raw查看', value: 'toggleFile("raw")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
@@ -23689,10 +23695,11 @@
                 abstract: 'ob-callout-abstract',
                 quote: 'ob-callout-quote'
             };
-            html = html.replace(/^>\s*\[!(\w+)\]\s*(.*)$/gm, (match, type, title) => {
+            html = html.replace(/^>\s*\[!(\w+)\]\s*([^\n]*)((?:\n>.*)*)/gm, (match, type, title, contentBlock) => {
                 const lowerType = type.toLowerCase();
                 const className = calloutClasses[lowerType] || calloutClasses.note;
-                return `<div class="ob-callout ${className}"><div class="ob-callout-title">${title || type}</div></div>\n<blockquote>`;
+                const processedContent = contentBlock ? contentBlock.replace(/^>\s*/gm, '') : '';
+                return `<div class="ob-callout ${className}"><div class="ob-callout-title">${title || type}</div>\n<div class="ob-callout-content">${processedContent}\n</div></div>`;
             });
             // 处理块 ID (Block identifiers)
             html = html.replace(/\s\^([a-zA-Z0-9\-]+)$/gm, ' <a target="_blank" name="$1" id="$1" class="ob-block-ref"></a>');
