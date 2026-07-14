@@ -14413,9 +14413,10 @@
             fileSpan.classList.add('active-file');
             currentActiveItem = fileSpan;
             safeLocalStorageSet(LAST_FILE_KEY, relativePath);
+            await switchToView(contentMain);
             //判断文件类型是否为支持的，不是则不打开
             const ext = getExt(relativePath);
-            if (checkFileExt(ext)) {
+            if (await checkFileExt(ext)) {
                 return;
             }
             //判断文件类型是否为视频文件
@@ -14430,7 +14431,6 @@
                 recordView(relativePath, fileName);
                 return;
             }
-
             const file = await getFile(currentFileHandle);
             if (checkFileSizeExceedsLimit(file.size)) {
                 return;
@@ -14438,11 +14438,6 @@
             currentFileName = file.name;
             const fileName = file.name;
             await cleanupCommonIframe();
-            if (!editEnable(fileName)) {
-                await switchToView(contentMain);
-            } else {
-                await destroyEverything();
-            }
             topRightBtnDisplay(fileName);
             previewFileText = '';
             originalContent = '';
@@ -15260,7 +15255,7 @@
         async function initPageNone() {
             await switchToView(contentMain);
             treeElement.innerHTML = '';
-            contentMain.innerHTML = `<div style="color:var(--color-text-secondary);font-size:0.875rem; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh; width:100%; box-sizing:border-box;">
+            contentMain.innerHTML = `<div style="color:var(--color-text-secondary);text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh; width:100%; box-sizing:border-box; font-size: 0.8125rem;">
                                 <div style="text-align:center;">
                                 ⚠️ 点击左上方按钮，打开本地目录
                                 </div>
@@ -15815,9 +15810,9 @@
             }
         }
 
-        function checkFileExt(ext) {
+        async function checkFileExt(ext) {
             if (!ext || (!isDoc(ext) && !isCode(ext) && !isVideoFile(ext) && !isImage(ext) && !isRaw(ext))) {
-                contentMain.innerHTML = `<div style="color:var(--color-text-secondary); text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh; width:100%; box-sizing:border-box;">
+                contentMain.innerHTML = `<div style="color:var(--color-text-secondary); text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh; width:100%; box-sizing:border-box; font-size: 0.8125rem;">
                                     <div style="text-align:center;">
                                         ⚠️ 文件类型不支持, 请使用其他工具查看
                                     </div>
@@ -15831,7 +15826,7 @@
         function checkFileSizeExceedsLimit(size) {
             if (size > MAX_FILE_SIZE) {
                 const fileSizeMB = (size / 1024 / 1024).toFixed(2);
-                contentMain.innerHTML = `<div style="color:var(--color-text-secondary); text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh; width:100%; box-sizing:border-box;">
+                contentMain.innerHTML = `<div style="color:var(--color-text-secondary); text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh; width:100%; box-sizing:border-box; font-size: 0.8125rem;">
                                     <div style="text-align:center;">
                                         ⚠️ 文件过大 (${fileSizeMB}MB)，请使用其他工具查看
                                     </div>
@@ -28869,7 +28864,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         async function openOpenRestyEditor() {
             await switchToView(openrestyEditorContainer);
-            let html = `<div style="color:var(--color-text-secondary); text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh; width:100%; box-sizing:border-box;">
+            let html = `<div style="color:var(--color-text-secondary); text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 80vh; width:100%; box-sizing:border-box; font-size: 0.8125rem;">
                                                 <div style="text-align:center;">
                                                     ⚠️ 获取配置失败: errorMsg
                                                 </div>
@@ -35576,7 +35571,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const edges = data.edges;
                 this.nodes = nodes;
                 this.edges = edges;
-              
+
                 const hasPositions = nodes.length > 0 && nodes[0].x !== undefined && (nodes[0].x !== 0 || nodes[0].y !== 0);
                 if (!hasPositions) {
                     const cols = Math.ceil(Math.sqrt(nodes.length));
