@@ -19,6 +19,15 @@
             pluginStore: { Store },
         };
 
+        // 挂载浏览器打开功能（通过 invoke → Rust open crate）
+        window.__tauriOpenUrl = async (url) => {
+            try {
+                await invoke('open_url', { url });
+            } catch (e) {
+                console.error('[TauriShell] 打开 URL 失败:', url, e);
+            }
+        };
+
         console.log('[TauriAdapter] Tauri API 已挂载');
     } catch (e) {
         console.error('[TauriAdapter] 加载 Tauri API 失败:', e);

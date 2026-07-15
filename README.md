@@ -9,12 +9,11 @@
   <img src="css_js/snipaste.png" alt="mdgo 预览" width="90%" />
 </div>
 
-> [!NOTE] 
-> 使用说明
+### 使用说明
 
 1. 直接访问（推荐）：[https://whatzhang.github.io/mdgo/](https://whatzhang.github.io/mdgo/)
 2. 直接浏览器打开  
-   - `index.html` → 依赖本地 js/css 文件  
+   - `index.html` → 依赖本地 js/css 文件
    - `index_cdn.html` → 依赖网络 CDN
 3. 本地运行：启动后端服务 `backend/main.py`，然后访问 `http://localhost:8091`
 4. 打包应用 
@@ -22,8 +21,7 @@
     - Windows: `tauri/build.bat build`  
    安装包输出路径：`tauri/src-tauri/target/release/bundle`
 
-> [!TIP] 
-> 功能与工具
+### 功能与工具
 
 - Mermaid 图表：支持流程图、时序图、类图、状态图、甘特图、ER 图、用户旅程图、Git 图、思维导图、饼图、时间线、看板、四象限图、桑基图、XY 图表、块状图、架构图、数据包图等
 - draw.io 图表：支持 draw.io 图表预览与编辑
@@ -33,6 +31,7 @@
 - 文件词云：根据文件内容生成词云图
 - GraphiQL：GraphQL API 测试工具
 - OpenResty：OpenResty 配置编辑器
+- Swagger：Swagger API 文档编辑器
 - 正则表达式测试：提供正则验证与测试功能
 - Cron 表达式解析：可视化展示 Cron 表达式
 - URL 编解码：URL 编码/解码工具

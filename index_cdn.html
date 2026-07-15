@@ -100,6 +100,8 @@
 
     <style>
         :root {
+            --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            --font-mono: "JetBrains Mono", "SF Mono", "Menlo", "Consolas", monospace;
             --color-primary: #165bfa;
             --color-primary-hover: #055bc5;
             --color-primary-active: #044eab;
@@ -203,7 +205,7 @@
             display: flex;
             margin: 0;
             height: 100vh;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            font-family: var(--font-family);
         }
 
         #sidebar {
@@ -710,7 +712,7 @@
             font-weight: bold;
             margin-bottom: 12px;
             font-size: 14px;
-            font-family: sans-serif;
+            font-family: var(--font-family);
             white-space: normal;
             word-break: break-all;
         }
@@ -776,7 +778,7 @@
         }
 
         .canvas-node-text {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            font-family: var(--font-family);
             font-size: 0.8rem;
             white-space: pre-wrap;
             word-wrap: break-word;
@@ -1681,8 +1683,7 @@
             padding: 0 10px;
             font-size: 0.75rem;
             font-weight: 600;
-            font-family: 'Segoe UI',
-                sans-serif;
+            font-family: var(--font-family);
             user-select: none;
             box-sizing: border-box;
             overflow: hidden;
@@ -1970,11 +1971,11 @@
             font-weight: 600;
         }
 
-        .ob-callout-content > :last-child {
+        .ob-callout-content> :last-child {
             margin-bottom: 0;
         }
 
-        .ob-callout-content > :first-child {
+        .ob-callout-content> :first-child {
             margin-top: 4px;
         }
 
@@ -2877,7 +2878,7 @@
             border-radius: var(--radius-sm);
             cursor: pointer;
             font-size: 13px;
-            font-family: "JetBrains Mono", "SF Mono", "Menlo", "Consolas", monospace;
+            font-family: var(--font-mono);
             border: 1px solid transparent;
             transition: all 0.15s;
             word-break: break-all;
@@ -2921,7 +2922,7 @@
             flex: 1;
             overflow-y: auto;
             overflow-x: hidden;
-            font-family: "JetBrains Mono", "SF Mono", "Menlo", "Consolas", monospace;
+            font-family: var(--font-mono);
             font-size: 13px;
             line-height: 1.6;
             padding: 4px;
@@ -2933,7 +2934,7 @@
             margin-left: 10px;
             width: 100%;
             font-size: 12px !important;
-            font-family: "JetBrains Mono", "SF Mono", "Menlo", "Consolas", monospace !important;
+            font-family: var(--font-mono) !important;
         }
 
         .jsontree_value-wrapper {
@@ -3591,7 +3592,7 @@
             cursor: pointer;
             transition: background 0.2s, border-color 0.2s, transform 0.1s;
             white-space: nowrap;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-family: var(--font-family);
         }
 
         .ai-action-chip:hover {
@@ -3627,7 +3628,7 @@
             background: transparent;
             border: none;
             outline: none;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-family: var(--font-family);
             font-size: 12px;
             color: #1d1d1f;
             resize: vertical;
@@ -4193,18 +4194,18 @@
         .tools-buttons-container {
             display: flex;
             gap: 10px;
-            flex-wrap: wrap; 
+            flex-wrap: wrap;
         }
 
         .tool-button {
             padding: 6px 10px;
-            background: var(--color-bg); 
+            background: var(--color-bg);
             color: var(--color-text);
             border: none;
             border-radius: 8px;
             cursor: pointer;
             font-size: 13px;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-family: var(--font-family);
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             transition: all 0.2s ease;
             display: inline-flex;
@@ -4259,11 +4260,11 @@
         .graphql-container input,
         button,
         pre {
-            font-family: "JetBrains Mono", "SF Mono", "Menlo", "Consolas", monospace;
+            font-family: var(--font-mono);
         }
 
         .graphql-container code {
-            font-family: "JetBrains Mono", "SF Mono", "Menlo", "Consolas", monospace;
+            font-family: var(--font-mono);
         }
 
         .hlyxcp {
@@ -4380,7 +4381,7 @@
             opacity: 0;
             transition: opacity 0.2s ease, background 0.2s ease;
             z-index: 10;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-family: var(--font-family);
             line-height: 1;
             white-space: nowrap;
         }
@@ -4794,7 +4795,7 @@
         }
 
         .mermaid-error-body pre {
-            font-family: "JetBrains Mono", "SF Mono", "Menlo", "Consolas", monospace;
+            font-family: var(--font-mono);
             font-size: 12px;
             line-height: 1.65;
             color: #6b2020;
@@ -5430,7 +5431,7 @@
             border: none;
             outline: none;
             padding: 8px 12px;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-family: var(--font-family);
             font-size: 13px;
             color: #1d1d1f;
             resize: vertical;
@@ -5629,7 +5630,7 @@
         }
 
         .regex-slash {
-            font-family: monospace;
+            font-family: var(--font-mono);
             font-weight: 700;
             color: var(--color-primary);
             font-size: 0.8rem;
@@ -5640,7 +5641,7 @@
             padding: 7px 7px;
             border: none;
             background: transparent;
-            font-family: 'Fira Code', monospace;
+            font-family: var(--font-mono);
             font-size: 0.8rem;
             font-weight: 700;
             outline: none;
@@ -5786,7 +5787,7 @@
             height: 100%;
             border: 1px solid var(--color-border);
             padding: 10px 14px;
-            font-family: monospace;
+            font-family: var(--font-mono);
             font-size: 0.8rem;
             background: transparent;
             resize: none;
@@ -5809,7 +5810,7 @@
             border: 1px solid var(--color-border);
             padding: 0px 0px 10px 14px;
             margin: 0 14px 14px 14px;
-            font-family: monospace;
+            font-family: var(--font-mono);
             font-size: 0.8rem;
             white-space: pre-wrap;
             overflow-y: auto;
@@ -5845,7 +5846,7 @@
         }
 
         .regex-ast-tree {
-            font-family: 'Fira Code', monospace;
+            font-family: var(--font-mono);
             font-size: 0.72rem;
             padding: 10px;
             border-radius: 6px;
@@ -5960,7 +5961,7 @@
         }
 
         .regex-match-body {
-            font-family: monospace;
+            font-family: var(--font-mono);
             font-size: 0.8rem;
             white-space: pre-wrap;
             overflow-y: auto;
@@ -6039,7 +6040,7 @@
             border: 1px solid var(--color-border);
             padding: 10px 0px 10px 14px;
             margin: 0 14px 14px 14px;
-            font-family: monospace;
+            font-family: var(--font-mono);
             font-size: 0.8rem;
             line-height: 1.4;
             overflow-y: auto;
@@ -6063,7 +6064,7 @@
             line-height: 1.4;
             white-space: pre-wrap;
             word-wrap: break-word;
-            font-family: monospace;
+            font-family: var(--font-mono);
             font-size: 0.8rem;
         }
 
@@ -8570,7 +8571,7 @@
         }
 
         .cron-expr-box .cron-expr-value {
-            font-family: 'JetBrains Mono', monospace;
+            font-family: var(--font-mono);
             font-size: 15px;
             font-weight: 600;
             color: var(--t0);
@@ -8604,7 +8605,7 @@
 
         .cron-expr-input {
             flex: 1;
-            font-family: 'JetBrains Mono', monospace;
+            font-family: var(--font-mono);
             font-size: 14px;
             font-weight: 500;
             padding: 7px 10px;
@@ -8727,7 +8728,7 @@
             color: var(--t3);
             margin-top: 1px;
             font-weight: 400;
-            font-family: 'JetBrains Mono', monospace
+            font-family: var(--font-mono);
         }
 
         .cron-builder-tab.active .cron-builder-tab-hint {
@@ -8795,7 +8796,7 @@
             font-size: 13px;
             text-align: center;
             outline: none;
-            font-family: 'JetBrains Mono', monospace;
+            font-family: var(--font-mono);
             background: var(--color-bg-secondary);
             color: var(--t0);
             transition: border-color .15s;
@@ -9004,7 +9005,7 @@
         }
 
         .cron-run-time {
-            font-family: 'JetBrains Mono', monospace;
+            font-family: var(--font-mono);
             font-size: 12px;
             color: var(--t0);
             flex: 1
@@ -9756,7 +9757,7 @@
             font-weight: 400;
             color: #1f2328;
             background-color: var(--color-bg-secondary);
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+            font-family: var(--font-family);
             font-size: 14px;
             line-height: 1.5;
             word-wrap: break-word;
@@ -10146,7 +10147,7 @@
 
         /* ========== Git 应用 ========== */
         .git-records-container {
-            font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif;
+            font-family: var(--font-family);
             background: var(--color-bg);
             color: var(--color-text);
             flex-direction: column;
@@ -10322,7 +10323,7 @@
         }
 
         .git-graph-sha {
-            font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+            font-family: var(--font-mono);
             font-size: 10px;
             color: var(--orange);
         }
@@ -10671,7 +10672,7 @@
             border: 1px solid var(--color-border);
             border-radius: 4px;
             font-size: 11px;
-            font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif;
+            font-family: var(--font-family);
             background: var(--color-bg);
             color: var(--color-text);
             outline: none;
@@ -10926,7 +10927,7 @@
             padding: 5px 5px;
             border: none;
             background: transparent;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+            font-family: var(--font-family);
             font-size: 0.8rem;
             font-weight: 400;
             outline: none;
@@ -11523,7 +11524,7 @@
             border: 1px solid #d9d9d9;
             border-radius: 3px;
             padding: 2px 6px;
-            font-family: monospace;
+            font-family: var(--font-mono);
             font-size: 12px;
         }
 
@@ -13818,7 +13819,7 @@
             { key: 'GraphiQL', value: 'toggleFile("graphiQL")', display: true, fileProtocolDisplay: false, tauriDisplay: false, serverDisplay: true },
             { key: 'GraphQLPlayground', value: 'toggleFile("graphQLPlayground")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
             { key: 'OpenResty', value: 'toggleFile("openRestyEditor")', display: true, fileProtocolDisplay: false, tauriDisplay: false, serverDisplay: true },
-            { key: 'Swagger', value:'toggleFile("swaggerDemo")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
+            { key: 'Swagger', value: 'toggleFile("swaggerDemo")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
             { key: '番茄钟', value: 'toggleFile("pomodoro")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
             { key: '正则表达式', value: 'toggleFile("regexTest")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
             { key: 'Cron', value: 'toggleFile("cron")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
@@ -13971,6 +13972,7 @@
         const isLocalVisit = () => window.location.protocol === 'file:';
         const isHttpVisit = () => window.location.protocol === 'http:' || window.location.protocol === 'https:';
         const isTauriVisit = () => typeof window.__TAURI__ !== 'undefined' && !!window.__TAURI__?.core?.invoke;
+        const openUrlInBrowser = (url) => isTauriVisit() && window.__tauriOpenUrl ? window.__tauriOpenUrl(url) : window.open(url, '_blank');
         const replaceMediaUrl = async (text, isAllFile) => photoLoadFromLocal(text, isAllFile);
         const isInDeletedDir = (p) => p === DELETED_DIR_NAME || p.startsWith(DELETED_DIR_NAME);
         // 路径归一化：反斜杠转正斜杠
@@ -14244,8 +14246,6 @@
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', async () => {
             compileAllRules();
-            await mountDir();
-            initDashboard();
             await initAll();
         });
 
@@ -14271,7 +14271,8 @@
                 Promise.resolve(initSystemMonitor()),// 初始化系统监控
                 Promise.resolve(initSidebarToggle()),// 初始化侧边栏切换按钮
                 Promise.resolve(todoEarlyInit()),// 初始化日历日程
-                Promise.resolve(initMonacoEditor())// 初始化编辑器
+                Promise.resolve(initMonacoEditor()),// 初始化编辑器
+                Promise.resolve(initDashboard())
             ]);
         }
 
@@ -20721,7 +20722,7 @@
                         <strong>❌ 渲染失败</strong>
                         <p>无法连接到plantuml.com服务器</p>
                         <p>请检查网络连接后重试</p>
-                        <p style="font-family:monospace; margin-top: 10px;">${escapeHtml(e.message)}</p>
+                        <p style="font-family: var(--font-mono); margin-top: 10px;">${escapeHtml(e.message)}</p>
                     </div>
                 `;
             }
@@ -21491,7 +21492,7 @@
                     padding: 16px;
                     border-radius: 6px;
                     overflow: auto;
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+                    font-family: var(--font-family);
                     font-size: 14px;
                     line-height: 1.6;
                     white-space: pre-wrap;
@@ -21935,6 +21936,9 @@
                     }
                 }
             }
+            if (window._swaggerSaveHandler) {
+                window.removeEventListener('keydown', window._swaggerSaveHandler, true);
+            }
             window.addEventListener('keydown', handleSwaggerSave, true);
             window._swaggerSaveHandler = handleSwaggerSave;
         }
@@ -21959,11 +21963,30 @@ info:
   description: 这是一个 Swagger 示例，包含常用的 HTTP 方法
   version: "1.0.0"
 servers:
-  - url: http://127.0.0.1:8080
+  - url: http://127.0.0.1:8091
     description: 测试环境
+tags:
+  - name: 系统
+  - name: 用户
 paths:
+  /api/system/health:
+    get:
+      tags:
+        - 系统
+      summary: 健康检查
+      responses:
+        '200':
+          description: 系统健康
+          content:
+            application/json:
+              schema:
+                \$ref: '#/components/schemas/CheckResult'
+        '500': 
+          description: 系统宕机
   /users:
     get:
+      tags:
+        - 用户
       summary: 获取用户列表
       description: 返回所有用户的列表，支持分页
       parameters:
@@ -21991,6 +22014,8 @@ paths:
                 items:
                   \$ref: '#/components/schemas/User'
     post:
+      tags:
+        - 用户
       summary: 创建新用户
       description: 创建一个新的用户账户
       requestBody:
@@ -22009,26 +22034,9 @@ paths:
         '400':
           description: 请求参数错误
   /users/{userId}:
-    get:
-      summary: 获取用户详情
-      description: 根据用户 ID 获取指定用户的详细信息
-      parameters:
-        - name: userId
-          in: path
-          description: 用户 ID
-          required: true
-          schema:
-            type: integer
-      responses:
-        '200':
-          description: 成功返回用户信息
-          content:
-            application/json:
-              schema:
-                \$ref: '#/components/schemas/User'
-        '404':
-          description: 用户不存在
     put:
+      tags:
+        - 用户
       summary: 更新用户信息
       description: 更新指定用户的全部信息
       parameters:
@@ -22054,6 +22062,8 @@ paths:
         '404':
           description: 用户不存在
     delete:
+      tags:
+        - 用户
       summary: 删除用户
       description: 根据用户 ID 删除指定用户
       parameters:
@@ -22100,6 +22110,15 @@ components:
           type: string
           format: email
           description: 邮箱
+    CheckResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        code:
+          type: integer          
 `;
 
         async function openSwaggerDemo() {
@@ -22125,6 +22144,9 @@ components:
                         showNotification('✗ 保存失败: ' + err.message, 'error');
                     }
                 }
+            }
+            if (window._swaggerDemoSaveHandler) {
+                window.removeEventListener('keydown', window._swaggerDemoSaveHandler, true);
             }
             window.addEventListener('keydown', handleSwaggerDemoSave, true);
             window._swaggerDemoSaveHandler = handleSwaggerDemoSave;
@@ -26413,9 +26435,9 @@ components:
 
         async function mountDir(setting) {
             // 未选择目录时不发送请求
-            if (!currentRootPath || isLocalVisit() || isTauriVisit()) return;
+            if (!currentRootPath || isLocalVisit() || isTauriVisit()) return false;
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 5000);
+            const timeoutId = setTimeout(() => controller.abort(), 700);
             try {
                 const response = await fetch('/api/system/mount', {
                     method: 'POST',
@@ -26423,15 +26445,16 @@ components:
                     body: JSON.stringify({ dir: currentRootPath, setting: setting || null }),
                     signal: controller.signal
                 });
-                const data = await response.json();
-                if (data.success) {
+                if (response.ok) {
                     hasBackendServer = true;
-                    return data;
+                    return true;
                 }
                 hasBackendServer = false;
                 console.warn('后端挂载失败:', data.message);
+                return false;
             } catch {
                 hasBackendServer = false;
+                return false;
             } finally {
                 clearTimeout(timeoutId);
             }
@@ -27630,7 +27653,8 @@ components:
             const input = document.getElementById('net-search');
             const key = input ? input.value.trim() : '';
             const hasKeyFlag = hasKey === true || hasKey === 'true';
-            window.open(`${query}${hasKeyFlag ? encodeURIComponent(key) : ''}`, '_blank');
+            const url = `${query}${hasKeyFlag ? encodeURIComponent(key) : ''}`;
+            openUrlInBrowser(url);
         }
         function initDashboard() {
             let html = `
@@ -27907,7 +27931,7 @@ components:
                     const faviconUrl = getFaviconUrl(child.url);
                     // 过滤 javascript: 等危险协议
                     const safeUrl = /^javascript:/i.test(child.url) ? '' : child.url;
-                    html += '<div class="bookmark-item' + (isDead ? ' bookmark-dead-link' : '') + '" data-bookmark-url="' + escapeHtml(child.url) + '" onclick="window.open(\'' + (safeUrl ? escapeJs(safeUrl) : 'about:blank') + '\', \'_blank\')">' +
+                    html += '<div class="bookmark-item' + (isDead ? ' bookmark-dead-link' : '') + '" data-bookmark-url="' + escapeHtml(child.url) + '" onclick="openUrlInBrowser(\'' + (safeUrl ? escapeJs(safeUrl) : 'about:blank') + '\')">' +
                         '<img class="bookmark-item-favicon" src="' + escapeHtml(faviconUrl) + '" onerror="this.style.display=\'none\'" alt="">' +
                         '<span class="bookmark-item-title">' + escapeHtml(child.title || child.url) + '</span>' +
                         '<span class="bookmark-item-url' + (isDead ? ' bookmark-url-dead' : '') + '">' + escapeHtml(shortenUrl(child.url)) + '</span>' +
@@ -30176,6 +30200,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     await clearOldData();
                     safeLocalStorageSet("ROOT_DIR", currentRootPath);
                     safeLocalStorageSet(PERMISSION_TIME_KEY, Date.now().toString());
+                    if (window.__tauriStorageFlush) await window.__tauriStorageFlush();
                     // TauriDirectoryHandle 是类实例，IndexedDB 序列化会丢失方法
                     // 改为存储可序列化的路径信息，读取时重建
                     await idbPut(DIRECTORY_STORE_NAME, 'handles', 'default', { __tauriDirHandle: true, path: dirHandle.path });
@@ -32552,11 +32577,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const key = markdownSelectionState.text;
             if (query === 'all') {
                 SEARCH_BTNS.forEach(item => {
-                    if (item.selectDisplay && item.name !== 'all') window.open(`${item.query}${encodeURIComponent(key)}`, '_blank');
+                    if (item.selectDisplay && item.name !== 'all') openUrlInBrowser(`${item.query}${encodeURIComponent(key)}`);
                 });
                 return;
             }
-            window.open(`${query}${encodeURIComponent(key)}`, '_blank');
+            openUrlInBrowser(`${query}${encodeURIComponent(key)}`);
         }
 
         async function dealWithTippy(dom = document) {
@@ -34506,7 +34531,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const el = document.createElement('div');
             el.className = `todo-week-event todo-${todoE.color}${isCronVirtual ? ' todo-cron-event' : ''}`;
             el.style.top = `${startHour * 60}px`;
-            el.style.height = `${Math.max(duration * 60, 20)}px`; 
+            el.style.height = `${Math.max(duration * 60, 20)}px`;
             // 重叠布局 - 并排显示时左右各留 4px 间隙
             if (todoE._layoutWidth !== undefined && todoE._layoutWidth < 1) {
                 const gapPx = 4;
@@ -39209,7 +39234,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 .attr('height', height)
                 .attr('viewBox', [0, 0, width, height])
                 .attr('class', 'wc-svg')
-                .attr('style', 'max-width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;');
+                .attr('style', 'max-width:100%;height:100%;font-family: var(--font-family);');
 
             var priority = 0;
             var PAD = 20;
@@ -40821,7 +40846,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 <div class="git-detail-layout">
                     <div class="git-detail-left">
                         <div class="git-detail-header">
-                            <span style="color:var(--orange);font-family:monospace;font-size:11px;">${c.oid}</span>
+                            <span style="color:var(--orange);font-family: var(--font-mono);font-size:11px;">${c.oid}</span>
                         </div>
                         <div class="git-detail-header">
                             <span>👤 ${gitEscapeHtml(c.commit.author.name)}</span>

@@ -18,6 +18,7 @@ pub fn run() {
             commands::fs::create_dir,
             commands::fs::exists,
             commands::fs::get_file_meta,
+            commands::open_url::open_url,
             commands::git::git_log,
             commands::git::git_status_matrix,
             commands::git::git_checkout,

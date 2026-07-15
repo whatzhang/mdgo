@@ -6,8 +6,9 @@
  *
  * 策略：
  * 1. 所有读写操作先在内存中同步完成（保证兼容性）
- * 2. 写操作通过防抖批量异步持久化到 Store（无阻塞、高性能）
- * 3. 页面加载时，从 Store 恢复数据到内存
+ * 2. 写操作通过 Promise 链串行持久化到 Store（保证写入顺序和完成追踪）
+ * 3. 暴露 __tauriStorageFlush() 供关键数据写入后强制刷盘
+ * 4. 页面加载时，从 Store 恢复数据到内存
  */
 
 (function () {
@@ -21,8 +22,6 @@
     const memStorage = {};
     let _store = null;
     let _storeReady = false;
-    let _saveTimer = null;
-    const SAVE_DEBOUNCE_MS = 200;
 
     async function _getStore() {
         if (_store) return _store;
@@ -31,20 +30,20 @@
         return _store;
     }
 
+    // Promise 链：保证所有写操作串行执行，且可追踪完成状态
+    let _saveChain = Promise.resolve();
+
     function _scheduleSave() {
         if (!_storeReady) return;
-        if (_saveTimer) clearTimeout(_saveTimer);
-        const token = {};
-        _saveTimer = token;
-        setTimeout(async () => {
-            try {
+        // 将 save 操作追加到链尾，确保串行执行
+        _saveChain = _saveChain
+            .then(async () => {
                 const store = await _getStore();
                 await store.save();
-            } catch (e) {
+            })
+            .catch((e) => {
                 console.warn('[TauriStore] 持久化失败:', e);
-            }
-            if (_saveTimer === token) _saveTimer = null;
-        }, SAVE_DEBOUNCE_MS);
+            });
     }
 
     /**
@@ -62,10 +61,29 @@
                     memStorage[key] = String(val);
                 }
             }
+            console.log('[TauriStore] 已从 Store 恢复', keys.length, '条数据');
         } catch (e) {
             console.warn('[TauriStore] 恢复数据失败:', e);
         }
     })();
+
+    /**
+     * 强制等待所有待处理的持久化操作完成。
+     * 在关键数据（如 ROOT_DIR）写入后调用，确保数据已落盘。
+     */
+    window.__tauriStorageFlush = async () => {
+        // 确保 store 已初始化
+        try {
+            await _getStore();
+        } catch (e) {
+            console.warn('[TauriStore] flush: 获取 Store 失败:', e);
+            return;
+        }
+        // 如果链上还有 pending 的 save，等待它完成
+        // 再额外执行一次 save 兜底（处理链上刚追加但尚未开始的 save）
+        _scheduleSave();
+        await _saveChain;
+    };
 
     const syncStorageHandler = {
         get(target, prop) {
