@@ -2118,7 +2118,7 @@
             font-size: 16px;
             font-weight: bold;
             margin: 0 0 8px 0;
-            padding: 6px 8px;
+            padding: 6px 0;
             color: var(--color-text, #1f2328);
             border-radius: 4px;
             transition: background-color 0.2s ease;
@@ -2391,7 +2391,7 @@
             background-color: #f2f4f6;
             color: #4c94e5;
             font-size: 13px;
-            font-weight: 500;
+            font-weight: 600;
             cursor: pointer;
             transition: all 0.2s ease;
             text-align: center;
@@ -10801,15 +10801,15 @@
         }
 
         .git-status-item-btn {
-            width: 16px;
-            height: 16px;
+            width: 1rem;
+            height: 1rem;
             border-radius: 4px;
             border: none;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 14px;
+            font-size: 0.875rem;
             font-weight: 600;
             line-height: 1;
             transition: background 0.12s;
@@ -13868,6 +13868,7 @@
             { key: 'Canvas文档白板', value: 'toggleFile("canvas")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
             { key: '思维导图', value: 'toggleFile("mindMap")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
             { key: '大纲笔记', value: 'toggleFile("opmlOutline")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
+            { key: '任务看板', value: 'toggleFile("kanban")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
             { key: '临时编辑器', value: 'toggleFile("tempEditor")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
             { key: '文件时间线', value: 'toggleFile("timeline")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
         ]
@@ -14424,6 +14425,8 @@
                 await openMindMap();
             } else if (type === 'opmlOutline') {
                 await openOPMLOutline();
+            } else if (type === 'kanban') {
+                await openKanbanDemo();
             } else if (type === 'picLayoutDisplay') {  //目录右键
                 await picLayoutDisplay(data.dirPathStr);
             } else if (type === 'openWordCloudFile') {
@@ -14633,10 +14636,9 @@
                 previewBtn: isOtherFile ? false : !editEnable(currentFileName),
                 mdImageBtn: false,
                 livePreviewBtn: (isMarkdownViewActive() && !isKanban) ? true : false,
-                formatBtn: false,
+                formatBtn: isKanban ? false : true,
                 opmlBtns: false
             });
-            formatBtn.style.display = 'inline-flex';
         }
 
         async function enterLivePreviewMode() {
@@ -16376,7 +16378,7 @@
                                 return;
                             }
                             await toggleFile('renderFile', { relativePath: node.path, fileSpan: fileSpan });
-                            showNotification(`🎲 随机打开: ${escapeHtml(node.path)}`, 'success', 1000);
+                            showNotification(`🎲 随机打开: ${escapeHtml(node.path)}`, 'success', 2000);
                             return;
                         }
                     }
@@ -20732,13 +20734,13 @@
             // 更新原始内容
             if (text === cachedPlantUMLSource && cachedPlantUMLSVG) {
                 if (cachedPlantUMLSVG.startsWith('<svg')) {
-                    contentMain.innerHTML = `<div style=" display: flex;justify-content: center;padding: 20px;background: #fafafa;min-height: 100%;">${cachedPlantUMLSVG}</div>`;
+                    contentMain.innerHTML = `<div style=" display: flex;justify-content: center;padding: 20px;background: transparent;min-height: 100%;">${cachedPlantUMLSVG}</div>`;
                 } else {
                     contentMain.innerHTML = `<div style="color: #cf222e;background: #ffebe9;padding: 20px; border-radius: 8px; margin: 20px;white-space: pre-wrap;"><strong>❌ 渲染失败</strong>${cachedPlantUMLSVG}</div>`;
                 }
                 return;
             }
-            contentMain.innerHTML = `<div style=" display: flex; align-items: center;justify-content: center;width: 100%; height: 200px;color: #666; font-style: italic;font-size: 16px;background: #fafafa;border-radius: 8px;">⌛ Rendering...</div>`;
+            contentMain.innerHTML = `<div style=" display: flex; align-items: center;justify-content: center;width: 100%; height: 200px;color: var(--t1); font-style: italic;font-size: 16px;background: #fafafa;border-radius: 8px;">⌛ 渲染中...</div>`;
             let svgText = '';
             let response;
             try {
@@ -21992,7 +21994,9 @@
             return (aceEl && window.ace) ? ace.edit(aceEl).getValue() : '';
         }
 
-        const SWAGGER_DEMO_SPEC = `openapi: "3.0.0"
+        async function openSwaggerDemo() {
+            await switchToView(swaggerEditorContainer);
+            _initSwaggerEditor(`openapi: "3.0.0"
 info:
   title: 示例 API 文档
   description: 这是一个 Swagger 示例，包含常用的 HTTP 方法
@@ -22154,11 +22158,7 @@ components:
           type: string
         code:
           type: integer          
-`;
-
-        async function openSwaggerDemo() {
-            await switchToView(swaggerEditorContainer);
-            _initSwaggerEditor(SWAGGER_DEMO_SPEC);
+`);
             setControlsState({ topControls: false, newFileControls: false, editBtn: false, previewBtn: false, saveBtn: false });
 
             async function handleSwaggerDemoSave(e) {
@@ -22196,6 +22196,57 @@ components:
                 window.removeEventListener('keydown', window._swaggerDemoSaveHandler, true);
                 window._swaggerDemoSaveHandler = null;
             }
+        }
+        async function openKanbanDemo(){
+            currentKanbanFileHandle = null;
+            currentFileHandle = null;
+            aiFabContainer.style.display = 'none';
+            topRightBtnDisplay('kanban.md');
+            mdIsKanban = true;
+            const kanbanData = parseMarkdownKanban(`---
+kanban-plugin: basic
+---
+
+## 📋 待办
+- [ ] 任务1
+      - 负责人: {{负责人}}
+      - 优先级: 🔴 高 / 🟡 中 / 🟢 低
+      - 预计时间: X小时/X分钟
+      - 截止时间: YYYY-MM-DD
+
+## 🔄 进行中
+- [ ] 进行中的任务1
+  | 子任务 | 进度 | 负责人 |阻塞因素 |
+  | :--- | :--- | :--- | :--- |
+  | 子任务1 | 10% | 耄耋 | 技术原因 |
+  | 子任务2 | 90% | 刀盾 | 流程依赖 |
+      - 截止时间: YYYY-MM-DD
+- [ ] 进行中的任务2
+    \`\`\`python
+    def bubble_sort(arr):
+        n = len(arr)
+        for i in range(n):
+            for j in range(0, n - i - 1):
+                if arr[j] > arr[j + 1]:
+                    arr[j], arr[j + 1] = arr[j + 1], arr[j]
+        return arr
+    \`\`\`
+
+- [ ] 进行中的任务3流程图
+    \`\`\`mermaid
+    graph LR
+        A[任务1] --> B[任务2] --> C[任务3] 
+        B --> D[任务4]
+    \`\`\`
+
+## ✅ 已完成
+- [x] 已完成的任务
+- [x] 任务2
+      - [x] 子任务1
+      - 任务
+      - [x] 子任务2`);
+            await renderKanbanToContent(kanbanData);
+            setControlsState({topControls: false});
         }
 
         function fixTreeDisplayAfterExpandCollapse() {
@@ -22545,7 +22596,7 @@ components:
             if (node.isRoot) {
                 renderedText = `<div id="md_nd_${node.id}" class="center-div">${previewText}</div>`
             } else {
-                renderedText = previewText ? `<div class="markdown-body" id="md_nd_${node.id}">${await markedParse(parseObsidianToHTML(previewText))}</div>` : '<p style="color:var(--t2);text-align:center;font-size:13px;">点击编辑内容...</p>';
+                renderedText = previewText ? `<div class="markdown-body" style="background: transparent;" id="md_nd_${node.id}">${await markedParse(parseObsidianToHTML(previewText))}</div>` : '<p style="color:var(--t2);text-align:center;font-size:13px;">点击编辑内容...</p>';
             }
             const foreignObject = nodeGroup.append('foreignObject')
                 .attr('x', 10)
@@ -22701,7 +22752,7 @@ components:
                 }
                 const previewText = await getFileContent(fileHandle);
                 const renderedText = await markedParse(parseObsidianToHTML(previewText));
-                contentDiv.html(`<div class="markdown-body" style="zoom: 0.6;" id="md_nd_${node.id}">${renderedText}</div>`);
+                contentDiv.html(`<div class="markdown-body" style="zoom: 0.6;background: transparent;" id="md_nd_${node.id}">${renderedText}</div>`);
             } catch (error) {
                 console.error('加载 markdown 预览失败:', error);
                 contentDiv.html(`<div style="display:flex;align-items:center;gap:6px;color:#cf222e;font-weight:500;">无法加载文件！ ${escapeHtml(node.file)}</div>`);
@@ -23500,7 +23551,7 @@ components:
                         编辑内容
                     </button>
                 </div>
-                <div class="markdown-body" style="padding: 8px 8px;">${htmlContent}</div>`;
+                <div class="markdown-body" style="padding: 8px 8px;background: transparent;">${htmlContent}</div>`;
             setControlsState({ copyBtn: false });
             setNodePanelState({ node, nodeType: 'text', filePath: '', fileContent: '' });
             const gen = _panelGeneration;
@@ -23534,7 +23585,7 @@ components:
                                 编辑内容
                             </button>
                         </div>
-                        <div class="markdown-body" style="padding: 8px 8px;">${htmlContent}</div>`;
+                        <div class="markdown-body" style="padding: 8px 8px;background: transparent;">${htmlContent}</div>`;
                     setNodePanelState({ node, nodeType: 'file', filePath: node.file, fileContent: text });
                     const gen = _panelGeneration;
                     postProcessMarkdown(contentPanel).then(result => {
@@ -23750,7 +23801,7 @@ components:
                                     编辑内容
                                 </button> 
                             </div>
-                            <div class="markdown-body" style="padding: 8px 8px;">${htmlContent}</div>`;
+                            <div class="markdown-body" style="padding: 8px 8px;background: transparent;">${htmlContent}</div>`;
                     setNodePanelState({ fileContent: text });
                     destroyNodeEditor();
                     postProcessMarkdown(contentPanel);
@@ -24580,27 +24631,27 @@ components:
 
         // 生成卡片的HTML
         async function renderCardHTML(card, colIndex, cardIndex) {
-            let html = (await markedParse(parseObsidianToHTML(card.content))).trim();
+            let html = await markedParse(parseObsidianToHTML(card.content));
             if (card.checked === null) {
                 html = `<div class="card-title null-checked">${html}</div>`;
             } else {
                 html = `<div class="card-title ${card.checked ? 'checked' : ''}">${html}</div>`;
             }
             if (card.body) {
-                let cardBody = (await markedParse(parseObsidianToHTML(card.body))).trim();
-                html += `<div class="kanban-card-body" style="font-size: 13px; line-height: 1;padding-left: 14px;"><div class="markdown-body">${cardBody}</div></div>`;
+                let cardBody = await markedParse(parseObsidianToHTML(card.body));
+                html += `<div class="kanban-card-body" style="line-height: 1;padding-left: 14px;"><div class="markdown-body" style="zoom: 0.8; background: transparent;">${cardBody}</div></div>`;
             }
             if (card.taskList && card.taskList.length > 0) {
                 html += '<div class="kanban-tasks">';
                 for (const task of card.taskList) {
-                    const taskContent = (await markedParse(parseObsidianToHTML(task.task))).trim();
+                    const taskContent = await markedParse(parseObsidianToHTML(task.task));
                     if (task.checked === null) {
                         html += `<div class="kanban-task null-checked">${taskContent}</div>`;
                     } else {
                         html += `<div class="kanban-task ${task.checked ? 'checked' : ''}">${taskContent}</div>`;
                     }
                     let taskBody = '';
-                    if (task.body) taskBody = (await markedParse(parseObsidianToHTML(task.body))).trim();
+                    if (task.body) taskBody = await markedParse(parseObsidianToHTML(task.body));
                     html += `<div class="kanban-task-body" style="font-size: 13px; line-height: 1;padding-left: 15px;">${taskBody}</div>`;
                 }
                 html += '</div>';
@@ -24653,7 +24704,7 @@ components:
                             }
                             taskData.push({
                                 task: taskParsed.title,
-                                body: taskBody.trim(),
+                                body: dedentStr(taskBody),
                                 md: taskContent,
                                 checked: taskParsed.checked
                             });
@@ -24668,7 +24719,7 @@ components:
                     }
                     cardData.push({
                         content: cardParsed.title,
-                        body: cardBody.trim(),
+                        body: dedentStr(cardBody),
                         taskList: taskData,
                         md: cardContent,
                         checked: cardParsed.checked
@@ -24720,7 +24771,7 @@ components:
                     }
                     columnListData.push({
                         title: columnTitle,
-                        body: columnBody.trim(),
+                        body: dedentStr(columnBody),
                         cards: cardData,
                         meta: meta,
                         kanbanHeader: kanbanHeader,
@@ -24729,6 +24780,30 @@ components:
                 }
             }
             return columnListData;
+        }
+        function dedentStr(text) {
+            if (!text || typeof text !== 'string') return text;
+            const lines = text.split('\n');
+            let minIndent = Infinity;
+            for (const line of lines) {
+                const trimmedLine = line.trimEnd();
+                if (trimmedLine.length > 0) {
+                    const indent = line.length - line.trimStart().length;
+                    minIndent = Math.min(minIndent, indent);
+                }
+            }
+            if (minIndent === Infinity || minIndent === 0) {
+                return text;
+            }
+            const rtn= lines
+                .map(line => {
+                    if (line.trimEnd().length === 0) {
+                        return line.trimEnd();
+                    }
+                    return line.slice(minIndent);
+                })
+                .join('\n');
+            return rtn.trim();
         }
 
         async function enterOriginalMarkdown() {
@@ -24978,14 +25053,13 @@ components:
             if (cardTitle && !cardTitle.classList.contains('null-checked')) {
                 _cardCheckboxDebounce = true;
                 TimerManager.setTimeout('kanbanCardToggle', async () => {
+                    toggleCardCheckbox(this);
                     const kanban = currentKanban;
                     const fileHandle = currentKanbanFileHandle;
-                    toggleCardCheckbox(this);
-                    try {
-                        await saveKanbanContent(kanban, fileHandle, false);
-                    } catch (err) {
-                        console.error('看板卡片保存失败:', err);
-                    }
+                    await saveKanbanContent(kanban, fileHandle, false).catch(err => {
+                        console.error('保存看板失败:', err);
+                        showNotification('✗ 保存失败: ' + err.message, 'error');
+                    });
                 }, 250);
                 setTimeout(() => {
                     _cardCheckboxDebounce = false;
@@ -24996,14 +25070,13 @@ components:
         async function handleTaskCheckboxClick(e) {
             if (!this.classList.contains('null-checked')) {
                 e.stopPropagation();
-                const kanban = currentKanban;
-                const fileHandle = currentKanbanFileHandle;
                 toggleTaskListItemCheckbox(this);
-                try {
-                    await saveKanbanContent(kanban, fileHandle);
-                } catch (err) {
-                    console.error('看板任务保存失败:', err);
-                }
+                const kanbanSnapshot = currentKanban;
+                const fileHandle = currentKanbanFileHandle;
+                await saveKanbanContent(kanbanSnapshot, fileHandle, false).catch(err => {
+                    console.error('保存看板失败:', err);
+                    showNotification('✗ 保存失败: ' + err.message, 'error');
+                });
             }
         }
 
@@ -25099,8 +25172,6 @@ components:
             if (!currentKanban || !currentKanban[colIndex] || !cardsContainer) {
                 return;
             }
-            const kanbanSnapshot = currentKanban;
-            const fileHandle = currentKanbanFileHandle;
             const cardData = parseKanbanCard(preParseKanbanCard(content));
             if (!cardData || cardData.length === 0) {
                 return;
@@ -25121,6 +25192,8 @@ components:
             initKanbanDrag();
             initKanbanCheckboxClick(cardsContainer);
             initKanbanMoreMenu(cardsContainer);
+            const kanbanSnapshot = currentKanban;
+            const fileHandle = currentKanbanFileHandle;
             saveKanbanContent(kanbanSnapshot, fileHandle).catch(err => {
                 console.error('保存看板失败:', err);
                 showNotification('✗ 保存失败: ' + err.message, 'error');
@@ -25133,8 +25206,6 @@ components:
                 console.error('editCardToColumn: 无效的参数');
                 return;
             }
-            const kanbanSnapshot = currentKanban;
-            const fileHandle = currentKanbanFileHandle;
             const cardData = parseKanbanCard(preParseKanbanCard(content));
             if (!cardData || cardData.length === 0) {
                 return;
@@ -25178,6 +25249,8 @@ components:
             initKanbanDrag();
             initKanbanCheckboxClick(cardsContainer);
             initKanbanMoreMenu(cardsContainer);
+            const kanbanSnapshot = currentKanban;
+            const fileHandle = currentKanbanFileHandle;
             saveKanbanContent(kanbanSnapshot, fileHandle).catch(err => {
                 console.error('保存看板失败:', err);
                 showNotification('✗ 保存失败: ' + err.message, 'error');
@@ -25418,7 +25491,6 @@ components:
         // 从 DOM 更新数据顺序(卡片拖拽)
         function updateKanbanOrder() {
             if (!currentKanban) return;
-            const fileHandle = currentKanbanFileHandle;
             const originalColumns = currentKanban.slice();
             const newColumns = [];
             document.querySelectorAll('.kanban-column').forEach((colEl) => {
@@ -25445,8 +25517,10 @@ components:
                 newColumns.push({ ...originalColumns[originalColIndex], cards: newCards });
             });
             currentKanban = newColumns;
+            const kanbanSnapshot = currentKanban;
+            const fileHandle = currentKanbanFileHandle;
             updateAllColumnElementIndices();
-            saveKanbanContent(currentKanban, fileHandle).catch(err => {
+            saveKanbanContent(kanbanSnapshot, fileHandle).catch(err => {
                 console.error('保存看板失败:', err);
                 showNotification('✗ 保存失败: ' + err.message, 'error');
             });
@@ -25455,7 +25529,6 @@ components:
         // 从 DOM 更新列顺序(列拖拽)
         function updateKanbanColumnOrder() {
             if (!currentKanban) return;
-            const fileHandle = currentKanbanFileHandle;
             const originalColumns = currentKanban.slice();
             const newColumns = [];
             document.querySelectorAll('.kanban-column').forEach((colEl) => {
@@ -25471,11 +25544,33 @@ components:
                 return;
             }
             currentKanban = newColumns;
+            const kanbanSnapshot = currentKanban;
+            const fileHandle = currentKanbanFileHandle;
             updateAllColumnElementIndices();
-            saveKanbanContent(currentKanban, fileHandle).catch(err => {
+            saveKanbanContent(kanbanSnapshot, fileHandle).catch(err => {
                 console.error('保存看板失败:', err);
                 showNotification('✗ 保存失败: ' + err.message, 'error');
             });
+        }
+        function indentStr(text, indent = 4, options = {}) {
+            const {
+                indentEmptyLines = false,
+                skipFirstLine = false
+            } = options;
+            if (!text || typeof text !== 'string') return text;
+            const indentStr = typeof indent === 'number' 
+                ? ' '.repeat(Math.max(0, indent)) 
+                : indent;
+            if (!indentStr) return text;
+            const lines = text.split('\n');
+            const rtn = lines
+                .map((line, index) => {
+                    if (skipFirstLine && index === 0) return line;
+                    if (line.trim() === '')  return indentEmptyLines ? indentStr + line : line;
+                    return indentStr + line;
+                })
+                .join('\n');
+            return rtn.trim();
         }
 
         // 从 kanbanData 生成 Markdown
@@ -25497,7 +25592,7 @@ components:
             data.forEach(col => {
                 md += `## ${col.title}\n`;
                 if (col.body) {
-                    md += `${col.body}\n`;
+                    if(col.body.trim() !== '') md += `\n    ${indentStr(col.body, 4)}\n\n`;
                 }
                 col.cards.forEach(card => {
                     let checkbox;
@@ -25508,19 +25603,19 @@ components:
                     }
                     md += `${checkbox}${card.content}\n`;
                     if (card.body) {
-                        md += `      ${card.body}\n`;
+                        if(card.body.trim() !== '') md += `\n    ${indentStr(card.body, 4)}\n\n`;
                     }
                     if (card.taskList && card.taskList.length > 0) {
                         card.taskList.forEach(task => {
                             let taskCheckbox;
                             if (task.checked === null) {
-                                taskCheckbox = '      - ';
+                                taskCheckbox = '    - ';
                             } else {
-                                taskCheckbox = task.checked ? '      - [x] ' : '      - [ ] ';
+                                taskCheckbox = task.checked ? '    - [x] ' : '    - [ ] ';
                             }
                             md += `${taskCheckbox}${task.task}\n`;
                             if (task.body) {
-                                md += `         ${task.body}\n`;
+                                if(task.body.trim() !== '') md += `\n        ${indentStr(task.body, 8)}\n\n`;
                             }
                         });
                     }
@@ -25530,8 +25625,8 @@ components:
             if (data.length > 0 && data[0].kanbanFooter) {
                 md += data[0].kanbanFooter;
             }
-            md = md.replace(/\n\n+/g, '\n\n');
-            return md;
+            md = md.replace(/\n\n\n+/g, '\n\n');
+            return md.trim();
         }
 
         function debounce(func, delay) {
@@ -25633,12 +25728,12 @@ components:
             }
             currentKanban[colIndex].cards.splice(cardIndex, 1);
             archiveColumn.cards.push(cardToArchive);
-            try {
-                await saveCurrentKanban();
-            } catch (err) {
+            const kanbanSnapshot = currentKanban;
+            const fileHandle = currentKanbanFileHandle;
+            saveKanbanContent(kanbanSnapshot, fileHandle,false).catch(err => {
                 console.error('保存看板失败:', err);
                 showNotification('✗ 保存失败: ' + err.message, 'error');
-            }
+            });
             await renderKanbanToContent(currentKanban);
             showNotification('✓ 卡片已归档', 'success');
         }
@@ -26377,7 +26472,9 @@ components:
                 return;
             }
             currentKanban[colIndex].cards.splice(cardIndex, 1);
-            saveCurrentKanban().catch(err => {
+            const kanbanSnapshot = currentKanban;
+            const fileHandle = currentKanbanFileHandle;
+            saveKanbanContent(kanbanSnapshot, fileHandle,false).catch(err => {
                 console.error('保存看板失败:', err);
                 showNotification('✗ 保存失败: ' + err.message, 'error');
             });
@@ -26386,17 +26483,17 @@ components:
         }
 
         async function saveKanbanContent(kanban, fileHandle, notify = true) {
-            if (!kanban || !fileHandle) return;
+            if (!kanban) return;
             const markdown = generateKanbanMarkdown(kanban);
-            await saveExistFileContent(markdown, notify, fileHandle);
-        }
-
-        async function saveCurrentKanban() {
-            try {
-                await saveKanbanContent(currentKanban, currentKanbanFileHandle);
-            } catch (err) {
-                console.error('保存看板失败:', err);
-                showNotification('✗ 保存看板失败: ' + err.message, 'error');
+            if(!fileHandle){  //新增逻辑
+                await showSaveModal({
+                    title: '保存看板',
+                    getDefaultFileName: () => '看板.md',
+                    getContent: () => markdown,
+                    onSave: doSaveToFolder
+                });
+            }else{
+                await saveExistFileContent(markdown, notify, fileHandle);
             }
         }
 
@@ -28284,7 +28381,7 @@ components:
             }
             targetItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
             targetItem.style.background = '#ffe0a0';
-            setTimeout(() => { targetItem.style.removeProperty('background'); }, 1500);
+            setTimeout(() => { targetItem.style.removeProperty('background'); }, 2500);
         }
 
         async function navigateToDir(dirPath, isNotify = true) {
@@ -28565,9 +28662,15 @@ components:
             });
         }
 
+        let _aiPanelToggleHandler = null;
         function initAIPanelToggle() {
             const aiButton = document.getElementById('ai-fab-button');
-            const showOrHidePanel = () => {
+            // 移除旧的监听器（如果存在）
+            if (_aiPanelToggleHandler) {
+                aiButton.removeEventListener('click', _aiPanelToggleHandler);
+            }
+            // 定义新的处理器并存储引用
+            _aiPanelToggleHandler = () => {
                 aiPanelVisible = !aiPanelVisible;
                 if (aiPanelVisible) {
                     displayAiPanel(aiSelectionText);
@@ -28575,8 +28678,7 @@ components:
                     hiddenAiPanel();
                 }
             };
-            aiButton.removeEventListener('click', showOrHidePanel);
-            aiButton.addEventListener('click', showOrHidePanel);
+            aiButton.addEventListener('click', _aiPanelToggleHandler);
             getAIHistoryData().then(() => {
                 renderAIHistory();
             });
@@ -28943,7 +29045,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             try {
                 const htmlContent = await markedParse(parseObsidianToHTML(content));
-                contentEl.innerHTML = `<div class="markdown-body" style="zoom: 0.85; height: 100%; overflow: auto;">${htmlContent}</div>`;
+                contentEl.innerHTML = `<div class="markdown-body" style="zoom: 0.85; height: 100%; overflow: auto;background: transparent;">${htmlContent}</div>`;
                 postProcessMarkdown(contentEl);
             } catch (error) {
                 console.error('Markdown解析失败:', error);
@@ -32899,6 +33001,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         var regexAppState = null;  // 正则表达式应用状态对象
+        var _regexAppHandlers = null;  // 存储事件处理器引用，防止重复绑定
+
         function initRegexApp() {
             if (regexAppState) {
                 destroyRegesTest();
@@ -33622,7 +33726,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 });
             }
 
-            function exportImage() {
+            // 初始化事件处理器存储对象
+            _regexAppHandlers = {};
+
+            _regexAppHandlers.exportImage = function exportImage() {
                 var svgEl = railroadContainer.querySelector('svg');
                 if (!svgEl) return;
                 var serializer = new XMLSerializer();
@@ -33643,9 +33750,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     link.click();
                 };
                 img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgStr)));
-            }
+            };
 
-            function embedCode() {
+            _regexAppHandlers.embedCode = function embedCode() {
                 var svgEl = railroadContainer.querySelector('svg');
                 if (!svgEl) return;
                 var serializer = new XMLSerializer();
@@ -33658,7 +33765,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }).catch(function () {
                     showError('复制失败，请手动复制');
                 });
-            }
+            };
 
             var debounceTimer = null;
 
@@ -33721,23 +33828,23 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                 }
             }
-            function prevMatch() {
+            _regexAppHandlers.prevMatch = function prevMatch() {
                 if (matchesData.length === 0) return;
                 var idx = currentMatchIndex - 1;
                 if (idx < 0) idx = 0;
                 currentMatchIndex = idx;
                 updateMatches();
                 scrollToMatchItem(currentMatchIndex);
-            }
-            function nextMatch() {
+            };
+            _regexAppHandlers.nextMatch = function nextMatch() {
                 if (matchesData.length === 0) return;
                 var idx = currentMatchIndex + 1;
                 if (idx >= matchesData.length) idx = matchesData.length - 1;
                 currentMatchIndex = idx;
                 updateMatches();
                 scrollToMatchItem(currentMatchIndex);
-            }
-            function replaceText() {
+            };
+            _regexAppHandlers.replaceText = function replaceText() {
                 try {
                     var raw = patternInput.value;
                     var replaceText = patternReplaceInput.value;
@@ -33756,17 +33863,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 } catch (e) {
                     showNotification('无效的正则表达式: ' + e.message, 'error');
                 }
-            }
-            function toggleRegexTable() {
+            };
+            _regexAppHandlers.toggleRegexTable = function toggleRegexTable() {
                 var visible = regexTableBody.style.display !== 'none';
                 regexTableBody.style.display = visible ? 'none' : 'block';
                 if (regexTableArrow) regexTableArrow.classList.toggle('open', !visible);
-            }
-            function cancelReplace() {
+            };
+            _regexAppHandlers.cancelReplace = function cancelReplace() {
                 patternReplaceInput.value = '';
                 updateMatches();
-            }
-            function copyResult() {
+            };
+            _regexAppHandlers.copyResult = function copyResult() {
                 if (textBodyEl) {
                     var text = textBodyEl.textContent;
                     console.log(text);
@@ -33778,31 +33885,56 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         });
                     }
                 }
+            };
+            // 先移除旧的事件处理器
+            if (_regexAppHandlers) {
+                copyResultBtn.removeEventListener('click', _regexAppHandlers.copyResult);
+                replaceCancelBtn.removeEventListener('click', _regexAppHandlers.cancelReplace);
+                replaceBtn.removeEventListener('click', _regexAppHandlers.replaceText);
+                prevBtn.removeEventListener('click', _regexAppHandlers.prevMatch);
+                nextBtn.removeEventListener('click', _regexAppHandlers.nextMatch);
+                var oldRegexTableHeader = document.getElementById('regexTableHeader');
+                if (oldRegexTableHeader) oldRegexTableHeader.removeEventListener('click', _regexAppHandlers.toggleRegexTable);
+                exportBtn.removeEventListener('click', _regexAppHandlers.exportImage);
+                embedBtn.removeEventListener('click', _regexAppHandlers.embedCode);
             }
-            copyResultBtn.removeEventListener('click', copyResult);
-            copyResultBtn.addEventListener('click', copyResult);
-            replaceCancelBtn.removeEventListener('click', cancelReplace);
-            replaceCancelBtn.addEventListener('click', cancelReplace);
-            replaceBtn.removeEventListener('click', replaceText);
-            prevBtn.removeEventListener('click', prevMatch);
-            nextBtn.removeEventListener('click', nextMatch);
-            replaceBtn.addEventListener('click', replaceText);
-            prevBtn.addEventListener('click', prevMatch);
-            nextBtn.addEventListener('click', nextMatch);
+            // 再绑定新的事件处理器（通过 _regexAppHandlers 存储引用，确保可移除）
+            copyResultBtn.addEventListener('click', _regexAppHandlers.copyResult);
+            replaceCancelBtn.addEventListener('click', _regexAppHandlers.cancelReplace);
+            replaceBtn.addEventListener('click', _regexAppHandlers.replaceText);
+            prevBtn.addEventListener('click', _regexAppHandlers.prevMatch);
+            nextBtn.addEventListener('click', _regexAppHandlers.nextMatch);
             var regexTableHeader = document.getElementById('regexTableHeader');
             var regexTableBody = document.getElementById('regexTableBody');
             var regexTableArrow = document.getElementById('regexTableArrow');
-            regexTableHeader.removeEventListener('click', toggleRegexTable);
-            regexTableHeader.addEventListener('click', toggleRegexTable);
-            exportBtn.removeEventListener('click', exportImage);
-            embedBtn.removeEventListener('click', embedCode);
-            exportBtn.addEventListener('click', exportImage);
-            embedBtn.addEventListener('click', embedCode);
+            regexTableHeader.addEventListener('click', _regexAppHandlers.toggleRegexTable);
+            exportBtn.addEventListener('click', _regexAppHandlers.exportImage);
+            embedBtn.addEventListener('click', _regexAppHandlers.embedCode);
             updateFlagsPreview();
             scheduleUpdate();
         }
 
         function destroyRegesTest() {
+            // 移除事件监听器
+            if (_regexAppHandlers) {
+                var btn = document.getElementById('regex-result-copy-btn');
+                if (btn) btn.removeEventListener('click', _regexAppHandlers.copyResult);
+                btn = document.getElementById('regex-replace-cancel-btn');
+                if (btn) btn.removeEventListener('click', _regexAppHandlers.cancelReplace);
+                btn = document.getElementById('regex-replace-btn');
+                if (btn) btn.removeEventListener('click', _regexAppHandlers.replaceText);
+                btn = document.getElementById('regex-prev-btn');
+                if (btn) btn.removeEventListener('click', _regexAppHandlers.prevMatch);
+                btn = document.getElementById('regex-next-btn');
+                if (btn) btn.removeEventListener('click', _regexAppHandlers.nextMatch);
+                var header = document.getElementById('regexTableHeader');
+                if (header) header.removeEventListener('click', _regexAppHandlers.toggleRegexTable);
+                btn = document.getElementById('regex-railroad-export');
+                if (btn) btn.removeEventListener('click', _regexAppHandlers.exportImage);
+                btn = document.getElementById('regex-railroad-embed');
+                if (btn) btn.removeEventListener('click', _regexAppHandlers.embedCode);
+                _regexAppHandlers = null;
+            }
             if (regexAppState) {
                 if (regexAppState.currentPaper) {
                     try {
