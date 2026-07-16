@@ -3937,39 +3937,39 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 10px 15px;
+            padding: 0.8rem 1rem;
             border-bottom: 1px solid #eaecef;
             background: #f6f8fa;
         }
 
         .ai-result-title {
-            font-size: 16px;
+            font-size: 1rem;
             font-weight: 600;
             color: #24292f;
         }
 
         .ai-result-btns {
             display: flex;
-            gap: 6px;
+            gap: 0.5rem;
             flex-shrink: 0;
             align-items: center;
         }
 
         .ai-result-btn {
-            padding: 4px 8px;
-            font-size: 12px;
+            padding: 0.125rem 0.8rem;
+            font-size: 0.75rem;
             color: var(--color-text-secondary);
             background-color: var(--color-bg);
         }
 
         .ai-result-close {
-            width: 32px;
-            height: 32px;
+            width: 1.25rem;
+            height: 1.25rem;
             border: none;
             background: transparent;
-            font-size: 18px;
+            font-size: 1rem;
             cursor: pointer;
-            border-radius: 6px;
+            border-radius: 0.375rem;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -3983,7 +3983,7 @@
         }
 
         .ai-result-content {
-            padding: 20px;
+            padding: 0.75rem;
             overflow: auto;
             flex: 1;
             box-sizing: border-box;
@@ -7691,6 +7691,8 @@
         jmnodes.theme-self jmnode {
             background-color: var(--color-bg);
             color: var(--t1);
+            font-size: 13px;
+            font-family: var(--font-family);
             border-color: #d9e1e8;
             padding: 10px;
             box-shadow: 1px 1px 1px 1px #b1b1b1;
@@ -7710,11 +7712,18 @@
         }
 
         jmnodes.theme-self jmnode.root {
-            background-color: var(--color-warning);
+            background-color: var(--color-primary);
             color: var(--color-text-white);
             font-weight: 600;
             font-size: 18px;
-            box-shadow: 1px 1px 1px 1px var(--color-warning);
+            box-shadow: 1px 1px 1px 1px var(--color-primary);
+        }
+
+        jmnodes.theme-self jmnode.root:hover {
+            border: 1px solid var(--color-primary);
+            box-shadow: 1px 1px 1px 1px var(--color-primary);
+            z-index: 200;
+            transform: scale(1.03);
         }
 
         jmnodes.theme-self jmexpander {}
@@ -15455,12 +15464,38 @@
             }
             try {
                 const text = await getFileContent(currentFileHandle);
-                await navigator.clipboard.writeText(text);
+                await copyTextToClipboard(text);
                 showNotification('✓ 文件已复制到剪贴板', 'success');
             } catch (error) {
                 showNotification('❌ 复制到剪贴板失败' + error.message, 'error');
                 console.error('复制到剪贴板失败:', error);
             }
+        }
+        // 统一复制函数：Tauri 原生 → Clipboard API → execCommand 降级
+        async function copyTextToClipboard(text) {
+            // Tauri 模式：使用 Rust arboard 命令（无需权限）
+            if (isTauriVisit() && window.__TAURI__?.core?.invoke) {
+                try {
+                    await window.__TAURI__.core.invoke('copy_to_clipboard', { text });
+                    return;
+                } catch (_) { /* 降级到浏览器 API */ }
+            }
+            // 浏览器模式：Clipboard API（需要安全上下文+用户手势）
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                try {
+                    await navigator.clipboard.writeText(text);
+                    return;
+                } catch (_) { /* 降级到 execCommand */ }
+            }
+            // 通用降级：textarea + execCommand（兼容 HTTP/Tauri 无权限场景）
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
         }
 
         function toggleNewFileModal(event) {
@@ -15901,12 +15936,8 @@
             if (!currentEditor) return;
             const code = currentEditor.getValue();
             if (code) {
-                try {
-                    await navigator.clipboard.writeText(code);
-                    showNotification('✓ 已复制到剪贴板', 'success');
-                } catch (e) {
-                    showNotification('✗ 复制失败，请手动复制', 'error');
-                }
+                await copyTextToClipboard(code);
+                showNotification('✓ 已复制到剪贴板', 'success');
             } else {
                 showNotification('✗ 当前编辑器为空', 'warning');
             }
@@ -17032,11 +17063,7 @@
         async function copyCurrentFilePath(relativePath, isRelativePath = true) {
             let fullPath = isRelativePath ? relativePath : joinPath(currentRootPath, relativePath);
             fullPath = formatPathForOS(fullPath);
-            try {
-                await navigator.clipboard.writeText(fullPath);
-            } catch {
-                showNotification(`✗ 复制路径失败`, 'error');
-            }
+            await copyTextToClipboard(fullPath);
             showNotification(`已经复制路径: ${fullPath}`, 'success');
         }
 
@@ -18406,7 +18433,7 @@
                     Object.assign(ta.style, {
                         zIndex: '100',
                         boxSizing: 'border-box',
-                        padding: '20px',
+                        padding: '8px',
                         margin: '0',
                         border: '1.5px solid var(--color-primary, #4A90D9)',
                         borderRadius: '7px',
@@ -21894,7 +21921,7 @@
                             const input = document.getElementById('jsonpath-input');
                             input.value = jsonPath;
                             input.select();
-                            navigator.clipboard.writeText(jsonPath).then(() => {
+                            copyTextToClipboard(jsonPath).then(() => {
                                 const btn = document.getElementById('jsonpath-btn');
                                 if (btn) {
                                     btn.textContent = '已复制';
@@ -24554,14 +24581,10 @@ kanban-plugin: basic
                     e.stopPropagation();
                     const code = pre.querySelector('code');
                     const text = code ? code.textContent : pre.textContent;
-                    try {
-                        await navigator.clipboard.writeText(text);
-                        copyBtn.textContent = '✓ 已复制';
-                        copyBtn.classList.add('copied');
-                        showNotification('✓ 代码已复制到剪贴板', 'success');
-                    } catch (err) {
-                        showNotification('✗ 复制失败', 'error');
-                    }
+                    await copyTextToClipboard(text);
+                    copyBtn.textContent = '✓ 已复制';
+                    copyBtn.classList.add('copied');
+                    showNotification('✓ 代码已复制到剪贴板', 'success');
                     setTimeout(() => {
                         copyBtn.textContent = '📋 复制';
                         copyBtn.classList.remove('copied');
@@ -28917,7 +28940,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             aiButton.classList.add('processing');
             aiFabContainer.style.pointerEvents = 'none';
             try {
-                showNotification('处理中，请稍候...', 'info');
+                showNotification('处理中，请稍候...', 'info', 1000);
                 let inputLen = promptStr.length + systemPrompt.length;
                 const processedResult = await callAIAPI(promptStr, systemPrompt);
                 const outputLen = processedResult.length;
@@ -29057,7 +29080,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             try {
                 const htmlContent = await markedParse(parseObsidianToHTML(content));
-                contentEl.innerHTML = `<div class="markdown-body" style="zoom: 0.85; height: 100%; overflow: auto;background: transparent;">${htmlContent}</div>`;
+                contentEl.innerHTML = `<div class="markdown-body" style="zoom: 0.95; height: 100%; overflow: auto;background: transparent;">${htmlContent}</div>`;
                 postProcessMarkdown(contentEl);
             } catch (error) {
                 console.error('Markdown解析失败:', error);
@@ -29076,7 +29099,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         async function copyAIResultModal() {
-            await navigator.clipboard.writeText(aiResultContext);
+            await copyTextToClipboard(aiResultContext);
             showNotification('✓ 结果已复制到剪贴板', 'success');
         }
 
@@ -33925,7 +33948,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (!svgEl) return;
                 var serializer = new XMLSerializer();
                 var svgStr = serializer.serializeToString(svgEl);
-                navigator.clipboard.writeText(svgStr).then(function () {
+                copyTextToClipboard(svgStr).then(function () {
                     showError('SVG 代码已复制到剪贴板');
                     setTimeout(function () {
                         showError('');
@@ -34044,9 +34067,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             _regexAppHandlers.copyResult = function copyResult() {
                 if (textBodyEl) {
                     var text = textBodyEl.textContent;
-                    console.log(text);
                     if (text) {
-                        navigator.clipboard.writeText(text).then(() => {
+                        copyTextToClipboard(text).then(() => {
                             showNotification('复制成功', 'info');
                         }).catch(e => {
                             showNotification('复制失败: ' + e.message, 'error');
@@ -37869,14 +37891,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             cron_render();
         }
 
-        function cron_doCopy() {
+        async function cron_doCopy() {
             const expr = cron_genExpr();
-            try {
-                navigator.clipboard.writeText(expr);
-                showNotification('✓ 已复制到剪贴板', 'success');
-            } catch (err) {
-                showNotification('✗ 复制失败', 'error');
-            }
+            await copyTextToClipboard(expr);
+            showNotification('✓ 已复制到剪贴板', 'success');
         }
 
         const VIDEO_HISTORY_MAX = 30;
@@ -39446,10 +39464,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         function clearEncoderResult() {
             document.getElementById('encoder-result').value = '';
         }
-        function copyEncoderResult() {
+        async function copyEncoderResult() {
             const result = document.getElementById('encoder-result');
             if (result.value) {
-                navigator.clipboard.writeText(result.value);
+                await copyTextToClipboard(result.value);
                 showNotification('✓ 复制成功', 'success');
             } else {
                 showNotification('✗ 结结果为空', 'error');
@@ -41249,13 +41267,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             // Tauri 模式：使用 Rust diffTree 实现
             if (window.__TAURI__ && window.GitRustAdapter) {
                 try {
-                    console.log('[GitComputeChangedFiles] Tauri 模式：调用 Rust diffTree');
                     const changes = await window.GitRustAdapter.diffTree(
                         window.gitRepoDir,
                         commit.oid,
                         parentOid
                     );
-                    console.log('[GitComputeChangedFiles] 返回:', changes.length, '个文件变更');
                     return changes;
                 } catch (e) {
                     console.error('[GitComputeChangedFiles] Rust diffTree error:', e);

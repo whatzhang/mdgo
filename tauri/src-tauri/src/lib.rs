@@ -34,6 +34,7 @@ pub fn run() {
             commands::git::git_resolve_ref,
             commands::system::start_monitor,
             commands::system::stop_monitor,
+            commands::clipboard::copy_to_clipboard,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
