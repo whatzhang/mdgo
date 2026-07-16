@@ -3,6 +3,7 @@ import time
 import asyncio
 import os
 import re
+import socket
 import psutil
 
 # 上次网络 IO 采样数据（用于计算速率）
@@ -13,6 +14,35 @@ _net_io_ready = False
 _service_process = None
 _service_start_time = time.time()
 
+# 本地 IP 缓存（不变值，只需获取一次）
+_local_ip = None
+
+# === 启动时一次获取的常量（运行时永不改变） ===
+_cpu_cores = psutil.cpu_count(logical=True)
+_mem_total = psutil.virtual_memory().total
+_boot_time = psutil.boot_time()
+
+# === 磁盘分区结构缓存 ===
+# 分区列表、物理设备映射几乎不变化，用 TTL 避免每次全量扫描
+_disk_structure = None
+_last_disk_refresh = 0
+_DISK_REFRESH_INTERVAL = 300  # 秒（5 分钟）
+
+
+def _get_local_ip():
+    """获取本机非回环 IPv4 地址（缓存）。"""
+    global _local_ip
+    if _local_ip is not None:
+        return _local_ip
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            # 连接一个外部 IP（无需可达，UDP 不真正发包）
+            s.connect(("10.254.254.254", 1))
+            _local_ip = s.getsockname()[0]
+    except Exception:
+        _local_ip = "127.0.0.1"
+    return _local_ip
+
 
 def _get_process():
     """获取当前进程的 psutil.Process 实例（缓存避免重复创建）"""
@@ -22,16 +52,18 @@ def _get_process():
     return _service_process
 
 
-def _get_all_disks_usage():
+def _refresh_disk_structure():
     """
-    汇总所有物理磁盘的总用量（去重：同一物理设备仅记录挂载点中用量最大的分区）。
-    返回 {total, used, free, percent}
+    刷新磁盘物理设备映射表（每 _DISK_REFRESH_INTERVAL 秒执行一次）。
+    仅缓存设备列表和总容量，用量数据在 _get_all_disks_usage 中实时查询。
     """
-    total = 0
-    used = 0
-    free = 0
+    global _disk_structure, _last_disk_refresh
+    now = time.time()
+    if _disk_structure is not None and now - _last_disk_refresh < _DISK_REFRESH_INTERVAL:
+        return
+
     partitions = psutil.disk_partitions(all=False)
-    physical_disks = {}
+    physical = {}
     for p in partitions:
         try:
             usage = psutil.disk_usage(p.mountpoint)
@@ -42,31 +74,40 @@ def _get_all_disks_usage():
                 # 从设备路径提取物理磁盘 ID（如 /dev/disk1, /dev/nvme0n1p1）
                 match = re.match(r'/dev/(disk\d+(?:s\d+)?(?:[sp]\d+)?|nvme\d+n\d+(?:p\d+)?|mmcblk\d+p\d+)', device)
                 physical_id = match.group(1) if match else device
-            if physical_id not in physical_disks:
-                physical_disks[physical_id] = {
+            # 同一物理设备只保留总容量最大的分区（总容量不会变化）
+            if physical_id not in physical or usage.total > physical[physical_id]['total']:
+                physical[physical_id] = {
+                    'mountpoint': p.mountpoint,
                     'total': usage.total,
-                    'used': usage.used,
-                    'free': usage.free,
-                    'percent': usage.percent,
-                    'mountpoint': p.mountpoint
                 }
-            else:
-                # 同一物理设备取用量最大的分区
-                if usage.percent > physical_disks[physical_id]['percent']:
-                    physical_disks[physical_id] = {
-                        'total': usage.total,
-                        'used': usage.used,
-                        'free': usage.free,
-                        'percent': usage.percent,
-                        'mountpoint': p.mountpoint
-                    }
         except Exception:
             continue
-    # 汇总所有物理设备
-    for disk_info in physical_disks.values():
-        total += disk_info['total']
-        used += disk_info['used']
-        free += disk_info['free']
+
+    _disk_structure = physical
+    _last_disk_refresh = now
+
+
+def _get_all_disks_usage():
+    """
+    汇总所有物理磁盘用量。
+    物理设备列表来自 _refresh_disk_structure（TTL 缓存），
+    用量数据（used/free/percent）实时查询。
+    """
+    _refresh_disk_structure()
+
+    total = 0
+    used = 0
+    free = 0
+    for info in _disk_structure.values():
+        try:
+            usage = psutil.disk_usage(info['mountpoint'])
+            total += usage.total
+            used += usage.used
+            free += usage.free
+        except Exception:
+            # 挂载点临时不可达时保留缓存的总容量，用量按 0 处理
+            total += info['total']
+
     if total == 0:
         total = 1
         used = 0
@@ -81,16 +122,19 @@ def _get_all_disks_usage():
 
 
 def get_metrics():
-    """采集 CPU、内存、网络、磁盘、服务进程等系统指标"""
+    """采集 CPU、内存、网络、磁盘、服务进程等系统指标。"""
     now = time.time()
-    cpu_percent = psutil.cpu_percent(interval=0.5)
-    cpu_cores = psutil.cpu_count(logical=True)
-    mem = psutil.virtual_memory()
-    net = psutil.net_io_counters()
 
+    # ---- CPU（非阻塞，~0.01ms，不阻塞事件循环） ----
+    cpu_percent = psutil.cpu_percent(interval=0)
+
+    # ---- 内存（仅有 few 字段变化，total 使用缓存） ----
+    mem = psutil.virtual_memory()
+
+    # ---- 网络（增量计算收发速率） ----
+    net = psutil.net_io_counters()
     global _net_io_last, _net_io_ready
     elapsed = now - _net_io_last["timestamp"]
-    # 计算网络收发速率（需要至少两次采样）
     if _net_io_ready and elapsed > 0:
         sent_rate = (net.bytes_sent - _net_io_last["bytes_sent"]) / elapsed
         recv_rate = (net.bytes_recv - _net_io_last["bytes_recv"]) / elapsed
@@ -101,22 +145,28 @@ def get_metrics():
     _net_io_last = {
         "bytes_sent": net.bytes_sent,
         "bytes_recv": net.bytes_recv,
-        "timestamp": now
+        "timestamp": now,
     }
 
+    # ---- 磁盘（结构缓存 + 用量实时） ----
     disk = _get_all_disks_usage()
-    uptime_seconds = int(time.time() - psutil.boot_time())
+
+    # ---- 系统运行时长（boot_time 使用缓存） ----
+    uptime_seconds = int(now - _boot_time)
+
+    # ---- 服务进程自身信息 ----
     service_process = _get_process()
     service_mem = service_process.memory_info()
     service_uptime_seconds = int(now - _service_start_time)
 
     return {
+        "host_ip": _get_local_ip(),
         "cpu": {
             "percent": round(cpu_percent, 1),
-            "core_count": cpu_cores,
+            "core_count": _cpu_cores,
         },
         "memory": {
-            "total": mem.total,
+            "total": _mem_total,
             "used": mem.used,
             "available": mem.available,
             "percent": round(mem.percent, 1),
@@ -127,23 +177,18 @@ def get_metrics():
             "total_sent": net.bytes_sent,
             "total_recv": net.bytes_recv,
         },
-        "disk": {
-            "total": disk["total"],
-            "used": disk["used"],
-            "free": disk["free"],
-            "percent": disk["percent"],
-        },
+        "disk": disk,
         "uptime": uptime_seconds,
         "service": {
             "rss": service_mem.rss,
             "vms": service_mem.vms,
             "uptime": service_uptime_seconds,
-        }
+        },
     }
 
 
 async def metrics_stream(interval: float = 5.0):
-    """SSE 流：按固定间隔推送系统指标"""
+    """SSE 流：按固定间隔推送系统指标。"""
     while True:
         data = get_metrics()
         yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"

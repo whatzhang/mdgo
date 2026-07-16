@@ -11,14 +11,16 @@
 
 window.__tauriInitPromise = (async () => {
     try {
-        const [{ invoke, convertFileSrc }, { open, save }, { Store }] = await Promise.all([
+        const [{ invoke, convertFileSrc }, { listen }, { open, save }, { Store }] = await Promise.all([
             import('@tauri-apps/api/core'),
+            import('@tauri-apps/api/event'),
             import('@tauri-apps/plugin-dialog'),
             import('@tauri-apps/plugin-store'),
         ]);
 
         window.__TAURI__ = {
             core: { invoke, convertFileSrc },
+            event: { listen },
             dialog: { open, save },
             pluginStore: { Store },
         };

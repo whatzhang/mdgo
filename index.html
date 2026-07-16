@@ -207,6 +207,28 @@
             font-family: var(--font-family);
         }
 
+        *::-webkit-scrollbar {
+            width: 4px !important;
+            height: 4px !important;
+        }
+
+        *::-webkit-scrollbar-track {
+            background: transparent !important;
+        }
+
+        *::-webkit-scrollbar-thumb {
+            background: var(--color-border, #d0d7de) !important;
+            border-radius: 2px !important;
+        }
+
+        *::-webkit-scrollbar-thumb:hover {
+            background: var(--color-text-tertiary) !important;
+        }
+
+        *::-webkit-scrollbar-corner {
+            background: transparent !important;
+        }
+
         #sidebar {
             width: 18%;
             overflow: hidden;
@@ -500,20 +522,12 @@
             position: relative;
             height: 100%;
             overflow-x: auto;
-            padding: 35px 6px 0 6px;
+            padding: 2.3rem 0.25rem 0.25rem 0.25rem;
             background: var(--color-bg-secondary);
         }
 
         #toc-container::-webkit-scrollbar {
             display: none;
-        }
-
-        .toc-title {
-            font-size: 14px;
-            font-weight: bold;
-            padding: 3px 0 3px 0;
-            border-bottom: 1px solid var(--color-border);
-            margin-bottom: 5px;
         }
 
         #toc {
@@ -1020,7 +1034,7 @@
             border: none;
             font-size: 20px;
             cursor: pointer;
-            color: #666;
+            color: var(--t2);
             padding: 0;
             line-height: 1;
         }
@@ -1378,17 +1392,17 @@
             top: 5px;
             right: 10px;
             display: flex;
-            gap: 8px;
+            gap: 0.4rem;
             z-index: 100;
             align-items: center;
         }
 
         .top-left-controls {
             position: absolute;
-            top: 7px;
+            top: 6px;
             left: 10px;
             display: flex;
-            gap: 10px;
+            gap: 0.4rem;
             z-index: 6000;
             align-items: center;
         }
@@ -2059,7 +2073,7 @@
 
         .ob-footnote {
             font-size: 0.9em;
-            color: #666;
+            color: var(--t2);
             margin: 4px 0;
             padding-left: 8px;
             border-top: 1px solid #eee;
@@ -2648,7 +2662,7 @@
 
         .confirm-modal-message {
             font-size: 13px;
-            color: #666;
+            color: var(--t2);
             margin-bottom: 15px;
             line-height: 1.5;
         }
@@ -3213,7 +3227,7 @@
 
         .heatmap-section .heatmap-right {
             flex: 1;
-            min-width: 18.75rem;
+            width: 12.5rem;
         }
 
         .charts-grid {
@@ -5231,7 +5245,6 @@
             gap: 8px;
             flex: 1;
             min-height: 0;
-            flex-wrap: wrap;
         }
 
         .monitor-item {
@@ -5242,6 +5255,7 @@
             border-radius: 10px;
             padding: 6px 8px;
             min-width: 0;
+            min-height: 0;
         }
 
         .monitor-label {
@@ -5259,6 +5273,8 @@
             flex: 1;
             min-height: 0;
             width: 100%;
+            overflow: hidden;
+            box-sizing: border-box;
         }
 
         .monitor-sub {
@@ -5267,30 +5283,29 @@
             text-align: center;
             flex-shrink: 0;
             margin-top: -2px;
-        }
-
-        .monitor-network {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            flex: 1;
-            justify-content: center;
+            min-height: 12px;
+            line-height: 1.2;
         }
 
         .net-row {
             display: flex;
-            justify-content: space-between;
-            font-size: 12px;
-            padding: 0 2px;
+            align-items: center;
+            margin-left: auto;
+            font-size: 10px;
+            font-weight: normal;
         }
 
-        .net-row span:first-child {
-            color: #666;
+        .net-row-label {
+            color: var(--t2);
         }
 
-        .net-row span:last-child {
-            font-weight: 600;
-            color: var(--color-primary-light);
+        .net-row-value-upload {
+            color: var(--yellow);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .net-row-value-download {
+            color: var(--color-note);
             font-variant-numeric: tabular-nums;
         }
 
@@ -11576,25 +11591,6 @@
             outline: none;
         }
 
-        /* ========== 统一所有滚动条样式（4px 宽、tree 风格） ========== */
-        *::-webkit-scrollbar {
-            width: 4px !important;
-            height: 4px !important;
-        }
-
-        *::-webkit-scrollbar-track {
-            background: transparent !important;
-        }
-
-        *::-webkit-scrollbar-thumb {
-            background: var(--color-border, #d0d7de) !important;
-            border-radius: 2px !important;
-        }
-
-        *::-webkit-scrollbar-thumb:hover {
-            background: var(--color-text-tertiary) !important;
-        }
-
         /* ===== 系统设置模态框 ===== */
         .setting-modal-overlay {
             position: fixed;
@@ -12322,7 +12318,9 @@
                                 <div class="monitor-header">
                                     <span>监控</span>
                                     <span>
-                                        <span class="monitor-uptime" id="serviceMem"></span>
+                                        <span class="monitor-uptime" id="pcIp">加载中...</span>
+                                        <span class="monitor-uptime">｜</span>
+                                        <span class="monitor-uptime" id="serviceMem">加载中...</span>
                                         <span class="monitor-uptime">｜</span>
                                         <span class="monitor-uptime" id="serviceUptime">服务Live:加载中...</span>
                                         <span class="monitor-uptime">｜</span>
@@ -12362,35 +12360,16 @@
                                         <div class="monitor-sub" id="memDetail"></div>
                                     </div>
                                     <div class="monitor-item">
-                                        <div class="monitor-label"><svg viewBox="0 0 24 24" width="14" height="14"
-                                                fill="none" stroke="currentColor" stroke-width="1.8"
-                                                stroke-linecap="round" stroke-linejoin="round"
-                                                style="vertical-align:-2px;margin-right:4px;">
-                                                <circle cx="12" cy="12" r="10" />
-                                                <line x1="2" y1="12" x2="22" y2="12" />
-                                                <path
-                                                    d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-                                            </svg>网络</div>
-                                        <div class="monitor-network">
-                                            <div class="net-row"><span><svg viewBox="0 0 24 24" width="12" height="12"
-                                                        fill="none" stroke="currentColor" stroke-width="1.8"
-                                                        stroke-linecap="round" stroke-linejoin="round"
-                                                        style="vertical-align:-2px;margin-right:3px;">
-                                                        <polyline points="17 1 21 5 17 9" />
-                                                        <path d="M3 11V9a4 4 0 0 1 4-4h14" />
-                                                        <polyline points="7 23 3 19 7 15" />
-                                                        <path d="M21 13v2a4 4 0 0 1-4 4H3" />
-                                                    </svg>下载</span><span id="netRecv">0 B/s</span></div>
-                                            <div class="net-row"><span><svg viewBox="0 0 24 24" width="12" height="12"
-                                                        fill="none" stroke="currentColor" stroke-width="1.8"
-                                                        stroke-linecap="round" stroke-linejoin="round"
-                                                        style="vertical-align:-2px;margin-right:3px;">
-                                                        <polyline points="17 1 21 5 17 9" />
-                                                        <path d="M3 11V9a4 4 0 0 1 4-4h14" />
-                                                        <polyline points="7 23 3 19 7 15" />
-                                                        <path d="M21 13v2a4 4 0 0 1-4 4H3" />
-                                                    </svg>上传</span><span id="netSent">0 B/s</span></div>
+                                        <div class="monitor-label">
+                                            <div class="net-row">
+                                                <span class="net-row-label">↓</span><span id="netRecv"
+                                                    class="net-row-value-download">0 B/s</span>
+                                                <span class="monitor-uptime">｜</span>
+                                                <span class="net-row-label">↑</span><span id="netSent"
+                                                    class="net-row-value-upload">0 B/s</span>
+                                            </div>
                                         </div>
+                                        <div id="netChart" class="monitor-chart"></div>
                                         <div class="monitor-divider"></div>
                                         <div class="monitor-label" style="margin-top:4px;"><svg viewBox="0 0 24 24"
                                                 width="14" height="14" fill="none" stroke="currentColor"
@@ -12399,12 +12378,30 @@
                                                 <ellipse cx="12" cy="5" rx="9" ry="3" />
                                                 <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
                                                 <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-                                            </svg>磁盘</div>
+                                            </svg>系统磁盘使用</div>
                                         <div class="monitor-disk">
                                             <div class="disk-bar">
                                                 <div class="disk-bar-fill" id="diskBarFill"></div>
                                             </div>
                                             <span class="disk-percent" id="diskPercent">0%</span>
+                                        </div>
+                                        <div class="monitor-label" style="margin-top:4px;"><svg viewBox="0 0 24 24"
+                                                width="14" height="14" fill="none" stroke="currentColor"
+                                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                                                style="vertical-align:-2px;margin-right:4px;">
+                                                <rect x="3" y="8" width="18" height="12" rx="1" />
+                                                <rect x="6" y="15" width="3" height="3" rx="0.5" fill="currentColor"
+                                                    stroke="none" />
+                                                <rect x="10.5" y="11" width="3" height="7" rx="0.5" fill="currentColor"
+                                                    stroke="none" />
+                                                <rect x="15" y="13" width="3" height="5" rx="0.5" fill="currentColor"
+                                                    stroke="none" />
+                                            </svg>当前目录磁盘使用</div>
+                                        <div class="monitor-disk">
+                                            <div class="disk-bar">
+                                                <div class="disk-bar-fill" id="diskNoteBarFill"></div>
+                                            </div>
+                                            <span class="disk-percent" id="diskNotePercent">0%</span>
                                         </div>
                                     </div>
                                 </div>
@@ -12757,7 +12754,6 @@
         </div>
         <!-- Markdown/HTML 文档目录 -->
         <div id="toc-container" style="display: none;">
-            <div class="toc-title">目录</div>
             <div id="toc"></div>
         </div>
         <!-- TOC 切换按钮 -->
@@ -14036,7 +14032,7 @@
             'html': '前端', 'htm': '前端', 'xhtml': '前端', 'css': '前端', 'scss': '前端', 'sass': '前端', 'less': '前端', 'styl': '前端', 'pcss': '前端', 'postcss': '前端', 'js': '前端', 'jsx': '前端', 'ts': '前端', 'tsx': '前端', 'mjs': '前端', 'cjs': '前端', 'jsm': '前端', 'tsm': '前端', 'mts': '前端', 'cts': '前端', 'vue': '前端', 'svelte': '前端', 'astro': '前端', 'swift': '前端', 'kt': '前端', 'py': '后端', 'pyw': '后端', 'java': '后端', 'kotlin': '后端', 'scala': '后端', 'groovy': '后端', 'c': '后端', 'cpp': '后端', 'h': '后端', 'hpp': '后端', 'cs': '后端', 'go': '后端', 'rs': '后端', 'rlib': '后端', 'rmeta': '后端', 'rb': '后端', 'php': '后端', 'dockerfile': '后端', 'gradle': '后端', 'makefile': '后端', 'cmake': '后端', 'proto': '后端', 'thrift': '后端', 'idl': '后端', 'wasm': '后端', 'asm': '后端', 'sh': '脚本', 'bash': '脚本', 'zsh': '脚本', 'bat': '脚本', 'cmd': '脚本', 'ps1': '脚本', 'sql': '数据库', 'mysql': '数据库', 'pgsql': '数据库', 'sqlite': '数据库', 'db': '数据库', 'db3': '数据库', 'sqlite3': '数据库', 'mdf': '数据库', 'ldf': '数据库', 'sqlitedb': '数据库', 'md': '文档', 'markdown': '文档', 'rst': '文档', 'tex': '文档', 'docx': '文档', 'doc': '文档', 'pdf': '文档', 'ppt': '文档', 'odt': '文档', 'rtf': '文档', 'epub': '文档', 'xlsx': '文档', 'xls': '文档', 'csv': '文档', 'tsv': '文档', 'ods': '文档', 'json': '文档', 'jsonc': '文档', 'xml': '文档', 'yaml': '文档', 'yml': '文档', 'toml': '文档', 'ini': '文档', 'conf': '文档', 'env': '文档', 'properties': '文档', 'txt': '文档', 'text': '文档', 'log': '文档', 'bak': '文档', 'tmp': '文档', 'cache': '文档', 'lock': '文档', 'map': '文档', 'gitignore': '文档', 'png': '媒体', 'jpg': '媒体', 'jpeg': '媒体', 'gif': '媒体', 'bmp': '媒体', 'svg': '媒体', 'webp': '媒体', 'ico': '媒体', 'tiff': '媒体', 'tif': '媒体', 'raw': '媒体', 'psd': '媒体', 'ai': '媒体', 'eps': '媒体', 'fig': '媒体', 'mp4': '媒体', 'mov': '媒体', 'avi': '媒体', 'flv': '媒体', 'wmv': '媒体', 'mkv': '媒体', 'webm': '媒体', 'm4v': '媒体', 'mpg': '媒体', 'mpeg': '媒体', '3gp': '媒体', 'mp3': '媒体', 'wav': '媒体', 'flac': '媒体', 'aac': '媒体', 'ogg': '媒体', 'wma': '媒体', 'm4a': '媒体', 'opus': '媒体', 'obj': '媒体', 'fbx': '媒体', 'dae': '媒体', 'stl': '媒体', '3ds': '媒体', 'blend': '媒体', 'zip': '压缩文件', 'rar': '压缩文件', '7z': '压缩文件', 'tar': '压缩文件', 'gz': '压缩文件', 'bz2': '压缩文件', 'xz': '压缩文件', 'dmg': '压缩文件', 'drawio': '图表', 'excalidraw': '图表', 'sketch': '图表', 'xd': '图表', 'afdesign': '图表', 'puml': '图表', 'plantuml': '图表', 'mmd': '图表', 'ttf': '字体', 'otf': '字体', 'woff': '字体', 'woff2': '字体', 'eot': '字体', 'glyphs': '字体', 'glyphs2': '字体'
         };
         const DOC_EXT_SET = new Set(['md', 'txt', 'mmd', 'csv', 'pdf', 'opml', 'drawio', 'excalidraw', 'puml', 'plantuml', 'html', 'mmd', 'mm', 'doc', 'docx', 'ppt', 'xls', 'xlsx', 'pptx', 'canvas']);
-        const CODE_EXT_SET = new Set(['iml', 'ghostty', 'dockerfile', 'groovy', 'js', 'jsx', 'ts', 'tsx', 'vue', 'css', 'scss', 'less', 'sass', 'py', 'java', 'c', 'cpp', 'h', 'hpp', 'cs', 'go', 'rust', 'rb', 'php', 'swift',
+        const CODE_EXT_SET = new Set(['html', 'htm', 'xhtml', 'iml', 'ghostty', 'dockerfile', 'groovy', 'js', 'jsx', 'ts', 'tsx', 'vue', 'css', 'scss', 'less', 'sass', 'py', 'java', 'c', 'cpp', 'h', 'hpp', 'cs', 'go', 'rust', 'rb', 'php', 'swift',
             'kt', 'scala', 'sh', 'bat', 'cmd', 'ps1', 'json', 'xml', 'yaml', 'yml', 'toml', 'ini', 'conf', 'env', 'sql', 'rst', 'log', 'properties', 'gradle', 'gitignore', 'jsm', 'mjs',
             'cjs', 'tsm', 'mts', 'cts', 'svelte', 'astro', 'styl', 'pcss', 'postcss', 'graphql', 'gql', 'prisma', 'proto', 'thrift', 'idl', 'asm', 's', 'asmx', 'fs', 'fsx', 'fsi', 'fsscript',
             'vb', 'vbs', 'pl', 'pm', 't', 'tt', 'pod', 'lua', 'r', 'R', 'matlab', 'm', 'psm1', 'psd1', 'ps1xml', 'xaml', 'axaml', 'resx', 'rs', 'sol', 'vy', 'move', 'aptos', 'sui', 'tsbuildinfo',
@@ -14046,6 +14042,7 @@
         const _PIC_IMAGE_EXT_SET = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico']);
         const _RAW_EXT_SET = new Set(['arw', 'raw', 'cr2', 'nef', 'dng', 'orf', 'raf', 'rw2', 'pef', 'srf', '3fr', 'erf']);
         const _SELECT_WORK_EXT_SET = new Set(['md', 'html']);
+        const _TOC_EXT_SET = new Set(['md', 'html', 'opml']);
         const isCode = (ext) => CODE_EXT_SET.has(ext.toLowerCase());
         const isDoc = (ext) => DOC_EXT_SET.has(ext.toLowerCase());
         const isVideoFile = (ext) => _VIDEO_EXT_SET.has(ext.toLowerCase());
@@ -14053,6 +14050,8 @@
         const isPicImage = (ext) => _PIC_IMAGE_EXT_SET.has(ext.toLowerCase());
         const isRaw = (ext) => _RAW_EXT_SET.has(ext.toLowerCase());
         const isSelectWork = (name) => _SELECT_WORK_EXT_SET.has(getExt(name).toLowerCase());
+        const isTocSupported = (name) => _TOC_EXT_SET.has(getExt(name).toLowerCase());
+
         // 带大小限制的 LRU 缓存（Map 封装）
         class LRUCache {
             constructor(maxSize) {
@@ -14142,6 +14141,7 @@
         let _treeLoadDuration = null;       // 文件树加载耗时(ms)
         let _dashboardLoadDuration = null;       // 仪表盘加载耗时(ms)
         let _fileScanDuration = null;       // 文件扫描耗时(ms)
+        let _currentDirTotalBytes = 1;      // 当前目录总大小(bytes)，用于 diskNote 计算
         // 左侧文件树
         let _markersMap = null;             // markers 缓存（Map，首次 readMarkers 时加载）
         let _cachedLastFile = null;         // createFileItem 预缓存：最后一次打开的文件路径
@@ -14244,7 +14244,7 @@
         ];
 
         const AUX_CONTROLS = [
-            tocContainer, topRightControls, newFileControls
+            topRightControls, newFileControls
         ];
 
         mermaid.initialize({
@@ -14296,7 +14296,6 @@
                 Promise.resolve(initAiResultModal()), // 初始化AI结果弹窗
                 Promise.resolve(initMarkdownSelectionToolbar()),// 初始化Markdown选择工具栏
                 Promise.resolve(startScheduledTask(10)),// 初始化定时任务组件
-                Promise.resolve(initSystemMonitor()),// 初始化系统监控
                 Promise.resolve(initSidebarToggle()),// 初始化侧边栏切换按钮
                 Promise.resolve(todoEarlyInit()),// 初始化日历日程
                 Promise.resolve(initMonacoEditor()),// 初始化编辑器
@@ -15392,6 +15391,10 @@
             }
             for (let i = 0; i < AUX_CONTROLS.length; i++) {
                 AUX_CONTROLS[i].style.display = 'none';
+            }
+            //toc 显影逻辑，优化视觉体验
+            if (!(lastToggle === "renderFile" && currentFileHandle && isTocSupported(currentFileHandle.name))) {
+                tocContainer.style.display = 'none';
             }
             // 等待所有子模块清理完成，避免清理尚未完成时新模块已开始渲染导致竞态
             await destroyEverything();
@@ -21082,6 +21085,7 @@
             iframe.style.width = '100%';
             iframe.style.height = 'calc(100% - 4px)';
             iframe.style.overflow = 'hidden';
+            iframe.style.scrollbarWidth = 'none';
             contentMain.textContent = '';
             contentMain.appendChild(iframe);
             let iframeLoaded = false;
@@ -26906,6 +26910,7 @@ kanban-plugin: basic
                 "folderTree": {}
             };
             if (!param || !isEmpty(param)) data = param;
+            _currentDirTotalBytes = data.stats.total_size_bytes;
             const btn = document.getElementById('data-refresh-btn');
             if (btn) {
                 btn.disabled = true;
@@ -26943,14 +26948,13 @@ kanban-plugin: basic
                 renderDashActivity(sortedByMtimeTop10, viewData),
 
             ]);
-            requestAnimationFrame(() => {
-                setTimeout(async () => {
-                    await renderDashCharts(stats, data)
-                    if (!chartsResizeBound) {
-                        window.addEventListener('resize', resizeDashboardCharts);
-                        chartsResizeBound = true;
-                    }
-                }, 0);
+            // 分帧渲染所有图表后，绑定窗口 resize 事件
+            requestAnimationFrame(async () => {
+                await renderDashCharts(stats, data);
+                if (!chartsResizeBound) {
+                    window.addEventListener('resize', resizeDashboardCharts);
+                    chartsResizeBound = true;
+                }
             });
             btn.disabled = false;
             btn.innerText = '扫描数据';
@@ -27760,6 +27764,8 @@ kanban-plugin: basic
                     }, 0);
                 });
             });
+            // 确保所有图表尺寸与容器对齐
+            requestAnimationFrame(() => resizeDashboardCharts());
         }
         let _currentNetSearchQuery = SEARCH_BTNS[1].query; // 默认选中第二个搜索引擎（Google）
         let _currentNetSearchName = SEARCH_BTNS[1].name;
@@ -27837,20 +27843,31 @@ kanban-plugin: basic
         async function toggleDashboardView(isFirst = false, data = null) {
             const _scanStart = performance.now();
             await switchToView(dashboardContainer);
+            // 确保所有 dashboard ECharts 实例都能响应窗口 resize
+            if (!chartsResizeBound) {
+                window.addEventListener('resize', resizeDashboardCharts);
+                chartsResizeBound = true;
+            }
             aiFabContainer.style.display = 'block';
             const larkCheckbox = document.querySelector('.ai-result-sw-lark input');
             if (larkCheckbox) larkCheckbox.checked = false;
             //监控面板展示
             const monitorPanel = dashboardContainer.querySelector('#monitor-panel');
             const fileSumPanel = dashboardContainer.querySelector('#file-sum-panel');
-            if (hasBackendServer) {
-                initSystemMonitor();
+            if (isTauriVisit()) {
                 monitorPanel.style.display = 'flex';
                 fileSumPanel.style.display = 'none';
+                startTauriSystemMonitor();
+            } else if (hasBackendServer) {
+                monitorPanel.style.display = 'flex';
+                fileSumPanel.style.display = 'none';
+                initSystemMonitor();
             } else {
                 monitorPanel.style.display = 'none';
                 fileSumPanel.style.display = 'flex';
             }
+            // 监控初始化完成后设置激活标志（防止 initSystemMonitor → closeSystemMonitor 误复位）
+            _dashboardMetricsActive = true;
 
             const timeDisplay = dashboardContainer.querySelector('#dashboard-time');
             if (timeDisplay) {
@@ -32822,14 +32839,97 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     data: [{ value: 0.15 }]
                 }]
             };
+
+            const netOption = {
+                animation: false,
+                tooltip: false,
+                grid: [{
+                    left: 5,
+                    right: 5,
+                    top: 5, height: '50%'
+                }, {
+                    left: 5,
+                    right: 5,
+                    bottom: 5, height: '50%'
+                }],
+                xAxis: [{
+                    type: 'time',
+                    gridIndex: 0,
+                    axisLine: { show: false },
+                    axisLabel: { show: false },
+                    axisTick: { show: false },
+                    splitLine: { show: false }
+                }, {
+                    type: 'time',
+                    gridIndex: 1,
+                    axisLine: { show: false },
+                    axisLabel: { show: false },
+                    axisTick: { show: false },
+                    splitLine: { show: false }
+                }],
+                yAxis: [
+                    {
+                        type: 'value',
+                        min: 0,
+                        interval: 10,
+                        gridIndex: 0,
+                        splitLine: { show: false },
+                        axisLabel: { show: false },
+                        axisTick: { show: false }
+                    },
+                    {
+                        type: 'value',
+                        min: 0,
+                        interval: 10,
+                        gridIndex: 1,
+                        splitLine: { show: false },
+                        axisLabel: { show: false },
+                        axisTick: { show: false }
+                    }
+                ],
+                series: [
+                    {
+                        name: '下载',
+                        type: 'line',
+                        smooth: true,
+                        symbol: 'none',
+                        large: true,
+                        yAxisIndex: 0,
+                        xAxisIndex: 0,
+                        data: _netDownloadData,
+                        lineStyle: { color: '#0077ff', width: 1.5 },
+                        areaStyle: {
+                            color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(0,119,255,0.3)' }, { offset: 1, color: 'rgba(0,119,255,0.0)' }] }
+                        }
+                    },
+                    {
+                        name: '上传',
+                        type: 'line',
+                        smooth: true,
+                        symbol: 'none',
+                        large: true,
+                        yAxisIndex: 1,
+                        xAxisIndex: 1,
+                        data: _netUploadData,
+                        lineStyle: { color: '#f09c00', width: 1.5 },
+                        areaStyle: {
+                            color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(240,156,0,0.25)' }, { offset: 1, color: 'rgba(240,156,0,0.0)' }] }
+                        }
+                    }
+                ]
+            };
+
+
             const cpuChart = initChart('cpuGauge', 'cpuGauge');
             cpuChart.setOption(cpuOption);
-
             const memChart = initChart('memGauge', 'memGauge');
             memChart.setOption(memOption);
+            const netChart = initChart('netChart', 'netChart');
+            netChart.setOption(netOption);
 
             cpuChart.resize();
             memChart.resize();
+            netChart.resize();
         }
 
         let _wsClient = null;
@@ -32845,7 +32945,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         // 处理 WebSocket 推送的系统监控数据（仅仪表盘可见时更新 DOM）
         function _handleWsMetrics(data) {
             const d = data.data || data;
-            if (!d || !d.cpu) return;
+            if (!d || !d.cpu || !d.network || !_dashboardMetricsActive) return;
             // 系统监控已关闭（离开仪表盘视图）→ 跳过所有 DOM 更新
             const cpuChart = dashboardCharts['cpuGauge'];
             const memChart = dashboardCharts['memGauge'];
@@ -32865,7 +32965,23 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const netSent = document.getElementById('netSent');
             if (netRecv) netRecv.textContent = _wsFormatBytes(d.network.recv_rate) + '/s';
             if (netSent) netSent.textContent = _wsFormatBytes(d.network.sent_rate) + '/s';
-
+            // 网络折线图实时更新
+            const now = Date.now();
+            _netDownloadData.push([now, d.network.recv_rate]);
+            _netUploadData.push([now, d.network.sent_rate]);
+            if (_netDownloadData.length > _NET_MAX_POINTS) {
+                _netDownloadData.shift();
+                _netUploadData.shift();
+            }
+            const netChart = dashboardCharts['netChart'];
+            if (netChart) {
+                netChart.setOption({
+                    series: [
+                        { data: _netDownloadData },
+                        { data: _netUploadData }
+                    ]
+                });
+            }
             const diskPct = d.disk.percent;
             const diskBar = document.getElementById('diskBarFill');
             const diskPercent = document.getElementById('diskPercent');
@@ -32875,12 +32991,26 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             if (diskPercent) diskPercent.textContent = diskPct + '%';
 
+            const diskNotePct = (_currentDirTotalBytes > 0 && d.disk.total > 0)
+                ? Math.min(Math.round((_currentDirTotalBytes / d.disk.total) * 10000) / 100, 100)
+                : 0;
+            const diskNoteBar = document.getElementById('diskNoteBarFill');
+            const diskNotePercent = document.getElementById('diskNotePercent');
+            if (diskNoteBar) {
+                diskNoteBar.style.width = Math.max(diskNotePct, 3) + '%';
+                diskNoteBar.className = 'disk-bar-fill' + (diskNotePct > 90 ? ' critical' : diskNotePct > 75 ? ' warning' : ' info');
+            }
+            if (diskNotePercent) diskNotePercent.textContent = diskNotePct.toFixed(2) + '%';
+
             const monitorUptime = document.getElementById('monitorUptime');
             const serviceUptime = document.getElementById('serviceUptime');
             const serviceMem = document.getElementById('serviceMem');
             if (monitorUptime) monitorUptime.textContent = '电脑Live: ' + _wsFormatUptime(d.uptime);
             if (serviceUptime) serviceUptime.textContent = '服务Live: ' + _wsFormatUptime(d.service.uptime);
             if (serviceMem) serviceMem.textContent = _wsFormatBytes(d.service.rss);
+
+            const pcIp = document.getElementById('pcIp');
+            if (pcIp && d.host_ip) pcIp.textContent = d.host_ip;
         }
 
         /** WebSocket 数据格式化：字节数转可读字符串（模块级常量，避免每次消息重复定义） */
@@ -32974,8 +33104,46 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             });
         }
 
-        // 关闭系统监控：断开 SSE + 销毁 ECharts
+        // ★ Tauri 系统监控：启动后台线程（Rust sysinfo → Tauri Event → 前端）
+        let _tauriMonitorUnlisten = null;
+        let _dashboardMetricsActive = false;
+        let _netDownloadData = [];
+        let _netUploadData = [];
+        const _NET_MAX_POINTS = 60;
+
+        function startTauriSystemMonitor() {
+            if (!isTauriVisit()) return;
+            initSystemMonitor();
+            // 先注册事件监听，确保不丢失第一个事件
+            if (window.__TAURI__.event) {
+                window.__TAURI__.event.listen('system-metrics', (event) => {
+                    _handleWsMetrics(event.payload);
+                }).then(unlisten => {
+                    _tauriMonitorUnlisten = unlisten;
+                    // 监听就绪后才启动后台线程
+                    window.__TAURI__.core.invoke('start_monitor').catch(e => {
+                        console.warn('[TauriMonitor] 启动失败:', e);
+                    });
+                }).catch(e => {
+                    console.warn('[TauriMonitor] 注册事件监听失败:', e);
+                });
+            }
+        }
+
+        function stopTauriSystemMonitor() {
+            if (typeof _tauriMonitorUnlisten === 'function') {
+                _tauriMonitorUnlisten();
+                _tauriMonitorUnlisten = null;
+            }
+            if (isTauriVisit()) {
+                window.__TAURI__.core.invoke('stop_monitor').catch(() => { });
+            }
+        }
+
+        // 关闭系统监控：断开 SSE / Tauri 后台线程 + 销毁 ECharts
         function closeSystemMonitor() {
+            _dashboardMetricsActive = false;
+            stopTauriSystemMonitor();
             const cpuChart = dashboardCharts['cpuGauge'];
             const memChart = dashboardCharts['memGauge'];
             if (cpuChart) {
@@ -32985,6 +33153,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (memChart) {
                 memChart.dispose();
                 dashboardCharts['memGauge'] = null;
+            }
+            const netChart = dashboardCharts['netChart'];
+            if (netChart) {
+                netChart.dispose();
+                dashboardCharts['netChart'] = null;
             }
         }
 
