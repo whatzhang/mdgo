@@ -114,6 +114,9 @@
             --color-warning: #6e40c9;
             --color-warning-hover: #5a32a3;
             --color-warning-active: #4c2889;
+            --color-orange: #D2691E;
+            --color-orange-hover: #E08233;
+            --color-orange-active: #B85C1B;
             --color-danger: #cf222e;
             --color-danger-hover: #992222;
             --color-danger-light: #ffebe9;
@@ -1180,6 +1183,19 @@
             background-color: var(--color-warning-active);
         }
 
+        .btn-orange {
+            background-color: var(--color-orange);
+            color: var(--color-text-white);
+        }
+
+        .btn-orange:hover {
+            background-color: var(--color-orange-hover);
+        }
+
+        .btn-orange:active {
+            background-color: var(--color-orange-active);
+        }
+
         .btn-sm {
             height: 1.65rem;
             padding: 0.275rem 0.625rem;
@@ -1390,7 +1406,7 @@
 
         .top-right-controls {
             position: absolute;
-            top: 5px;
+            top: 6px;
             right: 10px;
             display: flex;
             gap: 0.4rem;
@@ -1681,7 +1697,7 @@
             z-index: 10;
             font-size: 0.875rem;
             box-sizing: border-box;
-            height: 33px;
+            height: 35px;
             width: 100%;
             color: rgb(237, 5, 237);
             font-weight: 600;
@@ -2825,6 +2841,7 @@
             display: flex;
             gap: 6px;
             padding-bottom: 8px;
+            margin-left: 4px;
             flex-shrink: 0;
             align-items: center;
             position: sticky;
@@ -3075,7 +3092,7 @@
             height: 100vh;
             color: var(--color-text);
             overflow-y: auto;
-            padding: 3px 10px 10px 10px;
+            padding: 4px 10px 10px 10px;
             background: var(--color-bg-secondary);
         }
 
@@ -3091,7 +3108,7 @@
         }
 
         .page-title {
-            font-size: 30px;
+            font-size: 26px;
             font-weight: 900;
             margin-bottom: 6px;
             color: var(--color-warning, var(--color-primary-light));
@@ -3996,7 +4013,7 @@
         }
 
         .bookmark-header {
-            padding: 5px 10px;
+            padding: 6px 10px;
             display: flex;
             justify-content: flex-start;
             align-items: center;
@@ -4044,9 +4061,7 @@
 
         .bookmark-tree {
             background: var(--color-bg-secondary);
-            border-radius: var(--radius-lg);
             padding: 0.25rem;
-            box-shadow: var(--shadow-sm);
         }
 
         .bookmark-folder {
@@ -11890,6 +11905,61 @@
                 transform: rotate(360deg);
             }
         }
+
+        /* ═══ 演示模式 ═══ */
+        .demo-mode #jsmind-help,
+        .demo-mode #sidebar,
+        .demo-mode #sidebar-toggle-btn,
+        .demo-mode #toc-container,
+        .demo-mode #toc-toggle-btn,
+        .demo-mode #top-right-controls,
+        .demo-mode #new-file-controls,
+        .demo-mode #common-tool-controls,
+        .demo-mode #ai-fab-container,
+        .demo-mode .bookmark-header,
+        .demo-mode .json-toolbar {
+            display: none !important;
+        }
+
+        .demo-mode #content-main,
+        .demo-mode #content-common-container {
+            padding: 20px 30px;
+        }
+
+        .demo-mode #content {
+            width: 100%;
+        }
+
+        .demo-mode .demo-exit-bar.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .demo-exit-bar {
+            position: fixed;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999;
+            padding: 4px 14px 5px 14px;
+            background: var(--color-primary);
+            color: var(--color-text-white);
+            border-radius: 0 0 8px 8px;
+            font-size: 12px;
+            cursor: pointer;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease, background 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            user-select: none;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .demo-exit-bar:hover {
+            transform: translateX(-50%) scale(1.1);
+        }
     </style>
 </head>
 
@@ -12854,6 +12924,11 @@
                 复制
             </button>
         </div>
+        <div id="common-tool-controls" class="top-right-controls" style="display: none;">
+            <button id="demo-btn" class="btn btn-orange btn-sm" style="display:none;" onclick="toggleDemoMode()">
+                演示
+            </button>
+        </div>
         <!-- 新建文件工具栏（保存/清空） -->
         <div id="new-file-controls" class="top-right-controls" style="display: none;">
             <div class="mermaid-dropdown mermaid-save-dropdown new-file-save-dropdown">
@@ -13740,8 +13815,8 @@
         let DIR_BLACKLIST = ['.*/', '$*/', 'assets/', 'node_modules/', 'vendor/', 'dist/', 'build/', 'target/', '__pycache__/'];
         // 忽略的文件
         let FILE_BLACKLIST = ['.*', '$*', '*.tmp', '*.log', '!.gitignore'];
-        // 随机打开功能的目录
-        let RANDOM_DIR_BLACKLIST = ['note/moc/', 'note/templates/', 'deleted/', 'data/', 'code/'];
+        // 不能随机打开功能的目录
+        let RANDOM_DIR_BLACKLIST = ['note/moc/', 'note/templates/', 'mdgo_trash/', 'data/', 'code/'];
         // 显示渲染而非代码的目录
         let HTML_CODE_SHOW_BLACKLIST = ["note/"];
         // 编译后的黑名单规则（由 compileAllRules 在启动和保存时生成）
@@ -13967,7 +14042,6 @@
         const VIEW_SUM_KEY = 'index_view_sum';         // 浏览记录键名
         const VIEW_OPER_RECORDS_KEY = 'index_view_records';         // 浏览记录键名
         const TOC_VISIBLE_KEY = 'toc_visible_state';     // TOC 目录可见性状态键名
-        const SIDEBAR_VISIBLE_KEY = 'sidebar_visible_state'; // 文件菜单侧边栏可见性状态键名
         const GRAPH_PARAMS_KEY = 'graph_params'; // 图谱参数键名
         const VIDEO_HISTORY_KEY = 'video_play_history'; // 视频播放历史键名
         const PERMISSION_TIME_KEY = 'permission_timestamp'; // 授权时间戳键名
@@ -13976,12 +14050,7 @@
         const DIRECTORY_STORE_NAME = 'idb-data-store';
 
         // ====== 目录名常量 ======
-        const DELETED_DIR_NAME = 'deleted';         // 垃圾箱文件名
-        const DIARY_DIR_NAME = 'diary';         // 日记文件名
-        const NOTE_DIR_NAME = 'note';         // 笔记文件名
-        const PIC_DIR_NAME = 'pic';         // 图片文件名
-        const DATA_DIR_NAME = 'data';         // 数据文件名
-        const CODE_DIR_NAME = 'code';         // 代码文件名
+        const DELETED_DIR_NAME = 'mdgo_trash';         // 垃圾箱文件名
         const AI_HISTORY_MAX = 10; //AI调用历史最大条数
         //数据文件
         const INDEX_HISTORY_FILE = 'index_ai_history.json';
@@ -14242,6 +14311,8 @@
         const jmImgBtn = document.getElementById('jsmind-image-btn');
         const opmlMindmapBtn = document.getElementById('opml-mindmap-btn');
         const opmlBackBtn = document.getElementById('opml-back-btn');
+        const commonToolControls = document.getElementById('common-tool-controls');
+        const demoBtn = document.getElementById('demo-btn');
 
         // 所有主视图容器的集合（切换视图时隐藏其他容器用）
         const MAIN_VIEW_CONTAINERS = [
@@ -14254,7 +14325,7 @@
         ];
 
         const AUX_CONTROLS = [
-            topRightControls, newFileControls
+            topRightControls, newFileControls, tocContainer, commonToolControls
         ];
 
         mermaid.initialize({
@@ -14356,11 +14427,15 @@
 
         let previewFileText = ''; // 当前预览的文件内容（用于判断是否需要重新渲染）
         let lastToggle = 'none';  // 记录上一次打开的功能类型，默认为 'none'
+        let currentToggle = '';
         async function toggleFile(type, data = {}) {
             if (!isRootHandleAvailable()) {
                 showNotification('✗ 请先打开根目录', 'error');
                 return;
             }
+            currentToggle = type;
+            // 切换视图时自动退出演示模式
+            if (_isDemoMode) exitDemoMode();
             if (lastToggle === 'tempEditor') saveTempEditorValue();
             previewFileText = '';
             let destroyForce = lastToggle === 'newFile'
@@ -14610,7 +14685,7 @@
         function createEditorContainer(headerLabel, innerId = 'editor-inner', containerStyle = '', headerStyle = '') {
             return `<div class="editor-container"${containerStyle ? ` style="${containerStyle}"` : ''}>
                 <div class="editor-header"${headerStyle ? ` style="${headerStyle}"` : ''}>${headerLabel}</div>
-                <div id="${innerId}" style="width:100%;height:calc(100% - 58px);overflow: hidden;"></div>
+                <div id="${innerId}" style="width:100%;height:calc(100% - 60px);overflow: hidden;"></div>
                 ${createEditorFooter()}
             </div>`;
         }
@@ -14641,7 +14716,9 @@
                 mdImageBtn: false,
                 livePreviewBtn: (isMarkdownViewActive() && !isKanban) ? true : false,
                 formatBtn: isKanban ? false : true,
-                opmlBtns: false
+                opmlBtns: false,
+                commonToolControls: true,
+                demoBtn: true
             });
         }
 
@@ -15402,11 +15479,6 @@
             for (let i = 0; i < AUX_CONTROLS.length; i++) {
                 AUX_CONTROLS[i].style.display = 'none';
             }
-            //toc 显影逻辑，优化视觉体验
-            if (!(lastToggle === "renderFile" && currentFileHandle && isTocSupported(currentFileHandle.name))) {
-                tocContainer.style.display = 'none';
-            }
-            // 等待所有子模块清理完成，避免清理尚未完成时新模块已开始渲染导致竞态
             await destroyEverything();
         }
 
@@ -16372,6 +16444,129 @@
                     livePreviewBtn: false
                 });
             }
+            // 演示按钮：仅代码/文档/图片文件可见
+            setControlsState({
+                commonToolControls: true,
+                demoBtn: true
+            });
+        }
+
+        let _isDemoMode = false; // 是否进入演示模式
+        let _demoExitBar = null; // 退出演示指示条
+        let _demoTriggerStrip = null;  // 顶部透明触发条
+        let _demoBarTimer = null; // 演示指示条定时器
+
+        function toggleDemoMode() {
+            if (_isDemoMode) {
+                exitDemoMode();
+            } else {
+                enterDemoMode();
+            }
+        }
+
+
+        function enterDemoMode() {
+            if (_isDemoMode) return;
+            _isDemoMode = true;
+            document.body.classList.add('demo-mode');
+            // 进入全屏（Chrome/Edge 兼容）
+            enterFullscreen();
+            // 对当前可见的内容容器应用缩放
+            const containers = [contentMain, contentEdit];
+            for (const c of containers) {
+                if (c && c.style.display !== 'none') {
+                    c.dataset.demoPrevZoom = c.style.zoom || '';
+                    c.style.zoom = '1.5';
+                    // Monaco Editor 额外调大字号
+                    if (c === contentEdit && currentEditor) {
+                        try {
+                            const cur = currentEditor.getRawOptions().fontSize || 13;
+                            currentEditor.updateOptions({ fontSize: Math.round(cur * 1.03) });
+                        } catch (e) { /* ignore */ }
+                    }
+                    break;
+                }
+            }
+
+            // 创建退出指示条，点击即退出
+            _demoExitBar = document.createElement('div');
+            _demoExitBar.className = 'demo-exit-bar';
+            _demoExitBar.textContent = '退出演示';
+            _demoExitBar.onclick = exitDemoMode;
+            document.body.appendChild(_demoExitBar);
+
+            // 顶部透明触发条（解决 iframe 内鼠标事件被拦截的问题）
+            _demoTriggerStrip = document.createElement('div');
+            _demoTriggerStrip.style.cssText =
+                'position:fixed;top:0;left:0;width:100%;height:20px;z-index:9998;' +
+                'background:transparent;pointer-events:auto;';
+            _demoTriggerStrip.addEventListener('mouseenter', () => {
+                if (_demoExitBar) _demoExitBar.classList.add('show');
+                clearTimeout(_demoBarTimer);
+            });
+            _demoTriggerStrip.addEventListener('mouseleave', () => {
+                clearTimeout(_demoBarTimer);
+                _demoBarTimer = setTimeout(() => {
+                    if (_demoExitBar) _demoExitBar.classList.remove('show');
+                }, 3000);
+            });
+            document.body.appendChild(_demoTriggerStrip);
+            // 重新调整内容区域大小
+            resizeContentMain();
+        }
+
+        function exitDemoMode() {
+            if (!_isDemoMode) return;
+            _isDemoMode = false;
+            document.body.classList.remove('demo-mode');
+            // 退出全屏
+            exitFullscreen();
+            // 恢复容器缩放
+            const containers = [contentMain, contentEdit];
+            for (const c of containers) {
+                if (c && c.dataset.demoPrevZoom !== undefined) {
+                    c.style.zoom = c.dataset.demoPrevZoom;
+                    delete c.dataset.demoPrevZoom;
+                }
+            }
+            // 移除退出条和触发条
+            if (_demoExitBar) {
+                clearTimeout(_demoBarTimer);
+                _demoExitBar.remove();
+                _demoExitBar = null;
+            }
+            if (_demoTriggerStrip) {
+                _demoTriggerStrip.remove();
+                _demoTriggerStrip = null;
+            }
+            resizeContentMain();
+        }
+
+        // 进入全屏（兼容 Chrome/Edge/Safari）
+        function enterFullscreen() {
+            const el = document.documentElement;
+            const request = el.requestFullscreen ||
+                el.webkitRequestFullscreen;
+            if (request) {
+                try {
+                    request.call(el);
+                } catch (e) {
+                    console.warn('进入全屏失败:', e.message);
+                }
+            }
+        }
+
+        // 退出全屏
+        function exitFullscreen() {
+            const exit = document.exitFullscreen ||
+                document.webkitExitFullscreen;
+            if (exit) {
+                try {
+                    exit.call(document);
+                } catch (e) {
+                    console.warn('退出全屏失败:', e.message);
+                }
+            }
         }
 
         function escapeHtml(str) {
@@ -17084,28 +17279,8 @@
                 // 使用 switch 替代多层 if/else
                 switch (nameLow) {
                     case DELETED_DIR_NAME:
-                        nameSpan.textContent = '垃圾箱';
+                        nameSpan.textContent = '垃圾箱(' + name + ')';
                         nameSpan.style.color = 'var(--color-text-secondary)';
-                        break;
-                    case DIARY_DIR_NAME:
-                        nameSpan.textContent = '日记';
-                        nameSpan.style.color = 'var(--color-note)';
-                        break;
-                    case NOTE_DIR_NAME:
-                        nameSpan.textContent = '笔记';
-                        nameSpan.style.color = 'var(--color-note)';
-                        break;
-                    case PIC_DIR_NAME:
-                        nameSpan.textContent = '图片';
-                        nameSpan.style.color = 'var(--color-note)';
-                        break;
-                    case CODE_DIR_NAME:
-                        nameSpan.textContent = '代码';
-                        nameSpan.style.color = 'var(--color-note)';
-                        break;
-                    case DATA_DIR_NAME:
-                        nameSpan.textContent = '数据';
-                        nameSpan.style.color = 'var(--color-note)';
                         break;
                     default:
                         nameSpan.textContent = name;
@@ -17891,8 +18066,8 @@
                     line_color: '#a6a6ac',
                     line_style: 'curved',
                     node_overflow: 'wrap',
-                    hmargin: 500,
-                    vmargin: 500,
+                    hmargin: 1000,
+                    vmargin: 1000,
                     draggable: true,
                     hide_scrollbars_when_draggable: true,
                     zoom: { min: 0.7, max: 2.0, step: 0.1 },
@@ -21464,6 +21639,7 @@
                 document.addEventListener('mouseup', _onImageMouseUp);
                 window.addEventListener('resize', _onImageResize);
             }
+            set
         }
 
         function _onImageResize() {
@@ -24403,8 +24579,7 @@ kanban-plugin: basic
         }
 
         function initSidebarToggle() {
-            const savedState = safeLocalStorageGet(SIDEBAR_VISIBLE_KEY);
-            const preferHidden = savedState === '0';
+            const preferHidden = false;
             sidebarVisible = !preferHidden;
             const btn = document.getElementById('sidebar-toggle-btn');
             if (preferHidden) {
@@ -24430,7 +24605,9 @@ kanban-plugin: basic
                 contentBody.style.width = '100%';
                 btn.classList.remove('collapsed');  // 隐藏时箭头朝里
             }
-            safeLocalStorageSet(SIDEBAR_VISIBLE_KEY, sidebarVisible ? '1' : '0');
+            resizeContentMain();
+        }
+        function resizeContentMain() {
             // 等 CSS 布局生效后再触发 resize，让图表/画布/词云等拿到正确的容器尺寸
             requestAnimationFrame(function () {
                 window.dispatchEvent(new Event('resize'));
@@ -27106,7 +27283,7 @@ kanban-plugin: basic
             const extMap = {};
             const docExtMap = {};
             const filesByDateTop10 = {};
-            const heatmapFilesByDate = {};       // 热力图用：全量文件，不过滤 deleted
+            const heatmapFilesByDate = {};       // 热力图用：全量文件，不过滤 mdgo_trash
             const heatmapMonthData = {};         // 热力图用：monthData（不含 deleted）
             const dirFileCountMap = {};          // treemap 数量图用：目录→文件计数
             let deletedCount = 0;
@@ -27132,19 +27309,19 @@ kanban-plugin: basic
                 const cDay = createDate.getDate();
                 const createDateKey = `${cYear}-${String(cMonth).padStart(2, '0')}-${String(cDay).padStart(2, '0')}`;
 
-                // --- stats: filesByDate (top10, 含 deleted) ---
+                // --- stats: filesByDate (top10, 含 mdgo_trash) ---
                 if (!filesByDateTop10[createDateKey]) filesByDateTop10[createDateKey] = [];
                 filesByDateTop10[createDateKey].push(f);
 
-                // --- heatmap: filesByDate (全量, 含 deleted) ---
+                // --- heatmap: filesByDate (全量, 含 mdgo_trash) ---
                 if (!heatmapFilesByDate[createDateKey]) heatmapFilesByDate[createDateKey] = [];
                 heatmapFilesByDate[createDateKey].push(f);
 
-                // deleted 文件：只算热力图，跳过类型/大小/统计等
+                // mdgo_trash 文件：只算热力图，跳过类型/大小/统计等
                 if (isDeleteFolder) {
                     deletedCount++;
                     if (i > 0 && i % BATCH === 0) await yieldToMain();
-                    continue; // 跳过 typeMap/extMap/size/trend/dirCount 等非 deleted 统计
+                    continue; // 跳过 typeMap/extMap/size/trend/dirCount 等非 mdgo_trash 统计
                 }
 
                 // 今日编辑/新增：时间戳比较比 toDateString 快 3-5 倍
@@ -29060,6 +29237,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (opts.jmImgBtn !== undefined) jmImgBtn.style.display = opts.jmImgBtn ? 'inline-flex' : 'none';
             if (opts.jmSaveOpmlBtn !== undefined) jmSaveOpmlBtn.style.display = opts.jmSaveOpmlBtn ? 'inline-flex' : 'none';
             if (opts.opmlSaveMmBtn !== undefined) opmlSaveMmBtn.style.display = opts.opmlSaveMmBtn ? 'inline-flex' : 'none';
+            if (opts.commonToolControls !== undefined) commonToolControls.style.display = opts.commonToolControls ? 'flex' : 'none';
+            if (opts.demoBtn !== undefined) demoBtn.style.display = opts.demoBtn ? 'inline-flex' : 'none';
         }
 
         async function showAIResultModal(action, titles, content, fileName, filePath) {
@@ -30418,7 +30597,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             safeLocalStorageRemove(GRAPH_PARAMS_KEY);
             safeLocalStorageRemove(VIDEO_HISTORY_KEY);
             safeLocalStorageRemove(TOC_VISIBLE_KEY);
-            safeLocalStorageRemove(SIDEBAR_VISIBLE_KEY);
             safeLocalStorageRemove('highlight-colors');
             safeLocalStorageRemove('annotation-colors');
             _markersMap = null; // markers 缓存
