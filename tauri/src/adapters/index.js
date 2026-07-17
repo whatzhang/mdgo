@@ -11,9 +11,10 @@
 
 window.__tauriInitPromise = (async () => {
     try {
-        const [{ invoke, convertFileSrc }, { listen }, { open, save }, { Store }] = await Promise.all([
+        const [{ invoke, convertFileSrc }, { listen }, { getCurrentWindow }, { open, save }, { Store }] = await Promise.all([
             import('@tauri-apps/api/core'),
             import('@tauri-apps/api/event'),
+            import('@tauri-apps/api/window'),
             import('@tauri-apps/plugin-dialog'),
             import('@tauri-apps/plugin-store'),
         ]);
@@ -21,6 +22,7 @@ window.__tauriInitPromise = (async () => {
         window.__TAURI__ = {
             core: { invoke, convertFileSrc },
             event: { listen },
+            window: { getCurrentWindow },
             dialog: { open, save },
             pluginStore: { Store },
         };

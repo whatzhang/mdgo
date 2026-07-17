@@ -18,6 +18,7 @@
     "fs:allow-rename",
     "fs:allow-stat",
     "fs:allow-read-dir",
-    "store:default"
+    "store:default",
+    "core:window:allow-set-fullscreen"
   ]
 }

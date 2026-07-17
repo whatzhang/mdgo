@@ -1131,7 +1131,6 @@
 
         .btn:hover {
             box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
-            transform: scale(1.02);
         }
 
         .btn:active {
@@ -1368,6 +1367,24 @@
             z-index: 100;
         }
 
+        .demo-image-controls {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            gap: 10px;
+            z-index: 9999;
+            transform: scale(0.8);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+        }
+
+        .demo-image-controls.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
         .image-btn {
             width: 1.8rem;
             height: 1.8rem;
@@ -1411,6 +1428,22 @@
             gap: 0.4rem;
             z-index: 100;
             align-items: center;
+        }
+
+        .top-right-wrapper {
+            position: absolute;
+            top: 6px;
+            right: 10px;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            z-index: 100;
+        }
+
+        .top-right-wrapper .top-right-controls {
+            position: static;
+            top: auto;
+            right: auto;
         }
 
         .top-left-controls {
@@ -2197,7 +2230,6 @@
 
         .kanban-card:hover {
             transform: scale(1.02);
-            /* border-color: var(--color-primary, var(--color-primary-light)); */
         }
 
         .kanban-card.dragging {
@@ -4489,11 +4521,15 @@
             display: flex;
             align-items: center;
             gap: 5px;
-            padding: 5px 14px 4px 8px;
+            padding: 6px 8px 5px 8px;
             background: var(--color-bg);
             border-bottom: 1px solid #e2e8f0;
             flex-wrap: nowrap;
             flex-shrink: 0;
+        }
+
+        .mermaid-toolbar-btn-right {
+            padding-right: 3.875rem !important;
         }
 
         .mermaid-fixed-btn {
@@ -4520,6 +4556,11 @@
             flex-shrink: 1;
             min-width: 0;
             max-width: 68%;
+            box-sizing: border-box;
+        }
+
+        .mermaid-toolbar-left::-webkit-scrollbar {
+            height: 2px !important;
         }
 
         .mermaid-toolbar-right {
@@ -4540,9 +4581,8 @@
         .mermaid-tb {
             height: 1.688rem;
             padding: 0 0.5rem;
-            border: 1px solid #e2e8f0;
             background: var(--color-bg);
-            border-radius: 0.313rem;
+            border-radius: var(--radius-md);
             cursor: pointer;
             font-size: 0.813rem;
             font-weight: 600;
@@ -4588,7 +4628,7 @@
         }
 
         .mermaid-zoom-btn {
-            font-size: 15px;
+            font-size: 0.9375rem;
             color: var(--color-text, black);
             display: flex;
             align-items: center;
@@ -4596,8 +4636,8 @@
         }
 
         .mermaid-zoom-btn svg {
-            width: 16px;
-            height: 16px;
+            width: 1rem;
+            height: 1rem;
             display: block;
         }
 
@@ -4608,9 +4648,9 @@
         }
 
         .mermaid-zoom-label {
-            font-size: 11px;
+            font-size: 0.6875rem;
             color: #94a3b8;
-            min-width: 34px;
+            min-width: 2.125rem;
             text-align: center;
             font-variant-numeric: tabular-nums;
             user-select: none;
@@ -4647,13 +4687,13 @@
             right: 0;
             background: var(--color-bg);
             border: 1px solid #e2e8f0;
-            border-radius: 12px;
+            border-radius: 0.75rem;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             transition: all 0.2s ease;
             display: none;
-            min-width: 150px;
+            min-width: 9.375rem;
             z-index: 200;
-            padding: 4px;
+            padding: 0.25rem;
         }
 
         .mermaid-dropdown-menu.mermaid-open {
@@ -4661,11 +4701,11 @@
         }
 
         .mermaid-dropdown-item {
-            padding: 7px 14px;
+            padding: 0.375rem 1rem;
             cursor: pointer;
-            font-size: 13px;
+            font-size: 0.813rem;
             color: #475569;
-            border-radius: 5px;
+            border-radius: 0.75rem;
             transition: all 0.1s;
         }
 
@@ -4685,7 +4725,7 @@
         /* ═══ Code Panel (左侧 · Dark) ═══ */
         .mermaid-code-panel {
             width: 40%;
-            min-width: 300px;
+            min-width: 18.75rem;
             flex-direction: column;
             position: relative;
             background: #1e1e1e;
@@ -4698,7 +4738,7 @@
 
         /* ═══ Resizer ═══ */
         .mermaid-resizer {
-            width: 4px;
+            width: 0.25rem;
             cursor: col-resize;
             background: #e2e8f0;
             flex-shrink: 0;
@@ -4714,7 +4754,7 @@
         /* ═══ Preview Panel (右侧 · Light) ═══ */
         .mermaid-preview-panel {
             flex: 1;
-            min-width: 300px;
+            min-width: 18.75rem;
             display: flex;
             flex-direction: column;
             overflow: hidden;
@@ -4727,7 +4767,7 @@
             align-items: center;
             justify-content: center;
             position: relative;
-            padding: 20px;
+            padding: 1.25rem;
         }
 
         .mermaid-preview-area::-webkit-scrollbar {
@@ -4779,36 +4819,36 @@
 
         .mermaid-error-overlay {
             max-width: 85%;
-            width: 520px;
+            width: 32.5rem;
         }
 
         .mermaid-error-box {
             background: var(--color-bg);
             border: 1px solid #f0c0bf;
-            border-left: 4px solid #e74c3c;
-            border-radius: 8px;
-            box-shadow: 0 4px 20px rgba(231, 76, 60, 0.12);
+            border-left: 0.25rem solid #e74c3c;
+            border-radius: 0.5rem;
+            box-shadow: 0 0.25rem 1rem rgba(231, 76, 60, 0.12);
             overflow: hidden;
         }
 
         .mermaid-error-header {
             display: flex;
             align-items: center;
-            gap: 10px;
-            padding: 12px 15px;
+            gap: 0.5rem;
+            padding: 0.75rem 1rem;
             background: linear-gradient(135deg, #fef2f2, #fdf5f5);
             border-bottom: 1px solid #fce4e4;
         }
 
         .mermaid-error-header svg {
-            width: 20px;
-            height: 20px;
+            width: 1.25rem;
+            height: 1.25rem;
             flex-shrink: 0;
             color: #e74c3c;
         }
 
         .mermaid-error-header h4 {
-            font-size: 14px;
+            font-size: 0.875rem;
             font-weight: 600;
             color: #b91c1c;
             margin: 0;
@@ -4824,7 +4864,7 @@
             line-height: 1.65;
             color: #6b2020;
             border: 1px solid #fce8e8;
-            padding: 10px 14px;
+            padding: 0.75rem 1rem;
             margin: 0;
             white-space: pre-wrap;
             word-break: break-all;
@@ -4834,27 +4874,27 @@
 
         /* ═══ Status Bar ═══ */
         .mermaid-status-bar {
-            height: 28px;
+            height: 1.75rem;
             background: #007acc;
             display: flex;
             align-items: center;
-            padding: 0 14px;
-            font-size: 12px;
+            padding: 0 1rem;
+            font-size: 0.75rem;
             font-weight: bold;
             color: rgba(255, 255, 255, 0.9);
-            gap: 14px;
+            gap: 0.875rem;
             flex-shrink: 0;
         }
 
         .mermaid-status-item {
             display: flex;
             align-items: center;
-            gap: 5px;
+            gap: 0.25rem;
         }
 
         .mermaid-status-dot {
-            width: 8px;
-            height: 8px;
+            width: 0.5rem;
+            height: 0.5rem;
             border-radius: 50%;
             background: #4ec9b0;
         }
@@ -4887,12 +4927,12 @@
         .mermaid-status-right {
             margin-left: auto;
             display: flex;
-            gap: 14px;
+            gap: 0.875rem;
         }
 
         .mermaid-status-sep {
             width: 1px;
-            height: 14px;
+            height: 0.875rem;
             background: rgba(255, 255, 255, 0.2);
         }
 
@@ -4905,8 +4945,8 @@
             bottom: 0;
             inset: 0;
             background: rgba(255, 255, 255, 0.97);
-            backdrop-filter: blur(4px);
-            -webkit-backdrop-filter: blur(4px);
+            backdrop-filter: blur(0.25rem);
+            -webkit-backdrop-filter: blur(0.25rem);
             z-index: 9000;
             display: none;
             align-items: center;
@@ -4925,15 +4965,15 @@
             width: 100%;
             height: 100%;
             overflow: auto;
-            padding: 20px;
+            padding: 1.25rem;
             box-sizing: border-box;
             position: relative;
         }
 
         .mermaid-fullscreen-close-btn {
             position: fixed;
-            top: 16px;
-            right: 16px;
+            top: 1rem;
+            right: 1rem;
             z-index: 9003;
             background: rgba(0, 0, 0, 0.06);
             border: none;
@@ -4967,31 +5007,31 @@
 
         .mermaid-fullscreen-overlay .mermaid-fullscreen-zoom-bar {
             position: fixed;
-            bottom: 24px;
-            right: 24px;
+            bottom: 1.5rem;
+            right: 1.5rem;
             display: flex;
             align-items: center;
             gap: 2px;
             background: var(--color-bg);
             border: 1px solid #e4e6eb;
-            border-radius: 8px;
-            padding: 4px;
+            border-radius: 0.5rem;
+            padding: 0.25rem;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
             z-index: 9002;
             user-select: none;
         }
 
         .mermaid-fullscreen-overlay .mermaid-fullscreen-zoom-bar button {
-            font-size: 15px;
+            font-size: 0.9375rem;
             color: #1d2129;
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 28px;
-            height: 28px;
+            width: 1.75rem;
+            height: 1.75rem;
             border: none;
             background: transparent;
-            border-radius: 4px;
+            border-radius: 0.25rem;
             cursor: pointer;
             transition: all 0.15s;
         }
@@ -5012,15 +5052,15 @@
         }
 
         .mermaid-fullscreen-overlay .mermaid-fullscreen-zoom-bar button svg {
-            width: 15px;
-            height: 15px;
+            width: 0.9375rem;
+            height: 0.9375rem;
             display: block;
         }
 
         .mermaid-fullscreen-overlay .mermaid-fullscreen-zoom-bar .mermaid-fs-zoom-label {
-            font-size: 11px;
+            font-size: 0.6875rem;
             color: #94a3b8;
-            min-width: 34px;
+            min-width: 2.125rem;
             text-align: center;
             font-variant-numeric: tabular-nums;
             user-select: none;
@@ -5028,8 +5068,8 @@
 
         /* ═══ Save Dropdown ═══ */
         .mermaid-save-menu {
-            min-width: 240px;
-            max-height: 350px;
+            min-width: 15rem;
+            max-height: 21.875rem;
             overflow-y: auto;
             padding: 0;
         }
@@ -5043,13 +5083,13 @@
         }
 
         .mermaid-directory-item {
-            padding: 6px 12px;
+            padding: 0.375rem 0.75rem;
             cursor: pointer;
-            font-size: 13px;
+            font-size: 0.8125rem;
             color: #1d2129;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 0.5rem;
             transition: all 0.15s;
         }
 
@@ -5063,8 +5103,8 @@
         }
 
         .mermaid-directory-icon {
-            width: 16px;
-            height: 16px;
+            width: 1rem;
+            height: 1rem;
             flex-shrink: 0;
         }
 
@@ -5076,7 +5116,7 @@
         }
 
         .mermaid-directory-search-wrapper {
-            padding: 8px 8px;
+            padding: 0.5rem 0.5rem;
             flex-shrink: 0;
             position: sticky;
             top: 0;
@@ -5084,7 +5124,7 @@
             z-index: 10;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 0.5rem;
         }
 
         .mermaid-directory-search-box {
@@ -5094,10 +5134,10 @@
 
         .mermaid-directory-search-input {
             width: 100%;
-            padding: 6px 26px 6px 10px;
+            padding: 0.375rem 1.625rem 0.375rem 0.625rem;
             border: 1px solid var(--color-border);
-            border-radius: 6px;
-            font-size: 13px;
+            border-radius: 0.375rem;
+            font-size: 0.8125rem;
             background: var(--color-bg);
             color: var(--color-text);
             box-sizing: border-box;
@@ -5111,16 +5151,16 @@
 
         .mermaid-directory-search-clear {
             position: absolute;
-            right: 4px;
+            right: 0.25rem;
             top: 50%;
             transform: translateY(-50%);
-            width: 16px;
-            height: 16px;
+            width: 1rem;
+            height: 1rem;
             border: none;
             background: var(--color-text-tertiary);
             color: var(--color-text-white);
             border-radius: 50%;
-            font-size: 10px;
+            font-size: 0.625rem;
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -5144,16 +5184,16 @@
         }
 
         .mermaid-directory-summary {
-            padding: 4px 8px;
+            padding: 0.25rem 0.5rem;
             cursor: pointer;
-            font-size: 13px;
+            font-size: 0.8125rem;
             color: #1d2129;
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 0.375rem;
             list-style: none;
             user-select: none;
-            border-radius: 4px;
+            border-radius: 0.25rem;
             transition: background 0.15s;
         }
 
@@ -5167,17 +5207,17 @@
 
         .mermaid-directory-summary::before {
             content: '▶';
-            font-size: 10px;
+            font-size: 0.625rem;
             color: var(--color-text-secondary);
             transition: transform 0.15s;
             flex-shrink: 0;
-            width: 12px;
+            width: 0.75rem;
             text-align: center;
         }
 
         .mermaid-directory-summary-leaf::before {
             content: '';
-            width: 12px;
+            width: 0.75rem;
             flex-shrink: 0;
         }
 
@@ -5187,18 +5227,18 @@
 
         .mermaid-dir-folder-icon {
             flex-shrink: 0;
-            font-size: 14px;
+            font-size: 0.875rem;
         }
 
         .mermaid-dir-save-btn {
-            font-size: 13px;
+            font-size: 0.8125rem;
             cursor: pointer;
             opacity: 0.5;
             transition: opacity 0.15s;
             flex-shrink: 0;
             margin-left: auto;
-            padding: 2px 4px;
-            border-radius: 3px;
+            padding: 0.125rem 0.5rem;
+            border-radius: 0.2rem;
         }
 
         .mermaid-dir-save-btn:hover {
@@ -7674,12 +7714,6 @@
             display: block;
             border-radius: 6px;
             transition: transform 0.2s ease;
-        }
-
-        .jm-node-img img:hover,
-        .jm-node-image-wrapper img:hover,
-        .jm-node-custom img:hover {
-            transform: scale(1.02);
         }
 
         jmnode.jsmind-draggable-shadow-node img {
@@ -11912,21 +11946,36 @@
         .demo-mode #toc-container,
         .demo-mode #toc-toggle-btn,
         .demo-mode #top-right-controls,
+        .demo-mode #top-right-wrapper,
         .demo-mode #new-file-controls,
         .demo-mode #common-tool-controls,
         .demo-mode #ai-fab-container,
         .demo-mode .bookmark-header,
-        .demo-mode .json-toolbar {
+        .demo-mode .json-toolbar,
+        .demo-mode #editor-footer,
+        .demo-mode .editor-header,
+        .demo-mode #mermaid-toolbar,
+        .demo-mode .mermaid-status-bar,
+        .demo-mode .mind-jsmind-toolbar,
+        .demo-mode .image-controls,
+        .demo-mode #canvas-bottom-toolbar {
             display: none !important;
-        }
-
-        .demo-mode #content-main,
-        .demo-mode #content-common-container {
-            padding: 20px 30px;
         }
 
         .demo-mode #content {
             width: 100%;
+        }
+
+        .demo-mode #editor-inner {
+            height: 100% !important;
+        }
+
+        .demo-mode #mermaid-preview {
+            transform: scale(1.3) !important;
+        }
+
+        #mermaid-preview {
+            transform: scale(1);
         }
 
         .demo-mode .demo-exit-bar.show {
@@ -11956,8 +12005,11 @@
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         }
 
-        .demo-exit-bar:hover {
-            transform: translateX(-50%) scale(1.1);
+        @media (-webkit-user-agent: macOS) {
+            .btn:hover {
+                box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
+                transform: scale(1.02);
+            }
         }
     </style>
 </head>
@@ -12640,7 +12692,7 @@
         <!-- Mermaid 图表编辑器 -->
         <div id="mermaid-app-container" class="mermaid-app-container" style="display: none;">
             <div class="mermaid-app">
-                <div class="mermaid-toolbar">
+                <div class="mermaid-toolbar" id="mermaid-toolbar">
                     <button class="mermaid-tb mermaid-tab-btn mermaid-fixed-btn" data-type="all">测试渲染</button>
                     <div class="mermaid-toolbar-left" id="mermaid-toolbar-left">
                         <button class="mermaid-tb mermaid-tab-btn" data-type="flowchart">流程图</button>
@@ -12688,8 +12740,7 @@
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                                 stroke-linecap="round" stroke-linejoin="round">
                                 <path
-                                    d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M5 16v3a2 2 0 0 0 2 2h3">
-                                </path>
+                                    d="M3 8V5a2 2 0 0 1 2-2h3 M21 8V5a2 2 0 0 0-2-2h-3 M21 16v3a2 2 0 0 1-2 2h-3 M3 16v3a2 2 0 0 0 2 2h3" />
                             </svg>
                         </button>
                         <div class="mermaid-divider"></div>
@@ -12843,90 +12894,92 @@
             </svg>
         </div>
         <!-- 顶部操作工具栏（编辑/保存/预览/格式化等） -->
-        <div id="top-right-controls" class="top-right-controls" style="display: none;">
-            <span class="opml-original-buttons" id="opml-original-buttons">
-                <button id="opml-mindmap-btn" class="btn btn-success btn-sm" onclick="mindmapViewModel()">
-                    🧠 思维导图
+        <div id="top-right-wrapper" class="top-right-wrapper" style="display: flex;">
+            <div id="top-right-controls" class="top-right-controls" style="display: none;">
+                <span class="opml-original-buttons" id="opml-original-buttons">
+                    <button id="opml-mindmap-btn" class="btn btn-success btn-sm" onclick="mindmapViewModel()">
+                        🧠 思维导图
+                    </button>
+                    <button id="opml-back-btn" class="btn btn-success btn-sm" onclick="outlineViewModel()">
+                        📋 Outline
+                    </button>
+                    <button id="jsmind-save-opml-btn" class="btn btn-warning btn-sm" onclick="jsMindSaveOpml()"
+                        style="display:none;">
+                        保存为Outline格式
+                    </button>
+                    <button id="opml-save-mm-btn" class="btn btn-warning btn-sm" onclick="opmlSaveAsMm()"
+                        style="display:none;">
+                        保存为Freemind格式
+                    </button>
+                    <button id="jsmind-image-btn" class="btn btn-warning btn-sm" onclick="jsMindSaveImage()"
+                        style="display:none;">
+                        导出为图片
+                    </button>
+                    <button id="opml-collapse-btn-1" class="btn btn-warning btn-sm" onclick="collapse1Level(2)">
+                        一级
+                    </button>
+                    <button id="opml-collapse-btn-2" class="btn btn-warning btn-sm" onclick="collapse1Level(3)">
+                        二级
+                    </button>
+                    <button id="opml-collapse-btn-3" class="btn btn-warning btn-sm" onclick="collapse1Level(4)">
+                        三级
+                    </button>
+                    <select id="opml-level-select" class="btn btn-warning btn-sm" onchange="collapse1Level(this.value)"
+                        title="层级选择">
+                        <option value="" selected>选择</option>
+                        <option value="5">四级</option>
+                        <option value="6">五级</option>
+                        <option value="7">六级</option>
+                        <option value="8">七级</option>
+                        <option value="9">八级</option>
+                        <option value="10">九级</option>
+                        <option value="11">十级</option>
+                    </select>
+                    <button id="opml-expand-btn" class="btn btn-warning btn-sm" onclick="expandAll()">
+                        展开所有
+                    </button>
+                </span>
+                <button id="live-preview-btn" class="btn btn-success btn-sm" style="display: none;"
+                    onclick="enterLivePreviewMode()">
+                    实时预览
                 </button>
-                <button id="opml-back-btn" class="btn btn-success btn-sm" onclick="outlineViewModel()">
-                    📋 Outline
+                <button id="preview-btn" class="btn btn-success btn-sm" style="display: none;" onclick="previewFile()">
+                    预览
                 </button>
-                <button id="jsmind-save-opml-btn" class="btn btn-warning btn-sm" onclick="jsMindSaveOpml()"
-                    style="display:none;">
-                    保存为Outline格式
+                <button id="format-btn" class="btn btn-primary btn-sm" onclick="formatEditorValue()">
+                    格式化
                 </button>
-                <button id="opml-save-mm-btn" class="btn btn-warning btn-sm" onclick="opmlSaveAsMm()"
-                    style="display:none;">
-                    保存为Freemind格式
+                <button id="edit-btn" class="btn btn-primary btn-sm" onclick="enterEditMode()">
+                    编辑
                 </button>
-                <button id="jsmind-image-btn" class="btn btn-warning btn-sm" onclick="jsMindSaveImage()"
-                    style="display:none;">
+                <button id="save-btn" class="btn btn-primary btn-sm" onclick="saveFileOnly()">
+                    保存
+                </button>
+                <button id="markdown-btn" class="btn btn-warning btn-sm" style="display: none;"
+                    onclick="enterOriginalMarkdown()">
+                    markdown
+                </button>
+                <button id="plantuml-btn" class="btn btn-warning btn-sm" style="display: none;"
+                    onclick="enterPlantUMLSvg()">
+                    渲染
+                </button>
+                <button id="plantuml-svg-btn" class="btn btn-warning btn-sm" style="display: none;"
+                    onclick="plantUMLSvgSave()">
+                    保存为 svg
+                </button>
+                <button id="md-image-btn" class="btn btn-warning btn-sm" style="display: none;" onclick="mdToImage()">
                     导出为图片
                 </button>
-                <button id="opml-collapse-btn-1" class="btn btn-warning btn-sm" onclick="collapse1Level(2)">
-                    一级
+                <button id="copy-clipboard-btn" class="btn btn-warning btn-sm" style="display: inline-flex;"
+                    onclick="copyToClipboard()">
+                    复制
                 </button>
-                <button id="opml-collapse-btn-2" class="btn btn-warning btn-sm" onclick="collapse1Level(3)">
-                    二级
+            </div>
+            <div id="common-tool-controls" class="top-right-controls" style="display: none;">
+                <button id="demo-btn" class="btn btn-orange btn-sm" style="display:none;" onclick="toggleDemoMode()">
+                    演示
                 </button>
-                <button id="opml-collapse-btn-3" class="btn btn-warning btn-sm" onclick="collapse1Level(4)">
-                    三级
-                </button>
-                <select id="opml-level-select" class="btn btn-warning btn-sm" onchange="collapse1Level(this.value)"
-                    title="层级选择">
-                    <option value="" selected>选择</option>
-                    <option value="5">四级</option>
-                    <option value="6">五级</option>
-                    <option value="7">六级</option>
-                    <option value="8">七级</option>
-                    <option value="9">八级</option>
-                    <option value="10">九级</option>
-                    <option value="11">十级</option>
-                </select>
-                <button id="opml-expand-btn" class="btn btn-warning btn-sm" onclick="expandAll()">
-                    展开所有
-                </button>
-            </span>
-            <button id="live-preview-btn" class="btn btn-success btn-sm" style="display: none;"
-                onclick="enterLivePreviewMode()">
-                实时预览
-            </button>
-            <button id="preview-btn" class="btn btn-success btn-sm" style="display: none;" onclick="previewFile()">
-                预览
-            </button>
-            <button id="format-btn" class="btn btn-primary btn-sm" onclick="formatEditorValue()">
-                格式化
-            </button>
-            <button id="edit-btn" class="btn btn-primary btn-sm" onclick="enterEditMode()">
-                编辑
-            </button>
-            <button id="save-btn" class="btn btn-primary btn-sm" onclick="saveFileOnly()">
-                保存
-            </button>
-            <button id="markdown-btn" class="btn btn-warning btn-sm" style="display: none;"
-                onclick="enterOriginalMarkdown()">
-                markdown
-            </button>
-            <button id="plantuml-btn" class="btn btn-warning btn-sm" style="display: none;"
-                onclick="enterPlantUMLSvg()">
-                渲染
-            </button>
-            <button id="plantuml-svg-btn" class="btn btn-warning btn-sm" style="display: none;"
-                onclick="plantUMLSvgSave()">
-                保存为 svg
-            </button>
-            <button id="md-image-btn" class="btn btn-warning btn-sm" style="display: none;" onclick="mdToImage()">
-                导出为图片
-            </button>
-            <button id="copy-clipboard-btn" class="btn btn-warning btn-sm" style="display: inline-flex;"
-                onclick="copyToClipboard()">
-                复制
-            </button>
-        </div>
-        <div id="common-tool-controls" class="top-right-controls" style="display: none;">
-            <button id="demo-btn" class="btn btn-orange btn-sm" style="display:none;" onclick="toggleDemoMode()">
-                演示
-            </button>
+            </div>
         </div>
         <!-- 新建文件工具栏（保存/清空） -->
         <div id="new-file-controls" class="top-right-controls" style="display: none;">
@@ -13946,7 +13999,6 @@
             { key: '大纲笔记', value: 'toggleFile("opmlOutline")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
             { key: '任务看板', value: 'toggleFile("kanban")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
             { key: '临时编辑器', value: 'toggleFile("tempEditor")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '文件时间线', value: 'toggleFile("timeline")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
         ]
         // 高亮字体颜色（深色系，确保可读性）
         const HIGHLIGHT_FONT_COLORS = [
@@ -16450,124 +16502,6 @@
             });
         }
 
-        let _isDemoMode = false; // 是否进入演示模式
-        let _demoExitBar = null; // 退出演示指示条
-        let _demoTriggerStrip = null;  // 顶部透明触发条
-        let _demoBarTimer = null; // 演示指示条定时器
-
-        function toggleDemoMode() {
-            if (_isDemoMode) {
-                exitDemoMode();
-            } else {
-                enterDemoMode();
-            }
-        }
-
-
-        function enterDemoMode() {
-            if (_isDemoMode) return;
-            _isDemoMode = true;
-            document.body.classList.add('demo-mode');
-            // 进入全屏（Chrome/Edge 兼容）
-            enterFullscreen();
-            // 对当前可见的内容容器应用缩放
-            const containers = [contentMain, contentEdit];
-            for (const c of containers) {
-                if (c && c.style.display !== 'none') {
-                    c.dataset.demoPrevZoom = c.style.zoom || '';
-                    c.style.zoom = '1.5';
-                    // Monaco Editor 额外调大字号
-                    if (c === contentEdit && currentEditor) {
-                        try {
-                            const cur = currentEditor.getRawOptions().fontSize || 13;
-                            currentEditor.updateOptions({ fontSize: Math.round(cur * 1.03) });
-                        } catch (e) { /* ignore */ }
-                    }
-                    break;
-                }
-            }
-
-            // 创建退出指示条，点击即退出
-            _demoExitBar = document.createElement('div');
-            _demoExitBar.className = 'demo-exit-bar';
-            _demoExitBar.textContent = '退出演示';
-            _demoExitBar.onclick = exitDemoMode;
-            document.body.appendChild(_demoExitBar);
-
-            // 顶部透明触发条（解决 iframe 内鼠标事件被拦截的问题）
-            _demoTriggerStrip = document.createElement('div');
-            _demoTriggerStrip.style.cssText =
-                'position:fixed;top:0;left:0;width:100%;height:20px;z-index:9998;' +
-                'background:transparent;pointer-events:auto;';
-            _demoTriggerStrip.addEventListener('mouseenter', () => {
-                if (_demoExitBar) _demoExitBar.classList.add('show');
-                clearTimeout(_demoBarTimer);
-            });
-            _demoTriggerStrip.addEventListener('mouseleave', () => {
-                clearTimeout(_demoBarTimer);
-                _demoBarTimer = setTimeout(() => {
-                    if (_demoExitBar) _demoExitBar.classList.remove('show');
-                }, 3000);
-            });
-            document.body.appendChild(_demoTriggerStrip);
-            // 重新调整内容区域大小
-            resizeContentMain();
-        }
-
-        function exitDemoMode() {
-            if (!_isDemoMode) return;
-            _isDemoMode = false;
-            document.body.classList.remove('demo-mode');
-            // 退出全屏
-            exitFullscreen();
-            // 恢复容器缩放
-            const containers = [contentMain, contentEdit];
-            for (const c of containers) {
-                if (c && c.dataset.demoPrevZoom !== undefined) {
-                    c.style.zoom = c.dataset.demoPrevZoom;
-                    delete c.dataset.demoPrevZoom;
-                }
-            }
-            // 移除退出条和触发条
-            if (_demoExitBar) {
-                clearTimeout(_demoBarTimer);
-                _demoExitBar.remove();
-                _demoExitBar = null;
-            }
-            if (_demoTriggerStrip) {
-                _demoTriggerStrip.remove();
-                _demoTriggerStrip = null;
-            }
-            resizeContentMain();
-        }
-
-        // 进入全屏（兼容 Chrome/Edge/Safari）
-        function enterFullscreen() {
-            const el = document.documentElement;
-            const request = el.requestFullscreen ||
-                el.webkitRequestFullscreen;
-            if (request) {
-                try {
-                    request.call(el);
-                } catch (e) {
-                    console.warn('进入全屏失败:', e.message);
-                }
-            }
-        }
-
-        // 退出全屏
-        function exitFullscreen() {
-            const exit = document.exitFullscreen ||
-                document.webkitExitFullscreen;
-            if (exit) {
-                try {
-                    exit.call(document);
-                } catch (e) {
-                    console.warn('退出全屏失败:', e.message);
-                }
-            }
-        }
-
         function escapeHtml(str) {
             return String(str).replace(/[&<>"']/g, m => ({
                 '&': '&amp;',
@@ -18237,7 +18171,7 @@
                     title: '保存为 OPML 格式',
                     getDefaultFileName: () => currentFileName.replace(/\.\w+$/, '') + '.opml',
                     getContent: () => opmlXml,
-                    onSave: doSaveToFolder
+                    onSave: withMmOpmlConversion(doSaveToFolder)
                 });
             }
         }
@@ -18251,7 +18185,7 @@
                     title: '保存为 Freemind 格式',
                     getDefaultFileName: () => currentFileName.replace(/\.\w+$/, '') + '.mm',
                     getContent: () => mmXml,
-                    onSave: doSaveToFolder
+                    onSave: withMmOpmlConversion(doSaveToFolder)
                 });
                 return;
             }
@@ -18263,7 +18197,7 @@
                     title: '保存为 Freemind 格式',
                     getDefaultFileName: () => currentFileName.replace(/\.\w+$/, '') + '.mm',
                     getContent: () => mmXml,
-                    onSave: doSaveToFolder
+                    onSave: withMmOpmlConversion(doSaveToFolder)
                 });
             }
         }
@@ -18919,7 +18853,7 @@
                     title: '保存思维导图为 OPML',
                     getDefaultFileName: () => 'untitled.opml',
                     getContent: () => rtn,
-                    onSave: doSaveToFolder
+                    onSave: withMmOpmlConversion(doSaveToFolder)
                 });
             }
             async jsmind_save() {
@@ -18932,14 +18866,14 @@
                         title: '保存思维导图',
                         getDefaultFileName: () => 'untitled.mm',
                         getContent: () => rtn,
-                        onSave: doSaveToFolder
+                        onSave: withMmOpmlConversion(doSaveToFolder)
                     });
                     return;
                 }
                 const fileHandle = currentFileHandle;
                 if (!fileHandle) return;
                 if (rtn !== originalContent) {
-                    await saveExistFileContent(rtn, true, fileHandle);
+                    await saveMmOpmlContent(rtn, true, fileHandle, _getCurrentFileFullPath());
                 } else {
                     showNotification('✓ 文件没有变动', 'success');
                 }
@@ -20125,18 +20059,18 @@
                         title: '保存 OPML 文件',
                         getDefaultFileName: () => 'untitled.opml',
                         getContent: () => xml,
-                        onSave: doSaveToFolder
+                        onSave: withMmOpmlConversion(doSaveToFolder)
                     });
                     return;
                 }
                 if (!currentFileHandle) return;
                 if (currentFileName.endsWith('.mm')) {
                     const mmXml = this._toFreeMind();
-                    await saveExistFileContent(mmXml, true, currentFileHandle);
+                    await saveMmOpmlContent(mmXml, true, currentFileHandle, _getCurrentFileFullPath());
                     return;
                 }
                 const xml = this._serializeTree();
-                await saveExistFileContent(xml, true, currentFileHandle);
+                await saveMmOpmlContent(xml, true, currentFileHandle, _getCurrentFileFullPath());
             }
             /** 将内部树序列化为 OPML 2.0 XML 字符串 */
             _serializeTree() {
@@ -20169,6 +20103,42 @@
                 this._root = null;
                 this._selectedNodeId = null;
             }
+        }
+
+        function getRelativePath(currentPath, targetFilePath, currentFileIsDir = false) {
+            if (!targetFilePath) throw new Error("Paths cannot be empty");
+            if (!currentPath) return targetFilePath;
+            const normalize = (p) => p.replace(/\\/g, SLASH).replace(/\/+$/, '');
+            const from = normalize(currentPath);
+            const to = normalize(targetFilePath);
+            const fromParts = from.split(SLASH).filter(Boolean);
+            const toParts = to.split(SLASH).filter(Boolean);
+            if (!currentFileIsDir) {
+                fromParts.pop();
+            }
+            let i = 0;
+            while (i < fromParts.length && i < toParts.length && fromParts[i] === toParts[i]) {
+                i++;
+            }
+            const relativeParts = [];
+            const upLevels = fromParts.length - i;
+            for (let j = 0; j < upLevels; j++) {
+                relativeParts.push(DOUBLE_DOT);
+            }
+            for (let k = i; k < toParts.length; k++) {
+                relativeParts.push(toParts[k]);
+            }
+            let result = relativeParts.join(SLASH);
+            if (result === '') {
+                result = DOT;
+            }
+            if (!result.startsWith(DOT) && !result.startsWith(DOUBLE_DOT)) {
+                result = DOT + SLASH + result;
+            }
+            if (result === DOT && targetFilePath.includes(DOT)) {
+                return DOT + SLASH + toParts[toParts.length - 1];
+            }
+            return result;
         }
 
         function handleHelpClick(e) {
@@ -21124,7 +21094,7 @@
                     // .opml 源文件在思维导图视图中：转为 OPML XML 后直接覆盖原文件
                     const data = jsMindHandle.jm.get_data('node_tree');
                     const opmlXml = exportFreeMindToOpml(data);
-                    await saveExistFileContent(opmlXml, true, currentFileHandle);
+                    await saveMmOpmlContent(opmlXml, true, currentFileHandle, _getCurrentFileFullPath());
                 } else {
                     // .mm 源文件
                     await jsMindHandle.jsmind_save();
@@ -21153,6 +21123,50 @@
             const targetHandle = fileHandle || currentFileHandle;
             if (!targetHandle || !newContent) return;
             await saveExistFileContent(newContent, true, targetHandle);
+        }
+
+        // ====== 演示模式/全屏 图片路径转换工具 ======
+        /** 将 .mm / .opml 内容中的 _local_images 绝对路径转为相对路径 */
+        function convertMmOpmlContentToRelative(content, fileFullPath) {
+            if (!content || typeof content !== 'string' || !currentRootPath || !fileFullPath) return content;
+            const normalizedRoot = normalizePath(currentRootPath);
+            return content.replace(/_local_images="([^"]*?)"/g, (match, raw) => {
+                let path;
+                try { path = decodeURIComponent(raw); } catch { path = raw; }
+                path = path.replace(/&amp;/g, '&').replace(/&quot;/g, '"');
+                if (normalizePath(path).startsWith(normalizedRoot)) {
+                    return `_local_images="${encodeURIComponent(getRelativePath(fileFullPath, path))}"`;
+                }
+                return match;
+            });
+        }
+
+        /** 获取当前文件的完整绝对路径 */
+        function _getCurrentFileFullPath() {
+            if (!currentRootPath) return '';
+            const relativePath = currentActiveItem ? currentActiveItem.dataset.filePath : '';
+            return relativePath ? joinPath(currentRootPath, relativePath) : '';
+        }
+
+        /** 包装 saveExistFileContent：保存前将 .mm/.opml 的图片路径转为相对路径 */
+        async function saveMmOpmlContent(content, notify = true, fileHandle = null, filePath = '') {
+            if (typeof content === 'string' && filePath &&
+                (filePath.endsWith('.mm') || filePath.endsWith('.opml'))) {
+                content = convertMmOpmlContentToRelative(content, filePath);
+            }
+            return saveExistFileContent(content, notify, fileHandle);
+        }
+
+        /** 装饰 doSaveToFolder：保存前将 .mm/.opml 的图片路径转为相对路径 */
+        function withMmOpmlConversion(onSave) {
+            return (dirHandle, dirPath, fileName, content, isCreate) => {
+                if (typeof content === 'string' && currentRootPath &&
+                    (fileName.endsWith('.mm') || fileName.endsWith('.opml'))) {
+                    const savePath = dirPath ? joinPath(dirPath, fileName) : fileName;
+                    content = convertMmOpmlContentToRelative(content, joinPath(currentRootPath, savePath));
+                }
+                return onSave(dirHandle, dirPath, fileName, content, isCreate);
+            };
         }
 
         async function saveExistFileContent(newContent, notify = true, fileHandle = null) {
@@ -23951,13 +23965,15 @@ kanban-plugin: basic
                 }
                 adjustCanvasViewport(); // 面板关闭后重新适配画布视口
             }
-            setControlsState({ editBtn: true, copyBtn: true });
+            setControlsState({ editBtn: true, copyBtn: true, demoBtn: true, commonToolControls: true });
         }
 
         function editNodeContent(event, button) {
             event.stopPropagation();
             const contentPanel = button.closest('#node-content-panel');
             if (!contentPanel) return;
+            // 进入编辑模式，隐藏右上角演示按钮
+            setControlsState({ demoBtn: false, commonToolControls: false });
             const { node: nodeData, nodeType, filePath, fileContent } = getNodePanelState();
             const isFileNode = nodeType === 'file' && filePath;
             const editValue = isFileNode ? fileContent : (nodeData.text || '');
@@ -24006,6 +24022,7 @@ kanban-plugin: basic
                             <div class="markdown-body" style="padding: 8px 8px;background: transparent;">${htmlContent}</div>`;
                     setNodePanelState({ fileContent: text });
                     destroyNodeEditor();
+                    setControlsState({ demoBtn: true, commonToolControls: true });
                     postProcessMarkdown(contentPanel);
                 };
                 if (newText === originalContent) {
@@ -25180,16 +25197,10 @@ kanban-plugin: basic
             tocContainer.style.display = 'none';
             if (topRightControls) {
                 setControlsState({
-                    topControls: true,
-                    editBtn: true,
-                    markdownBtn: true,
-                    previewBtn: false,
-                    saveBtn: false,
-                    copyBtn: true,
-                    mdImageBtn: true,
-                    aiFab: true,
-                    livePreviewBtn: false,
-                    formatBtn: false
+                    topControls: true, editBtn: true, previewBtn: false,
+                    saveBtn: false, copyBtn: true, mdImageBtn: true,
+                    aiFab: true, livePreviewBtn: false, formatBtn: false,
+                    commonToolControls: true, demoBtn: true,
                 });
             }
             currentKanban = kanbanData;
@@ -28145,6 +28156,7 @@ kanban-plugin: basic
             const doc = new DOMParser().parseFromString(html, 'text/html');
             const root = parseBookmarkHtml(doc);
             contentCommonContainer.innerHTML = renderBookmarkPage(root, new Set(), false);
+            setControlsState({ commonToolControls: true, demoBtn: true });
         }
 
         async function importBookmarkToMdgo(input) {
@@ -29817,8 +29829,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         async function renderMermaidFile(fileText = '') {
             isMermaidFileDisplay = false;
             await switchToView(mermaidAppContainer);
+            const toolbar = mermaidAppContainer.querySelector(".mermaid-toolbar");
             if (fileText) {
                 isMermaidFileDisplay = true;
+                if (!toolbar.classList.contains("mermaid-toolbar-btn-right")) {
+                    toolbar.classList.add("mermaid-toolbar-btn-right");
+                }
+                setControlsState({ commonToolControls: true, demoBtn: true });
+            } else {
+                toolbar.classList.remove("mermaid-toolbar-btn-right");
             }
             const resizer = document.querySelector("#mermaid-resizer");
             if (isMermaidFileDisplay) {
@@ -30021,8 +30040,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        function setZoomMermaid(zMermaid) {
-            zoomLevelMermaid = Math.max(25, Math.min(300, zMermaid));
+        function setZoomMermaid(value) {
+            zoomLevelMermaid = Math.max(25, Math.min(300, value));
             zoomLabelMermaid.textContent = zoomLevelMermaid + "%";
             previewElMermaid.style.transform = "scale(" + zoomLevelMermaid / 100 + ")";
         }
@@ -30035,6 +30054,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     monacoEditorMermaid.layout();
                     renderBtnMermaid.textContent = "渲染";
                     if (resizer) resizer.style.display = "flex";
+                    setZoomMermaid(100);
                 } else if (renderBtnMermaid.textContent === "渲染") {
                     mermaidCodePanel.style.display = "none";
                     renderBtnMermaid.textContent = "编辑";
@@ -30401,6 +30421,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                 });
             }
+            // .mmd 文件渲染模式下：鼠标滚轮放大缩小
+            previewAreaMermaid.addEventListener('wheel', (e) => {
+                if (!isMermaidFileDisplay) return;
+                if (renderBtnMermaid.textContent !== '编辑') return;
+                e.preventDefault();
+                const delta = e.deltaY > 0 ? -5 : 5;
+                setZoomMermaid(zoomLevelMermaid + delta);
+            }, { passive: false });
             mermaidEventsInitialized = true;
         }
 
@@ -32661,7 +32689,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             });
         }
         function isSelectViewActive() {
-            return currentFileName && isSelectWork(currentFileName);
+            return currentFileName && isSelectWork(currentFileName) && !mdIsKanban;
         }
         function isMarkdownViewActive() {
             return currentFileName && currentFileName.endsWith('.md');
@@ -44114,7 +44142,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     val = val.replace(/^\/+|\/+$/g, '');
                     if (!val) { showNotification('请输入有效内容', 'warning'); return; }
                     // 目录型规则自动补尾部斜杠
-                    if (addTrailingSlash) val += '/';
+                    if (addTrailingSlash) val += SLASH;
                     const exists = items.some(item => item.toLowerCase() === val.toLowerCase());
                     if (exists) { showNotification('该项已存在', 'warning'); return; }
                     items.push(val);
@@ -44305,17 +44333,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 let negate = false;
                 if (pattern.startsWith('!')) { negate = true; pattern = pattern.slice(1); }
                 let dirOnly = false;
-                if (pattern.endsWith('/')) { dirOnly = true; pattern = pattern.slice(0, -1); }
-                const anchored = pattern.startsWith('/');
+                if (pattern.endsWith(SLASH)) { dirOnly = true; pattern = pattern.slice(0, -1); }
+                const anchored = pattern.startsWith(SLASH);
                 if (anchored) pattern = pattern.slice(1);
-                const hasSlash = pattern.includes('/');
+                const hasSlash = pattern.includes(SLASH);
                 let regexStr = '';
                 let i = 0;
                 while (i < pattern.length) {
                     const ch = pattern[i];
                     if (ch === '*') {
                         if (i + 1 < pattern.length && pattern[i + 1] === '*') {
-                            if (i + 2 < pattern.length && pattern[i + 2] === '/') {
+                            if (i + 2 < pattern.length && pattern[i + 2] === SLASH) {
                                 regexStr += '(.+/)?'; i += 3; continue;
                             }
                             regexStr += '.+'; i += 2; continue;
@@ -44323,7 +44351,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         regexStr += '[^/]*'; i++;
                     } else if (ch === '?') {
                         regexStr += '[^/]'; i++;
-                    } else if (ch === '.') {
+                    } else if (ch === DOT) {
                         regexStr += '\\.'; i++;
                     } else if (ch === '[') {
                         let j = i + 1;
@@ -44360,7 +44388,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         const ch = filePattern[fi];
                         if (ch === '*') {
                             if (fi + 1 < filePattern.length && filePattern[fi + 1] === '*') {
-                                if (fi + 2 < filePattern.length && filePattern[fi + 2] === '/') {
+                                if (fi + 2 < filePattern.length && filePattern[fi + 2] === SLASH) {
                                     fileRegexStr += '(.+/)?'; fi += 3; continue;
                                 }
                                 fileRegexStr += '.+'; fi += 2; continue;
@@ -44368,7 +44396,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             fileRegexStr += '[^/]*'; fi++;
                         } else if (ch === '?') {
                             fileRegexStr += '[^/]'; fi++;
-                        } else if (ch === '.') {
+                        } else if (ch === DOT) {
                             fileRegexStr += '\\.'; fi++;
                         } else if (ch === '[') {
                             let j = fi + 1;
@@ -44396,7 +44424,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         function testIgnore(compiled, relativePath, isDir) {
-            const path = relativePath.replace(/\\/g, '/').replace(/\/+$/, '');
+            const path = relativePath.replace(/\\/g, SLASH).replace(/\/+$/, '');
             let matched = false;
             for (const rule of compiled) {
                 if (rule.dirOnly && !isDir) continue;
@@ -44412,6 +44440,220 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             FILE_RULES = compileIgnorePatterns(FILE_BLACKLIST);
             RANDOM_RULES = compileIgnorePatterns(RANDOM_DIR_BLACKLIST);
             HTML_RULES = compileIgnorePatterns(HTML_CODE_SHOW_BLACKLIST);
+        }
+
+        let _isDemoMode = false; // 是否进入演示模式
+        let _demoExitBar = null; // 退出演示指示条
+        let _demoTriggerStrip = null;  // 顶部透明触发条
+        let _demoBarTimer = null; // 演示指示条定时器
+        let _demoZoomControls = null; // 演示模式右下角缩放按钮
+        let _demoZoomTrigger = null;  // 缩放按钮顶部触发区
+        let _demoZoomTimer = null;    // 缩放按钮隐藏定时器
+        let _demoZoomLevel = 1.4; // 演示模式当前缩放倍数，初始 1.4
+
+        function toggleDemoMode() {
+            if (_isDemoMode) {
+                exitDemoMode();
+            } else {
+                enterDemoMode();
+            }
+        }
+
+        function enterDemoMode() {
+            if (_isDemoMode) return;
+            _isDemoMode = true;
+            document.body.classList.add('demo-mode');
+            // 进入全屏（Chrome/Edge 兼容）
+            enterFullscreen();
+            // 对当前可见的内容容器应用缩放
+            const containers = [contentMain, contentEdit, mermaidAppContainer];
+            for (const c of containers) {
+                if (c && c.style.display !== 'none') {
+                    c.dataset.demoPrevZoom = c.style.zoom || '';
+                    c.style.zoom = '1.4';
+                    if (c === contentEdit && currentEditor) {
+                        try {
+                            currentEditor.layout();
+                        } catch (e) { /* ignore */ }
+                    }
+                    break;
+                }
+            }
+
+            // 创建退出指示条，点击即退出
+            _demoExitBar = document.createElement('div');
+            _demoExitBar.className = 'demo-exit-bar';
+            _demoExitBar.textContent = '退出演示';
+            _demoExitBar.onclick = exitDemoMode;
+            document.body.appendChild(_demoExitBar);
+
+            // 顶部透明触发条（解决 iframe 内鼠标事件被拦截的问题）
+            _demoTriggerStrip = document.createElement('div');
+            _demoTriggerStrip.style.cssText =
+                'position:fixed;top:0;left:0;width:100%;height:20px;z-index:9998;' +
+                'background:transparent;pointer-events:auto;';
+            _demoTriggerStrip.addEventListener('mouseenter', () => {
+                if (_demoExitBar) _demoExitBar.classList.add('show');
+                clearTimeout(_demoBarTimer);
+            });
+            _demoTriggerStrip.addEventListener('mouseleave', () => {
+                clearTimeout(_demoBarTimer);
+                _demoBarTimer = setTimeout(() => {
+                    if (_demoExitBar) _demoExitBar.classList.remove('show');
+                }, 1000);
+            });
+            document.body.appendChild(_demoTriggerStrip);
+
+            // 右上角透明触发区：显示缩放按钮
+            _demoZoomTrigger = document.createElement('div');
+            _demoZoomTrigger.style.cssText =
+                'position:fixed;top:0;right:0;width:120px;height:60px;z-index:9998;' +
+                'background:transparent;pointer-events:auto;';
+            _demoZoomTrigger.addEventListener('mouseenter', () => {
+                if (_demoZoomControls) _demoZoomControls.classList.add('visible');
+                clearTimeout(_demoZoomTimer);
+            });
+            _demoZoomTrigger.addEventListener('mouseleave', () => {
+                clearTimeout(_demoZoomTimer);
+                _demoZoomTimer = setTimeout(() => {
+                    if (_demoZoomControls) _demoZoomControls.classList.remove('visible');
+                }, 1000);
+            });
+            document.body.appendChild(_demoZoomTrigger);
+
+            // 右下角缩放按钮（放大、缩小、重置），样式复用 image-btn
+            _demoZoomControls = document.createElement('div');
+            _demoZoomControls.className = 'demo-image-controls';
+            _demoZoomControls.innerHTML = `
+                <button class="image-btn" id="demo-zoom-in" title="放大">
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
+                        <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                    </svg>
+                </button>
+                <button class="image-btn" id="demo-zoom-out" title="缩小">
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
+                        <path d="M19 13H5v-2h14v2z"/>
+                    </svg>
+                </button>
+                <button class="image-btn reset" id="demo-zoom-reset" title="重置">
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
+                        <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+                    </svg>
+                </button>
+            `;
+            _demoZoomControls.querySelector('#demo-zoom-in')?.addEventListener('click', () => {
+                _demoZoomLevel = Math.min(3.0, _demoZoomLevel + 0.1);
+                _applyDemoZoom();
+            });
+            _demoZoomControls.querySelector('#demo-zoom-out')?.addEventListener('click', () => {
+                _demoZoomLevel = Math.max(0.5, _demoZoomLevel - 0.1);
+                _applyDemoZoom();
+            });
+            _demoZoomControls.querySelector('#demo-zoom-reset')?.addEventListener('click', () => {
+                _demoZoomLevel = 1.4;
+                _applyDemoZoom();
+            });
+            document.body.appendChild(_demoZoomControls);
+
+            // 重新调整内容区域大小
+            resizeContentMain();
+        }
+
+        function _applyDemoZoom() {
+            const containers = [contentMain, contentEdit, mermaidAppContainer];
+            for (const c of containers) {
+                if (c && c.style.display !== 'none') {
+                    c.style.zoom = String(_demoZoomLevel);
+                    if (c === contentEdit && currentEditor) {
+                        try { currentEditor.layout(); } catch (e) { /* ignore */ }
+                    }
+                    break;
+                }
+            }
+        }
+
+        function exitDemoMode() {
+            if (!_isDemoMode) return;
+            _isDemoMode = false;
+            document.body.classList.remove('demo-mode');
+            // 退出全屏
+            exitFullscreen();
+            // 恢复容器缩放
+            const containers = [contentMain, contentEdit, mermaidAppContainer];
+            for (const c of containers) {
+                if (c && c.style.display !== 'none') {
+                    if (c && c.dataset.demoPrevZoom !== undefined) {
+                        c.style.zoom = c.dataset.demoPrevZoom;
+                        delete c.dataset.demoPrevZoom;
+                    }
+                }
+            }
+            // 移除退出条和触发条
+            if (_demoExitBar) {
+                clearTimeout(_demoBarTimer);
+                _demoExitBar.remove();
+                _demoExitBar = null;
+            }
+            if (_demoTriggerStrip) {
+                _demoTriggerStrip.remove();
+                _demoTriggerStrip = null;
+            }
+            if (_demoZoomControls) {
+                clearTimeout(_demoZoomTimer);
+                _demoZoomControls.remove();
+                _demoZoomControls = null;
+            }
+            if (_demoZoomTrigger) {
+                _demoZoomTrigger.remove();
+                _demoZoomTrigger = null;
+            }
+            _demoZoomLevel = 1.4;
+            resizeContentMain();
+        }
+
+        // 进入全屏：Tauri 优先，否则用浏览器 Fullscreen API
+        async function enterFullscreen() {
+            if (isTauriVisit() && window.__TAURI__.window?.getCurrentWindow) {
+                try {
+                    const win = await window.__TAURI__.window.getCurrentWindow();
+                    await win.setFullscreen(true);
+                    return;
+                } catch (e) {
+                    console.warn('Tauri 全屏失败，降级到浏览器全屏:', e.message);
+                }
+            }
+            const el = document.documentElement;
+            const request = el.requestFullscreen ||
+                el.webkitRequestFullscreen;
+            if (request) {
+                try {
+                    request.call(el);
+                } catch (e) {
+                    console.warn('进入全屏失败:', e.message);
+                }
+            }
+        }
+
+        // 退出全屏：Tauri 优先，否则用浏览器 Fullscreen API
+        async function exitFullscreen() {
+            if (isTauriVisit() && window.__TAURI__.window?.getCurrentWindow) {
+                try {
+                    const win = await window.__TAURI__.window.getCurrentWindow();
+                    await win.setFullscreen(false);
+                    return;
+                } catch (e) {
+                    console.warn('Tauri 退出全屏失败，降级到浏览器退出全屏:', e.message);
+                }
+            }
+            const exit = document.exitFullscreen ||
+                document.webkitExitFullscreen;
+            if (exit) {
+                try {
+                    exit.call(document);
+                } catch (e) {
+                    console.warn('退出全屏失败:', e.message);
+                }
+            }
         }
     </script>
 </body>
