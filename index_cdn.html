@@ -4829,7 +4829,8 @@
             border-left: 0.25rem solid #e74c3c;
             border-radius: 0.5rem;
             box-shadow: 0 0.25rem 1rem rgba(231, 76, 60, 0.12);
-            overflow: hidden;
+            overflow: auto;
+            max-height: 50rem;
         }
 
         .mermaid-error-header {
@@ -14130,6 +14131,279 @@
         const isTauriVisit = () => typeof window.__TAURI__ !== 'undefined' && !!window.__TAURI__?.core?.invoke;
         const openUrlInBrowser = (url) => isTauriVisit() && window.__tauriOpenUrl ? window.__tauriOpenUrl(url) : window.open(url, '_blank');
         const replaceMediaUrl = async (text, isAllFile) => photoLoadFromLocal(text, isAllFile);
+
+        // ========== 图片懒加载系统 ==========
+        // LRU 缓存（容量 200，用于浏览器模式存储 blob URL）
+        const _LAZY_IMG_CACHE_MAX = 200;
+        const _LAZY_IMG_CACHE = new Map();
+        const _LAZY_IMG_PENDING = new Map();  // path → Promise（并发去重）
+        // 浏览器模式并发限制（最多 4 个同时 FileReader）
+        const _LAZY_SEMAPHORE = { max: 4, current: 0, queue: [] };
+        function _lazyAcquire() {
+            if (_LAZY_SEMAPHORE.current < _LAZY_SEMAPHORE.max) {
+                _LAZY_SEMAPHORE.current++;
+                return Promise.resolve();
+            }
+            return new Promise(r => _LAZY_SEMAPHORE.queue.push(r));
+        }
+        function _lazyRelease() {
+            _LAZY_SEMAPHORE.current--;
+            const next = _LAZY_SEMAPHORE.queue.shift();
+            if (next) { _LAZY_SEMAPHORE.current++; next(); }
+        }
+        function _lazyCacheGet(key) {
+            if (!_LAZY_IMG_CACHE.has(key)) return undefined;
+            const v = _LAZY_IMG_CACHE.get(key);
+            _LAZY_IMG_CACHE.delete(key);
+            _LAZY_IMG_CACHE.set(key, v);
+            return v;
+        }
+        function _lazyCacheSet(key, value) {
+            if (_LAZY_IMG_CACHE.has(key)) _LAZY_IMG_CACHE.delete(key);
+            _LAZY_IMG_CACHE.set(key, value);
+            if (_LAZY_IMG_CACHE.size > _LAZY_IMG_CACHE_MAX) {
+                const oldest = _LAZY_IMG_CACHE.keys().next().value;
+                const oldVal = _LAZY_IMG_CACHE.get(oldest);
+                _LAZY_IMG_CACHE.delete(oldest);
+                if (oldVal && oldVal.startsWith('blob:')) URL.revokeObjectURL(oldVal);
+            }
+        }
+        // 生成 Tauri asset URL（纯同步，零 I/O）
+        function getAssetUrl(absPath) {
+            try {
+                if (isTauriVisit() && window.__TAURI__?.core?.convertFileSrc) {
+                    return window.__TAURI__.core.convertFileSrc(absPath);
+                }
+            } catch (_) {}
+            return null;
+        }
+        // 同步替换：<img src="path"> → <img src="assetUrl" loading="lazy" decoding="async">
+        // resolveSrc 接受(src)返回 asset URL 或 null
+        function _replaceImgWithDataSrc(text, isFullText, resolveSrc) {
+            if (!isFullText) {
+                if (isContinueImg(text)) return text;
+                const url = resolveSrc(text);
+                return url || text;
+            }
+            const matches = [];
+            let match;
+            IMG_SRC_REGEX.lastIndex = 0;
+            while ((match = IMG_SRC_REGEX.exec(text)) !== null) {
+                matches.push({ fullMatch: match[0], before: match[1], src: match[2], after: match[3] });
+            }
+            if (matches.length === 0) return text;
+            let result = '';
+            let lastIdx = 0;
+            for (const m of matches) {
+                result += text.slice(lastIdx, text.indexOf(m.fullMatch, lastIdx));
+                if (isContinueImg(m.src)) {
+                    result += m.fullMatch;
+                } else {
+                    const url = resolveSrc(m.src);
+                    if (url) {
+                        result += `<img${m.before}src="${url}" loading="lazy" decoding="async"${m.after}>`;
+                    } else {
+                        result += m.fullMatch;
+                    }
+                }
+                lastIdx = text.indexOf(m.fullMatch, lastIdx) + m.fullMatch.length;
+            }
+            result += text.slice(lastIdx);
+            return result;
+        }
+        // 异步替换：<img src="path"> → <img src="" data-lazy-src="absPath" data-lazy-token="...">
+        // resolveSrc 返回 { absPath, localSrc } 或 null
+        async function _replaceImgWithDataSrcAsync(text, isFullText, resolveSrc) {
+            if (!isFullText) {
+                if (isContinueImg(text)) return text;
+                const info = await resolveSrc(text);
+                return info ? info.absPath : text;
+            }
+            const matches = [];
+            let match;
+            IMG_SRC_REGEX.lastIndex = 0;
+            while ((match = IMG_SRC_REGEX.exec(text)) !== null) {
+                matches.push({ fullMatch: match[0], before: match[1], src: match[2], after: match[3] });
+            }
+            if (matches.length === 0) return text;
+            // 先收集所有 src（一次性异步）
+            const srcResolutions = await Promise.all(matches.map(m => resolveSrc(m.src)));
+            let result = '';
+            let lastIdx = 0;
+            for (let i = 0; i < matches.length; i++) {
+                const m = matches[i];
+                const info = srcResolutions[i];
+                result += text.slice(lastIdx, text.indexOf(m.fullMatch, lastIdx));
+                if (!info || isContinueImg(m.src)) {
+                    result += m.fullMatch;
+                } else {
+                    result += `<img${m.before}src="" data-lazy-src="${info.localSrc}" data-lazy-abs="${info.absPath}" data-lazy-gen="${_lazyImgGen}"${m.after === '>' ? '>' : m.after}`;
+                }
+                lastIdx = text.indexOf(m.fullMatch, lastIdx) + m.fullMatch.length;
+            }
+            result += text.slice(lastIdx);
+            return result;
+        }
+        // Tauri 模式：零 I/O，同步，使用 convertFileSrc
+        function buildLazyTauriImg(text, isFullText = false, photoDirPath = '') {
+            const normalizedRootPath = normalizePath(currentRootPath);
+            return _replaceImgWithDataSrc(text, isFullText, (src) => {
+                const localSrc = buildLocalImgSrc(src, normalizedRootPath, photoDirPath);
+                const absPath = joinPath(normalizedRootPath, localSrc);
+                return getAssetUrl(absPath);
+            });
+        }
+        // 浏览器模式：异步，使用 Blob URL + 并发控制
+        async function buildLazyHttpImg(text, isFullText = false, photoDirPath = '') {
+            const normalizedRootPath = normalizePath(currentRootPath);
+            const result = await _replaceImgWithDataSrcAsync(text, isFullText, async (src) => {
+                let localSrc = dealWithAbsolutePath(src, normalizedRootPath);
+                if (localSrc === src) {
+                    localSrc = buildLocalImgSrc(src, normalizedRootPath, photoDirPath);
+                }
+                const absPath = joinPath(normalizedRootPath, localSrc);
+                return { localSrc, absPath };
+            });
+            return result;
+        }
+        // 懒加载引擎（浏览器模式）
+        let _lazyImgGen = 0;
+        let _lazyObserver = null;
+        let _lazyStylesInjected = false;
+        function injectLazyImageStyles() {
+            if (_lazyStylesInjected) return;
+            _lazyStylesInjected = true;
+            const style = document.createElement('style');
+            style.id = 'lazy-img-styles';
+            style.textContent = `
+                img[loading="lazy"] {
+                    background: #f0f0f0;
+                    min-height: 30px;
+                    transition: opacity 0.3s ease-in;
+                }
+                img[data-lazy-src] {
+                    background: #f0f0f0;
+                    min-height: 30px;
+                }
+                img[data-lazy-loaded="1"] {
+                    opacity: 1;
+                    background: transparent;
+                }
+                img[data-lazy-error] {
+                    background: #ffe0e0;
+                    min-height: 30px;
+                    border: 1px dashed #e0c0c0;
+                    opacity: 0.6;
+                }
+            `;
+            document.head.appendChild(style);
+        }
+        // 接管 browser mode 的图片懒加载（IntersectionObserver + Blob URL）
+        function lazyImageObserve(container) {
+            if (isTauriVisit()) return; // Tauri 使用原生 loading="lazy"
+            if (!container || !container.querySelectorAll) return;
+            injectLazyImageStyles();
+            const imgs = container.querySelectorAll('img[data-lazy-src]');
+            if (!imgs.length) return;
+            if (!_lazyObserver) {
+                _lazyObserver = new IntersectionObserver((entries) => {
+                    for (const entry of entries) {
+                        if (!entry.isIntersecting) continue;
+                        const img = entry.target;
+                        _lazyObserver.unobserve(img);
+                        _loadLazyImage(img);
+                    }
+                }, { rootMargin: '200px 0px', threshold: 0.01 });
+            }
+            imgs.forEach(img => _lazyObserver.observe(img));
+        }
+        async function _loadLazyImage(img) {
+            if (!img) return;
+            const absPath = img.dataset.lazyAbs || img.dataset.lazySrc;
+            if (!absPath) return;
+            const gen = parseInt(img.dataset.lazyGen || '0', 10);
+            if (gen !== _lazyImgGen) return; // 已废弃
+            // cache 命中
+            const cached = _lazyCacheGet(absPath);
+            if (cached) {
+                img.src = cached;
+                img.dataset.lazyLoaded = '1';
+                img.removeAttribute('data-lazy-src');
+                img.removeAttribute('data-lazy-abs');
+                img.removeAttribute('data-lazy-gen');
+                return;
+            }
+            // 并发去重
+            if (!_LAZY_IMG_PENDING.has(absPath)) {
+                _LAZY_IMG_PENDING.set(absPath, _doLoadLazyImage(absPath));
+            }
+            const url = await _LAZY_IMG_PENDING.get(absPath);
+            _LAZY_IMG_PENDING.delete(absPath);
+            if (!url) {
+                img.dataset.lazyError = '1';
+                img.removeAttribute('data-lazy-src');
+                img.removeAttribute('data-lazy-abs');
+                img.removeAttribute('data-lazy-gen');
+                return;
+            }
+            if (gen !== _lazyImgGen) {
+                // 已废弃：释放 blob URL 防止内存泄漏
+                if (url.startsWith('blob:')) try { URL.revokeObjectURL(url); } catch (_) {}
+                return;
+            }
+            img.src = url;
+            img.dataset.lazyLoaded = '1';
+            img.removeAttribute('data-lazy-src');
+            img.removeAttribute('data-lazy-abs');
+            img.removeAttribute('data-lazy-gen');
+            _lazyCacheSet(absPath, url);
+        }
+        async function _doLoadLazyImage(absPath) {
+            await _lazyAcquire();
+            try {
+                // 浏览器模式下 getFileParentHandleByFilePath 期望相对路径，
+                // 但 absPath 为带盘符的绝对路径（如 D:/pic/AI/image.png），
+                // 需剥离 root 前缀后传入
+                let relativePath = absPath;
+                if (!isTauriVisit()) {
+                    const root = normalizePath(currentRootPath);
+                    if (relativePath.startsWith(root)) {
+                        relativePath = relativePath.substring(root.length).replace(/^[/\\]/, '');
+                    }
+                }
+                const fileHandle = await getFileHandleByPath(relativePath);
+                if (!fileHandle) return null;
+                const file = await fileHandle.getFile();
+                return URL.createObjectURL(file);
+            } catch (e) {
+                console.warn(`懒加载图片失败: ${absPath}`, e);
+                return null;
+            } finally {
+                _lazyRelease();
+            }
+        }
+        // 图片懒加载销毁（文件切换时调用）
+        function destroyLazyImages() {
+            _lazyImgGen++;
+            if (_lazyObserver) {
+                _lazyObserver.disconnect();
+                _lazyObserver = null;
+            }
+            // 清空信号量队列，避免切换后旧排队任务继续执行
+            _LAZY_SEMAPHORE.queue = [];
+        }
+        // 清理所有 lazy blob URLs
+        function cleanupLazyImageBlobUrls() {
+            for (const [path, url] of _LAZY_IMG_CACHE) {
+                if (url && url.startsWith('blob:')) {
+                    try { URL.revokeObjectURL(url); } catch (_) {}
+                }
+            }
+            _LAZY_IMG_CACHE.clear();
+            _LAZY_IMG_PENDING.clear();
+        }
+        // ========== 图片懒加载系统结束 ==========
+
         const isInDeletedDir = (p) => p === DELETED_DIR_NAME || p.startsWith(DELETED_DIR_NAME);
         // 路径归一化：反斜杠转正斜杠
         const normalizePath = (p) => (!p && p !== '') ? '' : String(p).replace(/\\/g, SLASH);
@@ -14416,6 +14690,7 @@
             destroyVideoPlayer();
             TimerManager.clearAll();
             destroyEverything();
+            cleanupLazyImageBlobUrls();
         });
 
         async function initAll() {
@@ -14480,6 +14755,17 @@
         let previewFileText = ''; // 当前预览的文件内容（用于判断是否需要重新渲染）
         let lastToggle = 'none';  // 记录上一次打开的功能类型，默认为 'none'
         let currentToggle = '';
+        // LRU 缓存：文件读取内容，避免短时间内重复 I/O
+        const FILE_TEXT_CACHE = new Map();
+        const FILE_TEXT_CACHE_MAX = 10;
+        const FILE_TEXT_CACHE_TTL = 500; // 500ms
+        function getFileTextCacheKey() {
+            return currentFileName || '';
+        }
+        function clearFileTextCache(fileName) {
+            if (fileName) { FILE_TEXT_CACHE.delete(fileName); }
+            else { FILE_TEXT_CACHE.clear(); }
+        }
         async function toggleFile(type, data = {}) {
             if (!isRootHandleAvailable()) {
                 showNotification('✗ 请先打开根目录', 'error');
@@ -14867,6 +15153,8 @@
         let _treeDblClickHandler = null;
         let _treeToggleHandler = null;
         let _lastFileClick = { path: '', time: 0 }; // 防抖：防止双击时打开文件两次
+        let _fileSwitchTimer = null;      // 全局文件切换防抖计时器
+        let _pendingFileSwitch = null;    // 待切换的文件信息
         async function initTreeDelegation() {
             // 先移除旧 handler（使用稳定引用），再绑定新 handler
             if (_treeClickHandler) {
@@ -14885,20 +15173,23 @@
                 // 若点击的是更多菜单按钮或颜色选择器，不触发文件打开
                 if (event.target.closest('.file-item-more-menu') || event.target.closest('.marker-color-picker')) return;
                 const filePath = fileSpan.dataset.filePath;
-                // 防抖：300ms 内重复点击同一文件只执行一次
-                const now = Date.now();
-                if (_lastFileClick.path === filePath && now - _lastFileClick.time < 300) return;
-                _lastFileClick = { path: filePath, time: now };
-                try {
-                    currentFileHandle = await getFileHandleByPath(filePath);
-                    if (!currentFileHandle) {
-                        showNotification(`✗ 无法找到文件: ${filePath}`, 'error');
-                        return;
+                // 全局防抖：150ms 内只执行最后一次点击
+                clearTimeout(_fileSwitchTimer);
+                _pendingFileSwitch = { filePath, fileSpan };
+                _fileSwitchTimer = setTimeout(async () => {
+                    const { filePath: fp, fileSpan: fs } = _pendingFileSwitch;
+                    _pendingFileSwitch = null;
+                    try {
+                        currentFileHandle = await getFileHandleByPath(fp);
+                        if (!currentFileHandle) {
+                            showNotification(`✗ 无法找到文件: ${fp}`, 'error');
+                            return;
+                        }
+                        await toggleFile('renderFile', { relativePath: fp, fileSpan: fs });
+                    } catch (e) {
+                        console.error('文件切换失败:', e);
                     }
-                    await toggleFile('renderFile', { relativePath: filePath, fileSpan: fileSpan });
-                } catch (e) {
-                    console.error('文件切换失败:', e);
-                }
+                }, 150);
             };
             treeElement.addEventListener('click', _treeClickHandler);
 
@@ -14908,7 +15199,9 @@
                 if (e.target.closest('.file-item-more-menu') || e.target.closest('.marker-color-picker')) return;
                 e.stopPropagation();
                 e.preventDefault();
-                if (_treeClickTimer) { clearTimeout(_treeClickTimer); _treeClickTimer = null; }
+                // 取消等待中的文件切换（双击表示重命名，不打开文件）
+                clearTimeout(_fileSwitchTimer);
+                _pendingFileSwitch = null;
                 const filePath = fileSpan.dataset.filePath;
                 const fileHandle = await getFileHandleByPath(filePath);
                 const textSpan = fileSpan.querySelector('.file-item-text');
@@ -15029,8 +15322,23 @@
         };
 
         async function getFileText(file) {
+            const cacheKey = getFileTextCacheKey();
+            if (cacheKey) {
+                const cached = FILE_TEXT_CACHE.get(cacheKey);
+                if (cached && Date.now() - cached.time < FILE_TEXT_CACHE_TTL) {
+                    originalContent = cached.text;
+                    return cached.text;
+                }
+            }
             let fileText = await getFileContent(currentFileHandle, file);
             originalContent = fileText;
+            if (cacheKey) {
+                FILE_TEXT_CACHE.set(cacheKey, { text: fileText, time: Date.now() });
+                if (FILE_TEXT_CACHE.size > FILE_TEXT_CACHE_MAX) {
+                    const firstKey = FILE_TEXT_CACHE.keys().next().value;
+                    FILE_TEXT_CACHE.delete(firstKey);
+                }
+            }
             return fileText;
         }
 
@@ -15552,6 +15860,7 @@
 
         async function destroyEverything() {
             cleanupObjectUrls();
+            destroyLazyImages();
             showTocToggleBtn(false);
             // 并发清理各模块，等待所有清理完成再返回，避免竞态
             await Promise.allSettled([
@@ -17213,7 +17522,7 @@
                 // 使用 switch 替代多层 if/else
                 switch (nameLow) {
                     case DELETED_DIR_NAME:
-                        nameSpan.textContent = '垃圾箱(' + name + ')';
+                        nameSpan.textContent = '垃圾箱';
                         nameSpan.style.color = 'var(--color-text-secondary)';
                         break;
                     default:
@@ -17337,7 +17646,10 @@
                 throw new Error('OPML XML解析失败: ' + parseError.textContent);
             }
 
-            function parseOutline(outline) {
+            // 方案B+D: parseOutline 直接生成含 id/_parent 的树，消除 _buildTree 二次遍历
+            const ID_BASE = Date.now().toString(36);
+            let _opmlIdCounter = 0;
+            function parseOutline(outline, parent) {
                 const head = outline.getAttribute("text") || outline.getAttribute("TEXT") || getMubuText(outline) || '';
                 const note = outline.getAttribute("_note") || outline.getAttribute("note") || '';
                 const images = outline.getAttribute("_mubu_images") || outline.getAttribute("images") || '';
@@ -17345,17 +17657,21 @@
                 const mubu_note = outline.getAttribute("_mubu_note") || '';
                 const color = outline.getAttribute("COLOR") || outline.getAttribute("color") || '';
                 const node = {
+                    id: 'opml_' + (++_opmlIdCounter) + '_' + ID_BASE,
                     head: head,
                     note: note,
                     images: images,
                     local_images: local_images,
                     mubu_note: mubu_note,
                     color: color,
-                    children: []
+                    children: [],
+                    _parent: parent
                 };
-                const childOutlines = outline.querySelectorAll(':scope > outline');
-                for (let i = 0; i < childOutlines.length; i++) {
-                    node.children.push(parseOutline(childOutlines[i]));
+                // 用 DOM children 替代 querySelectorAll(':scope > outline')，避免每次创建 NodeList
+                const ch = outline.children;
+                for (let i = 0; i < ch.length; i++) {
+                    if (ch[i].tagName !== 'outline') continue;
+                    node.children.push(parseOutline(ch[i], node));
                 }
                 return node;
             }
@@ -17370,39 +17686,28 @@
             }
             const bodyTag = xmlDoc.getElementsByTagName("body");
             if (bodyTag.length === 0) {
-                return { head: title, children: [] };
+                return { head: title, children: [], id: 'opml_root_' + ID_BASE, _parent: null };
             }
-            const rootOutlines = bodyTag[0].querySelectorAll(':scope > outline');
-            if (rootOutlines.length === 0) {
-                return { head: title, children: [] };
+            const rootNode = {
+                id: 'opml_' + (++_opmlIdCounter) + '_' + ID_BASE,
+                head: title,
+                note: '',
+                images: '',
+                local_images: '',
+                mubu_note: '',
+                color: '',
+                children: [],
+                _parent: null
+            };
+            // 根级也用 children 替代 querySelectorAll
+            const body = bodyTag[0];
+            for (let i = 0; i < body.children.length; i++) {
+                if (body.children[i].tagName !== 'outline') continue;
+                const child = parseOutline(body.children[i], rootNode);
+                if (!child.head) child.head = title;
+                rootNode.children.push(child);
             }
-            if (rootOutlines.length === 1) {
-                const root = parseOutline(rootOutlines[0]);
-                if (!root.head) {
-                    root.head = title;
-                }
-                return {
-                    head: title,
-                    note: '',
-                    images: '',
-                    local_images: '',
-                    mubu_note: '',
-                    children: [root]
-                };
-            } else {
-                const rootNode = {
-                    head: title,
-                    note: '',
-                    images: '',
-                    local_images: '',
-                    mubu_note: '',
-                    children: []
-                };
-                for (let i = 0; i < rootOutlines.length; i++) {
-                    rootNode.children.push(parseOutline(rootOutlines[i]));
-                }
-                return rootNode;
-            }
+            return rootNode;
         }
 
         //解析FreeMind文件内容,转换为树形数据结构
@@ -17457,7 +17762,7 @@
             }
             if (node.images || node.local_images) {
                 html += `<div class="mindmap-images-row">`;
-                html += await getImage(node.local_images, node.images, nodeId, true);
+                html += getImage(node.local_images, node.images, nodeId, true);
                 html += `</div>`;
             }
             html += `</div></div>`;
@@ -17478,7 +17783,7 @@
             return { html: html, opmlTocData: opmlTocData };
         }
 
-        async function getImage(local_images, images_url, nodeId, style = true) {
+        function getImage(local_images, images_url, nodeId, style = true) {
             let html = "<div style='display: flex; flex-direction: column; align-items: left; gap: 4px; overflow: visible;'>";
             if (local_images) {
                 let localImages;
@@ -17500,11 +17805,24 @@
                 }
                 if (imgList.length > 0) {
                     html += `<div style="display: inline-flex; flex-wrap: wrap;">`;
+                    const normalizedRootPath = normalizePath(currentRootPath);
                     for (let i = 0; i < imgList.length; i++) {
-                        let imgSrc = imgList[i].uri;
-                        imgSrc = await replaceMediaUrl(imgSrc, false);
+                        const uri = imgList[i].uri;
+                        let localPath = dealWithAbsolutePath(uri, normalizedRootPath);
+                        if (localPath === uri) {
+                            localPath = buildLocalImgSrc(uri, normalizedRootPath, '');
+                        }
+                        const absPath = joinPath(normalizedRootPath, localPath);
                         const imgId = `${imgList[i].id || 'img'}${nodeId}-${Math.random().toString(36).slice(2)}`;
-                        html += `<img src="${imgSrc}" id="${imgId}" ${style ? 'style="width: auto;height: auto;max-height: 150px; max-width: 100%; cursor: pointer;"' : ''} onclick="showImageModal('${imgSrc}')">`;
+                        const styleAttr = style ? 'style="width: auto;height: auto;max-height: 150px; max-width: 100%; cursor: pointer;"' : '';
+                        // Tauri 模式：零 I/O asset URL
+                        const assetUrl = getAssetUrl(absPath);
+                        if (assetUrl) {
+                            html += `<img src="${assetUrl}" id="${imgId}" loading="lazy" decoding="async" ${styleAttr}>`;
+                        } else {
+                            // Browser 模式：data-lazy-src 接入懒加载系统
+                            html += `<img src="" data-lazy-src="${escapeHtml(localPath)}" data-lazy-abs="${escapeHtml(absPath)}" data-lazy-gen="${_lazyImgGen}" id="${imgId}" ${styleAttr}>`;
+                        }
                     }
                     html += `</div>`;
                 }
@@ -17520,7 +17838,7 @@
                         for (let i = 0; i < bj.length; i++) {
                             const imgSrc = `https://api2.mubu.com/v3/${bj[i].uri}`;
                             const imgId = `${bj[i].id}${nodeId}-${Math.random().toString(36).slice(2)}`;
-                            html += `<img src="${imgSrc}" id="${imgId}" ${style ? 'style="width: auto;height: auto;max-height: 150px; max-width: 100%; cursor: pointer;"' : ''} onclick="showImageModal('${imgSrc}')">`;
+                            html += `<img src="${imgSrc}" id="${imgId}" ${style ? 'style="width: auto;height: auto;max-height: 150px; max-width: 100%; cursor: pointer;"' : ''}>`;
                         }
                         html += `</div>`;
                     }
@@ -17910,6 +18228,26 @@
                 const text = await getFileContent(currentFileHandle);
                 const { html, opmlTocData } = await buidlOPMLNode(await parseFreeMind(text), 0);
                 contentMain.innerHTML = `<div class="mindmap-container">${html}</div>`;
+                lazyImageObserve(contentMain.querySelector('.mindmap-container'));
+                // 图片点击预览（buidlOPMLNode 输出 getImage 的 data-lazy-src 图片，无内联 onclick）
+                const container = contentMain.querySelector('.mindmap-container');
+                container?.addEventListener('click', (e) => {
+                    const img = e.target.closest('img');
+                    if (!img) return;
+                    e.stopPropagation();
+                    let src = img.currentSrc || img.getAttribute('src') || '';
+                    if (src) {
+                        showImageModal(src);
+                    } else {
+                        const absPath = img.dataset.lazyAbs;
+                        if (absPath) {
+                            _loadLazyImage(img).then(() => {
+                                const loadedSrc = img.getAttribute('src');
+                                if (loadedSrc) showImageModal(loadedSrc);
+                            });
+                        }
+                    }
+                });
                 generateTOC('', 'opml', opmlTocData);
                 setOPMLControls({ readonly: true, isMmSource: true });
             }
@@ -19309,32 +19647,11 @@
                 this._editingNewNodeId = null;   // 记录本次会话新建节点的 ID，ESC 空内容时撤销
                 this._readonly = !!readonly;     // 只读模式：禁用节点增删改，仅可查看/展开折叠
                 this.handleGlobalKeydown = this.handleGlobalKeydown.bind(this);
-                this._buildTree(opmlText);
+                // 方案B: parseOPML 直接生成含 id/_parent 的完整树，无需 _buildTree 二次遍历
+                this._root = parseOPML(opmlText);
                 this.toc = [];
             }
             getToc() { return this.toc; }
-            _buildTree(opmlText) {
-                const parsed = parseOPML(opmlText);
-                let idCounter = 0;
-                const _walk = (src, parent) => {
-                    const node = {
-                        id: 'opml_' + (++idCounter) + '_' + Date.now().toString(36),
-                        head: src.head || '',
-                        note: src.note || '',
-                        images: src.images || '',
-                        local_images: src.local_images || '',
-                        mubu_note: src.mubu_note || '',
-                        color: src.color || '',
-                        children: [],
-                        _parent: parent
-                    };
-                    if (src.children) {
-                        node.children = src.children.map(c => _walk(c, node));
-                    }
-                    return node;
-                };
-                this._root = _walk(parsed, null);
-            }
             getTreeData() { return this._root; }
             _findNode(id, node = this._root) {
                 if (node.id === id) return node;
@@ -19352,12 +19669,22 @@
                 container.innerHTML = '';
                 const wrapper = document.createElement('div');
                 wrapper.className = 'mindmap-container';
-                wrapper.innerHTML = await this._renderNodeHtml(this._root, 0);
+                // 方案F: DocumentFragment 批量插入
+                const html = await this._renderNodeHtml(this._root, 0);
+                const temp = document.createElement('div');
+                temp.innerHTML = html;
+                const fragment = document.createDocumentFragment();
+                while (temp.firstChild) {
+                    fragment.appendChild(temp.firstChild);
+                }
+                wrapper.appendChild(fragment);
                 // 底部留白，方便最后一个节点编辑时不被遮挡
                 const spacer = document.createElement('div');
                 spacer.style.cssText = 'height: 300px;';
                 wrapper.appendChild(spacer);
                 container.appendChild(wrapper);
+                // 注册懒加载图片观察
+                lazyImageObserve(wrapper);
                 this._initEventDelegation(wrapper);
             }
             async _renderNodeHtml(node, level) {
@@ -19393,7 +19720,7 @@
                     html += `<div class="mindmap-note-row">${getTitleNote(node.mubu_note, node.note)}</div>`;
                 }
                 if (node.images || node.local_images) {
-                    html += `<div class="mindmap-images-row">${await getImage(node.local_images, node.images, node.id, true)}</div>`;
+                    html += `<div class="mindmap-images-row">${getImage(node.local_images, node.images, node.id, true)}</div>`;
                 }
                 html += `</div></div>`;
                 if (hasChildren) {
@@ -19411,15 +19738,44 @@
                 const wrapper = this._container.querySelector('.mindmap-container');
                 if (!wrapper) return;
                 const selId = this._selectedNodeId;
-                wrapper.innerHTML = await this._renderNodeHtml(this._root, 0);
+                // 方案F: DocumentFragment 批量插入
+                wrapper.innerHTML = '';
+                const html = await this._renderNodeHtml(this._root, 0);
+                const temp = document.createElement('div');
+                temp.innerHTML = html;
+                const fragment = document.createDocumentFragment();
+                while (temp.firstChild) {
+                    fragment.appendChild(temp.firstChild);
+                }
+                wrapper.appendChild(fragment);
                 const spacer = document.createElement('div');
                 spacer.style.cssText = 'height: 300px;';
                 wrapper.appendChild(spacer);
+                // 重建后重新注册懒加载图片观察
+                lazyImageObserve(wrapper);
                 if (selId) this._selectNode(selId);
             }
             _initEventDelegation(wrapper) {
-                // 单击：选中节点
+                // 单击：选中节点 / 图片预览
                 wrapper.addEventListener('click', (e) => {
+                    // 图片点击：触发预览（兼容 Tauri 直链和 Browser 懒加载图片）
+                    const imgEl = e.target.closest('.mindmap-images-row img');
+                    if (imgEl && !e.target.closest('[data-action="toggle"]')) {
+                        e.stopPropagation();
+                        let src = imgEl.currentSrc || imgEl.getAttribute('src') || '';
+                        if (src) {
+                            showImageModal(src);
+                        } else {
+                            const absPath = imgEl.dataset.lazyAbs;
+                            if (absPath) {
+                                _loadLazyImage(imgEl).then(() => {
+                                    const loadedSrc = imgEl.getAttribute('src');
+                                    if (loadedSrc) showImageModal(loadedSrc);
+                                });
+                            }
+                        }
+                        return;
+                    }
                     const nodeEl = e.target.closest('[data-node-id]');
                     if (!nodeEl) return;
                     if (e.target.closest('[data-action="toggle"]')) {
@@ -19609,7 +19965,13 @@
                                 contentCol.appendChild(imgRow);
                             }
                         }
-                        if (imgRow) imgRow.innerHTML = await getImage(path, '', node.id, true);
+                        if (imgRow) {
+                            imgRow.innerHTML = getImage(path, '', node.id, true);
+                            // 粘贴的图片立即触发加载（用户主动操作）
+                            if (!isTauriVisit()) {
+                                imgRow.querySelectorAll('img[data-lazy-src]').forEach(img => _loadLazyImage(img));
+                            }
+                        }
                     }
                     showNotification('✓ 图片已粘贴: ' + fileName, 'success');
                 } finally {
@@ -20016,7 +20378,13 @@
                                 imgRow.className = 'mindmap-images-row';
                                 contentCol?.appendChild(imgRow);
                             }
-                            if (imgRow) imgRow.innerHTML = await getImage(imgPath, '', node.id, true);
+                            if (imgRow) {
+                                imgRow.innerHTML = getImage(imgPath, '', node.id, true);
+                                // 新选择的图片立即加载
+                                if (!isTauriVisit()) {
+                                    imgRow.querySelectorAll('img[data-lazy-src]').forEach(img => _loadLazyImage(img));
+                                }
+                            }
                         }
                         showNotification('✓ 图片已添加', 'success');
                     }
@@ -20358,16 +20726,32 @@
             if (hasImage) {
                 const nodeId = node.id;
                 const imageWrapper = element.querySelector('.jm-node-image-wrapper');
-                getImage(local_images, images, nodeId, false).then(imgHtml => {
-                    if (!element.isConnected || !imageWrapper) return;
-                    const currentNode = jm.get_node(nodeId);
-                    if (!currentNode) return;
-                    const currentData = currentNode.data || {};
-                    const currentLocalImages = currentData.local_images || '';
-                    const currentImages = currentData.images || '';
-                    if (currentLocalImages !== local_images || currentImages !== images) return;
-                    imageWrapper.innerHTML = imgHtml;
-                });
+                if (imageWrapper) {
+                    imageWrapper.innerHTML = getImage(local_images, images, nodeId, false);
+                    // jsMind 动态管理 DOM 节点（zoom/拖拽时会重建），不适合 IntersectionObserver，
+                    // 插入后立即触发 _loadLazyImage 加载
+                    if (!isTauriVisit()) {
+                        imageWrapper.querySelectorAll('img[data-lazy-src]').forEach(img => _loadLazyImage(img));
+                    }
+                    // 图片点击预览（getImage 不再内联 onclick，需通过事件代理处理）
+                    imageWrapper.addEventListener('click', (e) => {
+                        const img = e.target.closest('img');
+                        if (!img) return;
+                        e.stopPropagation();
+                        let src = img.currentSrc || img.getAttribute('src') || '';
+                        if (src) {
+                            showImageModal(src);
+                        } else {
+                            const absPath = img.dataset.lazyAbs;
+                            if (absPath) {
+                                _loadLazyImage(img).then(() => {
+                                    const loadedSrc = img.getAttribute('src');
+                                    if (loadedSrc) showImageModal(loadedSrc);
+                                });
+                            }
+                        }
+                    });
+                }
             }
             return true;
         };
@@ -21177,6 +21561,7 @@
                 await writeFileHandle(targetHandle, newContent);
                 if (targetHandle === currentFileHandle) {
                     originalContent = newContent;
+                    clearFileTextCache(getFileTextCacheKey()); // 保存后失效缓存
                 }
                 if (notify) showNotification('✓ 文件保存成功', 'success');
             } catch (error) {
@@ -21280,6 +21665,9 @@
         async function renderOriginalMarkdown(text) {
             const htmlContent = await markedParse(parseObsidianToHTML(text));
             contentMain.innerHTML = `<article id="content-article" class="markdown-body">${htmlContent}</article>`;
+            // 注入懒加载 CSS + 注册视口观察（浏览器模式）
+            injectLazyImageStyles();
+            lazyImageObserve(contentMain.querySelector('#content-article'));
             generateTOC(text, 'md');
             postProcessMarkdown(contentMain.querySelector('#content-article'));
         }
@@ -21317,14 +21705,36 @@
                 const style = doc.createElement('style');
                 style.textContent = 'img{cursor:zoom-in;}';
                 (doc.head || doc.documentElement).appendChild(style);
+                // iframe 内懒加载图片（使用 IntersectionObserver 按需加载）
+                if (!isTauriVisit()) {
+                    const lazyImgs = doc.querySelectorAll('img[data-lazy-src]');
+                    if (lazyImgs.length > 0) {
+                        const iframeObserver = new IntersectionObserver((entries) => {
+                            for (const entry of entries) {
+                                if (!entry.isIntersecting) continue;
+                                const img = entry.target;
+                                iframeObserver.unobserve(img);
+                                _loadLazyImage(img);
+                            }
+                        }, { root: doc.documentElement, rootMargin: '200px 0px', threshold: 0.01 });
+                        lazyImgs.forEach(img => iframeObserver.observe(img));
+                    }
+                }
                 doc.addEventListener('click', (e) => {
                     const img = e.target.closest('img');
                     if (!img) return;
                     e.stopPropagation();
                     const src = img.getAttribute('src');
+                    const lazySrc = img.dataset.lazyAbs || img.dataset.lazySrc;
                     if (src) {
                         const fullSrc = new URL(src, window.location.href).href;
                         showImageModal(fullSrc);
+                    } else if (lazySrc) {
+                        // 如果点击时图片尚未加载，立即加载并预览
+                        _loadLazyImage(img).then(() => {
+                            const loadedSrc = img.getAttribute('src');
+                            if (loadedSrc) showImageModal(loadedSrc);
+                        });
                     }
                 });
             };
@@ -24799,12 +25209,19 @@ kanban-plugin: basic
             if (!root || root.dataset.imagePreviewBound === '1') return;
             root.dataset.imagePreviewBound = '1';
             const target = container instanceof Document ? container : root;
-            const imgHandler = (e) => {
+            const imgHandler = async (e) => {
                 const img = e.target.closest('img');
                 if (!img) return;
                 e.stopPropagation();
-                const src = img.getAttribute('src');
-                const originUrl = img.dataset.originUrl || src;
+                // 优先使用实际加载的 URL（currentSrc），然后 src，最后回退到延迟加载路径
+                let src = img.currentSrc || img.getAttribute('src') || '';
+                const lazyPath = img.dataset.lazyAbs || img.dataset.lazySrc || '';
+                // 如果是延迟加载图片但还未加载，立即加载再预览
+                if (!src && lazyPath) {
+                    await _loadLazyImage(img);
+                    src = img.currentSrc || img.getAttribute('src') || '';
+                }
+                const originUrl = img.dataset.originUrl || src || lazyPath;
                 if (src) showImageModal(src, nextEnable, originUrl);
             }
             target.removeEventListener('click', imgHandler);
@@ -30616,6 +31033,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         async function clearOldData() {
             await destroyEverything();
+            cleanupLazyImageBlobUrls();
             // 清理本地存储数据
             safeLocalStorageRemove(LAST_FILE_KEY);
             safeLocalStorageRemove(EXPANDED_STATE_KEY);
@@ -40334,14 +40752,22 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             };
         }
         async function photoLoadFromLocal(text, isAllFile = false, photoDirPath = '') {
-            // Tauri 模式：使用 invoke 直接读取文件为 base64
-            if (isTauriVisit()) return await buildTauriImg(text, isAllFile, photoDirPath);
-            // 存在后端服务, 更改绝对路径
-            if (hasBackendServer) return buildLocalAbsoluteImg(text, isAllFile);
-            // 本地访问, 构建本地图片路径
-            if (isLocalVisit()) return buildLocalImg(text, isAllFile, photoDirPath);
-            // http访问, 无后端服务
-            if (isHttpVisit()) return await buildHttpImg(text, isAllFile, photoDirPath);
+            // isAllFile=true：全量文本替换 → 懒加载（零 I/O / 异步视口加载）
+            // isAllFile=false：单张图片替换 → 现有逻辑
+            if (isAllFile) {
+                if (isTauriVisit()) {
+                    return buildLazyTauriImg(text, true, photoDirPath); // 同步，零 I/O
+                }
+                if (hasBackendServer) return buildLocalAbsoluteImg(text, true);
+                if (isLocalVisit()) return buildLocalImg(text, true, photoDirPath);
+                if (isHttpVisit()) return await buildLazyHttpImg(text, true, photoDirPath); // data-lazy-src 模式
+                return text;
+            }
+            // 单张图片路径：保持原有逻辑
+            if (isTauriVisit()) return await buildTauriImg(text, false, photoDirPath);
+            if (hasBackendServer) return buildLocalAbsoluteImg(text, false);
+            if (isLocalVisit()) return buildLocalImg(text, false, photoDirPath);
+            if (isHttpVisit()) return await buildHttpImg(text, false, photoDirPath);
             return text;
         }
         // 图片散落布局的位置算法
@@ -41280,15 +41706,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 console.warn('gitParseRefs error:', e);
             }
         }
-        /**
-         * 渲染提交列表
-         * @param {boolean} fullRender - true=完整渲染（含 canvas 重绘），false=仅更新行高亮
-         */
+        // true=完整渲染（含 canvas 重绘），false=仅更新行高亮
         function gitRenderGraphAndList(fullRender = true) {
             // 渲染嵌套深度计数：允许 fullRender 打断非 fullRender，但反之不行
             if (_gitRenderDepth > 0) {
                 if (!fullRender) return; // 非完整渲染在已有渲染进行时跳过
-                // fullRender 等待当前渲染完成后再执行（避免 graph 布局竞争）
             }
             _gitRenderDepth++;
             try {
@@ -41941,10 +42363,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                 }
 
-                // [1,2,1] OID 误判已从根源修复：FS 适配器 readFile 正确实现了 autocrlf
-                // 换行符归一化，statusMatrix 的 WORKDIR OID 计算与 git blob OID 一致，
-                // 不再需要昂贵的 readBlob + hashBlob + 逐字节比对。直接信任 statusMatrix 结果。
-
                 // 缓存结果（不存 matrix 避免大数组占用内存，仅保留 staged/unstaged/time）
                 gitStatusCache = { staged: [...staged], unstaged: [...unstaged], time: now };
 
@@ -42156,7 +42574,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        // ==================== 方案5：增量状态管理 ====================
         /** 增量更新单个文件状态（不重新计算statusMatrix） */
         function gitUpdateSingleFileStatus(filepath, newStatus) {
             const oldStatus = gitFileStatusMap.get(filepath);
@@ -42193,7 +42610,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         /** 从状态Map中移除文件（文件被删除或提交） */
         function gitRemoveFileFromStatusMap(filepath) {
             gitFileStatusMap.delete(filepath);
-
             // 同步更新缓存列表
             const staged = [];
             const unstaged = [];
@@ -42251,6 +42667,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             // 异步加载状态
             try {
                 await gitUpdateStatusLists(forceRefresh);
+                // 如果加载过程中用户已离开 Git 视图，保护 DOM 不被废弃数据写入
+                if (!gitViewActive) return;
             } catch (e) {
                 console.error('gitUpdateStatusListsAsync error:', e);
                 if (addListEl) addListEl.innerHTML = '<div class="git-status-error">⚠️ 加载失败</div>';
@@ -42468,7 +42886,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (!confirmed) return;
                 try {
                     const notification = showNotification(`正在放弃 ${files.length} 个文件更改...`, 'info', 0);
-
                     // Tauri 模式
                     if (window.__TAURI__ && window.GitRustAdapter) {
                         for (const { filepath } of files) {
@@ -42812,12 +43229,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             });
             if (onFilesRendered) onFilesRendered();
         }
-        /**
-         * 创建基于 FileSystemDirectoryHandle 的 FS 适配器（供 isomorphic-git 使用）
-         * @param {FileSystemDirectoryHandle} gitDirHandle - .git 目录的句柄
-         * @param {FileSystemDirectoryHandle} rootDirHandle - 仓库根目录的句柄
-         * @returns {object} 符合 isomorphic-git fs 接口的对象
-         */
+
         function createGitFsAdapter(gitDirHandle, rootDirHandle) {
             /** 判断路径是否属于 .git 内部，并返回 { isGit, relativePath } */
             function _route(p) {
@@ -42955,7 +43367,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             const isUtf8 = opts === 'utf8' || (opts && opts.encoding === 'utf8');
                             // 处理 autocrlf：当 isomorphic-git 的 GitWalkerFs 传入 { autocrlf: true } 时，
                             // 将 CRLF/CR 归一化为 LF，确保 OID 计算与 git 存储的 blob OID 一致，
-                            // 从根源上消除 statusMatrix 的 [1,2,1] 误判（假修改）。
                             const doAutocrlf = opts && opts.autocrlf;
                             if (isUtf8) {
                                 const text = await getFileContent(fileHandle);
@@ -43225,9 +43636,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        // 在文件变更列表中选中指定文件
-        // @param {string} filePath - 要选中的文件路径
-        // @param {boolean} autoOpen - 是否自动打开文件对比
+        // 在文件变更列表中选中指定文件, filePath - 要选中的文件路径, autoOpen - 是否自动打开文件对比
         function gitSelectFileInList(filePath, autoOpen = false) {
             const container = document.getElementById('gitChangedFiles');
             if (!container) return;
@@ -43338,6 +43747,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         setTimeout(() => reject(new Error('Git 加载超时，请检查仓库是否完整或 git 命令是否可用')), TIMEOUT_MS)
                     ),
                 ]);
+                // 如果加载过程中用户已离开 Git 视图，废弃结果
+                if (!gitViewActive) {
+                    gitFs = null;
+                    return;
+                }
             } catch (err) {
                 gitFs = null;
                 showNotification(`${gitEscapeHtml(err.message || '未知错误')}, 请检查仓库是否完整`, 'error');

@@ -37,7 +37,7 @@ pub struct RefsInfo {
 }
 
 /// 单个引用信息
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct RefInfo {
     pub name: String,
     pub hash: String,

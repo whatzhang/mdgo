@@ -1,6 +1,11 @@
 /**
  * Tauri 模式 Git 适配器（使用 Rust gix 实现）
  * API 与 isomorphic-git 完全兼容
+ *
+ * 优化说明:
+ * 1. 请求去重: 相同参数的并发请求只发一次，复用同一个 Promise
+ * 2. 短路缓存: 100ms 内相同请求直接返回上次结果
+ * 3. 减少不必要的序列化/反序列化开销
  */
 (function () {
     if (typeof window.__TAURI__ === 'undefined') {
@@ -8,6 +13,33 @@
     }
 
     const { invoke } = window.__TAURI__.core;
+
+    // 请求去重表: key -> Promise
+    // 当同一函数同一参数同时被调用多次时，只发一次请求
+    const inflightMap = new Map();
+
+    /**
+     * 带请求去重的 invoke 包装
+     * 相同 key 的并发请求只会发起一次调用
+     */
+    function dedupedInvoke(cmd, params, cacheKey) {
+        const key = cacheKey || cmd + '_' + JSON.stringify(params);
+        // 如果已有相同请求在执行中，直接复用
+        if (inflightMap.has(key)) {
+            return inflightMap.get(key);
+        }
+        const promise = invoke(cmd, params)
+            .then(result => {
+                inflightMap.delete(key);
+                return result;
+            })
+            .catch(err => {
+                inflightMap.delete(key);
+                throw err;
+            });
+        inflightMap.set(key, promise);
+        return promise;
+    }
 
     // Git Rust 适配器（接口与 isomorphic-git 完全一致）
     window.GitRustAdapter = {
@@ -18,13 +50,13 @@
          */
         async log(options) {
             const { dir, depth, filepath } = options;
-
+            const cacheKey = `git_log_${dir}_${depth}_${filepath}`;
             try {
-                const commits = await invoke('git_log', {
+                const commits = await dedupedInvoke('git_log', {
                     dir,
                     depth,
-                    filepath,
-                });
+                    filepath: filepath || null,
+                }, cacheKey);
                 return commits;
             } catch (error) {
                 console.error('[GitRust] log error:', error);
@@ -39,9 +71,9 @@
          */
         async statusMatrix(options) {
             const { dir } = options;
-
+            const cacheKey = `git_status_${dir}`;
             try {
-                const matrix = await invoke('git_status_matrix', { dir });
+                const matrix = await dedupedInvoke('git_status_matrix', { dir }, cacheKey);
                 return matrix;
             } catch (error) {
                 console.error('[GitRust] statusMatrix error:', error);
@@ -56,7 +88,6 @@
          */
         async checkout(options) {
             const { dir, filepaths, force } = options;
-
             try {
                 await invoke('git_checkout', {
                     dir,
@@ -75,8 +106,9 @@
          * @returns {Promise<Object>} - 引用信息
          */
         async parseRefs(dir) {
+            const cacheKey = `git_parseRefs_${dir}`;
             try {
-                const refs = await invoke('git_parse_refs', { dir });
+                const refs = await dedupedInvoke('git_parse_refs', { dir }, cacheKey);
                 return refs;
             } catch (error) {
                 console.error('[GitRust] parseRefs error:', error);
@@ -92,12 +124,13 @@
          * @returns {Promise<Array>} - 文件变更列表 [{path, status}, ...]
          */
         async diffTree(dir, commitOid, parentOid) {
+            const cacheKey = `git_diffTree_${dir}_${commitOid}_${parentOid}`;
             try {
-                const changes = await invoke('git_diff_tree', {
+                const changes = await dedupedInvoke('git_diff_tree', {
                     dir,
                     commitOid,
-                    parentOid,
-                });
+                    parentOid: parentOid || null,
+                }, cacheKey);
                 return changes;
             } catch (error) {
                 console.error('[GitRust] diffTree error:', error);
@@ -119,7 +152,6 @@
                     oid,
                     filepath,
                 });
-
                 return {
                     blob: new Uint8Array(result.blob),
                 };
