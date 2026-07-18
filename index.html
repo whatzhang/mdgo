@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+﻿﻿<!DOCTYPE html>
 <html lang="zh-CN">
 
 <head>
@@ -230,6 +230,12 @@
 
         *::-webkit-scrollbar-corner {
             background: transparent !important;
+        }
+
+        .app-header button,
+        .app-header a,
+        .app-header input {
+            -webkit-app-region: no-drag;
         }
 
         #sidebar {
@@ -2175,6 +2181,8 @@
             white-space: normal;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             transition: all 0.2s ease;
+            user-select: none;
+            -webkit-user-select: none;
         }
 
         .kanban-column h1,
@@ -2219,6 +2227,8 @@
             padding: 10px;
             border-radius: 8px;
             cursor: grab;
+            user-select: none;
+            -webkit-user-select: none;
             color: var(--color-text, #1f2328);
             position: relative;
             overflow: visible !important;
@@ -2226,6 +2236,17 @@
             word-wrap: break-word;
             box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
             transition: all 0.2s ease;
+        }
+
+        .kanban-card input,
+        .kanban-card textarea,
+        .kanban-card [contenteditable],
+        .kanban-task input,
+        .kanban-task textarea,
+        .kanban-task [contenteditable] {
+            user-select: text;
+            -webkit-user-select: text;
+            cursor: text;
         }
 
         .kanban-card:hover {
@@ -3161,10 +3182,23 @@
         }
 
         .stats-grid {
-            display: flex;
-            gap: 0.9375rem;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr;
+            gap: 0.625rem;
+            width: 100%;
+            box-sizing: border-box;
             margin-bottom: 0.9375rem;
-            flex-wrap: wrap;
+        }
+
+        @media (max-width: 1300px) {
+            .stats-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr 1fr 1fr;
+                gap: 0.625rem;
+                width: 100%;
+                box-sizing: border-box;
+                margin-bottom: 0.9375rem;
+            }
         }
 
         .stat-card {
@@ -3308,6 +3342,20 @@
         }
 
         .activity-section .chart-card {
+            width: 100%;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        .activity-section-three {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 0.625rem;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .activity-section-three .chart-card {
             width: 100%;
             box-sizing: border-box;
             overflow: hidden;
@@ -4387,16 +4435,17 @@
 
         .marker-tab-bar {
             display: flex;
-            gap: 6px;
+            gap: 0.375rem;
             flex-wrap: wrap;
-            margin-bottom: 8px;
+            margin-bottom: 0.5rem;
         }
 
         .marker-tab-btn {
-            padding: 4px 8px;
-            font-size: 12px;
+            padding: 0.25rem 0.75rem;
+            font-size: 0.75rem;
             border: 1px solid #e2e8f0;
-            border-radius: 6px;
+            border-radius: 0.375rem;
+            ;
             cursor: pointer;
             background: #f8fafc;
             color: #334155;
@@ -4405,7 +4454,7 @@
         }
 
         .marker-tab-btn:hover {
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.08);
         }
 
         .marker-tab-btn.active {
@@ -4416,8 +4465,8 @@
 
         .marker-empty {
             color: #94a3b8;
-            font-size: 12px;
-            padding: 12px;
+            font-size: 0.75rem;
+            padding: 0.75rem;
             text-align: center;
             white-space: nowrap;
         }
@@ -4425,14 +4474,14 @@
         /* 代码块复制按钮 */
         .code-copy-btn {
             position: absolute;
-            top: 8px;
-            right: 8px;
-            padding: 4px 10px;
-            font-size: 12px;
+            top: 0.5rem;
+            right: 0.5rem;
+            padding: 0.25rem 0.5rem;
+            font-size: 0.75rem;
             color: #c9d1d9;
             background: rgba(110, 118, 129, 0.4);
             border: 1px solid rgba(110, 118, 129, 0.2);
-            border-radius: 6px;
+            border-radius: 0.375rem;
             cursor: pointer;
             opacity: 0;
             transition: opacity 0.2s ease, background 0.2s ease;
@@ -4459,8 +4508,8 @@
 
         .ai-result-sw-lark {
             position: relative;
-            width: 33px;
-            height: 18px;
+            width: 2rem;
+            height: 1.125rem;
             cursor: pointer;
             flex-shrink: 0;
         }
@@ -4484,9 +4533,9 @@
         .ai-result-sw-lark .slider::before {
             content: '';
             position: absolute;
-            width: 15px;
-            height: 15px;
-            left: 2px;
+            width: 1rem;
+            height: 1rem;
+            left: 0.125rem;
             top: 50%;
             transform: translateY(-50%);
             background: var(--color-bg);
@@ -12218,6 +12267,100 @@
             </button>
             <canvas id="graph-canvas" class="graph-canvas"></canvas>
         </div>
+        <div id="dir-space-container" class="dashboard-container" style="display: none;padding: 10px;">
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                            style="vertical-align:-2px;margin-right:4px;">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                        </svg>每月新增文件趋势</div>
+                    <div id="monthTrendChart" class="chart-container chart-container--bar"></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                            style="vertical-align:-2px;margin-right:4px;">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
+                            <line x1="16" y1="13" x2="8" y2="13" />
+                            <line x1="16" y1="17" x2="8" y2="17" />
+                            <polyline points="10 9 9 9 8 9" />
+                        </svg>文档尾缀统计分布</div>
+                    <div id="extChart" class="chart-container"></div>
+                </div>
+            </div>
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                            style="vertical-align:-2px;margin-right:4px;">
+                            <line x1="18" y1="20" x2="18" y2="10" />
+                            <line x1="12" y1="20" x2="12" y2="4" />
+                            <line x1="6" y1="20" x2="6" y2="14" />
+                        </svg>文件类型分布</div>
+                    <div id="nestChart" class="chart-container"></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                            style="vertical-align:-2px;margin-right:4px;">
+                            <polyline points="21 8 21 21 3 21 3 8" />
+                            <rect x="1" y="3" width="22" height="5" />
+                            <line x1="10" y1="12" x2="14" y2="12" />
+                        </svg>文件大小分布</div>
+                    <div id="fileSizeChart" class="chart-container chart-container--pie"></div>
+                </div>
+            </div>
+            <div class="charts-grid single-column">
+                <div class="chart-card">
+                    <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                            style="vertical-align:-2px;margin-right:4px;">
+                            <polyline points="4 7 4 4 20 4 20 7" />
+                            <line x1="9" y1="20" x2="15" y2="20" />
+                            <line x1="12" y1="4" x2="12" y2="20" />
+                        </svg>文件后缀 TOP20</div>
+                    <div id="extRankChart" class="chart-container chart-container--bar"></div>
+                </div>
+            </div>
+            <div class="charts-grid single-column">
+                <div class="chart-card">
+                    <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                            style="vertical-align:-2px;margin-right:4px;">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                            <line x1="12" y1="11" x2="12" y2="17" />
+                            <line x1="9" y1="14" x2="15" y2="14" />
+                        </svg>文件夹关系</div>
+                    <div id="folderChart" class="chart-container chart-container--tree"></div>
+                </div>
+            </div>
+            <div class="charts-grid single-column">
+                <div class="chart-card">
+                    <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                            style="vertical-align:-2px;margin-right:4px;">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                            <line x1="3" y1="9" x2="21" y2="9" />
+                            <line x1="9" y1="3" x2="9" y2="21" />
+                        </svg>矩形树图 - 按文件大小</div>
+                    <div id="treemapChart" class="chart-container chart-container--treemap"></div>
+                </div>
+            </div>
+            <div class="charts-grid single-column">
+                <div class="chart-card">
+                    <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                            style="vertical-align:-2px;margin-right:4px;">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                            <line x1="12" y1="3" x2="12" y2="21" />
+                            <line x1="3" y1="12" x2="21" y2="12" />
+                        </svg>矩形树图 - 按文件数量</div>
+                    <div id="treemapCountChart" class="chart-container chart-container--treemap"></div>
+                </div>
+            </div>
+        </div>
         <!-- 统计面板（文件数、热力图、图表等） -->
         <div id="dashboard-container" class="dashboard-container" style="display: none;">
             <div class="page-header">
@@ -12286,7 +12429,7 @@
                         </svg></div>
                     <div class="stat-info">
                         <div class="stat-value" id="todayEdit">0</div>
-                        <div class="stat-label">今日修改</div>
+                        <div class="stat-label">今日修改文件数</div>
                     </div>
                 </div>
                 <div class="stat-card">
@@ -12298,7 +12441,7 @@
                         </svg></div>
                     <div class="stat-info">
                         <div class="stat-value" id="todayAdd">0</div>
-                        <div class="stat-label">今日新增</div>
+                        <div class="stat-label">今日新增文件数</div>
                     </div>
                 </div>
                 <div class="stat-card">
@@ -12320,7 +12463,7 @@
                         </svg></div>
                     <div class="stat-info">
                         <div class="stat-value" id="todayViewCount">0</div>
-                        <div class="stat-label">今日浏览</div>
+                        <div class="stat-label">今日浏览文件数</div>
                     </div>
                 </div>
                 <div class="stat-card">
@@ -12336,7 +12479,7 @@
                 </div>
             </div>
             <div class="heatmap-section">
-                <div class="chart-title" style="margin-bottom: 3px;"><svg viewBox="0 0 24 24" width="16" height="16"
+                <div class="chart-title" style="margin-bottom: 3px;"><svg viewBox="0 0 24 24" width="1rem" height="1rem"
                         fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
                         stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
                         <path
@@ -12348,7 +12491,7 @@
             <div class="heatmap-section">
                 <div class="heatmap-container">
                     <div class="heatmap-left">
-                        <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                        <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
                                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
                                 style="vertical-align:-2px;margin-right:4px;">
                                 <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
@@ -12472,12 +12615,13 @@
                                 </div>
                                 <div class="monitor-body">
                                     <div class="monitor-item">
-                                        <div class="monitor-label"><svg viewBox="0 0 24 24" width="14" height="14"
-                                                fill="none" stroke="currentColor" stroke-width="1.8"
+                                        <div class="monitor-label"><svg viewBox="0 0 24 24" width="0.875rem"
+                                                height="0.875rem" fill="none" stroke="currentColor" stroke-width="1.8"
                                                 stroke-linecap="round" stroke-linejoin="round"
                                                 style="vertical-align:-2px;margin-right:4px;">
                                                 <rect x="4" y="4" width="16" height="16" rx="2" ry="2" />
                                                 <rect x="9" y="9" width="6" height="6" />
+                                                <rect x="9" y="9" width="0.375rem" height="0.375rem" />
                                                 <line x1="9" y1="1" x2="9" y2="4" />
                                                 <line x1="15" y1="1" x2="15" y2="4" />
                                                 <line x1="9" y1="20" x2="9" y2="23" />
@@ -12491,13 +12635,17 @@
                                         <div class="monitor-sub" id="cpuCores"></div>
                                     </div>
                                     <div class="monitor-item">
-                                        <div class="monitor-label"><svg viewBox="0 0 24 24" width="14" height="14"
+                                        <div class="monitor-label"><svg viewBox="0 0 24 24" width="1rem" height="1rem"
                                                 fill="none" stroke="currentColor" stroke-width="1.8"
                                                 stroke-linecap="round" stroke-linejoin="round"
                                                 style="vertical-align:-2px;margin-right:4px;">
-                                                <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-                                                <line x1="8" y1="21" x2="16" y2="21" />
-                                                <line x1="12" y1="17" x2="12" y2="21" />
+                                                <rect x="3" y="8" width="18" height="12" rx="1" />
+                                                <rect x="6" y="15" width="3" height="3" rx="0.5" fill="currentColor"
+                                                    stroke="none" />
+                                                <rect x="10.5" y="11" width="3" height="7" rx="0.5" fill="currentColor"
+                                                    stroke="none" />
+                                                <rect x="15" y="13" width="3" height="5" rx="0.5" fill="currentColor"
+                                                    stroke="none" />
                                             </svg>内存</div>
                                         <div id="memGauge" class="monitor-chart"></div>
                                         <div class="monitor-sub" id="memDetail"></div>
@@ -12515,7 +12663,7 @@
                                         <div id="netChart" class="monitor-chart"></div>
                                         <div class="monitor-divider"></div>
                                         <div class="monitor-label" style="margin-top:4px;"><svg viewBox="0 0 24 24"
-                                                width="14" height="14" fill="none" stroke="currentColor"
+                                                width="0.875rem" height="0.875rem" fill="none" stroke="currentColor"
                                                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
                                                 style="vertical-align:-2px;margin-right:4px;">
                                                 <ellipse cx="12" cy="5" rx="9" ry="3" />
@@ -12529,16 +12677,12 @@
                                             <span class="disk-percent" id="diskPercent">0%</span>
                                         </div>
                                         <div class="monitor-label" style="margin-top:4px;"><svg viewBox="0 0 24 24"
-                                                width="14" height="14" fill="none" stroke="currentColor"
+                                                width="0.875rem" height="0.875rem" fill="none" stroke="currentColor"
                                                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
                                                 style="vertical-align:-2px;margin-right:4px;">
-                                                <rect x="3" y="8" width="18" height="12" rx="1" />
-                                                <rect x="6" y="15" width="3" height="3" rx="0.5" fill="currentColor"
-                                                    stroke="none" />
-                                                <rect x="10.5" y="11" width="3" height="7" rx="0.5" fill="currentColor"
-                                                    stroke="none" />
-                                                <rect x="15" y="13" width="3" height="5" rx="0.5" fill="currentColor"
-                                                    stroke="none" />
+                                                <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                                                <line x1="8" y1="21" x2="16" y2="21" />
+                                                <line x1="12" y1="17" x2="12" y2="21" />
                                             </svg>当前目录磁盘使用</div>
                                         <div class="monitor-disk">
                                             <div class="disk-bar">
@@ -12562,7 +12706,7 @@
                 </div>
                 <div class="chart-card">
                     <div class="activity-column">
-                        <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                        <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
                                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
                                 style="vertical-align:-2px;margin-right:4px;">
                                 <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
@@ -12572,7 +12716,7 @@
                 </div>
                 <div class="chart-card">
                     <div class="activity-column">
-                        <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                        <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
                                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
                                 style="vertical-align:-2px;margin-right:4px;">
                                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
@@ -12588,7 +12732,7 @@
                 </div>
                 <div class="chart-card">
                     <div class="activity-column">
-                        <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                        <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
                                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
                                 style="vertical-align:-2px;margin-right:4px;">
                                 <path
@@ -12598,124 +12742,42 @@
                     </div>
                 </div>
             </div>
-            <!-- 习惯分析面板 -->
-            <div class="charts-grid">
-                <div class="chart-card" style="grid-column: 1 / -1;">
-                    <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
-                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-                            style="vertical-align:-2px;margin-right:4px;">
-                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                        </svg>习惯分析</div>
-                    <div style="display:flex;gap:12px;">
-                        <div style="flex:1;min-width:0;">
-                            <div class="chart-title" style="font-size:12px;margin-bottom:4px;">🏆 浏览时长 Top 10</div>
-                            <div id="habit-top10-chart" class="chart-container chart-container--bar" style="height:200px;"></div>
-                        </div>
-                        <div style="flex:1;min-width:0;">
-                            <div class="chart-title" style="font-size:12px;margin-bottom:4px;">📂 文件类型时间分布</div>
-                            <div id="habit-type-chart" class="chart-container" style="height:200px;"></div>
-                        </div>
-                        <div style="flex:1;min-width:0;">
-                            <div class="chart-title" style="font-size:12px;margin-bottom:4px;">🕐 时段活跃度</div>
-                            <div id="habit-heatmap-chart" class="chart-container" style="height:200px;"></div>
-                        </div>
-                        <div style="flex:1;min-width:0;">
-                            <div class="chart-title" style="font-size:12px;margin-bottom:4px;">📈 近 7 天趋势</div>
-                            <div id="habit-weekly-chart" class="chart-container chart-container--bar" style="height:200px;"></div>
+            <div class="activity-section-three">
+                <div class="chart-card">
+                    <div class="activity-column">
+                        <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                                stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                                style="vertical-align:-2px;margin-right:4px;">
+                                <line x1="18" y1="20" x2="18" y2="10" />
+                                <line x1="12" y1="20" x2="12" y2="4" />
+                                <line x1="6" y1="20" x2="6" y2="14" />
+                            </svg>浏览时长 Top 10</div>
+                        <div id="habit-top10-chart" class="chart-container chart-container--bar" style="height:200px;">
                         </div>
                     </div>
                 </div>
-            </div>
-            <div class="charts-grid">
                 <div class="chart-card">
-                    <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
-                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-                            style="vertical-align:-2px;margin-right:4px;">
-                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                        </svg>每月新增文件趋势</div>
-                    <div id="monthTrendChart" class="chart-container chart-container--bar"></div>
+                    <div class="activity-column">
+                        <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                                stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                                style="vertical-align:-2px;margin-right:4px;">
+                                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                            </svg>时段活跃度</div>
+                        <div id="habit-heatmap-chart" class="chart-container" style="height:200px;"></div>
+                    </div>
                 </div>
                 <div class="chart-card">
-                    <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
-                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-                            style="vertical-align:-2px;margin-right:4px;">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                            <polyline points="14 2 14 8 20 8" />
-                            <line x1="16" y1="13" x2="8" y2="13" />
-                            <line x1="16" y1="17" x2="8" y2="17" />
-                            <polyline points="10 9 9 9 8 9" />
-                        </svg>文档尾缀统计分布</div>
-                    <div id="extChart" class="chart-container"></div>
-                </div> 
-            </div>
-            <div class="charts-grid">
-                <div class="chart-card">
-                    <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
-                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-                            style="vertical-align:-2px;margin-right:4px;">
-                            <line x1="18" y1="20" x2="18" y2="10" />
-                            <line x1="12" y1="20" x2="12" y2="4" />
-                            <line x1="6" y1="20" x2="6" y2="14" />
-                        </svg>文件类型分布</div>
-                    <div id="nestChart" class="chart-container"></div>
-                </div>
-                <div class="chart-card">
-                    <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
-                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-                            style="vertical-align:-2px;margin-right:4px;">
-                            <polyline points="21 8 21 21 3 21 3 8" />
-                            <rect x="1" y="3" width="22" height="5" />
-                            <line x1="10" y1="12" x2="14" y2="12" />
-                        </svg>文件大小分布</div>
-                    <div id="fileSizeChart" class="chart-container chart-container--pie"></div>
-                </div>
-            </div>
-            <div class="charts-grid single-column">
-                <div class="chart-card">
-                    <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
-                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-                            style="vertical-align:-2px;margin-right:4px;">
-                            <polyline points="4 7 4 4 20 4 20 7" />
-                            <line x1="9" y1="20" x2="15" y2="20" />
-                            <line x1="12" y1="4" x2="12" y2="20" />
-                        </svg>文件后缀 TOP20</div>
-                    <div id="extRankChart" class="chart-container chart-container--bar"></div>
-                </div>
-            </div>
-            <div class="charts-grid single-column">
-                <div class="chart-card">
-                    <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
-                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-                            style="vertical-align:-2px;margin-right:4px;">
-                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                            <line x1="12" y1="11" x2="12" y2="17" />
-                            <line x1="9" y1="14" x2="15" y2="14" />
-                        </svg>文件夹关系</div>
-                    <div id="folderChart" class="chart-container chart-container--tree"></div>
-                </div>
-            </div>
-            <div class="charts-grid single-column">
-                <div class="chart-card">
-                    <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
-                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-                            style="vertical-align:-2px;margin-right:4px;">
-                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                            <line x1="3" y1="9" x2="21" y2="9" />
-                            <line x1="9" y1="3" x2="9" y2="21" />
-                        </svg>矩形树图 - 按文件大小</div>
-                    <div id="treemapChart" class="chart-container chart-container--treemap"></div>
-                </div>
-            </div>
-            <div class="charts-grid single-column">
-                <div class="chart-card">
-                    <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
-                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-                            style="vertical-align:-2px;margin-right:4px;">
-                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                            <line x1="12" y1="3" x2="12" y2="21" />
-                            <line x1="3" y1="12" x2="21" y2="12" />
-                        </svg>矩形树图 - 按文件数量</div>
-                    <div id="treemapCountChart" class="chart-container chart-container--treemap"></div>
+                    <div class="activity-column">
+                        <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                                stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                                style="vertical-align:-2px;margin-right:4px;">
+                                <polyline points="21 8 21 21 3 21 3 8" />
+                                <rect x="1" y="3" width="22" height="5" />
+                                <line x1="10" y1="12" x2="14" y2="12" />
+                            </svg>近 7 天趋势</div>
+                        <div id="habit-weekly-chart" class="chart-container chart-container--bar" style="height:200px;">
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -13745,21 +13807,21 @@
                 <div class="video-header-right">
                     <button class="btn btn-primary btn-sm" id="video-file-open-btn" onclick="openVideoFileDialog()"
                         title="打开视频文件">
-                        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                        <svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="currentColor">
                             <path
                                 d="M20 6h2-2H2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z" />
                         </svg>&nbsp;打开视频文件
                     </button>
                     <button class="btn btn-primary btn-sm" id="video-add-url-btn" onclick="toggleVideoUrlPanel()"
                         title="添加网络视频">
-                        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                        <svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="currentColor">
                             <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
                         </svg>
                         网络视频
                     </button>
                     <button class="btn btn-sm btn-warning" id="video-history-btn" onclick="toggleVideoHistory()"
                         title="播放历史">
-                        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                        <svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="currentColor">
                             <path
                                 d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z" />
                         </svg>
@@ -13891,7 +13953,6 @@
             </div>
         </div>
     </div>
-
     <script>
         // ====== 后端服务地址 ======
         let GRAPHQL_ENDPOINT = 'http://localhost:8091/graphql';
@@ -14039,6 +14100,7 @@
             { key: '大纲笔记', value: 'toggleFile("opmlOutline")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
             { key: '任务看板', value: 'toggleFile("kanban")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
             { key: '临时编辑器', value: 'toggleFile("tempEditor")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
+            { key: '目录空间分析', value: 'toggleFile("dirSpace")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
         ]
         // 高亮字体颜色（深色系，确保可读性）
         const HIGHLIGHT_FONT_COLORS = [
@@ -14212,7 +14274,7 @@
                 if (isTauriVisit() && window.__TAURI__?.core?.convertFileSrc) {
                     return window.__TAURI__.core.convertFileSrc(absPath);
                 }
-            } catch (_) {}
+            } catch (_) { }
             return null;
         }
         // 同步替换：<img src="path"> → <img src="assetUrl" loading="lazy" decoding="async">
@@ -14386,7 +14448,7 @@
             }
             if (gen !== _lazyImgGen) {
                 // 已废弃：释放 blob URL 防止内存泄漏
-                if (url.startsWith('blob:')) try { URL.revokeObjectURL(url); } catch (_) {}
+                if (url.startsWith('blob:')) try { URL.revokeObjectURL(url); } catch (_) { }
                 return;
             }
             img.src = url;
@@ -14434,7 +14496,7 @@
         function cleanupLazyImageBlobUrls() {
             for (const [path, url] of _LAZY_IMG_CACHE) {
                 if (url && url.startsWith('blob:')) {
-                    try { URL.revokeObjectURL(url); } catch (_) {}
+                    try { URL.revokeObjectURL(url); } catch (_) { }
                 }
             }
             _LAZY_IMG_CACHE.clear();
@@ -14563,6 +14625,8 @@
         let openrestyEditor = null;         // OpenResty 编辑器实例
         let isNewFileClickListenerActive = false;  // 新建文件点击监听器是否激活
         let dashboardCharts = {};           // 存储 ECharts 实例的对象，键为容器 ID，值为对应的 ECharts 实例
+        let dirSpaceCharts = {};            // DirSpace 图表实例池
+        let dirSpaceChartsBound = false;    // DirSpace resize 绑定标志
         let chartsResizeBound = false;      // 是否已绑定窗口 resize 事件以调整图表大小
         let currentObjectUrls = [];         // 跟踪当前的 object URLs 用于清理
         let currentVideoObjectUrl = null;   // 当前视频 Blob URL（单独管理，避免大文件堆积）
@@ -14687,6 +14751,7 @@
         const newFileDropdownPanel = document.getElementById('new-file-dropdown-panel');
         const contentCommonContainer = document.getElementById('content-common-container');
         const swaggerEditorContainer = document.getElementById('swagger-editor-container');
+        const dirSpaceContainer = document.getElementById('dir-space-container');
         const dashboardContainer = document.getElementById('dashboard-container');
         const dashboardButtons = document.getElementById('tools-buttons-container');
         const graphqlContainer = document.getElementById('graphql-container');
@@ -14721,7 +14786,7 @@
             iframeCommonContainer, mermaidAppContainer, timelineAppContainer,
             graphqlPlaygroundContainer, regexTestContainer, calendarContainer,
             cronViewContainer, videoViewContainer, wordViewContainer, gitRecordsContainer,
-            swaggerEditorContainer
+            swaggerEditorContainer, dirSpaceContainer
         ];
 
         const AUX_CONTROLS = [
@@ -14921,6 +14986,8 @@
                 await openOPMLOutline();
             } else if (type === 'kanban') {
                 await openKanbanDemo();
+            } else if (type === 'dirSpace') {
+                await openDirSpace();
             } else if (type === 'picLayoutDisplay') {  //目录右键
                 await picLayoutDisplay(data.dirPathStr);
             } else if (type === 'openWordCloudFile') {
@@ -15967,7 +16034,8 @@
                 Promise.resolve(destroyFileGraph()),
                 Promise.resolve(disposeOpenRestyEditor()),
                 Promise.resolve(destroyPomodoro()),
-                Promise.resolve(destroyBookmarkPage())
+                Promise.resolve(destroyBookmarkPage()),
+                Promise.resolve(destroyDirSpace())
             ]);
         }
 
@@ -18388,7 +18456,7 @@
                     </button>`;
             html += `<div class="mind-jsmind-toolbar">
                         <span id="tbltl-left">
-                            <svg t="1750169375313" width="16" height="16" viewBox="0 0 1024 1024" version="1.1">
+                            <svg t="1750169375313" width="1rem" height="1rem" viewBox="0 0 1024 1024" version="1.1">
                                 <path d="M639 463.30000001L639 285.1c0-36.90000001-26.4-68.5-61.3-68.5l-150.2 0c-1.5 0-3 0.1-4.5 0.3-10.2-38.7-45.5-67.3-87.5-67.3-50 0-90.5 40.5-90.5 90.5s40.5 90.5 90.5 90.5c42 0 77.3-28.6 87.5-67.39999999 1.4 0.3 2.9 0.4 4.5 0.39999999L577.7 263.6c6.8 0 14.3 8.9 14.3 21.49999999l0 427.00000001c0 12.7-7.40000001 21.5-14.30000001 21.5l-150.19999999 0c-1.5 0-3 0.2-4.5 0.4-10.2-38.8-45.5-67.3-87.5-67.3-50 0-90.5 40.5-90.5 90.4 0 49.9 40.5 90.6 90.5 90.59999999 42 0 77.3-28.6 87.5-67.39999999 1.4 0.2 2.9 0.4 4.49999999 0.4L577.7 780.7c34.80000001 0 61.3-31.6 61.3-68.50000001L639 510.3l79.1 0c10.4 38.5 45.49999999 67 87.4 67 50 0 90.5-40.5 90.5-90.5s-40.5-90.5-90.5-90.5c-41.79999999 0-77.00000001 28.4-87.4 67L639 463.30000001z" fill="currentColor" p-id="1776"></path>
                             </svg>
                         </span>
@@ -18398,7 +18466,7 @@
                             </svg>
                         </span>
                         <span id="tbltr-right">
-                            <svg t="1750169667709" width="16" height="16" viewBox="0 0 1024 1024" version="1.1">
+                            <svg t="1750169667709" width="1rem" height="1rem" viewBox="0 0 1024 1024" version="1.1">
                                 <path d="M385 560.69999999L385 738.9c0 36.90000001 26.4 68.5 61.3 68.5l150.2 0c1.5 0 3-0.1 4.5-0.3 10.2 38.7 45.5 67.3 87.5 67.3 50 0 90.5-40.5 90.5-90.5s-40.5-90.5-90.5-90.5c-42 0-77.3 28.6-87.5 67.39999999-1.4-0.3-2.9-0.4-4.5-0.39999999L446.3 760.4c-6.8 0-14.3-8.9-14.3-21.49999999l0-427.00000001c0-12.7 7.40000001-21.5 14.30000001-21.5l150.19999999 0c1.5 0 3-0.2 4.5-0.4 10.2 38.8 45.5 67.3 87.5 67.3 50 0 90.5-40.5 90.5-90.4 0-49.9-40.5-90.6-90.5-90.59999999-42 0-77.3 28.6-87.5 67.39999999-1.4-0.2-2.9-0.4-4.49999999-0.4L446.3 243.3c-34.80000001 0-61.3 31.6-61.3 68.50000001L385 513.7l-79.1 0c-10.4-38.5-45.49999999-67-87.4-67-50 0-90.5 40.5-90.5 90.5s40.5 90.5 90.5 90.5c41.79999999 0 77.00000001-28.4 87.4-67L385 560.69999999z" fill="currentColor" p-id="3038"></path>
                             </svg>
                         </span>
@@ -26085,6 +26153,8 @@ kanban-plugin: basic
                     group: 'kanban',
                     animation: 150,
                     ghostClass: 'dragging',
+                    filter: 'input, textarea, [contenteditable]',
+                    preventOnFilter: false,
                     onEnd: function (evt) {
                         updateKanbanOrder();
                     },
@@ -27227,6 +27297,20 @@ kanban-plugin: basic
             return dashboardCharts[chartInstance];
         }
 
+        function initDirSpaceChart(chartInstance, domId) {
+            if (dirSpaceCharts[chartInstance]) {
+                dirSpaceCharts[chartInstance].dispose();
+            }
+            dirSpaceCharts[chartInstance] = echarts.init(document.getElementById(domId));
+            return dirSpaceCharts[chartInstance];
+        }
+
+        function resizeDirSpaceCharts() {
+            Object.values(dirSpaceCharts).forEach(c => {
+                if (c && !c.isDisposed()) c.resize();
+            });
+        }
+
         async function scanDashboardData(force = false) {
             const _tStart = performance.now();
             let data;
@@ -27624,7 +27708,7 @@ kanban-plugin: basic
                 btn.innerText = '加载中...';
             }
             // 单次遍历完成所有数据处理 (stats + heatmap + 活动列表预排序 + treemap 映射)
-            const stats = await renderDashStats(data);
+            const stats = await renderDashStats();
             // 更新统计卡片 (轻量操作,同步)
             const { todayEdit, todayAdd, deletedCount, sortedByMtimeTop10 } = stats;
             const viewData = loadViewData();
@@ -27662,6 +27746,72 @@ kanban-plugin: basic
             // 分帧渲染所有图表后，绑定窗口 resize 事件
             requestAnimationFrame(async () => {
                 await renderDashCharts(stats, data);
+                renderHabitAnalysis();
+                if (!chartsResizeBound) {
+                    window.addEventListener('resize', resizeDashboardCharts);
+                    chartsResizeBound = true;
+                }
+            });
+            btn.disabled = false;
+            btn.innerText = '扫描数据';
+        }
+
+        async function renderDashboardLight(param = null) {
+            let data = {
+                "stats": {
+                    "total_files": 0,
+                    "total_folders": 0,
+                    "total_size_bytes": 0,
+                    "total_size_str": ""
+                },
+                "files": [],
+                "folderTree": {}
+            };
+            if (!param || !isEmpty(param)) data = param;
+            _currentDirTotalBytes = data.stats.total_size_bytes;
+            const btn = document.getElementById('data-refresh-btn');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerText = '加载中...';
+            }
+            // 单次遍历完成所有数据处理 (stats + heatmap + 活动列表预排序)
+            const stats = await renderDashStats();
+            // 更新统计卡片 (轻量操作,同步)
+            const { todayEdit, todayAdd, deletedCount, sortedByMtimeTop10 } = stats;
+            const viewData = loadViewData();
+            const todayMs = new Date().setHours(0, 0, 0, 0);
+            document.getElementById('todayViewCount').innerText = viewData.sumList.filter(r => r.lastViewTime >= todayMs).length;
+            document.getElementById('totalFiles').innerText = data.stats.total_files;
+            document.getElementById('totalFolders').innerText = data.stats.total_folders;
+            document.getElementById('totalSpace').innerText = data.stats.total_size_str;
+            document.getElementById('todayEdit').innerText = todayEdit;
+            document.getElementById('todayAdd').innerText = todayAdd;
+            document.getElementById('deletedCount').innerText = deletedCount;
+            // 更新今日浏览时长（习惯分析）
+            const todayDuration = viewData.sumList
+                .filter(r => r.lastViewTime >= todayMs)
+                .reduce((sum, r) => sum + (r.durationMs || 0), 0);
+            document.getElementById('todayDurationStat').innerText = _fmtDuration(todayDuration);
+            // 构建热力图数据 (从 stats 中直接取，无需二次遍历)
+            const heatmapData = {
+                monthData: stats.heatmapMonthData,
+                year: stats.year,
+                filesByDate: stats.heatmapFilesByDate
+            };
+            // 从 stats 预提取文件类型计数，避免 renderFileSumPanel 重复遍历
+            const fileTypeCounts = {
+                doc: stats.docCount || 0,
+                code: stats.codeCount || 0,
+                image: stats.imgCount || 0
+            };
+            // 并行启动所有板块渲染（不含图表——图表已移至 DirSpace）
+            await Promise.all([
+                renderFileSumPanel(data, fileTypeCounts),
+                renderDashHeatmap(heatmapData),
+                renderDashActivity(sortedByMtimeTop10, viewData),
+            ]);
+            // 延迟帧渲染习惯分析，绑定 resize 事件
+            requestAnimationFrame(async () => {
                 renderHabitAnalysis();
                 if (!chartsResizeBound) {
                     window.addEventListener('resize', resizeDashboardCharts);
@@ -27784,7 +27934,7 @@ kanban-plugin: basic
         }
 
         // 板块1：统计数据预处理（一次遍历合并热力图/活动列表/treemap 所需数据）
-        async function renderDashStats(data) {
+        async function renderDashStats() {
             let todayAdd = 0;
             let todayEdit = 0;
             const monthData = {};
@@ -28353,7 +28503,7 @@ kanban-plugin: basic
             for (let i = 0; i < lightCharts.length; i += 2) {
                 const batch = lightCharts.slice(i, i + 2);
                 batch.forEach(({ id, option }) => {
-                    const chart = initChart(id, id);
+                    const chart = initDirSpaceChart(id, id);
                     chart.setOption(option);
                 });
                 if (i + 2 < lightCharts.length) await yieldToMain();
@@ -28407,7 +28557,7 @@ kanban-plugin: basic
                             : { count: null, size: null };
 
                         // 1. 渲染文件目录树
-                        const folderChart = initChart('folderChart', 'folderChart');
+                        const folderChart = initDirSpaceChart('folderChart', 'folderChart');
                         folderChart.setOption({
                             tooltip: {
                                 trigger: 'item', triggerOn: 'mousemove',
@@ -28431,7 +28581,7 @@ kanban-plugin: basic
                         await yieldToMain(); // 渲染完交还主线程
 
                         // 2. 渲染大小 Treemap
-                        const treemapChart = initChart('treemapChart', 'treemapChart');
+                        const treemapChart = initDirSpaceChart('treemapChart', 'treemapChart');
                         treemapChart.setOption({
                             tooltip: {
                                 formatter: (info) => {
@@ -28453,7 +28603,7 @@ kanban-plugin: basic
                         await yieldToMain(); // 渲染完交还主线程
 
                         // 3. 渲染数量 Treemap
-                        const treemapCountChart = initChart('treemapCountChart', 'treemapCountChart');
+                        const treemapCountChart = initDirSpaceChart('treemapCountChart', 'treemapCountChart');
                         treemapCountChart.setOption({
                             tooltip: {
                                 formatter: (info) => {
@@ -28551,6 +28701,27 @@ kanban-plugin: basic
                 netSearchDropdown.innerHTML = html;
             }
         }
+        async function destroyDirSpace() {
+            Object.values(dirSpaceCharts).forEach(c => {
+                if (c && !c.isDisposed()) c.dispose();
+            });
+            dirSpaceCharts = {};
+            if (dirSpaceChartsBound) {
+                window.removeEventListener('resize', resizeDirSpaceCharts);
+                dirSpaceChartsBound = false;
+            }
+        }
+        async function openDirSpace() {
+            await switchToView(dirSpaceContainer);
+            const stats = await renderDashStats();
+            await renderDashCharts(stats, _scanData);
+            // 绑定 DirSpace resize 事件
+            if (!dirSpaceChartsBound) {
+                window.addEventListener('resize', resizeDirSpaceCharts);
+                dirSpaceChartsBound = true;
+            }
+            requestAnimationFrame(() => resizeDirSpaceCharts());
+        }
         //首页面板
         async function toggleDashboardView(isFirst = false, data = null) {
             const _scanStart = performance.now();
@@ -28580,7 +28751,6 @@ kanban-plugin: basic
             }
             // 监控初始化完成后设置激活标志（防止 initSystemMonitor → closeSystemMonitor 误复位）
             _dashboardMetricsActive = true;
-
             const timeDisplay = dashboardContainer.querySelector('#dashboard-time');
             if (timeDisplay) {
                 todoUpdateModalTime(timeDisplay);
@@ -28592,15 +28762,15 @@ kanban-plugin: basic
                 }, 1000);
             }
             if (data) {
-                await renderDashboard(data);
+                await renderDashboardLight(data);
             } else {
                 if (isFirst) {
-                    await renderDashboard(await scanDashboardData(true));
+                    await renderDashboardLight(await scanDashboardData(true));
                     showNotification('✓ 数据扫描刷新成功', 'success');
                 } else {
                     try {
                         const data = await scanDashboardData(false);
-                        await renderDashboard(data);
+                        await renderDashboardLight(data);
                     } catch (e) {
                         showNotification(`✗ 获取数据失败: ${e.message}`, 'error');
                     }
@@ -28796,7 +28966,7 @@ kanban-plugin: basic
                     html += '<div class="bookmark-folder" data-depth="' + depth + '">' +
                         '<div class="bookmark-folder-header" onclick="toggleBookmarkFolder(this)">' +
                         '<span class="bookmark-folder-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg></span>' +
-                        '<svg viewBox="0 0 24 24" width="16" height="16" fill="#e8a735"><path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2z"/></svg>' +
+                        '<svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="#e8a735"><path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2z"/></svg>' +
                         '<span class="bookmark-folder-name">' + escapeHtml(child.title || '未命名目录') + '</span>' +
                         '<span class="bookmark-folder-count">' + count + '</span>' +
                         '</div>' +
@@ -29061,17 +29231,20 @@ kanban-plugin: basic
             return h + ' 时 ' + (min % 60) + ' 分';
         }
 
+        const habitTop10Chart = document.getElementById('habit-top10-chart');
+        const habitHeatmapChart = document.getElementById('habit-heatmap-chart');
+        const habitWeeklyChart = document.getElementById('habit-weekly-chart');
         async function renderHabitAnalysis() {
             const viewData = loadViewData();
             const records = viewData.sumList || [];
             const opRecords = viewData.viewList || [];
 
-            // 2. 浏览时长 Top 10 条形图
+            // 浏览时长 Top 10 条形图
             const sorted = [...records]
                 .filter(r => (r.durationMs || 0) > 0)
                 .sort((a, b) => (b.durationMs || 0) - (a.durationMs || 0))
                 .slice(0, 10);
-            const top10Chart = echarts.init(document.getElementById('habit-top10-chart'));
+            const top10Chart = echarts.init(habitTop10Chart);
             top10Chart.setOption({
                 tooltip: {
                     trigger: 'axis',
@@ -29081,18 +29254,18 @@ kanban-plugin: basic
                         return record.name + '<br/>总时长: ' + _fmtDuration(record.durationMs) + '<br/>打开次数: ' + (record.count || 0) + ' 次';
                     }
                 },
-                grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-                xAxis: { type: 'value', name: '分钟' },
+                grid: { left: '3%', right: '3%', bottom: '3%', top: '3%', containLabel: true },
+                xAxis: { type: 'value', name: '分钟', axisLabel: { fontSize: '0.6875rem' } },
                 yAxis: {
                     type: 'category',
                     data: sorted.map(r => r.name.length > 20 ? r.name.slice(0, 20) + '…' : r.name).reverse(),
-                    axisLabel: { fontSize: 11 }
+                    axisLabel: { fontSize: '0.6875rem' }
                 },
                 series: [{
                     type: 'bar',
                     data: sorted.map(r => Math.round((r.durationMs || 0) / 60000 * 10) / 10).reverse(),
                     itemStyle: {
-                        color: '#5470c6',
+                        color: '#ED8A5D',
                         borderRadius: [0, 4, 4, 0]
                     },
                     barMaxWidth: 24,
@@ -29105,74 +29278,55 @@ kanban-plugin: basic
                 }]
             });
 
-            // 3. 文件类型时间分布（饼图）
-            const typeMap = {};
-            records.forEach(r => {
-                if (!r.durationMs) return;
-                const ext = r.name.includes('.') ? r.name.split('.').pop().toLowerCase() : '其他';
-                typeMap[ext] = (typeMap[ext] || 0) + r.durationMs;
-            });
-            const typeData = Object.entries(typeMap)
-                .map(([k, v]) => ({ name: '.' + k, value: Math.round(v / 60000 * 10) / 10 }))
-                .sort((a, b) => b.value - a.value);
-            const typeChart = echarts.init(document.getElementById('habit-type-chart'));
-            typeChart.setOption({
-                tooltip: {
-                    trigger: 'item',
-                    formatter: function (p) { return p.name + ': ' + p.value + ' 分钟 (' + p.percent + '%)'; }
-                },
-                series: [{
-                    type: 'pie',
-                    radius: ['30%', '60%'],
-                    data: typeData.length > 0 ? typeData : [{ name: '暂无数据', value: 1 }],
-                    emphasis: {
-                        itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: 'rgba(0,0,0,0.5)' }
-                    }
-                }]
-            });
-
-            // 4. 时段活跃度热力图（按小时统计操作次数）
+            // 时段活跃度热力图（按小时统计操作次数）
             const hourData = Array(24).fill(0);
             opRecords.forEach(r => {
                 const h = new Date(r.viewTime).getHours();
                 if (!isNaN(h)) hourData[h] += 1;
             });
-            const maxVal = Math.max(...hourData, 1);
-            const heatmapChart = echarts.init(document.getElementById('habit-heatmap-chart'));
+            const heatmapChart = echarts.init(habitHeatmapChart);
             heatmapChart.setOption({
                 tooltip: {
-                    formatter: function (p) {
-                        const idx = p.data[0];
-                        const count = hourData[idx];
-                        return idx + ' 时: ' + count + ' 次操作';
+                    trigger: 'axis',
+                    formatter: function (params) {
+                        const p = params[0];
+                        return `${p.name}: ${p.value} 次操作`;
                     }
                 },
-                grid: { left: '3%', right: '3%', bottom: '10%' },
+                grid: {
+                    left: '3%',
+                    right: '4%',
+                    bottom: '3%',
+                    top: '3%',
+                    containLabel: true
+                },
                 xAxis: {
                     type: 'category',
                     data: Array.from({ length: 24 }, (_, i) => i + '时'),
-                    axisLabel: { interval: 3, fontSize: 10 }
+                    axisLabel: { fontSize: '0.6875rem' }
                 },
-                yAxis: { type: 'category', data: ['活跃度'], show: false },
-                visualMap: {
-                    min: 0, max: maxVal,
-                    orient: 'horizontal', left: 'center', bottom: 0,
-                    inRange: { color: ['#e8f0fe', '#5470c6'] },
-                    calculable: true
-                },
+                yAxis: { type: 'value', name: '活跃度', axisLabel: { fontSize: '0.6875rem' } },
                 series: [{
-                    type: 'heatmap',
-                    data: hourData.map((v, i) => [i, 0, v]),
-                    label: {
-                        show: true,
-                        formatter: function (p) { return p.data[2] || ''; },
-                        fontSize: 10
+                    type: 'line',
+                    data: hourData,
+                    smooth: true,
+                    areaStyle: {
+                        color: {
+                            type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                            colorStops: [
+                                { offset: 0, color: 'rgba(59, 130, 246, 0.5)' },
+                                { offset: 1, color: 'rgba(59, 130, 246, 0.05)' }
+                            ]
+                        }
                     },
-                    emphasis: { itemStyle: { shadowBlur: 10 } }
+                    lineStyle: { color: '#3B82F6', width: 1 },
+                    symbol: 'circle',
+                    symbolSize: 6,
+                    itemStyle: { color: '#3B82F6' }
                 }]
             });
 
-            // 5. 近 7 天趋势折线图
+            // 近 7 天趋势折线图
             const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
             const weekData = [];
             const now = new Date();
@@ -29187,7 +29341,7 @@ kanban-plugin: basic
                 const dayLabel = (i === 0 ? '今天' : (i === 1 ? '昨天' : '周' + dayNames[d.getDay()]));
                 weekData.push({ label: dayLabel, value: Math.round(dayDuration / 60000 * 10) / 10, ts: dayStart });
             }
-            const weeklyChart = echarts.init(document.getElementById('habit-weekly-chart'));
+            const weeklyChart = echarts.init(habitWeeklyChart);
             weeklyChart.setOption({
                 tooltip: {
                     trigger: 'axis',
@@ -29198,32 +29352,33 @@ kanban-plugin: basic
                         return d.label + ' (' + dateStr + ')<br/>浏览时长: ' + d.value + ' 分钟';
                     }
                 },
-                grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+                grid: { left: '3%', right: '3%', bottom: '3%', top: '3%', containLabel: true },
                 xAxis: {
                     type: 'category',
                     data: weekData.map(d => d.label),
-                    axisLabel: { fontSize: 11 }
+                    axisLabel: { fontSize: '0.6875rem' }
                 },
-                yAxis: { type: 'value', name: '分钟' },
+                yAxis: { type: 'value', name: '分钟', axisLabel: { fontSize: '0.6875rem' } },
                 series: [{
                     type: 'line',
                     data: weekData.map(d => d.value),
                     smooth: true,
-                    lineStyle: { color: '#5470c6', width: 2 },
+                    lineStyle: { color: '#ee7874', width: 1.5 },
                     areaStyle: {
-                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                            { offset: 0, color: 'rgba(84, 112, 198, 0.3)' },
-                            { offset: 1, color: 'rgba(84, 112, 198, 0.02)' }
-                        ])
+                        type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                        colorStops: [
+                            { offset: 0, color: 'rgba(238, 120, 116, 0.5)' },
+                            { offset: 1, color: 'rgba(238, 120, 116, 0.05)' }
+                        ]
                     },
                     symbol: 'circle',
                     symbolSize: 6,
-                    itemStyle: { color: '#5470c6' }
+                    itemStyle: { color: '#ee7874' }
                 }]
             });
 
             // 图表窗口 resize 自适应
-            const habitCharts = [top10Chart, typeChart, heatmapChart, weeklyChart];
+            const habitCharts = [top10Chart, heatmapChart, weeklyChart];
             const _habitResize = () => habitCharts.forEach(c => c.resize());
             window.removeEventListener('resize', _habitResize);
             window.addEventListener('resize', _habitResize);
@@ -40982,13 +41137,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             newPager.id = 'photo-masonry-pager';
             newPager.innerHTML = `
                 <button class="photo-pager-btn" id="photo-masonry-prev" title="上一页" ${currentPage <= 1 ? 'disabled' : ''}>
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="currentColor">
                         <path d="M15 18l-6-6 6-6v12z"/>
                     </svg>
                 </button>
                 <span class="photo-pager-info">${start}-${end} / ${totalCount}</span>
                 <button class="photo-pager-btn" id="photo-masonry-next" title="下一页" ${currentPage >= totalPages ? 'disabled' : ''}>
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="currentColor">
                         <path d="M9 18l6-6-6-6v12z"/>
                     </svg>
                 </button>
@@ -41138,13 +41293,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             newPager.id = 'photo-scatter-pager';
             newPager.innerHTML = `
                 <button class="photo-pager-btn" id="photo-scatter-prev" title="上一页" ${currentPage <= 1 ? 'disabled' : ''}>
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="currentColor">
                         <path d="M15 18l-6-6 6-6v12z"/>
                     </svg>
                 </button>
                 <span class="photo-pager-info">${start}-${end} / ${totalCount}</span>
                 <button class="photo-pager-btn" id="photo-scatter-next" title="下一页" ${currentPage >= totalPages ? 'disabled' : ''}>
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="currentColor">
                         <path d="M9 18l6-6-6-6v12z"/>
                     </svg>
                 </button>
@@ -44101,9 +44256,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             contentMain.innerHTML = `
             <div class="pomodoro-container">
                 <div class="pomodoro-mode-tabs">
-                    <button class="pomodoro-mode-tab active" data-mode="pomodoro" onclick="pomodoroSwitch('pomodoro')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> 专注</button>
-                    <button class="pomodoro-mode-tab" data-mode="short" onclick="pomodoroSwitch('short')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg> 短休息</button>
-                    <button class="pomodoro-mode-tab" data-mode="long" onclick="pomodoroSwitch('long')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> 长休息</button>
+                    <button class="pomodoro-mode-tab active" data-mode="pomodoro" onclick="pomodoroSwitch('pomodoro')"><svg width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> 专注</button>
+                    <button class="pomodoro-mode-tab" data-mode="short" onclick="pomodoroSwitch('short')"><svg width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg> 短休息</button>
+                    <button class="pomodoro-mode-tab" data-mode="long" onclick="pomodoroSwitch('long')"><svg width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> 长休息</button>
                 </div>
                 <div class="pomodoro-timer-wrapper" id="pomoTimerWrapper">
                     <svg class="pomodoro-timer-svg" viewBox="0 0 100 100">
