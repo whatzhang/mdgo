@@ -282,29 +282,26 @@ def _scan_scandir(base_dir, on_file, on_dir=None):
 
         try:
             with os.scandir(abs_root) as it:
-                entries = list(it)
+                dirs = []
+                files = []
+                for entry in it:
+                    name = entry.name.replace('/', '／')
+                    child_rel = f"{rel_root}/{name}" if rel_root else name
+                    if should_ignore_file(child_rel):
+                        continue
+                    try:
+                        is_dir = entry.is_dir(follow_symlinks=False)
+                    except OSError:
+                        continue
+                    if is_dir:
+                        if should_ignore_dir(child_rel):
+                            ignored_dirs_total += 1
+                            continue
+                        dirs.append(entry)
+                    else:
+                        files.append(entry)
         except PermissionError:
             continue
-
-        dirs = []
-        files = []
-        for entry in entries:
-            name = entry.name.replace('/', '／')
-            child_rel = f"{rel_root}/{name}" if rel_root else name
-            if should_ignore_file(child_rel):
-                continue
-            try:
-                is_dir = entry.is_dir(follow_symlinks=False)
-            except OSError:
-                continue
-
-            if is_dir:
-                if should_ignore_dir(child_rel):
-                    ignored_dirs_total += 1
-                    continue
-                dirs.append(entry)
-            else:
-                files.append(entry)
 
         for d_entry in dirs:
             d_name = d_entry.name.replace('/', '／')

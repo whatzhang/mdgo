@@ -48,17 +48,34 @@ class ConnectionManager:
         logger.info(f"WebSocket 客户端已断开，当前连接数: {len(self._connections)}")
 
     async def broadcast(self, message: dict):
-        """向所有客户端广播消息，自动清理已断开的连接"""
+        """
+        向所有客户端广播消息，自动清理已断开的连接。
+
+        高并发：使用 asyncio.gather 并发发送，避免慢客户端头阻塞所有其他客户端。
+        """
         payload = json.dumps(message, ensure_ascii=False)
         async with self._lock:
-            dead_connections = []
-            for ws in self._connections:
-                try:
-                    await ws.send_text(payload)
-                except Exception:
-                    dead_connections.append(ws)
-            for ws in dead_connections:
-                self._connections.discard(ws)
+            connections = list(self._connections)
+
+        if not connections:
+            return
+
+        # 并发发送：每个连接独立 await，gather 并行执行
+        async def _send(ws):
+            try:
+                await ws.send_text(payload)
+            except Exception:
+                return ws  # 失败时返回 ws 引用以便清理
+            return None
+
+        results = await asyncio.gather(*[_send(ws) for ws in connections])
+
+        # 批量清理已断开连接
+        dead = [ws for ws, r in zip(connections, results) if r is not None]
+        if dead:
+            async with self._lock:
+                for ws in dead:
+                    self._connections.discard(ws)
 
     @property
     def count(self) -> int:
@@ -80,12 +97,13 @@ async def ws_heartbeat_loop():
 
 
 async def ws_metrics_loop(interval: float = 5.0):
-    """后台指标推送：定期采集并推送系统监控数据"""
+    """后台指标推送：定期采集并推送系统监控数据（使用线程池避免阻塞事件循环）"""
     from service.system_monitor_service import get_metrics
+
+    loop = asyncio.get_running_loop()
 
     # 启动后立即推送一次
     try:
-        loop = asyncio.get_running_loop()
         data = await loop.run_in_executor(None, get_metrics)
         await ws_manager.broadcast({"type": "metrics", "data": data})
     except Exception as e:
@@ -94,7 +112,6 @@ async def ws_metrics_loop(interval: float = 5.0):
     while True:
         await asyncio.sleep(interval)
         try:
-            loop = asyncio.get_running_loop()
             data = await loop.run_in_executor(None, get_metrics)
             await ws_manager.broadcast({
                 "type": "metrics",

@@ -4,11 +4,16 @@ import asyncio
 import os
 import re
 import socket
+import threading
 import psutil
 
 # 上次网络 IO 采样数据（用于计算速率）
 _net_io_last = {"bytes_sent": 0, "bytes_recv": 0, "timestamp": time.time()}
 _net_io_ready = False
+
+# 上次磁盘 IO 采样数据（用于计算速率）
+_disk_io_last = {"read_bytes": 0, "write_bytes": 0, "timestamp": time.time()}
+_disk_io_ready = False
 
 # 当前进程缓存 + 启动时间
 _service_process = None
@@ -17,10 +22,17 @@ _service_start_time = time.time()
 # 本地 IP 缓存（不变值，只需获取一次）
 _local_ip = None
 
+# 线程锁，保护 _net_io_last / _disk_io_last 的并发读写（SSE + WebSocket 可能同时调用）
+_net_io_lock = threading.Lock()
+_disk_io_lock = threading.Lock()
+
 # === 启动时一次获取的常量（运行时永不改变） ===
 _cpu_cores = psutil.cpu_count(logical=True)
 _mem_total = psutil.virtual_memory().total
 _boot_time = psutil.boot_time()
+
+# CPU 预热：psutil.cpu_percent() 第一次调用总是返回 0.0，提前调用以初始化内部计数器
+_ = psutil.cpu_percent(interval=0)
 
 # === 磁盘分区结构缓存 ===
 # 分区列表、物理设备映射几乎不变化，用 TTL 避免每次全量扫描
@@ -48,7 +60,10 @@ def _get_process():
     """获取当前进程的 psutil.Process 实例（缓存避免重复创建）"""
     global _service_process
     if _service_process is None:
-        _service_process = psutil.Process(os.getpid())
+        proc = psutil.Process(os.getpid())
+        # CPU 预热：cpu_percent(interval=0) 第一次调用返回 0.0
+        _ = proc.cpu_percent(interval=0)
+        _service_process = proc
     return _service_process
 
 
@@ -122,7 +137,11 @@ def _get_all_disks_usage():
 
 
 def get_metrics():
-    """采集 CPU、内存、网络、磁盘、服务进程等系统指标。"""
+    """采集 CPU、内存、网络、磁盘、服务进程等系统指标。
+
+    高可用：使用线程锁保护网络/磁盘 IO 的增量计数器，避免 SSE 和 WebSocket
+    两个生产者并发调用时的数据竞争。
+    """
     now = time.time()
 
     # ---- CPU（非阻塞，~0.01ms，不阻塞事件循环） ----
@@ -131,22 +150,41 @@ def get_metrics():
     # ---- 内存（仅有 few 字段变化，total 使用缓存） ----
     mem = psutil.virtual_memory()
 
-    # ---- 网络（增量计算收发速率） ----
+    # ---- 网络（增量计算收发速率，线程锁保护） ----
     net = psutil.net_io_counters()
     global _net_io_last, _net_io_ready
-    elapsed = now - _net_io_last["timestamp"]
-    if _net_io_ready and elapsed > 0:
-        sent_rate = (net.bytes_sent - _net_io_last["bytes_sent"]) / elapsed
-        recv_rate = (net.bytes_recv - _net_io_last["bytes_recv"]) / elapsed
-    else:
-        sent_rate = 0
-        recv_rate = 0
-        _net_io_ready = True
-    _net_io_last = {
-        "bytes_sent": net.bytes_sent,
-        "bytes_recv": net.bytes_recv,
-        "timestamp": now,
-    }
+    with _net_io_lock:
+        elapsed = now - _net_io_last["timestamp"]
+        if _net_io_ready and elapsed > 0:
+            sent_rate = (net.bytes_sent - _net_io_last["bytes_sent"]) / elapsed
+            recv_rate = (net.bytes_recv - _net_io_last["bytes_recv"]) / elapsed
+        else:
+            sent_rate = 0
+            recv_rate = 0
+            _net_io_ready = True
+        _net_io_last = {
+            "bytes_sent": net.bytes_sent,
+            "bytes_recv": net.bytes_recv,
+            "timestamp": now,
+        }
+
+    # ---- 磁盘 IO 速率（增量计算，类似网络速率） ----
+    disk_io = psutil.disk_io_counters()
+    global _disk_io_last, _disk_io_ready
+    with _disk_io_lock:
+        elapsed_io = now - _disk_io_last["timestamp"]
+        if _disk_io_ready and elapsed_io > 0:
+            disk_read_rate = (disk_io.read_bytes - _disk_io_last["read_bytes"]) / elapsed_io
+            disk_write_rate = (disk_io.write_bytes - _disk_io_last["write_bytes"]) / elapsed_io
+        else:
+            disk_read_rate = 0
+            disk_write_rate = 0
+            _disk_io_ready = True
+        _disk_io_last = {
+            "read_bytes": disk_io.read_bytes,
+            "write_bytes": disk_io.write_bytes,
+            "timestamp": now,
+        }
 
     # ---- 磁盘（结构缓存 + 用量实时） ----
     disk = _get_all_disks_usage()
@@ -157,6 +195,9 @@ def get_metrics():
     # ---- 服务进程自身信息 ----
     service_process = _get_process()
     service_mem = service_process.memory_info()
+    # cpu_percent 已在 _get_process 预热，第二次调用起即有真实值
+    service_cpu = service_process.cpu_percent(interval=0)
+    service_mem_pct = service_process.memory_percent()
     service_uptime_seconds = int(now - _service_start_time)
 
     return {
@@ -177,19 +218,27 @@ def get_metrics():
             "total_sent": net.bytes_sent,
             "total_recv": net.bytes_recv,
         },
+        "disk_io": {
+            "read_rate": round(disk_read_rate, 0),
+            "write_rate": round(disk_write_rate, 0),
+        },
         "disk": disk,
         "uptime": uptime_seconds,
         "service": {
             "rss": service_mem.rss,
             "vms": service_mem.vms,
             "uptime": service_uptime_seconds,
+            "app_cpu_percent": round(service_cpu, 1),
+            "app_mem_percent": round(service_mem_pct, 1),
+            "app_mem_bytes": service_mem.rss,
         },
     }
 
 
 async def metrics_stream(interval: float = 5.0):
-    """SSE 流：按固定间隔推送系统指标。"""
+    """SSE 流：按固定间隔推送系统指标（使用线程池避免阻塞事件循环）"""
+    loop = asyncio.get_running_loop()
     while True:
-        data = get_metrics()
+        data = await loop.run_in_executor(None, get_metrics)
         yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
         await asyncio.sleep(interval)

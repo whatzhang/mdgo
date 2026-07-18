@@ -1,16 +1,26 @@
 use crate::commands::git_types::*;
 use std::process::Command;
+use std::sync::mpsc;
 use std::sync::{LazyLock, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
+
+// ==================== 常量 ====================
+
+/// Git 命令执行超时（防止网络驱动器/NFS 挂载导致无限阻塞）
+const GIT_TIMEOUT: Duration = Duration::from_secs(30);
+/// 缓存 TTL：100ms 内相同请求使用缓存
+const CACHE_TTL_MS: u64 = 100;
 
 // ==================== 缓存层 ====================
 // 简单的时间敏感缓存，避免短时间内重复 git 调用
 struct GitCache {
-    refs: Option<(std::time::Instant, RefsInfo)>,
-    log: Option<(std::time::Instant, String, Vec<CommitInfo>)>, // key=depth_dir_filepath
+    refs: Option<(Instant, RefsInfo)>,
+    log: Option<(Instant, String, Vec<CommitInfo>)>, // key=depth_dir_filepath
 }
-const CACHE_TTL_MS: u64 = 100; // 100ms 内相同请求使用缓存
 
-static GIT_CACHE: LazyLock<Mutex<GitCache>> = LazyLock::new(|| Mutex::new(GitCache { refs: None, log: None }));
+static GIT_CACHE: LazyLock<Mutex<GitCache>> =
+    LazyLock::new(|| Mutex::new(GitCache { refs: None, log: None }));
 
 /// 安全获取缓存锁，即使被 poisoning 也能恢复
 fn lock_cache() -> std::sync::MutexGuard<'static, GitCache> {
@@ -32,18 +42,45 @@ fn git_cmd() -> Command {
     Command::new("git")
 }
 
-/// 执行 git 命令并返回 stdout（成功时）
+/// 执行 git 命令并返回 stdout（带超时保护）。
+///
+/// 通过子线程执行 `Command::output()` 并通过 channel 超时等待，
+/// 避免网络驱动器挂载导致无限阻塞。同时通过在子线程中读取 stdout/stderr
+/// 避免管道缓冲区满导致的死锁。
 fn run_git(args: &[&str], dir: &str) -> Result<Vec<u8>, String> {
-    let output = git_cmd()
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .map_err(|e| format!("执行 git 失败: {}", e))?;
+    let mut cmd = git_cmd();
+    cmd.args(args).current_dir(dir);
 
-    if !output.status.success() {
-        return Err(format!("git 错误: {}", String::from_utf8_lossy(&output.stderr)));
+    let (tx, rx) = mpsc::channel();
+
+    // 在独立线程中执行，避免管道死锁（Command::output 内部会读取 stdout/stderr）
+    thread::spawn(move || {
+        let result = cmd
+            .output()
+            .map_err(|e| format!("执行 git 失败: {}", e))
+            .and_then(|output| {
+                if output.status.success() {
+                    Ok(output.stdout)
+                } else {
+                    Err(format!("git 错误: {}", String::from_utf8_lossy(&output.stderr)))
+                }
+            });
+        // 超时 kill 后仍可能发送，忽略 SendError
+        let _ = tx.send(result);
+    });
+
+    match rx.recv_timeout(GIT_TIMEOUT) {
+        Ok(result) => result,
+        Err(mpsc::RecvTimeoutError::Timeout) => Err(format!(
+            "git 命令超时 ({}s): {} {:?}",
+            GIT_TIMEOUT.as_secs(),
+            dir,
+            args
+        )),
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            Err("git 命令线程意外退出".to_string())
+        }
     }
-    Ok(output.stdout)
 }
 
 /// 执行 git 命令并返回 stdout 字符串
@@ -203,11 +240,14 @@ pub fn git_commit(
         &dir,
     )?;
 
+    // 输出格式: "[main 1234567] commit message"
+    // parts[1] 为 "1234567]" 包含尾部 ']'
     for line in stdout.lines() {
-        if line.starts_with("[") && line.contains(" ") {
+        if line.starts_with('[') && line.contains(' ') {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 2 {
-                return Ok(parts[1].to_string());
+                let hash = parts[1].trim_end_matches(']');
+                return Ok(hash.to_string());
             }
         }
     }
@@ -307,7 +347,7 @@ pub fn git_checkout(
     Ok(())
 }
 
-/// 解析引用（分支、标签等）—— 优化版：并行执行减少延迟
+/// 解析引用（分支、标签等）—— 高并发版：scoped threads + 批量 tag hash
 #[tauri::command]
 pub fn git_parse_refs(dir: String) -> Result<RefsInfo, String> {
     // 使用缓存
@@ -326,51 +366,54 @@ pub fn git_parse_refs(dir: String) -> Result<RefsInfo, String> {
         }
     }
 
-    // 并行执行独立命令: 用线程池并行获取所有引用信息
-    let dir_clone = dir.clone();
-    let handle_locals = std::thread::spawn(move || {
-        run_git_utf8(
-            &["branch", "--list", "--format=%(refname:short) %(objectname)"],
-            &dir_clone,
-        )
-    });
+    // scoped threads: 无需 clone dir，自动借用，减少线程创建开销
+    let (local_branches, remote_branches, tag_list, branch_name, head_hash_res) =
+        std::thread::scope(|s| {
+            let h1 = s.spawn(|| {
+                run_git_utf8(
+                    &["-c", "core.quotepath=false", "branch", "--list", "--format=%(refname:short) %(objectname)"],
+                    &dir,
+                )
+            });
+            let h2 = s.spawn(|| {
+                run_git_utf8(
+                    &["-c", "core.quotepath=false", "branch", "-r", "--list", "--format=%(refname:short) %(objectname)"],
+                    &dir,
+                )
+            });
+            // 批量获取 tag 名称和 hash，避免 N+1 个 git 调用
+            let h3 = s.spawn(|| {
+                run_git_utf8(
+                    &["-c", "core.quotepath=false", "tag", "--list", "--format=%(refname:short)%00%(objectname)"],
+                    &dir,
+                )
+            });
+            let h4 = s.spawn(|| {
+                run_git_utf8(&["rev-parse", "--abbrev-ref", "HEAD"], &dir)
+            });
+            let h5 = s.spawn(|| {
+                run_git_utf8(&["rev-parse", "HEAD"], &dir)
+            });
 
-    let dir_clone2 = dir.clone();
-    let handle_remotes = std::thread::spawn(move || {
-        run_git_utf8(
-            &["branch", "-r", "--list", "--format=%(refname:short) %(objectname)"],
-            &dir_clone2,
-        )
-    });
-
-    let dir_clone3 = dir.clone();
-    let handle_tags = std::thread::spawn(move || {
-        run_git_utf8(&["tag", "--list"], &dir_clone3)
-    });
-
-    let dir_clone4 = dir.clone();
-    let handle_branch = std::thread::spawn(move || {
-        run_git_utf8(&["rev-parse", "--abbrev-ref", "HEAD"], &dir_clone4)
-    });
-
-    let dir_clone5 = dir.clone();
-    let handle_head_hash = std::thread::spawn(move || {
-        run_git_utf8(&["rev-parse", "HEAD"], &dir_clone5)
-    });
-
-    // 收集结果
-    let local_branches = handle_locals.join().map_err(|_| "分支线程崩溃".to_string())?;
-    let remote_branches = handle_remotes.join().map_err(|_| "远程分支线程崩溃".to_string())?;
-    let tag_list = handle_tags.join().map_err(|_| "标签线程崩溃".to_string())?;
-    let branch_name = handle_branch.join().map_err(|_| "分支名线程崩溃".to_string())?;
-    let head_hash_res = handle_head_hash.join().map_err(|_| "HEAD 线程崩溃".to_string())?;
+            (
+                // panic 时返回 Err，与原有行为一致
+                h1.join().unwrap_or(Err("分支线程崩溃".to_string())),
+                h2.join().unwrap_or(Err("远程分支线程崩溃".to_string())),
+                h3.join().unwrap_or(Err("标签线程崩溃".to_string())),
+                h4.join().unwrap_or(Err("分支名线程崩溃".to_string())),
+                h5.join().unwrap_or(Err("HEAD 线程崩溃".to_string())),
+            )
+        });
 
     let mut heads = Vec::new();
     if let Ok(stdout) = local_branches {
         for line in stdout.lines() {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 2 {
-                heads.push(RefInfo { name: parts[0].to_string(), hash: parts[1].to_string() });
+                heads.push(RefInfo {
+                    name: parts[0].to_string(),
+                    hash: parts[1].to_string(),
+                });
             }
         }
     }
@@ -380,22 +423,44 @@ pub fn git_parse_refs(dir: String) -> Result<RefsInfo, String> {
         for line in stdout.lines() {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 2 {
-                remotes.push(RefInfo { name: parts[0].to_string(), hash: parts[1].to_string() });
+                remotes.push(RefInfo {
+                    name: parts[0].to_string(),
+                    hash: parts[1].to_string(),
+                });
             }
         }
     }
 
+    // 批量解析 tag hash: 格式 "refname\0hash" 每行，一次 git 调用获取所有 tag
     let mut tags = Vec::new();
     if let Ok(stdout) = tag_list {
-        for tag_name in stdout.lines() {
-            let tag = tag_name.trim();
-            if tag.is_empty() { continue; }
-            // 并行获取每个 tag hash（只获取第一个 tag 的 hash 做演示，实际可优化）
-            if let Ok(hash_out) = run_git_utf8(&["rev-list", "-n", "1", tag], &dir) {
-                if let Some(hash) = hash_out.lines().next() {
-                    let hash = hash.trim().to_string();
-                    if !hash.is_empty() {
-                        tags.push(RefInfo { name: tag.to_string(), hash });
+        for line in stdout.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            // 按 '\x00' 分割，格式为 "tagname\0hash"
+            let mut parts = line.splitn(2, '\0');
+            if let (Some(name), Some(hash)) = (parts.next(), parts.next()) {
+                let name = name.trim();
+                let hash = hash.trim();
+                if !name.is_empty() && !hash.is_empty() {
+                    tags.push(RefInfo {
+                        name: name.to_string(),
+                        hash: hash.to_string(),
+                    });
+                }
+            } else if !line.is_empty() {
+                // fallback: 只有 tag 名，单独获取 hash
+                if let Ok(hash_out) = run_git_utf8(&["rev-list", "-n", "1", line], &dir) {
+                    if let Some(hash) = hash_out.lines().next() {
+                        let hash = hash.trim().to_string();
+                        if !hash.is_empty() {
+                            tags.push(RefInfo {
+                                name: line.to_string(),
+                                hash,
+                            });
+                        }
                     }
                 }
             }
@@ -410,21 +475,30 @@ pub fn git_parse_refs(dir: String) -> Result<RefsInfo, String> {
         .trim()
         .to_string();
 
-    let head_hash = head_hash_res.ok().and_then(|s| {
-        s.lines().next().map(|l| l.trim().to_string())
-    });
+    let head_hash = head_hash_res
+        .ok()
+        .and_then(|s| s.lines().next().map(|l| l.trim().to_string()));
 
-    let refs = RefsInfo { heads, remotes, tags, head_hash, current_branch };
+    let refs = RefsInfo {
+        heads,
+        remotes,
+        tags,
+        head_hash,
+        current_branch,
+    };
 
-    // 写入缓存
+    // 写入缓存（避免 clone 整个 refs）
     let mut cache = lock_cache();
-    cache.refs = Some((std::time::Instant::now(), RefsInfo {
-        heads: refs.heads.clone(),
-        remotes: refs.remotes.clone(),
-        tags: refs.tags.clone(),
-        head_hash: refs.head_hash.clone(),
-        current_branch: refs.current_branch.clone(),
-    }));
+    cache.refs = Some((
+        Instant::now(),
+        RefsInfo {
+            heads: refs.heads.clone(),
+            remotes: refs.remotes.clone(),
+            tags: refs.tags.clone(),
+            head_hash: refs.head_hash.clone(),
+            current_branch: refs.current_branch.clone(),
+        },
+    ));
 
     Ok(refs)
 }

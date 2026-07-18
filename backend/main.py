@@ -227,11 +227,15 @@ async def serve_scan_files(full_path: str):
         if full_path_with_slash.startswith(prefix):
             return JSONResponse(content={"error": "File not found"}, status_code=404)
 
-    # 解析真实路径，防止目录穿越
-    resolved_path = os.path.realpath(os.path.join(DYNAMIC_SCAN_PATH, full_path))
-    scan_root = os.path.realpath(DYNAMIC_SCAN_PATH)
+    # 解析真实路径并规范化（Windows 兼容：大小写不敏感、分隔符统一）
+    resolved_path = os.path.normpath(os.path.realpath(
+        os.path.join(DYNAMIC_SCAN_PATH, full_path)))
+    scan_root = os.path.normpath(os.path.realpath(DYNAMIC_SCAN_PATH))
+    scan_root_prefix = scan_root + os.sep
 
-    if not resolved_path.startswith(scan_root + os.sep) and resolved_path != scan_root:
+    # 使用 normcase 处理 Windows 大小写不敏感的情况
+    if not os.path.normcase(resolved_path).startswith(os.path.normcase(scan_root_prefix)) \
+            and os.path.normcase(resolved_path) != os.path.normcase(scan_root):
         return JSONResponse(content={"error": "Access denied"}, status_code=403)
 
     if not os.path.isfile(resolved_path):

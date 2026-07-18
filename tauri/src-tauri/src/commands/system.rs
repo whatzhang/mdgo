@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::net::UdpSocket;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -20,9 +20,6 @@ const MONITOR_SLEEP_SEGMENTS: u32 = MONITOR_INTERVAL.as_millis() as u32 / MONITO
 const CPU_WARMUP_DELAY: Duration = Duration::from_millis(200);
 /// 网络速率计算的最小有效间隔（秒），低于此值跳过计算以防止时钟抖动
 const NET_MIN_INTERVAL_SECS: f64 = 0.001;
-/// 磁盘列表刷新间隔（采集周期数）。每 N 次采集才完整刷新一次磁盘列表及用量。
-/// 磁盘用量变化缓慢，频繁 I/O 无意义。
-const DISK_REFRESH_CYCLES: u32 = 5; // 每 ~15 秒刷新一次
 
 // ============== 监控线程状态管理 ==============
 
@@ -79,10 +76,22 @@ pub struct DiskMetrics {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct DiskIOMetrics {
+    pub read_rate: f64,
+    pub write_rate: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct ServiceMetrics {
     pub rss: u64,
     pub vms: u64,
     pub uptime: u64,
+    /// 当前应用所有进程（Rust + WebView）CPU 总使用率（0~100*核数）
+    pub app_cpu_percent: f32,
+    /// 当前应用所有进程（Rust + WebView）内存占用率（0~100%）
+    pub app_mem_percent: f32,
+    /// 当前应用所有进程（Rust + WebView）内存占用绝对值（字节）
+    pub app_mem_bytes: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -92,6 +101,7 @@ pub struct MetricsData {
     pub memory: MemoryMetrics,
     pub network: NetworkMetrics,
     pub disk: DiskMetrics,
+    pub disk_io: DiskIOMetrics,
     pub uptime: u64,
     pub service: ServiceMetrics,
 }
@@ -191,24 +201,70 @@ fn compute_network_rates(
 
 // ============== 核心采集函数 ==============
 
-/// 采集一次系统指标（增量刷新，极低开销）
+/// 全量扫描进程树，找出 root_pid 的所有后代 PID。
+/// 同时刷新所有进程的 CPU 数据，返回完整的应用 PID 列表（含 root）。
+fn find_app_pids(sys: &mut System, root_pid: sysinfo::Pid) -> Vec<sysinfo::Pid> {
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    let mut children_of: HashMap<sysinfo::Pid, Vec<sysinfo::Pid>> = HashMap::new();
+    for (pid, process) in sys.processes() {
+        if let Some(parent) = process.parent() {
+            children_of.entry(parent).or_default().push(*pid);
+        }
+    }
+
+    let mut result = vec![root_pid];
+    let mut stack: Vec<sysinfo::Pid> = children_of.remove(&root_pid).unwrap_or_default();
+    while let Some(pid) = stack.pop() {
+        result.push(pid);
+        if let Some(grandchildren) = children_of.remove(&pid) {
+            stack.extend(grandchildren);
+        }
+    }
+    result
+}
+
+/// 从已知 PID 列表汇总 mdgo 应用所有进程的 CPU 和内存。
+/// 不依赖 `sys.processes()` 全量遍历，效率 O(k) 其中 k = 应用进程数（通常 ≤5）。
+fn sum_app_resources_by_pids(
+    sys: &System,
+    pids: &[sysinfo::Pid],
+    mem_total: u64,
+) -> (f32, u64, f32) {
+    let mut total_cpu = 0.0f32;
+    let mut total_rss = 0u64;
+
+    for pid in pids {
+        if let Some(process) = sys.process(*pid) {
+            total_cpu += process.cpu_usage();
+            total_rss += process.memory();
+        }
+    }
+
+    let mem_pct = if mem_total > 0 {
+        ((total_rss as f32 / mem_total as f32) * 100.0 * 10.0).round() / 10.0
+    } else {
+        0.0
+    };
+
+    ((total_cpu * 10.0).round() / 10.0, total_rss, mem_pct)
+}
+
+/// 采集一次系统指标。
+///
+/// # 说明
+/// - 进程数据由调用方提前刷新（`sys.refresh_processes`），此函数仅做读取。
+/// - `app_pids` 为已知的应用进程 PID 列表（含主进程），由 `find_app_pids` 或缓存提供。
+/// - `r#type` 和 `host_ip` 由调用方缓存传入，避免每周期重复分配。
 fn collect_metrics(
     sys: &mut System,
     disks: &Disks,
-    process_pid: Option<sysinfo::Pid>,
-    cached_boot_ts: u64,
+    app_pids: &[sysinfo::Pid],
     cached_host_ip: &str,
+    cached_type: &str,
+    seen_devices: &mut HashSet<String>,
 ) -> SystemMetricsPayload {
-    // CPU 使用率（sysinfo 0.39+ 使用简化 API，仅刷新使用率字段）
     sys.refresh_cpu_usage();
-    // 内存 + Swap 信息
     sys.refresh_memory();
-    // 磁盘数据由调用方按 TTL 刷新，此处仅读取
-    // 当前进程自身的内存/时间信息
-    if let Some(pid) = process_pid {
-        let pids = [pid];
-        sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&pids), false);
-    }
 
     let cpu_percent = sys.global_cpu_usage();
     let core_count = sys.cpus().len();
@@ -231,14 +287,14 @@ fn collect_metrics(
     };
 
     // 汇总所有磁盘用量（按物理设备去重，防止 APFS/LVM 虚报容量）
+    seen_devices.clear();
     let mut disk_total: u64 = 0;
     let mut disk_used: u64 = 0;
     let mut disk_free: u64 = 0;
-    let mut seen_devices = HashSet::new();
     for d in disks.list() {
         let base = extract_base_device_name(&d.name().to_string_lossy());
         if !seen_devices.insert(base) {
-            continue; // 同一物理设备只计入一次
+            continue;
         }
         let total = d.total_space();
         let avail = d.available_space();
@@ -247,19 +303,24 @@ fn collect_metrics(
         disk_used = disk_used.saturating_add(used);
         disk_free = disk_free.saturating_add(avail);
     }
-    // 避免除零
     let disk_total_safe = if disk_total == 0 { 1 } else { disk_total };
     let disk_percent = (disk_used as f32 / disk_total_safe as f32) * 100.0;
 
-    // 系统运行时长（使用缓存值，避免循环内重复系统调用）
+    // 系统运行时长：用 wall clock 与 boot time 差值。
+    // sys.boot_time() 由 sysinfo 内部缓存，调用开销极低。
     let uptime = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
-        .saturating_sub(cached_boot_ts);
+        .saturating_sub(sysinfo::System::boot_time());
 
-    // 当前进程（mdgo Tauri 进程）自身内存
-    let (service_rss, service_vms) = if let Some(pid) = process_pid {
+    // 应用资源：所有进程累计 CPU/内存（利用调用方已刷新的数据）
+    let (app_cpu_percent, app_mem_bytes, app_mem_percent) =
+        sum_app_resources_by_pids(sys, app_pids, mem_total);
+
+    // 主进程自身 RSS/VMS（兼容旧字段）
+    let root_pid = app_pids.first().copied();
+    let (service_rss, service_vms) = if let Some(pid) = root_pid {
         if let Some(process) = sys.process(pid) {
             (process.memory(), process.virtual_memory())
         } else {
@@ -270,7 +331,7 @@ fn collect_metrics(
     };
 
     SystemMetricsPayload {
-        r#type: "metrics".to_string(),
+        r#type: cached_type.to_string(),
         data: MetricsData {
             host_ip: cached_host_ip.to_string(),
             cpu: CpuMetrics {
@@ -296,11 +357,18 @@ fn collect_metrics(
                 free: disk_free,
                 percent: (disk_percent * 10.0).round() / 10.0,
             },
+            disk_io: DiskIOMetrics {
+                read_rate: 0.0,
+                write_rate: 0.0,
+            },
             uptime,
             service: ServiceMetrics {
                 rss: service_rss,
                 vms: service_vms,
-                uptime: 0, // 在循环中填充真实值
+                uptime: 0,
+                app_cpu_percent,
+                app_mem_percent,
+                app_mem_bytes,
             },
         },
     }
@@ -308,106 +376,181 @@ fn collect_metrics(
 
 // ============== Tauri 命令 ==============
 
-/// 启动后台系统监控线程（每 3 秒采集一次，通过 Tauri Event 推送到前端）
+/// 全量 PID 重扫间隔（采集周期数）。每 30 次（~90 秒）重新扫描一次进程树，
+/// 以捕获新生的 WebView2 子进程。
+const FULL_REFRESH_INTERVAL: u32 = 30;
+
+/// 网络接口列表重扫间隔（采集周期数）。每 6 次（~18 秒）重新检测网络接口变化。
+const NET_REFRESH_LIST_INTERVAL: u32 = 6;
+
+/// 启动后台系统监控线程（每 3 秒采集一次，通过 Tauri Event 推送到前端）。
+///
+/// # 性能
+/// - 进程刷新使用选择性 PID 刷新（仅刷新已知的应用进程，通常 ≤5 个），
+///   避免每 3 秒全量扫描 ~200-400 个系统进程。
+/// - 每 `FULL_REFRESH_INTERVAL`（~90 秒）做一次全量扫描以发现新生进程。
+/// - 固定字符串（`r#type`、`host_ip`）在线程启动时缓存，避免每周期堆分配。
 #[tauri::command]
 pub fn start_monitor(app: AppHandle, state: tauri::State<'_, SystemMonitorState>) {
-    if state.running.load(Ordering::SeqCst) {
-        return; // 已在运行
+    // 原子 compare-and-swap：避免 load-then-store 竞态条件
+    if state
+        .running
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return;
     }
-    state.running.store(true, Ordering::SeqCst);
 
     let running = state.running.clone();
     let app_handle: AppHandle = app.clone();
     let process_start = state.process_start;
 
-    // 缓存系统启动时间戳（启动后不会变），避免循环内重复系统调用
-    let cached_boot_ts = System::boot_time();
-    // 缓存本地 IP（启动后不会变）
+    // 缓存启动后不会变化的系统常量（boot_time 改用 sys.boot_time() 每周期读取，无需缓存）
     let cached_host_ip = get_local_ip();
+    let cached_type = "metrics".to_string();
 
-    thread::spawn(move || {
-        // catch_unwind 兜底：防止线程 panic 导致 running 永久锁死
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let mut sys = System::new();
-            let mut disks = Disks::new();
-            let mut networks = Networks::new_with_refreshed_list();
-            let pid = sysinfo::Pid::from_u32(std::process::id());
+    // 为线程命名以便调试 / crash dump
+    std::thread::Builder::new()
+        .name("system-monitor".into())
+        .spawn(move || {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let mut sys = System::new();
+                let mut disks = Disks::new();
+                let mut networks = Networks::new_with_refreshed_list();
+                let pid = sysinfo::Pid::from_u32(std::process::id());
 
-            // === 预热阶段 ===
-            // sysinfo 的 CPU 使用率需要两次采样才能算出差值，
-            // 先在循环外做一次刷新建立基线，避免第一个 tick 显示 0%
-            sys.refresh_cpu_usage();
-            thread::sleep(CPU_WARMUP_DELAY);
+                // === 预热阶段 ===
+                sys.refresh_cpu_usage();
+                thread::sleep(CPU_WARMUP_DELAY);
+                disks.refresh(false);
 
-            // 预热磁盘和进程信息
-            disks.refresh(false);
-            let pids = [pid];
-            sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&pids), false);
+                // 初始全量扫描，建立应用 PID 列表（主进程 + WebView 子进程）
+                let mut app_pids = find_app_pids(&mut sys, pid);
+                // 计数器从 1 开始，使首次循环跳过重扫
+                let mut full_refresh_counter = 1u32;
+                let mut net_refresh_counter = 1u32;
 
-            // 网络 IO 基线：记录累计收发字节数，后续循环算差值/时间间隔得到速率
-            let mut net_prev_total_sent: u64 =
-                networks.list().iter().map(|(_, n)| n.total_transmitted()).sum();
-            let mut net_prev_total_recv: u64 =
-                networks.list().iter().map(|(_, n)| n.total_received()).sum();
-            let mut net_prev_time = Instant::now();
+                // 磁盘去重缓存（复用避免每周期分配）
+                let mut seen_devices = HashSet::new();
 
-            // 磁盘 TTL 计数器：每 DISK_REFRESH_CYCLES 次才完整刷新一次磁盘
-            let mut disk_refresh_cycle = 0u32;
-
-            while running.load(Ordering::SeqCst) {
-                // 磁盘：按 TTL 刷新，避免每次循环做 I/O
-                if disk_refresh_cycle == 0 {
-                    disks.refresh(false);
-                }
-                disk_refresh_cycle = (disk_refresh_cycle + 1) % DISK_REFRESH_CYCLES;
-
-                let mut payload = collect_metrics(&mut sys, &disks, Some(pid), cached_boot_ts, &cached_host_ip);
-
-                // 网络 IO 速率：累计值差值 / 时间间隔
-                // 使用 refresh(true) 及时清理已移除的网络接口（VPN断开、USB网卡拔出等）
-                networks.refresh(true);
-                let net_total_sent: u64 =
+                // 网络 IO 基线
+                let mut net_prev_total_sent: u64 =
                     networks.list().iter().map(|(_, n)| n.total_transmitted()).sum();
-                let net_total_recv: u64 =
+                let mut net_prev_total_recv: u64 =
                     networks.list().iter().map(|(_, n)| n.total_received()).sum();
-                let net_elapsed = net_prev_time.elapsed().as_secs_f64();
+                let mut net_prev_time = Instant::now();
 
-                let (sent_rate, recv_rate) = compute_network_rates(
-                    net_total_sent, net_prev_total_sent,
-                    net_total_recv, net_prev_total_recv,
-                    net_elapsed,
-                );
-                payload.data.network.sent_rate = sent_rate;
-                payload.data.network.recv_rate = recv_rate;
+                // 磁盘 IO 基线
+                let mut disk_prev_read_bytes: u64 =
+                    disks.list().iter().map(|d| d.usage().read_bytes).sum();
+                let mut disk_prev_write_bytes: u64 =
+                    disks.list().iter().map(|d| d.usage().written_bytes).sum();
+                let mut disk_prev_time = Instant::now();
 
-                net_prev_total_sent = net_total_sent;
-                net_prev_total_recv = net_total_recv;
-                net_prev_time = Instant::now();
+                // 事件背压：上次发送失败时跳过本次，给前端处理时间
+                let mut last_emit_ok = true;
 
-                // 填充进程持续运行时长（秒）
-                payload.data.service.uptime = process_start.elapsed().as_secs();
+                while running.load(Ordering::SeqCst) {
+                    disks.refresh(false);
 
-                if let Err(e) = app_handle.emit("system-metrics", &payload) {
-                    eprintln!("[SystemMonitor] 发送事件失败: {e}");
-                }
-
-                // 分段休眠：支持更及时的退出响应
-                for _ in 0..MONITOR_SLEEP_SEGMENTS {
-                    if !running.load(Ordering::SeqCst) {
-                        break;
+                    // ---------- 进程刷新：选择性刷新 vs 全量扫描 ----------
+                    if full_refresh_counter == 0 {
+                        // 每 ~90 秒全量扫描一次，更新 PID 列表
+                        app_pids = find_app_pids(&mut sys, pid);
+                    } else {
+                        // 常规周期：仅刷新已知应用进程（通常 ≤5 个 PID）
+                        sys.refresh_processes(
+                            sysinfo::ProcessesToUpdate::Some(&app_pids),
+                            true,
+                        );
                     }
-                    thread::sleep(MONITOR_SLEEP_SEGMENT);
-                }
-            }
-        }));
+                    full_refresh_counter = (full_refresh_counter + 1) % FULL_REFRESH_INTERVAL;
 
-        if result.is_err() {
-            eprintln!(
-                "[SystemMonitor] 监控线程 panic 退出，已重置运行状态"
-            );
-            running.store(false, Ordering::SeqCst);
-        }
-    });
+                    let mut payload = collect_metrics(
+                        &mut sys,
+                        &disks,
+                        &app_pids,
+                        &cached_host_ip,
+                        &cached_type,
+                        &mut seen_devices,
+                    );
+
+                    // ---------- 网络 IO 速率 ----------
+                    // 大部分周期使用 refresh(false) 仅刷新计数器
+                    // 每 NET_REFRESH_LIST_INTERVAL 次 refresh(true) 检测接口变化
+                    if net_refresh_counter == 0 {
+                        networks.refresh(true);
+                    } else {
+                        networks.refresh(false);
+                    }
+                    net_refresh_counter = (net_refresh_counter + 1) % NET_REFRESH_LIST_INTERVAL;
+
+                    let net_total_sent: u64 =
+                        networks.list().iter().map(|(_, n)| n.total_transmitted()).sum();
+                    let net_total_recv: u64 =
+                        networks.list().iter().map(|(_, n)| n.total_received()).sum();
+                    let net_elapsed = net_prev_time.elapsed().as_secs_f64();
+
+                    let (sent_rate, recv_rate) = compute_network_rates(
+                        net_total_sent, net_prev_total_sent,
+                        net_total_recv, net_prev_total_recv,
+                        net_elapsed,
+                    );
+                    payload.data.network.sent_rate = sent_rate;
+                    payload.data.network.recv_rate = recv_rate;
+
+                    net_prev_total_sent = net_total_sent;
+                    net_prev_total_recv = net_total_recv;
+                    net_prev_time = Instant::now();
+
+                    // ---------- 磁盘 IO 速率 ----------
+                    let disk_read_bytes: u64 =
+                        disks.list().iter().map(|d| d.usage().read_bytes).sum();
+                    let disk_write_bytes: u64 =
+                        disks.list().iter().map(|d| d.usage().written_bytes).sum();
+                    let disk_elapsed = disk_prev_time.elapsed().as_secs_f64();
+                    if disk_elapsed > NET_MIN_INTERVAL_SECS {
+                        payload.data.disk_io.read_rate =
+                            (disk_read_bytes.saturating_sub(disk_prev_read_bytes)) as f64 / disk_elapsed;
+                        payload.data.disk_io.write_rate =
+                            (disk_write_bytes.saturating_sub(disk_prev_write_bytes)) as f64 / disk_elapsed;
+                    }
+                    disk_prev_read_bytes = disk_read_bytes;
+                    disk_prev_write_bytes = disk_write_bytes;
+                    disk_prev_time = Instant::now();
+
+                    // 进程持续运行时长（使用单调时钟，不受系统时钟跳变影响）
+                    payload.data.service.uptime = process_start.elapsed().as_secs();
+
+                    // ---------- 事件发射：背压保护 ----------
+                    // 上次发射失败时跳过本次，给前端处理时间
+                    if last_emit_ok {
+                        if app_handle.emit("system-metrics", &payload).is_err() {
+                            last_emit_ok = false;
+                        }
+                    } else {
+                        // 仅重试一次：如果再次失败保持 false，下次不再跳过
+                        if app_handle.emit("system-metrics", &payload).is_ok() {
+                            last_emit_ok = true;
+                        }
+                    }
+
+                    // 分段休眠
+                    for _ in 0..MONITOR_SLEEP_SEGMENTS {
+                        if !running.load(Ordering::SeqCst) {
+                            break;
+                        }
+                        thread::sleep(MONITOR_SLEEP_SEGMENT);
+                    }
+                }
+            }));
+
+            if result.is_err() {
+                // panic 时静默重置运行状态，不输出日志（生产环境无日志依赖）
+                running.store(false, Ordering::SeqCst);
+            }
+        })
+        .expect("system-monitor 线程创建失败");
 }
 
 /// 停止后台系统监控线程（幂等安全）

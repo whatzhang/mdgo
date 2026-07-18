@@ -3712,7 +3712,7 @@
             padding: 4px 10px;
             border-radius: 8px;
             font-size: 12px;
-            font-weight: 600;
+            font-weight: 500;
             color: var(--color-text);
             background: rgba(0, 0, 0, 0.04);
             border: 1px solid rgba(0, 0, 0, 0.06);
@@ -5439,13 +5439,45 @@
         .monitor-disk {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 0.375rem;
             margin-top: 2px;
+        }
+
+        .monitor-app {
+            display: flex;
+            align-items: center;
+            gap: 0.625rem;
+            margin-top: 3px;
+            flex-shrink: 0;
+        }
+
+        .app-stat {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            font-size: 0.6875rem;
+        }
+
+        .app-stat-label {
+            color: var(--t2);
+        }
+
+        .app-stat-value {
+            font-weight: 500;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .app-stat-value.cpu {
+            color: var(--color-note);
+        }
+
+        .app-stat-value.mem {
+            color: var(--yellow);
         }
 
         .disk-bar {
             flex: 1;
-            height: 6px;
+            height: 0.375rem;
             background: #e9ecef;
             border-radius: 3px;
             overflow: hidden;
@@ -5470,9 +5502,9 @@
         }
 
         .disk-percent {
-            font-size: 11px;
-            font-weight: 600;
-            min-width: 32px;
+            font-size: 0.6875rem;
+            font-weight: 500;
+            min-width: 2rem;
             text-align: right;
             font-variant-numeric: tabular-nums;
         }
@@ -12629,8 +12661,6 @@
                                         <span>
                                             <span class="monitor-uptime" id="pcIp">加载中...</span>
                                             <span class="monitor-uptime">｜</span>
-                                            <span class="monitor-uptime" id="serviceMem">加载中...</span>
-                                            <span class="monitor-uptime">｜</span>
                                             <span class="monitor-uptime" id="serviceUptime">服务Live:加载中...</span>
                                             <span class="monitor-uptime">｜</span>
                                             <span class="monitor-uptime" id="monitorUptime">电脑Live: 加载中...</span>
@@ -12653,7 +12683,7 @@
                                                     <line x1="20" y1="14" x2="23" y2="14" />
                                                     <line x1="1" y1="9" x2="4" y2="9" />
                                                     <line x1="1" y1="14" x2="4" y2="14" />
-                                                </svg>CPU</div>
+                                                </svg>系统CPU</div>
                                             <div id="cpuGauge" class="monitor-chart"></div>
                                             <div class="monitor-sub" id="cpuCores"></div>
                                         </div>
@@ -12669,17 +12699,17 @@
                                                         fill="currentColor" stroke="none" />
                                                     <rect x="15" y="13" width="3" height="5" rx="0.5"
                                                         fill="currentColor" stroke="none" />
-                                                </svg>内存</div>
+                                                </svg>系统内存</div>
                                             <div id="memGauge" class="monitor-chart"></div>
                                             <div class="monitor-sub" id="memDetail"></div>
                                         </div>
                                         <div class="monitor-item">
                                             <div class="monitor-label">
                                                 <div class="net-row">
-                                                    <span class="net-row-label">↓</span><span id="netRecv"
+                                                    <span class="net-row-label">↓&nbsp;</span><span id="netRecv"
                                                         class="net-row-value-download">0 B/s</span>
                                                     <span class="monitor-uptime">｜</span>
-                                                    <span class="net-row-label">↑</span><span id="netSent"
+                                                    <span class="net-row-label">↑&nbsp;</span><span id="netSent"
                                                         class="net-row-value-upload">0 B/s</span>
                                                 </div>
                                             </div>
@@ -12712,6 +12742,23 @@
                                                     <div class="disk-bar-fill" id="diskNoteBarFill"></div>
                                                 </div>
                                                 <span class="disk-percent" id="diskNotePercent">0%</span>
+                                            </div>
+                                        </div>
+                                        <div class="monitor-item">
+                                            <div class="monitor-label">
+                                                <div class="net-row">
+                                                    <span class="net-row-label">r&nbsp;</span><span id="diskRead" class="net-row-value-download">0 B/s</span>
+                                                    <span class="monitor-uptime">｜</span>
+                                                    <span class="net-row-label">w&nbsp;</span><span id="diskWrite" class="net-row-value-upload">0 B/s</span>
+                                                </div>
+                                            </div>
+                                            <div id="diskIOChart" class="monitor-chart"></div>
+                                            <div class="monitor-divider"></div>
+                                            <div class="monitor-label" style="margin-top:3px;"><svg viewBox="0 0 24 24" width="0.875rem" height="0.875rem" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3"/><path d="M15 1v3"/><path d="M9 20v3"/><path d="M15 20v3"/><path d="M1 9h3"/><path d="M20 9h3"/><path d="M1 15h3"/><path d="M20 15h3"/></svg>应用资源</div>
+                                            <div class="monitor-app">
+                                                <div class="app-stat"><span class="app-stat-label">CPU</span><span id="appCpuPercent" class="app-stat-value cpu">0%</span></div>
+                                                <span class="monitor-uptime">｜</span>
+                                                <div class="app-stat"><span class="app-stat-label">内存</span><span id="appMemPercent" class="app-stat-value mem">0%</span></div>
                                             </div>
                                         </div>
                                     </div>
@@ -25365,7 +25412,6 @@ kanban-plugin: basic
                 const copyBtn = document.createElement('button');
                 copyBtn.className = 'code-copy-btn';
                 copyBtn.textContent = '复制';
-                copyBtn.title = '复制代码';
                 copyBtn.addEventListener('click', async (e) => {
                     e.stopPropagation();
                     const code = pre.querySelector('code');
@@ -27758,11 +27804,11 @@ kanban-plugin: basic
             document.getElementById('todayEdit').innerText = todayEdit;
             document.getElementById('todayAdd').innerText = todayAdd;
             document.getElementById('deletedCount').innerText = deletedCount;
-            // 更新今日浏览时长（习惯分析）
-            const todayDuration = viewData.sumList
+            const todayDuration_ = viewData.sumList
                 .filter(r => r.lastViewTime >= todayMs)
                 .reduce((sum, r) => sum + (r.durationMs || 0), 0);
-            document.getElementById('todayDurationStat').innerText = _fmtDuration(todayDuration);
+            const todayMinutes_ = Math.floor(todayDuration_ / 60000);
+            document.getElementById('todayDurationStat').innerText = todayMinutes_ + ' 分钟';
             // 构建热力图数据 (从 stats 中直接取，无需二次遍历)
             const heatmapData = {
                 monthData: stats.heatmapMonthData,
@@ -27825,11 +27871,11 @@ kanban-plugin: basic
             document.getElementById('todayEdit').innerText = todayEdit;
             document.getElementById('todayAdd').innerText = todayAdd;
             document.getElementById('deletedCount').innerText = deletedCount;
-            // 更新今日浏览时长（习惯分析）
-            const todayDuration = viewData.sumList
+            const todayDuration_ = viewData.sumList
                 .filter(r => r.lastViewTime >= todayMs)
                 .reduce((sum, r) => sum + (r.durationMs || 0), 0);
-            document.getElementById('todayDurationStat').innerText = _fmtDuration(todayDuration);
+            const todayMinutes_ = Math.floor(todayDuration_ / 60000);
+            document.getElementById('todayDurationStat').innerText = todayMinutes_ + ' 分钟';
             // 构建热力图数据 (从 stats 中直接取，无需二次遍历)
             const heatmapData = {
                 monthData: stats.heatmapMonthData,
@@ -28496,7 +28542,10 @@ kanban-plugin: basic
                             label: { show: true, position: 'outside', formatter: '{b}\n{c}', fontSize: 10 },
                             emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
                             labelLine: { show: true, smooth: true },
-                            data: Object.entries(docExtMap).map(([n, v]) => ({ value: v, name: `${n} (${v})` }))
+                            data: Object.entries(docExtMap)
+                                .sort((a, b) => b[1] - a[1])
+                                .slice(0, 20)
+                                .map(([n, v]) => ({ value: v, name: `${n} (${v})` }))
                         }]
                     }
                 },
@@ -29260,41 +29309,46 @@ kanban-plugin: basic
         }
 
         function _fmtDuration(ms) {
-            if (!ms || ms < 60000) return '0 分钟';
-            const min = Math.floor(ms / 60000);
-            if (min < 60) return min + ' 分';
+            if (!ms || ms < 1000) return '0 秒';
+            const totalSec = Math.floor(ms / 1000);
+            if (totalSec < 60) return totalSec + ' 秒';
+            const min = Math.floor(totalSec / 60);
+            if (min < 60) return min + ' 分 ' + (totalSec % 60) + ' 秒';
             const h = Math.floor(min / 60);
-            return h + ' 时 ' + (min % 60) + ' 分';
+            return h + ' 时 ' + (min % 60) + ' 分 ';
         }
-
-        const habitTop10Chart = document.getElementById('habit-top10-chart');
-        const habitHeatmapChart = document.getElementById('habit-heatmap-chart');
-        const habitWeeklyChart = document.getElementById('habit-weekly-chart');
         async function renderHabitAnalysis() {
             const viewData = loadViewData();
             const records = viewData.sumList || [];
             const opRecords = viewData.viewList || [];
+
+            // 先 dispose 旧的图表实例，避免 ECharts 复用旧实例的 0x0 尺寸缓存
+            if (dashboardCharts['habitTop10']) dashboardCharts['habitTop10'].dispose();
+            if (dashboardCharts['habitHeatmap']) dashboardCharts['habitHeatmap'].dispose();
+            if (dashboardCharts['habitWeekly']) dashboardCharts['habitWeekly'].dispose();
 
             // 浏览时长 Top 10 条形图
             const sorted = [...records]
                 .filter(r => (r.durationMs || 0) > 0)
                 .sort((a, b) => (b.durationMs || 0) - (a.durationMs || 0))
                 .slice(0, 10);
-            const top10Chart = echarts.init(habitTop10Chart);
+            const top10Chart = echarts.init(document.getElementById('habit-top10-chart'));
+            dashboardCharts['habitTop10'] = top10Chart;
             top10Chart.setOption({
                 tooltip: {
                     trigger: 'axis',
+                    textStyle: { fontSize: 11 },
                     formatter: function (params) {
                         const p = params[0];
-                        const record = sorted[p.dataIndex];
+                        const record = sorted[sorted.length - 1 - p.dataIndex];
                         return record.name + '<br/>总时长: ' + _fmtDuration(record.durationMs) + '<br/>打开次数: ' + (record.count || 0) + ' 次';
                     }
                 },
-                grid: { left: '3%', right: '3%', bottom: '3%', top: '3%', containLabel: true },
+                grid: { left: '3%', right: '15%', bottom: '3%', top: '3%', containLabel: true },
                 xAxis: { type: 'value', name: '分钟', axisLabel: { fontSize: '0.6875rem' } },
                 yAxis: {
                     type: 'category',
-                    data: sorted.map(r => r.name.length > 20 ? r.name.slice(0, 20) + '…' : r.name).reverse(),
+                    data: sorted.map(r => r.name.length > 10 ? r.name.slice(0, 10) + '…' : r.name).reverse(),
                     axisLabel: { fontSize: '0.6875rem' }
                 },
                 series: [{
@@ -29308,7 +29362,12 @@ kanban-plugin: basic
                     label: {
                         show: true,
                         position: 'right',
-                        formatter: function (p) { return p.value + ' 分钟'; },
+                        formatter: function (p) {
+                            const idx = sorted.length - 1 - p.dataIndex;
+                            const record = sorted[idx];
+                            const sec = Math.round((record.durationMs || 0) / 1000);
+                            return sec < 60 ? sec + ' 秒' : p.value + ' 分钟';
+                        },
                         fontSize: 11
                     }
                 }]
@@ -29320,10 +29379,12 @@ kanban-plugin: basic
                 const h = new Date(r.viewTime).getHours();
                 if (!isNaN(h)) hourData[h] += 1;
             });
-            const heatmapChart = echarts.init(habitHeatmapChart);
+            const heatmapChart = echarts.init(document.getElementById('habit-heatmap-chart'));
+            dashboardCharts['habitHeatmap'] = heatmapChart;
             heatmapChart.setOption({
                 tooltip: {
                     trigger: 'axis',
+                    textStyle: { fontSize: 11 },
                     formatter: function (params) {
                         const p = params[0];
                         return `${p.name}: ${p.value} 次操作`;
@@ -29377,10 +29438,12 @@ kanban-plugin: basic
                 const dayLabel = (i === 0 ? '今天' : (i === 1 ? '昨天' : '周' + dayNames[d.getDay()]));
                 weekData.push({ label: dayLabel, value: Math.round(dayDuration / 60000 * 10) / 10, ts: dayStart });
             }
-            const weeklyChart = echarts.init(habitWeeklyChart);
+            const weeklyChart = echarts.init(document.getElementById('habit-weekly-chart'));
+            dashboardCharts['habitWeekly'] = weeklyChart;
             weeklyChart.setOption({
                 tooltip: {
                     trigger: 'axis',
+                     textStyle: { fontSize: 11 },
                     formatter: function (params) {
                         const p = params[0];
                         const d = weekData[p.dataIndex];
@@ -29413,11 +29476,15 @@ kanban-plugin: basic
                 }]
             });
 
-            // 图表窗口 resize 自适应
-            const habitCharts = [top10Chart, heatmapChart, weeklyChart];
-            const _habitResize = () => habitCharts.forEach(c => c.resize());
-            window.removeEventListener('resize', _habitResize);
-            window.addEventListener('resize', _habitResize);
+            // 注册统一 resize 处理（resizeDashboardCharts 通过 dashboardCharts 管理所有图表）
+            // 无需独立的 _habitResize，统一由 resizeDashboardCharts 处理
+
+            // 下一帧确保尺寸正确（此时浏览器已完成布局）
+            requestAnimationFrame(() => {
+                top10Chart.resize();
+                heatmapChart.resize();
+                weeklyChart.resize();
+            });
         }
 
         async function openFileFromPathAndType(filePath, type = '', timestamp = null) {
@@ -31279,18 +31346,20 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (fsZoomInBtn) fsZoomInBtn.addEventListener('click', fsZoomIn);
             if (fsZoomOutBtn) fsZoomOutBtn.addEventListener('click', fsZoomOut);
             if (fsZoomResetBtn) fsZoomResetBtn.addEventListener('click', fsZoomReset);
+            // 全屏模式下：SVG 区域鼠标滚轮放大缩小
+            const fsSvgWrap = document.getElementById('mermaid-fullscreen-svg-wrap');
+            if (fsSvgWrap) {
+                fsSvgWrap.addEventListener('wheel', (e) => {
+                    const overlay = document.getElementById('mermaid-fullscreen-overlay');
+                    if (!overlay || !overlay.classList.contains('active')) return;
+                    e.preventDefault();
+                    const delta = e.deltaY > 0 ? -5 : 5;
+                    fsSetZoom(fsZoomLevel + delta);
+                }, { passive: false });
+            }
             // 全屏关闭按钮事件（只绑定一次）
             const fsCloseBtn = document.getElementById('mermaid-fullscreen-close-btn');
             if (fsCloseBtn) fsCloseBtn.addEventListener('click', (e) => { e.stopPropagation(); fsCloseOverlay(); });
-            // 全屏遮罩关闭事件：点击遮罩背景或空白区域（svg-wrap）时关闭
-            const fullscreenOverlay = document.getElementById('mermaid-fullscreen-overlay');
-            if (fullscreenOverlay) {
-                fullscreenOverlay.addEventListener('click', (e) => {
-                    if (e.target === fullscreenOverlay || e.target === document.getElementById('mermaid-fullscreen-svg-wrap')) {
-                        fsCloseOverlay();
-                    }
-                });
-            }
             // .mmd 文件渲染模式下：鼠标滚轮放大缩小
             previewAreaMermaid.addEventListener('wheel', (e) => {
                 if (!isMermaidFileDisplay) return;
@@ -34019,6 +34088,85 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 ]
             };
 
+            const diskIOOption = {
+                animation: false,
+                tooltip: false,
+                grid: [{
+                    left: 5,
+                    right: 5,
+                    top: 5, height: '50%'
+                }, {
+                    left: 5,
+                    right: 5,
+                    bottom: 5, height: '50%'
+                }],
+                xAxis: [{
+                    type: 'time',
+                    gridIndex: 0,
+                    axisLine: { show: false },
+                    axisLabel: { show: false },
+                    axisTick: { show: false },
+                    splitLine: { show: false }
+                }, {
+                    type: 'time',
+                    gridIndex: 1,
+                    axisLine: { show: false },
+                    axisLabel: { show: false },
+                    axisTick: { show: false },
+                    splitLine: { show: false }
+                }],
+                yAxis: [
+                    {
+                        type: 'value',
+                        min: 0,
+                        interval: 10,
+                        gridIndex: 0,
+                        splitLine: { show: false },
+                        axisLabel: { show: false },
+                        axisTick: { show: false }
+                    },
+                    {
+                        type: 'value',
+                        min: 0,
+                        interval: 10,
+                        gridIndex: 1,
+                        splitLine: { show: false },
+                        axisLabel: { show: false },
+                        axisTick: { show: false }
+                    }
+                ],
+                series: [
+                    {
+                        name: '读取',
+                        type: 'line',
+                        smooth: true,
+                        symbol: 'none',
+                        large: true,
+                        yAxisIndex: 0,
+                        xAxisIndex: 0,
+                        data: _diskReadData,
+                        lineStyle: { color: '#2ea043', width: 1.5 },
+                        areaStyle: {
+                            color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(46,160,67,0.3)' }, { offset: 1, color: 'rgba(46,160,67,0.0)' }] }
+                        }
+                    },
+                    {
+                        name: '写入',
+                        type: 'line',
+                        smooth: true,
+                        symbol: 'none',
+                        large: true,
+                        yAxisIndex: 1,
+                        xAxisIndex: 1,
+                        data: _diskWriteData,
+                        lineStyle: { color: '#d97706', width: 1.5 },
+                        areaStyle: {
+                            color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(217,119,6,0.25)' }, { offset: 1, color: 'rgba(217,119,6,0.0)' }] }
+                        }
+                    }
+                ]
+            };
+
 
             const cpuChart = initChart('cpuGauge', 'cpuGauge');
             cpuChart.setOption(cpuOption);
@@ -34026,10 +34174,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             memChart.setOption(memOption);
             const netChart = initChart('netChart', 'netChart');
             netChart.setOption(netOption);
+            const diskIOChart = initChart('diskIOChart', 'diskIOChart');
+            diskIOChart.setOption(diskIOOption);
 
             cpuChart.resize();
             memChart.resize();
             netChart.resize();
+            diskIOChart.resize();
         }
 
         let _wsClient = null;
@@ -34065,6 +34216,18 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const netSent = document.getElementById('netSent');
             if (netRecv) netRecv.textContent = _wsFormatBytes(d.network.recv_rate) + '/s';
             if (netSent) netSent.textContent = _wsFormatBytes(d.network.sent_rate) + '/s';
+            const diskReadLabel = document.getElementById('diskRead');
+            const diskWriteLabel = document.getElementById('diskWrite');
+            if (diskReadLabel && d.disk_io) diskReadLabel.textContent = _wsFormatBytes(d.disk_io.read_rate) + '/s';
+            if (diskWriteLabel && d.disk_io) diskWriteLabel.textContent = _wsFormatBytes(d.disk_io.write_rate) + '/s';
+            // 应用资源（仅 Tauri 模式）
+            const appCpuEl = document.getElementById('appCpuPercent');
+            const appMemEl = document.getElementById('appMemPercent');
+            if (appCpuEl && d.service?.app_cpu_percent !== undefined) appCpuEl.textContent = d.service.app_cpu_percent + '%';
+            if (appMemEl && d.service?.app_mem_percent !== undefined) {
+                const memSize = _wsFormatBytes(d.service.app_mem_bytes);
+                appMemEl.textContent = memSize + ' (' + d.service.app_mem_percent + '%)';
+            }
             // 网络折线图实时更新
             const now = Date.now();
             _netDownloadData.push([now, d.network.recv_rate]);
@@ -34081,6 +34244,25 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         { data: _netUploadData }
                     ]
                 });
+            }
+            // 磁盘 IO 折线图实时更新
+            if (d.disk_io) {
+                const now = Date.now();
+                _diskReadData.push([now, d.disk_io.read_rate]);
+                _diskWriteData.push([now, d.disk_io.write_rate]);
+                if (_diskReadData.length > _NET_MAX_POINTS) {
+                    _diskReadData.shift();
+                    _diskWriteData.shift();
+                }
+                const diskIOChart = dashboardCharts['diskIOChart'];
+                if (diskIOChart) {
+                    diskIOChart.setOption({
+                        series: [
+                            { data: _diskReadData },
+                            { data: _diskWriteData }
+                        ]
+                    });
+                }
             }
             const diskPct = d.disk.percent;
             const diskBar = document.getElementById('diskBarFill');
@@ -34104,10 +34286,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
             const monitorUptime = document.getElementById('monitorUptime');
             const serviceUptime = document.getElementById('serviceUptime');
-            const serviceMem = document.getElementById('serviceMem');
             if (monitorUptime) monitorUptime.textContent = '电脑Live: ' + _wsFormatUptime(d.uptime);
             if (serviceUptime) serviceUptime.textContent = '服务Live: ' + _wsFormatUptime(d.service.uptime);
-            if (serviceMem) serviceMem.textContent = _wsFormatBytes(d.service.rss);
 
             const pcIp = document.getElementById('pcIp');
             if (pcIp && d.host_ip) pcIp.textContent = d.host_ip;
@@ -34209,6 +34389,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         let _dashboardMetricsActive = false;
         let _netDownloadData = [];
         let _netUploadData = [];
+        let _diskReadData = [];
+        let _diskWriteData = [];
         const _NET_MAX_POINTS = 60;
 
         function startTauriSystemMonitor() {
@@ -34258,6 +34440,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (netChart) {
                 netChart.dispose();
                 dashboardCharts['netChart'] = null;
+            }
+            const diskIOChart = dashboardCharts['diskIOChart'];
+            if (diskIOChart) {
+                diskIOChart.dispose();
+                dashboardCharts['diskIOChart'] = null;
             }
         }
 
