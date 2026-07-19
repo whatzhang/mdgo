@@ -225,6 +225,12 @@ fn find_app_pids(sys: &mut System, root_pid: sysinfo::Pid) -> Vec<sysinfo::Pid> 
 
 /// 从已知 PID 列表汇总 mdgo 应用所有进程的 CPU 和内存。
 /// 不依赖 `sys.processes()` 全量遍历，效率 O(k) 其中 k = 应用进程数（通常 ≤5）。
+///
+/// # CPU 归一化说明
+/// `sysinfo::Process::cpu_usage()` 返回的值是以**单核为基准**的百分比。
+/// 即一个使用 2% 总系统容量的进程（如 Windows 任务管理器显示），在 20 核机器上
+/// 此 API 会返回 ~40%。因此需要除以核心数，归一化为系统总负载百分比，
+/// 与任务管理器显示一致。
 fn sum_app_resources_by_pids(
     sys: &System,
     pids: &[sysinfo::Pid],
@@ -232,6 +238,7 @@ fn sum_app_resources_by_pids(
 ) -> (f32, u64, f32) {
     let mut total_cpu = 0.0f32;
     let mut total_rss = 0u64;
+    let cpu_count = sys.cpus().len() as f32;
 
     for pid in pids {
         if let Some(process) = sys.process(*pid) {
@@ -240,13 +247,21 @@ fn sum_app_resources_by_pids(
         }
     }
 
+    // sysinfo::Process::cpu_usage() 返回单核基准百分比
+    // 除以核心数得到系统总负载百分比（0~100%）
+    let normalized_cpu = if cpu_count > 0.0 {
+        total_cpu / cpu_count
+    } else {
+        total_cpu
+    };
+
     let mem_pct = if mem_total > 0 {
         ((total_rss as f32 / mem_total as f32) * 100.0 * 10.0).round() / 10.0
     } else {
         0.0
     };
 
-    ((total_cpu * 10.0).round() / 10.0, total_rss, mem_pct)
+    ((normalized_cpu * 10.0).round() / 10.0, total_rss, mem_pct)
 }
 
 /// 采集一次系统指标。

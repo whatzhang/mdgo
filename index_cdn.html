@@ -136,6 +136,7 @@
             --color-hover-subtle: #eef1f5;
             --shadow-ss: 0 1px 2px rgba(0, 0, 0, .06);
             --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.1);
+            --shadow-sd: 0 2px 6px rgba(0, 0, 0, 0.2);
             --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.3);
             --radius-sm: 4px;
             --radius-md: 6px;
@@ -3296,7 +3297,7 @@
             padding: 0.625rem;
             border-radius: 0.75rem;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-            margin-bottom: 0.9375rem;
+            margin-bottom: 0.75rem;
             overflow: visible;
         }
 
@@ -3304,29 +3305,18 @@
             display: flex;
             flex-direction: column;
             gap: 0.75rem;
-            padding-bottom: 1rem;
         }
-
-        .heatmap-section .chart-title {
-            width: 18.75rem;
-        }
-
-        .heatmap-section .heatmap-container {
-            display: flex;
-            gap: 0.5rem;
-            align-items: flex-start;
-            flex-wrap: wrap;
-        }
-
-        .heatmap-section .heatmap-left {
-            flex: 0 0 auto;
+        .heatmap-section-heatmap{
+            background: var(--color-bg);
+            padding: 0.625rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            margin-bottom: 0.75rem;
+            overflow: visible;
             display: flex;
             flex-direction: column;
-        }
-
-        .heatmap-section .heatmap-right {
-            flex: 1;
-            width: 12.5rem;
+            gap: 0.75rem;
+            position: relative;
         }
 
         .charts-grid {
@@ -3342,7 +3332,7 @@
         .chart-title {
             font-size: 1rem;
             font-weight: 600;
-            margin-bottom: 0.75rem;
+            margin-bottom: 0.625rem;
             color: var(--color-text);
             white-space: nowrap;
             overflow: hidden;
@@ -5319,20 +5309,58 @@
             background: var(--color-bg-secondary);
             color: #d97706;
             border-radius: 16px;
-            font-size: 11px;
+            font-size: 11px; 
             line-height: 1.4;
+        }
+        
+        .heatmap-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            justify-content: center;
+            box-sizing: border-box;
+        }
+
+        .heatmap-left {
+            flex: 0 0 auto;
+            margin-top: 35px;
+        }
+
+        .heatmap-right {
+            flex: 1 1 0;     
+            min-width: 300px;  
+        }
+
+        .chart-title-heatmap{
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 0.625rem;
+            color: var(--color-text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            width: 200px;
+            position: absolute;
+            top: 12px;
+            left: 12px;
+        }
+        
+        .file-sum-heatmap {
+            padding: 5px;
+            border-radius: 15px;
+            box-shadow: var(--shadow-sd);
+            background: var(--color-bg);
+            width: 950px;
+            height: 150px;
         }
 
         .ai-file-summary {
             display: block;
             padding: 10px;
             border-radius: 15px;
-            box-shadow: 2px 1px 2px rgba(0, 0, 0, 0.03),
-                2px 4px 12px rgba(0, 0, 0, 0.08),
-                2px 8px 24px rgba(0, 0, 0, 0.06);
+            box-shadow: var(--shadow-sd);
             height: 175px;
             background: var(--color-bg);
-            margin: 3px;
             width: calc(100% - 20px);
             overflow: hidden;
         }
@@ -5531,18 +5559,6 @@
 
         .disk-bar-fill.critical {
             background: linear-gradient(90deg, #dc2626, #b91c1c) !important;
-        }
-
-        .file-sum-heatmap {
-            padding: 5px;
-            border-radius: 15px;
-            box-shadow: -2px 1px 2px rgba(0, 0, 0, 0.03),
-                -2px 4px 12px rgba(0, 0, 0, 0.08),
-                -2px 8px 24px rgba(0, 0, 0, 0.06);
-            background: var(--color-bg);
-            margin: 3px 3px 0 0;
-            width: 950px;
-            height: 150px;
         }
 
         .tippy-box[data-theme~='custom'] {
@@ -8221,8 +8237,8 @@
         .graph-mode-toggle {
             display: flex;
             position: absolute;
-            top: 14px;
-            right: 100px;
+            top: 13px;
+            right: 90px;
             z-index: 10000;
             display: flex;
             align-items: center;
@@ -12543,17 +12559,17 @@
                     <div id="tools-buttons-container" class="tools-buttons-container">
                     </div>
                 </div>
-                <div class="heatmap-section">
-                    <div class="heatmap-container">
+                <div class="heatmap-section-heatmap">
+                        <div class="chart-title-heatmap"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                                        stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                                        stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
+                                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                                        <line x1="16" y1="2" x2="16" y2="6" />
+                                        <line x1="8" y1="2" x2="8" y2="6" />
+                                        <line x1="3" y1="10" x2="21" y2="10" />
+                                    </svg>每日新增文件热力图</div>
+                        <div class="heatmap-container">
                         <div class="heatmap-left">
-                            <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
-                                    stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-                                    stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
-                                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                                    <line x1="16" y1="2" x2="16" y2="6" />
-                                    <line x1="8" y1="2" x2="8" y2="6" />
-                                    <line x1="3" y1="10" x2="21" y2="10" />
-                                </svg>每日新增文件热力图</div>
                             <div id="file-sum-heatmap" class="file-sum-heatmap"></div>
                         </div>
                         <div class="heatmap-right">
@@ -13878,8 +13894,6 @@
             <div id="cron-view-container" style="display: none; width: 100%; height: 100%;">
                 <div class="cron-app" id="cron-app"></div>
             </div>
-            <div id="word-view-container" style="display: none; width: 100%; height: 100%;">
-            </div>
             <!-- 视频播放器 -->
             <div id="video-view-container" class="video-view-container" style="display: none;">
                 <!-- Header Bar -->
@@ -14316,278 +14330,6 @@
         const openUrlInBrowser = (url) => isTauriVisit() && window.__tauriOpenUrl ? window.__tauriOpenUrl(url) : window.open(url, '_blank');
         const replaceMediaUrl = async (text, isAllFile) => photoLoadFromLocal(text, isAllFile);
 
-        // ========== 图片懒加载系统 ==========
-        // LRU 缓存（容量 200，用于浏览器模式存储 blob URL）
-        const _LAZY_IMG_CACHE_MAX = 200;
-        const _LAZY_IMG_CACHE = new Map();
-        const _LAZY_IMG_PENDING = new Map();  // path → Promise（并发去重）
-        // 浏览器模式并发限制（最多 4 个同时 FileReader）
-        const _LAZY_SEMAPHORE = { max: 4, current: 0, queue: [] };
-        function _lazyAcquire() {
-            if (_LAZY_SEMAPHORE.current < _LAZY_SEMAPHORE.max) {
-                _LAZY_SEMAPHORE.current++;
-                return Promise.resolve();
-            }
-            return new Promise(r => _LAZY_SEMAPHORE.queue.push(r));
-        }
-        function _lazyRelease() {
-            _LAZY_SEMAPHORE.current--;
-            const next = _LAZY_SEMAPHORE.queue.shift();
-            if (next) { _LAZY_SEMAPHORE.current++; next(); }
-        }
-        function _lazyCacheGet(key) {
-            if (!_LAZY_IMG_CACHE.has(key)) return undefined;
-            const v = _LAZY_IMG_CACHE.get(key);
-            _LAZY_IMG_CACHE.delete(key);
-            _LAZY_IMG_CACHE.set(key, v);
-            return v;
-        }
-        function _lazyCacheSet(key, value) {
-            if (_LAZY_IMG_CACHE.has(key)) _LAZY_IMG_CACHE.delete(key);
-            _LAZY_IMG_CACHE.set(key, value);
-            if (_LAZY_IMG_CACHE.size > _LAZY_IMG_CACHE_MAX) {
-                const oldest = _LAZY_IMG_CACHE.keys().next().value;
-                const oldVal = _LAZY_IMG_CACHE.get(oldest);
-                _LAZY_IMG_CACHE.delete(oldest);
-                if (oldVal && oldVal.startsWith('blob:')) URL.revokeObjectURL(oldVal);
-            }
-        }
-        // 生成 Tauri asset URL（纯同步，零 I/O）
-        function getAssetUrl(absPath) {
-            try {
-                if (isTauriVisit() && window.__TAURI__?.core?.convertFileSrc) {
-                    return window.__TAURI__.core.convertFileSrc(absPath);
-                }
-            } catch (_) { }
-            return null;
-        }
-        // 同步替换：<img src="path"> → <img src="assetUrl" loading="lazy" decoding="async">
-        // resolveSrc 接受(src)返回 asset URL 或 null
-        function _replaceImgWithDataSrc(text, isFullText, resolveSrc) {
-            if (!isFullText) {
-                if (isContinueImg(text)) return text;
-                const url = resolveSrc(text);
-                return url || text;
-            }
-            const matches = [];
-            let match;
-            IMG_SRC_REGEX.lastIndex = 0;
-            while ((match = IMG_SRC_REGEX.exec(text)) !== null) {
-                matches.push({ fullMatch: match[0], before: match[1], src: match[2], after: match[3] });
-            }
-            if (matches.length === 0) return text;
-            let result = '';
-            let lastIdx = 0;
-            for (const m of matches) {
-                result += text.slice(lastIdx, text.indexOf(m.fullMatch, lastIdx));
-                if (isContinueImg(m.src)) {
-                    result += m.fullMatch;
-                } else {
-                    const url = resolveSrc(m.src);
-                    if (url) {
-                        result += `<img${m.before}src="${url}" loading="lazy" decoding="async"${m.after}>`;
-                    } else {
-                        result += m.fullMatch;
-                    }
-                }
-                lastIdx = text.indexOf(m.fullMatch, lastIdx) + m.fullMatch.length;
-            }
-            result += text.slice(lastIdx);
-            return result;
-        }
-        // 异步替换：<img src="path"> → <img src="" data-lazy-src="absPath" data-lazy-token="...">
-        // resolveSrc 返回 { absPath, localSrc } 或 null
-        async function _replaceImgWithDataSrcAsync(text, isFullText, resolveSrc) {
-            if (!isFullText) {
-                if (isContinueImg(text)) return text;
-                const info = await resolveSrc(text);
-                return info ? info.absPath : text;
-            }
-            const matches = [];
-            let match;
-            IMG_SRC_REGEX.lastIndex = 0;
-            while ((match = IMG_SRC_REGEX.exec(text)) !== null) {
-                matches.push({ fullMatch: match[0], before: match[1], src: match[2], after: match[3] });
-            }
-            if (matches.length === 0) return text;
-            // 先收集所有 src（一次性异步）
-            const srcResolutions = await Promise.all(matches.map(m => resolveSrc(m.src)));
-            let result = '';
-            let lastIdx = 0;
-            for (let i = 0; i < matches.length; i++) {
-                const m = matches[i];
-                const info = srcResolutions[i];
-                result += text.slice(lastIdx, text.indexOf(m.fullMatch, lastIdx));
-                if (!info || isContinueImg(m.src)) {
-                    result += m.fullMatch;
-                } else {
-                    result += `<img${m.before}src="" data-lazy-src="${info.localSrc}" data-lazy-abs="${info.absPath}" data-lazy-gen="${_lazyImgGen}"${m.after === '>' ? '>' : m.after}`;
-                }
-                lastIdx = text.indexOf(m.fullMatch, lastIdx) + m.fullMatch.length;
-            }
-            result += text.slice(lastIdx);
-            return result;
-        }
-        // Tauri 模式：零 I/O，同步，使用 convertFileSrc
-        function buildLazyTauriImg(text, isFullText = false, photoDirPath = '') {
-            const normalizedRootPath = normalizePath(currentRootPath);
-            return _replaceImgWithDataSrc(text, isFullText, (src) => {
-                const localSrc = buildLocalImgSrc(src, normalizedRootPath, photoDirPath);
-                const absPath = joinPath(normalizedRootPath, localSrc);
-                return getAssetUrl(absPath);
-            });
-        }
-        // 浏览器模式：异步，使用 Blob URL + 并发控制
-        async function buildLazyHttpImg(text, isFullText = false, photoDirPath = '') {
-            const normalizedRootPath = normalizePath(currentRootPath);
-            const result = await _replaceImgWithDataSrcAsync(text, isFullText, async (src) => {
-                let localSrc = dealWithAbsolutePath(src, normalizedRootPath);
-                if (localSrc === src) {
-                    localSrc = buildLocalImgSrc(src, normalizedRootPath, photoDirPath);
-                }
-                const absPath = joinPath(normalizedRootPath, localSrc);
-                return { localSrc, absPath };
-            });
-            return result;
-        }
-        // 懒加载引擎（浏览器模式）
-        let _lazyImgGen = 0;
-        let _lazyObserver = null;
-        let _lazyStylesInjected = false;
-        function injectLazyImageStyles() {
-            if (_lazyStylesInjected) return;
-            _lazyStylesInjected = true;
-            const style = document.createElement('style');
-            style.id = 'lazy-img-styles';
-            style.textContent = `
-                img[loading="lazy"] {
-                    background: #f0f0f0;
-                    min-height: 30px;
-                    transition: opacity 0.3s ease-in;
-                }
-                img[data-lazy-src] {
-                    background: #f0f0f0;
-                    min-height: 30px;
-                }
-                img[data-lazy-loaded="1"] {
-                    opacity: 1;
-                    background: transparent;
-                }
-                img[data-lazy-error] {
-                    background: #ffe0e0;
-                    min-height: 30px;
-                    border: 1px dashed #e0c0c0;
-                    opacity: 0.6;
-                }
-            `;
-            document.head.appendChild(style);
-        }
-        // 接管 browser mode 的图片懒加载（IntersectionObserver + Blob URL）
-        function lazyImageObserve(container) {
-            if (isTauriVisit()) return; // Tauri 使用原生 loading="lazy"
-            if (!container || !container.querySelectorAll) return;
-            injectLazyImageStyles();
-            const imgs = container.querySelectorAll('img[data-lazy-src]');
-            if (!imgs.length) return;
-            if (!_lazyObserver) {
-                _lazyObserver = new IntersectionObserver((entries) => {
-                    for (const entry of entries) {
-                        if (!entry.isIntersecting) continue;
-                        const img = entry.target;
-                        _lazyObserver.unobserve(img);
-                        _loadLazyImage(img);
-                    }
-                }, { rootMargin: '200px 0px', threshold: 0.01 });
-            }
-            imgs.forEach(img => _lazyObserver.observe(img));
-        }
-        async function _loadLazyImage(img) {
-            if (!img) return;
-            const absPath = img.dataset.lazyAbs || img.dataset.lazySrc;
-            if (!absPath) return;
-            const gen = parseInt(img.dataset.lazyGen || '0', 10);
-            if (gen !== _lazyImgGen) return; // 已废弃
-            // cache 命中
-            const cached = _lazyCacheGet(absPath);
-            if (cached) {
-                img.src = cached;
-                img.dataset.lazyLoaded = '1';
-                img.removeAttribute('data-lazy-src');
-                img.removeAttribute('data-lazy-abs');
-                img.removeAttribute('data-lazy-gen');
-                return;
-            }
-            // 并发去重
-            if (!_LAZY_IMG_PENDING.has(absPath)) {
-                _LAZY_IMG_PENDING.set(absPath, _doLoadLazyImage(absPath));
-            }
-            const url = await _LAZY_IMG_PENDING.get(absPath);
-            _LAZY_IMG_PENDING.delete(absPath);
-            if (!url) {
-                img.dataset.lazyError = '1';
-                img.removeAttribute('data-lazy-src');
-                img.removeAttribute('data-lazy-abs');
-                img.removeAttribute('data-lazy-gen');
-                return;
-            }
-            if (gen !== _lazyImgGen) {
-                // 已废弃：释放 blob URL 防止内存泄漏
-                if (url.startsWith('blob:')) try { URL.revokeObjectURL(url); } catch (_) { }
-                return;
-            }
-            img.src = url;
-            img.dataset.lazyLoaded = '1';
-            img.removeAttribute('data-lazy-src');
-            img.removeAttribute('data-lazy-abs');
-            img.removeAttribute('data-lazy-gen');
-            _lazyCacheSet(absPath, url);
-        }
-        async function _doLoadLazyImage(absPath) {
-            await _lazyAcquire();
-            try {
-                // 浏览器模式下 getFileParentHandleByFilePath 期望相对路径，
-                // 但 absPath 为带盘符的绝对路径（如 D:/pic/AI/image.png），
-                // 需剥离 root 前缀后传入
-                let relativePath = absPath;
-                if (!isTauriVisit()) {
-                    const root = normalizePath(currentRootPath);
-                    if (relativePath.startsWith(root)) {
-                        relativePath = relativePath.substring(root.length).replace(/^[/\\]/, '');
-                    }
-                }
-                const fileHandle = await getFileHandleByPath(relativePath);
-                if (!fileHandle) return null;
-                const file = await fileHandle.getFile();
-                return URL.createObjectURL(file);
-            } catch (e) {
-                console.warn(`懒加载图片失败: ${absPath}`, e);
-                return null;
-            } finally {
-                _lazyRelease();
-            }
-        }
-        // 图片懒加载销毁（文件切换时调用）
-        function destroyLazyImages() {
-            _lazyImgGen++;
-            if (_lazyObserver) {
-                _lazyObserver.disconnect();
-                _lazyObserver = null;
-            }
-            // 清空信号量队列，避免切换后旧排队任务继续执行
-            _LAZY_SEMAPHORE.queue = [];
-        }
-        // 清理所有 lazy blob URLs
-        function cleanupLazyImageBlobUrls() {
-            for (const [path, url] of _LAZY_IMG_CACHE) {
-                if (url && url.startsWith('blob:')) {
-                    try { URL.revokeObjectURL(url); } catch (_) { }
-                }
-            }
-            _LAZY_IMG_CACHE.clear();
-            _LAZY_IMG_PENDING.clear();
-        }
-        // ========== 图片懒加载系统结束 ==========
-
         const isInDeletedDir = (p) => p === DELETED_DIR_NAME || p.startsWith(DELETED_DIR_NAME);
         // 路径归一化：反斜杠转正斜杠
         const normalizePath = (p) => (!p && p !== '') ? '' : String(p).replace(/\\/g, SLASH);
@@ -14732,6 +14474,9 @@
         let _treeLoadDuration = null;       // 文件树加载耗时(ms)
         let _dashboardLoadDuration = null;       // 仪表盘加载耗时(ms)
         let _fileScanDuration = null;       // 文件扫描耗时(ms)
+        let _dashStatsGeneration = 0;       // 扫描数据版本号，递增时 stats 缓存失效
+        let _dashCachedStats = null;        // renderDashStats 缓存结果
+        let _dashCachedGeneration = -1;     // 缓存的版本号
         let _currentDirTotalBytes = 1;      // 当前目录总大小(bytes)，用于 diskNote 计算
         // 左侧文件树
         let _markersMap = null;             // markers 缓存（Map，首次 readMarkers 时加载）
@@ -14853,7 +14598,6 @@
         const graphViewContainer = document.getElementById('graph-view-container');
         const cronViewContainer = document.getElementById('cron-view-container');
         const videoViewContainer = document.getElementById('video-view-container');
-        const wordViewContainer = document.getElementById('word-view-container');
         const gitRecordsContainer = document.getElementById('git-records-container');
         const jmSaveOpmlBtn = document.getElementById('jsmind-save-opml-btn');
         const opmlSaveMmBtn = document.getElementById('opml-save-mm-btn');
@@ -14869,7 +14613,7 @@
             graphqlContainer, openrestyEditorContainer, graphViewContainer,
             iframeCommonContainer, mermaidAppContainer, timelineAppContainer,
             graphqlPlaygroundContainer, regexTestContainer, calendarContainer,
-            cronViewContainer, videoViewContainer, wordViewContainer, gitRecordsContainer,
+            cronViewContainer, videoViewContainer, gitRecordsContainer,
             swaggerEditorContainer, dirSpaceContainer
         ];
 
@@ -15251,9 +14995,9 @@
                 </div>`;
         }
 
-        function createEditorContainer(headerLabel, innerId = 'editor-inner', containerStyle = '', headerStyle = '') {
+        function createEditorContainer(headerLabel, innerId = 'editor-inner', containerStyle = '') {
             return `<div class="editor-container"${containerStyle ? ` style="${containerStyle}"` : ''}>
-                <div class="editor-header"${headerStyle ? ` style="${headerStyle}"` : ''}>${headerLabel}</div>
+                <div class="editor-header">${headerLabel}</div>
                 <div id="${innerId}" style="width:100%;height:calc(100% - 60px);overflow: hidden;"></div>
                 ${createEditorFooter()}
             </div>`;
@@ -15307,7 +15051,7 @@
             editorInnerDiv.style.height = '100%';
             editorInnerDiv.style.display = 'flex';
             editorInnerDiv.innerHTML =
-                createEditorContainer('📝 编辑预览模式 - ' + currentFileName, 'editor-inner-live', 'height: 100%;', 'height: 30px;');
+                createEditorContainer('📝 编辑预览模式 - ' + currentFileName, 'editor-inner-live', 'height: 100%;');
             const previewInnerDiv = document.createElement('div');
             previewInnerDiv.id = 'content-live-preview ';
             previewInnerDiv.classList.add('content-live-preview');
@@ -16087,6 +15831,7 @@
             if (canvasControls) canvasControls.style.display = 'none';
             const canvasSaveMenu = document.getElementById('canvas-save-menu');
             if (canvasSaveMenu) canvasSaveMenu.classList.remove('canvas-open');
+            tocElement.innerHTML = '';
         }
 
         async function destroyEverything() {
@@ -16096,6 +15841,7 @@
             // 并发清理各模块，等待所有清理完成再返回，避免竞态
             await Promise.allSettled([
                 Promise.resolve(cleanupData()),
+                Promise.resolve(destroyContentEdit()),
                 Promise.resolve(disposeAllCharts()),
                 Promise.resolve(cleanupImageDragEvents()),
                 Promise.resolve(hideMarkdownSelectionToolbar()),
@@ -16109,7 +15855,7 @@
                 Promise.resolve(picLayoutDestroy()),
                 Promise.resolve(cleanupKanban()),
                 Promise.resolve(destroySwaggerEditor()),
-                Promise.resolve(destroyGraphQLPlayground()),
+                Promise.resolve(destroyGraphiQL()),
                 Promise.resolve(cleanupCommonIframe()),
                 Promise.resolve(destroyRegesTest()),
                 Promise.resolve(destroyJSONPage()),
@@ -16120,8 +15866,19 @@
                 Promise.resolve(disposeOpenRestyEditor()),
                 Promise.resolve(destroyPomodoro()),
                 Promise.resolve(destroyBookmarkPage()),
-                Promise.resolve(destroyDirSpace())
+                Promise.resolve(destroyDirSpace()),
+                Promise.resolve(cleanupDashboardData())
             ]);
+        }
+
+        function cleanupDashboardData() {
+            _dashCachedStats = null;
+            _dashCachedGeneration = -1;
+        }
+
+        async function destroyContentEdit(){
+            openrestyEditorContainer.innerHTML = '';
+            contentEdit.innerHTML = '';
         }
 
         async function copyToClipboard() {
@@ -16488,6 +16245,7 @@
                 document.removeEventListener('keydown', jsMindHandle.handleGlobalKeydown, true);
                 jsMindHandle = null;
             }
+            contentMain.innerHTML = '';
         }
 
         // 清理 Canvas 相关状态（关闭白板或切换文件时调用）
@@ -16551,7 +16309,6 @@
                 // 6. 隐藏底部工具栏
                 const bottomToolbar = document.getElementById('canvas-bottom-toolbar');
                 if (bottomToolbar) bottomToolbar.style.display = 'none';
-
             }
         }
 
@@ -16564,6 +16321,7 @@
                 await opmlHandle.destroy();
                 opmlHandle = null;
             }
+            contentMain.innerHTML = '';
         }
 
         async function checkFileExt(ext) {
@@ -16846,7 +16604,7 @@
                         emptyItem.className = 'mermaid-directory-item';
                         emptyItem.style.color = '#94a3b8';
                         emptyItem.style.cursor = 'default';
-                        emptyItem.style.paddingLeft = '16px';
+                        emptyItem.style.paddingLeft = '1rem';
                         emptyItem.innerHTML = '<span class="mermaid-directory-name">无匹配目录</span>';
                         container.appendChild(emptyItem);
                         return;
@@ -16854,7 +16612,7 @@
                     flatNodes.forEach(({ node, depth }) => {
                         const item = document.createElement('div');
                         item.className = 'mermaid-directory-item';
-                        item.style.paddingLeft = (depth * 16) + 'px';
+                        item.style.paddingLeft = (depth * 1) + 'rem';
                         item.innerHTML = `
                             <span class="mermaid-directory-name">${escapeHtml(depth === 1 ? '根目录' : node.name)}</span>
                             <span class="mermaid-dir-save-btn" title="保存到此目录">💾</span>`;
@@ -22689,13 +22447,12 @@
         let currentJSONData = null;
         async function destroyJSONPage() {
             if (currentJsonTree) {
-                const container = document.getElementById('json-container');
-                if (container) container.innerHTML = '';
                 currentJsonTree.destroy();
                 currentJsonTree = null;
             }
             currentJSONData = null;
             jsonPathResultMatches = [];
+            contentMain.innerHTML = '';
         }
 
         async function renderJSONFile(text) {
@@ -27424,6 +27181,7 @@ kanban-plugin: basic
             if (force) {
                 _scanData = data;
                 _scanFileList = [];
+                _dashStatsGeneration++; // 扫描数据更新，stats 缓存失效
             }
             _fileScanDuration = Math.round(performance.now() - _tStart);
             console.log(`[文件扫描] 总耗时: ${_fileScanDuration}ms`);
@@ -27530,8 +27288,8 @@ kanban-plugin: basic
             const fileList = new Array(totalFileCount);
             let totalFiles = 0;
             let totalSize = 0;
-            const BATCH = 100;
-            const MAX_WORKERS = 8;
+            const BATCH = 500;
+            const MAX_WORKERS = 16;
 
             // 优化：格式化结果缓存 — 相同时间戳的文件共享格式字符串
             const _timeStrCache = new Map();
@@ -27619,8 +27377,8 @@ kanban-plugin: basic
                         totalSize += r.size;
                     }
                     completedBatches++;
-                    // 每完成 4 批让出主线程一次
-                    if (completedBatches % 4 === 0) {
+                    // 每完成 20 批让出主线程一次（批量更大、频率更低，减少上下文切换开销）
+                    if (completedBatches % 20 === 0) {
                         await yieldToMain();
                     }
                 }
@@ -28319,17 +28077,17 @@ kanban-plugin: basic
                         const dayFiles = filesByDate[dateStr] || [];
                         const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
                         const weekDay = weekDays[new Date(dateStr).getDay()];
-                        let content = `<div style="font-weight:500; margin-bottom:0.25rem;font-size:0.8125rem;">📅 ${dateStr} (${weekDay})</div><div style="margin-bottom:0.25rem;font-size:0.8125rem;">📄 共 ${count} 个文件</div>`;
+                        let content = `<div style="font-weight:500; margin-bottom:0.125rem;font-size:0.8125rem;">📅 ${dateStr} (${weekDay})</div><div style="margin-bottom:0.25rem;font-size:0.8125rem;font-weight:500;">📄 共 ${count} 个文件</div>`;
                         const dayFileCount = dayFiles.length;
                         if (dayFileCount > 0) {
-                            content += `<div style="border-top:1px solid #eee; padding-top:0.25rem; margin-top:0.185rem;">`;
-                            dayFiles.sort((a, b) => b.ctime - a.ctime).slice(0, 20).forEach(f => {
+                            content += `<div style="border-top:1px solid #eee; padding-top:0.2rem; margin-top:0.2rem;font-weight:500;">`;
+                            dayFiles.sort((a, b) => b.ctime - a.ctime).slice(0, 10).forEach(f => {
                                 const t = new Date(f.ctime * 1000);
                                 const ts = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
-                                content += `<div style="font-size:0.75rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:12.5rem;" title="${f.name}">📄 ${f.name} <span style="color:#999;">${ts}</span></div>`;
+                                content += `<div style="font-size:0.75rem;white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:12.5rem;" title="${f.name}">📄 ${f.name} <span style="color:var(--t3);">${ts}</span></div>`;
                             });
-                            if (dayFileCount > 20) {
-                                content += `<div style="font-size:0.75rem; color:#999;">还有 ${dayFileCount - 20} 个文件</div>`;
+                            if (dayFileCount > 10) {
+                                content += `<div style="font-size:0.75rem;">♻️ 还有 ${dayFileCount - 10} 个文件</div>`;
                             }
                             content += `</div>`;
                         }
@@ -28895,6 +28653,7 @@ kanban-plugin: basic
         function destroyBookmarkPage() {
             _bookmarkDestroyed = true;
             _bookmarkImportPromise = null;
+            contentCommonContainer.innerHTML = '';
         }
 
         function renderBookmarkEmpty() {
@@ -28903,7 +28662,7 @@ kanban-plugin: basic
                 <div class="bookmark-empty-hint">从浏览器导出书签为 HTML 文件后，点击下方按钮导入</div>
                 <div style="margin-top: 0.875rem;">
                     <input type="file" id="bookmark-dashboard-import-btn" accept=".html,.htm" style="display:none" onchange="importBookmarkToMdgo(this)">
-                    <button class="btn btn-sm btn-primary" onclick="document.getElementById('bookmark-dashboard-import-btn').click()">📂 导入书签 HTML 文件</button>
+                    <button class="btn btn-sm btn-primary" style="height: 2rem;display: inline-flex;align-items: center;" onclick="document.getElementById('bookmark-dashboard-import-btn').click()">📂 导入书签 HTML 文件</button>
                  </div>
              </div>`;
         }
@@ -29332,8 +29091,8 @@ kanban-plugin: basic
                 .filter(r => (r.durationMs || 0) > 0)
                 .sort((a, b) => (b.durationMs || 0) - (a.durationMs || 0))
                 .slice(0, 10);
-            const top10Chart = echarts.init(document.getElementById('habit-top10-chart'));
-            dashboardCharts['habitTop10'] = top10Chart;
+
+            const top10Chart = initChart('habit-top10-chart', 'habit-top10-chart');
             top10Chart.setOption({
                 tooltip: {
                     trigger: 'axis',
@@ -29379,8 +29138,7 @@ kanban-plugin: basic
                 const h = new Date(r.viewTime).getHours();
                 if (!isNaN(h)) hourData[h] += 1;
             });
-            const heatmapChart = echarts.init(document.getElementById('habit-heatmap-chart'));
-            dashboardCharts['habitHeatmap'] = heatmapChart;
+            const heatmapChart = initChart('habit-heatmap-chart', 'habit-heatmap-chart');
             heatmapChart.setOption({
                 tooltip: {
                     trigger: 'axis',
@@ -29438,8 +29196,7 @@ kanban-plugin: basic
                 const dayLabel = (i === 0 ? '今天' : (i === 1 ? '昨天' : '周' + dayNames[d.getDay()]));
                 weekData.push({ label: dayLabel, value: Math.round(dayDuration / 60000 * 10) / 10, ts: dayStart });
             }
-            const weeklyChart = echarts.init(document.getElementById('habit-weekly-chart'));
-            dashboardCharts['habitWeekly'] = weeklyChart;
+            const weeklyChart = initChart('habit-weekly-chart', 'habit-weekly-chart');
             weeklyChart.setOption({
                 tooltip: {
                     trigger: 'axis',
@@ -29475,10 +29232,6 @@ kanban-plugin: basic
                     itemStyle: { color: '#ee7874' }
                 }]
             });
-
-            // 注册统一 resize 处理（resizeDashboardCharts 通过 dashboardCharts 管理所有图表）
-            // 无需独立的 _habitResize，统一由 resizeDashboardCharts 处理
-
             // 下一帧确保尺寸正确（此时浏览器已完成布局）
             requestAnimationFrame(() => {
                 top10Chart.resize();
@@ -30360,10 +30113,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
 
-        async function destroyGraphQLPlayground() {
+        async function destroyGraphiQL() {
             if (graphqlReactRoot) {
                 await graphqlReactRoot.unmount();
                 graphqlReactRoot = null;
+                graphqlContainer.innerHTML = '';
             }
         }
 
@@ -30429,6 +30183,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 } catch (e) {
                 }
                 iframe.src = '';
+                iframe.innerHTML = '';
             }
         }
 
@@ -30763,6 +30518,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             zoomLevelMermaid = 100;
             isMermaidFileDisplay = false;
         }
+
         async function renderMermaidFile(fileText = '') {
             isMermaidFileDisplay = false;
             await switchToView(mermaidAppContainer);
@@ -31572,6 +31328,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             _pendingAutoClickFile = null; // 待自动打开的文件路径
             _scanData = null; // 扫描数据缓存
             _scanFileList = []; // 扫描文件列表缓存
+            _dashStatsGeneration++; // 使 stats 缓存失效
+            _dashCachedStats = null; // 清除缓存的 stats
+            _dashCachedGeneration = -1;
             _folderNodeMap = null; // 目录节点索引缓存
             // 清理目录句柄数据库
             idbDeleteDatabase(DIRECTORY_STORE_NAME);
@@ -31619,7 +31378,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 await mountDir(setting);
             }
             try {
-                const data = await scanDashboardData(true);
+                // 先尝试从缓存加载（index_file_scan_data.json），避免每次启动全量扫描
+                showGlobalLoading('正在加载文件目录...');
+                let data = await scanDashboardData(false);
+                // 缓存无效（首次使用/目录变更）时回退到全量扫描
+                if (!data || !data.files || typeof data.files !== 'object' || Object.keys(data.files).length === 0 || !data.stats) {
+                    showGlobalLoading('正在扫描目录中...');
+                    data = await scanDashboardData(true);
+                }
                 await Promise.all([renderDirectory(handle, data), toggleDashboardView(true, data)]);
             } finally {
                 hideGlobalLoading(true);
@@ -32104,6 +31870,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 window.removeEventListener('keydown', handleBBSaveShortcut, true);
                 window.removeEventListener('keydown', handleBBSaveShortcutNoCreate, true);
             }
+            contentCommonContainer.innerHTML = '';
         }
         // ===== 全局文件保存队列系统（per-file 串行化，避免竞态） =====
         const _fileSaveQueues = new WeakMap();
@@ -32683,6 +32450,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             timelineCurrentFilter = 'all';
             timelineSearchKeyword = '';
             defaultSelectionApplied = false;
+            const heatmap = document.getElementById('timelineMonthsHeatmap');
+            if (heatmap)   heatmap.innerHTML = '';
+            const tooltip = document.getElementById('timelineHeatmapTooltip');
+            if (tooltip)   tooltip.innerHTML = '';
+            const visTimeline = document.getElementById('visTimeline');
+            if (visTimeline)  visTimeline.innerHTML = '';
         }
 
         function getTodayStr() {
@@ -34167,7 +33940,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 ]
             };
 
-
             const cpuChart = initChart('cpuGauge', 'cpuGauge');
             cpuChart.setOption(cpuOption);
             const memChart = initChart('memGauge', 'memGauge');
@@ -34181,6 +33953,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             memChart.resize();
             netChart.resize();
             diskIOChart.resize();
+
+            if (!chartsResizeBound) {
+                window.addEventListener('resize', resizeDashboardCharts);
+                chartsResizeBound = true;
+            }
         }
 
         let _wsClient = null;
@@ -35401,6 +35178,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 regexAppState.vizReady = false;
             }
             regexAppState = null;
+            var railroadContainer = document.getElementById('regex-railroad-container');
+            if(railroadContainer) railroadContainer.innerHTML = '正在初始化 Regulex 渲染引擎...';
+            var astContainer = document.getElementById('regex-ast-container');
+            if(astContainer) astContainer.innerHTML = '输入正则后自动生成 AST';
         }
 
         // 农历和法定节假日数据缓存
@@ -36976,7 +36757,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             _graphRebuilding = false;
             _graphTraversing = false;
             _savedNodePositions = null;
-            if (graphCanvas) { graphCtx = null; graphCanvas = null; }
+            if (graphCanvas) { graphCtx = null; graphCanvas = null; graphCanvas.innerHTML = ''; }
             graphWidth = 0;
             graphHeight = 0;
         }
@@ -40655,6 +40436,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (typeof window.rawDestroy === 'function') {
                 window.rawDestroy();
             }
+            contentMain.innerHTML = '';
         }
         async function openRawFile() {
             await switchToView(contentMain);
@@ -40851,9 +40633,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         var _wcPageIndex = 0;       // 当前页码（从 0 开始）
         var _wcPageSize = 400;      // 每页条数
         function _renderWordCloud(items, isNewPage) {
-            if (!wordViewContainer) return;
-            var width = wordViewContainer.clientWidth || 900;
-            var height = wordViewContainer.clientHeight || 600;
+            if (!contentCommonContainer) return;
+            var width = contentCommonContainer.clientWidth || 900;
+            var height = contentCommonContainer.clientHeight || 600;
 
             // 复用或创建 SVG 包装层，避免清除按钮
             var wrap = document.getElementById('wc-svg-wrap');
@@ -40861,7 +40643,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 wrap = document.createElement('div');
                 wrap.id = 'wc-svg-wrap';
                 wrap.style.cssText = 'width:100%;height:100%;';
-                wordViewContainer.appendChild(wrap);
+                contentCommonContainer.appendChild(wrap);
             }
             wrap.innerHTML = '';
 
@@ -40875,7 +40657,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     'svg.wc-svg text.wc-hover{transition:font-weight .15s;font-weight:bold!important;}' +
                     '@keyframes wc-breathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}' +
                     '@keyframes wc-blip{0%,85%,100%{opacity:.06!important}88%{opacity:.25!important}91%{opacity:.06!important}94%{opacity:.2!important}}';
-                wordViewContainer.appendChild(styleEl);
+                contentCommonContainer.appendChild(styleEl);
             }
 
             var svg = d3.select(wrap)
@@ -40962,13 +40744,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (_wordCloudLoading) return;
             _wordCloudLoading = true;
             try {
-                await switchToView(wordViewContainer, 'flex');
+                await switchToView(contentCommonContainer, 'flex');
                 aiFabContainer.style.display = 'none';
-                wordViewContainer.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;min-height:80vh;gap:16px;"><div class="raw-spinner"></div><span style="color:var(--color-text-secondary);font-size:14px">正在生成词云…</span></div>';
+                contentCommonContainer.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;min-height:80vh;gap:16px;"><div class="raw-spinner"></div><span style="color:var(--color-text-secondary);font-size:14px">正在生成词云…</span></div>';
                 // 全量获取并打乱顺序，使大小文件在各页均匀分布
                 var allFiles = _getWordCloudFiles(dirPath || '');
                 if (allFiles.length === 0) {
-                    wordViewContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;width:100%;min-height:80vh;color:var(--color-text-secondary);font-size:14px">未找到文档文件</div>';
+                    contentCommonContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;width:100%;min-height:80vh;color:var(--color-text-secondary);font-size:14px">未找到文档文件</div>';
                     return;
                 }
                 // Fisher-Yates 洗牌，打乱文件大小顺序
@@ -40981,7 +40763,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 // 取第一页
                 var pageItems = _wcAllItems.slice(0, _wcPageSize);
                 // 清除 loading（wrap 尚不存在，直接清空容器）
-                wordViewContainer.innerHTML = '';
+                contentCommonContainer.innerHTML = '';
                 _renderWordCloud(pageItems);
                 // 添加分页按钮组
                 var navBar = document.createElement('div');
@@ -41017,7 +40799,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 navBar.appendChild(prevBtn);
                 navBar.appendChild(infoEl);
                 navBar.appendChild(nextBtn);
-                wordViewContainer.appendChild(navBar);
+                contentCommonContainer.appendChild(navBar);
                 _updateWordCloudNavBtn();
                 // resize 时重新布局当前页
                 _wordCloudResizeHandler = function () {
@@ -41029,7 +40811,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             } catch (error) {
                 destroyWordCloud();
                 console.error('词云生成失败:', error);
-                wordViewContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;min-height:80vh;color:#d73a49;font-size:14px">\u274C 词云生成失败: ' + error.message + '</div>';
+                contentCommonContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;min-height:80vh;color:#d73a49;font-size:14px">\u274C 词云生成失败: ' + error.message + '</div>';
             } finally {
                 _wordCloudLoading = false;
             }
@@ -41046,6 +40828,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             _wcColorPalette = null;
             _wcAllItems = [];
             _wcPageIndex = 0;
+            contentCommonContainer.innerHTML = '';
         }
 
         async function getCustomFileList(relPath, callback) {
@@ -41206,6 +40989,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             kanbanMoreMenuInitialized = false;
             currentKanban = null;
             currentKanbanFileHandle = null;
+            contentMain.innerHTML = '';
         }
 
         async function picLayoutDestroy() {
@@ -41235,6 +41019,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 photoSwitchTimer = null;
             }
             photoLayoutDirPath = '';
+            contentMain.innerHTML = '';
         }
         // 切换布局 - 懒加载渲染
         async function photoSwitchLayout(name, triggerEl) {
@@ -44407,6 +44192,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 disposeEditor(openrestyEditor);
                 openrestyEditor = null;
             }
+            openrestyEditorContainer.innerHTML = '';
         }
 
         // ========== 番茄钟状态 ==========
@@ -45718,6 +45504,277 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (header) header.style.display = 'flex';
             }
         }
+        // ========== 图片懒加载系统 ==========
+        // LRU 缓存（容量 200，用于浏览器模式存储 blob URL）
+        const _LAZY_IMG_CACHE_MAX = 200;
+        const _LAZY_IMG_CACHE = new Map();
+        const _LAZY_IMG_PENDING = new Map();  // path → Promise（并发去重）
+        // 浏览器模式并发限制（最多 4 个同时 FileReader）
+        const _LAZY_SEMAPHORE = { max: 4, current: 0, queue: [] };
+        function _lazyAcquire() {
+            if (_LAZY_SEMAPHORE.current < _LAZY_SEMAPHORE.max) {
+                _LAZY_SEMAPHORE.current++;
+                return Promise.resolve();
+            }
+            return new Promise(r => _LAZY_SEMAPHORE.queue.push(r));
+        }
+        function _lazyRelease() {
+            _LAZY_SEMAPHORE.current--;
+            const next = _LAZY_SEMAPHORE.queue.shift();
+            if (next) { _LAZY_SEMAPHORE.current++; next(); }
+        }
+        function _lazyCacheGet(key) {
+            if (!_LAZY_IMG_CACHE.has(key)) return undefined;
+            const v = _LAZY_IMG_CACHE.get(key);
+            _LAZY_IMG_CACHE.delete(key);
+            _LAZY_IMG_CACHE.set(key, v);
+            return v;
+        }
+        function _lazyCacheSet(key, value) {
+            if (_LAZY_IMG_CACHE.has(key)) _LAZY_IMG_CACHE.delete(key);
+            _LAZY_IMG_CACHE.set(key, value);
+            if (_LAZY_IMG_CACHE.size > _LAZY_IMG_CACHE_MAX) {
+                const oldest = _LAZY_IMG_CACHE.keys().next().value;
+                const oldVal = _LAZY_IMG_CACHE.get(oldest);
+                _LAZY_IMG_CACHE.delete(oldest);
+                if (oldVal && oldVal.startsWith('blob:')) URL.revokeObjectURL(oldVal);
+            }
+        }
+        // 生成 Tauri asset URL（纯同步，零 I/O）
+        function getAssetUrl(absPath) {
+            try {
+                if (isTauriVisit() && window.__TAURI__?.core?.convertFileSrc) {
+                    return window.__TAURI__.core.convertFileSrc(absPath);
+                }
+            } catch (_) { }
+            return null;
+        }
+        // 同步替换：<img src="path"> → <img src="assetUrl" loading="lazy" decoding="async">
+        // resolveSrc 接受(src)返回 asset URL 或 null
+        function _replaceImgWithDataSrc(text, isFullText, resolveSrc) {
+            if (!isFullText) {
+                if (isContinueImg(text)) return text;
+                const url = resolveSrc(text);
+                return url || text;
+            }
+            const matches = [];
+            let match;
+            IMG_SRC_REGEX.lastIndex = 0;
+            while ((match = IMG_SRC_REGEX.exec(text)) !== null) {
+                matches.push({ fullMatch: match[0], before: match[1], src: match[2], after: match[3] });
+            }
+            if (matches.length === 0) return text;
+            let result = '';
+            let lastIdx = 0;
+            for (const m of matches) {
+                result += text.slice(lastIdx, text.indexOf(m.fullMatch, lastIdx));
+                if (isContinueImg(m.src)) {
+                    result += m.fullMatch;
+                } else {
+                    const url = resolveSrc(m.src);
+                    if (url) {
+                        result += `<img${m.before}src="${url}" loading="lazy" decoding="async"${m.after}>`;
+                    } else {
+                        result += m.fullMatch;
+                    }
+                }
+                lastIdx = text.indexOf(m.fullMatch, lastIdx) + m.fullMatch.length;
+            }
+            result += text.slice(lastIdx);
+            return result;
+        }
+        // 异步替换：<img src="path"> → <img src="" data-lazy-src="absPath" data-lazy-token="...">
+        // resolveSrc 返回 { absPath, localSrc } 或 null
+        async function _replaceImgWithDataSrcAsync(text, isFullText, resolveSrc) {
+            if (!isFullText) {
+                if (isContinueImg(text)) return text;
+                const info = await resolveSrc(text);
+                return info ? info.absPath : text;
+            }
+            const matches = [];
+            let match;
+            IMG_SRC_REGEX.lastIndex = 0;
+            while ((match = IMG_SRC_REGEX.exec(text)) !== null) {
+                matches.push({ fullMatch: match[0], before: match[1], src: match[2], after: match[3] });
+            }
+            if (matches.length === 0) return text;
+            // 先收集所有 src（一次性异步）
+            const srcResolutions = await Promise.all(matches.map(m => resolveSrc(m.src)));
+            let result = '';
+            let lastIdx = 0;
+            for (let i = 0; i < matches.length; i++) {
+                const m = matches[i];
+                const info = srcResolutions[i];
+                result += text.slice(lastIdx, text.indexOf(m.fullMatch, lastIdx));
+                if (!info || isContinueImg(m.src)) {
+                    result += m.fullMatch;
+                } else {
+                    result += `<img${m.before}src="" data-lazy-src="${info.localSrc}" data-lazy-abs="${info.absPath}" data-lazy-gen="${_lazyImgGen}"${m.after === '>' ? '>' : m.after}`;
+                }
+                lastIdx = text.indexOf(m.fullMatch, lastIdx) + m.fullMatch.length;
+            }
+            result += text.slice(lastIdx);
+            return result;
+        }
+        // Tauri 模式：零 I/O，同步，使用 convertFileSrc
+        function buildLazyTauriImg(text, isFullText = false, photoDirPath = '') {
+            const normalizedRootPath = normalizePath(currentRootPath);
+            return _replaceImgWithDataSrc(text, isFullText, (src) => {
+                const localSrc = buildLocalImgSrc(src, normalizedRootPath, photoDirPath);
+                const absPath = joinPath(normalizedRootPath, localSrc);
+                return getAssetUrl(absPath);
+            });
+        }
+        // 浏览器模式：异步，使用 Blob URL + 并发控制
+        async function buildLazyHttpImg(text, isFullText = false, photoDirPath = '') {
+            const normalizedRootPath = normalizePath(currentRootPath);
+            const result = await _replaceImgWithDataSrcAsync(text, isFullText, async (src) => {
+                let localSrc = dealWithAbsolutePath(src, normalizedRootPath);
+                if (localSrc === src) {
+                    localSrc = buildLocalImgSrc(src, normalizedRootPath, photoDirPath);
+                }
+                const absPath = joinPath(normalizedRootPath, localSrc);
+                return { localSrc, absPath };
+            });
+            return result;
+        }
+        // 懒加载引擎（浏览器模式）
+        let _lazyImgGen = 0;
+        let _lazyObserver = null;
+        let _lazyStylesInjected = false;
+        function injectLazyImageStyles() {
+            if (_lazyStylesInjected) return;
+            _lazyStylesInjected = true;
+            const style = document.createElement('style');
+            style.id = 'lazy-img-styles';
+            style.textContent = `
+                img[loading="lazy"] {
+                    background: #f0f0f0;
+                    min-height: 30px;
+                    transition: opacity 0.3s ease-in;
+                }
+                img[data-lazy-src] {
+                    background: #f0f0f0;
+                    min-height: 30px;
+                }
+                img[data-lazy-loaded="1"] {
+                    opacity: 1;
+                    background: transparent;
+                }
+                img[data-lazy-error] {
+                    background: #ffe0e0;
+                    min-height: 30px;
+                    border: 1px dashed #e0c0c0;
+                    opacity: 0.6;
+                }
+            `;
+            document.head.appendChild(style);
+        }
+        // 接管 browser mode 的图片懒加载（IntersectionObserver + Blob URL）
+        function lazyImageObserve(container) {
+            if (isTauriVisit()) return; // Tauri 使用原生 loading="lazy"
+            if (!container || !container.querySelectorAll) return;
+            injectLazyImageStyles();
+            const imgs = container.querySelectorAll('img[data-lazy-src]');
+            if (!imgs.length) return;
+            if (!_lazyObserver) {
+                _lazyObserver = new IntersectionObserver((entries) => {
+                    for (const entry of entries) {
+                        if (!entry.isIntersecting) continue;
+                        const img = entry.target;
+                        _lazyObserver.unobserve(img);
+                        _loadLazyImage(img);
+                    }
+                }, { rootMargin: '200px 0px', threshold: 0.01 });
+            }
+            imgs.forEach(img => _lazyObserver.observe(img));
+        }
+        async function _loadLazyImage(img) {
+            if (!img) return;
+            const absPath = img.dataset.lazyAbs || img.dataset.lazySrc;
+            if (!absPath) return;
+            const gen = parseInt(img.dataset.lazyGen || '0', 10);
+            if (gen !== _lazyImgGen) return; // 已废弃
+            // cache 命中
+            const cached = _lazyCacheGet(absPath);
+            if (cached) {
+                img.src = cached;
+                img.dataset.lazyLoaded = '1';
+                img.removeAttribute('data-lazy-src');
+                img.removeAttribute('data-lazy-abs');
+                img.removeAttribute('data-lazy-gen');
+                return;
+            }
+            // 并发去重
+            if (!_LAZY_IMG_PENDING.has(absPath)) {
+                _LAZY_IMG_PENDING.set(absPath, _doLoadLazyImage(absPath));
+            }
+            const url = await _LAZY_IMG_PENDING.get(absPath);
+            _LAZY_IMG_PENDING.delete(absPath);
+            if (!url) {
+                img.dataset.lazyError = '1';
+                img.removeAttribute('data-lazy-src');
+                img.removeAttribute('data-lazy-abs');
+                img.removeAttribute('data-lazy-gen');
+                return;
+            }
+            if (gen !== _lazyImgGen) {
+                // 已废弃：释放 blob URL 防止内存泄漏
+                if (url.startsWith('blob:')) try { URL.revokeObjectURL(url); } catch (_) { }
+                return;
+            }
+            img.src = url;
+            img.dataset.lazyLoaded = '1';
+            img.removeAttribute('data-lazy-src');
+            img.removeAttribute('data-lazy-abs');
+            img.removeAttribute('data-lazy-gen');
+            _lazyCacheSet(absPath, url);
+        }
+        async function _doLoadLazyImage(absPath) {
+            await _lazyAcquire();
+            try {
+                // 浏览器模式下 getFileParentHandleByFilePath 期望相对路径，
+                // 但 absPath 为带盘符的绝对路径（如 D:/pic/AI/image.png），
+                // 需剥离 root 前缀后传入
+                let relativePath = absPath;
+                if (!isTauriVisit()) {
+                    const root = normalizePath(currentRootPath);
+                    if (relativePath.startsWith(root)) {
+                        relativePath = relativePath.substring(root.length).replace(/^[/\\]/, '');
+                    }
+                }
+                const fileHandle = await getFileHandleByPath(relativePath);
+                if (!fileHandle) return null;
+                const file = await fileHandle.getFile();
+                return URL.createObjectURL(file);
+            } catch (e) {
+                console.warn(`懒加载图片失败: ${absPath}`, e);
+                return null;
+            } finally {
+                _lazyRelease();
+            }
+        }
+        // 图片懒加载销毁（文件切换时调用）
+        function destroyLazyImages() {
+            _lazyImgGen++;
+            if (_lazyObserver) {
+                _lazyObserver.disconnect();
+                _lazyObserver = null;
+            }
+            // 清空信号量队列，避免切换后旧排队任务继续执行
+            _LAZY_SEMAPHORE.queue = [];
+        }
+        // 清理所有 lazy blob URLs
+        function cleanupLazyImageBlobUrls() {
+            for (const [path, url] of _LAZY_IMG_CACHE) {
+                if (url && url.startsWith('blob:')) {
+                    try { URL.revokeObjectURL(url); } catch (_) { }
+                }
+            }
+            _LAZY_IMG_CACHE.clear();
+            _LAZY_IMG_PENDING.clear();
+        }
+        // ========== 图片懒加载系统结束 ==========
     </script>
 </body>
 
