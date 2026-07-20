@@ -5350,12 +5350,29 @@
             margin-bottom: 0.625rem;
             color: var(--color-text);
             white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            width: 200px;
             position: absolute;
             top: 12px;
             left: 12px;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .snake-toggle-btn {
+            background: none;
+            border: 1px solid #c0c4cc;
+            border-radius: 4px;
+            padding: 0 4px;
+            font-size: 0.75rem;
+            line-height: 1.5;
+            cursor: pointer;
+            color: #909399;
+            transition: background 0.15s, color 0.15s;
+        }
+        .snake-toggle-btn:hover {
+            background: #e8e8e8;
+            color: #606266;
         }
 
         .file-sum-heatmap {
@@ -12062,7 +12079,8 @@
         .demo-mode .mermaid-status-bar,
         .demo-mode .mind-jsmind-toolbar,
         .demo-mode .image-controls,
-        .demo-mode #canvas-bottom-toolbar {
+        .demo-mode #canvas-bottom-toolbar,
+        .demo-mode #canvas-top-left-controls {
             display: none !important;
         }
 
@@ -12713,7 +12731,8 @@
                             <line x1="16" y1="2" x2="16" y2="6" />
                             <line x1="8" y1="2" x2="8" y2="6" />
                             <line x1="3" y1="10" x2="21" y2="10" />
-                        </svg>每日新增文件热力图</div>
+                        </svg>每日新增文件热力图
+                        <button class="snake-toggle-btn" id="snakeToggleBtn" onclick="toggleSnake()" title="暂停贪吃蛇动画">⏸</button></div>
                     <div class="heatmap-container">
                         <div class="heatmap-left">
                             <div id="file-sum-heatmap" class="file-sum-heatmap"></div>
@@ -14642,6 +14661,8 @@
         let _dashCachedStats = null;        // renderDashStats 缓存结果
         let _dashCachedGeneration = -1;     // 缓存的版本号
         let _currentDirTotalBytes = 1;      // 当前目录总大小(bytes)，用于 diskNote 计算
+        let _snakePaused = false;           // 贪吃蛇动画暂停状态
+        let _snakeAutoPauseTimer = null;    // 贪吃蛇自动暂停定时器
         // 左侧文件树
         let _markersMap = null;             // markers 缓存（Map，首次 readMarkers 时加载）
         let _cachedLastFile = null;         // createFileItem 预缓存：最后一次打开的文件路径
@@ -15964,6 +15985,7 @@
             });
             dashboardCharts = {};
             TimerManager.clear('snakeGame');
+            if (_snakeAutoPauseTimer) { clearTimeout(_snakeAutoPauseTimer); _snakeAutoPauseTimer = null; }
             // 清理看板 Sortable 实例
             if (sortableInstances && sortableInstances.length > 0) {
                 sortableInstances.forEach(instance => {
@@ -28077,6 +28099,8 @@ kanban-plugin: basic
 
         // 板块3：渲染热力图
         async function renderDashHeatmap(heatmapData) {
+            // 每次渲染重置贪吃蛇暂停状态
+            _snakePaused = false;
             const { monthData, year, filesByDate } = heatmapData;
             const heatmapDataArr = [];
             const start = new Date(year, 0, 1);
@@ -28219,6 +28243,8 @@ kanban-plugin: basic
             }
 
             function tick() {
+                // 空闲或手动暂停时停止动画，减少CPU占用（蛇形动画仅装饰用途）
+                if (isIdle() || _snakePaused) return;
                 direction = aiDirection();
                 const headIdx = snakeIdxs[0];
                 const deltas = { UP: -7, DOWN: 7, LEFT: -1, RIGHT: 1 };
@@ -28356,6 +28382,42 @@ kanban-plugin: basic
             heatmapChart.setOption(option);
             renderSnake();
             TimerManager.set('snakeGame', tick, SPEED);
+
+            // dashboard 打开后默认运行 1 分钟，之后自动暂停
+            function _scheduleAutoPause() {
+                if (_snakeAutoPauseTimer) clearTimeout(_snakeAutoPauseTimer);
+                _snakeAutoPauseTimer = setTimeout(() => {
+                    if (!_snakePaused) {
+                        _snakePaused = true;
+                        TimerManager.clear('snakeGame');
+                        const btn = document.getElementById('snakeToggleBtn');
+                        if (btn) { btn.textContent = '▶'; btn.title = '继续贪吃蛇动画'; }
+                        heatmapChart.setOption({ series: [{}, { data: [] }, { data: [] }] });
+                    }
+                    _snakeAutoPauseTimer = null;
+                }, 30000);
+            }
+            _scheduleAutoPause();
+
+            // 暴露点击方法供 HTML onclick 调用（按钮已通过 onclick="toggleSnake()" 绑定）
+            window.toggleSnake = () => {
+                const btn = document.getElementById('snakeToggleBtn');
+                if (!btn) return;
+                _snakePaused = !_snakePaused;
+                if (_snakePaused) {
+                    TimerManager.clear('snakeGame');
+                    btn.textContent = '▶';
+                    btn.title = '继续贪吃蛇动画';
+                    heatmapChart.setOption({ series: [{}, { data: [] }, { data: [] }] });
+                    if (_snakeAutoPauseTimer) { clearTimeout(_snakeAutoPauseTimer); _snakeAutoPauseTimer = null; }
+                } else {
+                    TimerManager.set('snakeGame', tick, SPEED);
+                    btn.textContent = '⏸';
+                    btn.title = '暂停贪吃蛇动画';
+                    renderSnake();
+                    _scheduleAutoPause();
+                }
+            };
         }
 
         // 板块4：渲染操作记录列表（数据已在 renderDashStats 预计算）
@@ -36980,12 +37042,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             graphFps = 0;
             graphFrameCount = 0;
             graphLastFrameTime = performance.now();
-            clearTimeout(_graphFilterDebounceId);
+            clearTimeout(_graphFilterDebounceId); 
             _graphFilterDebounceId = null;
             _graphRebuilding = false;
             _graphTraversing = false;
             _savedNodePositions = null;
-            if (graphCanvas) { graphCtx = null; graphCanvas = null; graphCanvas.innerHTML = ''; }
+            if (graphCanvas) { graphCanvas.innerHTML = ''; graphCtx = null; graphCanvas = null; }
             graphWidth = 0;
             graphHeight = 0;
         }
@@ -44860,7 +44922,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         async function dirCanvasDisplay(dirPath) {
             if (!dirPath) return;
             await switchToView(contentMain);
-            currentCvsDirPath = dirPath;
+            currentCvsDirPath = dirPath; 
             const children = [];
             var allFiles = _getFilesByDirPath(dirPath || '');
             if (allFiles.length === 0) {
@@ -44879,6 +44941,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             const data = generateCanvasFolderJSON({ folderName: basename(dirPath), children });
             await openCanvasFile(data);
+            setControlsState({ commonToolControls: true, demoBtn: true }); 
         }
 
         function generateCanvasFolderJSON({
