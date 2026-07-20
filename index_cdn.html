@@ -218,6 +218,10 @@
             height: 100vh;
             font-family: var(--font-family);
             background: var(--color-bg-secondary);
+            overflow: hidden;
+            overscroll-behavior: none;
+            overscroll-behavior-y: contain;
+            touch-action: none;
         }
 
         *::-webkit-scrollbar {
@@ -3218,17 +3222,8 @@
             width: 100%;
             box-sizing: border-box;
             margin-bottom: 0.9375rem;
-        }
-
-        @media (max-width: 1300px) {
-            .stats-grid {
-                display: grid;
-                grid-template-columns: 1fr 1fr 1fr 1fr;
-                gap: 0.625rem;
-                width: 100%;
-                box-sizing: border-box;
-                margin-bottom: 0.9375rem;
-            }
+            flex-wrap: nowrap;
+            flex-shrink: 1;
         }
 
         .stat-card {
@@ -3240,7 +3235,6 @@
             display: flex;
             align-items: center;
             gap: 0.75rem;
-            min-width: 7.5rem;
         }
 
         .stat-icon {
@@ -3250,7 +3244,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.25rem;
+            font-size: 1rem;
             flex-shrink: 0;
         }
 
@@ -3295,13 +3289,14 @@
         }
 
         .stat-value {
-            font-size: 1.3rem;
+            font-size: 1.125rem;
             font-weight: 700;
         }
 
         .stat-label {
             color: var(--t2);
             font-size: 0.75rem;
+            margin-top: 0.125rem;
         }
 
         .heatmap-section,
@@ -5371,6 +5366,7 @@
             color: #909399;
             transition: background 0.15s, color 0.15s;
         }
+
         .snake-toggle-btn:hover {
             background: #e8e8e8;
             color: #606266;
@@ -7002,8 +6998,9 @@
         .todo-month-day.todo-today .todo-day-number {
             background: #3370FF;
             color: var(--color-text-white);
-            width: 1.75rem;
-            height: 1.75rem;
+            width: 1.5rem;
+            height: 1.5rem;
+            font-size: 0.8125rem;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -12630,7 +12627,7 @@
                             </svg></div>
                         <div class="stat-info">
                             <div class="stat-value" id="totalSpace">0</div>
-                            <div class="stat-label">总占用空间</div>
+                            <div class="stat-label">占用空间</div>
                         </div>
                     </div>
                     <div class="stat-card">
@@ -12643,7 +12640,7 @@
                             </svg></div>
                         <div class="stat-info">
                             <div class="stat-value" id="totalFiles">0</div>
-                            <div class="stat-label">总文件数</div>
+                            <div class="stat-label">文件</div>
                         </div>
                     </div>
                     <div class="stat-card">
@@ -12653,30 +12650,7 @@
                             </svg></div>
                         <div class="stat-info">
                             <div class="stat-value" id="totalFolders">0</div>
-                            <div class="stat-label">总文件夹数</div>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon purple"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
-                                stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
-                                <path d="M15 5l4 4" />
-                            </svg></div>
-                        <div class="stat-info">
-                            <div class="stat-value" id="todayEdit">0</div>
-                            <div class="stat-label">今日修改文件数</div>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon cyan"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
-                                stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                <circle cx="12" cy="12" r="10" />
-                                <line x1="12" y1="8" x2="12" y2="16" />
-                                <line x1="8" y1="12" x2="16" y2="12" />
-                            </svg></div>
-                        <div class="stat-info">
-                            <div class="stat-value" id="todayAdd">0</div>
-                            <div class="stat-label">今日新增文件数</div>
+                            <div class="stat-label">文件夹</div>
                         </div>
                     </div>
                     <div class="stat-card">
@@ -12692,6 +12666,29 @@
                         </div>
                     </div>
                     <div class="stat-card">
+                        <div class="stat-icon purple"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
+                                stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                                <path d="M15 5l4 4" />
+                            </svg></div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="todayEdit">0</div>
+                            <div class="stat-label">今日修改</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon cyan"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
+                                stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10" />
+                                <line x1="12" y1="8" x2="12" y2="16" />
+                                <line x1="8" y1="12" x2="16" y2="12" />
+                            </svg></div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="todayAdd">0</div>
+                            <div class="stat-label">今日新增</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
                         <div class="stat-icon yellow"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
                                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
@@ -12699,7 +12696,7 @@
                             </svg></div>
                         <div class="stat-info">
                             <div class="stat-value" id="todayViewCount">0</div>
-                            <div class="stat-label">今日浏览文件数</div>
+                            <div class="stat-label">今日浏览</div>
                         </div>
                     </div>
                     <div class="stat-card">
@@ -12733,7 +12730,9 @@
                             <line x1="8" y1="2" x2="8" y2="6" />
                             <line x1="3" y1="10" x2="21" y2="10" />
                         </svg>每日新增文件热力图
-                        <button class="snake-toggle-btn" id="snakeToggleBtn" title="暂停贪吃蛇动画">⏸</button></div>
+                        <button class="snake-toggle-btn" id="snakeToggleBtn" onclick="toggleSnake()"
+                            title="暂停贪吃蛇动画">⏸</button>
+                    </div>
                     <div class="heatmap-container">
                         <div class="heatmap-left">
                             <div id="file-sum-heatmap" class="file-sum-heatmap"></div>
@@ -14819,7 +14818,7 @@
         function initMonacoEditor() {
             if (!monacoInitPromise) {
                 monacoInitPromise = new Promise((resolve) => {
-                    require.config({ paths: { 'vs': 'css_js/cdn/monaco-editor/min/vs' } });
+                	require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs' } });
                     require(['vs/editor/editor.main'], () => {
                         initFormatProviders();
                         resolve();
@@ -26195,6 +26194,7 @@ kanban-plugin: basic
             sortableInstances.forEach(instance => instance.destroy());
             sortableInstances = [];
             const containers = document.querySelectorAll('.kanban-cards');
+            const forceFallback = isTauriVisit();
             containers.forEach(container => {
                 const sortable = new Sortable(container, {
                     group: 'kanban',
@@ -26202,6 +26202,7 @@ kanban-plugin: basic
                     ghostClass: 'dragging',
                     filter: 'input, textarea, [contenteditable]',
                     preventOnFilter: false,
+                    forceFallback: forceFallback,
                     onEnd: function (evt) {
                         updateKanbanOrder();
                     },
@@ -26214,6 +26215,7 @@ kanban-plugin: basic
                     animation: 150,
                     ghostClass: 'dragging',
                     handle: '.kanban-column h2',
+                    forceFallback: forceFallback,
                     onEnd: function (evt) {
                         updateKanbanColumnOrder();
                     },
@@ -29379,7 +29381,7 @@ kanban-plugin: basic
                     textStyle: { fontSize: 11 },
                     formatter: function (params) {
                         const p = params[0];
-                        return `${p.name}: ${p.value} 次操作`;
+                        return `${p.name}: ${p.value} 次浏览`;
                     }
                 },
                 grid: {
@@ -37043,7 +37045,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             graphFps = 0;
             graphFrameCount = 0;
             graphLastFrameTime = performance.now();
-            clearTimeout(_graphFilterDebounceId); 
+            clearTimeout(_graphFilterDebounceId);
             _graphFilterDebounceId = null;
             _graphRebuilding = false;
             _graphTraversing = false;
@@ -44923,7 +44925,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         async function dirCanvasDisplay(dirPath) {
             if (!dirPath) return;
             await switchToView(contentMain);
-            currentCvsDirPath = dirPath; 
+            currentCvsDirPath = dirPath;
             const children = [];
             var allFiles = _getFilesByDirPath(dirPath || '');
             if (allFiles.length === 0) {
@@ -44942,7 +44944,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             const data = generateCanvasFolderJSON({ folderName: basename(dirPath), children });
             await openCanvasFile(data);
-            setControlsState({ commonToolControls: true, demoBtn: true }); 
+            setControlsState({ commonToolControls: true, demoBtn: true });
         }
 
         function generateCanvasFolderJSON({
@@ -46284,7 +46286,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         // 通过解析 cron 字段 + 逐级跳过（月→日→时→分），避免逐日展开创建大量虚拟事件
         function _findNextCronTime(todoE, afterMs) {
             if (!todoE.cron) return Infinity;
-
             // 1) 解析 cron 字段并缓存到事件对象上（仅首次解析）
             let p = todoE._cronParsed;
             if (!p) {
@@ -46306,25 +46307,19 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 p._months = p.months; p._days = p.days; p._dows = p.dows;
                 p._hours = p.hours; p._mins = p.mins;
             }
-
             const startMs = (todoE.start instanceof Date ? todoE.start : new Date(todoE.start)).getTime();
             const endMs = (todoE.end instanceof Date ? todoE.end : new Date(todoE.end)).getTime();
-
             let cursor = new Date(Math.max(afterMs + 60000, startMs)); // 至少从下一分钟开始
             cursor.setSeconds(0, 0);
             const limitMs = Math.min(startMs + 31622400000, endMs); // 上限 ≤ 1 年且 ≤ end
-
             const incDay = () => { cursor.setDate(cursor.getDate() + 1); cursor.setHours(0, 0, 0, 0); };
             const incMonth = () => { cursor.setMonth(cursor.getMonth() + 1); cursor.setDate(1); cursor.setHours(0, 0, 0, 0); };
-
             while (cursor.getTime() <= limitMs) {
                 // ---- 月 ----
                 if (!p.allMon && !p._months.has(cursor.getMonth() + 1)) { incMonth(); continue; }
-
                 // ---- 日（月日 + 星期 均需匹配） ----
                 if ((!p.allDay && !p._days.has(cursor.getDate())) ||
                     (!p.allDow && !p._dows.has(cursor.getDay()) && !(cursor.getDay() === 0 && p._dows.has(7)))) { incDay(); continue; }
-
                 // ---- 时 ----
                 const ch = cursor.getHours();
                 if (!p.allHr) {
@@ -46333,7 +46328,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     for (let h = ch; h <= 23; h++) { if (p._hours.has(h)) { if (h !== ch) cursor.setHours(h, 0, 0, 0); found = true; break; } }
                     if (!found) { incDay(); continue; }
                 }
-
                 // ---- 分 ----
                 const cm = cursor.getMinutes();
                 if (!p.allMin) {
@@ -46341,11 +46335,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     for (let m = cm; m <= 59; m++) { if (p._mins.has(m)) { if (m !== cm) cursor.setMinutes(m, 0, 0); found = true; break; } }
                     if (!found) { cursor.setHours(cursor.getHours() + 1, 0, 0, 0); continue; }
                 }
-
                 // ---- 全部匹配 → 命中 ----
                 const t = cursor.getTime();
                 if (t > afterMs && t >= startMs && t <= endMs) return t;
-
                 // 当前时间已匹配，前进到下一分钟继续扫描
                 cursor.setMinutes(cursor.getMinutes() + 1);
             }
@@ -46356,9 +46348,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const el = document.getElementById('upcomingEvent');
             const fel = document.getElementById('upcomingFestival');
             if (!el || !fel) return;
-
             const now = Date.now();
-
             // 1) 查找下一个日程事件（含一次性和 cron 定时事件）
             let nextEv = null, nextEvStart = Infinity, nextEvTime = null;
             if (todoEvents && todoEvents.length > 0) {
@@ -46377,10 +46367,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                 }
             }
-            el.textContent = nextEv
-                ? `${_formatShortDateTime(nextEvTime)} ${nextEv.title}`
-                : '--';
-
+            el.textContent = nextEv ? `${_formatShortDateTime(nextEvTime)} ${nextEv.title}` : '--';
             // 2) 查找下一个重要节日（每日缓存）
             const today = new Date();
             const cacheKey = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
