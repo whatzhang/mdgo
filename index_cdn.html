@@ -146,6 +146,7 @@
             --transition-normal: 0.2s ease;
             --color-bg-header: #e1e5e8;
             --color-bg-empty: #ebedf0;
+            --window-header-bg: #edeff1;
 
             /* ---- 日历日程 ---- */
             --todo-primary-light: #E8F0FE;
@@ -163,6 +164,11 @@
             --todo-event-orange-text: #EA580C;
             --todo-event-red-bg: #FEE2E2;
             --todo-event-red-text: #DC2626;
+            --shadow-elevation: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            --shadow-border-purple: 0 0 0 1px #7B61FF;
+            --shadow-border-green: 0 0 0 1px #10B981;
+            --shadow-border-orange: 0 0 0 1px #F59E0B;
+            --shadow-border-red: 0 0 0 1px #EF4444;
 
             /* ---- Cron 表达式工具 ---- */
             --t0: #1D1D1F;
@@ -237,13 +243,19 @@
         }
 
         #app-header {
-            height: 28px;
+            height: 30px;
+            padding-left: 70px;
+            transition: padding-left 0.2s ease;
             display: none;
             align-items: center;
             gap: 3px;
             flex-shrink: 1;
             width: auto;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--t3);
             -webkit-app-region: no-drag;
+            background: var(--window-header-bg);
         }
 
         #main-container {
@@ -1796,16 +1808,17 @@
 
         .editor-notification {
             position: fixed;
-            right: 20px;
+            right: 1.25rem;
             background: transparent;
             color: var(--color-text-white);
-            padding: 10px 18px;
-            border-radius: 10px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.625rem;
+            box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.2);
             z-index: 10000;
-            font-size: 13px;
+            font-size: 0.8125rem;
             width: auto;
             text-align: center;
+            line-height: 1.4;
             cursor: default;
             animation: notificationFadeIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
             transition: opacity 0.3s ease, transform 0.2s ease, bottom 0.35s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease;
@@ -1816,20 +1829,20 @@
             content: '';
             position: absolute;
             inset: 0;
-            border-radius: 10px;
+            border-radius: 0.625rem;
             z-index: -1;
             transition: opacity 0.35s ease;
         }
 
         .editor-notification:hover {
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+            box-shadow: 0 0.5rem 1.25rem rgba(0, 0, 0, 0.28);
             transform: translateY(-2px);
         }
 
         .editor-notification.dismissing {
             animation: none !important;
             opacity: 0 !important;
-            transform: translateY(10px) !important;
+            transform: translateY(0.625rem) !important;
             pointer-events: none;
         }
 
@@ -3306,7 +3319,8 @@
             flex-direction: column;
             gap: 0.75rem;
         }
-        .heatmap-section-heatmap{
+
+        .heatmap-section-heatmap {
             background: var(--color-bg);
             padding: 0.625rem;
             border-radius: 0.75rem;
@@ -5309,10 +5323,10 @@
             background: var(--color-bg-secondary);
             color: #d97706;
             border-radius: 16px;
-            font-size: 11px; 
+            font-size: 11px;
             line-height: 1.4;
         }
-        
+
         .heatmap-container {
             display: flex;
             flex-wrap: wrap;
@@ -5327,11 +5341,11 @@
         }
 
         .heatmap-right {
-            flex: 1 1 0;     
-            min-width: 300px;  
+            flex: 1 1 0;
+            min-width: 300px;
         }
 
-        .chart-title-heatmap{
+        .chart-title-heatmap {
             font-size: 1rem;
             font-weight: 600;
             margin-bottom: 0.625rem;
@@ -5344,7 +5358,7 @@
             top: 12px;
             left: 12px;
         }
-        
+
         .file-sum-heatmap {
             padding: 5px;
             border-radius: 15px;
@@ -5474,9 +5488,10 @@
         .monitor-app {
             display: flex;
             align-items: center;
-            gap: 0.625rem;
+            column-gap: 0.625rem;
             margin-top: 3px;
             flex-shrink: 0;
+            flex-wrap: wrap;
         }
 
         .app-stat {
@@ -6811,7 +6826,7 @@
         .todo-mini-day.todo-has-event::after {
             content: '';
             position: absolute;
-            bottom: 3px;
+            bottom: 0;
             width: 4px;
             height: 4px;
             background: var(--color-primary);
@@ -7615,27 +7630,25 @@
             border-radius: 12px;
             width: 380px;
             max-width: 90vw;
-            box-shadow: 0 17px 50px rgba(0, 0, 0, 0.18);
             overflow: hidden;
             animation: todoModalIn 0.25s ease-out;
-            border: 3px solid var(--color-primary);
             z-index: 20001;
         }
 
         .todo-reminder-modal.todo-purple {
-            border-color: #7B61FF;
+            box-shadow: var(--shadow-elevation), var(--shadow-border-purple);
         }
 
         .todo-reminder-modal.todo-green {
-            border-color: #10B981;
+            box-shadow: var(--shadow-elevation), var(--shadow-border-green);
         }
 
         .todo-reminder-modal.todo-orange {
-            border-color: #F59E0B;
+            box-shadow: var(--shadow-elevation), var(--shadow-border-orange);
         }
 
         .todo-reminder-modal.todo-red {
-            border-color: #EF4444;
+            box-shadow: var(--shadow-elevation), var(--shadow-border-red);
         }
 
         .todo-reminder-header {
@@ -8606,26 +8619,6 @@
             gap: 10px
         }
 
-        .cron-logo {
-            width: 30px;
-            height: 30px;
-            border-radius: var(--radius-lg);
-            background: linear-gradient(135deg, #3370ff, #5b8def);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: var(--color-text-white);
-            font-size: 16px;
-            flex-shrink: 0;
-            box-shadow: 0 2px 8px rgba(51, 112, 255, .3);
-        }
-
-        .cron-header h1 {
-            font-size: 18px;
-            font-weight: bold;
-            letter-spacing: -.01em
-        }
-
         .cron-header-right {
             display: flex;
             align-items: center;
@@ -8701,10 +8694,9 @@
             pointer-events: none
         }
 
-        /* Cards */
         .cron-card {
             background: var(--color-bg);
-            border-radius: var(--radius-lg);
+            border-radius: var(--radius-xxl);
             margin-bottom: 20px;
             border: none;
             cursor: pointer;
@@ -9567,7 +9559,7 @@
             height: 100%;
             overflow-x: hidden;
             box-sizing: border-box;
-            padding: 4.5px 10px 10px 10px;
+            padding: 10px;
             background: var(--color-bg-secondary);
         }
 
@@ -9579,14 +9571,14 @@
             border: 1px dashed var(--color-border);
             border-radius: var(--radius-xl);
             background: var(--color-bg);
-            padding: 56px 40px;
+            padding: 20px;
             text-align: center;
             cursor: pointer;
             transition: all var(--ease);
             position: relative;
-            height: calc(100vh - 56px - 56px - 70px);
-            margin: 16px;
-            margin-top: 22px;
+            height: calc(60vh);
+            ;
+            margin: 100px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -9862,27 +9854,27 @@
 
         .urlEncoder-card {
             background: var(--color-bg);
-            border-radius: 12px;
-            padding: 28px;
-            margin-bottom: 20px;
+            border-radius: 0.75rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             transition: all 0.2s ease;
         }
 
         .urlEncoder-card-title {
-            font-size: 15px;
+            font-size: 1rem;
             font-weight: 500;
             color: var(--color-text);
-            margin-bottom: 16px;
+            margin-bottom: 1rem;
         }
 
         .urlEncoder-textarea {
-            width: calc(100% - 32px);
-            height: 160px;
+            width: calc(100% - 2rem);
+            height: 12rem;
             border: 1px solid #E5E6EB;
-            border-radius: 8px;
-            padding: 14px 16px;
-            font-size: 13px;
+            border-radius: 0.5rem;
+            padding: 0.875rem 1rem;
+            font-size: 0.8125rem;
             line-height: 1.6;
             outline: none;
             resize: vertical;
@@ -9895,33 +9887,33 @@
         }
 
         .urlEncoder-tip {
-            font-size: 12px;
+            font-size: 0.75rem;
             color: #86909C;
-            margin-top: 8px;
+            margin-top: 0.5rem;
         }
 
         .urlEncoder-btn-group {
             display: flex;
-            gap: 12px;
-            margin: 20px 0;
+            gap: 0.75rem;
+            margin: 1rem 0;
             justify-content: center;
         }
 
         .urlEncoder-footer {
             text-align: center;
-            margin-top: 20px;
-            font-size: 12px;
+            margin-top: 1rem;
+            font-size: 0.75rem;
             color: var(--color-text-tertiary);
         }
 
         .urlEncoder-footer p {
-            margin: 4px;
+            margin: 0.25rem;
         }
 
         .urlEncoder-footer code {
             background: var(--color-bg-hover);
-            padding: 1px 6px;
-            border-radius: 4px;
+            padding: 0.125rem 0.25rem;
+            border-radius: 0.25rem;
         }
 
         .btn-lg {
@@ -12124,11 +12116,169 @@
                 transform: scale(1.02);
             }
         }
+
+        .time-bar {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            padding: 0 1rem;
+            gap: 0.75rem;
+            flex-shrink: 0;
+            overflow: hidden;
+        }
+
+        .time-module {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            height: 100%;
+            flex-shrink: 0;
+        }
+
+        .time-module .label {
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        .progress-track {
+            width: 5rem;
+            height: 0.3rem;
+            background: #f3f4f5;
+            border-radius: 0.25rem;
+            overflow: hidden;
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .progress-track .progress-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 1s ease;
+            position: relative;
+        }
+
+        .progress-track .progress-fill::after {
+            content: '';
+            position: absolute;
+            right: 0;
+            top: 0;
+            width: 0.5rem;
+            height: 100%;
+            border-radius: 0.25rem;
+            filter: blur(0.125rem);
+            opacity: 0.4;
+        }
+
+        /* 今日进度 - 亮蓝色渐变 */
+        .progress-fill.today {
+            background: linear-gradient(90deg, #3b82f6, #6366f1);
+        }
+
+        .progress-fill.today::after {
+            background: #6366f1;
+        }
+
+        /* 本周进度 - 紫色渐变 */
+        .progress-fill.week {
+            background: linear-gradient(90deg, #a855f7, #d946ef);
+        }
+
+        .progress-fill.week::after {
+            background: #d946ef;
+        }
+
+        /* 本月进度 - 橙色渐变 */
+        .progress-fill.month {
+            background: linear-gradient(90deg, #f97316, #f59e0b);
+        }
+
+        .progress-fill.month::after {
+            background: #f59e0b;
+        }
+
+        /* 今年进度 - 亮绿色渐变 */
+        .progress-fill.year {
+            background: linear-gradient(90deg, #22c55e, #10b981);
+        }
+
+        .progress-fill.year::after {
+            background: #10b981;
+        }
+
+        /* ---- 进度数值 ---- */
+        .progress-value {
+            font-variant-numeric: tabular-nums;
+            min-width: 1rem;
+            text-align: right;
+        }
+
+        /* ---- 右上角日程/节日预告 ---- */
+        .header-upcoming {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #94a3b8;
+            white-space: nowrap;
+            height: 100%;
+            flex-shrink: 0;
+            overflow: hidden;
+            padding: 0 0.5rem;
+        }
+
+        .header-upcoming .upcoming-event {
+            color: #3370FF;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .header-upcoming .upcoming-festival {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .header-time-bar {
+            color: var(--orange);
+        }
     </style>
 </head>
 
 <body>
-    <div id="app-header" data-tauri-drag-region></div>
+    <div id="app-header" data-tauri-drag-region>
+        <span id="header-time" class="header-time-bar"></span>
+        <div class="header-upcoming" id="headerUpcoming">
+            <span class="upcoming-event" id="upcomingEvent">--</span>
+            <span class="upcoming-festival" id="upcomingFestival">--</span>
+            <div class="time-module">
+                <span class="label">今日</span>
+                <div class="progress-track">
+                    <div class="progress-fill today" id="todayProgress" style="width:0%;"></div>
+                </div>
+                <span class="progress-value today-val" id="todayPercent">0%</span>
+            </div>
+            <div class="time-module">
+                <span class="label">本周</span>
+                <div class="progress-track">
+                    <div class="progress-fill week" id="weekProgress" style="width:0%;"></div>
+                </div>
+                <span class="progress-value week-val" id="weekPercent">0%</span>
+            </div>
+            <div class="time-module">
+                <span class="label">本月</span>
+                <div class="progress-track">
+                    <div class="progress-fill month" id="monthProgress" style="width:0%;"></div>
+                </div>
+                <span class="progress-value month-val" id="monthPercent">0%</span>
+            </div>
+            <div class="time-module">
+                <span class="label">今年</span>
+                <div class="progress-track">
+                    <div class="progress-fill year" id="yearProgress" style="width:0%;"></div>
+                </div>
+                <span class="progress-value year-val" id="yearPercent">0%</span>
+            </div>
+        </div>
+    </div>
     <div id="main-container">
         <!-- ====== 左侧文件树侧边栏 ====== -->
         <div id="sidebar">
@@ -12450,8 +12600,6 @@
                         <button class="btn btn-primary" id="dashboard-refresh-btn"
                             onclick="toggleDashboardView(false)">刷新
                         </button>
-                        <button class="btn btn-primary" id="data-refresh-btn" onclick="toggleDashboardView(true)">扫描数据
-                        </button>
                     </div>
                 </div>
                 <div class="stats-grid">
@@ -12559,15 +12707,15 @@
                     </div>
                 </div>
                 <div class="heatmap-section-heatmap">
-                        <div class="chart-title-heatmap"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
-                                        stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-                                        stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
-                                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                                        <line x1="16" y1="2" x2="16" y2="6" />
-                                        <line x1="8" y1="2" x2="8" y2="6" />
-                                        <line x1="3" y1="10" x2="21" y2="10" />
-                                    </svg>每日新增文件热力图</div>
-                        <div class="heatmap-container">
+                    <div class="chart-title-heatmap"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                            style="vertical-align:-2px;margin-right:4px;">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                            <line x1="16" y1="2" x2="16" y2="6" />
+                            <line x1="8" y1="2" x2="8" y2="6" />
+                            <line x1="3" y1="10" x2="21" y2="10" />
+                        </svg>每日新增文件热力图</div>
+                    <div class="heatmap-container">
                         <div class="heatmap-left">
                             <div id="file-sum-heatmap" class="file-sum-heatmap"></div>
                         </div>
@@ -12737,7 +12885,7 @@
                                                     <ellipse cx="12" cy="5" rx="9" ry="3" />
                                                     <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
                                                     <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-                                                </svg>系统磁盘使用</div>
+                                                </svg>系统磁盘</div>
                                             <div class="monitor-disk">
                                                 <div class="disk-bar">
                                                     <div class="disk-bar-fill" id="diskBarFill"></div>
@@ -12751,7 +12899,7 @@
                                                     <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
                                                     <line x1="8" y1="21" x2="16" y2="21" />
                                                     <line x1="12" y1="17" x2="12" y2="21" />
-                                                </svg>当前目录磁盘使用</div>
+                                                </svg>当前目录</div>
                                             <div class="monitor-disk">
                                                 <div class="disk-bar">
                                                     <div class="disk-bar-fill" id="diskNoteBarFill"></div>
@@ -12762,18 +12910,35 @@
                                         <div class="monitor-item">
                                             <div class="monitor-label">
                                                 <div class="net-row">
-                                                    <span class="net-row-label">r&nbsp;</span><span id="diskRead" class="net-row-value-download">0 B/s</span>
+                                                    <span class="net-row-label">r&nbsp;</span><span id="diskRead"
+                                                        class="net-row-value-download">0 B/s</span>
                                                     <span class="monitor-uptime">｜</span>
-                                                    <span class="net-row-label">w&nbsp;</span><span id="diskWrite" class="net-row-value-upload">0 B/s</span>
+                                                    <span class="net-row-label">w&nbsp;</span><span id="diskWrite"
+                                                        class="net-row-value-upload">0 B/s</span>
                                                 </div>
                                             </div>
                                             <div id="diskIOChart" class="monitor-chart"></div>
                                             <div class="monitor-divider"></div>
-                                            <div class="monitor-label" style="margin-top:3px;"><svg viewBox="0 0 24 24" width="0.875rem" height="0.875rem" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3"/><path d="M15 1v3"/><path d="M9 20v3"/><path d="M15 20v3"/><path d="M1 9h3"/><path d="M20 9h3"/><path d="M1 15h3"/><path d="M20 15h3"/></svg>应用资源</div>
+                                            <div class="monitor-label" style="margin-top:3px;"><svg viewBox="0 0 24 24"
+                                                    width="0.875rem" height="0.875rem" fill="none" stroke="currentColor"
+                                                    stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                                                    style="vertical-align:-2px;margin-right:4px;">
+                                                    <rect x="4" y="4" width="16" height="16" rx="2" ry="2" />
+                                                    <rect x="9" y="9" width="6" height="6" />
+                                                    <path d="M9 1v3" />
+                                                    <path d="M15 1v3" />
+                                                    <path d="M9 20v3" />
+                                                    <path d="M15 20v3" />
+                                                    <path d="M1 9h3" />
+                                                    <path d="M20 9h3" />
+                                                    <path d="M1 15h3" />
+                                                    <path d="M20 15h3" />
+                                                </svg>应用资源</div>
                                             <div class="monitor-app">
-                                                <div class="app-stat"><span class="app-stat-label">CPU</span><span id="appCpuPercent" class="app-stat-value cpu">0%</span></div>
-                                                <span class="monitor-uptime">｜</span>
-                                                <div class="app-stat"><span class="app-stat-label">内存</span><span id="appMemPercent" class="app-stat-value mem">0%</span></div>
+                                                <div class="app-stat"><span class="app-stat-label">CPU</span><span
+                                                        id="appCpuPercent" class="app-stat-value cpu">0%</span></div>
+                                                <div class="app-stat"><span class="app-stat-label">内存</span><span
+                                                        id="appMemPercent" class="app-stat-value mem">0%</span></div>
                                             </div>
                                         </div>
                                     </div>
@@ -14154,9 +14319,9 @@
             { key: '📄 新建文件', name: "untitled.txt", click: "createFileByParentDir" },
             { key: '🌄 图片墙', name: "图片墙", click: "picLayoutDisplay" },
             { key: '🌐 文件图谱', name: '文件图谱', click: 'openNoteGraph' },
-            { key: '🔗 文档白板', name: "文档白板", click: "dirGraphDisplay" },
+            { key: '🔗 文档白板', name: "文档白板", click: "dirCanvasDisplay" },
             { key: '📚️ 文件词云', name: "文件词云", click: "openWordCloudFile" },
-             { key: '🏷️类型分布', name: "类型分布", click: "openFileType" },
+            { key: '🏷️ 类型分布', name: "类型分布", click: "openFileType" },
             { key: '标记', name: "标记", click: "markDir" },
         ]
         // 操作类型枚举（用于操作记录展示）
@@ -14360,11 +14525,11 @@
         const getExt = (p) => p?.split(DOT).pop() || '';  // 获取路径里的文件后缀名
         // 文件类型分组（模块级常量，避免每次扫描重建）
         const _EXT_TYPE_MAP = {
-            'html': '前端', 'htm': '前端', 'xhtml': '前端', 'css': '前端', 'scss': '前端', 'sass': '前端', 'less': '前端', 'styl': '前端', 'pcss': '前端', 'postcss': '前端', 'js': '前端', 'jsx': '前端', 'ts': '前端', 'tsx': '前端', 'mjs': '前端', 'cjs': '前端', 'jsm': '前端', 'tsm': '前端', 'mts': '前端', 'cts': '前端', 'vue': '前端', 'svelte': '前端', 'astro': '前端', 'swift': '前端', 'kt': '前端', 'py': '后端', 'pyw': '后端', 'java': '后端', 'kotlin': '后端', 'scala': '后端', 'groovy': '后端', 'c': '后端', 'cpp': '后端', 'h': '后端', 'hpp': '后端', 'cs': '后端', 'go': '后端', 'rs': '后端', 'rlib': '后端', 'rmeta': '后端', 'rb': '后端', 'php': '后端', 'dockerfile': '后端', 'gradle': '后端', 'makefile': '后端', 'cmake': '后端', 'proto': '后端', 'thrift': '后端', 'idl': '后端', 'wasm': '后端', 'asm': '后端', 'sh': '脚本', 'bash': '脚本', 'zsh': '脚本', 'bat': '脚本', 'cmd': '脚本', 'ps1': '脚本', 'sql': '数据库', 'mysql': '数据库', 'pgsql': '数据库', 'sqlite': '数据库', 'db': '数据库', 'db3': '数据库', 'sqlite3': '数据库', 'mdf': '数据库', 'ldf': '数据库', 'sqlitedb': '数据库', 'md': '文档', 'markdown': '文档', 'rst': '文档', 'tex': '文档', 'docx': '文档', 'doc': '文档', 'pdf': '文档', 'ppt': '文档', 'odt': '文档', 'rtf': '文档', 'epub': '文档', 'xlsx': '文档', 'xls': '文档', 'csv': '文档', 'tsv': '文档', 'ods': '文档', 'json': '文档', 'jsonc': '文档', 'xml': '文档', 'yaml': '文档', 'yml': '文档', 'toml': '文档', 'ini': '文档', 'conf': '文档', 'env': '文档', 'properties': '文档', 'txt': '文档', 'text': '文档', 'log': '文档', 'bak': '文档', 'tmp': '文档', 'cache': '文档', 'lock': '文档', 'map': '文档', 'gitignore': '文档', 'png': '媒体', 'jpg': '媒体', 'jpeg': '媒体', 'gif': '媒体', 'bmp': '媒体', 'svg': '媒体', 'webp': '媒体', 'ico': '媒体', 'tiff': '媒体', 'tif': '媒体', 'raw': '媒体', 'psd': '媒体', 'ai': '媒体', 'eps': '媒体', 'fig': '媒体', 'mp4': '媒体', 'mov': '媒体', 'avi': '媒体', 'flv': '媒体', 'wmv': '媒体', 'mkv': '媒体', 'webm': '媒体', 'm4v': '媒体', 'mpg': '媒体', 'mpeg': '媒体', '3gp': '媒体', 'mp3': '媒体', 'wav': '媒体', 'flac': '媒体', 'aac': '媒体', 'ogg': '媒体', 'wma': '媒体', 'm4a': '媒体', 'opus': '媒体', 'obj': '媒体', 'fbx': '媒体', 'dae': '媒体', 'stl': '媒体', '3ds': '媒体', 'blend': '媒体', 'zip': '压缩文件', 'rar': '压缩文件', '7z': '压缩文件', 'tar': '压缩文件', 'gz': '压缩文件', 'bz2': '压缩文件', 'xz': '压缩文件', 'dmg': '压缩文件', 'drawio': '图表', 'excalidraw': '图表', 'sketch': '图表', 'xd': '图表', 'afdesign': '图表', 'puml': '图表', 'plantuml': '图表', 'mmd': '图表', 'ttf': '字体', 'otf': '字体', 'woff': '字体', 'woff2': '字体', 'eot': '字体', 'glyphs': '字体', 'glyphs2': '字体'
+            'html': '前端', 'htm': '前端', 'xhtml': '前端', 'css': '前端', 'scss': '前端', 'sass': '前端', 'less': '前端', 'styl': '前端', 'pcss': '前端', 'postcss': '前端', 'js': '前端', 'jsx': '前端', 'ts': '前端', 'tsx': '前端', 'mjs': '前端', 'cjs': '前端', 'jsm': '前端', 'tsm': '前端', 'mts': '前端', 'cts': '前端', 'vue': '前端', 'svelte': '前端', 'astro': '前端', 'swift': '前端', 'kt': '前端', 'py': '后端', 'pyw': '后端', 'java': '后端', 'kotlin': '后端', 'scala': '后端', 'groovy': '后端', 'c': '后端', 'cpp': '后端', 'h': '后端', 'hpp': '后端', 'cs': '后端', 'go': '后端', 'rs': '后端', 'rlib': '后端', 'rmeta': '后端', 'rb': '后端', 'php': '后端', 'dockerfile': '后端', 'gradle': '后端', 'makefile': '后端', 'cmake': '后端', 'proto': '后端', 'thrift': '后端', 'idl': '后端', 'wasm': '后端', 'asm': '后端', 'sh': '脚本', 'bash': '脚本', 'zsh': '脚本', 'bat': '脚本', 'cmd': '脚本', 'ps1': '脚本', 'sql': '数据库', 'mysql': '数据库', 'pgsql': '数据库', 'sqlite': '数据库', 'db': '数据库', 'db3': '数据库', 'sqlite3': '数据库', 'mdf': '数据库', 'ldf': '数据库', 'sqlitedb': '数据库', 'md': '文档', 'markdown': '文档', 'rst': '文档', 'tex': '文档', 'docx': '文档', 'doc': '文档', 'pdf': '文档', 'ppt': '文档', 'odt': '文档', 'rtf': '文档', 'epub': '文档', 'xlsx': '文档', 'xls': '文档', 'csv': '文档', 'tsv': '文档', 'ods': '文档', 'json': '文档', 'jsonl': '文档', 'jsonc': '文档', 'xml': '文档', 'yaml': '文档', 'yml': '文档', 'toml': '文档', 'ini': '文档', 'conf': '文档', 'env': '文档', 'properties': '文档', 'txt': '文档', 'text': '文档', 'log': '文档', 'bak': '文档', 'tmp': '文档', 'cache': '文档', 'lock': '文档', 'map': '文档', 'gitignore': '文档', 'png': '媒体', 'jpg': '媒体', 'jpeg': '媒体', 'gif': '媒体', 'bmp': '媒体', 'svg': '媒体', 'webp': '媒体', 'ico': '媒体', 'tiff': '媒体', 'tif': '媒体', 'raw': '媒体', 'psd': '媒体', 'ai': '媒体', 'eps': '媒体', 'fig': '媒体', 'mp4': '媒体', 'mov': '媒体', 'avi': '媒体', 'flv': '媒体', 'wmv': '媒体', 'mkv': '媒体', 'webm': '媒体', 'm4v': '媒体', 'mpg': '媒体', 'mpeg': '媒体', '3gp': '媒体', 'mp3': '媒体', 'wav': '媒体', 'flac': '媒体', 'aac': '媒体', 'ogg': '媒体', 'wma': '媒体', 'm4a': '媒体', 'opus': '媒体', 'obj': '媒体', 'fbx': '媒体', 'dae': '媒体', 'stl': '媒体', '3ds': '媒体', 'blend': '媒体', 'zip': '压缩文件', 'rar': '压缩文件', '7z': '压缩文件', 'tar': '压缩文件', 'gz': '压缩文件', 'bz2': '压缩文件', 'xz': '压缩文件', 'dmg': '压缩文件', 'drawio': '图表', 'excalidraw': '图表', 'sketch': '图表', 'xd': '图表', 'afdesign': '图表', 'puml': '图表', 'plantuml': '图表', 'mmd': '图表', 'ttf': '字体', 'otf': '字体', 'woff': '字体', 'woff2': '字体', 'eot': '字体', 'glyphs': '字体', 'glyphs2': '字体'
         };
         const DOC_EXT_SET = new Set(['md', 'txt', 'mmd', 'csv', 'pdf', 'opml', 'drawio', 'excalidraw', 'puml', 'plantuml', 'html', 'mmd', 'mm', 'doc', 'docx', 'ppt', 'xls', 'xlsx', 'pptx', 'canvas']);
         const CODE_EXT_SET = new Set(['html', 'htm', 'xhtml', 'iml', 'ghostty', 'dockerfile', 'groovy', 'js', 'jsx', 'ts', 'tsx', 'vue', 'css', 'scss', 'less', 'sass', 'py', 'java', 'c', 'cpp', 'h', 'hpp', 'cs', 'go', 'rust', 'rb', 'php', 'swift',
-            'kt', 'scala', 'sh', 'bat', 'cmd', 'ps1', 'json', 'xml', 'yaml', 'yml', 'toml', 'ini', 'conf', 'env', 'sql', 'rst', 'log', 'properties', 'gradle', 'gitignore', 'jsm', 'mjs',
+            'kt', 'scala', 'sh', 'bat', 'cmd', 'ps1', 'json', 'jsonl', 'xml', 'yaml', 'yml', 'toml', 'ini', 'conf', 'env', 'sql', 'rst', 'log', 'properties', 'gradle', 'gitignore', 'jsm', 'mjs',
             'cjs', 'tsm', 'mts', 'cts', 'svelte', 'astro', 'styl', 'pcss', 'postcss', 'graphql', 'gql', 'prisma', 'proto', 'thrift', 'idl', 'asm', 's', 'asmx', 'fs', 'fsx', 'fsi', 'fsscript',
             'vb', 'vbs', 'pl', 'pm', 't', 'tt', 'pod', 'lua', 'r', 'R', 'matlab', 'm', 'psm1', 'psd1', 'ps1xml', 'xaml', 'axaml', 'resx', 'rs', 'sol', 'vy', 'move', 'aptos', 'sui', 'tsbuildinfo',
         ]);
@@ -14527,7 +14692,7 @@
         let _canvasImgQueue = [];           // 待加载的图片任务队列
         let _canvasImgInFlight = 0;         // 当前正在加载的图片数量
         let currentCvsDirPath = null;       // 当前 Canvas 白板所在目录路径
-        let dirGraphDisplayFlag = false;      // 当前 Canvas 白板所在目录是否显示图谱
+        let dirCanvasDisplayFlag = false;      // 当前 Canvas 白板所在目录是否显示图谱
         async function _canvasImgProcessQueue() {
             while (_canvasImgInFlight < _CANVAS_IMG_CONCURRENCY && _canvasImgQueue.length > 0) {
                 const task = _canvasImgQueue.shift();
@@ -14650,11 +14815,12 @@
             initDiffModel();
             compileAllRules();
             await initAll();
+            await updateTimeAll();
+            await updateTimeHeader();
         });
 
         window.addEventListener('beforeunload', function (e) {
             _stopBrowsingTimer();
-            stopScheduledTask();
             wsDisconnect();
             destroyVideoPlayer();
             TimerManager.clearAll();
@@ -14672,11 +14838,11 @@
                 Promise.resolve(initNewFileDropdown()), // 初始化新文件下拉菜单
                 Promise.resolve(initAiResultModal()), // 初始化AI结果弹窗
                 Promise.resolve(initMarkdownSelectionToolbar()),// 初始化Markdown选择工具栏
-                Promise.resolve(startScheduledTask(10)),// 初始化定时任务组件
                 Promise.resolve(initSidebarToggle()),// 初始化侧边栏切换按钮
                 Promise.resolve(todoEarlyInit()),// 初始化日历日程
                 Promise.resolve(initMonacoEditor()),// 初始化编辑器
-                Promise.resolve(initDashboard())
+                Promise.resolve(initDashboard()), // 初始化时间进度条
+                Promise.resolve(initTauriWindowState()), // Tauri 窗口状态（最大化/还原）
             ]);
         }
 
@@ -14817,15 +14983,17 @@
                 await openKanbanDemo();
             } else if (type === 'dirSpace') {
                 await openDirSpace();
+            } else if (type === 'fileType') {
+                await openFileType();
             } else if (type === 'picLayoutDisplay') {  //目录右键
                 await picLayoutDisplay(data.dirPathStr);
             } else if (type === 'openWordCloudFile') {
                 await openWordCloudFile(data.dirPathStr);
-            } else if (type === 'dirGraphDisplay') {
-                await dirGraphDisplay(data.dirPathStr);
+            } else if (type === 'dirCanvasDisplay') {
+                await dirCanvasDisplay(data.dirPathStr);
             } else if (type === 'openNoteGraph') {
                 await openNoteGraph(data.dirPathStr);
-                  } else if (type === 'openFileType') {
+            } else if (type === 'openFileType') {
                 openFileType(data.dirPathStr);
             } else if (type === 'restoreFile') {  //文件右键
                 await restoreFile(data.relativePath, data.fileSpan);
@@ -14841,16 +15009,16 @@
 
         function setAllTypeFlag(type) {
             if (type === 'renderFile') {
-                dirGraphDisplayFlag = false;
+                dirCanvasDisplayFlag = false;
             } else if (type === 'dashboard') {
                 aiFabContainer.style.display = 'block';
             } else if (type === 'randomOpen') {
                 aiFabContainer.style.display = 'block';
             } else if (type === 'canvas') {
                 currentCvsDirPath = null;
-                dirGraphDisplayFlag = false;
-            } else if (type === 'dirGraphDisplay') {
-                dirGraphDisplayFlag = true;
+                dirCanvasDisplayFlag = false;
+            } else if (type === 'dirCanvasDisplay') {
+                dirCanvasDisplayFlag = true;
             }
         }
 
@@ -14900,7 +15068,7 @@
                 await renderImageFile(file);
             } else if (await isSwaggerFile(file)) {
                 await renderSwaggerFile(await getFileText(), fileName);
-            } else if (fileName.endsWith('.json') && !fileName.endsWith('.jsonl')) {
+            } else if (fileName.endsWith('.json')) {
                 await renderJSONFile(await getFileText());
             } else if (fileName.endsWith('.puml') || fileName.endsWith('.plantuml')) {
                 await renderPlantUMLFile(await getFileText());
@@ -15869,16 +16037,19 @@
                 Promise.resolve(destroyPomodoro()),
                 Promise.resolve(destroyBookmarkPage()),
                 Promise.resolve(destroyDirSpace()),
-                Promise.resolve(cleanupDashboardData())
+                Promise.resolve(cleanupDashboardData()),
+                Promise.resolve(updateTimeHeader()),
+                Promise.resolve(todoDestroy()),
             ]);
         }
 
         function cleanupDashboardData() {
             _dashCachedStats = null;
             _dashCachedGeneration = -1;
+            TimerManager.clear('dashboardTime');
         }
 
-        async function destroyContentEdit(){
+        async function destroyContentEdit() {
             openrestyEditorContainer.innerHTML = '';
             contentEdit.innerHTML = '';
         }
@@ -16311,6 +16482,7 @@
                 // 6. 隐藏底部工具栏
                 const bottomToolbar = document.getElementById('canvas-bottom-toolbar');
                 if (bottomToolbar) bottomToolbar.style.display = 'none';
+                contentMain.innerHTML = '';
             }
         }
 
@@ -16951,8 +17123,14 @@
             currentTranslateY = (ch - img.naturalHeight * currentZoom) / 2;
             applyImageTransform(img);
         }
+        async function clearTreeSearchValue() {
+            const handle = await getRootHandle();
+            const data = await scanDashboardData(true);
+            await renderDirectory(handle, data, false);
+        }
 
         async function refreshTree(showNoti = true) {
+            await updateTimeAll();
             try {
                 refreshTreeBtn.disabled = true;
                 await initTreeBrowser();
@@ -17060,11 +17238,8 @@
         function filterFiles(keyword) {
             const keywordLower = keyword.toLowerCase().trim();
             clearSearchBtn.style.display = keywordLower ? 'flex' : 'none';
-            const isSearching = Boolean(keywordLower);
-            refreshTreeBtn.disabled = isSearching;
-            refreshTreeBtn.classList.toggle('btn-disabled', isSearching);
             if (!keywordLower) {
-                refreshTree(false);
+                clearTreeSearchValue();
                 return;
             }
             executeSearch(keywordLower);
@@ -22470,12 +22645,19 @@
                         <div class="json-toolbar">
                             <button class="btn btn-sm json-btn" id="json-btn-expand-all" onclick="jsonTreeExpandAll()">展开全部</button>
                             <button class="btn btn-sm json-btn" id="json-btn-collapse-all" onclick="jsonTreeCollapseAll()">折叠全部</button>
-                            <button class="btn btn-sm json-btn" id="btn-l1"  onclick="jsonTreeCollapseToLevel(1)">1级</button>
-                            <button class="btn btn-sm json-btn" id="btn-l2"  onclick="jsonTreeCollapseToLevel(2)">2级</button>
-                            <button class="btn btn-sm json-btn" id="btn-l3"  onclick="jsonTreeCollapseToLevel(3)">3级</button>
-                            <button class="btn btn-sm json-btn" id="btn-l4"  onclick="jsonTreeCollapseToLevel(4)">4级</button>
-                            <button class="btn btn-sm json-btn" id="btn-l5"  onclick="jsonTreeCollapseToLevel(5)">5级</button>
-                            <button class="btn btn-sm json-btn" id="btn-l6"  onclick="jsonTreeCollapseToLevel(6)">6级</button>
+                            <button class="btn btn-sm json-btn" id="btn-l1"  onclick="jsonTreeCollapseToLevel(1)">一级</button>
+                            <button class="btn btn-sm json-btn" id="btn-l2"  onclick="jsonTreeCollapseToLevel(2)">二级</button>
+                            <button class="btn btn-sm json-btn" id="btn-l3"  onclick="jsonTreeCollapseToLevel(3)">三级</button>
+                            <select id="opml-level-select" class="btn btn-sm json-btn" onchange="jsonTreeCollapseToLevel(this.value)" title="层级选择">
+                                <option value="" selected>选择</option>
+                                <option value="4">四级</option>
+                                <option value="5">五级</option>
+                                <option value="6">六级</option>
+                                <option value="7">七级</option>
+                                <option value="8">八级</option>
+                                <option value="9">九级</option>
+                                <option value="10">十级</option>
+                            </select>
                             <button class="btn btn-sm json-btn" id="btn-find-mark"  onclick="findAndMark()">查找并标记</button>
                             <button class="btn btn-sm json-btn" id="btn-un-mark"  onclick="unJsonMark()">取消标记</button>
                             <div style="display: flex; gap: 8px; align-items: center;">
@@ -23725,7 +23907,7 @@ kanban-plugin: basic
                             if (node.type === 'text') {
                                 selectCanvasNode(node.id, d3.select(this), null);
                                 await showCanvasNodeContent(node);
-                                if (!node.text && !dirGraphDisplayFlag) {
+                                if (!node.text && !dirCanvasDisplayFlag) {
                                     const btn = document.getElementById('content-panel-btn');
                                     if (btn) btn.click();
                                 }
@@ -24163,7 +24345,7 @@ kanban-plugin: basic
         async function showCanvasNodeContent(node) {
             const contentPanel = createNodeContentPanel('100%');
             const htmlContent = await markedParse(parseObsidianToHTML(node.text));
-            contentPanel.innerHTML = ` <div class="canvas-edit-controls" id="canvas-edit-controls" ${dirGraphDisplayFlag ? 'style="display:none;"' : ''}>
+            contentPanel.innerHTML = ` <div class="canvas-edit-controls" id="canvas-edit-controls" ${dirCanvasDisplayFlag ? 'style="display:none;"' : ''}>
                     <button id="content-panel-btn" class="btn btn-primary btn-sm" data-node-id="${node.id}" onclick="editNodeContent(event, this)">
                         编辑内容
                     </button>
@@ -24197,7 +24379,7 @@ kanban-plugin: basic
                     const text = await getFileContent(fileHandle);
                     const htmlContent = await markedParse(parseObsidianToHTML(text));
                     contentPanel.innerHTML = `
-                        <div class="canvas-edit-controls" id="canvas-edit-controls" ${dirGraphDisplayFlag ? 'style="display:none;"' : ''}>
+                        <div class="canvas-edit-controls" id="canvas-edit-controls" ${dirCanvasDisplayFlag ? 'style="display:none;"' : ''}>
                             <button class="btn btn-primary btn-sm" data-node-id="${node.id}" onclick="editNodeContent(event, this)">
                                 编辑内容
                             </button>
@@ -27546,11 +27728,6 @@ kanban-plugin: basic
             };
             if (!param || !isEmpty(param)) data = param;
             _currentDirTotalBytes = data.stats.total_size_bytes;
-            const btn = document.getElementById('data-refresh-btn');
-            if (btn) {
-                btn.disabled = true;
-                btn.innerText = '加载中...';
-            }
             // 单次遍历完成所有数据处理 (stats + heatmap + 活动列表预排序 + treemap 映射)
             const stats = await renderDashStats();
             // 更新统计卡片 (轻量操作,同步)
@@ -27596,8 +27773,6 @@ kanban-plugin: basic
                     chartsResizeBound = true;
                 }
             });
-            btn.disabled = false;
-            btn.innerText = '扫描数据';
         }
 
         async function renderDashboardLight(param = null) {
@@ -27613,11 +27788,6 @@ kanban-plugin: basic
             };
             if (!param || !isEmpty(param)) data = param;
             _currentDirTotalBytes = data.stats.total_size_bytes;
-            const btn = document.getElementById('data-refresh-btn');
-            if (btn) {
-                btn.disabled = true;
-                btn.innerText = '加载中...';
-            }
             // 单次遍历完成所有数据处理 (stats + heatmap + 活动列表预排序)
             const stats = await renderDashStats();
             // 更新统计卡片 (轻量操作,同步)
@@ -27662,11 +27832,8 @@ kanban-plugin: basic
                     chartsResizeBound = true;
                 }
             });
-            btn.disabled = false;
-            btn.innerText = '扫描数据';
         }
 
-        // 更新文件摘要面板数据
         async function renderFileSumPanel(data, typeCounts = null) {
             if (hasBackendServer) return;
             const now = Date.now();
@@ -28571,6 +28738,7 @@ kanban-plugin: basic
         }
         //首页面板
         async function toggleDashboardView(isFirst = false, data = null) {
+            await updateTimeAll();
             const _scanStart = performance.now();
             await switchToView(dashboardContainer);
             // 确保所有 dashboard ECharts 实例都能响应窗口 resize
@@ -28598,15 +28766,17 @@ kanban-plugin: basic
             }
             // 监控初始化完成后设置激活标志（防止 initSystemMonitor → closeSystemMonitor 误复位）
             _dashboardMetricsActive = true;
-            const timeDisplay = dashboardContainer.querySelector('#dashboard-time');
-            if (timeDisplay) {
-                todoUpdateModalTime(timeDisplay);
-                TimerManager.set('dashboardTime', () => {
-                    // 空闲时不更新时间，减少 CPU 占用
-                    if (!isIdle()) {
-                        todoUpdateModalTime(timeDisplay);
-                    }
-                }, 1000);
+            if (!(isTauriVisit() && navigator.userAgent.includes('Mac'))) {
+                const timeDisplay = dashboardContainer.querySelector('#dashboard-time');
+                if (timeDisplay) {
+                    todoUpdateModalTime(timeDisplay);
+                    TimerManager.set('dashboardTime', () => {
+                        // 空闲时不更新时间，减少 CPU 占用
+                        if (!isIdle()) {
+                            todoUpdateModalTime(timeDisplay);
+                        }
+                    }, 1000);
+                }
             }
             if (data) {
                 await renderDashboardLight(data);
@@ -29202,7 +29372,7 @@ kanban-plugin: basic
             weeklyChart.setOption({
                 tooltip: {
                     trigger: 'axis',
-                     textStyle: { fontSize: 11 },
+                    textStyle: { fontSize: 11 },
                     formatter: function (params) {
                         const p = params[0];
                         const d = weekData[p.dataIndex];
@@ -29223,7 +29393,7 @@ kanban-plugin: basic
                     smooth: true,
                     lineStyle: { color: '#2EA043', width: 1.5 },
                     areaStyle: {
-                            color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(46,160,67,0.5)' }, { offset: 1, color: 'rgba(46,160,67,0.05)' }] }
+                        color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(46,160,67,0.5)' }, { offset: 1, color: 'rgba(46,160,67,0.05)' }] }
                     },
                     symbol: 'circle',
                     symbolSize: 6,
@@ -30343,6 +30513,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             tsx: 'typescript',
             json: 'json',
             jsonc: 'json',
+            jsonl: 'json',
             xml: 'xml',
             xsd: 'xml',
             xsl: 'xml',
@@ -32449,11 +32620,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             timelineSearchKeyword = '';
             defaultSelectionApplied = false;
             const heatmap = document.getElementById('timelineMonthsHeatmap');
-            if (heatmap)   heatmap.innerHTML = '';
+            if (heatmap) heatmap.innerHTML = '';
             const tooltip = document.getElementById('timelineHeatmapTooltip');
-            if (tooltip)   tooltip.innerHTML = '';
+            if (tooltip) tooltip.innerHTML = '';
             const visTimeline = document.getElementById('visTimeline');
-            if (visTimeline)  visTimeline.innerHTML = '';
+            if (visTimeline) visTimeline.innerHTML = '';
         }
 
         function getTodayStr() {
@@ -33062,42 +33233,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (!isEmpty(operRecords)) {
                     safeLocalStorageSet(VIEW_OPER_RECORDS_KEY, JSON.stringify(operRecords));
                 }
-            }
-        }
-
-        // 定时任务系统（基于 setInterval 的简单调度）
-
-        async function executeScheduledTask() {
-            if (!currentFileHandle) return;
-            const startTime = new Date();
-            const timeStr = startTime.toLocaleString('zh-CN', {
-                month: '2-digit',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-            console.log(`[定时任务] 开始执行: ${timeStr}`);
-
-            syncOperationToLocalFile();
-
-            console.log(`[定时任务] 执行完成，耗时: ${Date.now() - startTime}ms`);
-        }
-
-        function startScheduledTask(intervalMinutes = 5) {
-            stopScheduledTask();
-            const intervalMs = intervalMinutes * 60 * 1000;
-            console.log(`[定时任务] 启动，间隔: ${intervalMinutes}分钟 (${intervalMs}ms)`);
-            executeScheduledTask().catch(e => console.error('[定时任务] 执行失败:', e));
-            // 系统级定时器：页面隐藏时继续运行，确保定时任务通知
-            TimerManager.set('scheduledTask', () => {
-                executeScheduledTask().catch(e => console.error('[定时任务] 执行失败:', e));
-            }, intervalMs, true);
-        }
-
-        function stopScheduledTask() {
-            if (TimerManager.has('scheduledTask')) {
-                TimerManager.clear('scheduledTask');
-                console.log('[定时任务] 已停止');
             }
         }
 
@@ -33744,11 +33879,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     splitLine: { show: false },
                     axisLabel: { show: false },
                     detail: {
-                        fontSize: 14,
+                        fontSize: 12,
                         fontWeight: 'bold',
                         color: '#333',
                         formatter: '{value}%',
-                        offsetCenter: ['7%', '50%']
+                        offsetCenter: ['7%', '60%']
                     },
                     data: [{ value: 0.15 }]
                 }]
@@ -33770,11 +33905,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     splitLine: { show: false },
                     axisLabel: { show: false },
                     detail: {
-                        fontSize: 14,
+                        fontSize: 12,
                         fontWeight: 'bold',
                         color: '#333',
                         formatter: '{value}%',
-                        offsetCenter: ['7%', '50%']
+                        offsetCenter: ['7%', '60%']
                     },
                     data: [{ value: 0.15 }]
                 }]
@@ -35177,14 +35312,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             regexAppState = null;
             var railroadContainer = document.getElementById('regex-railroad-container');
-            if(railroadContainer) railroadContainer.innerHTML = '正在初始化 Regulex 渲染引擎...';
+            if (railroadContainer) railroadContainer.innerHTML = '正在初始化 Regulex 渲染引擎...';
             var astContainer = document.getElementById('regex-ast-container');
-            if(astContainer) astContainer.innerHTML = '输入正则后自动生成 AST';
+            if (astContainer) astContainer.innerHTML = '输入正则后自动生成 AST';
         }
 
         // 农历和法定节假日数据缓存
         let _holidayCache = null;           // { "2026-01-01": { date, holiday, ... } }
         let _lunarCache = {};              // { "2026-01-01": { lunarDay, lunarMonth, isLeap, festival, ... } }
+        let _lunarCacheDirty = false;      // 农历缓存是否有未保存的变更
         let _holidayLoading = false;
         const LUNAR_CACHE_KEY = 'todo_lunar_cache';
         const HOLIDAY_CACHE_KEY = 'todo_holiday_cache';
@@ -35194,15 +35330,22 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         function _saveLunarCache() {
             try {
                 const payload = { _expire: Date.now() + CACHE_EXPIRE_DAYS * 86400000, data: _lunarCache };
-                localStorage.setItem(LUNAR_CACHE_KEY, JSON.stringify(payload));
+                safeLocalStorageSet(LUNAR_CACHE_KEY, JSON.stringify(payload));
             } catch (e) { /* ignore quota */
+            }
+        }
+        // 仅在缓存有变更时保存，在渲染/导航完成后调用
+        function _flushLunarCache() {
+            if (_lunarCacheDirty) {
+                _lunarCacheDirty = false;
+                _saveLunarCache();
             }
         }
 
         // localStorage → 农历缓存
         function _loadLunarCache() {
             try {
-                const raw = localStorage.getItem(LUNAR_CACHE_KEY);
+                const raw = safeLocalStorageGet(LUNAR_CACHE_KEY);
                 if (!raw) return false;
                 const payload = JSON.parse(raw);
                 if (!payload || payload._expire < Date.now()) {
@@ -35231,7 +35374,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         function _saveHolidayCache(year, data) {
             try {
                 const payload = { _year: year, _expire: Date.now() + CACHE_EXPIRE_DAYS * 86400000, holiday: data };
-                localStorage.setItem(HOLIDAY_CACHE_KEY, JSON.stringify(payload));
+                safeLocalStorageSet(HOLIDAY_CACHE_KEY, JSON.stringify(payload));
             } catch (e) { /* ignore quota */
             }
         }
@@ -35239,7 +35382,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         // localStorage → 节假日缓存
         function _loadHolidayCache(year) {
             try {
-                const raw = localStorage.getItem(HOLIDAY_CACHE_KEY);
+                const raw = safeLocalStorageGet(HOLIDAY_CACHE_KEY);
                 if (!raw) return false;
                 const payload = JSON.parse(raw);
                 if (!payload || payload._expire < Date.now() || payload._year !== year) {
@@ -35326,9 +35469,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
 
             _lunarCache[key] = info;
-            // 每写 50 条异步持久化一次（延迟批量写）
-            const count = Object.keys(_lunarCache).length;
-            if (count % 50 === 0) setTimeout(_saveLunarCache, 0);
+            _lunarCacheDirty = true;
             return info;
         }
 
@@ -35361,12 +35502,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             _ensureHolidayData(year).then(() => {
                 if (todoCurrentDate.getFullYear() !== year) return;
                 todoRenderAll();
+                _flushLunarCache(); // 初始渲染完成后持久化农历缓存
             });
             todoInit();
             const timeDisplay = calendarContainer.querySelector('#todo-display-time');
             if (timeDisplay) {
-                todoUpdateModalTime(timeDisplay);
-                TimerManager.set('dashboardTime', () => {
+                TimerManager.set('todo-display-time', () => {
                     // 空闲时不更新时间，减少 CPU 占用
                     if (!isIdle()) {
                         todoUpdateModalTime(timeDisplay);
@@ -35386,6 +35527,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         let todoEventSource = null; // SSE 连接实例
         let _todoEventsCache = null; // 按日期排序的事件缓存
         let todoLastCheckTime = 0; // 上次检查时间（用于去重）
+        const _remindedEventIds = new Set(); // 已提醒的事件 ID（防止重复弹窗）
 
         /** 颜色配置映射表 - 统一管理所有颜色相关样式 */
         const TODO_COLORS = {
@@ -35432,10 +35574,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         function _expandCronEventsForDate(todoE, date) {
             if (!todoE.cron) return [];
 
-            const cronParts = todoE.cron.trim().split(/\s+/);
-            if (cronParts.length < 5) return [];
-
-            const [minField, hourField, domField, monthField, dowField] = cronParts;
+            const p = todoE._cronParsed;
             const startDate = todoE.start instanceof Date ? todoE.start : new Date(todoE.start);
             const endDate = todoE.end instanceof Date ? todoE.end : new Date(todoE.end);
 
@@ -35444,44 +35583,53 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             dayStart.setHours(0, 0, 0, 0);
             const dayEnd = new Date(date);
             dayEnd.setHours(23, 59, 59, 999);
-
-            // 当天不在 start~end 区间内，跳过
             if (dayEnd < startDate || dayStart > endDate) return [];
 
-            // 检查月字段是否匹配
-            const targetMonth = date.getMonth() + 1; // 1-12
-            const months = _parseCronField(monthField, 1, 12);
-            if (!months.includes(targetMonth)) return [];
-
-            // 检查日字段是否匹配
-            const targetDay = date.getDate(); // 1-31
-            const days = _parseCronField(domField, 1, 31);
-            if (!days.includes(targetDay)) return [];
-
-            // 检查星期字段是否匹配
-            const targetDow = date.getDay(); // 0-6 (周日=0)
-            const dows = _parseCronField(dowField, 0, 6);
-            if (!dows.includes(targetDow)) return [];
+            // 使用缓存的 parsed 字段做 O(1) 日月匹配，避免 _parseCronField 重复解析
+            if (p) {
+                const targetMonth = date.getMonth() + 1;
+                const targetDay = date.getDate();
+                const targetDow = date.getDay();
+                if (!p.allMon && !p._months.has(targetMonth)) return [];
+                if (!p.allDay && !p._days.has(targetDay)) return [];
+                if (!p.allDow && !p._dows.has(targetDow) && !(targetDow === 0 && p._dows.has(7))) return [];
+            } else {
+                // 无缓存时回退到原始解析方式
+                const cronParts = todoE.cron.trim().split(/\s+/);
+                if (cronParts.length < 5) return [];
+                const [minField, hourField, domField, monthField, dowField] = cronParts;
+                const targetMonth = date.getMonth() + 1;
+                if (!_parseCronField(monthField, 1, 12).includes(targetMonth)) return [];
+                const targetDay = date.getDate();
+                if (!_parseCronField(domField, 1, 31).includes(targetDay)) return [];
+                const targetDow = date.getDay();
+                if (!_parseCronField(dowField, 0, 6).includes(targetDow)) return [];
+            }
 
             // 当天的实际区间（取 start~end 和 当天的交集）
             const rangeStart = dayStart > startDate ? dayStart : startDate;
             const rangeEnd = dayEnd < endDate ? dayEnd : endDate;
 
-            const hours = _parseCronField(hourField, 0, 23);
-            const minutes = _parseCronField(minField, 0, 59);
+            let hours, minutes;
+            if (p) {
+                hours = [...p._hours];
+                minutes = [...p._mins];
+            } else {
+                const cronParts = todoE.cron.trim().split(/\s+/);
+                hours = _parseCronField(cronParts[1], 0, 23);
+                minutes = _parseCronField(cronParts[0], 0, 59);
+            }
 
             const events = [];
-            for (const h of hours) {
-                for (const m of minutes) {
-                    const eventTime = new Date(date);
+            const baseTime = new Date(date);
+            for (let hi = 0; hi < hours.length; hi++) {
+                const h = hours[hi];
+                for (let mi = 0; mi < minutes.length; mi++) {
+                    const m = minutes[mi];
+                    const eventTime = new Date(baseTime);
                     eventTime.setHours(h, m, 0, 0);
-                    // 检查是否在区间内
                     if (eventTime >= rangeStart && eventTime <= rangeEnd) {
-                        events.push({
-                            ...todoE,
-                            _isCronVirtual: true,
-                            _cronTime: eventTime
-                        });
+                        events.push({ ...todoE, _isCronVirtual: true, _cronTime: eventTime });
                     }
                 }
             }
@@ -35491,6 +35639,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         // 按日期缓存 getEventsForDate 结果，todoEvents 变更或切换月份时失效
         let _eventsByDateCache = null;
         let _eventsByDateCacheKey = '';
+        let _eventsCacheVersion = 0;            // 递增计数器，todoEvents 变更时 +1
 
         /**
          * 获取指定日期的所有事件（含 Cron 展开的虚拟事件）
@@ -35498,16 +35647,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
          * @returns {Array} 排序后的事件列表
          */
         function getEventsForDate(date) {
-            // 使用缓存：以 "year-month-eventCount" 作为缓存 key
-            const cacheKey = `${date.getFullYear()}-${date.getMonth()}-${todoEvents.length}`;
-            if (_eventsByDateCache && _eventsByDateCacheKey === cacheKey && _eventsByDateCache.has(date.toDateString())) {
-                return _eventsByDateCache.get(date.toDateString());
+            // 使用缓存：以版本号为 key（_eventsCacheVersion 在 todoEvents 变更时递增）
+            const verKey = `${_eventsCacheVersion}`;
+            const dateKey = date.toDateString();
+            if (_eventsByDateCache && _eventsByDateCacheKey === verKey && _eventsByDateCache.has(dateKey)) {
+                return _eventsByDateCache.get(dateKey);
             }
-            // 普通事件（非 cron 事件），按 start 日期匹配
-            const normalEvents = todoEvents.filter(todoE => !todoE.cron && todoIsSameDay(todoE.start, date));
-            // Cron 事件展开为虚拟事件
+            // 普通事件（非 cron 事件），按 start 日期匹配，排除稍后提醒临时事件
+            const normalEvents = todoEvents.filter(todoE => !todoE._isSnoozed && !todoE.cron && todoIsSameDay(todoE.start, date));
+            // Cron 事件展开为虚拟事件，排除稍后提醒临时事件
             const cronEvents = todoEvents
-                .filter(todoE => todoE.cron)
+                .filter(todoE => !todoE._isSnoozed && todoE.cron)
                 .flatMap(todoE => _expandCronEventsForDate(todoE, date));
 
             const result = [...normalEvents, ...cronEvents].sort((a, b) => {
@@ -35516,17 +35666,18 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 return aTime - bTime;
             });
             // 存入缓存
-            if (!_eventsByDateCache || _eventsByDateCacheKey !== cacheKey) {
+            if (!_eventsByDateCache || _eventsByDateCacheKey !== verKey) {
                 _eventsByDateCache = new Map();
-                _eventsByDateCacheKey = cacheKey;
+                _eventsByDateCacheKey = verKey;
             }
-            _eventsByDateCache.set(date.toDateString(), result);
+            _eventsByDateCache.set(dateKey, result);
             return result;
         }
         /** 使事件缓存失效，在 todoEvents 变更后调用 */
         function _invalidateEventsCache() {
             _eventsByDateCache = null;
             _eventsByDateCacheKey = '';
+            _eventsCacheVersion++;                  // 递增版本号，让所有缓存失效
         }
         function validateScheduleTime(start, end) {
             var now = new Date();
@@ -35574,10 +35725,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (TimerManager.has('todoTimeline')) {
                 TimerManager.clear('todoTimeline');
             }
-            TimerManager.clear('dashboardTime');
+            TimerManager.clear('todo-display-time');
             TimerManager.clear('todoModalTime');
-            // 保存农历缓存，但不停止后台调度器
-            _saveLunarCache();
         }
 
         function todoRenderAll() {
@@ -35691,11 +35840,24 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         function todoHasEvent(date) {
-            // 轻量检查：先查普通事件，再查 cron 事件，命中即短路
-            const hasNormal = todoEvents.some(todoE => !todoE.cron && todoIsSameDay(todoE.start, date));
+            // 轻量检查：先查普通事件，再查 cron 事件，命中即短路（排除稍后提醒临时事件）
+            const hasNormal = todoEvents.some(todoE => !todoE._isSnoozed && !todoE.cron && todoIsSameDay(todoE.start, date));
             if (hasNormal) return true;
+            // cron 事件使用缓存的解析字段快速判断，避免重复调用 _expandCronEventsForDate
             return todoEvents.some(todoE => {
-                if (!todoE.cron) return false;
+                if (todoE._isSnoozed || !todoE.cron) return false;
+                // 尝试用已缓存的 cronParsed 做快速日月匹配
+                const p = todoE._cronParsed;
+                if (p) {
+                    const m = date.getMonth() + 1;
+                    const d = date.getDate();
+                    const w = date.getDay();
+                    if (!p.allMon && !p._months.has(m)) return false;
+                    if (!p.allDay && !p._days.has(d)) return false;
+                    if (!p.allDow && !p._dows.has(w) && !(w === 0 && p._dows.has(7))) return false;
+                    return true; // 日月星期都匹配 → 有事件
+                }
+                // 无缓存时回退到展开方式
                 const expanded = _expandCronEventsForDate(todoE, date);
                 return expanded.length > 0;
             });
@@ -35832,10 +35994,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             columns.innerHTML = '';
             timeColumn.innerHTML = '';
             todoRenderTimeColumn(timeColumn);
+            const _todayForWeek = new Date();
             for (let i = 0; i < 7; i++) {
                 const date = new Date(startOfWeek);
                 date.setDate(startOfWeek.getDate() + i);
-                const isToday = todoIsSameDay(date, new Date());
+                const isToday = todoIsSameDay(date, _todayForWeek);
                 const headerCol = document.createElement('div');
                 headerCol.className = 'todo-day-column-header';
                 headerCol.innerHTML = `
@@ -36045,13 +36208,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 container.innerHTML = '<div class="todo-empty-state">今日暂无待办日程</div>';
                 return;
             }
-            var html = '';
-            for (var i = 0; i < upcoming.length; i++) {
-                var todoE = upcoming[i];
-                var isCronVirtual = todoE._isCronVirtual;
-                var eventTime = isCronVirtual ? todoFormatTime(todoE._cronTime) : (todoE.start instanceof Date ? todoE.start : new Date(todoE.start));
-                var endDate = isCronVirtual ? null : (todoE.end instanceof Date ? todoE.end : new Date(todoE.end));
-                var timeStr;
+            let html = '';
+            for (let i = 0; i < upcoming.length; i++) {
+                const todoE = upcoming[i];
+                const isCronVirtual = todoE._isCronVirtual;
+                const eventTime = isCronVirtual ? todoFormatTime(todoE._cronTime) : (todoE.start instanceof Date ? todoE.start : new Date(todoE.start));
+                const endDate = isCronVirtual ? null : (todoE.end instanceof Date ? todoE.end : new Date(todoE.end));
+                let timeStr;
                 if (isCronVirtual) {
                     timeStr = '🔄 ' + eventTime;
                 } else if (eventTime instanceof Date && !isNaN(eventTime) && endDate instanceof Date && !isNaN(endDate)) {
@@ -36059,7 +36222,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 } else {
                     timeStr = '';
                 }
-                var cronClass = isCronVirtual ? ' todo-cron-sidebar' : '';
+                const cronClass = isCronVirtual ? ' todo-cron-sidebar' : '';
                 html += '<div class="todo-event-item todo-' + (todoE.color || 'blue') + cronClass + '" onclick="todoEditEvent(\'' + todoE.id + '\')">' +
                     '<div class="todo-event-time">' + timeStr + '</div>' +
                     '<div class="todo-event-title">' + escapeHtml(todoE.title) + '</div>' +
@@ -36082,6 +36245,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const now = Date.now();
             const historyMap = new Map();
             todoEvents.forEach(function (todoE) {
+                if (todoE._isSnoozed) return; // 稍后提醒临时事件不显示在历史中
                 if (todoE.cron) {
                     const cronStart = todoE.start instanceof Date ? todoE.start : new Date(todoE.start);
                     const cronEnd = todoE.end instanceof Date ? todoE.end : new Date(todoE.end);
@@ -36487,25 +36651,30 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             // 复用 todoFormatDateTimeLocal，增加 Date 类型校验
             return d instanceof Date ? todoFormatDateTimeLocal(d) : d;
         }
-        // 保存日程数据到本地文件
+        // 保存日程数据到本地文件（带 500ms 防抖，避免连续保存重复写盘）
+        let _syncTimer = null;
         async function todoSyncToFile() {
-            try {
-                const eventsData = todoEvents.map(e => ({
-                    id: e.id,
-                    title: e.title,
-                    start: e.start instanceof Date ? _dateToLocalISO(e.start) : e.start,
-                    end: e.end instanceof Date ? _dateToLocalISO(e.end) : e.end,
-                    color: e.color,
-                    desc: e.desc || '',
-                    cron: e.cron || '',
-                    notify: e.notify !== undefined ? e.notify : true,
-                    created_at: e.created_at || _dateToLocalISO(new Date()),
-                    updated_at: _dateToLocalISO(new Date())
-                }));
-                await writeFileByDirHandle(await getDataDir(), INDEX_SCHEDULE_FILE, JSON.stringify({ events: eventsData }));
-            } catch (e) {
-                console.error('保存日程数据失败:', e);
-            }
+            if (_syncTimer) clearTimeout(_syncTimer);
+            _syncTimer = setTimeout(async () => {
+                _syncTimer = null;
+                try {
+                    const eventsData = todoEvents.map(e => ({
+                        id: e.id,
+                        title: e.title,
+                        start: e.start instanceof Date ? _dateToLocalISO(e.start) : e.start,
+                        end: e.end instanceof Date ? _dateToLocalISO(e.end) : e.end,
+                        color: e.color,
+                        desc: e.desc || '',
+                        cron: e.cron || '',
+                        notify: e.notify !== undefined ? e.notify : true,
+                        created_at: e.created_at || _dateToLocalISO(new Date()),
+                        updated_at: _dateToLocalISO(new Date())
+                    }));
+                    await writeFileByDirHandle(await getDataDir(), INDEX_SCHEDULE_FILE, JSON.stringify({ events: eventsData }));
+                } catch (e) {
+                    console.error('保存日程数据失败:', e);
+                }
+            }, 500);
         }
         // 从本地 index_schedule.json 加载日程数据
         async function todoLoadFromFile() {
@@ -36528,9 +36697,26 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             }
         }
-        // 检查 Cron 表达式是否匹配当前时间
-        function _cronMatches(cron, date) {
+        // 检查 Cron 表达式是否匹配当前时间（字段解析结果缓存到 todoEvents._cronParsed）
+        function _cronMatches(cron, date, cachedParsed) {
             if (!cron || typeof cron !== 'string') return false;
+
+            // 优先使用调用方传入的缓存，否则尝试从事件对象获取
+            const p = cachedParsed || cron._cronParsed;
+            if (p) {
+                const minute = date.getMinutes();
+                const hour = date.getHours();
+                const dayOfMonth = date.getDate();
+                const month = date.getMonth() + 1;
+                const dayOfWeek = date.getDay();
+                return (p.allMon || p._months.has(month)) &&
+                    (p.allDay || p._days.has(dayOfMonth)) &&
+                    (p.allDow || p._dows.has(dayOfWeek) || (dayOfWeek === 0 && p._dows.has(7))) &&
+                    (p.allHr || p._hours.has(hour)) &&
+                    (p.allMin || p._mins.has(minute));
+            }
+
+            // 无缓存时直接解析（兜底）
             const cronParts = cron.trim().split(/\s+/);
             if (cronParts.length < 5) return false;
 
@@ -36540,7 +36726,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const dayOfMonth = date.getDate();
             const month = date.getMonth() + 1;
             const dayOfWeek = date.getDay();
-            // 标准 cron 中 0 和 7 都表示周日，同时检查避免遗漏
             const dows = _parseCronField(dowField, 0, 6);
             const dowsExtended = _parseCronField(dowField, 0, 7);
             const dowMatch = dows.includes(dayOfWeek) || (dayOfWeek === 0 && dowsExtended.includes(7));
@@ -36555,13 +36740,34 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (!event.notify) return false;
             const eventStart = event.start instanceof Date ? event.start : new Date(event.start);
             const eventEnd = event.end instanceof Date ? event.end : new Date(event.end);
-            if (now < eventStart || now > eventEnd) return false;
+            if (now > eventEnd) return false;
             if (event.cron) {
-                return _cronMatches(event.cron, now);
+                // 延迟初始化 cron 解析缓存（第一次调用时解析，后续复用）
+                if (!event._cronParsed) {
+                    const parts = event.cron.trim().split(/\s+/);
+                    if (parts.length === 5) {
+                        const p = {
+                            months: new Set(_parseCronField(parts[3], 1, 12)),
+                            days: new Set(_parseCronField(parts[2], 1, 31)),
+                            dows: new Set(_parseCronField(parts[4], 0, 7)), // [0,7] 兼容周日 0/7
+                            hours: new Set(_parseCronField(parts[1], 0, 23)),
+                            mins: new Set(_parseCronField(parts[0], 0, 59)),
+                        };
+                        p.allMon = (p.months.size === 12);
+                        p.allDay = (p.days.size === 31);
+                        p.allDow = (p.dows.size >= 7); // [0,7] 范围共 8 个值
+                        p.allHr = (p.hours.size === 24);
+                        p.allMin = (p.mins.size === 60);
+                        p._months = p.months; p._days = p.days; p._dows = p.dows;
+                        p._hours = p.hours; p._mins = p.mins;
+                        event._cronParsed = p;
+                    }
+                }
+                return _cronMatches(event.cron, now, event._cronParsed);
             }
-            // 仅在开始时间前60秒到后30秒之间触发，避免调度器两次tick都命中
+            // 非 cron 事件：在开始时间 ±60 秒内触发（调度器每 60s tick，确保至少命中一次）
             const diff = eventStart.getTime() - now.getTime();
-            return diff <= 60000 && diff > -30000;
+            return diff <= 60000 && diff >= -60000;
         }
         // 本地调度器检查函数
         function todoCheckScheduledEvents() {
@@ -36570,8 +36776,20 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (currentMinute === todoLastCheckTime) return;
             todoLastCheckTime = currentMinute;
 
+            // 清理已过期事件的提醒记录（事件已不存在或已结束超过 5 分钟）
+            if (currentMinute % 5 === 0) {
+                const nowMs = now.getTime();
+                for (const id of _remindedEventIds) {
+                    const ev = todoEvents.find(e => e.id === id);
+                    if (!ev || (ev.end && new Date(ev.end).getTime() + 300000 < nowMs)) {
+                        _remindedEventIds.delete(id);
+                    }
+                }
+            }
+
             for (const event of todoEvents) {
-                if (_shouldTriggerReminder(event, now)) {
+                if (!_remindedEventIds.has(event.id) && _shouldTriggerReminder(event, now)) {
+                    _remindedEventIds.add(event.id);
                     todoShowReminder({
                         id: event.id,
                         title: event.title,
@@ -36580,7 +36798,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         desc: event.desc,
                         color: event.color,
                         cron: event.cron,
-                        cron_trigger: !!event.cron
+                        cron_trigger: !!event.cron,
+                        _snoozeCount: event._snoozeCount || 0
                     });
                 }
             }
@@ -36643,11 +36862,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     </div>
                     <div class="todo-reminder-footer">
                         <button class="todo-reminder-btn todo-reminder-btn-close" onclick="this.closest('.todo-reminder-overlay').remove()">关闭</button>
-                        ${isCron ? '' : `<button class="todo-reminder-btn todo-reminder-btn-snooze" onclick="todoSnoozeReminder(this, '${data.id}')">稍后提醒(5分钟)</button>`}
+                        ${isCron ? '' : (data._snoozeCount >= 2
+                    ? `<button class="todo-reminder-btn todo-reminder-btn-snooze" onclick="todoConfirmReminder(this)">确认</button>`
+                    : `<button class="todo-reminder-btn todo-reminder-btn-snooze" onclick="todoSnoozeReminder(this, '${data.id}')">稍后提醒(5分钟)</button>`)}
                     </div>
                 </div>
             `;
             document.body.appendChild(overlay);
+            //声音提醒
+            paySound();
         }
         // 稍后提醒：5分钟后再次触发（不修改原事件 start 时间）
         function todoSnoozeReminder(btn, eventId) {
@@ -36657,20 +36880,28 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (event) {
                 const snoozeTime = Date.now() + 5 * 60 * 1000;
                 // 创建临时提醒（不改变原事件的 start 时间，以免影响日历显示）
+                var targetTitle = event.title.startsWith('[稍后提醒]') ? event.title : `[稍后提醒] ${event.title}`;
                 const tmpEvent = {
                     ...event,
                     id: generateEventId(),
                     start: new Date(snoozeTime),
                     end: new Date(snoozeTime + 60 * 60 * 1000),
-                    title: `[稍后提醒] ${event.title}`,
+                    title: targetTitle,
                     desc: event.desc || '',
                     cron: '', // 稍后提醒不是 cron
-                    notify: true
+                    notify: true,
+                    _isSnoozed: true,                          // 标记为稍后提醒临时事件
+                    _snoozeCount: (event._snoozeCount || 0) + 1 // 累计稍后次数
                 };
                 todoEvents.push(tmpEvent);
                 todoSyncToFile();
                 todoUpdateLocalScheduler();
             }
+        }
+        // 确认（最后提醒的按钮）：关闭弹窗，不创建新事件
+        function todoConfirmReminder(btn) {
+            const overlay = btn.closest('.todo-reminder-overlay');
+            if (overlay) overlay.remove();
         }
 
         /**
@@ -38219,7 +38450,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 showNeighborsOnly: graphParams.showNeighborsOnly
             };
             try {
-                localStorage.setItem(GRAPH_PARAMS_KEY, JSON.stringify(params));
+                safeLocalStorageSet(GRAPH_PARAMS_KEY, JSON.stringify(params));
             } catch (e) {
                 console.warn('保存参数失败', e);
             }
@@ -38227,7 +38458,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         function loadGraphParams() {
             try {
-                const saved = localStorage.getItem(GRAPH_PARAMS_KEY);
+                const saved = safeLocalStorageGet(GRAPH_PARAMS_KEY);
                 if (saved) {
                     const params = JSON.parse(saved);
                     Object.keys(params).forEach(key => {
@@ -38685,7 +38916,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const presets = cron_qtz ? CRON_PRESETS_QTZ : CRON_PRESETS_STD;
             let h = '';
             //header
-            h += '<div class="cron-header"><div class="cron-header-left"><div class="cron-logo">⏱</div><h1>Cron 表达式生成器</h1></div>';
+            h += '<div class="cron-header"><div class="cron-header-left"></div>';
             h += '<div class="cron-header-right"><div class="cron-switch-group"><span class="cron-switch-label">Quartz 模式</span><button class="cron-switch' + (cron_qtz ? ' on' : '') + '" onclick="cron_toggleQtz()"></button></div>';
             if (cron_qtz) h += '<div class="cron-switch-group"><span class="cron-switch-label sub">年字段</span><button class="cron-switch' + (cron_yearOn ? ' on' : '') + '" onclick="cron_toggleYear()"></button></div>';
             h += '</div></div>';
@@ -40541,7 +40772,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return visible;
         }
 
-        function _getWordCloudFiles(dirPath) {
+        function _getFilesByDirPath(dirPath) {
             var allFiles = getScanFileList();
             if (!allFiles || allFiles.length === 0) return [];
             var prefix = dirPath ? dirPath + SLASH : '';
@@ -40749,7 +40980,26 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             fill = "#cccccc",
             fillOpacity = 0.7,
         } = {}) {
-            const V = d3.map(data, value);
+            data = data.map(item => {
+                const raw = value(item);
+                let adjustedValue;
+                if (raw <= 20) {
+                    // 核心：低值区高区分度
+                    const exponent = 0.35;
+                    const normalized = raw / 20;
+                    const mapped = Math.pow(Math.max(normalized, 0), exponent);
+                    adjustedValue = 20 + mapped * 80; // 20 → 100
+                } else {
+                    // 高值区线性增长
+                    adjustedValue = 100 + (raw - 20) * 2.5;
+                }
+                return {
+                    ...item,
+                    value: Math.round(Math.min(300, adjustedValue))
+                };
+            });
+
+            const V = d3.map(data, d => d.value);
             const G = group == null ? null : d3.map(data, group);
             const I = d3.range(V.length).filter(i => V[i] > 0);
             if (G) {
@@ -40757,73 +41007,73 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 var color = d3.scaleOrdinal(gs, colors);
             }
             const L = label == null ? null : d3.map(data, label);
-
             const root = d3.pack()
                 .size([width - marginLeft - marginRight, height - marginTop - marginBottom])
                 .padding(padding)
                 (d3.hierarchy({ children: I }).sum(i => V[i]));
-
             const svg = d3.create("svg")
                 .attr("width", width)
                 .attr("height", height)
                 .attr("viewBox", [-marginLeft, -marginTop, width, height])
                 .attr("style", "max-width: 100%; height: auto;")
-                .attr("font-size", "0.5rem")
                 .attr("fill", "#fff")
                 .attr("font-family", "sans-serif")
                 .attr("text-anchor", "middle");
-
             const leaf = svg.selectAll("g")
                 .data(root.leaves())
                 .join("g")
                 .attr("transform", d => `translate(${d.x},${d.y})`);
-
             leaf.append("circle")
                 .attr("r", d => d.r)
                 .attr("fill", G ? d => color(G[d.data]) : fill == null ? "none" : fill)
                 .attr("fill-opacity", fillOpacity)
                 .attr("style", "filter: drop-shadow(0 4px 12px rgba(0,0,0,.15));");
-
             if (L) {
                 leaf.append("clipPath")
-                    .attr("id", (d,i) => `cp-${i}`)
+                    .attr("id", (d, i) => `cp-${i}`)
                     .append("circle")
                     .attr("r", d => d.r);
                 leaf.append("text")
-                    .attr("clip-path", (d,i) => `url(#cp-${i})`)
+                    .attr("clip-path", (d, i) => `url(#cp-${i})`)
                     .selectAll("tspan")
                     .data(d => `${L[d.data]}`.split(/\n/g))
                     .join("tspan")
+                    .attr("font-size", function () {
+                        const r = this.parentNode.__data__.r;
+                        return `${r / 48}rem`;
+                    })
                     .attr("x", 0)
                     .attr("y", (d, i, nodes) => `${i - nodes.length / 2 + 0.85}em`)
                     .text(d => d);
             }
-
             return svg.node();
         }
 
         async function openFileType(dirPath) {
             await switchToView(contentCommonContainer, 'flex');
-            var allFiles = _getWordCloudFiles(dirPath || '');
+            var allFiles = _getFilesByDirPath(dirPath || '');
             if (allFiles.length === 0) {
-                contentCommonContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;width:100%;min-height:80vh;color:var(--color-text-secondary);font-size:14px">未找到文档文件</div>';
+                showNotification(`目录下没有文件`, 'warning');
                 return;
             }
             const cache = {}, data = [];
-            allFiles.forEach(({ext}) => cache[ext] ? cache[ext].value++ : data.push(cache[ext] = {id: ext, value: 1}));
+            allFiles.forEach(({ ext }) => cache[ext] ? cache[ext].value++ : data.push(cache[ext] = { id: ext, value: 1 }));
+
             const colors = [...new Set(data.map(d => d.id))].map((g, i) => getGraphGroupColor(i, 0));
+
+            // 传递 autoExpand: true 开启无限画布
             const svg = BubbleChart(data, {
                 padding: 10, margin: 20,
                 label: d => `${d.id}\n${d.value}`,
                 value: d => d.value,
                 group: d => d.id,
-                colors, fillOpacity: 0.85
+                colors,
+                fillOpacity: 0.85,
+                autoExpand: true
             });
-            d3.select(svg).attr("width", "100%").attr("height", "100%")
-                .attr("preserveAspectRatio", "xMidYMid meet")
-                .attr("style", "width:100%;height:100%");
+
             const div = document.createElement('div');
-            Object.assign(div.style, {display:'flex',height:'100%',width:'100%',justifyContent:'center',alignItems:'center'});
+            Object.assign(div.style, { display: 'flex', height: '100%', width: '100%', justifyContent: 'center', alignItems: 'center' });
             div.appendChild(svg);
             contentCommonContainer.appendChild(div);
         }
@@ -40836,9 +41086,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 aiFabContainer.style.display = 'none';
                 contentCommonContainer.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;min-height:80vh;gap:16px;"><div class="raw-spinner"></div><span style="color:var(--color-text-secondary);font-size:14px">正在生成词云…</span></div>';
                 // 全量获取并打乱顺序，使大小文件在各页均匀分布
-                var allFiles = _getWordCloudFiles(dirPath || '');
+                var allFiles = _getFilesByDirPath(dirPath || '');
                 if (allFiles.length === 0) {
-                    contentCommonContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;width:100%;min-height:80vh;color:var(--color-text-secondary);font-size:14px">未找到文档文件</div>';
+                    showNotification(`目录下没有文件`, 'warning');
                     return;
                 }
                 // Fisher-Yates 洗牌，打乱文件大小顺序
@@ -44300,23 +44550,19 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         };
 
         function pomodoroLoadState() {
-            try {
-                const saved = localStorage.getItem(POMODORO_CFG.storageKey);
-                if (saved) {
-                    const data = JSON.parse(saved);
-                    const today = new Date().toDateString();
-                    pomodoroState.streak = data.lastDate === today ? (data.streak || 0) : 0;
-                }
-            } catch (_) { }
+            const saved = safeLocalStorageGet(POMODORO_CFG.storageKey);
+            if (saved) {
+                const data = JSON.parse(saved);
+                const today = new Date().toDateString();
+                pomodoroState.streak = data.lastDate === today ? (data.streak || 0) : 0;
+            }
         }
 
         function pomodoroSaveState() {
-            try {
-                localStorage.setItem(POMODORO_CFG.storageKey, JSON.stringify({
-                    streak: pomodoroState.streak,
-                    lastDate: new Date().toDateString()
-                }));
-            } catch (_) { }
+            safeLocalStorageSet(POMODORO_CFG.storageKey, JSON.stringify({
+                streak: pomodoroState.streak,
+                lastDate: new Date().toDateString()
+            }));
         }
 
         function pomodoroGetSettings() {
@@ -44612,33 +44858,27 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             } catch (_) { }
         }
 
-        async function dirGraphDisplay(relPath) {
-            if (!relPath) return;
+        async function dirCanvasDisplay(dirPath) {
+            if (!dirPath) return;
             await switchToView(contentMain);
-            //保存面板里的文件树选中当前目录
-            const { dirHandle, dirParentHandle } = await getDirHandleByDirPath(relPath);
-            if (!dirHandle) {
-                showNotification(`目录 ${relPath} 不存在`, 'error');
+            currentCvsDirPath = dirPath;
+            const children = [];
+            var allFiles = _getFilesByDirPath(dirPath || '');
+            if (allFiles.length === 0) {
+                showNotification(`目录下没有文件`, 'warning');
                 return;
             }
-            currentCvsDirPath = relPath;
-            const children = [];
-            const entries = await getDirectoryEntries(dirHandle);
-            let index = 1;
-            for (const entry of entries) {
-                const name = entry.name
-                if (entry.kind === 'file') {
-                    if (index > 20) {
-                        showNotification('⚠️ 目录下文件过多，最多显示前20个文件', 'warning');
-                        break;
-                    }
-                    const path = joinPath(relPath, name);
-                    const isfile = name.endsWith('.md') || name.endsWith('.mmd') || isPicImage(getExt(name));
-                    children.push({ name: name, id: `node_${index}`, path: path, isfile: !isfile });
-                    index++;
+            for (let i = 0; i < allFiles.length; i++) {
+                const file = allFiles[i];
+                const ext = file.ext.toLowerCase();
+                const isfile = ext === 'md' || ext === 'mmd' || isPicImage(ext);
+                children.push({ name: file.name, id: `node_${i}`, path: file.path, isfile: !isfile });
+                if (i > 50) {
+                    showNotification(`目录下有${allFiles.length}个文件，仅显示前50个`, 'warning');
+                    break;
                 }
             }
-            const data = generateCanvasFolderJSON({ folderName: basename(relPath), children });
+            const data = generateCanvasFolderJSON({ folderName: basename(dirPath), children });
             await openCanvasFile(data);
         }
 
@@ -45583,6 +45823,25 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             }
         }
+
+        // Tauri 窗口最大化时调整 header padding
+        async function initTauriWindowState() {
+            if (!isTauriVisit() || !window.__TAURI__.window?.getCurrentWindow) return;
+            try {
+                const win = await window.__TAURI__.window.getCurrentWindow();
+                const header = document.getElementById('app-header');
+                if (!header) return;
+                const updatePadding = async () => {
+                    try {
+                        header.style.paddingLeft = (await win.isMaximized()) ? '8px' : '70px';
+                    } catch (e) { /* ignore */ }
+                };
+                win.onResized(updatePadding);
+                await updatePadding(); // 检查初始状态
+            } catch (e) {
+                console.warn('Tauri 窗口状态初始化失败:', e.message);
+            }
+        }
         async function initDiffModel() {
             if (window.__tauriInitPromise) {
                 await window.__tauriInitPromise;
@@ -45863,6 +46122,232 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             _LAZY_IMG_PENDING.clear();
         }
         // ========== 图片懒加载系统结束 ==========
+        // 进度计算 — 高性能优化版
+        // 缓存 DOM 引用，消除重复的 document.getElementById()
+        let _progEl = null;
+        function _cacheProgEl() {
+            _progEl = {
+                tb: document.getElementById('todayProgress'),
+                tp: document.getElementById('todayPercent'),
+                wb: document.getElementById('weekProgress'),
+                wp: document.getElementById('weekPercent'),
+                mb: document.getElementById('monthProgress'),
+                mp: document.getElementById('monthPercent'),
+                yb: document.getElementById('yearProgress'),
+                yp: document.getElementById('yearPercent'),
+            };
+        }
+        // 月/年边界缓存（仅当月/年变化时重新计算）
+        let _prvYear = -1, _prvMonth = -1;
+        let _sMonth = 0, _monMs = 0, _sYear = 0, _yrMs = 0;
+        const _DAY_MS = 86400000;
+        const _WEEK_MS = 7 * _DAY_MS;
+        // 格式化为 MM/DD HH:MM（用于日程列表显示）
+        function _formatShortDateTime(date) {
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            const hh = String(date.getHours()).padStart(2, '0');
+            const mm = String(date.getMinutes()).padStart(2, '0');
+            return `${m}/${d} ${hh}:${mm}`;
+        }
+        async function updateTimeHeader() {
+            if (window.__tauriInitPromise) {
+                await window.__tauriInitPromise;
+            }
+            if (!isTauriVisit() || !navigator.userAgent.includes('Mac')) return;
+            const timeDisplay = document.getElementById('header-time');
+            if (timeDisplay) {
+                TimerManager.set('header-time', () => {
+                    if (!isIdle()) {
+                        todoUpdateModalTime(timeDisplay);
+                    }
+                }, 1000, true);
+            }
+        }
+        async function updateTimeAll() {
+            if (window.__tauriInitPromise) {
+                await window.__tauriInitPromise;
+            }
+            if (!(isTauriVisit() && navigator.userAgent.includes('Mac'))) return;
+            let el = _progEl;
+            if (!el) { _cacheProgEl(); el = _progEl; }
+
+            const now = Date.now();
+            const d = new Date(now);
+            const year = d.getFullYear();
+            const month = d.getMonth();
+
+            // 1) 今日进度 — 时间戳算术替代多次 new Date()
+            const stDay = now - (d.getHours() * 3600000 + d.getMinutes() * 60000 + d.getSeconds() * 1000 + d.getMilliseconds());
+            const pDay = Math.min(100, ((now - stDay) * 100 / _DAY_MS));
+            el.tb.style.width = pDay + '%';
+            el.tp.textContent = (pDay + 0.5 | 0) + '%';
+
+            // 2) 本周进度 — ISO 周（周一至周日）
+            const isoDay = d.getDay() || 7;
+            const pWeek = Math.min(100, ((now - (stDay - (isoDay - 1) * _DAY_MS)) * 100 / _WEEK_MS));
+            el.wb.style.width = pWeek + '%';
+            el.wp.textContent = (pWeek + 0.5 | 0) + '%';
+
+            // 3) 本月进度 — 惰性缓存
+            if (year !== _prvYear || month !== _prvMonth) {
+                if (year !== _prvYear) { _prvYear = year; _sYear = new Date(year, 0, 1).getTime(); _yrMs = new Date(year + 1, 0, 1).getTime() - _sYear; _prvMonth = -1; }
+                _prvMonth = month;
+                _sMonth = new Date(year, month, 1).getTime();
+                _monMs = new Date(year, month + 1, 1).getTime() - _sMonth;
+            }
+            const pMon = Math.min(100, ((now - _sMonth) * 100 / _monMs));
+            el.mb.style.width = pMon + '%';
+            el.mp.textContent = (pMon + 0.5 | 0) + '%';
+
+            // 4) 今年进度 — 使用已缓存值（第 3 步已确保 _sYear/_yrMs 最新）
+            const pYr = Math.min(100, ((now - _sYear) * 100 / _yrMs));
+            el.yb.style.width = pYr + '%';
+            el.yp.textContent = (pYr + 0.5 | 0) + '%';
+
+            // 5) 右上角日程/节日预告
+            updateHeaderUpcoming();
+        }
+
+        // ---- 重要节日白名单（用于右上角预告） ----
+        const _IMP_FESTIVALS = new Set([
+            '元旦', '春节', '清明节', '劳动节', '端午节', '中秋节', '国庆节',
+            '元宵节', '七夕节', '重阳节', '除夕', '腊八节'
+        ]);
+        let _nextFestivalCache = { days: Infinity, name: '' };
+        let _festivalCacheDate = '';
+
+        // 查找 cron 定时事件的下一次触发时间（高性能版）
+        // 通过解析 cron 字段 + 逐级跳过（月→日→时→分），避免逐日展开创建大量虚拟事件
+        function _findNextCronTime(todoE, afterMs) {
+            if (!todoE.cron) return Infinity;
+
+            // 1) 解析 cron 字段并缓存到事件对象上（仅首次解析）
+            let p = todoE._cronParsed;
+            if (!p) {
+                const parts = todoE.cron.trim().split(/\s+/);
+                if (parts.length !== 5) return Infinity;
+                p = todoE._cronParsed = {
+                    months: new Set(_parseCronField(parts[3], 1, 12)),
+                    days: new Set(_parseCronField(parts[2], 1, 31)),
+                    dows: new Set(_parseCronField(parts[4], 0, 7)), // [0,7] 兼容周日 0/7
+                    hours: new Set(_parseCronField(parts[1], 0, 23)),
+                    mins: new Set(_parseCronField(parts[0], 0, 59)),
+                };
+                p.allMon = (p.months.size === 12);
+                p.allDay = (p.days.size === 31);
+                p.allDow = (p.dows.size >= 7); // [0,7] 范围共 8 个值，>=7 即可覆盖全部
+                p.allHr = (p.hours.size === 24);
+                p.allMin = (p.mins.size === 60);
+                // 将常用 Set 转为预检布尔值，避免反复 .has() 调用（常数级优化）
+                p._months = p.months; p._days = p.days; p._dows = p.dows;
+                p._hours = p.hours; p._mins = p.mins;
+            }
+
+            const startMs = (todoE.start instanceof Date ? todoE.start : new Date(todoE.start)).getTime();
+            const endMs = (todoE.end instanceof Date ? todoE.end : new Date(todoE.end)).getTime();
+
+            let cursor = new Date(Math.max(afterMs + 60000, startMs)); // 至少从下一分钟开始
+            cursor.setSeconds(0, 0);
+            const limitMs = Math.min(startMs + 31622400000, endMs); // 上限 ≤ 1 年且 ≤ end
+
+            const incDay = () => { cursor.setDate(cursor.getDate() + 1); cursor.setHours(0, 0, 0, 0); };
+            const incMonth = () => { cursor.setMonth(cursor.getMonth() + 1); cursor.setDate(1); cursor.setHours(0, 0, 0, 0); };
+
+            while (cursor.getTime() <= limitMs) {
+                // ---- 月 ----
+                if (!p.allMon && !p._months.has(cursor.getMonth() + 1)) { incMonth(); continue; }
+
+                // ---- 日（月日 + 星期 均需匹配） ----
+                if ((!p.allDay && !p._days.has(cursor.getDate())) ||
+                    (!p.allDow && !p._dows.has(cursor.getDay()) && !(cursor.getDay() === 0 && p._dows.has(7)))) { incDay(); continue; }
+
+                // ---- 时 ----
+                const ch = cursor.getHours();
+                if (!p.allHr) {
+                    // 找下一个匹配的小时
+                    let found = false;
+                    for (let h = ch; h <= 23; h++) { if (p._hours.has(h)) { if (h !== ch) cursor.setHours(h, 0, 0, 0); found = true; break; } }
+                    if (!found) { incDay(); continue; }
+                }
+
+                // ---- 分 ----
+                const cm = cursor.getMinutes();
+                if (!p.allMin) {
+                    let found = false;
+                    for (let m = cm; m <= 59; m++) { if (p._mins.has(m)) { if (m !== cm) cursor.setMinutes(m, 0, 0); found = true; break; } }
+                    if (!found) { cursor.setHours(cursor.getHours() + 1, 0, 0, 0); continue; }
+                }
+
+                // ---- 全部匹配 → 命中 ----
+                const t = cursor.getTime();
+                if (t > afterMs && t >= startMs && t <= endMs) return t;
+
+                // 当前时间已匹配，前进到下一分钟继续扫描
+                cursor.setMinutes(cursor.getMinutes() + 1);
+            }
+            return Infinity;
+        }
+
+        function updateHeaderUpcoming() {
+            const el = document.getElementById('upcomingEvent');
+            const fel = document.getElementById('upcomingFestival');
+            if (!el || !fel) return;
+
+            const now = Date.now();
+
+            // 1) 查找下一个日程事件（含一次性和 cron 定时事件）
+            let nextEv = null, nextEvStart = Infinity, nextEvTime = null;
+            if (todoEvents && todoEvents.length > 0) {
+                for (let i = 0; i < todoEvents.length; i++) {
+                    const ev = todoEvents[i];
+                    let t = Infinity;
+                    if (ev.cron) {
+                        t = _findNextCronTime(ev, now);
+                    } else if (ev.start && typeof ev.start.getTime === 'function') {
+                        t = ev.start.getTime();
+                    }
+                    if (t > now && t < nextEvStart) {
+                        nextEvStart = t;
+                        nextEv = ev;
+                        nextEvTime = new Date(t);
+                    }
+                }
+            }
+            el.textContent = nextEv
+                ? `${_formatShortDateTime(nextEvTime)} ${nextEv.title}`
+                : '--';
+
+            // 2) 查找下一个重要节日（每日缓存）
+            const today = new Date();
+            const cacheKey = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+            let festival = _nextFestivalCache;
+            if (_festivalCacheDate !== cacheKey) {
+                festival = { days: Infinity, name: '' };
+                for (let i = 1; i <= 365; i++) {
+                    const d = new Date(today);
+                    d.setDate(today.getDate() + i);
+                    const info = _getDayLunarInfo(d.getFullYear(), d.getMonth() + 1, d.getDate());
+                    let name = '';
+                    if (info.festival && _IMP_FESTIVALS.has(info.festival)) {
+                        name = info.festival;
+                    } else if (info.holiday && info.holiday.holiday === true && _IMP_FESTIVALS.has(info.holiday.name)) {
+                        name = info.holiday.name;
+                    }
+                    if (name) { festival = { days: i, name }; break; }
+                }
+                _nextFestivalCache = festival;
+                _festivalCacheDate = cacheKey;
+            }
+
+            if (festival.name) {
+                fel.textContent = festival.days <= 1
+                    ? (festival.days === 0 ? `今天${festival.name}` : `明天${festival.name}`)
+                    : `${festival.name}: ${festival.days}天后`;
+            } else {
+                fel.textContent = '--';
+            }
+        }
     </script>
 </body>
 
