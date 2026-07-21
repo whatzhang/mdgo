@@ -5355,23 +5355,6 @@
             gap: 6px;
         }
 
-        .snake-toggle-btn {
-            background: none;
-            border: 1px solid #c0c4cc;
-            border-radius: 4px;
-            padding: 0 4px;
-            font-size: 0.75rem;
-            line-height: 1.5;
-            cursor: pointer;
-            color: #909399;
-            transition: background 0.15s, color 0.15s;
-        }
-
-        .snake-toggle-btn:hover {
-            background: #e8e8e8;
-            color: #606266;
-        }
-
         .file-sum-heatmap {
             padding: 5px;
             border-radius: 15px;
@@ -9936,6 +9919,24 @@
             font-size: 0.8rem;
         }
 
+        .btn-snake {
+            padding: 0.25rem;
+            height: 1.1rem;
+            width: 1.1rem;
+            border-radius: 0.125rem;
+            font-weight: normal;
+            font-size: 0.75rem;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+            transition: all 0.2s ease;
+            background: var(--color-bg);
+            color: var(--t1);
+        }
+
+        .btn-snake svg {
+            width: 0.75rem;
+            height: 0.75rem;
+        }
+
         .markdown-body {
             color-scheme: light;
             -ms-text-size-adjust: 100%;
@@ -12730,8 +12731,10 @@
                             <line x1="8" y1="2" x2="8" y2="6" />
                             <line x1="3" y1="10" x2="21" y2="10" />
                         </svg>每日新增文件热力图
-                        <button class="snake-toggle-btn" id="snakeToggleBtn" onclick="toggleSnake()"
-                            title="暂停贪吃蛇动画">⏸</button>
+                        <button class="btn btn-secondary btn-snake" id="snakeToggleBtn" onclick="toggleSnake()"
+                            title="暂停贪吃蛇动画"><svg viewBox="0 0 24 24" fill="currentColor" id="snake-pause-icon">
+                                <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+                            </svg></button>
                     </div>
                     <div class="heatmap-container">
                         <div class="heatmap-left">
@@ -14818,7 +14821,7 @@
         function initMonacoEditor() {
             if (!monacoInitPromise) {
                 monacoInitPromise = new Promise((resolve) => {
-                	require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs' } });
+                    require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs' } });
                     require(['vs/editor/editor.main'], () => {
                         initFormatProviders();
                         resolve();
@@ -28394,7 +28397,8 @@ kanban-plugin: basic
                         _snakePaused = true;
                         TimerManager.clear('snakeGame');
                         const btn = document.getElementById('snakeToggleBtn');
-                        if (btn) { btn.textContent = '▶'; btn.title = '继续贪吃蛇动画'; }
+                        const pauseIcon = document.getElementById('snake-pause-icon');
+                        if (btn) { pauseIcon.innerHTML = '<path d="M8 5v14l11-7z"/>'; btn.title = '继续贪吃蛇动画'; }
                         heatmapChart.setOption({ series: [{}, { data: [] }, { data: [] }] });
                     }
                     _snakeAutoPauseTimer = null;
@@ -28405,17 +28409,18 @@ kanban-plugin: basic
             // 暴露点击方法供 HTML onclick 调用（按钮已通过 onclick="toggleSnake()" 绑定）
             window.toggleSnake = () => {
                 const btn = document.getElementById('snakeToggleBtn');
-                if (!btn) return;
+                const pauseIcon = document.getElementById('snake-pause-icon');
+                if (!btn || !pauseIcon) return;
                 _snakePaused = !_snakePaused;
                 if (_snakePaused) {
                     TimerManager.clear('snakeGame');
-                    btn.textContent = '▶';
+                    pauseIcon.innerHTML = '<path d="M8 5v14l11-7z"/>';
                     btn.title = '继续贪吃蛇动画';
                     heatmapChart.setOption({ series: [{}, { data: [] }, { data: [] }] });
                     if (_snakeAutoPauseTimer) { clearTimeout(_snakeAutoPauseTimer); _snakeAutoPauseTimer = null; }
                 } else {
                     TimerManager.set('snakeGame', tick, SPEED);
-                    btn.textContent = '⏸';
+                    pauseIcon.innerHTML = '<path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />';
                     btn.title = '暂停贪吃蛇动画';
                     renderSnake();
                     _scheduleAutoPause();
@@ -46389,7 +46394,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 _nextFestivalCache = festival;
                 _festivalCacheDate = cacheKey;
             }
-
             if (festival.name) {
                 fel.textContent = festival.days <= 1
                     ? (festival.days === 0 ? `今天${festival.name}` : `明天${festival.name}`)

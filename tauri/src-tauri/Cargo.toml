@@ -25,3 +25,24 @@ mime_guess = "2"
 base64 = "0.22"
 sysinfo = "0.39.5"
 arboard = "3"
+
+# 知识库 — 向量数据库 + 全文检索
+lancedb = "0.31"
+arrow-array = "58"
+arrow-schema = "58"
+futures = "0.3"
+tantivy = "0.26"
+tokio = { version = "1", features = ["full"] }
+
+# 知识库 — Embedding HTTP 客户端
+reqwest = { version = "0.12", features = ["json"] }
+
+# 知识库 — 文件监听增量索引
+notify = { version = "8", features = ["macos_kqueue"] }
+
+# 知识库 — 工具
+uuid = { version = "1", features = ["v4"] }
+regex = "1"
+
+# 知识库 — 本地 Embedding（fallback）
+fastembed = "4"

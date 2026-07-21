@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 
 <head>
@@ -4385,6 +4385,566 @@
             font-family: var(--font-mono);
         }
 
+        /* ===== AI 聊天面板样式 ===== */
+        .chat-panel {
+            display: flex;
+            width: 100%;
+            flex-direction: column;
+            height: 100%;
+            background: var(--color-bg-secondary);
+        }
+
+        .chat-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.5rem 0.875rem;
+            border-bottom: 0.0625rem solid var(--color-border);
+            background: var(--color-bg);
+            font-size: 0.8125rem;
+            font-weight: 500;
+            color: var(--color-text);
+            flex-shrink: 0;
+        }
+
+        .chat-panel-header select {
+            margin-left: 0.5rem;
+            padding: 0.125rem 0.375rem;
+            border: 0.0625rem solid var(--color-border);
+            border-radius: 0.375rem;
+            background: var(--color-bg);
+            color: var(--color-text);
+            font-size: 0.75rem;
+            font-family: var(--font-family);
+            cursor: pointer;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.75rem 0.875rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .chat-message {
+            max-width: 85%;
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.625rem;
+            font-size: 0.8125rem;
+            line-height: 1.5;
+            word-break: break-word;
+            white-space: pre-wrap;
+        }
+
+        .chat-message.user {
+            align-self: flex-end;
+            background: var(--color-primary);
+            color: #fff;
+            border-bottom-right-radius: 0.25rem;
+        }
+
+        .chat-message.assistant {
+            align-self: flex-start;
+            background: var(--color-bg);
+            color: var(--color-text);
+            border: 0.0625rem solid var(--color-border);
+            border-bottom-left-radius: 0.25rem;
+        }
+
+        .chat-message.system {
+            align-self: center;
+            background: transparent;
+            color: var(--t3);
+            font-size: 0.75rem;
+            border: none;
+            padding: 0.25rem 0.5rem;
+        }
+
+        .chat-message .msg-sources {
+            margin-top: 0.375rem;
+            padding-top: 0.375rem;
+            border-top: 0.0625rem solid var(--color-border);
+            font-size: 0.75rem;
+            color: var(--t2);
+        }
+
+        .chat-message .msg-sources summary {
+            cursor: pointer;
+            color: var(--color-primary);
+        }
+
+        .chat-message .msg-sources .source-item {
+            padding: 0.125rem 0;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .chat-message .msg-sources .source-item .source-score {
+            font-size: 0.6875rem;
+            color: var(--t3);
+            margin-left: auto;
+        }
+
+        .chat-input-area {
+            display: flex;
+            gap: 0.5rem;
+            padding: 0.625rem 0.875rem;
+            border-top: 0.0625rem solid var(--color-border);
+            background: var(--color-bg);
+            flex-shrink: 0;
+        }
+
+        .chat-input-area textarea {
+            flex: 1;
+            resize: none;
+            border: 0.0625rem solid var(--color-border);
+            border-radius: 0.5rem;
+            padding: 0.5rem 0.625rem;
+            font-size: 0.8125rem;
+            font-family: var(--font-family);
+            background: var(--color-bg-secondary);
+            color: var(--color-text);
+            min-height: 2.25rem;
+            max-height: 7.5rem;
+            outline: none;
+        }
+
+        .chat-input-area textarea:focus {
+            border-color: var(--color-primary);
+        }
+
+        .chat-input-area .chat-send-btn {
+            padding: 0.375rem 1rem;
+            background: var(--color-primary);
+            color: #fff;
+            border: none;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            font-size: 0.8125rem;
+            font-family: var(--font-family);
+            white-space: nowrap;
+            align-self: flex-end;
+        }
+
+        .chat-input-area .chat-send-btn:hover {
+            opacity: 0.85;
+        }
+
+        .chat-input-area .chat-send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .chat-typing {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.1875rem;
+            padding: 0.25rem 0;
+        }
+
+        .chat-typing span {
+            width: 0.375rem;
+            height: 0.375rem;
+            background: var(--t3);
+            border-radius: 50%;
+            animation: chatTyping 1.4s infinite ease-in-out;
+        }
+
+        .chat-typing span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .chat-typing span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes chatTyping {
+
+            0%,
+            60%,
+            100% {
+                opacity: 0.3;
+                transform: scale(0.8);
+            }
+
+            30% {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        /* ===== 知识库管理面板样式 ===== */
+        .knowledge-panel {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            width: 100%;
+            background: var(--color-bg-secondary);
+        }
+
+        .knowledge-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.5rem 0.875rem;
+            border-bottom: 0.0625rem solid var(--color-border);
+            background: var(--color-bg);
+            font-size: 0.8125rem;
+            font-weight: 500;
+            color: var(--color-text);
+            flex-shrink: 0;
+        }
+
+        .knowledge-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.625rem 0.875rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .knowledge-item {
+            background: var(--color-bg);
+            border: 0.0625rem solid var(--color-border);
+            border-radius: 0.625rem;
+            padding: 0.75rem 0.875rem;
+            cursor: pointer;
+            transition: box-shadow 0.2s;
+        }
+
+        .knowledge-item:hover {
+            box-shadow: 0 0.125rem 0.5rem rgba(0, 0, 0, 0.08);
+        }
+
+        .knowledge-item .kb-name {
+            font-weight: 500;
+            font-size: 0.875rem;
+            color: var(--color-text);
+            margin-bottom: 0.25rem;
+        }
+
+        .knowledge-item .kb-meta {
+            font-size: 0.75rem;
+            color: var(--t3);
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .knowledge-item .kb-meta span {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.1875rem;
+        }
+
+        .knowledge-item .kb-actions {
+            display: flex;
+            gap: 0.375rem;
+            margin-top: 0.5rem;
+        }
+
+        .knowledge-item .kb-actions button {
+            padding: 0.125rem 0.5rem;
+            border: 0.0625rem solid var(--color-border);
+            border-radius: 0.3125rem;
+            background: var(--color-bg-secondary);
+            color: var(--t2);
+            font-size: 0.75rem;
+            font-family: var(--font-family);
+            cursor: pointer;
+        }
+
+        .knowledge-item .kb-actions button:hover {
+            background: var(--color-hover-highlight);
+        }
+
+        .kb-empty {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            flex: 1;
+            color: var(--t3);
+            font-size: 0.8125rem;
+            gap: 0.5rem;
+        }
+
+        .kb-empty button {
+            padding: 0.375rem 0.875rem;
+            background: var(--color-primary);
+            color: #fff;
+            border: none;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            font-size: 0.8125rem;
+            font-family: var(--font-family);
+        }
+
+        /* ===== 知识库 - 当前目录展示 ===== */
+        .kb-current-dir {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.625rem 0.875rem;
+            border-bottom: 0.0625rem solid var(--color-border);
+            background: var(--color-bg-secondary);
+            flex-shrink: 0;
+        }
+
+        .kb-dir-icon {
+            font-size: 1.5rem;
+            flex-shrink: 0;
+        }
+
+        .kb-dir-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .kb-dir-path {
+            font-size: 0.8125rem;
+            font-weight: 500;
+            color: var(--color-text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .kb-dir-status {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            margin-top: 0.125rem;
+            font-size: 0.6875rem;
+            color: var(--t3);
+        }
+
+        .kb-status-dot {
+            display: inline-block;
+            width: 0.5rem;
+            height: 0.5rem;
+            border-radius: 50%;
+            background: var(--t3);
+        }
+
+        .kb-status-dot.ready {
+            background: #16a34a;
+        }
+
+        .kb-status-dot.error {
+            background: #dc2626;
+        }
+
+        .kb-status-dot.indexing {
+            background: #ea580c;
+            animation: kbPulse 1s infinite;
+        }
+
+        @keyframes kbPulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.4;
+            }
+        }
+
+        /* ===== 知识库 - 统计卡片 ===== */
+        .kb-stats {
+            display: flex;
+            gap: 0.5rem;
+            padding: 0.5rem 0.875rem;
+            border-bottom: 0.0625rem solid var(--color-border);
+            background: var(--color-bg);
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+
+        .kb-stat-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.125rem;
+            padding: 0.375rem 0.75rem;
+            background: var(--color-bg-secondary);
+            border-radius: 0.375rem;
+            min-width: 4rem;
+        }
+
+        .kb-stat-label {
+            font-size: 0.625rem;
+            color: var(--t3);
+            text-transform: uppercase;
+        }
+
+        .kb-stat-value {
+            font-size: 0.9375rem;
+            font-weight: 600;
+            color: var(--color-text);
+        }
+
+        /* ===== 聊天 RAG 提示 ===== */
+        .chat-rag-hint {
+            font-size: 0.75rem;
+            color: var(--t3);
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .kb-doc-list {
+            margin-top: 0.5rem;
+            padding-top: 0.375rem;
+            border-top: 0.0625rem solid var(--color-border);
+        }
+
+        .kb-doc-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.1875rem 0;
+            font-size: 0.75rem;
+            color: var(--t2);
+        }
+
+        .kb-doc-item .doc-status {
+            font-size: 0.6875rem;
+            padding: 0.0625rem 0.3125rem;
+            border-radius: 0.25rem;
+        }
+
+        .kb-doc-item .doc-status.ready {
+            color: #16a34a;
+        }
+
+        .kb-doc-item .doc-status.indexing {
+            color: #ea580c;
+        }
+
+        .kb-doc-item .doc-status.pending {
+            color: var(--t3);
+        }
+
+        .kb-doc-item .doc-status.error {
+            color: #dc2626;
+        }
+
+        .kb-upload-area {
+            display: flex;
+            gap: 0.375rem;
+            align-items: center;
+            padding: 0.25rem 0;
+        }
+
+        .kb-upload-area input[type="file"] {
+            font-size: 0.75rem;
+            color: var(--color-text);
+        }
+
+        .kb-upload-area button {
+            padding: 0.1875rem 0.625rem;
+            border: 0.0625rem solid var(--color-border);
+            border-radius: 0.3125rem;
+            background: var(--color-bg-secondary);
+            color: var(--t2);
+            font-size: 0.75rem;
+            font-family: var(--font-family);
+            cursor: pointer;
+        }
+
+        .kb-upload-area button:hover {
+            background: var(--color-hover-highlight);
+        }
+
+        .kb-progress {
+            height: 0.1875rem;
+            background: var(--color-border);
+            border-radius: 0.125rem;
+            overflow: hidden;
+            margin-top: 0.25rem;
+        }
+
+        .kb-progress-bar {
+            height: 100%;
+            background: var(--color-primary);
+            border-radius: 0.125rem;
+            transition: width 0.3s;
+        }
+
+        /* ===== 聊天容器 + 知识库容器（全宽全高） ===== */
+        #chat-container,
+        #knowledge-container {
+            display: none;
+            height: 100%;
+            width: 100%;
+        }
+
+        /* ===== 聊天配置栏（模式） ===== */
+        .chat-config-bar {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.375rem 0.875rem;
+            border-bottom: 0.0625rem solid var(--color-border);
+            background: var(--color-bg);
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+
+        .chat-mode-group {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .chat-mode-group label {
+            font-size: 0.75rem;
+            color: var(--t3);
+            white-space: nowrap;
+        }
+
+        .btn-mode {
+            padding: 0.1875rem 0.625rem;
+            border: 0.0625rem solid var(--color-border);
+            border-radius: 0.375rem;
+            background: var(--color-bg);
+            color: var(--t2);
+            font-size: 0.75rem;
+            font-family: var(--font-family);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .btn-mode:hover {
+            border-color: var(--color-primary);
+            color: var(--color-primary);
+        }
+
+        .btn-mode.active {
+            background: var(--color-primary);
+            color: #fff;
+            border-color: var(--color-primary);
+        }
+
+        .btn-mode.btn-mode-disabled,
+        .btn-mode:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .btn-mode.btn-mode-disabled:hover,
+        .btn-mode:disabled:hover {
+            border-color: var(--color-border);
+            color: var(--t2);
+        }
+
         .hlyxcp {
             height: 40px !important;
         }
@@ -5352,23 +5912,6 @@
             display: flex;
             align-items: center;
             gap: 6px;
-        }
-
-        .snake-toggle-btn {
-            background: none;
-            border: 1px solid #c0c4cc;
-            border-radius: 4px;
-            padding: 0 4px;
-            font-size: 0.75rem;
-            line-height: 1.5;
-            cursor: pointer;
-            color: #909399;
-            transition: background 0.15s, color 0.15s;
-        }
-
-        .snake-toggle-btn:hover {
-            background: #e8e8e8;
-            color: #606266;
         }
 
         .file-sum-heatmap {
@@ -9935,6 +10478,24 @@
             font-size: 0.8rem;
         }
 
+        .btn-snake {
+            padding: 0.25rem;
+            height: 1.1rem;
+            width: 1.1rem;
+            border-radius: 0.125rem;
+            font-weight: normal;
+            font-size: 0.75rem;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+            transition: all 0.2s ease;
+            background: var(--color-bg);
+            color: var(--t1);
+        }
+
+        .btn-snake svg {
+            width: 0.75rem;
+            height: 0.75rem;
+        }
+
         .markdown-body {
             color-scheme: light;
             -ms-text-size-adjust: 100%;
@@ -12502,7 +13063,7 @@
             <div id="dir-space-container" class="dashboard-container" style="display: none;padding: 10px;">
                 <div class="charts-grid">
                     <div class="chart-card">
-                        <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                        <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
                                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
                                 style="vertical-align:-2px;margin-right:4px;">
                                 <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
@@ -12510,7 +13071,7 @@
                         <div id="monthTrendChart" class="chart-container chart-container--bar"></div>
                     </div>
                     <div class="chart-card">
-                        <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                        <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
                                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
                                 style="vertical-align:-2px;margin-right:4px;">
                                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -12524,7 +13085,7 @@
                 </div>
                 <div class="charts-grid">
                     <div class="chart-card">
-                        <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                        <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
                                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
                                 style="vertical-align:-2px;margin-right:4px;">
                                 <line x1="18" y1="20" x2="18" y2="10" />
@@ -12534,7 +13095,7 @@
                         <div id="nestChart" class="chart-container"></div>
                     </div>
                     <div class="chart-card">
-                        <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                        <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
                                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
                                 style="vertical-align:-2px;margin-right:4px;">
                                 <polyline points="21 8 21 21 3 21 3 8" />
@@ -12546,7 +13107,7 @@
                 </div>
                 <div class="charts-grid single-column">
                     <div class="chart-card">
-                        <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                        <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
                                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
                                 style="vertical-align:-2px;margin-right:4px;">
                                 <polyline points="4 7 4 4 20 4 20 7" />
@@ -12558,7 +13119,7 @@
                 </div>
                 <div class="charts-grid single-column">
                     <div class="chart-card">
-                        <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                        <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
                                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
                                 style="vertical-align:-2px;margin-right:4px;">
                                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
@@ -12570,7 +13131,7 @@
                 </div>
                 <div class="charts-grid single-column">
                     <div class="chart-card">
-                        <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                        <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
                                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
                                 style="vertical-align:-2px;margin-right:4px;">
                                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
@@ -12582,7 +13143,7 @@
                 </div>
                 <div class="charts-grid single-column">
                     <div class="chart-card">
-                        <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                        <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
                                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
                                 style="vertical-align:-2px;margin-right:4px;">
                                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
@@ -12711,8 +13272,8 @@
                     </div>
                 </div>
                 <div class="heatmap-section">
-                    <div class="chart-title" style="margin-bottom: 3px;"><svg viewBox="0 0 24 24" width="1rem"
-                            height="1rem" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                    <div class="chart-title" style="margin-bottom: 3px;"><svg viewBox="0 0 24 24" width="16"
+                            height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
                             stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
                             <path
                                 d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
@@ -12721,7 +13282,7 @@
                     </div>
                 </div>
                 <div class="heatmap-section-heatmap">
-                    <div class="chart-title-heatmap"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                    <div class="chart-title-heatmap"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
                             stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
                             style="vertical-align:-2px;margin-right:4px;">
                             <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
@@ -12729,8 +13290,10 @@
                             <line x1="8" y1="2" x2="8" y2="6" />
                             <line x1="3" y1="10" x2="21" y2="10" />
                         </svg>每日新增文件热力图
-                        <button class="snake-toggle-btn" id="snakeToggleBtn" onclick="toggleSnake()"
-                            title="暂停贪吃蛇动画">⏸</button>
+                        <button class="btn btn-secondary btn-snake" id="snakeToggleBtn" onclick="toggleSnake()"
+                            title="暂停贪吃蛇动画"><svg viewBox="0 0 24 24" fill="currentColor" id="snake-pause-icon">
+                                <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+                            </svg></button>
                     </div>
                     <div class="heatmap-container">
                         <div class="heatmap-left">
@@ -12868,8 +13431,8 @@
                                             <div class="monitor-sub" id="cpuCores"></div>
                                         </div>
                                         <div class="monitor-item">
-                                            <div class="monitor-label"><svg viewBox="0 0 24 24" width="1rem"
-                                                    height="1rem" fill="none" stroke="currentColor" stroke-width="1.8"
+                                            <div class="monitor-label"><svg viewBox="0 0 24 24" width="16"
+                                                    height="16" fill="none" stroke="currentColor" stroke-width="1.8"
                                                     stroke-linecap="round" stroke-linejoin="round"
                                                     style="vertical-align:-2px;margin-right:4px;">
                                                     <rect x="3" y="8" width="18" height="12" rx="1" />
@@ -12973,7 +13536,7 @@
                     </div>
                     <div class="chart-card">
                         <div class="activity-column">
-                            <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                            <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
                                     stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
                                     stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
                                     <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
@@ -12983,7 +13546,7 @@
                     </div>
                     <div class="chart-card">
                         <div class="activity-column">
-                            <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                            <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
                                     stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
                                     stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
                                     <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
@@ -12999,7 +13562,7 @@
                     </div>
                     <div class="chart-card">
                         <div class="activity-column">
-                            <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                            <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
                                     stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
                                     stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
                                     <path
@@ -13012,7 +13575,7 @@
                 <div class="activity-section-three">
                     <div class="chart-card">
                         <div class="activity-column">
-                            <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                            <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
                                     stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
                                     stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
                                     <polyline points="21 8 21 21 3 21 3 8" />
@@ -13026,7 +13589,7 @@
                     </div>
                     <div class="chart-card">
                         <div class="activity-column">
-                            <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                            <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
                                     stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
                                     stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
                                     <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
@@ -13036,7 +13599,7 @@
                     </div>
                     <div class="chart-card">
                         <div class="activity-column">
-                            <div class="chart-title"><svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="none"
+                            <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
                                     stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
                                     stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
                                     <line x1="18" y1="20" x2="18" y2="10" />
@@ -14085,21 +14648,21 @@
                     <div class="video-header-right">
                         <button class="btn btn-primary btn-sm" id="video-file-open-btn" onclick="openVideoFileDialog()"
                             title="打开视频文件">
-                            <svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="currentColor">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
                                 <path
                                     d="M20 6h2-2H2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z" />
                             </svg>&nbsp;打开视频文件
                         </button>
                         <button class="btn btn-primary btn-sm" id="video-add-url-btn" onclick="toggleVideoUrlPanel()"
                             title="添加网络视频">
-                            <svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="currentColor">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
                                 <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
                             </svg>
                             网络视频
                         </button>
                         <button class="btn btn-sm btn-warning" id="video-history-btn" onclick="toggleVideoHistory()"
                             title="播放历史">
-                            <svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="currentColor">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
                                 <path
                                     d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z" />
                             </svg>
@@ -14230,6 +14793,93 @@
                     </div>
                 </div>
             </div>
+            <div id="chat-container" style="display: none;">
+                <div class="chat-panel">
+                    <div class="chat-panel-header">
+                        <span>💬 AI 聊天</span>
+                        <div id="chat-header-actions">
+                            <button class="btn btn-ghost btn-xs" onclick="clearChatMessages()" title="清空对话">清空</button>
+                        </div>
+                    </div>
+                    <div class="chat-config-bar" id="chat-config-bar">
+                        <div class="chat-mode-group">
+                            <label>模式：</label>
+                            <button id="chat-mode-normal" class="btn-mode active"
+                                onclick="setChatMode('normal')">普通对话</button>
+                            <button id="chat-mode-rag" class="btn-mode" onclick="setChatMode('rag')"
+                                style="display:none;">RAG</button>
+                            <button id="chat-mode-agent" class="btn-mode btn-mode-disabled" disabled title="开发中"
+                                style="display:none;">Agent</button>
+                        </div>
+                        <div class="chat-rag-hint" id="chat-rag-hint"
+                            style="display:none; font-size:0.75rem; color:var(--t3);">
+                            📁 使用当前目录作为知识库
+                        </div>
+                    </div>
+                    <div class="chat-messages" id="chat-messages">
+                        <div class="chat-message system">欢迎使用 AI 聊天助手，请在设置中配置 LLM 和 Embedding 端点后开始对话。</div>
+                    </div>
+                    <div class="chat-input-area">
+                        <textarea id="chat-input" rows="1" placeholder="输入消息..."
+                            onkeydown="handleChatKeydown(event)"></textarea>
+                        <button class="chat-send-btn" id="chat-send-btn" onclick="sendChatMessage()">发送</button>
+                    </div>
+                </div>
+            </div>
+            <div id="knowledge-container" style="display: none;">
+                <div class="knowledge-panel">
+                    <div class="knowledge-panel-header">
+                        <span>📚 知识库</span>
+                        <div>
+                            <button class="btn btn-ghost btn-xs" onclick="indexCurrentDir()"
+                                id="kb-index-btn">索引当前目录</button>
+                            <button class="btn btn-ghost btn-xs" onclick="refreshKnowledgeStatus()"
+                                style="margin-left:4px;">刷新</button>
+                        </div>
+                    </div>
+                    <div class="kb-current-dir" id="kb-current-dir">
+                        <div class="kb-dir-icon">📁</div>
+                        <div class="kb-dir-info">
+                            <div class="kb-dir-path" id="kb-dir-path">— 未打开任何目录 —</div>
+                            <div class="kb-dir-status" id="kb-dir-status">
+                                <span class="kb-status-dot" id="kb-status-dot"></span>
+                                <span id="kb-status-text">请先打开一个目录</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="kb-stats" id="kb-stats" style="display:none;">
+                        <div class="kb-stat-item">
+                            <span class="kb-stat-label">文件数</span>
+                            <span class="kb-stat-value" id="kb-stat-files">0</span>
+                        </div>
+                        <div class="kb-stat-item">
+                            <span class="kb-stat-label">已索引</span>
+                            <span class="kb-stat-value" id="kb-stat-indexed">0</span>
+                        </div>
+                        <div class="kb-stat-item">
+                            <span class="kb-stat-label">向量数</span>
+                            <span class="kb-stat-value" id="kb-stat-vectors">0</span>
+                        </div>
+                        <div class="kb-stat-item">
+                            <span class="kb-stat-label">状态</span>
+                            <span class="kb-stat-value" id="kb-stat-status">未索引</span>
+                        </div>
+                    </div>
+                    <div id="kb-progress-wrap" style="display:none; padding: 0 0.875rem 0.5rem;">
+                        <div class="kb-progress">
+                            <div class="kb-progress-bar" id="kb-progress-bar" style="width:0%"></div>
+                        </div>
+                        <div style="font-size:0.6875rem; color:var(--t3); margin-top:0.25rem; text-align:center;"
+                            id="kb-progress-text">索引中...</div>
+                    </div>
+                    <div class="knowledge-list" id="knowledge-list">
+                        <div class="kb-empty" id="kb-empty-msg">
+                            <span>当前目录尚未索引</span>
+                            <button onclick="indexCurrentDir()">🔍 开始索引</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
     <script>
@@ -14241,6 +14891,11 @@
         let LOCAL_LLM_TOKEN = 'c17f18e31adb10978d3a9cd0d6743d30a067af602a8789e7';
         let LOCAL_LLM_MODEL = 'gemma-4-e4b-it';
         let LOCAL_LLM_CONTEXT_LENGTH = 10000;
+        // ====== Embedding 配置 ======
+        let EMBEDDING_ENDPOINT = 'http://192.168.31.152:12345/v1/embeddings';
+        let EMBEDDING_TOKEN = 'c17f18e31adb10978d3a9cd0d6743d30a067af602a8789e7';
+        let EMBEDDING_MODEL = 'text-embedding-qwen3-embedding-0.6b';
+        let EMBEDDING_DIMENSION = 512;
         // nginx 配置地址
         let NGINX_CONF_PATH = '/usr/local/etc/openresty/sites/index.conf';
         // 忽略的目录
@@ -14381,6 +15036,8 @@
             { key: '任务看板', value: 'toggleFile("kanban")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
             { key: '临时编辑器', value: 'toggleFile("tempEditor")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
             { key: '目录空间分析', value: 'toggleFile("dirSpace")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
+            { key: 'AI聊天', value: 'toggleFile("aiChat")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
+            { key: '知识库', value: 'toggleFile("knowledge")', display: true, fileProtocolDisplay: false, tauriDisplay: true, serverDisplay: false },
         ]
         // 高亮字体颜色（深色系，确保可读性）
         const HIGHLIGHT_FONT_COLORS = [
@@ -14484,6 +15141,7 @@
 
         // ====== 目录名常量 ======
         const DELETED_DIR_NAME = 'mdgo_trash';         // 垃圾箱文件名
+        const DIARY_DIR_NAME = 'mdgo_diary';         // 日记文件名
         const AI_HISTORY_MAX = 10; //AI调用历史最大条数
         //数据文件
         const INDEX_HISTORY_FILE = 'index_ai_history.json';
@@ -14783,6 +15441,8 @@
         const cronViewContainer = document.getElementById('cron-view-container');
         const videoViewContainer = document.getElementById('video-view-container');
         const gitRecordsContainer = document.getElementById('git-records-container');
+        const chatContainer = document.getElementById('chat-container');
+        const knowledgeContainer = document.getElementById('knowledge-container');
         const jmSaveOpmlBtn = document.getElementById('jsmind-save-opml-btn');
         const opmlSaveMmBtn = document.getElementById('opml-save-mm-btn');
         const jmImgBtn = document.getElementById('jsmind-image-btn');
@@ -14798,7 +15458,7 @@
             iframeCommonContainer, mermaidAppContainer, timelineAppContainer,
             graphqlPlaygroundContainer, regexTestContainer, calendarContainer,
             cronViewContainer, videoViewContainer, gitRecordsContainer,
-            swaggerEditorContainer, dirSpaceContainer
+            swaggerEditorContainer, dirSpaceContainer, chatContainer, knowledgeContainer
         ];
 
         const AUX_CONTROLS = [
@@ -14836,6 +15496,23 @@
             await initAll();
             await updateTimeAll();
             await updateTimeHeader();
+            // Tauri 模式下显示 RAG/Agent 模式按钮
+            if (isTauriVisit()) {
+                const ragBtn = document.getElementById('chat-mode-rag');
+                const agentBtn = document.getElementById('chat-mode-agent');
+                if (ragBtn) ragBtn.style.display = '';
+                if (agentBtn) agentBtn.style.display = '';
+
+                // 监听知识库文件变更事件，自动刷新状态
+                try {
+                    const { listen } = window.__TAURI__.event;
+                    listen('kb-watcher-event', () => {
+                        refreshKnowledgeStatus();
+                    });
+                } catch (e) {
+                    console.warn('注册 watcher 事件监听失败:', e);
+                }
+            }
         });
 
         window.addEventListener('beforeunload', function (e) {
@@ -15002,6 +15679,10 @@
                 await openKanbanDemo();
             } else if (type === 'dirSpace') {
                 await openDirSpace();
+            } else if (type === 'aiChat') {
+                await openAiChat();
+            } else if (type === 'knowledge') {
+                await openKnowledgeBase();
             } else if (type === 'fileType') {
                 await openFileType();
             } else if (type === 'picLayoutDisplay') {  //目录右键
@@ -15036,6 +15717,10 @@
             } else if (type === 'canvas') {
                 currentCvsDirPath = null;
                 dirCanvasDisplayFlag = false;
+            } else if (type === 'aiChat') {
+                aiFabContainer.style.display = 'none';
+            } else if (type === 'knowledge') {
+                aiFabContainer.style.display = 'none';
             } else if (type === 'dirCanvasDisplay') {
                 dirCanvasDisplayFlag = true;
             }
@@ -18496,7 +19181,7 @@
                     </button>`;
             html += `<div class="mind-jsmind-toolbar">
                         <span id="tbltl-left">
-                            <svg t="1750169375313" width="1rem" height="1rem" viewBox="0 0 1024 1024" version="1.1">
+                            <svg t="1750169375313" width="16" height="16" viewBox="0 0 1024 1024" version="1.1">
                                 <path d="M639 463.30000001L639 285.1c0-36.90000001-26.4-68.5-61.3-68.5l-150.2 0c-1.5 0-3 0.1-4.5 0.3-10.2-38.7-45.5-67.3-87.5-67.3-50 0-90.5 40.5-90.5 90.5s40.5 90.5 90.5 90.5c42 0 77.3-28.6 87.5-67.39999999 1.4 0.3 2.9 0.4 4.5 0.39999999L577.7 263.6c6.8 0 14.3 8.9 14.3 21.49999999l0 427.00000001c0 12.7-7.40000001 21.5-14.30000001 21.5l-150.19999999 0c-1.5 0-3 0.2-4.5 0.4-10.2-38.8-45.5-67.3-87.5-67.3-50 0-90.5 40.5-90.5 90.4 0 49.9 40.5 90.6 90.5 90.59999999 42 0 77.3-28.6 87.5-67.39999999 1.4 0.2 2.9 0.4 4.49999999 0.4L577.7 780.7c34.80000001 0 61.3-31.6 61.3-68.50000001L639 510.3l79.1 0c10.4 38.5 45.49999999 67 87.4 67 50 0 90.5-40.5 90.5-90.5s-40.5-90.5-90.5-90.5c-41.79999999 0-77.00000001 28.4-87.4 67L639 463.30000001z" fill="currentColor" p-id="1776"></path>
                             </svg>
                         </span>
@@ -18506,7 +19191,7 @@
                             </svg>
                         </span>
                         <span id="tbltr-right">
-                            <svg t="1750169667709" width="1rem" height="1rem" viewBox="0 0 1024 1024" version="1.1">
+                            <svg t="1750169667709" width="16" height="16" viewBox="0 0 1024 1024" version="1.1">
                                 <path d="M385 560.69999999L385 738.9c0 36.90000001 26.4 68.5 61.3 68.5l150.2 0c1.5 0 3-0.1 4.5-0.3 10.2 38.7 45.5 67.3 87.5 67.3 50 0 90.5-40.5 90.5-90.5s-40.5-90.5-90.5-90.5c-42 0-77.3 28.6-87.5 67.39999999-1.4-0.3-2.9-0.4-4.5-0.39999999L446.3 760.4c-6.8 0-14.3-8.9-14.3-21.49999999l0-427.00000001c0-12.7 7.40000001-21.5 14.30000001-21.5l150.19999999 0c1.5 0 3-0.2 4.5-0.4 10.2 38.8 45.5 67.3 87.5 67.3 50 0 90.5-40.5 90.5-90.4 0-49.9-40.5-90.6-90.5-90.59999999-42 0-77.3 28.6-87.5 67.39999999-1.4-0.2-2.9-0.4-4.49999999-0.4L446.3 243.3c-34.80000001 0-61.3 31.6-61.3 68.50000001L385 513.7l-79.1 0c-10.4-38.5-45.49999999-67-87.4-67-50 0-90.5 40.5-90.5 90.5s40.5 90.5 90.5 90.5c41.79999999 0 77.00000001-28.4 87.4-67L385 560.69999999z" fill="currentColor" p-id="3038"></path>
                             </svg>
                         </span>
@@ -28393,7 +29078,8 @@ kanban-plugin: basic
                         _snakePaused = true;
                         TimerManager.clear('snakeGame');
                         const btn = document.getElementById('snakeToggleBtn');
-                        if (btn) { btn.textContent = '▶'; btn.title = '继续贪吃蛇动画'; }
+                        const pauseIcon = document.getElementById('snake-pause-icon');
+                        if (btn) { pauseIcon.innerHTML = '<path d="M8 5v14l11-7z"/>'; btn.title = '继续贪吃蛇动画'; }
                         heatmapChart.setOption({ series: [{}, { data: [] }, { data: [] }] });
                     }
                     _snakeAutoPauseTimer = null;
@@ -28404,17 +29090,18 @@ kanban-plugin: basic
             // 暴露点击方法供 HTML onclick 调用（按钮已通过 onclick="toggleSnake()" 绑定）
             window.toggleSnake = () => {
                 const btn = document.getElementById('snakeToggleBtn');
-                if (!btn) return;
+                const pauseIcon = document.getElementById('snake-pause-icon');
+                if (!btn || !pauseIcon) return;
                 _snakePaused = !_snakePaused;
                 if (_snakePaused) {
                     TimerManager.clear('snakeGame');
-                    btn.textContent = '▶';
+                    pauseIcon.innerHTML = '<path d="M8 5v14l11-7z"/>';
                     btn.title = '继续贪吃蛇动画';
                     heatmapChart.setOption({ series: [{}, { data: [] }, { data: [] }] });
                     if (_snakeAutoPauseTimer) { clearTimeout(_snakeAutoPauseTimer); _snakeAutoPauseTimer = null; }
                 } else {
                     TimerManager.set('snakeGame', tick, SPEED);
-                    btn.textContent = '⏸';
+                    pauseIcon.innerHTML = '<path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />';
                     btn.title = '暂停贪吃蛇动画';
                     renderSnake();
                     _scheduleAutoPause();
@@ -29047,7 +29734,7 @@ kanban-plugin: basic
                     html += '<div class="bookmark-folder" data-depth="' + depth + '">' +
                         '<div class="bookmark-folder-header" onclick="toggleBookmarkFolder(this)">' +
                         '<span class="bookmark-folder-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg></span>' +
-                        '<svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="#e8a735"><path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2z"/></svg>' +
+                        '<svg viewBox="0 0 24 24" width="16" height="16" fill="#e8a735"><path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2z"/></svg>' +
                         '<span class="bookmark-folder-name">' + escapeHtml(child.title || '未命名目录') + '</span>' +
                         '<span class="bookmark-folder-count">' + count + '</span>' +
                         '</div>' +
@@ -41546,13 +42233,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             newPager.id = 'photo-masonry-pager';
             newPager.innerHTML = `
                 <button class="photo-pager-btn" id="photo-masonry-prev" title="上一页" ${currentPage <= 1 ? 'disabled' : ''}>
-                    <svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="currentColor">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
                         <path d="M15 18l-6-6 6-6v12z"/>
                     </svg>
                 </button>
                 <span class="photo-pager-info">${start}-${end} / ${totalCount}</span>
                 <button class="photo-pager-btn" id="photo-masonry-next" title="下一页" ${currentPage >= totalPages ? 'disabled' : ''}>
-                    <svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="currentColor">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
                         <path d="M9 18l6-6-6-6v12z"/>
                     </svg>
                 </button>
@@ -41702,13 +42389,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             newPager.id = 'photo-scatter-pager';
             newPager.innerHTML = `
                 <button class="photo-pager-btn" id="photo-scatter-prev" title="上一页" ${currentPage <= 1 ? 'disabled' : ''}>
-                    <svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="currentColor">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
                         <path d="M15 18l-6-6 6-6v12z"/>
                     </svg>
                 </button>
                 <span class="photo-pager-info">${start}-${end} / ${totalCount}</span>
                 <button class="photo-pager-btn" id="photo-scatter-next" title="下一页" ${currentPage >= totalPages ? 'disabled' : ''}>
-                    <svg viewBox="0 0 24 24" width="1rem" height="1rem" fill="currentColor">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
                         <path d="M9 18l6-6-6-6v12z"/>
                     </svg>
                 </button>
@@ -44662,9 +45349,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             contentMain.innerHTML = `
             <div class="pomodoro-container">
                 <div class="pomodoro-mode-tabs">
-                    <button class="pomodoro-mode-tab active" data-mode="pomodoro" onclick="pomodoroSwitch('pomodoro')"><svg width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> 专注</button>
-                    <button class="pomodoro-mode-tab" data-mode="short" onclick="pomodoroSwitch('short')"><svg width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg> 短休息</button>
-                    <button class="pomodoro-mode-tab" data-mode="long" onclick="pomodoroSwitch('long')"><svg width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> 长休息</button>
+                    <button class="pomodoro-mode-tab active" data-mode="pomodoro" onclick="pomodoroSwitch('pomodoro')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> 专注</button>
+                    <button class="pomodoro-mode-tab" data-mode="short" onclick="pomodoroSwitch('short')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg> 短休息</button>
+                    <button class="pomodoro-mode-tab" data-mode="long" onclick="pomodoroSwitch('long')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> 长休息</button>
                 </div>
                 <div class="pomodoro-timer-wrapper" id="pomoTimerWrapper">
                     <svg class="pomodoro-timer-svg" viewBox="0 0 100 100">
@@ -45290,6 +45977,35 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                     <label>上下文长度</label>
                                     <input class="setting-number" id="${inputId('llmContext')}" type="number" min="1000" max="100000" step="1000" value="${LOCAL_LLM_CONTEXT_LENGTH}">
                                 </div>
+                                <div class="setting-row">
+                                    <label></label>
+                                    <button class="setting-btn" onclick="testLlmConnection(this)" style="margin-top:4px;">测试连接</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="setting-section">
+                            <div class="setting-section-title">Embedding <span class="setting-help" data-tippy-content="用于将文本向量化，是知识库检索的基础。可与 LLM 使用同一服务（如 Ollama 同时支持 chat 和 embedding）">ⓘ</span></div>
+                            <div class="setting-section-body">
+                                <div class="setting-row">
+                                    <label>API 端点</label>
+                                    <input class="setting-text" id="${inputId('embedEndpoint')}" value="${escapeHtml(EMBEDDING_ENDPOINT)}" placeholder="http://localhost:11434/v1/embeddings">
+                                </div>
+                                <div class="setting-row">
+                                    <label>Token</label>
+                                    <input class="setting-text" id="${inputId('embedToken')}" value="${escapeHtml(EMBEDDING_TOKEN)}">
+                                </div>
+                                <div class="setting-row">
+                                    <label>模型名称</label>
+                                    <input class="setting-text" id="${inputId('embedModel')}" value="${escapeHtml(EMBEDDING_MODEL)}" placeholder="text-embedding-qwen3-embedding-0.6b">
+                                </div>
+                                <div class="setting-row">
+                                    <label>向量维度</label>
+                                    <input class="setting-number" id="${inputId('embedDimension')}" type="number" min="64" max="8192" step="64" value="${EMBEDDING_DIMENSION}">
+                                </div>
+                                <div class="setting-row">
+                                    <label></label>
+                                    <button class="setting-btn" onclick="testEmbeddingConnection(this)" style="margin-top:4px;">测试连接</button>
+                                </div>
                             </div>
                         </div>
                         <div class="setting-section">
@@ -45465,6 +46181,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     LOCAL_LLM_TOKEN = document.getElementById(inputId('llmToken')).value.trim();
                     LOCAL_LLM_MODEL = document.getElementById(inputId('llmModel')).value.trim();
                     LOCAL_LLM_CONTEXT_LENGTH = contextLength;
+                    EMBEDDING_ENDPOINT = document.getElementById(inputId('embedEndpoint')).value.trim();
+                    EMBEDDING_TOKEN = document.getElementById(inputId('embedToken')).value.trim();
+                    EMBEDDING_MODEL = document.getElementById(inputId('embedModel')).value.trim();
+                    const embedDimVal = document.getElementById(inputId('embedDimension')).value.trim();
+                    const embedDimension = parseInt(embedDimVal, 10);
+                    if (!isNaN(embedDimension) && embedDimension >= 64) {
+                        EMBEDDING_DIMENSION = embedDimension;
+                    }
                     DIR_BLACKLIST = dirBlacklistItems;
                     FILE_BLACKLIST = fileBlacklistItems;
                     RANDOM_DIR_BLACKLIST = randomDirItems;
@@ -45477,6 +46201,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         localLlmToken: LOCAL_LLM_TOKEN,
                         localLlmModel: LOCAL_LLM_MODEL,
                         localLlmContextLength: LOCAL_LLM_CONTEXT_LENGTH,
+                        embeddingEndpoint: EMBEDDING_ENDPOINT,
+                        embeddingToken: EMBEDDING_TOKEN,
+                        embeddingModel: EMBEDDING_MODEL,
+                        embeddingDimension: EMBEDDING_DIMENSION,
                         dirBlacklist: DIR_BLACKLIST,
                         fileBlacklist: FILE_BLACKLIST,
                         randomDirBlacklist: RANDOM_DIR_BLACKLIST,
@@ -45531,6 +46259,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 LOCAL_LLM_TOKEN = setting.localLlmToken;
                 LOCAL_LLM_MODEL = setting.localLlmModel;
                 LOCAL_LLM_CONTEXT_LENGTH = setting.localLlmContextLength;
+                EMBEDDING_ENDPOINT = setting.embeddingEndpoint || EMBEDDING_ENDPOINT;
+                EMBEDDING_TOKEN = setting.embeddingToken || EMBEDDING_TOKEN;
+                EMBEDDING_MODEL = setting.embeddingModel || EMBEDDING_MODEL;
+                EMBEDDING_DIMENSION = setting.embeddingDimension || EMBEDDING_DIMENSION;
                 DIR_BLACKLIST = setting.dirBlacklist;
                 FILE_BLACKLIST = setting.fileBlacklist;
                 RANDOM_DIR_BLACKLIST = setting.randomDirBlacklist;
@@ -45551,6 +46283,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 localLlmToken: LOCAL_LLM_TOKEN,
                 localLlmModel: LOCAL_LLM_MODEL,
                 localLlmContextLength: LOCAL_LLM_CONTEXT_LENGTH,
+                embeddingEndpoint: EMBEDDING_ENDPOINT,
+                embeddingToken: EMBEDDING_TOKEN,
+                embeddingModel: EMBEDDING_MODEL,
+                embeddingDimension: EMBEDDING_DIMENSION,
                 dirBlacklist: DIR_BLACKLIST,
                 fileBlacklist: FILE_BLACKLIST,
                 randomDirBlacklist: RANDOM_DIR_BLACKLIST,
@@ -46394,6 +47130,564 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     : `${festival.name}: ${festival.days}天后`;
             } else {
                 fel.textContent = '--';
+            }
+        }
+
+        // ====== AI 聊天核心逻辑 ======
+        let chatMode = 'normal'; // normal | rag | agent
+        let chatMessages = [];
+        let chatAbortController = null;
+        let chatStreaming = false;
+
+        async function openAiChat() {
+            hideAllViewContainers();
+            chatContainer.style.display = 'flex';
+            setTimeout(() => document.getElementById('chat-input')?.focus(), 100);
+        }
+
+        async function openKnowledgeBase() {
+            hideAllViewContainers();
+            knowledgeContainer.style.display = 'flex';
+            refreshKnowledgeStatus();
+        }
+
+        function setChatMode(mode) {
+            // 非 Tauri 模式只允许普通对话
+            if (!isTauriVisit() && mode !== 'normal') {
+                showNotification('非 Tauri 环境仅支持普通对话模式', 'warning');
+                return;
+            }
+            chatMode = mode;
+            document.querySelectorAll('.btn-mode').forEach(b => b.classList.remove('active'));
+            const btn = document.getElementById('chat-mode-' + mode);
+            if (btn) btn.classList.add('active');
+            const ragHint = document.getElementById('chat-rag-hint');
+            if (mode === 'rag') {
+                ragHint.style.display = '';
+                if (!getRootHandle()) {
+                    showNotification('请先打开一个目录', 'warning');
+                } else {
+                    showNotification('RAG 模式：使用当前目录作为知识库', 'info');
+                }
+            } else {
+                ragHint.style.display = 'none';
+                if (mode === 'agent') {
+                    showNotification('Agent 模式开发中', 'info');
+                }
+            }
+        }
+
+        function handleChatKeydown(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendChatMessage();
+            }
+        }
+
+        function clearChatMessages() {
+            if (chatStreaming) {
+                chatAbortController?.abort();
+                chatStreaming = false;
+            }
+            chatMessages = [];
+            const container = document.getElementById('chat-messages');
+            container.innerHTML = '<div class="chat-message system">对话已清空</div>';
+        }
+
+        function addChatMessage(role, content, sources) {
+            const container = document.getElementById('chat-messages');
+            const div = document.createElement('div');
+            div.className = 'chat-message ' + role;
+            div.textContent = content;
+            if (sources && sources.length > 0) {
+                const details = document.createElement('details');
+                details.className = 'msg-sources';
+                const summary = document.createElement('summary');
+                summary.textContent = '\u{1F4CE}引用来源 (' + sources.length + ')';
+                details.appendChild(summary);
+                sources.forEach(s => {
+                    const item = document.createElement('div');
+                    item.className = 'source-item';
+                    item.innerHTML = '<span>' + (s.docName || '未知文档') + '</span><span class="source-score">' + (s.score * 100).toFixed(1) + '%</span>';
+                    details.appendChild(item);
+                });
+                div.appendChild(details);
+            }
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function showChatTyping() {
+            const container = document.getElementById('chat-messages');
+            const div = document.createElement('div');
+            div.className = 'chat-message assistant';
+            div.id = 'chat-typing-indicator';
+            div.innerHTML = '<div class="chat-typing"><span></span><span></span><span></span></div>';
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function removeChatTyping() {
+            const el = document.getElementById('chat-typing-indicator');
+            if (el) el.remove();
+        }
+
+        async function sendChatMessage() {
+            const input = document.getElementById('chat-input');
+            const text = input.value.trim();
+            if (!text || chatStreaming) return;
+            if (!LOCAL_LLM_ENDPOINT) {
+                showNotification('\u2717 请先在设置中配置 LLM API 端点', 'warning');
+                return;
+            }
+            input.value = '';
+            addChatMessage('user', text);
+            chatMessages.push({ role: 'user', content: text });
+            if (chatMode === 'rag') {
+                if (!getRootHandle()) {
+                    showNotification('请先打开一个目录作为知识库', 'warning');
+                    return;
+                }
+                await sendRagQuery(text);
+            } else {
+                await sendLlmQuery(text);
+            }
+        }
+
+        async function sendLlmQuery(text) {
+            const sendBtn = document.getElementById('chat-send-btn');
+            sendBtn.disabled = true;
+            chatStreaming = true;
+            chatAbortController = new AbortController();
+            showChatTyping();
+            try {
+                const messages = chatMessages.map(m => ({ role: m.role, content: m.content }));
+                const response = await fetch(LOCAL_LLM_ENDPOINT, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': LOCAL_LLM_TOKEN ? 'Bearer ' + LOCAL_LLM_TOKEN : '',
+                    },
+                    body: JSON.stringify({
+                        model: LOCAL_LLM_MODEL,
+                        messages: messages,
+                        stream: true,
+                        max_tokens: LOCAL_LLM_CONTEXT_LENGTH || 4096,
+                    }),
+                    signal: chatAbortController.signal,
+                });
+                if (!response.ok) throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+                removeChatTyping();
+                const assistantDiv = document.createElement('div');
+                assistantDiv.className = 'chat-message assistant';
+                const container = document.getElementById('chat-messages');
+                container.appendChild(assistantDiv);
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let fullContent = '';
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n').filter(l => l.startsWith('data: '));
+                    for (const line of lines) {
+                        const data = line.slice(6).trim();
+                        if (data === '[DONE]') continue;
+                        try {
+                            const parsed = JSON.parse(data);
+                            const delta = parsed.choices?.[0]?.delta;
+                            if (delta?.content) {
+                                fullContent += delta.content;
+                                assistantDiv.textContent = fullContent;
+                                container.scrollTop = container.scrollHeight;
+                            }
+                        } catch { /* skip parse errors */ }
+                    }
+                }
+                if (fullContent) {
+                    chatMessages.push({ role: 'assistant', content: fullContent });
+                }
+            } catch (err) {
+                removeChatTyping();
+                if (err.name !== 'AbortError') {
+                    addChatMessage('system', '\u2717 请求失败: ' + err.message);
+                    console.error('LLM 请求失败:', err);
+                }
+            } finally {
+                sendBtn.disabled = false;
+                chatStreaming = false;
+                chatAbortController = null;
+            }
+        }
+
+        async function sendRagQuery(text) {
+            const sendBtn = document.getElementById('chat-send-btn');
+            sendBtn.disabled = true;
+            chatStreaming = true;
+            chatAbortController = new AbortController();
+            if (!EMBEDDING_ENDPOINT) {
+                showNotification('\u2717 请先在设置中配置 Embedding API 端点', 'warning');
+                sendBtn.disabled = false;
+                chatStreaming = false;
+                return;
+            }
+            showChatTyping();
+            try {
+                const embedResponse = await fetch(EMBEDDING_ENDPOINT, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': EMBEDDING_TOKEN ? 'Bearer ' + EMBEDDING_TOKEN : '',
+                    },
+                    body: JSON.stringify({ model: EMBEDDING_MODEL, input: [text] }),
+                    signal: chatAbortController.signal,
+                });
+                if (!embedResponse.ok) throw new Error('Embedding API error: ' + embedResponse.status);
+                const embedData = await embedResponse.json();
+                const queryVector = embedData.data?.[0]?.embedding;
+                if (!queryVector) throw new Error('Embedding 返回数据格式异常');
+                removeChatTyping();
+                const searchMsg = document.createElement('div');
+                searchMsg.className = 'chat-message system';
+                searchMsg.textContent = '\u{1F50D} 正在检索知识库...';
+                document.getElementById('chat-messages').appendChild(searchMsg);
+
+                let sources = null;
+                // 获取当前目录路径
+                const dirHandle = getRootHandle();
+                const path = dirHandle ? getDirPath(dirHandle) : null;
+
+                // Tauri 环境：通过 Rust 后端检索
+                if (isTauriVisit() && path) {
+                    try {
+                        sources = await window.__TAURI__.core.invoke('kb_search_hybrid', {
+                            dirPath: path,
+                            queryVector: queryVector,
+                            query: text,
+                            topK: 10,
+                        });
+                    } catch (e) {
+                        console.warn('Tauri kb_search_hybrid 失败:', e);
+                    }
+                }
+                searchMsg.remove();
+                if (!sources || sources.length === 0) {
+                    addChatMessage('system', '\u274C 知识库中未找到相关内容');
+                    searchMsg.remove(); // 清理未完成的搜索提示
+                    return;
+                }
+                // 解决 L6：过滤低分结果，保留 score >= 0.3 的相关文档
+                const MIN_SCORE = 0.3;
+                const filtered = sources.filter(s => s.score >= MIN_SCORE);
+                if (filtered.length === 0) {
+                    sources = sources.slice(0, 3); // 至少保留 top 3 个最高分
+                } else {
+                    sources = filtered;
+                }
+                const context = sources.map(s => s.text).join('\n\n---\n\n');
+                await streamLlmWithContext(text, context, sources);
+            } catch (err) {
+                removeChatTyping();
+                if (err.name !== 'AbortError') {
+                    addChatMessage('system', '\u2717 RAG 查询失败: ' + err.message);
+                }
+            } finally {
+                sendBtn.disabled = false;
+                chatStreaming = false;
+            }
+        }
+
+        async function streamLlmWithContext(text, context, sources) {
+            const sendBtn = document.getElementById('chat-send-btn');
+            const systemPrompt = '你是一个知识库助手，请基于以下上下文回答问题。如果上下文中没有相关信息，请如实告知。\n\n上下文：\n' + context;
+            const messages = [
+                { role: 'system', content: systemPrompt },
+                ...chatMessages.map(m => ({ role: m.role, content: m.content })),
+            ];
+            showChatTyping();
+            try {
+                const response = await fetch(LOCAL_LLM_ENDPOINT, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': LOCAL_LLM_TOKEN ? 'Bearer ' + LOCAL_LLM_TOKEN : '',
+                    },
+                    body: JSON.stringify({
+                        model: LOCAL_LLM_MODEL,
+                        messages: messages,
+                        stream: true,
+                        max_tokens: LOCAL_LLM_CONTEXT_LENGTH || 4096,
+                    }),
+                    signal: chatAbortController.signal,
+                });
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                removeChatTyping();
+                const assistantDiv = document.createElement('div');
+                assistantDiv.className = 'chat-message assistant';
+                const container = document.getElementById('chat-messages');
+                container.appendChild(assistantDiv);
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let fullContent = '';
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n').filter(l => l.startsWith('data: '));
+                    for (const line of lines) {
+                        const data = line.slice(6).trim();
+                        if (data === '[DONE]') continue;
+                        try {
+                            const parsed = JSON.parse(data);
+                            const delta = parsed.choices?.[0]?.delta;
+                            if (delta?.content) {
+                                fullContent += delta.content;
+                                assistantDiv.textContent = fullContent;
+                                container.scrollTop = container.scrollHeight;
+                            }
+                        } catch { /* skip */ }
+                    }
+                }
+                if (fullContent) {
+                    chatMessages.push({ role: 'assistant', content: fullContent });
+                    if (sources && sources.length > 0) {
+                        const details = document.createElement('details');
+                        details.className = 'msg-sources';
+                        details.innerHTML = '<summary>\u{1F4CE}引用来源 (' + sources.length + ')</summary>';
+                        sources.forEach(s => {
+                            const item = document.createElement('div');
+                            item.className = 'source-item';
+                            const docName = s.docName || s.doc_name || '未知文档';
+                            item.innerHTML = '<span>' + docName + '</span><span class="source-score">' + (s.score * 100).toFixed(1) + '%</span>';
+                            details.appendChild(item);
+                        });
+                        assistantDiv.appendChild(details);
+                    }
+                }
+            } catch (err) {
+                removeChatTyping();
+                if (err.name !== 'AbortError') {
+                    addChatMessage('system', '\u2717 请求失败: ' + err.message);
+                }
+            } finally {
+                sendBtn.disabled = false;
+                chatStreaming = false;
+            }
+        }
+
+
+        // ====== 知识库状态管理（当前目录即为知识库） ======
+        function getDirPath(dirHandle) {
+            try { return dirHandle.path || dirHandle.name || 'local'; } catch { return 'local'; }
+        }
+        async function refreshKnowledgeStatus() {
+            const dirHandle = getRootHandle();
+            const dirPathEl = document.getElementById('kb-dir-path');
+            const statusText = document.getElementById('kb-status-text');
+            const statusDot = document.getElementById('kb-status-dot');
+            const stats = document.getElementById('kb-stats');
+            const emptyMsg = document.getElementById('kb-empty-msg');
+            const indexBtn = document.getElementById('kb-index-btn');
+
+            if (!dirHandle) {
+                dirPathEl.textContent = '\u2014 未打开任何目录 \u2014';
+                statusText.textContent = '请先打开一个目录';
+                statusDot.className = 'kb-status-dot';
+                stats.style.display = 'none';
+                if (emptyMsg) { emptyMsg.style.display = ''; emptyMsg.querySelector('span').textContent = '请先打开一个目录'; emptyMsg.querySelector('button').style.display = 'none'; }
+                indexBtn.disabled = true;
+                indexBtn.textContent = '\u26A0\uFE0F 请先打开目录';
+                return;
+            }
+
+            const path = getDirPath(dirHandle);
+            dirPathEl.textContent = path;
+            indexBtn.disabled = false;
+            indexBtn.textContent = '索引当前目录';
+            if (emptyMsg) emptyMsg.querySelector('button').style.display = '';
+
+            // Tauri 环境：通过 Rust 后端获取状态
+            if (isTauriVisit()) {
+                try {
+                    const status = await window.__TAURI__.core.invoke('kb_status', { dirPath: path });
+                    if (status && status.vector_count > 0) {
+                        stats.style.display = 'flex';
+                        document.getElementById('kb-stat-files').textContent = status.file_count || 0;
+                        document.getElementById('kb-stat-indexed').textContent = status.chunk_count || 0;
+                        document.getElementById('kb-stat-vectors').textContent = status.vector_count || 0;
+                        const statusLabel = status.status === 'indexed' ? '已索引' : '未完成';
+                        document.getElementById('kb-stat-status').textContent = statusLabel;
+                        statusDot.className = 'kb-status-dot ready';
+                        statusText.textContent = '\u2705 已索引 (' + (status.indexed_at ? new Date(status.indexed_at).toLocaleString() : '') + ')';
+                        if (emptyMsg) emptyMsg.style.display = 'none';
+                        if (indexBtn) indexBtn.textContent = '重新索引';
+                        return;
+                    }
+                    // Rust 返回空状态
+                } catch (e) {
+                    console.warn('Rust kb_status 失败:', e);
+                }
+            }
+
+            stats.style.display = 'none';
+            statusDot.className = 'kb-status-dot';
+            statusText.textContent = '\u274C 尚未索引';
+            if (emptyMsg) {
+                emptyMsg.style.display = '';
+                emptyMsg.querySelector('span').textContent = '当前目录尚未索引';
+                emptyMsg.querySelector('button').style.display = '';
+            }
+        }
+
+        async function indexCurrentDir() {
+            console.log('[KB] indexCurrentDir: 开始');
+            const dirHandle = getRootHandle();
+            console.log('[KB] indexCurrentDir: dirHandle =', dirHandle);
+            if (!dirHandle) {
+                showNotification('请先打开一个目录', 'warning');
+                return;
+            }
+
+            if (!EMBEDDING_ENDPOINT) {
+                showNotification('✗ 请先在设置中配置 Embedding API 端点', 'warning');
+                return;
+            }
+
+            const indexBtn = document.getElementById('kb-index-btn');
+            const progressWrap = document.getElementById('kb-progress-wrap');
+            const progressBar = document.getElementById('kb-progress-bar');
+            const progressText = document.getElementById('kb-progress-text');
+
+            if (!indexBtn || !progressWrap || !progressBar || !progressText) {
+                console.error('[KB] DOM 元素缺失:', { indexBtn, progressWrap, progressBar, progressText });
+                showNotification('页面组件加载异常，请刷新后重试', 'error');
+                return;
+            }
+
+            indexBtn.disabled = true;
+            indexBtn.textContent = '📄 索引中...';
+            progressWrap.style.display = '';
+
+            const path = getDirPath(dirHandle);
+            console.log('[KB] path =', path, 'isTauriVisit =', isTauriVisit());
+
+            // Tauri 环境：委托 Rust 后端索引
+            if (isTauriVisit()) {
+                try {
+                    // 监听进度事件
+                    let unlisten;
+                    try {
+                        const { listen } = window.__TAURI__.event;
+                        unlisten = await listen('kb-progress', (e) => {
+                            const { percent, message } = e.payload;
+                            progressBar.style.width = (percent || 0) + '%';
+                            progressText.textContent = message || '';
+                        });
+                    } catch (e) { console.warn('注册进度监听失败:', e); }
+
+                    // 先停止已有的文件监听
+                    try { await window.__TAURI__.core.invoke('kb_stop_watcher'); } catch (e) { console.warn('停止旧 watcher 失败:', e); }
+
+                    const result = await window.__TAURI__.core.invoke('kb_index', {
+                        dirPath: path,
+                        embeddingEndpoint: EMBEDDING_ENDPOINT,
+                        embeddingToken: EMBEDDING_TOKEN || null,
+                        embeddingModel: EMBEDDING_MODEL || 'default',
+                        embeddingDimension: EMBEDDING_DIMENSION || 768,
+                        dirBlacklist: DIR_BLACKLIST,
+                        fileBlacklist: FILE_BLACKLIST,
+                    });
+
+                    if (unlisten) unlisten();
+
+                    progressWrap.style.display = 'none';
+                    indexBtn.disabled = false;
+                    indexBtn.textContent = '重新索引';
+                    await refreshKnowledgeStatus();
+                    showNotification('\u2705 索引完成: ' + result.file_count + ' 个文件, ' + result.chunk_count + ' 个文本块', 'success');
+
+                    // 启动文件监听，支持增量索引
+                    try {
+                        await window.__TAURI__.core.invoke('kb_start_watcher', {
+                            dirPath: path,
+                            embeddingEndpoint: EMBEDDING_ENDPOINT,
+                            embeddingToken: EMBEDDING_TOKEN || null,
+                            embeddingModel: EMBEDDING_MODEL || 'default',
+                            embeddingDimension: EMBEDDING_DIMENSION || 768,
+                            dirBlacklist: DIR_BLACKLIST,
+                            fileBlacklist: FILE_BLACKLIST,
+                        });
+                        console.log('[KBWatcher] 文件监听已启动');
+                    } catch (e) {
+                        console.warn('启动文件监听失败:', e);
+                    }
+
+                    return;
+                } catch (e) {
+                    progressWrap.style.display = 'none';
+                    indexBtn.disabled = false;
+                    indexBtn.textContent = '重新索引';
+                    console.error('Rust kb_index 失败:', e);
+                    showNotification('\u2717 索引失败: ' + e.message, 'error');
+                    return;
+                }
+            }
+
+            // 非 Tauri 环境不支持知识库索引
+            progressWrap.style.display = 'none';
+            indexBtn.disabled = false;
+            indexBtn.textContent = '重新索引';
+            console.warn('[KB] isTauriVisit() =', isTauriVisit(), '— 非 Tauri 环境无法索引');
+            showNotification('✗ 非 Tauri 环境不支持知识库索引', 'error');
+        }
+
+        // ====== 连接测试 ======
+        async function testLlmConnection(btn) {
+            const endpoint = document.getElementById('setting-llmEndpoint')?.value || LOCAL_LLM_ENDPOINT;
+            const token = document.getElementById('setting-llmToken')?.value || LOCAL_LLM_TOKEN;
+            btn = btn || event?.target;
+            if (btn) { btn.disabled = true; btn.textContent = '测试中...'; }
+            try {
+                const start = Date.now();
+                const res = await fetch(endpoint.replace(/\/chat\/completions.*/, '/models'), {
+                    headers: { 'Authorization': token ? 'Bearer ' + token : '' },
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+                const latency = Date.now() - start;
+                const models = data.data?.map?.(m => m.id)?.join(', ') || '\u2014';
+                showNotification('\u2713 连接成功 延迟:' + latency + 'ms 模型:' + models, 'success');
+            } catch (e) {
+                showNotification('\u2717 连接失败: ' + e.message, 'error');
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = '测试连接'; }
+            }
+        }
+
+        async function testEmbeddingConnection(btn) {
+            const endpoint = document.getElementById('setting-embedEndpoint')?.value || EMBEDDING_ENDPOINT;
+            const token = document.getElementById('setting-embedToken')?.value || EMBEDDING_TOKEN;
+            btn = btn || event?.target;
+            if (btn) { btn.disabled = true; btn.textContent = '测试中...'; }
+            try {
+                const start = Date.now();
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': token ? 'Bearer ' + token : '',
+                    },
+                    body: JSON.stringify({ model: EMBEDDING_MODEL, input: ['test'] }),
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+                const latency = Date.now() - start;
+                const dim = data.data?.[0]?.embedding?.length || '\u2014';
+                showNotification('\u2713 连接成功 延迟:' + latency + 'ms 维度:' + dim, 'success');
+            } catch (e) {
+                showNotification('\u2717 连接失败: ' + e.message, 'error');
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = '测试连接'; }
             }
         }
     </script>

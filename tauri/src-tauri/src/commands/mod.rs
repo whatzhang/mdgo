@@ -1,6 +1,9 @@
 pub mod clipboard;
+pub mod config;
 pub mod fs;
+pub mod fs_watcher;
 pub mod git;
 pub mod git_types;
+pub mod knowledge;
 pub mod open_url;
 pub mod system;

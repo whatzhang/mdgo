@@ -203,6 +203,7 @@ fn compute_network_rates(
 
 /// 全量扫描进程树，找出 root_pid 的所有后代 PID。
 /// 同时刷新所有进程的 CPU 数据，返回完整的应用 PID 列表（含 root）。
+/// 使用 HashSet 去重，防止边界情况下的重复 PID。
 fn find_app_pids(sys: &mut System, root_pid: sysinfo::Pid) -> Vec<sysinfo::Pid> {
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
     let mut children_of: HashMap<sysinfo::Pid, Vec<sysinfo::Pid>> = HashMap::new();
@@ -212,9 +213,14 @@ fn find_app_pids(sys: &mut System, root_pid: sysinfo::Pid) -> Vec<sysinfo::Pid> 
         }
     }
 
+    let mut seen = HashSet::new();
     let mut result = vec![root_pid];
+    seen.insert(root_pid);
     let mut stack: Vec<sysinfo::Pid> = children_of.remove(&root_pid).unwrap_or_default();
     while let Some(pid) = stack.pop() {
+        if !seen.insert(pid) {
+            continue;
+        }
         result.push(pid);
         if let Some(grandchildren) = children_of.remove(&pid) {
             stack.extend(grandchildren);
@@ -400,20 +406,22 @@ const NET_REFRESH_LIST_INTERVAL: u32 = 6;
 
 /// 启动后台系统监控线程（每 3 秒采集一次，通过 Tauri Event 推送到前端）。
 ///
+/// 返回 true 表示成功启动，false 表示监控已在运行中。
+///
 /// # 性能
 /// - 进程刷新使用选择性 PID 刷新（仅刷新已知的应用进程，通常 ≤5 个），
 ///   避免每 3 秒全量扫描 ~200-400 个系统进程。
 /// - 每 `FULL_REFRESH_INTERVAL`（~90 秒）做一次全量扫描以发现新生进程。
 /// - 固定字符串（`r#type`、`host_ip`）在线程启动时缓存，避免每周期堆分配。
 #[tauri::command]
-pub fn start_monitor(app: AppHandle, state: tauri::State<'_, SystemMonitorState>) {
+pub fn start_monitor(app: AppHandle, state: tauri::State<'_, SystemMonitorState>) -> bool {
     // 原子 compare-and-swap：避免 load-then-store 竞态条件
     if state
         .running
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
     {
-        return;
+        return false;
     }
 
     let running = state.running.clone();
@@ -566,6 +574,8 @@ pub fn start_monitor(app: AppHandle, state: tauri::State<'_, SystemMonitorState>
             }
         })
         .expect("system-monitor 线程创建失败");
+
+    true
 }
 
 /// 停止后台系统监控线程（幂等安全）

@@ -1,5 +1,7 @@
 use crate::commands::git_types::*;
-use std::process::Command;
+use std::collections::HashMap;
+use std::io::Read;
+use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::sync::{LazyLock, Mutex};
 use std::thread;
@@ -11,16 +13,22 @@ use std::time::{Duration, Instant};
 const GIT_TIMEOUT: Duration = Duration::from_secs(30);
 /// 缓存 TTL：100ms 内相同请求使用缓存
 const CACHE_TTL_MS: u64 = 100;
+/// log 缓存最大条目数（LRU 简单实现：超出时清除过期项）
+const LOG_CACHE_MAX: usize = 20;
 
 // ==================== 缓存层 ====================
 // 简单的时间敏感缓存，避免短时间内重复 git 调用
 struct GitCache {
     refs: Option<(Instant, RefsInfo)>,
-    log: Option<(Instant, String, Vec<CommitInfo>)>, // key=depth_dir_filepath
+    log: HashMap<String, (Instant, Vec<CommitInfo>)>, // key=depth_dir_filepath
 }
 
-static GIT_CACHE: LazyLock<Mutex<GitCache>> =
-    LazyLock::new(|| Mutex::new(GitCache { refs: None, log: None }));
+static GIT_CACHE: LazyLock<Mutex<GitCache>> = LazyLock::new(|| {
+    Mutex::new(GitCache {
+        refs: None,
+        log: HashMap::new(),
+    })
+});
 
 /// 安全获取缓存锁，即使被 poisoning 也能恢复
 fn lock_cache() -> std::sync::MutexGuard<'static, GitCache> {
@@ -42,42 +50,62 @@ fn git_cmd() -> Command {
     Command::new("git")
 }
 
-/// 执行 git 命令并返回 stdout（带超时保护）。
+/// 执行 git 命令并返回 stdout（带超时保护，超时后 kill 子进程）。
 ///
-/// 通过子线程执行 `Command::output()` 并通过 channel 超时等待，
-/// 避免网络驱动器挂载导致无限阻塞。同时通过在子线程中读取 stdout/stderr
-/// 避免管道缓冲区满导致的死锁。
+/// 设计：子线程负责读取 stdout/stderr，主线程持有 Child 句柄负责超时 kill。
+/// 子线程读取完毕后通过 channel 发送数据，主线程再 wait 回收。
 fn run_git(args: &[&str], dir: &str) -> Result<Vec<u8>, String> {
-    let mut cmd = git_cmd();
-    cmd.args(args).current_dir(dir);
+    let mut child = git_cmd()
+        .args(args)
+        .current_dir(dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("启动 git 失败: {}", e))?;
+
+    let mut stdout = child.stdout.take().ok_or("无法获取 stdout")?;
+    let mut stderr = child.stderr.take().ok_or("无法获取 stderr")?;
 
     let (tx, rx) = mpsc::channel();
 
-    // 在独立线程中执行，避免管道死锁（Command::output 内部会读取 stdout/stderr）
+    // 子线程：只负责读取输出，不持有 Child
     thread::spawn(move || {
-        let result = cmd
-            .output()
-            .map_err(|e| format!("执行 git 失败: {}", e))
-            .and_then(|output| {
-                if output.status.success() {
-                    Ok(output.stdout)
-                } else {
-                    Err(format!("git 错误: {}", String::from_utf8_lossy(&output.stderr)))
-                }
-            });
-        // 超时 kill 后仍可能发送，忽略 SendError
-        let _ = tx.send(result);
+        let mut stdout_buf = Vec::new();
+        let mut stderr_buf = Vec::new();
+
+        let _ = stdout.read_to_end(&mut stdout_buf);
+        let _ = stderr.read_to_end(&mut stderr_buf);
+
+        let _ = tx.send((stdout_buf, stderr_buf));
     });
 
     match rx.recv_timeout(GIT_TIMEOUT) {
-        Ok(result) => result,
-        Err(mpsc::RecvTimeoutError::Timeout) => Err(format!(
-            "git 命令超时 ({}s): {} {:?}",
-            GIT_TIMEOUT.as_secs(),
-            dir,
-            args
-        )),
+        Ok((stdout_buf, stderr_buf)) => {
+            // 读取完成，等待进程退出
+            let status = child.wait().map_err(|e| format!("等待 git 进程失败: {}", e))?;
+            if status.success() {
+                Ok(stdout_buf)
+            } else {
+                Err(format!(
+                    "git 错误: {}",
+                    String::from_utf8_lossy(&stderr_buf)
+                ))
+            }
+        }
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            // 超时：主动 kill 子进程
+            let _ = child.kill();
+            let _ = child.wait();
+            Err(format!(
+                "git 命令超时 ({}s): {} {:?}",
+                GIT_TIMEOUT.as_secs(),
+                dir,
+                args
+            ))
+        }
         Err(mpsc::RecvTimeoutError::Disconnected) => {
+            let _ = child.kill();
+            let _ = child.wait();
             Err("git 命令线程意外退出".to_string())
         }
     }
@@ -102,17 +130,29 @@ pub fn git_log(
     let cache_key = format!("{}_{:?}_{:?}", dir, depth, filepath);
     {
         let cache = lock_cache();
-        if let Some((ts, ref key, ref data)) = cache.log {
-            if key == &cache_key && ts.elapsed().as_millis() < CACHE_TTL_MS as u128 {
+        if let Some((ts, data)) = cache.log.get(&cache_key) {
+            if ts.elapsed().as_millis() < CACHE_TTL_MS as u128 {
                 return Ok(data.clone());
             }
         }
     }
 
     let commits = do_git_log(&dir, depth, filepath.as_deref())?;
-    // 写入缓存
+
+    // 写入缓存：超出容量时清理过期项
     let mut cache = lock_cache();
-    cache.log = Some((std::time::Instant::now(), cache_key, commits.clone()));
+    if cache.log.len() >= LOG_CACHE_MAX {
+        let ttl = CACHE_TTL_MS;
+        cache.log.retain(|_, (ts, _)| ts.elapsed().as_millis() < ttl as u128);
+        // 如果清理完还是满，强制清空一半（简单策略）
+        if cache.log.len() >= LOG_CACHE_MAX {
+            let to_remove: Vec<String> = cache.log.keys().take(LOG_CACHE_MAX / 2).cloned().collect();
+            for k in to_remove {
+                cache.log.remove(&k);
+            }
+        }
+    }
+    cache.log.insert(cache_key, (Instant::now(), commits.clone()));
     Ok(commits)
 }
 
