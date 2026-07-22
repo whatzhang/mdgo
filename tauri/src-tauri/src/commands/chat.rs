@@ -53,11 +53,19 @@ pub async fn chat_session_create(
             let indexer = indexer.clone();
             let dir_path = dir_path.clone();
             let prev = prev.clone();
-            tokio::spawn(async move {
-                if let Err(e) = indexer.index_chat_session(&dir_path, &prev, &messages).await {
-                    log::warn!("[chat] 索引上一个会话失败: {}", e);
-                }
-            });
+            // 使用超时等待索引完成（30s），确保数据落库后才返回
+            // 如果超时则降级为异步后台执行，至少不阻塞会话创建
+            if tokio::time::timeout(
+                std::time::Duration::from_secs(30),
+                indexer.index_chat_session(&dir_path, &prev, &messages),
+            ).await.is_err() {
+                log::warn!("[chat] 索引上一个会话超时（30s），降级为后台异步执行");
+                tokio::spawn(async move {
+                    if let Err(e) = indexer.index_chat_session(&dir_path, &prev, &messages).await {
+                        log::warn!("[chat] 索引上一个会话失败: {}", e);
+                    }
+                });
+            }
         }
     }
 

@@ -358,7 +358,7 @@
         }
 
         .file-item-text {
-            font-size: 0.8125rem;
+            font-size: 0.875rem;
             display: flex;
             align-items: center;
             flex: 1;
@@ -386,7 +386,7 @@
             color: var(--color-text-white);
             padding: 0.375rem 0.625rem;
             border-radius: 0.25rem;
-            font-size: 0.8125rem;
+            font-size: 0.875rem;
             white-space: nowrap;
             z-index: 100;
             box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
@@ -480,7 +480,7 @@
         .file-item-more-dropdown-item {
             padding: 0.25rem 0.5rem;
             margin: 0 0.25rem;
-            font-size: 0.8125rem;
+            font-size: 0.875rem;
             color: var(--color-text);
             cursor: pointer;
             display: flex;
@@ -15194,6 +15194,7 @@
         let LOCAL_LLM_TOKEN = 'c17f18e31adb10978d3a9cd0d6743d30a067af602a8789e7';
         let LOCAL_LLM_MODEL = 'gemma-4-e4b-it';
         let LOCAL_LLM_CONTEXT_LENGTH = 10000;
+        let LOCAL_LLM_MAX_TOKENS = 4096;
         // nginx 配置地址
         let NGINX_CONF_PATH = '/usr/local/etc/openresty/sites/index.conf';
         // 忽略的目录
@@ -15310,32 +15311,32 @@
             FORMAT: { key: '格式化', color: '#f22431ff' },
         };
         let DASHBOARD_BUTTON = [
-            { key: '行为记录分析', value: 'analyzeFileOs()', display: false, fileProtocolDisplay: false, tauriDisplay: false, serverDisplay: false },
-            { key: 'GraphiQL', value: 'toggleFile("graphiQL")', display: true, fileProtocolDisplay: false, tauriDisplay: false, serverDisplay: true },
-            { key: 'GraphQLPlayground', value: 'toggleFile("graphQLPlayground")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: 'OpenResty', value: 'toggleFile("openRestyEditor")', display: true, fileProtocolDisplay: false, tauriDisplay: false, serverDisplay: true },
-            { key: 'Swagger', value: 'toggleFile("swaggerDemo")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '番茄钟', value: 'toggleFile("pomodoro")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '正则表达式', value: 'toggleFile("regexTest")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: 'Cron', value: 'toggleFile("cron")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '视频播放器', value: 'toggleFile("video")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: 'Raw查看', value: 'toggleFile("raw")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: 'url编解码', value: 'toggleFile("urlEncoder")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '书签', value: 'toggleFile("bookmarks")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '文件词云', value: 'toggleFile("wordCloud")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '文件时间线', value: 'toggleFile("timeline")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: 'git记录', value: 'toggleFile("gitRecords")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '文件图谱', value: 'toggleFile("noteGraph")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: 'Mermaid', value: 'toggleFile("mermaid")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: 'Excalidraw白板', value: 'toggleFile("whiteboard")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: 'Canvas文档白板', value: 'toggleFile("canvas")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '思维导图', value: 'toggleFile("mindMap")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '大纲笔记', value: 'toggleFile("opmlOutline")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '任务看板', value: 'toggleFile("kanban")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '临时编辑器', value: 'toggleFile("tempEditor")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '目录空间分析', value: 'toggleFile("dirSpace")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: 'AI聊天', value: 'toggleFile("aiChat")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '知识库', value: 'toggleFile("knowledge")', display: true, fileProtocolDisplay: false, tauriDisplay: true, serverDisplay: false },
+            { key: '行为记录分析', value: 'analyzeFileOs()', display: false, fileProtocolDisplay: false, tauriDisplay: false },
+            { key: 'GraphiQL', value: 'toggleFile("graphiQL")', display: true, fileProtocolDisplay: false, tauriDisplay: false },
+            { key: 'GraphQLPlayground', value: 'toggleFile("graphQLPlayground")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: 'OpenResty', value: 'toggleFile("openRestyEditor")', display: true, fileProtocolDisplay: false, tauriDisplay: false },
+            { key: 'Swagger', value: 'toggleFile("swaggerDemo")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '番茄钟', value: 'toggleFile("pomodoro")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '正则表达式', value: 'toggleFile("regexTest")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: 'Cron', value: 'toggleFile("cron")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '视频播放器', value: 'toggleFile("video")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: 'Raw查看', value: 'toggleFile("raw")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: 'url编解码', value: 'toggleFile("urlEncoder")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '书签', value: 'toggleFile("bookmarks")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '文件词云', value: 'toggleFile("wordCloud")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '文件时间线', value: 'toggleFile("timeline")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: 'git记录', value: 'toggleFile("gitRecords")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '文件图谱', value: 'toggleFile("noteGraph")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: 'Mermaid', value: 'toggleFile("mermaid")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: 'Excalidraw白板', value: 'toggleFile("whiteboard")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: 'Canvas文档白板', value: 'toggleFile("canvas")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '思维导图', value: 'toggleFile("mindMap")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '大纲笔记', value: 'toggleFile("opmlOutline")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '任务看板', value: 'toggleFile("kanban")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '临时编辑器', value: 'toggleFile("tempEditor")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '目录空间分析', value: 'toggleFile("dirSpace")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: 'RAG问答', value: 'toggleFile("aiChat")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
+            { key: '知识库', value: 'toggleFile("knowledge")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
         ]
         // 高亮字体颜色（深色系，确保可读性）
         const HIGHLIGHT_FONT_COLORS = [
@@ -15794,21 +15795,7 @@
             await initAll();
             await updateTimeAll();
             await updateTimeHeader();
-            // Tauri 模式下显示 RAG/Agent 模式按钮
-            if (isTauriVisit()) {
-                const ragBtn = document.getElementById('chat-mode-rag');
-                if (ragBtn) ragBtn.style.display = '';
-
-                // 监听知识库文件变更事件，自动刷新状态
-                try {
-                    const { listen } = window.__TAURI__.event;
-                    listen('kb-watcher-event', () => {
-                        refreshKnowledgeStatus();
-                    });
-                } catch (e) {
-                    console.warn('注册 watcher 事件监听失败:', e);
-                }
-            }
+            RAGInit();
         });
 
         window.addEventListener('beforeunload', function (e) {
@@ -16954,7 +16941,6 @@
             for (let i = 0; i < AUX_CONTROLS.length; i++) {
                 AUX_CONTROLS[i].style.display = 'none';
             }
-            cleanupChatState();
         }
 
         async function disposeAllCharts() {
@@ -17040,10 +17026,14 @@
                 Promise.resolve(destroyBookmarkPage()),
                 Promise.resolve(destroyDirSpace()),
                 Promise.resolve(cleanupDashboardData()),
-                Promise.resolve(updateTimeHeader()),
                 Promise.resolve(todoDestroy()),
-                finalizeCurrentSession(),
+                Promise.resolve(finalizeChatAndCleanup()),
             ]);
+        }
+
+        async function finalizeChatAndCleanup() {
+            await finalizeCurrentSession();
+            cleanupChatState();
         }
 
         function cleanupDashboardData() {
@@ -29697,15 +29687,12 @@ kanban-plugin: basic
                 </div>`;
             const fileProtocol = isLocalVisit();
             const isTauri = isTauriVisit();
-            const serverDisplay = !fileProtocol && !isTauri;
-            const httpLocal = !fileProtocol && !isTauri && !serverDisplay;
+            const httpLocal = !fileProtocol && !isTauri;
             DASHBOARD_BUTTON.forEach(b => {
                 if (b.display) {
                     if (fileProtocol && b.fileProtocolDisplay) {
                         html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
                     } else if (isTauri && b.tauriDisplay) {
-                        html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
-                    } else if (serverDisplay && b.serverDisplay) {
                         html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
                     } else if (httpLocal && b.fileProtocolDisplay) {
                         html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
@@ -46174,8 +46161,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             //nginx 配置
             const fileProtocol = isLocalVisit();
             const isTauri = isTauriVisit();
-            const serverDisplay = !fileProtocol && !isTauri;
-            const httpLocal = !fileProtocol && !isTauri && !serverDisplay;
+            const httpLocal = !fileProtocol && !isTauri;
             let nginxDisplay = false;
             const nginxRestyButton = DASHBOARD_BUTTON.find(b => b.key === 'OpenResty')
             if (nginxRestyButton) {
@@ -46183,8 +46169,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     if (fileProtocol && nginxRestyButton.fileProtocolDisplay) {
                         nginxDisplay = true;
                     } else if (isTauri && nginxRestyButton.tauriDisplay) {
-                        nginxDisplay = true;
-                    } else if (serverDisplay && nginxRestyButton.serverDisplay) {
                         nginxDisplay = true;
                     } else if (httpLocal && nginxRestyButton.fileProtocolDisplay) {
                         nginxDisplay = true;
@@ -46244,6 +46228,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                 <div class="setting-row">
                                     <label>上下文长度</label>
                                     <input class="setting-number" id="${inputId('llmContext')}" type="number" min="1000" max="100000" step="1000" value="${LOCAL_LLM_CONTEXT_LENGTH}">
+                                </div>
+                                <div class="setting-row">
+                                    <label>最大输出 Token</label>
+                                    <input class="setting-number" id="${inputId('llmMaxTokens')}" type="number" min="256" max="32000" step="256" value="${LOCAL_LLM_MAX_TOKENS}">
                                 </div>
                                 <div class="setting-row">
                                     <label></label>
@@ -46424,6 +46412,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     LOCAL_LLM_TOKEN = document.getElementById(inputId('llmToken')).value.trim();
                     LOCAL_LLM_MODEL = document.getElementById(inputId('llmModel')).value.trim();
                     LOCAL_LLM_CONTEXT_LENGTH = contextLength;
+                    const maxTokensVal = document.getElementById(inputId('llmMaxTokens')).value.trim();
+                    LOCAL_LLM_MAX_TOKENS = parseInt(maxTokensVal, 10) || 4096;
                     DIR_BLACKLIST = dirBlacklistItems;
                     FILE_BLACKLIST = fileBlacklistItems;
                     RANDOM_DIR_BLACKLIST = randomDirItems;
@@ -46436,6 +46426,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         localLlmToken: LOCAL_LLM_TOKEN,
                         localLlmModel: LOCAL_LLM_MODEL,
                         localLlmContextLength: LOCAL_LLM_CONTEXT_LENGTH,
+                        localLlmMaxTokens: LOCAL_LLM_MAX_TOKENS,
                         dirBlacklist: DIR_BLACKLIST,
                         fileBlacklist: FILE_BLACKLIST,
                         randomDirBlacklist: RANDOM_DIR_BLACKLIST,
@@ -46489,6 +46480,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 LOCAL_LLM_TOKEN = setting.localLlmToken;
                 LOCAL_LLM_MODEL = setting.localLlmModel;
                 LOCAL_LLM_CONTEXT_LENGTH = setting.localLlmContextLength;
+                LOCAL_LLM_MAX_TOKENS = setting.localLlmMaxTokens || 4096;
                 DIR_BLACKLIST = setting.dirBlacklist;
                 FILE_BLACKLIST = setting.fileBlacklist;
                 RANDOM_DIR_BLACKLIST = setting.randomDirBlacklist;
@@ -46509,6 +46501,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 localLlmToken: LOCAL_LLM_TOKEN,
                 localLlmModel: LOCAL_LLM_MODEL,
                 localLlmContextLength: LOCAL_LLM_CONTEXT_LENGTH,
+                localLlmMaxTokens: LOCAL_LLM_MAX_TOKENS,
                 dirBlacklist: DIR_BLACKLIST,
                 fileBlacklist: FILE_BLACKLIST,
                 randomDirBlacklist: RANDOM_DIR_BLACKLIST,
@@ -47369,6 +47362,64 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         let chatHistorySearchTimer = null;
 
         /**
+         * 公共 SSE 流式 LLM 请求函数
+         * 封装 fetch + SSE 读取 + delta 解析，消除 sendLlmQuery / streamLlmWithContext 中的重复代码。
+         *
+         * @param {object[]} messages - 发送给 LLM 的消息数组
+         * @param {object} [options]
+         * @param {AbortSignal} [options.signal] - 中断信号
+         * @param {(fullContent: string) => void} [options.onDelta] - 每轮 delta 更新后回调（含完整内容）
+         * @param {(usage: object) => void} [options.onUsage] - 收到 usage 信息时回调
+         * @returns {Promise<string>} 完整生成内容
+         */
+        async function streamLlmChatCompletion(messages, { signal, onDelta, onUsage } = {}) {
+            const response = await fetch(LOCAL_LLM_ENDPOINT, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': LOCAL_LLM_TOKEN ? 'Bearer ' + LOCAL_LLM_TOKEN : '',
+                },
+                body: JSON.stringify({
+                    model: LOCAL_LLM_MODEL,
+                    messages: messages,
+                    stream: true,
+                    max_tokens: LOCAL_LLM_MAX_TOKENS,
+                }),
+                signal,
+            });
+            if (!response.ok) throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let fullContent = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const chunk = decoder.decode(value, { stream: true });
+                const lines = chunk.split('\n').filter(l => l.startsWith('data: '));
+                for (const line of lines) {
+                    const data = line.slice(6).trim();
+                    if (data === '[DONE]') continue;
+                    try {
+                        const parsed = JSON.parse(data);
+                        if (parsed.usage && onUsage) {
+                            onUsage(parsed.usage);
+                        }
+                        const delta = parsed.choices?.[0]?.delta;
+                        if (delta?.content) {
+                            fullContent += delta.content;
+                            _chatStreamingFullContent = fullContent;
+                            if (onDelta) onDelta(fullContent);
+                        }
+                    } catch { /* skip parse errors */ }
+                }
+            }
+
+            return fullContent;
+        }
+
+        /**
          * 保存当前正在流式生成的部分消息到数据库
          * 仅在 chatStreaming 为 true 且有部分内容时生效
          * 调用后 chatStreaming 置为 false，已生成的内容会被持久化
@@ -47489,19 +47540,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         /**
-         * 离开 AI Chat 界面时的清理：
-         * 1. 先保存当前正在生成的消息
-         * 2. 记录最后会话 ID
-         * 3. 清空内存中的 UI 状态（但不清空 chatSessions/currentSessionId，等下次进入重新加载）
+         * 清理聊天状态（仅由 destroyEverything 在 finalizeCurrentSession 之后调用）。
+         * 清空内存中的 UI 状态，保存最后会话记录并触发异步索引。
          */
         async function cleanupChatState() {
-            // 1. 保存正在生成的消息
-            await finalizeCurrentSession();
-            // 2. 将当前会话异步索引，确保可被搜索召回
+            // 1. 将当前会话异步索引，确保可被搜索召回
             indexCurrentSessionIfNeeded();
-            // 3. 记录最后会话
+            // 2. 记录最后会话
             rememberLastChatSession();
-            // 4. 清空 DOM 和内存消息
+            // 3. 清空 DOM 和内存消息
             chatMessages = [];
             chatSessions = [];
             currentSessionId = null;
@@ -47772,72 +47819,50 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             showChatTyping();
             try {
                 const messages = chatMessages.map(m => ({ role: m.role, content: m.content }));
-                const response = await fetch(LOCAL_LLM_ENDPOINT, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': LOCAL_LLM_TOKEN ? 'Bearer ' + LOCAL_LLM_TOKEN : '',
-                    },
-                    body: JSON.stringify({
-                        model: LOCAL_LLM_MODEL,
-                        messages: messages,
-                        stream: true,
-                        max_tokens: LOCAL_LLM_CONTEXT_LENGTH || 4096,
-                    }),
-                    signal: chatAbortController.signal,
-                });
-                if (!response.ok) throw new Error('HTTP ' + response.status + ': ' + response.statusText);
-                removeChatTyping();
-                const assistantDiv = document.createElement('div');
-                assistantDiv.className = 'chat-message assistant';
-                const container = document.getElementById('chat-messages');
-                container.appendChild(assistantDiv);
-                _chatStreamingDiv = assistantDiv;
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let fullContent = '';
                 let usageData = null;
-                // 使用 TextNode 增量追加，避免每个 chunk 都触发完整 DOM 重渲染
-                const textNode = document.createTextNode('');
-                assistantDiv.appendChild(textNode);
-                let _streamRafPending = false;
-                const _streamScroll = () => {
-                    if (!_streamRafPending) {
-                        _streamRafPending = true;
-                        requestAnimationFrame(() => {
-                            _streamRafPending = false;
-                            container.scrollTop = container.scrollHeight;
-                        });
-                    }
-                };
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    const chunk = decoder.decode(value, { stream: true });
-                    const lines = chunk.split('\n').filter(l => l.startsWith('data: '));
-                    for (const line of lines) {
-                        const data = line.slice(6).trim();
-                        if (data === '[DONE]') continue;
-                        try {
-                            const parsed = JSON.parse(data);
-                            // 追踪 usage 信息（在最后一条流式消息中）
-                            if (parsed.usage) {
-                                usageData = parsed.usage;
-                            }
-                            const delta = parsed.choices?.[0]?.delta;
-                            if (delta?.content) {
-                                fullContent += delta.content;
-                                _chatStreamingFullContent = fullContent;
-                                // 增量追加到 TextNode，避免 textContent 全量重设
-                                textNode.data = fullContent;
-                                _streamScroll();
-                            }
-                        } catch { /* skip parse errors */ }
-                    }
-                }
+
+                // 使用公共 SSE 流式函数
+                const fullContent = await streamLlmChatCompletion(messages, {
+                    signal: chatAbortController.signal,
+                    onDelta(fullContent) {
+                        // 首次收到 delta 时创建 assistant DOM
+                        if (!_chatStreamingDiv) {
+                            removeChatTyping();
+                            const container = document.getElementById('chat-messages');
+                            const div = document.createElement('div');
+                            div.className = 'chat-message assistant';
+                            container.appendChild(div);
+                            _chatStreamingDiv = div;
+                            // 创建 TextNode 用于增量追加
+                            const textNode = document.createTextNode('');
+                            div.appendChild(textNode);
+                            div._textNode = textNode;
+                            // 防抖滚动
+                            let _rafPending = false;
+                            div._scroll = () => {
+                                if (!_rafPending) {
+                                    _rafPending = true;
+                                    requestAnimationFrame(() => {
+                                        _rafPending = false;
+                                        container.scrollTop = container.scrollHeight;
+                                    });
+                                }
+                            };
+                        }
+                        // 更新 TextNode
+                        _chatStreamingDiv._textNode.data = fullContent;
+                        _chatStreamingDiv._scroll();
+                    },
+                    onUsage(usage) {
+                        usageData = usage;
+                    },
+                });
+
+                // 移除流式 DOM 中可能残留的 typing 指示器
+                removeChatTyping();
+
                 if (fullContent) {
                     chatMessages.push({ role: 'assistant', content: fullContent });
-                    // 保存助手消息（await 确保完成，独立 try-catch 避免影响 UI）
                     if (currentSessionId) {
                         const tokenCount = usageData?.completion_tokens || 0;
                         try {
@@ -47848,7 +47873,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                 content: fullContent,
                                 tokenCount,
                             });
-                            // 刷新会话列表（同步 updated_at / message_count）
                             window.__TAURI__.core.invoke('chat_session_list', {
                                 dirPath: currentRootPath,
                             }).then(sessions => {
@@ -47872,7 +47896,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     addChatMessage('system', '✗ 请求失败: ' + err.message);
                     console.error('LLM 请求失败:', err);
                 } else {
-                    // 用户主动中断：将已生成的部分内容持久化
                     await savePartialAssistantMessage();
                 }
             } finally {
@@ -47881,7 +47904,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 _chatStreamingDiv = null;
                 _chatStreamingSources = null;
                 _chatStreamingFullContent = '';
-                // 记录最后会话
                 rememberLastChatSession();
             }
         }
@@ -48338,64 +48360,39 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             _chatStreamingSources = sources || null;
             showChatTyping();
             try {
-                const response = await fetch(LOCAL_LLM_ENDPOINT, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': LOCAL_LLM_TOKEN ? 'Bearer ' + LOCAL_LLM_TOKEN : '',
-                    },
-                    body: JSON.stringify({
-                        model: LOCAL_LLM_MODEL,
-                        messages: messages,
-                        stream: true,
-                        max_tokens: LOCAL_LLM_CONTEXT_LENGTH || 4096,
-                    }),
+                // 使用公共 SSE 流式函数
+                const fullContent = await streamLlmChatCompletion(messages, {
                     signal: chatAbortController.signal,
+                    onDelta(fullContent) {
+                        // 首次收到 delta 时创建 assistant DOM
+                        if (!_chatStreamingDiv) {
+                            removeChatTyping();
+                            const container = document.getElementById('chat-messages');
+                            const div = document.createElement('div');
+                            div.className = 'chat-message assistant';
+                            container.appendChild(div);
+                            _chatStreamingDiv = div;
+                            const textNode = document.createTextNode('');
+                            div.appendChild(textNode);
+                            div._textNode = textNode;
+                            let _rafPending = false;
+                            div._scroll = () => {
+                                if (!_rafPending) {
+                                    _rafPending = true;
+                                    requestAnimationFrame(() => {
+                                        _rafPending = false;
+                                        container.scrollTop = container.scrollHeight;
+                                    });
+                                }
+                            };
+                        }
+                        _chatStreamingDiv._textNode.data = fullContent;
+                        _chatStreamingDiv._scroll();
+                    },
                 });
-                if (!response.ok) throw new Error('HTTP ' + response.status);
+
                 removeChatTyping();
-                const assistantDiv = document.createElement('div');
-                assistantDiv.className = 'chat-message assistant';
-                const container = document.getElementById('chat-messages');
-                container.appendChild(assistantDiv);
-                _chatStreamingDiv = assistantDiv;
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let fullContent = '';
-                // 使用 TextNode 增量追加，避免每个 chunk 都触发完整 DOM 重渲染
-                const textNode = document.createTextNode('');
-                assistantDiv.appendChild(textNode);
-                let _streamRafPending = false;
-                const _streamScroll = () => {
-                    if (!_streamRafPending) {
-                        _streamRafPending = true;
-                        requestAnimationFrame(() => {
-                            _streamRafPending = false;
-                            container.scrollTop = container.scrollHeight;
-                        });
-                    }
-                };
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    const chunk = decoder.decode(value, { stream: true });
-                    const lines = chunk.split('\n').filter(l => l.startsWith('data: '));
-                    for (const line of lines) {
-                        const data = line.slice(6).trim();
-                        if (data === '[DONE]') continue;
-                        try {
-                            const parsed = JSON.parse(data);
-                            const delta = parsed.choices?.[0]?.delta;
-                            if (delta?.content) {
-                                fullContent += delta.content;
-                                _chatStreamingFullContent = fullContent;
-                                // 增量追加到 TextNode，避免 textContent 全量重设
-                                textNode.data = fullContent;
-                                _streamScroll();
-                            }
-                        } catch { /* skip */ }
-                    }
-                }
+
                 if (fullContent) {
                     // 连带 sources 存入 chatMessages（用于后续加载时重绘）
                     const msgEntry = { role: 'assistant', content: fullContent, sources: sources || [] };
@@ -48435,7 +48432,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             console.warn('保存助手消息失败:', e);
                         }
                     }
-                    if (sources && sources.length > 0) {
+                    if (sources && sources.length > 0 && _chatStreamingDiv) {
                         const details = document.createElement('details');
                         details.className = 'msg-sources';
                         const summary = document.createElement('summary');
@@ -48453,7 +48450,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             item.appendChild(scoreSpan);
                             details.appendChild(item);
                         });
-                        assistantDiv.appendChild(details);
+                        _chatStreamingDiv.appendChild(details);
                     }
                 }
             } catch (err) {
@@ -48612,6 +48609,24 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 showNotification('\u2717 连接失败: ' + e.message, 'error');
             } finally {
                 if (btn) { btn.disabled = false; btn.textContent = '测试连接'; }
+            }
+        }
+
+        function RAGInit(){
+            // Tauri 模式下显示 RAG/Agent 模式按钮
+            if (isTauriVisit()) {
+                const ragBtn = document.getElementById('chat-mode-rag');
+                if (ragBtn) ragBtn.style.display = '';
+
+                // 监听知识库文件变更事件，自动刷新状态
+                try {
+                    const { listen } = window.__TAURI__.event;
+                    listen('kb-watcher-event', () => {
+                        refreshKnowledgeStatus();
+                    });
+                } catch (e) {
+                    console.warn('注册 watcher 事件监听失败:', e);
+                }
             }
         }
     </script>

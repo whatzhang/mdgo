@@ -171,7 +171,7 @@ impl ChatStore {
         if count > MAX_SESSIONS_PER_TYPE {
             let excess = count - MAX_SESSIONS_PER_TYPE;
             if let Err(e) = conn.execute(
-                "DELETE FROM chat_sessions WHERE id IN (SELECT id FROM chat_sessions WHERE type = ?1 AND favorite = 0 ORDER BY updated_at ASC LIMIT ?2)",
+                "DELETE FROM chat_sessions WHERE id IN (SELECT id FROM chat_sessions WHERE type = ?1 AND favorite = 0 ORDER BY updated_at ASC, id ASC LIMIT ?2)",
                 rusqlite::params![session_type, excess],
             ) {
                 conn.execute_batch("ROLLBACK").ok();
@@ -584,7 +584,10 @@ impl ChatStore {
                 if let Ok((sid, content)) = row {
                     like_session_ids.insert(sid.clone());
                     let snippet = if content.len() > 100 {
-                        format!("{}...", &content[..100])
+                        let char_end = content.char_indices().take(100).last()
+                            .map(|(i, c)| i + c.len_utf8())
+                            .unwrap_or(content.len());
+                        format!("{}...", &content[..char_end])
                     } else {
                         content
                     };
@@ -651,7 +654,7 @@ impl ChatStore {
             .map(|s| (s.id.clone(), s))
             .collect();
 
-        // 4. 组装结果：LIKE 命中给基础分 0.3，Indexer 命中保留其 RRF score，取 max
+        // 4. 组装结果：LIKE 命中给基础分 0.05，Indexer 命中保留其 RRF score，取 max
         let indexer_score_map: std::collections::HashMap<String, (f32, String)> = indexer_hits
             .iter()
             .cloned()
@@ -670,13 +673,13 @@ impl ChatStore {
             let (score, matched_content) = if let Some((idx_score, idx_text)) = indexer_hit {
                 // Indexer 命中：使用 RRF score，matched_text 用索引返回的内容
                 let idx_score = *idx_score;
-                let final_score = if like_hit { idx_score.max(0.3) } else { idx_score };
+                let final_score = if like_hit { idx_score.max(0.05) } else { idx_score };
                 let content = like_snippets.get(sid).cloned().unwrap_or_else(|| idx_text.clone());
                 (final_score, content)
             } else {
-                // 仅 LIKE 命中：给基础分 0.3
+                // 仅 LIKE 命中：给基础分 0.05
                 let content = like_snippets.get(sid).cloned().unwrap_or_default();
-                (0.3, content)
+                (0.05, content)
             };
 
             results.push(ChatSessionSearchResult {

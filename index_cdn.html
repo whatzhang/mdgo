@@ -262,6 +262,15 @@
             background: var(--window-header-bg);
         }
 
+        #app-header,
+        #app-header * {
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            cursor: default;
+        }
+
         #main-container {
             display: flex;
             flex: 1;
@@ -309,7 +318,7 @@
         }
 
         #tree {
-            font-size: 14px;
+            font-size: 0.875rem;
             flex: 1;
             overflow-y: auto;
             min-height: 0;
@@ -326,13 +335,13 @@
 
         .file-item {
             cursor: pointer;
-            padding: 4px 4px;
+            padding: 0.25rem;
             color: var(--color-text);
             border-radius: var(--radius-sm);
             display: flex;
             align-items: center;
-            gap: 6px;
-            height: 20px;
+            gap: 0.375rem;
+            height: 1.25rem;
         }
 
         .file-item:hover {
@@ -350,7 +359,7 @@
         }
 
         .file-item-text {
-            font-size: 13px;
+            font-size: 0.875rem;
             display: flex;
             align-items: center;
             flex: 1;
@@ -376,12 +385,12 @@
             top: 100%;
             background: var(--color-bg-tertiary, #24292f);
             color: var(--color-text-white);
-            padding: 6px 10px;
-            border-radius: 4px;
-            font-size: 13px;
+            padding: 0.375rem 0.625rem;
+            border-radius: 0.25rem;
+            font-size: 0.875rem;
             white-space: nowrap;
             z-index: 100;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
             max-width: 300px;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -389,7 +398,7 @@
 
         .file-item-buttons {
             display: flex;
-            gap: 2px;
+            gap: 0.125rem;
             margin-left: auto;
             flex-shrink: 0;
             align-items: center;
@@ -408,15 +417,15 @@
             right: 0;
             background: var(--color-bg);
             border: 1px solid var(--color-border, #d0d7de);
-            border-radius: 6px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            border-radius: 0.375rem;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
             min-width: 100px;
             display: flex;
             flex-direction: column;
             z-index: 1000;
             overflow: hidden;
-            padding: 3px 0 3px 0;
-            margin-top: 2px;
+            padding: 0.1875rem 0;
+            margin-top: 0.125rem;
             opacity: 0;
             visibility: hidden;
             transition: opacity 0.15s ease, visibility 0.15s ease;
@@ -435,8 +444,8 @@
         }
 
         .file-item-marker {
-            width: 10px;
-            height: 10px;
+            width: 0.625rem;
+            height: 0.625rem;
             border-radius: 50%;
             cursor: pointer;
             background: transparent;
@@ -448,8 +457,8 @@
         }
 
         .file-item-more-btn {
-            width: 15px;
-            height: 15px;
+            width: 1rem;
+            height: 1rem;
             border: none;
             background: transparent;
             color: black;
@@ -460,7 +469,7 @@
             justify-content: center;
             padding: 0;
             border-radius: 50%;
-            font-size: 14px;
+            font-size: 0.875rem;
             line-height: 1;
             text-decoration: none !important;
         }
@@ -470,16 +479,16 @@
         }
 
         .file-item-more-dropdown-item {
-            padding: 5px 8px;
-            margin: 0 4px 0 4px;
-            font-size: 13px;
+            padding: 0.25rem 0.5rem;
+            margin: 0 0.25rem;
+            font-size: 0.875rem;
             color: var(--color-text);
             cursor: pointer;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 0.5rem;
             border: none;
-            border-radius: 6px;
+            border-radius: 0.5rem;
             background: transparent;
             width: auto;
             text-align: left;
@@ -497,7 +506,7 @@
         }
 
         details {
-            margin-top: 2px;
+            margin-top: 0.125rem;
             margin-bottom: 0;
             padding: 0;
         }
@@ -509,15 +518,15 @@
         details>summary {
             list-style: none;
             cursor: pointer;
-            padding: 4px 4px 4px 4px;
+            padding: 0.25rem;
             border-radius: var(--radius-sm);
             display: flex;
             align-items: center;
-            gap: 3px;
+            gap: 0.25rem;
         }
 
         details>summary .file-name {
-            font-size: 13px;
+            font-size: 0.8125rem;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -532,8 +541,8 @@
         details>summary::before {
             content: '';
             display: inline-block;
-            width: 15px;
-            height: 15px;
+            width: 1rem;
+            height: 1rem;
             flex-shrink: 0;
             align-self: center;
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v2h20V8c0-1.1-.9-2-2-2z' opacity='0.8' fill='%23e8a735'/%3E%3Cpath d='M2 10h20v10c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V10z' fill='%23e8a735'/%3E%3C/svg%3E");
@@ -548,6 +557,27 @@
 
         summary:hover {
             background-color: var(--color-hover-subtle);
+        }
+
+        .chat-message>details>summary::before {
+            content: '';
+            display: inline-block;
+            width: 1rem;
+            height: 1rem;
+            flex-shrink: 0;
+            align-self: center;
+            background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M10%2013a5%205%200%200%200%207.54.54l3-3a5%205%200%200%200-7.07-7.07l-1.72%201.71%22%3E%3C%2Fpath%3E%3Cpath%20d%3D%22M14%2011a5%205%200%200%200-7.54-.54l-3%203a5%205%200%200%200%207.07%207.07l1.71-1.71%22%3E%3C%2Fpath%3E%3C%2Fsvg%3E");
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center center;
+        }
+
+        .chat-message>details[open]>summary::before {
+            background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M10%2013a5%205%200%200%200%207.54.54l3-3a5%205%200%200%200-7.07-7.07l-1.72%201.71%22%3E%3C%2Fpath%3E%3Cpath%20d%3D%22M14%2011a5%205%200%200%200-7.54-.54l-3%203a5%205%200%200%200%207.07%207.07l1.71-1.71%22%3E%3C%2Fpath%3E%3C%2Fsvg%3E");
+        }
+
+        .chat-message>summary:hover {
+            /**占位**/
         }
 
         #content {
@@ -573,7 +603,7 @@
         }
 
         #toc {
-            font-size: 12px;
+            font-size: 0.75rem;
             height: 100%;
         }
 
@@ -584,7 +614,7 @@
         }
 
         #toc li {
-            margin-bottom: 8px;
+            margin-bottom: 0.5rem;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -609,12 +639,12 @@
             white-space: nowrap;
             background: #333;
             color: var(--color-text-white);
-            padding: 3px 8px;
-            border-radius: 4px;
-            font-size: 12px;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
             z-index: 1000;
             pointer-events: none;
-            margin-top: 2px;
+            margin-top: 0.125rem;
         }
 
         /* TOC 切换按钮 - 半圆形,贴屏幕右侧边 */
@@ -623,9 +653,9 @@
             right: 0;
             top: 40%;
             transform: translateY(-50%);
-            width: 10px;
-            height: 35px;
-            border-radius: 22px 0 0 22px;
+            width: 0.75rem;
+            height: 2rem;
+            border-radius: 1rem 0 0 1rem;
             background: var(--color-bg-secondary);
             border: 1px solid var(--color-border);
             border-right: none;
@@ -644,7 +674,7 @@
         .toc-toggle-btn:hover {
             background: var(--color-primary);
             color: var(--color-text-white);
-            width: 22px;
+            width: 1rem;
             box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15);
         }
 
@@ -665,9 +695,9 @@
             left: 0;
             top: 40%;
             transform: translateY(-50%);
-            width: 10px;
-            height: 35px;
-            border-radius: 0 22px 22px 0;
+            width: 0.75rem;
+            height: 2rem;
+            border-radius: 0 1rem 1rem 0;
             background: var(--color-bg-secondary);
             border: 1px solid var(--color-border);
             border-left: none;
@@ -686,7 +716,7 @@
         .sidebar-toggle-btn:hover {
             background: var(--color-primary);
             color: var(--color-text-white);
-            width: 22px;
+            width: 1rem;
             box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
         }
 
@@ -708,24 +738,24 @@
         }
 
         #toc .level-2 {
-            padding-left: 16px;
+            padding-left: 1rem;
             font-weight: bold;
         }
 
         #toc .level-3 {
-            padding-left: 32px;
+            padding-left: 2rem;
         }
 
         #toc .level-4 {
-            padding-left: 48px;
+            padding-left: 3rem;
         }
 
         #toc .level-5 {
-            padding-left: 64px;
+            padding-left: 4rem;
         }
 
         #toc .level-6 {
-            padding-left: 80px;
+            padding-left: 5rem;
         }
 
         #content-main {
@@ -744,9 +774,9 @@
         .mermaid-output {
             display: flex;
             justify-content: center;
-            margin: 20px 0;
+            margin: 1rem 0;
             background: var(--color-bg-secondary);
-            padding: 20px;
+            padding: 1rem;
             border-radius: var(--radius-md);
         }
 
@@ -758,15 +788,15 @@
         .mermaid-error-block {
             border: 1px solid var(--color-danger) !important;
             border-radius: var(--radius-md) !important;
-            padding: 16px !important;
+            padding: 1rem !important;
             background-color: var(--color-danger-light) !important;
         }
 
         .mermaid-error-msg {
             color: var(--color-danger);
             font-weight: bold;
-            margin-bottom: 12px;
-            font-size: 14px;
+            margin-bottom: 0.75rem;
+            font-size: 0.875rem;
             font-family: var(--font-family);
             white-space: normal;
             word-break: break-all;
@@ -779,7 +809,7 @@
             position: relative;
             background: #fafafa;
             background-image: radial-gradient(circle, #ddd 1px, transparent 1px);
-            background-size: 20px 20px;
+            background-size: 1rem 1rem;
         }
 
         .canvas-svg {
@@ -798,20 +828,20 @@
 
         .canvas-node-dragging {
             cursor: grabbing !important;
-            filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.18));
+            filter: drop-shadow(0 0.5rem 1rem rgba(0, 0, 0, 0.18));
         }
 
         .canvas-node-dragging .canvas-node-rect {
             stroke: var(--color-primary);
             stroke-width: 2;
-            filter: drop-shadow(0 4px 12px rgba(9, 105, 218, 0.25));
+            filter: drop-shadow(0 0.5rem 0.75rem rgba(9, 105, 218, 0.25));
         }
 
         .canvas-node-rect {
             fill: var(--color-bg);
             rx: 8;
             ry: 8;
-            filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.12));
+            filter: drop-shadow(0 0.5rem 0.75rem rgba(0, 0, 0, 0.12));
             transition: stroke 0.15s ease, stroke-width 0.15s ease, filter 0.15s ease;
         }
 
@@ -1285,6 +1315,7 @@
             border: 1px solid var(--color-primary);
             border-radius: var(--radius-md);
             overflow: hidden;
+            outline: none;
         }
 
         #file-search {
@@ -4395,6 +4426,376 @@
             background: var(--color-bg-secondary);
         }
 
+        .chat-with-history {
+            display: flex;
+            flex: 1;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .chat-main-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            background: var(--color-bg-secondary);
+        }
+
+        .chat-history-panel {
+            width: 17.5rem;
+            min-width: 17.5rem;
+            display: flex;
+            flex-direction: column;
+            background: var(--color-bg, #fff);
+            border-left: 1px solid var(--border-color, #e0e0e0);
+            overflow: hidden;
+        }
+
+        .chat-history-header {
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--border-color, #e0e0e0);
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .chat-history-header .new-chat-btn {
+            width: 100%;
+            padding: 0.5rem 0.75rem;
+            border: 1px dashed var(--border-color, #ccc);
+            border-radius: 0.375rem;
+            background: transparent;
+            cursor: pointer;
+            color: var(--t1, #333);
+            font-size: 0.8125rem;
+            transition: all 0.2s;
+        }
+
+        .chat-history-header .new-chat-btn:hover {
+            background: var(--hover-bg, rgba(0, 0, 0, 0.04));
+            border-color: var(--accent, #4a90d9);
+            color: var(--accent, #4a90d9);
+        }
+
+        .chat-history-search {
+            width: 100%;
+            height: 26px;
+            padding: 3px 0.5rem;
+            border: 1px solid var(--color-border);
+            border-radius: 0.375rem;
+            background: var(--color-bg, #fff);
+            color: var(--t1, #333);
+            font-size: 0.75rem;
+            outline: none;
+            box-sizing: border-box;
+        }
+
+        .chat-history-search:focus {
+            border-color: var(--accent, #4a90d9);
+            background: var(--color-bg, #fff);
+            outline: none;
+        }
+
+        .chat-history-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.25rem 0;
+        }
+
+        .chat-history-section-label {
+            padding: 0.5rem 0.75rem 0.25rem;
+            font-size: 0.6875rem;
+            font-weight: 600;
+            color: var(--t3, #999);
+            text-transform: uppercase;
+            letter-spacing: 0.03125rem;
+        }
+
+        .chat-history-item {
+            position: relative;
+            padding: 0.5rem 0.75rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            transition: background 0.15s;
+            border-left: 0.1875rem solid transparent;
+        }
+
+        .chat-history-item:hover {
+            background: var(--hover-bg, rgba(0, 0, 0, 0.03));
+        }
+
+        .chat-history-item.active {
+            background: var(--active-bg, rgba(74, 144, 217, 0.08));
+            border-left-color: var(--accent, #4a90d9);
+        }
+
+        .chat-history-item-title {
+            flex: 1;
+            font-size: 0.8125rem;
+            color: var(--t1, #333);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            line-height: 1.4;
+            min-width: 0;
+        }
+
+        .chat-history-item-title .editing-input {
+            width: 100%;
+            border: 1px solid var(--accent, #4a90d9);
+            border-radius: 0.1875rem;
+            padding: 0.125rem 0.25rem;
+            font-size: 0.8125rem;
+            outline: none;
+            background: var(--color-bg);
+            box-sizing: border-box;
+        }
+
+        .rag-indicator {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: #fff;
+            font-size: 0.625rem;
+            font-weight: 600;
+            padding: 0.0625rem 0.3125rem;
+            border-radius: 0.1875rem;
+            margin-right: 0.25rem;
+            vertical-align: middle;
+            line-height: 1.4;
+        }
+
+        .chat-history-item-date {
+            font-size: 0.6875rem;
+            color: var(--t3, #bbb);
+            white-space: nowrap;
+            flex-shrink: 0;
+            transition: margin-right 0.15s ease;
+        }
+
+        .chat-history-item:hover .chat-history-item-date {
+            margin-right: 1.5rem;
+        }
+
+        .chat-history-item-more {
+            display: none;
+            position: absolute;
+            right: 0.25rem;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 1.375rem;
+            height: 1.375rem;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.25rem;
+            cursor: pointer;
+            font-size: 0.875rem;
+            line-height: 1;
+            color: var(--t2, #999);
+            background: transparent;
+            border: none;
+            padding: 0;
+            z-index: 10;
+            margin: 0;
+        }
+
+        .chat-history-item:hover .chat-history-item-more {
+            display: flex;
+            background: var(--color-bg, #fff);
+            box-shadow: 0 0.0625rem 0.1875rem rgba(0, 0, 0, 0.1);
+        }
+
+        .chat-history-item-more:hover {
+            background-color: rgba(0, 0, 0, 0.05);
+        }
+
+        .chat-history-item-more-menu {
+            display: none;
+            position: absolute;
+            right: 1.75rem;
+            top: 50%;
+            transform: translateY(-50%);
+            background: var(--color-bg, #fff);
+            border: 1px solid var(--border-color, #e0e0e0);
+            border-radius: 0.375rem;
+            z-index: 100;
+            box-shadow: 0 0.125rem 0.5rem rgba(0, 0, 0, 0.12);
+            width: auto;
+            padding: 0.25rem 0;
+        }
+
+        .chat-history-item-more-menu.show {
+            display: block;
+        }
+
+        .chat-history-item-more-menu-item {
+            padding: 0.375rem 0.75rem;
+            font-size: 0.75rem;
+            color: var(--t1, #333);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+            white-space: nowrap;
+        }
+
+        .chat-history-item-more-menu-item:hover {
+            background: var(--hover-bg, rgba(0, 0, 0, 0.04));
+        }
+
+        .chat-history-item-more-menu-item.danger {
+            color: #e74c3c;
+        }
+
+        .chat-history-month-divider {
+            padding: 0.375rem 0.75rem 0.125rem;
+            font-size: 0.6875rem;
+            font-weight: 600;
+            color: var(--t3, #999);
+        }
+
+        .chat-history-empty {
+            padding: 1.25rem;
+            text-align: center;
+            color: var(--t3, #999);
+            font-size: 0.8125rem;
+        }
+
+        /* 收藏区域特殊样式 */
+        .chat-history-favorites {
+            border-bottom: 1px solid var(--border-color, #e0e0e0);
+            margin-bottom: 0.25rem;
+        }
+
+        /* 当前会话区域 */
+        .chat-history-current {
+            border-bottom: 1px solid var(--border-color, #e0e0e0);
+            margin-bottom: 0.25rem;
+        }
+
+        .chat-history-current .chat-history-item {
+            background: rgba(74, 144, 217, 0.04);
+        }
+
+        /* ── 消息操作按钮 ── */
+        .chat-message-actions {
+            position: absolute;
+            bottom: -0.75rem;
+            right: 0.5rem;
+            display: none;
+            gap: 0.125rem;
+            z-index: 5;
+        }
+
+        .chat-message:hover .chat-message-actions {
+            display: flex;
+        }
+
+        .chat-message-action-btn {
+            width: 1.625rem;
+            height: 1.625rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.25rem;
+            cursor: pointer;
+            font-size: 0.8125rem;
+            background: var(--color-bg, #fff);
+            border: 1px solid var(--border-color, #e0e0e0);
+            color: var(--t2, #666);
+            padding: 0;
+            transition: all 0.15s;
+            box-shadow: 0 0.0625rem 0.125rem rgba(0, 0, 0, 0.06);
+        }
+
+        .chat-message-action-btn:hover {
+            background: var(--hover-bg, #f0f0f0);
+            border-color: var(--accent, #4a90d9);
+            color: var(--accent, #4a90d9);
+        }
+
+        /* ── 上下文使用率 ── */
+        .chat-context-bar {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            padding: 0.125rem 0.5rem;
+            height: 1.25rem;
+        }
+
+        .chat-context-usage {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            cursor: default;
+            position: relative;
+        }
+
+        .context-ring-container {
+            position: relative;
+            width: 1rem;
+            height: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .context-ring-svg {
+            width: 1rem;
+            height: 1rem;
+            transform: rotate(-90deg);
+        }
+
+        .context-ring-bg {
+            fill: none;
+            stroke: var(--border-color, #e0e0e0);
+            stroke-width: 2;
+        }
+
+        .context-ring-fg {
+            fill: none;
+            stroke: var(--accent, #4a90d9);
+            stroke-width: 2;
+            stroke-linecap: round;
+            transition: stroke-dashoffset 0.3s;
+        }
+
+        .context-ring-fg.warning {
+            stroke: #f39c12;
+        }
+
+        .context-ring-fg.danger {
+            stroke: #e74c3c;
+        }
+
+        .context-percent {
+            font-size: 0.6875rem;
+            color: var(--t2, #666);
+            font-weight: 500;
+        }
+
+        .context-usage-tooltip {
+            display: none;
+            position: absolute;
+            bottom: 100%;
+            right: 0;
+            margin-bottom: 0.25rem;
+            background: var(--tooltip-bg, #333);
+            color: #fff;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            font-size: 0.6875rem;
+            white-space: nowrap;
+            z-index: 100;
+            pointer-events: none;
+        }
+
+        .chat-context-usage:hover .context-usage-tooltip {
+            display: block;
+        }
+
         .chat-messages {
             flex: 1;
             overflow-y: auto;
@@ -4405,10 +4806,11 @@
         }
 
         .chat-message {
+            position: relative;
             max-width: 85%;
             padding: 0.5rem 0.75rem;
             border-radius: 0.625rem;
-            font-size: 0.8125rem;
+            font-size: 0.875rem;
             line-height: 1.5;
             word-break: break-word;
             white-space: pre-wrap;
@@ -4458,6 +4860,7 @@
 
         .chat-input-area {
             display: flex;
+            flex-direction: column;
             gap: 0.5rem;
             padding: 0.625rem 0.875rem;
             border-top: 0.0625rem solid var(--color-border);
@@ -4468,7 +4871,7 @@
         .chat-input-area textarea {
             flex: 1;
             resize: none;
-            border: 0.0625rem solid var(--color-border);
+            border: 1px solid var(--color-border);
             border-radius: 0.5rem;
             padding: 0.5rem 0.625rem;
             font-size: 0.875rem;
@@ -4554,7 +4957,7 @@
 
         .knowledge-item {
             background: var(--color-bg);
-            border: 0.0625rem solid var(--color-border);
+            border: 1px solid var(--color-border);
             border-radius: 0.625rem;
             padding: 0.75rem 0.875rem;
             cursor: pointer;
@@ -4594,7 +4997,7 @@
 
         .knowledge-item .kb-actions button {
             padding: 0.125rem 0.5rem;
-            border: 0.0625rem solid var(--color-border);
+            border: 1px solid var(--color-border);
             border-radius: 0.3125rem;
             background: var(--color-bg-secondary);
             color: var(--t2);
@@ -4763,7 +5166,7 @@
 
         .kb-upload-area button {
             padding: 0.1875rem 0.625rem;
-            border: 0.0625rem solid var(--color-border);
+            border: 1px solid var(--color-border);
             border-radius: 0.3125rem;
             background: var(--color-bg-secondary);
             color: var(--t2);
@@ -10374,7 +10777,7 @@
             border-radius: 0.125rem;
             font-weight: normal;
             font-size: 0.75rem;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
             transition: all 0.2s ease;
             background: var(--color-bg);
             color: var(--t1);
@@ -13306,7 +13709,7 @@
                                                     style="vertical-align:-2px;margin-right:4px;">
                                                     <rect x="4" y="4" width="16" height="16" rx="2" ry="2" />
                                                     <rect x="9" y="9" width="6" height="6" />
-                                                    <rect x="9" y="9" width="0.375rem" height="0.375rem" />
+                                                    <rect x="9" y="9" width="6" height="6" />
                                                     <line x1="9" y1="1" x2="9" y2="4" />
                                                     <line x1="15" y1="1" x2="15" y2="4" />
                                                     <line x1="9" y1="20" x2="9" y2="23" />
@@ -14683,25 +15086,52 @@
                 </div>
             </div>
             <div id="chat-container" style="display: none;">
-                <div class="chat-panel">
-                    <div class="chat-config-bar" id="chat-config-bar">
-                        <div>
-                            <div class="chat-mode-group">
-                                <button id="chat-mode-normal" class="btn btn-sm btn-mode active"
-                                    onclick="setChatMode('normal')">普通对话</button>
-                                <button id="chat-mode-rag" class="btn btn-sm btn-mode" onclick="setChatMode('rag')"
-                                    style="display:none;">RAG</button>
+                <div class="chat-with-history">
+                    <!-- 左侧聊天主面板 -->
+                    <div class="chat-main-panel">
+                        <div class="chat-config-bar" id="chat-config-bar">
+                            <div>
+                                <div class="chat-mode-group">
+                                    <button id="chat-mode-normal" class="btn btn-sm btn-mode active"
+                                        onclick="setChatMode('normal')">普通对话</button>
+                                    <button id="chat-mode-rag" class="btn btn-sm btn-mode" onclick="setChatMode('rag')"
+                                        style="display:none;">RAG</button>
+                                </div>
+                            </div>
+                            <div id="chat-header-actions">
+                                <button class="btn btn-orange btn-sm" onclick="clearChatMessages()"
+                                    title="清空对话">清空</button>
                             </div>
                         </div>
-                        <div id="chat-header-actions">
-                            <button class="btn btn-orange btn-sm" onclick="clearChatMessages()" title="清空对话">清空</button>
+                        <div class="chat-messages" id="chat-messages"></div>
+                        <div class="chat-input-area">
+                            <div class="chat-context-bar">
+                                <div class="chat-context-usage" id="chat-context-usage" style="display:none;">
+                                    <div class="context-ring-container">
+                                        <svg class="context-ring-svg" viewBox="0 0 16 16">
+                                            <circle class="context-ring-bg" cx="8" cy="8" r="6.5" />
+                                            <circle class="context-ring-fg" id="context-ring-fg" cx="8" cy="8" r="6.5"
+                                                stroke-dasharray="40.84" stroke-dashoffset="0" />
+                                        </svg>
+                                    </div>
+                                    <span class="context-percent" id="context-percent">0%</span>
+                                    <div class="context-usage-tooltip" id="context-usage-tooltip">已使用 0 / 0 tokens</div>
+                                </div>
+                            </div>
+                            <textarea id="chat-input" rows="4" placeholder="按下回车发送消息..."
+                                onkeydown="handleChatKeydown(event)"></textarea>
                         </div>
                     </div>
-                    <div class="chat-messages" id="chat-messages">
-                    </div>
-                    <div class="chat-input-area">
-                        <textarea id="chat-input" rows="4" placeholder="按下回车发送消息..."
-                            onkeydown="handleChatKeydown(event)"></textarea>
+                    <!-- 右侧历史面板 -->
+                    <div class="chat-history-panel" id="chat-history-panel">
+                        <div class="chat-history-header">
+                            <button class="new-chat-btn" onclick="createNewChatSession()">+ 新对话</button>
+                            <input class="chat-history-search" id="chat-history-search" type="text"
+                                placeholder="搜索历史对话..." oninput="onChatHistorySearch(this.value)">
+                        </div>
+                        <div class="chat-history-body" id="chat-history-body">
+                            <div class="chat-history-empty">暂无对话历史</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -14765,6 +15195,7 @@
         let LOCAL_LLM_TOKEN = 'c17f18e31adb10978d3a9cd0d6743d30a067af602a8789e7';
         let LOCAL_LLM_MODEL = 'gemma-4-e4b-it';
         let LOCAL_LLM_CONTEXT_LENGTH = 10000;
+        let LOCAL_LLM_MAX_TOKENS = 4096;
         // nginx 配置地址
         let NGINX_CONF_PATH = '/usr/local/etc/openresty/sites/index.conf';
         // 忽略的目录
@@ -14881,32 +15312,32 @@
             FORMAT: { key: '格式化', color: '#f22431ff' },
         };
         let DASHBOARD_BUTTON = [
-            { key: '行为记录分析', value: 'analyzeFileOs()', display: false, fileProtocolDisplay: false, tauriDisplay: false, serverDisplay: false },
-            { key: 'GraphiQL', value: 'toggleFile("graphiQL")', display: true, fileProtocolDisplay: false, tauriDisplay: false, serverDisplay: true },
-            { key: 'GraphQLPlayground', value: 'toggleFile("graphQLPlayground")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: 'OpenResty', value: 'toggleFile("openRestyEditor")', display: true, fileProtocolDisplay: false, tauriDisplay: false, serverDisplay: true },
-            { key: 'Swagger', value: 'toggleFile("swaggerDemo")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '番茄钟', value: 'toggleFile("pomodoro")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '正则表达式', value: 'toggleFile("regexTest")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: 'Cron', value: 'toggleFile("cron")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '视频播放器', value: 'toggleFile("video")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: 'Raw查看', value: 'toggleFile("raw")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: 'url编解码', value: 'toggleFile("urlEncoder")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '书签', value: 'toggleFile("bookmarks")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '文件词云', value: 'toggleFile("wordCloud")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '文件时间线', value: 'toggleFile("timeline")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: 'git记录', value: 'toggleFile("gitRecords")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '文件图谱', value: 'toggleFile("noteGraph")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: 'Mermaid', value: 'toggleFile("mermaid")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: 'Excalidraw白板', value: 'toggleFile("whiteboard")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: 'Canvas文档白板', value: 'toggleFile("canvas")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '思维导图', value: 'toggleFile("mindMap")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '大纲笔记', value: 'toggleFile("opmlOutline")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '任务看板', value: 'toggleFile("kanban")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '临时编辑器', value: 'toggleFile("tempEditor")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '目录空间分析', value: 'toggleFile("dirSpace")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: 'AI聊天', value: 'toggleFile("aiChat")', display: true, fileProtocolDisplay: true, tauriDisplay: true, serverDisplay: true },
-            { key: '知识库', value: 'toggleFile("knowledge")', display: true, fileProtocolDisplay: false, tauriDisplay: true, serverDisplay: false },
+            { key: '行为记录分析', value: 'analyzeFileOs()', display: false, fileProtocolDisplay: false, tauriDisplay: false },
+            { key: 'GraphiQL', value: 'toggleFile("graphiQL")', display: true, fileProtocolDisplay: false, tauriDisplay: false },
+            { key: 'GraphQLPlayground', value: 'toggleFile("graphQLPlayground")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: 'OpenResty', value: 'toggleFile("openRestyEditor")', display: true, fileProtocolDisplay: false, tauriDisplay: false },
+            { key: 'Swagger', value: 'toggleFile("swaggerDemo")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '番茄钟', value: 'toggleFile("pomodoro")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '正则表达式', value: 'toggleFile("regexTest")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: 'Cron', value: 'toggleFile("cron")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '视频播放器', value: 'toggleFile("video")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: 'Raw查看', value: 'toggleFile("raw")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: 'url编解码', value: 'toggleFile("urlEncoder")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '书签', value: 'toggleFile("bookmarks")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '文件词云', value: 'toggleFile("wordCloud")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '文件时间线', value: 'toggleFile("timeline")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: 'git记录', value: 'toggleFile("gitRecords")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '文件图谱', value: 'toggleFile("noteGraph")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: 'Mermaid', value: 'toggleFile("mermaid")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: 'Excalidraw白板', value: 'toggleFile("whiteboard")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: 'Canvas文档白板', value: 'toggleFile("canvas")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '思维导图', value: 'toggleFile("mindMap")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '大纲笔记', value: 'toggleFile("opmlOutline")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '任务看板', value: 'toggleFile("kanban")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '临时编辑器', value: 'toggleFile("tempEditor")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '目录空间分析', value: 'toggleFile("dirSpace")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: 'RAG问答', value: 'toggleFile("aiChat")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
+            { key: '知识库', value: 'toggleFile("knowledge")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
         ]
         // 高亮字体颜色（深色系，确保可读性）
         const HIGHLIGHT_FONT_COLORS = [
@@ -15007,6 +15438,7 @@
         const TREE_LOAD_TIME_KEY = 'tree_load_duration'; // 文件树加载时长键名
         const FILE_SCAN_TIME_KEY = 'file_scan_duration'; // 文件扫描时长键名
         const DIRECTORY_STORE_NAME = 'idb-data-store';
+        const LAST_CHAT_SESSION_KEY = 'last_chat_session_id'; // 最后打开的聊天会话ID
 
         // ====== 目录名常量 ======
         const DELETED_DIR_NAME = 'mdgo_trash';         // 垃圾箱文件名
@@ -15364,21 +15796,7 @@
             await initAll();
             await updateTimeAll();
             await updateTimeHeader();
-            // Tauri 模式下显示 RAG/Agent 模式按钮
-            if (isTauriVisit()) {
-                const ragBtn = document.getElementById('chat-mode-rag');
-                if (ragBtn) ragBtn.style.display = '';
-
-                // 监听知识库文件变更事件，自动刷新状态
-                try {
-                    const { listen } = window.__TAURI__.event;
-                    listen('kb-watcher-event', () => {
-                        refreshKnowledgeStatus();
-                    });
-                } catch (e) {
-                    console.warn('注册 watcher 事件监听失败:', e);
-                }
-            }
+            RAGInit();
         });
 
         window.addEventListener('beforeunload', function (e) {
@@ -16609,9 +17027,14 @@
                 Promise.resolve(destroyBookmarkPage()),
                 Promise.resolve(destroyDirSpace()),
                 Promise.resolve(cleanupDashboardData()),
-                Promise.resolve(updateTimeHeader()),
                 Promise.resolve(todoDestroy()),
+                Promise.resolve(finalizeChatAndCleanup()),
             ]);
+        }
+
+        async function finalizeChatAndCleanup() {
+            await finalizeCurrentSession();
+            cleanupChatState();
         }
 
         function cleanupDashboardData() {
@@ -29265,15 +29688,12 @@ kanban-plugin: basic
                 </div>`;
             const fileProtocol = isLocalVisit();
             const isTauri = isTauriVisit();
-            const serverDisplay = !fileProtocol && !isTauri;
-            const httpLocal = !fileProtocol && !isTauri && !serverDisplay;
+            const httpLocal = !fileProtocol && !isTauri;
             DASHBOARD_BUTTON.forEach(b => {
                 if (b.display) {
                     if (fileProtocol && b.fileProtocolDisplay) {
                         html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
                     } else if (isTauri && b.tauriDisplay) {
-                        html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
-                    } else if (serverDisplay && b.serverDisplay) {
                         html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
                     } else if (httpLocal && b.fileProtocolDisplay) {
                         html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
@@ -30296,36 +30716,35 @@ kanban-plugin: basic
                     { role: 'user', content: promptStr }
                 ],
                 stream: false
-            })
-            console.log(JSON.stringify(requestBody));
-            return fetch(LOCAL_LLM_ENDPOINT, {
+            });
+            const response = await fetch(LOCAL_LLM_ENDPOINT, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': 'Bearer ' + LOCAL_LLM_TOKEN
                 },
                 body: requestBody
-            }).then(response => {
-                if (!response.ok) {
-                    response.json().then(data => {
-                        console.error('API请求失败', data, e);
-                        throw new Error('API请求失败: ' + JSON.stringify(data));
-                    }).catch((e) => {
-                        console.error('API请求解析失败结果异常', e);
-                        throw new Error('API请求失败: ' + e.message);
-                    });
-                    throw new Error('API请求失败: ' + response.status);
-                }
-                return response.json();
-            }).then(data => {
-                if (data.content) return data.content;
-                if (data.response) return data.response;
-                if (data.output) return data.output;
-                if (data.choices && data.choices[0] && data.choices[0].message) return data.choices[0].message.content;
-                if (data.result) return data.result;
-                console.error('未识别的 API 响应格式:', JSON.stringify(data));
-                return '无法解析 API 响应，请检查 API 配置';
             });
+            if (!response.ok) {
+                let errorMsg = 'API请求失败: ' + response.status;
+                try {
+                    const data = await response.json();
+                    console.error('API请求失败', data);
+                    errorMsg = 'API请求失败: ' + JSON.stringify(data);
+                } catch (e) {
+                    console.error('API请求解析失败结果异常', e);
+                    errorMsg = 'API请求失败: ' + e.message;
+                }
+                throw new Error(errorMsg);
+            }
+            const data = await response.json();
+            if (data.content) return data.content;
+            if (data.response) return data.response;
+            if (data.output) return data.output;
+            if (data.choices && data.choices[0] && data.choices[0].message) return data.choices[0].message.content;
+            if (data.result) return data.result;
+            console.error('未识别的 API 响应格式:', JSON.stringify(data));
+            return '无法解析 API 响应，请检查 API 配置';
         }
 
         let _aiPanelToggleHandler = null;
@@ -30533,6 +30952,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
                 customPrompt = prompt;
             } else {
+                if (!PROMPTS[action]) {
+                    showNotification('未指定有效的操作', 'warning');
+                    return;
+                }
                 if (prompt) {
                     customPrompt = prompt;
                 } else {
@@ -30578,9 +31001,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const now = new Date();
                 const time = now.getTime();
                 const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-                addAIHistoryItem({
+                const label = action === 'custom' ? customPrompt : (PROMPTS[action] ? PROMPTS[action].title : action);
+                const actionStr = action === 'custom' ? '' : (PROMPTS[action] ? PROMPTS[action].key : '');
+                await addAIHistoryItem({
                     type: action,
-                    label: action === 'custom' ? customPrompt : PROMPTS[action].title,
+                    label: label,
                     prompt: customPrompt,
                     result: processedResult,
                     fileName: fileName,
@@ -30588,7 +31013,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     date: dateStr,
                     lastAccess: time
                 });
-                const actionStr = action === 'custom' ? '' : PROMPTS[action].key;
                 if (aiResultLinkCurrentFile || aiSelectionMode) {
                     recordOperation(fileName, filePath, OPERATION_TYPES.AI, time, actionStr);
                 } else {
@@ -30596,12 +31020,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     recordOperation(context, '', OPERATION_TYPES.AI, time, actionStr);
                 }
                 if (action === 'analyze' || action === 'summarize') {
-                    await showAIResultModal(action, PROMPTS[action].title, processedResult, fileName, filePath);
-                    showNotification(`处理完成，${PROMPTS[action].title}已展示在弹窗中，输入字符数: ${inputLen}，输出字符数: ${outputLen}`, 'success');
+                    const title = PROMPTS[action] ? PROMPTS[action].title : action;
+                    await showAIResultModal(action, title, processedResult, fileName, filePath);
+                    showNotification(`处理完成，${title}已展示在弹窗中，输入字符数: ${inputLen}，输出字符数: ${outputLen}`, 'success');
                 } else if (action === 'reformat') {
                     if (aiSelectionMode) {
-                        await showAIResultModal(action, PROMPTS[action].title, processedResult, fileName, filePath);
-                        showNotification(`处理完成，${PROMPTS[action].title}已展示在弹窗中，输入字符数: ${inputLen}，输出字符数: ${outputLen}`, 'success');
+                        const title = PROMPTS[action] ? PROMPTS[action].title : action;
+                        await showAIResultModal(action, title, processedResult, fileName, filePath);
+                        showNotification(`处理完成，${title}已展示在弹窗中，输入字符数: ${inputLen}，输出字符数: ${outputLen}`, 'success');
                     } else {
                         enterEditMode(false, processedResult);
                         showNotification(`处理完成，结果已放入编辑器，输入字符数: ${inputLen}，输出字符数: ${outputLen}`, 'success');
@@ -45736,8 +46162,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             //nginx 配置
             const fileProtocol = isLocalVisit();
             const isTauri = isTauriVisit();
-            const serverDisplay = !fileProtocol && !isTauri;
-            const httpLocal = !fileProtocol && !isTauri && !serverDisplay;
+            const httpLocal = !fileProtocol && !isTauri;
             let nginxDisplay = false;
             const nginxRestyButton = DASHBOARD_BUTTON.find(b => b.key === 'OpenResty')
             if (nginxRestyButton) {
@@ -45745,8 +46170,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     if (fileProtocol && nginxRestyButton.fileProtocolDisplay) {
                         nginxDisplay = true;
                     } else if (isTauri && nginxRestyButton.tauriDisplay) {
-                        nginxDisplay = true;
-                    } else if (serverDisplay && nginxRestyButton.serverDisplay) {
                         nginxDisplay = true;
                     } else if (httpLocal && nginxRestyButton.fileProtocolDisplay) {
                         nginxDisplay = true;
@@ -45773,7 +46196,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                     <input class="setting-text" id="${inputId('currentRootPath')}" value="${escapeHtml(rootDirPath)}" placeholder="请输入目录路径...">
                                 </div>
                             </div>
-                        </div>
+                        </div> 
                     ` : ''}
                         <div class="setting-section">
                             <div class="setting-section-title">后端服务</div>
@@ -45806,6 +46229,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                 <div class="setting-row">
                                     <label>上下文长度</label>
                                     <input class="setting-number" id="${inputId('llmContext')}" type="number" min="1000" max="100000" step="1000" value="${LOCAL_LLM_CONTEXT_LENGTH}">
+                                </div>
+                                <div class="setting-row">
+                                    <label>最大输出 Token</label>
+                                    <input class="setting-number" id="${inputId('llmMaxTokens')}" type="number" min="256" max="32000" step="256" value="${LOCAL_LLM_MAX_TOKENS}">
                                 </div>
                                 <div class="setting-row">
                                     <label></label>
@@ -45986,6 +46413,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     LOCAL_LLM_TOKEN = document.getElementById(inputId('llmToken')).value.trim();
                     LOCAL_LLM_MODEL = document.getElementById(inputId('llmModel')).value.trim();
                     LOCAL_LLM_CONTEXT_LENGTH = contextLength;
+                    const maxTokensVal = document.getElementById(inputId('llmMaxTokens')).value.trim();
+                    LOCAL_LLM_MAX_TOKENS = parseInt(maxTokensVal, 10) || 4096;
                     DIR_BLACKLIST = dirBlacklistItems;
                     FILE_BLACKLIST = fileBlacklistItems;
                     RANDOM_DIR_BLACKLIST = randomDirItems;
@@ -45998,6 +46427,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         localLlmToken: LOCAL_LLM_TOKEN,
                         localLlmModel: LOCAL_LLM_MODEL,
                         localLlmContextLength: LOCAL_LLM_CONTEXT_LENGTH,
+                        localLlmMaxTokens: LOCAL_LLM_MAX_TOKENS,
                         dirBlacklist: DIR_BLACKLIST,
                         fileBlacklist: FILE_BLACKLIST,
                         randomDirBlacklist: RANDOM_DIR_BLACKLIST,
@@ -46051,6 +46481,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 LOCAL_LLM_TOKEN = setting.localLlmToken;
                 LOCAL_LLM_MODEL = setting.localLlmModel;
                 LOCAL_LLM_CONTEXT_LENGTH = setting.localLlmContextLength;
+                LOCAL_LLM_MAX_TOKENS = setting.localLlmMaxTokens || 4096;
                 DIR_BLACKLIST = setting.dirBlacklist;
                 FILE_BLACKLIST = setting.fileBlacklist;
                 RANDOM_DIR_BLACKLIST = setting.randomDirBlacklist;
@@ -46071,6 +46502,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 localLlmToken: LOCAL_LLM_TOKEN,
                 localLlmModel: LOCAL_LLM_MODEL,
                 localLlmContextLength: LOCAL_LLM_CONTEXT_LENGTH,
+                localLlmMaxTokens: LOCAL_LLM_MAX_TOKENS,
                 dirBlacklist: DIR_BLACKLIST,
                 fileBlacklist: FILE_BLACKLIST,
                 randomDirBlacklist: RANDOM_DIR_BLACKLIST,
@@ -46886,7 +47318,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                 }
             }
-            el.textContent = nextEv ? `${_formatShortDateTime(nextEvTime)} ${nextEv.title}` : '--';
+            el.textContent = nextEv ? `${_formatShortDateTime(nextEvTime)} ${nextEv.title}` : '';
             // 2) 查找下一个重要节日（每日缓存）
             const today = new Date();
             const cacheKey = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
@@ -46913,7 +47345,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     ? (festival.days === 0 ? `今天${festival.name}` : `明天${festival.name}`)
                     : `${festival.name}: ${festival.days}天后`;
             } else {
-                fel.textContent = '--';
+                fel.textContent = '';
             }
         }
 
@@ -46922,16 +47354,232 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         let chatMessages = [];
         let chatAbortController = null;
         let chatStreaming = false;
+        let _chatStreamingDiv = null;       // 当前正在生成的 assistant 消息 DOM
+        let _chatStreamingSources = null;   // RAG 模式下正在生成的消息的 sources
+        let _chatStreamingFullContent = ''; // 当前正在生成的消息完整内容
+        // 会话与搜索状态（提前声明，避免 TDZ 风险）
+        let chatSessions = [];
+        let currentSessionId = null;
+        let chatHistorySearchTimer = null;
+
+        /**
+         * 公共 SSE 流式 LLM 请求函数
+         * 封装 fetch + SSE 读取 + delta 解析，消除 sendLlmQuery / streamLlmWithContext 中的重复代码。
+         *
+         * @param {object[]} messages - 发送给 LLM 的消息数组
+         * @param {object} [options]
+         * @param {AbortSignal} [options.signal] - 中断信号
+         * @param {(fullContent: string) => void} [options.onDelta] - 每轮 delta 更新后回调（含完整内容）
+         * @param {(usage: object) => void} [options.onUsage] - 收到 usage 信息时回调
+         * @returns {Promise<string>} 完整生成内容
+         */
+        async function streamLlmChatCompletion(messages, { signal, onDelta, onUsage } = {}) {
+            const response = await fetch(LOCAL_LLM_ENDPOINT, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': LOCAL_LLM_TOKEN ? 'Bearer ' + LOCAL_LLM_TOKEN : '',
+                },
+                body: JSON.stringify({
+                    model: LOCAL_LLM_MODEL,
+                    messages: messages,
+                    stream: true,
+                    max_tokens: LOCAL_LLM_MAX_TOKENS,
+                }),
+                signal,
+            });
+            if (!response.ok) throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let fullContent = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const chunk = decoder.decode(value, { stream: true });
+                const lines = chunk.split('\n').filter(l => l.startsWith('data: '));
+                for (const line of lines) {
+                    const data = line.slice(6).trim();
+                    if (data === '[DONE]') continue;
+                    try {
+                        const parsed = JSON.parse(data);
+                        if (parsed.usage && onUsage) {
+                            onUsage(parsed.usage);
+                        }
+                        const delta = parsed.choices?.[0]?.delta;
+                        if (delta?.content) {
+                            fullContent += delta.content;
+                            _chatStreamingFullContent = fullContent;
+                            if (onDelta) onDelta(fullContent);
+                        }
+                    } catch { /* skip parse errors */ }
+                }
+            }
+
+            return fullContent;
+        }
+
+        /**
+         * 保存当前正在流式生成的部分消息到数据库
+         * 仅在 chatStreaming 为 true 且有部分内容时生效
+         * 调用后 chatStreaming 置为 false，已生成的内容会被持久化
+         */
+        async function savePartialAssistantMessage() {
+            if (!chatStreaming || !currentSessionId) return;
+            const partialContent = _chatStreamingFullContent || (_chatStreamingDiv ? _chatStreamingDiv.textContent : '');
+            if (!partialContent || partialContent.trim().length === 0) return;
+            try {
+                // 保存消息正文，拿到数据库生成的真实 message_id
+                const savedMsg = await window.__TAURI__.core.invoke('chat_message_save', {
+                    dirPath: currentRootPath,
+                    sessionId: currentSessionId,
+                    role: 'assistant',
+                    content: partialContent,
+                    tokenCount: 0,
+                });
+                // 同时保存 RAG sources（使用真实 message_id）
+                if (_chatStreamingSources && _chatStreamingSources.length > 0 && savedMsg && savedMsg.id) {
+                    try {
+                        const sourceEntries = _chatStreamingSources.map(s => ({
+                            id: crypto.randomUUID(),
+                            message_id: savedMsg.id,
+                            doc_name: s.docName || s.doc_name || '未知文档',
+                            score: s.score || 0,
+                            snippet: s.text || '',
+                        }));
+                        await window.__TAURI__.core.invoke('chat_message_sources_save', {
+                            dirPath: currentRootPath,
+                            messageId: savedMsg.id,
+                            sources: sourceEntries,
+                        });
+                    } catch (e) {
+                        console.warn('保存部分引用来源失败:', e);
+                    }
+                }
+                // 将部分消息推入 chatMessages，保证内存状态与数据库一致
+                chatMessages.push({
+                    role: 'assistant',
+                    content: partialContent,
+                    sources: _chatStreamingSources || [],
+                });
+                // 移除流式消息 DOM，避免后续重新渲染导致重复
+                if (_chatStreamingDiv && _chatStreamingDiv.parentNode) {
+                    _chatStreamingDiv.remove();
+                }
+                // 刷新会话列表
+                const sessions = await window.__TAURI__.core.invoke('chat_session_list', {
+                    dirPath: currentRootPath,
+                });
+                chatSessions = sessions;
+                renderChatSessionList();
+            } catch (e) {
+                console.warn('保存部分助手消息失败:', e);
+            }
+        }
+
+        /**
+         * 收尾当前会话：中断流式输出 + 保存部分消息 + 清理流状态
+         * 所有"离开当前会话"的操作（切换会话、切换模式、切换页面、新建会话、删除会话）
+         * 都必须先调用此函数，确保数据不丢失
+         */
+        async function finalizeCurrentSession() {
+            if (!chatStreaming) return;
+            // 1. 中断流式请求
+            chatAbortController?.abort();
+            // 2. 保存已生成的部分内容
+            await savePartialAssistantMessage();
+            // 3. 清理流状态
+            chatStreaming = false;
+            chatAbortController = null;
+            _chatStreamingDiv = null;
+            _chatStreamingSources = null;
+            _chatStreamingFullContent = '';
+            removeChatTyping();
+        }
+
+        /**
+         * 将当前会话异步索引到向量库/BM25，确保进行中的会话也能被搜索召回。
+         * 不阻塞调用方，失败仅记录日志。
+         */
+        function indexCurrentSessionIfNeeded() {
+            if (!isTauriVisit() || !currentRootPath || !currentSessionId) return;
+            window.__TAURI__.core.invoke('chat_session_index_current', {
+                dirPath: currentRootPath,
+                sessionId: currentSessionId,
+            }).catch(e => console.warn('索引当前会话失败:', e));
+        }
+
+        /**
+         * 记录最后打开的会话 ID，便于下次进入聊天页时恢复
+         */
+        function rememberLastChatSession() {
+            if (!currentRootPath || !currentSessionId) return;
+            try {
+                const key = LAST_CHAT_SESSION_KEY + ':' + currentRootPath;
+                safeLocalStorageSet(key, JSON.stringify({
+                    sessionId: currentSessionId,
+                    mode: chatMode,
+                }));
+            } catch (e) {
+                console.warn('记录最后会话失败:', e);
+            }
+        }
+
+        /**
+         * 获取最后打开的会话 ID
+         */
+        function getLastChatSession() {
+            if (!currentRootPath) return null;
+            try {
+                const key = LAST_CHAT_SESSION_KEY + ':' + currentRootPath;
+                const raw = safeLocalStorageGet(key);
+                return raw ? JSON.parse(raw) : null;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        /**
+         * 清理聊天状态（仅由 destroyEverything 在 finalizeCurrentSession 之后调用）。
+         * 清空内存中的 UI 状态，保存最后会话记录并触发异步索引。
+         */
+        async function cleanupChatState() {
+            // 1. 将当前会话异步索引，确保可被搜索召回
+            indexCurrentSessionIfNeeded();
+            // 2. 记录最后会话
+            rememberLastChatSession();
+            // 3. 清空 DOM 和内存消息
+            chatMessages = [];
+            chatSessions = [];
+            currentSessionId = null;
+            chatMode = 'normal';
+            chatAbortController = null;
+            _chatStreamingDiv = null;
+            _chatStreamingSources = null;
+            _chatStreamingFullContent = '';
+            const container = document.getElementById('chat-messages');
+            if (container) container.innerHTML = '';
+            const body = document.getElementById('chat-history-body');
+            if (body) body.innerHTML = '<div class="chat-history-empty">暂无对话历史</div>';
+        }
 
         async function openAiChat() {
-            hideAllViewContainers();
-            chatContainer.style.display = 'flex';
+            await switchToView(chatContainer, 'flex');
+            await loadChatSessions();
+            // 恢复上次打开的会话
+            const last = getLastChatSession();
+            if (last && last.sessionId && chatSessions.some(s => s.id === last.sessionId)) {
+                await switchChatSession(last.sessionId, true);
+            } else if (chatSessions.length > 0) {
+                // 没有记录的话，默认打开最近的会话
+                await switchChatSession(chatSessions[0].id, true);
+            }
             setTimeout(() => document.getElementById('chat-input')?.focus(), 100);
         }
 
         async function openKnowledgeBase() {
-            hideAllViewContainers();
-            knowledgeContainer.style.display = 'flex';
+            await switchToView(knowledgeContainer, 'flex');
             refreshKnowledgeStatus();
             // 自动启动后台文件监听（幂等，已索引的目录才生效）
             startWatcherIfNeeded();
@@ -46956,27 +47604,55 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        function setChatMode(mode) {
+        async function setChatMode(mode) {
             // 非 Tauri 模式只允许普通对话
             if (!isTauriVisit() && mode !== 'normal') {
                 showNotification('非 Tauri 环境仅支持普通对话模式', 'warning');
                 return;
             }
+            if (mode === 'agent') {
+                showNotification('Agent 模式开发中', 'info');
+                return;
+            }
+            // 相同模式不处理
+            if (chatMode === mode) return;
+
+            // 1. 收尾当前会话（保存正在生成的消息）
+            await finalizeCurrentSession();
+            // 将当前会话异步索引，确保可被搜索召回
+            indexCurrentSessionIfNeeded();
+
+            // 2. 切换模式
             chatMode = mode;
             document.querySelectorAll('.btn-mode').forEach(b => b.classList.remove('active'));
             const btn = document.getElementById('chat-mode-' + mode);
             if (btn) btn.classList.add('active');
-            if (mode === 'rag') {
-                if (!getRootHandle()) {
-                    showNotification('请先打开一个目录', 'warning');
-                } else {
+
+            // 3. 查找是否有对应类型的最近会话
+            const targetType = mode === 'rag' ? 'rag' : 'regular';
+            const sessionOfType = chatSessions.find(s => s.type === targetType);
+
+            if (sessionOfType) {
+                // 切换到该类型最近的会话
+                await switchChatSession(sessionOfType.id, true);
+            } else {
+                // 没有对应类型的会话，创建一个新的空会话
+                if (mode === 'rag' && !getRootHandle()) {
+                    showNotification('请先打开一个目录作为知识库', 'warning');
+                    return;
+                }
+                // 清空当前消息区，等用户输入第一条消息时自动创建
+                chatMessages = [];
+                currentSessionId = null;
+                const container = document.getElementById('chat-messages');
+                if (container) container.innerHTML = '';
+                renderChatSessionList();
+                if (mode === 'rag') {
                     showNotification('RAG 模式：使用当前目录作为知识库', 'info');
                 }
-            } else {
-                if (mode === 'agent') {
-                    showNotification('Agent 模式开发中', 'info');
-                }
             }
+            // 4. 记录最后的模式
+            rememberLastChatSession();
         }
 
         function handleChatKeydown(e) {
@@ -46986,13 +47662,38 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        function clearChatMessages() {
-            if (chatStreaming) {
-                chatAbortController?.abort();
-                chatStreaming = false;
-            }
+        async function clearChatMessages(silent = false) {
+            // 先收尾当前会话（中断流 + 保存部分消息）
+            await finalizeCurrentSession();
             chatMessages = [];
-            showNotification('对话已清空', 'info');
+            const container = document.getElementById('chat-messages');
+            if (container) container.innerHTML = '';
+            // 清空后端数据库消息（await 完成后再刷新会话列表，避免竞态导致 message_count 不一致）
+            if (isTauriVisit() && currentSessionId) {
+                try {
+                    await window.__TAURI__.core.invoke('chat_session_clear_messages', {
+                        dirPath: currentRootPath,
+                        sessionId: currentSessionId,
+                    });
+                } catch (e) {
+                    console.warn('清空消息记录失败:', e);
+                }
+            }
+            // 刷新会话列表（确保 clear 已落库，message_count 一致）
+            if (isTauriVisit() && currentRootPath) {
+                try {
+                    const sessions = await window.__TAURI__.core.invoke('chat_session_list', {
+                        dirPath: currentRootPath,
+                    });
+                    chatSessions = sessions;
+                    renderChatSessionList();
+                } catch (e) {
+                    console.warn('刷新会话列表失败:', e);
+                }
+            }
+            if (!silent) {
+                showNotification('对话已清空', 'info');
+            }
         }
 
         function addChatMessage(role, content, sources) {
@@ -47004,17 +47705,27 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const details = document.createElement('details');
                 details.className = 'msg-sources';
                 const summary = document.createElement('summary');
-                summary.textContent = '\u{1F4CE}引用来源 (' + sources.length + ')';
+                summary.textContent = '引用来源 (' + sources.length + ')';
                 details.appendChild(summary);
                 sources.forEach(s => {
                     const item = document.createElement('div');
                     item.className = 'source-item';
-                    item.innerHTML = '<span>' + (s.docName || '未知文档') + '</span><span class="source-score">' + (s.score * 100).toFixed(1) + '%</span>';
+                    const nameSpan = document.createElement('span');
+                    nameSpan.textContent = s.docName || s.doc_name || '未知文档';
+                    const scoreSpan = document.createElement('span');
+                    scoreSpan.className = 'source-score';
+                    scoreSpan.textContent = (s.score * 100).toFixed(1) + '%';
+                    item.appendChild(nameSpan);
+                    item.appendChild(scoreSpan);
                     details.appendChild(item);
                 });
                 div.appendChild(details);
             }
             container.appendChild(div);
+            // 为消息添加操作按钮（复制/保存）
+            if (role !== 'system') {
+                addMessageActions(div, content);
+            }
             container.scrollTop = container.scrollHeight;
         }
 
@@ -47041,9 +47752,54 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 showNotification('\u2717 请先在设置中配置 LLM API 端点', 'warning');
                 return;
             }
+            // 自动创建会话（用户直接输入时），以首条消息命名
+            if (!currentSessionId) {
+                try {
+                    const sessionType = chatMode === 'rag' ? 'rag' : 'regular';
+                    const session = await window.__TAURI__.core.invoke('chat_session_create', { dirPath: currentRootPath, title: text, type: sessionType });
+                    chatSessions.unshift(session);
+                    currentSessionId = session.id;
+                    renderChatSessionList();
+                } catch (e) {
+                    console.error('自动创建会话失败:', e);
+                    showNotification('创建会话失败，请重试', 'error');
+                    return;
+                }
+            }
             input.value = '';
             addChatMessage('user', text);
             chatMessages.push({ role: 'user', content: text });
+            // 保存用户消息
+            if (currentSessionId) {
+                try {
+                    await window.__TAURI__.core.invoke('chat_message_save', {
+                        dirPath: currentRootPath,
+                        sessionId: currentSessionId,
+                        role: 'user',
+                        content: text,
+                        tokenCount: 0,
+                    });
+                    // 刷新会话列表（更新时间）
+                    const sessions = await window.__TAURI__.core.invoke('chat_session_list', { dirPath: currentRootPath });
+                    chatSessions = sessions;
+                    // 以首条消息重命名"新对话"（乐观更新：先改 UI，再异步调 API）
+                    const cur = chatSessions.find(s => s.id === currentSessionId);
+                    if (cur && (cur.title === '新对话' || !cur.title)) {
+                        cur.title = text;
+                        renderChatSessionList();
+                        window.__TAURI__.core.invoke('chat_session_rename', {
+                            dirPath: currentRootPath,
+                            sessionId: currentSessionId,
+                            title: text,
+                        }).catch(e => console.warn('重命名会话失败:', e));
+                    } else {
+                        renderChatSessionList();
+                    }
+                    rememberLastChatSession();
+                } catch (e) {
+                    console.warn('保存用户消息失败:', e);
+                }
+            }
             if (chatMode === 'rag') {
                 if (!getRootHandle()) {
                     showNotification('请先打开一个目录作为知识库', 'warning');
@@ -47058,69 +47814,484 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         async function sendLlmQuery(text) {
             chatStreaming = true;
             chatAbortController = new AbortController();
+            _chatStreamingDiv = null;
+            _chatStreamingSources = null;
+            _chatStreamingFullContent = '';
             showChatTyping();
             try {
                 const messages = chatMessages.map(m => ({ role: m.role, content: m.content }));
-                const response = await fetch(LOCAL_LLM_ENDPOINT, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': LOCAL_LLM_TOKEN ? 'Bearer ' + LOCAL_LLM_TOKEN : '',
-                    },
-                    body: JSON.stringify({
-                        model: LOCAL_LLM_MODEL,
-                        messages: messages,
-                        stream: true,
-                        max_tokens: LOCAL_LLM_CONTEXT_LENGTH || 4096,
-                    }),
+                let usageData = null;
+
+                // 使用公共 SSE 流式函数
+                const fullContent = await streamLlmChatCompletion(messages, {
                     signal: chatAbortController.signal,
+                    onDelta(fullContent) {
+                        // 首次收到 delta 时创建 assistant DOM
+                        if (!_chatStreamingDiv) {
+                            removeChatTyping();
+                            const container = document.getElementById('chat-messages');
+                            const div = document.createElement('div');
+                            div.className = 'chat-message assistant';
+                            container.appendChild(div);
+                            _chatStreamingDiv = div;
+                            // 创建 TextNode 用于增量追加
+                            const textNode = document.createTextNode('');
+                            div.appendChild(textNode);
+                            div._textNode = textNode;
+                            // 防抖滚动
+                            let _rafPending = false;
+                            div._scroll = () => {
+                                if (!_rafPending) {
+                                    _rafPending = true;
+                                    requestAnimationFrame(() => {
+                                        _rafPending = false;
+                                        container.scrollTop = container.scrollHeight;
+                                    });
+                                }
+                            };
+                        }
+                        // 更新 TextNode
+                        _chatStreamingDiv._textNode.data = fullContent;
+                        _chatStreamingDiv._scroll();
+                    },
+                    onUsage(usage) {
+                        usageData = usage;
+                    },
                 });
-                if (!response.ok) throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+
+                // 移除流式 DOM 中可能残留的 typing 指示器
                 removeChatTyping();
-                const assistantDiv = document.createElement('div');
-                assistantDiv.className = 'chat-message assistant';
-                const container = document.getElementById('chat-messages');
-                container.appendChild(assistantDiv);
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let fullContent = '';
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    const chunk = decoder.decode(value, { stream: true });
-                    const lines = chunk.split('\n').filter(l => l.startsWith('data: '));
-                    for (const line of lines) {
-                        const data = line.slice(6).trim();
-                        if (data === '[DONE]') continue;
-                        try {
-                            const parsed = JSON.parse(data);
-                            const delta = parsed.choices?.[0]?.delta;
-                            if (delta?.content) {
-                                fullContent += delta.content;
-                                assistantDiv.textContent = fullContent;
-                                container.scrollTop = container.scrollHeight;
-                            }
-                        } catch { /* skip parse errors */ }
-                    }
-                }
+
                 if (fullContent) {
                     chatMessages.push({ role: 'assistant', content: fullContent });
+                    if (currentSessionId) {
+                        const tokenCount = usageData?.completion_tokens || 0;
+                        try {
+                            await window.__TAURI__.core.invoke('chat_message_save', {
+                                dirPath: currentRootPath,
+                                sessionId: currentSessionId,
+                                role: 'assistant',
+                                content: fullContent,
+                                tokenCount,
+                            });
+                            window.__TAURI__.core.invoke('chat_session_list', {
+                                dirPath: currentRootPath,
+                            }).then(sessions => {
+                                chatSessions = sessions;
+                                renderChatSessionList();
+                            }).catch(e => console.warn('刷新会话列表失败:', e));
+                        } catch (e) {
+                            console.warn('保存助手消息失败:', e);
+                        }
+                    }
+                }
+                // 更新上下文使用率
+                if (usageData) {
+                    const used = (usageData.prompt_tokens || 0) + (usageData.completion_tokens || 0);
+                    const total = usageData.total_tokens || LOCAL_LLM_CONTEXT_LENGTH || 10000;
+                    updateContextUsage(used, total);
                 }
             } catch (err) {
                 removeChatTyping();
                 if (err.name !== 'AbortError') {
-                    addChatMessage('system', '\u2717 请求失败: ' + err.message);
+                    addChatMessage('system', '✗ 请求失败: ' + err.message);
                     console.error('LLM 请求失败:', err);
+                } else {
+                    await savePartialAssistantMessage();
                 }
             } finally {
                 chatStreaming = false;
                 chatAbortController = null;
+                _chatStreamingDiv = null;
+                _chatStreamingSources = null;
+                _chatStreamingFullContent = '';
+                rememberLastChatSession();
             }
+        }
+
+        // ─── 聊天历史会话管理 ───
+
+        async function loadChatSessions() {
+            if (!currentRootPath) return;
+            try {
+                const sessions = await window.__TAURI__.core.invoke('chat_session_list', { dirPath: currentRootPath });
+                chatSessions = sessions;
+                renderChatSessionList();
+            } catch (e) {
+                console.warn('加载会话列表失败:', e);
+            }
+        }
+
+        function renderChatSessionList() {
+            const body = document.getElementById('chat-history-body');
+            if (!body) return;
+
+            if (!chatSessions || chatSessions.length === 0) {
+                body.innerHTML = '<div class="chat-history-empty">暂无对话历史</div>';
+                return;
+            }
+
+            // 从历史列表中排除当前会话（当前会话单独显示在顶部区域）
+            const historySessions = chatSessions.filter(s => s.id !== currentSessionId);
+            const favorites = historySessions.filter(s => s.favorite);
+            const others = historySessions.filter(s => !s.favorite);
+
+            let html = '';
+
+            if (currentSessionId) {
+                const current = chatSessions.find(s => s.id === currentSessionId);
+                if (current) {
+                    html += '<div class="chat-history-section-label">当前会话</div>';
+                    html += '<div class="chat-history-current">';
+                    html += renderSessionItem(current, true);
+                    html += '</div>';
+                }
+            }
+
+            if (favorites.length > 0) {
+                html += '<div class="chat-history-section-label">收藏的会话</div>';
+                html += '<div class="chat-history-favorites">';
+                favorites.forEach(s => {
+                    html += renderSessionItem(s, false);
+                });
+                html += '</div>';
+            }
+
+            const grouped = {};
+            others.forEach(s => {
+                const month = s.month_group || '';
+                if (!grouped[month]) grouped[month] = [];
+                grouped[month].push(s);
+            });
+
+            const months = Object.keys(grouped).sort().reverse();
+            months.forEach(month => {
+                if (month) {
+                    const parts = month.split('-');
+                    const label = parts.length === 2 ? parts[0] + '年' + parseInt(parts[1]) + '月' : month;
+                    html += '<div class="chat-history-month-divider">' + label + '</div>';
+                }
+                grouped[month].forEach(s => {
+                    html += renderSessionItem(s, s.id === currentSessionId);
+                });
+            });
+
+            body.innerHTML = html;
+        }
+
+        function renderSessionItem(session, isActive) {
+            const ts = Number(session.created_at);
+            // 兼容秒级和毫秒级时间戳
+            const date = new Date(ts < 100000000000 ? ts * 1000 : ts);
+            const dateStr = (date.getMonth() + 1) + '/' + date.getDate();
+            const title = escapeHtml(session.title) || '新对话';
+            const activeClass = isActive ? ' active' : '';
+            const favIcon = session.favorite ? '★' : '';
+            const typeBadge = session.type === 'rag' ? '<span class="rag-indicator">RAG</span>' : '';
+
+            return `<div class="chat-history-item${activeClass}" data-session-id="${session.id}">
+                <div class="chat-history-item-title" onclick="switchChatSession('${session.id}')">${favIcon} ${typeBadge} ${title}</div>
+                <span class="chat-history-item-date">${dateStr}</span>
+                <button class="chat-history-item-more" onclick="toggleSessionMenu(event, '${session.id}')">⋮</button>
+                <div class="chat-history-item-more-menu" id="menu-${session.id}">
+                    <div class="chat-history-item-more-menu-item" onclick="renameChatSession('${session.id}')">重命名</div>
+                    <div class="chat-history-item-more-menu-item" onclick="toggleFavoriteSession('${session.id}')">${session.favorite ? '取消收藏' : '收藏'}</div>
+                    <div class="chat-history-item-more-menu-item danger" onclick="deleteChatSession('${session.id}')">删除</div>
+                </div>
+            </div>`;
+        }
+
+        function toggleSessionMenu(event, sessionId) {
+            event.stopPropagation();
+            document.querySelectorAll('.chat-history-item-more-menu.show').forEach(el => {
+                if (el.id !== 'menu-' + sessionId) el.classList.remove('show');
+            });
+            const menu = document.getElementById('menu-' + sessionId);
+            if (menu) menu.classList.toggle('show');
+        }
+
+        document.addEventListener('click', function (e) {
+            if (!e.target.closest('.chat-history-item-more-menu') && !e.target.closest('.chat-history-item-more')) {
+                document.querySelectorAll('.chat-history-item-more-menu.show').forEach(el => el.classList.remove('show'));
+            }
+        });
+
+        async function createNewChatSession() {
+            // 1. 收尾当前会话（保存正在生成的消息）
+            await finalizeCurrentSession();
+            // 将当前会话异步索引，确保可被搜索召回
+            indexCurrentSessionIfNeeded();
+            // 2. 当前会话为空时复用，不创建新会话
+            if (!currentSessionId || chatMessages.length === 0) {
+                document.getElementById('chat-input')?.focus();
+                return;
+            }
+            try {
+                const sessionType = chatMode === 'rag' ? 'rag' : 'regular';
+                const session = await window.__TAURI__.core.invoke('chat_session_create', { dirPath: currentRootPath, title: '新对话', type: sessionType });
+                chatSessions.unshift(session);
+                currentSessionId = session.id;
+                chatMessages = [];
+                const container = document.getElementById('chat-messages');
+                if (container) container.innerHTML = '';
+                renderChatSessionList();
+                rememberLastChatSession();
+                document.getElementById('chat-input')?.focus();
+            } catch (e) {
+                console.error('创建会话失败:', e);
+            }
+        }
+
+        async function switchChatSession(sessionId, skipFinalize = false) {
+            if (sessionId === currentSessionId) return;
+
+            // 1. 收尾当前会话（保存正在生成的消息）
+            if (!skipFinalize) {
+                await finalizeCurrentSession();
+            }
+            // 将离开的会话异步索引，确保可被搜索召回
+            indexCurrentSessionIfNeeded();
+
+            // 2. 清空前端 UI
+            chatMessages = [];
+            const container = document.getElementById('chat-messages');
+            if (container) container.innerHTML = '';
+            currentSessionId = sessionId;
+
+            try {
+                const messages = await window.__TAURI__.core.invoke('chat_session_messages', { dirPath: currentRootPath, sessionId });
+
+                // 3. 批量加载引用来源
+                let sourcesMap = {};
+                const msgIds = messages.map(m => m.id).filter(Boolean);
+                if (msgIds.length > 0) {
+                    try {
+                        sourcesMap = await window.__TAURI__.core.invoke('chat_messages_sources', {
+                            dirPath: currentRootPath,
+                            messageIds: msgIds,
+                        });
+                    } catch (e) {
+                        console.warn('加载引用来源失败:', e);
+                    }
+                }
+
+                // 4. 构建消息条目（含 sources）
+                chatMessages = messages.map(m => ({
+                    role: m.role,
+                    content: m.content,
+                    sources: sourcesMap[m.id] || [],
+                }));
+
+                container.innerHTML = '';
+                chatMessages.forEach(m => addChatMessage(m.role, m.content, m.sources));
+
+                // 5. 根据会话类型同步 chatMode
+                const session = chatSessions.find(s => s.id === sessionId);
+                if (session) {
+                    const newMode = session.type === 'rag' ? 'rag' : 'normal';
+                    if (chatMode !== newMode) {
+                        chatMode = newMode;
+                        document.querySelectorAll('.btn-mode').forEach(b => b.classList.remove('active'));
+                        const btn = document.getElementById('chat-mode-' + newMode);
+                        if (btn) btn.classList.add('active');
+                    }
+                }
+
+                renderChatSessionList();
+                // 6. 记录最后会话
+                rememberLastChatSession();
+            } catch (e) {
+                console.error('加载会话消息失败:', e);
+            }
+        }
+
+        async function deleteChatSession(sessionId) {
+            if (!confirm('确定要删除这个对话吗？')) return;
+            // 如果删除的是当前会话，先收尾
+            if (currentSessionId === sessionId) {
+                await finalizeCurrentSession();
+            }
+            try {
+                await window.__TAURI__.core.invoke('chat_session_delete', { dirPath: currentRootPath, id: sessionId });
+                chatSessions = chatSessions.filter(s => s.id !== sessionId);
+                if (currentSessionId === sessionId) {
+                    currentSessionId = null;
+                    chatMessages = [];
+                    const container = document.getElementById('chat-messages');
+                    if (container) container.innerHTML = '';
+                    // 删除后自动切换到最近的会话
+                    if (chatSessions.length > 0) {
+                        await switchChatSession(chatSessions[0].id, true);
+                    }
+                }
+                renderChatSessionList();
+                rememberLastChatSession();
+            } catch (e) {
+                console.error('删除会话失败:', e);
+            }
+        }
+
+        async function toggleFavoriteSession(sessionId) {
+            try {
+                const newState = await window.__TAURI__.core.invoke('chat_session_toggle_favorite', { dirPath: currentRootPath, id: sessionId });
+                const session = chatSessions.find(s => s.id === sessionId);
+                if (session) session.favorite = newState;
+                renderChatSessionList();
+            } catch (e) {
+                console.error('切换收藏失败:', e);
+            }
+        }
+
+        async function renameChatSession(sessionId) {
+            const item = document.querySelector(`.chat-history-item[data-session-id="${sessionId}"]`);
+            if (!item) return;
+            const titleEl = item.querySelector('.chat-history-item-title');
+            const currentTitle = chatSessions.find(s => s.id === sessionId)?.title || '新对话';
+
+            const input = document.createElement('input');
+            input.className = 'editing-input';
+            input.value = currentTitle;
+            input.onblur = async function () {
+                await saveRename(sessionId, input.value);
+            };
+            input.onkeydown = async function (e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    input.blur();
+                } else if (e.key === 'Escape') {
+                    cancelRename(titleEl, currentTitle);
+                }
+            };
+            titleEl.innerHTML = '';
+            titleEl.appendChild(input);
+            input.focus();
+            input.select();
+        }
+
+        async function saveRename(sessionId, newTitle) {
+            if (!newTitle.trim()) return;
+            try {
+                await window.__TAURI__.core.invoke('chat_session_rename', { dirPath: currentRootPath, id: sessionId, title: newTitle.trim() });
+                const session = chatSessions.find(s => s.id === sessionId);
+                if (session) session.title = newTitle.trim();
+                renderChatSessionList();
+            } catch (e) {
+                console.error('重命名失败:', e);
+            }
+        }
+
+        function cancelRename(titleEl, originalTitle) {
+            titleEl.textContent = originalTitle;
+        }
+
+        function onChatHistorySearch(value) {
+            clearTimeout(chatHistorySearchTimer);
+            if (!value.trim()) {
+                renderChatSessionList();
+                return;
+            }
+            chatHistorySearchTimer = setTimeout(async () => {
+                try {
+                    const results = await window.__TAURI__.core.invoke('chat_history_search', { dirPath: currentRootPath, query: value.trim() });
+                    const body = document.getElementById('chat-history-body');
+                    if (results.length === 0) {
+                        body.innerHTML = '<div class="chat-history-empty">未找到相关对话</div>';
+                        return;
+                    }
+                    let html = '<div class="chat-history-section-label">🔍 搜索结果</div>';
+                    results.forEach(r => {
+                        html += renderSessionItem(r.session, r.session.id === currentSessionId);
+                    });
+                    body.innerHTML = html;
+                } catch (e) {
+                    console.error('搜索失败:', e);
+                }
+            }, 300);
+        }
+
+        // ── 消息操作 ──
+        function addMessageActions(messageEl, content) {
+            const actions = document.createElement('div');
+            actions.className = 'chat-message-actions';
+
+            const copyBtn = document.createElement('button');
+            copyBtn.className = 'chat-message-action-btn';
+            copyBtn.title = '复制';
+            copyBtn.textContent = '📋';
+            copyBtn.onclick = function (e) {
+                e.stopPropagation();
+                navigator.clipboard.writeText(content).then(() => {
+                    showNotification('已复制到剪贴板', 'success', 1000);
+                }).catch(() => {
+                    window.__TAURI__.core.invoke('copy_to_clipboard', { text: content }).catch(console.error);
+                });
+            };
+
+            const saveBtn = document.createElement('button');
+            saveBtn.className = 'chat-message-action-btn';
+            saveBtn.title = '保存';
+            saveBtn.textContent = '💾';
+            saveBtn.onclick = function (e) {
+                e.stopPropagation();
+                saveMessageToFile(content);
+            };
+
+            actions.appendChild(copyBtn);
+            actions.appendChild(saveBtn);
+            messageEl.appendChild(actions);
+        }
+
+        async function saveMessageToFile(content) {
+            try {
+                const result = await window.__TAURI__.core.invoke('plugin:dialog|save', {
+                    defaultPath: 'chat-message.md',
+                    filters: [{ name: 'Markdown', extensions: ['md'] }, { name: 'Text', extensions: ['txt'] }]
+                });
+                if (result) {
+                    await window.__TAURI__.core.invoke('write_file', { path: result, content: content });
+                    showNotification('✅ 保存成功', 'success', 1500);
+                }
+            } catch (e) {
+                console.error('保存失败:', e);
+                showNotification('❌ 保存失败', 'error');
+            }
+        }
+
+        // ── 上下文使用率 ──
+
+        function updateContextUsage(used, total) {
+            const el = document.getElementById('chat-context-usage');
+            const percentEl = document.getElementById('context-percent');
+            const ringEl = document.getElementById('context-ring-fg');
+            const tooltipEl = document.getElementById('context-usage-tooltip');
+
+            if (!el || !percentEl || !ringEl) return;
+
+            if (total <= 0) {
+                el.style.display = 'none';
+                return;
+            }
+
+            el.style.display = 'flex';
+            const pct = Math.min(100, Math.round((used / total) * 100));
+            percentEl.textContent = pct + '%';
+            tooltipEl.textContent = '已使用 ' + used + ' / ' + total + ' tokens';
+
+            const circumference = 40.84;
+            const offset = circumference - (pct / 100) * circumference;
+            ringEl.setAttribute('stroke-dashoffset', offset);
+
+            ringEl.classList.remove('warning', 'danger');
+            if (pct >= 90) ringEl.classList.add('danger');
+            else if (pct >= 70) ringEl.classList.add('warning');
         }
 
         async function sendRagQuery(text) {
             chatStreaming = true;
             chatAbortController = new AbortController();
+            _chatStreamingDiv = null;
+            _chatStreamingSources = null;
+            _chatStreamingFullContent = '';
             showChatTyping();
             try {
                 // 使用本地模型生成查询向量，后端做混合检索
@@ -47146,28 +48317,37 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 document.getElementById('chat-messages').appendChild(searchMsg);
 
                 if (!sources || sources.length === 0) {
-                    addChatMessage('system', '\u274C 知识库中未找到相关内容');
+                    addChatMessage('system', '❌ 知识库中未找到相关内容');
                     searchMsg.remove();
                     return;
                 }
-                // 解决 L6：过滤低分结果，保留 score >= 0.3 的相关文档
+                // 过滤低分结果，保留 score >= 0.3 的相关文档
                 const MIN_SCORE = 0.3;
                 const filtered = sources.filter(s => s.score >= MIN_SCORE);
                 if (filtered.length === 0) {
-                    sources = sources.slice(0, 3); // 至少保留 top 3 个最高分
-                } else {
-                    sources = filtered;
+                    addChatMessage('system', '⚠️ 知识库中未找到足够相关的内容（请尝试更换关键词或扩展知识库）');
+                    searchMsg.remove();
+                    return;
                 }
+                sources = filtered;
                 searchMsg.remove();
                 const context = sources.map(s => s.text).join('\n\n---\n\n');
                 await streamLlmWithContext(text, context, sources);
             } catch (err) {
                 removeChatTyping();
                 if (err.name !== 'AbortError') {
-                    addChatMessage('system', '\u2717 RAG 查询失败: ' + err.message);
+                    addChatMessage('system', '✗ RAG 查询失败: ' + err.message);
+                } else {
+                    // 用户主动中断：保存部分生成的消息
+                    await savePartialAssistantMessage();
                 }
             } finally {
                 chatStreaming = false;
+                chatAbortController = null;
+                _chatStreamingDiv = null;
+                _chatStreamingSources = null;
+                _chatStreamingFullContent = '';
+                rememberLastChatSession();
             }
         }
 
@@ -47177,73 +48357,110 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 { role: 'system', content: systemPrompt },
                 ...chatMessages.map(m => ({ role: m.role, content: m.content })),
             ];
+            // 记录 sources，供中断时保存使用
+            _chatStreamingSources = sources || null;
             showChatTyping();
             try {
-                const response = await fetch(LOCAL_LLM_ENDPOINT, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': LOCAL_LLM_TOKEN ? 'Bearer ' + LOCAL_LLM_TOKEN : '',
-                    },
-                    body: JSON.stringify({
-                        model: LOCAL_LLM_MODEL,
-                        messages: messages,
-                        stream: true,
-                        max_tokens: LOCAL_LLM_CONTEXT_LENGTH || 4096,
-                    }),
+                // 使用公共 SSE 流式函数
+                const fullContent = await streamLlmChatCompletion(messages, {
                     signal: chatAbortController.signal,
+                    onDelta(fullContent) {
+                        // 首次收到 delta 时创建 assistant DOM
+                        if (!_chatStreamingDiv) {
+                            removeChatTyping();
+                            const container = document.getElementById('chat-messages');
+                            const div = document.createElement('div');
+                            div.className = 'chat-message assistant';
+                            container.appendChild(div);
+                            _chatStreamingDiv = div;
+                            const textNode = document.createTextNode('');
+                            div.appendChild(textNode);
+                            div._textNode = textNode;
+                            let _rafPending = false;
+                            div._scroll = () => {
+                                if (!_rafPending) {
+                                    _rafPending = true;
+                                    requestAnimationFrame(() => {
+                                        _rafPending = false;
+                                        container.scrollTop = container.scrollHeight;
+                                    });
+                                }
+                            };
+                        }
+                        _chatStreamingDiv._textNode.data = fullContent;
+                        _chatStreamingDiv._scroll();
+                    },
                 });
-                if (!response.ok) throw new Error('HTTP ' + response.status);
+
                 removeChatTyping();
-                const assistantDiv = document.createElement('div');
-                assistantDiv.className = 'chat-message assistant';
-                const container = document.getElementById('chat-messages');
-                container.appendChild(assistantDiv);
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let fullContent = '';
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    const chunk = decoder.decode(value, { stream: true });
-                    const lines = chunk.split('\n').filter(l => l.startsWith('data: '));
-                    for (const line of lines) {
-                        const data = line.slice(6).trim();
-                        if (data === '[DONE]') continue;
-                        try {
-                            const parsed = JSON.parse(data);
-                            const delta = parsed.choices?.[0]?.delta;
-                            if (delta?.content) {
-                                fullContent += delta.content;
-                                assistantDiv.textContent = fullContent;
-                                container.scrollTop = container.scrollHeight;
-                            }
-                        } catch { /* skip */ }
-                    }
-                }
+
                 if (fullContent) {
-                    chatMessages.push({ role: 'assistant', content: fullContent });
-                    if (sources && sources.length > 0) {
+                    // 连带 sources 存入 chatMessages（用于后续加载时重绘）
+                    const msgEntry = { role: 'assistant', content: fullContent, sources: sources || [] };
+                    chatMessages.push(msgEntry);
+                    // 保存助手消息到数据库（RAG 模式）
+                    if (currentSessionId) {
+                        try {
+                            const savedMsg = await window.__TAURI__.core.invoke('chat_message_save', {
+                                dirPath: currentRootPath,
+                                sessionId: currentSessionId,
+                                role: 'assistant',
+                                content: fullContent,
+                                tokenCount: 0,
+                            });
+                            // 保存引用来源
+                            if (sources && sources.length > 0 && savedMsg?.id) {
+                                const sourceEntries = sources.map(s => ({
+                                    id: crypto.randomUUID(),
+                                    message_id: savedMsg.id,
+                                    doc_name: s.docName || s.doc_name || '未知文档',
+                                    score: s.score || 0,
+                                    snippet: s.text || '',
+                                }));
+                                await window.__TAURI__.core.invoke('chat_message_sources_save', {
+                                    dirPath: currentRootPath,
+                                    messageId: savedMsg.id,
+                                    sources: sourceEntries,
+                                }).catch(e => console.warn('保存引用来源失败:', e));
+                            }
+                            // 刷新会话列表
+                            const sessions = await window.__TAURI__.core.invoke('chat_session_list', {
+                                dirPath: currentRootPath,
+                            });
+                            chatSessions = sessions;
+                            renderChatSessionList();
+                        } catch (e) {
+                            console.warn('保存助手消息失败:', e);
+                        }
+                    }
+                    if (sources && sources.length > 0 && _chatStreamingDiv) {
                         const details = document.createElement('details');
                         details.className = 'msg-sources';
-                        details.innerHTML = '<summary>\u{1F4CE}引用来源 (' + sources.length + ')</summary>';
+                        const summary = document.createElement('summary');
+                        summary.textContent = '引用来源 (' + sources.length + ')';
+                        details.appendChild(summary);
                         sources.forEach(s => {
                             const item = document.createElement('div');
                             item.className = 'source-item';
-                            const docName = s.docName || s.doc_name || '未知文档';
-                            item.innerHTML = '<span>' + docName + '</span><span class="source-score">' + (s.score * 100).toFixed(1) + '%</span>';
+                            const nameSpan = document.createElement('span');
+                            nameSpan.textContent = s.docName || s.doc_name || '未知文档';
+                            const scoreSpan = document.createElement('span');
+                            scoreSpan.className = 'source-score';
+                            scoreSpan.textContent = (s.score * 100).toFixed(1) + '%';
+                            item.appendChild(nameSpan);
+                            item.appendChild(scoreSpan);
                             details.appendChild(item);
                         });
-                        assistantDiv.appendChild(details);
+                        _chatStreamingDiv.appendChild(details);
                     }
                 }
             } catch (err) {
                 removeChatTyping();
                 if (err.name !== 'AbortError') {
-                    addChatMessage('system', '\u2717 请求失败: ' + err.message);
+                    addChatMessage('system', '✗ 请求失败: ' + err.message);
                 }
-            } finally {
-                chatStreaming = false;
+                // AbortError 由上层 sendRagQuery 统一处理保存
+                throw err;
             }
         }
 
@@ -47393,6 +48610,24 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 showNotification('\u2717 连接失败: ' + e.message, 'error');
             } finally {
                 if (btn) { btn.disabled = false; btn.textContent = '测试连接'; }
+            }
+        }
+
+        function RAGInit(){
+            // Tauri 模式下显示 RAG/Agent 模式按钮
+            if (isTauriVisit()) {
+                const ragBtn = document.getElementById('chat-mode-rag');
+                if (ragBtn) ragBtn.style.display = '';
+
+                // 监听知识库文件变更事件，自动刷新状态
+                try {
+                    const { listen } = window.__TAURI__.event;
+                    listen('kb-watcher-event', () => {
+                        refreshKnowledgeStatus();
+                    });
+                } catch (e) {
+                    console.warn('注册 watcher 事件监听失败:', e);
+                }
             }
         }
     </script>

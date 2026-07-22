@@ -15,8 +15,7 @@
 2. 直接浏览器打开  
    - `index.html` → 依赖本地 js/css 文件
    - `index_cdn.html` → 依赖网络 CDN
-3. 本地运行：启动后端服务 `backend/main.py`，然后访问 `http://localhost:8091`
-4. 打包应用 
+3. 打包应用 
     - Linux/macOS: `tauri/build.sh build`  
     - Windows: `tauri/build.bat build`  
    安装包输出路径：`tauri/src-tauri/target/release/bundle`
@@ -24,6 +23,7 @@
 ### 功能与工具
 
 - Mermaid 图表：支持流程图、时序图、类图、状态图、甘特图、ER 图、用户旅程图、Git 图、思维导图、饼图、时间线、看板、四象限图、桑基图、XY 图表、块状图、架构图、数据包图等
+- RAG问答：基于向量检索的问答问答功能，支持自定义问答模型（Tauri应用支持）
 - draw.io 图表：支持 draw.io 图表预览与编辑
 - Excalidraw 白板：手绘风格的协作白板
 - 图谱：显示目录文件、文档关联关系图谱
