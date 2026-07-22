@@ -138,15 +138,18 @@ impl Indexer {
             batch_chunks.extend(doc_chunks);
             file_count += 1;
 
-            let pct = 5 + ((i + 1) * 30 / total.max(1) as usize) as u8;
+            // 读取进度：0% → 20%（基于已扫描的文件比例）
+            let read_pct = ((i + 1) * 20 / total.max(1) as usize) as u8;
             if batch_chunks.len() < BATCH_CHUNK_LIMIT && i + 1 < total as usize {
-                progress(pct.min(35), &format!("读取文件 {}/{} (已缓存 {} 个文本块)", i + 1, total, batch_chunks.len()));
+                progress(read_pct.min(19), &format!("读取文件 {}/{} (已缓存 {} 个文本块)", i + 1, total, batch_chunks.len()));
                 continue;
             }
 
             // ── 批次已满或最后一批：处理 ──
             batch_index += 1;
-            progress(pct.min(35), &format!("处理第 {} 批 ({} 个文本块)...", batch_index, batch_chunks.len()));
+            // Embedding + DB 写入进度：20% → 85%（基于已处理的文件比例）
+            let embed_pct = 20 + ((i + 1) * 65 / total.max(1) as usize) as u8;
+            progress(embed_pct.min(84), &format!("正在向量化第 {} 批 ({} 个文本块)", batch_index, batch_chunks.len()));
 
             let vectors = self.embed_batch(&batch_chunks).await?;
 
@@ -157,7 +160,7 @@ impl Indexer {
             total_vectors += vectors.len() as u32;
             batch_chunks.clear();
 
-            progress(85, &format!("已处理 {}/{} 文件 (累计 {} 文本块, {} 向量)", i + 1, total, total_chunks, total_vectors));
+            progress(embed_pct.min(84), &format!("已处理 {}/{} 文件 (累计 {} 文本块, {} 向量)", i + 1, total, total_chunks, total_vectors));
         }
 
         if total_chunks == 0 {
@@ -333,16 +336,16 @@ impl Indexer {
     ///
     /// 调用本地 bge-small-zh-v1.5 模型（384 维），纯同步推理。
     async fn embed_batch(&self, chunks: &[DocumentChunk]) -> Result<Vec<Vec<f32>>, String> {
-        let embed_batch_size = 20usize;
-        let mut all_vectors: Vec<Vec<f32>> = Vec::with_capacity(chunks.len());
+        log::info!("[indexer] embed_batch 开始，共 {} 个文本块", chunks.len());
 
-        for embed_batch in chunks.chunks(embed_batch_size) {
-            let texts: Vec<&str> = embed_batch.iter().map(|c| c.text.as_str()).collect();
-            let vectors = utils::call_embedding(&texts)
-                .map_err(|e| format!("Embedding 失败: {}", e))?;
-            all_vectors.extend(vectors);
-        }
+        let texts: Vec<&str> = chunks.iter().map(|c| c.text.as_str()).collect();
+        let all_vectors = utils::call_embedding(&texts)
+            .map_err(|e| {
+                log::error!("[indexer] Embedding 失败: {}", e);
+                format!("Embedding 失败: {}", e)
+            })?;
 
+        log::info!("[indexer] embed_batch 完成，共 {} 个向量", all_vectors.len());
         Ok(all_vectors)
     }
 

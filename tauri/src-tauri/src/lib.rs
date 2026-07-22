@@ -1,3 +1,4 @@
+#![allow(linker_messages)]
 mod commands;
 mod db;
 mod services;
@@ -81,14 +82,13 @@ pub fn run() {
 
 /// 初始化日志系统：文件日志（Debug）+ 终端日志（Info）双输出。
 ///
-/// 日志文件路径：`%APPDATA%/mdgo/logs/app.log`（Windows）
-/// 终端日志仅在附加了控制台时有效（dev 模式下可见）。
+/// 日志文件路径：
+/// - macOS/Linux: `~/Library/Logs/mdgo/mdgo.log` / `~/.cache/mdgo/logs/mdgo.log`
+/// - Windows: `%APPDATA%/mdgo/logs/mdgo.log`
+///
+/// **注意**：日志目录不会在项目目录内，避免触发 Tauri 开发服务器的文件监听重建循环。
 fn init_logging() {
-    let log_dir = std::env::var("APPDATA")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| std::path::PathBuf::from("."))
-        .join("logs");
-
+    let log_dir = log_dir_global();
     let log_path = log_dir.join("mdgo.log");
 
     // 创建文件日志
@@ -125,4 +125,42 @@ fn init_logging() {
     if has_file_logger {
         log::info!("日志文件: {}", log_path.display());
     }
+}
+
+/// 跨平台日志根目录（不依赖 Tauri API，纯标准库实现）。
+///
+/// - Windows: `%APPDATA%/mdgo/logs/`
+/// - macOS:   `~/Library/Logs/mdgo/`
+/// - Linux:   `~/.cache/mdgo/logs/`
+fn log_dir_global() -> std::path::PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var("APPDATA")
+            .map(|p| std::path::PathBuf::from(p).join("mdgo").join("logs"))
+            .unwrap_or_else(|_| dirs_fallback())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::path::PathBuf::from(
+            std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string()),
+        )
+        .join("Library")
+        .join("Logs")
+        .join("mdgo")
+    }
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        std::path::PathBuf::from(
+            std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string()),
+        )
+        .join(".cache")
+        .join("mdgo")
+        .join("logs")
+    }
+}
+
+/// 兜底日志路径（所有平台都无法获取标准目录时使用）
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn dirs_fallback() -> std::path::PathBuf {
+    std::path::PathBuf::from("/tmp/mdgo/logs")
 }

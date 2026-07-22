@@ -1,11 +1,10 @@
-use std::path::Path;
-use std::sync::LazyLock;
-use std::sync::Mutex;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+
 use regex::Regex;
 use serde::Serialize;
 
 use super::lance::DocumentChunk;
-use crate::services::LocalEmbedding;
 
 // ─── 常量 ───
 
@@ -343,44 +342,28 @@ fn resolve_model_dir() -> std::path::PathBuf {
     std::path::PathBuf::from("models/bge-small-zh-v1.5")
 }
 
-static LOCAL_EMBEDDER: LazyLock<Mutex<Option<LocalEmbedding>>> = LazyLock::new(|| {
-    Mutex::new(None)
-});
+/// 模型目录路径（惰性静态缓存，仅首次解析，终身复用）
+static MODEL_DIR: OnceLock<PathBuf> = OnceLock::new();
 
-/// 使用本地 BGE-Small-ZH 模型生成向量（纯本地，零网络依赖）。
+/// 获取模型目录路径（缓存版，首次调用后零开销）
+pub fn get_model_dir() -> &'static Path {
+    MODEL_DIR.get_or_init(|| resolve_model_dir())
+}
+
+/// 使用本地 BGE-Small-ZH 模型并行生成向量（零锁，CPU 满载）。
 ///
-/// 模型文件随安装包分发，首次调用时初始化 ONNX Runtime 并加载模型。
 /// 向量维度：384（bge-small-zh-v1.5）。
 ///
-/// # 并发设计
-/// - 首次调用时不持有锁初始化模型（避免长时间阻塞）
-/// - 推理期间短暂持有锁（<200ms），多个并发调用互不干扰
+/// # 并发模型
+/// - `call_embedding_parallel` 内部使用 rayon 线程池并行推理
+/// - 模型路径通过 `OnceLock` 缓存，仅首次调用时解析
 pub fn call_embedding(texts: &[&str]) -> Result<Vec<Vec<f32>>, String> {
-    let texts_owned: Vec<String> = texts.iter().map(|s| s.to_string()).collect();
-
-    // ── 快速路径：模型已初始化，直接推理 ──
-    {
-        let mut guard = LOCAL_EMBEDDER.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(ref mut model) = *guard {
-            let texts_str: Vec<&str> = texts_owned.iter().map(|s| s.as_str()).collect();
-            return model.embed(&texts_str);
-        }
+    if texts.is_empty() {
+        return Ok(Vec::new());
     }
 
-    // ── 慢速路径：首次调用，加载模型（不持有锁）───
-    log::info!("[local_embedding] 正在初始化本地模型 bge-small-zh-v1.5...");
-
-    let model_dir = resolve_model_dir();
-    log::info!("[local_embedding] 模型目录: {}", model_dir.display());
-
-    let model = LocalEmbedding::new(&model_dir)?;
-
-    // 再获取锁写入模型，并执行首次推理
-    let mut guard = LOCAL_EMBEDDER.lock().unwrap_or_else(|e| e.into_inner());
-    *guard = Some(model);
-    let model = guard.as_mut().unwrap();
-    let texts_str: Vec<&str> = texts_owned.iter().map(|s| s.as_str()).collect();
-    model.embed(&texts_str)
+    let model_dir = get_model_dir();
+    crate::services::call_embedding_parallel(texts, model_dir)
 }
 
 // ─── 文本分块（解决 C2：唯一版本）───

@@ -38,6 +38,9 @@ tokio = { version = "1", features = ["full"] }
 tract-onnx = "0.23"
 tokenizers = "0.22"
 
+# 知识库 — Embedding 并行化
+rayon = "1"
+
 # 知识库 — 文件监听增量索引
 notify = { version = "8", features = ["macos_kqueue"] }
 

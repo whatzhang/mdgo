@@ -4953,6 +4953,7 @@ dependencies = [
  "mime_guess",
  "notify",
  "open",
+ "rayon",
  "regex",
  "serde",
  "serde_json",
