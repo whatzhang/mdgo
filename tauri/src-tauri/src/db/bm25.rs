@@ -266,8 +266,9 @@ impl Bm25Index {
         let searcher = reader.searcher();
 
         let query_parser = QueryParser::for_index(&index, vec![text_field]);
+        let escaped_query = escape_query(query_str);
         let query = query_parser
-            .parse_query(query_str)
+            .parse_query(&escaped_query)
             .map_err(|e| format!("解析 BM25 查询失败: {}", e))?;
 
         let collector = TopDocs::with_limit(top_k as usize).order_by_score();
@@ -345,4 +346,20 @@ impl Bm25Index {
         self.invalidate_reader();
         Ok(())
     }
+}
+
+/// 转义 Tantivy QueryParser 特殊字符，防止用户输入含特殊符号时解析失败。
+fn escape_query(input: &str) -> String {
+    let special_chars = [
+        '+', '-', '&', '|', '!', '(', ')', '{', '}', '[', ']', '^', '"', '~', '*', '?', ':', '\\',
+        '/',
+    ];
+    let mut output = String::with_capacity(input.len());
+    for c in input.chars() {
+        if special_chars.contains(&c) {
+            output.push('\\');
+        }
+        output.push(c);
+    }
+    output
 }

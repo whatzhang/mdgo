@@ -48,6 +48,9 @@ notify = { version = "8", features = ["macos_kqueue"] }
 uuid = { version = "1", features = ["v4"] }
 regex = "1"
 
+# AI 聊天历史
+rusqlite = { version = "0.34", features = ["bundled"] }
+
 # 日志
 log = "0.4"
 simplelog = "0.12"

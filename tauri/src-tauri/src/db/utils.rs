@@ -475,4 +475,16 @@ pub fn get_bm25_dir(dir_path: &str) -> String {
         .to_string()
 }
 
+/// 获取对话 BM25 索引目录：{dir_path}/.mdgo/data/chat_bm25
+///
+/// 对话数据与文档数据分离存储，避免互相污染。
+pub fn get_chat_bm25_dir(dir_path: &str) -> String {
+    Path::new(dir_path)
+        .join(".mdgo")
+        .join("data")
+        .join("chat_bm25")
+        .to_string_lossy()
+        .to_string()
+}
+
 

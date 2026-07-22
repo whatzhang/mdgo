@@ -60,8 +60,12 @@ pub async fn kb_search_hybrid(
     let state = app.state::<AppState>();
 
     // 本地生成查询向量（bge-small-zh-v1.5, 384 维）
-    let query_vec = crate::db::utils::call_embedding(&[query.as_str()])
-        .map_err(|e| format!("生成查询向量失败: {}", e))?
+    let query_text = query.clone();
+    let query_embedding = tokio::task::spawn_blocking(move || crate::db::utils::call_embedding(&[&query_text]))
+        .await
+        .map_err(|e| format!("Embedding 任务执行失败: {}", e))?
+        .map_err(|e| format!("生成查询向量失败: {}", e))?;
+    let query_vec = query_embedding
         .into_iter()
         .next()
         .ok_or("Embedding 返回空向量")?;

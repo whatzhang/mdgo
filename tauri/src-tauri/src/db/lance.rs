@@ -147,6 +147,18 @@ impl LanceStore {
             return Err("向量维度为 0，请检查 Embedding 模型配置".into());
         }
 
+        // 校验所有向量维度一致
+        for (i, v) in vectors.iter().enumerate() {
+            if v.len() as i32 != dim {
+                return Err(format!(
+                    "向量维度不一致：第 {} 个向量维度为 {}，期望 {}",
+                    i,
+                    v.len(),
+                    dim
+                ));
+            }
+        }
+
         let table = self.open_table().await?;
 
         // 构建 RecordBatch
@@ -290,7 +302,8 @@ impl LanceStore {
         if doc_name.is_empty() {
             return Err("doc_name 不能为空".into());
         }
-        if doc_name.contains('\x00') {
+        // 拒绝控制字符，防止 SQL 谓词注入
+        if doc_name.chars().any(|c| c.is_control()) {
             return Err("doc_name 包含非法字符".into());
         }
         let table = self.open_table().await?;

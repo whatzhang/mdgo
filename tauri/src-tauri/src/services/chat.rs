@@ -1,0 +1,822 @@
+use std::path::Path;
+use std::sync::Mutex;
+use std::time::SystemTime;
+
+use rusqlite::Connection;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+/// 每类对话（regular / rag）最多保留的非收藏会话数量
+const MAX_SESSIONS_PER_TYPE: i64 = 100;
+
+// ─── 数据模型 ───
+
+#[derive(Debug, Serialize, Clone)]
+pub struct ChatSession {
+    pub id: String,
+    pub title: String,
+    pub created_at: u64,
+    pub updated_at: u64,
+    pub favorite: bool,
+    pub message_count: u32,
+    pub token_usage: u32,
+    pub month_group: String,
+    pub r#type: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct ChatMessage {
+    pub id: String,
+    pub session_id: String,
+    pub role: String,
+    pub content: String,
+    pub token_count: i32,
+    pub created_at: u64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct ChatSessionSearchResult {
+    pub session: ChatSession,
+    pub score: f32,
+    pub matched_content: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ChatMessageSource {
+    pub id: String,
+    pub message_id: String,
+    pub doc_name: String,
+    pub score: f32,
+    pub snippet: String,
+}
+
+// ─── 存储服务 ───
+
+pub struct ChatStore {
+    conn: Mutex<Connection>,
+}
+
+impl ChatStore {
+    /// 创建新的 ChatStore，自动创建数据库目录和表
+    pub fn new(db_dir_path: &str) -> Result<Self, String> {
+        let db_path = Self::get_db_path(db_dir_path);
+
+        // 确保目录存在
+        if let Some(parent) = Path::new(&db_path).parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("创建数据库目录失败: {}", e))?;
+        }
+
+        let conn = Connection::open(&db_path).map_err(|e| format!("打开数据库失败: {}", e))?;
+        // 启用外键约束（默认关闭，必须手动开启）
+        conn.execute_batch("PRAGMA foreign_keys = ON;")
+            .map_err(|e| format!("启用外键约束失败: {}", e))?;
+        Self::init_tables(&conn)?;
+
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
+    }
+
+    fn get_db_path(db_dir_path: &str) -> String {
+        Path::new(db_dir_path)
+            .join("chat.db")
+            .to_string_lossy()
+            .to_string()
+    }
+
+    fn init_tables(conn: &Connection) -> Result<(), String> {
+        conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS chat_sessions (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL DEFAULT '',
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                favorite INTEGER NOT NULL DEFAULT 0,
+                message_count INTEGER NOT NULL DEFAULT 0,
+                token_usage INTEGER NOT NULL DEFAULT 0,
+                type TEXT NOT NULL DEFAULT 'regular'
+            );
+
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                token_count INTEGER DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS chat_message_sources (
+                id TEXT PRIMARY KEY,
+                message_id TEXT NOT NULL,
+                doc_name TEXT NOT NULL,
+                score REAL NOT NULL DEFAULT 0,
+                snippet TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE CASCADE
+            );
+            ",
+        )
+        .map_err(|e| format!("建表失败: {}", e))?;
+
+        // 迁移旧数据：将秒级时间戳转换为毫秒级（一次性）
+        conn.execute_batch(
+            "
+            UPDATE chat_sessions SET created_at = created_at * 1000 WHERE created_at > 0 AND created_at < 100000000000;
+            UPDATE chat_sessions SET updated_at = updated_at * 1000 WHERE updated_at > 0 AND updated_at < 100000000000;
+            UPDATE chat_messages SET created_at = created_at * 1000 WHERE created_at > 0 AND created_at < 100000000000;
+            ",
+        )
+        .map_err(|e| format!("时间戳迁移失败: {}", e))?;
+
+        Ok(())
+    }
+
+    /// 创建新会话。
+    ///
+    /// 每类对话（regular / rag）最多保留 100 条非收藏会话。
+    /// 超出时自动删除最早 updated_at 的非收藏会话（及其消息，CASCADE）。
+    pub fn create_session(&self, title: &str, session_type: &str) -> Result<ChatSession, String> {
+        let now = unix_timestamp_now();
+        let id = Uuid::new_v4().to_string();
+        let month_group = unix_timestamp_to_year_month(now);
+
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        // 开启事务
+        conn.execute_batch("BEGIN TRANSACTION")
+            .map_err(|e| format!("开启事务失败: {}", e))?;
+
+        let insert_result = conn.execute(
+            "INSERT INTO chat_sessions (id, title, created_at, updated_at, favorite, message_count, token_usage, type) VALUES (?1, ?2, ?3, ?4, 0, 0, 0, ?5)",
+            rusqlite::params![id, title, now, now, session_type],
+        );
+
+        if let Err(e) = insert_result {
+            conn.execute_batch("ROLLBACK").ok();
+            return Err(format!("创建会话失败: {}", e));
+        }
+
+        // 统计同类型非收藏会话数量
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM chat_sessions WHERE type = ?1 AND favorite = 0",
+                rusqlite::params![session_type],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("统计会话数失败: {}", e))?;
+
+        // 超出 100 条时删除最旧的（按 updated_at ASC 排序）
+        if count > MAX_SESSIONS_PER_TYPE {
+            let excess = count - MAX_SESSIONS_PER_TYPE;
+            if let Err(e) = conn.execute(
+                "DELETE FROM chat_sessions WHERE id IN (SELECT id FROM chat_sessions WHERE type = ?1 AND favorite = 0 ORDER BY updated_at ASC LIMIT ?2)",
+                rusqlite::params![session_type, excess],
+            ) {
+                conn.execute_batch("ROLLBACK").ok();
+                return Err(format!("清理旧会话失败: {}", e));
+            }
+        }
+
+        conn.execute_batch("COMMIT")
+            .map_err(|e| format!("提交事务失败: {}", e))?;
+
+        Ok(ChatSession {
+            id,
+            title: title.to_string(),
+            created_at: now,
+            updated_at: now,
+            favorite: false,
+            message_count: 0,
+            token_usage: 0,
+            month_group,
+            r#type: session_type.to_string(),
+        })
+    }
+
+    /// 删除会话及其所有消息（CASCADE）
+    pub fn delete_session(&self, id: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let affected = conn
+            .execute("DELETE FROM chat_sessions WHERE id = ?1", rusqlite::params![id])
+            .map_err(|e| format!("删除会话失败: {}", e))?;
+        if affected == 0 {
+            return Err("会话不存在".to_string());
+        }
+        Ok(())
+    }
+
+    /// 重命名会话
+    pub fn rename_session(&self, id: &str, title: &str) -> Result<(), String> {
+        let now = unix_timestamp_now();
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let affected = conn
+            .execute(
+                "UPDATE chat_sessions SET title = ?1, updated_at = ?2 WHERE id = ?3",
+                rusqlite::params![title, now, id],
+            )
+            .map_err(|e| format!("重命名会话失败: {}", e))?;
+        if affected == 0 {
+            return Err("会话不存在".to_string());
+        }
+        Ok(())
+    }
+
+    /// 切换收藏状态，返回新状态
+    pub fn toggle_favorite(&self, id: &str) -> Result<bool, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let affected = conn
+            .execute(
+                "UPDATE chat_sessions SET favorite = CASE WHEN favorite = 0 THEN 1 ELSE 0 END WHERE id = ?1",
+                rusqlite::params![id],
+            )
+            .map_err(|e| format!("切换收藏失败: {}", e))?;
+        if affected == 0 {
+            return Err("会话不存在".to_string());
+        }
+
+        // 查询新状态
+        let new_fav: i32 = conn
+            .query_row(
+                "SELECT favorite FROM chat_sessions WHERE id = ?1",
+                rusqlite::params![id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("查询收藏状态失败: {}", e))?;
+        Ok(new_fav != 0)
+    }
+
+    /// 按 updated_at DESC 排序返回所有会话
+    pub fn list_sessions(&self) -> Result<Vec<ChatSession>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, title, created_at, updated_at, favorite, message_count, token_usage, type FROM chat_sessions ORDER BY updated_at DESC",
+            )
+            .map_err(|e| format!("查询会话列表失败: {}", e))?;
+
+        let sessions = stmt
+            .query_map([], |row| {
+                let id: String = row.get(0)?;
+                let title: String = row.get(1)?;
+                let created_at: u64 = row.get(2)?;
+                let updated_at: u64 = row.get(3)?;
+                let favorite: i32 = row.get(4)?;
+                let message_count: u32 = row.get(5)?;
+                let token_usage: u32 = row.get(6)?;
+                let r#type: String = row.get(7)?;
+
+                Ok(ChatSession {
+                    id,
+                    title,
+                    created_at,
+                    updated_at,
+                    favorite: favorite != 0,
+                    message_count,
+                    token_usage,
+                    month_group: unix_timestamp_to_year_month(created_at),
+                    r#type,
+                })
+            })
+            .map_err(|e| format!("查询会话列表失败: {}", e))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("读取会话列表失败: {}", e))?;
+
+        Ok(sessions)
+    }
+
+    /// 按 created_at ASC 返回会话消息
+    pub fn get_session_messages(&self, session_id: &str) -> Result<Vec<ChatMessage>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, session_id, role, content, token_count, created_at FROM chat_messages WHERE session_id = ?1 ORDER BY created_at ASC",
+            )
+            .map_err(|e| format!("查询消息失败: {}", e))?;
+
+        let messages = stmt
+            .query_map(rusqlite::params![session_id], |row| {
+                let id: String = row.get(0)?;
+                let session_id: String = row.get(1)?;
+                let role: String = row.get(2)?;
+                let content: String = row.get(3)?;
+                let token_count: i32 = row.get(4)?;
+                let created_at: u64 = row.get(5)?;
+
+                Ok(ChatMessage {
+                    id,
+                    session_id,
+                    role,
+                    content,
+                    token_count,
+                    created_at,
+                })
+            })
+            .map_err(|e| format!("查询消息失败: {}", e))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("读取消息失败: {}", e))?;
+
+        Ok(messages)
+    }
+
+    /// 保存消息，同时更新会话的 message_count、token_usage、updated_at
+    pub fn save_message(
+        &self,
+        session_id: &str,
+        role: &str,
+        content: &str,
+        token_count: i32,
+    ) -> Result<ChatMessage, String> {
+        let now = unix_timestamp_now();
+        let id = Uuid::new_v4().to_string();
+
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        conn.execute_batch("BEGIN TRANSACTION")
+            .map_err(|e| format!("开启事务失败: {}", e))?;
+
+        // 验证会话存在
+        let session_exists: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM chat_sessions WHERE id = ?1",
+                rusqlite::params![session_id],
+                |row| row.get::<_, i32>(0),
+            )
+            .map(|count| count > 0)
+            .map_err(|e| format!("验证会话失败: {}", e))?;
+
+        if !session_exists {
+            conn.execute_batch("ROLLBACK").ok();
+            return Err("会话不存在".to_string());
+        }
+
+        // 插入消息
+        if let Err(e) = conn.execute(
+            "INSERT INTO chat_messages (id, session_id, role, content, token_count, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![id, session_id, role, content, token_count, now],
+        ) {
+            conn.execute_batch("ROLLBACK").ok();
+            return Err(format!("保存消息失败: {}", e));
+        }
+
+        // 更新会话统计
+        if let Err(e) = conn.execute(
+            "UPDATE chat_sessions SET message_count = message_count + 1, token_usage = token_usage + ?1, updated_at = ?2 WHERE id = ?3",
+            rusqlite::params![token_count.max(0) as u32, now, session_id],
+        ) {
+            conn.execute_batch("ROLLBACK").ok();
+            return Err(format!("更新会话统计失败: {}", e));
+        }
+
+        conn.execute_batch("COMMIT")
+            .map_err(|e| format!("提交事务失败: {}", e))?;
+
+        Ok(ChatMessage {
+            id,
+            session_id: session_id.to_string(),
+            role: role.to_string(),
+            content: content.to_string(),
+            token_count,
+            created_at: now,
+        })
+    }
+
+    /// 清空会话的所有消息，重置 message_count 和 token_usage
+    pub fn clear_session_messages(&self, session_id: &str) -> Result<(), String> {
+        let now = unix_timestamp_now();
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        conn.execute_batch("BEGIN TRANSACTION")
+            .map_err(|e| format!("开启事务失败: {}", e))?;
+
+        if let Err(e) = conn.execute(
+            "DELETE FROM chat_messages WHERE session_id = ?1",
+            rusqlite::params![session_id],
+        ) {
+            conn.execute_batch("ROLLBACK").ok();
+            return Err(format!("清空消息失败: {}", e));
+        }
+
+        if let Err(e) = conn.execute(
+            "UPDATE chat_sessions SET message_count = 0, token_usage = 0, updated_at = ?1 WHERE id = ?2",
+            rusqlite::params![now, session_id],
+        ) {
+            conn.execute_batch("ROLLBACK").ok();
+            return Err(format!("重置会话统计失败: {}", e));
+        }
+
+        conn.execute_batch("COMMIT")
+            .map_err(|e| format!("提交事务失败: {}", e))?;
+
+        log::info!("[chat_store] 清空会话 {} 的消息", session_id);
+        Ok(())
+    }
+
+    /// 保存消息的引用来源（RAG 模式）
+    ///
+    /// 先删除该 message_id 下已有的 sources，再插入新的，保证幂等。
+    pub fn save_message_sources(
+        &self,
+        message_id: &str,
+        sources: &[ChatMessageSource],
+    ) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        conn.execute_batch("BEGIN TRANSACTION")
+            .map_err(|e| format!("开启事务失败: {}", e))?;
+
+        // 先删除已有 sources（保证幂等，避免重复调用产生脏数据）
+        if let Err(e) = conn.execute(
+            "DELETE FROM chat_message_sources WHERE message_id = ?1",
+            rusqlite::params![message_id],
+        ) {
+            conn.execute_batch("ROLLBACK").ok();
+            return Err(format!("清理旧引用来源失败: {}", e));
+        }
+
+        for src in sources {
+            if let Err(e) = conn.execute(
+                "INSERT INTO chat_message_sources (id, message_id, doc_name, score, snippet) VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![src.id, message_id, src.doc_name, src.score, src.snippet],
+            ) {
+                conn.execute_batch("ROLLBACK").ok();
+                return Err(format!("保存引用来源失败: {}", e));
+            }
+        }
+
+        conn.execute_batch("COMMIT")
+            .map_err(|e| format!("提交事务失败: {}", e))?;
+
+        Ok(())
+    }
+
+    /// 获取指定消息的所有引用来源
+    pub fn get_message_sources(&self, message_id: &str) -> Result<Vec<ChatMessageSource>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, message_id, doc_name, score, snippet FROM chat_message_sources WHERE message_id = ?1 ORDER BY score DESC",
+            )
+            .map_err(|e| format!("查询引用来源失败: {}", e))?;
+
+        let sources = stmt
+            .query_map(rusqlite::params![message_id], |row| {
+                let id: String = row.get(0)?;
+                let message_id: String = row.get(1)?;
+                let doc_name: String = row.get(2)?;
+                let score: f32 = row.get(3)?;
+                let snippet: String = row.get(4)?;
+
+                Ok(ChatMessageSource {
+                    id,
+                    message_id,
+                    doc_name,
+                    score,
+                    snippet,
+                })
+            })
+            .map_err(|e| format!("查询引用来源失败: {}", e))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("读取引用来源失败: {}", e))?;
+
+        Ok(sources)
+    }
+
+    /// 批量获取多条消息的引用来源，按 message_id 分组
+    pub fn get_messages_sources(&self, message_ids: &[String]) -> Result<std::collections::HashMap<String, Vec<ChatMessageSource>>, String> {
+        if message_ids.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+
+        // 构建占位符
+        let placeholders: Vec<String> = message_ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
+        let sql = format!(
+            "SELECT id, message_id, doc_name, score, snippet FROM chat_message_sources WHERE message_id IN ({}) ORDER BY score DESC",
+            placeholders.join(",")
+        );
+
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn.prepare(&sql).map_err(|e| format!("查询引用来源失败: {}", e))?;
+
+        let params: Vec<&dyn rusqlite::types::ToSql> = message_ids.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+
+        let mut result: std::collections::HashMap<String, Vec<ChatMessageSource>> = std::collections::HashMap::new();
+
+        let rows = stmt
+            .query_map(params.as_slice(), |row| {
+                let id: String = row.get(0)?;
+                let message_id: String = row.get(1)?;
+                let doc_name: String = row.get(2)?;
+                let score: f32 = row.get(3)?;
+                let snippet: String = row.get(4)?;
+                Ok(ChatMessageSource {
+                    id,
+                    message_id,
+                    doc_name,
+                    score,
+                    snippet,
+                })
+            })
+            .map_err(|e| format!("查询引用来源失败: {}", e))?;
+
+        let sources = rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("读取引用来源失败: {}", e))?;
+
+        for src in sources {
+            result.entry(src.message_id.clone()).or_default().push(src);
+        }
+
+        Ok(result)
+    }
+
+    /// 混合搜索会话。
+    ///
+    /// **新架构**：向量检索和 BM25 检索由 `Indexer::search_chat_sessions` 完成
+    /// （查询预索引的 `chat_vectors` / `chat_bm25`，只需 1 次 query embedding）。
+    /// 本方法负责 SQL LIKE 文本匹配 + 根据 Indexer 返回的 session_id 组装最终结果。
+    ///
+    /// - `indexer_hits`: Indexer 混合检索返回的 `(session_id, score, matched_text)` 列表
+    pub fn search_sessions(
+        &self,
+        query_text: &str,
+        indexer_hits: &[(String, f32, String)],
+    ) -> Result<Vec<ChatSessionSearchResult>, String> {
+        if query_text.trim().is_empty() && indexer_hits.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        // 1. SQL LIKE 模糊查询（标题 + 消息内容），获取文本匹配的 session_id 集合
+        let mut like_session_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut like_snippets: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+        if !query_text.trim().is_empty() {
+            // 标题匹配
+            let like_pattern = format!("%{}%", query_text.replace('%', "\\%").replace('_', "\\_"));
+            let mut title_stmt = conn
+                .prepare("SELECT id, title FROM chat_sessions WHERE LOWER(title) LIKE LOWER(?1) ESCAPE '\\'")
+                .map_err(|e| format!("查询会话标题失败: {}", e))?;
+            let title_rows = title_stmt
+                .query_map(rusqlite::params![like_pattern], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .map_err(|e| format!("查询会话标题失败: {}", e))?;
+            for row in title_rows {
+                if let Ok((id, title)) = row {
+                    like_session_ids.insert(id.clone());
+                    like_snippets.insert(id, format!("[标题] {}", title));
+                }
+            }
+
+            // 消息内容匹配
+            let mut msg_stmt = conn
+                .prepare("SELECT DISTINCT session_id, content FROM chat_messages WHERE LOWER(content) LIKE LOWER(?1) ESCAPE '\\'")
+                .map_err(|e| format!("查询消息失败: {}", e))?;
+            let msg_rows = msg_stmt
+                .query_map(rusqlite::params![like_pattern], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .map_err(|e| format!("查询消息失败: {}", e))?;
+            for row in msg_rows {
+                if let Ok((sid, content)) = row {
+                    like_session_ids.insert(sid.clone());
+                    let snippet = if content.len() > 100 {
+                        format!("{}...", &content[..100])
+                    } else {
+                        content
+                    };
+                    like_snippets.entry(sid).or_insert(snippet);
+                }
+            }
+        }
+
+        // 2. 合并候选 session_id（LIKE 命中 + Indexer 命中）
+        let mut candidate_ids: std::collections::HashSet<String> = like_session_ids.clone();
+        for (sid, _, _) in indexer_hits {
+            candidate_ids.insert(sid.clone());
+        }
+
+        if candidate_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // 3. 批量查询候选会话元信息
+        let candidate_vec: Vec<String> = candidate_ids.into_iter().collect();
+        let placeholders: Vec<String> = candidate_vec
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("?{}", i + 1))
+            .collect();
+        let sql = format!(
+            "SELECT id, title, created_at, updated_at, favorite, message_count, token_usage, type FROM chat_sessions WHERE id IN ({})",
+            placeholders.join(",")
+        );
+        let params: Vec<&dyn rusqlite::types::ToSql> = candidate_vec
+            .iter()
+            .map(|s| s as &dyn rusqlite::types::ToSql)
+            .collect();
+
+        let mut stmt = conn.prepare(&sql).map_err(|e| format!("查询会话失败: {}", e))?;
+        let sessions: Vec<ChatSession> = stmt
+            .query_map(params.as_slice(), |row| {
+                let id: String = row.get(0)?;
+                let title: String = row.get(1)?;
+                let created_at: u64 = row.get(2)?;
+                let updated_at: u64 = row.get(3)?;
+                let favorite: i32 = row.get(4)?;
+                let message_count: u32 = row.get(5)?;
+                let token_usage: u32 = row.get(6)?;
+                let r#type: String = row.get(7)?;
+                Ok(ChatSession {
+                    id,
+                    title,
+                    created_at,
+                    updated_at,
+                    favorite: favorite != 0,
+                    message_count,
+                    token_usage,
+                    month_group: unix_timestamp_to_year_month(created_at),
+                    r#type,
+                })
+            })
+            .map_err(|e| format!("查询会话失败: {}", e))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("读取会话失败: {}", e))?;
+
+        let session_map: std::collections::HashMap<String, ChatSession> = sessions
+            .into_iter()
+            .map(|s| (s.id.clone(), s))
+            .collect();
+
+        // 4. 组装结果：LIKE 命中给基础分 0.3，Indexer 命中保留其 RRF score，取 max
+        let indexer_score_map: std::collections::HashMap<String, (f32, String)> = indexer_hits
+            .iter()
+            .cloned()
+            .map(|(sid, score, text)| (sid, (score, text)))
+            .collect();
+
+        let mut results: Vec<ChatSessionSearchResult> = Vec::new();
+        for (sid, session) in &session_map {
+            let like_hit = like_session_ids.contains(sid);
+            let indexer_hit = indexer_score_map.get(sid);
+
+            if !like_hit && indexer_hit.is_none() {
+                continue;
+            }
+
+            let (score, matched_content) = if let Some((idx_score, idx_text)) = indexer_hit {
+                // Indexer 命中：使用 RRF score，matched_text 用索引返回的内容
+                let idx_score = *idx_score;
+                let final_score = if like_hit { idx_score.max(0.3) } else { idx_score };
+                let content = like_snippets.get(sid).cloned().unwrap_or_else(|| idx_text.clone());
+                (final_score, content)
+            } else {
+                // 仅 LIKE 命中：给基础分 0.3
+                let content = like_snippets.get(sid).cloned().unwrap_or_default();
+                (0.3, content)
+            };
+
+            results.push(ChatSessionSearchResult {
+                session: session.clone(),
+                score,
+                matched_content,
+            });
+        }
+
+        // 5. 按 score 降序排列
+        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+
+        Ok(results)
+    }
+
+    /// 根据 ID 获取单个会话
+    pub fn get_session(&self, session_id: &str) -> Result<Option<ChatSession>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let result = conn.query_row(
+            "SELECT id, title, created_at, updated_at, favorite, message_count, token_usage, type FROM chat_sessions WHERE id = ?1",
+            rusqlite::params![session_id],
+            |row| {
+                let id: String = row.get(0)?;
+                let title: String = row.get(1)?;
+                let created_at: u64 = row.get(2)?;
+                let updated_at: u64 = row.get(3)?;
+                let favorite: i32 = row.get(4)?;
+                let message_count: u32 = row.get(5)?;
+                let token_usage: u32 = row.get(6)?;
+                let r#type: String = row.get(7)?;
+                Ok(ChatSession {
+                    id,
+                    title,
+                    created_at,
+                    updated_at,
+                    favorite: favorite != 0,
+                    message_count,
+                    token_usage,
+                    month_group: unix_timestamp_to_year_month(created_at),
+                    r#type,
+                })
+            },
+        );
+        match result {
+            Ok(session) => Ok(Some(session)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(format!("查询会话失败: {}", e)),
+        }
+    }
+
+    /// 获取指定类型最近更新的会话（按 updated_at DESC），用于新建会话时索引上一个会话
+    pub fn get_last_session_by_type(&self, session_type: &str) -> Result<Option<ChatSession>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let result = conn.query_row(
+            "SELECT id, title, created_at, updated_at, favorite, message_count, token_usage, type FROM chat_sessions WHERE type = ?1 ORDER BY updated_at DESC LIMIT 1",
+            rusqlite::params![session_type],
+            |row| {
+                let id: String = row.get(0)?;
+                let title: String = row.get(1)?;
+                let created_at: u64 = row.get(2)?;
+                let updated_at: u64 = row.get(3)?;
+                let favorite: i32 = row.get(4)?;
+                let message_count: u32 = row.get(5)?;
+                let token_usage: u32 = row.get(6)?;
+                let r#type: String = row.get(7)?;
+                Ok(ChatSession {
+                    id,
+                    title,
+                    created_at,
+                    updated_at,
+                    favorite: favorite != 0,
+                    message_count,
+                    token_usage,
+                    month_group: unix_timestamp_to_year_month(created_at),
+                    r#type,
+                })
+            },
+        );
+        match result {
+            Ok(session) => Ok(Some(session)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(format!("查询会话失败: {}", e)),
+        }
+    }
+
+    /// 更新会话标题
+    pub fn update_session_title(&self, id: &str, title: &str) -> Result<(), String> {
+        // update_session_title 与 rename_session 语义相同
+        self.rename_session(id, title)
+    }
+}
+
+// ─── 工具函数 ───
+
+/// 获取当前 Unix 时间戳（毫秒）
+fn unix_timestamp_now() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+/// 将 Unix 时间戳（秒）转换为 "YYYY-MM" 格式的月份分组字符串
+fn unix_timestamp_to_year_month(ts: u64) -> String {
+    // 兼容毫秒和秒级时间戳
+    let ts_i: i64 = if ts > 100_000_000_000 { (ts / 1000) as i64 } else { ts as i64 };
+    let mut days = ts_i / 86400;
+    let mut year = 1970i32;
+
+    loop {
+        let days_in_year = if is_leap_year(year) { 366 } else { 365 };
+        if days < days_in_year {
+            break;
+        }
+        days -= days_in_year;
+        year += 1;
+        // 安全保护：防止无限循环
+        if year > 3000 {
+            break;
+        }
+    }
+
+    let month_days = if is_leap_year(year) {
+        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    } else {
+        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    };
+
+    let mut month = 1u32;
+    for &md in &month_days {
+        if days < md {
+            break;
+        }
+        days -= md;
+        month += 1;
+    }
+
+    format!("{:04}-{:02}", year, month)
+}
+
+fn is_leap_year(year: i32) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+}

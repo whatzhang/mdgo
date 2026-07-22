@@ -1,3 +1,4 @@
+pub mod chat;
 pub mod clipboard;
 pub mod config;
 pub mod fs;

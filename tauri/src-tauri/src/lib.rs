@@ -3,7 +3,8 @@ mod commands;
 mod db;
 mod services;
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use commands::system::SystemMonitorState;
 use log::LevelFilter;
@@ -15,6 +16,29 @@ pub struct AppState {
     pub config_store: Arc<ConfigStore>,
     pub indexer: Arc<Indexer>,
     pub watcher: Arc<WatcherService>,
+    /// 按目录路径缓存的 ChatStore 实例（惰性创建）
+    pub chat_stores: Mutex<HashMap<String, Arc<services::chat::ChatStore>>>,
+}
+
+impl AppState {
+    /// 获取或创建指定目录的 ChatStore
+    pub fn get_chat_store(&self, dir_path: &str) -> Result<Arc<services::chat::ChatStore>, String> {
+        let mut stores = self.chat_stores.lock().map_err(|e| e.to_string())?;
+        if let Some(store) = stores.get(dir_path) {
+            return Ok(Arc::clone(store));
+        }
+        // 聊天数据存储在 {dir_path}/.mdgo/data/chat.db
+        let db_dir = std::path::Path::new(dir_path)
+            .join(".mdgo")
+            .join("data");
+        let store = Arc::new(
+            services::chat::ChatStore::new(
+                &db_dir.to_string_lossy(),
+            )?,
+        );
+        stores.insert(dir_path.to_string(), Arc::clone(&store));
+        Ok(store)
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -39,7 +63,12 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .manage(SystemMonitorState::new())
-        .manage(AppState { config_store, indexer, watcher })
+        .manage(AppState {
+            config_store,
+            indexer,
+            watcher,
+            chat_stores: Mutex::new(HashMap::new()),
+        })
         .invoke_handler(tauri::generate_handler![
             commands::fs::read_dir_recursive,
             commands::fs::read_dir,
@@ -75,6 +104,19 @@ pub fn run() {
             commands::config::kb_config_delete,
             commands::fs_watcher::kb_start_watcher,
             commands::fs_watcher::kb_stop_watcher,
+            // AI 聊天历史命令
+            commands::chat::chat_session_list,
+            commands::chat::chat_session_create,
+            commands::chat::chat_session_delete,
+            commands::chat::chat_session_rename,
+            commands::chat::chat_session_toggle_favorite,
+            commands::chat::chat_session_messages,
+            commands::chat::chat_history_search,
+            commands::chat::chat_message_save,
+            commands::chat::chat_session_clear_messages,
+            commands::chat::chat_message_sources_save,
+            commands::chat::chat_messages_sources,
+            commands::chat::chat_session_index_current,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
