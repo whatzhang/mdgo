@@ -241,3 +241,4 @@ tauri/dist/
 tauri/src-tauri/target/
 # Vite 构建输出
 .vite/
+tauri/src-tauri/logs/

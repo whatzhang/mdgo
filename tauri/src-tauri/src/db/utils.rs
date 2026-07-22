@@ -1,11 +1,11 @@
 use std::path::Path;
 use std::sync::LazyLock;
 use std::sync::Mutex;
-use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
 use regex::Regex;
 use serde::Serialize;
 
 use super::lance::DocumentChunk;
+use crate::services::LocalEmbedding;
 
 // ─── 常量 ───
 
@@ -279,20 +279,81 @@ pub struct KbProgress {
     pub message: String,
 }
 
-/// 本地 BGE-Small-ZH 模型输出的向量维度。
+/// 本地 BGE-Small-ZH 模型输出的向量维度（384）。
 pub const LOCAL_EMBEDDING_DIMENSION: u32 = 384;
 
-static LOCAL_EMBEDDER: LazyLock<Mutex<Option<TextEmbedding>>> = LazyLock::new(|| {
+/// 启动时解析模型文件的实际路径（纯本地，零网络依赖）。
+///
+/// # 搜索优先级
+/// 1. `MDGO_MODEL_DIR` 环境变量（用户/启动器手动指定）
+/// 2. 可执行文件同目录 `models/bge-small-zh-v1.5/`（Windows NSIS 打包）
+/// 3. macOS 资源目录 `<App.app>/Contents/Resources/models/bge-small-zh-v1.5/`
+/// 4. 开发模式 `CARGO_MANIFEST_DIR/models/bge-small-zh-v1.5/`
+fn resolve_model_dir() -> std::path::PathBuf {
+    // 1. 环境变量
+    if let Ok(dir) = std::env::var("MDGO_MODEL_DIR") {
+        let p = std::path::PathBuf::from(&dir);
+        if p.join("model.onnx").exists() {
+            return p;
+        }
+    }
+
+    // 2. 可执行文件同目录
+    if let Ok(exe) = std::env::current_exe() {
+        let candidates = [
+            exe.parent().map(|p| p.join("models").join("bge-small-zh-v1.5")),
+            // macOS: executable in MacOS/, resources in ../Resources/
+            exe.parent()
+                .and_then(|p| p.parent())
+                .map(|p| p.join("Resources").join("models").join("bge-small-zh-v1.5")),
+        ];
+        for candidate in candidates.iter().flatten() {
+            if candidate.join("model.onnx").exists() {
+                return candidate.clone();
+            }
+        }
+    }
+
+    // 3. 开发模式：CARGO_MANIFEST_DIR/models/bge-small-zh-v1.5
+    if cfg!(debug_assertions) {
+        if let Ok(cargo_dir) = std::env::var("CARGO_MANIFEST_DIR")
+            .or_else(|_| std::env::var("MDGO_CARGO_MANIFEST_DIR"))
+        {
+            let p = std::path::PathBuf::from(&cargo_dir)
+                .join("models")
+                .join("bge-small-zh-v1.5");
+            if p.join("model.onnx").exists() {
+                return p;
+            }
+        }
+        // fallback: env!("CARGO_MANIFEST_DIR") 编译时注入
+        #[cfg(debug_assertions)]
+        {
+            let p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("models")
+                .join("bge-small-zh-v1.5");
+            if p.join("model.onnx").exists() {
+                return p;
+            }
+        }
+    }
+
+    // 全部失败 → 返回默认路径并让调用者报错
+    log::error!("[local_embedding] 模型文件未找到，请检查安装包完整性");
+    std::path::PathBuf::from("models/bge-small-zh-v1.5")
+}
+
+static LOCAL_EMBEDDER: LazyLock<Mutex<Option<LocalEmbedding>>> = LazyLock::new(|| {
     Mutex::new(None)
 });
 
-/// 使用本地 BGE-Small-ZH 模型生成向量。
+/// 使用本地 BGE-Small-ZH 模型生成向量（纯本地，零网络依赖）。
 ///
-/// 模型文件首次调用时自动从 HuggingFace 下载并缓存到本地。
+/// 模型文件随安装包分发，首次调用时初始化 ONNX Runtime 并加载模型。
 /// 向量维度：384（bge-small-zh-v1.5）。
 ///
 /// # 并发设计
-/// - 首次调用时不持有锁下载模型（避免长时间阻塞）
+/// - 首次调用时不持有锁初始化模型（避免长时间阻塞）
 /// - 推理期间短暂持有锁（<200ms），多个并发调用互不干扰
 pub fn call_embedding(texts: &[&str]) -> Result<Vec<Vec<f32>>, String> {
     let texts_owned: Vec<String> = texts.iter().map(|s| s.to_string()).collect();
@@ -302,118 +363,24 @@ pub fn call_embedding(texts: &[&str]) -> Result<Vec<Vec<f32>>, String> {
         let mut guard = LOCAL_EMBEDDER.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(ref mut model) = *guard {
             let texts_str: Vec<&str> = texts_owned.iter().map(|s| s.as_str()).collect();
-            return model
-                .embed(texts_str, None)
-                .map_err(|e| format!("本地 Embedding 推理失败: {}", e));
+            return model.embed(&texts_str);
         }
     }
 
-    // ── 慢速路径：首次调用，下载并初始化模型（不持有锁）───
-    log::info!("[local_embedding] 正在下载/初始化本地模型 bge-small-zh-v1.5...");
+    // ── 慢速路径：首次调用，加载模型（不持有锁）───
+    log::info!("[local_embedding] 正在初始化本地模型 bge-small-zh-v1.5...");
 
-    let model = try_init_embedding_model()?;
-    log::info!("[local_embedding] 本地模型初始化完成");
+    let model_dir = resolve_model_dir();
+    log::info!("[local_embedding] 模型目录: {}", model_dir.display());
+
+    let model = LocalEmbedding::new(&model_dir)?;
 
     // 再获取锁写入模型，并执行首次推理
     let mut guard = LOCAL_EMBEDDER.lock().unwrap_or_else(|e| e.into_inner());
     *guard = Some(model);
     let model = guard.as_mut().unwrap();
     let texts_str: Vec<&str> = texts_owned.iter().map(|s| s.as_str()).collect();
-    model
-        .embed(texts_str, None)
-        .map_err(|e| format!("本地 Embedding 推理失败: {}", e))
-}
-
-/// 尝试初始化 embedding 模型，带镜像回退 + 缓存清理逻辑。
-///
-/// 首次下载模型文件时会从 HuggingFace 拉取。如果配置了 HF_ENDPOINT 镜像
-/// （如 hf-mirror.com）但下载失败（常见问题：缺少 Content-Range 头），
-/// 自动回退到官方源 `https://huggingface.co` 重试。
-///
-/// 缓存清理：删除 stale lockfile，防止因上次下载中断导致 huggingface_hub
-/// 认为缓存无效而重复下载。
-fn try_init_embedding_model() -> Result<TextEmbedding, String> {
-    // ── 清理 stale lockfiles（上次下载中断留下的）──
-    cleanup_stale_locks();
-
-    // 获取缓存目录（优先级：FASTEMBED_CACHE_DIR env > 默认）
-    let cache_path = std::env::var("FASTEMBED_CACHE_DIR")
-        .map(std::path::PathBuf::from)
-        .ok()
-        .filter(|p| p.exists());
-
-    let try_init = |endpoint: Option<&str>| {
-        // 设置临时端点（如果有）
-        if let Some(url) = endpoint {
-            unsafe { std::env::set_var("HF_ENDPOINT", url); }
-        }
-        let mut options = TextInitOptions::new(EmbeddingModel::BGESmallZHV15)
-            .with_show_download_progress(false);
-        // 如已配置 FASTEMBED_CACHE_DIR，显式传入 with_cache_dir 双重保险
-        if let Some(ref dir) = cache_path {
-            options = options.with_cache_dir(dir.clone());
-        }
-        TextEmbedding::try_new(options)
-    };
-
-    // 第 1 次尝试：使用当前 HF_ENDPOINT（可能为镜像）
-    let current = std::env::var("HF_ENDPOINT").ok();
-    match try_init(current.as_deref()) {
-        Ok(m) => return Ok(m),
-        Err(e) => {
-            // 如果是镜像失败且已配置为非官方端点 → 回退官方 HuggingFace
-            let is_mirror = current.as_deref().map(|s| s != "https://huggingface.co").unwrap_or(false);
-            if is_mirror {
-                log::warn!("[local_embedding] 镜像下载失败，回退官方 HuggingFace: {}", e);
-                match try_init(Some("https://huggingface.co")) {
-                    Ok(m) => return Ok(m),
-                    Err(e2) => return Err(format!(
-                        "初始化本地 Embedding 模型失败（镜像和官方均不可用）: {}", e2
-                    )),
-                }
-            }
-            return Err(format!("初始化本地 Embedding 模型失败: {}", e));
-        }
-    }
-}
-
-/// 清理 huggingface_hub 缓存目录中的 stale lockfiles。
-///
-/// 下载中断后会留下 `.lock` 文件，让 huggingface_hub 认为缓存无效，
-/// 导致下次启动时重新下载（即使模型文件已完整存在）。
-///
-/// huggingface_hub 的缓存结构为：
-///   {cache_dir}/models--{repo_id}/blobs/{hash}.lock
-/// lock 文件在模型子目录的 blobs/ 下，不在根目录的 blobs/。
-/// 所以需要递归搜索整个缓存目录。
-fn cleanup_stale_locks() {
-    let cache_dir = match std::env::var("FASTEMBED_CACHE_DIR") {
-        Ok(d) => std::path::PathBuf::from(d),
-        Err(_) => return,
-    };
-    if !cache_dir.exists() {
-        return;
-    }
-    let mut cleaned = 0u32;
-    cleanup_stale_locks_recursive(&cache_dir, &mut cleaned);
-    if cleaned > 0 {
-        log::info!("[local_embedding] 已清理 {} 个 stale lockfile", cleaned);
-    }
-}
-
-/// 递归搜索目录树中所有 `.lock` 文件并删除
-fn cleanup_stale_locks_recursive(dir: &std::path::Path, cleaned: &mut u32) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            cleanup_stale_locks_recursive(&path, cleaned);
-        } else if path.extension().is_some_and(|ext| ext == "lock") {
-            if std::fs::remove_file(&path).is_ok() {
-                *cleaned += 1;
-            }
-        }
-    }
+    model.embed(&texts_str)
 }
 
 // ─── 文本分块（解决 C2：唯一版本）───

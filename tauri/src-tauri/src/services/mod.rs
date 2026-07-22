@@ -1,9 +1,11 @@
 pub mod config;
+pub mod embedding;
 pub mod indexer;
 pub mod watcher;
 pub mod types;
 
 pub use config::*;
+pub use embedding::LocalEmbedding;
 pub use indexer::*;
 pub use watcher::*;
 pub use types::*;

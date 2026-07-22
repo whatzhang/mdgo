@@ -21,35 +21,7 @@ pub fn run() {
     // ── 初始化日志（文件 + 终端双输出）──
     init_logging();
 
-    // 设置 HuggingFace 镜像源（解决国内下载慢/失败问题）
-    // 优先使用用户已设置的环境变量，否则使用国内镜像
-    if std::env::var("HF_ENDPOINT").is_err() {
-        // SAFETY: 在程序启动时设置环境变量是安全的
-        unsafe {
-            std::env::set_var("HF_ENDPOINT", "https://hf-mirror.com");
-        }
-    }
-
-    // 设置 fastembed 模型缓存目录
-    // dev 模式下，模型可能已下载到 CARGO_MANIFEST_DIR/.fastembed_cache/
-    // 需要显式指定绝对路径，避免因 CWD 不同或缓存结构校验失败导致重试下载
-    if std::env::var("FASTEMBED_CACHE_DIR").is_err() {
-        let search_paths = [
-            // 通常 CWD = 项目根目录 或 src-tauri/
-            std::env::current_dir().map(|p| p.join(".fastembed_cache")).ok(),
-            // dev 模式下：cargo manifest dir = tauri/src-tauri/
-            Some(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".fastembed_cache")),
-        ];
-        for path in search_paths.iter().flatten() {
-            if path.exists() {
-                unsafe {
-                    std::env::set_var("FASTEMBED_CACHE_DIR", path.to_string_lossy().as_ref());
-                }
-                log::info!("[startup] FASTBED_CACHE_DIR 设为: {}", path.display());
-                break;
-            }
-        }
-    }
+    log::info!("[startup] 启动 mdgo...");
 
     // 初始化共享服务
     let config_store = Arc::new(ConfigStore::new(IndexerConfig::default()));
@@ -115,10 +87,9 @@ fn init_logging() {
     let log_dir = std::env::var("APPDATA")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| std::path::PathBuf::from("."))
-        .join("mdgo")
         .join("logs");
 
-    let log_path = log_dir.join("app.log");
+    let log_path = log_dir.join("mdgo.log");
 
     // 创建文件日志
     let has_file_logger;

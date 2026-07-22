@@ -4421,7 +4421,7 @@
             color: var(--color-primary);
             border-bottom-right-radius: 0.25rem;
         }
- 
+
         .chat-message.assistant {
             align-self: flex-start;
             background: var(--color-bg);
@@ -5322,7 +5322,7 @@
             background: rgba(255, 255, 255, 0.95);
             align-items: center;
             justify-content: center;
-        }  
+        }
 
         .mermaid-error-display.active {
             display: flex;
@@ -13160,8 +13160,8 @@
                     </div>
                 </div>
                 <div class="heatmap-section">
-                    <div class="chart-title" style="margin-bottom: 3px;"><svg viewBox="0 0 24 24" width="16"
-                            height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                    <div class="chart-title" style="margin-bottom: 3px;"><svg viewBox="0 0 24 24" width="16" height="16"
+                            fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
                             stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
                             <path
                                 d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
@@ -13319,8 +13319,8 @@
                                             <div class="monitor-sub" id="cpuCores"></div>
                                         </div>
                                         <div class="monitor-item">
-                                            <div class="monitor-label"><svg viewBox="0 0 24 24" width="16"
-                                                    height="16" fill="none" stroke="currentColor" stroke-width="1.8"
+                                            <div class="monitor-label"><svg viewBox="0 0 24 24" width="16" height="16"
+                                                    fill="none" stroke="currentColor" stroke-width="1.8"
                                                     stroke-linecap="round" stroke-linejoin="round"
                                                     style="vertical-align:-2px;margin-right:4px;">
                                                     <rect x="3" y="8" width="18" height="12" rx="1" />
@@ -14684,14 +14684,14 @@
             <div id="chat-container" style="display: none;">
                 <div class="chat-panel">
                     <div class="chat-config-bar" id="chat-config-bar">
-                        <div> 
+                        <div>
                             <div class="chat-mode-group">
                                 <button id="chat-mode-normal" class="btn btn-sm btn-mode active"
                                     onclick="setChatMode('normal')">普通对话</button>
                                 <button id="chat-mode-rag" class="btn btn-sm btn-mode" onclick="setChatMode('rag')"
                                     style="display:none;">RAG</button>
                             </div>
-                        </div> 
+                        </div>
                         <div id="chat-header-actions">
                             <button class="btn btn-orange btn-sm" onclick="clearChatMessages()" title="清空对话">清空</button>
                         </div>
@@ -14822,7 +14822,7 @@
                 value: '解读分析文件内容，根据分析结果输出合适的 Drawio 图形代码，并严格遵守 Drawio XML 语法规范，确保代码可直接导入渲染',
                 title: 'Drawio 图'
             },
-            excalidraw: { 
+            excalidraw: {
                 key: 'Excalidraw画图',
                 display: true,
                 ext: ".excalidraw",
@@ -15031,7 +15031,6 @@
             return ext && (isDoc(ext) || isPicImage(ext));
         };
         const isShowHtmlCode = (relativePath) => !testIgnore(HTML_RULES, relativePath, false);  // 判断文件路径是否应显示代码而非渲染 HTML
-        let hasBackendServer = false; // 运行环境判断：file:// 协议表示本地直接打开，http://且 api 访问正常表示有后端服务
         const isLocalVisit = () => window.location.protocol === 'file:';
         const isHttpVisit = () => window.location.protocol === 'http:' || window.location.protocol === 'https:';
         const isTauriVisit = () => typeof window.__TAURI__ !== 'undefined' && !!window.__TAURI__?.core?.invoke;
@@ -27955,33 +27954,6 @@ kanban-plugin: basic
             return [];
         }
 
-        async function mountDir(setting) {
-            // 未选择目录时不发送请求
-            if (!currentRootPath || isLocalVisit() || isTauriVisit()) return false;
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 700);
-            try {
-                const response = await fetch('/api/system/mount', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ dir: currentRootPath, setting: setting || null }),
-                    signal: controller.signal
-                });
-                if (response.ok) {
-                    hasBackendServer = true;
-                    return true;
-                }
-                hasBackendServer = false;
-                console.warn('后端挂载失败:', data.message);
-                return false;
-            } catch {
-                hasBackendServer = false;
-                return false;
-            } finally {
-                clearTimeout(timeoutId);
-            }
-        }
-
         // 模块级快速时间格式化（扫描专用，避免每次创建闭包）
         function _formatTimeFast(ts) {
             const d = new Date(ts * 1000);
@@ -28409,7 +28381,6 @@ kanban-plugin: basic
         }
 
         async function renderFileSumPanel(data, typeCounts = null) {
-            if (hasBackendServer) return;
             const now = Date.now();
             //扫描文件时长
             const scanFileTime = document.getElementById('fileScanTime');
@@ -29293,7 +29264,7 @@ kanban-plugin: basic
                 </div>`;
             const fileProtocol = isLocalVisit();
             const isTauri = isTauriVisit();
-            const serverDisplay = hasBackendServer && !fileProtocol && !isTauri;
+            const serverDisplay = !fileProtocol && !isTauri;
             const httpLocal = !fileProtocol && !isTauri && !serverDisplay;
             DASHBOARD_BUTTON.forEach(b => {
                 if (b.display) {
@@ -29372,10 +29343,6 @@ kanban-plugin: basic
                 monitorPanel.style.display = 'flex';
                 fileSumPanel.style.display = 'none';
                 startTauriSystemMonitor();
-            } else if (hasBackendServer) {
-                monitorPanel.style.display = 'flex';
-                fileSumPanel.style.display = 'none';
-                initSystemMonitor();
             } else {
                 monitorPanel.style.display = 'none';
                 fileSumPanel.style.display = 'flex';
@@ -32080,7 +32047,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     safeLocalStorageSet(PERMISSION_TIME_KEY, Date.now().toString());
                     if (window.__tauriStorageFlush) await window.__tauriStorageFlush();
                     await idbPut(DIRECTORY_STORE_NAME, 'handles', 'default', { __tauriDirHandle: true, path: dirHandle.path });
-                    await mountDir();
                     await initAll();
                 } catch (e) {
                     console.error('初始化目录失败', e);
@@ -32160,7 +32126,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 setRootHandle(handle);
                 currentRootPath = savedPath;
                 const setting = await loadSetting();
-                await mountDir(setting);
             }
             try {
                 // 先尝试从缓存加载（index_file_scan_data.json），避免每次启动全量扫描
@@ -42136,14 +42101,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (isTauriVisit()) {
                     return buildLazyTauriImg(text, true, photoDirPath); // 同步，零 I/O
                 }
-                if (hasBackendServer) return buildLocalAbsoluteImg(text, true);
                 if (isLocalVisit()) return buildLocalImg(text, true, photoDirPath);
                 if (isHttpVisit()) return await buildLazyHttpImg(text, true, photoDirPath); // data-lazy-src 模式
                 return text;
             }
             // 单张图片路径：保持原有逻辑
             if (isTauriVisit()) return await buildTauriImg(text, false, photoDirPath);
-            if (hasBackendServer) return buildLocalAbsoluteImg(text, false);
             if (isLocalVisit()) return buildLocalImg(text, false, photoDirPath);
             if (isHttpVisit()) return await buildHttpImg(text, false, photoDirPath);
             return text;
@@ -45772,7 +45735,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             //nginx 配置
             const fileProtocol = isLocalVisit();
             const isTauri = isTauriVisit();
-            const serverDisplay = hasBackendServer && !fileProtocol && !isTauri;
+            const serverDisplay = !fileProtocol && !isTauri;
             const httpLocal = !fileProtocol && !isTauri && !serverDisplay;
             let nginxDisplay = false;
             const nginxRestyButton = DASHBOARD_BUTTON.find(b => b.key === 'OpenResty')
@@ -45809,7 +45772,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                     <input class="setting-text" id="${inputId('currentRootPath')}" value="${escapeHtml(rootDirPath)}" placeholder="请输入目录路径...">
                                 </div>
                             </div>
-                        </div>
+                        </div> 
                     ` : ''}
                         <div class="setting-section">
                             <div class="setting-section-title">后端服务</div>
@@ -45848,7 +45811,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                     <button class="setting-btn" onclick="testLlmConnection(this)" style="margin-top:4px;">测试连接</button>
                                 </div>
                             </div>
-                        </div>
                         </div>
                         <!-- 没有 Embedding 配置区块 — 使用本地模型 bge-small-zh-v1.5 自动处理 -->
                         <div class="setting-section">
@@ -46015,7 +45977,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         safeLocalStorageSet("ROOT_DIR", currentRootPath);
                         safeLocalStorageSet(PERMISSION_TIME_KEY, Date.now().toString());
                         await idbPut(DIRECTORY_STORE_NAME, 'handles', 'default', getRootHandle());
-                        await mountDir();
                         await initAll();
                     }
                     GRAPHQL_ENDPOINT = graphqlVal;
@@ -46043,7 +46004,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }, null, 4);
                     await writeFileByDirHandle(await getDataDir(), SETTING_FILE, settingsJson);
                     compileAllRules();
-                    await mountDir(JSON.parse(settingsJson));
                     await closeModal(true);
                     const data = await scanDashboardData(true);
                     await Promise.all([renderDirectory(getRootHandle(), data), toggleDashboardView(true, data)]);
