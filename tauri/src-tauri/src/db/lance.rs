@@ -7,7 +7,10 @@ use lancedb::query::{ExecutableQuery, QueryBase};
 use lancedb::DistanceType;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
+
+use crate::db::utils::LOCAL_EMBEDDING_DIMENSION;
 
 fn escape_sql_string(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
@@ -68,10 +71,23 @@ impl LanceStore {
         Ok(cloned)
     }
 
-    /// 连接数据库并创建向量表（首次索引时调用）
-    pub async fn create_table(&self, dimension: u32) -> Result<(), String> {
+    /// 创建或确保向量表存在（固定 384 维，本地 bge-small-zh-v1.5 模型）
+    ///
+    /// 如果表已存在则直接返回（无需检查维度——全局统一使用本地模型）。
+    pub async fn create_table(&self) -> Result<(), String> {
         let db = self.get_connection().await?;
 
+        // 表已存在 → 直接返回（维度统一 384，无需检查）
+        let open_result = tokio::time::timeout(
+            Duration::from_secs(30),
+            db.open_table(&self.table_name).execute(),
+        )
+        .await;
+        if let Ok(Ok(_)) = open_result {
+            return Ok(());
+        }
+
+        // 表不存在 → 创建新表（固定 384 维）
         let schema = Arc::new(Schema::new(vec![
             Field::new("id", DataType::Utf8, false),
             Field::new("text", DataType::Utf8, false),
@@ -81,21 +97,19 @@ impl LanceStore {
                 "vector",
                 DataType::FixedSizeList(
                     Arc::new(Field::new("item", DataType::Float32, true)),
-                    dimension as i32,
+                    LOCAL_EMBEDDING_DIMENSION as i32,
                 ),
                 true,
             ),
         ]));
 
-        // 先尝试打开已有表，不存在则创建
-        if db.open_table(&self.table_name).execute().await.is_ok() {
-            return Ok(());
-        }
-
-        db.create_empty_table(&self.table_name, schema)
-            .execute()
-            .await
-            .map_err(|e| format!("LanceDB 创建表失败: {}", e))?;
+        tokio::time::timeout(
+            Duration::from_secs(30),
+            db.create_empty_table(&self.table_name, schema).execute(),
+        )
+        .await
+        .map_err(|_| "LanceDB 创建表超时 (30s)".to_string())?
+        .map_err(|e| format!("LanceDB 创建表失败: {}", e))?;
 
         Ok(())
     }
@@ -109,7 +123,7 @@ impl LanceStore {
             .map_err(|e| format!("打开表失败: {}", e))
     }
 
-    /// 批量写入文档块 + 向量，含维度校验（解决 M4）
+    /// 批量写入文档块 + 向量（维度校验：仅检查非零，一致性由单一模型保证）
     pub async fn add_chunks(
         &self,
         chunks: &[DocumentChunk],
@@ -129,19 +143,8 @@ impl LanceStore {
         let n = chunks.len();
         let dim = vectors[0].len() as i32;
 
-        // 校验所有向量维度一致（解决 M4）
         if dim == 0 {
             return Err("向量维度为 0，请检查 Embedding 模型配置".into());
-        }
-        for (i, v) in vectors.iter().enumerate() {
-            if v.len() as i32 != dim {
-                return Err(format!(
-                    "向量维度不一致: 第 0 个维度 {}，第 {} 个维度 {}",
-                    dim,
-                    i,
-                    v.len()
-                ));
-            }
         }
 
         let table = self.open_table().await?;
@@ -195,10 +198,9 @@ impl LanceStore {
         )
         .map_err(|e| format!("构建 RecordBatch 失败: {}", e))?;
 
-        table
-            .add(batch)
-            .execute()
+        tokio::time::timeout(Duration::from_secs(120), table.add(batch).execute())
             .await
+            .map_err(|_| "LanceDB 写入超时 (120s)，请检查磁盘空间或数据一致性".to_string())?
             .map_err(|e| format!("LanceDB 写入失败: {}", e))?;
 
         Ok(())
@@ -261,11 +263,22 @@ impl LanceStore {
 
     /// 清空表
     ///
-    /// 使用 drop + 重建的方式替代逐行删除，速度提升几个数量级。
-    /// `table.delete("true")` 是 O(N) 且不释放磁盘空间，大数据量时极慢。
+    /// 先通过 API drop 表，再删除整个数据目录，确保完全清理
+    /// （防止上次中断写入留下的损坏数据影响下一次索引）
     pub async fn clear(&self) -> Result<(), String> {
         let db = self.get_connection().await?;
         let _ = db.drop_table(&self.table_name, &[]).await;
+
+        // 删除整个数据目录，确保 LanceDB 内部状态完全重置
+        let data_path = std::path::Path::new(&self.uri);
+        if data_path.exists() {
+            let _ = std::fs::remove_dir_all(&self.uri);
+        }
+
+        // 重置连接缓存，下次使用时会重新连接
+        let mut guard = self.db.lock().await;
+        *guard = None;
+
         Ok(())
     }
 

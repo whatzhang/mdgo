@@ -34,8 +34,8 @@ futures = "0.3"
 tantivy = "0.26"
 tokio = { version = "1", features = ["full"] }
 
-# 知识库 — Embedding HTTP 客户端
-reqwest = { version = "0.12", features = ["json"] }
+# 知识库 — 本地 Embedding 模型
+fastembed = "5.17.3"
 
 # 知识库 — 文件监听增量索引
 notify = { version = "8", features = ["macos_kqueue"] }
@@ -44,5 +44,17 @@ notify = { version = "8", features = ["macos_kqueue"] }
 uuid = { version = "1", features = ["v4"] }
 regex = "1"
 
-# 知识库 — 本地 Embedding（fallback）
-fastembed = "4"
+# 日志
+log = "0.4"
+simplelog = "0.12"
+
+[profile.release]
+# "thin" LTO 比 "true" 快很多，90% 的优化效果，10% 的编译时间
+lto = "thin"
+# 多代码生成单元，并行编译（16 ≈ 16 个 CPU 核同时工作）
+codegen-units = 16
+strip = true
+opt-level = "z"
+panic = "abort"
+# 分拆调试信息，减少链接时内存占用
+split-debuginfo = "packed"

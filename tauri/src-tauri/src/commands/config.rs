@@ -11,7 +11,6 @@ const STORE_FILE: &str = "app_settings.json";
 /// 可用配置项：
 /// - graphql_endpoint, nginx_conf_path
 /// - local_llm_endpoint, local_llm_token, local_llm_model, local_llm_context_length
-/// - embedding_endpoint, embedding_token, embedding_model, embedding_dimension
 /// - dir_blacklist, file_blacklist, random_dir_blacklist, html_code_show_blacklist
 #[tauri::command]
 pub async fn kb_config_read(app: AppHandle) -> Result<HashMap<String, Value>, String> {

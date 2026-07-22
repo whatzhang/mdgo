@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "clean:target": "cd src-tauri ; cargo clean",
+    "build:target": "npm run build ; cd src-tauri ; cargo build",
+    "build:release": "npm run build ; cd src-tauri ; cargo build --release"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

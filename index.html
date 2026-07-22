@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 
 <head>
@@ -4394,31 +4394,6 @@
             background: var(--color-bg-secondary);
         }
 
-        .chat-panel-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0.5rem 0.875rem;
-            border-bottom: 0.0625rem solid var(--color-border);
-            background: var(--color-bg);
-            font-size: 0.8125rem;
-            font-weight: 500;
-            color: var(--color-text);
-            flex-shrink: 0;
-        }
-
-        .chat-panel-header select {
-            margin-left: 0.5rem;
-            padding: 0.125rem 0.375rem;
-            border: 0.0625rem solid var(--color-border);
-            border-radius: 0.375rem;
-            background: var(--color-bg);
-            color: var(--color-text);
-            font-size: 0.75rem;
-            font-family: var(--font-family);
-            cursor: pointer;
-        }
-
         .chat-messages {
             flex: 1;
             overflow-y: auto;
@@ -4436,30 +4411,22 @@
             line-height: 1.5;
             word-break: break-word;
             white-space: pre-wrap;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+            transition: all 0.2s ease;
         }
 
         .chat-message.user {
             align-self: flex-end;
-            background: var(--color-primary);
-            color: #fff;
+            background: var(--color-bg);
+            color: var(--color-primary);
             border-bottom-right-radius: 0.25rem;
         }
-
+ 
         .chat-message.assistant {
             align-self: flex-start;
             background: var(--color-bg);
             color: var(--color-text);
-            border: 0.0625rem solid var(--color-border);
             border-bottom-left-radius: 0.25rem;
-        }
-
-        .chat-message.system {
-            align-self: center;
-            background: transparent;
-            color: var(--t3);
-            font-size: 0.75rem;
-            border: none;
-            padding: 0.25rem 0.5rem;
         }
 
         .chat-message .msg-sources {
@@ -4503,39 +4470,16 @@
             border: 0.0625rem solid var(--color-border);
             border-radius: 0.5rem;
             padding: 0.5rem 0.625rem;
-            font-size: 0.8125rem;
+            font-size: 0.875rem;
             font-family: var(--font-family);
             background: var(--color-bg-secondary);
             color: var(--color-text);
-            min-height: 2.25rem;
             max-height: 7.5rem;
             outline: none;
         }
 
         .chat-input-area textarea:focus {
             border-color: var(--color-primary);
-        }
-
-        .chat-input-area .chat-send-btn {
-            padding: 0.375rem 1rem;
-            background: var(--color-primary);
-            color: #fff;
-            border: none;
-            border-radius: 0.5rem;
-            cursor: pointer;
-            font-size: 0.8125rem;
-            font-family: var(--font-family);
-            white-space: nowrap;
-            align-self: flex-end;
-        }
-
-        .chat-input-area .chat-send-btn:hover {
-            opacity: 0.85;
-        }
-
-        .chat-input-area .chat-send-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
         }
 
         .chat-typing {
@@ -4589,7 +4533,7 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 0.5rem 0.875rem;
+            padding: 0.5rem 0.5rem;
             border-bottom: 0.0625rem solid var(--color-border);
             background: var(--color-bg);
             font-size: 0.8125rem;
@@ -4688,30 +4632,7 @@
         .kb-current-dir {
             display: flex;
             align-items: center;
-            gap: 0.5rem;
-            padding: 0.625rem 0.875rem;
-            border-bottom: 0.0625rem solid var(--color-border);
-            background: var(--color-bg-secondary);
             flex-shrink: 0;
-        }
-
-        .kb-dir-icon {
-            font-size: 1.5rem;
-            flex-shrink: 0;
-        }
-
-        .kb-dir-info {
-            flex: 1;
-            min-width: 0;
-        }
-
-        .kb-dir-path {
-            font-size: 0.8125rem;
-            font-weight: 500;
-            color: var(--color-text);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
         }
 
         .kb-dir-status {
@@ -4720,7 +4641,7 @@
             gap: 0.25rem;
             margin-top: 0.125rem;
             font-size: 0.6875rem;
-            color: var(--t3);
+            color: var(--t1);
         }
 
         .kb-status-dot {
@@ -4788,15 +4709,6 @@
             font-size: 0.9375rem;
             font-weight: 600;
             color: var(--color-text);
-        }
-
-        /* ===== 聊天 RAG 提示 ===== */
-        .chat-rag-hint {
-            font-size: 0.75rem;
-            color: var(--t3);
-            display: flex;
-            align-items: center;
-            gap: 0.25rem;
         }
 
         .kb-doc-list {
@@ -4890,12 +4802,13 @@
         .chat-config-bar {
             display: flex;
             align-items: center;
+            justify-content: space-between;
             gap: 0.75rem;
-            padding: 0.375rem 0.875rem;
+            padding: 0.375rem 0.5rem;
             border-bottom: 0.0625rem solid var(--color-border);
             background: var(--color-bg);
             flex-shrink: 0;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;
         }
 
         .chat-mode-group {
@@ -4904,20 +4817,7 @@
             gap: 0.25rem;
         }
 
-        .chat-mode-group label {
-            font-size: 0.75rem;
-            color: var(--t3);
-            white-space: nowrap;
-        }
-
         .btn-mode {
-            padding: 0.1875rem 0.625rem;
-            border: 0.0625rem solid var(--color-border);
-            border-radius: 0.375rem;
-            background: var(--color-bg);
-            color: var(--t2);
-            font-size: 0.75rem;
-            font-family: var(--font-family);
             cursor: pointer;
             transition: all 0.15s;
         }
@@ -4931,18 +4831,6 @@
             background: var(--color-primary);
             color: #fff;
             border-color: var(--color-primary);
-        }
-
-        .btn-mode.btn-mode-disabled,
-        .btn-mode:disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
-        }
-
-        .btn-mode.btn-mode-disabled:hover,
-        .btn-mode:disabled:hover {
-            border-color: var(--color-border);
-            color: var(--t2);
         }
 
         .hlyxcp {
@@ -5434,7 +5322,7 @@
             background: rgba(255, 255, 255, 0.95);
             align-items: center;
             justify-content: center;
-        }
+        }  
 
         .mermaid-error-display.active {
             display: flex;
@@ -14795,56 +14683,41 @@
             </div>
             <div id="chat-container" style="display: none;">
                 <div class="chat-panel">
-                    <div class="chat-panel-header">
-                        <span>💬 AI 聊天</span>
-                        <div id="chat-header-actions">
-                            <button class="btn btn-ghost btn-xs" onclick="clearChatMessages()" title="清空对话">清空</button>
-                        </div>
-                    </div>
                     <div class="chat-config-bar" id="chat-config-bar">
-                        <div class="chat-mode-group">
-                            <label>模式：</label>
-                            <button id="chat-mode-normal" class="btn-mode active"
-                                onclick="setChatMode('normal')">普通对话</button>
-                            <button id="chat-mode-rag" class="btn-mode" onclick="setChatMode('rag')"
-                                style="display:none;">RAG</button>
-                            <button id="chat-mode-agent" class="btn-mode btn-mode-disabled" disabled title="开发中"
-                                style="display:none;">Agent</button>
-                        </div>
-                        <div class="chat-rag-hint" id="chat-rag-hint"
-                            style="display:none; font-size:0.75rem; color:var(--t3);">
-                            📁 使用当前目录作为知识库
+                        <div> 
+                            <div class="chat-mode-group">
+                                <button id="chat-mode-normal" class="btn btn-sm btn-mode active"
+                                    onclick="setChatMode('normal')">普通对话</button>
+                                <button id="chat-mode-rag" class="btn btn-sm btn-mode" onclick="setChatMode('rag')"
+                                    style="display:none;">RAG</button>
+                            </div>
+                        </div> 
+                        <div id="chat-header-actions">
+                            <button class="btn btn-orange btn-sm" onclick="clearChatMessages()" title="清空对话">清空</button>
                         </div>
                     </div>
                     <div class="chat-messages" id="chat-messages">
-                        <div class="chat-message system">欢迎使用 AI 聊天助手，请在设置中配置 LLM 和 Embedding 端点后开始对话。</div>
                     </div>
                     <div class="chat-input-area">
-                        <textarea id="chat-input" rows="1" placeholder="输入消息..."
+                        <textarea id="chat-input" rows="4" placeholder="按下回车发送消息..."
                             onkeydown="handleChatKeydown(event)"></textarea>
-                        <button class="chat-send-btn" id="chat-send-btn" onclick="sendChatMessage()">发送</button>
                     </div>
                 </div>
             </div>
             <div id="knowledge-container" style="display: none;">
                 <div class="knowledge-panel">
                     <div class="knowledge-panel-header">
-                        <span>📚 知识库</span>
-                        <div>
-                            <button class="btn btn-ghost btn-xs" onclick="indexCurrentDir()"
-                                id="kb-index-btn">索引当前目录</button>
-                            <button class="btn btn-ghost btn-xs" onclick="refreshKnowledgeStatus()"
-                                style="margin-left:4px;">刷新</button>
-                        </div>
-                    </div>
-                    <div class="kb-current-dir" id="kb-current-dir">
-                        <div class="kb-dir-icon">📁</div>
-                        <div class="kb-dir-info">
-                            <div class="kb-dir-path" id="kb-dir-path">— 未打开任何目录 —</div>
+                        <div class="kb-current-dir" id="kb-current-dir">
                             <div class="kb-dir-status" id="kb-dir-status">
                                 <span class="kb-status-dot" id="kb-status-dot"></span>
-                                <span id="kb-status-text">请先打开一个目录</span>
+                                <span id="kb-status-text"></span>
                             </div>
+                        </div>
+                        <div>
+                            <button class="btn btn-warning btn-sm" onclick="indexCurrentDir()"
+                                id="kb-index-btn">索引当前目录</button>
+                            <button class="btn btn-warning btn-sm" onclick="refreshKnowledgeStatus()"
+                                style="margin-left:4px;">刷新</button>
                         </div>
                     </div>
                     <div class="kb-stats" id="kb-stats" style="display:none;">
@@ -14875,7 +14748,7 @@
                     <div class="knowledge-list" id="knowledge-list">
                         <div class="kb-empty" id="kb-empty-msg">
                             <span>当前目录尚未索引</span>
-                            <button onclick="indexCurrentDir()">🔍 开始索引</button>
+                            <button onclick="indexCurrentDir()">开始索引</button>
                         </div>
                     </div>
                 </div>
@@ -14891,11 +14764,6 @@
         let LOCAL_LLM_TOKEN = 'c17f18e31adb10978d3a9cd0d6743d30a067af602a8789e7';
         let LOCAL_LLM_MODEL = 'gemma-4-e4b-it';
         let LOCAL_LLM_CONTEXT_LENGTH = 10000;
-        // ====== Embedding 配置 ======
-        let EMBEDDING_ENDPOINT = 'http://192.168.31.152:12345/v1/embeddings';
-        let EMBEDDING_TOKEN = 'c17f18e31adb10978d3a9cd0d6743d30a067af602a8789e7';
-        let EMBEDDING_MODEL = 'text-embedding-qwen3-embedding-0.6b';
-        let EMBEDDING_DIMENSION = 512;
         // nginx 配置地址
         let NGINX_CONF_PATH = '/usr/local/etc/openresty/sites/index.conf';
         // 忽略的目录
@@ -14954,7 +14822,7 @@
                 value: '解读分析文件内容，根据分析结果输出合适的 Drawio 图形代码，并严格遵守 Drawio XML 语法规范，确保代码可直接导入渲染',
                 title: 'Drawio 图'
             },
-            excalidraw: {
+            excalidraw: { 
                 key: 'Excalidraw画图',
                 display: true,
                 ext: ".excalidraw",
@@ -15499,9 +15367,7 @@
             // Tauri 模式下显示 RAG/Agent 模式按钮
             if (isTauriVisit()) {
                 const ragBtn = document.getElementById('chat-mode-rag');
-                const agentBtn = document.getElementById('chat-mode-agent');
                 if (ragBtn) ragBtn.style.display = '';
-                if (agentBtn) agentBtn.style.display = '';
 
                 // 监听知识库文件变更事件，自动刷新状态
                 try {
@@ -45983,31 +45849,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                 </div>
                             </div>
                         </div>
-                        <div class="setting-section">
-                            <div class="setting-section-title">Embedding <span class="setting-help" data-tippy-content="用于将文本向量化，是知识库检索的基础。可与 LLM 使用同一服务（如 Ollama 同时支持 chat 和 embedding）">ⓘ</span></div>
-                            <div class="setting-section-body">
-                                <div class="setting-row">
-                                    <label>API 端点</label>
-                                    <input class="setting-text" id="${inputId('embedEndpoint')}" value="${escapeHtml(EMBEDDING_ENDPOINT)}" placeholder="http://localhost:11434/v1/embeddings">
-                                </div>
-                                <div class="setting-row">
-                                    <label>Token</label>
-                                    <input class="setting-text" id="${inputId('embedToken')}" value="${escapeHtml(EMBEDDING_TOKEN)}">
-                                </div>
-                                <div class="setting-row">
-                                    <label>模型名称</label>
-                                    <input class="setting-text" id="${inputId('embedModel')}" value="${escapeHtml(EMBEDDING_MODEL)}" placeholder="text-embedding-qwen3-embedding-0.6b">
-                                </div>
-                                <div class="setting-row">
-                                    <label>向量维度</label>
-                                    <input class="setting-number" id="${inputId('embedDimension')}" type="number" min="64" max="8192" step="64" value="${EMBEDDING_DIMENSION}">
-                                </div>
-                                <div class="setting-row">
-                                    <label></label>
-                                    <button class="setting-btn" onclick="testEmbeddingConnection(this)" style="margin-top:4px;">测试连接</button>
-                                </div>
-                            </div>
                         </div>
+                        <!-- 没有 Embedding 配置区块 — 使用本地模型 bge-small-zh-v1.5 自动处理 -->
                         <div class="setting-section">
                             <div class="setting-section-title">文件树过滤 <span class="setting-help" data-tippy-content="配置系统中需要隐藏的目录和文件黑名单，将不会显示在系统中，.gitignore 语法格式">ⓘ</span></div>
                             <div class="setting-section-body">
@@ -46181,14 +46024,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     LOCAL_LLM_TOKEN = document.getElementById(inputId('llmToken')).value.trim();
                     LOCAL_LLM_MODEL = document.getElementById(inputId('llmModel')).value.trim();
                     LOCAL_LLM_CONTEXT_LENGTH = contextLength;
-                    EMBEDDING_ENDPOINT = document.getElementById(inputId('embedEndpoint')).value.trim();
-                    EMBEDDING_TOKEN = document.getElementById(inputId('embedToken')).value.trim();
-                    EMBEDDING_MODEL = document.getElementById(inputId('embedModel')).value.trim();
-                    const embedDimVal = document.getElementById(inputId('embedDimension')).value.trim();
-                    const embedDimension = parseInt(embedDimVal, 10);
-                    if (!isNaN(embedDimension) && embedDimension >= 64) {
-                        EMBEDDING_DIMENSION = embedDimension;
-                    }
                     DIR_BLACKLIST = dirBlacklistItems;
                     FILE_BLACKLIST = fileBlacklistItems;
                     RANDOM_DIR_BLACKLIST = randomDirItems;
@@ -46201,10 +46036,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         localLlmToken: LOCAL_LLM_TOKEN,
                         localLlmModel: LOCAL_LLM_MODEL,
                         localLlmContextLength: LOCAL_LLM_CONTEXT_LENGTH,
-                        embeddingEndpoint: EMBEDDING_ENDPOINT,
-                        embeddingToken: EMBEDDING_TOKEN,
-                        embeddingModel: EMBEDDING_MODEL,
-                        embeddingDimension: EMBEDDING_DIMENSION,
                         dirBlacklist: DIR_BLACKLIST,
                         fileBlacklist: FILE_BLACKLIST,
                         randomDirBlacklist: RANDOM_DIR_BLACKLIST,
@@ -46259,10 +46090,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 LOCAL_LLM_TOKEN = setting.localLlmToken;
                 LOCAL_LLM_MODEL = setting.localLlmModel;
                 LOCAL_LLM_CONTEXT_LENGTH = setting.localLlmContextLength;
-                EMBEDDING_ENDPOINT = setting.embeddingEndpoint || EMBEDDING_ENDPOINT;
-                EMBEDDING_TOKEN = setting.embeddingToken || EMBEDDING_TOKEN;
-                EMBEDDING_MODEL = setting.embeddingModel || EMBEDDING_MODEL;
-                EMBEDDING_DIMENSION = setting.embeddingDimension || EMBEDDING_DIMENSION;
                 DIR_BLACKLIST = setting.dirBlacklist;
                 FILE_BLACKLIST = setting.fileBlacklist;
                 RANDOM_DIR_BLACKLIST = setting.randomDirBlacklist;
@@ -46283,10 +46110,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 localLlmToken: LOCAL_LLM_TOKEN,
                 localLlmModel: LOCAL_LLM_MODEL,
                 localLlmContextLength: LOCAL_LLM_CONTEXT_LENGTH,
-                embeddingEndpoint: EMBEDDING_ENDPOINT,
-                embeddingToken: EMBEDDING_TOKEN,
-                embeddingModel: EMBEDDING_MODEL,
-                embeddingDimension: EMBEDDING_DIMENSION,
                 dirBlacklist: DIR_BLACKLIST,
                 fileBlacklist: FILE_BLACKLIST,
                 randomDirBlacklist: RANDOM_DIR_BLACKLIST,
@@ -47149,6 +46972,27 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             hideAllViewContainers();
             knowledgeContainer.style.display = 'flex';
             refreshKnowledgeStatus();
+            // 自动启动后台文件监听（幂等，已索引的目录才生效）
+            startWatcherIfNeeded();
+        }
+
+        /** 启动后台文件监听（仅在 Tauri 环境有效，重复调用无副作用） */
+        async function startWatcherIfNeeded() {
+            if (!isTauriVisit()) return;
+            const handle = getRootHandle();
+            if (!handle) return;
+            const path = getDirPath(handle);
+            if (!path) return;
+            try {
+                await window.__TAURI__.core.invoke('kb_start_watcher', {
+                    dirPath: path,
+                    dirBlacklist: DIR_BLACKLIST,
+                    fileBlacklist: FILE_BLACKLIST,
+                });
+            } catch (e) {
+                // 尚未索引时 watcher 可能缺表，忽略
+                console.log('[KBWatcher] 后台监听未启动（尚未索引？）:', e);
+            }
         }
 
         function setChatMode(mode) {
@@ -47161,16 +47005,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             document.querySelectorAll('.btn-mode').forEach(b => b.classList.remove('active'));
             const btn = document.getElementById('chat-mode-' + mode);
             if (btn) btn.classList.add('active');
-            const ragHint = document.getElementById('chat-rag-hint');
             if (mode === 'rag') {
-                ragHint.style.display = '';
                 if (!getRootHandle()) {
                     showNotification('请先打开一个目录', 'warning');
                 } else {
                     showNotification('RAG 模式：使用当前目录作为知识库', 'info');
                 }
             } else {
-                ragHint.style.display = 'none';
                 if (mode === 'agent') {
                     showNotification('Agent 模式开发中', 'info');
                 }
@@ -47190,8 +47031,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 chatStreaming = false;
             }
             chatMessages = [];
-            const container = document.getElementById('chat-messages');
-            container.innerHTML = '<div class="chat-message system">对话已清空</div>';
+            showNotification('对话已清空', 'info');
         }
 
         function addChatMessage(role, content, sources) {
@@ -47255,8 +47095,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         async function sendLlmQuery(text) {
-            const sendBtn = document.getElementById('chat-send-btn');
-            sendBtn.disabled = true;
             chatStreaming = true;
             chatAbortController = new AbortController();
             showChatTyping();
@@ -47314,55 +47152,24 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     console.error('LLM 请求失败:', err);
                 }
             } finally {
-                sendBtn.disabled = false;
                 chatStreaming = false;
                 chatAbortController = null;
             }
         }
 
         async function sendRagQuery(text) {
-            const sendBtn = document.getElementById('chat-send-btn');
-            sendBtn.disabled = true;
             chatStreaming = true;
             chatAbortController = new AbortController();
-            if (!EMBEDDING_ENDPOINT) {
-                showNotification('\u2717 请先在设置中配置 Embedding API 端点', 'warning');
-                sendBtn.disabled = false;
-                chatStreaming = false;
-                return;
-            }
             showChatTyping();
             try {
-                const embedResponse = await fetch(EMBEDDING_ENDPOINT, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': EMBEDDING_TOKEN ? 'Bearer ' + EMBEDDING_TOKEN : '',
-                    },
-                    body: JSON.stringify({ model: EMBEDDING_MODEL, input: [text] }),
-                    signal: chatAbortController.signal,
-                });
-                if (!embedResponse.ok) throw new Error('Embedding API error: ' + embedResponse.status);
-                const embedData = await embedResponse.json();
-                const queryVector = embedData.data?.[0]?.embedding;
-                if (!queryVector) throw new Error('Embedding 返回数据格式异常');
-                removeChatTyping();
-                const searchMsg = document.createElement('div');
-                searchMsg.className = 'chat-message system';
-                searchMsg.textContent = '\u{1F50D} 正在检索知识库...';
-                document.getElementById('chat-messages').appendChild(searchMsg);
-
-                let sources = null;
-                // 获取当前目录路径
+                // 使用本地模型生成查询向量，后端做混合检索
                 const dirHandle = getRootHandle();
                 const path = dirHandle ? getDirPath(dirHandle) : null;
-
-                // Tauri 环境：通过 Rust 后端检索
+                let sources = null;
                 if (isTauriVisit() && path) {
                     try {
                         sources = await window.__TAURI__.core.invoke('kb_search_hybrid', {
                             dirPath: path,
-                            queryVector: queryVector,
                             query: text,
                             topK: 10,
                         });
@@ -47370,10 +47177,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         console.warn('Tauri kb_search_hybrid 失败:', e);
                     }
                 }
-                searchMsg.remove();
+                removeChatTyping();
+                // 添加搜索提示
+                const searchMsg = document.createElement('div');
+                searchMsg.className = 'chat-message system';
+                searchMsg.textContent = '\u{1F50D} 正在检索知识库...';
+                document.getElementById('chat-messages').appendChild(searchMsg);
+
                 if (!sources || sources.length === 0) {
                     addChatMessage('system', '\u274C 知识库中未找到相关内容');
-                    searchMsg.remove(); // 清理未完成的搜索提示
+                    searchMsg.remove();
                     return;
                 }
                 // 解决 L6：过滤低分结果，保留 score >= 0.3 的相关文档
@@ -47384,6 +47197,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 } else {
                     sources = filtered;
                 }
+                searchMsg.remove();
                 const context = sources.map(s => s.text).join('\n\n---\n\n');
                 await streamLlmWithContext(text, context, sources);
             } catch (err) {
@@ -47392,13 +47206,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     addChatMessage('system', '\u2717 RAG 查询失败: ' + err.message);
                 }
             } finally {
-                sendBtn.disabled = false;
                 chatStreaming = false;
             }
         }
 
         async function streamLlmWithContext(text, context, sources) {
-            const sendBtn = document.getElementById('chat-send-btn');
             const systemPrompt = '你是一个知识库助手，请基于以下上下文回答问题。如果上下文中没有相关信息，请如实告知。\n\n上下文：\n' + context;
             const messages = [
                 { role: 'system', content: systemPrompt },
@@ -47470,7 +47282,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     addChatMessage('system', '\u2717 请求失败: ' + err.message);
                 }
             } finally {
-                sendBtn.disabled = false;
                 chatStreaming = false;
             }
         }
@@ -47482,26 +47293,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
         async function refreshKnowledgeStatus() {
             const dirHandle = getRootHandle();
-            const dirPathEl = document.getElementById('kb-dir-path');
             const statusText = document.getElementById('kb-status-text');
             const statusDot = document.getElementById('kb-status-dot');
             const stats = document.getElementById('kb-stats');
             const emptyMsg = document.getElementById('kb-empty-msg');
             const indexBtn = document.getElementById('kb-index-btn');
 
-            if (!dirHandle) {
-                dirPathEl.textContent = '\u2014 未打开任何目录 \u2014';
-                statusText.textContent = '请先打开一个目录';
-                statusDot.className = 'kb-status-dot';
-                stats.style.display = 'none';
-                if (emptyMsg) { emptyMsg.style.display = ''; emptyMsg.querySelector('span').textContent = '请先打开一个目录'; emptyMsg.querySelector('button').style.display = 'none'; }
-                indexBtn.disabled = true;
-                indexBtn.textContent = '\u26A0\uFE0F 请先打开目录';
-                return;
-            }
-
             const path = getDirPath(dirHandle);
-            dirPathEl.textContent = path;
             indexBtn.disabled = false;
             indexBtn.textContent = '索引当前目录';
             if (emptyMsg) emptyMsg.querySelector('button').style.display = '';
@@ -47518,7 +47316,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         const statusLabel = status.status === 'indexed' ? '已索引' : '未完成';
                         document.getElementById('kb-stat-status').textContent = statusLabel;
                         statusDot.className = 'kb-status-dot ready';
-                        statusText.textContent = '\u2705 已索引 (' + (status.indexed_at ? new Date(status.indexed_at).toLocaleString() : '') + ')';
+                        statusText.textContent = '已索引 (' + (status.indexed_at ? new Date(status.indexed_at).toLocaleString() : '') + ')';
                         if (emptyMsg) emptyMsg.style.display = 'none';
                         if (indexBtn) indexBtn.textContent = '重新索引';
                         return;
@@ -47531,7 +47329,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
             stats.style.display = 'none';
             statusDot.className = 'kb-status-dot';
-            statusText.textContent = '\u274C 尚未索引';
+            statusText.textContent = '尚未索引';
             if (emptyMsg) {
                 emptyMsg.style.display = '';
                 emptyMsg.querySelector('span').textContent = '当前目录尚未索引';
@@ -47545,11 +47343,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             console.log('[KB] indexCurrentDir: dirHandle =', dirHandle);
             if (!dirHandle) {
                 showNotification('请先打开一个目录', 'warning');
-                return;
-            }
-
-            if (!EMBEDDING_ENDPOINT) {
-                showNotification('✗ 请先在设置中配置 Embedding API 端点', 'warning');
                 return;
             }
 
@@ -47585,15 +47378,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         });
                     } catch (e) { console.warn('注册进度监听失败:', e); }
 
-                    // 先停止已有的文件监听
-                    try { await window.__TAURI__.core.invoke('kb_stop_watcher'); } catch (e) { console.warn('停止旧 watcher 失败:', e); }
-
                     const result = await window.__TAURI__.core.invoke('kb_index', {
                         dirPath: path,
-                        embeddingEndpoint: EMBEDDING_ENDPOINT,
-                        embeddingToken: EMBEDDING_TOKEN || null,
-                        embeddingModel: EMBEDDING_MODEL || 'default',
-                        embeddingDimension: EMBEDDING_DIMENSION || 768,
                         dirBlacklist: DIR_BLACKLIST,
                         fileBlacklist: FILE_BLACKLIST,
                     });
@@ -47606,29 +47392,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     await refreshKnowledgeStatus();
                     showNotification('\u2705 索引完成: ' + result.file_count + ' 个文件, ' + result.chunk_count + ' 个文本块', 'success');
 
-                    // 启动文件监听，支持增量索引
-                    try {
-                        await window.__TAURI__.core.invoke('kb_start_watcher', {
-                            dirPath: path,
-                            embeddingEndpoint: EMBEDDING_ENDPOINT,
-                            embeddingToken: EMBEDDING_TOKEN || null,
-                            embeddingModel: EMBEDDING_MODEL || 'default',
-                            embeddingDimension: EMBEDDING_DIMENSION || 768,
-                            dirBlacklist: DIR_BLACKLIST,
-                            fileBlacklist: FILE_BLACKLIST,
-                        });
-                        console.log('[KBWatcher] 文件监听已启动');
-                    } catch (e) {
-                        console.warn('启动文件监听失败:', e);
-                    }
-
                     return;
                 } catch (e) {
                     progressWrap.style.display = 'none';
                     indexBtn.disabled = false;
                     indexBtn.textContent = '重新索引';
                     console.error('Rust kb_index 失败:', e);
-                    showNotification('\u2717 索引失败: ' + e.message, 'error');
+                    const errMsg = typeof e === 'string' ? e : (e.message || JSON.stringify(e) || '未知错误(请查看控制台)');
+                    showNotification('\u2717 索引失败: ' + errMsg, 'error');
                     return;
                 }
             }
@@ -47657,33 +47428,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const latency = Date.now() - start;
                 const models = data.data?.map?.(m => m.id)?.join(', ') || '\u2014';
                 showNotification('\u2713 连接成功 延迟:' + latency + 'ms 模型:' + models, 'success');
-            } catch (e) {
-                showNotification('\u2717 连接失败: ' + e.message, 'error');
-            } finally {
-                if (btn) { btn.disabled = false; btn.textContent = '测试连接'; }
-            }
-        }
-
-        async function testEmbeddingConnection(btn) {
-            const endpoint = document.getElementById('setting-embedEndpoint')?.value || EMBEDDING_ENDPOINT;
-            const token = document.getElementById('setting-embedToken')?.value || EMBEDDING_TOKEN;
-            btn = btn || event?.target;
-            if (btn) { btn.disabled = true; btn.textContent = '测试中...'; }
-            try {
-                const start = Date.now();
-                const res = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': token ? 'Bearer ' + token : '',
-                    },
-                    body: JSON.stringify({ model: EMBEDDING_MODEL, input: ['test'] }),
-                });
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                const data = await res.json();
-                const latency = Date.now() - start;
-                const dim = data.data?.[0]?.embedding?.length || '\u2014';
-                showNotification('\u2713 连接成功 延迟:' + latency + 'ms 维度:' + dim, 'success');
             } catch (e) {
                 showNotification('\u2717 连接失败: ' + e.message, 'error');
             } finally {
