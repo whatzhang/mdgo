@@ -247,6 +247,30 @@ impl ChatStore {
         Ok(new_fav != 0)
     }
 
+    /// 获取会话总数
+    pub fn get_session_count(&self) -> u32 {
+        let conn = match self.conn.lock() {
+            Ok(c) => c,
+            Err(_) => return 0,
+        };
+        conn.query_row("SELECT COUNT(*) FROM chat_sessions", [], |row| row.get(0))
+            .unwrap_or(0)
+    }
+
+    /// 获取所有会话的消息总数
+    pub fn get_message_count(&self) -> u32 {
+        let conn = match self.conn.lock() {
+            Ok(c) => c,
+            Err(_) => return 0,
+        };
+        conn.query_row(
+            "SELECT COALESCE(SUM(message_count), 0) FROM chat_sessions",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0)
+    }
+
     /// 按 updated_at DESC 排序返回所有会话
     pub fn list_sessions(&self) -> Result<Vec<ChatSession>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;

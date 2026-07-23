@@ -47,6 +47,7 @@ window.__tauriInitPromise = (async () => {
         await Promise.all([
             import('./file-system.js').then(() => console.log('[TauriAdapter] 文件系统适配器已加载')),
             import('./storage.js').then(() => console.log('[TauriAdapter] 存储适配器已加载')),
+            import('./ai-history.js').then(() => console.log('[TauriAdapter] AI 历史适配器已加载')),
         ]);
     } catch (e) {
         console.error('[TauriAdapter] 加载核心适配器失败:', e);

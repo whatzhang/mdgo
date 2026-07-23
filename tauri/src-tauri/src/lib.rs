@@ -18,6 +18,8 @@ pub struct AppState {
     pub watcher: Arc<WatcherService>,
     /// 按目录路径缓存的 ChatStore 实例（惰性创建）
     pub chat_stores: Mutex<HashMap<String, Arc<services::chat::ChatStore>>>,
+    /// 按目录路径缓存的 AiHistoryStore 实例（惰性创建）
+    pub ai_history_stores: Mutex<HashMap<String, Arc<services::ai_history::AiHistoryStore>>>,
 }
 
 impl AppState {
@@ -35,6 +37,26 @@ impl AppState {
             services::chat::ChatStore::new(
                 &db_dir.to_string_lossy(),
             )?,
+        );
+        stores.insert(dir_path.to_string(), Arc::clone(&store));
+        Ok(store)
+    }
+
+    /// 获取或创建指定目录的 AiHistoryStore
+    pub fn get_ai_history_store(
+        &self,
+        dir_path: &str,
+    ) -> Result<Arc<services::ai_history::AiHistoryStore>, String> {
+        let mut stores = self.ai_history_stores.lock().map_err(|e| e.to_string())?;
+        if let Some(store) = stores.get(dir_path) {
+            return Ok(Arc::clone(store));
+        }
+        // AI 历史数据存储在 {dir_path}/.mdgo/data/ai_history.db
+        let db_dir = std::path::Path::new(dir_path)
+            .join(".mdgo")
+            .join("data");
+        let store = Arc::new(
+            services::ai_history::AiHistoryStore::new(&db_dir.to_string_lossy())?,
         );
         stores.insert(dir_path.to_string(), Arc::clone(&store));
         Ok(store)
@@ -68,6 +90,7 @@ pub fn run() {
             indexer,
             watcher,
             chat_stores: Mutex::new(HashMap::new()),
+            ai_history_stores: Mutex::new(HashMap::new()),
         })
         .invoke_handler(tauri::generate_handler![
             commands::fs::read_dir_recursive,
@@ -99,11 +122,20 @@ pub fn run() {
             commands::knowledge::kb_search_hybrid,
             commands::knowledge::kb_status,
             commands::knowledge::kb_clear,
+            commands::knowledge::kb_dashboard_stats,
             commands::config::kb_config_read,
             commands::config::kb_config_write,
             commands::config::kb_config_delete,
             commands::fs_watcher::kb_start_watcher,
             commands::fs_watcher::kb_stop_watcher,
+            // AI 历史记录命令
+            commands::ai_history::ai_history_add,
+            commands::ai_history::ai_history_list,
+            commands::ai_history::ai_history_delete,
+            commands::ai_history::ai_history_toggle_favorite,
+            commands::ai_history::ai_history_update_access_time,
+            commands::ai_history::ai_history_update_file_path,
+            commands::ai_history::ai_history_stats,
             // AI 聊天历史命令
             commands::chat::chat_session_list,
             commands::chat::chat_session_create,
@@ -117,6 +149,7 @@ pub fn run() {
             commands::chat::chat_message_sources_save,
             commands::chat::chat_messages_sources,
             commands::chat::chat_session_index_current,
+            commands::chat::kb_chat_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

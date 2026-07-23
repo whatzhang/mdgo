@@ -270,3 +270,30 @@ pub async fn chat_session_index_current(
 
     Ok(())
 }
+
+/// 获取聊天统计（供知识库面板使用）
+#[derive(Debug, serde::Serialize)]
+pub struct KbChatStats {
+    pub session_count: u32,
+    pub message_count: u32,
+}
+
+#[tauri::command]
+pub async fn kb_chat_stats(
+    state: tauri::State<'_, AppState>,
+    dir_path: String,
+) -> Result<KbChatStats, String> {
+    let store = state.get_chat_store(&dir_path)?;
+    let store_clone = Arc::clone(&store);
+    let stats = tokio::task::spawn_blocking(move || {
+        let session_count = store_clone.get_session_count();
+        let message_count = store_clone.get_message_count();
+        KbChatStats {
+            session_count,
+            message_count,
+        }
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?;
+    Ok(stats)
+}
