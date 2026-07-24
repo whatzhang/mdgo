@@ -19,6 +19,7 @@ arrow-schema = "58"
 tantivy = "0.26"
 # 基础依赖：ndarray 始终需要
 ndarray = "0.17"
+rayon = "1.10"
 tokenizers = "0.22"
 notify = { version = "8", features = ["macos_kqueue"] }
 walkdir = "2"

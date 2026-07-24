@@ -5052,6 +5052,7 @@ dependencies = [
  "ndarray 0.17.2",
  "notify",
  "ort",
+ "rayon",
  "regex",
  "serde",
  "serde_json",

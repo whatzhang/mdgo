@@ -174,7 +174,6 @@ impl Indexer {
         let mut file_count = 0u32;
         let mut total_chunks = 0u32;
         let mut total_vectors = 0u32;
-        let mut batch_index = 0u32;
 
         for (i, file_path) in files.iter().enumerate() {
             let content = match read_file_content(file_path) {
@@ -204,13 +203,26 @@ impl Indexer {
                 continue;
             }
 
-            // ── 批次已满或最后一批：处理 ──
-            batch_index += 1;
-            // Embedding + DB 写入进度：20% → 85%（基于已处理的文件比例）
-            let embed_pct = 20 + ((i + 1) * 65 / total.max(1) as usize) as u8;
-            progress(embed_pct.min(84), &format!("正在向量化第 {} 批 ({} 个文本块)", batch_index, batch_chunks.len()));
+            // 进度 20%：模型编译（仅首次，tract-onnx 约需 30-60 秒）
+            progress(20, "正在加载向量模型 (首次约需 30-60 秒)...");
 
-            let vectors = self.embed_batch(&batch_chunks).await?;
+            // 向量化进度回调：嵌入过程中实时更新进度
+            let total_chunks_pending = total_chunks + batch_chunks.len() as u32;
+            // 借用 progress，确保之后还能使用
+            let _ = &progress;
+            let embed_progress = |done: usize, total_groups: usize, msg: &str| {
+                // 向量化占比 20% → 80%
+                let embed_pct = 20 + (done * 60 / total_groups.max(1)) as u8;
+                progress(
+                    embed_pct.min(80),
+                    &format!("已完成 {} 文件 ({} 文本块) / {} 文件 - {}", file_count, total_chunks_pending, total, msg),
+                );
+            };
+
+            let vectors = self.embed_batch(&batch_chunks, Some(&embed_progress)).await?;
+
+            // 进度 80% → 85%：写入数据库
+            progress(82, &format!("已完成 {} 文件 ({} 文本块) / {} 文件 - 写入数据库", file_count, total_chunks + batch_chunks.len() as u32, total));
 
             store.add_chunks(&batch_chunks, &vectors).await?;
             bm25.add_documents(&batch_chunks)?;
@@ -219,7 +231,12 @@ impl Indexer {
             total_vectors += vectors.len() as u32;
             batch_chunks.clear();
 
-            progress(embed_pct.min(84), &format!("已处理 {}/{} 文件 (累计 {} 文本块, {} 向量)", i + 1, total, total_chunks, total_vectors));
+            // 进度 85%：单批完成
+            let done_pct = 20 + (file_count * 65 / total.max(1)) as u8;
+            progress(
+                done_pct.min(99),
+                &format!("已完成 {} 文件 ({} 文本块) / {} 文件", file_count, total_chunks, total),
+            );
         }
 
         if total_chunks == 0 {
@@ -254,7 +271,7 @@ impl Indexer {
         }
 
         let doc_chunks = utils::build_document_chunks(rel_path, &chunks);
-        let vectors = self.embed_batch(&doc_chunks).await?;
+        let vectors = self.embed_batch(&doc_chunks, None).await?;
 
         // ── LanceDB：确保表存在，先删后写 ──
         let store = self.get_lance_store(dir_path).await;
@@ -404,24 +421,50 @@ impl Indexer {
     /// 对一组 DocumentChunk 批量 Embedding，返回向量列表。
     ///
     /// 调用本地 bge-small-zh-v1.5 模型（384 维），纯同步推理。
-    async fn embed_batch(&self, chunks: &[DocumentChunk]) -> Result<Vec<Vec<f32>>, String> {
+    /// progress 回调：(已完成组数, 总组数, "状态消息")
+    async fn embed_batch(
+        &self,
+        chunks: &[DocumentChunk],
+        progress: Option<&(dyn Fn(usize, usize, &str) + Send + Sync)>,
+    ) -> Result<Vec<Vec<f32>>, String> {
+        use tokio::sync::mpsc;
+
         log::info!("[indexer] embed_batch 开始，共 {} 个文本块", chunks.len());
 
         let texts: Vec<String> = chunks.iter().map(|c| c.text.clone()).collect();
-        let all_vectors = tokio::task::spawn_blocking(move || {
-            let refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
-            utils::call_embedding(&refs)
-        })
-        .await
-        .map_err(|e| {
-            log::error!("[indexer] Embedding 任务执行失败: {}", e);
-            format!("Embedding 任务执行失败: {}", e)
-        })?
-        .map_err(|e| {
-            log::error!("[indexer] Embedding 失败: {}", e);
-            format!("Embedding 失败: {}", e)
-        })?;
+        let (progress_tx, mut progress_rx) = mpsc::unbounded_channel::<(usize, usize, String)>();
 
+        // 启动阻塞任务进行嵌入
+        let handle = tokio::task::spawn_blocking(move || {
+            let refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
+            let pg = |done: usize, total: usize, msg: &str| {
+                let _ = progress_tx.send((done, total, msg.to_string()));
+            };
+            utils::call_embedding(&refs, Some(&pg))
+        });
+
+        tokio::pin!(handle);
+
+        // 轮询 channel，实时调用 progress 回调
+        let mut result: Option<Result<Vec<Vec<f32>>, String>> = None;
+        while result.is_none() {
+            tokio::select! {
+                Some((done, total, msg)) = progress_rx.recv() => {
+                    if let Some(p) = progress.as_ref() {
+                        p(done, total, &msg);
+                    }
+                }
+                joined = &mut handle => {
+                    result = Some(match joined {
+                        Ok(Ok(v)) => Ok(v),
+                        Ok(Err(e)) => Err(e),
+                        Err(e) => Err(format!("Embedding 任务执行失败: {}", e)),
+                    });
+                }
+            }
+        }
+
+        let all_vectors = result.unwrap()?;
         log::info!("[indexer] embed_batch 完成，共 {} 个向量", all_vectors.len());
         Ok(all_vectors)
     }
@@ -514,7 +557,7 @@ impl Indexer {
         let texts: Vec<String> = chunks.iter().map(|c| c.text.clone()).collect();
         let vectors = tokio::task::spawn_blocking(move || {
             let refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
-            utils::call_embedding(&refs)
+            utils::call_embedding(&refs, None)
         })
         .await
         .map_err(|e| format!("Embedding 任务执行失败: {}", e))??;
@@ -574,7 +617,7 @@ impl Indexer {
 
         // 1. 生成查询向量（1 次 ONNX 推理，放入 spawn_blocking 避免阻塞 Tokio）
         let query_string = query.to_string();
-        let query_embedding = tokio::task::spawn_blocking(move || utils::call_embedding(&[&query_string]))
+        let query_embedding = tokio::task::spawn_blocking(move || utils::call_embedding(&[&query_string], None))
             .await
             .map_err(|e| format!("Embedding 任务执行失败: {}", e))??;
         let query_vec = query_embedding

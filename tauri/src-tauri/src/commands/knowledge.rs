@@ -76,7 +76,7 @@ pub async fn kb_search_hybrid(
 
     // 本地生成查询向量（bge-small-zh-v1.5, 384 维）
     let query_text = query.clone();
-    let query_embedding = tokio::task::spawn_blocking(move || call_embedding(&[&query_text]))
+    let query_embedding = tokio::task::spawn_blocking(move || call_embedding(&[&query_text], None))
         .await
         .map_err(|e| format!("Embedding 任务执行失败: {}", e))?
         .map_err(|e| format!("生成查询向量失败: {}", e))?;

@@ -1,7 +1,8 @@
 use std::path::Path;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use ndarray::{Array2, Axis, s};
+use rayon::prelude::*;
 
 // ─── 按平台选择后端 ───
 //
@@ -12,10 +13,10 @@ use ndarray::{Array2, Axis, s};
 type SessionType = ort::session::Session;
 
 #[cfg(not(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64"))))]
-type SessionType = tract_onnx::prelude::RunnableModel<
-    tract_onnx::prelude::TypedModel,
-    tract_onnx::prelude::TypedModel,
->;
+type SessionType = std::sync::Arc<tract_onnx::prelude::RunnableModel<
+    tract_onnx::prelude::TypedFact,
+    Box<dyn tract_onnx::prelude::TypedOp>,
+>>;
 
 /// BGE-Small-ZH 模型隐藏层维度（ONNX 输出维度）
 const HIDDEN_SIZE: usize = 512;
@@ -79,7 +80,7 @@ fn create_session(model_path: &Path) -> Result<SessionType, String> {
         .map_err(|e| format!("设置 token_type_ids 输入形状失败: {}", e))?
         .into_optimized()
         .map_err(|e| format!("模型优化失败: {}", e))?
-        .into_runnable()
+        .into_runnable_with_options(&Default::default())
         .map_err(|e| format!("模型编译失败: {}", e))?;
 
     log::info!("[ort_embedding] tract-onnx session 创建成功");
@@ -157,7 +158,7 @@ fn run_batch(
 /// 对一批填充后的张量执行 tract-onnx 推理（Intel Mac / Linux 纯 CPU）。
 #[cfg(not(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64"))))]
 fn run_batch(
-    session: &mut SessionType,
+    session: &SessionType,
     input_ids: Array2<i64>,
     attention_mask: Array2<i64>,
     token_type_ids: Array2<i64>,
@@ -182,7 +183,7 @@ fn run_batch(
     }
 
     let hidden = outputs[0]
-        .to_array_view::<f32>()
+        .to_plain_array_view::<f32>()
         .map_err(|e| format!("解析输出张量失败: {}", e))?
         .to_owned()
         .into_dyn();
@@ -311,7 +312,13 @@ fn post_process_batch(
 /// - Intel Mac / Linux 使用 tract 纯 Rust CPU 推理
 /// - 分组降低 padding 浪费
 /// - 动态形状免除每批重编译的开销
-pub fn call_embedding_parallel(texts: &[&str], models_dir: &Path) -> Result<Vec<Vec<f32>>, String> {
+///
+/// progress 回调：`(已完成组数, 总组数, "状态消息")`
+pub fn call_embedding_parallel(
+    texts: &[&str],
+    models_dir: &Path,
+    progress: Option<&(dyn Fn(usize, usize, &str) + Send + Sync)>,
+) -> Result<Vec<Vec<f32>>, String> {
     if texts.is_empty() {
         return Ok(Vec::new());
     }
@@ -323,36 +330,47 @@ pub fn call_embedding_parallel(texts: &[&str], models_dir: &Path) -> Result<Vec<
         .get()
         .ok_or_else(|| "ONNX Runtime 未初始化，请先调用 ensure_initialized".to_string())?;
 
-    // ── 2. 分词所有文本 ──
+    // ── 2. 并行分词 ──
     let mut items: Vec<(usize, Vec<i64>, Vec<i64>, Vec<i64>, usize)> =
         Vec::with_capacity(texts.len());
 
-    for (idx, &text) in texts.iter().enumerate() {
-        let (ids, mask, type_ids) = with_tokenizer(|tok| -> Result<_, String> {
-            let enc = tok
-                .encode(text, true)
-                .map_err(|e| format!("分词失败: {}", e))?;
-            let ids: Vec<i64> = enc.get_ids().iter().map(|&id| id as i64).collect();
-            let mask: Vec<i64> = enc
-                .get_attention_mask()
-                .iter()
-                .map(|&m| m as i64)
-                .collect();
-            let type_ids: Vec<i64> = enc
-                .get_type_ids()
-                .iter()
-                .map(|&id| id as i64)
-                .collect();
+    // 使用 rayon 并行分词，每个线程使用自己的 thread_local tokenizer
+    let tokenized: Vec<Result<(usize, Vec<i64>, Vec<i64>, Vec<i64>, usize), String>> = texts
+        .par_iter()
+        .enumerate()
+        .map(|(idx, text)| {
+            let (ids, mask, type_ids) = with_tokenizer(|tok| -> Result<_, String> {
+                let enc = tok
+                    .encode(*text, true)
+                    .map_err(|e| format!("分词失败: {}", e))?;
+                let ids: Vec<i64> = enc.get_ids().iter().map(|&id| id as i64).collect();
+                let mask: Vec<i64> = enc
+                    .get_attention_mask()
+                    .iter()
+                    .map(|&m| m as i64)
+                    .collect();
+                let type_ids: Vec<i64> = enc
+                    .get_type_ids()
+                    .iter()
+                    .map(|&id| id as i64)
+                    .collect();
 
-            // 截断至模型支持的最大长度
-            let truncated_len = ids.len().min(MAX_SEQ_LEN);
-            let ids = ids[..truncated_len].to_vec();
-            let mask = mask[..truncated_len].to_vec();
-            let type_ids = type_ids[..truncated_len].to_vec();
-            Ok((ids, mask, type_ids))
-        })?;
+                // 截断至模型支持的最大长度
+                let truncated_len = ids.len().min(MAX_SEQ_LEN);
+                let ids = ids[..truncated_len].to_vec();
+                let mask = mask[..truncated_len].to_vec();
+                let type_ids = type_ids[..truncated_len].to_vec();
+                Ok((ids, mask, type_ids))
+            })?;
 
-        let valid_count = mask.iter().filter(|&&m| m > 0).count();
+            let valid_count = mask.iter().filter(|&&m| m > 0).count();
+            Ok((idx, ids, mask, type_ids, valid_count))
+        })
+        .collect();
+
+    // 收集结果
+    for r in tokenized {
+        let (idx, ids, mask, type_ids, valid_count) = r?;
         items.push((idx, ids, mask, type_ids, valid_count));
     }
 
@@ -361,64 +379,179 @@ pub fn call_embedding_parallel(texts: &[&str], models_dir: &Path) -> Result<Vec<
     let groups: Vec<&[(usize, Vec<i64>, Vec<i64>, Vec<i64>, usize)]> =
         items.chunks(BATCH_SIZE).collect();
 
-    // ── 4. 依次对每组推理（ORT Session 需要 &mut self，各组串行执行）──
-    // ONNX Runtime 内部 GPU 流已经提供并行度；CPU 模式下 ORT 内部线程池也会利用多核。
+    let total_groups = groups.len();
+
+    // 分词完成，报告进度
+    if let Some(p) = progress.as_ref() {
+        if total_groups > 0 {
+            p(0, total_groups, &format!("分词完成，共 {} 组", total_groups));
+        }
+    }
+
+    // ── 4. 获取 Session ──
+    //   - ort 路径: 需要持有 MutexGuard 以支持 &mut self 的 run 调用
+    //   - tract 路径: 克隆 Arc 后立即释放锁，多个 group 可并行推理
+    #[cfg(not(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64"))))]
+    let session = {
+        let guard = session_mutex
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        Arc::clone(&guard)
+    };
+
+    #[cfg(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64")))]
     let mut session = session_mutex
         .lock()
         .unwrap_or_else(|e| e.into_inner());
 
     let mut results = vec![vec![0.0f32; EMBEDDING_DIMENSION]; texts.len()];
 
-    for group in &groups {
-        let group_size = group.len();
-        let max_len = group
-            .iter()
-            .map(|(_, ids, ..)| ids.len())
-            .max()
-            .unwrap_or(1);
-
-        // ── 构建 batched 张量 ──
-        let mut ids_flat = Vec::with_capacity(group_size * max_len);
-        let mut mask_flat = Vec::with_capacity(group_size * max_len);
-        let mut type_ids_flat = Vec::with_capacity(group_size * max_len);
-
-        for (_, ids, mask, type_ids, _) in group.iter() {
-            for j in 0..max_len {
-                if j < ids.len() {
-                    ids_flat.push(ids[j]);
-                    mask_flat.push(mask[j]);
-                    type_ids_flat.push(type_ids[j]);
-                } else {
-                    ids_flat.push(0i64);
-                    mask_flat.push(0i64);
-                    type_ids_flat.push(0i64);
+    // ── 5. 批量推理（各组可并行）──
+    #[cfg(not(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64"))))]
+    {
+        // tract 路径: Arc 支持共享，各组可并行推理
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let done = AtomicUsize::new(0);
+        let group_results: Vec<Result<Vec<(usize, Vec<f32>)>, String>> = groups
+            .par_iter()
+            .map(|group| {
+                let result = process_one_group(group, &session);
+                let completed = done.fetch_add(1, Ordering::Relaxed) + 1;
+                if let Some(p) = progress.as_ref() {
+                    p(completed, total_groups, &format!("向量化中 {}/{}", completed, total_groups));
                 }
+                result
+            })
+            .collect();
+
+        for gr in group_results {
+            for (orig_idx, emb) in gr? {
+                results[orig_idx] = emb;
             }
         }
+    }
 
-        let input_ids = Array2::from_shape_vec((group_size, max_len), ids_flat)
-            .map_err(|e| format!("构建 input_ids 失败: {}", e))?;
-        let attention_mask = Array2::from_shape_vec((group_size, max_len), mask_flat)
-            .map_err(|e| format!("构建 attention_mask 失败: {}", e))?;
-        let token_type_ids = Array2::from_shape_vec((group_size, max_len), type_ids_flat)
-            .map_err(|e| format!("构建 token_type_ids 失败: {}", e))?;
-
-        // ── 推理（run_batch 按平台切换 ort / tract-onnx 后端）──
-        let hidden = run_batch(&mut session, input_ids, attention_mask, token_type_ids)?;
-
-        // ── Mean Pooling + L2 Normalize ──
-        let group_masks: Vec<Vec<i64>> = group.iter().map(|(_, _, mask, ..)| mask.clone()).collect();
-        let valid_counts: Vec<usize> = group.iter().map(|(_, _, _, _, vc)| *vc).collect();
-
-        let embeddings = post_process_batch(hidden.view(), group_size, &group_masks, &valid_counts);
-
-        // ── 恢复原始顺序 ──
-        for (i, (orig_idx, ..)) in group.iter().enumerate() {
-            results[*orig_idx] = embeddings[i].clone();
+    #[cfg(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64")))]
+    {
+        // ort 路径: 需要 &mut self，各组串行执行
+        for (gi, group) in groups.iter().enumerate() {
+            if let Some(p) = progress.as_ref() {
+                p(gi + 1, total_groups, &format!("向量化中 {}/{}", gi + 1, total_groups));
+            }
+            let embeddings = process_one_group(group, &mut session)?;
+            for (orig_idx, emb) in embeddings {
+                results[orig_idx] = emb;
+            }
         }
     }
 
     Ok(results)
+}
+
+/// 处理一个 group 的所有文本块：padding → 推理 → mean pooling → L2 normalize → 恢复顺序
+#[cfg(not(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64"))))]
+fn process_one_group(
+    group: &[(usize, Vec<i64>, Vec<i64>, Vec<i64>, usize)],
+    session: &SessionType,
+) -> Result<Vec<(usize, Vec<f32>)>, String> {
+    let group_size = group.len();
+    let max_len = group
+        .iter()
+        .map(|(_, ids, ..)| ids.len())
+        .max()
+        .unwrap_or(1);
+
+    // 构建 batched 张量
+    let mut ids_flat = Vec::with_capacity(group_size * max_len);
+    let mut mask_flat = Vec::with_capacity(group_size * max_len);
+    let mut type_ids_flat = Vec::with_capacity(group_size * max_len);
+
+    for (_, ids, mask, type_ids, _) in group.iter() {
+        for j in 0..max_len {
+            if j < ids.len() {
+                ids_flat.push(ids[j]);
+                mask_flat.push(mask[j]);
+                type_ids_flat.push(type_ids[j]);
+            } else {
+                ids_flat.push(0i64);
+                mask_flat.push(0i64);
+                type_ids_flat.push(0i64);
+            }
+        }
+    }
+
+    let input_ids = Array2::from_shape_vec((group_size, max_len), ids_flat)
+        .map_err(|e| format!("构建 input_ids 失败: {}", e))?;
+    let attention_mask = Array2::from_shape_vec((group_size, max_len), mask_flat)
+        .map_err(|e| format!("构建 attention_mask 失败: {}", e))?;
+    let token_type_ids = Array2::from_shape_vec((group_size, max_len), type_ids_flat)
+        .map_err(|e| format!("构建 token_type_ids 失败: {}", e))?;
+
+    let hidden = run_batch(session, input_ids, attention_mask, token_type_ids)?;
+
+    let group_masks: Vec<Vec<i64>> = group.iter().map(|(_, _, mask, ..)| mask.clone()).collect();
+    let valid_counts: Vec<usize> = group.iter().map(|(_, _, _, _, vc)| *vc).collect();
+    let embeddings = post_process_batch(hidden.view(), group_size, &group_masks, &valid_counts);
+
+    let result: Vec<(usize, Vec<f32>)> = group
+        .iter()
+        .enumerate()
+        .map(|(i, (orig_idx, ..))| (*orig_idx, embeddings[i].clone()))
+        .collect();
+    Ok(result)
+}
+
+/// 处理一个 group（ORT 路径，需要 &mut SessionType）
+#[cfg(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64")))]
+fn process_one_group(
+    group: &[(usize, Vec<i64>, Vec<i64>, Vec<i64>, usize)],
+    session: &mut SessionType,
+) -> Result<Vec<(usize, Vec<f32>)>, String> {
+    let group_size = group.len();
+    let max_len = group
+        .iter()
+        .map(|(_, ids, ..)| ids.len())
+        .max()
+        .unwrap_or(1);
+
+    // 构建 batched 张量
+    let mut ids_flat = Vec::with_capacity(group_size * max_len);
+    let mut mask_flat = Vec::with_capacity(group_size * max_len);
+    let mut type_ids_flat = Vec::with_capacity(group_size * max_len);
+
+    for (_, ids, mask, type_ids, _) in group.iter() {
+        for j in 0..max_len {
+            if j < ids.len() {
+                ids_flat.push(ids[j]);
+                mask_flat.push(mask[j]);
+                type_ids_flat.push(type_ids[j]);
+            } else {
+                ids_flat.push(0i64);
+                mask_flat.push(0i64);
+                type_ids_flat.push(0i64);
+            }
+        }
+    }
+
+    let input_ids = Array2::from_shape_vec((group_size, max_len), ids_flat)
+        .map_err(|e| format!("构建 input_ids 失败: {}", e))?;
+    let attention_mask = Array2::from_shape_vec((group_size, max_len), mask_flat)
+        .map_err(|e| format!("构建 attention_mask 失败: {}", e))?;
+    let token_type_ids = Array2::from_shape_vec((group_size, max_len), type_ids_flat)
+        .map_err(|e| format!("构建 token_type_ids 失败: {}", e))?;
+
+    let hidden = run_batch(session, input_ids, attention_mask, token_type_ids)?;
+
+    let group_masks: Vec<Vec<i64>> = group.iter().map(|(_, _, mask, ..)| mask.clone()).collect();
+    let valid_counts: Vec<usize> = group.iter().map(|(_, _, _, _, vc)| *vc).collect();
+    let embeddings = post_process_batch(hidden.view(), group_size, &group_masks, &valid_counts);
+
+    let result: Vec<(usize, Vec<f32>)> = group
+        .iter()
+        .enumerate()
+        .map(|(i, (orig_idx, ..))| (*orig_idx, embeddings[i].clone()))
+        .collect();
+    Ok(result)
 }
 
 // ── 兼容旧接口（单线程）───
@@ -438,6 +571,6 @@ impl LocalEmbedding {
             .get()
             .ok_or("模型未初始化，请先调用 new")?;
         let model_path = Path::new(models_dir);
-        call_embedding_parallel(texts, model_path)
+        call_embedding_parallel(texts, model_path, None)
     }
 }

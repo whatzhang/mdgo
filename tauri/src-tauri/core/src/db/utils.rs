@@ -359,13 +359,16 @@ pub fn get_model_dir() -> &'static Path {
 /// # 并发模型
 /// - `call_embedding_parallel` 内部使用 ONNX Runtime 批处理推理
 /// - 模型路径通过 `OnceLock` 缓存，仅首次调用时解析
-pub fn call_embedding(texts: &[&str]) -> Result<Vec<Vec<f32>>, String> {
+pub fn call_embedding(
+    texts: &[&str],
+    progress: Option<&(dyn Fn(usize, usize, &str) + Send + Sync)>,
+) -> Result<Vec<Vec<f32>>, String> {
     if texts.is_empty() {
         return Ok(Vec::new());
     }
 
     let model_dir = get_model_dir();
-    crate::embedding::call_embedding_parallel(texts, model_dir)
+    crate::embedding::call_embedding_parallel(texts, model_dir, progress)
 }
 
 // ─── 文本分块（解决 C2：唯一版本）───
