@@ -30,6 +30,12 @@ pub async fn kb_start_watcher(
         let _ = app_clone.emit("watcher-error", msg.to_string());
     }));
 
+    // 注入变更通知回调：索引更新后发射 kb-watcher-event，通知前端刷新面板
+    let app_clone2 = app.clone();
+    state.watcher.set_on_changed(Arc::new(move || {
+        let _ = app_clone2.emit("kb-watcher-event", ());
+    }));
+
     // 启动 watcher（Idempotent）
     state.watcher.start(&dir_path, &dir_blacklist, &file_blacklist)
 }

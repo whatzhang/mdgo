@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use crate::services::chat::{ChatMessage, ChatMessageSource, ChatSession, ChatSessionSearchResult};
+use mdgo_core::{ChatMessage, ChatMessageSource, ChatSession, ChatSessionSearchResult};
+use tauri::{AppHandle, Emitter};
 use crate::AppState;
 
 #[tauri::command]
@@ -19,6 +20,7 @@ pub async fn chat_session_list(
 /// 创建前会先把上一个同类型会话（按 updated_at DESC）的所有消息
 /// 索引到 `chat_vectors` / `chat_bm25`，使其可被搜索召回。
 /// 当前进行中的会话不入索引，避免频繁重建。
+/// 超过上限 100 条时会自动删除最旧的会话，并同时清理其向量+BM25 索引。
 #[tauri::command]
 pub async fn chat_session_create(
     state: tauri::State<'_, AppState>,
@@ -53,26 +55,35 @@ pub async fn chat_session_create(
             let indexer = indexer.clone();
             let dir_path = dir_path.clone();
             let prev = prev.clone();
-            // 使用超时等待索引完成（30s），确保数据落库后才返回
-            // 如果超时则降级为异步后台执行，至少不阻塞会话创建
-            if tokio::time::timeout(
-                std::time::Duration::from_secs(30),
-                indexer.index_chat_session(&dir_path, &prev, &messages),
-            ).await.is_err() {
-                log::warn!("[chat] 索引上一个会话超时（30s），降级为后台异步执行");
-                tokio::spawn(async move {
-                    if let Err(e) = indexer.index_chat_session(&dir_path, &prev, &messages).await {
-                        log::warn!("[chat] 索引上一个会话失败: {}", e);
-                    }
-                });
-            }
+            // 后台异步索引上一个会话，不阻塞新建会话
+            tokio::spawn(async move {
+                if let Err(e) = indexer.index_chat_session(&dir_path, &prev, &messages).await {
+                    log::warn!("[chat] 索引上一个会话失败: {}", e);
+                }
+            });
         }
     }
 
-    // 3. 创建新会话
-    tokio::task::spawn_blocking(move || store.create_session(&title, &session_type))
+    // 3. 创建新会话（超出上限时自动删除最旧的，返回被删 ID）
+    let (session, deleted_ids) = tokio::task::spawn_blocking(move || store.create_session(&title, &session_type))
         .await
-        .map_err(|e| format!("任务执行失败: {}", e))?
+        .map_err(|e| format!("任务执行失败: {}", e))??;
+
+    // 4. 清理被自动删除会话的向量+BM25 索引
+    if !deleted_ids.is_empty() {
+        for sid in &deleted_ids {
+            let indexer = indexer.clone();
+            let dp = dir_path.clone();
+            let sid = sid.clone();
+            tokio::spawn(async move {
+                if let Err(e) = indexer.remove_chat_session(&dp, &sid).await {
+                    log::warn!("[chat] 清理自动删除会话索引失败 ({}): {}", sid, e);
+                }
+            });
+        }
+    }
+
+    Ok(session)
 }
 
 /// 删除会话：同时从 SQLite（CASCADE 消息）和对话索引中删除
@@ -230,8 +241,10 @@ pub async fn chat_messages_sources(
 ///
 /// 在会话切换、关闭页面或应用退出前调用，确保进行中的会话也能被搜索召回。
 /// 索引在后台异步执行，不阻塞前端。
+/// 自动去重：消息条数无变化时跳过，避免重复索引浪费性能。
 #[tauri::command]
 pub async fn chat_session_index_current(
+    app: AppHandle,
     state: tauri::State<'_, AppState>,
     dir_path: String,
     session_id: String,
@@ -252,6 +265,19 @@ pub async fn chat_session_index_current(
         None => return Ok(()),
     };
 
+    // 去重：消息条数无变化则跳过
+    let indexed_count = tokio::task::spawn_blocking({
+        let store = Arc::clone(&store);
+        let sid = session_id.clone();
+        move || store.get_indexed_message_count(&sid)
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))??;
+
+    if indexed_count == session.message_count {
+        return Ok(());
+    }
+
     let messages = tokio::task::spawn_blocking({
         let store = Arc::clone(&store);
         let sid = session_id.clone();
@@ -260,10 +286,22 @@ pub async fn chat_session_index_current(
     .await
     .map_err(|e| format!("任务执行失败: {}", e))??;
 
-    if !messages.is_empty() {
+    let msg_count = messages.len() as u32;
+
+    if msg_count > 0 {
+        let store_clone = store.clone();
+        let sid = session_id.clone();
+        let app_clone = app.clone();
         tokio::spawn(async move {
             if let Err(e) = indexer.index_chat_session(&dir_path, &session, &messages).await {
-                log::warn!("[chat] 索引当前会话失败: {}", e);
+                log::error!("[chat] 索引当前会话失败: {}", e);
+                let _ = app_clone.emit("chat-index-error", format!("索引会话失败: {}", e));
+            } else {
+                // 仅索引成功后才持久化已索引条数，避免失败后跳过后续重试
+                let _ = tokio::task::spawn_blocking(move || {
+                    store_clone.set_indexed_message_count(&sid, msg_count)
+                })
+                .await;
             }
         });
     }
@@ -286,6 +324,7 @@ pub async fn kb_chat_stats(
     let store = state.get_chat_store(&dir_path)?;
     let store_clone = Arc::clone(&store);
     let stats = tokio::task::spawn_blocking(move || {
+        // 统计当前目录下所有会话（按目录维度，不限制会话类型）
         let session_count = store_clone.get_session_count();
         let message_count = store_clone.get_message_count();
         KbChatStats {
@@ -296,4 +335,35 @@ pub async fn kb_chat_stats(
     .await
     .map_err(|e| format!("任务执行失败: {}", e))?;
     Ok(stats)
+}
+
+#[tauri::command]
+pub async fn chat_session_set_last(
+    state: tauri::State<'_, AppState>,
+    dir_path: String,
+    session_id: String,
+    mode: String,
+) -> Result<(), String> {
+    let store = state.get_chat_store(&dir_path)?;
+    tokio::task::spawn_blocking(move || store.set_last_session(&session_id, &mode))
+        .await
+        .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct LastSessionInfo {
+    pub session_id: String,
+    pub mode: String,
+}
+
+#[tauri::command]
+pub async fn chat_session_get_last(
+    state: tauri::State<'_, AppState>,
+    dir_path: String,
+) -> Result<Option<LastSessionInfo>, String> {
+    let store = state.get_chat_store(&dir_path)?;
+    let result = tokio::task::spawn_blocking(move || store.get_last_session())
+        .await
+        .map_err(|e| format!("任务执行失败: {}", e))??;
+    Ok(result.map(|(session_id, mode)| LastSessionInfo { session_id, mode }))
 }

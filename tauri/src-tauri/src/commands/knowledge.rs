@@ -1,6 +1,6 @@
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::services::{KbIndexResult, KbStatus};
+use mdgo_core::{IndexerConfig, KbIndexResult, KbProgress, KbStatus, SearchHit, call_embedding};
 use crate::AppState;
 
 // ─── 数据结构 ───
@@ -34,7 +34,7 @@ pub async fn kb_index(
     let state = app.state::<AppState>();
 
     // 更新黑名单配置
-    state.config_store.update(crate::services::IndexerConfig {
+    state.config_store.update(IndexerConfig {
         dir_blacklist,
         file_blacklist,
     });
@@ -48,7 +48,7 @@ pub async fn kb_index(
         .index_all(&dir_path, |percent, msg| {
             let _ = app.emit(
                 "kb-progress",
-                crate::db::utils::KbProgress {
+                KbProgress {
                     percent,
                     message: msg.to_string(),
                 },
@@ -71,12 +71,12 @@ pub async fn kb_search_hybrid(
     dir_path: String,
     query: String,
     top_k: u32,
-) -> Result<Vec<crate::db::lance::SearchHit>, String> {
+) -> Result<Vec<SearchHit>, String> {
     let state = app.state::<AppState>();
 
     // 本地生成查询向量（bge-small-zh-v1.5, 384 维）
     let query_text = query.clone();
-    let query_embedding = tokio::task::spawn_blocking(move || crate::db::utils::call_embedding(&[&query_text]))
+    let query_embedding = tokio::task::spawn_blocking(move || call_embedding(&[&query_text]))
         .await
         .map_err(|e| format!("Embedding 任务执行失败: {}", e))?
         .map_err(|e| format!("生成查询向量失败: {}", e))?;

@@ -4,18 +4,24 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio::sync::Mutex;
 
+use crate::chat_types::{ChatMessage, ChatSession};
+use crate::config::ConfigStore;
 use crate::db::bm25::Bm25Index;
 use crate::db::lance::{DocumentChunk, LanceStore, SearchHit};
 use crate::db::utils;
 use crate::db::utils::IgnoreMatcher;
-use crate::services::chat::{ChatMessage, ChatSession};
-
-use super::config::ConfigStore;
-use super::types::{IndexMeta, KbIndexResult, KbStatus};
+use crate::types::{IndexMeta, KbIndexResult, KbStatus};
 
 const KB_SUPPORTED_EXTS: &[&str] = utils::KB_SUPPORTED_EXTS;
 const BATCH_CHUNK_LIMIT: usize = 200;
+/// RRF 融合常数 K（值越小排名靠前的贡献越大）
 const RRF_K: u32 = 30;
+/// BM25 关键词匹配的 RRF 权重倍数。
+///
+/// 当 chunk 被 BM25 命中（存在关键词匹配）时，其 RRF 分数乘以该权重。
+/// 值 > 1.0 使关键词精确匹配结果优先于纯语义相似结果。
+/// 推荐值 1.5（实验调优后确定）。
+const BM25_RRF_WEIGHT: f32 = 1.5;
 
 /// 知识库索引引擎（纯逻辑，不依赖 Tauri）
 ///
@@ -253,6 +259,9 @@ impl Indexer {
         // ── LanceDB：确保表存在，先删后写 ──
         let store = self.get_lance_store(dir_path).await;
         store.create_table().await?;
+
+        // 统计旧 chunk 数，用于元数据差值计算（避免每次 index 后 chunk_count 累积增长）
+        let old_chunks = self.count_document_chunks(&store, rel_path).await;
         let _ = store.delete_document(rel_path).await;
         store.add_chunks(&doc_chunks, &vectors).await.map_err(|e| {
             log::error!("[indexer] 写入 LanceDB 失败 ({}): {}", rel_path, e);
@@ -268,8 +277,13 @@ impl Indexer {
             })?;
         }
 
-        // 写入成功后更新元数据
-        self.update_metadata_delta(dir_path, 0, doc_chunks.len() as i32, vectors.len() as i32).await;
+        // 写入成功后更新元数据（用新旧差值，避免重复 index 导致数据膨胀）
+        let new_count = doc_chunks.len() as i32;
+        let old_count = old_chunks as i32;
+        let chunk_delta = new_count - old_count;
+        let vector_delta = new_count - old_count; // 每个 chunk 生成一个向量
+        let file_delta = if old_chunks == 0 { 1 } else { 0 };
+        self.update_metadata_delta(dir_path, file_delta, chunk_delta, vector_delta).await;
 
         Ok(())
     }
@@ -296,7 +310,7 @@ impl Indexer {
 
         // 更新元数据（file_count = -1 表示文件被删除）
         if deleted_chunks > 0 {
-            self.update_metadata_delta(dir_path, -1, 0, -(deleted_chunks as i32)).await;
+            self.update_metadata_delta(dir_path, -1, -(deleted_chunks as i32), -(deleted_chunks as i32)).await;
         } else {
             // 即使没有 chunk 也要更新 file_count 和时间戳
             self.update_metadata_delta(dir_path, -1, 0, 0).await;
@@ -380,12 +394,12 @@ impl Indexer {
             Err(_) => Vec::new(),
         };
 
-        let fused = rrf_merge(&vec_hits, &bm25_hits, RRF_K);
+        let fused = rrf_fuse(&vec_hits, &bm25_hits, RRF_K);
         let result: Vec<SearchHit> = fused.into_iter().take(top_k as usize).collect();
         Ok(result)
     }
 
-    // ─── 内部 Embedding（纯本地）───
+    /// ─── 内部 Embedding（纯本地）───
 
     /// 对一组 DocumentChunk 批量 Embedding，返回向量列表。
     ///
@@ -579,8 +593,8 @@ impl Indexer {
             Err(_) => Vec::new(),
         };
 
-        // 4. RRF 融合
-        let fused = rrf_merge(&vec_hits, &bm25_hits, RRF_K);
+        // 4. RRF 融合+实际分数
+        let fused = rrf_fuse(&vec_hits, &bm25_hits, RRF_K);
 
         // 5. 转换为 (session_id, score, matched_text)
         let results = fused
@@ -669,38 +683,64 @@ fn load_metadata(data_dir: &str) -> Option<IndexMeta> {
     serde_json::from_str(&content).ok()
 }
 
-/// RRF（倒数排名融合）
-fn rrf_merge(vec_hits: &[SearchHit], bm25_hits: &[SearchHit], k: u32) -> Vec<SearchHit> {
+/// RRF 融合 + 实际分数报告
+///
+/// 排序使用 RRF（倒数排名融合），保留对双系统共识信号的敏感度；
+/// `score` 字段报告向量/BM25 的实际相似度最大值（归一化到 [0,1]），
+/// 确保前端阈值过滤（如 0.3）能正常工作。
+///
+/// 相比纯 RRF（分数 < 0.1），本方案既保留了排序质量，又提供了
+/// 语义上有意义的分数。
+fn rrf_fuse(vec_hits: &[SearchHit], bm25_hits: &[SearchHit], k: u32) -> Vec<SearchHit> {
     use std::collections::HashMap;
 
-    let mut score_map: HashMap<(String, u32), (f32, String)> = HashMap::new();
-
-    for (rank, hit) in vec_hits.iter().enumerate() {
-        let key = (hit.doc_name.clone(), hit.chunk_index);
-        let rrf_score = 1.0 / (k as f32 + rank as f32);
-        score_map
-            .entry(key)
-            .or_insert_with(|| (0.0, hit.text.clone()))
-            .0 += rrf_score;
+    #[derive(Default)]
+    struct Entry {
+        rrf_score: f32,
+        sim_score: f32,
+        text: String,
     }
 
+    let mut score_map: HashMap<(String, u32), Entry> = HashMap::new();
+
+    // ── 遍历向量结果集 ──
+    for (rank, hit) in vec_hits.iter().enumerate() {
+        let key = (hit.doc_name.clone(), hit.chunk_index);
+        let entry = score_map.entry(key).or_default();
+        entry.rrf_score += 1.0 / (k as f32 + rank as f32);
+        if hit.score > entry.sim_score {
+            entry.sim_score = hit.score;
+        }
+        // 向量结果集的 text 作为基准
+        entry.text = hit.text.clone();
+    }
+
+    // ── 遍历 BM25 结果集（关键词匹配，带权重 BM25_RRF_WEIGHT）──
     for (rank, hit) in bm25_hits.iter().enumerate() {
         let key = (hit.doc_name.clone(), hit.chunk_index);
-        let rrf_score = 1.0 / (k as f32 + rank as f32);
-        let entry = score_map
-            .entry(key)
-            .or_insert_with(|| (0.0, hit.text.clone()));
-        entry.0 += rrf_score;
-        if entry.1.len() < hit.text.len() {
-            entry.1 = hit.text.clone();
+        let entry = score_map.entry(key).or_default();
+        // BM25 匹配的 RRF 分数乘以权重，使关键词精确匹配优先
+        entry.rrf_score += BM25_RRF_WEIGHT / (k as f32 + rank as f32);
+        if hit.score > entry.sim_score {
+            entry.sim_score = hit.score;
+        }
+        // 仅当 vec 未覆盖此 key 时才用 BM25 的 text
+        if entry.text.is_empty() {
+            entry.text = hit.text.clone();
         }
     }
 
-    let mut results: Vec<SearchHit> = score_map
-        .into_iter()
-        .map(|((doc_name, chunk_index), (score, text))| SearchHit { text, doc_name, chunk_index, score: score.min(1.0) })
-        .collect();
+    // ── 按 RRF 排序，报告实际相似度 ──
+    let mut entries: Vec<_> = score_map.drain().collect();
+    entries.sort_by(|a, b| b.1.rrf_score.partial_cmp(&a.1.rrf_score).unwrap_or(std::cmp::Ordering::Equal));
 
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
-    results
+    entries
+        .into_iter()
+        .map(|((doc_name, chunk_index), entry)| SearchHit {
+            text: entry.text,
+            doc_name,
+            chunk_index,
+            score: entry.sim_score.min(1.0).max(0.0),
+        })
+        .collect()
 }

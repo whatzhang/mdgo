@@ -1,3 +1,10 @@
+[workspace]
+resolver = "2"
+members = [
+    ".",
+    "core",
+]
+
 [package]
 name = "mdgo"
 version = "1.0.0"
@@ -25,31 +32,17 @@ mime_guess = "2"
 base64 = "0.22"
 sysinfo = "0.39.5"
 arboard = "3"
-
-# 知识库 — 向量数据库 + 全文检索
-lancedb = "0.31"
-arrow-array = "58"
-arrow-schema = "58"
-futures = "0.3"
-tantivy = "0.26"
 tokio = { version = "1", features = ["full"] }
-
-# 知识库 — 本地 Embedding 模型（tract-onnx 纯 Rust 推理，零外部依赖）
-tract-onnx = "0.23"
-tokenizers = "0.22"
-
-# 知识库 — Embedding 并行化
-rayon = "1"
-
-# 知识库 — 文件监听增量索引
-notify = { version = "8", features = ["macos_kqueue"] }
-
-# 知识库 — 工具
-uuid = { version = "1", features = ["v4"] }
-regex = "1"
 
 # AI 聊天历史
 rusqlite = { version = "0.34", features = ["bundled"] }
+
+# 知识库 — 核心引擎（重型依赖隔离在 mdgo-core 中）
+mdgo-core = { path = "core" }
+
+# 工具
+uuid = { version = "1", features = ["v4"] }
+regex = "1"
 
 # 日志
 log = "0.4"

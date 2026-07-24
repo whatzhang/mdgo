@@ -27,5 +27,3 @@ pub struct IndexMeta {
     pub vector_count: u32,
     pub indexed_at: u64,
 }
-
-

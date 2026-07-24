@@ -3,52 +3,12 @@ use std::sync::Mutex;
 use std::time::SystemTime;
 
 use rusqlite::Connection;
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use mdgo_core::{ChatMessage, ChatMessageSource, ChatSession, ChatSessionSearchResult};
 
 /// 每类对话（regular / rag）最多保留的非收藏会话数量
 const MAX_SESSIONS_PER_TYPE: i64 = 100;
-
-// ─── 数据模型 ───
-
-#[derive(Debug, Serialize, Clone)]
-pub struct ChatSession {
-    pub id: String,
-    pub title: String,
-    pub created_at: u64,
-    pub updated_at: u64,
-    pub favorite: bool,
-    pub message_count: u32,
-    pub token_usage: u32,
-    pub month_group: String,
-    pub r#type: String,
-}
-
-#[derive(Debug, Serialize, Clone)]
-pub struct ChatMessage {
-    pub id: String,
-    pub session_id: String,
-    pub role: String,
-    pub content: String,
-    pub token_count: i32,
-    pub created_at: u64,
-}
-
-#[derive(Debug, Serialize, Clone)]
-pub struct ChatSessionSearchResult {
-    pub session: ChatSession,
-    pub score: f32,
-    pub matched_content: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ChatMessageSource {
-    pub id: String,
-    pub message_id: String,
-    pub doc_name: String,
-    pub score: f32,
-    pub snippet: String,
-}
 
 // ─── 存储服务 ───
 
@@ -70,6 +30,9 @@ impl ChatStore {
         // 启用外键约束（默认关闭，必须手动开启）
         conn.execute_batch("PRAGMA foreign_keys = ON;")
             .map_err(|e| format!("启用外键约束失败: {}", e))?;
+        // 启用 WAL 模式，支持多连接并发读写（与 AiHistoryStore 共享同一文件）
+        conn.execute_batch("PRAGMA journal_mode=WAL;")
+            .map_err(|e| format!("启用 WAL 模式失败: {}", e))?;
         Self::init_tables(&conn)?;
 
         Ok(Self {
@@ -79,7 +42,7 @@ impl ChatStore {
 
     fn get_db_path(db_dir_path: &str) -> String {
         Path::new(db_dir_path)
-            .join("chat.db")
+            .join("mdgo.db")
             .to_string_lossy()
             .to_string()
     }
@@ -116,6 +79,11 @@ impl ChatStore {
                 snippet TEXT NOT NULL DEFAULT '',
                 FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS chat_config (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
             ",
         )
         .map_err(|e| format!("建表失败: {}", e))?;
@@ -137,7 +105,8 @@ impl ChatStore {
     ///
     /// 每类对话（regular / rag）最多保留 100 条非收藏会话。
     /// 超出时自动删除最早 updated_at 的非收藏会话（及其消息，CASCADE）。
-    pub fn create_session(&self, title: &str, session_type: &str) -> Result<ChatSession, String> {
+    /// 返回 (新会话, 被删除的旧会话 ID 列表)。
+    pub fn create_session(&self, title: &str, session_type: &str) -> Result<(ChatSession, Vec<String>), String> {
         let now = unix_timestamp_now();
         let id = Uuid::new_v4().to_string();
         let month_group = unix_timestamp_to_year_month(now);
@@ -168,21 +137,39 @@ impl ChatStore {
             .map_err(|e| format!("统计会话数失败: {}", e))?;
 
         // 超出 100 条时删除最旧的（按 updated_at ASC 排序）
+        let mut deleted_ids: Vec<String> = Vec::new();
         if count > MAX_SESSIONS_PER_TYPE {
             let excess = count - MAX_SESSIONS_PER_TYPE;
-            if let Err(e) = conn.execute(
-                "DELETE FROM chat_sessions WHERE id IN (SELECT id FROM chat_sessions WHERE type = ?1 AND favorite = 0 ORDER BY updated_at ASC, id ASC LIMIT ?2)",
-                rusqlite::params![session_type, excess],
-            ) {
-                conn.execute_batch("ROLLBACK").ok();
-                return Err(format!("清理旧会话失败: {}", e));
+
+            // 先 SELECT 待删除的 session ID
+            let mut stmt = conn
+                .prepare("SELECT id FROM chat_sessions WHERE type = ?1 AND favorite = 0 ORDER BY updated_at ASC, id ASC LIMIT ?2")
+                .map_err(|e| format!("查询待删除会话失败: {}", e))?;
+            let ids: Vec<String> = stmt
+                .query_map(rusqlite::params![session_type, excess], |row| {
+                    row.get::<_, String>(0)
+                })
+                .map_err(|e| format!("查询待删除会话失败: {}", e))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| format!("查询待删除会话失败: {}", e))?;
+
+            if !ids.is_empty() {
+                // 再执行 DELETE
+                let placeholders: Vec<String> = ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
+                let sql = format!("DELETE FROM chat_sessions WHERE id IN ({})", placeholders.join(","));
+                let params: Vec<&dyn rusqlite::types::ToSql> = ids.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+                if let Err(e) = conn.execute(&sql, params.as_slice()) {
+                    conn.execute_batch("ROLLBACK").ok();
+                    return Err(format!("清理旧会话失败: {}", e));
+                }
+                deleted_ids = ids;
             }
         }
 
         conn.execute_batch("COMMIT")
             .map_err(|e| format!("提交事务失败: {}", e))?;
 
-        Ok(ChatSession {
+        Ok((ChatSession {
             id,
             title: title.to_string(),
             created_at: now,
@@ -192,18 +179,46 @@ impl ChatStore {
             token_usage: 0,
             month_group,
             r#type: session_type.to_string(),
-        })
+        }, deleted_ids))
     }
 
-    /// 删除会话及其所有消息（CASCADE）
+    /// 删除会话及其所有消息（CASCADE），同时清理 chat_config 中相关条目
     pub fn delete_session(&self, id: &str) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        conn.execute_batch("BEGIN TRANSACTION")
+            .map_err(|e| format!("开启事务失败: {}", e))?;
+
         let affected = conn
             .execute("DELETE FROM chat_sessions WHERE id = ?1", rusqlite::params![id])
             .map_err(|e| format!("删除会话失败: {}", e))?;
         if affected == 0 {
+            conn.execute_batch("ROLLBACK").ok();
             return Err("会话不存在".to_string());
         }
+
+        // 清理 chat_config 中该会话的索引计数条目
+        let indexed_key = format!("indexed_msg_count_{}", id);
+        conn.execute("DELETE FROM chat_config WHERE key = ?1", rusqlite::params![indexed_key])
+            .map_err(|e| format!("清理索引入数失败: {}", e))?;
+
+        // 如果被删除的会话是 last_session，也一并清理
+        // 先读出当前 last_session 值
+        let last_val: Result<String, _> = conn.query_row(
+            "SELECT value FROM chat_config WHERE key = 'last_session'",
+            [],
+            |row| row.get(0),
+        );
+        if let Ok(val) = last_val {
+            if val.contains(id) {
+                conn.execute("DELETE FROM chat_config WHERE key = 'last_session'", [])
+                    .ok();
+            }
+        }
+
+        conn.execute_batch("COMMIT")
+            .map_err(|e| format!("提交事务失败: {}", e))?;
+
         Ok(())
     }
 
@@ -247,7 +262,7 @@ impl ChatStore {
         Ok(new_fav != 0)
     }
 
-    /// 获取会话总数
+    /// 获取指定类型的会话总数
     pub fn get_session_count(&self) -> u32 {
         let conn = match self.conn.lock() {
             Ok(c) => c,
@@ -255,6 +270,20 @@ impl ChatStore {
         };
         conn.query_row("SELECT COUNT(*) FROM chat_sessions", [], |row| row.get(0))
             .unwrap_or(0)
+    }
+
+    /// 获取指定类型的会话总数
+    pub fn get_session_count_by_type(&self, session_type: &str) -> u32 {
+        let conn = match self.conn.lock() {
+            Ok(c) => c,
+            Err(_) => return 0,
+        };
+        conn.query_row(
+            "SELECT COUNT(*) FROM chat_sessions WHERE type = ?1",
+            rusqlite::params![session_type],
+            |row| row.get(0),
+        )
+        .unwrap_or(0)
     }
 
     /// 获取所有会话的消息总数
@@ -266,6 +295,20 @@ impl ChatStore {
         conn.query_row(
             "SELECT COALESCE(SUM(message_count), 0) FROM chat_sessions",
             [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0)
+    }
+
+    /// 获取指定类型的会话消息总数
+    pub fn get_message_count_by_type(&self, session_type: &str) -> u32 {
+        let conn = match self.conn.lock() {
+            Ok(c) => c,
+            Err(_) => return 0,
+        };
+        conn.query_row(
+            "SELECT COALESCE(SUM(message_count), 0) FROM chat_sessions WHERE type = ?1",
+            rusqlite::params![session_type],
             |row| row.get(0),
         )
         .unwrap_or(0)
@@ -428,6 +471,16 @@ impl ChatStore {
         ) {
             conn.execute_batch("ROLLBACK").ok();
             return Err(format!("重置会话统计失败: {}", e));
+        }
+
+        // 同步重置已索引入数，避免 chat_session_index_current 去重判断永久不匹配
+        let indexed_key = format!("indexed_msg_count_{}", session_id);
+        if let Err(e) = conn.execute(
+            "DELETE FROM chat_config WHERE key = ?1",
+            rusqlite::params![indexed_key],
+        ) {
+            conn.execute_batch("ROLLBACK").ok();
+            return Err(format!("重置已索引入数失败: {}", e));
         }
 
         conn.execute_batch("COMMIT")
@@ -793,6 +846,70 @@ impl ChatStore {
     pub fn update_session_title(&self, id: &str, title: &str) -> Result<(), String> {
         // update_session_title 与 rename_session 语义相同
         self.rename_session(id, title)
+    }
+
+    /// 记录最后打开的会话（覆盖写入）
+    pub fn set_last_session(&self, session_id: &str, mode: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT OR REPLACE INTO chat_config (key, value) VALUES ('last_session', ?1)",
+            rusqlite::params![serde_json::json!({"sessionId": session_id, "mode": mode}).to_string()],
+        )
+        .map_err(|e| format!("记录最后会话失败: {}", e))?;
+        Ok(())
+    }
+
+    /// 获取最后打开的会话，返回 (session_id, mode)
+    pub fn get_last_session(&self) -> Result<Option<(String, String)>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let result: Result<String, _> = conn.query_row(
+            "SELECT value FROM chat_config WHERE key = 'last_session'",
+            [],
+            |row| row.get(0),
+        );
+        match result {
+            Ok(json_str) => {
+                let val: serde_json::Value = serde_json::from_str(&json_str)
+                    .map_err(|e| format!("解析最后会话数据失败: {}", e))?;
+                let session_id = val["sessionId"].as_str().unwrap_or("").to_string();
+                let mode = val["mode"].as_str().unwrap_or("normal").to_string();
+                if session_id.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some((session_id, mode)))
+                }
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(format!("查询最后会话失败: {}", e)),
+        }
+    }
+
+    /// 获取该会话已索引的消息条数（从 chat_config 读取，用于去重）
+    pub fn get_indexed_message_count(&self, session_id: &str) -> Result<u32, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let key = format!("indexed_msg_count_{}", session_id);
+        let result: Result<String, _> = conn.query_row(
+            "SELECT value FROM chat_config WHERE key = ?1",
+            rusqlite::params![key],
+            |row| row.get(0),
+        );
+        match result {
+            Ok(v) => v.parse::<u32>().map_err(|e| format!("解析已索引消息数失败: {}", e)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(0),
+            Err(e) => Err(format!("查询已索引消息数失败: {}", e)),
+        }
+    }
+
+    /// 记录该会话已索引的消息条数（用于去重）
+    pub fn set_indexed_message_count(&self, session_id: &str, count: u32) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let key = format!("indexed_msg_count_{}", session_id);
+        conn.execute(
+            "INSERT OR REPLACE INTO chat_config (key, value) VALUES (?1, ?2)",
+            rusqlite::params![key, count.to_string()],
+        )
+        .map_err(|e| format!("记录已索引消息数失败: {}", e))?;
+        Ok(())
     }
 }
 

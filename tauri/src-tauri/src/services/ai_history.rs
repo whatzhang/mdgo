@@ -69,6 +69,7 @@ pub struct DailyCount {
 #[derive(Debug, Serialize)]
 pub struct FileCount {
     pub file_name: String,
+    pub file_path: String,
     pub count: u32,
 }
 
@@ -85,7 +86,7 @@ impl AiHistoryStore {
     /// 创建新的 AiHistoryStore，自动创建数据库目录和表
     pub fn new(db_dir_path: &str) -> Result<Self, String> {
         let db_path = Path::new(db_dir_path)
-            .join("ai_history.db")
+            .join("mdgo.db")
             .to_string_lossy()
             .to_string();
 
@@ -96,6 +97,9 @@ impl AiHistoryStore {
 
         let conn = Connection::open(&db_path)
             .map_err(|e| format!("打开数据库失败: {}", e))?;
+        // 启用 WAL 模式，支持多连接并发读写（与 ChatStore 共享同一文件）
+        conn.execute_batch("PRAGMA journal_mode=WAL;")
+            .map_err(|e| format!("启用 WAL 模式失败: {}", e))?;
         Self::init_tables(&conn)?;
 
         Ok(Self {
@@ -348,16 +352,17 @@ impl AiHistoryStore {
         // 最热文件排行 Top 10
         let mut stmt = conn
             .prepare(
-                "SELECT file_name, COUNT(*) as cnt FROM ai_history
+                "SELECT file_name, file_path, COUNT(*) as cnt FROM ai_history
                  WHERE file_name != '' AND file_name IS NOT NULL
-                 GROUP BY file_name ORDER BY cnt DESC LIMIT 10",
+                 GROUP BY file_name, file_path ORDER BY cnt DESC LIMIT 10",
             )
             .map_err(|e| format!("文件排行查询失败: {}", e))?;
         let top_files = stmt
             .query_map([], |row| {
                 Ok(FileCount {
                     file_name: row.get(0)?,
-                    count: row.get(1)?,
+                    file_path: row.get(1)?,
+                    count: row.get(2)?,
                 })
             })
             .map_err(|e| format!("文件排行查询失败: {}", e))?

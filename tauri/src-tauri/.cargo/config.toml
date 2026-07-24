@@ -1,0 +1,16 @@
+# 解决 Windows 上 CRT 链接冲突：
+#   ort-sys 预编译的 ONNX Runtime 二进制使用动态 CRT (/MD)
+#   esaxx-rs、onig_sys 等 crates 中的 cc crate 默认使用静态 CRT (/MT) 或不一致
+#   MSVC 不允许混合 /MT 和 /MD，必须在所有链接单元间统一。
+#
+# 策略:
+#   1. rustflags = "-C target-feature=-crt-static" 确保所有 Rust crate 使用动态 CRT
+#   2. [env] 中设置 CFLAGS/CXXFLAGS="-MD" 强制 C/C++ 编译使用动态 CRT
+#      (cc crate 在默认 flags 之后处理 envflags，MSVC 以最后一个 /MT 或 /MD 为准)
+# 注意: -MD 在 GCC/Clang 上意为"生成依赖文件"(无害), 在 MSVC 上意为"动态 CRT"(必需项)
+[target.'cfg(target_os = "windows")']
+rustflags = ["-C", "target-feature=-crt-static"]
+
+[env]
+CFLAGS = "-MD"
+CXXFLAGS = "-MD"

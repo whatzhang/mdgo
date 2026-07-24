@@ -325,10 +325,12 @@ fn resolve_model_dir() -> std::path::PathBuf {
                 return p;
             }
         }
-        // fallback: env!("CARGO_MANIFEST_DIR") 编译时注入
+        // fallback: env!("CARGO_MANIFEST_DIR") 编译时注入（core crate 在 core/ 下，需退回父目录）
         #[cfg(debug_assertions)]
         {
             let p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
                 .join("models")
                 .join("bge-small-zh-v1.5");
             if p.join("model.onnx").exists() {
@@ -350,12 +352,12 @@ pub fn get_model_dir() -> &'static Path {
     MODEL_DIR.get_or_init(|| resolve_model_dir())
 }
 
-/// 使用本地 BGE-Small-ZH 模型并行生成向量（零锁，CPU 满载）。
+/// 使用本地 BGE-Small-ZH 模型生成向量。
 ///
 /// 向量维度：384（bge-small-zh-v1.5）。
 ///
 /// # 并发模型
-/// - `call_embedding_parallel` 内部使用 rayon 线程池并行推理
+/// - `call_embedding_parallel` 内部使用 ONNX Runtime 批处理推理
 /// - 模型路径通过 `OnceLock` 缓存，仅首次调用时解析
 pub fn call_embedding(texts: &[&str]) -> Result<Vec<Vec<f32>>, String> {
     if texts.is_empty() {
@@ -363,7 +365,7 @@ pub fn call_embedding(texts: &[&str]) -> Result<Vec<Vec<f32>>, String> {
     }
 
     let model_dir = get_model_dir();
-    crate::services::call_embedding_parallel(texts, model_dir)
+    crate::embedding::call_embedding_parallel(texts, model_dir)
 }
 
 // ─── 文本分块（解决 C2：唯一版本）───
@@ -486,5 +488,3 @@ pub fn get_chat_bm25_dir(dir_path: &str) -> String {
         .to_string_lossy()
         .to_string()
 }
-
-

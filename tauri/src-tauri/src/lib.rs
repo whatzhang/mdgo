@@ -1,6 +1,5 @@
 #![allow(linker_messages)]
 mod commands;
-mod db;
 mod services;
 
 use std::collections::HashMap;
@@ -8,8 +7,8 @@ use std::sync::{Arc, Mutex};
 
 use commands::system::SystemMonitorState;
 use log::LevelFilter;
-use services::{ConfigStore, Indexer, IndexerConfig, WatcherService};
 use simplelog::{ColorChoice, Config, TerminalMode, TermLogger, WriteLogger};
+use mdgo_core::{ConfigStore, Indexer, IndexerConfig, WatcherService};
 
 /// Tauri 托管的应用级共享状态
 pub struct AppState {
@@ -78,7 +77,9 @@ pub fn run() {
     let on_error: Arc<dyn Fn(&str) + Send + Sync> = Arc::new(|msg: &str| {
         log::error!("[watcher-err] {}", msg);
     });
-    let watcher = Arc::new(WatcherService::new(indexer.clone(), on_error));
+    // watcher 变更回调（初始无操作，启动时由 fs_watcher 注入真实 Tauri 事件发射器）
+    let on_changed: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+    let watcher = Arc::new(WatcherService::new(indexer.clone(), on_error, on_changed));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -150,6 +151,8 @@ pub fn run() {
             commands::chat::chat_messages_sources,
             commands::chat::chat_session_index_current,
             commands::chat::kb_chat_stats,
+            commands::chat::chat_session_set_last,
+            commands::chat::chat_session_get_last,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

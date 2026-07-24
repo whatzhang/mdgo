@@ -79,13 +79,6 @@ run_tests() {
   cd "$TAURI_SRC"
   cargo test 2>&1 || warn "没有找到 Rust 测试用例"
   ok "Rust 测试完成"
-
-  info "运行 Python 后端检查..."
-  if [ -d "$BACKEND_DIR" ]; then
-    cd "$BACKEND_DIR"
-    python3 -c "import py_compile; py_compile.compile('main.py', doraise=True)" 2>/dev/null && \
-      ok "Python 后端语法检查通过" || warn "Python 检查失败（可忽略）"
-  fi
 }
 
 # ------------------------------------------------------------------------------
@@ -93,7 +86,6 @@ run_tests() {
 # ------------------------------------------------------------------------------
 run_dev() {
   info "启动 Tauri 开发模式..."
-  info "确保 Python 后端已在另一个终端启动（可选）"
   cd "$TAURI_DIR"
   npx tauri dev
 }

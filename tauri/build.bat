@@ -168,29 +168,8 @@ if %TEST_EXIT_CODE% equ 0 (
     exit /b 1
 )
 
-echo [INFO]  Running Python backend check...
-if exist "%BACKEND_DIR%\main.py" (
-    REM -- Fix 7: Check if python command exists --
-    where python >nul 2>&1
-    if errorlevel 1 (
-        echo [WARN]  Python not found, skipping backend check
-        goto :eof
-    )
-    
-    pushd "%BACKEND_DIR%"
-    python -c "import py_compile; py_compile.compile('main.py', doraise=True)" 2>nul
-    if errorlevel 1 (
-        echo [WARN]  Python check failed (can be ignored)
-    ) else (
-        echo [OK]    Python backend syntax check passed
-    )
-    popd
-)
-goto :eof
-
 :run_dev
 echo [INFO]  Starting Tauri dev mode...
-echo [INFO]  Make sure Python backend is started in another terminal (optional)
 
 pushd "%TAURI_DIR%"
 

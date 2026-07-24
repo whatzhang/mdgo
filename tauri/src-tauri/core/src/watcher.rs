@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use tokio::sync::{mpsc, oneshot};
 
-use super::indexer::Indexer;
+use crate::indexer::Indexer;
 
 /// 文件变更事件（带时间戳，用于防抖排序）
 struct FileEvent {
@@ -51,10 +51,16 @@ pub struct WatcherService {
     /// 增量索引错误回调（用于通知前端）
     /// 包裹在 Mutex 中以便在 AppHandle 可用后替换（替换操作仅发生在 start() 调用时，非热路径可接受）
     on_error: Mutex<Arc<dyn Fn(&str) + Send + Sync>>,
+    /// 增量索引成功回调（通知前端刷新面板）
+    on_changed: Mutex<Arc<dyn Fn() + Send + Sync>>,
 }
 
 impl WatcherService {
-    pub fn new(indexer: Arc<Indexer>, on_error: Arc<dyn Fn(&str) + Send + Sync>) -> Self {
+    pub fn new(
+        indexer: Arc<Indexer>,
+        on_error: Arc<dyn Fn(&str) + Send + Sync>,
+        on_changed: Arc<dyn Fn() + Send + Sync>,
+    ) -> Self {
         Self {
             indexer,
             notify_watcher: Mutex::new(None),
@@ -65,6 +71,7 @@ impl WatcherService {
             watch_dir: Mutex::new(None),
             running: AtomicBool::new(false),
             on_error: Mutex::new(on_error),
+            on_changed: Mutex::new(on_changed),
         }
     }
 
@@ -169,8 +176,9 @@ impl WatcherService {
         let debounce_indexer = indexer.clone();
         let debounce_dir = dir_path.to_string();
         let debounce_on_error = self.on_error.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let debounce_on_changed = self.on_changed.lock().unwrap_or_else(|e| e.into_inner()).clone();
         tokio::spawn(async move {
-            run_debounce_loop(rx, cmd_rx, stop_rx, debounce_indexer, &debounce_dir, paused, debounce_on_error).await;
+            run_debounce_loop(rx, cmd_rx, stop_rx, debounce_indexer, &debounce_dir, paused, debounce_on_error, debounce_on_changed).await;
         });
 
         // 保存状态（先 drop 旧的 notify watcher）
@@ -235,6 +243,11 @@ impl WatcherService {
     pub fn set_on_error(&self, on_error: Arc<dyn Fn(&str) + Send + Sync>) {
         *self.on_error.lock().unwrap_or_else(|e| e.into_inner()) = on_error;
     }
+
+    /// 替换变更通知回调（用于在 AppHandle 可用后注入 Tauri 事件）
+    pub fn set_on_changed(&self, on_changed: Arc<dyn Fn() + Send + Sync>) {
+        *self.on_changed.lock().unwrap_or_else(|e| e.into_inner()) = on_changed;
+    }
 }
 
 /// 防抖处理主循环
@@ -252,6 +265,7 @@ async fn run_debounce_loop(
     dir_path: &str,
     paused: Arc<AtomicBool>,
     on_error: Arc<dyn Fn(&str) + Send + Sync>,
+    on_changed: Arc<dyn Fn() + Send + Sync>,
 ) {
     let dir_path = dir_path.to_string();
     let debounce_delay = Duration::from_millis(800);
@@ -311,6 +325,8 @@ async fn run_debounce_loop(
                         if let Err(e) = indexer.remove_file(&dir_path, path).await {
                             log::error!("[watcher] 删除处理失败 ({}): {}", path, e);
                             on_error(&format!("增量删除失败 ({}): {}", path, e));
+                        } else {
+                            on_changed();
                         }
                     } else {
                         let abs_path = format!("{}/{}", dir_path, path);
@@ -320,6 +336,8 @@ async fn run_debounce_loop(
                             if let Err(e) = indexer.remove_file(&dir_path, path).await {
                                 log::error!("[watcher] 删除处理失败 ({}): {}", path, e);
                                 on_error(&format!("增量删除失败 ({}): {}", path, e));
+                            } else {
+                                on_changed();
                             }
                             continue;
                         }
@@ -327,6 +345,8 @@ async fn run_debounce_loop(
                         if let Err(e) = indexer.index_file(&dir_path, path, &abs_path).await {
                             log::error!("[watcher] 索引处理失败 ({}): {}", path, e);
                             on_error(&format!("增量索引失败 ({}): {}", path, e));
+                        } else {
+                            on_changed();
                         }
                     }
                 }
