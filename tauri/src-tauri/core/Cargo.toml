@@ -17,17 +17,29 @@ lancedb = "0.31"
 arrow-array = "58"
 arrow-schema = "58"
 tantivy = "0.26"
-ort = { version = "2.0.0-rc.11", features = ["ndarray"] }
+# 基础依赖：ndarray 始终需要
 ndarray = "0.17"
 tokenizers = "0.22"
 notify = { version = "8", features = ["macos_kqueue"] }
 walkdir = "2"
 
-# 平台特定 GPU 执行提供者
-[target.'cfg(target_os = "windows")'.dependencies]
-ort = { version = "2.0.0-rc.11", features = ["directml"] }
+# ─── ONNX Runtime / 推理引擎 按平台选择 ───
+#
+# 策略：
+#   - Windows → 原生 ONNX Runtime + DirectML GPU
+#   - macOS aarch64 (M系列) → 原生 ONNX Runtime + CoreML GPU
+#   - macOS x86_64 (Intel) / Linux → tract-onnx 直接使用（纯 Rust，零原生依赖）
 
-[target.'cfg(target_os = "macos")'.dependencies]
-ort = { version = "2.0.0-rc.11", features = ["coreml"] }
+# Windows：原生 ONNX Runtime + DirectML GPU
+[target.'cfg(target_os = "windows")'.dependencies]
+ort = { version = "2.0.0-rc.11", features = ["ndarray", "directml"] }
+
+# macOS Apple Silicon：原生 ONNX Runtime + CoreML GPU
+[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
+ort = { version = "2.0.0-rc.11", features = ["ndarray", "coreml"] }
+
+# Intel Mac / Linux：tract-onnx 直接使用（不经过 ort-tract 包装层）
+[target.'cfg(not(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64"))))'.dependencies]
+tract-onnx = "0.23"
 
 [build-dependencies]

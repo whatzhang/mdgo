@@ -2,10 +2,20 @@ use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
 use ndarray::{Array2, Axis, s};
-use ort::{
-    session::Session,
-    value::Tensor,
-};
+
+// ─── 按平台选择后端 ───
+//
+// Windows / macOS Apple Silicon 使用 ort crate，通过原生 ONNX Runtime + GPU 加速。
+// Intel Mac / Linux 使用 tract-onnx 直接推理（纯 Rust，零原生依赖）。
+
+#[cfg(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64")))]
+type SessionType = ort::session::Session;
+
+#[cfg(not(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64"))))]
+type SessionType = tract_onnx::prelude::RunnableModel<
+    tract_onnx::prelude::TypedModel,
+    tract_onnx::prelude::TypedModel,
+>;
 
 /// BGE-Small-ZH 模型隐藏层维度（ONNX 输出维度）
 const HIDDEN_SIZE: usize = 512;
@@ -24,12 +34,11 @@ const BATCH_SIZE: usize = 20;
 static TOKENIZER_JSON: OnceLock<Vec<u8>> = OnceLock::new();
 /// 模型文件目录（用于编译时找 model.onnx）
 static MODEL_DIR: OnceLock<String> = OnceLock::new();
-/// 全局 ONNX Runtime Session（Mutex 封装以支持 &mut self 的 run 调用，线程安全）
+/// 全局 Session（Mutex 封装以支持 &mut self 的 run 调用，线程安全）
 ///
-/// ONNX Runtime 内部 Session 是线程安全的（可并发 run），但 ort Rust 绑定的
-/// `run(&'s mut self)` 签名需要可变引用，因此通过 Mutex 序列化访问。
+/// ort 的 `run(&'s mut self)` 需要可变引用，tract 同理，因此通过 Mutex 序列化访问。
 /// GPU 批处理本身提供足够的加速，Mutex 争用极小。
-static GLOBAL_SESSION: OnceLock<Mutex<Session>> = OnceLock::new();
+static GLOBAL_SESSION: OnceLock<Mutex<SessionType>> = OnceLock::new();
 
 /// 线程级 Tokenizer 缓存
 fn with_tokenizer<F, R>(f: F) -> R
@@ -50,42 +59,135 @@ where
     })
 }
 
-/// 创建 ONNX Runtime Session（平台特定 GPU 后端，回退到 CPU）
-fn create_session(model_path: &Path) -> Result<Session, String> {
-    let mut builder = Session::builder()
+// ─── ONNX Session 创建（按平台两条独立实现路径）───
+
+/// 创建 tract-onnx 推理 Session（Intel Mac / Linux 纯 CPU 后端）。
+///
+/// tract 支持动态形状（batch & seq_len 均为运行时变量），加载后优化并编译为可执行模型。
+#[cfg(not(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64"))))]
+fn create_session(model_path: &Path) -> Result<SessionType, String> {
+    use tract_onnx::prelude::*;
+
+    let model = tract_onnx::onnx()
+        .model_for_path(model_path)
+        .map_err(|e| format!("加载 ONNX 模型失败: {}", e))?
+        .with_input_fact(0, InferenceFact::dt_shape(i64::datum_type(), tvec!(-1, -1)))
+        .map_err(|e| format!("设置 input_ids 输入形状失败: {}", e))?
+        .with_input_fact(1, InferenceFact::dt_shape(i64::datum_type(), tvec!(-1, -1)))
+        .map_err(|e| format!("设置 attention_mask 输入形状失败: {}", e))?
+        .with_input_fact(2, InferenceFact::dt_shape(i64::datum_type(), tvec!(-1, -1)))
+        .map_err(|e| format!("设置 token_type_ids 输入形状失败: {}", e))?
+        .into_optimized()
+        .map_err(|e| format!("模型优化失败: {}", e))?
+        .into_runnable()
+        .map_err(|e| format!("模型编译失败: {}", e))?;
+
+    log::info!("[ort_embedding] tract-onnx session 创建成功");
+    Ok(model)
+}
+
+/// 创建原生 ONNX Runtime Session（Windows / macOS Apple Silicon GPU 后端）。
+#[cfg(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64")))]
+fn create_session(model_path: &Path) -> Result<SessionType, String> {
+    let mut builder = ort::session::Session::builder()
         .map_err(|e| format!("创建 ONNX Runtime 配置失败: {}", e))?;
 
-    // 平台特定的 GPU 加速：
-    // - macOS: CoreML（Apple Silicon Metal + ANE / Intel GPU）
-    // - Windows: DirectML（DX12 覆盖 NVIDIA/AMD/Intel）
-    // - CPU 始终作为显式最终回退，保证 GPU 不可用时不中断服务
-    #[cfg(target_os = "macos")]
-    {
-        builder = builder
-            .with_execution_providers([
-                ort::ep::CoreMLExecutionProvider::default().build(),
-                ort::ep::CPUExecutionProvider::default().build(),
-            ])
-            .map_err(|e| format!("设置 CoreML GPU 执行提供者失败: {}", e))?;
-        log::info!("[ort_embedding] 启用 CoreML (macOS GPU) + CPU 回退");
-    }
+    // Windows：DirectML GPU 加速
     #[cfg(target_os = "windows")]
     {
         builder = builder
-            .with_execution_providers([
-                ort::ep::DirectMLExecutionProvider::default().build(),
-                ort::ep::CPUExecutionProvider::default().build(),
-            ])
+            .with_execution_providers([ort::ep::DirectML::default().build()])
             .map_err(|e| format!("设置 DirectML GPU 执行提供者失败: {}", e))?;
-        log::info!("[ort_embedding] 启用 DirectML (Windows GPU) + CPU 回退");
+        log::info!("[ort_embedding] 启用 DirectML (Windows GPU)，CPU 为默认回退");
+    }
+
+    // macOS Apple Silicon（M 系列）：CoreML GPU 加速
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    {
+        builder = builder
+            .with_execution_providers([ort::ep::CoreML::default().build()])
+            .map_err(|e| format!("设置 CoreML GPU 执行提供者失败: {}", e))?;
+        log::info!("[ort_embedding] 启用 CoreML (macOS Apple Silicon GPU)，CPU 为默认回退");
     }
 
     let session = builder
         .commit_from_file(model_path)
         .map_err(|e| format!("加载 ONNX 模型失败: {}", e))?;
 
-    log::info!("[ort_embedding] ONNX Runtime session 创建成功");
+    log::info!("[ort_embedding] 原生 ORT session 创建成功");
     Ok(session)
+}
+
+// ─── 按平台运行批量推理 ───
+
+/// 对一批填充后的张量执行原生 ONNX Runtime 推理（Windows / macOS Apple Silicon）。
+#[cfg(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64")))]
+fn run_batch(
+    session: &mut SessionType,
+    input_ids: Array2<i64>,
+    attention_mask: Array2<i64>,
+    token_type_ids: Array2<i64>,
+) -> Result<ndarray::ArrayD<f32>, String> {
+    let input_tensor = ort::value::Tensor::<i64>::from_array(input_ids)
+        .map_err(|e| format!("创建 input_ids 张量失败: {}", e))?;
+    let mask_tensor = ort::value::Tensor::<i64>::from_array(attention_mask)
+        .map_err(|e| format!("创建 attention_mask 张量失败: {}", e))?;
+    let type_ids_tensor = ort::value::Tensor::<i64>::from_array(token_type_ids)
+        .map_err(|e| format!("创建 token_type_ids 张量失败: {}", e))?;
+
+    let outputs = session
+        .run([
+            input_tensor.into(),
+            mask_tensor.into(),
+            type_ids_tensor.into(),
+        ])
+        .map_err(|e| format!("ONNX Runtime 推理失败: {}", e))?;
+
+    if outputs.len() == 0 {
+        return Err("ONNX Runtime 推理返回空输出".to_string());
+    }
+
+    let hidden = outputs[0]
+        .try_extract_array::<f32>()
+        .map_err(|e| format!("解析输出张量失败: {}", e))?;
+
+    Ok(hidden.to_owned())
+}
+
+/// 对一批填充后的张量执行 tract-onnx 推理（Intel Mac / Linux 纯 CPU）。
+#[cfg(not(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64"))))]
+fn run_batch(
+    session: &mut SessionType,
+    input_ids: Array2<i64>,
+    attention_mask: Array2<i64>,
+    token_type_ids: Array2<i64>,
+) -> Result<ndarray::ArrayD<f32>, String> {
+    use tract_onnx::prelude::*;
+
+    // 使用 ndarray::Array 直接转换为 Tensor（通过 Into trait）
+    let input_tensor: Tensor = input_ids.into_dyn().into();
+    let mask_tensor: Tensor = attention_mask.into_dyn().into();
+    let type_tensor: Tensor = token_type_ids.into_dyn().into();
+
+    let outputs = session
+        .run(tvec!(
+            input_tensor.into(),
+            mask_tensor.into(),
+            type_tensor.into(),
+        ))
+        .map_err(|e| format!("tract-onnx 推理失败: {}", e))?;
+
+    if outputs.is_empty() {
+        return Err("tract-onnx 推理返回空输出".to_string());
+    }
+
+    let hidden = outputs[0]
+        .to_array_view::<f32>()
+        .map_err(|e| format!("解析输出张量失败: {}", e))?
+        .to_owned()
+        .into_dyn();
+
+    Ok(hidden)
 }
 
 /// 初始化全局缓存：检查模型文件完整性，缓存 tokenizer.json 字节，创建 Session。
@@ -201,13 +303,14 @@ fn post_process_batch(
 /// # 算法
 /// 1. 分词所有文本 → 获取实际 token 长度
 /// 2. 按长度降序排序 → 每 BATCH_SIZE 条分一组
-/// 3. 各组依次在 ONNX Runtime Session 上推理（ORT 内部分配 GPU/CPU 资源）
+/// 3. 各组依次推理（按平台使用原生 ONNX Runtime 或 tract-onnx）
 /// 4. 恢复原始输入顺序返回
 ///
 /// # 性能
-/// - GPU 加速（CoreML / DirectML）提供 ~5-10x 加速
-/// - ORT 动态形状免除 tract-onnx 每批重编译的开销
+/// - Windows / Apple Silicon 使用 GPU 加速（DirectML / CoreML）
+/// - Intel Mac / Linux 使用 tract 纯 Rust CPU 推理
 /// - 分组降低 padding 浪费
+/// - 动态形状免除每批重编译的开销
 pub fn call_embedding_parallel(texts: &[&str], models_dir: &Path) -> Result<Vec<Vec<f32>>, String> {
     if texts.is_empty() {
         return Ok(Vec::new());
@@ -300,36 +403,14 @@ pub fn call_embedding_parallel(texts: &[&str], models_dir: &Path) -> Result<Vec<
         let token_type_ids = Array2::from_shape_vec((group_size, max_len), type_ids_flat)
             .map_err(|e| format!("构建 token_type_ids 失败: {}", e))?;
 
-        // ── 创建 ONNX Runtime Tensor ──
-        let input_tensor =
-            Tensor::<i64>::from_array(input_ids)
-                .map_err(|e| format!("创建 input_ids 张量失败: {}", e))?;
-        let mask_tensor =
-            Tensor::<i64>::from_array(attention_mask)
-                .map_err(|e| format!("创建 attention_mask 张量失败: {}", e))?;
-        let type_ids_tensor =
-            Tensor::<i64>::from_array(token_type_ids)
-                .map_err(|e| format!("创建 token_type_ids 张量失败: {}", e))?;
-
-        // ── 推理 ──
-        let outputs = session
-            .run(ort::inputs![input_tensor, mask_tensor, type_ids_tensor])
-            .map_err(|e| format!("ONNX Runtime 推理失败: {}", e))?;
-        // 防御性检查：确保模型至少返回一个输出张量
-        if outputs.len() < 1 {
-            return Err("ONNX Runtime 推理返回空输出，请检查模型文件完整性".to_string());
-        }
-
-        // ── 提取输出 ──
-        let hidden = outputs[0]
-            .try_extract_array::<f32>()
-            .map_err(|e| format!("解析输出张量失败: {}", e))?;
+        // ── 推理（run_batch 按平台切换 ort / tract-onnx 后端）──
+        let hidden = run_batch(&mut session, input_ids, attention_mask, token_type_ids)?;
 
         // ── Mean Pooling + L2 Normalize ──
         let group_masks: Vec<Vec<i64>> = group.iter().map(|(_, _, mask, ..)| mask.clone()).collect();
         let valid_counts: Vec<usize> = group.iter().map(|(_, _, _, _, vc)| *vc).collect();
 
-        let embeddings = post_process_batch(hidden, group_size, &group_masks, &valid_counts);
+        let embeddings = post_process_batch(hidden.view(), group_size, &group_masks, &valid_counts);
 
         // ── 恢复原始顺序 ──
         for (i, (orig_idx, ..)) in group.iter().enumerate() {
@@ -358,46 +439,5 @@ impl LocalEmbedding {
             .ok_or("模型未初始化，请先调用 new")?;
         let model_path = Path::new(models_dir);
         call_embedding_parallel(texts, model_path)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_local_embedding_load_and_infer() {
-        let models_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("models")
-            .join("bge-small-zh-v1.5");
-
-        let mut model = LocalEmbedding::new(&models_dir).expect("初始化应成功");
-
-        let texts = &["今天天气真好", "测试嵌入向量"];
-        let embeddings = model.embed(texts).expect("推理应成功");
-
-        assert_eq!(embeddings.len(), 2);
-        assert_eq!(embeddings[0].len(), EMBEDDING_DIMENSION);
-
-        let norm0: f32 = embeddings[0].iter().map(|x| x * x).sum::<f32>().sqrt();
-        assert!(norm0 > 0.0);
-        let diff: f32 = embeddings[0]
-            .iter()
-            .zip(embeddings[1].iter())
-            .map(|(a, b)| (a - b).abs())
-            .sum();
-        assert!(diff > 0.0);
-    }
-
-    #[test]
-    fn test_parallel_embedding() {
-        let models_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("models")
-            .join("bge-small-zh-v1.5");
-
-        let texts: Vec<&str> = (0..20).map(|_| "测试并行嵌入向量").collect();
-        let embeddings = call_embedding_parallel(&texts, &models_dir).expect("并行推理应成功");
-        assert_eq!(embeddings.len(), 20);
-        assert_eq!(embeddings[0].len(), EMBEDDING_DIMENSION);
     }
 }

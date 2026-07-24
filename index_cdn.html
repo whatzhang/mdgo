@@ -4994,10 +4994,11 @@
         }
 
         .chat-typing {
-            display: inline-flex;
+            display: flex;
             align-items: center;
+            justify-content: center;
             gap: 0.1875rem;
-            padding: 0.25rem 0;
+            padding: 0.5rem 0;
         }
 
         .chat-typing span {
@@ -13193,7 +13194,7 @@
 
         .chat-message-body>.markdown-body {
             display: block;
-            line-height: 1.5;
+            line-height: 1.7;
             font-size: 0.8125rem;
             white-space: normal;
             padding: 0;
@@ -13202,12 +13203,12 @@
             margin-top: 0;
             margin-bottom: 0.5em; 
         }
-        .chat-message-body>.markdown-body h1 { font-size: 1.25em; border-bottom: 1px solid var(--border-light); margin-bottom: 0.5em; margin-top: 0.5em; }
-        .chat-message-body>.markdown-body h2 { font-size: 1.2em; margin-bottom: 0.3em; margin-top: 0.3em; }
-        .chat-message-body>.markdown-body h3 { font-size: 1.1em; margin-bottom: 0.25em; margin-top: 0.25em; }
+        .chat-message-body>.markdown-body h1 { font-size: 1.25em; border-bottom: 1px solid var(--border-light); margin-bottom: 1em; margin-top: 1em; }
+        .chat-message-body>.markdown-body h2 { font-size: 1.2em; margin-bottom: 0.75em; margin-top: 0.75em; }
+        .chat-message-body>.markdown-body h3 { font-size: 1.1em; margin-bottom: 0.5em; margin-top: 0.5em; }
         .chat-message-body>.markdown-body h4,
         .chat-message-body>.markdown-body h5,
-        .chat-message-body>.markdown-body h6 { font-size: 1em; margin-bottom: 0.125em; margin-top: 0.125em; }
+        .chat-message-body>.markdown-body h6 { font-size: 1em; margin-bottom: 0.25em; margin-top: 0.25em; }
     </style>
 </head>
 
@@ -13841,14 +13842,14 @@
                                         <div class="monitor-item">
                                             <div class="monitor-label">
                                                 <div class="net-row">
-                                                    <span class="net-row-label">↓&nbsp;</span><span id="netRecv"
+                                                    <span class="net-row-label">r&nbsp;</span><span id="diskRead"
                                                         class="net-row-value-download">0 B/s</span>
                                                     <span class="monitor-uptime">｜</span>
-                                                    <span class="net-row-label">↑&nbsp;</span><span id="netSent"
+                                                    <span class="net-row-label">w&nbsp;</span><span id="diskWrite"
                                                         class="net-row-value-upload">0 B/s</span>
                                                 </div>
                                             </div>
-                                            <div id="netChart" class="monitor-chart"></div>
+                                            <div id="diskIOChart" class="monitor-chart"></div>
                                             <div class="monitor-divider"></div>
                                             <div class="monitor-label" style="margin-top:4px;"><svg viewBox="0 0 24 24"
                                                     width="0.875rem" height="0.875rem" fill="none" stroke="currentColor"
@@ -13882,14 +13883,14 @@
                                         <div class="monitor-item">
                                             <div class="monitor-label">
                                                 <div class="net-row">
-                                                    <span class="net-row-label">r&nbsp;</span><span id="diskRead"
+                                                    <span class="net-row-label">↓&nbsp;</span><span id="netRecv"
                                                         class="net-row-value-download">0 B/s</span>
                                                     <span class="monitor-uptime">｜</span>
-                                                    <span class="net-row-label">w&nbsp;</span><span id="diskWrite"
+                                                    <span class="net-row-label">↑&nbsp;</span><span id="netSent"
                                                         class="net-row-value-upload">0 B/s</span>
                                                 </div>
                                             </div>
-                                            <div id="diskIOChart" class="monitor-chart"></div>
+                                            <div id="netChart" class="monitor-chart"></div>
                                             <div class="monitor-divider"></div>
                                             <div class="monitor-label" style="margin-top:3px;"><svg viewBox="0 0 24 24"
                                                     width="0.875rem" height="0.875rem" fill="none" stroke="currentColor"
@@ -48215,6 +48216,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const div = getMessageAssistant();
             div.id = 'chat-typing-indicator';
             // 保留 header，仅在下方追加打字动画
+            const body = div.querySelector('.chat-message-body');
+            if(body) body.style.display = 'none';
             const typingEl = document.createElement('div');
             typingEl.className = 'chat-typing';
             typingEl.innerHTML = '<span></span><span></span><span></span>';
