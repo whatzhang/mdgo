@@ -7,7 +7,7 @@
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "node -e \"require('fs').rmSync('../dist',{recursive:true,force:true});require('fs').rmSync('../.vite',{recursive:true,force:true})\" && npm run build && node -e \"try{require('fs').rmSync('dist/index_cdn.html',{force:true})}catch(e){}\""
+    "beforeBuildCommand": "node -e \"require('fs').rmSync('../dist',{recursive:true,force:true});require('fs').rmSync('../.vite',{recursive:true,force:true})\" && npm run build"
   },
   "app": {
     "windows": [

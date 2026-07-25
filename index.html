@@ -8361,7 +8361,7 @@
         }
 
         .todo-modal-header {
-            padding: 1.1rem 1rem 0.625rem 1rem;
+            padding: 0.75rem 1rem 0.75rem 1rem;
             border-bottom: 1px solid var(--color-border-light);
             display: flex;
             justify-content: space-between;
@@ -13032,6 +13032,7 @@
         }
 
         /* ═══ 演示模式 ═══ */
+        .demo-mode #wc-nav-bar,
         .demo-mode #graph-top-right-controls,
         .demo-mode #app-header,
         .demo-mode #jsmind-help,
@@ -42686,7 +42687,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         // 词云分页状态
         var _wcAllItems = [];       // 全量排序后的 items
         var _wcPageIndex = 0;       // 当前页码（从 0 开始）
-        var _wcPageSize = 400;      // 每页条数
+        var _wcPageSize = 300;      // 每页条数
         function _renderWordCloud(items, isNewPage) {
             if (!contentCommonContainer) return;
             var width = contentCommonContainer.clientWidth || 900;
@@ -42759,7 +42760,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         .style('font-size', self.attr('data-original-font-size') + 'px');
                     svg.call(_occlusion);
                 })
-                .on('click', function (event, d) {
+                .on('dbclick', function (event, d) {
                     var node = d3.select(this);
                     var cur = +node.attr('data-priority');
                     if (cur) {
@@ -42909,6 +42910,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             contentCommonContainer.appendChild(div);
         }
 
+        function shuffle(arr) {
+            const result = [...arr];
+            for (let i = result.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [result[i], result[j]] = [result[j], result[i]];
+            }
+            return result;
+        }
+
         async function openWordCloudFile(dirPath) {
             if (_wordCloudLoading) return;
             _wordCloudLoading = true;
@@ -42922,22 +42932,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     showNotification(`目录下没有文件`, 'warning');
                     return;
                 }
-                // Fisher-Yates 洗牌，打乱文件大小顺序
-                for (var ri = allFiles.length - 1; ri > 0; ri--) {
-                    var rj = Math.floor(Math.random() * (ri + 1));
-                    var rt = allFiles[ri]; allFiles[ri] = allFiles[rj]; allFiles[rj] = rt;
-                }
-                _wcAllItems = _buildWordCloudItems(allFiles);
+                _wcAllItems = shuffle(_buildWordCloudItems(allFiles));
                 _wcPageIndex = 0;
                 // 取第一页
                 var pageItems = _wcAllItems.slice(0, _wcPageSize);
                 // 清除 loading（wrap 尚不存在，直接清空容器）
                 contentCommonContainer.innerHTML = '';
                 _renderWordCloud(pageItems);
-                // 添加分页按钮组
                 var navBar = document.createElement('div');
                 navBar.id = 'wc-nav-bar';
-                navBar.style.cssText = 'position:absolute;top:10px;right:10px;z-index:40000;display:flex;align-items:center;gap:6px;';
+                navBar.className = 'top-right-controls';
+                navBar.style = 'z-index:10000;';
                 var prevBtn = document.createElement('button');
                 prevBtn.id = 'wc-prev-btn';
                 prevBtn.className = 'btn btn-primary btn-ss';
@@ -42965,9 +42970,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     var page = _wcAllItems.slice(start, start + _wcPageSize);
                     _renderWordCloud(page);
                 };
+                  var demoBtn = document.createElement('button');
+                  demoBtn.id = 'wc-demo-btn';
+                demoBtn.className = 'btn btn-orange btn-ss';
+                demoBtn.textContent = '演示';
+                demoBtn.onclick = () => toggleDemoMode();
                 navBar.appendChild(prevBtn);
                 navBar.appendChild(infoEl);
                 navBar.appendChild(nextBtn);
+                navBar.appendChild(demoBtn);
                 contentCommonContainer.appendChild(navBar);
                 _updateWordCloudNavBtn();
                 // resize 时重新布局当前页
@@ -42987,11 +42998,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
         function destroyWordCloud() {
             if (_wordCloudResizeHandler) { window.removeEventListener('resize', _wordCloudResizeHandler); _wordCloudResizeHandler = null; }
-            // 清理 DOM 残留
-            var navBar = document.getElementById('wc-nav-bar');
-            if (navBar) navBar.remove();
-            var wrap = document.getElementById('wc-svg-wrap');
-            if (wrap) wrap.remove();
             var css = document.getElementById('occlusion-wordcloud-css');
             if (css) css.remove();
             _wcColorPalette = null;
@@ -47475,18 +47481,20 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             // 进入全屏（Chrome/Edge 兼容）
             enterFullscreen();
             // 对当前可见的内容容器应用缩放
-            const containers = [contentMain, contentEdit, mermaidAppContainer, graphViewContainer];
+            const containers = [contentMain, contentEdit, mermaidAppContainer, graphViewContainer, contentCommonContainer];
             for (const c of containers) {
                 if (c && c.style.display !== 'none') {
                     c.dataset.demoPrevZoom = c.style.zoom || '';
-                    c.style.zoom = '1.4';
                     if (c === contentEdit && currentEditor) {
+                        c.style.zoom = '1.4';
                         try {
                             currentEditor.layout();
                         } catch (e) { /* ignore */ }
                     }else if(c === graphViewContainer){
                         collapsedGraphToolbar(true);
-                        setTimeout(() => { resetGraphView(); }, 300);
+                        setTimeout(() => {  graphZoomOut(); }, 300);
+                    }else{
+                        c.style.zoom = '1.4';
                     }
                     break;
                 }
@@ -47500,7 +47508,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             // 顶部透明触发条（解决 iframe 内鼠标事件被拦截的问题）
             _demoTriggerStrip = document.createElement('div');
             _demoTriggerStrip.style.cssText =
-                'position:fixed;top:0;left:0;width:100%;height:20px;z-index:9998;' +
+                'position:fixed;top:0;left:25%;width:50%;height:20px;z-index:9998;' +
                 'background:transparent;pointer-events:auto;';
             _demoTriggerStrip.addEventListener('mouseenter', () => {
                 if (_demoExitBar) _demoExitBar.classList.add('show');
@@ -47647,7 +47655,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             // 退出全屏
             exitFullscreen();
             // 恢复容器缩放
-            const containers = [contentMain, contentEdit, mermaidAppContainer, graphViewContainer];
+            const containers = [contentMain, contentEdit, mermaidAppContainer, graphViewContainer, contentCommonContainer];
             for (const c of containers) {
                 if (c && c.style.display !== 'none') {
                     if (c && c.dataset.demoPrevZoom !== undefined) {

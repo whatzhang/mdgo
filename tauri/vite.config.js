@@ -9,9 +9,9 @@ export default defineConfig({
         viteStaticCopy({
             targets: [
                 {
-                    src: ['css_js/**', '!css_js/snipaste.png'],
+                    src: ['css_js/**', '!css_js/snipaste.png', '!index_cdn.html'],
                     dest: '.',
-                },
+                }
             ],
         }),
     ],
@@ -24,6 +24,14 @@ export default defineConfig({
                 '**/tauri/src-tauri/gen/**',
                 '**/.venv/**',
                 '**/backend/**',
+                '**/.idea/**',
+                '**/.mdgo/**',
+                '**/.vscode/**',
+                '**/.git/**',
+                '**/data/**',
+                '**/index_cdn.html/**',
+                '**/*.tmp',
+                '**/*.TMP',
             ],
         },
     },
