@@ -1,3 +1,4 @@
+// macOS 链接器对齐段警告（tract-onnx 固有，可安全忽略）
 #![allow(linker_messages)]
 mod commands;
 mod services;
@@ -28,7 +29,7 @@ impl AppState {
         if let Some(store) = stores.get(dir_path) {
             return Ok(Arc::clone(store));
         }
-        // 聊天数据存储在 {dir_path}/.mdgo/data/chat.db
+        // 聊天数据存储在 {dir_path}/.mdgo/data/mdgo.db
         let db_dir = std::path::Path::new(dir_path)
             .join(".mdgo")
             .join("data");
@@ -50,7 +51,7 @@ impl AppState {
         if let Some(store) = stores.get(dir_path) {
             return Ok(Arc::clone(store));
         }
-        // AI 历史数据存储在 {dir_path}/.mdgo/data/ai_history.db
+        // AI 历史数据存储在 {dir_path}/.mdgo/data/mdgo.db
         let db_dir = std::path::Path::new(dir_path)
             .join(".mdgo")
             .join("data");
@@ -118,6 +119,7 @@ pub fn run() {
             commands::git::git_resolve_ref,
             commands::system::start_monitor,
             commands::system::stop_monitor,
+            commands::system::set_log_level,
             commands::clipboard::copy_to_clipboard,
             commands::knowledge::kb_index,
             commands::knowledge::kb_search_hybrid,
@@ -169,14 +171,14 @@ fn init_logging() {
     let log_dir = log_dir_global();
     let log_path = log_dir.join("mdgo.log");
 
-    // 创建文件日志
+    // 创建文件日志（允许所有级别，由 log::set_max_level_filter 统一控制）
     let has_file_logger;
     let file_logger = match std::fs::create_dir_all(&log_dir)
         .and_then(|_| std::fs::File::create(&log_path))
     {
         Ok(file) => {
             has_file_logger = true;
-            Some(WriteLogger::new(LevelFilter::Debug, Config::default(), file))
+            Some(WriteLogger::new(LevelFilter::Trace, Config::default(), file))
         }
         Err(_) => {
             has_file_logger = false;
@@ -184,9 +186,9 @@ fn init_logging() {
         }
     };
 
-    // 创建终端日志（dev 模式下终端可用）
+    // 创建终端日志（允许所有级别，同上）
     let term_logger = TermLogger::new(
-        LevelFilter::Info,
+        LevelFilter::Trace,
         Config::default(),
         TerminalMode::Mixed,
         ColorChoice::Auto,
@@ -199,6 +201,13 @@ fn init_logging() {
     }
 
     let _ = simplelog::CombinedLogger::init(loggers);
+
+    // dev: Debug 级别方便调试；release: 只记录 Warn 以上
+    if cfg!(debug_assertions) {
+        log::set_max_level(LevelFilter::Debug);
+    } else {
+        log::set_max_level(LevelFilter::Warn);
+    }
 
     if has_file_logger {
         log::info!("日志文件: {}", log_path.display());

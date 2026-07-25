@@ -13,9 +13,9 @@ pub use db::bm25::Bm25Index;
 pub use db::lance::{DocumentChunk, LanceStore, SearchHit};
 pub use db::utils::{
     build_document_chunks, get_bm25_dir, get_chat_bm25_dir, get_data_dir, get_model_dir,
-    call_embedding, split_text, IgnoreMatcher, KbProgress, LOCAL_EMBEDDING_DIMENSION,
+    call_embedding, split_text, IgnoreMatcher, KbProgress, get_local_embedding_dimension,
 };
-pub use embedding::call_embedding_parallel;
+pub use embedding::{call_embedding_parallel, get_embedding_dimension};
 pub use indexer::Indexer;
 pub use types::{IndexMeta, KbIndexResult, KbStatus};
 pub use watcher::WatcherService;

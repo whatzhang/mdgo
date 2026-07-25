@@ -21,7 +21,7 @@ impl ChatStore {
     pub fn new(db_dir_path: &str) -> Result<Self, String> {
         let db_path = Self::get_db_path(db_dir_path);
 
-        // 确保目录存在
+        // 创建数据库目录
         if let Some(parent) = Path::new(&db_path).parent() {
             std::fs::create_dir_all(parent).map_err(|e| format!("创建数据库目录失败: {}", e))?;
         }
@@ -113,7 +113,6 @@ impl ChatStore {
 
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
 
-        // 开启事务
         conn.execute_batch("BEGIN TRANSACTION")
             .map_err(|e| format!("开启事务失败: {}", e))?;
 
@@ -136,13 +135,12 @@ impl ChatStore {
             )
             .map_err(|e| format!("统计会话数失败: {}", e))?;
 
-        // 超出 100 条时删除最旧的（按 updated_at ASC 排序）
-        let mut deleted_ids: Vec<String> = Vec::new();
-        if count > MAX_SESSIONS_PER_TYPE {
-            let excess = count - MAX_SESSIONS_PER_TYPE;
+        // 超出上限时删除最旧的（按 updated_at ASC 排序）
+            let mut deleted_ids: Vec<String> = Vec::new();
+            if count > MAX_SESSIONS_PER_TYPE {
+                let excess = count - MAX_SESSIONS_PER_TYPE;
 
-            // 先 SELECT 待删除的 session ID
-            let mut stmt = conn
+                let mut stmt = conn
                 .prepare("SELECT id FROM chat_sessions WHERE type = ?1 AND favorite = 0 ORDER BY updated_at ASC, id ASC LIMIT ?2")
                 .map_err(|e| format!("查询待删除会话失败: {}", e))?;
             let ids: Vec<String> = stmt
@@ -251,7 +249,7 @@ impl ChatStore {
             return Err("会话不存在".to_string());
         }
 
-        // 查询新状态
+        // 查询切换后的收藏状态
         let new_fav: i32 = conn
             .query_row(
                 "SELECT favorite FROM chat_sessions WHERE id = ?1",
@@ -262,7 +260,7 @@ impl ChatStore {
         Ok(new_fav != 0)
     }
 
-    /// 获取指定类型的会话总数
+    /// 获取所有会话的总数
     pub fn get_session_count(&self) -> u32 {
         let conn = match self.conn.lock() {
             Ok(c) => c,
@@ -766,7 +764,7 @@ impl ChatStore {
             });
         }
 
-        // 5. 按 score 降序排列
+        // 按 score 降序排列（f32 无法直接 Ord，通过 partial_cmp 降序）
         results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
 
         Ok(results)

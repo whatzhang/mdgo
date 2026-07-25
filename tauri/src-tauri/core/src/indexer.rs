@@ -32,7 +32,7 @@ const BM25_RRF_WEIGHT: f32 = 1.5;
 /// - 搜索/状态查询
 ///
 /// 设计要点：
-/// - 使用本地 bge-small-zh-v1.5 模型（384 维），无 API 依赖
+/// - 使用本地 bge-small-zh-v1.5 模型（维度由 config.json 决定），无 API 依赖
 /// - 缓存 LanceStore / Bm25Index 实例（Arc 共享），避免增量操作反复重建连接
 /// - 文档索引与对话索引分离（不同 table / 目录），互不污染
 /// - `indexing_lock` 防止并发 index_all 调用导致数据损坏
@@ -140,7 +140,6 @@ impl Indexer {
         dir_path: &str,
         progress: impl Fn(u8, &str) + Send + Sync,
     ) -> Result<KbIndexResult, String> {
-        // 互斥锁：防止并发 index_all
         let _guard = self.indexing_lock.lock().await;
 
         let config = self.config_store.read();
@@ -162,14 +161,12 @@ impl Indexer {
         }
         progress(2, &format!("已发现 {} 个文件", total));
 
-        // 预创建 LanceDB 表（本地模型固定 384 维）
+        // 预创建 LanceDB 表和 BM25 索引
         let store = self.get_lance_store(dir_path).await;
         store.create_table().await?;
 
-        // 预创建 BM25 索引
         let bm25 = self.get_bm25_index(dir_path).await?;
 
-        // 分批处理
         let mut batch_chunks: Vec<DocumentChunk> = Vec::with_capacity(BATCH_CHUNK_LIMIT);
         let mut file_count = 0u32;
         let mut total_chunks = 0u32;
@@ -238,7 +235,7 @@ impl Indexer {
         }
 
         if total_chunks == 0 {
-            // 清理已创建的空表，避免留下不一致的空索引
+            // 无有效内容时清理空索引表
             let _ = self.clear_inner(dir_path).await;
             progress(100, "索引完成（无有效内容）");
             return Err("未能从文件中提取有效内容".into());
@@ -311,7 +308,6 @@ impl Indexer {
         let mut deleted_chunks = 0u32;
 
         if store.open_table().await.is_ok() {
-            // 先统计待删除的 chunk 数量
             deleted_chunks = self.count_document_chunks(&store, rel_path).await;
             if let Err(e) = store.delete_document(rel_path).await {
                 log::error!("[indexer] 删除 LanceDB 文档失败 ({}): {}", rel_path, e);
@@ -335,7 +331,7 @@ impl Indexer {
         Ok(())
     }
 
-    /// ─── 清除全部索引 ───
+    // ─── 清除全部索引 ───
 
     pub async fn clear(&self, dir_path: &str) -> Result<(), String> {
         self.clear_inner(dir_path).await
@@ -362,7 +358,7 @@ impl Indexer {
         Ok(())
     }
 
-    /// ─── 状态查询 ───
+    // ─── 状态查询 ───
 
     pub async fn status(&self, dir_path: &str) -> Result<KbStatus, String> {
         let data_dir = utils::get_data_dir(dir_path);
@@ -389,7 +385,7 @@ impl Indexer {
         })
     }
 
-    /// ─── 混合检索 ───
+    // ─── 混合检索 ───
 
     pub async fn hybrid_search(
         &self,
@@ -415,11 +411,11 @@ impl Indexer {
         Ok(result)
     }
 
-    /// ─── 内部 Embedding（纯本地）───
+    // ─── 内部 Embedding（纯本地）───
 
     /// 对一组 DocumentChunk 批量 Embedding，返回向量列表。
     ///
-    /// 调用本地 bge-small-zh-v1.5 模型（384 维），纯同步推理。
+    /// 调用本地 bge-small-zh-v1.5 模型（维度由 config.json 决定），纯同步推理。
     /// progress 回调：(已完成组数, 总组数, "状态消息")
     async fn embed_batch(
         &self,
@@ -428,7 +424,7 @@ impl Indexer {
     ) -> Result<Vec<Vec<f32>>, String> {
         use tokio::sync::mpsc;
 
-        log::info!("[indexer] embed_batch 开始，共 {} 个文本块", chunks.len());
+        log::debug!("[indexer] embed_batch 开始，共 {} 个文本块", chunks.len());
 
         let texts: Vec<String> = chunks.iter().map(|c| c.text.clone()).collect();
         let (progress_tx, mut progress_rx) = mpsc::unbounded_channel::<(usize, usize, String)>();
@@ -462,7 +458,7 @@ impl Indexer {
         }
 
         let all_vectors = result.unwrap()?;
-        log::info!("[indexer] embed_batch 完成，共 {} 个向量", all_vectors.len());
+        log::debug!("[indexer] embed_batch 完成，共 {} 个向量", all_vectors.len());
         Ok(all_vectors)
     }
 

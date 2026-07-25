@@ -3,6 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
+/// 安全规范化路径：先检查路径存在性，再调用 canonicalize 解析为绝对路径。
+/// 用于在文件操作前确保路径有效并阻止符号链接绕过。
 fn canonicalize_safe(path: &str) -> Result<PathBuf, String> {
     let p = Path::new(path);
     if !p.exists() {
@@ -14,6 +16,7 @@ fn canonicalize_safe(path: &str) -> Result<PathBuf, String> {
     Ok(canon)
 }
 
+/// 检查路径是否包含 ..（ParentDir），防止目录遍历攻击
 fn is_path_safe(path: &Path) -> bool {
     let components: Vec<_> = path.components().collect();
     for c in &components {
@@ -182,7 +185,7 @@ pub fn read_file(path: String) -> Result<String, String> {
     fs::read_to_string(&canon).map_err(|e| format!("读取文件失败 ({}): {}", path, e))
 }
 
-/// 读取文件内容（二进制，返回 base64）
+/// 读取文件内容（二进制，返回原始字节数组）
 #[tauri::command]
 pub fn read_file_binary(path: String) -> Result<Vec<u8>, String> {
     if !is_path_safe(Path::new(&path)) {

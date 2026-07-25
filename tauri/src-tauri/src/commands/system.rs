@@ -568,8 +568,8 @@ pub fn start_monitor(app: AppHandle, state: tauri::State<'_, SystemMonitorState>
                 }
             }));
 
-            if result.is_err() {
-                // panic 时静默重置运行状态，不输出日志（生产环境无日志依赖）
+            if let Err(e) = result {
+                log::error!("[system-monitor] 监控线程异常退出: {:?}", e);
                 running.store(false, Ordering::SeqCst);
             }
         })
@@ -585,4 +585,19 @@ pub fn stop_monitor(state: tauri::State<'_, SystemMonitorState>) {
         return; // 幂等保护：未运行不执行任何操作
     }
     state.running.store(false, Ordering::SeqCst);
+}
+
+/// 设置日志级别（热切换，即时生效）
+#[tauri::command]
+pub fn set_log_level(level: String) {
+    match level.to_lowercase().as_str() {
+        "off" => log::set_max_level(log::LevelFilter::Off),
+        "error" => log::set_max_level(log::LevelFilter::Error),
+        "warn" => log::set_max_level(log::LevelFilter::Warn),
+        "info" => log::set_max_level(log::LevelFilter::Info),
+        "debug" => log::set_max_level(log::LevelFilter::Debug),
+        "trace" => log::set_max_level(log::LevelFilter::Trace),
+        _ => return,
+    }
+    log::info!("[config] 日志级别已切换为: {}", level);
 }

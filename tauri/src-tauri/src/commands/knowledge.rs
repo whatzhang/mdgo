@@ -74,7 +74,7 @@ pub async fn kb_search_hybrid(
 ) -> Result<Vec<SearchHit>, String> {
     let state = app.state::<AppState>();
 
-    // 本地生成查询向量（bge-small-zh-v1.5, 384 维）
+    // 本地生成查询向量（bge-small-zh-v1.5, 维度由 config.json 动态决定）
     let query_text = query.clone();
     let query_embedding = tokio::task::spawn_blocking(move || call_embedding(&[&query_text], None))
         .await

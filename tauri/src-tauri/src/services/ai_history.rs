@@ -142,17 +142,16 @@ impl AiHistoryStore {
 
     // ─── CRUD ───
 
-    /// 添加一条 AI 操作记录，自动执行 LRU 淘汰。
+    /// 添加一条 AI 操作记录。
     ///
-    /// 时间复杂度: O(log N) — INSERT + 至多 2 次子查询淘汰。
-    /// 空间复杂度: O(1) — 仅构造返回值，不额外分配。
+    /// 当非收藏记录超过上限 `MAX_RECORDS` 时，自动淘汰最早访问的记录（LRU 策略）。
+    /// 收藏记录同理，使用 `MAX_FAVORITE_RECORDS` 作为上限。
     pub fn add(&self, item: &AddAiHistoryRequest) -> Result<AiHistoryItem, String> {
         let now = unix_timestamp_now();
         let id = Uuid::new_v4().to_string();
         let prompt_len = item.prompt.len() as i32;
         let result_len = item.result.len() as i32;
 
-        // ── 单次加锁完成 INSERT + LRU 淘汰 ──
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
 
         conn.execute(
@@ -203,7 +202,6 @@ impl AiHistoryStore {
             );
         }
 
-        // 直接构造返回值，无需二次查询
         Ok(AiHistoryItem {
             id,
             r#type: item.r#type.clone(),
@@ -296,7 +294,7 @@ impl AiHistoryStore {
 
     /// 获取 AI 操作统计摘要。
     ///
-    /// 时间复杂度: O(N) — GROUP BY 需全表扫描（N <= 1200，可接受）。
+    /// 包含总数、收藏数、按类型分布、近 30 日趋势、最热文件 Top 10 和总 token 用量。
     pub fn get_stats(&self) -> Result<AiHistoryStats, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
 

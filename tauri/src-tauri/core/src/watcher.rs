@@ -80,15 +80,13 @@ impl WatcherService {
     /// Idempotent：如已启动且在监听同一目录，直接返回 Ok。
     /// 若目录变化则重新启动。
     pub fn start(&self, dir_path: &str, dir_blacklist: &[String], file_blacklist: &[String]) -> Result<(), String> {
-        // 检查是否已在监听同一目录
         if self.running.load(Ordering::Acquire) {
             let current_dir = self.watch_dir.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(ref d) = *current_dir {
                 if d == dir_path {
-                    return Ok(()); // 同一目录，跳过
+                    return Ok(());
                 }
             }
-            // 不同目录，先停止旧的
             self.stop_inner();
         }
 
@@ -280,7 +278,6 @@ async fn run_debounce_loop(
 
         tokio::select! {
             Some(event) = rx.recv() => {
-                // 收到新事件，更新/插入（合并同类事件，保留最新的）
                 match pending.get(&event.rel_path) {
                     Some((existing_time, _)) if *existing_time > event.timestamp => {
                         // 旧事件，保留现有的
@@ -321,7 +318,7 @@ async fn run_debounce_loop(
                 // 处理到期事件
                 for (path, is_remove) in &to_process {
                     if *is_remove {
-                        log::info!("[watcher] 处理删除: {}", path);
+                        log::debug!("[watcher] 处理删除: {}", path);
                         if let Err(e) = indexer.remove_file(&dir_path, path).await {
                             log::error!("[watcher] 删除处理失败 ({}): {}", path, e);
                             on_error(&format!("增量删除失败 ({}): {}", path, e));
@@ -332,7 +329,7 @@ async fn run_debounce_loop(
                         let abs_path = format!("{}/{}", dir_path, path);
                         if !Path::new(&abs_path).exists() {
                             // 文件已不存在，视作删除
-                            log::info!("[watcher] 文件已不存在，转删除: {}", path);
+                            log::debug!("[watcher] 文件已不存在，转删除: {}", path);
                             if let Err(e) = indexer.remove_file(&dir_path, path).await {
                                 log::error!("[watcher] 删除处理失败 ({}): {}", path, e);
                                 on_error(&format!("增量删除失败 ({}): {}", path, e));
@@ -341,7 +338,7 @@ async fn run_debounce_loop(
                             }
                             continue;
                         }
-                        log::info!("[watcher] 处理修改: {}", path);
+                        log::debug!("[watcher] 处理修改: {}", path);
                         if let Err(e) = indexer.index_file(&dir_path, path, &abs_path).await {
                             log::error!("[watcher] 索引处理失败 ({}): {}", path, e);
                             on_error(&format!("增量索引失败 ({}): {}", path, e));

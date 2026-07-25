@@ -24,24 +24,22 @@
     <link rel="stylesheet" href="https://unpkg.com/tippy.js@6/dist/tippy.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jsmind@0.9.1/style/jsmind.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.1/dist/katex.min.css">
-
     <!-- 核心 JS 库（同步加载，体积小） -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/katex@0.18.1/dist/katex.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/katex@0.18.1/dist/contrib/auto-render.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/raphael@2.3.0/raphael.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/underscore@1.13.8/underscore-umd-min.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/snap.svg/0.5.1/snap.svg-min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/webfont/1.6.28/webfontloader.js"></script>
-    <script src="https://cdn.bootcdn.net/ajax/libs/flowchart/1.17.1/flowchart.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/js-sequence-diagram@2.0.1/dist/sequence-diagram.min.js"></script>
-
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.4.12/dist/purify.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
-
+    <!-- 流程图 & 时序图依赖 -->
+    <script src="https://cdn.jsdelivr.net/npm/raphael@2.3.0/raphael.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/underscore@1.13.8/underscore-umd-min.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/snap.svg/0.5.1/snap.svg-min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/webfont/1.6.28/webfontloader.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/flowchart/1.17.1/flowchart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/js-sequence-diagram@2.0.1/dist/sequence-diagram.min.js"></script>
     <!-- 大体积库（JSON 树、思维导图、Excel、D3、Excalidraw 等） -->
     <script src="https://cdn.jsdelivr.net/gh/summerstyle/jsonTreeViewer/libs/jsonTree/jsonTree.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsmind@0.9.1/es6/jsmind.js"></script>
@@ -58,7 +56,6 @@
         src="https://cdn.jsdelivr.net/npm/swagger-editor-dist@4.14.8/swagger-editor-standalone-preset.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/swagger-editor-dist@4.14.8/swagger-editor-bundle.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/graphql-playground-react@1.7.28/build/static/js/middleware.js"></script>
-
     <!-- Prettier: 必须在 Monaco 之前同步加载，避免 AMD define 冲突 -->
     <script src="https://unpkg.com/prettier@3.5.3/standalone.js"></script>
     <script src="https://unpkg.com/prettier@3.5.3/plugins/babel.js"></script>
@@ -68,13 +65,11 @@
     <script src="https://unpkg.com/prettier@3.5.3/plugins/markdown.js"></script>
     <script src="https://unpkg.com/prettier@3.5.3/plugins/yaml.js"></script>
     <script src="https://unpkg.com/prettier@3.5.3/plugins/graphql.js"></script>
-
     <!-- 视频播放库（artplayer/hls/dash/flv）：也是 UMD define，必须在 Monaco loader 之前加载 -->
     <script src="https://cdn.jsdelivr.net/npm/artplayer@4.5.6/dist/artplayer.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dashjs@4.7.4/dist/dash.all.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/flv.js@1.6.2/dist/flv.min.js"></script>
-
     <!-- Moment.js + vis-timeline（moment 必须在前） -->
     <script src="https://unpkg.com/moment@2.30.1/min/moment.min.js"></script>
     <script src="https://unpkg.com/moment@2.30.1/locale/zh-cn.js"></script>
@@ -85,7 +80,6 @@
     <script src="https://cdn.jsdelivr.net/npm/html2canvas-pro@2.0.4/dist/html2canvas-pro.min.js"></script>
     <script src="https://unpkg.com/isomorphic-git@1.25.10/index.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsonpath@1.3.0/jsonpath.min.js"></script>
-
     <!-- cronstrue：cron 表达式解析，内置中文 -->
     <script src="https://cdn.jsdelivr.net/npm/cronstrue@3.14.0/dist/cronstrue-i18n.min.js"></script>
     <!-- GraphiQL（UMD，必须在 define 清理前加载） -->
@@ -5250,7 +5244,7 @@
             align-items: center;
             gap: 0.25rem;
             margin-top: 0.125rem;
-            font-size: 0.6875rem;
+            font-size: 0.75rem;
             color: var(--t1);
         }
 
@@ -9272,20 +9266,9 @@
             cursor: grabbing;
         }
 
-        .graph-refresh-btn {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            z-index: 10000;
-        }
-
         /* ——— 图谱模式切换开关 ——— */
         .graph-mode-toggle {
             display: flex;
-            position: absolute;
-            top: 13px;
-            right: 6.25rem;
-            z-index: 10000;
             display: flex;
             align-items: center;
             gap: 6px;
@@ -11397,7 +11380,7 @@
 
         .git-left-header {
             padding: 2px 6px;
-            font-size: 12px;
+            font-size: 0.75rem;
             font-weight: 600;
             color: var(--t1);
             border-bottom: 1px solid var(--color-border);
@@ -11527,7 +11510,7 @@
         }
 
         .git-graph-msg {
-            font-size: 12px;
+            font-size: 0.75rem;
             font-weight: 500;
             white-space: nowrap;
             overflow: hidden;
@@ -11536,24 +11519,24 @@
         }
 
         .git-graph-meta {
-            font-size: 11px;
+            font-size: 0.6875rem;
             color: var(--t2);
             margin-top: 2px;
             display: flex;
-            column-gap: 8px;
-            row-gap: 4px;
+            column-gap: 0.5rem;
+            row-gap: 0.25rem;
             align-items: center;
             flex-wrap: wrap;
         }
 
         .git-graph-sha {
             font-family: var(--font-mono);
-            font-size: 10px;
+            font-size: 0.625rem;
             color: var(--orange);
         }
 
         .git-graph-refs {
-            font-size: 11px;
+            font-size: 0.6875rem;
             color: var(--t2);
             display: flex;
             column-gap: 0.5rem;
@@ -11565,7 +11548,7 @@
         }
 
         .git-graph-ref {
-            font-size: 10px;
+            font-size: 0.625rem;
             padding: 1px 5px;
             border-radius: 3px;
             white-space: nowrap;
@@ -12834,7 +12817,7 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 1rem 1.25rem;
+            padding: 0.75rem 1.25rem;
             border-bottom: 0.063rem solid var(--color-border);
             font-size: 1rem;
             font-weight: 600;
@@ -12896,13 +12879,13 @@
             padding: 0.75rem;
             display: flex;
             flex-direction: column;
-            gap: 0.625rem;
+            gap: 0.5rem;
         }
 
         .setting-row {
             display: flex;
             align-items: center;
-            gap: 0.625rem;
+            gap: 0.5rem;
         }
 
         .setting-row label {
@@ -12987,25 +12970,7 @@
             display: flex;
             align-items: center;
             gap: 0.375rem;
-            margin-top: 0.25rem;
-        }
-
-        .setting-tag-input {
-            flex: 1;
-            max-width: 12rem;
-            height: 1.5rem;
-            padding: 0 0.375rem;
-            border: 0.063rem solid var(--color-border);
-            border-radius: 0.25rem;
-            font-size: 0.75rem;
-            background: var(--color-bg);
-            color: var(--color-text);
-            outline: none;
-            box-sizing: border-box;
-        }
-
-        .setting-tag-input:focus {
-            border-color: var(--color-primary);
+            margin-top: 0.5rem;
         }
 
         .setting-tag-add-btn {
@@ -13032,33 +12997,6 @@
             justify-content: flex-end;
             gap: 0.625rem;
             padding: 0.75rem 1.25rem;
-            border-top: 0.063rem solid var(--color-border);
-        }
-
-        .setting-btn {
-            height: 1.75rem;
-            padding: 0 1rem;
-            border-radius: 0.25rem;
-            font-size: 0.813rem;
-            cursor: pointer;
-            border: 0.063rem solid var(--color-border);
-            background: var(--color-bg);
-            color: var(--color-text);
-            transition: all 0.15s;
-        }
-
-        .setting-btn:hover {
-            background: var(--color-bg-secondary);
-        }
-
-        .setting-btn-primary {
-            background: var(--color-primary);
-            color: var(--color-text-white);
-            border-color: var(--color-primary);
-        }
-
-        .setting-btn-primary:hover {
-            background: var(--color-primary-hover);
         }
 
         #setting-currentRootPath:placeholder-shown {
@@ -13097,6 +13035,7 @@
         }
 
         /* ═══ 演示模式 ═══ */
+        .demo-mode #graph-top-right-controls,
         .demo-mode #app-header,
         .demo-mode #jsmind-help,
         .demo-mode #sidebar,
@@ -13571,16 +13510,19 @@
                         title="收起面板">‹
                     </button>
                 </div>
-                <label class="graph-mode-toggle" id="graph-mode-toggle" title="切换图谱模式">
-                    <span class="graph-mode-toggle-label">文档关联</span>
-                    <div class="graph-mode-switch">
-                        <input type="checkbox" id="graph-mode-checkbox" onchange="toggleGraphMode()">
-                        <span class="graph-mode-slider"></span>
-                    </div>
-                </label>
-                <button id="graph-refresh-btn" class="btn btn-primary graph-refresh-btn" onclick="refreshGraphData()">
-                    更新图谱
-                </button>
+                <div id="graph-top-right-controls" class="top-right-controls">
+                    <label class="graph-mode-toggle" id="graph-mode-toggle" title="切换图谱模式">
+                        <span class="graph-mode-toggle-label">文档关联</span>
+                        <div class="graph-mode-switch">
+                            <input type="checkbox" id="graph-mode-checkbox" onchange="toggleGraphMode()">
+                            <span class="graph-mode-slider"></span>
+                        </div>
+                    </label>
+                    <button id="graph-refresh-btn" class="btn btn-primary btn-sm" onclick="refreshGraphData()">
+                        更新图谱
+                    </button>
+                    <button id="graph-demo-btn" class="btn btn-orange btn-sm" onclick="toggleDemoMode()">演示</button>
+                </div>
                 <canvas id="graph-canvas" class="graph-canvas"></canvas>
             </div>
             <div id="dir-space-container" class="dashboard-container" style="display: none;padding: 10px;">
@@ -26623,6 +26565,7 @@ kanban-plugin: basic
             }
             resizeContentMain();
         }
+
         function resizeContentMain() {
             // 等 CSS 布局生效后再触发 resize，让图表/画布/词云等拿到正确的容器尺寸
             requestAnimationFrame(function () {
@@ -26744,7 +26687,7 @@ kanban-plugin: basic
         async function postProcessCodeAndDiagrams(dom = document) {
             if (!dom) return;
             // 限定在 .markdown-body 内，排除无关 <pre>
-            const container = dom.closest?.('.markdown-body') || dom.querySelector('.markdown-body') || dom;
+            const container = dom.querySelector('.markdown-body') || dom;
             const preElements = container.querySelectorAll('pre');
             if (!preElements.length) return;
             const BATCH_SIZE = 5;
@@ -26888,7 +26831,7 @@ kanban-plugin: basic
                 if (i > 0 && i % BATCH_SIZE === 0) await yieldToMain();
                 const pre = preElements[i];
                 // 快速跳过：不可见、已处理
-                if (!pre.isConnected || pre.dataset.processed === '1') continue;
+                if (pre.dataset.processed === '1') continue;
                 pre.dataset.processed = '1';
                 const code = pre.querySelector('code:not([highlighted])');
                 if (!code) {
@@ -29999,7 +29942,6 @@ kanban-plugin: basic
                     pauseIcon.innerHTML = '<path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />';
                     btn.title = '暂停贪吃蛇动画';
                     renderSnake();
-                    _scheduleAutoPause();
                 }
             };
         }
@@ -39385,8 +39327,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
             getNodeAt(canvasX, canvasY, nodes) {
                 if (!nodes) return null;
-                for (let i = nodes.length - 1; i >= 0; i--) {
-                    const node = nodes[i];
+                for (let i = nodes.length - 1; i >= 0; i--) {                    const node = nodes[i];
                     if (node.x === undefined || node.y === undefined) continue;
                     const dx = node.x - canvasX;
                     const dy = node.y - canvasY;
@@ -40391,6 +40332,27 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (!graphCanvas) return;
             d3.select(graphCanvas).transition().duration(300)
                 .call(graphInteraction.zoomBehavior.transform, d3.zoomIdentity);
+        }
+
+        function collapsedGraphToolbar(collapsed = true) {
+            const toolbar = document.querySelector('.graph-toolbar');
+            const toggleBtn = document.getElementById('graph-toolbar-toggle');
+            const isCollapsed = toolbar.classList.contains('collapsed');
+            if (!isCollapsed && !!collapsed) {
+                toolbar.style.zoom = '0.8';
+                toggleBtn.style.zoom = '0.8';
+                toolbar.classList.toggle('collapsed');
+                toggleBtn.classList.toggle('collapsed');
+                toggleBtn.textContent = "›";
+                toggleBtn.title = "展开面板";
+            }else if(isCollapsed && !collapsed){
+                toolbar.style.zoom = '1';
+                toggleBtn.style.zoom = '1';
+                toolbar.classList.toggle('collapsed');
+                toggleBtn.classList.toggle('collapsed');
+                toggleBtn.textContent = "‹";
+                toggleBtn.title = "收起面板";
+            }
         }
 
         function toggleGraphToolbar() {
@@ -47063,19 +47025,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         </div> 
                     ` : ''}
                         <div class="setting-section">
-                            <div class="setting-section-title">后端服务</div>
-                            <div class="setting-section-body">
-                                <div class="setting-row">
-                                    <label>GraphQL 地址</label>
-                                    <input class="setting-text" id="${inputId('graphql')}" value="${escapeHtml(GRAPHQL_ENDPOINT)}">
-                                </div>
-                                <div class="setting-row" ${nginxDisplay ? '' : 'style="display: none;"'}>
-                                    <label>Nginx 路径</label>
-                                    <input class="setting-text" id="${inputId('nginx')}" value="${escapeHtml(NGINX_CONF_PATH)}">
-                                </div>
-                            </div>
-                        </div>
-                        <div class="setting-section">
                             <div class="setting-section-title">本地 LLM</div>
                             <div class="setting-section-body">
                                 <div class="setting-row">
@@ -47100,7 +47049,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                 </div>
                                 <div class="setting-row">
                                     <label></label>
-                                    <button class="setting-btn" onclick="testLlmConnection(this)" style="margin-top:4px;">测试连接</button>
+                                    <button class="setting-tag-add-btn"" onclick="testLlmConnection(this)" style="margin-top:4px;">测试连接</button>
+                                    <div id="testLlmRtn" class="center-div" style="display:none;width:70%;color: var(--orange);"></div>
                                 </div>
                             </div>
                         </div>
@@ -47113,7 +47063,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                     <div style="flex:1;">
                                         <div class="setting-tag-list" id="${inputId('dirBlacklist')}"></div>
                                         <div class="setting-tag-add-row">
-                                            <input class="setting-tag-input" id="${inputId('dirBlacklistInput')}" placeholder="输入目录前缀">
+                                            <input class="setting-text" id="${inputId('dirBlacklistInput')}" placeholder="输入目录前缀">
                                             <button class="setting-tag-add-btn">添加</button>
                                         </div>
                                     </div>
@@ -47123,7 +47073,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                     <div style="flex:1;">
                                         <div class="setting-tag-list" id="${inputId('fileBlacklist')}"></div>
                                         <div class="setting-tag-add-row">
-                                            <input class="setting-tag-input" id="${inputId('fileBlacklistInput')}" placeholder="输入文件前缀">
+                                            <input class="setting-text" id="${inputId('fileBlacklistInput')}" placeholder="输入文件前缀">
                                             <button class="setting-tag-add-btn">添加</button>
                                         </div>
                                     </div>
@@ -47138,7 +47088,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                     <div style="flex:1;">
                                         <div class="setting-tag-list" id="${inputId('randomDirBlacklist')}"></div>
                                         <div class="setting-tag-add-row">
-                                            <input class="setting-tag-input" id="${inputId('randomDirBlacklistInput')}" placeholder="输入目录路径">
+                                            <input class="setting-text" id="${inputId('randomDirBlacklistInput')}" placeholder="输入目录路径">
                                             <button class="setting-tag-add-btn">添加</button>
                                         </div>
                                     </div>
@@ -47148,18 +47098,31 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                     <div style="flex:1;">
                                         <div class="setting-tag-list" id="${inputId('htmlShowBlacklist')}"></div>
                                         <div class="setting-tag-add-row">
-                                            <input class="setting-tag-input" id="${inputId('htmlShowBlacklistInput')}" placeholder="输入目录前缀">
+                                            <input class="setting-text" id="${inputId('htmlShowBlacklistInput')}" placeholder="输入目录前缀">
                                             <button class="setting-tag-add-btn">添加</button>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
+                        <div class="setting-section">
+                            <div class="setting-section-title">服务配置</div>
+                            <div class="setting-section-body">
+                                <div class="setting-row">
+                                    <label>GraphQL 地址</label>
+                                    <input class="setting-text" id="${inputId('graphql')}" value="${escapeHtml(GRAPHQL_ENDPOINT)}">
+                                </div>
+                                <div class="setting-row" ${nginxDisplay ? '' : 'style="display: none;"'}>
+                                    <label>Nginx 路径</label>
+                                    <input class="setting-text" id="${inputId('nginx')}" value="${escapeHtml(NGINX_CONF_PATH)}">
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    <div class="setting-modal-footer">
-                        <button class="setting-btn" id="${inputId('cancel')}">取消</button>
-                        <button class="setting-btn setting-btn-primary" id="${inputId('save')}">保存</button>
-                    </div>
+                     <div class="setting-modal-footer">
+                         <button class="confirm-modal-btn confirm-modal-btn-cancel" id="${inputId('cancel')}">取消</button>
+                         <button class="confirm-modal-btn confirm-modal-btn-confirm" id="${inputId('save')}">确认</button>
+                     </div>
                 </div>
             `;
             document.body.appendChild(overlay);
@@ -47515,7 +47478,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             // 进入全屏（Chrome/Edge 兼容）
             enterFullscreen();
             // 对当前可见的内容容器应用缩放
-            const containers = [contentMain, contentEdit, mermaidAppContainer];
+            const containers = [contentMain, contentEdit, mermaidAppContainer, graphViewContainer];
             for (const c of containers) {
                 if (c && c.style.display !== 'none') {
                     c.dataset.demoPrevZoom = c.style.zoom || '';
@@ -47524,18 +47487,19 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         try {
                             currentEditor.layout();
                         } catch (e) { /* ignore */ }
+                    }else if(c === graphViewContainer){
+                        collapsedGraphToolbar(true);
+                        setTimeout(() => { resetGraphView(); }, 300);
                     }
                     break;
                 }
             }
-
             // 创建退出指示条，点击即退出
             _demoExitBar = document.createElement('div');
             _demoExitBar.className = 'demo-exit-bar';
             _demoExitBar.textContent = '退出演示';
             _demoExitBar.onclick = exitDemoMode;
             document.body.appendChild(_demoExitBar);
-
             // 顶部透明触发条（解决 iframe 内鼠标事件被拦截的问题）
             _demoTriggerStrip = document.createElement('div');
             _demoTriggerStrip.style.cssText =
@@ -47591,6 +47555,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 </button>
             `;
             _demoZoomControls.querySelector('#demo-zoom-in')?.addEventListener('click', () => {
+                if(_customDemoZoom('in')) return;
                 if (_demoMmdCtrl) {
                     _demoMmdCtrl.zoomIn();
                 } else {
@@ -47599,6 +47564,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             });
             _demoZoomControls.querySelector('#demo-zoom-out')?.addEventListener('click', () => {
+                if(_customDemoZoom('out')) return;
                 if (_demoMmdCtrl) {
                     _demoMmdCtrl.zoomOut();
                 } else {
@@ -47607,6 +47573,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             });
             _demoZoomControls.querySelector('#demo-zoom-reset')?.addEventListener('click', () => {
+                if(_customDemoZoom('reset')) return;
                 if (_demoMmdCtrl) {
                     _demoMmdCtrl.reset();
                 } else {
@@ -47615,6 +47582,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             });
             document.body.appendChild(_demoZoomControls);
+
+            // 鼠标悬浮到按钮上时，也保持按钮可见
+            _demoZoomControls.addEventListener('mouseenter', () => {
+                clearTimeout(_demoZoomTimer);
+            });
+            _demoZoomControls.addEventListener('mouseleave', () => {
+                clearTimeout(_demoZoomTimer);
+                _demoZoomTimer = setTimeout(() => {
+                    if (_demoZoomControls) _demoZoomControls.classList.remove('visible');
+                }, 1000);
+            });
 
             // ── MMD 拖拽缩放（演示模式下额外支持）──
             if (mermaidAppContainer && mermaidAppContainer.style.display !== 'none' && previewElMermaid) {
@@ -47633,7 +47611,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         function _applyDemoZoom() {
-            const containers = [contentMain, contentEdit, mermaidAppContainer];
+            const containers = [contentMain, contentEdit, mermaidAppContainer, graphViewContainer];
             for (const c of containers) {
                 if (c && c.style.display !== 'none') {
                     c.style.zoom = String(_demoZoomLevel);
@@ -47645,6 +47623,26 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
+        function _customDemoZoom(type) {
+            if(!type) return false;
+            const containers = [contentMain, contentEdit, mermaidAppContainer, graphViewContainer];
+            for (const c of containers) {
+                if (c && c.style.display !== 'none') {
+                    if(c === graphViewContainer){
+                        if(type === 'reset'){
+                            resetGraphView(); 
+                        }else if(type === 'in'){
+                            graphZoomIn(); 
+                        }else if(type === 'out'){
+                            graphZoomOut(); 
+                        }
+                    }
+                   return true;
+                }
+            }
+            return false;
+        }
+
         function exitDemoMode() {
             if (!_isDemoMode) return;
             _isDemoMode = false;
@@ -47652,12 +47650,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             // 退出全屏
             exitFullscreen();
             // 恢复容器缩放
-            const containers = [contentMain, contentEdit, mermaidAppContainer];
+            const containers = [contentMain, contentEdit, mermaidAppContainer, graphViewContainer];
             for (const c of containers) {
                 if (c && c.style.display !== 'none') {
                     if (c && c.dataset.demoPrevZoom !== undefined) {
                         c.style.zoom = c.dataset.demoPrevZoom;
                         delete c.dataset.demoPrevZoom;
+                    }
+                    if(c === graphViewContainer){
+                        collapsedGraphToolbar(false);
+                        setTimeout(() => { resetGraphView(); }, 300);
                     }
                 }
             }
@@ -48831,7 +48833,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             try {
                 const messages = chatMessages.map(m => ({ role: m.role, content: m.content }));
                 let usageData = null;
-
                 // 使用公共 SSE 流式函数
                 const fullContent = await streamLlmChatCompletion(messages, {
                     signal: chatAbortController.signal,
@@ -48866,10 +48867,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         usageData = usage;
                     },
                 });
-
+                // 流式结束后对代码块进行语法高亮
+                if (_chatStreamingDiv && _chatStreamingDiv._body) {
+                    highlightChatCodeBlocks(_chatStreamingDiv._body);
+                }
                 // 移除流式 DOM 中可能残留的 typing 指示器
                 removeChatTyping();
-
                 if (fullContent) {
                     chatMessages.push({ role: 'assistant', content: fullContent });
                     if (currentSessionId) {
@@ -49809,6 +49812,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const token = document.getElementById('setting-llmToken')?.value || LOCAL_LLM_TOKEN;
             btn = btn || event?.target;
             if (btn) { btn.disabled = true; btn.textContent = '测试中...'; }
+            const testLlmRtn = document.getElementById('testLlmRtn');
             try {
                 const start = Date.now();
                 const res = await fetch(endpoint.replace(/\/chat\/completions.*/, '/models'), {
@@ -49818,11 +49822,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const data = await res.json();
                 const latency = Date.now() - start;
                 const models = data.data?.map?.(m => m.id)?.join(', ') || '\u2014';
-                showNotification('\u2713 连接成功 延迟:' + latency + 'ms 模型:' + models, 'success');
+                testLlmRtn.textContent = '模型列表:' + models;
+                testLlmRtn.style.display = 'flex';
+                showNotification('\u2713 连接成功 延迟:' + latency + 'ms', 'success');
             } catch (e) {
                 showNotification('\u2717 连接失败: ' + e.message, 'error');
             } finally {
                 if (btn) { btn.disabled = false; btn.textContent = '测试连接'; }
+                 setTimeout(() => {
+                    testLlmRtn.textContent = '';
+                    testLlmRtn.style.display = 'none';
+                }, 5000);
             }
         }
 
@@ -49851,9 +49861,28 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             }
         }
+
         function highlightChatCodeBlocks(dom) {
             if (typeof hljs === 'undefined') return;
             postProcessCodeAndDiagrams(dom);
         }
+
+        async function setLogLevel(level) {
+            try {
+                if (window.__TAURI__?.core?.invoke) {
+                    await window.__TAURI__.core.invoke('set_log_level', { level });
+                }
+            } catch (e) {
+                console.warn('设置日志级别失败:', e);
+            }
+        }
+        
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === '+') {
+                e.preventDefault();
+                const level = prompt('设置日志级别 (off / error / warn / info / debug / trace):', 'info');
+                if (level) setLogLevel(level.trim());
+            }
+        });
     </script>
 </body>

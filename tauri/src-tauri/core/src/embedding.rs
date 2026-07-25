@@ -1,5 +1,8 @@
 use std::path::Path;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock};
+
+#[cfg(not(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64"))))]
+use std::sync::Arc;
 
 use ndarray::{Array2, Axis, s};
 use rayon::prelude::*;
@@ -18,13 +21,29 @@ type SessionType = std::sync::Arc<tract_onnx::prelude::RunnableModel<
     Box<dyn tract_onnx::prelude::TypedOp>,
 >>;
 
-/// BGE-Small-ZH 模型隐藏层维度（ONNX 输出维度）
-const HIDDEN_SIZE: usize = 384;
-/// BGE-Small-ZH 模型的向量维度（截取前 384 维作为检索用）
-pub const EMBEDDING_DIMENSION: usize = 384;
+/// 从 config.json 加载的实际 hidden_size，初始化为 512 作为安全默认值
+static HIDDEN_SIZE: OnceLock<usize> = OnceLock::new();
+/// 从 config.json 读取 hidden_size，未初始化时返回 512
+fn get_hidden_size() -> usize {
+    *HIDDEN_SIZE.get().unwrap_or(&512)
+}
+/// 从 config.json 加载的实际 max_position_embeddings，初始化为 512 作为安全默认值
+static MAX_SEQ_LEN: OnceLock<usize> = OnceLock::new();
+/// 从 config.json 读取 max_position_embeddings，未初始化时返回 512
+fn get_max_seq_len() -> usize {
+    *MAX_SEQ_LEN.get().unwrap_or(&512)
+}
+/// 输出的向量维度，等于模型的 hidden_size
+pub fn get_embedding_dimension() -> usize {
+    get_hidden_size()
+}
 
-/// BERT 最大序列长度
-const MAX_SEQ_LEN: usize = 512;
+/// 从 config.json 加载的 pad_token_id，初始化为 0 作为安全默认值
+static PAD_TOKEN_ID: OnceLock<i64> = OnceLock::new();
+/// 从 config.json 读取 pad_token_id，未初始化时返回 0
+fn get_pad_token_id() -> i64 {
+    *PAD_TOKEN_ID.get().unwrap_or(&0)
+}
 
 /// 每个推理批次的文本数（长度相近的文本分在一组）
 const BATCH_SIZE: usize = 20;
@@ -215,6 +234,25 @@ fn ensure_initialized(models_dir: &Path) -> Result<(), String> {
         std::fs::read(models_dir.join("tokenizer.json"))
             .map_err(|e| format!("读取 tokenizer.json 失败: {}", e))?;
 
+    // 从 config.json 读取 hidden_size，以兼容不同版本的 BGE 模型
+    let config_raw =
+        std::fs::read_to_string(models_dir.join("config.json"))
+            .map_err(|e| format!("读取 config.json 失败: {}", e))?;
+    let config: serde_json::Value =
+        serde_json::from_str(&config_raw)
+            .map_err(|e| format!("解析 config.json 失败: {}", e))?;
+    let hs = config["hidden_size"].as_u64().unwrap_or(512) as usize;
+    let _ = HIDDEN_SIZE.set(hs);
+    log::info!("[ort_embedding] 从 config.json 读取 hidden_size={}", hs);
+
+    let ms = config["max_position_embeddings"].as_u64().unwrap_or(512) as usize;
+    let _ = MAX_SEQ_LEN.set(ms);
+    log::info!("[ort_embedding] 从 config.json 读取 max_position_embeddings={}", ms);
+
+    let pt = config["pad_token_id"].as_i64().unwrap_or(0);
+    let _ = PAD_TOKEN_ID.set(pt);
+    log::info!("[ort_embedding] 从 config.json 读取 pad_token_id={}", pt);
+
     let model_path = models_dir.join("model.onnx");
     let session = create_session(&model_path)?;
 
@@ -249,31 +287,32 @@ fn post_process_batch(
     let actual_batch = shape[0];
     let seq_len = shape[1];
     let actual_hidden = shape[2];
+    let hidden_size = get_hidden_size();
 
-    if actual_batch != batch_size || actual_hidden != HIDDEN_SIZE {
+    if actual_batch != batch_size || actual_hidden != hidden_size {
         return Err(format!(
             "[ort_embedding] 输出形状不匹配: {:?}, 期望 ({}, ?, {})",
-            shape, batch_size, HIDDEN_SIZE
+            shape, batch_size, hidden_size
         ));
     }
 
-    // hidden 是 3D 视图，reshape 为 (batch, seq_len, HIDDEN_SIZE)
+    // hidden 是 3D 视图，reshape 为 (batch, seq_len, hidden_size)
     let hidden_3d = hidden
-        .into_shape_with_order((batch_size, seq_len, HIDDEN_SIZE))
-        .expect("hidden 形状应匹配 (batch_size, seq_len, HIDDEN_SIZE)");
+        .into_shape_with_order((batch_size, seq_len, hidden_size))
+        .expect("hidden 形状应匹配 (batch_size, seq_len, hidden_size)");
 
     let mut all_embeddings = Vec::with_capacity(batch_size);
 
     for i in 0..batch_size {
         let valid = valid_counts[i];
         if valid == 0 {
-            all_embeddings.push(vec![0.0f32; EMBEDDING_DIMENSION]);
+            all_embeddings.push(vec![0.0f32; get_embedding_dimension()]);
             continue;
         }
 
         let valid_len = masks[i].len();
         let sum = hidden_3d
-            .slice(s![i, 0..valid_len, 0..EMBEDDING_DIMENSION])
+            .slice(s![i, 0..valid_len, 0..get_embedding_dimension()])
             .sum_axis(Axis(0));
 
         let count_f = valid as f32;
@@ -352,7 +391,7 @@ pub fn call_embedding_parallel(
                     .collect();
 
                 // 截断至模型支持的最大长度
-                let truncated_len = ids.len().min(MAX_SEQ_LEN);
+                let truncated_len = ids.len().min(get_max_seq_len());
                 let ids = ids[..truncated_len].to_vec();
                 let mask = mask[..truncated_len].to_vec();
                 let type_ids = type_ids[..truncated_len].to_vec();
@@ -406,7 +445,7 @@ pub fn call_embedding_parallel(
             e.into_inner()
         });
 
-    let mut results = vec![vec![0.0f32; EMBEDDING_DIMENSION]; texts.len()];
+    let mut results = vec![vec![0.0f32; get_embedding_dimension()]; texts.len()];
 
     // ── 5. 批量推理（各组可并行）──
     #[cfg(not(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64"))))]
@@ -475,7 +514,8 @@ fn process_one_group(
                 mask_flat.push(mask[j]);
                 type_ids_flat.push(type_ids[j]);
             } else {
-                ids_flat.push(0i64);
+                let pad_id = get_pad_token_id();
+                ids_flat.push(pad_id);
                 mask_flat.push(0i64);
                 type_ids_flat.push(0i64);
             }
@@ -528,7 +568,8 @@ fn process_one_group(
                 mask_flat.push(mask[j]);
                 type_ids_flat.push(type_ids[j]);
             } else {
-                ids_flat.push(0i64);
+                let pad_id = get_pad_token_id();
+                ids_flat.push(pad_id);
                 mask_flat.push(0i64);
                 type_ids_flat.push(0i64);
             }

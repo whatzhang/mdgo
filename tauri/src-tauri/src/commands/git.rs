@@ -126,7 +126,7 @@ pub fn git_log(
     depth: Option<u32>,
     filepath: Option<String>,
 ) -> Result<Vec<CommitInfo>, String> {
-    // 缓存查找
+    // 缓存查找（命中且未过期则直接返回）
     let cache_key = format!("{}_{:?}_{:?}", dir, depth, filepath);
     {
         let cache = lock_cache();
@@ -144,7 +144,7 @@ pub fn git_log(
     if cache.log.len() >= LOG_CACHE_MAX {
         let ttl = CACHE_TTL_MS;
         cache.log.retain(|_, (ts, _)| ts.elapsed().as_millis() < ttl as u128);
-        // 如果清理完还是满，强制清空一半（简单策略）
+        // 如果清理过期项后仍满，按插入顺序删除最早的一半
         if cache.log.len() >= LOG_CACHE_MAX {
             let to_remove: Vec<String> = cache.log.keys().take(LOG_CACHE_MAX / 2).cloned().collect();
             for k in to_remove {

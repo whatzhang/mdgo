@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 
-use crate::db::utils::LOCAL_EMBEDDING_DIMENSION;
+use crate::db::utils::get_local_embedding_dimension;
 
 fn escape_sql_string(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
@@ -97,7 +97,7 @@ impl LanceStore {
                 "vector",
                 DataType::FixedSizeList(
                     Arc::new(Field::new("item", DataType::Float32, true)),
-                    LOCAL_EMBEDDING_DIMENSION as i32,
+                    get_local_embedding_dimension() as i32,
                 ),
                 true,
             ),

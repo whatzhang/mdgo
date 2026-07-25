@@ -278,8 +278,10 @@ pub struct KbProgress {
     pub message: String,
 }
 
-/// 本地 BGE-Small-ZH 模型输出的向量维度（384）。
-pub const LOCAL_EMBEDDING_DIMENSION: u32 = 384;
+/// 本地 BGE 模型输出的向量维度（动态获取，等于模型的 hidden_size）。
+pub fn get_local_embedding_dimension() -> u32 {
+    crate::embedding::get_embedding_dimension() as u32
+}
 
 /// 启动时解析模型文件的实际路径（纯本地，零网络依赖）。
 ///
@@ -353,8 +355,6 @@ pub fn get_model_dir() -> &'static Path {
 }
 
 /// 使用本地 BGE-Small-ZH 模型生成向量。
-///
-/// 向量维度：384（bge-small-zh-v1.5）。
 ///
 /// # 并发模型
 /// - `call_embedding_parallel` 内部使用 ONNX Runtime 批处理推理

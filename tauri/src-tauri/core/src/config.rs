@@ -1,6 +1,6 @@
 use std::sync::{Arc, RwLock};
 
-/// 索引器配置（持目录/文件黑名单）
+/// 索引器配置，定义索引时需要排除的目录和文件黑名单
 #[derive(Clone, Debug)]
 pub struct IndexerConfig {
     pub dir_blacklist: Vec<String>,

@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-/// 知识库索引结果
 #[derive(Debug, Serialize)]
 pub struct KbIndexResult {
     pub file_count: u32,
@@ -9,7 +8,6 @@ pub struct KbIndexResult {
     pub indexed_at: u64,
 }
 
-/// 知识库状态
 #[derive(Debug, Serialize)]
 pub struct KbStatus {
     pub file_count: u32,
