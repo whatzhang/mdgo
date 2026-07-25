@@ -23,9 +23,19 @@
     <link rel="stylesheet" href="https://unpkg.com/graphiql@3.0.6/graphiql.min.css" />
     <link rel="stylesheet" href="https://unpkg.com/tippy.js@6/dist/tippy.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jsmind@0.9.1/style/jsmind.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.1/dist/katex.min.css">
 
     <!-- 核心 JS 库（同步加载，体积小） -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.18.1/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.18.1/dist/contrib/auto-render.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/raphael@2.3.0/raphael.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/underscore@1.13.8/underscore-umd-min.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/snap.svg/0.5.1/snap.svg-min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/webfont/1.6.28/webfontloader.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/flowchart/1.17.1/flowchart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/js-sequence-diagram@2.0.1/dist/sequence-diagram.min.js"></script>
+
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.4.12/dist/purify.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
@@ -797,6 +807,70 @@
             font-family: var(--font-family);
             white-space: normal;
             word-break: break-all;
+        }
+
+        .katex-block {
+            background: var(--color-bg-secondary) !important;
+            color: var(--color-text) !important;
+            padding: 1rem 1.5rem;
+            overflow-x: auto;
+            text-align: center;
+        }
+
+        .flowchart-output,
+        .sequence-output {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 1rem 0;
+            background: var(--color-bg-secondary);
+            padding: 1rem;
+            border-radius: var(--radius-md);
+            overflow-x: auto;
+        }
+
+        .flowchart-error-block,
+        .sequence-error-block {
+            border: 1px solid var(--color-danger) !important;
+            border-radius: var(--radius-md) !important;
+            padding: 1rem !important;
+            background-color: var(--color-danger-light) !important;
+            color: var(--color-danger);
+            font-size: 0.875rem;
+            text-align: center;
+        }
+
+        /* 通用渲染错误展示：错误消息 + 原始源码 */
+        .render-error-block {
+            border: 1px solid var(--color-danger);
+            border-radius: var(--radius-md);
+            background-color: var(--color-danger-light);
+            margin: 0.5rem 0;
+        }
+
+        .render-error-msg {
+            color: var(--color-danger);
+            font-weight: bold;
+            padding: 0.75rem 1rem 0.25rem;
+            font-size: 0.875rem;
+            font-family: var(--font-family);
+            white-space: normal;
+        }
+
+        .render-error-code {
+            margin: 0.5rem;
+            padding: 0.75rem;
+            background: var(--color-bg-primary, #fff);
+            border: 1px solid var(--color-border, #ddd);
+            border-radius: var(--radius-sm);
+            font-size: 0.8125rem;
+            font-family: var(--font-mono, monospace);
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 300px;
+            overflow-y: auto;
+            color: var(--color-text, #333);
         }
 
         .canvas-container {
@@ -10905,7 +10979,7 @@
             -ms-text-size-adjust: 100%;
             -webkit-text-size-adjust: 100%;
             font-weight: 400;
-            color: #1f2328;
+            color: var(--color-text);
             background-color: var(--color-bg-secondary);
             font-family: var(--font-family);
             font-size: 14px;
@@ -13255,6 +13329,15 @@
             font-size: 1em;
             margin-bottom: 0.25em;
             margin-top: 0.25em;
+        }
+
+        .center-div-flowchart {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            height: 100%;
+            box-sizing: border-box;
         }
     </style>
 </head>
@@ -24939,7 +25022,7 @@ kanban-plugin: basic
             } else {
                 const contentDiv = foreignObject.append('xhtml:div')
                     .attr('class', 'canvas-node-text')
-                    .style('color', '#1f2328')
+                    .style('color', 'var(--color-text)')
                     .style('background-color', 'var(--color-bg)')
                     .html(`<div style="color:var(--color-warning);display:inline-block; width:100%; text-align:center;" title="📄 ${escapeHtml(node.file)}">📄 ${escapeHtml(basename(node.file) || node.file)}</div>`);
             }
@@ -26590,123 +26673,320 @@ kanban-plugin: basic
             }
         }
 
+        /**
+         * 通用渲染错误展示：在容器中显示错误消息 + 原始源码
+         * @param {Element} container - 要替换内容的 DOM 元素（已在 DOM 中）
+         * @param {string} errorMsg - 错误描述
+         * @param {string} sourceCode - 原始源码
+         * @param {string} label - 渲染类型标签（如 "KaTeX"、"Flowchart"）
+         */
+        function showRenderError(container, errorMsg, sourceCode, label) {
+            container.className = 'render-error-block';
+            container.innerHTML = '';
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'render-error-msg';
+            msgDiv.textContent = `⚠ ${label} 渲染失败: ${errorMsg}`;
+            container.appendChild(msgDiv);
+            const codePre = document.createElement('pre');
+            codePre.className = 'render-error-code';
+            codePre.textContent = sourceCode;
+            container.appendChild(codePre);
+        }
+
+        /**
+         * 带并发限制的异步任务调度器
+         * @param {number} limit - 最大并发数
+         */
+        function createConcurrencyLimiter(limit) {
+            const queue = [];
+            let running = 0;
+            function next() {
+                if (queue.length === 0 || running >= limit) return;
+                const task = queue.shift();
+                running++;
+                task().finally(() => { running--; next(); });
+            }
+            return function enqueue(fn) {
+                return new Promise(resolve => {
+                    queue.push(() => fn().then(resolve, resolve));
+                    next();
+                });
+            };
+        }
+
+        /**
+         * 高效的 yieldToMain：优先使用 scheduler.yield()（Chrome 115+），
+         * 降级到 MessageChannel 实现亚 1ms 让出，最后回退 setTimeout(0)
+         */
+        function yieldToMain() {
+            if (typeof scheduler !== 'undefined' && scheduler.yield) {
+                return scheduler.yield();
+            }
+            return new Promise(resolve => {
+                if (typeof MessageChannel !== 'undefined') {
+                    const ch = new MessageChannel();
+                    ch.port1.onmessage = resolve;
+                    ch.port2.postMessage(null);
+                } else {
+                    setTimeout(resolve, 0);
+                }
+            });
+        }
+
+        /**
+         * 后处理 Markdown 渲染结果中的 <pre> 块：
+         * - Mermaid 图表
+         * - Math/KaTeX/LaTeX 数学公式
+         * - Flowchart 流程图（flow 语法）
+         * - Sequence Diagram 时序图（seq 语法）
+         * - Draw.io / Excalidraw / 代码高亮
+         */
         async function postProcessCodeAndDiagrams(dom = document) {
             if (!dom) return;
-            const preElements = dom.querySelectorAll('pre');
+            // 限定在 .markdown-body 内，排除无关 <pre>
+            const container = dom.closest?.('.markdown-body') || dom.querySelector('.markdown-body') || dom;
+            const preElements = container.querySelectorAll('pre');
             if (!preElements.length) return;
-            const mermaidTasks = [];
-            for (let i = 0, len = preElements.length; i < len; i++) {
-                const pre = preElements[i];
-                if (!pre.isConnected || pre.dataset.processed === '1' || pre.classList.contains('mermaid-error-block')) continue;
-                pre.dataset.processed = '1';
-                const mermaidCode = pre.querySelector('code.language-mermaid:not([highlighted])');
-                if (mermaidCode && pre.closest('.markdown-body')) {
+            const BATCH_SIZE = 5;
+            // Mermaid 并发限制为 3，避免渲染器过载
+            const mermaidLimit = createConcurrencyLimiter(3);
+            const tasks = [];
+            // 返回 false 表示不执行后续代码高亮
+            const handlers = {
+                // ── Mermaid ──
+                mermaid(el, code, lang) {
+                    if (!el.closest('.markdown-body')) return false;
                     const uniqueId = `mermaid-svg-${crypto.randomUUID()}`;
-                    mermaidTasks.push((async () => {
+                    // 通过并发限制器提交异步任务
+                    tasks.push(mermaidLimit(async () => {
                         await yieldToMain();
                         try {
-                            const { svg } = await mermaid.render(uniqueId, mermaidCode.textContent);
+                            const { svg } = await mermaid.render(uniqueId, code.textContent);
                             const svgContainer = document.createElement('div');
                             svgContainer.className = 'mermaid-output';
                             svgContainer.innerHTML = svg;
-                            pre.replaceWith(svgContainer);
+                            el.replaceWith(svgContainer);
                         } catch (error) {
                             console.error('Mermaid 渲染失败:', error);
+                            // 清理 mermaid 创建的残留元素
                             const ghost = document.getElementById('d' + uniqueId) || document.getElementById(uniqueId);
                             if (ghost) ghost.remove();
-                            document.querySelectorAll('.mermaid-error').forEach(el => el.remove());
-
-                            pre.className = 'mermaid-error-block';
+                            el.className = 'mermaid-error-block';
                             const errMsg = error?.message || error?.str || '未知语法错误';
-                            const errDiv = document.createElement('div');
-                            errDiv.className = 'mermaid-error-msg';
-                            errDiv.textContent = `❌ Mermaid 语法错误: ${errMsg}`;
-                            pre.insertBefore(errDiv, pre.firstChild);
+                            // 显示错误消息 + 原始源码
+                            showRenderError(el, errMsg, code.textContent, 'Mermaid');
                         }
-                        mermaidCode.setAttribute('highlighted', '1');
-                    })());
+                        code.setAttribute('highlighted', '1');
+                    }));
+                    return false;
+                },
+
+                // ── Math / KaTeX / LaTeX ──
+                math(el, code, lang) {
+                    // 先标记已处理（KaTeX render 会销毁 <code>）
+                    code.setAttribute('highlighted', '1');
+                    try {
+                        katex.render(code.textContent, el, {
+                            displayMode: true,
+                            throwOnError: false,
+                            output: 'html'
+                        });
+                        el.className = 'katex-block';
+                    } catch (e) {
+                        console.warn(`KaTeX 渲染失败 (${lang}):`, e);
+                        // 显示错误消息 + 原始 LaTeX 源码
+                        el.className = ''; // 清除 pre 默认样式
+                        showRenderError(el, e.message || '语法错误', code.textContent, 'KaTeX');
+                    }
+                    return false;
+                },
+                katex: 'math',  // alias
+                latex: 'math',  // alias
+
+                // ── Flowchart（flow 语法）──
+                flow(el, code, lang) {
+                    if (typeof flowchart === 'undefined') {
+                        console.warn('flowchart.js 未加载');
+                        return true; // 回退到代码高亮
+                    }
+                    // 先标记已处理（drawSVG 之后 <code> 会脱离 DOM）
+                    code.setAttribute('highlighted', '1');
+                    const diagramId = `flowchart-${crypto.randomUUID()}`;
+                    const container = document.createElement('div');
+                    container.id = diagramId;
+                    container.className = 'center-div-flowchart';
+                    el.replaceWith(container);
+                    try {
+                        const diagram = flowchart.parse(code.textContent);
+                        diagram.drawSVG(diagramId, { 'line-width': 2 });
+                    } catch (e) {
+                        console.warn('Flowchart 渲染失败:', e);
+                        showRenderError(container, e.message || '语法错误', code.textContent, 'Flowchart');
+                    }
+                    return false;
+                },
+                flowchart: 'flow',  // alias
+
+                // ── Sequence Diagram（seq 语法）──
+                seq(el, code, lang) {
+                    if (typeof Diagram === 'undefined') {
+                        console.warn('sequence-diagram 未加载');
+                        return true;
+                    }
+                    // 先标记已处理（drawSVG 之后 <code> 会脱离 DOM）
+                    code.setAttribute('highlighted', '1');
+                    const diagramId = `seq-${crypto.randomUUID()}`;
+                    const container = document.createElement('div');
+                    container.id = diagramId;
+                    container.className = 'center-div';
+                    el.replaceWith(container);
+                    try {
+                        const diagram = Diagram.parse(code.textContent);
+                        diagram.drawSVG(diagramId, { theme: 'simple' });
+                    } catch (e) {
+                        console.warn('Sequence Diagram 渲染失败:', e);
+                        showRenderError(container, e.message || '语法错误', code.textContent, 'Sequence Diagram');
+                    }
+                    return false;
+                },
+                sequence: 'seq',   // alias
+
+                // ── Draw.io ──
+                xml(el, code, lang) {
+                    if (!code.textContent.trim().startsWith('<mxfile')) return true;
+                    try {
+                        const fileUrl = encodeURIComponent(code.textContent);
+                        const iframe = document.createElement('iframe');
+                        iframe.style.cssText = 'width:100%;height:100%;border:none';
+                        iframe.src = `https://viewer.diagrams.net/?#R${fileUrl}`;
+                        el.replaceWith(iframe);
+                    } catch (e) {
+                        console.warn('Draw.io 替换失败:', e);
+                    }
+                    return false;
+                },
+
+                // ── Excalidraw ──
+                json(el, code, lang) {
+                    try {
+                        const jsonData = JSON.parse(code.textContent);
+                        if (jsonData && jsonData.type === 'excalidraw' && jsonData.elements) {
+                            const container = document.createElement('div');
+                            container.style.cssText = 'width:100%; height:600px; max-height:100vh; overflow:auto';
+                            el.replaceWith(container);
+                            renderEmbeddedExcalidraw(container, jsonData);
+                            return false;
+                        }
+                    } catch (e) { /* ignore non-excalidraw json */ }
+                    return true; // 非 excalidraw json，回退到代码高亮
+                }
+            };
+
+            // ── 遍历并处理每个 <pre> 块 ──
+            for (let i = 0, len = preElements.length; i < len; i++) {
+                // 每 BATCH 个元素让出主线程
+                if (i > 0 && i % BATCH_SIZE === 0) await yieldToMain();
+                const pre = preElements[i];
+                // 快速跳过：不可见、已处理
+                if (!pre.isConnected || pre.dataset.processed === '1') continue;
+                pre.dataset.processed = '1';
+                const code = pre.querySelector('code:not([highlighted])');
+                if (!code) {
+                    // 无 code 标签，但需要复制按钮
+                    if (!pre.querySelector('.code-copy-btn')) {
+                        addCopyButton(pre);
+                    }
                     continue;
                 }
-                const codeBlock = pre.querySelector('code:not([highlighted])');
-                if (codeBlock) {
-                    let langClass;
-                    for (const cls of codeBlock.classList) {
-                        if (cls.startsWith('language-')) {
-                            langClass = cls;
-                            break;
-                        }
-                    }
-                    let isMermaid = false;
-                    if (langClass) {
-                        const lang = langClass.slice('language-'.length);
-                        isMermaid = lang === 'mermaid';
-                        const codeContent = codeBlock.textContent.trim();
 
-                        if (lang === 'xml' && codeContent.startsWith('<mxfile')) {
-                            try {
-                                const fileUrl = encodeURIComponent(codeContent);
-                                const iframe = document.createElement('iframe');
-                                iframe.style.width = '100%';
-                                iframe.style.height = '100%';
-                                iframe.src = `https://viewer.diagrams.net/?#R${fileUrl}`;
-                                pre.replaceWith(iframe);
-                                continue;
-                            } catch (e) {
-                                console.warn('Draw.io 替换失败:', e);
-                            }
-                        } else if (lang === 'json') {
-                            try {
-                                const jsonData = JSON.parse(codeContent);
-                                if (jsonData && jsonData.type === 'excalidraw' && jsonData.elements) {
-                                    const container = document.createElement('div');
-                                    container.style.cssText = 'width:100%; height:600px; max-height:100vh; overflow:auto';
-                                    pre.replaceWith(container);
-                                    renderEmbeddedExcalidraw(container, jsonData);
-                                    continue;
-                                }
-                            } catch (e) {
-                                console.warn('json 解析失败:', e);
-                            }
-                        } else if (!isMermaid && !hljs.getLanguage(lang)) {
-                            codeBlock.classList.remove(langClass);
-                            codeBlock.classList.add(lang === 'properties' ? 'language-bash' : 'language-plaintext');
-                        }
+                // 定位 language-xxx class
+                let lang = '';
+                for (const cls of code.classList) {
+                    if (cls.startsWith('language-')) {
+                        lang = cls.slice(9);
+                        break;
                     }
-                    if (!isMermaid && !codeBlock.classList.contains('hljs')) {
-                        try {
-                            hljs.highlightElement(codeBlock);
-                        } catch (error) {
-                            console.warn('highlight.js 高亮失败:', error);
-                        }
-                    }
-                    codeBlock.setAttribute('highlighted', '1');
                 }
 
-                if (pre.querySelector('.code-copy-btn')) continue;
-                pre.style.position = 'relative';
+                // 有特定语言标识 → 查找处理器
+                if (lang) {
+                    let handler = handlers[lang];
+                    while (typeof handler === 'string') handler = handlers[handler];
+                    if (handler) {
+                        try {
+                            const shouldHighlight = handler(pre, code, lang);
+                            if (shouldHighlight === false) {
+                                continue; // 由处理器处理了，跳过后续
+                            }
+                        } catch (e) {
+                            console.error(`Handler 执行异常 (${lang}):`, e);
+                            showRenderError(pre, `处理器异常: ${e.message}`, code.textContent, lang);
+                            continue;
+                        }
+                    } else if (!lang.startsWith('mermaid') && !hljs.getLanguage(lang)) {
+                        code.classList.remove('language-' + lang);
+                        code.classList.add(lang === 'properties' ? 'language-bash' : 'language-plaintext');
+                    } else if (lang.startsWith('mermaid')) {
+                        // 不降级，直接走后续的高亮逻辑
+                    }
+                }
 
-                const copyBtn = document.createElement('button');
-                copyBtn.className = 'code-copy-btn';
-                copyBtn.textContent = '复制';
-                copyBtn.addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    const code = pre.querySelector('code');
-                    const text = code ? code.textContent : pre.textContent;
-                    await copyTextToClipboard(text);
-                    copyBtn.textContent = '✓ 已复制';
-                    copyBtn.classList.add('copied');
-                    showNotification('✓ 代码已复制到剪贴板', 'success');
-                    setTimeout(() => {
-                        copyBtn.textContent = '📋 复制';
-                        copyBtn.classList.remove('copied');
-                    }, 2000);
-                });
-                pre.appendChild(copyBtn);
+                // ── 代码高亮 ──
+                if (!code.classList.contains('hljs')) {
+                    try {
+                        hljs.highlightElement(code);
+                    } catch (error) {
+                        console.warn('highlight.js 高亮失败:', error);
+                    }
+                }
+                code.setAttribute('highlighted', '1');
+                if (!pre.querySelector('.code-copy-btn')) {
+                    addCopyButton(pre);
+                }
             }
 
-            if (mermaidTasks.length) {
-                await Promise.allSettled(mermaidTasks);
+            // ── 等待所有异步任务（Mermaid 等）完成 ──
+            if (tasks.length) {
+                await Promise.allSettled(tasks);
             }
+
+            // ── 渲染 KaTeX 行内公式（auto-render 兜底） ──
+            if (typeof renderMathInElement === 'function') {
+                try {
+                    renderMathInElement(container, {
+                        delimiters: [
+                            { left: '$$', right: '$$', display: true },
+                            { left: '$', right: '$', display: false },
+                            { left: '\\(', right: '\\)', display: false },
+                            { left: '\\[', right: '\\]', display: true }
+                        ],
+                        throwOnError: false
+                    });
+                } catch (e) {
+                    console.warn('KaTeX auto-render 失败:', e);
+                }
+            }
+        }
+
+        function addCopyButton(pre) {
+            pre.style.position = 'relative';
+            const copyBtn = document.createElement('button');
+            copyBtn.className = 'code-copy-btn';
+            copyBtn.textContent = '复制';
+            copyBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const code = pre.querySelector('code');
+                const text = code ? code.textContent : pre.textContent;
+                await copyTextToClipboard(text);
+                copyBtn.textContent = '✓ 已复制';
+                copyBtn.classList.add('copied');
+                showNotification('✓ 代码已复制到剪贴板', 'success');
+                setTimeout(() => {
+                    copyBtn.textContent = '📋 复制';
+                    copyBtn.classList.remove('copied');
+                }, 2000);
+            });
+            pre.appendChild(copyBtn);
         }
 
         async function bindImagePreview(container, nextEnable = false) {
@@ -28659,10 +28939,6 @@ kanban-plugin: basic
             const s = ['B', 'KB', 'MB', 'GB', 'TB'];
             const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), s.length - 1);
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + s[i];
-        }
-
-        function yieldToMain() {
-            return new Promise(resolve => setTimeout(resolve, 0));
         }
 
         function clearContainer(id) {
