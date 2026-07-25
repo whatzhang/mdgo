@@ -19,7 +19,7 @@ type SessionType = std::sync::Arc<tract_onnx::prelude::RunnableModel<
 >>;
 
 /// BGE-Small-ZH 模型隐藏层维度（ONNX 输出维度）
-const HIDDEN_SIZE: usize = 512;
+const HIDDEN_SIZE: usize = 384;
 /// BGE-Small-ZH 模型的向量维度（截取前 384 维作为检索用）
 pub const EMBEDDING_DIMENSION: usize = 384;
 
@@ -72,15 +72,9 @@ fn create_session(model_path: &Path) -> Result<SessionType, String> {
     let model = tract_onnx::onnx()
         .model_for_path(model_path)
         .map_err(|e| format!("加载 ONNX 模型失败: {}", e))?
-        .with_input_fact(0, InferenceFact::dt_shape(i64::datum_type(), tvec!(-1, -1)))
-        .map_err(|e| format!("设置 input_ids 输入形状失败: {}", e))?
-        .with_input_fact(1, InferenceFact::dt_shape(i64::datum_type(), tvec!(-1, -1)))
-        .map_err(|e| format!("设置 attention_mask 输入形状失败: {}", e))?
-        .with_input_fact(2, InferenceFact::dt_shape(i64::datum_type(), tvec!(-1, -1)))
-        .map_err(|e| format!("设置 token_type_ids 输入形状失败: {}", e))?
         .into_optimized()
         .map_err(|e| format!("模型优化失败: {}", e))?
-        .into_runnable_with_options(&Default::default())
+        .into_runnable()
         .map_err(|e| format!("模型编译失败: {}", e))?;
 
     log::info!("[ort_embedding] tract-onnx session 创建成功");
@@ -238,27 +232,29 @@ fn ensure_initialized(models_dir: &Path) -> Result<(), String> {
 // ─── Mean Pooling + L2 Normalize ───
 
 /// 对一组 ONNX 推理结果进行 mean pooling + L2 normalize。
+///
+/// 返回 `Result`，形状不匹配时返回 `Err`，避免静默写入零向量导致数据损坏。
 fn post_process_batch(
     hidden: ndarray::ArrayViewD<'_, f32>,
     batch_size: usize,
     masks: &[Vec<i64>],
     valid_counts: &[usize],
-) -> Vec<Vec<f32>> {
+) -> Result<Vec<Vec<f32>>, String> {
     let shape = hidden.shape();
     if shape.len() != 3 {
-        log::error!("[ort_embedding] 意外的输出形状: {:?}, 期望 3D", shape);
-        return vec![vec![0.0f32; EMBEDDING_DIMENSION]; batch_size];
+        return Err(format!(
+            "[ort_embedding] 意外的输出形状: {:?}, 期望 3D", shape
+        ));
     }
     let actual_batch = shape[0];
     let seq_len = shape[1];
     let actual_hidden = shape[2];
 
     if actual_batch != batch_size || actual_hidden != HIDDEN_SIZE {
-        log::error!(
+        return Err(format!(
             "[ort_embedding] 输出形状不匹配: {:?}, 期望 ({}, ?, {})",
             shape, batch_size, HIDDEN_SIZE
-        );
-        return vec![vec![0.0f32; EMBEDDING_DIMENSION]; batch_size];
+        ));
     }
 
     // hidden 是 3D 视图，reshape 为 (batch, seq_len, HIDDEN_SIZE)
@@ -294,7 +290,7 @@ fn post_process_batch(
         all_embeddings.push(embedding);
     }
 
-    all_embeddings
+    Ok(all_embeddings)
 }
 
 // ─── 公开 API ───
@@ -395,14 +391,20 @@ pub fn call_embedding_parallel(
     let session = {
         let guard = session_mutex
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(|e| {
+                log::warn!("[ort_embedding] tract session mutex 中毒，已恢复");
+                e.into_inner()
+            });
         Arc::clone(&guard)
     };
 
     #[cfg(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64")))]
     let mut session = session_mutex
         .lock()
-        .unwrap_or_else(|e| e.into_inner());
+        .unwrap_or_else(|e| {
+            log::warn!("[ort_embedding] ORT session mutex 中毒，已恢复（session 可能处于不一致状态）");
+            e.into_inner()
+        });
 
     let mut results = vec![vec![0.0f32; EMBEDDING_DIMENSION]; texts.len()];
 
@@ -491,7 +493,7 @@ fn process_one_group(
 
     let group_masks: Vec<Vec<i64>> = group.iter().map(|(_, _, mask, ..)| mask.clone()).collect();
     let valid_counts: Vec<usize> = group.iter().map(|(_, _, _, _, vc)| *vc).collect();
-    let embeddings = post_process_batch(hidden.view(), group_size, &group_masks, &valid_counts);
+    let embeddings = post_process_batch(hidden.view(), group_size, &group_masks, &valid_counts)?;
 
     let result: Vec<(usize, Vec<f32>)> = group
         .iter()
@@ -544,7 +546,7 @@ fn process_one_group(
 
     let group_masks: Vec<Vec<i64>> = group.iter().map(|(_, _, mask, ..)| mask.clone()).collect();
     let valid_counts: Vec<usize> = group.iter().map(|(_, _, _, _, vc)| *vc).collect();
-    let embeddings = post_process_batch(hidden.view(), group_size, &group_masks, &valid_counts);
+    let embeddings = post_process_batch(hidden.view(), group_size, &group_masks, &valid_counts)?;
 
     let result: Vec<(usize, Vec<f32>)> = group
         .iter()

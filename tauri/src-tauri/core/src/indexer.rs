@@ -203,13 +203,11 @@ impl Indexer {
                 continue;
             }
 
-            // 进度 20%：模型编译（仅首次，tract-onnx 约需 30-60 秒）
-            progress(20, "正在加载向量模型 (首次约需 30-60 秒)...");
+            // 进度 20%：模型加载（仅首次约需 30-60 秒，已预热则瞬间完成）
+            progress(20, "正在加载向量模型...");
 
             // 向量化进度回调：嵌入过程中实时更新进度
             let total_chunks_pending = total_chunks + batch_chunks.len() as u32;
-            // 借用 progress，确保之后还能使用
-            let _ = &progress;
             let embed_progress = |done: usize, total_groups: usize, msg: &str| {
                 // 向量化占比 20% → 80%
                 let embed_pct = 20 + (done * 60 / total_groups.max(1)) as u8;
@@ -242,6 +240,7 @@ impl Indexer {
         if total_chunks == 0 {
             // 清理已创建的空表，避免留下不一致的空索引
             let _ = self.clear_inner(dir_path).await;
+            progress(100, "索引完成（无有效内容）");
             return Err("未能从文件中提取有效内容".into());
         }
 
@@ -435,15 +434,13 @@ impl Indexer {
         let (progress_tx, mut progress_rx) = mpsc::unbounded_channel::<(usize, usize, String)>();
 
         // 启动阻塞任务进行嵌入
-        let handle = tokio::task::spawn_blocking(move || {
+        let mut handle = tokio::task::spawn_blocking(move || {
             let refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
             let pg = |done: usize, total: usize, msg: &str| {
                 let _ = progress_tx.send((done, total, msg.to_string()));
             };
             utils::call_embedding(&refs, Some(&pg))
         });
-
-        tokio::pin!(handle);
 
         // 轮询 channel，实时调用 progress 回调
         let mut result: Option<Result<Vec<Vec<f32>>, String>> = None;

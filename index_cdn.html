@@ -562,10 +562,10 @@
             width: 0.75rem;
             height: 0.75rem;
             content: '▶';
-            display: inline-block;      
-            line-height: 0.75rem;    
-            text-align: center;      
-            font-size: 0.625rem !important;          
+            display: inline-block;
+            line-height: 0.75rem;
+            text-align: center;
+            font-size: 0.625rem !important;
             background-image: none;
         }
 
@@ -3462,6 +3462,31 @@
             text-overflow: ellipsis;
         }
 
+        .chart-title>svg {
+            width: 1rem;
+            height: 1rem;
+        }
+
+        .chart-title-heatmap {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 0.625rem;
+            color: var(--color-text);
+            white-space: nowrap;
+            position: absolute;
+            top: 0.75rem;
+            left: 0.75rem;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+        }
+
+        .chart-title-heatmap>svg {
+            width: 1rem;
+            height: 1rem;
+        }
+
         .activity-section {
             display: grid;
             grid-template-columns: 1fr 1fr 1fr 1fr;
@@ -4808,7 +4833,7 @@
 
         .chat-message-header-actions {
             display: none;
-            gap: 0.5rem;
+            gap: 0.25rem;
         }
 
         .chat-message-header:hover .chat-message-header-actions {
@@ -5773,6 +5798,14 @@
             display: none;
         }
 
+        .mermaid-preview-area.pan-mode {
+            cursor: grab;
+        }
+
+        .mermaid-preview-area.pan-mode.dragging {
+            cursor: grabbing;
+        }
+
         #mermaid-preview {
             transform-origin: center center;
             transition: transform 0.15s ease;
@@ -5872,16 +5905,16 @@
             overflow-y: auto;
         }
 
-        /* ═══ Status Bar ═══ */
         .mermaid-status-bar {
             height: 1.75rem;
-            background: #007acc;
+            background: var(--color-bg);
+            border-top: 1px solid #e2e8f0;
             display: flex;
             align-items: center;
             padding: 0 1rem;
             font-size: 0.75rem;
             font-weight: bold;
-            color: rgba(255, 255, 255, 0.9);
+            color: var(--t2);
             gap: 0.875rem;
             flex-shrink: 0;
         }
@@ -5964,10 +5997,20 @@
             justify-content: center;
             width: 100%;
             height: 100%;
-            overflow: auto;
+            overflow: hidden;
             padding: 1.25rem;
             box-sizing: border-box;
             position: relative;
+            cursor: default;
+            user-select: none;
+        }
+
+        .mermaid-fullscreen-overlay .mermaid-fullscreen-svg-wrap.pan-mode {
+            cursor: grab;
+        }
+
+        .mermaid-fullscreen-overlay .mermaid-fullscreen-svg-wrap.pan-mode.dragging {
+            cursor: grabbing;
         }
 
         .mermaid-fullscreen-close-btn {
@@ -6273,21 +6316,6 @@
         .heatmap-right {
             flex: 1 1 0;
             min-width: 300px;
-        }
-
-        .chart-title-heatmap {
-            font-size: 1rem;
-            font-weight: 600;
-            margin-bottom: 0.625rem;
-            color: var(--color-text);
-            white-space: nowrap;
-            position: absolute;
-            top: 12px;
-            left: 12px;
-            z-index: 1;
-            display: flex;
-            align-items: center;
-            gap: 6px;
         }
 
         .file-sum-heatmap {
@@ -12995,6 +13023,7 @@
         }
 
         /* ═══ 演示模式 ═══ */
+        .demo-mode #app-header,
         .demo-mode #jsmind-help,
         .demo-mode #sidebar,
         .demo-mode #sidebar-toggle-btn,
@@ -13024,10 +13053,6 @@
 
         .demo-mode #editor-inner {
             height: 100% !important;
-        }
-
-        .demo-mode #mermaid-preview {
-            transform: scale(1.3) !important;
         }
 
         #mermaid-preview {
@@ -13195,20 +13220,42 @@
         .chat-message-body>.markdown-body {
             display: block;
             line-height: 1.7;
-            font-size: 0.8125rem;
+            font-size: 0.875rem;
             white-space: normal;
             padding: 0;
         }
+
         .chat-message-body .markdown-body :where(p, ul, ol, pre, blockquote, table, hr) {
             margin-top: 0;
-            margin-bottom: 0.5em; 
+            margin-bottom: 0.5em;
         }
-        .chat-message-body>.markdown-body h1 { font-size: 1.25em; border-bottom: 1px solid var(--border-light); margin-bottom: 1em; margin-top: 1em; }
-        .chat-message-body>.markdown-body h2 { font-size: 1.2em; margin-bottom: 0.75em; margin-top: 0.75em; }
-        .chat-message-body>.markdown-body h3 { font-size: 1.1em; margin-bottom: 0.5em; margin-top: 0.5em; }
+
+        .chat-message-body>.markdown-body h1 {
+            font-size: 1.25em;
+            border-bottom: 1px solid var(--border-light);
+            margin-bottom: 1em;
+            margin-top: 1em;
+        }
+
+        .chat-message-body>.markdown-body h2 {
+            font-size: 1.2em;
+            margin-bottom: 0.75em;
+            margin-top: 0.75em;
+        }
+
+        .chat-message-body>.markdown-body h3 {
+            font-size: 1.1em;
+            margin-bottom: 0.5em;
+            margin-top: 0.5em;
+        }
+
         .chat-message-body>.markdown-body h4,
         .chat-message-body>.markdown-body h5,
-        .chat-message-body>.markdown-body h6 { font-size: 1em; margin-bottom: 0.25em; margin-top: 0.25em; }
+        .chat-message-body>.markdown-body h6 {
+            font-size: 1em;
+            margin-bottom: 0.25em;
+            margin-top: 0.25em;
+        }
     </style>
 </head>
 
@@ -13677,12 +13724,12 @@
                 <div class="heatmap-section-heatmap">
                     <div class="chart-title-heatmap"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
                             stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-                            style="vertical-align:-2px;margin-right:4px;">
+                            style="vertical-align:-2px;">
                             <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
                             <line x1="16" y1="2" x2="16" y2="6" />
                             <line x1="8" y1="2" x2="8" y2="6" />
                             <line x1="3" y1="10" x2="21" y2="10" />
-                        </svg>每日新增文件热力图
+                        </svg>新增文件热力图
                         <button class="btn btn-secondary btn-snake" id="snakeToggleBtn" onclick="toggleSnake()"
                             title="暂停贪吃蛇动画"><svg viewBox="0 0 24 24" fill="currentColor" id="snake-pause-icon">
                                 <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
@@ -15253,7 +15300,8 @@
                         </div>
                     </div>
 
-                    <div id="kb-progress-wrap" style="display:none; padding: 0 0.875rem 0.5rem;">
+                    <div id="kb-progress-wrap"
+                        style="display:none; padding: 0.5rem;margin: 0.5rem 0;background-color:transparent;">
                         <div class="kb-progress">
                             <div class="kb-progress-bar" id="kb-progress-bar" style="width:0%"></div>
                         </div>
@@ -16074,7 +16122,7 @@
 
         // DOMPurify 配置
         if (typeof DOMPurify !== 'undefined') {
-            DOMPurify.setConfig({  ADD_ATTR: ['class'] });
+            DOMPurify.setConfig({ ADD_ATTR: ['class'] });
         }
 
         // 页面加载完成后初始化
@@ -16084,7 +16132,6 @@
             await initAll();
             await updateTimeAll();
             await updateTimeHeader();
-            RAGInit();
         });
 
         window.addEventListener('beforeunload', function (e) {
@@ -16111,6 +16158,7 @@
                 Promise.resolve(initMonacoEditor()),// 初始化编辑器
                 Promise.resolve(initDashboard()), // 初始化时间进度条
                 Promise.resolve(initTauriWindowState()), // Tauri 窗口状态（最大化/还原）
+                Promise.resolve(RAGInit()), // 初始化RAG
             ]);
         }
 
@@ -27461,7 +27509,7 @@ kanban-plugin: basic
             if (!text) return '';
             const rawHtml = markedMd(text);
             try {
-               return typeof DOMPurify !== 'undefined'  ? DOMPurify.sanitize(rawHtml)  : rawHtml;
+                return typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(rawHtml) : rawHtml;
             } catch (e) {
                 console.error('DOMPurify 渲染失败:', e);
                 return escapeHtml(text);
@@ -31993,6 +32041,148 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             { name: "architecture", label: "架构图", codeKey: "architecture-beta" },
             { name: "packet", label: "数据包图", codeKey: "packet-beta" }
         ];
+        /**
+         * 创建一个拖拽缩放控制器
+         * @param {Object} opts
+         * @param {HTMLElement} opts.target        - 应用 transform 的元素
+         * @param {HTMLElement} opts.container     - 捕获鼠标/滚轮事件的容器
+         * @param {number}  [opts.initialZoom=100] - 初始缩放百分比
+         * @param {number}  [opts.minZoom=25]      - 最小缩放
+         * @param {number}  [opts.maxZoom=300]     - 最大缩放
+         * @param {number}  [opts.zoomStep=10]     - 按钮点击缩放步进
+         * @param {number}  [opts.wheelStep=5]     - 滚轮缩放步进
+         * @param {boolean} [opts.panOnlyZoomed=true] - 仅在 >100% 时启用拖拽
+         * @param {Function}[opts.onZoomChange]    - 缩放变化回调(zoom)
+         * @returns {{ setZoom, getZoom, zoomIn, zoomOut, reset, setTarget, destroy }}
+         */
+        function createPanZoomController(opts) {
+            const {
+                target: initialTarget,
+                container,
+                initialZoom = 100,
+                minZoom = 25,
+                maxZoom = 300,
+                zoomStep = 10,
+                wheelStep = 5,
+                panOnlyZoomed = true,
+                onZoomChange = null,
+            } = opts;
+
+            let target = initialTarget;
+            let zoom = initialZoom;
+            let panX = 0, panY = 0;
+            let isDragging = false;
+            let dragStartX = 0, dragStartY = 0;
+            let panStartX = 0, panStartY = 0;
+            let destroyed = false;
+            let enabled = true;
+            function setEnabled(v) { enabled = v; }
+            function isEnabled() { return enabled; }
+            function applyTransform() {
+                if (destroyed || !target) return;
+                const scale = zoom / 100;
+                target.style.transform = `translate(${panX}px,${panY}px) scale(${scale})`;
+                target.style.transformOrigin = '0 0';
+            }
+            function setZoom(value) {
+                if (destroyed) return;
+                zoom = Math.max(minZoom, Math.min(maxZoom, value));
+                if (!panOnlyZoomed || zoom <= 100) {
+                    panX = 0;
+                    panY = 0;
+                }
+                applyTransform();
+                if (onZoomChange) onZoomChange(zoom);
+                return zoom;
+            }
+            function getZoom() { return zoom; }
+            function zoomIn() { setZoom(zoom + zoomStep); }
+            function zoomOut() { setZoom(zoom - zoomStep); }
+            function reset() { setZoom(initialZoom); }
+            function setTarget(newTarget) {
+                target = newTarget;
+                if (target) applyTransform();
+            }
+            // ── 拖拽事件 ──
+            function onMouseDown(e) {
+                if (!enabled) return;
+                if (e.button !== 0) return;
+                if (panOnlyZoomed && zoom <= 100) return;
+                isDragging = true;
+                dragStartX = e.clientX;
+                dragStartY = e.clientY;
+                panStartX = panX;
+                panStartY = panY;
+                if (target) target.style.transition = 'none';
+                if (container) container.classList.add('dragging');
+                e.preventDefault();
+            }
+            function onMouseMove(e) {
+                if (!isDragging) return;
+                panX = panStartX + (e.clientX - dragStartX);
+                panY = panStartY + (e.clientY - dragStartY);
+                applyTransform();
+                e.preventDefault();
+            }
+            function onMouseUp() {
+                if (!isDragging) return;
+                isDragging = false;
+                if (target) target.style.transition = '';
+                if (container) container.classList.remove('dragging');
+            }
+            // ── 滚轮缩放（以鼠标位置为中心） ──
+            function onWheel(e) {
+                if (destroyed || !enabled || !container) return;
+                e.preventDefault();
+                // 鼠标在容器内的坐标
+                const rect = container.getBoundingClientRect();
+                const mx = e.clientX - rect.left;
+                const my = e.clientY - rect.top;
+                // 缩放前的世界坐标
+                const oldScale = zoom / 100;
+                const worldX = (mx - panX) / oldScale;
+                const worldY = (my - panY) / oldScale;
+                // 计算新缩放值
+                const delta = e.deltaY > 0 ? -wheelStep : wheelStep;
+                const newZoom = Math.max(minZoom, Math.min(maxZoom, zoom + delta));
+                if (newZoom === zoom) return;
+                const newScale = newZoom / 100;
+                zoom = newZoom;
+                // 调整 pan 使鼠标下的世界坐标保持不变
+                panX = mx - worldX * newScale;
+                panY = my - worldY * newScale;
+                // panOnlyZoomed 模式：缩放到 100% 或以下时重置位置
+                if (panOnlyZoomed && zoom <= 100) {
+                    panX = 0;
+                    panY = 0;
+                }
+                applyTransform();
+                if (onZoomChange) onZoomChange(zoom);
+            }
+            // ── 绑定事件 ──
+            if (container) {
+                container.addEventListener('mousedown', onMouseDown);
+                container.addEventListener('wheel', onWheel, { passive: false });
+            }
+            // mousemove/mouseup 绑定在 document 上，确保移出容器仍能跟踪
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+            // 初始化 transform
+            applyTransform();
+            // ── 销毁 ──
+            function destroy() {
+                destroyed = true;
+                if (container) {
+                    container.removeEventListener('mousedown', onMouseDown);
+                    container.removeEventListener('wheel', onWheel);
+                }
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+                target = null;
+            }
+            return { setZoom, getZoom, zoomIn, zoomOut, reset, setTarget, setEnabled, isEnabled, destroy };
+        }
+
         let zoomLevelMermaid = 100,
             renderTimerMermaid = null,
             monacoEditorMermaid = null;
@@ -32010,6 +32200,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             tabBtnsMermaid = document.querySelectorAll(".mermaid-tab-btn"),
             mermaidCodePanel = document.getElementById("mermaid-code-panel"),
             renderBtnMermaid = document.querySelector("#mermaid-render-btn");
+
+        // ── 内联 MMD 拖拽缩放控制器 ──
+        const inlineMmdCtrl = createPanZoomController({
+            target: previewElMermaid,
+            container: previewAreaMermaid,
+            initialZoom: 100,
+            onZoomChange(zoom) {
+                zoomLevelMermaid = zoom;
+                previewAreaMermaid.classList.toggle('pan-mode', zoom > 100);
+            },
+        });
 
         function extractErrorMessageMermaid(err) {
             if (err.message && err.message.trim() && err.message.trim() !== "Unknown diagram type: .")
@@ -32056,6 +32257,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             // 重置状态变量
             zoomLevelMermaid = 100;
             isMermaidFileDisplay = false;
+            inlineMmdCtrl.setEnabled(false);
         }
 
         async function renderMermaidFile(fileText = '') {
@@ -32064,6 +32266,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const toolbar = mermaidAppContainer.querySelector(".mermaid-toolbar");
             if (fileText) {
                 isMermaidFileDisplay = true;
+                inlineMmdCtrl.setEnabled(true);
                 if (!toolbar.classList.contains("mermaid-toolbar-btn-right")) {
                     toolbar.classList.add("mermaid-toolbar-btn-right");
                 }
@@ -32273,9 +32476,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         function setZoomMermaid(value) {
-            zoomLevelMermaid = Math.max(25, Math.min(300, value));
+            zoomLevelMermaid = inlineMmdCtrl.setZoom(value);
             zoomLabelMermaid.textContent = zoomLevelMermaid + "%";
-            previewElMermaid.style.transform = "scale(" + zoomLevelMermaid / 100 + ")";
         }
 
         async function renderMermaidMermaid(e = null) {
@@ -32309,7 +32511,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const { svg } = await mermaid.render("mermaid_mmd_" + crypto.randomUUID(), code);
                 previewElMermaid.className = "";
                 previewElMermaid.innerHTML = svg;
-                previewElMermaid.style.transform = "scale(" + zoomLevelMermaid / 100 + ")";
+                inlineMmdCtrl.setZoom(zoomLevelMermaid);
                 errorDisplayMermaid.classList.remove("active");
                 errorDisplayMermaid.innerHTML = "";
                 setStatusMermaid("ok", "渲染成功");
@@ -32554,37 +32756,43 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 await loadSaveDirectoryTreeMermaid();
             }
         }
-        // 全屏遮罩缩放状态（独立于主界面缩放）
-        let fsZoomLevel = 100;
+        // ── 全屏拖拽缩放控制器（懒初始化，在 initMermaidEventListeners 中创建）──
+        let fullscreenCtrl = null;
 
         function fsCloseOverlay() {
             const overlay = document.getElementById('mermaid-fullscreen-overlay');
             const sw = document.getElementById('mermaid-fullscreen-svg-wrap');
             if (overlay) overlay.classList.remove('active');
-            if (sw) sw.innerHTML = '';
-            fsZoomLevel = 100;
+            if (sw) {
+                sw.innerHTML = '';
+                sw.classList.remove('pan-mode', 'dragging');
+            }
+            if (fullscreenCtrl) {
+                fullscreenCtrl.setEnabled(false);
+                fullscreenCtrl.setTarget(null);
+            }
             document.removeEventListener('keydown', mermaidEscHandler);
         }
 
         function fsSetZoom(level) {
-            const svgWrap = document.getElementById('mermaid-fullscreen-svg-wrap');
+            if (!fullscreenCtrl) return;
+            fullscreenCtrl.setZoom(level);
             const label = document.getElementById('mermaid-fs-zoom-label');
             const zoomIn = document.getElementById('mermaid-fs-zoom-in');
             const zoomOut = document.getElementById('mermaid-fs-zoom-out');
-            if (!svgWrap) return;
-            fsZoomLevel = Math.max(25, Math.min(300, level));
-            if (label) label.textContent = fsZoomLevel + '%';
-            if (zoomIn) zoomIn.disabled = fsZoomLevel >= 300;
-            if (zoomOut) zoomOut.disabled = fsZoomLevel <= 25;
-            const svg = svgWrap.querySelector('svg');
-            if (svg) {
-                svg.style.transform = 'scale(' + fsZoomLevel / 100 + ')';
-                svg.style.transformOrigin = 'center center';
+            const zoom = fullscreenCtrl.getZoom();
+            if (label) label.textContent = zoom + '%';
+            if (zoomIn) zoomIn.disabled = zoom >= 300;
+            if (zoomOut) zoomOut.disabled = zoom <= 25;
+            // 同步 pan-mode class（控制光标样式）
+            const sw = document.getElementById('mermaid-fullscreen-svg-wrap');
+            if (sw) {
+                sw.classList.toggle('pan-mode', zoom > 100);
             }
         }
 
-        function fsZoomIn() { fsSetZoom(fsZoomLevel + 10); }
-        function fsZoomOut() { fsSetZoom(fsZoomLevel - 10); }
+        function fsZoomIn() { fsSetZoom((fullscreenCtrl ? fullscreenCtrl.getZoom() : 100) + 10); }
+        function fsZoomOut() { fsSetZoom((fullscreenCtrl ? fullscreenCtrl.getZoom() : 100) - 10); }
         function fsZoomReset() { fsSetZoom(100); }
 
         async function handleMermaidFullscreenToggleClick(e) {
@@ -32617,6 +32825,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
             svgWrap.innerHTML = '';
             svgWrap.appendChild(svgClone);
+            // 激活或创建全屏控制器
+            if (fullscreenCtrl) {
+                fullscreenCtrl.setTarget(svgClone);
+                fullscreenCtrl.setEnabled(true);
+                fullscreenCtrl.reset();
+            }
             fsSetZoom(100);
             overlay.classList.add('active');
             document.addEventListener('keydown', mermaidEscHandler);
@@ -32641,28 +32855,29 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (fsZoomInBtn) fsZoomInBtn.addEventListener('click', fsZoomIn);
             if (fsZoomOutBtn) fsZoomOutBtn.addEventListener('click', fsZoomOut);
             if (fsZoomResetBtn) fsZoomResetBtn.addEventListener('click', fsZoomReset);
-            // 全屏模式下：SVG 区域鼠标滚轮放大缩小
+            // 全屏拖拽缩放控制器
             const fsSvgWrap = document.getElementById('mermaid-fullscreen-svg-wrap');
-            if (fsSvgWrap) {
-                fsSvgWrap.addEventListener('wheel', (e) => {
-                    const overlay = document.getElementById('mermaid-fullscreen-overlay');
-                    if (!overlay || !overlay.classList.contains('active')) return;
-                    e.preventDefault();
-                    const delta = e.deltaY > 0 ? -5 : 5;
-                    fsSetZoom(fsZoomLevel + delta);
-                }, { passive: false });
+            if (fsSvgWrap && !fullscreenCtrl) {
+                fullscreenCtrl = createPanZoomController({
+                    target: null,          // 打开全屏时 setTarget
+                    container: fsSvgWrap,
+                    initialZoom: 100,
+                    panOnlyZoomed: true,
+                    onZoomChange(zoom) {
+                        const label = document.getElementById('mermaid-fs-zoom-label');
+                        const zoomIn = document.getElementById('mermaid-fs-zoom-in');
+                        const zoomOut = document.getElementById('mermaid-fs-zoom-out');
+                        if (label) label.textContent = zoom + '%';
+                        if (zoomIn) zoomIn.disabled = zoom >= 300;
+                        if (zoomOut) zoomOut.disabled = zoom <= 25;
+                        fsSvgWrap.classList.toggle('pan-mode', zoom > 100);
+                    },
+                });
+                fullscreenCtrl.setEnabled(false); // 初始禁用，打开全屏时启用
             }
             // 全屏关闭按钮事件（只绑定一次）
             const fsCloseBtn = document.getElementById('mermaid-fullscreen-close-btn');
             if (fsCloseBtn) fsCloseBtn.addEventListener('click', (e) => { e.stopPropagation(); fsCloseOverlay(); });
-            // .mmd 文件渲染模式下：鼠标滚轮放大缩小
-            previewAreaMermaid.addEventListener('wheel', (e) => {
-                if (!isMermaidFileDisplay) return;
-                if (renderBtnMermaid.textContent !== '编辑') return;
-                e.preventDefault();
-                const delta = e.deltaY > 0 ? -5 : 5;
-                setZoomMermaid(zoomLevelMermaid + delta);
-            }, { passive: false });
             mermaidEventsInitialized = true;
         }
 
@@ -47007,6 +47222,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         let _demoZoomTrigger = null;  // 缩放按钮顶部触发区
         let _demoZoomTimer = null;    // 缩放按钮隐藏定时器
         let _demoZoomLevel = 1.4; // 演示模式当前缩放倍数，初始 1.4
+        let _demoMmdCtrl = null; // 演示模式下 MMD 的拖拽缩放控制器
 
         function toggleDemoMode() {
             if (_isDemoMode) {
@@ -47099,18 +47315,42 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 </button>
             `;
             _demoZoomControls.querySelector('#demo-zoom-in')?.addEventListener('click', () => {
-                _demoZoomLevel = Math.min(3.0, _demoZoomLevel + 0.1);
-                _applyDemoZoom();
+                if (_demoMmdCtrl) {
+                    _demoMmdCtrl.zoomIn();
+                } else {
+                    _demoZoomLevel = Math.min(3.0, _demoZoomLevel + 0.1);
+                    _applyDemoZoom();
+                }
             });
             _demoZoomControls.querySelector('#demo-zoom-out')?.addEventListener('click', () => {
-                _demoZoomLevel = Math.max(0.5, _demoZoomLevel - 0.1);
-                _applyDemoZoom();
+                if (_demoMmdCtrl) {
+                    _demoMmdCtrl.zoomOut();
+                } else {
+                    _demoZoomLevel = Math.max(0.5, _demoZoomLevel - 0.1);
+                    _applyDemoZoom();
+                }
             });
             _demoZoomControls.querySelector('#demo-zoom-reset')?.addEventListener('click', () => {
-                _demoZoomLevel = 1.4;
-                _applyDemoZoom();
+                if (_demoMmdCtrl) {
+                    _demoMmdCtrl.reset();
+                } else {
+                    _demoZoomLevel = 1.4;
+                    _applyDemoZoom();
+                }
             });
             document.body.appendChild(_demoZoomControls);
+
+            // ── MMD 拖拽缩放（演示模式下额外支持）──
+            if (mermaidAppContainer && mermaidAppContainer.style.display !== 'none' && previewElMermaid) {
+                // 关闭内联控制器，避免与演示控制器冲突
+                inlineMmdCtrl.setEnabled(false);
+                _demoMmdCtrl = createPanZoomController({
+                    target: previewElMermaid,
+                    container: mermaidAppContainer,
+                    initialZoom: 100,
+                    panOnlyZoomed: true,
+                });
+            }
 
             // 重新调整内容区域大小
             resizeContentMain();
@@ -47163,6 +47403,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (_demoZoomTrigger) {
                 _demoZoomTrigger.remove();
                 _demoZoomTrigger = null;
+            }
+            // 销毁 MMD 拖拽缩放控制器
+            if (_demoMmdCtrl) {
+                _demoMmdCtrl.destroy();
+                _demoMmdCtrl = null;
+                // 恢复内联控制器
+                inlineMmdCtrl.setEnabled(true);
             }
             _demoZoomLevel = 1.4;
             resizeContentMain();
@@ -47960,13 +48207,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
          * 清空内存中的 UI 状态，保存最后会话记录并触发异步索引。
          */
         async function cleanupChatState() {
-            try{
+            try {
                 // 1. 将当前会话异步索引，确保可被搜索召回
                 indexCurrentSessionIfNeeded(currentSessionId);
                 // 2. 记录最后会话
                 rememberLastChatSession();
             } catch (e) {
-               console.log('[cleanupChatState] 清理聊天数据失败:', e);
+                console.log('[cleanupChatState] 清理聊天数据失败:', e);
             } finally {
                 // 3. 清空 DOM 和内存消息
                 chatMessages = [];
@@ -48179,12 +48426,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 // 按 score 降序排列
                 const sorted = [...sources].sort((a, b) => (b.score || 0) - (a.score || 0));
                 sorted.forEach(s => {
-                    const path =  s.docName || s.doc_name || '';
+                    const path = s.docName || s.doc_name || '';
                     if (path) {
                         const item = document.createElement('div');
                         item.className = 'source-item';
                         const nameSpan = document.createElement('span');
-                        nameSpan.textContent =path
+                        nameSpan.textContent = path
                         const scoreSpan = document.createElement('span');
                         scoreSpan.className = 'source-score';
                         scoreSpan.textContent = (s.score * 100).toFixed(1) + '%';
@@ -48217,7 +48464,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             div.id = 'chat-typing-indicator';
             // 保留 header，仅在下方追加打字动画
             const body = div.querySelector('.chat-message-body');
-            if(body) body.style.display = 'none';
+            if (body) body.style.display = 'none';
             const typingEl = document.createElement('div');
             typingEl.className = 'chat-typing';
             typingEl.innerHTML = '<span></span><span></span><span></span>';
@@ -48558,7 +48805,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         if (btn) btn.classList.add('active');
                     }
                 }
-                 // 5. 构建消息条目（含 sources）
+                // 5. 构建消息条目（含 sources）
                 chatMessages = messages.map(m => ({
                     role: m.role,
                     content: m.content,
@@ -49095,8 +49342,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 ? '<div style="font-size:0.6875rem;color:#ea580c;margin-top:0.25rem;">💡 建议：上次索引已超过 7 天，建议重新索引</div>'
                 : '';
 
-            container.innerHTML = bar('索引完整度', completeness,'#f09c00')
-                + bar('数据新鲜度', freshness,'#1a7f37')
+            container.innerHTML = bar('索引完整度', completeness, '#f09c00')
+                + bar('数据新鲜度', freshness, '#1a7f37')
                 + bar('使用活跃度', activity, '#1976d2')
                 + bar('文件覆盖率', coverage, '#9333ea')
                 + bar('向量化效率', efficiency, '#0891b2')
@@ -49140,7 +49387,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     var chart = kbCharts['kb-ai-trend'];
                     chart.setOption({
                         tooltip: false,
-                        grid: { left: '3%', right: '3%', bottom: '1%', top: '3%', containLabel: true },
+                        grid: { left: '3%', right: '3%', bottom: '1%', top: '5%', containLabel: true },
                         xAxis: {
                             type: 'category',
                             data: recentTrend.map(function (d) {
@@ -49303,12 +49550,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        function RAGInit() {
+        async function RAGInit() {
             // Tauri 模式下显示 RAG/Agent 模式按钮
             if (isTauriVisit()) {
                 const ragBtn = document.getElementById('chat-mode-rag');
                 if (ragBtn) ragBtn.style.display = '';
-
                 // 监听知识库文件变更事件，自动刷新状态
                 try {
                     const { listen } = window.__TAURI__.event;
@@ -49318,7 +49564,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 } catch (e) {
                     console.warn('注册 watcher 事件监听失败:', e);
                 }
-
                 // 监听聊天会话索引进度反馈
                 try {
                     const { listen } = window.__TAURI__.event;
@@ -49330,9 +49575,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             }
         }
-       function highlightChatCodeBlocks(dom) {
+        function highlightChatCodeBlocks(dom) {
             if (typeof hljs === 'undefined') return;
-             postProcessCodeAndDiagrams(dom);
+            postProcessCodeAndDiagrams(dom);
         }
     </script>
 </body>
