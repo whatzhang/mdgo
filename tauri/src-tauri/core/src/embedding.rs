@@ -489,7 +489,213 @@ pub fn call_embedding_parallel(
     Ok(results)
 }
 
-/// 处理一个 group 的所有文本块：padding → 推理 → mean pooling → L2 normalize → 恢复顺序
+// ─── BGE-Reranker 交叉编码器重排序 ───
+
+/// Reranker 全局 Session（独立于 Embedding 模型）
+static RERANKER_SESSION: OnceLock<Mutex<SessionType>> = OnceLock::new();
+/// Reranker 的 pad_token_id
+static RERANKER_PAD_ID: OnceLock<i64> = OnceLock::new();
+
+/// 初始化 Reranker 模型
+///
+/// 模型文件位于 `{model_dir}/reranker/` 目录下，包含:
+/// - model.onnx
+/// - tokenizer.json
+/// - config.json
+/// 如果 reranker 目录不存在，返回错误（调用方降级为不使用 reranker）。
+fn ensure_reranker_initialized(models_dir: &Path) -> Result<(), String> {
+    let reranker_dir = models_dir.join("reranker");
+    if !reranker_dir.exists() {
+        return Err("Reranker 模型目录不存在，跳过重排序".to_string());
+    }
+    if RERANKER_SESSION.get().is_some() {
+        return Ok(());
+    }
+
+    for (name, p) in [
+        ("model.onnx", reranker_dir.join("model.onnx")),
+        ("tokenizer.json", reranker_dir.join("tokenizer.json")),
+        ("config.json", reranker_dir.join("config.json")),
+    ] {
+        if !p.exists() {
+            return Err(format!("Reranker 模型文件缺失: {} ({})", name, p.display()));
+        }
+    }
+
+    let tokenizer_raw = std::fs::read(reranker_dir.join("tokenizer.json"))
+        .map_err(|e| format!("读取 reranker tokenizer.json 失败: {}", e))?;
+
+    let config_raw = std::fs::read_to_string(reranker_dir.join("config.json"))
+        .map_err(|e| format!("读取 reranker config.json 失败: {}", e))?;
+    let config: serde_json::Value = serde_json::from_str(&config_raw)
+        .map_err(|e| format!("解析 reranker config.json 失败: {}", e))?;
+    let pt = config["pad_token_id"].as_i64().unwrap_or(0);
+    let _ = RERANKER_PAD_ID.set(pt);
+
+    let model_path = reranker_dir.join("model.onnx");
+    let session = create_session(&model_path)?;
+
+    // 缓存 tokenizer 字节
+    thread_local! {
+        static RERANKER_TOKENIZER: OnceLock<tokenizers::Tokenizer> = OnceLock::new();
+    }
+    RERANKER_TOKENIZER.with(|cache| {
+        let _ = cache.get_or_init(|| {
+            tokenizers::Tokenizer::from_bytes(tokenizer_raw.clone())
+                .expect("reranker tokenizer.json 解析失败")
+        });
+    });
+
+    let _ = RERANKER_SESSION.set(Mutex::new(session));
+    log::info!("[reranker] BGE-Reranker 初始化完成");
+    Ok(())
+}
+
+/// 线程级 Reranker Tokenizer 缓存
+fn with_reranker_tokenizer<F, R>(f: F) -> R
+where
+    F: FnOnce(&tokenizers::Tokenizer) -> R,
+{
+    thread_local! {
+        static TOKENIZER: OnceLock<tokenizers::Tokenizer> = OnceLock::new();
+    }
+    TOKENIZER.with(|cache| {
+        let tok = cache.get_or_init(|| {
+            // 从原始字节重新解析（首次使用时根据 MODEL_DIR + reranker 目录构造）
+            let models_dir = MODEL_DIR.get()
+                .expect("MODEL_DIR 未初始化");
+            let reranker_dir = Path::new(models_dir).join("reranker");
+            let raw = std::fs::read(reranker_dir.join("tokenizer.json"))
+                .expect("读取 reranker tokenizer.json 失败");
+            tokenizers::Tokenizer::from_bytes(raw)
+                .expect("解析 reranker tokenizer.json 失败")
+        });
+        f(tok)
+    })
+}
+
+/// 对 query 和候选文档进行交叉编码重排序。
+///
+/// 返回每个候选文档的分数（sigmoid(logit)），顺序与 `candidates` 一致。
+/// 如果 reranker 模型不存在，返回 `Err`，调用方应降级。
+///
+/// # 参数
+/// - `query`: 原始查询文本
+/// - `candidates`: 候选文档文本列表（建议不超过 60 条）
+/// - `models_dir`: 模型根目录（包含 reranker/ 子目录）
+/// - `batch_size`: 推理批次大小（默认 32）
+pub fn rerank(
+    query: &str,
+    candidates: &[&str],
+    models_dir: &Path,
+    batch_size: usize,
+) -> Result<Vec<f32>, String> {
+    if candidates.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    ensure_reranker_initialized(models_dir)?;
+
+    let session_mutex = RERANKER_SESSION
+        .get()
+        .ok_or_else(|| "Reranker 未初始化".to_string())?;
+
+    // 1. 为每个 (query, candidate) 对构建输入文本
+    let pairs: Vec<String> = candidates.iter().map(|c| format!("{} [SEP] {}", query, c)).collect();
+    let texts: Vec<&str> = pairs.iter().map(|s| s.as_str()).collect();
+
+    // 2. 并行分词
+    let mut items: Vec<(usize, Vec<i64>, Vec<i64>, Vec<i64>)> = Vec::with_capacity(texts.len());
+    let tokenized: Vec<Result<(usize, Vec<i64>, Vec<i64>, Vec<i64>), String>> = texts
+        .par_iter()
+        .enumerate()
+        .map(|(idx, text)| {
+            with_reranker_tokenizer(|tok| {
+                let enc = tok
+                    .encode(*text, true)
+                    .map_err(|e| format!("Reranker 分词失败: {}", e))?;
+                let ids: Vec<i64> = enc.get_ids().iter().map(|&id| id as i64).collect();
+                let mask: Vec<i64> = enc.get_attention_mask().iter().map(|&m| m as i64).collect();
+                let type_ids: Vec<i64> = enc.get_type_ids().iter().map(|&id| id as i64).collect();
+                Ok((idx, ids, mask, type_ids))
+            })
+        })
+        .collect();
+
+    for r in tokenized {
+        let (idx, ids, mask, type_ids) = r?;
+        items.push((idx, ids, mask, type_ids));
+    }
+
+    // 3. 按长度分组，批次推理
+    items.sort_unstable_by(|a, b| b.1.len().cmp(&a.1.len()));
+    let groups: Vec<&[(usize, Vec<i64>, Vec<i64>, Vec<i64>)]> =
+        items.chunks(batch_size).collect();
+
+    let mut scores = vec![0.0f32; candidates.len()];
+
+    #[cfg(not(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64"))))]
+    let session = {
+        let guard = session_mutex.lock().unwrap_or_else(|e| e.into_inner());
+        std::sync::Arc::clone(&guard)
+    };
+
+    #[cfg(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64")))]
+    let mut session = session_mutex.lock().unwrap_or_else(|e| e.into_inner());
+
+    for group in &groups {
+        let group_size = group.len();
+        let max_len = group.iter().map(|(_, ids, _, _)| ids.len()).max().unwrap_or(1);
+        let pad_id = RERANKER_PAD_ID.get().copied().unwrap_or(0);
+
+        let mut ids_flat = Vec::with_capacity(group_size * max_len);
+        let mut mask_flat = Vec::with_capacity(group_size * max_len);
+        let mut type_ids_flat = Vec::with_capacity(group_size * max_len);
+
+        for (_, ids, mask, type_ids) in group.iter() {
+            for j in 0..max_len {
+                if j < ids.len() {
+                    ids_flat.push(ids[j]);
+                    mask_flat.push(mask[j]);
+                    type_ids_flat.push(type_ids[j]);
+                } else {
+                    ids_flat.push(pad_id);
+                    mask_flat.push(0i64);
+                    type_ids_flat.push(0i64);
+                }
+            }
+        }
+
+        let input_ids = Array2::from_shape_vec((group_size, max_len), ids_flat)
+            .map_err(|e| format!("构建 reranker input_ids 失败: {}", e))?;
+        let attention_mask = Array2::from_shape_vec((group_size, max_len), mask_flat)
+            .map_err(|e| format!("构建 reranker attention_mask 失败: {}", e))?;
+        let token_type_ids = Array2::from_shape_vec((group_size, max_len), type_ids_flat)
+            .map_err(|e| format!("构建 reranker token_type_ids 失败: {}", e))?;
+
+        #[cfg(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64")))]
+        let logits = run_batch(&mut session, input_ids, attention_mask, token_type_ids)?;
+        #[cfg(not(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64"))))]
+        let logits = run_batch(&session, input_ids, attention_mask, token_type_ids)?;
+
+        // Reranker 输出形状: (batch_size, 1) 或 (batch_size, 2)
+        // 取第一个 logit 做 sigmoid
+        let shape = logits.shape();
+        let stride = if shape.len() == 2 { shape[1] } else { 1 };
+        if stride != 1 {
+            log::warn!("[reranker] 输出形状异常 (batch_size, {}), 跳过重排序", stride);
+            return Err(format!("Reranker 输出形状为 ({}, {}), 期望 (batch_size, 1)", shape[0], stride));
+        }
+        let logits_slice = logits.as_slice().ok_or("Reranker 输出不是连续内存")?;
+        for (i, (orig_idx, _, _, _)) in group.iter().enumerate() {
+            let raw = logits_slice[i * stride];
+            let score = 1.0 / (1.0 + (-raw).exp()); // sigmoid
+            scores[*orig_idx] = score;
+        }
+    }
+
+    Ok(scores)
+}
 #[cfg(not(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64"))))]
 fn process_one_group(
     group: &[(usize, Vec<i64>, Vec<i64>, Vec<i64>, usize)],

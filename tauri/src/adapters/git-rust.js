@@ -91,7 +91,7 @@
             try {
                 await invoke('git_checkout', {
                     dir,
-                    filepaths,
+                    filepaths: filepaths || [],
                     force: force || false,
                 });
             } catch (error) {
@@ -156,7 +156,8 @@
                     blob: new Uint8Array(result.blob),
                 };
             } catch (error) {
-                return null;
+                console.error('[GitRust] readBlob error:', error);
+                throw new Error(`Git readBlob 失败: ${error}`);
             }
         },
 

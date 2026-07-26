@@ -4052,11 +4052,11 @@
         .ai-history-item {
             display: flex;
             align-items: center;
-            padding: 5px 8px;
+            padding: 0.25rem 0.5rem;
             border-radius: 6px;
             cursor: pointer;
             transition: background 0.15s;
-            gap: 6px;
+            gap: 0.5rem;
         }
 
         .ai-history-item:hover {
@@ -4081,6 +4081,7 @@
         .ai-history-item-result {
             font-size: 10px;
             margin: 2px 0 2px 0;
+            line-height: 1.7;
             color: #86868b;
             white-space: nowrap;
             overflow: hidden;
@@ -15641,7 +15642,7 @@
             { key: '📁 新建目录', name: "新建目录", click: "createDirByParentDir" },
             { key: '📄 新建文件', name: "untitled.txt", click: "createFileByParentDir" },
             { key: '🌄 图片墙', name: "图片墙", click: "picLayoutDisplay" },
-            { key: '🌐 文件图谱', name: '文件图谱', click: 'openNoteGraph' },
+            { key: '🌐 文件图谱', name: '文件图谱', click: 'openFileGraph' },
             { key: '🔗 文档白板', name: "文档白板", click: "dirCanvasDisplay" },
             { key: '📚️ 文件词云', name: "文件词云", click: "openWordCloudFile" },
             { key: '🏷️ 类型分布', name: "类型分布", click: "openFileType" },
@@ -15678,7 +15679,8 @@
             { key: '文件词云', value: 'toggleFile("wordCloud")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: '文件时间线', value: 'toggleFile("timeline")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: 'git记录', value: 'toggleFile("gitRecords")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: '文件图谱', value: 'toggleFile("noteGraph")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '文件图谱', value: 'toggleFile("fileGraph")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '文档关联图谱', value: 'toggleFile("noteGraph")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: 'Mermaid', value: 'toggleFile("mermaid")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: 'Excalidraw白板', value: 'toggleFile("whiteboard")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: 'Canvas文档白板', value: 'toggleFile("canvas")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
@@ -16268,8 +16270,10 @@
             setAllTypeFlag(type);
             if (type === 'newFile') {
                 newFile(data.newFileName);
+            } else if (type === 'fileGraph') {
+                await openFileGraph();
             } else if (type === 'noteGraph') {
-                await openNoteGraph();
+                await openNoteGraph(false);
             } else if (type === 'bookmarks') {
                 await toggleDashboardBookmarkView()
             } else if (type === 'dashboard') {
@@ -16334,8 +16338,8 @@
                 await openWordCloudFile(data.dirPathStr);
             } else if (type === 'dirCanvasDisplay') {
                 await dirCanvasDisplay(data.dirPathStr);
-            } else if (type === 'openNoteGraph') {
-                await openNoteGraph(data.dirPathStr);
+            } else if (type === 'openFileGraph') {
+                await openFileGraph(data.dirPathStr);
             } else if (type === 'openFileType') {
                 openFileType(data.dirPathStr);
             } else if (type === 'restoreFile') {  //文件右键
@@ -38727,10 +38731,29 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             todoStartLocalScheduler();
             _todoEarlyInitialized = true;
         }
-        // 打开关系图谱视图
-        async function openNoteGraph(dirPath = getRootHandle().name) {
+        async function openFileGraph(dirPath = getRootHandle().name) {
             await switchToView(graphViewContainer, 'flex');
             await toggleGraphView(dirPath);
+        }
+        async function openNoteGraph() {
+            await switchToView(graphViewContainer, 'flex');
+            graphMode = 'file';
+            const label = document.getElementById('graph-mode-toggle');
+            if (label) label.style.display = 'none';
+            setGraphControlsDisabled(true);
+            try {
+                if (!graphCanvas) initGraphCanvas();
+                loadGraphParams();
+                const data = await loadLinkGraphData();
+                if (data && data.nodes && data.nodes.length > 0) {
+                    linkGraphCache = data;
+                    processGraphData(data.nodes, data.edges);
+                } else {
+                    await _doRefreshGraphData();
+                }
+            } finally {
+                setGraphControlsDisabled(false);
+            }
         }
         // 知识关系图谱（D3 force 布局）
         let graphViewActive = false;     // 是否激活关系图谱
@@ -38818,9 +38841,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         async function toggleGraphView(dirPath = getRootHandle().name) {
             graphMode = 'file';
             graphRootPath = dirPath;
-            const allFile = getRootHandle().name === graphRootPath;
             const label = document.getElementById('graph-mode-toggle');
-            if (label) label.style.display = allFile ? 'flex' : 'none';
+            if (label) label.style.display = 'none';
             setGraphControlsDisabled(true);
             const checkbox = document.getElementById('graph-mode-checkbox');
             if (checkbox) checkbox.checked = false;
@@ -39170,19 +39192,55 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             document.getElementById('edge-count').textContent = graphDataMap.edges.length;
 
             const nodes = Array.from(graphDataMap.nodes.values());
-            const cols = Math.ceil(Math.sqrt(nodes.length));
-            let gridIdx = 0;
-            nodes.forEach((node) => {
-                const saved = _savedNodePositions && _savedNodePositions.get(node.id);
-                if (saved) {
-                    node.x = saved.x;
-                    node.y = saved.y;
-                } else {
-                    node.x = (gridIdx % cols) * 50 - (cols * 25) + graphWidth / 2;
-                    node.y = Math.floor(gridIdx / cols) * 50 - (cols * 25) + graphHeight / 2;
-                    gridIdx++;
+            // 径向树状初始布局：按 depth 分层，每层在同心圆上均匀散布
+            // 相比网格布局，大幅减少节点间初始重叠，降低初始排斥力冲击
+            if (nodes.length > 0) {
+                let maxDepth = 0;
+                const depthMap = new Map(); // depth -> [nodes]
+                for (let i = 0; i < nodes.length; i++) {
+                    const n = nodes[i];
+                    const d = n.depth || 0;
+                    if (d > maxDepth) maxDepth = d;
+                    if (!depthMap.has(d)) depthMap.set(d, []);
+                    depthMap.get(d).push(n);
                 }
-            });
+                const cx = graphWidth / 2;
+                const cy = graphHeight / 2;
+                const maxR = Math.min(graphWidth, graphHeight) * 0.42;
+                const minR = 30;
+                for (let d = 0; d <= maxDepth; d++) {
+                    const layer = depthMap.get(d);
+                    if (!layer) continue;
+                    // Root (d=0) 放正中心，深度越大半径越大
+                    const radius = d === 0 ? 0 : minR + (d / maxDepth) * maxR;
+                    if (d === 0) {
+                        for (let j = 0; j < layer.length; j++) {
+                            const saved = _savedNodePositions && _savedNodePositions.get(layer[j].id);
+                            if (saved) {
+                                layer[j].x = saved.x;
+                                layer[j].y = saved.y;
+                            } else {
+                                layer[j].x = cx;
+                                layer[j].y = cy;
+                            }
+                        }
+                    } else {
+                        const angleStep = (Math.PI * 2) / layer.length;
+                        for (let j = 0; j < layer.length; j++) {
+                            const saved = _savedNodePositions && _savedNodePositions.get(layer[j].id);
+                            if (saved) {
+                                layer[j].x = saved.x;
+                                layer[j].y = saved.y;
+                            } else {
+                                // 使用黄金角偏移避免同层节点对齐
+                                const angle = j * angleStep + d * 1.1;
+                                layer[j].x = cx + Math.cos(angle) * radius;
+                                layer[j].y = cy + Math.sin(angle) * radius;
+                            }
+                        }
+                    }
+                }
+            }
             graphLayout.updateData(graphDataMap);
             graphLayout.onTick(() => graphRenderer.requestRender());
             graphRenderer.requestRender();
@@ -39197,7 +39255,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 this.edges = [];
                 this._rafId = null;
                 this._tickCount = 0;
-                this._maxTicks = 500;
+                this._maxTicks = 2000;
                 this._renderCallback = null;
                 this.initSimulation();
             }
@@ -39217,10 +39275,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     .force('collide', d3.forceCollide()
                         .radius(d => d.size + 12)
                         .strength(0.8))
-                    .alphaDecay(0.008);
+                    .alphaDecay(0.005);
                 // Phase 1: 停止自动仿真，手动 rAF 控制
+                // 降低初始 alpha + 慢衰减 → 更多 tick、更均匀的位移，避免一开始剧烈抖动
                 this.simulation.stop();
-                this.simulation.alpha(0.3);
+                this.simulation.alpha(0.2);
             }
 
             _startRAFLoop() {
@@ -39248,7 +39307,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                     this.simulation.tick(1);
                     this._tickCount++;
-                    if (this._renderCallback) this._renderCallback();
+                    // 自适应渲染帧跳过：高速度阶段 (alpha 大) 跳过部分帧
+                    // 让每次渲染累积更多 tick 位移 → 视觉更连续不卡顿
+                    // 同时减少渲染开销，保持帧率稳定
+                    const alpha = this.simulation.alpha();
+                    const shouldRender = alpha <= 0.08 || (this._tickCount % 2 === 1);
+                    if (shouldRender && this._renderCallback) {
+                        this._renderCallback();
+                    }
                     this._rafId = requestAnimationFrame(loop);
                 };
                 this._rafId = requestAnimationFrame(loop);
@@ -39263,11 +39329,29 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
                 const hasPositions = nodes.length > 0 && nodes[0].x !== undefined && (nodes[0].x !== 0 || nodes[0].y !== 0);
                 if (!hasPositions) {
-                    const cols = Math.ceil(Math.sqrt(nodes.length));
-                    nodes.forEach((node, i) => {
-                        node.x = (i % cols) * 50 - (cols * 25);
-                        node.y = Math.floor(i / cols) * 50 - (cols * 25);
+                    // 后备：同心圆布局，按深度分层
+                    const cx = this.width / 2;
+                    const cy = this.height / 2;
+                    const maxR = Math.min(this.width, this.height) * 0.35;
+                    const depthMap = new Map();
+                    let maxDepth = 0;
+                    nodes.forEach(n => {
+                        const d = n.depth || 1;
+                        if (d > maxDepth) maxDepth = d;
+                        if (!depthMap.has(d)) depthMap.set(d, []);
+                        depthMap.get(d).push(n);
                     });
+                    for (let d = 1; d <= maxDepth; d++) {
+                        const layer = depthMap.get(d);
+                        if (!layer) continue;
+                        const radius = (d / maxDepth) * maxR;
+                        const step = (Math.PI * 2) / layer.length;
+                        layer.forEach((n, j) => {
+                            const angle = j * step + d * 1.1;
+                            n.x = cx + Math.cos(angle) * radius;
+                            n.y = cy + Math.sin(angle) * radius;
+                        });
+                    }
                 }
 
                 this.isPaused = false;
@@ -39279,7 +39363,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
                 this.simulation.nodes(nodes);
                 this.simulation.force('link').links(edges);
-                this.simulation.alpha(0.3);
+                this.simulation.alpha(0.2);
                 this._startRAFLoop();
             }
 
@@ -39292,7 +39376,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 linkForce.strength(params.linkStrength);
                 linkForce.distance(params.linkDistance);
                 this.simulation.force('collide').radius(d => d.size + 12);
-                this.simulation.alpha(0.3).restart();
+                this.simulation.alpha(0.2).restart();
                 // 重启 rAF 循环，让画面重新动起来
                 this.isPaused = false;
                 updateGraphPauseButton(false);
@@ -39309,7 +39393,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 node.fy = y;
                 if (!this.isPaused && this.simulation) {
                     if (this.simulation.alphaTarget() === 0) {
-                        this.simulation.alphaTarget(0.3).restart();
+                        this.simulation.alphaTarget(0.15).restart();
                     }
                 }
             }
@@ -39342,7 +39426,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 this.simulation.force('y').y(height / 2);
                 this.isPaused = false;
                 updateGraphPauseButton(false);
-                this.simulation.alpha(0.3).restart();
+                this.simulation.alpha(0.2).restart();
                 this._startRAFLoop();
             }
 
@@ -39365,7 +39449,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 this.isPaused = false;
                 updateGraphPauseButton(false);
                 if (this.simulation) {
-                    this.simulation.alpha(0.3).restart();
+                    this.simulation.alpha(0.2).restart();
                     this._startRAFLoop();
                 }
             }
@@ -39537,7 +39621,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     this._cachedVisibleBounds = { left, top, right, bottom };
                 }
                 visibleBounds = this._cachedVisibleBounds;
-                this.renderEdges(visibleBounds);
+                // 高速度阶段 (alpha 大)：跳过边和标签渲染 → 大幅减少每帧开销
+                // 边数量通常远多于节点，高速阶段跳过它们让帧率保持稳定
+                this._isHighVelocity = graphLayout && graphLayout.simulation && graphLayout.simulation.alpha() > 0.1;
+                if (!this._isHighVelocity) {
+                    this.renderEdges(visibleBounds);
+                }
                 this.renderNodes(visibleBounds);
                 this.updateFPS();
             }
@@ -39640,7 +39729,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         ctx.stroke();
                     }
 
-                    if (graphParams.showTags && (viewport.k > 0.5 || (this.focusNodeId && viewport.k > 0.2 && (isFocused || isNeighbor)))) {
+                    // 高速度阶段跳过标签渲染，降低填充文本的开销
+                    if (!this._isHighVelocity && graphParams.showTags && (viewport.k > 0.5 || (this.focusNodeId && viewport.k > 0.2 && (isFocused || isNeighbor)))) {
                         ctx.fillStyle = (isHighlighted || isFocused) ? 'red' : '#646a73';
                         ctx.font = `${Math.max(6, 8 / viewport.k)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif`;
                         ctx.textAlign = 'center';
@@ -47265,6 +47355,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }, null, 4);
                     await writeFileByDirHandle(await getDataDir(), SETTING_FILE, settingsJson);
                     compileAllRules();
+                    // 同步 LLM 配置到后端（中央化配置入口）
+                    if (window.__TAURI__ && currentRootPath) {
+                        window.__TAURI__.core.invoke('kb_update_llm_config', {
+                            dirPath: currentRootPath,
+                            endpoint: LOCAL_LLM_ENDPOINT,
+                            model: LOCAL_LLM_MODEL,
+                            apiKey: LOCAL_LLM_TOKEN,
+                        }).catch(e => console.warn('同步 LLM 配置到后端失败:', e));
+                    }
                     await closeModal(true);
                     const data = await scanDashboardData(true);
                     await Promise.all([renderDirectory(getRootHandle(), data), toggleDashboardView(true, data)]);
@@ -47317,6 +47416,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 RANDOM_DIR_BLACKLIST = setting.randomDirBlacklist;
                 HTML_CODE_SHOW_BLACKLIST = setting.htmlCodeShowBlacklist;
                 compileAllRules();
+                // 加载配置后同步 LLM 配置到后端
+                syncLlmConfigToBackend();
                 return setting;
             } catch (e) {
                 console.error('加载设置文件失败:', e);
@@ -47338,6 +47439,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 randomDirBlacklist: RANDOM_DIR_BLACKLIST,
                 htmlCodeShowBlacklist: HTML_CODE_SHOW_BLACKLIST
             };
+        }
+        /** 同步 LLM 配置到后端内存（中央化配置入口） */
+        function syncLlmConfigToBackend() {
+            if (window.__TAURI__ && currentRootPath) {
+                window.__TAURI__.core.invoke('kb_update_llm_config', {
+                    dirPath: currentRootPath,
+                    endpoint: LOCAL_LLM_ENDPOINT,
+                    model: LOCAL_LLM_MODEL,
+                    apiKey: LOCAL_LLM_TOKEN,
+                }).catch(e => console.warn('同步 LLM 配置到后端失败:', e));
+            }
         }
         function compileIgnorePatterns(patterns) {
             const rules = [];
@@ -48304,7 +48416,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
          * @param {(usage: object) => void} [options.onUsage] - 收到 usage 信息时回调
          * @returns {Promise<string>} 完整生成内容
          */
-        async function streamLlmChatCompletion(messages, { signal, onDelta, onUsage } = {}) {
+        async function streamLlmChatCompletion(messages, { signal, onDelta, onUsage, temperature, max_tokens } = {}) {
             const response = await fetch(LOCAL_LLM_ENDPOINT, {
                 method: 'POST',
                 headers: {
@@ -48315,7 +48427,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     model: LOCAL_LLM_MODEL,
                     messages: messages,
                     stream: true,
-                    max_tokens: LOCAL_LLM_MAX_TOKENS,
+                    max_tokens: max_tokens || LOCAL_LLM_MAX_TOKENS,
+                    temperature: temperature !== undefined ? temperature : undefined,
                 }),
                 signal,
             });
@@ -48639,7 +48752,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         // ── 公共方法：创建消息 header + 操作按钮 ──
-        function createMessageHeader(titleText, getContent) {
+        function createMessageHeader(titleText, getContent, getSources) {
             const header = document.createElement('div');
             header.className = 'chat-message-header';
 
@@ -48670,8 +48783,25 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             saveBtn.textContent = '保存';
             saveBtn.onclick = async function (e) {
                 e.stopPropagation();
-                const text = typeof getContent === 'function' ? getContent() : getContent;
-                if (text) await saveMessageToFile(text);
+                let text = typeof getContent === 'function' ? getContent() : getContent;
+                if (!text) return;
+                // 如果有引用来源，以双链形式追加到文件末尾
+                const sources = typeof getSources === 'function' ? getSources() : getSources;
+                if (sources && sources.length > 0) {
+                    const seen = new Set();
+                    const links = [];
+                    for (const s of sources) {
+                        const path = s.docName || s.doc_name || '';
+                        if (path && !seen.has(path)) {
+                            seen.add(path);
+                            links.push('- [[' + path + ']]');
+                        }
+                    }
+                    if (links.length > 0) {
+                        text = text + '\n\n## 引用\n\n' + links.join('\n');
+                    }
+                }
+                await saveMessageToFile(text);
             };
 
             actions.appendChild(copyBtn);
@@ -48680,17 +48810,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return header;
         }
 
-        function addChatMessage(role, content, sources, mode) {
+        async function addChatMessage(role, content, sources, mode) {
             const container = document.getElementById('chat-messages');
             const div = document.createElement('div');
             div.className = 'chat-message ' + role;
             if (role === 'assistant') {
-                div.appendChild(createMessageHeader('小助手', content));
+                div.appendChild(createMessageHeader('小助手', content, sources));
                 const body = document.createElement('div');
                 body.className = 'chat-message-body';
                 body.innerHTML = `<div class="markdown-body" style="zoom: 1;background: transparent;">${renderChatMarkdown(content)}</div>`;
-                highlightChatCodeBlocks(body);
                 div.appendChild(body);
+                div._body = body;
             } else if (role === 'user') {
                 div.classList.add('msg-' + mode);
                 const body = document.createElement('div');
@@ -48717,7 +48847,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         nameSpan.textContent = path
                         const scoreSpan = document.createElement('span');
                         scoreSpan.className = 'source-score';
-                        scoreSpan.textContent = (s.score * 100).toFixed(1) + '%';
+                        if (s.score_vec !== undefined && s.score_bm25 !== undefined) {
+                            scoreSpan.textContent = 'V:' + s.score_vec.toFixed(3) + ' B:' + s.score_bm25.toFixed(3);
+                        } else {
+                            scoreSpan.textContent = s.score.toFixed(3);
+                        }
                         item.ondblclick = () => openFileFromPath(path);
                         item.appendChild(nameSpan);
                         item.appendChild(scoreSpan);
@@ -48728,12 +48862,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             container.appendChild(div);
             container.scrollTop = container.scrollHeight;
+            // assistant 消息：挂载到 DOM 后再执行代码高亮和图表渲染（确保完整文档上下文）
+            if (role === 'assistant' && div._body) {
+                highlightChatCodeBlocks(div._body);
+            }
         }
 
         function getMessageAssistant() {
             const div = document.createElement('div');
             div.className = 'chat-message assistant';
-            div.appendChild(createMessageHeader('小助手', () => div._body ? div._body.textContent : ''));
+            div.appendChild(createMessageHeader('小助手', () => div._body ? div._body.textContent : '', () => _chatStreamingSources));
             const body = document.createElement('div');
             body.className = 'chat-message-body';
             div.appendChild(body);
@@ -48835,87 +48973,111 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             _chatStreamingSources = null;
             _chatStreamingFullContent = '';
             showChatTyping();
-            try {
-                const messages = chatMessages.map(m => ({ role: m.role, content: m.content }));
-                let usageData = null;
-                // 使用公共 SSE 流式函数
-                const fullContent = await streamLlmChatCompletion(messages, {
-                    signal: chatAbortController.signal,
-                    onDelta(fullContent) {
-                        // 首次收到 delta 时创建 assistant DOM
-                        if (!_chatStreamingDiv) {
-                            removeChatTyping();
-                            const container = document.getElementById('chat-messages');
-                            const div = getMessageAssistant();
-                            container.appendChild(div);
-                            _chatStreamingDiv = div;
-                            // 防抖滚动
-                            let _rafPending = false;
-                            div._scroll = () => {
-                                if (!_rafPending) {
-                                    _rafPending = true;
-                                    requestAnimationFrame(() => {
-                                        _rafPending = false;
-                                        container.scrollTop = container.scrollHeight;
-                                    });
-                                }
-                            };
-                        }
-                        // 实时 Markdown 渲染（流式期间仅渲染文本，不重复高亮代码块以节省性能）
-                        if (_chatStreamingDiv._body) {
-                            _chatStreamingDiv._body.innerHTML = `<div class="markdown-body" style="zoom: 1;background: transparent;">${renderChatMarkdown(fullContent)}</div>`;
-                        }
-                        _chatStreamingDiv._scroll();
-                        _chatStreamingFullContent = fullContent;
-                    },
-                    onUsage(usage) {
-                        usageData = usage;
-                    },
-                });
-                // 流式结束后对代码块进行语法高亮
-                if (_chatStreamingDiv && _chatStreamingDiv._body) {
-                    highlightChatCodeBlocks(_chatStreamingDiv._body);
-                }
-                // 移除流式 DOM 中可能残留的 typing 指示器
-                removeChatTyping();
-                if (fullContent) {
-                    chatMessages.push({ role: 'assistant', content: fullContent });
-                    if (currentSessionId) {
-                        const tokenCount = usageData?.completion_tokens || 0;
-                        try {
-                            await window.__TAURI__.core.invoke('chat_message_save', {
-                                dirPath: currentRootPath,
-                                sessionId: currentSessionId,
-                                role: 'assistant',
-                                content: fullContent,
-                                tokenCount,
-                            });
-                            window.__TAURI__.core.invoke('chat_session_list', {
-                                dirPath: currentRootPath,
-                            }).then(sessions => {
-                                chatSessions = sessions;
-                                renderChatSessionList();
-                            }).catch(e => console.warn('刷新会话列表失败:', e));
-                        } catch (e) {
-                            console.warn('保存助手消息失败:', e);
+
+            const requestId = crypto.randomUUID();
+            let usageData = null;
+            let llmDone = false;
+
+            // 取消时通知后端
+            const abortHandler = () => {
+                window.__TAURI__.core.invoke('kb_cancel_task', { requestId }).catch(() => {});
+            };
+            chatAbortController.signal.addEventListener('abort', abortHandler);
+
+            // 监听 Tauri 事件
+            const unlisteners = await Promise.all([
+                window.__TAURI__.event.listen('llm:delta', (e) => {
+                    if (e.payload.request_id !== requestId) return;
+                    const delta = e.payload.content;
+                    _chatStreamingFullContent += delta;
+                    if (!_chatStreamingDiv) {
+                        removeChatTyping();
+                        const container = document.getElementById('chat-messages');
+                        const div = getMessageAssistant();
+                        container.appendChild(div);
+                        _chatStreamingDiv = div;
+                        let _rafPending = false;
+                        div._scroll = () => {
+                            if (!_rafPending) {
+                                _rafPending = true;
+                                requestAnimationFrame(() => {
+                                    _rafPending = false;
+                                    container.scrollTop = container.scrollHeight;
+                                });
+                            }
+                        };
+                    }
+                    if (_chatStreamingDiv && _chatStreamingDiv._body) {
+                        _chatStreamingDiv._body.innerHTML = `<div class="markdown-body" style="zoom: 1;background: transparent;">${renderChatMarkdown(_chatStreamingFullContent)}</div>`;
+                    }
+                    if (_chatStreamingDiv) _chatStreamingDiv._scroll();
+                }),
+                window.__TAURI__.event.listen('llm:usage', (e) => {
+                    if (e.payload.request_id !== requestId) return;
+                    usageData = e.payload;
+                }),
+                window.__TAURI__.event.listen('llm:done', async (e) => {
+                    if (e.payload.request_id !== requestId) return;
+                    llmDone = true;
+                    const fullContent = e.payload.content;
+                    // 流式结束后对代码块进行语法高亮
+                    if (_chatStreamingDiv && _chatStreamingDiv._body) {
+                        await highlightChatCodeBlocks(_chatStreamingDiv._body);
+                    }
+                    removeChatTyping();
+                    if (fullContent) {
+                        chatMessages.push({ role: 'assistant', content: fullContent });
+                        if (currentSessionId) {
+                            const tokenCount = usageData?.completion_tokens || 0;
+                            try {
+                                await window.__TAURI__.core.invoke('chat_message_save', {
+                                    dirPath: currentRootPath,
+                                    sessionId: currentSessionId,
+                                    role: 'assistant',
+                                    content: fullContent,
+                                    tokenCount,
+                                });
+                                window.__TAURI__.core.invoke('chat_session_list', {
+                                    dirPath: currentRootPath,
+                                }).then(sessions => {
+                                    chatSessions = sessions;
+                                    renderChatSessionList();
+                                }).catch(e => console.warn('刷新会话列表失败:', e));
+                            } catch (e) {
+                                console.warn('保存助手消息失败:', e);
+                            }
                         }
                     }
-                }
-                // 更新上下文使用率
-                if (usageData) {
-                    const used = (usageData.prompt_tokens || 0) + (usageData.completion_tokens || 0);
-                    const total = usageData.total_tokens || LOCAL_LLM_CONTEXT_LENGTH || 10000;
-                    updateContextUsage(used, total);
-                }
+                    // 更新上下文使用率
+                    if (usageData) {
+                        const used = (usageData.prompt_tokens || 0) + (usageData.completion_tokens || 0);
+                        const total = usageData.total_tokens || LOCAL_LLM_CONTEXT_LENGTH || 10000;
+                        updateContextUsage(used, total);
+                    }
+                }),
+                window.__TAURI__.event.listen('llm:error', (e) => {
+                    if (e.payload.request_id !== requestId) return;
+                    llmDone = true;
+                    removeChatTyping();
+                    showNotification('✗ ' + e.payload.message, 'error');
+                }),
+            ]);
+
+            try {
+                const messages = chatMessages.map(m => ({ role: m.role, content: m.content }));
+                await window.__TAURI__.core.invoke('kb_llm_query', {
+                    messages,
+                    requestId,
+                });
             } catch (err) {
-                removeChatTyping();
-                if (err.name !== 'AbortError') {
-                    showNotification('✗ 请求失败: ' + err.message, 'error');
-                    console.error('LLM 请求失败:', err);
-                } else {
+                if (err.name !== 'AbortError' && !llmDone) {
+                    showNotification('✗ LLM 请求失败: ' + err.message, 'error');
+                } else if (err.name === 'AbortError' && !llmDone) {
                     await savePartialAssistantMessage();
                 }
             } finally {
+                chatAbortController?.signal.removeEventListener('abort', abortHandler);
+                unlisteners.forEach(u => u());
                 chatStreaming = false;
                 chatAbortController = null;
                 _chatStreamingDiv = null;
@@ -49243,131 +49405,121 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         async function sendRagQuery(text) {
+            const dirHandle = getRootHandle();
+            const path = dirHandle ? getDirPath(dirHandle) : null;
+            if (!path) {
+                removeChatTyping();
+                showNotification('❌ 未选择知识库目录', 'error');
+                return;
+            }
+
             chatStreaming = true;
             chatAbortController = new AbortController();
             _chatStreamingDiv = null;
             _chatStreamingSources = null;
             _chatStreamingFullContent = '';
             showChatTyping();
-            try {
-                // 使用本地模型生成查询向量，后端做混合检索
-                const dirHandle = getRootHandle();
-                const path = dirHandle ? getDirPath(dirHandle) : null;
-                let sources = null;
-                if (isTauriVisit() && path) {
-                    try {
-                        sources = await window.__TAURI__.core.invoke('kb_search_hybrid', {
-                            dirPath: path,
-                            query: text,
-                            topK: 10,
-                        });
-                    } catch (e) {
-                        console.warn('Tauri kb_search_hybrid 失败:', e);
+
+            const requestId = crypto.randomUUID();
+            let ragDone = false;
+            let _statusEl = null;
+
+            // 取消时通知后端
+            const abortHandler = () => {
+                window.__TAURI__.core.invoke('kb_cancel_task', { requestId }).catch(() => {});
+            };
+            chatAbortController.signal.addEventListener('abort', abortHandler);
+
+            // 监听 Tauri 事件
+            const unlisteners = await Promise.all([
+                window.__TAURI__.event.listen('rag:delta', (e) => {
+                    if (e.payload.request_id !== requestId) return;
+                    const delta = e.payload.content;
+                    _chatStreamingFullContent += delta;
+                    if (!_chatStreamingDiv) {
+                        removeChatTyping();
+                        if (_statusEl) _statusEl.remove();
+                        const container = document.getElementById('chat-messages');
+                        const div = getMessageAssistant();
+                        container.appendChild(div);
+                        _chatStreamingDiv = div;
+                        let _rafPending = false;
+                        div._scroll = () => {
+                            if (!_rafPending) {
+                                _rafPending = true;
+                                requestAnimationFrame(() => {
+                                    _rafPending = false;
+                                    container.scrollTop = container.scrollHeight;
+                                });
+                            }
+                        };
                     }
-                }
-                removeChatTyping();
-                // 添加搜索提示
-                const searchMsg = document.createElement('div');
-                searchMsg.className = 'chat-message system';
-                searchMsg.textContent = '\u{1F50D} 正在检索知识库...';
-                document.getElementById('chat-messages').appendChild(searchMsg);
-
-                if (!sources || sources.length === 0) {
-                    showNotification('❌ 知识库中未找到相关内容', 'error');
-                    searchMsg.remove();
-                    return;
-                }
-                // 过滤低分结果，保留 score >= 0.3 的相关文档
-                const MIN_SCORE = 0.3;
-                const filtered = sources.filter(s => s.score >= MIN_SCORE);
-                if (filtered.length === 0) {
-                    showNotification('⚠️ 知识库中未找到足够相关的内容（请尝试更换关键词或扩展知识库）', 'warning');
-                    searchMsg.remove();
-                    return;
-                }
-                sources = filtered;
-                searchMsg.remove();
-                const context = sources.map(s => s.text).join('\n\n---\n\n');
-                await streamLlmWithContext(text, context, sources);
-            } catch (err) {
-                removeChatTyping();
-                if (err.name !== 'AbortError') {
-                    showNotification('✗ RAG 查询失败: ' + err.message, 'error');
-                } else {
-                    // 用户主动中断：保存部分生成的消息
-                    await savePartialAssistantMessage();
-                }
-            } finally {
-                chatStreaming = false;
-                chatAbortController = null;
-                _chatStreamingDiv = null;
-                _chatStreamingSources = null;
-                _chatStreamingFullContent = '';
-                rememberLastChatSession();
-            }
-        }
-
-        async function streamLlmWithContext(text, context, sources) {
-            const systemPrompt = '你是一个知识库助手，请基于以下上下文回答问题。如果上下文中没有相关信息，请如实告知。\n\n上下文：\n' + context;
-            const messages = [
-                { role: 'system', content: systemPrompt },
-                ...chatMessages.map(m => ({ role: m.role, content: m.content })),
-            ];
-            // 记录 sources，供中断时保存使用
-            _chatStreamingSources = sources || null;
-            showChatTyping();
-            try {
-                // 使用公共 SSE 流式函数
-                const fullContent = await streamLlmChatCompletion(messages, {
-                    signal: chatAbortController.signal,
-                    onDelta(fullContent) {
-                        // 首次收到 delta 时创建 assistant DOM
-                        if (!_chatStreamingDiv) {
-                            removeChatTyping();
-                            const container = document.getElementById('chat-messages');
-                            const div = getMessageAssistant();
-                            container.appendChild(div);
-                            _chatStreamingDiv = div;
-                            let _rafPending = false;
-                            div._scroll = () => {
-                                if (!_rafPending) {
-                                    _rafPending = true;
-                                    requestAnimationFrame(() => {
-                                        _rafPending = false;
-                                        container.scrollTop = container.scrollHeight;
-                                    });
-                                }
-                            };
-                        }
-                        // 实时 Markdown 渲染（流式期间仅渲染文本，不重复高亮代码块以节省性能）
-                        if (_chatStreamingDiv._body) {
-                            _chatStreamingDiv._body.innerHTML = `<div class="markdown-body" style="zoom: 1;background: transparent;">${renderChatMarkdown(fullContent)}</div>`;
-                        }
-                        _chatStreamingDiv._scroll();
-                        _chatStreamingFullContent = fullContent;
-                    },
-                });
-                removeChatTyping();
-                if (fullContent) {
-                    // 连带 sources 存入 chatMessages（用于后续加载时重绘）
-                    const msgEntry = { role: 'assistant', content: fullContent, sources: sources || [] };
+                    if (_chatStreamingDiv && _chatStreamingDiv._body) {
+                        _chatStreamingDiv._body.innerHTML = `<div class="markdown-body" style="zoom: 1;background: transparent;">${renderChatMarkdown(_chatStreamingFullContent)}</div>`;
+                    }
+                    if (_chatStreamingDiv) _chatStreamingDiv._scroll();
+                }),
+                window.__TAURI__.event.listen('rag:status', (e) => {
+                    if (e.payload.request_id !== requestId) return;
+                    // 在聊天区域显示状态信息
+                    if (!_statusEl) {
+                        _statusEl = document.createElement('div');
+                        _statusEl.className = 'chat-message system';
+                        document.getElementById('chat-messages').appendChild(_statusEl);
+                    }
+                    _statusEl.textContent = '🔍 ' + e.payload.message;
+                }),
+                window.__TAURI__.event.listen('rag:done', async (e) => {
+                    if (e.payload.request_id !== requestId) return;
+                    ragDone = true;
+                    if (_statusEl) _statusEl.remove();
+                    const fullContent = e.payload.content;
+                    const sources = e.payload.sources || [];
+                    const promptTokens = e.payload.prompt_tokens || 0;
+                    const completionTokens = e.payload.completion_tokens || 0;
+                    // 流式结束后对代码块进行语法高亮
+                    if (_chatStreamingDiv && _chatStreamingDiv._body) {
+                        await highlightChatCodeBlocks(_chatStreamingDiv._body);
+                    }
+                    removeChatTyping();
+                    // 追加引用来源 UI（流式渲染时 getMessageAssistant 未创建 sources 元素）
+                    if (sources.length > 0 && _chatStreamingDiv) {
+                        const details = document.createElement('details');
+                        details.className = 'msg-sources';
+                        const summary = document.createElement('summary');
+                        summary.textContent = '引用来源 (' + sources.length + ')';
+                        details.appendChild(summary);
+                        const sorted = [...sources].sort((a, b) => (b.score || 0) - (a.score || 0));
+                        sorted.forEach(s => {
+                            const path = s.doc_name || '';
+                            if (path) {
+                                const item = document.createElement('div');
+                                item.className = 'msg-source-item';
+                                item.textContent = path + (s.score ? ' (' + s.score.toFixed(2) + ')' : '');
+                                details.appendChild(item);
+                            }
+                        });
+                        _chatStreamingDiv.appendChild(details);
+                    }
+                    // 连带 sources 存入 chatMessages
+                    const msgEntry = { role: 'assistant', content: fullContent, sources: sources };
                     chatMessages.push(msgEntry);
-                    // 保存助手消息到数据库（RAG 模式）
-                    if (currentSessionId) {
+                    // 保存到数据库
+                    if (currentSessionId && fullContent) {
                         try {
                             const savedMsg = await window.__TAURI__.core.invoke('chat_message_save', {
                                 dirPath: currentRootPath,
                                 sessionId: currentSessionId,
                                 role: 'assistant',
                                 content: fullContent,
-                                tokenCount: 0,
+                                tokenCount: completionTokens,
                             });
                             // 保存引用来源
-                            if (sources && sources.length > 0 && savedMsg?.id) {
+                            if (sources.length > 0 && savedMsg?.id) {
                                 const sourceEntries = sources.map(s => ({
                                     id: crypto.randomUUID(),
                                     message_id: savedMsg.id,
-                                    doc_name: s.docName || s.doc_name || '未知文档',
+                                    doc_name: s.doc_name || '未知文档',
                                     score: s.score || 0,
                                     snippet: s.text || '',
                                 }));
@@ -49377,7 +49529,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                     sources: sourceEntries,
                                 }).catch(e => console.warn('保存引用来源失败:', e));
                             }
-                            // 刷新会话列表
                             const sessions = await window.__TAURI__.core.invoke('chat_session_list', {
                                 dirPath: currentRootPath,
                             });
@@ -49387,37 +49538,41 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             console.warn('保存助手消息失败:', e);
                         }
                     }
-                    if (sources && sources.length > 0 && _chatStreamingDiv) {
-                        const details = document.createElement('details');
-                        details.className = 'msg-sources';
-                        const summary = document.createElement('summary');
-                        summary.textContent = '引用来源 (' + sources.length + ')';
-                        details.appendChild(summary);
-                        sources.forEach(s => {
-                            const item = document.createElement('div');
-                            item.className = 'source-item';
-                            const nameSpan = document.createElement('span');
-                            nameSpan.textContent = s.docName || s.doc_name || '未知文档';
-                            const scoreSpan = document.createElement('span');
-                            scoreSpan.className = 'source-score';
-                            scoreSpan.textContent = (s.score * 100).toFixed(1) + '%';
-                            item.appendChild(nameSpan);
-                            item.appendChild(scoreSpan);
-                            details.appendChild(item);
-                        });
-                        _chatStreamingDiv.appendChild(details);
-                    }
-                }
+                }),
+                window.__TAURI__.event.listen('rag:error', (e) => {
+                    if (e.payload.request_id !== requestId) return;
+                    ragDone = true;
+                    if (_statusEl) _statusEl.remove();
+                    removeChatTyping();
+                    showNotification('✗ ' + e.payload.message, 'error');
+                }),
+            ]);
+
+            try {
+                await window.__TAURI__.core.invoke('kb_rag_query', {
+                    dirPath: path,
+                    query: text,
+                    messages: chatMessages.map(m => ({ role: m.role, content: m.content })),
+                    requestId,
+                    topK: 10,
+                });
             } catch (err) {
-                removeChatTyping();
-                if (err.name !== 'AbortError') {
-                    showNotification('✗ 请求失败: ' + err.message, 'error');
+                if (err.name !== 'AbortError' && !ragDone) {
+                    showNotification('✗ RAG 查询失败: ' + (err.message || err), 'error');
+                } else if (err.name === 'AbortError' && !ragDone) {
+                    await savePartialAssistantMessage();
                 }
-                // AbortError 由上层 sendRagQuery 统一处理保存
-                throw err;
+            } finally {
+                chatAbortController?.signal.removeEventListener('abort', abortHandler);
+                unlisteners.forEach(u => u());
+                chatStreaming = false;
+                chatAbortController = null;
+                _chatStreamingDiv = null;
+                _chatStreamingSources = null;
+                _chatStreamingFullContent = '';
+                rememberLastChatSession();
             }
         }
-
 
         // ====== 知识库状态管理（当前目录即为知识库） ======
         function getDirPath(dirHandle) {
@@ -49867,9 +50022,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        function highlightChatCodeBlocks(dom) {
+        async function highlightChatCodeBlocks(dom) {
             if (typeof hljs === 'undefined') return;
-            postProcessCodeAndDiagrams(dom);
+            await postProcessCodeAndDiagrams(dom);
         }
 
         async function setLogLevel(level) {

@@ -100,6 +100,9 @@ impl AiHistoryStore {
         // 启用 WAL 模式，支持多连接并发读写（与 ChatStore 共享同一文件）
         conn.execute_batch("PRAGMA journal_mode=WAL;")
             .map_err(|e| format!("启用 WAL 模式失败: {}", e))?;
+        // 启用外键约束（每个连接独立设置，保持与 ChatStore 一致）
+        conn.execute_batch("PRAGMA foreign_keys = ON;")
+            .map_err(|e| format!("启用外键约束失败: {}", e))?;
         Self::init_tables(&conn)?;
 
         Ok(Self {
@@ -248,18 +251,39 @@ impl AiHistoryStore {
 
     /// 切换收藏状态，返回新状态。
     ///
-    /// 使用 SQLite 3.35+ RETURNING 子句将 UPDATE + SELECT 合并为一次查询。
+    /// 兼容 SQLite 3.35+（RETURNING）和更早版本（单独 SELECT）。
     pub fn toggle_favorite(&self, id: &str) -> Result<bool, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        let new_fav: i32 = conn
-            .query_row(
-                "UPDATE ai_history SET favorite = CASE WHEN favorite = 0 THEN 1 ELSE 0 END
-                 WHERE id = ?1 RETURNING favorite",
-                rusqlite::params![id],
-                |row| row.get(0),
-            )
-            .map_err(|e| format!("切换收藏失败: {}", e))?;
-        Ok(new_fav != 0)
+
+        // 先尝试 RETURNING 语法（SQLite 3.35+）
+        let result: Result<i32, _> = conn.query_row(
+            "UPDATE ai_history SET favorite = CASE WHEN favorite = 0 THEN 1 ELSE 0 END
+             WHERE id = ?1 RETURNING favorite",
+            rusqlite::params![id],
+            |row| row.get(0),
+        );
+
+        match result {
+            Ok(fav) => Ok(fav != 0),
+            Err(e) => {
+                // RETURNING 失败（可能是旧版 SQLite），降级为 UPDATE + SELECT
+                log::warn!("[ai_history] RETURNING 语法失败，降级为两阶段更新: {}", e);
+                conn.execute(
+                    "UPDATE ai_history SET favorite = CASE WHEN favorite = 0 THEN 1 ELSE 0 END WHERE id = ?1",
+                    rusqlite::params![id],
+                )
+                .map_err(|e| format!("切换收藏失败: {}", e))?;
+
+                let new_fav: i32 = conn
+                    .query_row(
+                        "SELECT favorite FROM ai_history WHERE id = ?1",
+                        rusqlite::params![id],
+                        |row| row.get(0),
+                    )
+                    .map_err(|e| format!("查询收藏状态失败: {}", e))?;
+                Ok(new_fav != 0)
+            }
+        }
     }
 
     /// 更新最后访问时间

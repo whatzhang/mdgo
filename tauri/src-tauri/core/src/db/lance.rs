@@ -38,6 +38,8 @@ pub struct SearchHit {
     pub doc_name: String,
     pub chunk_index: u32,
     pub score: f32,
+    pub score_vec: f32,
+    pub score_bm25: f32,
 }
 
 pub struct LanceStore {
@@ -266,6 +268,8 @@ impl LanceStore {
                     doc_name: doc_names.value(i).to_string(),
                     chunk_index: chunk_idxs.value(i),
                     score: score.max(0.0),
+                    score_vec: score.max(0.0),
+                    score_bm25: 0.0,
                 });
             }
         }

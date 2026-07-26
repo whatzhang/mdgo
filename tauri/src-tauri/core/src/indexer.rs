@@ -14,14 +14,17 @@ use crate::types::{IndexMeta, KbIndexResult, KbStatus};
 
 const KB_SUPPORTED_EXTS: &[&str] = utils::KB_SUPPORTED_EXTS;
 const BATCH_CHUNK_LIMIT: usize = 200;
-/// RRF 融合常数 K（值越小排名靠前的贡献越大）
-const RRF_K: u32 = 30;
+/// RRF 融合常数 K（值越大排名靠前的贡献越平滑，减少头部排名偏差）
+///
+/// 增大 K 值使 RRF 分数分布更均匀，避免向量检索的头部排名过度主导融合结果，
+/// 让 BM25 关键词匹配和 Reranker 有更多机会影响最终排序。
+const RRF_K: u32 = 60;
 /// BM25 关键词匹配的 RRF 权重倍数。
 ///
 /// 当 chunk 被 BM25 命中（存在关键词匹配）时，其 RRF 分数乘以该权重。
 /// 值 > 1.0 使关键词精确匹配结果优先于纯语义相似结果。
-/// 推荐值 1.5（实验调优后确定）。
-const BM25_RRF_WEIGHT: f32 = 1.5;
+/// 推荐值 2.0（提升关键词精确匹配的权重）。
+const BM25_RRF_WEIGHT: f32 = 2.0;
 
 /// 知识库索引引擎（纯逻辑，不依赖 Tauri）
 ///
@@ -172,22 +175,24 @@ impl Indexer {
         let mut total_chunks = 0u32;
         let mut total_vectors = 0u32;
 
+        let cfg = self.config_store.read();
         for (i, file_path) in files.iter().enumerate() {
             let content = match read_file_content(file_path) {
                 Some(c) if c.len() >= 10 => c,
                 _ => continue,
             };
 
-            let chunks = utils::split_text(&content, 1000, 200);
-            if chunks.is_empty() {
-                continue;
-            }
-
             let rel_path = file_path
                 .strip_prefix(base_dir)
                 .unwrap_or(file_path)
                 .to_string_lossy()
                 .to_string();
+
+            let is_md = rel_path.ends_with(".md") || rel_path.ends_with(".mdx");
+            let chunks = utils::split_text_with_structure(&content, cfg.chunk_size, cfg.chunk_overlap, is_md);
+            if chunks.is_empty() {
+                continue;
+            }
 
             let doc_chunks = utils::build_document_chunks(&rel_path, &chunks);
             batch_chunks.extend(doc_chunks);
@@ -243,11 +248,16 @@ impl Indexer {
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_millis() as u64;
 
         let meta = IndexMeta { file_count, chunk_count: total_chunks, vector_count: total_vectors, indexed_at: now };
-        save_metadata(&utils::get_data_dir(dir_path), &meta);
+        if let Err(e) = std::fs::write(
+            &Path::new(&utils::get_data_dir(dir_path)).join("index_meta.json"),
+            &serde_json::to_string(&meta).unwrap_or_default(),
+        ) {
+            log::error!("[indexer] 保存元数据失败: {}", e);
+        }
 
         progress(100, "索引完成");
         Ok(KbIndexResult { file_count, chunk_count: total_chunks, vector_count: total_vectors, indexed_at: now })
@@ -261,7 +271,9 @@ impl Indexer {
             _ => return Ok(()),
         };
 
-        let chunks = utils::split_text(&content, 1000, 200);
+        let is_md = rel_path.ends_with(".md") || rel_path.ends_with(".mdx");
+        let cfg = self.config_store.read();
+        let chunks = utils::split_text_with_structure(&content, cfg.chunk_size, cfg.chunk_overlap, is_md);
         if chunks.is_empty() {
             return Ok(());
         }
@@ -275,7 +287,9 @@ impl Indexer {
 
         // 统计旧 chunk 数，用于元数据差值计算（避免每次 index 后 chunk_count 累积增长）
         let old_chunks = self.count_document_chunks(&store, rel_path).await;
-        let _ = store.delete_document(rel_path).await;
+        if let Err(e) = store.delete_document(rel_path).await {
+            log::warn!("[indexer] 删除旧 LanceDB 数据失败 ({}): {}，将继续写入新数据", rel_path, e);
+        }
         store.add_chunks(&doc_chunks, &vectors).await.map_err(|e| {
             log::error!("[indexer] 写入 LanceDB 失败 ({}): {}", rel_path, e);
             e
@@ -283,7 +297,9 @@ impl Indexer {
 
         // ── BM25：先删后写 ──
         if let Ok(bm25) = self.get_bm25_index(dir_path).await {
-            let _ = bm25.delete_document(rel_path);
+            if let Err(e) = bm25.delete_document(rel_path) {
+                log::warn!("[indexer] 删除 BM25 旧数据失败 ({}): {}，将继续写入新数据", rel_path, e);
+            }
             bm25.add_documents(&doc_chunks).map_err(|e| {
                 log::error!("[indexer] 写入 BM25 失败 ({}): {}", rel_path, e);
                 e
@@ -397,16 +413,39 @@ impl Indexer {
         let store = self.get_lance_store(dir_path).await;
         let bm25_dir = utils::get_bm25_dir(dir_path);
 
-        let vec_k = (top_k * 2).max(10);
+        // 候选池扩大到 top_k * 5，为 Reranker 提供更多候选
+        let vec_k = (top_k * 5).max(15);
         let vec_hits = store.search_vectors(query_vector, vec_k).await.unwrap_or_default();
 
-        let bm25_k = (top_k * 2).max(10);
+        let bm25_k = (top_k * 5).max(15);
         let bm25_hits = match Bm25Index::open(&bm25_dir) {
             Ok(idx) => idx.search(query, bm25_k).unwrap_or_default(),
             Err(_) => Vec::new(),
         };
 
-        let fused = rrf_fuse(&vec_hits, &bm25_hits, RRF_K);
+        let mut fused = rrf_fuse(&vec_hits, &bm25_hits, RRF_K);
+
+        // Reranker 重排序（降级安全：模型不存在时静默跳过）
+        if !fused.is_empty() {
+            let candidates: Vec<&str> = fused.iter().map(|h| h.text.as_str()).collect();
+            let model_dir = utils::get_model_dir();
+            match crate::embedding::rerank(query, &candidates, &model_dir, 32) {
+                Ok(scores) => {
+                    // 将 reranker 分数写回 SearchHit（保留原始 RRF 排序作为 fallback）
+                    for (i, hit) in fused.iter_mut().enumerate() {
+                        if i < scores.len() {
+                            hit.score = scores[i];
+                        }
+                    }
+                    // 按 reranker 分数降序排列
+                    fused.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+                }
+                Err(_) => {
+                    // Reranker 不可用，直接使用 RRF 排序结果
+                }
+            }
+        }
+
         let result: Vec<SearchHit> = fused.into_iter().take(top_k as usize).collect();
         Ok(result)
     }
@@ -477,7 +516,7 @@ impl Indexer {
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_millis() as u64;
 
         let new_meta = IndexMeta {
@@ -641,6 +680,68 @@ impl Indexer {
 
         Ok(results)
     }
+
+    // ─── Watcher 启动同步 ───
+
+    /// 文件监听启动时执行一致性检查：对比当前文件修改时间与上次索引时间戳，
+    /// 自动索引新增或修改过的文件，确保索引与文件系统一致。
+    ///
+    /// 返回同步的文件数量。
+    pub async fn sync_on_start(&self, dir_path: &str) -> Result<u32, String> {
+        let data_dir = utils::get_data_dir(dir_path);
+        let meta = load_metadata(&data_dir);
+        let indexed_at = meta.as_ref().map(|m| m.indexed_at).unwrap_or(0);
+
+        if indexed_at == 0 {
+            log::info!("[indexer] sync_on_start: 无索引记录，跳过启动同步（由 index_all 全量处理）");
+            return Ok(0);
+        }
+
+        let base_dir = Path::new(dir_path);
+        if !base_dir.exists() {
+            return Err(format!("目录不存在: {}", dir_path));
+        }
+
+        let config = self.config_store.read();
+        let ignore = IgnoreMatcher::new(&config.dir_blacklist, &config.file_blacklist);
+        let files = scan_directory(base_dir, &ignore)?;
+
+        let indexed_time = UNIX_EPOCH + std::time::Duration::from_millis(indexed_at);
+        let mut synced_count = 0u32;
+
+        for file_path in &files {
+            let metadata = match std::fs::metadata(file_path) {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+
+            let modified = match metadata.modified() {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+
+            // 给予 1 秒缓冲区（避免文件系统时间精度导致的误判）
+            if modified <= indexed_time + std::time::Duration::from_secs(1) {
+                continue;
+            }
+
+            let rel_path = file_path
+                .strip_prefix(base_dir)
+                .unwrap_or(file_path)
+                .to_string_lossy()
+                .to_string();
+
+            log::info!("[indexer] 启动同步: 索引修改文件 {}", rel_path);
+            if let Err(e) = self.index_file(dir_path, &rel_path, &file_path.to_string_lossy()).await {
+                log::warn!("[indexer] 启动同步: 文件 {} 索引失败: {}", rel_path, e);
+                continue;
+            }
+            synced_count += 1;
+        }
+
+        log::info!("[indexer] 启动同步完成: 共同步 {} 个文件", synced_count);
+        Ok(synced_count)
+    }
 }
 
 // ─── 辅助函数 ───
@@ -687,8 +788,34 @@ fn scan_directory(base_dir: &Path, ignore: &IgnoreMatcher) -> Result<Vec<std::pa
     Ok(files)
 }
 
-/// 读取文件内容，非 UTF-8 则跳过
+/// 读取文件内容，非 UTF-8 则跳过（PDF 文件使用 pdf-extract 提取文本）
 fn read_file_content(path: &Path) -> Option<String> {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    #[cfg(feature = "pdf-extract")]
+    if ext == "pdf" {
+        return match pdf_extract::extract_text(path) {
+            Ok(text) => {
+                let trimmed = text.trim();
+                if trimmed.is_empty() {
+                    log::warn!("跳过 PDF 文件 {}: 未提取到文本内容", path.display());
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            }
+            Err(e) => {
+                log::warn!("跳过 PDF 文件 {}: 提取文本失败: {}", path.display(), e);
+                None
+            }
+        };
+    }
+
+    // 非 PDF 文件（或 pdf-extract 未启用）：读取 UTF-8 文本
     match std::fs::read_to_string(path) {
         Ok(c) => Some(c),
         Err(e) => {
@@ -709,7 +836,9 @@ fn read_file_content(path: &Path) -> Option<String> {
 fn save_metadata(data_dir: &str, meta: &IndexMeta) {
     let path = Path::new(data_dir).join("index_meta.json");
     if let Ok(json) = serde_json::to_string(meta) {
-        let _ = std::fs::write(&path, &json);
+        if let Err(e) = std::fs::write(&path, &json) {
+            log::error!("[indexer] 保存元数据失败 ({}): {}", path.display(), e);
+        }
     }
 }
 
@@ -734,6 +863,8 @@ fn rrf_fuse(vec_hits: &[SearchHit], bm25_hits: &[SearchHit], k: u32) -> Vec<Sear
     struct Entry {
         rrf_score: f32,
         sim_score: f32,
+        score_vec: f32,
+        score_bm25: f32,
         text: String,
     }
 
@@ -747,6 +878,9 @@ fn rrf_fuse(vec_hits: &[SearchHit], bm25_hits: &[SearchHit], k: u32) -> Vec<Sear
         if hit.score > entry.sim_score {
             entry.sim_score = hit.score;
         }
+        if hit.score_vec > entry.score_vec {
+            entry.score_vec = hit.score_vec;
+        }
         // 向量结果集的 text 作为基准
         entry.text = hit.text.clone();
     }
@@ -759,6 +893,9 @@ fn rrf_fuse(vec_hits: &[SearchHit], bm25_hits: &[SearchHit], k: u32) -> Vec<Sear
         entry.rrf_score += BM25_RRF_WEIGHT / (k as f32 + rank as f32);
         if hit.score > entry.sim_score {
             entry.sim_score = hit.score;
+        }
+        if hit.score_bm25 > entry.score_bm25 {
+            entry.score_bm25 = hit.score_bm25;
         }
         // 仅当 vec 未覆盖此 key 时才用 BM25 的 text
         if entry.text.is_empty() {
@@ -777,6 +914,8 @@ fn rrf_fuse(vec_hits: &[SearchHit], bm25_hits: &[SearchHit], k: u32) -> Vec<Sear
             doc_name,
             chunk_index,
             score: entry.sim_score.min(1.0).max(0.0),
+            score_vec: entry.score_vec.min(1.0).max(0.0),
+            score_bm25: entry.score_bm25.min(1.0).max(0.0),
         })
         .collect()
 }

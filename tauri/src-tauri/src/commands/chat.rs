@@ -163,7 +163,10 @@ pub async fn chat_history_search(
     let indexer_hits = indexer
         .search_chat_sessions(&dir_path, &query, 20)
         .await
-        .unwrap_or_default();
+        .unwrap_or_else(|e| {
+            log::warn!("[chat] 索引搜索失败，降级为纯 LIKE 搜索: {}", e);
+            Vec::new()
+        });
 
     // 2. ChatStore: SQL LIKE + 组装结果
     tokio::task::spawn_blocking(move || store.search_sessions(&query, &indexer_hits))

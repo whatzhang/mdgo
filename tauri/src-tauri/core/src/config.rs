@@ -1,10 +1,15 @@
 use std::sync::{Arc, RwLock};
+use serde::Serialize;
 
-/// 索引器配置，定义索引时需要排除的目录和文件黑名单
-#[derive(Clone, Debug)]
+/// 索引器配置，定义索引时需要排除的目录和文件黑名单，以及分块/检索参数
+#[derive(Clone, Debug, Serialize)]
 pub struct IndexerConfig {
     pub dir_blacklist: Vec<String>,
     pub file_blacklist: Vec<String>,
+    pub chunk_size: usize,
+    pub chunk_overlap: usize,
+    pub top_k: u32,
+    pub min_score: f32,
 }
 
 impl Default for IndexerConfig {
@@ -12,6 +17,10 @@ impl Default for IndexerConfig {
         Self {
             dir_blacklist: Vec::new(),
             file_blacklist: Vec::new(),
+            chunk_size: 1000,
+            chunk_overlap: 200,
+            top_k: 10,
+            min_score: 0.3,
         }
     }
 }

@@ -72,7 +72,7 @@
      */
     function _getDirPath() {
         const handle = window.getRootHandle && window.getRootHandle();
-        return handle.path;
+        return handle ? handle.path : '';
     }
 
     // ─── 替换全局函数 ───

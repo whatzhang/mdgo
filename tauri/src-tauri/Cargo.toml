@@ -38,11 +38,17 @@ tokio = { version = "1", features = ["full"] }
 rusqlite = { version = "0.34", features = ["bundled"] }
 
 # 知识库 — 核心引擎（重型依赖隔离在 mdgo-core 中）
-mdgo-core = { path = "core" }
+mdgo-core = { path = "core", features = ["pdf-extract"] }
 
 # 工具
 uuid = { version = "1", features = ["v4"] }
 regex = "1"
+
+# LLM 客户端 + 异步工具
+reqwest = { version = "0.12", features = ["stream", "json"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+futures = "0.3"
+bytes = "1"
 
 # 日志
 log = "0.4"

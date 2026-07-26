@@ -375,8 +375,9 @@ pub fn git_status_matrix(dir: String) -> Result<Vec<FileStatusEntry>, String> {
 pub fn git_checkout(
     dir: String,
     filepaths: Vec<String>,
-    force: bool,
+    force: Option<bool>,
 ) -> Result<(), String> {
+    let force = force.unwrap_or(false);
     for filepath in &filepaths {
         let mut args = vec!["checkout"];
         if force { args.push("--force"); }

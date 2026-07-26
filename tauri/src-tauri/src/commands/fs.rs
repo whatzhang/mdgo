@@ -206,6 +206,10 @@ pub fn write_file(path: String, content: String) -> Result<(), String> {
     }
     let p = Path::new(&path);
     if let Some(parent) = p.parent() {
+        // 对父目录执行 canonicalize 防止符号链接绕过
+        let _ = canonicalize_safe(&parent.to_string_lossy()).map_err(|e| {
+            format!("父目录路径不安全 ({}): {}", parent.display(), e)
+        })?;
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     fs::write(p, &content).map_err(|e| format!("写入文件失败 ({}): {}", path, e))
@@ -219,6 +223,10 @@ pub fn write_file_binary(path: String, content: Vec<u8>) -> Result<(), String> {
     }
     let p = Path::new(&path);
     if let Some(parent) = p.parent() {
+        // 对父目录执行 canonicalize 防止符号链接绕过
+        let _ = canonicalize_safe(&parent.to_string_lossy()).map_err(|e| {
+            format!("父目录路径不安全 ({}): {}", parent.display(), e)
+        })?;
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     fs::write(p, &content).map_err(|e| format!("写入文件失败 ({}): {}", path, e))

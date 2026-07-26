@@ -325,8 +325,7 @@
         /** 删除子目录/文件 */
         async removeEntry(name, options) {
             const targetPath = _joinPath(this._path, name);
-            const recursive = options && options.recursive;
-            await invoke('delete', { path: targetPath, recursive: !!recursive });
+            await invoke('delete', { path: targetPath });
         }
 
         /** 查询权限 */

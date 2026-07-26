@@ -102,7 +102,7 @@
                                 console.warn('[TauriStore] set 失败:', e);
                             }
                         })
-                        .catch(() => {});
+                        .catch((e) => console.warn('[TauriStore] setItem 获取 Store 失败:', e));
                 };
             }
             if (prop === 'removeItem') {
@@ -117,7 +117,7 @@
                                 console.warn('[TauriStore] delete 失败:', e);
                             }
                         })
-                        .catch(() => {});
+                        .catch((e) => console.warn('[TauriStore] removeItem 获取 Store 失败:', e));
                 };
             }
             if (prop === 'clear') {
@@ -135,7 +135,7 @@
                                 console.warn('[TauriStore] clear 失败:', e);
                             }
                         })
-                        .catch(() => {});
+                        .catch((e) => console.warn('[TauriStore] clear 获取 Store 失败:', e));
                 };
             }
             if (prop === 'length') {
@@ -161,7 +161,7 @@
                             console.warn('[TauriStore] 持久化失败:', e);
                         }
                     })
-                    .catch(() => {});
+                    .catch((e) => console.warn('[TauriStore] Proxy set 获取 Store 失败:', e));
                 return true;
             }
             return Reflect.set(target, prop, value);
@@ -178,7 +178,7 @@
                             console.warn('[TauriStore] 删除失败:', e);
                         }
                     })
-                    .catch(() => {});
+                    .catch((e) => console.warn('[TauriStore] deleteProperty 获取 Store 失败:', e));
                 return true;
             }
             return Reflect.deleteProperty(target, prop);

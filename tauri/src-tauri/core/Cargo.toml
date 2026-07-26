@@ -23,6 +23,7 @@ rayon = "1.10"
 tokenizers = "0.22"
 notify = { version = "8", features = ["macos_kqueue"] }
 walkdir = "2"
+pdf-extract = { version = "0.7", optional = true }
 
 # ─── ONNX Runtime / 推理引擎 按平台选择 ───
 #

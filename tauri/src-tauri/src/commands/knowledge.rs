@@ -30,13 +30,22 @@ pub async fn kb_index(
     dir_path: String,
     dir_blacklist: Vec<String>,
     file_blacklist: Vec<String>,
+    chunk_size: Option<usize>,
+    chunk_overlap: Option<usize>,
+    top_k: Option<u32>,
+    min_score: Option<f32>,
 ) -> Result<KbIndexResult, String> {
     let state = app.state::<AppState>();
 
-    // 更新黑名单配置
+    let old_cfg = state.config_store.read();
+    // 更新配置，保留已有值，新字段可选
     state.config_store.update(IndexerConfig {
         dir_blacklist,
         file_blacklist,
+        chunk_size: chunk_size.unwrap_or(old_cfg.chunk_size),
+        chunk_overlap: chunk_overlap.unwrap_or(old_cfg.chunk_overlap),
+        top_k: top_k.unwrap_or(old_cfg.top_k),
+        min_score: min_score.unwrap_or(old_cfg.min_score),
     });
 
     // 暂停 watcher 增量处理（避免 index_all 与 watcher 并发写 DB）
@@ -60,6 +69,32 @@ pub async fn kb_index(
     state.watcher.resume();
 
     result
+}
+
+/// 获取当前索引器配置
+#[tauri::command]
+pub async fn kb_get_indexer_config(app: AppHandle) -> Result<IndexerConfig, String> {
+    let state = app.state::<AppState>();
+    Ok(state.config_store.read())
+}
+
+/// 更新索引器配置（不影响当前索引状态）
+#[tauri::command]
+pub async fn kb_update_indexer_config(
+    app: AppHandle,
+    chunk_size: Option<usize>,
+    chunk_overlap: Option<usize>,
+    top_k: Option<u32>,
+    min_score: Option<f32>,
+) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let mut cfg = state.config_store.read();
+    if let Some(v) = chunk_size { cfg.chunk_size = v; }
+    if let Some(v) = chunk_overlap { cfg.chunk_overlap = v; }
+    if let Some(v) = top_k { cfg.top_k = v; }
+    if let Some(v) = min_score { cfg.min_score = v; }
+    state.config_store.update(cfg);
+    Ok(())
 }
 
 /// 混合检索（向量 + BM25 + RRF）

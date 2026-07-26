@@ -42,6 +42,8 @@ pub struct WatcherService {
     cmd_tx: Mutex<Option<mpsc::UnboundedSender<DebounceCmd>>>,
     /// 停止信号
     stop_tx: Mutex<Option<oneshot::Sender<()>>>,
+    /// 防抖循环的 JoinHandle（重启时用于确保旧任务退出）
+    debounce_handle: Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// 暂停信号（true = 暂停增量处理，index_all 期间使用）
     paused: Arc<AtomicBool>,
     /// 当前监听目录
@@ -67,6 +69,7 @@ impl WatcherService {
             event_tx: Mutex::new(None),
             cmd_tx: Mutex::new(None),
             stop_tx: Mutex::new(None),
+            debounce_handle: Mutex::new(None),
             paused: Arc::new(AtomicBool::new(false)),
             watch_dir: Mutex::new(None),
             running: AtomicBool::new(false),
@@ -175,8 +178,29 @@ impl WatcherService {
         let debounce_dir = dir_path.to_string();
         let debounce_on_error = self.on_error.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let debounce_on_changed = self.on_changed.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             run_debounce_loop(rx, cmd_rx, stop_rx, debounce_indexer, &debounce_dir, paused, debounce_on_error, debounce_on_changed).await;
+        });
+        *self.debounce_handle.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
+
+        // ── 启动一致性同步：对比文件修改时间与索引时间戳 ──
+        let sync_indexer = indexer.clone();
+        let sync_dir = dir_path.to_string();
+        let sync_on_changed = self.on_changed.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        tokio::spawn(async move {
+            match sync_indexer.sync_on_start(&sync_dir).await {
+                Ok(count) => {
+                    if count > 0 {
+                        log::info!("[watcher] 启动同步完成: 更新了 {} 个文件", count);
+                        sync_on_changed();
+                    } else {
+                        log::info!("[watcher] 启动同步: 无需更新");
+                    }
+                }
+                Err(e) => {
+                    log::warn!("[watcher] 启动同步失败: {}", e);
+                }
+            }
         });
 
         // 保存状态（先 drop 旧的 notify watcher）
@@ -203,6 +227,11 @@ impl WatcherService {
         // 通知防抖循环退出
         if let Some(tx) = self.stop_tx.lock().unwrap_or_else(|e| e.into_inner()).take() {
             let _ = tx.send(());
+        }
+
+        // 等待防抖任务退出（防止重启时两个防抖循环并发）
+        if let Some(handle) = self.debounce_handle.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            handle.abort();
         }
 
         // 清空通道

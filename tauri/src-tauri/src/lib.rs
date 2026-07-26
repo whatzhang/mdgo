@@ -6,10 +6,30 @@ mod services;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use commands::llm::TaskRegistry;
 use commands::system::SystemMonitorState;
 use log::LevelFilter;
 use simplelog::{ColorChoice, Config, TerminalMode, TermLogger, WriteLogger};
 use mdgo_core::{ConfigStore, Indexer, IndexerConfig, WatcherService};
+use std::sync::RwLock;
+
+/// LLM 连接配置（中央化，由前端保存后通过命令更新）
+#[derive(Clone, Debug)]
+pub struct LlmConfig {
+    pub endpoint: String,
+    pub model: String,
+    pub api_key: String,
+}
+
+impl Default for LlmConfig {
+    fn default() -> Self {
+        Self {
+            endpoint: String::new(),
+            model: String::new(),
+            api_key: String::new(),
+        }
+    }
+}
 
 /// Tauri 托管的应用级共享状态
 pub struct AppState {
@@ -20,6 +40,8 @@ pub struct AppState {
     pub chat_stores: Mutex<HashMap<String, Arc<services::chat::ChatStore>>>,
     /// 按目录路径缓存的 AiHistoryStore 实例（惰性创建）
     pub ai_history_stores: Mutex<HashMap<String, Arc<services::ai_history::AiHistoryStore>>>,
+    /// LLM 连接配置（中央化，由前端保存后通过 kb_update_llm_config 更新）
+    pub llm_config: RwLock<LlmConfig>,
 }
 
 impl AppState {
@@ -87,12 +109,14 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .manage(SystemMonitorState::new())
+        .manage(TaskRegistry::new())
         .manage(AppState {
             config_store,
             indexer,
             watcher,
             chat_stores: Mutex::new(HashMap::new()),
             ai_history_stores: Mutex::new(HashMap::new()),
+            llm_config: RwLock::new(LlmConfig::default()),
         })
         .invoke_handler(tauri::generate_handler![
             commands::fs::read_dir_recursive,
@@ -126,9 +150,12 @@ pub fn run() {
             commands::knowledge::kb_status,
             commands::knowledge::kb_clear,
             commands::knowledge::kb_dashboard_stats,
+            commands::knowledge::kb_get_indexer_config,
+            commands::knowledge::kb_update_indexer_config,
             commands::config::kb_config_read,
             commands::config::kb_config_write,
             commands::config::kb_config_delete,
+            commands::config::kb_update_llm_config,
             commands::fs_watcher::kb_start_watcher,
             commands::fs_watcher::kb_stop_watcher,
             // AI 历史记录命令
@@ -155,6 +182,10 @@ pub fn run() {
             commands::chat::kb_chat_stats,
             commands::chat::chat_session_set_last,
             commands::chat::chat_session_get_last,
+            // LLM 命令
+            commands::llm::kb_rag_query,
+            commands::llm::kb_llm_query,
+            commands::llm::kb_cancel_task,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

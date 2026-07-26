@@ -198,7 +198,7 @@ impl Bm25Index {
 
     /// 获取缓存的 reader（首次调用时创建，写入后需手动清理缓存）
     fn get_reader(&self) -> Result<IndexReader, String> {
-        let mut reader_guard = self.reader.lock().unwrap();
+        let mut reader_guard = self.reader.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(ref reader) = *reader_guard {
             return Ok(reader.clone());
         }
@@ -214,7 +214,7 @@ impl Bm25Index {
 
     /// 写入数据后调用，使下一次查询时重建 reader
     fn invalidate_reader(&self) {
-        let mut reader_guard = self.reader.lock().unwrap();
+        let mut reader_guard = self.reader.lock().unwrap_or_else(|e| e.into_inner());
         *reader_guard = None;
     }
 
@@ -302,6 +302,8 @@ impl Bm25Index {
                 doc_name,
                 chunk_index,
                 score: (score as f32 / 10.0).min(1.0),
+                score_vec: 0.0,
+                score_bm25: (score as f32 / 10.0).min(1.0),
             });
         }
 
@@ -318,10 +320,11 @@ impl Bm25Index {
             .writer(50_000_000)
             .map_err(|e| format!("创建 BM25 writer 失败: {}", e))?;
 
-        // Tantivy 使用 term 删除，返回删除的文档数（u64）
+        // Tantivy 使用 term 删除，返回删除的文档数
         let term = tantivy::Term::from_field_text(doc_name_field, doc_name);
-        let _deleted = writer
+        let deleted_count = writer
             .delete_term(term);
+        log::debug!("[bm25] 删除文档 '{}': 删除了 {} 条", doc_name, deleted_count);
 
         writer
             .commit()
