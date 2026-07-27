@@ -440,138 +440,55 @@ pub fn split_text(text: &str, max_size: usize, overlap: usize) -> Vec<String> {
     chunks
 }
 
-/// 文档结构感知分块（Markdown 优先）
-///
-/// 对 Markdown 文件：
-/// 1. 按标题层级（# ~ ######）划分段落
-/// 2. 每个 chunk 注入父级标题路径作为前缀（如 "# 父标题\n## 当前标题\n\n内容"）
-/// 3. 超过 max_size 的长段落回退到 split_text 切分
-///
-/// 对非 Markdown 文件：直接回退到 split_text
-pub fn split_text_with_structure(text: &str, max_size: usize, overlap: usize, is_markdown: bool) -> Vec<String> {
-    if !is_markdown || !text.contains('#') {
-        return split_text(text, max_size, overlap);
-    }
-
-    // 按行解析 Markdown 标题
-    let heading_re = Regex::new(r"^(#{1,6})\s+(.+)").unwrap();
-    let lines: Vec<&str> = text.lines().collect();
-    let mut result: Vec<String> = Vec::new();
-
-    // 标题栈：维护当前所在的标题层级链
-    struct Heading {
-        level: usize,
-        text: String,
-    }
-    let mut stack: Vec<Heading> = Vec::new();
-    let mut section_start = 0usize;
-
-    let push_section = |result: &mut Vec<String>, stack: &[Heading], lines: &[&str], start: usize, end: usize, max_size: usize, overlap: usize| {
-        if end <= start { return; }
-        // 构建标题前缀
-        let prefix: String = stack.iter().map(|h| {
-            let tag = "#".repeat(h.level);
-            format!("{} {}\n", tag, h.text)
-        }).collect();
-        let body = lines[start..end].join("\n");
-        let combined = format!("{}{}", prefix, body);
-
-        if combined.len() <= max_size * 3 / 2 {
-            result.push(combined);
-        } else {
-            // 长段落：用前缀 + split_text 再切分
-            let body_chunks = split_text(&body, max_size - prefix.len().max(50), overlap);
-            for chunk in body_chunks {
-                result.push(format!("{}{}", prefix, chunk));
-            }
-        }
-    };
-
-    for (i, line) in lines.iter().enumerate() {
-        if let Some(caps) = heading_re.captures(line) {
-            let level = caps.get(1).unwrap().as_str().len();
-            let heading_text = caps.get(2).unwrap().as_str().trim().to_string();
-
-            // 遇到新标题时，关闭上一段落
-            if !stack.is_empty() {
-                push_section(&mut result, &stack, &lines, section_start, i, max_size, overlap);
-            }
-
-            // 弹出级别 ≥ 当前标题的栈顶元素
-            while let Some(top) = stack.last() {
-                if top.level >= level {
-                    stack.pop();
-                } else {
-                    break;
-                }
-            }
-
-            section_start = i + 1;
-            stack.push(Heading { level, text: heading_text });
-            continue;
-        }
-    }
-
-    // 处理最后一段
-    if !stack.is_empty() {
-        push_section(&mut result, &stack, &lines, section_start, lines.len(), max_size, overlap);
-    }
-
-    // 如果没有识别到任何标题结构，回退到 split_text
-    if result.is_empty() {
-        return split_text(text, max_size, overlap);
-    }
-
-    result
-}
-
 // ─── DocumentChunk 批量创建 ───
 
 pub fn build_document_chunks(rel_path: &str, chunks: &[String]) -> Vec<DocumentChunk> {
+    // 文件名前缀：注入到每个 chunk 文本开头，使 BM25 和向量搜索都能匹配到文件名
+    let file_tag = format!("[文件: {}]\n", rel_path);
     chunks
         .iter()
         .enumerate()
-        .map(|(i, text)| DocumentChunk {
-            id: format!("{}:{}:{}", rel_path, i, uuid::Uuid::new_v4()),
-            doc_name: rel_path.to_string(),
-            chunk_index: i as u32,
-            text: text.clone(),
+        .map(|(i, text)| {
+            let text_with_name = format!("{}{}", file_tag, text);
+            DocumentChunk {
+                id: format!("{}:{}:{}", rel_path, i, uuid::Uuid::new_v4()),
+                doc_name: rel_path.to_string(),
+                chunk_index: i as u32,
+                text: text_with_name,
+            }
         })
         .collect()
 }
 
 // ─── 路径工具 ───
 
-/// 获取知识库数据目录：{dir_path}/.mdgo/data
+/// 获取知识库数据目录：{dir_path}/.mdgo
 ///
-/// 每个目录的索引数据独立存储在该目录下的 .mdgo/data 中，
+/// 每个目录的索引数据独立存储在该目录下的 .mdgo 中，
 /// 切换目录时自动加载对应的数据，无需依赖系统级应用数据目录。
 pub fn get_data_dir(dir_path: &str) -> String {
     Path::new(dir_path)
         .join(".mdgo")
-        .join("data")
         .join("lancedb")
         .to_string_lossy()
         .to_string()
 }
 
-/// 获取 BM25 索引目录：{dir_path}/.mdgo/data/bm25
+/// 获取 BM25 索引目录：{dir_path}/.mdgo/bm25
 pub fn get_bm25_dir(dir_path: &str) -> String {
     Path::new(dir_path)
         .join(".mdgo")
-        .join("data")
         .join("bm25")
         .to_string_lossy()
         .to_string()
 }
 
-/// 获取对话 BM25 索引目录：{dir_path}/.mdgo/data/chat_bm25
+/// 获取对话 BM25 索引目录：{dir_path}/.mdgo/chat_bm25
 ///
 /// 对话数据与文档数据分离存储，避免互相污染。
 pub fn get_chat_bm25_dir(dir_path: &str) -> String {
     Path::new(dir_path)
         .join(".mdgo")
-        .join("data")
         .join("chat_bm25")
         .to_string_lossy()
         .to_string()

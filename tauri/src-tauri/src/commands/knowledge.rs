@@ -140,21 +140,54 @@ pub async fn kb_clear(app: AppHandle, dir_path: String) -> Result<(), String> {
     state.indexer.clear(&dir_path).await
 }
 
+/// 递归计算目录下所有文件的总字节数
+fn calc_dir_size(path: &std::path::Path) -> u64 {
+    walkdir::WalkDir::new(path)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .filter_map(|e| e.metadata().ok())
+        .map(|m| m.len())
+        .sum()
+}
+
+/// 格式化字节数为人类可读字符串
+fn format_size(bytes: u64) -> String {
+    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
+    let mut size = bytes as f64;
+    let mut unit_idx = 0;
+    while size >= 1024.0 && unit_idx < UNITS.len() - 1 {
+        size /= 1024.0;
+        unit_idx += 1;
+    }
+    if unit_idx == 0 {
+        format!("{} {}", bytes, UNITS[unit_idx])
+    } else {
+        format!("{:.1} {}", size, UNITS[unit_idx])
+    }
+}
+
 /// 获取知识库仪表板统计（占用空间 + 文档类型分布）
 #[tauri::command]
 pub async fn kb_dashboard_stats(
     dir_path: String,
 ) -> Result<KbDashboardStats, String> {
-    let scan_path = std::path::Path::new(&dir_path)
-        .join(".mdgo")
-        .join("data")
-        .join("index_file_scan_data.json");
+    // 计算 .mdgo 目录实际占用空间
+    let mdgo_dir = std::path::Path::new(&dir_path).join(".mdgo");
+    let storage_size = if mdgo_dir.exists() {
+        let bytes = calc_dir_size(&mdgo_dir);
+        format_size(bytes)
+    } else {
+        "--".to_string()
+    };
 
+    // 从扫描数据中获取类型分布
+    let scan_path = mdgo_dir.join("data").join("index_file_scan_data.json");
     let content = match std::fs::read_to_string(&scan_path) {
         Ok(c) => c,
         Err(_) => {
             return Ok(KbDashboardStats {
-                storage_size: "--".to_string(),
+                storage_size,
                 type_distribution: vec![],
             });
         }
@@ -162,14 +195,6 @@ pub async fn kb_dashboard_stats(
 
     let root: serde_json::Value = serde_json::from_str(&content)
         .map_err(|e| format!("解析扫描数据失败: {}", e))?;
-
-    // 总大小
-    let storage_size = root
-        .get("stats")
-        .and_then(|s| s.get("total_size_str"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("--")
-        .to_string();
 
     // 为每个文件句柄扩展名估算文件类型
     fn classify_ext(ext: &str) -> String {

@@ -7,6 +7,7 @@ use tokio::sync::Mutex;
 use crate::chat_types::{ChatMessage, ChatSession};
 use crate::config::ConfigStore;
 use crate::db::bm25::Bm25Index;
+use crate::db::chunk_splitter::ChunkSplitterFactory;
 use crate::db::lance::{DocumentChunk, LanceStore, SearchHit};
 use crate::db::utils;
 use crate::db::utils::IgnoreMatcher;
@@ -14,6 +15,13 @@ use crate::types::{IndexMeta, KbIndexResult, KbStatus};
 
 const KB_SUPPORTED_EXTS: &[&str] = utils::KB_SUPPORTED_EXTS;
 const BATCH_CHUNK_LIMIT: usize = 200;
+
+/// 全局 ChunkSplitter 工厂（懒初始化，线程安全）
+static CHUNK_SPLITTER_FACTORY: std::sync::OnceLock<ChunkSplitterFactory> = std::sync::OnceLock::new();
+fn chunk_splitter_factory() -> &'static ChunkSplitterFactory {
+    CHUNK_SPLITTER_FACTORY.get_or_init(ChunkSplitterFactory::new)
+}
+
 /// RRF 融合常数 K（值越大排名靠前的贡献越平滑，减少头部排名偏差）
 ///
 /// 增大 K 值使 RRF 分数分布更均匀，避免向量检索的头部排名过度主导融合结果，
@@ -188,8 +196,9 @@ impl Indexer {
                 .to_string_lossy()
                 .to_string();
 
-            let is_md = rel_path.ends_with(".md") || rel_path.ends_with(".mdx");
-            let chunks = utils::split_text_with_structure(&content, cfg.chunk_size, cfg.chunk_overlap, is_md);
+            let ext = rel_path.rsplit('.').next().unwrap_or("txt");
+            let splitter = chunk_splitter_factory().get_splitter(ext);
+            let chunks = splitter.split(&content, cfg.chunk_size, cfg.chunk_overlap);
             if chunks.is_empty() {
                 continue;
             }
@@ -271,9 +280,10 @@ impl Indexer {
             _ => return Ok(()),
         };
 
-        let is_md = rel_path.ends_with(".md") || rel_path.ends_with(".mdx");
+        let ext = rel_path.rsplit('.').next().unwrap_or("txt");
+        let splitter = chunk_splitter_factory().get_splitter(ext);
         let cfg = self.config_store.read();
-        let chunks = utils::split_text_with_structure(&content, cfg.chunk_size, cfg.chunk_overlap, is_md);
+        let chunks = splitter.split(&content, cfg.chunk_size, cfg.chunk_overlap);
         if chunks.is_empty() {
             return Ok(());
         }
@@ -444,6 +454,30 @@ impl Indexer {
                     // Reranker 不可用，直接使用 RRF 排序结果
                 }
             }
+        }
+
+        // ── 文件名匹配加分 ──
+        // 当查询词与 doc_name 匹配时额外加分，提升"按文件名搜索"的召回准确率
+        let query_lower = query.to_lowercase();
+        let query_tokens: Vec<&str> = query_lower
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|t| t.len() >= 2)
+            .collect();
+        if !query_tokens.is_empty() {
+            for hit in fused.iter_mut() {
+                let name_lower = hit.doc_name.to_lowercase();
+                let query_matches = query_tokens
+                    .iter()
+                    .filter(|t| name_lower.contains(*t))
+                    .count();
+                if query_matches > 0 {
+                    // 每匹配一个关键词加 0.15 分，文件名精准匹配大加分
+                    let boost = 0.15 * query_matches as f32;
+                    hit.score = (hit.score + boost).min(1.0);
+                }
+            }
+            // 加分后重新排序
+            fused.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
         }
 
         let result: Vec<SearchHit> = fused.into_iter().take(top_k as usize).collect();

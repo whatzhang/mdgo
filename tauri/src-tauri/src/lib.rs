@@ -51,10 +51,9 @@ impl AppState {
         if let Some(store) = stores.get(dir_path) {
             return Ok(Arc::clone(store));
         }
-        // 聊天数据存储在 {dir_path}/.mdgo/data/mdgo.db
+        // 聊天数据存储在 {dir_path}/.mdgo/mdgo.db
         let db_dir = std::path::Path::new(dir_path)
-            .join(".mdgo")
-            .join("data");
+            .join(".mdgo");
         let store = Arc::new(
             services::chat::ChatStore::new(
                 &db_dir.to_string_lossy(),
@@ -73,10 +72,9 @@ impl AppState {
         if let Some(store) = stores.get(dir_path) {
             return Ok(Arc::clone(store));
         }
-        // AI 历史数据存储在 {dir_path}/.mdgo/data/mdgo.db
+        // AI 历史数据存储在 {dir_path}/.mdgo/mdgo.db
         let db_dir = std::path::Path::new(dir_path)
-            .join(".mdgo")
-            .join("data");
+            .join(".mdgo");
         let store = Arc::new(
             services::ai_history::AiHistoryStore::new(&db_dir.to_string_lossy())?,
         );

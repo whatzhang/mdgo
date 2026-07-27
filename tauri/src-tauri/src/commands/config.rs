@@ -62,7 +62,7 @@ pub async fn kb_config_delete(app: AppHandle, key: String) -> Result<(), String>
 /// 更新 LLM 连接配置（中央化入口）
 ///
 /// 前端在保存设置后调用此命令，更新后端内存中的 LLM 配置，
-/// 同时将配置持久化到 `.mdgo/data/setting.json`。
+/// 同时将配置持久化到 `.mdgo/setting.json`。
 #[tauri::command]
 pub async fn kb_update_llm_config(
     state: State<'_, AppState>,
@@ -79,10 +79,9 @@ pub async fn kb_update_llm_config(
         cfg.api_key = api_key.clone();
     }
 
-    // 2. 持久化到 .mdgo/data/setting.json
+    // 2. 持久化到 .mdgo/setting.json
     let setting_path = std::path::Path::new(&dir_path)
         .join(".mdgo")
-        .join("data")
         .join("setting.json");
 
     // 读取现有配置，只更新 LLM 字段（不覆盖其它配置）

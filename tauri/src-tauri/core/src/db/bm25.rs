@@ -265,7 +265,8 @@ impl Bm25Index {
         let reader = self.get_reader()?;
         let searcher = reader.searcher();
 
-        let query_parser = QueryParser::for_index(&index, vec![text_field]);
+        let mut query_parser = QueryParser::for_index(&index, vec![text_field, doc_name_field]);
+        query_parser.set_field_boost(doc_name_field, 2.0);
         let escaped_query = escape_query(query_str);
         let query = query_parser
             .parse_query(&escaped_query)
