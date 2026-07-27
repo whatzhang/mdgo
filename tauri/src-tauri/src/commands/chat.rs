@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use mdgo_core::{ChatMessage, ChatMessageSource, ChatSession, ChatSessionSearchResult};
+use crate::core::{ChatMessage, ChatMessageSource, ChatSession, ChatSessionSearchResult};
 use tauri::{AppHandle, Emitter};
 use crate::AppState;
 

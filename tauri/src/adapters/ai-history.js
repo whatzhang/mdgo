@@ -126,22 +126,26 @@
      * 与 renderAIHistory 的 reverse() 配合显示最新在前。
      */
     window.addAIHistoryItemTauri = async function (item) {
-        const path = _getDirPath();
+        // 优先使用调用方显式传入的 dirPath（如 currentRootPath），
+        // 避免依赖 _getDirPath() 可能因句柄状态异常返回空路径导致数据丢失
+        const path = item.dirPath || _getDirPath();
         if (!path) {
             console.error('[TauriAIHistory] 添加失败: 无法获取根目录路径');
             return;
         }
+        // 移除 dirPath 字段，不发送到后端
+        const { dirPath: _dirPath, ...rest } = item;
         try {
             const newItem = await invoke('ai_history_add', {
                 dirPath: path,
                 item: {
-                    type: item.type || '',
-                    label: item.label || '',
-                    prompt: item.prompt || '',
-                    result: item.result || '',
-                    file_name: item.fileName || '',
-                    file_path: item.filePath || '',
-                    token_count: 0,
+                    type: rest.type || '',
+                    label: rest.label || '',
+                    prompt: rest.prompt || '',
+                    result: rest.result || '',
+                    file_name: rest.fileName || '',
+                    file_path: rest.filePath || '',
+                    token_count: rest.tokenCount || 0,
                 },
             });
             const frontendItem = _toFrontendFormat(newItem);

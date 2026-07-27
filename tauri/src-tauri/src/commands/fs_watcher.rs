@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, Emitter, Manager};
 
-use mdgo_core::IndexerConfig;
+use crate::core::IndexerConfig;
 use crate::AppState;
 
 /// 启动文件监听（带防抖）

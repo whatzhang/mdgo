@@ -305,6 +305,7 @@ impl Bm25Index {
                 score: (score as f32 / 10.0).min(1.0),
                 score_vec: 0.0,
                 score_bm25: (score as f32 / 10.0).min(1.0),
+                path_json: None,
             });
         }
 

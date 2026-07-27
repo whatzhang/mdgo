@@ -359,7 +359,8 @@ impl AiHistoryStore {
                  GROUP BY day ORDER BY day ASC",
             )
             .map_err(|e| format!("趋势查询失败: {}", e))?;
-        let thirty_days_ago = unix_timestamp_now() as i64 - 30 * 24 * 60 * 60 * 1000;
+        let now = unix_timestamp_now();
+        let thirty_days_ago = i64::try_from(now).unwrap_or(i64::MAX) - 30 * 24 * 60 * 60 * 1000;
         let daily_trend = stmt
             .query_map(rusqlite::params![thirty_days_ago], |row| {
                 Ok(DailyCount {

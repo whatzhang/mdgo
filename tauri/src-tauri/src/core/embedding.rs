@@ -38,6 +38,16 @@ pub fn get_embedding_dimension() -> usize {
     get_hidden_size()
 }
 
+/// 模型显示名称（从 MODEL_DIR 目录名提取，如 bge-small-zh-v1.5）
+pub fn get_model_name() -> String {
+    MODEL_DIR
+        .get()
+        .and_then(|d| std::path::Path::new(d).file_name())
+        .and_then(|n| n.to_str())
+        .unwrap_or("BGE-Small-ZH v1.5")
+        .to_string()
+}
+
 /// 从 config.json 加载的 pad_token_id，初始化为 0 作为安全默认值
 static PAD_TOKEN_ID: OnceLock<i64> = OnceLock::new();
 /// 从 config.json 读取 pad_token_id，未初始化时返回 0

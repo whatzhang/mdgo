@@ -4,14 +4,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio::sync::Mutex;
 
-use crate::chat_types::{ChatMessage, ChatSession};
-use crate::config::ConfigStore;
-use crate::db::bm25::Bm25Index;
-use crate::db::chunk_splitter::ChunkSplitterFactory;
-use crate::db::lance::{DocumentChunk, LanceStore, SearchHit};
-use crate::db::utils;
-use crate::db::utils::IgnoreMatcher;
-use crate::types::{IndexMeta, KbIndexResult, KbStatus};
+use crate::core::chat_types::{ChatMessage, ChatSession};
+use crate::core::config::ConfigStore;
+use crate::core::db::bm25::Bm25Index;
+use crate::core::db::chunk_splitter::ChunkSplitterFactory;
+use crate::core::db::lance::{DocumentChunk, LanceStore, SearchHit};
+use crate::core::db::utils;
+use crate::core::db::utils::IgnoreMatcher;
+use crate::core::types::{FileTypeCount, IndexMeta, KbIndexResult, KbStatus};
 
 const KB_SUPPORTED_EXTS: &[&str] = utils::KB_SUPPORTED_EXTS;
 const BATCH_CHUNK_LIMIT: usize = 200;
@@ -33,6 +33,46 @@ const RRF_K: u32 = 60;
 /// 值 > 1.0 使关键词精确匹配结果优先于纯语义相似结果。
 /// 推荐值 2.0（提升关键词精确匹配的权重）。
 const BM25_RRF_WEIGHT: f32 = 2.0;
+
+/// 根据文件扩展名分类为 "Markdown" / "代码" / "数据" / "其他"
+fn classify_ext(ext: &str) -> &'static str {
+    match ext {
+        "md" | "markdown" | "mdown" | "rst" => "Markdown",
+        "csv" | "tsv" | "jsonl" | "parquet" | "arrow" | "feather" => "数据",
+        _ if matches!(
+            ext,
+            "py" | "js" | "ts" | "rs" | "go" | "java" | "c" | "cpp" | "h"
+            | "hpp" | "css" | "scss" | "html" | "json" | "yaml" | "yml"
+            | "toml" | "xml" | "sql" | "sh" | "bash" | "zsh" | "fish"
+            | "ps1" | "bat" | "rb" | "php" | "swift" | "kt" | "scala"
+            | "dart" | "lua" | "r"
+        ) => "代码",
+        _ => "其他",
+    }
+}
+
+/// 检查 parent_json 是否是 child_json 的**严格路径前缀**。
+///
+/// path_json 序列化为 JSON 字符串数组（如 `["A","B"]`），简单的字符串 `starts_with`
+/// 会因 JSON 格式问题失效（`["A","B"].starts_with(["A"])` 返回 false）。
+///
+/// 本函数利用 JSON 数组特性：去掉父路径尾部 `]` 后，检查子路径是否以截断串开头
+/// 且下一个字符是 `,`（表示父路径最后一个元素后有更多元素）。
+fn is_path_prefix(parent_json: &str, child_json: &str) -> bool {
+    if parent_json == child_json {
+        return false;
+    }
+    // 父路径去掉尾部 `]` 及可能的空白
+    let parent_trimmed = parent_json.trim_end_matches(']').trim_end();
+    if parent_trimmed.len() >= parent_json.len() {
+        return false;
+    }
+    if !child_json.starts_with(parent_trimmed) {
+        return false;
+    }
+    // 下一个字符必须是 `,`（表示父路径后还有更多元素）
+    child_json.as_bytes().get(parent_trimmed.len()) == Some(&b',')
+}
 
 /// 知识库索引引擎（纯逻辑，不依赖 Tauri）
 ///
@@ -182,6 +222,7 @@ impl Indexer {
         let mut file_count = 0u32;
         let mut total_chunks = 0u32;
         let mut total_vectors = 0u32;
+        let mut type_counts: std::collections::HashMap<&'static str, u32> = std::collections::HashMap::new();
 
         let cfg = self.config_store.read();
         for (i, file_path) in files.iter().enumerate() {
@@ -197,6 +238,8 @@ impl Indexer {
                 .to_string();
 
             let ext = rel_path.rsplit('.').next().unwrap_or("txt");
+            let ft = classify_ext(ext);
+            *type_counts.entry(ft).or_insert(0) += 1;
             let splitter = chunk_splitter_factory().get_splitter(ext);
             let chunks = splitter.split(&content, cfg.chunk_size, cfg.chunk_overlap);
             if chunks.is_empty() {
@@ -260,7 +303,17 @@ impl Indexer {
             .unwrap_or_default()
             .as_millis() as u64;
 
-        let meta = IndexMeta { file_count, chunk_count: total_chunks, vector_count: total_vectors, indexed_at: now };
+        let total_type_count = type_counts.values().sum::<u32>().max(1);
+        let type_distribution: Vec<FileTypeCount> = type_counts
+            .into_iter()
+            .map(|(file_type, count)| FileTypeCount {
+                percentage: (count as f32 / total_type_count as f32 * 100.0 * 10.0).round() / 10.0,
+                file_type: file_type.to_string(),
+                count,
+            })
+            .collect();
+
+        let meta = IndexMeta { file_count, chunk_count: total_chunks, vector_count: total_vectors, indexed_at: now, type_distribution };
         if let Err(e) = std::fs::write(
             &Path::new(&utils::get_data_dir(dir_path)).join("index_meta.json"),
             &serde_json::to_string(&meta).unwrap_or_default(),
@@ -366,9 +419,10 @@ impl Indexer {
     async fn clear_inner(&self, dir_path: &str) -> Result<(), String> {
         let data_dir = utils::get_data_dir(dir_path);
 
+        // 仅清理文档相关数据（"vectors" 表），不碰 "chat_vectors" 表
         let store = self.get_lance_store(dir_path).await;
         if store.open_table().await.is_ok() {
-            store.clear().await?;
+            store.drop_table_only().await?;
         }
 
         // 使用缓存的 BM25 实例执行 clear（clear 内部会 invalidate reader）
@@ -439,7 +493,7 @@ impl Indexer {
         if !fused.is_empty() {
             let candidates: Vec<&str> = fused.iter().map(|h| h.text.as_str()).collect();
             let model_dir = utils::get_model_dir();
-            match crate::embedding::rerank(query, &candidates, &model_dir, 32) {
+            match crate::core::embedding::rerank(query, &candidates, &model_dir, 32) {
                 Ok(scores) => {
                     // 将 reranker 分数写回 SearchHit（保留原始 RRF 排序作为 fallback）
                     for (i, hit) in fused.iter_mut().enumerate() {
@@ -478,6 +532,55 @@ impl Indexer {
             }
             // 加分后重新排序
             fused.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        }
+
+        // ── OPML 层级去重 ──
+        // 对于同一文档中具有路径前缀关系的 chunk（如父节点与子节点），保留最深节点。
+        // 使用掩码方式：如果 A 的路径是 B 的路径的严格前缀，则标记 A 为冗余。
+        // 注意：必须处理子节点分数高于父节点的情况（此时父节点是前缀，应被移除）。
+        if fused.len() > 1 {
+            let mut groups: std::collections::HashMap<String, Vec<SearchHit>> = std::collections::HashMap::new();
+            for hit in fused {
+                groups.entry(hit.doc_name.clone()).or_default().push(hit);
+            }
+            let mut deduped: Vec<SearchHit> = Vec::new();
+            for (_, hits) in groups {
+                let n = hits.len();
+                if n <= 1 {
+                    deduped.extend(hits);
+                    continue;
+                }
+                let mut keep_mask = vec![true; n];
+                for i in 0..n {
+                    if !keep_mask[i] { continue; }
+                    let hp = hits[i].path_json.as_deref();
+                    let hp = match hp {
+                        Some(p) => p,
+                        None => continue, // 无路径信息的不参与去重
+                    };
+                    for j in 0..n {
+                        if i == j || !keep_mask[j] { continue; }
+                        let op = match hits[j].path_json.as_deref() {
+                            Some(p) => p,
+                            None => continue,
+                        };
+                        // 如果 i 的路径是 j 路径的严格前缀（使用 JSON 数组格式感知比较）
+                        // → i 是父节点，冗余
+                        if is_path_prefix(hp, op) {
+                            keep_mask[i] = false;
+                            break;
+                        }
+                    }
+                }
+                for (i, hit) in hits.into_iter().enumerate() {
+                    if keep_mask[i] {
+                        deduped.push(hit);
+                    }
+                }
+            }
+            // 去重后重新按 score 排序
+            deduped.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+            fused = deduped;
         }
 
         let result: Vec<SearchHit> = fused.into_iter().take(top_k as usize).collect();
@@ -546,6 +649,7 @@ impl Indexer {
             chunk_count: 0,
             vector_count: 0,
             indexed_at: 0,
+            type_distribution: vec![],
         });
 
         let now = SystemTime::now()
@@ -558,6 +662,7 @@ impl Indexer {
             chunk_count: (meta.chunk_count as i32 + chunk_delta).max(0) as u32,
             vector_count: (meta.vector_count as i32 + vector_delta).max(0) as u32,
             indexed_at: now,
+            type_distribution: meta.type_distribution,
         };
         save_metadata(&data_dir, &new_meta);
     }
@@ -616,6 +721,8 @@ impl Indexer {
                 doc_name: session.id.clone(),
                 chunk_index: i as u32,
                 text: format!("[{}] {}", msg.role, msg.content),
+                path_depth: None,
+                path_json: None,
             })
             .collect();
 
@@ -900,6 +1007,7 @@ fn rrf_fuse(vec_hits: &[SearchHit], bm25_hits: &[SearchHit], k: u32) -> Vec<Sear
         score_vec: f32,
         score_bm25: f32,
         text: String,
+        path_json: Option<String>,
     }
 
     let mut score_map: HashMap<(String, u32), Entry> = HashMap::new();
@@ -917,6 +1025,10 @@ fn rrf_fuse(vec_hits: &[SearchHit], bm25_hits: &[SearchHit], k: u32) -> Vec<Sear
         }
         // 向量结果集的 text 作为基准
         entry.text = hit.text.clone();
+        // 保存 OPML 层级路径（BM25 结果无此字段，优先使用向量结果的 path_json）
+        if entry.path_json.is_none() {
+            entry.path_json = hit.path_json.clone();
+        }
     }
 
     // ── 遍历 BM25 结果集（关键词匹配，带权重 BM25_RRF_WEIGHT）──
@@ -950,6 +1062,7 @@ fn rrf_fuse(vec_hits: &[SearchHit], bm25_hits: &[SearchHit], k: u32) -> Vec<Sear
             score: entry.sim_score.min(1.0).max(0.0),
             score_vec: entry.score_vec.min(1.0).max(0.0),
             score_bm25: entry.score_bm25.min(1.0).max(0.0),
+            path_json: entry.path_json,
         })
         .collect()
 }

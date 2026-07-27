@@ -5,7 +5,7 @@ use std::time::SystemTime;
 use rusqlite::Connection;
 use uuid::Uuid;
 
-use mdgo_core::{ChatMessage, ChatMessageSource, ChatSession, ChatSessionSearchResult};
+use crate::core::{ChatMessage, ChatMessageSource, ChatSession, ChatSessionSearchResult};
 
 /// 每类对话（regular / rag）最多保留的非收藏会话数量
 const MAX_SESSIONS_PER_TYPE: i64 = 100;
@@ -77,6 +77,7 @@ impl ChatStore {
                 doc_name TEXT NOT NULL,
                 score REAL NOT NULL DEFAULT 0,
                 snippet TEXT NOT NULL DEFAULT '',
+                path_json TEXT DEFAULT '',
                 FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE CASCADE
             );
 
@@ -87,6 +88,17 @@ impl ChatStore {
             ",
         )
         .map_err(|e| format!("建表失败: {}", e))?;
+
+        // 兼容旧表：添加 path_json 列（如果不存在）
+        let has_path_json: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('chat_message_sources') WHERE name='path_json'")
+            .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i32>(0)))
+            .map(|count| count > 0)
+            .unwrap_or(false);
+        if !has_path_json {
+            conn.execute_batch("ALTER TABLE chat_message_sources ADD COLUMN path_json TEXT DEFAULT ''")
+                .map_err(|e| format!("添加 path_json 列失败: {}", e))?;
+        }
 
         // 迁移旧数据：将秒级时间戳转换为毫秒级（一次性）
         conn.execute_batch(
@@ -284,21 +296,24 @@ impl ChatStore {
         .unwrap_or(0)
     }
 
-    /// 获取所有会话的消息总数
+    /// 获取所有会话的消息总数（仅统计用户发送的消息）
     pub fn get_message_count(&self) -> u32 {
         let conn = match self.conn.lock() {
             Ok(c) => c,
             Err(_) => return 0,
         };
         conn.query_row(
-            "SELECT COALESCE(SUM(message_count), 0) FROM chat_sessions",
+            "SELECT COUNT(*) FROM chat_messages WHERE role = 'user'",
             [],
             |row| row.get(0),
         )
         .unwrap_or(0)
     }
 
-    /// 获取指定类型的会话消息总数
+    /// 获取指定类型的会话消息总数（含 user + assistant 所有角色消息）。
+    ///
+    /// **注意**：此方法使用 `chat_sessions.message_count` 列的 SUM，包含所有消息，
+    /// 与 `get_message_count()`（仅统计 `role = 'user'`）口径不同。
     pub fn get_message_count_by_type(&self, session_type: &str) -> u32 {
         let conn = match self.conn.lock() {
             Ok(c) => c,
@@ -512,8 +527,8 @@ impl ChatStore {
 
         for src in sources {
             if let Err(e) = conn.execute(
-                "INSERT INTO chat_message_sources (id, message_id, doc_name, score, snippet) VALUES (?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![src.id, message_id, src.doc_name, src.score, src.snippet],
+                "INSERT INTO chat_message_sources (id, message_id, doc_name, score, snippet, path_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![src.id, message_id, src.doc_name, src.score, src.snippet, src.path_json.as_deref().unwrap_or("")],
             ) {
                 conn.execute_batch("ROLLBACK").ok();
                 return Err(format!("保存引用来源失败: {}", e));
@@ -531,7 +546,7 @@ impl ChatStore {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, message_id, doc_name, score, snippet FROM chat_message_sources WHERE message_id = ?1 ORDER BY score DESC",
+                "SELECT id, message_id, doc_name, score, snippet, path_json FROM chat_message_sources WHERE message_id = ?1 ORDER BY score DESC",
             )
             .map_err(|e| format!("查询引用来源失败: {}", e))?;
 
@@ -542,6 +557,7 @@ impl ChatStore {
                 let doc_name: String = row.get(2)?;
                 let score: f32 = row.get(3)?;
                 let snippet: String = row.get(4)?;
+                let path_json: String = row.get(5)?;
 
                 Ok(ChatMessageSource {
                     id,
@@ -549,6 +565,7 @@ impl ChatStore {
                     doc_name,
                     score,
                     snippet,
+                    path_json: if path_json.is_empty() { None } else { Some(path_json) },
                 })
             })
             .map_err(|e| format!("查询引用来源失败: {}", e))?
@@ -567,7 +584,7 @@ impl ChatStore {
         // 构建占位符
         let placeholders: Vec<String> = message_ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
         let sql = format!(
-            "SELECT id, message_id, doc_name, score, snippet FROM chat_message_sources WHERE message_id IN ({}) ORDER BY score DESC",
+            "SELECT id, message_id, doc_name, score, snippet, path_json FROM chat_message_sources WHERE message_id IN ({}) ORDER BY score DESC",
             placeholders.join(",")
         );
 
@@ -585,12 +602,14 @@ impl ChatStore {
                 let doc_name: String = row.get(2)?;
                 let score: f32 = row.get(3)?;
                 let snippet: String = row.get(4)?;
+                let path_json: String = row.get(5)?;
                 Ok(ChatMessageSource {
                     id,
                     message_id,
                     doc_name,
                     score,
                     snippet,
+                    path_json: if path_json.is_empty() { None } else { Some(path_json) },
                 })
             })
             .map_err(|e| format!("查询引用来源失败: {}", e))?;

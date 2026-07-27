@@ -1,5 +1,5 @@
 use arrow_array::{
-    FixedSizeListArray, Float32Array, RecordBatch, StringArray, UInt32Array,
+    Array, FixedSizeListArray, Float32Array, RecordBatch, StringArray, UInt32Array,
     types::Float32Type,
 };
 use arrow_schema::{DataType, Field, Schema};
@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 
-use crate::db::utils::get_local_embedding_dimension;
+use crate::core::db::utils::get_local_embedding_dimension;
 
 fn escape_sql_string(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
@@ -30,6 +30,10 @@ pub struct DocumentChunk {
     pub doc_name: String,
     pub chunk_index: u32,
     pub text: String,
+    /// OPML 节点在树中的深度（仅 OPML 文件有值）
+    pub path_depth: Option<u32>,
+    /// OPML 节点路径的 JSON 数组（仅 OPML 文件有值）
+    pub path_json: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -40,6 +44,8 @@ pub struct SearchHit {
     pub score: f32,
     pub score_vec: f32,
     pub score_bm25: f32,
+    /// OPML 节点路径 JSON 数组（仅 OPML 文件有值），用于层级去重和前端展示
+    pub path_json: Option<String>,
 }
 
 pub struct LanceStore {
@@ -79,13 +85,15 @@ impl LanceStore {
     pub async fn create_table(&self) -> Result<(), String> {
         let db = self.get_connection().await?;
 
-        // 表已存在 → 直接返回（维度统一 384，无需检查）
+        // 表已存在 → 迁移新列（向后兼容）
         let open_result = tokio::time::timeout(
             Duration::from_secs(30),
             db.open_table(&self.table_name).execute(),
         )
         .await;
-        if let Ok(Ok(_)) = open_result {
+        if let Ok(Ok(table)) = open_result {
+            let _ = Self::migrate_add_column(&table, "path_depth", DataType::UInt32).await;
+            let _ = Self::migrate_add_column(&table, "path_json", DataType::Utf8).await;
             return Ok(());
         }
 
@@ -95,6 +103,8 @@ impl LanceStore {
             Field::new("text", DataType::Utf8, false),
             Field::new("doc_name", DataType::Utf8, false),
             Field::new("chunk_index", DataType::UInt32, false),
+            Field::new("path_depth", DataType::UInt32, true),
+            Field::new("path_json", DataType::Utf8, true),
             Field::new(
                 "vector",
                 DataType::FixedSizeList(
@@ -114,6 +124,15 @@ impl LanceStore {
         .map_err(|e| format!("LanceDB 创建表失败: {}", e))?;
 
         Ok(())
+    }
+
+    /// 尝试为已有表添加新列（兼容旧版本创建的 schema）
+    async fn migrate_add_column(table: &lancedb::Table, name: &str, dtype: DataType) {
+        use lancedb::table::NewColumnTransform;
+        // 构建新列 schema（仅包含要添加的列）
+        let new_schema = Arc::new(ArrowSchema::new(vec![Field::new(name, dtype.clone(), true)]));
+        let transform = NewColumnTransform::AllNulls(new_schema);
+        let _ = table.add_columns(transform, None).await;
     }
 
     /// 获取或打开已有表
@@ -168,12 +187,16 @@ impl LanceStore {
         let mut text_arr = Vec::with_capacity(n);
         let mut doc_name_arr = Vec::with_capacity(n);
         let mut chunk_idx_arr = Vec::with_capacity(n);
+        let mut path_depth_arr: Vec<Option<u32>> = Vec::with_capacity(n);
+        let mut path_json_arr: Vec<Option<&str>> = Vec::with_capacity(n);
 
         for chunk in chunks {
             id_arr.push(chunk.id.as_str());
             text_arr.push(chunk.text.as_str());
             doc_name_arr.push(chunk.doc_name.as_str());
             chunk_idx_arr.push(chunk.chunk_index);
+            path_depth_arr.push(chunk.path_depth);
+            path_json_arr.push(chunk.path_json.as_deref());
         }
 
         let vector_arrays: Vec<Option<Vec<Option<f32>>>> = vectors
@@ -192,6 +215,8 @@ impl LanceStore {
                 Field::new("text", DataType::Utf8, false),
                 Field::new("doc_name", DataType::Utf8, false),
                 Field::new("chunk_index", DataType::UInt32, false),
+                Field::new("path_depth", DataType::UInt32, true),
+                Field::new("path_json", DataType::Utf8, true),
                 Field::new(
                     "vector",
                     DataType::FixedSizeList(
@@ -207,6 +232,8 @@ impl LanceStore {
                 Arc::new(StringArray::from(text_arr)),
                 Arc::new(StringArray::from(doc_name_arr)),
                 Arc::new(UInt32Array::from(chunk_idx_arr)),
+                Arc::new(UInt32Array::from(path_depth_arr)),
+                Arc::new(StringArray::from(path_json_arr)),
                 Arc::new(vector_arr),
             ],
         )
@@ -260,9 +287,16 @@ impl LanceStore {
                 .and_then(|c| c.as_any().downcast_ref::<Float32Array>())
                 .ok_or("缺少 _distance 列")?;
 
+            let path_jsons = batch
+                .column_by_name("path_json")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+
             for i in 0..batch.num_rows() {
                 let dist = distances.value(i);
                 let score: f32 = 1.0 - dist;
+                let path_json_val = path_jsons.and_then(|arr| {
+                    if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
+                });
                 hits.push(SearchHit {
                     text: texts.value(i).to_string(),
                     doc_name: doc_names.value(i).to_string(),
@@ -270,6 +304,7 @@ impl LanceStore {
                     score: score.max(0.0),
                     score_vec: score.max(0.0),
                     score_bm25: 0.0,
+                    path_json: path_json_val,
                 });
             }
         }
@@ -277,24 +312,13 @@ impl LanceStore {
         Ok(hits)
     }
 
-    /// 清空表
-    ///
-    /// 先通过 API drop 表，再删除整个数据目录，确保完全清理
-    /// （防止上次中断写入留下的损坏数据影响下一次索引）
-    pub async fn clear(&self) -> Result<(), String> {
+    /// 仅删除当前表（不删除数据目录），用于知识库重新索引时保留对话索引数据
+    pub async fn drop_table_only(&self) -> Result<(), String> {
         let db = self.get_connection().await?;
         let _ = db.drop_table(&self.table_name, &[]).await;
-
-        // 删除整个数据目录，确保 LanceDB 内部状态完全重置
-        let data_path = std::path::Path::new(&self.uri);
-        if data_path.exists() {
-            let _ = std::fs::remove_dir_all(&self.uri);
-        }
-
-        // 重置连接缓存，下次使用时会重新连接
+        // 重置连接缓存
         let mut guard = self.db.lock().await;
         *guard = None;
-
         Ok(())
     }
 

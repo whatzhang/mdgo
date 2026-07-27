@@ -1,6 +1,7 @@
 // macOS 链接器对齐段警告（tract-onnx 固有，可安全忽略）
 #![allow(linker_messages)]
 mod commands;
+mod core;
 mod services;
 
 use std::collections::HashMap;
@@ -10,7 +11,7 @@ use commands::llm::TaskRegistry;
 use commands::system::SystemMonitorState;
 use log::LevelFilter;
 use simplelog::{ColorChoice, Config, TerminalMode, TermLogger, WriteLogger};
-use mdgo_core::{ConfigStore, Indexer, IndexerConfig, WatcherService};
+use crate::core::{ConfigStore, Indexer, IndexerConfig, WatcherService};
 use std::sync::RwLock;
 
 /// LLM 连接配置（中央化，由前端保存后通过命令更新）
@@ -148,6 +149,7 @@ pub fn run() {
             commands::knowledge::kb_status,
             commands::knowledge::kb_clear,
             commands::knowledge::kb_dashboard_stats,
+            commands::knowledge::kb_embedding_info,
             commands::knowledge::kb_get_indexer_config,
             commands::knowledge::kb_update_indexer_config,
             commands::config::kb_config_read,

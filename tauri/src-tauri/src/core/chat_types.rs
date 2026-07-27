@@ -37,4 +37,6 @@ pub struct ChatMessageSource {
     pub doc_name: String,
     pub score: f32,
     pub snippet: String,
+    /// OPML 节点路径 JSON 数组（仅 OPML 文件有值）
+    pub path_json: Option<String>,
 }

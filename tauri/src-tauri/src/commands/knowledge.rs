@@ -1,16 +1,10 @@
 use tauri::{AppHandle, Emitter, Manager};
 
-use mdgo_core::{IndexerConfig, KbIndexResult, KbProgress, KbStatus, SearchHit, call_embedding};
+use crate::core::types::{FileTypeCount, IndexMeta};
+use crate::core::{IndexerConfig, KbIndexResult, KbProgress, KbStatus, SearchHit, call_embedding};
 use crate::AppState;
 
 // ─── 数据结构 ───
-
-#[derive(Debug, serde::Serialize)]
-pub struct FileTypeCount {
-    pub file_type: String,
-    pub count: u32,
-    pub percentage: f32,
-}
 
 #[derive(Debug, serde::Serialize)]
 pub struct KbDashboardStats {
@@ -181,74 +175,30 @@ pub async fn kb_dashboard_stats(
         "--".to_string()
     };
 
-    // 从扫描数据中获取类型分布
-    let scan_path = mdgo_dir.join("data").join("index_file_scan_data.json");
-    let content = match std::fs::read_to_string(&scan_path) {
-        Ok(c) => c,
-        Err(_) => {
-            return Ok(KbDashboardStats {
-                storage_size,
-                type_distribution: vec![],
-            });
-        }
+    // 从索引元数据中获取已索引文件的类型分布
+    let data_dir = crate::core::db::utils::get_data_dir(&dir_path);
+    let meta_path = std::path::Path::new(&data_dir).join("index_meta.json");
+    let type_distribution = match std::fs::read_to_string(&meta_path) {
+        Ok(c) => serde_json::from_str::<IndexMeta>(&c)
+            .map(|meta| meta.type_distribution)
+            .unwrap_or_default(),
+        Err(_) => vec![],
     };
-
-    let root: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|e| format!("解析扫描数据失败: {}", e))?;
-
-    // 为每个文件句柄扩展名估算文件类型
-    fn classify_ext(ext: &str) -> String {
-        match ext.to_lowercase().as_str() {
-            "md" | "markdown" | "mdown" | "rst" | "txt" => "Markdown",
-            "csv" | "tsv" | "jsonl" | "parquet" | "arrow" | "feather" => "数据",
-            _ if matches!(
-                ext.to_lowercase().as_str(),
-                "py" | "js" | "ts" | "rs" | "go" | "java" | "c" | "cpp" | "h"
-                | "hpp" | "css" | "scss" | "html" | "json" | "yaml" | "yml"
-                | "toml" | "xml" | "sql" | "sh" | "bash" | "zsh" | "fish"
-                | "ps1" | "bat" | "rb" | "php" | "swift" | "kt" | "scala"
-                | "dart" | "lua" | "r"
-            ) => "代码",
-            _ => "其他",
-        }
-        .to_string()
-    }
-
-    // 遍历所有文件统计类型分布
-    let mut type_counts: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
-    let mut total_files: u32 = 0;
-
-    if let Some(files_map) = root.get("files").and_then(|f| f.as_object()) {
-        for (_dir_key, file_list) in files_map {
-            if let Some(arr) = file_list.as_array() {
-                for file_val in arr {
-                    let ext = file_val
-                        .get("ext")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    let ft = classify_ext(ext);
-                    *type_counts.entry(ft.to_string()).or_insert(0) += 1;
-                    total_files += 1;
-                }
-            }
-        }
-    }
-
-    let type_distribution: Vec<FileTypeCount> = type_counts
-        .into_iter()
-        .map(|(file_type, count)| FileTypeCount {
-            percentage: if total_files > 0 {
-                (count as f32 / total_files as f32 * 100.0 * 10.0).round() / 10.0
-            } else {
-                0.0
-            },
-            file_type,
-            count,
-        })
-        .collect();
 
     Ok(KbDashboardStats {
         storage_size,
         type_distribution,
+    })
+}
+
+/// 获取嵌入模型信息（模型名称、向量维度、状态）
+#[tauri::command]
+pub async fn kb_embedding_info() -> Result<crate::core::types::KbEmbeddingInfo, String> {
+    let dimension = crate::core::db::utils::get_local_embedding_dimension();
+    let model_name = crate::core::db::utils::get_local_embedding_model_name();
+    Ok(crate::core::types::KbEmbeddingInfo {
+        model_name,
+        dimension,
+        status: "loaded".into(),
     })
 }

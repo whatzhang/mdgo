@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::indexer::Indexer;
+use crate::core::indexer::Indexer;
 
 /// 文件变更事件（带时间戳，用于防抖排序）
 struct FileEvent {
@@ -93,7 +93,7 @@ impl WatcherService {
             self.stop_inner();
         }
 
-        let ignore = crate::db::utils::IgnoreMatcher::new(dir_blacklist, file_blacklist);
+        let ignore = crate::core::db::utils::IgnoreMatcher::new(dir_blacklist, file_blacklist);
         let watch_dir = dir_path.to_string();
         let path = Path::new(&watch_dir).to_path_buf();
         if !path.exists() || !path.is_dir() {

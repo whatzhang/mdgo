@@ -1397,7 +1397,7 @@
 
         #file-tree-search-box #level-select {
             height: 100%;
-            padding: 0 8px;
+            padding: 0 0.5rem;
             border: none;
             border-left: 1px solid var(--color-border);
             background: transparent;
@@ -4206,20 +4206,20 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 12px 16px;
+            padding: 0.75rem 1rem 0.5rem 1rem;
             border-bottom: 1px solid #eaecef;
             background: #f6f8fa;
         }
 
         .whiteboard-save-title {
-            font-size: 16px;
+            font-size: 0.875rem;
             font-weight: 600;
             color: #24292f;
         }
 
         .whiteboard-save-close {
-            width: 1.75rem;
-            height: 1.75rem;
+            width: 1.2rem;
+            height: 1.2rem;
             border: none;
             background: transparent;
             border-radius: 0.375rem;
@@ -4227,7 +4227,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 16px;
+            font-size: 1rem;
             color: #6e7781;
             transition: all 0.15s;
         }
@@ -4243,6 +4243,7 @@
             padding: 0;
             display: flex;
             flex-direction: column;
+            padding: 0.5rem;
         }
 
         .whiteboard-save-content::-webkit-scrollbar {
@@ -4911,6 +4912,17 @@
             gap: 0.25rem;
         }
 
+        .chat-message-header-status {
+            flex: 1;
+            text-align: left;
+            font-size: 0.6875rem;
+            color: var(--color-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin: 0 0.5rem;
+        }
+
         .chat-message-header:hover .chat-message-header-actions {
             display: flex;
         }
@@ -5054,10 +5066,37 @@
         .chat-message .msg-sources .source-item {
             padding: 0.25rem;
             display: flex;
-            justify-content: center;
-            align-items: center;
+            align-items: flex-start;
             gap: 0.25rem;
             cursor: pointer;
+        }
+
+        .chat-message .msg-sources .source-item .source-info {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.125rem;
+        }
+
+        .chat-message .msg-sources .source-item .source-path {
+            font-size: 0.6875rem;
+            color: var(--t3);
+            padding-left: 0.125rem;
+        }
+
+        .chat-message .msg-sources .source-item .source-path-seg {
+            opacity: 0.85;
+        }
+
+        .chat-message .msg-sources .source-item .source-path-sep {
+            color: var(--t4);
+            margin: 0 0.0625rem;
+        }
+
+        .chat-message .msg-sources .source-item .source-path-ellipsis {
+            color: var(--t4);
+            font-size: 0.6875rem;
         }
 
        .chat-message .msg-sources .source-item::before {
@@ -5066,7 +5105,8 @@
             width:  0.75rem;
             height:  0.75rem;
             flex-shrink: 0;
-            align-self: center;
+            align-self: flex-start;
+            margin-top: 0.125rem;
             background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2024%2024'%20width%3D'14'%20height%3D'14'%20fill%3D'none'%20stroke%3D'%230077ff'%20stroke-width%3D'1.8'%20stroke-linecap%3D'round'%20stroke-linejoin%3D'round'%3E%3Cpath%20d%3D'M14%202H6a2%202%200%200%200-2%202v16a2%202%200%200%200%202%202h12a2%202%200%200%200%202-2V8l-6-6z'%2F%3E%3Cpath%20d%3D'M9%2012h6'%2F%3E%3Cpath%20d%3D'M9%2016h4'%2F%3E%3C%2Fsvg%3E");
             background-size: contain;
             background-repeat: no-repeat;
@@ -6248,7 +6288,6 @@
         }
 
         .mermaid-directory-search-wrapper {
-            padding: 0.5rem 0.5rem;
             flex-shrink: 0;
             position: sticky;
             top: 0;
@@ -6267,6 +6306,7 @@
         .mermaid-directory-search-input {
             width: 100%;
             padding: 0.375rem 1.625rem 0.375rem 0.625rem;
+            margin-bottom: 0.25rem;
             border: 1px solid var(--color-border);
             border-radius: 0.375rem;
             font-size: 0.8125rem;
@@ -6369,7 +6409,6 @@
             transition: opacity 0.15s;
             flex-shrink: 0;
             margin-left: auto;
-            padding: 0.125rem 0.5rem;
             border-radius: 0.2rem;
         }
 
@@ -15715,7 +15754,7 @@
             { key: '临时编辑器', value: 'toggleFile("tempEditor")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: '目录空间分析', value: 'toggleFile("dirSpace")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: 'RAG问答', value: 'toggleFile("aiChat")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
-            { key: '知识库索引', value: 'toggleFile("knowledge")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '知识库索引', value: 'toggleFile("knowledge")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
         ]
         // 高亮字体颜色（深色系，确保可读性）
         const HIGHLIGHT_FONT_COLORS = [
@@ -17422,7 +17461,7 @@
 
         async function finalizeChatAndCleanup() {
             await finalizeCurrentSession();
-            cleanupChatState();
+            await cleanupChatState();
         }
 
         function cleanupDashboardData() {
@@ -19204,7 +19243,7 @@
             let _opmlIdCounter = 0;
             function parseOutline(outline, parent) {
                 const head = outline.getAttribute("text") || outline.getAttribute("TEXT") || getMubuText(outline) || '';
-                const note = outline.getAttribute("_note") || outline.getAttribute("note") || '';
+                const note = outline.getAttribute("NOTE") || outline.getAttribute("note") || '';
                 const images = outline.getAttribute("_mubu_images") || outline.getAttribute("images") || '';
                 const local_images = outline.getAttribute("_local_images") || '';
                 const mubu_note = outline.getAttribute("_mubu_note") || '';
@@ -22001,7 +22040,7 @@
                     const indent = '    '.repeat(depth);
                     let attrs = '';
                     if (node.head) attrs += ` text="${esc(node.head)}"`;
-                    if (node.note) attrs += ` _note="${esc(node.note)}"`;
+                    if (node.note) attrs += ` note="${esc(node.note)}"`;
                     if (node.images) attrs += ` _images="${esc(node.images)}"`;
                     if (node.local_images) attrs += ` _local_images="${esc(node.local_images)}"`;
                     if (node.mubu_note) attrs += ` _mubu_note="${esc(node.mubu_note)}"`;
@@ -22458,7 +22497,7 @@
 
                 var topic = outline.getAttribute('text') || outline.getAttribute('TEXT') || getMubuText(outline) || '';
                 var images = outline.getAttribute("_local_images") || outline.getAttribute("_mubu_images") || outline.getAttribute("images") || '';
-                const note = outline.getAttribute("_NOTE") || outline.getAttribute("NOTE") || outline.getAttribute("_note") || outline.getAttribute("note") || outline.getAttribute("_mubu_note") || '';
+                const note = outline.getAttribute("NOTE") || outline.getAttribute("note") || outline.getAttribute("_mubu_note") || '';
                 try { if (images) images = decodeURIComponent(images); } catch { console.error('解码图片失败:', images); }
                 if (!topic && images) {
                     topic = '图片';
@@ -22588,7 +22627,7 @@
             let localImagesAttr = node.getAttribute('_local_images') || node.getAttribute('_mubu_images') || '';
             let images = node.getAttribute('images') || '';
             try { if (localImagesAttr) images = images || decodeURIComponent(localImagesAttr); } catch { images = images || localImagesAttr; }
-            const noteStr = node.getAttribute("_note") || node.getAttribute("note") || node.getAttribute("NOTE") || note || '';
+            const noteStr = node.getAttribute("note") || node.getAttribute("NOTE") || note || '';
             // 4. 方向控制：根节点居中，子节点根据 POSITION 判断
             let dir = 'right';
             if (isRoot) {
@@ -28540,6 +28579,13 @@ kanban-plugin: basic
                 return data;
             } catch (e) {
                 console.error('读取标记数据失败:', e);
+                // 文件不存在时，创建内容为 {} 的默认标记文件
+                try {
+                    await writeFileByDirHandle(await getDataDir(), INDEX_MARKERS_FILE, '{}');
+                    console.log('已创建默认标记文件:', INDEX_MARKERS_FILE);
+                } catch (writeErr) {
+                    console.error('创建默认标记文件失败:', writeErr);
+                }
                 _markersMap = new Map();
                 return {};
             }
@@ -38770,7 +38816,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
         async function openNoteGraph() {
             await switchToView(graphViewContainer, 'flex');
-            graphMode = 'file';
+            graphMode = 'link';
             const label = document.getElementById('graph-mode-toggle');
             if (label) label.style.display = 'none';
             setGraphControlsDisabled(true);
@@ -40229,6 +40275,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 graphCachedRootName = rootName;
                 processGraphData(nodes, edges);
             } catch (e) {
+                console.error('构建图谱失败', e);
                 showNotification('✗ 构建图谱时出错: ' + e.message, 'error');
             } finally {
                 _graphTraversing = false;
@@ -40254,13 +40301,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     const idx = path.indexOf(SLASH);
                     topDir = idx === -1 ? path : path.slice(0, idx);
                 }
-
                 let group = groupMap.get(topDir);
                 if (group === undefined) {
                     group = groupCounter++;
                     groupMap.set(topDir, group);
                 }
-
                 nodes.push({ id, title, path, size, group, depth });
                 pathToIdMap.set(path, id);
             }
@@ -40286,11 +40331,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         }
                     }
                 }
-
                 const allFiles = getScanFileList();
                 for (let i = 0; i < allFiles.length; i++) {
                     const f = allFiles[i];
-                    if (isSkipFile(f.path)) continue;
+                    if (!f || !f.path || isSkipFile(f.path)) continue;
                     const id = _nodeIdCounter++;
                     const depth = f.path.split(SLASH).length;
                     addNode(id, f.name, f.path, 1, depth, false); // 全盘模式 false
@@ -40322,7 +40366,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     groupMap.set(graphRootPath, 0);
                     groupCounter++;
                     addNode(rootId, targetNode.name, graphRootPath, -100, 0, true); // 子目录模式 true
-
                     const stack = [];
                     for (const child of (targetNode.children || [])) {
                         stack.push({ node: child, dirPath: _buildPath(graphRootPath, child.name), parentPath: graphRootPath, depth: 1 });
@@ -40336,13 +40379,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             stack.push({ node: child, dirPath: _buildPath(dirPath, child.name), parentPath: dirPath, depth: depth + 1 });
                         }
                     }
-
                     const fileMap = _scanData.files;
                     if (fileMap) {
                         for (const [filePath, list] of Object.entries(fileMap)) {
                             if (filePath === graphRootPath || filePath.startsWith(graphRootPath)) {
                                 for (const f of list) {
-                                    if (isSkipFile(f.path)) continue;
+                                    if (!f || !f.path || isSkipFile(f.path)) continue;
                                     const id = _nodeIdCounter++;
                                     const depth = f.path.split(SLASH).length;
                                     addNode(id, f.name, f.path, f.size || 1, depth, true);
@@ -40352,7 +40394,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                 }
             }
-
             createDirectoryTreeEdges(nodes, edges, pathToIdMap);
             return { nodes, edges };
         }
@@ -47454,8 +47495,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 return setting;
             } catch (e) {
                 console.error('加载设置文件失败:', e);
-                //获取默认设置
-                return getDefaultSetting();
+                // 文件不存在时，用系统常量创建默认 setting.json 并持久化
+                const defaults = getDefaultSetting();
+                try {
+                    const dirHandle = await getDataDir();
+                    await writeFileByDirHandle(dirHandle, SETTING_FILE, JSON.stringify(defaults, null, 2));
+                    console.log('已创建默认设置文件:', SETTING_FILE);
+                } catch (writeErr) {
+                    console.error('创建默认设置文件失败:', writeErr);
+                }
+                return defaults;
             }
         }
         function getDefaultSetting() {
@@ -48404,6 +48453,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         let chatStreaming = false;
         let _chatStreamingDiv = null;       // 当前正在生成的 assistant 消息 DOM
         let _chatStreamingSources = null;   // RAG 模式下正在生成的消息的 sources
+        let _chatStreamingStatusMsg = '';   // RAG 模式下当前搜索状态文本
         let _chatStreamingFullContent = ''; // 当前正在生成的消息完整内容
         // 会话与搜索状态（提前声明，避免 TDZ 风险）
         let chatSessions = [];
@@ -48531,6 +48581,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             doc_name: s.docName || s.doc_name || '未知文档',
                             score: s.score || 0,
                             snippet: s.text || '',
+                            path_json: s.path_json || '',
                         }));
                         await window.__TAURI__.core.invoke('chat_message_sources_save', {
                             dirPath: currentRootPath,
@@ -48578,6 +48629,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             chatAbortController = null;
             _chatStreamingDiv = null;
             _chatStreamingSources = null;
+            _chatStreamingStatusMsg = '';
             _chatStreamingFullContent = '';
             removeChatTyping();
         }
@@ -48605,10 +48657,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         /**
          * 记录最后打开的会话 ID（通过后端 SQLite 存储）
          */
-        function rememberLastChatSession() {
+        async function rememberLastChatSession() {
             if (!currentRootPath || !currentSessionId) return;
             if (!window.__TAURI__) return;
-            window.__TAURI__.core.invoke('chat_session_set_last', {
+            await window.__TAURI__.core.invoke('chat_session_set_last', {
                 dirPath: currentRootPath,
                 sessionId: currentSessionId,
                 mode: chatMode,
@@ -48639,8 +48691,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             try {
                 // 1. 将当前会话异步索引，确保可被搜索召回
                 indexCurrentSessionIfNeeded(currentSessionId);
-                // 2. 记录最后会话
-                rememberLastChatSession();
+                // 2. 记录最后会话（必须 await，后续 openAiChat 依赖此写入完成）
+                await rememberLastChatSession();
             } catch (e) {
                 console.log('[cleanupChatState] 清理聊天数据失败:', e);
             } finally {
@@ -48740,7 +48792,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             }
             // 4. 记录最后的模式
-            rememberLastChatSession();
+            await rememberLastChatSession();
         }
 
         function handleChatKeydown(e) {
@@ -48868,8 +48920,53 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (path) {
                     const item = document.createElement('div');
                     item.className = 'source-item';
+
+                    // 信息区域（文件路径 + 层级路径）
+                    const infoDiv = document.createElement('div');
+                    infoDiv.className = 'source-info';
+
                     const nameSpan = document.createElement('span');
                     nameSpan.textContent = path;
+                    infoDiv.appendChild(nameSpan);
+
+                    // 解析 OPML 层级路径并显示为面包屑导航
+                    const pathJson = s.path_json;
+                    if (pathJson) {
+                        try {
+                            const pathArr = JSON.parse(pathJson);
+                            if (Array.isArray(pathArr) && pathArr.length > 0) {
+                                const pathEl = document.createElement('div');
+                                pathEl.className = 'source-path';
+                                // 截断：最多显示最近 5 级，每级最多 20 字符
+                                const displayArr = pathArr.length > 5 ? pathArr.slice(-5) : pathArr;
+                                const isTruncated = pathArr.length > 5;
+                                if (isTruncated) {
+                                    const ellipsis = document.createElement('span');
+                                    ellipsis.className = 'source-path-ellipsis';
+                                    ellipsis.textContent = '… › ';
+                                    pathEl.appendChild(ellipsis);
+                                }
+                                displayArr.forEach((p, idx) => {
+                                    if (idx > 0 || isTruncated) {
+                                        const sep = document.createElement('span');
+                                        sep.className = 'source-path-sep';
+                                        sep.textContent = ' › ';
+                                        pathEl.appendChild(sep);
+                                    }
+                                    const seg = document.createElement('span');
+                                    seg.className = 'source-path-seg';
+                                    const displayText = p.length > 20 ? p.slice(0, 18) + '…' : p;
+                                    seg.textContent = displayText;
+                                    seg.title = p; // 悬停显示完整文本
+                                    pathEl.appendChild(seg);
+                                });
+                                infoDiv.appendChild(pathEl);
+                            }
+                        } catch (e) {
+                            // path_json 解析失败，忽略
+                        }
+                    }
+
                     const scoreSpan = document.createElement('span');
                     scoreSpan.className = 'source-score';
                     if (s.score_vec !== undefined && s.score_bm25 !== undefined) {
@@ -48877,8 +48974,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     } else {
                         scoreSpan.textContent = s.score.toFixed(3);
                     }
+
                     item.ondblclick = () => openFileFromPath(path);
-                    item.appendChild(nameSpan);
+                    item.appendChild(infoDiv);
                     item.appendChild(scoreSpan);
                     details.appendChild(item);
                 }
@@ -48917,6 +49015,30 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
+        /** 在流式消息的 header 中更新搜索状态文本 */
+        function updateStreamingStatus(div, msg) {
+            if (!div) return;
+            let st = div.querySelector('.chat-message-header-status');
+            if (msg) {
+                if (!st) {
+                    st = document.createElement('span');
+                    st.className = 'chat-message-header-status';
+                    const header = div.querySelector('.chat-message-header');
+                    if (header) {
+                        const title = header.querySelector('.chat-message-header-title');
+                        if (title) {
+                            header.insertBefore(st, title.nextSibling);
+                        } else {
+                            header.appendChild(st);
+                        }
+                    }
+                }
+                st.textContent = msg;
+            } else if (st) {
+                st.remove();
+            }
+        }
+
         function getMessageAssistant() {
             const div = document.createElement('div');
             div.className = 'chat-message assistant';
@@ -48925,6 +49047,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             body.className = 'chat-message-body';
             div.appendChild(body);
             div._body = body;
+            // 如果有等待的搜索状态文本，立即显示
+            if (_chatStreamingStatusMsg) {
+                updateStreamingStatus(div, _chatStreamingStatusMsg);
+            }
             return div;
         }
 
@@ -48999,7 +49125,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     } else {
                         renderChatSessionList();
                     }
-                    rememberLastChatSession();
+                    await rememberLastChatSession();
                 } catch (e) {
                     console.warn('保存用户消息失败:', e);
                 }
@@ -49020,6 +49146,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             chatAbortController = new AbortController();
             _chatStreamingDiv = null;
             _chatStreamingSources = null;
+            _chatStreamingStatusMsg = '';
             _chatStreamingFullContent = '';
             showChatTyping();
 
@@ -49076,8 +49203,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     removeChatTyping();
                     if (fullContent) {
                         chatMessages.push({ role: 'assistant', content: fullContent });
+                        const tokenCount = usageData?.completion_tokens || 0;
                         if (currentSessionId) {
-                            const tokenCount = usageData?.completion_tokens || 0;
                             try {
                                 await window.__TAURI__.core.invoke('chat_message_save', {
                                     dirPath: currentRootPath,
@@ -49095,6 +49222,41 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             } catch (e) {
                                 console.warn('保存助手消息失败:', e);
                             }
+                        }
+                        // 记录到 AI 历史（使 AI 使用统计包含聊天对话）
+                        if (isTauriVisit()) {
+                            window.addAIHistoryItemTauri({
+                                dirPath: currentRootPath, // 显式传入路径，避免依赖 _getDirPath()
+                                type: 'chat',
+                                label: (chatMessages[0]?.content || '对话').slice(0, 50),
+                                prompt: text,
+                                result: fullContent,
+                                fileName: '',
+                                filePath: '',
+                                tokenCount: tokenCount || 0,
+                            }).catch(e => console.warn('记录 AI 历史失败:', e));
+                        }
+                        // 重命名"新对话"（容错：防止 sendChatMessage 中因竞态未能更新）
+                        if (currentSessionId) {
+                            window.__TAURI__.core.invoke('chat_session_list', {
+                                dirPath: currentRootPath,
+                            }).then(sessions => {
+                                const cur = sessions.find(s => s.id === currentSessionId);
+                                if (cur && (cur.title === '新对话' || !cur.title)) {
+                                    const msg = chatMessages[0]?.content || '';
+                                    if (msg) {
+                                        window.__TAURI__.core.invoke('chat_session_rename', {
+                                            dirPath: currentRootPath,
+                                            sessionId: currentSessionId,
+                                            title: msg,
+                                        }).then(() => {
+                                            cur.title = msg;
+                                            chatSessions = sessions;
+                                            renderChatSessionList();
+                                        }).catch(e => console.warn('重命名失败:', e));
+                                    }
+                                }
+                            }).catch(e => console.warn('刷新列表失败:', e));
                         }
                     }
                     // 更新上下文使用率
@@ -49132,7 +49294,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 _chatStreamingDiv = null;
                 _chatStreamingSources = null;
                 _chatStreamingFullContent = '';
-                rememberLastChatSession();
+                await rememberLastChatSession();
             }
         }
 
@@ -49240,8 +49402,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             await finalizeCurrentSession();
             // 将当前会话异步索引，确保可被搜索召回
             indexCurrentSessionIfNeeded(currentSessionId);
-            // 2. 当前会话为空时复用，不创建新会话
-            if (!currentSessionId || chatMessages.length === 0) {
+            // 2. 没有 currentSessionId 时清空界面，让 sendChatMessage 自动创建
+            if (!currentSessionId) {
+                chatMessages = [];
+                const container = document.getElementById('chat-messages');
+                if (container) container.innerHTML = '';
                 document.getElementById('chat-input')?.focus();
                 return;
             }
@@ -49254,7 +49419,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const container = document.getElementById('chat-messages');
                 if (container) container.innerHTML = '';
                 renderChatSessionList();
-                rememberLastChatSession();
+                await rememberLastChatSession();
                 document.getElementById('chat-input')?.focus();
             } catch (e) {
                 console.error('创建会话失败:', e);
@@ -49310,7 +49475,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 chatMessages.forEach(m => addChatMessage(m.role, m.content, m.sources, chatMode));
                 renderChatSessionList();
                 // 6. 记录最后会话
-                rememberLastChatSession();
+                await rememberLastChatSession();
             } catch (e) {
                 console.error('加载会话消息失败:', e);
             }
@@ -49336,7 +49501,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                 }
                 renderChatSessionList();
-                rememberLastChatSession();
+                await rememberLastChatSession();
             } catch (e) {
                 console.error('删除会话失败:', e);
             }
@@ -49466,6 +49631,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             chatAbortController = new AbortController();
             _chatStreamingDiv = null;
             _chatStreamingSources = null;
+            _chatStreamingStatusMsg = '';
             _chatStreamingFullContent = '';
             showChatTyping();
 
@@ -49510,18 +49676,20 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }),
                 window.__TAURI__.event.listen('rag:status', (e) => {
                     if (e.payload.request_id !== requestId) return;
-                    // 在聊天区域显示状态信息
-                    if (!_statusEl) {
-                        _statusEl = document.createElement('div');
-                        _statusEl.className = 'chat-message system';
-                        document.getElementById('chat-messages').appendChild(_statusEl);
+                    _chatStreamingStatusMsg = e.payload.message;
+                    if (_chatStreamingDiv) {
+                        updateStreamingStatus(_chatStreamingDiv, _chatStreamingStatusMsg);
                     }
-                    _statusEl.textContent = '🔍 ' + e.payload.message;
                 }),
                 window.__TAURI__.event.listen('rag:done', async (e) => {
                     if (e.payload.request_id !== requestId) return;
                     ragDone = true;
                     if (_statusEl) _statusEl.remove();
+                    _chatStreamingStatusMsg = '';
+                    if (_chatStreamingDiv) {
+                        const st = _chatStreamingDiv.querySelector('.chat-message-header-status');
+                        if (st) st.remove();
+                    }
                     const fullContent = e.payload.content;
                     const sources = e.payload.sources || [];
                     const promptTokens = e.payload.prompt_tokens || 0;
@@ -49560,6 +49728,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                     doc_name: s.doc_name || '未知文档',
                                     score: s.score || 0,
                                     snippet: s.text || '',
+                                    path_json: s.path_json || '',
                                 }));
                                 await window.__TAURI__.core.invoke('chat_message_sources_save', {
                                     dirPath: currentRootPath,
@@ -49576,11 +49745,51 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             console.warn('保存助手消息失败:', e);
                         }
                     }
+                    // 记录到 AI 历史（使 AI 使用统计包含 RAG 对话）
+                    if (isTauriVisit()) {
+                        window.addAIHistoryItemTauri({
+                            dirPath: currentRootPath, // 显式传入路径
+                            type: 'chat',
+                            label: (chatMessages[0]?.content || '对话').slice(0, 50),
+                            prompt: text,
+                            result: fullContent,
+                            fileName: '',
+                            filePath: '',
+                            tokenCount: completionTokens || 0,
+                        }).catch(e => console.warn('记录 AI 历史失败:', e));
+                    }
+                    // 重命名"新对话"（容错：防止 sendChatMessage 中因竞态未能更新）
+                    if (currentSessionId) {
+                        window.__TAURI__.core.invoke('chat_session_list', {
+                            dirPath: currentRootPath,
+                        }).then(sessions => {
+                            const cur = sessions.find(s => s.id === currentSessionId);
+                            if (cur && (cur.title === '新对话' || !cur.title)) {
+                                const msg = chatMessages[0]?.content || '';
+                                if (msg) {
+                                    window.__TAURI__.core.invoke('chat_session_rename', {
+                                        dirPath: currentRootPath,
+                                        sessionId: currentSessionId,
+                                        title: msg,
+                                    }).then(() => {
+                                        cur.title = msg;
+                                        chatSessions = sessions;
+                                        renderChatSessionList();
+                                    }).catch(e => console.warn('重命名失败:', e));
+                                }
+                            }
+                        }).catch(e => console.warn('刷新列表失败:', e));
+                    }
                 }),
                 window.__TAURI__.event.listen('rag:error', (e) => {
                     if (e.payload.request_id !== requestId) return;
                     ragDone = true;
                     if (_statusEl) _statusEl.remove();
+                    _chatStreamingStatusMsg = '';
+                    if (_chatStreamingDiv) {
+                        const st = _chatStreamingDiv.querySelector('.chat-message-header-status');
+                        if (st) st.remove();
+                    }
                     removeChatTyping();
                     showNotification('✗ ' + e.payload.message, 'error');
                 }),
@@ -49608,7 +49817,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 _chatStreamingDiv = null;
                 _chatStreamingSources = null;
                 _chatStreamingFullContent = '';
-                rememberLastChatSession();
+                await rememberLastChatSession();
             }
         }
 
@@ -49637,11 +49846,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 return;
             }
             try {
-                const [kbStatus, chatStats, aiStats, scanData] = await Promise.all([
+                const [kbStatus, chatStats, aiStats, scanData, embInfo] = await Promise.all([
                     window.__TAURI__.core.invoke('kb_status', { dirPath: path }),
                     window.__TAURI__.core.invoke('kb_chat_stats', { dirPath: path }).catch(() => null),
                     window.__TAURI__.core.invoke('ai_history_stats', { dirPath: path }).catch(() => null),
                     window.__TAURI__.core.invoke('kb_dashboard_stats', { dirPath: path }).catch(() => null),
+                    window.__TAURI__.core.invoke('kb_embedding_info').catch(() => null),
                 ]);
                 if (kbStatus && kbStatus.vector_count > 0) {
                     statusDot.className = 'kb-status-dot ready';
@@ -49665,7 +49875,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
                     renderTypeDistribution(scanData?.type_distribution);
                     renderHealthDetails(kbStatus, scanData);
-                    renderVectorInfo(kbStatus);
+                    renderVectorInfo(kbStatus, embInfo);
                     renderAIStats(aiStats);
                 } else {
                     statusDot.className = 'kb-status-dot';
@@ -49827,11 +50037,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 + suggestion;
         }
 
-        function renderVectorInfo(kbStatus) {
+        function renderVectorInfo(kbStatus, embInfo) {
             const container = document.getElementById('kb-vector-info');
             if (!container) return;
             const avg = kbStatus.file_count > 0 ? (kbStatus.vector_count / kbStatus.file_count).toFixed(1) : '--';
-            container.innerHTML = '<span>模型:</span><span>BGE-Small-ZH v1.5</span><span>维度:</span><span>384</span><span>平均向量/文件:</span><span>' + avg + '</span><span>状态:</span><span style="color:#16a34a;">✓ 正常</span>';
+            const modelName = embInfo?.model_name || 'BGE-Small-ZH v1.5';
+            const dim = embInfo?.dimension ?? 384;
+            container.innerHTML = '<span>模型:</span><span>' + modelName + '</span><span>维度:</span><span>' + dim + '</span><span>平均向量/文件:</span><span>' + avg + '</span><span>状态:</span><span style="color:#16a34a;">✓ 正常</span>';
         }
 
         function renderAIStats(aiStats) {

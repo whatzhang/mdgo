@@ -5,6 +5,7 @@ use regex::Regex;
 use serde::Serialize;
 
 use super::lance::DocumentChunk;
+use super::chunk_splitter::ChunkResult;
 
 // ─── 常量 ───
 
@@ -12,7 +13,7 @@ pub const KB_SUPPORTED_EXTS: &[&str] = &[
     "md", "txt", "pdf", "docx", "js", "ts", "jsx", "tsx", "py", "java", "go", "rs", "rb", "php",
     "c", "cpp", "h", "hpp", "cs", "swift", "kt", "scala", "r", "lua", "sh", "bash", "zsh", "ps1",
     "sql", "css", "scss", "less", "html", "htm", "xml", "json", "yaml", "yml", "toml", "ini",
-    "cfg", "conf", "env", "gitignore", "dockerfile", "makefile",
+    "cfg", "conf", "env", "gitignore", "dockerfile", "makefile", "opml",
 ];
 
 // ─── Gitignore 风格模式匹配（对齐 JS compileIgnorePatterns / testIgnore）───
@@ -280,7 +281,12 @@ pub struct KbProgress {
 
 /// 本地 BGE 模型输出的向量维度（动态获取，等于模型的 hidden_size）。
 pub fn get_local_embedding_dimension() -> u32 {
-    crate::embedding::get_embedding_dimension() as u32
+    crate::core::embedding::get_embedding_dimension() as u32
+}
+
+/// 本地 BGE 模型名称（从模型目录名提取，如 bge-small-zh-v1.5）。
+pub fn get_local_embedding_model_name() -> String {
+    crate::core::embedding::get_model_name()
 }
 
 /// 启动时解析模型文件的实际路径（纯本地，零网络依赖）。
@@ -368,7 +374,7 @@ pub fn call_embedding(
     }
 
     let model_dir = get_model_dir();
-    crate::embedding::call_embedding_parallel(texts, model_dir, progress)
+    crate::core::embedding::call_embedding_parallel(texts, model_dir, progress)
 }
 
 // ─── 文本分块（解决 C2：唯一版本）───
@@ -440,21 +446,50 @@ pub fn split_text(text: &str, max_size: usize, overlap: usize) -> Vec<String> {
     chunks
 }
 
+/// 基于 Unicode chars 切割文本，严格按字符计数，避免多字节字符截断乱码。
+///
+/// 与 `split_text` 不同，此函数不做任何分隔符智能切分，仅按固定字符数滑动窗口分割。
+/// max_chars：单块最大字符数量；overlap：前后块重叠字符数。
+pub fn split_text_char_based(text: &str, max_chars: usize, overlap: usize) -> Vec<String> {
+    let mut chunks = Vec::new();
+    let chars: Vec<char> = text.chars().collect();
+    let total = chars.len();
+    if total == 0 || max_chars == 0 {
+        return chunks;
+    }
+
+    let mut start = 0;
+    while start < total {
+        let end = (start + max_chars).min(total);
+        let chunk: String = chars[start..end].iter().collect();
+        chunks.push(chunk);
+        // 滑动窗口重叠，防止上下文断裂
+        let next = end.saturating_sub(overlap);
+        if next <= start {
+            break;
+        }
+        start = next;
+    }
+    chunks
+}
+
 // ─── DocumentChunk 批量创建 ───
 
-pub fn build_document_chunks(rel_path: &str, chunks: &[String]) -> Vec<DocumentChunk> {
+pub fn build_document_chunks(rel_path: &str, chunks: &[ChunkResult]) -> Vec<DocumentChunk> {
     // 文件名前缀：注入到每个 chunk 文本开头，使 BM25 和向量搜索都能匹配到文件名
     let file_tag = format!("[文件: {}]\n", rel_path);
     chunks
         .iter()
         .enumerate()
-        .map(|(i, text)| {
-            let text_with_name = format!("{}{}", file_tag, text);
+        .map(|(i, r)| {
+            let text_with_name = format!("{}{}", file_tag, r.text);
             DocumentChunk {
                 id: format!("{}:{}:{}", rel_path, i, uuid::Uuid::new_v4()),
                 doc_name: rel_path.to_string(),
                 chunk_index: i as u32,
                 text: text_with_name,
+                path_depth: r.path_depth,
+                path_json: r.path_json.clone(),
             }
         })
         .collect()

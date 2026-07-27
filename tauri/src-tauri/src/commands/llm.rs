@@ -7,7 +7,7 @@ use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::services::llm::{ChatMessage, LLMClient};
-use mdgo_core::{call_embedding, SearchHit};
+use crate::core::{call_embedding, SearchHit};
 
 // ─── 事件类型 ───
 
@@ -29,6 +29,8 @@ pub struct RagSource {
     pub doc_name: String,
     pub score: f32,
     pub text: String,
+    /// OPML 节点路径 JSON 数组（仅 OPML 文件有值）
+    pub path_json: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -303,6 +305,7 @@ pub async fn kb_rag_query(
             doc_name: hit.doc_name.clone(),
             score: hit.score,
             text: hit.text.clone(),
+            path_json: hit.path_json.clone(),
         })
         .collect();
     let sources_clone = sources.clone();
