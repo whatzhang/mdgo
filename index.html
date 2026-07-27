@@ -4636,7 +4636,7 @@
         }
 
         .chat-history-header {
-            padding: 0.75rem;
+            padding: 0.375rem 0.75rem;
             border-bottom: 1px solid var(--border-color, #e0e0e0);
             display: flex;
             flex-direction: column;
@@ -4645,7 +4645,7 @@
 
         .chat-history-header .new-chat-btn {
             width: 100%;
-            padding: 0.5rem 0.75rem;
+            padding: 0.375rem 0.75rem;
             border: 1px dashed var(--border-color, #ccc);
             border-radius: 0.375rem;
             background: transparent;
@@ -5009,6 +5009,14 @@
             display: block;
         }
 
+        .chat-turn-counter {
+            font-size: 0.7rem;
+            color: var(--color-text-secondary, #888);
+            margin-left: 0.5rem;
+            white-space: nowrap;
+            user-select: none;
+        }
+
         .chat-messages {
             flex: 1;
             overflow-y: auto;
@@ -5026,7 +5034,7 @@
             line-height: 1.5;
             word-break: break-word;
             white-space: pre-wrap;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+            box-shadow: 0 0.25rem 0.5rem rgba(0, 0, 0, 0.15);
             transition: all 0.2s ease;
         }
 
@@ -9477,7 +9485,7 @@
 
         .graph-toolbar-buttons button {
             width: auto;
-            height: 1.75rem;
+            height: 1rem;
             border: 1px solid var(--color-border);
             background: var(--color-bg-secondary);
             border-radius: 0.25rem;
@@ -9486,7 +9494,6 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 0.25rem 0.375rem;
             box-sizing: border-box;
         }
 
@@ -9496,21 +9503,21 @@
 
         .graph-toolbar input[type="range"] {
             flex: 1;
-            width: 20px;
-            height: 4px;
+            width: 1.25rem;
+            height: 0.25rem;
         }
 
         .graph-toolbar input[type="text"] {
             flex: 1;
-            padding: 4px 8px;
+            padding: 0.125rem 0.5rem;
             border: 1px solid var(--color-border);
-            border-radius: 4px;
+            border-radius: 0.25rem;
             background: var(--color-bg-secondary);
             color: var(--color-text);
-            font-size: 13px;
-            height: 28px;
+            font-size: 0.813rem;
+            height: 1.75rem;
             box-sizing: border-box;
-            margin-bottom: 4px;
+            margin-bottom: 0.25rem;
         }
 
         .graph-toolbar input[type="text"]:focus {
@@ -15350,6 +15357,7 @@
                                     <span class="context-percent" id="context-percent">0%</span>
                                     <div class="context-usage-tooltip" id="context-usage-tooltip">已使用 0 / 0 tokens</div>
                                 </div>
+                                <span class="chat-turn-counter" id="chat-turn-counter" style="display:none;"></span>
                             </div>
                             <textarea id="chat-input" rows="4" placeholder="按下回车发送消息..."
                                 onkeydown="handleChatKeydown(event)"></textarea>
@@ -15609,6 +15617,8 @@
         let LOCAL_LLM_MODEL = 'gemma-4-e4b-it';
         let LOCAL_LLM_CONTEXT_LENGTH = 10000;
         let LOCAL_LLM_MAX_TOKENS = 4096;
+        /** 对话历史预算占 context 的比例（剩余留给 system prompt / RAG context） */
+        const HISTORY_BUDGET_RATIO = 0.6;
         // nginx 配置地址
         let NGINX_CONF_PATH = '/usr/local/etc/openresty/sites/index.conf';
         // 忽略的目录
@@ -33338,10 +33348,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             setRootHandle(dirHandle);
             // Tauri 模式：dirHandle.path 包含物理路径，跳过手动输入
             if (dirHandle.path) {
-                currentRootPath = dirHandle.path.replace(/[\/\\]+$/, '');
                 showGlobalLoading('正在扫描目录文件...');
                 try {
+                    // 先清理旧目录数据（使用旧的 currentRootPath），再更新路径
                     await clearOldData();
+                    currentRootPath = dirHandle.path.replace(/[\/\\]+$/, '');
                     safeLocalStorageSet("ROOT_DIR", currentRootPath);
                     safeLocalStorageSet(PERMISSION_TIME_KEY, Date.now().toString());
                     if (window.__tauriStorageFlush) await window.__tauriStorageFlush();
@@ -48702,7 +48713,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 _chatStreamingDiv = null;
                 _chatStreamingSources = null;
                 _chatStreamingFullContent = '';
+                window._chatAutoScroll = true;
+                updateTurnCounter();
+                const ctxEl = document.getElementById('chat-context-usage');
+                if (ctxEl) ctxEl.style.display = 'none';
                 const container = document.getElementById('chat-messages');
+                // 移除滚动监听器，避免残留
+                if (container && window._chatScrollHandler) {
+                    container.removeEventListener('scroll', window._chatScrollHandler);
+                    window._chatScrollHandler = null;
+                }
                 if (container) container.innerHTML = '';
                 const body = document.getElementById('chat-history-body');
                 if (body) body.innerHTML = '<div class="chat-history-empty">暂无对话历史</div>';
@@ -48712,6 +48732,21 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         async function openAiChat() {
             await switchToView(chatContainer, 'flex');
             await loadChatSessions();
+            // 初始化自动滚动：用户手动滚动时暂停，滚回底部时恢复
+            window._chatAutoScroll = true;
+            const chatMsgContainer = document.getElementById('chat-messages');
+            if (chatMsgContainer) {
+                // 移除旧的监听器，确保不重复注册（openAiChat 可能被多次调用）
+                if (window._chatScrollHandler) {
+                    chatMsgContainer.removeEventListener('scroll', window._chatScrollHandler);
+                }
+                window._chatScrollHandler = () => {
+                    const threshold = 20;
+                    const atBottom = chatMsgContainer.scrollHeight - chatMsgContainer.scrollTop - chatMsgContainer.clientHeight < threshold;
+                    window._chatAutoScroll = atBottom;
+                };
+                chatMsgContainer.addEventListener('scroll', window._chatScrollHandler, { passive: true });
+            }
             // 恢复上次打开的会话
             const last = await getLastChatSession();
             if (last && last.sessionId && chatSessions.some(s => s.id === last.sessionId)) {
@@ -48783,6 +48818,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 currentSessionId = null;
                 const container = document.getElementById('chat-messages');
                 if (container) container.innerHTML = '';
+                updateTurnCounter();
                 renderChatSessionList();
                 if (mode === 'rag') {
                     showNotification('RAG 模式：使用当前目录作为知识库', 'info');
@@ -48817,6 +48853,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             chatMessages = [];
             const container = document.getElementById('chat-messages');
             if (container) container.innerHTML = '';
+            updateTurnCounter();
             // 清空后端数据库消息（await 完成后再刷新会话列表，避免竞态导致 message_count 不一致）
             if (isTauriVisit() && currentSessionId) {
                 try {
@@ -48911,6 +48948,19 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const summary = document.createElement('summary');
             summary.textContent = '引用来源 (' + sources.length + ')';
             details.appendChild(summary);
+            // 用户展开引用列表时自动滚动到底部
+            details.addEventListener('toggle', () => {
+                if (details.open && window._chatAutoScroll !== false) {
+                    const chatContainer = container.closest('#chat-messages') || container.parentElement;
+                    if (chatContainer) {
+                        requestAnimationFrame(() => {
+                            if (window._chatAutoScroll !== false) {
+                                chatContainer.scrollTop = chatContainer.scrollHeight;
+                            }
+                        });
+                    }
+                }
+            });
             const sorted = [...sources].sort((a, b) => (b.score || 0) - (a.score || 0));
             sorted.forEach(s => {
                 const path = s.docName || s.doc_name || '';
@@ -49005,7 +49055,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 renderChatSources(div, sources);
             }
             container.appendChild(div);
-            container.scrollTop = container.scrollHeight;
+            if (window._chatAutoScroll !== false) {
+                container.scrollTop = container.scrollHeight;
+            }
             // assistant 消息：挂载到 DOM 后再执行代码高亮和图表渲染（确保完整文档上下文）
             if (role === 'assistant' && div._body) {
                 highlightChatCodeBlocks(div._body);
@@ -49063,12 +49115,79 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             typingEl.innerHTML = '<span></span><span></span><span></span>';
             div.appendChild(typingEl);
             container.appendChild(div);
-            container.scrollTop = container.scrollHeight;
+            if (window._chatAutoScroll !== false) {
+                container.scrollTop = container.scrollHeight;
+            }
         }
 
         function removeChatTyping() {
             const el = document.getElementById('chat-typing-indicator');
             if (el) el.remove();
+        }
+
+        // ─── 多轮对话上下文管理 ───
+        /**
+         * 粗略估算文本的 token 数（中英文通用近似）。
+         * 中文约 1 token/1.5 字符，英文约 1 token/4 字符。
+         */
+        function estimateTokenCount(text) {
+            if (!text) return 0;
+            let chars = 0, cjk = 0;
+            for (let i = 0; i < text.length; i++) {
+                const code = text.charCodeAt(i);
+                chars++;
+                if (code >= 0x4E00 && code <= 0x9FFF) cjk++;
+            }
+            // CJK 字符每个 ~1.5 字符/token，非 CJK ~4 字符/token
+            const cjkTokens = cjk / 1.5;
+            const asciiTokens = (chars - cjk) / 4;
+            return Math.ceil(cjkTokens + asciiTokens);
+        }
+
+        /** 估算 chatMessages 数组的 token 总量 */
+        function estimateMessagesTokens(messages) {
+            let total = 0;
+            for (const m of messages) {
+                // 每条消息的角色标记 + 内容
+                total += 4 + estimateTokenCount(m.content);
+            }
+            return total;
+        }
+
+        /**
+         * 裁剪对话历史，同时满足：
+         *   历史消息总 token 不超过 context 预算（留给 system/RAG context）
+         *   - 始终保留最后一条 user 消息（当前输入）
+         *
+         * @param {Array} messages  - 对话消息数组
+         * @param {number} [budgetRatio] - 可选的历史预算比例，覆盖 HISTORY_BUDGET_RATIO
+         *                                  RAG 场景建议传 0.4，纯对话传 0.6
+         * @returns {Array} 裁剪后的消息数组。若被裁剪会在控制台输出提示并在 UI 上显示通知。
+         */
+        function trimChatHistory(messages, budgetRatio) {
+            if (messages.length <= 2) return messages; // 只有 1 轮或刚输入，无需裁剪
+            const ratio = (budgetRatio !== undefined) ? budgetRatio : HISTORY_BUDGET_RATIO;
+            const budget = Math.floor(LOCAL_LLM_CONTEXT_LENGTH * ratio);
+            let totalTokens = estimateMessagesTokens(messages);
+            if (totalTokens <= budget) return messages;
+            // 从旧到新逐条保留，直到预算用尽
+            const keptLast = messages[messages.length - 1];
+            let trimmed = [keptLast];
+            let keptTokens = estimateTokenCount(keptLast.content) + 4;
+            let droppedCount = 0;
+            for (let i = messages.length - 2; i >= 0; i--) {
+                const msgTokens = estimateTokenCount(messages[i].content) + 4;
+                if (keptTokens + msgTokens > budget) {
+                    droppedCount++;
+                    continue;
+                }
+                trimmed.unshift(messages[i]);
+                keptTokens += msgTokens;
+            }
+            if (droppedCount > 0) {
+                console.warn('[chat] 对话 token 超预算(' + totalTokens + '>' + budget + ')，丢弃了' + droppedCount + '条旧消息');
+            }
+            return trimmed;
         }
 
         async function sendChatMessage() {
@@ -49079,6 +49198,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 showNotification('\u2717 请先在设置中配置 LLM API 端点', 'warning');
                 return;
             }
+            // 用户发送新消息时恢复自动滚动
+            window._chatAutoScroll = true;
             // 自动创建会话（用户直接输入时），以首条消息命名
             if (!currentSessionId) {
                 try {
@@ -49096,15 +49217,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             input.value = '';
             addChatMessage('user', text, null, chatMode);
             chatMessages.push({ role: 'user', content: text });
-            // 保存用户消息
+            updateTurnCounter();
+            // 保存用户消息（估算 token 数，用于 token_usage 统计）
             if (currentSessionId) {
                 try {
+                    const userTokenCount = estimateTokenCount(text);
                     await window.__TAURI__.core.invoke('chat_message_save', {
                         dirPath: currentRootPath,
                         sessionId: currentSessionId,
                         role: 'user',
                         content: text,
-                        tokenCount: 0,
+                        tokenCount: userTokenCount,
                     });
                     // 刷新会话列表（更新时间）
                     const sessions = await window.__TAURI__.core.invoke('chat_session_list', { dirPath: currentRootPath });
@@ -49171,11 +49294,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         _chatStreamingDiv = div;
                         let _rafPending = false;
                         div._scroll = () => {
-                            if (!_rafPending) {
+                            if (!_rafPending && window._chatAutoScroll !== false) {
                                 _rafPending = true;
                                 requestAnimationFrame(() => {
                                     _rafPending = false;
-                                    container.scrollTop = container.scrollHeight;
+                                    if (window._chatAutoScroll !== false) {
+                                        container.scrollTop = container.scrollHeight;
+                                    }
                                 });
                             }
                         };
@@ -49200,6 +49325,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     removeChatTyping();
                     if (fullContent) {
                         chatMessages.push({ role: 'assistant', content: fullContent });
+                        updateTurnCounter();
                         const tokenCount = usageData?.completion_tokens || 0;
                         if (currentSessionId) {
                             try {
@@ -49256,11 +49382,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             }).catch(e => console.warn('刷新列表失败:', e));
                         }
                     }
-                    // 更新上下文使用率
-                    if (usageData) {
-                        const used = (usageData.prompt_tokens || 0) + (usageData.completion_tokens || 0);
-                        const total = usageData.total_tokens || LOCAL_LLM_CONTEXT_LENGTH || 10000;
-                        updateContextUsage(used, total);
+                    // 更新上下文使用率（模型上下文窗口占用率）
+                    // 优先使用 API 返回的 prompt_tokens，不可用时保留上次的值
+                    if (usageData && usageData.prompt_tokens) {
+                        updateContextUsage(usageData.prompt_tokens, LOCAL_LLM_CONTEXT_LENGTH || 10000);
                     }
                 }),
                 window.__TAURI__.event.listen('llm:error', (e) => {
@@ -49272,7 +49397,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             ]);
 
             try {
-                const messages = chatMessages.map(m => ({ role: m.role, content: m.content }));
+                let messages = chatMessages.map(m => ({ role: m.role, content: m.content }));
+                messages = trimChatHistory(messages);
+                // 发送前使用裁剪后的消息估算 token，展示实际发送给 LLM 的上下文占比
+                const estTokens = estimateMessagesTokens(messages);
+                if (estTokens > 0) {
+                    updateContextUsage(estTokens, LOCAL_LLM_CONTEXT_LENGTH || 10000);
+                }
                 await window.__TAURI__.core.invoke('kb_llm_query', {
                     messages,
                     requestId,
@@ -49404,6 +49535,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 chatMessages = [];
                 const container = document.getElementById('chat-messages');
                 if (container) container.innerHTML = '';
+                updateTurnCounter();
                 document.getElementById('chat-input')?.focus();
                 return;
             }
@@ -49470,6 +49602,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }));
                 container.innerHTML = '';
                 chatMessages.forEach(m => addChatMessage(m.role, m.content, m.sources, chatMode));
+                updateTurnCounter();
+                // 加载后立即显示上下文使用率（token_usage 已持久化在 chat_sessions 中）
+                const sessionTokenUsage = session ? session.token_usage || 0 : 0;
+                if (sessionTokenUsage > 0) {
+                    updateContextUsage(sessionTokenUsage, LOCAL_LLM_CONTEXT_LENGTH || 10000);
+                } else if (chatMessages.length > 0) {
+                    updateContextUsage(estimateMessagesTokens(chatMessages), LOCAL_LLM_CONTEXT_LENGTH || 10000);
+                }
                 renderChatSessionList();
                 // 6. 记录最后会话
                 await rememberLastChatSession();
@@ -49495,6 +49635,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     // 删除后自动切换到最近的会话
                     if (chatSessions.length > 0) {
                         await switchChatSession(chatSessions[0].id, true);
+                    } else {
+                        updateTurnCounter();
                     }
                 }
                 renderChatSessionList();
@@ -49615,15 +49757,29 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             else if (pct >= 70) ringEl.classList.add('warning');
         }
 
+        /** 计算当前对话已完成的轮次并更新 UI */
+        function updateTurnCounter() {
+            const el = document.getElementById('chat-turn-counter');
+            if (!el) return;
+            // 仅显示当前完成轮次数（1 user + 1 assistant = 1 轮），纯信息展示，不阻断
+            const userCount = chatMessages.filter(m => m.role === 'user').length;
+            const totalMsgs = chatMessages.length;
+            el.textContent = totalMsgs > 0 ? '共 ' + userCount + ' 轮' : '';
+            el.style.display = totalMsgs > 0 ? 'inline' : 'none';
+            el.className = 'chat-turn-counter';
+        }
+
         async function sendRagQuery(text) {
             const dirHandle = getRootHandle();
             const path = dirHandle ? getDirPath(dirHandle) : null;
             if (!path) {
+                console.warn('[rag] sendRagQuery: no directory selected');
                 removeChatTyping();
                 showNotification('❌ 未选择知识库目录', 'error');
                 return;
             }
 
+            console.debug('[rag] sendRagQuery ENTRY text_len=' + text.length + ' dir=' + path);
             chatStreaming = true;
             chatAbortController = new AbortController();
             _chatStreamingDiv = null;
@@ -49631,22 +49787,29 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             _chatStreamingStatusMsg = '';
             _chatStreamingFullContent = '';
             showChatTyping();
+            console.debug('[rag] chatTyping shown');
 
             const requestId = crypto.randomUUID();
             let ragDone = false;
             let _statusEl = null;
+            console.debug('[rag] requestId=' + requestId);
 
             // 取消时通知后端
             const abortHandler = () => {
+                console.debug('[rag] abort triggered requestId=' + requestId);
                 window.__TAURI__.core.invoke('kb_cancel_task', { requestId }).catch(() => {});
             };
             chatAbortController.signal.addEventListener('abort', abortHandler);
 
             // 监听 Tauri 事件
+            console.debug('[rag] registering event listeners...');
             const unlisteners = await Promise.all([
                 window.__TAURI__.event.listen('rag:delta', (e) => {
                     if (e.payload.request_id !== requestId) return;
                     const delta = e.payload.content;
+                    if (!_chatStreamingDiv) {
+                        console.debug('[rag] FIRST delta received len=' + delta.length);
+                    }
                     _chatStreamingFullContent += delta;
                     if (!_chatStreamingDiv) {
                         removeChatTyping();
@@ -49657,11 +49820,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         _chatStreamingDiv = div;
                         let _rafPending = false;
                         div._scroll = () => {
-                            if (!_rafPending) {
+                            if (!_rafPending && window._chatAutoScroll !== false) {
                                 _rafPending = true;
                                 requestAnimationFrame(() => {
                                     _rafPending = false;
-                                    container.scrollTop = container.scrollHeight;
+                                    if (window._chatAutoScroll !== false) {
+                                        container.scrollTop = container.scrollHeight;
+                                    }
                                 });
                             }
                         };
@@ -49674,12 +49839,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 window.__TAURI__.event.listen('rag:status', (e) => {
                     if (e.payload.request_id !== requestId) return;
                     _chatStreamingStatusMsg = e.payload.message;
+                    console.debug('[rag] status event stage=' + e.payload.stage + ' msg=' + e.payload.message);
                     if (_chatStreamingDiv) {
                         updateStreamingStatus(_chatStreamingDiv, _chatStreamingStatusMsg);
                     }
                 }),
                 window.__TAURI__.event.listen('rag:done', async (e) => {
                     if (e.payload.request_id !== requestId) return;
+                    console.debug('[rag] done event requestId=' + requestId + ' content_len=' + (e.payload.content || '').length + ' sources=' + (e.payload.sources || []).length + ' tokens_in=' + e.payload.prompt_tokens + ' tokens_out=' + e.payload.completion_tokens);
                     ragDone = true;
                     if (_statusEl) _statusEl.remove();
                     _chatStreamingStatusMsg = '';
@@ -49691,10 +49858,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     const sources = e.payload.sources || [];
                     const promptTokens = e.payload.prompt_tokens || 0;
                     const completionTokens = e.payload.completion_tokens || 0;
-                    // 更新上下文使用率
-                    const used = (promptTokens || 0) + (completionTokens || 0);
-                    const total = LOCAL_LLM_CONTEXT_LENGTH || 10000;
-                    updateContextUsage(used, total);
+                    // 更新上下文使用率（模型上下文窗口占用率）
+                    // 优先使用 API 返回的 prompt_tokens，不可用时保留上次的值
+                    if (promptTokens > 0) {
+                        updateContextUsage(promptTokens, LOCAL_LLM_CONTEXT_LENGTH || 10000);
+                    }
                     // 流式结束后对代码块进行语法高亮
                     if (_chatStreamingDiv && _chatStreamingDiv._body) {
                         await highlightChatCodeBlocks(_chatStreamingDiv._body);
@@ -49704,9 +49872,21 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     if (sources.length > 0 && _chatStreamingDiv) {
                         renderChatSources(_chatStreamingDiv, sources);
                     }
+                    // 流式结束后滚动到底部，确保最新消息和引用完整可见 
+                    if (window._chatAutoScroll !== false) {
+                        const chatContainer = document.getElementById('chat-messages');
+                        if (chatContainer) {
+                            requestAnimationFrame(() => {
+                                if (window._chatAutoScroll !== false) {
+                                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                                }
+                            });
+                        }
+                    }
                     // 连带 sources 存入 chatMessages
                     const msgEntry = { role: 'assistant', content: fullContent, sources: sources };
                     chatMessages.push(msgEntry);
+                    updateTurnCounter();
                     // 保存到数据库
                     if (currentSessionId && fullContent) {
                         try {
@@ -49780,6 +49960,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }),
                 window.__TAURI__.event.listen('rag:error', (e) => {
                     if (e.payload.request_id !== requestId) return;
+                    console.error('[rag] error event requestId=' + requestId + ' msg=' + e.payload.message);
                     ragDone = true;
                     if (_statusEl) _statusEl.remove();
                     _chatStreamingStatusMsg = '';
@@ -49792,21 +49973,31 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }),
             ]);
 
+            console.debug('[rag] listeners registered, invoking kb_rag_query... requestId=' + requestId);
             try {
+                const histMessages = trimChatHistory(chatMessages.map(m => ({ role: m.role, content: m.content })), 0.4);
+                // 发送前使用裁剪后的消息估算 token，展示实际发送给 LLM 的上下文占比
+                const estTokens = estimateMessagesTokens(histMessages);
+                if (estTokens > 0) {
+                    updateContextUsage(estTokens, LOCAL_LLM_CONTEXT_LENGTH || 10000);
+                }
                 await window.__TAURI__.core.invoke('kb_rag_query', {
                     dirPath: path,
                     query: text,
-                    messages: chatMessages.map(m => ({ role: m.role, content: m.content })),
+                    messages: histMessages,
                     requestId,
                     topK: 10,
                 });
+                console.debug('[rag] invoke completed successfully requestId=' + requestId);
             } catch (err) {
+                console.error('[rag] invoke failed requestId=' + requestId + ' err=' + (err.message || err));
                 if (err.name !== 'AbortError' && !ragDone) {
                     showNotification('✗ RAG 查询失败: ' + (err.message || err), 'error');
                 } else if (err.name === 'AbortError' && !ragDone) {
                     await savePartialAssistantMessage();
                 }
             } finally {
+                console.debug('[rag] finally block cleaning up requestId=' + requestId);
                 chatAbortController?.signal.removeEventListener('abort', abortHandler);
                 unlisteners.forEach(u => u());
                 chatStreaming = false;
@@ -49815,9 +50006,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 _chatStreamingSources = null;
                 _chatStreamingFullContent = '';
                 await rememberLastChatSession();
+                console.debug('[rag] cleanup done requestId=' + requestId);
             }
         }
-
         // ====== 知识库状态管理（当前目录即为知识库） ======
         function getDirPath(dirHandle) {
             try { return dirHandle.path || dirHandle.name || 'local'; } catch { return 'local'; }

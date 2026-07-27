@@ -254,7 +254,7 @@ fn log_dir_global() -> std::path::PathBuf {
     #[cfg(target_os = "windows")]
     {
         std::env::var("APPDATA")
-            .map(|p| std::path::PathBuf::from(p).join("mdgo").join("logs"))
+            .map(|p| std::path::PathBuf::from(p).join("com.mdgo").join("logs"))
             .unwrap_or_else(|_| dirs_fallback())
     }
     #[cfg(target_os = "macos")]

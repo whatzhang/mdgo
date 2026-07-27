@@ -369,6 +369,8 @@ pub fn call_embedding(
     texts: &[&str],
     progress: Option<&(dyn Fn(usize, usize, &str) + Send + Sync)>,
 ) -> Result<Vec<Vec<f32>>, String> {
+    log::debug!("[embedding] call_embedding texts_count={} first_text_len={}",
+        texts.len(), texts.first().map(|t| t.len()).unwrap_or(0));
     if texts.is_empty() {
         return Ok(Vec::new());
     }

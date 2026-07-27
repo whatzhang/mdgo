@@ -146,6 +146,9 @@ impl LLMClient {
         let url = self.endpoint.clone();
         let api_key = self.api_key.clone();
 
+        log::debug!("[llm] stream_chat_completion url={} model={} msg_count={} temp={:?} max_tokens={:?}",
+            url, self.model, messages.len(), temperature, max_tokens);
+
         tokio::spawn(async move {
             let mut builder = client.post(&url).json(&body);
             if !api_key.is_empty() {
@@ -155,15 +158,19 @@ impl LLMClient {
             let response = match builder.send().await {
                 Ok(r) => r,
                 Err(e) => {
+                    log::error!("[llm] HTTP request failed url={} err={}", url, e);
                     let msg = format!("\n\n[网络错误] LLM 请求失败: {}", e);
                     let _ = tx.send(LLMEvent::Delta(msg)).await;
                     return;
                 }
             };
 
+            log::debug!("[llm] HTTP response status={}", response.status());
+
             if !response.status().is_success() {
                 let status = response.status();
                 let text = response.text().await.unwrap_or_default();
+                log::error!("[llm] HTTP error status={} body={}", status, text);
                 let msg = format!("\n\n[HTTP {}] LLM 返回错误: {}", status, text);
                 let _ = tx.send(LLMEvent::Delta(msg)).await;
                 return;
@@ -171,15 +178,19 @@ impl LLMClient {
 
             let mut buffer = String::new();
             let mut stream = response.bytes_stream();
+            let mut total_bytes = 0u64;
+            let mut sse_line_count = 0u64;
 
             loop {
                 tokio::select! {
                     _ = cancel.cancelled() => {
+                        log::debug!("[llm] Stream cancelled url={}", url);
                         break;
                     }
                     chunk = stream.next() => {
                         match chunk {
                             Some(Ok(bytes)) => {
+                                total_bytes += bytes.len() as u64;
                                 let s = String::from_utf8_lossy(&bytes);
                                 buffer.push_str(&s);
 
@@ -196,9 +207,11 @@ impl LLMClient {
                                             }
                                             let (content, usage) = extract_sse_content(&data);
                                             if !content.is_empty() {
+                                                sse_line_count += 1;
                                                 let _ = tx.send(LLMEvent::Delta(content)).await;
                                             }
                                             if let Some(u) = usage {
+                                                log::debug!("[llm] Usage info: prompt_tokens={} completion_tokens={}", u.prompt_tokens, u.completion_tokens);
                                                 let _ = tx.send(LLMEvent::Usage(u)).await;
                                             }
                                         }
@@ -208,10 +221,13 @@ impl LLMClient {
                                 }
                             }
                             Some(Err(e)) => {
-                                log::warn!("[llm] SSE 流读取错误: {}", e);
+                                log::warn!("[llm] SSE stream read error url={} err={}", url, e);
                                 break;
                             }
-                            None => break,
+                            None => {
+                                log::debug!("[llm] SSE stream ended url={} total_bytes={} sse_lines={}", url, total_bytes, sse_line_count);
+                                break;
+                            }
                         }
                     }
                 }
@@ -230,6 +246,8 @@ impl LLMClient {
         history: &[ChatMessage],
         cancel: CancellationToken,
     ) -> Vec<String> {
+        log::debug!("[llm] expand_queries input: query='{}' history_count={}", text, history.len());
+
         // 构建携带上下文的扩展 prompt
         let mut system_msg = String::new();
 
@@ -243,7 +261,8 @@ impl LLMClient {
                     _ => "助手",
                 };
                 let content = if msg.content.len() > 200 {
-                    format!("{}...", &msg.content[..200])
+                    let truncated: String = msg.content.chars().take(200).collect();
+                    format!("{}...", truncated)
                 } else {
                     msg.content.clone()
                 };
@@ -276,7 +295,7 @@ impl LLMClient {
         {
             Ok(rx) => rx,
             Err(e) => {
-                log::warn!("[llm] 查询扩展请求失败: {}", e);
+                log::warn!("[llm] expand_queries: stream_chat_completion failed: {}", e);
                 return Vec::new();
             }
         };
@@ -287,6 +306,8 @@ impl LLMClient {
                 full.push_str(&text);
             }
         }
+
+        log::debug!("[llm] expand_queries raw_response: {}", full);
 
         // 解析结果为查询列表
         let lines: Vec<String> = full
