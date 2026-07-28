@@ -13,7 +13,7 @@ pub const KB_SUPPORTED_EXTS: &[&str] = &[
     "md", "txt", "pdf", "docx", "js", "ts", "jsx", "tsx", "py", "java", "go", "rs", "rb", "php",
     "c", "cpp", "h", "hpp", "cs", "swift", "kt", "scala", "r", "lua", "sh", "bash", "zsh", "ps1",
     "sql", "css", "scss", "less", "html", "htm", "xml", "json", "yaml", "yml", "toml", "ini",
-    "cfg", "conf", "env", "gitignore", "dockerfile", "makefile", "opml",
+    "cfg", "conf", "env", "gitignore", "dockerfile", "makefile", "opml", "mm",
 ];
 
 // ─── Gitignore 风格模式匹配（对齐 JS compileIgnorePatterns / testIgnore）───
@@ -379,12 +379,38 @@ pub fn call_embedding(
     crate::core::embedding::call_embedding_parallel(texts, model_dir, progress)
 }
 
-// ─── 文本分块（解决 C2：唯一版本）───
+// ─── 文本分块 ───
+
+/// 通用文本分隔符（按优先级从高到低）
+pub const GENERIC_TEXT_SEPARATORS: &[&str] = &[
+    "\n\n", "\n", ". ", "。", "！", "？", "，", " ",
+];
+
+/// Markdown 专用分隔符（含标题模式，仅用于结构化 Markdown 文本）
+#[allow(dead_code)]
+pub const MARKDOWN_TEXT_SEPARATORS: &[&str] = &[
+    "\n## ", "\n### ", "\n#### ", "\n---\n", "\n\n", "\n", ". ", "。", "！", "？", "，", " ",
+];
 
 /// 按字符数（而非字节数）切分文本，中英文场景更一致。
 ///
+/// 使用 `GENERIC_TEXT_SEPARATORS` 作为分隔符优先级列表。
 /// 预先计算所有字符的字节偏移，避免重复遍历。
 pub fn split_text(text: &str, max_size: usize, overlap: usize) -> Vec<String> {
+    split_text_with_separators(text, max_size, overlap, GENERIC_TEXT_SEPARATORS)
+}
+
+/// 使用自定义分隔符优先级列表进行文本切分。
+///
+/// 按优先级从高到低尝试在每个窗口内寻找分隔符位置切分，
+/// 保证块内语义完整性。max_size 为单块最大字符数，
+/// overlap 为前后块重叠字符数。
+pub fn split_text_with_separators(
+    text: &str,
+    max_size: usize,
+    overlap: usize,
+    separators: &[&str],
+) -> Vec<String> {
     let chars: Vec<char> = text.chars().collect();
     let total = chars.len();
 
@@ -399,9 +425,6 @@ pub fn split_text(text: &str, max_size: usize, overlap: usize) -> Vec<String> {
         .collect();
 
     let mut chunks = Vec::new();
-    let separators = [
-        "\n## ", "\n### ", "\n#### ", "\n---\n", "\n\n", "\n", ". ", "。", "！", "？", "，", " ",
-    ];
     let mut start = 0usize;
 
     while start < total {
@@ -414,7 +437,7 @@ pub fn split_text(text: &str, max_size: usize, overlap: usize) -> Vec<String> {
             let window_end_byte = byte_offsets[end];
             let window = &text[window_start_byte..window_end_byte];
 
-            for sep in &separators {
+            for sep in separators {
                 if let Some(rel_byte) = window.rfind(sep) {
                     let sep_end_byte = rel_byte + sep.len();
                     let sep_char_count = window[..sep_end_byte].chars().count();

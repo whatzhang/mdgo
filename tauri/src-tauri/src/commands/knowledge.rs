@@ -65,6 +65,46 @@ pub async fn kb_index(
     result
 }
 
+/// 增量索引：仅索引未索引的文件（不清理已有索引）
+///
+/// 扫描目录后逐个检查 LanceDB，跳过已有 chunk 的文件，
+/// 只对新文件执行 index_file。
+#[tauri::command]
+pub async fn kb_index_unindexed(
+    app: AppHandle,
+    dir_path: String,
+    dir_blacklist: Vec<String>,
+    file_blacklist: Vec<String>,
+) -> Result<KbIndexResult, String> {
+    let state = app.state::<AppState>();
+
+    state.config_store.update(IndexerConfig {
+        dir_blacklist,
+        file_blacklist,
+        ..state.config_store.read()
+    });
+
+    // 暂停 watcher 增量处理（避免并发写 DB）
+    state.watcher.pause();
+
+    let result = state
+        .indexer
+        .index_unindexed(&dir_path, |percent, msg| {
+            let _ = app.emit(
+                "kb-progress",
+                KbProgress {
+                    percent,
+                    message: msg.to_string(),
+                },
+            );
+        })
+        .await;
+
+    state.watcher.resume();
+
+    result
+}
+
 /// 获取当前索引器配置
 #[tauri::command]
 pub async fn kb_get_indexer_config(app: AppHandle) -> Result<IndexerConfig, String> {
@@ -202,3 +242,4 @@ pub async fn kb_embedding_info() -> Result<crate::core::types::KbEmbeddingInfo, 
         status: "loaded".into(),
     })
 }
+

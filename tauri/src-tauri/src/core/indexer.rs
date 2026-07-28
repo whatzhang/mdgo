@@ -889,12 +889,118 @@ impl Indexer {
         log::info!("[indexer] 启动同步完成: 共同步 {} 个文件", synced_count);
         Ok(synced_count)
     }
+
+    /// ─── 增量索引（仅索引未在 LanceDB 中的文件）───
+    ///
+    /// 与 index_all 的区别：
+    /// - 不清理已有索引（不调用 clear_inner）
+    /// - 逐个检查文件是否已存在 LanceDB 中，已存在的跳过
+    /// - 适用于向已有索引的知识库添加新文件后，快速增量补索引
+    pub async fn index_unindexed(
+        &self,
+        dir_path: &str,
+        progress: impl Fn(u8, &str) + Send + Sync,
+    ) -> Result<KbIndexResult, String> {
+        let _guard = self.indexing_lock.lock().await;
+
+        let config = self.config_store.read();
+        let base_dir = Path::new(dir_path);
+        if !base_dir.exists() {
+            return Err(format!("目录不存在: {}", dir_path));
+        }
+
+        progress(0, "正在扫描目录...");
+        let ignore = IgnoreMatcher::new(&config.dir_blacklist, &config.file_blacklist);
+        let files = scan_directory(base_dir, &ignore)?;
+        let total = files.len() as u32;
+        if total == 0 {
+            return Err("目录中没有可索引的文件".into());
+        }
+        progress(3, &format!("已发现 {} 个文件，正在检查已索引状态...", total));
+
+        // 确保 LanceDB 表存在
+        let store = self.get_lance_store(dir_path).await;
+        store.create_table().await?;
+
+        // 筛选未索引的文件（chunk 数为 0）
+        let to_index: Vec<(String, String)> = files
+            .iter()
+            .filter_map(|f| {
+                let rel = f
+                    .strip_prefix(base_dir)
+                    .unwrap_or(f)
+                    .to_string_lossy()
+                    .to_string()
+                    .replace('\\', "/");
+                // 阻塞调用：count_document_chunks 是 async，但在 filter_map 中
+                // 无法直接 await。这里用 tokio::task::block_in_place + Handle 执行
+                // 实际使用更简洁的方式：收集路径后异步检查
+                Some((rel, f.to_string_lossy().to_string()))
+            })
+            .collect();
+
+        // 异步检查哪些文件未索引
+        progress(5, &format!("正在检查 {} 个文件的索引状态...", to_index.len()));
+        let mut unindexed: Vec<(String, String)> = Vec::new();
+        for (i, (rel, abs)) in to_index.iter().enumerate() {
+            let chunks = self.count_document_chunks(&store, rel).await;
+            if chunks == 0 {
+                unindexed.push((rel.clone(), abs.clone()));
+            }
+            // 每检查 500 个文件更新一次进度
+            if i % 500 == 0 {
+                let pct = 5 + ((i + 1) * 5 / to_index.len().max(1)) as u8;
+                progress(pct.min(9), &format!("检查索引状态 {}/{}", i + 1, to_index.len()));
+            }
+        }
+
+        let unindexed_count = unindexed.len() as u32;
+        if unindexed_count == 0 {
+            progress(100, "所有文件均已索引，无需增量");
+            return Ok(KbIndexResult {
+                file_count: 0,
+                chunk_count: 0,
+                vector_count: 0,
+                indexed_at: 0,
+            });
+        }
+
+        progress(10, &format!("发现 {} 个未索引文件，开始索引...", unindexed_count));
+
+        let mut file_count = 0u32;
+        let unindexed_total = unindexed.len();
+        for (idx, (rel, abs)) in unindexed.iter().enumerate() {
+            match self.index_file(dir_path, rel, abs).await {
+                Ok(()) => file_count += 1,
+                Err(e) => {
+                    log::warn!("[indexer] 增量索引失败 ({}): {}", rel, e);
+                }
+            }
+            let pct = 10 + ((idx + 1) * 90 / unindexed_total.max(1)) as u8;
+            progress(
+                pct.min(99),
+                &format!(
+                    "增量索引 ({}/{})",
+                    idx + 1,
+                    unindexed_total
+                ),
+            );
+        }
+
+        progress(100, &format!("增量索引完成: {} 个文件", file_count));
+        Ok(KbIndexResult {
+            file_count,
+            chunk_count: 0,
+            vector_count: 0,
+            indexed_at: 0,
+        })
+    }
 }
 
 // ─── 辅助函数 ───
 
 /// 扫描目录，返回符合扩展名和过滤规则的绝对路径列表
-fn scan_directory(base_dir: &Path, ignore: &IgnoreMatcher) -> Result<Vec<std::path::PathBuf>, String> {
+pub(crate) fn scan_directory(base_dir: &Path, ignore: &IgnoreMatcher) -> Result<Vec<std::path::PathBuf>, String> {
     let mut files = Vec::new();
     let walker = walkdir::WalkDir::new(base_dir)
         .follow_links(false)

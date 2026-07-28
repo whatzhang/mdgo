@@ -145,6 +145,7 @@ pub fn run() {
             commands::system::set_log_level,
             commands::clipboard::copy_to_clipboard,
             commands::knowledge::kb_index,
+            commands::knowledge::kb_index_unindexed,
             commands::knowledge::kb_search_hybrid,
             commands::knowledge::kb_status,
             commands::knowledge::kb_clear,

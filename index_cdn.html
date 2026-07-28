@@ -250,6 +250,18 @@
             background: transparent !important;
         }
 
+        select {
+            appearance: auto;
+        }
+        select:focus {
+            outline: none;
+            border-color: none;
+        }
+        select option {
+            background: var(--todo-bg);
+            color: var(--t1);
+        }
+
         #app-header {
             height: 30px;
             padding-left: 70px;
@@ -287,11 +299,16 @@
             overflow: hidden;
             border-right: 1px solid var(--color-border);
             padding: 6px;
+            padding-right: 0.125rem;
             padding-top: 0;
             background: var(--color-bg-secondary);
             flex-shrink: 0;
             display: flex;
             flex-direction: column;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
         }
 
         #sidebar-header {
@@ -308,6 +325,11 @@
             width: auto;
             border: none;
             border-radius: var(--radius-sm);
+        }
+        .sidebar-headers {
+            display: flex;
+            flex-direction: column;
+             padding-right: 4px;
         }
 
         #sidebar-header>* {
@@ -2712,9 +2734,9 @@
         }
 
         .new-file-modal-title {
-            font-size: 12px;
+            font-size: 0.75rem;
             color: var(--color-text);
-            margin-bottom: 8px;
+            margin-bottom: 0.5rem;
         }
 
         .new-file-modal-grid {
@@ -3007,7 +3029,7 @@
         .json-container {
             display: flex;
             height: 100%;
-            padding: 3px 0 0 8px;
+            padding: 3px 0 0 0;
             box-sizing: border-box;
             overflow: hidden;
         }
@@ -3021,9 +3043,9 @@
 
         .json-toolbar {
             display: flex;
-            gap: 6px;
-            padding-bottom: 8px;
-            margin-left: 4px;
+            gap: 0.375rem;
+            padding-bottom: 0.5rem;
+            padding-left: 0.5rem;
             flex-shrink: 0;
             align-items: center;
             position: sticky;
@@ -3036,9 +3058,8 @@
         .json-right-panel {
             display: none;
             flex-direction: column;
-            border-left: 1px solid var(--color-border);
-            background: var(--color-bg);
-            width: 30%;
+            width: 25%;
+            z-index: 20;
         }
 
         .json-right-panel.show {
@@ -3046,22 +3067,17 @@
         }
 
         .json-result-header {
-            padding: 8px 12px;
+            padding: 0.25rem 0.5rem;
             border-bottom: 1px solid var(--color-border-light);
             display: flex;
             align-items: center;
             flex-shrink: 0;
         }
 
-        .json-result-header span {
-            font-weight: bold;
-            font-size: 14px;
-        }
-
         .json-result-count {
             color: var(--color-primary);
-            font-size: 12px;
-            margin-left: 8px;
+            font-size: 0.75rem;
+            margin-left: 0.5rem;
             font-weight: normal !important;
         }
 
@@ -3069,26 +3085,29 @@
             background: none;
             border: none;
             cursor: pointer;
-            font-size: 16px;
+            font-size: 1rem;
             padding: 0;
-            width: 24px;
-            height: 24px;
-            margin-right: 8px;
-            line-height: 24px;
+            width: 1.5rem;
+            height: 1.5rem;
+            line-height: 1.5rem;
             text-align: center;
             border-radius: var(--radius-sm);
-            background: #e24cdd;
-            color: var(--color-text-white);
+            background: var(--color-bg-btn);
+            color: var(--t1);
         }
 
         .json-result-list {
             flex: 1;
             overflow-y: auto;
-            padding: 8px;
+            padding: 0.5rem;
+        }
+
+        .result-shadow-left {
+            box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15);
         }
 
         .json-result-item {
-            padding: 8px 10px;
+            padding: 0.25rem 0.5rem;
             border-radius: var(--radius-sm);
             cursor: pointer;
             font-size: 13px;
@@ -3105,15 +3124,14 @@
 
         .json-result-item .path {
             color: var(--color-primary);
-            font-size: 11px;
-            margin-top: 8px !important;
+            font-size: 0.75rem;
         }
 
         .json-result-item .value {
             color: var(--color-success);
-            font-size: 12px;
+            font-size: 0.75rem;
+            margin-top: 0.25rem;
             height: auto;
-            margin-block: 4px 4px !important;
             overflow: hidden;
             text-overflow: ellipsis;
         }
@@ -3140,7 +3158,7 @@
             font-size: 13px;
             line-height: 1.6;
             padding: 4px;
-            padding-left: 8px;
+            margin-left: 8px;
             box-sizing: border-box;
         }
 
@@ -3176,16 +3194,16 @@
         }
 
         .jsonpath-input {
-            flex: 1;
             width: 13rem;
             align-self: center;
-            padding: 0.125rem 0.625rem;
-            height: 1.65rem;
+            padding: 0 0.5rem;
+            height: 1.5rem;
+            width: 10rem;
             box-sizing: border-box;
             border: 1px solid var(--color-border);
-            border-radius: var(--radius-md);
-            font-size: 0.75rem;
-            font-family: inherit;
+            border-radius: var(--radius-sm);
+            font-size: 12px;
+            outline: none;
         }
 
         .jsonpath-input:focus {
@@ -3199,8 +3217,9 @@
             border: 1px solid var(--color-border);
             border-radius: var(--radius-sm);
             background: var(--color-bg);
-            color: var(--color-text);
-            font-size: 12px;
+            color: var(--t1);
+            font-size: 0.75rem;
+            font-weight: 600;
             cursor: pointer;
             transition: all 0.15s;
             white-space: nowrap;
@@ -3283,7 +3302,7 @@
         }
 
         .page-header {
-            margin-bottom: 15px;
+            margin-bottom: 0.75rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -3317,7 +3336,7 @@
             gap: 0.625rem;
             width: 100%;
             box-sizing: border-box;
-            margin-bottom: 0.9375rem;
+            margin-bottom: 0.75rem;
             flex-wrap: nowrap;
             flex-shrink: 1;
         }
@@ -3419,7 +3438,7 @@
         .heatmap-section {
             display: flex;
             flex-direction: column;
-            gap: 0.75rem;
+            column-gap: 0.75rem;
         }
 
         .heatmap-section-heatmap {
@@ -3523,7 +3542,7 @@
         .chart-title {
             font-size: 1rem;
             font-weight: 600;
-            margin-bottom: 0.625rem;
+            margin-bottom: 0.25rem;
             color: var(--color-text);
             white-space: nowrap;
             overflow: hidden;
@@ -3538,7 +3557,7 @@
         .chart-title-heatmap {
             font-size: 1rem;
             font-weight: 600;
-            margin-bottom: 0.625rem;
+            margin-bottom: 0.25rem;
             color: var(--color-text);
             white-space: nowrap;
             position: absolute;
@@ -3741,8 +3760,8 @@
         }
 
         .ai-fab-button {
-            width: 2.125rem;
-            height: 2.125rem;
+            width: 2rem;
+            height: 2rem;
             border-radius: 0.5rem;
             background: var(--color-bg);
             overflow: hidden;
@@ -3974,8 +3993,8 @@
 
         .ai-action-btn-split {
             display: flex;
-            height: 1.563rem;
-            border-radius: 0.5rem;
+            height: 1.4rem;
+            border-radius: 0.4rem;
             overflow: hidden;
             box-shadow: 0 1px 3px rgba(0, 122, 245, 0.2);
             margin-left: auto;
@@ -3984,7 +4003,7 @@
         }
 
         .ai-action-btn-left {
-            padding: 0 0.5rem;
+            padding: 0.125rem 0.5rem;
             background-color: #007af5;
             color: var(--color-text-white);
             border: none;
@@ -5302,6 +5321,17 @@
         }
 
         /* ===== 知识库 - 当前目录展示 ===== */
+        .kb-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .kb-toolbar-label {
+            font-size: 0.75rem;
+            color: var(--t2);
+            white-space: nowrap;
+        }
+
         .kb-current-dir {
             display: flex;
             align-items: center;
@@ -5620,8 +5650,10 @@
 
         .ai-result-sw-lark {
             position: relative;
+            display: inline-flex;
+            align-items: center;
             width: 2rem;
-            height: 1.125rem;
+            height: 1rem;
             cursor: pointer;
             flex-shrink: 0;
         }
@@ -5647,7 +5679,6 @@
             position: absolute;
             width: 1rem;
             height: 1rem;
-            left: 0.125rem;
             top: 50%;
             transform: translateY(-50%);
             background: var(--color-bg);
@@ -5661,7 +5692,7 @@
         }
 
         .ai-result-sw-lark input:checked+.slider::before {
-            transform: translateY(-50%) translateX(15px);
+            transform: translateY(-50%) translateX(1rem);
         }
 
         .mermaid-app-container {
@@ -6446,7 +6477,7 @@
 
         .heatmap-left {
             flex: 0 0 auto;
-            margin-top: 35px;
+            margin-top: 30px;
         }
 
         .heatmap-right {
@@ -6468,7 +6499,7 @@
             padding: 10px;
             border-radius: 15px;
             box-shadow: var(--shadow-sd);
-            height: 175px;
+            height: 170px;
             background: var(--color-bg);
             width: calc(100% - 20px);
             overflow: hidden;
@@ -6874,13 +6905,14 @@
         .live-preview-render {
             flex: 1;
             overflow-y: auto;
-            padding: 20px;
-            background: var(--color-bg);
+            padding: 1rem;
+            background: var(--color-bg-secondary);
             min-width: 50%;
         }
 
         .live-preview-render .markdown-body {
             max-width: 100%;
+            cursor: text;
         }
 
         /* ===== 正则表达式专业工作台样式 ===== */
@@ -8994,7 +9026,7 @@
             border: 1px solid var(--color-primary);
             box-shadow: 1px 1px 1px 1px var(--color-primary);
             z-index: 200;
-            transform: scale(1.03);
+            transform: scale(1.02);
         }
 
         jmnodes.theme-self jmexpander {}
@@ -11038,6 +11070,7 @@
             overflow-y: auto;
             -ms-overflow-style: none;
             padding: 10px;
+            cursor: text;
         }
 
         .markdown-body::-webkit-scrollbar {
@@ -13304,6 +13337,7 @@
             font-size: 0.875rem;
             white-space: normal;
             padding: 0;
+            cursor: text;
         }
 
         .chat-message-body .markdown-body :where(p, ul, ol, pre, blockquote, table, hr) {
@@ -13387,65 +13421,68 @@
     </div>
     <div id="main-container">
         <div id="sidebar">
-            <div id="sidebar-header">
-                <button id="graph-btn" class="btn btn-sm btn-primary" onclick="openSetting()" title="设置">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                        <path
-                            d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94L14.4 2.81a.488.488 0 00-.48-.41H9.6c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.488.488 0 00-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.63-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z" />
-                    </svg>
-                </button>
-                <button id="refresh-btn" class="btn btn-sm btn-primary" onclick="refreshTree()" title="刷新">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                        <path
-                            d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
-                    </svg>
-                </button>
-                <button id="new-file-btn" class="btn btn-sm btn-primary" onclick="toggleNewFileModal(event)"
-                    title="新建文件">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                        <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-                    </svg>
-                </button>
-                <button id="calendar-btn" class="btn btn-sm btn-primary" onclick="toggleFile('calendar')" title="日历日程">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                        <path
-                            d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H5V10h14v8zM7 12h5v5H7v-5z" />
-                    </svg>
-                </button>
-                <button id="random-open-btn" class="btn btn-sm btn-success" onclick="toggleFile('randomOpen')"
-                    title="随机打开文件">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                        <path
-                            d="M19 5v14H5V5h14m0-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 6h-2V7h2v2zm-4 0H8V7h2v2zm8 4h-2v-2h2v2zm-4 0h-2v-2h2v2z" />
-                    </svg>
-                </button>
-                <button id="dashboard-btn" class="btn btn-sm btn-warning" onclick="toggleFile('dashboard')"
-                    title="统计面板">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                        <path
-                            d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z" />
-                    </svg>
-                </button>
-                <button id="open-btn" class="btn btn-sm btn-primary" onclick="openDir(true)" title="打开文件夹">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                        <path
-                            d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z" />
-                    </svg>
-                </button>
-            </div>
-            <div id="sidebar-search-header">
-                <div id="file-tree-search-box">
-                    <input type="text" id="file-search" placeholder="🔍 按下回车搜索文件..."
-                        onkeydown="handleSearchKeydown(event)">
-                    <button id="clear-search" onclick="clearSearch()" style="display: none;">✕</button>
-                    <select id="level-select" onchange="handleLevelChange(this.value)" title="层级选择">
-                        <option value="">层级</option>
-                        <option value="all">全部</option>
-                        <option value="0">1级</option>
-                        <option value="1">2级</option>
-                        <option value="2">3级</option>
-                        <option value="3">4级</option>
-                    </select>
+            <div class="sidebar-headers">
+                <div id="sidebar-header">
+                    <button id="graph-btn" class="btn btn-sm btn-primary" onclick="openSetting()" title="设置">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                            <path
+                                d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94L14.4 2.81a.488.488 0 00-.48-.41H9.6c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.488.488 0 00-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.63-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z" />
+                        </svg>
+                    </button>
+                    <button id="refresh-btn" class="btn btn-sm btn-primary" onclick="refreshTree()" title="刷新">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                            <path
+                                d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
+                        </svg>
+                    </button>
+                    <button id="new-file-btn" class="btn btn-sm btn-primary" onclick="toggleNewFileModal(event)"
+                        title="新建文件">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+                        </svg>
+                    </button>
+                    <button id="calendar-btn" class="btn btn-sm btn-primary" onclick="toggleFile('calendar')" title="日历日程">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                            <path
+                                d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H5V10h14v8zM7 12h5v5H7v-5z" />
+                        </svg>
+                    </button>
+                    <button id="random-open-btn" class="btn btn-sm btn-success" onclick="toggleFile('randomOpen')"
+                        title="随机打开文件">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                            <path
+                                d="M19 5v14H5V5h14m0-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 6h-2V7h2v2zm-4 0H8V7h2v2zm8 4h-2v-2h2v2zm-4 0h-2v-2h2v2z" />
+                        </svg>
+                    </button>
+                    <button id="dashboard-btn" class="btn btn-sm btn-warning" onclick="toggleFile('dashboard')"
+                        title="统计面板">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                            <path
+                                d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z" />
+                        </svg>
+                    </button>
+                    <button id="open-btn" class="btn btn-sm btn-primary" onclick="openDir(true)" title="打开文件夹">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                            <path
+                                d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z" />
+                        </svg>
+                    </button>
+                </div>
+                <div id="sidebar-search-header">
+                    <div id="file-tree-search-box">
+                        <input type="text" id="file-search" placeholder="🔍按下回车搜索文件..."
+                            onkeydown="handleSearchKeydown(event)">
+                        <button id="clear-search" onclick="clearSearch()" style="display: none;">✕</button>
+                        <select id="level-select" onchange="handleLevelChange(this.value)" title="层级选择">
+                            <option value="">层级</option>
+                            <option value="all">全部</option>
+                            <option value="0">一级</option>
+                            <option value="1">二级</option>
+                            <option value="2">三级</option>
+                            <option value="3">四级</option>
+                            <option value="4">五级</option>
+                        </select>
+                    </div>
                 </div>
             </div>
             <div id="new-file-dropdown-panel" class="new-file-dropdown-panel">
@@ -13691,14 +13728,12 @@
             <div id="dashboard-container" class="dashboard-container" style="display: none;">
                 <div class="page-header">
                     <div>
-                        <div class="page-title">mdgo <svg viewBox="0 0 24 24" width="20" height="20" fill="none"
-                                stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-                                style="vertical-align:-3px;">
-                                <polyline points="16 11 11 13 8 12" />
-                                <polyline points="10 7 9 7 8 7" />
-                                <polyline points="16 7 15 7 14 7" />
-                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                            </svg></div>
+                        <div class="page-title">mdgo <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 11.5 Q12 13 10 13"/>
+                        <polyline points="10 7 9 7 8 7"/>
+                        <polyline points="16 7 15 7 14 7"/>
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                        </svg></div>
                         <div class="page-subtitle">本地文档知识库 <a href="https://github.com/whatzhang/mdgo" target="_blank"
                                 style="color: var(--orange);">[github]</a>
                             <span id="dashboard-time" class="dashboard-time"></span>
@@ -15388,11 +15423,21 @@
                                 <span id="kb-status-text"></span>
                             </div>
                         </div>
-                        <div>
-                            <button class="btn btn-warning btn-sm" onclick="indexCurrentDir()"
-                                id="kb-index-btn">重新索引</button>
-                            <button class="btn btn-primary btn-sm" onclick="refreshKnowledgeStatus()"
-                                style="margin-left:4px;">刷新</button>
+                        <div class="kb-toolbar">
+                            <span class="kb-toolbar-label">文件监听</span>
+                            <label class="ai-result-sw-lark">
+                                <input type="checkbox" id="kb-watcher-checkbox"
+                                    onchange="toggleWatcher(this.checked)">
+                                <span class="slider"></span>
+                            </label>
+                            <select class="btn btn-warning btn-sm" id="kb-index-select"
+                                onchange="onIndexSelectChange(this)">
+                                <option value="">索引选项</option>
+                                <option value="full">全量重新索引</option>
+                                <option value="incremental">增量索引</option>
+                            </select>
+                            <button class="btn btn-primary btn-sm"
+                                onclick="refreshKnowledgeStatus()">刷新</button>
                         </div>
                     </div>
 
@@ -15408,7 +15453,7 @@
                     <div class="knowledge-list" id="knowledge-list">
                         <div class="kb-empty" id="kb-empty-msg">
                             <span>当前目录尚未索引</span>
-                            <button onclick="indexCurrentDir()">开始索引</button>
+                            <button onclick="indexCurrentDir('full')">开始索引</button>
                         </div>
 
                         <div class="kn-stats-grid" id="kb-stats-row1" style="display:none;">
@@ -15424,6 +15469,19 @@
                                 <div class="stat-info">
                                     <div class="stat-value" id="kb-stat-files">0</div>
                                     <div class="stat-label">文件数</div>
+                                </div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon orange"><svg xmlns="http://www.w3.org/2000/svg" width="18"
+                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10" />
+                                        <line x1="12" y1="8" x2="12" y2="12" />
+                                        <line x1="12" y1="16" x2="12.01" y2="16" />
+                                    </svg></div>
+                                <div class="stat-info">
+                                    <div class="stat-value" id="kb-stat-unindexed">--</div>
+                                    <div class="stat-label">未索引的文件数</div>
                                 </div>
                             </div>
                             <div class="stat-card">
@@ -15511,19 +15569,7 @@
                                     <div class="stat-value" id="kb-stat-ai-ops">--</div>
                                     <div class="stat-label">AI操作</div>
                                 </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon green"><svg xmlns="http://www.w3.org/2000/svg" width="18"
-                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                        <path
-                                            d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-stat-health">--</div>
-                                    <div class="stat-label">健康分</div>
-                                </div>
-                            </div>
+                            </div>                           
                         </div>
 
                         <div id="kb-dashboard-content" style="display:none;">
@@ -15586,7 +15632,7 @@
                                                 d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
                                         </svg>AI 使用统计
                                         <span id="kb-ai-summary"
-                                            style="font-size:0.75rem;color:var(--t3);margin-left:auto;"></span>
+                                            style="font-size:0.6875rem;color:var(--t3);margin-left:auto;"></span>
                                     </div>
                                     <div id="kb-ai-trend" style="height:7rem;"></div>
                                 </div>
@@ -16653,8 +16699,8 @@
             previewInnerDiv.style.width = '50%';
             previewInnerDiv.style.display = 'flex';
             previewInnerDiv.innerHTML = '<div class="live-preview-container"><div class="live-preview-render" id="live-preview-render"><div class="markdown-body" id="live-preview-content"></div></div></div>';
-            contentEdit.appendChild(editorInnerDiv);
             contentEdit.appendChild(previewInnerDiv);
+            contentEdit.appendChild(editorInnerDiv);
             let initialContent = previewFileText || originalContent;
             const editorInner = document.getElementById('editor-inner-live');
             const previewContent = document.getElementById('live-preview-content');
@@ -24083,7 +24129,7 @@
                             <button class="btn btn-sm json-btn" id="btn-l1"  onclick="jsonTreeCollapseToLevel(1)">一级</button>
                             <button class="btn btn-sm json-btn" id="btn-l2"  onclick="jsonTreeCollapseToLevel(2)">二级</button>
                             <button class="btn btn-sm json-btn" id="btn-l3"  onclick="jsonTreeCollapseToLevel(3)">三级</button>
-                            <select id="opml-level-select" class="btn btn-sm json-btn" onchange="jsonTreeCollapseToLevel(this.value)" title="层级选择">
+                            <select id="json-level-select" class="btn btn-sm json-btn" onchange="jsonTreeCollapseToLevel(this.value)" title="层级选择">
                                 <option value="" selected>选择</option>
                                 <option value="4">四级</option>
                                 <option value="5">五级</option>
@@ -24095,18 +24141,15 @@
                             </select>
                             <button class="btn btn-sm json-btn" id="btn-find-mark"  onclick="findAndMark()">查找并标记</button>
                             <button class="btn btn-sm json-btn" id="btn-un-mark"  onclick="unJsonMark()">取消标记</button>
-                            <div style="display: flex; gap: 8px; align-items: center;">
-                                <input type="text" id="jsonpath-input" class="jsonpath-input" style="margin-top: 2px;" placeholder="输入JSONPath表达式" onkeydown="if(event.key === 'Enter') jsonPathQuery();">
-                                <button class="btn json-btn btn-sm" id="jsonpath-btn"  onclick="jsonPathQuery()">匹配</button>
+                                <input type="text" id="jsonpath-input" class="jsonpath-input" placeholder="输入JSONPath表达式" onkeydown="if(event.key === 'Enter') jsonPathQuery();">
+                                <button class="btn btn-sm json-btn" id="jsonpath-btn" onclick="jsonPathQuery()">匹配</button>
                                 <button class="btn btn-sm json-btn" onclick="clearJsonHighlight()">清除高亮</button>
-                            </div>
                         </div>
                         <div id="json-tree-container" class="jsonview-container"></div>
                     </div>
                     <div class="json-right-panel" id="json-result-panel">
                         <div class="json-result-header">
                             <button class="json-result-close" id="json-result-close" onclick="closeResultPanel()">✕</button>
-                            <span>查询结果</span>
                             <div style="display: flex; align-items: center; gap: 8px;">
                                 <span class="json-result-count" id="json-result-count"></span>
                             </div>
@@ -24560,6 +24603,7 @@ kanban-plugin: basic
                 resultList.innerHTML = '<div style="padding: 20px; color: var(--color-text-tertiary); text-align: center;">请输入JSONPath表达式</div>';
                 resultCount.textContent = '';
                 panel.classList.remove('show');
+                panel.classList.remove('result-shadow-left');
                 return;
             }
             try {
@@ -24573,11 +24617,13 @@ kanban-plugin: basic
                 displayJsonResults(jsonPathResultMatches);
                 highlightJsonResults(jsonPathResultMatches);
                 panel.classList.add('show');
+                panel.classList.add('result-shadow-left');
             } catch (e) {
                 console.error('JSONPath查询失败:', e);
                 resultList.innerHTML = `<div style="color:#cf222e; padding: 10px;">❌ JSONPath错误: ${escapeHtml(e.message)}</div>`;
                 resultCount.textContent = '';
                 panel.classList.add('show');
+                panel.classList.remove('result-shadow-left');
             }
         }
 
@@ -26762,8 +26808,13 @@ kanban-plugin: basic
          */
         async function postProcessCodeAndDiagrams(dom = document) {
             if (!dom) return;
-            // 限定在 .markdown-body 内，排除无关 <pre>
-            const containers = dom.querySelectorAll('.markdown-body');
+            // 先从自身开始匹配，再查子元素
+            let containers = [];
+            if (dom.matches && dom.matches('.markdown-body')) {
+                containers = [dom, ...dom.querySelectorAll('.markdown-body')];
+            } else {
+                containers = dom.querySelectorAll('.markdown-body');
+            }
             for (const container of containers) {
                 try{
                     await postSubProcessCodeAndDiagrams(container);
@@ -33351,6 +33402,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             setRootHandle(dirHandle);
             // Tauri 模式：dirHandle.path 包含物理路径，跳过手动输入
             if (dirHandle.path) {
+                // 先停止旧目录的文件监听
+                if (isTauriVisit()) {
+                    try {   await window.__TAURI__.core.invoke('kb_stop_watcher');   } catch (e) {  }
+                }
                 showGlobalLoading('正在扫描目录文件...');
                 try {
                     // 先清理旧目录数据（使用旧的 currentRootPath），再更新路径
@@ -39183,7 +39238,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             const degree = new Map();
             const keepFlags = new Map();
-
             for (let i = 0; i < nodes.length; i++) {
                 const n = nodes[i];
                 const titleLower = n.title.toLowerCase();
@@ -39206,15 +39260,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const extGroupMap = new Map();
             const refEdges = [];
             const refNeighborsMap = new Map();
-
             for (let i = 0; i < nodes.length; i++) {
                 const nodeData = nodes[i];
                 if (!keepFlags.get(nodeData.id)) continue;
-
                 const d = degree.get(nodeData.id) || 0;
                 const isRoot = nodeData.id === 'root' || nodeData.size === -100;
                 const baseSize = isRoot ? 55 : Math.min(50, Math.round(5 + Math.sqrt(d) * 6));
-
                 const ext = (nodeData.ext || '').toLowerCase();
                 let group = nodeData.group;
                 if (group === undefined) {
@@ -39245,7 +39296,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
 
             graphDataMap.nodesArray = Array.from(graphDataMap.nodes.values());
-
             for (let i = 0; i < edgeArray.length; i++) {
                 const e = edgeArray[i];
                 if (!keepFlags.get(e.source) || !keepFlags.get(e.target)) continue;
@@ -39260,10 +39310,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 refNeighborsMap.get(src.id).add(tgt.id);
                 refNeighborsMap.get(tgt.id).add(src.id);
             }
-
             graphDataMap.edges = refEdges;
             graphDataMap.neighborsMap = refNeighborsMap;
-
             finalizeGraphRender(true);
         }
 
@@ -39273,14 +39321,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (graphLayout) { graphLayout.destroy(); graphLayout = null; }
                 if (graphInteraction) { graphInteraction.destroy(); graphInteraction = null; }
             }
-
             if (!graphLayout) graphLayout = new GraphLayout(graphWidth, graphHeight);
             if (!graphRenderer) graphRenderer = new GraphRenderer(graphCanvas);
             if (!graphInteraction) graphInteraction = new InteractionController(graphCanvas, graphRenderer, graphLayout);
-
             document.getElementById('node-count').textContent = graphDataMap.nodes.size;
             document.getElementById('edge-count').textContent = graphDataMap.edges.length;
-
             const nodes = Array.from(graphDataMap.nodes.values());
             // 径向树状初始布局：按 depth 分层，每层在同心圆上均匀散布
             // 相比网格布局，大幅减少节点间初始重叠，降低初始排斥力冲击
@@ -40257,28 +40302,23 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             const allFile = getRootHandle().name === graphRootPath;
             const rootName = allFile ? graphRootPath : dirname(graphRootPath);
-
             if (!force && graphCachedNodes && graphCachedEdges && graphCachedRootName === rootName) {
                 processGraphData(graphCachedNodes, graphCachedEdges);
                 return;
             }
-
             if (!_scanData || !_scanData.files || !_scanData.folderTree) {
                 showNotification('✗ 扫描数据不可用，请先刷新文件树', 'error');
                 return;
             }
-
             if (graphRenderer) graphRenderer.invalidateDataCaches();
             if (_graphTraversing) {
                 showNotification('正在构建图谱，请稍候...', 'info');
                 return;
             }
-
-            _graphTraversing = true;
-            graphCachedNodes = null;
-            graphCachedEdges = null;
-            graphCachedRootName = null;
-
+            _graphTraversing = true; // 标记为正在构建图谱
+            graphCachedNodes = null; // 清空缓存节点
+            graphCachedEdges = null; // 清空缓存连线
+            graphCachedRootName = null; // 清空缓存根目录名
             try {
                 const { nodes, edges } = buildGraphFromScanData(rootName, allFile);
                 graphCachedNodes = nodes;
@@ -47401,6 +47441,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         }
                         //去除路径末尾的斜杠，兼容 windows 和 linux 系统
                         currentRootPath = trimmedPath.replace(/[\/\\]+$/, '');
+                        // 先停止旧目录的文件监听
+                        if (isTauriVisit()) {
+                            try {  await window.__TAURI__.core.invoke('kb_stop_watcher');  } catch (e) { }
+                        }
                         //验证路径是否合法
                         if (!await checkDirPath()) {
                             return;
@@ -48764,8 +48808,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         async function openKnowledgeBase() {
             await switchToView(knowledgeContainer, 'flex');
             refreshKnowledgeStatus();
-            // 自动启动后台文件监听（幂等，已索引的目录才生效）
-            startWatcherIfNeeded();
         }
 
         /** 启动后台文件监听（仅在 Tauri 环境有效，重复调用无副作用） */
@@ -50017,23 +50059,27 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             try { return dirHandle.path || dirHandle.name || 'local'; } catch { return 'local'; }
         }
         async function refreshKnowledgeStatus() {
+            // 同步文件监听开关状态
+            const watcherCb = document.getElementById('kb-watcher-checkbox');
+            if (watcherCb) watcherCb.checked = safeLocalStorageGet('KB_WATCHER_ENABLED') === 'true';
+
             const dirHandle = getRootHandle();
             const statusText = document.getElementById('kb-status-text');
             const statusDot = document.getElementById('kb-status-dot');
             const emptyMsg = document.getElementById('kb-empty-msg');
             const dashboardContent = document.getElementById('kb-dashboard-content');
-            const indexBtn = document.getElementById('kb-index-btn');
+            const indexSel = document.getElementById('kb-index-select');
             const statsRow1 = document.getElementById('kb-stats-row1');
 
             const path = getDirPath(dirHandle);
-            indexBtn.disabled = false;
+            indexSel.disabled = false;
             // 仅 Tauri 模式下可用
             if (typeof window.__TAURI__ === 'undefined') {
                 statusDot.className = 'kb-status-dot';
                 statusText.textContent = '仅 Tauri 模式支持';
                 if (statsRow1) statsRow1.style.display = 'none';
                 if (dashboardContent) dashboardContent.style.display = 'none';
-                indexBtn.disabled = true;
+                indexSel.disabled = true;
                 return;
             }
             try {
@@ -50050,7 +50096,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     statusText.textContent = `已索引 (${dateStr})`;
                     if (emptyMsg) emptyMsg.style.display = 'none';
                     if (dashboardContent) dashboardContent.style.display = '';
-                    indexBtn.textContent = '重新索引';
 
                     document.getElementById('kb-stat-files').textContent = kbStatus.file_count || 0;
                     document.getElementById('kb-stat-chunks').textContent = kbStatus.chunk_count || 0;
@@ -50061,8 +50106,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     document.getElementById('kb-stat-sessions').textContent = chatStats?.session_count ?? '--';
                     document.getElementById('kb-stat-messages').textContent = chatStats?.message_count ?? '--';
                     document.getElementById('kb-stat-ai-ops').textContent = aiStats?.total_count ?? '--';
-                    const healthScore = computeHealthScore(kbStatus, scanData);
-                    document.getElementById('kb-stat-health').textContent = healthScore;
+
+                    const unindexed = Math.max(0, _scanFileList.length - (kbStatus.file_count || 0));
+                    document.getElementById('kb-stat-unindexed').textContent = unindexed;
 
                     renderTypeDistribution(scanData?.type_distribution);
                     renderHealthDetails(kbStatus, scanData);
@@ -50084,44 +50130,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 statusDot.className = 'kb-status-dot error';
                 statusText.textContent = '加载失败';
             }
-        }
-
-        function computeHealthScore(kbStatus, scanData) {
-            const completeness = kbStatus.file_count > 0
-                ? Math.min(100, Math.round((kbStatus.vector_count / kbStatus.file_count / 9) * 100))
-                : 0;
-            const daysSinceIndex = kbStatus.indexed_at
-                ? (Date.now() - kbStatus.indexed_at) / 86400000
-                : 999;
-            const freshness = Math.max(0, Math.round(100 - (daysSinceIndex / 30) * 100));
-            const activity = kbStatus.vector_count > 0 ? 72 : 0;
-
-            // 文件覆盖率: 已索引文件数 / 总文件数
-            const coverage = kbStatus.file_count > 0 && kbStatus.chunk_count > 0
-                ? Math.min(100, Math.round((kbStatus.chunk_count / kbStatus.file_count) * 100))
-                : 0;
-
-            // 向量化效率: 每个分块的向量数量
-            // 5-15: 高效率
-            // 3-5: 中效率
-            // 15-20: 低效率
-            // 0-20: 未知效率
-            const avgVectorsPerChunk = kbStatus.chunk_count > 0
-                ? kbStatus.vector_count / kbStatus.chunk_count
-                : 0;
-            let efficiency = 0;
-            if (avgVectorsPerChunk >= 5 && avgVectorsPerChunk <= 15) {
-                efficiency = 100;
-            } else if (avgVectorsPerChunk >= 3 && avgVectorsPerChunk < 5) {
-                efficiency = 80;
-            } else if (avgVectorsPerChunk > 15 && avgVectorsPerChunk <= 20) {
-                efficiency = 85;
-            } else if (avgVectorsPerChunk > 0) {
-                efficiency = Math.max(50, Math.min(90, avgVectorsPerChunk * 10));
-            }
-
-            // 综合评分：索引完整度 25% + 数据新鲜度 20% + 使用活跃度 15% + 文件覆盖率 20% + 向量化效率 20%
-            return Math.round(completeness * 0.25 + freshness * 0.20 + activity * 0.15 + coverage * 0.20 + efficiency * 0.20);
         }
 
         function renderTypeDistribution(typeDist) {
@@ -50334,26 +50342,57 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             window.showNotification('增量索引开发中...', 'info', 2000);
         }
 
-        async function indexCurrentDir() {
+        /** 文件监听开关 */
+        async function toggleWatcher(enabled) {
+            safeLocalStorageSet('KB_WATCHER_ENABLED', enabled ? 'true' : 'false');
+            if (enabled) {
+                await startWatcherIfNeeded();
+            } else {
+                if (!isTauriVisit()) return;
+                try {
+                    await window.__TAURI__.core.invoke('kb_stop_watcher');
+                } catch (e) {
+                    console.warn('[watcher] 停止失败:', e);
+                }
+            }
+        }
+        /** select 索引选项变更 */
+        function onIndexSelectChange(select) {
+            const mode = select.value;
+            if (!mode) return;
+            select.value = ''; // 重置为空选项（占位符）
+            indexCurrentDir(mode);
+        }
+
+        /** 索引入口：按 mode 路由 */
+        async function indexCurrentDir(mode) {
+            if (mode === 'incremental') {
+                await indexUnindexedDir();
+            } else {
+                await indexAllDir();
+            }
+        }
+
+        /** 全量重新索引 */
+        async function indexAllDir() {
             const dirHandle = getRootHandle();
             if (!dirHandle) {
                 showNotification('请先打开一个目录', 'warning');
                 return;
             }
 
-            const indexBtn = document.getElementById('kb-index-btn');
+            const indexSel = document.getElementById('kb-index-select');
             const progressWrap = document.getElementById('kb-progress-wrap');
             const progressBar = document.getElementById('kb-progress-bar');
             const progressText = document.getElementById('kb-progress-text');
 
-            if (!indexBtn || !progressWrap || !progressBar || !progressText) {
-                console.error('[KB] DOM 元素缺失:', { indexBtn, progressWrap, progressBar, progressText });
+            if (!indexSel || !progressWrap || !progressBar || !progressText) {
+                console.error('[KB] DOM 元素缺失:', { indexSel, progressWrap, progressBar, progressText });
                 showNotification('页面组件加载异常，请刷新后重试', 'error');
                 return;
             }
 
-            indexBtn.disabled = true;
-            indexBtn.textContent = '📄 索引中...';
+            indexSel.disabled = true;
             progressWrap.style.display = '';
 
             const path = getDirPath(dirHandle);
@@ -50382,16 +50421,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     if (unlisten) unlisten();
 
                     progressWrap.style.display = 'none';
-                    indexBtn.disabled = false;
-                    indexBtn.textContent = '重新索引';
+                    indexSel.disabled = false;
                     await refreshKnowledgeStatus();
                     showNotification('\u2705 索引完成: ' + result.file_count + ' 个文件, ' + result.chunk_count + ' 个文本块', 'success');
 
                     return;
                 } catch (e) {
                     progressWrap.style.display = 'none';
-                    indexBtn.disabled = false;
-                    indexBtn.textContent = '重新索引';
+                    indexSel.disabled = false;
                     console.error('Rust kb_index 失败:', e);
                     const errMsg = typeof e === 'string' ? e : (e.message || JSON.stringify(e) || '未知错误(请查看控制台)');
                     showNotification('\u2717 索引失败: ' + errMsg, 'error');
@@ -50401,8 +50438,76 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
             // 非 Tauri 环境不支持知识库索引
             progressWrap.style.display = 'none';
-            indexBtn.disabled = false;
-            indexBtn.textContent = '重新索引';
+            indexSel.disabled = false;
+            console.warn('[KB] isTauriVisit() =', isTauriVisit(), '— 非 Tauri 环境无法索引');
+            showNotification('✗ 非 Tauri 环境不支持知识库索引', 'error');
+        }
+
+        /** 增量索引：只索引未索引的文件 */
+        async function indexUnindexedDir() {
+            const dirHandle = getRootHandle();
+            if (!dirHandle) {
+                showNotification('请先打开一个目录', 'warning');
+                return;
+            }
+
+            const indexSel = document.getElementById('kb-index-select');
+            const progressWrap = document.getElementById('kb-progress-wrap');
+            const progressBar = document.getElementById('kb-progress-bar');
+            const progressText = document.getElementById('kb-progress-text');
+
+            if (!indexSel || !progressWrap || !progressBar || !progressText) {
+                console.error('[KB] DOM 元素缺失:', { indexSel, progressWrap, progressBar, progressText });
+                showNotification('页面组件加载异常，请刷新后重试', 'error');
+                return;
+            }
+
+            indexSel.disabled = true;
+            progressWrap.style.display = '';
+
+            const path = getDirPath(dirHandle);
+            console.log('[KB] incremental index, path =', path, 'isTauriVisit =', isTauriVisit());
+
+            if (isTauriVisit()) {
+                try {
+                    let unlisten;
+                    try {
+                        const { listen } = window.__TAURI__.event;
+                        unlisten = await listen('kb-progress', (e) => {
+                            const { percent, message } = e.payload;
+                            progressBar.style.width = (percent || 0) + '%';
+                            progressText.textContent = message || '';
+                        });
+                    } catch (e) { console.warn('注册进度监听失败:', e); }
+
+                    const result = await window.__TAURI__.core.invoke('kb_index_unindexed', {
+                        dirPath: path,
+                        dirBlacklist: DIR_BLACKLIST,
+                        fileBlacklist: FILE_BLACKLIST,
+                    });
+
+                    if (unlisten) unlisten();
+
+                    progressWrap.style.display = 'none';
+                    indexSel.disabled = false;
+                    await refreshKnowledgeStatus();
+                    const msg = result.file_count > 0
+                        ? ('\u2705 增量索引完成: ' + result.file_count + ' 个文件')
+                        : '\u2705 所有文件均已索引，无需增量';
+                    showNotification(msg, 'success');
+                    return;
+                } catch (e) {
+                    progressWrap.style.display = 'none';
+                    indexSel.disabled = false;
+                    console.error('Rust kb_index_unindexed 失败:', e);
+                    const errMsg = typeof e === 'string' ? e : (e.message || JSON.stringify(e) || '未知错误(请查看控制台)');
+                    showNotification('\u2717 增量索引失败: ' + errMsg, 'error');
+                    return;
+                }
+            }
+
+            progressWrap.style.display = 'none';
+            indexSel.disabled = false;
             console.warn('[KB] isTauriVisit() =', isTauriVisit(), '— 非 Tauri 环境无法索引');
             showNotification('✗ 非 Tauri 环境不支持知识库索引', 'error');
         }
@@ -50451,6 +50556,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 } catch (e) {
                     console.warn('注册 watcher 事件监听失败:', e);
                 }
+                // 监听 watcher 错误事件，通知用户
+                try {
+                    const { listen } = window.__TAURI__.event;
+                    listen('watcher-error', (e) => {
+                        console.warn('[watcher] 错误:', e.payload);
+                        showNotification('文件监听错误: ' + String(e.payload), 'warning');
+                    });
+                } catch (e) {
+                    console.warn('注册 watcher-error 监听失败:', e);
+                }
                 // 监听聊天会话索引进度反馈
                 try {
                     const { listen } = window.__TAURI__.event;
@@ -50460,11 +50575,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 } catch (e) {
                     console.warn('注册 chat-index 事件监听失败:', e);
                 }
+                // 应用启动时，如果 toggle 为 ON 且 root 目录就绪，自动启动 watcher
+                if (safeLocalStorageGet('KB_WATCHER_ENABLED') === 'true' && getRootHandle()) {
+                    setTimeout(startWatcherIfNeeded, 500);
+                }
             }
         }
 
         async function highlightChatCodeBlocks(dom) {
-            if (typeof hljs === 'undefined') return;
             await postProcessCodeAndDiagrams(dom);
         }
 

@@ -183,26 +183,6 @@ impl WatcherService {
         });
         *self.debounce_handle.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
 
-        // ── 启动一致性同步：对比文件修改时间与索引时间戳 ──
-        let sync_indexer = indexer.clone();
-        let sync_dir = dir_path.to_string();
-        let sync_on_changed = self.on_changed.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        tokio::spawn(async move {
-            match sync_indexer.sync_on_start(&sync_dir).await {
-                Ok(count) => {
-                    if count > 0 {
-                        log::info!("[watcher] 启动同步完成: 更新了 {} 个文件", count);
-                        sync_on_changed();
-                    } else {
-                        log::info!("[watcher] 启动同步: 无需更新");
-                    }
-                }
-                Err(e) => {
-                    log::warn!("[watcher] 启动同步失败: {}", e);
-                }
-            }
-        });
-
         // 保存状态（先 drop 旧的 notify watcher）
         *self.notify_watcher.lock().unwrap_or_else(|e| e.into_inner()) = Some(notify_watcher);
         *self.event_tx.lock().unwrap_or_else(|e| e.into_inner()) = Some(tx);
@@ -229,9 +209,16 @@ impl WatcherService {
             let _ = tx.send(());
         }
 
-        // 等待防抖任务退出（防止重启时两个防抖循环并发）
+        // 等待防抖任务优雅退出，5 秒超时后强制中止
         if let Some(handle) = self.debounce_handle.lock().unwrap_or_else(|e| e.into_inner()).take() {
-            handle.abort();
+            // 在独立任务中等待当前 index_file 完成
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                if !handle.is_finished() {
+                    handle.abort();
+                    log::warn!("[watcher] 防抖任务超时，强制中止");
+                }
+            });
         }
 
         // 清空通道
@@ -280,7 +267,7 @@ impl WatcherService {
 /// 防抖处理主循环
 ///
 /// 策略：
-/// - 同一文件在 800ms 内收到多个事件时，只保留最后一次
+/// - 同一文件在 1200000ms（20分钟） 内收到多个事件时，只保留最后一次，文件变动事件 → 写入 pending 表（更新/覆盖同路径旧事件） 每 30000ms tick 触发 → 扫描 pending 表
 /// - 对于 Modify/Remove 冲突（同路径），比较时间戳，最新的优先
 /// - 暂停期间事件继续收集但延迟处理，恢复时收到 ClearPending 命令清空过期事件
 /// - 通过 stop_rx 实现优雅退出
@@ -295,8 +282,8 @@ async fn run_debounce_loop(
     on_changed: Arc<dyn Fn() + Send + Sync>,
 ) {
     let dir_path = dir_path.to_string();
-    let debounce_delay = Duration::from_millis(800);
-    let check_interval = Duration::from_millis(200);
+    let debounce_delay = Duration::from_millis(1200000);
+    let check_interval = Duration::from_millis(30000);
 
     // 待处理事件表：rel_path → (最后一次时间戳, 是否为 Remove)
     let mut pending: HashMap<String, (Instant, bool)> = HashMap::new();

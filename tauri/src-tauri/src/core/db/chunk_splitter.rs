@@ -78,15 +78,10 @@ impl Default for MarkdownSplitConfig {
     }
 }
 
-#[allow(dead_code)]
-const ATX_HEADING_MAX_LEVEL: usize = 6;
-
 /// 章节标题栈节点，缓存完整标题前缀避免重复拼接
 #[derive(Debug)]
 struct HeadingNode {
     level: usize,
-    #[allow(dead_code)]
-    text: String,
     cached_prefix: String,
 }
 
@@ -114,6 +109,7 @@ enum ParseState {
 /// - Setext 二级标题支持
 /// - 列表/引用行屏蔽标题匹配
 /// - Windows \r\n 换行兼容
+#[derive(Debug, Clone)]
 pub struct MarkdownChunkSplitter {
     config: MarkdownSplitConfig,
 }
@@ -284,18 +280,20 @@ impl ChunkSplitter for MarkdownChunkSplitter {
                                 overlap,
                             );
                         }
-                        // 压入二级标题栈
+                        // 压入标题栈（=== 为 H1，--- 为 H2）
+                        let is_h1 = line.starts_with('=');
+                        let setext_level = if is_h1 { 1 } else { 2 };
                         while let Some(top) = heading_stack.last() {
-                            if top.level >= 2 {
+                            if top.level >= setext_level {
                                 heading_stack.pop();
                             } else {
                                 break;
                             }
                         }
-                        let prefix = format!("## {}\n", title);
+                        let tag = "#".repeat(setext_level);
+                        let prefix = format!("{} {}\n", tag, title);
                         heading_stack.push(HeadingNode {
-                            level: 2,
-                            text: title.clone(),
+                            level: setext_level,
                             cached_prefix: prefix,
                         });
                         section_start = line_idx + 1;
@@ -303,7 +301,8 @@ impl ChunkSplitter for MarkdownChunkSplitter {
                     continue;
                 }
                 // 记录可能作为 Setext 标题的上一行文本
-                if !line.trim_start().is_empty() {
+                // 排除列表/引用行中的 ---/===（应被视为 <hr> 而非标题）
+                if !line.trim_start().is_empty() && !list_quote_re.is_match(line) {
                     setext_candidate = Some((line_idx, line.trim_start().to_string()));
                 } else {
                     setext_candidate = None;
@@ -354,7 +353,6 @@ impl ChunkSplitter for MarkdownChunkSplitter {
                 let cached_prefix = format!("{} {}\n", tag, heading_text);
                 heading_stack.push(HeadingNode {
                     level,
-                    text: heading_text,
                     cached_prefix,
                 });
                 section_start = line_idx + 1;
@@ -386,6 +384,324 @@ impl ChunkSplitter for MarkdownChunkSplitter {
     }
 }
 
+// ─── 树形处理器常量 ───
+
+/// 短叶子节点最大字符数
+const SHORT_LEAF_MAX_CHARS: usize = 8;
+/// 路径前缀最大保留级数
+const PATH_MAX_LEVELS: usize = 3;
+/// 路径前缀最大字符数（超过则截断）
+const PATH_MAX_CHARS: usize = 50;
+
+// ─── TreeNode 特质（树形节点统一访问接口） ───
+
+/// 树形节点特质：提供统一访问接口，供 TreeProcessor 使用。
+///
+/// 适用于 OPML、FreeMind 等树形大纲格式的节点访问。
+/// 遵循接口隔离原则，每种格式的节点只需实现本特质的三个方法。
+trait TreeNode: Sized {
+    fn text(&self) -> &str;
+    fn note(&self) -> &str;
+    fn children(&self) -> &[Self];
+}
+
+// ─── 宏：消除 OPML / FreeMind 的 TreeNode 和 ChunkSplitter 重复实现 ───
+
+/// 为树形节点类型实现 TreeNode trait
+macro_rules! impl_tree_node {
+    ($node_type:ty) => {
+        impl TreeNode for $node_type {
+            fn text(&self) -> &str { &self.text }
+            fn note(&self) -> &str { &self.note }
+            fn children(&self) -> &[Self] { &self.children }
+        }
+    };
+}
+
+/// 为树形格式分割器实现 ChunkSplitter trait（解析 + TreeProcessor 遍历）
+macro_rules! impl_tree_chunk_splitter {
+    ($splitter_type:ty, $parse_fn:expr) => {
+        impl ChunkSplitter for $splitter_type {
+            fn split(&self, text: &str, max_size: usize, overlap: usize) -> Vec<ChunkResult> {
+                let nodes = $parse_fn(text);
+                if nodes.is_empty() {
+                    return utils::split_text_char_based(text, max_size, overlap)
+                        .into_iter().map(ChunkResult::plain).collect();
+                }
+                let mut result = Vec::new();
+                for root_node in &nodes {
+                    TreeProcessor::process_node(root_node, &[], max_size, overlap, &mut result);
+                }
+                result
+            }
+        }
+    };
+}
+
+// ─── TreeProcessor（树形处理公共逻辑） ───
+
+/// 树形大纲文档的通用 chunk 处理引擎。
+///
+/// 封装了所有与节点类型无关的树形遍历逻辑：
+/// - DFS 递归遍历
+/// - 路径上下文前缀构建
+/// - 短叶子兄弟聚合
+/// - 空容器跳过
+/// - 超长内容二次切分
+/// - HTML note 清洗
+///
+/// 遵循单一职责原则：只处理树形遍历和 chunk 生成，不关心具体 XML 格式。
+/// 遵循开闭原则：新增格式时只需实现 TreeNode，无需修改本处理器。
+struct TreeProcessor;
+
+impl TreeProcessor {
+    // ─── HTML 清洗 ───
+
+    /// 清洗 HTML 标签，返回纯文本。
+    ///
+    /// 块级标签转为换行，其余标签直接剥离，解码 HTML 实体，压缩空白行。
+    fn clean_html(raw: &str) -> String {
+        // Phase 1: 块级标签转换行 —— 用单次正则替换减少中间分配
+        static BLOCK_RE: OnceLock<Regex> = OnceLock::new();
+        let re = BLOCK_RE.get_or_init(|| {
+            Regex::new(r"</?(?:p|br\s*/?|div|li)>").unwrap()
+        });
+        let s = re.replace_all(raw, |caps: &regex::Captures| {
+            match &caps[0] {
+                "<p>" | "<br>" | "<br/>" | "<br />" | "<div>" | "</li>" => "\n",
+                _ => "",
+            }
+        });
+        // Phase 2: 剥离所有剩余 HTML 标签
+        static HTML_TAG_RE: OnceLock<Regex> = OnceLock::new();
+        let re = HTML_TAG_RE.get_or_init(|| Regex::new(r"<[^>]+>").unwrap());
+        let s = re.replace_all(&s, "");
+        // Phase 3: 解码 HTML 实体
+        let s = s
+            .replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&nbsp;", " ")
+            .replace("&quot;", "\"");
+        // Phase 4: 压缩空白行
+        let s: Vec<&str> = s.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+        s.join("\n")
+    }
+
+    // ─── 路径工具 ───
+
+    /// 构建带截断的路径前缀字符串。
+    ///
+    /// - 跳过空 text 节点
+    /// - 最多保留最近 `PATH_MAX_LEVELS` 级
+    /// - 总长度限制 `PATH_MAX_CHARS` 字符
+    fn build_path_prefix(path: &[String]) -> String {
+        let meaningful: Vec<&str> = path.iter().filter(|s| !s.is_empty()).map(|s| s.as_str()).collect();
+        let joined = if meaningful.len() > PATH_MAX_LEVELS {
+            meaningful[meaningful.len() - PATH_MAX_LEVELS..].join(" > ")
+        } else {
+            meaningful.join(" > ")
+        };
+        if joined.chars().count() > PATH_MAX_CHARS {
+            let truncated: String = joined.chars().take(PATH_MAX_CHARS - 3).collect();
+            format!("{}...", truncated)
+        } else {
+            joined
+        }
+    }
+
+    // ─── 节点判定 ───
+
+    /// 是否为短叶子节点：无子节点、text ≤ `SHORT_LEAF_MAX_CHARS` 字符、note 为空。
+    fn is_short_leaf<N: TreeNode>(node: &N) -> bool {
+        node.children().is_empty() && node.text().chars().count() <= SHORT_LEAF_MAX_CHARS && node.note().is_empty()
+    }
+
+    /// 是否为空容器节点：仅有 children、自身 text 和 note 均为空。
+    fn is_empty_container<N: TreeNode>(node: &N) -> bool {
+        node.text().is_empty() && node.note().is_empty() && !node.children().is_empty()
+    }
+
+    // ─── 内容构建 ───
+
+    /// 构建节点正文。
+    fn build_content<N: TreeNode>(node: &N) -> String {
+        if !node.note().is_empty() {
+            node.note().to_string()
+        } else if !node.children().is_empty() {
+            let summary: Vec<String> = node
+                .children()
+                .iter()
+                .filter(|c| !c.text().is_empty())
+                .map(|c| format!("- {}", c.text()))
+                .collect();
+            if summary.is_empty() {
+                node.text().to_string()
+            } else if node.text().is_empty() {
+                summary.join("\n")
+            } else {
+                format!("{}\n{}", node.text(), summary.join("\n"))
+            }
+        } else {
+            node.text().to_string()
+        }
+    }
+
+    // ─── 元数据 ───
+
+    /// 从路径数组生成 path_depth 和 path_json。
+    fn path_to_metadata(path: &[String]) -> (Option<u32>, Option<String>) {
+        let depth = path.iter().filter(|s| !s.is_empty()).count() as u32;
+        let path_depth = if depth > 0 { Some(depth) } else { None };
+        let meaningful: Vec<&str> = path.iter().filter(|s| !s.is_empty()).map(|s| s.as_str()).collect();
+        let path_json = if meaningful.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_string(&meaningful).unwrap_or_default())
+        };
+        (path_depth, path_json)
+    }
+
+    // ─── Chunk 生成 ───
+
+    /// 创建一个带元数据的 ChunkResult 并加入结果。
+    ///
+    /// 内部自动拼接【上下文: 路径前缀】前缀、校验长度、超长时二次切分。
+    fn push_chunk(
+        body: &str,
+        path: &[String],
+        max_size: usize,
+        overlap: usize,
+        result: &mut Vec<ChunkResult>,
+    ) {
+        let prefix_str = Self::build_path_prefix(path);
+        let prefix_line = if prefix_str.is_empty() {
+            String::new()
+        } else {
+            format!("【上下文: {}】\n", prefix_str)
+        };
+        let combined = format!("{}{}", prefix_line, body);
+        let (path_depth, path_json) = Self::path_to_metadata(path);
+        let char_count = combined.chars().count();
+
+        if char_count <= max_size * 3 / 2 {
+            result.push(ChunkResult { text: combined, path_depth, path_json });
+            return;
+        }
+
+        let prefix_char_count = prefix_line.chars().count();
+        let sub_max = if max_size > prefix_char_count {
+            max_size - prefix_char_count
+        } else {
+            max_size
+        };
+        for sub in utils::split_text(body, sub_max, overlap) {
+            result.push(ChunkResult {
+                text: format!("{}{}", prefix_line, sub),
+                path_depth,
+                path_json: path_json.clone(),
+            });
+        }
+    }
+
+    /// 直接创建 ChunkResult，不校验长度（用于兄弟合并缓冲区刷新）。
+    fn push_chunk_unchecked(
+        body: &str,
+        path: &[String],
+        result: &mut Vec<ChunkResult>,
+    ) {
+        let prefix_str = Self::build_path_prefix(path);
+        let combined = if prefix_str.is_empty() {
+            body.to_string()
+        } else {
+            format!("【上下文: {}】\n{}", prefix_str, body)
+        };
+        let (path_depth, path_json) = Self::path_to_metadata(path);
+        result.push(ChunkResult { text: combined, path_depth, path_json });
+    }
+
+    // ─── DFS 遍历 ───
+
+    /// 处理单个节点及其子节点。
+    fn process_node<N: TreeNode>(
+        node: &N,
+        path: &[String],
+        max_size: usize,
+        overlap: usize,
+        result: &mut Vec<ChunkResult>,
+    ) {
+        if Self::is_empty_container(node) {
+            Self::process_children(node.children(), path, max_size, overlap, result);
+            return;
+        }
+
+        let mut current_path = path.to_vec();
+        if !node.text().is_empty() {
+            current_path.push(node.text().to_string());
+        }
+
+        let content = Self::build_content(node);
+        if !content.is_empty() {
+            Self::push_chunk(&content, &current_path, max_size, overlap, result);
+        }
+
+        Self::process_children(node.children(), &current_path, max_size, overlap, result);
+    }
+
+    /// 遍历子节点列表，带兄弟短叶子聚合和大小上限检查。
+    fn process_children<N: TreeNode>(
+        children: &[N],
+        parent_path: &[String],
+        max_size: usize,
+        overlap: usize,
+        result: &mut Vec<ChunkResult>,
+    ) {
+        let mut buf: Vec<String> = Vec::new();
+        let mut buf_chars: usize = 0;
+
+        for child in children {
+            if Self::is_empty_container(child) {
+                Self::flush_sibling_buf(&mut buf, &mut buf_chars, parent_path, result);
+                Self::process_node(child, parent_path, max_size, overlap, result);
+                continue;
+            }
+
+            if Self::is_short_leaf(child) {
+                let text = child.text().to_string();
+                let added = text.chars().count() + 2; // "- " overhead
+                // 如果加入后超出上限，先 flush 再继续
+                if max_size > 0 && buf_chars > 0 && buf_chars + added > max_size * 3 / 2 {
+                    Self::flush_sibling_buf(&mut buf, &mut buf_chars, parent_path, result);
+                }
+                buf.push(text);
+                buf_chars += added;
+                continue;
+            }
+
+            Self::flush_sibling_buf(&mut buf, &mut buf_chars, parent_path, result);
+            Self::process_node(child, parent_path, max_size, overlap, result);
+        }
+
+        Self::flush_sibling_buf(&mut buf, &mut buf_chars, parent_path, result);
+    }
+
+    /// 刷新兄弟合并缓冲区。
+    fn flush_sibling_buf(
+        buf: &mut Vec<String>,
+        buf_chars: &mut usize,
+        parent_path: &[String],
+        result: &mut Vec<ChunkResult>,
+    ) {
+        if buf.is_empty() {
+            return;
+        }
+        let merged = format!("- {}", buf.join("\n- "));
+        Self::push_chunk_unchecked(&merged, parent_path, result);
+        buf.clear();
+        *buf_chars = 0;
+    }
+}
+
 // ─── OPML 文档分割器 ───
 
 /// OPML 文档分割器
@@ -397,7 +713,7 @@ impl ChunkSplitter for MarkdownChunkSplitter {
 
 /// 树形层级感知的 OPML 分块器。
 ///
-/// 使用 roxmltree 将 OPML 解析为 OutlineNode 树，然后通过 DFS 递归遍历：
+/// 使用 roxmltree 将 OPML 解析为 OutlineNode 树，然后通过 TreeProcessor 进行 DFS 递归遍历：
 /// - 构建祖先上下文路径前缀 `【上下文: A > B > C】`
 /// - 兄弟短节点聚合（连续短文本叶子合并）
 /// - 空容器节点跳过（仅起层级组织作用的父节点）
@@ -414,9 +730,9 @@ struct OutlineNode {
     children: Vec<OutlineNode>,
 }
 
-impl OpmlChunkSplitter {
-    // ─── 解析 ───
+impl_tree_node!(OutlineNode);
 
+impl OpmlChunkSplitter {
     /// 使用 roxmltree 解析 OPML XML 为 OutlineNode 树
     fn parse_opml(xml: &str) -> Vec<OutlineNode> {
         let doc = match roxmltree::Document::parse(xml) {
@@ -447,7 +763,7 @@ impl OpmlChunkSplitter {
             .attribute("_note")
             .or_else(|| elem.attribute("note"))
             .or_else(|| elem.attribute("NOTE"))
-            .map(Self::clean_html)
+            .map(TreeProcessor::clean_html)
             .unwrap_or_default();
 
         let children: Vec<OutlineNode> = elem
@@ -458,263 +774,105 @@ impl OpmlChunkSplitter {
 
         OutlineNode { text, note, children }
     }
+}
 
-    // ─── HTML 清洗 ───
+impl_tree_chunk_splitter!(OpmlChunkSplitter, OpmlChunkSplitter::parse_opml);
 
-    /// 清洗幕布 note 中的 HTML 标签，返回纯文本。
-    fn clean_html(raw: &str) -> String {
-        // 块级标签 → 换行
-        let s = raw
-            .replace("<p>", "\n")
-            .replace("</p>", "")
-            .replace("<br>", "\n")
-            .replace("<br/>", "\n")
-            .replace("<br />", "\n")
-            .replace("<div>", "\n")
-            .replace("</div>", "\n")
-            // 幕布特定：<li> 列表项
-            .replace("</li>", "\n");
-        // 去除剩余所有行内标签（缓存正则）
-        static HTML_TAG_RE: OnceLock<Regex> = OnceLock::new();
-        let re = HTML_TAG_RE.get_or_init(|| Regex::new(r"<[^>]+>").unwrap());
-        let s = re.replace_all(&s, "");
-        // 解码 HTML 实体
-        let s = s
-            .replace("&amp;", "&")
-            .replace("&lt;", "<")
-            .replace("&gt;", ">")
-            .replace("&nbsp;", " ")
-            .replace("&quot;", "\"");
-        // 压缩多余空白行
-        let s: Vec<&str> = s.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
-        s.join("\n")
+// ─── FreeMind 文档分割器 ───
+
+/// FreeMind 文档分割器
+///
+/// FreeMind（.mm）是一种用于表示思维导图的 XML 格式。
+/// 节点使用 `<node TEXT="...">` 标签，支持 `<richcontent TYPE="NOTE">` 富文本注释。
+///
+/// 解析策略与 OPML 一致：解析为树形结构后复用 TreeProcessor 进行 DFS 遍历和 chunk 生成。
+/// 无法解析时回退到纯文本字符级分割。
+pub struct FreeMindChunkSplitter;
+
+/// FreeMind 大纲节点
+struct FreeMindNode {
+    text: String,
+    note: String,
+    children: Vec<FreeMindNode>,
+}
+
+impl_tree_node!(FreeMindNode);
+
+impl FreeMindChunkSplitter {
+    /// 使用 roxmltree 解析 FreeMind XML 为 FreeMindNode 树
+    fn parse_freemind(xml: &str) -> Vec<FreeMindNode> {
+        let doc = match roxmltree::Document::parse(xml) {
+            Ok(d) => d,
+            Err(_) => return Vec::new(),
+        };
+
+        if let Some(map) = doc.root().descendants().find(|n| n.has_tag_name("map")) {
+            map.children()
+                .filter(|n| n.has_tag_name("node"))
+                .map(Self::parse_node)
+                .collect()
+        } else {
+            Vec::new()
+        }
     }
 
-    // ─── 路径工具 ───
+    fn parse_node(elem: roxmltree::Node) -> FreeMindNode {
+        let text = elem
+            .attribute("TEXT")
+            .or_else(|| elem.attribute("text"))
+            .unwrap_or("")
+            .trim()
+            .to_string();
 
-    /// 构建带截断的路径前缀字符串。
+        // 提取注释：优先取 NOTE 属性（纯文本），回退到 richcontent HTML 并清洗
+        let note = elem
+            .attribute("NOTE")
+            .or_else(|| elem.attribute("note"))
+            .map(|n| n.to_string())
+            .or_else(|| Self::extract_richcontent_note(elem).map(|n| TreeProcessor::clean_html(&n)))
+            .unwrap_or_default();
+
+        let children: Vec<FreeMindNode> = elem
+            .children()
+            .filter(|c| c.has_tag_name("node"))
+            .map(Self::parse_node)
+            .collect();
+
+        FreeMindNode { text, note, children }
+    }
+
+    /// 从 FreeMind 节点的 `<richcontent TYPE="NOTE">` 中提取 HTML 正文。
     ///
-    /// - 跳过空 text 节点
-    /// - 最多保留最近 3 级
-    /// - 总长度限制 50 字符
-    fn build_path_prefix(path: &[String]) -> String {
-        let meaningful: Vec<&str> = path.iter().filter(|s| !s.is_empty()).map(|s| s.as_str()).collect();
-        let joined = if meaningful.len() > 3 {
-            meaningful[meaningful.len() - 3..].join(" > ")
-        } else {
-            meaningful.join(" > ")
-        };
-        if joined.chars().count() > 50 {
-            let truncated: String = joined.chars().take(47).collect();
-            format!("{}...", truncated)
-        } else {
-            joined
-        }
-    }
-
-    // ─── 节点判定 ───
-
-    /// 是否为短叶子节点：无子节点、text ≤ 8 字符、note 为空。
-    fn is_short_leaf(node: &OutlineNode) -> bool {
-        node.children.is_empty() && node.text.chars().count() <= 8 && node.note.is_empty()
-    }
-
-    /// 是否为空容器节点：仅有 children、自身 text 和 note 均为空。
-    fn is_empty_container(node: &OutlineNode) -> bool {
-        node.text.is_empty() && node.note.is_empty() && !node.children.is_empty()
-    }
-
-    // ─── 内容构建 ───
-
-    /// 构建节点正文：
-    /// 1. 优先 note（正文）
-    /// 2. 无  且有子节点 → 子节点 text 概览
-    /// 3. 仅叶子节点 → 自身 text
-    fn build_content(node: &OutlineNode) -> String {
-        if !node.note.is_empty() {
-            node.note.clone()
-        } else if !node.children.is_empty() {
-            let summary: Vec<String> = node
-                .children
-                .iter()
-                .filter(|c| !c.text.is_empty())
-                .map(|c| format!("- {}", c.text))
-                .collect();
-            if summary.is_empty() {
-                node.text.clone()
-            } else {
-                summary.join("\n")
-            }
-        } else {
-            node.text.clone()
-        }
-    }
-
-    // ─── 元数据 ───
-
-    /// 从路径数组生成 path_depth 和 path_json
-    fn path_to_metadata(path: &[String]) -> (Option<u32>, Option<String>) {
-        let depth = path.iter().filter(|s| !s.is_empty()).count() as u32;
-        let path_depth = if depth > 0 { Some(depth) } else { None };
-        let meaningful: Vec<&str> = path.iter().filter(|s| !s.is_empty()).map(|s| s.as_str()).collect();
-        let path_json = if meaningful.is_empty() {
-            None
-        } else {
-            Some(serde_json::to_string(&meaningful).unwrap_or_default())
-        };
-        (path_depth, path_json)
-    }
-
-    // ─── Chunk 生成 ───
-
-    /// 创建一个带元数据的 ChunkResult 并加入结果。
-    ///
-    /// 内部自动拼接【上下文: 路径前缀】前缀、校验长度、超长时二次切分。
-    /// 当 `max_size == 0` 时不校验长度，直接生成 chunk。
-    fn push_chunk(
-        body: &str,
-        path: &[String],
-        max_size: usize,
-        overlap: usize,
-        result: &mut Vec<ChunkResult>,
-    ) {
-        // max_size == 0 表示调用方不要求长度校验（如兄弟合并）
-        if max_size == 0 {
-            let prefix_str = Self::build_path_prefix(path);
-            let combined = if prefix_str.is_empty() {
-                body.to_string()
-            } else {
-                format!("【上下文: {}】\n{}", prefix_str, body)
-            };
-            let (path_depth, path_json) = Self::path_to_metadata(path);
-            result.push(ChunkResult { text: combined, path_depth, path_json });
-            return;
-        }
-
-        let prefix_str = Self::build_path_prefix(path);
-        let prefix_line = if prefix_str.is_empty() {
-            String::new()
-        } else {
-            format!("【上下文: {}】\n", prefix_str)
-        };
-        let combined = format!("{}{}", prefix_line, body);
-        let (path_depth, path_json) = Self::path_to_metadata(path);
-        let char_count = combined.chars().count();
-
-        if char_count <= max_size * 3 / 2 {
-            result.push(ChunkResult { text: combined, path_depth, path_json });
-            return;
-        }
-
-        // 超长：前缀不变，正文二次切分
-        let prefix_char_count = prefix_line.chars().count();
-        let sub_max = if max_size > prefix_char_count {
-            max_size - prefix_char_count
-        } else {
-            max_size
-        };
-        for sub in utils::split_text_char_based(body, sub_max, overlap) {
-            result.push(ChunkResult {
-                text: format!("{}{}", prefix_line, sub),
-                path_depth,
-                path_json: path_json.clone(),
-            });
-        }
-    }
-
-    // ─── DFS 遍历 ───
-
-    /// 处理单个节点及其子节点。
-    fn process_node(
-        node: &OutlineNode,
-        path: &[String],
-        max_size: usize,
-        overlap: usize,
-        result: &mut Vec<ChunkResult>,
-    ) {
-        // 空容器：不加入路径，直接递归子节点
-        if Self::is_empty_container(node) {
-            Self::process_children(&node.children, path, max_size, overlap, result);
-            return;
-        }
-
-        // 构建当前路径
-        let mut current_path = path.to_vec();
-        if !node.text.is_empty() {
-            current_path.push(node.text.clone());
-        }
-
-        // 构建正文
-        let content = Self::build_content(node);
-        if !content.is_empty() {
-            Self::push_chunk(&content, &current_path, max_size, overlap, result);
-        }
-
-        // 递归子节点（带兄弟聚合）
-        Self::process_children(&node.children, &current_path, max_size, overlap, result);
-    }
-
-    /// 遍历子节点列表，带兄弟短叶子聚合。
-    fn process_children(
-        children: &[OutlineNode],
-        parent_path: &[String],
-        max_size: usize,
-        overlap: usize,
-        result: &mut Vec<ChunkResult>,
-    ) {
-        let mut buf: Vec<String> = Vec::new();
-
-        for child in children {
-            if Self::is_empty_container(child) {
-                Self::flush_sibling_buf(&mut buf, parent_path, result);
-                Self::process_node(child, parent_path, max_size, overlap, result);
-                continue;
-            }
-
-            if Self::is_short_leaf(child) {
-                buf.push(child.text.clone());
-                continue;
-            }
-
-            // 非短叶子：刷新缓冲区 + 处理自身
-            Self::flush_sibling_buf(&mut buf, parent_path, result);
-            Self::process_node(child, parent_path, max_size, overlap, result);
-        }
-
-        Self::flush_sibling_buf(&mut buf, parent_path, result);
-    }
-
-    /// 刷新兄弟合并缓冲区，将累积的短叶子合并为一个 chunk。
-    fn flush_sibling_buf(
-        buf: &mut Vec<String>,
-        parent_path: &[String],
-        result: &mut Vec<ChunkResult>,
-    ) {
-        if buf.is_empty() {
-            return;
-        }
-        let merged = format!("- {}", buf.join("\n- "));
-        Self::push_chunk(&merged, parent_path, 0, 0, result);
-        buf.clear();
+    /// 使用 `descendants()` 遍历所有嵌套层级，确保深层 HTML 内容不被遗漏。
+    /// 块级元素插入换行标记，由调用方 `clean_html` 统一清洗。
+    fn extract_richcontent_note(elem: roxmltree::Node) -> Option<String> {
+        let rich = elem.children().find(|c| {
+            c.has_tag_name("richcontent") && c.attribute("TYPE") == Some("NOTE")
+        })?;
+        let body = rich.descendants().find(|n| n.has_tag_name("body"))?;
+        let parts: Vec<String> = body
+            .descendants()
+            .filter_map(|n| {
+                if n.is_text() {
+                    n.text().map(|t| t.to_string())
+                } else if n.is_element() {
+                    match n.tag_name().name() {
+                        "p" | "div" | "br" | "tr" => Some("\n".to_string()),
+                        "li" => Some("\n- ".to_string()),
+                        "td" | "th" => Some("\t".to_string()),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let result = parts.join("").trim().to_string();
+        if result.is_empty() { None } else { Some(result) }
     }
 }
 
-impl ChunkSplitter for OpmlChunkSplitter {
-    fn split(&self, text: &str, max_size: usize, overlap: usize) -> Vec<ChunkResult> {
-        let nodes = Self::parse_opml(text);
-
-        if nodes.is_empty() {
-            return utils::split_text_char_based(text, max_size, overlap)
-                .into_iter().map(ChunkResult::plain).collect();
-        }
-
-        let mut result = Vec::new();
-        for root_node in &nodes {
-            Self::process_node(root_node, &[], max_size, overlap, &mut result);
-        }
-        result
-    }
-}
+impl_tree_chunk_splitter!(FreeMindChunkSplitter, FreeMindChunkSplitter::parse_freemind);
 
 // ─── ChunkSplitterFactory（工厂模式） ───
 
@@ -740,22 +898,26 @@ impl ChunkSplitterFactory {
             suffix: Vec::new(),
         };
 
-        // 注册内置分割器
-        let md = Box::new(MarkdownChunkSplitter::new());
+        // 注册内置分割器（复用配置实例避免重复堆分配）
+        let md_splitter = MarkdownChunkSplitter::new();
         let opml = Box::new(OpmlChunkSplitter);
+        let freemind = Box::new(FreeMindChunkSplitter);
 
         // Markdown 类型
-        factory.exact.insert("md", md);
-        factory.exact.insert("mdx", Box::new(MarkdownChunkSplitter::new()));
-        factory.suffix.push(("md", Box::new(MarkdownChunkSplitter::new())));
+        factory.exact.insert("md", Box::new(md_splitter.clone()));
+        factory.exact.insert("mdx", Box::new(md_splitter.clone()));
+        factory.suffix.push(("md", Box::new(md_splitter)));
 
         // OPML 类型
         factory.exact.insert("opml", opml);
 
+        // FreeMind 类型
+        factory.exact.insert("mm", freemind);
+
         // 纯文本类型（默认）
-        // 代码、配置文件等所有非 Markdown/OPML 类型都使用纯文本分割
+        // 代码、配置文件等所有非 Markdown/OPML/FreeMind 类型都使用纯文本分割
         for ext in utils::KB_SUPPORTED_EXTS {
-            if ext != &"md" && ext != &"mdx" && ext != &"opml" {
+            if ext != &"md" && ext != &"mdx" && ext != &"opml" && ext != &"mm" {
                 factory.exact.insert(ext, Box::new(PlainTextChunkSplitter));
             }
         }
@@ -777,9 +939,9 @@ impl ChunkSplitterFactory {
             return splitter.as_ref();
         }
 
-        // 后缀匹配
+        // 后缀匹配（如 "md" 前缀匹配 "mdx"；避免误匹配 .cmd、.3md 等）
         for (suffix, splitter) in &self.suffix {
-            if ext_lower.ends_with(suffix) {
+            if ext_lower == *suffix || ext_lower.starts_with(suffix) {
                 return splitter.as_ref();
             }
         }
