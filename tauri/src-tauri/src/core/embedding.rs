@@ -216,7 +216,7 @@ fn run_batch(
 
 /// 初始化全局缓存：检查模型文件完整性，缓存 tokenizer.json 字节，创建 Session。
 /// 幂等安全，重复调用无副作用。
-fn ensure_initialized(models_dir: &Path) -> Result<(), String> {
+pub(crate) fn ensure_initialized(models_dir: &Path) -> Result<(), String> {
     if let Some(cached) = MODEL_DIR.get() {
         if cached != &models_dir.to_string_lossy().as_ref() {
             log::warn!(
@@ -505,6 +505,8 @@ pub fn call_embedding_parallel(
 static RERANKER_SESSION: OnceLock<Mutex<SessionType>> = OnceLock::new();
 /// Reranker 的 pad_token_id
 static RERANKER_PAD_ID: OnceLock<i64> = OnceLock::new();
+/// Reranker tokenizer.json 原始字节缓存（避免每个线程首次使用读磁盘）
+static RERANKER_TOKENIZER_JSON: OnceLock<Vec<u8>> = OnceLock::new();
 
 /// 初始化 Reranker 模型
 ///
@@ -545,23 +547,15 @@ fn ensure_reranker_initialized(models_dir: &Path) -> Result<(), String> {
     let model_path = reranker_dir.join("model.onnx");
     let session = create_session(&model_path)?;
 
-    // 缓存 tokenizer 字节
-    thread_local! {
-        static RERANKER_TOKENIZER: OnceLock<tokenizers::Tokenizer> = OnceLock::new();
-    }
-    RERANKER_TOKENIZER.with(|cache| {
-        let _ = cache.get_or_init(|| {
-            tokenizers::Tokenizer::from_bytes(tokenizer_raw.clone())
-                .expect("reranker tokenizer.json 解析失败")
-        });
-    });
+    // 缓存 tokenizer 原始字节（全局，供线程级 cache 使用）
+    let _ = RERANKER_TOKENIZER_JSON.set(tokenizer_raw);
 
     let _ = RERANKER_SESSION.set(Mutex::new(session));
     log::info!("[reranker] BGE-Reranker 初始化完成");
     Ok(())
 }
 
-/// 线程级 Reranker Tokenizer 缓存
+/// 线程级 Reranker Tokenizer 缓存（使用全局缓存的字节，避免读磁盘）
 fn with_reranker_tokenizer<F, R>(f: F) -> R
 where
     F: FnOnce(&tokenizers::Tokenizer) -> R,
@@ -571,13 +565,9 @@ where
     }
     TOKENIZER.with(|cache| {
         let tok = cache.get_or_init(|| {
-            // 从原始字节重新解析（首次使用时根据 MODEL_DIR + reranker 目录构造）
-            let models_dir = MODEL_DIR.get()
-                .expect("MODEL_DIR 未初始化");
-            let reranker_dir = Path::new(models_dir).join("reranker");
-            let raw = std::fs::read(reranker_dir.join("tokenizer.json"))
-                .expect("读取 reranker tokenizer.json 失败");
-            tokenizers::Tokenizer::from_bytes(raw)
+            let raw = RERANKER_TOKENIZER_JSON.get()
+                .expect("Reranker 未初始化，请先调用 ensure_reranker_initialized");
+            tokenizers::Tokenizer::from_bytes(raw.clone())
                 .expect("解析 reranker tokenizer.json 失败")
         });
         f(tok)

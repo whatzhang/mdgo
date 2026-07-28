@@ -15,6 +15,8 @@ pub struct ChunkResult {
     pub path_depth: Option<u32>,
     /// 节点路径的 JSON 数组（仅 OPML 文件有值），如 `["项目计划","第一阶段"]`
     pub path_json: Option<String>,
+    /// 句子级 chunk 的上下文窗口文本（SentenceWindow 用），存储该句子周边的扩展上下文
+    pub sentence_window: Option<String>,
 }
 
 impl ChunkResult {
@@ -24,6 +26,7 @@ impl ChunkResult {
             text,
             path_depth: None,
             path_json: None,
+            sentence_window: None,
         }
     }
 }
@@ -235,11 +238,12 @@ impl ChunkSplitter for MarkdownChunkSplitter {
         let mut section_start = 0usize;
         let mut setext_candidate: Option<(usize, String)> = None;
 
-        // 无 # 且关闭 Setext 时，直接降级纯文本分割
+        // 无 # 且关闭 Setext 时，降级为分隔符感知的段落分割（保留段落结构）
         let has_hash = uniform_text.contains('#');
         if !has_hash && !config.enable_setext_heading {
-            return utils::split_text_char_based(&uniform_text, max_chars, overlap)
-                .into_iter().map(ChunkResult::plain).collect();
+            return utils::split_text_with_separators(
+                &uniform_text, max_chars, overlap, &["\n\n", "\n", ". ", "。"]
+            ).into_iter().map(ChunkResult::plain).collect();
         }
 
         for (line_idx, line) in lines.iter().enumerate() {
@@ -267,6 +271,14 @@ impl ChunkSplitter for MarkdownChunkSplitter {
             if config.enable_setext_heading {
                 if setext_re.is_match(line) {
                     if let Some((prev_idx, title)) = setext_candidate.take() {
+                        // --- 仅在候选标题较短（≤100 字符）时视为 H2，
+                        // 避免长段落前的 --- 分割线被误识别为 Setext 标题
+                        let is_h1 = line.starts_with('=');
+                        if !is_h1 && title.chars().count() > 100 {
+                            // --- 且候选文本过长 → 视为 HR（分割线），跳过
+                            setext_candidate = None;
+                            continue;
+                        }
                         // 先保存上一段落
                         if !heading_stack.is_empty() {
                             Self::push_section(
@@ -281,7 +293,6 @@ impl ChunkSplitter for MarkdownChunkSplitter {
                             );
                         }
                         // 压入标题栈（=== 为 H1，--- 为 H2）
-                        let is_h1 = line.starts_with('=');
                         let setext_level = if is_h1 { 1 } else { 2 };
                         while let Some(top) = heading_stack.last() {
                             if top.level >= setext_level {
@@ -585,7 +596,7 @@ impl TreeProcessor {
         let char_count = combined.chars().count();
 
         if char_count <= max_size * 3 / 2 {
-            result.push(ChunkResult { text: combined, path_depth, path_json });
+            result.push(ChunkResult { text: combined, path_depth, path_json, sentence_window: None });
             return;
         }
 
@@ -600,6 +611,7 @@ impl TreeProcessor {
                 text: format!("{}{}", prefix_line, sub),
                 path_depth,
                 path_json: path_json.clone(),
+                sentence_window: None,
             });
         }
     }
@@ -617,7 +629,7 @@ impl TreeProcessor {
             format!("【上下文: {}】\n{}", prefix_str, body)
         };
         let (path_depth, path_json) = Self::path_to_metadata(path);
-        result.push(ChunkResult { text: combined, path_depth, path_json });
+        result.push(ChunkResult { text: combined, path_depth, path_json, sentence_window: None });
     }
 
     // ─── DFS 遍历 ───
@@ -873,6 +885,182 @@ impl FreeMindChunkSplitter {
 }
 
 impl_tree_chunk_splitter!(FreeMindChunkSplitter, FreeMindChunkSplitter::parse_freemind);
+
+// ─── SemanticChunkSplitter（语义分块） ───
+
+/// 语义分块器：通过 sentence-level embedding 相似度找到语义边界进行切分。
+///
+/// # 算法（Greg Kamradt 方法）
+/// 1. 将文本分割为句子
+/// 2. 用滑动窗口（默认 5 句）分组句子，对每组生成 embedding
+/// 3. 计算相邻组的余弦相似度
+/// 4. 在相似度低于阈值百分位数的位置切分
+/// 5. 合并过小的 chunk（< 30% max_size）
+///
+/// # 退化策略
+/// 若 embedding 调用失败（如模型未就绪），自动回退到字符级分块。
+#[allow(dead_code)]
+pub struct SemanticChunkSplitter {
+    /// 滑动窗口大小（句子数），默认 5
+    pub window_size: usize,
+    /// 相似度阈值百分位数（0.0~1.0），默认 0.9
+    pub threshold_percentile: f64,
+}
+
+impl Default for SemanticChunkSplitter {
+    fn default() -> Self {
+        Self {
+            window_size: 5,
+            threshold_percentile: 0.9,
+        }
+    }
+}
+
+impl ChunkSplitter for SemanticChunkSplitter {
+    fn split(&self, text: &str, max_size: usize, overlap: usize) -> Vec<ChunkResult> {
+        // 1. Split into sentences
+        let sentences = utils::split_sentences(text);
+        if sentences.len() <= 1 {
+            return vec![ChunkResult::plain(text.to_string())];
+        }
+
+        // 2. Group sentences into overlapping windows of window_size
+        let groups: Vec<String> = if sentences.len() <= self.window_size {
+            vec![sentences.join("")]
+        } else {
+            sentences.windows(self.window_size)
+                .map(|w| w.join(""))
+                .collect()
+        };
+
+        // 3. Compute embedding for each group
+        let refs: Vec<&str> = groups.iter().map(|s| s.as_str()).collect();
+        let embeddings = match utils::call_embedding(&refs, None) {
+            Ok(e) => e,
+            Err(_) => {
+                // Fallback to character-based splitting
+                log::warn!("[semantic_chunk] embedding call failed, falling back to char-based split");
+                return utils::split_text_char_based(text, max_size, overlap)
+                    .into_iter().map(ChunkResult::plain).collect();
+            }
+        };
+
+        // 4. Calculate cosine similarities between adjacent groups
+        let similarities: Vec<f64> = embeddings.windows(2)
+            .map(|w| utils::cosine_similarity(&w[0], &w[1]))
+            .collect();
+
+        // 5. Find threshold — break where similarity drops below percentile
+        let threshold = if similarities.is_empty() {
+            0.0
+        } else {
+            let mut sorted = similarities.clone();
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let idx = ((sorted.len() as f64) * self.threshold_percentile).floor() as usize;
+            let idx = idx.min(sorted.len().saturating_sub(1));
+            sorted[idx]
+        };
+
+        // 6. Build chunks at semantic breakpoints
+        let mut chunk_sentences: Vec<Vec<String>> = Vec::new();
+        let mut current: Vec<String> = Vec::new();
+        current.push(sentences[0].clone());
+
+        for i in 0..similarities.len() {
+            let sentence_idx = i + 1;
+            if sentence_idx < sentences.len() {
+                if similarities[i] < threshold {
+                    if !current.is_empty() {
+                        chunk_sentences.push(std::mem::take(&mut current));
+                    }
+                }
+                current.push(sentences[sentence_idx].clone());
+            }
+        }
+        if !current.is_empty() {
+            chunk_sentences.push(current);
+        }
+
+        // 7. Convert to ChunkResult
+        let results: Vec<ChunkResult> = chunk_sentences.into_iter()
+            .map(|group| ChunkResult::plain(group.join("")))
+            .collect();
+
+        // 8. Merge chunks that are too small (< 30% of max_size)
+        let min_size = (max_size as f64 * 0.3).max(1.0) as usize;
+        if results.len() > 1 {
+            let mut merged: Vec<ChunkResult> = Vec::new();
+            for chunk in results.into_iter() {
+                if let Some(last) = merged.last_mut() {
+                    if last.text.chars().count() < min_size {
+                        last.text.push('\n');
+                        last.text.push_str(&chunk.text);
+                        continue;
+                    }
+                }
+                merged.push(chunk);
+            }
+            merged
+        } else {
+            results
+        }
+    }
+}
+
+// ─── SentenceWindowChunkSplitter（句子窗口分块） ───
+
+/// 句子窗口分块器：句子级细粒度分块 + 上下文窗口元数据。
+///
+/// # 原理（LlamaIndex SentenceWindowNodeParser 思路）
+/// - 每个句子作为独立 chunk（被 embedding 和检索）
+/// - chunk 的 `sentence_window` 字段存储该句子周边的扩展上下文
+/// - 检索到该 chunk 后，后处理阶段可用窗口文本代替原句传给 LLM
+///
+/// # 使用场景
+/// 对召回精度要求高（精确匹配句子）、同时对上下文完整性有要求的场景。
+/// 相比传统固定大小分块，句子窗口在检索阶段更精确，在生成阶段更完整。
+#[allow(dead_code)]
+pub struct SentenceWindowChunkSplitter {
+    /// 上下文窗口大小（前后句子数），默认 2（即前后各 2 句，共 5 句窗口）
+    pub context_window: usize,
+}
+
+impl Default for SentenceWindowChunkSplitter {
+    fn default() -> Self {
+        Self { context_window: 2 }
+    }
+}
+
+impl ChunkSplitter for SentenceWindowChunkSplitter {
+    fn split(&self, text: &str, _max_size: usize, _overlap: usize) -> Vec<ChunkResult> {
+        let sentences = utils::split_sentences(text);
+        if sentences.is_empty() || sentences.len() <= 1 {
+            return vec![ChunkResult::plain(text.to_string())];
+        }
+
+        let n = sentences.len();
+        let window = self.context_window;
+        let mut results = Vec::with_capacity(n);
+
+        for i in 0..n {
+            let sentence_text = sentences[i].clone();
+
+            // Build context window: window sentences before + after
+            let window_start = i.saturating_sub(window);
+            let window_end = (i + window + 1).min(n);
+            let window_text = sentences[window_start..window_end].join("");
+
+            results.push(ChunkResult {
+                text: sentence_text,
+                path_depth: None,
+                path_json: None,
+                sentence_window: Some(window_text),
+            });
+        }
+
+        results
+    }
+}
 
 // ─── ChunkSplitterFactory（工厂模式） ───
 

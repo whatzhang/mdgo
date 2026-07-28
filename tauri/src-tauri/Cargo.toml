@@ -61,6 +61,8 @@ tantivy = "0.26"
 # 数值计算
 ndarray = "0.17"
 rayon = "1.10"
+# 中文分词（Jieba，替换简单 Bigram）
+jieba-rs = "0.10"
 # 分词
 tokenizers = "0.22"
 # 文件监听

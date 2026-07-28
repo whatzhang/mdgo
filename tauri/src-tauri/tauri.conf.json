@@ -15,9 +15,9 @@
         "label": "main",
         "title": "",
         "width": 1230,
-        "height": 750,
+        "height": 730,
         "minWidth": 1230,
-        "minHeight": 750,
+        "minHeight": 730,
         "decorations": true,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true

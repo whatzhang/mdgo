@@ -5146,29 +5146,68 @@
         .chat-input-area {
             display: flex;
             flex-direction: column;
-            gap: 0.5rem;
-            padding: 0.625rem 0.875rem;
-            border-top: 0.0625rem solid var(--color-border);
+            gap: 0.25rem;
+            border-radius: 1rem;
+            padding: 0.25rem;
+            margin-top: 0.25rem;
+            margin-bottom: 1rem;
+            width: 70%;
+            align-self: center;
             background: var(--color-bg);
             flex-shrink: 0;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transition: all 0.2s ease;
+            position: relative;
         }
 
         .chat-input-area textarea {
             flex: 1;
             resize: none;
-            border: 1px solid var(--color-border);
-            border-radius: 0.5rem;
+            border-radius: 0.75rem;
             padding: 0.5rem 0.625rem;
             font-size: 0.875rem;
             font-family: var(--font-family);
-            background: var(--color-bg-secondary);
-            color: var(--color-text);
+            font-weight: 500;
+            line-height: 1.3;
+            background: #f5f3f3;
+            color: var(--t0);
             max-height: 7.5rem;
             outline: none;
+            border: none;
         }
 
         .chat-input-area textarea:focus {
-            border-color: var(--color-primary);
+            border: none;
+        }
+
+        /* 发送按钮：位于输入框右下角 */
+        .chat-send-btn {
+            position: absolute;
+            bottom: 0.5rem;
+            right: 0.5rem;
+            width: 2rem;
+            height: 2rem;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+            color: #fff;
+            z-index: 1;
+        }
+        .chat-send-btn:not(:disabled) {
+            background: var(--color-primary, #0879e9);
+        }
+        .chat-send-btn:not(:disabled):hover {
+            background: var(--color-primary-hover, #0550ae);
+            transform: scale(1.05);
+        }
+        .chat-send-btn:disabled {
+            background: #c8ccd0;
+            cursor: not-allowed;
+            opacity: 0.6;
         }
 
         .chat-typing {
@@ -5508,6 +5547,59 @@
             background: var(--color-warning);
             color: #fff;
             border-color: var(--color-warning);
+        }
+
+        /* RAG 设置齿轮按钮 */
+        .rag-settings-btn {
+            display: none;
+            width: 1.5rem;
+            height: 1.5rem;
+            padding: 0.125rem;
+            border-radius: 50%;
+            background: transparent;
+            cursor: pointer;
+            color: var(--t2);
+            transition: all 0.15s;
+            flex-shrink: 0;
+        }
+        .rag-settings-btn:hover {
+            background: var(--color-hover-bg, #f3f4f6);
+            color: var(--color-text, #1f2328);
+        }
+        .rag-settings-btn.active {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* RAG 设置面板表单行 */
+        .rag-settings-row {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+        .rag-settings-row label {
+            font-size: 0.875rem;
+            color: var(--color-text, #1f2328);
+            flex-shrink: 0;
+            min-width: 4rem;
+        }
+        .rag-settings-row input[type="number"] {
+            width: 5rem;
+            padding: 0.125rem 0.25rem;
+            font-size: 0.8125rem;
+            height: 1.5rem;
+            line-height: 1.5;
+            border: 1px solid var(--color-border, #d0d7de);
+            border-radius: 0.3125rem;
+            outline: none;
+            text-align: right;
+            box-sizing: border-box;
+        }
+        .rag-settings-row input:focus {
+            border-color: var(--color-primary, #0879e9);
+            box-shadow: 0 0 0 3px rgba(8,121,233,0.1);
         }
 
         .hlyxcp {
@@ -8600,7 +8692,7 @@
         }
 
         .todo-modal-footer {
-            padding: 0.65rem 1rem 1.2rem 1rem;
+            padding: 0.65rem 1rem 1rem 1rem;
             display: flex;
             justify-content: flex-end;
             gap: 10px;
@@ -15369,6 +15461,12 @@
                                         onclick="setChatMode('normal')">普通对话</button>
                                     <button id="chat-mode-rag" class="btn btn-sm btn-mode" onclick="setChatMode('rag')"
                                         style="display:none;">RAG</button>
+                                    <button id="rag-settings-btn" class="rag-settings-btn" onclick="openRagSettings()"
+                                        title="RAG 检索参数设置">
+                                        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                                            <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/>
+                                        </svg>
+                                    </button>
                                 </div>
                             </div>
                             <div id="chat-header-actions">
@@ -15376,6 +15474,41 @@
                                     title="清空对话">清空</button>
                                 <button class="btn btn-sm" id="toggle-history-btn" onclick="toggleChatHistory()"
                                     title="展开历史面板">对话历史</button>
+                            </div>
+                        </div>
+                        <!-- RAG 设置面板 -->
+                        <div id="rag-settings-overlay" class="modal-overlay" style="display:none;" onclick="closeRagSettings()">
+                            <div class="todo-modal" onclick="event.stopPropagation()" style="width:15rem">
+                                <div class="todo-modal-header">
+                                    <div class="todo-modal-title">RAG 检索参数</div>
+                                    <button class="todo-modal-close" onclick="closeRagSettings()">×</button>
+                                </div>
+                                <div class="todo-modal-body">
+                                    <div class="rag-settings-row">
+                                        <label>Top-K</label>
+                                        <input type="number" id="rag-setting-topk" min="1" max="50" step="1" value="10">
+                                        <span class="setting-help" data-tippy-content="控制每次检索从知识库中返回的最相关结果数量。较大的值（如 20）会提供更多候选结果，但可能引入噪声；较小的值（如 5）更精确但可能遗漏相关信息。默认值 10 在多数场景下表现良好。">ⓘ</span>
+                                    </div>
+                                    <div class="rag-settings-row">
+                                        <label>最低分数</label>
+                                        <input type="number" id="rag-setting-min-score" min="0" max="1" step="0.05" value="0.3">
+                                        <span class="setting-help" data-tippy-content="相关性分数的过滤阈值（0~1）。只有得分 ≥ 此值的检索结果才会被送入 LLM 作为上下文。较高的阈值（如 0.5）可以过滤掉低质量匹配，但可能减少可用上下文；较低的阈值（如 0.1）会保留更多结果但可能引入噪声。">ⓘ</span>
+                                    </div>
+                                    <div class="rag-settings-row">
+                                        <label>分块大小</label>
+                                        <input type="number" id="rag-setting-chunk-size" min="100" max="4000" step="50" value="1000">
+                                        <span class="setting-help" data-tippy-content="文档被切分成索引块时的目标字符数。较小的块（如 500）更精确但上下文可能不完整；较大的块（如 2000）上下文更丰富但检索精度可能下降。默认值 1000 在准确性和上下文完整性之间取得平衡。">ⓘ</span>
+                                    </div>
+                                    <div class="rag-settings-row">
+                                        <label>分块重叠</label>
+                                        <input type="number" id="rag-setting-chunk-overlap" min="0" max="500" step="10" value="200">
+                                        <span class="setting-help" data-tippy-content="相邻文档块之间重叠的字符数。重叠可以避免因切分位置不当导致的关键信息被截断。较大的重叠（如 300）提供更好的连续性但增加存储开销；较小的重叠（如 100）节省空间但可能丢失边界信息。">ⓘ</span>
+                                    </div>
+                                </div>
+                                <div class="todo-modal-footer">
+                                    <button class="todo-btn-secondary" onclick="closeRagSettings()">取消</button>
+                                    <button class="todo-btn-primary" onclick="saveRagSettings()">保存</button>
+                                </div>
                             </div>
                         </div>
                         <div class="chat-messages" id="chat-messages"></div>
@@ -15395,7 +15528,15 @@
                                 <span class="chat-turn-counter" id="chat-turn-counter" style="display:none;"></span>
                             </div>
                             <textarea id="chat-input" rows="4" placeholder="按下回车发送消息..."
-                                onkeydown="handleChatKeydown(event)"></textarea>
+                                onkeydown="handleChatKeydown(event)"
+                                oninput="updateChatSendButton()" onfocus="updateChatSendButton()" onblur="updateChatSendButton()"></textarea>
+                            <button id="chat-send-btn" class="chat-send-btn" disabled
+                                onclick="handleChatSendClick()"
+                                title="发送消息">
+                                <svg id="chat-send-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                                </svg>
+                            </button>
                         </div>
                     </div>
                     <!-- 右侧历史面板 -->
@@ -36206,7 +36347,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     // onclose 会自动触发
                 };
             } catch (e) {
-                console.debug('WebSocket 连接失败:', e.message);
+                console.error('WebSocket 连接失败:', e.message);
             }
         }
 
@@ -38651,7 +38792,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         return;
                     }
                 } catch (e) {
-                    console.debug('从本地文件加载日程失败，尝试 HTTP 请求:', e.message);
+                    console.error('从本地文件加载日程失败，尝试 HTTP 请求:', e.message);
                 }
             }
         }
@@ -48672,11 +48813,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
          */
         async function finalizeCurrentSession() {
             if (!chatStreaming) return;
-            // 1. 中断流式请求
+            // 1. 中断流式请求 → 触发 query 函数 catch 块自动保存部分消息 + finally 块清理状态
             chatAbortController?.abort();
-            // 2. 保存已生成的部分内容
-            await savePartialAssistantMessage();
-            // 3. 清理流状态
+            // 2. 等 query 函数的 finally 块完成状态清理后再执行后续操作
+            await new Promise(resolve => setTimeout(resolve, 0));
+            // 3. 兜底清理（query finally 已清理，此处仅防异常路径）
             chatStreaming = false;
             chatAbortController = null;
             _chatStreamingDiv = null;
@@ -48684,6 +48825,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             _chatStreamingStatusMsg = '';
             _chatStreamingFullContent = '';
             removeChatTyping();
+            updateChatSendButton();
         }
 
         // 追踪各会话已索引时的消息条数，避免重复索引
@@ -48800,6 +48942,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 await switchChatSession(chatSessions[0].id, true);
             }
             setTimeout(() => document.getElementById('chat-input')?.focus(), 100);
+            // 初始化发送按钮状态
+            updateChatSendButton();
         }
 
         async function openKnowledgeBase() {
@@ -48841,7 +48985,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             document.querySelectorAll('.btn-mode').forEach(b => b.classList.remove('active'));
             const btn = document.getElementById('chat-mode-' + mode);
             if (btn) btn.classList.add('active');
-
+            // 显示/隐藏 RAG 设置齿轮按钮
+            const settingsBtn = document.getElementById('rag-settings-btn');
+            if (settingsBtn)  settingsBtn.classList.toggle('active', mode === 'rag');
             // 3. 查找是否有对应类型的最近会话
             const targetType = mode === 'rag' ? 'rag' : 'regular';
             const sessionOfType = chatSessions.find(s => s.type === targetType);
@@ -48875,6 +49021,36 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 e.preventDefault();
                 sendChatMessage();
             }
+        }
+
+        /** 更新发送按钮状态（禁用/可用/停止图标） */
+        function updateChatSendButton() {
+            const btn = document.getElementById('chat-send-btn');
+            const icon = document.getElementById('chat-send-icon');
+            const input = document.getElementById('chat-input');
+            if (!btn || !icon || !input) return;
+            if (chatStreaming) {
+                // 流式响应中 → 显示方块停止图标，始终可用
+                btn.disabled = false;
+                btn.title = '停止生成';
+                icon.innerHTML = '<rect x="6" y="6" width="12" height="12" rx="2"/>';
+            } else {
+                // 正常状态 → 根据输入内容决定是否可用
+                const hasText = input.value.trim().length > 0;
+                btn.disabled = !hasText;
+                btn.title = hasText ? '发送消息' : '输入消息后发送';
+                icon.innerHTML = '<path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>';
+            }
+        }
+
+        /** 发送按钮点击事件：发送或停止 */
+        function handleChatSendClick() {
+            if (chatStreaming) {
+                // 停止生成
+                chatAbortController?.abort();
+                return;
+            }
+            sendChatMessage();
         }
 
         /** 折叠/展开右侧历史面板 */
@@ -49257,6 +49433,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             }
             input.value = '';
+            updateChatSendButton();
             addChatMessage('user', text, null, chatMode);
             chatMessages.push({ role: 'user', content: text });
             updateTurnCounter();
@@ -49305,6 +49482,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         async function sendLlmQuery(text) {
             chatStreaming = true;
+            updateChatSendButton();
             chatAbortController = new AbortController();
             _chatStreamingDiv = null;
             _chatStreamingSources = null;
@@ -49460,6 +49638,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 chatAbortController?.signal.removeEventListener('abort', abortHandler);
                 unlisteners.forEach(u => u());
                 chatStreaming = false;
+                updateChatSendButton();
                 chatAbortController = null;
                 _chatStreamingDiv = null;
                 _chatStreamingSources = null;
@@ -49606,6 +49785,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             // 将离开的会话异步索引，确保可被搜索召回
             indexCurrentSessionIfNeeded(currentSessionId);
             // 2. 清空前端 UI
+            const inputEl = document.getElementById('chat-input');
+            if (inputEl) {
+                inputEl.value = '';
+                updateChatSendButton();
+            }
             chatMessages = [];
             const container = document.getElementById('chat-messages');
             if (container) container.innerHTML = '';
@@ -49634,6 +49818,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         document.querySelectorAll('.btn-mode').forEach(b => b.classList.remove('active'));
                         const btn = document.getElementById('chat-mode-' + newMode);
                         if (btn) btn.classList.add('active');
+                        // 同步齿轮按钮状态
+                        const settingsBtn = document.getElementById('rag-settings-btn');
+                        if (settingsBtn) settingsBtn.classList.toggle('active', newMode === 'rag');
                     }
                 }
                 // 5. 构建消息条目（含 sources）
@@ -49811,6 +49998,71 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             el.className = 'chat-turn-counter';
         }
 
+        // ─── RAG 检索参数设置 ───
+        let ragSettings = null; // 延迟初始化，从后端加载
+        let ragSettingsTippy = null;
+        async function openRagSettings() {
+            const overlay = document.getElementById('rag-settings-overlay');
+            if (!overlay) return;
+            // 从后端加载当前配置
+            try {
+                if (window.__TAURI__?.core?.invoke) {
+                    const cfg = await window.__TAURI__.core.invoke('kb_get_indexer_config');
+                    ragSettings = ragSettings || {};
+                    document.getElementById('rag-setting-topk').value = cfg.top_k ?? 10;
+                    document.getElementById('rag-setting-min-score').value = cfg.min_score ?? 0.3;
+                    document.getElementById('rag-setting-chunk-size').value = cfg.chunk_size ?? 1000;
+                    document.getElementById('rag-setting-chunk-overlap').value = cfg.chunk_overlap ?? 200;
+                }
+            } catch (e) {
+                console.warn('[rag-settings] 加载配置失败:', e);
+            }
+            overlay.style.display = 'flex';
+            // 初始化 ⓘ 提示
+            if (!ragSettingsTippy) {
+                ragSettingsTippy = tippy(overlay.querySelectorAll('.setting-help'), {
+                    theme: 'custom',
+                    content: (ref) => ref.getAttribute('data-tippy-content'),
+                });
+            }
+        }
+
+        function closeRagSettings() {
+            const overlay = document.getElementById('rag-settings-overlay');
+            if (overlay) overlay.style.display = 'none';
+            // 销毁 tippy 实例，避免下次打开时重复绑定
+            if (ragSettingsTippy) {
+                ragSettingsTippy.forEach(t => t.destroy());
+                ragSettingsTippy = null;
+            }
+        }
+
+        async function saveRagSettings() {
+            const topK = parseInt(document.getElementById('rag-setting-topk').value) || 10;
+            const minScore = parseFloat(document.getElementById('rag-setting-min-score').value) || 0.3;
+            const chunkSize = parseInt(document.getElementById('rag-setting-chunk-size').value) || 1000;
+            const chunkOverlap = parseInt(document.getElementById('rag-setting-chunk-overlap').value) || 200;
+            // 更新本地状态
+            ragSettings = { topK, minScore, chunkSize, chunkOverlap };
+            // 持久化到后端
+            try {
+                if (window.__TAURI__?.core?.invoke) {
+                    await window.__TAURI__.core.invoke('kb_update_indexer_config', {
+                        chunkSize,
+                        chunkOverlap,
+                        topK,
+                        minScore,
+                    });
+                    showNotification('RAG 参数已保存', 'success');
+                }
+            } catch (e) {
+                console.error('[rag-settings] 保存配置失败:', e);
+                showNotification('保存 RAG 参数失败: ' + (e.message || e), 'error');
+            }
+            // 关闭面板
+            closeRagSettings();
+        }
+
         async function sendRagQuery(text) {
             const dirHandle = getRootHandle();
             const path = dirHandle ? getDirPath(dirHandle) : null;
@@ -49823,17 +50075,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
             console.debug('[rag] sendRagQuery ENTRY text_len=' + text.length + ' dir=' + path);
             chatStreaming = true;
+            updateChatSendButton();
             chatAbortController = new AbortController();
             _chatStreamingDiv = null;
             _chatStreamingSources = null;
             _chatStreamingStatusMsg = '';
             _chatStreamingFullContent = '';
             showChatTyping();
-            console.debug('[rag] chatTyping shown');
 
             const requestId = crypto.randomUUID();
             let ragDone = false;
-            let _statusEl = null;
             console.debug('[rag] requestId=' + requestId);
 
             // 取消时通知后端
@@ -49844,7 +50095,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             chatAbortController.signal.addEventListener('abort', abortHandler);
 
             // 监听 Tauri 事件
-            console.debug('[rag] registering event listeners...');
             const unlisteners = await Promise.all([
                 window.__TAURI__.event.listen('rag:delta', (e) => {
                     if (e.payload.request_id !== requestId) return;
@@ -49890,7 +50140,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     if (e.payload.request_id !== requestId) return;
                     console.debug('[rag] done event requestId=' + requestId + ' content_len=' + (e.payload.content || '').length + ' sources=' + (e.payload.sources || []).length + ' tokens_in=' + e.payload.prompt_tokens + ' tokens_out=' + e.payload.completion_tokens);
                     ragDone = true;
-                    if (_statusEl) _statusEl.remove();
                     _chatStreamingStatusMsg = '';
                     if (_chatStreamingDiv) {
                         const st = _chatStreamingDiv.querySelector('.chat-message-header-status');
@@ -50004,7 +50253,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     if (e.payload.request_id !== requestId) return;
                     console.error('[rag] error event requestId=' + requestId + ' msg=' + e.payload.message);
                     ragDone = true;
-                    if (_statusEl) _statusEl.remove();
                     _chatStreamingStatusMsg = '';
                     if (_chatStreamingDiv) {
                         const st = _chatStreamingDiv.querySelector('.chat-message-header-status');
@@ -50015,7 +50263,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }),
             ]);
 
-            console.debug('[rag] listeners registered, invoking kb_rag_query... requestId=' + requestId);
             try {
                 const histMessages = trimChatHistory(chatMessages.map(m => ({ role: m.role, content: m.content })), 0.4);
                 // 发送前使用裁剪后的消息估算 token，展示实际发送给 LLM 的上下文占比
@@ -50028,9 +50275,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     query: text,
                     messages: histMessages,
                     requestId,
-                    topK: 10,
+                    topK: ragSettings?.topK ?? 10,
                 });
-                console.debug('[rag] invoke completed successfully requestId=' + requestId);
             } catch (err) {
                 console.error('[rag] invoke failed requestId=' + requestId + ' err=' + (err.message || err));
                 if (err.name !== 'AbortError' && !ragDone) {
@@ -50039,10 +50285,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     await savePartialAssistantMessage();
                 }
             } finally {
-                console.debug('[rag] finally block cleaning up requestId=' + requestId);
                 chatAbortController?.signal.removeEventListener('abort', abortHandler);
                 unlisteners.forEach(u => u());
                 chatStreaming = false;
+                updateChatSendButton();
                 chatAbortController = null;
                 _chatStreamingDiv = null;
                 _chatStreamingSources = null;
@@ -50544,6 +50790,22 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (isTauriVisit()) {
                 const ragBtn = document.getElementById('chat-mode-rag');
                 if (ragBtn) ragBtn.style.display = '';
+
+                // 预加载 RAG 检索参数配置
+                try {
+                    if (window.__TAURI__?.core?.invoke) {
+                        const cfg = await window.__TAURI__.core.invoke('kb_get_indexer_config');
+                        ragSettings = {
+                            topK: cfg.top_k ?? 10,
+                            minScore: cfg.min_score ?? 0.3,
+                            chunkSize: cfg.chunk_size ?? 1000,
+                            chunkOverlap: cfg.chunk_overlap ?? 200,
+                        };
+                    }
+                } catch (e) {
+                    console.warn('[rag] 加载配置失败:', e);
+                }
+
                 // 监听知识库文件变更事件，自动刷新状态
                 try {
                     const { listen } = window.__TAURI__.event;

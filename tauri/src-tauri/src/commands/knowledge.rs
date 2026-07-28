@@ -1,7 +1,7 @@
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::core::types::{FileTypeCount, IndexMeta};
-use crate::core::{IndexerConfig, KbIndexResult, KbProgress, KbStatus, SearchHit, call_embedding};
+use crate::core::{IndexerConfig, KbIndexResult, KbProgress, KbStatus, SearchHit, call_embedding_query};
 use crate::AppState;
 
 // ─── 数据结构 ───
@@ -145,7 +145,7 @@ pub async fn kb_search_hybrid(
 
     // 本地生成查询向量（bge-small-zh-v1.5, 维度由 config.json 动态决定）
     let query_text = query.clone();
-    let query_embedding = tokio::task::spawn_blocking(move || call_embedding(&[&query_text], None))
+    let query_embedding = tokio::task::spawn_blocking(move || call_embedding_query(&query_text))
         .await
         .map_err(|e| format!("Embedding 任务执行失败: {}", e))?
         .map_err(|e| format!("生成查询向量失败: {}", e))?;

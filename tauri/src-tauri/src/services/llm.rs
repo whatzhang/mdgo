@@ -309,15 +309,15 @@ impl LLMClient {
 
         log::debug!("[llm] expand_queries raw_response: {}", full);
 
-        // 解析结果为查询列表
+        // 解析结果为查询列表：按行分割，去除编号/前缀
         let lines: Vec<String> = full
             .split('\n')
-            .map(|l| l.trim().to_string())
+            .map(|l| l.trim().trim_start_matches(|c: char| c.is_ascii_digit() || ".-、). ".contains(c)).trim().to_string())
             .filter(|l| l.len() > 5)
             .collect();
 
-        // 简单字符集 Jaccard 去重
-        let similarity = |a: &str, b: &str| -> f64 {
+        // 字符集 Jaccard 相似度（用于去重）
+        let char_jaccard = |a: &str, b: &str| -> f64 {
             let set_a: HashSet<char> = a
                 .to_lowercase()
                 .chars()
@@ -340,10 +340,30 @@ impl LLMClient {
             }
         };
 
-        lines
+        // 1) 初筛：过滤掉与原始查询过于相似的变体
+        let mut candidates: Vec<String> = lines
             .into_iter()
-            .filter(|l| similarity(l, text) < 0.7)
-            .take(3)
-            .collect()
+            .filter(|l| char_jaccard(l, text) < 0.6)
+            .collect();
+
+        // 2) 交叉去重：如果两个变体彼此过于相似，保留更短的（更聚焦）
+        //    先将候选按与原始查询的相似度升序排列（优先保留差异最大的）
+        candidates.sort_by(|a, b| {
+            let sa = char_jaccard(a, text);
+            let sb = char_jaccard(b, text);
+            sa.partial_cmp(&sb).unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let mut deduped: Vec<String> = Vec::new();
+        for cand in candidates {
+            let is_dup = deduped.iter().any(|existing| char_jaccard(&cand, existing) >= 0.8);
+            if !is_dup {
+                deduped.push(cand);
+            }
+        }
+
+        // 3) 上限 3 个
+        deduped.truncate(3);
+        deduped
     }
 }

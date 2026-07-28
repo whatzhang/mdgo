@@ -12,7 +12,7 @@ use tokio::sync::Mutex;
 
 use crate::core::db::utils::get_local_embedding_dimension;
 
-fn escape_sql_string(s: &str) -> String {
+pub(crate) fn escape_sql_string(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     for c in s.chars() {
         match c {
@@ -34,6 +34,8 @@ pub struct DocumentChunk {
     pub path_depth: Option<u32>,
     /// OPML 节点路径的 JSON 数组（仅 OPML 文件有值）
     pub path_json: Option<String>,
+    /// 句子级 chunk 的上下文窗口文本（SentenceWindow 用）
+    pub sentence_window: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -46,6 +48,8 @@ pub struct SearchHit {
     pub score_bm25: f32,
     /// OPML 节点路径 JSON 数组（仅 OPML 文件有值），用于层级去重和前端展示
     pub path_json: Option<String>,
+    /// 句子级 chunk 的上下文窗口文本（SentenceWindow 用）
+    pub sentence_window: Option<String>,
 }
 
 pub struct LanceStore {
@@ -94,6 +98,7 @@ impl LanceStore {
         if let Ok(Ok(table)) = open_result {
             let _ = Self::migrate_add_column(&table, "path_depth", DataType::UInt32).await;
             let _ = Self::migrate_add_column(&table, "path_json", DataType::Utf8).await;
+            let _ = Self::migrate_add_column(&table, "sentence_window", DataType::Utf8).await;
             return Ok(());
         }
 
@@ -105,6 +110,7 @@ impl LanceStore {
             Field::new("chunk_index", DataType::UInt32, false),
             Field::new("path_depth", DataType::UInt32, true),
             Field::new("path_json", DataType::Utf8, true),
+            Field::new("sentence_window", DataType::Utf8, true),
             Field::new(
                 "vector",
                 DataType::FixedSizeList(
@@ -189,6 +195,7 @@ impl LanceStore {
         let mut chunk_idx_arr = Vec::with_capacity(n);
         let mut path_depth_arr: Vec<Option<u32>> = Vec::with_capacity(n);
         let mut path_json_arr: Vec<Option<&str>> = Vec::with_capacity(n);
+        let mut sentence_window_arr: Vec<Option<&str>> = Vec::with_capacity(n);
 
         for chunk in chunks {
             id_arr.push(chunk.id.as_str());
@@ -197,6 +204,7 @@ impl LanceStore {
             chunk_idx_arr.push(chunk.chunk_index);
             path_depth_arr.push(chunk.path_depth);
             path_json_arr.push(chunk.path_json.as_deref());
+            sentence_window_arr.push(chunk.sentence_window.as_deref());
         }
 
         let vector_arrays: Vec<Option<Vec<Option<f32>>>> = vectors
@@ -217,6 +225,7 @@ impl LanceStore {
                 Field::new("chunk_index", DataType::UInt32, false),
                 Field::new("path_depth", DataType::UInt32, true),
                 Field::new("path_json", DataType::Utf8, true),
+                Field::new("sentence_window", DataType::Utf8, true),
                 Field::new(
                     "vector",
                     DataType::FixedSizeList(
@@ -234,6 +243,7 @@ impl LanceStore {
                 Arc::new(UInt32Array::from(chunk_idx_arr)),
                 Arc::new(UInt32Array::from(path_depth_arr)),
                 Arc::new(StringArray::from(path_json_arr)),
+                Arc::new(StringArray::from(sentence_window_arr)),
                 Arc::new(vector_arr),
             ],
         )
@@ -290,11 +300,17 @@ impl LanceStore {
             let path_jsons = batch
                 .column_by_name("path_json")
                 .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+            let sentence_windows = batch
+                .column_by_name("sentence_window")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
 
             for i in 0..batch.num_rows() {
                 let dist = distances.value(i);
                 let score: f32 = 1.0 - dist;
                 let path_json_val = path_jsons.and_then(|arr| {
+                    if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
+                });
+                let sentence_window_val = sentence_windows.and_then(|arr| {
                     if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
                 });
                 hits.push(SearchHit {
@@ -305,6 +321,7 @@ impl LanceStore {
                     score_vec: score.max(0.0),
                     score_bm25: 0.0,
                     path_json: path_json_val,
+                    sentence_window: sentence_window_val,
                 });
             }
         }

@@ -7,7 +7,7 @@ use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::services::llm::{ChatMessage, LLMClient};
-use crate::core::{call_embedding, SearchHit};
+use crate::core::{call_embedding_query, SearchHit};
 
 // ─── 后端消息长度预算 ───
 /// 消息总字符数上限（粗略估计 ~7500 tokens 的字符量，为 LLM 回复留出余量）
@@ -227,7 +227,7 @@ pub async fn kb_rag_query(
                 let q_for_embed = q.clone();
                 let embed_start = std::time::Instant::now();
                 let embedding = tokio::task::spawn_blocking(move || {
-                    call_embedding(&[&q_for_embed], None)
+                    call_embedding_query(&q_for_embed)
                 })
                 .await
                 .ok()
@@ -352,9 +352,10 @@ pub async fn kb_rag_query(
         },
     );
 
+    // 优先使用 sentence_window（包含检索句子前后的上下文），fallback 到 chunk text
     let context: String = selected
         .iter()
-        .map(|(hit, _)| hit.text.as_str())
+        .map(|(hit, _)| hit.sentence_window.as_deref().unwrap_or(&hit.text))
         .collect::<Vec<&str>>()
         .join("\n\n---\n\n");
     log::debug!("[rag_query] Stage4: context built char_len={}", context.len());

@@ -12,94 +12,128 @@ use tantivy::{doc, Index, IndexReader, ReloadPolicy, TantivyDocument};
 
 use super::lance::{DocumentChunk, SearchHit};
 
-/// 中文 Bigram 分词器
+/// Jieba 中文分词器（替换简单 Bigram 2-gram）。
 ///
-/// 对中文字符做 2-gram 切分，英文/数字使用 SimpleTokenizer。
-/// 无需额外依赖，对中文搜索效果有显著提升。
+/// 使用 jieba-rs 进行真正的词法切分，"机器学习" → ["机器", "学习"] 而非 ["机器", "器学", "学习"]。
+/// 英文/数字保持原有按字母数字 token 的处理。
+/// Jieba 实例通过 OnceLock 全局缓存，首次使用时加载词典。
 #[derive(Clone)]
-struct ChineseBigramTokenizer;
+struct JiebaTokenizer;
 
-struct ChineseBigramTokenStream<'a> {
-    text: &'a str,
-    chars: Vec<char>,
+struct JiebaTokenStream {
+    tokens: Vec<(String, usize, usize)>, // (text, offset_from, offset_to)
     pos: usize,
     current_token: Token,
 }
 
-impl Tokenizer for ChineseBigramTokenizer {
-    type TokenStream<'a> = ChineseBigramTokenStream<'a>;
+impl Tokenizer for JiebaTokenizer {
+    type TokenStream<'a> = JiebaTokenStream;
 
-    fn token_stream<'a>(&mut self, text: &'a str) -> Self::TokenStream<'a> {
-        let chars: Vec<char> = text.chars().collect();
-        ChineseBigramTokenStream {
-            text,
-            chars,
+    fn token_stream<'a>(&mut self, text: &'a str) -> JiebaTokenStream {
+        static JIEBA: std::sync::OnceLock<jieba_rs::Jieba> = std::sync::OnceLock::new();
+        let jieba = JIEBA.get_or_init(|| {
+            log::info!("[bm25] 初始化 Jieba 中文分词...");
+            jieba_rs::Jieba::new()
+        });
+        JiebaTokenStream {
+            tokens: segment_text(text, jieba),
             pos: 0,
             current_token: Token::default(),
         }
     }
 }
 
-impl<'a> TokenStream for ChineseBigramTokenStream<'a> {
-    fn advance(&mut self) -> bool {
-        while self.pos < self.chars.len() {
-            let c = self.chars[self.pos];
-
-            // 中文字符：bigram 切分
-            if Self::is_cjk(c) {
-                if self.pos + 1 < self.chars.len() && Self::is_cjk(self.chars[self.pos + 1]) {
-                    let text: String = self.chars[self.pos..self.pos + 2].iter().collect();
-                    let offset_from = self.text.char_indices().nth(self.pos).map(|(i, _)| i).unwrap_or(0);
-                    let offset_to = self.text.char_indices().nth(self.pos + 2).map(|(i, _)| i).unwrap_or(self.text.len());
-                    self.current_token = Token {
-                        offset_from,
-                        offset_to,
-                        position: self.pos,
-                        text,
-                        ..Default::default()
-                    };
-                    self.pos += 1;
-                    return true;
-                } else {
-                    // 单个中文字符（最后一个）
-                    let text: String = c.to_string();
-                    let offset_from = self.text.char_indices().nth(self.pos).map(|(i, _)| i).unwrap_or(0);
-                    let offset_to = self.text.char_indices().nth(self.pos + 1).map(|(i, _)| i).unwrap_or(self.text.len());
-                    self.current_token = Token {
-                        offset_from,
-                        offset_to,
-                        position: self.pos,
-                        text,
-                        ..Default::default()
-                    };
-                    self.pos += 1;
-                    return true;
-                }
+/// 对文本做 Jieba 中文分词 + 英文数字 token 化，返回 (text, byte_offset_from, byte_offset_to)。
+fn segment_text(text: &str, jieba: &jieba_rs::Jieba) -> Vec<(String, usize, usize)> {
+    let mut results = Vec::new();
+    let chars: Vec<char> = text.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        // CJK 段：收集连续 CJK 字符，用 Jieba 分词
+        if is_cjk(c) {
+            let start = i;
+            while i < chars.len() && is_cjk(chars[i]) {
+                i += 1;
             }
-
-            // 英文/数字：收集连续的字母数字
-            if c.is_alphanumeric() {
-                let start = self.pos;
-                while self.pos < self.chars.len() && self.chars[self.pos].is_alphanumeric() {
-                    self.pos += 1;
+            let cjk_text: String = chars[start..i].iter().collect();
+            let cjk_base_offset = char_offset_to_byte(text, start); // CJK 段在原始文本中的字节起始
+            for token in jieba.cut(&cjk_text, false) {
+                let word = token.word;
+                // 跳过空白分词结果
+                if word.trim().is_empty() {
+                    continue;
                 }
-                let text: String = self.chars[start..self.pos].iter().collect();
-                let offset_from = self.text.char_indices().nth(start).map(|(i, _)| i).unwrap_or(0);
-                let offset_to = self.text.char_indices().nth(self.pos).map(|(i, _)| i).unwrap_or(self.text.len());
-                self.current_token = Token {
-                    offset_from,
-                    offset_to,
-                    position: start,
-                    text,
-                    ..Default::default()
-                };
-                return true;
+                // 通过指针算术计算 word 在原始文本中的字节偏移
+                // word 借用自 cjk_text，直接做指针差即可
+                let word_start = word.as_ptr() as usize;
+                let cjk_start = cjk_text.as_ptr() as usize;
+                let rel_offset = word_start.wrapping_sub(cjk_start);
+                let offset_from = cjk_base_offset + rel_offset;
+                let offset_to = offset_from + word.len();
+                results.push((word.to_string(), offset_from, offset_to));
             }
-
-            // 标点/空白：跳过
-            self.pos += 1;
+            continue;
         }
-        false
+        // 英文/数字：收集连续的字母数字
+        if c.is_alphanumeric() {
+            let start = i;
+            while i < chars.len() && chars[i].is_alphanumeric() {
+                i += 1;
+            }
+            let token: String = chars[start..i].iter().collect();
+            let offset_from = char_offset_to_byte(text, start);
+            let offset_to = char_offset_to_byte(text, i);
+            results.push((token, offset_from, offset_to));
+            continue;
+        }
+        // 标点/空白：跳过
+        i += 1;
+    }
+    results
+}
+
+/// 快速判断 CJK 字符
+fn is_cjk(c: char) -> bool {
+    matches!(c as u32,
+        0x4E00..=0x9FFF   // CJK Unified Ideographs
+        | 0x3400..=0x4DBF   // CJK Unified Ideographs Extension A
+        | 0x3040..=0x309F   // Hiragana
+        | 0x30A0..=0x30FF   // Katakana
+        | 0xAC00..=0xD7AF   // Hangul Syllables
+    )
+}
+
+/// 将 char 索引转换为字节偏移
+fn char_offset_to_byte(text: &str, char_idx: usize) -> usize {
+    text.char_indices()
+        .nth(char_idx)
+        .map(|(byte_idx, _)| byte_idx)
+        .unwrap_or(text.len())
+}
+
+impl JiebaTokenStream {
+    fn fill_current_token(&mut self) {
+        if let Some((text, offset_from, offset_to)) = self.tokens.get(self.pos) {
+            self.current_token = Token {
+                offset_from: *offset_from,
+                offset_to: *offset_to,
+                position: self.pos,
+                text: text.clone(),
+                ..Default::default()
+            };
+        }
+    }
+}
+
+impl TokenStream for JiebaTokenStream {
+    fn advance(&mut self) -> bool {
+        if self.pos >= self.tokens.len() {
+            return false;
+        }
+        self.fill_current_token();
+        self.pos += 1;
+        true
     }
 
     fn token(&self) -> &Token {
@@ -111,21 +145,9 @@ impl<'a> TokenStream for ChineseBigramTokenStream<'a> {
     }
 }
 
-impl<'a> ChineseBigramTokenStream<'a> {
-    fn is_cjk(c: char) -> bool {
-        matches!(c as u32,
-            0x4E00..=0x9FFF   // CJK Unified Ideographs
-            | 0x3400..=0x4DBF   // CJK Unified Ideographs Extension A
-            | 0x3040..=0x309F   // Hiragana
-            | 0x30A0..=0x30FF   // Katakana
-            | 0xAC00..=0xD7AF   // Hangul Syllables
-        )
-    }
-}
-
-/// 构建中文 + 英文混合的文本分词器
+/// 构建中文 + 英文混合的文本分词器（Jieba 分词 + 小写化 + 长词过滤）
 fn chinese_text_analyzer() -> TextAnalyzer {
-    TextAnalyzer::builder(ChineseBigramTokenizer)
+    TextAnalyzer::builder(JiebaTokenizer)
         .filter(RemoveLongFilter::limit(40))
         .filter(LowerCaser)
         .build()
@@ -142,11 +164,11 @@ impl Bm25Index {
         builder.add_text_field("doc_id", STRING | STORED);
         builder.add_text_field("doc_name", STRING | STORED);
         builder.add_u64_field("chunk_index", STORED);
-        // text 字段使用中文 bigram 分词器（索引时用，需在 Index 上注册同名 tokenizer）
+        // text 字段使用 Jieba 中文分词器（索引时用，需在 Index 上注册同名 tokenizer）
         let text_options = TextOptions::default()
             .set_indexing_options(
                 TextFieldIndexing::default()
-                    .set_tokenizer("chinese_bigram")
+                    .set_tokenizer("jieba_chinese")
                     .set_index_option(IndexRecordOption::WithFreqsAndPositions),
             )
             .set_stored();
@@ -158,7 +180,7 @@ impl Bm25Index {
     fn register_tokenizers(index: &Index) {
         index
             .tokenizers()
-            .register("chinese_bigram", chinese_text_analyzer());
+            .register("jieba_chinese", chinese_text_analyzer());
     }
 
     /// 打开已有索引
@@ -246,6 +268,9 @@ impl Bm25Index {
                 .map_err(|e| format!("添加文档到 BM25 失败: {}", e))?;
         }
 
+        // 防御性重注册：确保 commit 时 tantivy writer 能获取到 jieba_chinese 分词器
+        Self::register_tokenizers(&index);
+
         writer
             .commit()
             .map_err(|e| format!("BM25 提交失败: {}", e))?;
@@ -278,9 +303,12 @@ impl Bm25Index {
             .map_err(|e| format!("BM25 检索失败: {}", e))?;
 
         let mut hits = Vec::with_capacity(top_docs.len());
-        for (score, doc_address) in top_docs {
+        let mut raw_scores: Vec<f32> = Vec::with_capacity(top_docs.len());
+
+        // 第一遍：收集原始分数和文档数据
+        for (score, doc_address) in &top_docs {
             let doc = searcher
-                .doc::<TantivyDocument>(doc_address)
+                .doc::<TantivyDocument>(*doc_address)
                 .map_err(|e| format!("读取 BM25 文档失败: {}", e))?;
 
             let doc_name = doc
@@ -298,15 +326,26 @@ impl Bm25Index {
                 .and_then(|v| v.as_u64())
                 .unwrap_or(0) as u32;
 
+            raw_scores.push(*score as f32);
             hits.push(SearchHit {
                 text,
                 doc_name,
                 chunk_index,
-                score: (score as f32 / 10.0).min(1.0),
+                score: 0.0, // 占位，第二遍归一化后填入
                 score_vec: 0.0,
-                score_bm25: (score as f32 / 10.0).min(1.0),
+                score_bm25: 0.0,
                 path_json: None,
+                sentence_window: None,
             });
+        }
+
+        // 第二遍：将 BM25 分数归一化到 [0, 1]，基于最高分动态缩放
+        let max_score = raw_scores.iter().cloned().fold(0.0f32, f32::max);
+        let normalize_factor = if max_score > 0.0 { 1.0 / max_score } else { 0.0 };
+        for (i, hit) in hits.iter_mut().enumerate() {
+            let normalized = (raw_scores[i] * normalize_factor).min(1.0);
+            hit.score = normalized;
+            hit.score_bm25 = normalized;
         }
 
         Ok(hits)

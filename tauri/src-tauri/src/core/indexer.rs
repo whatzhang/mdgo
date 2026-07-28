@@ -27,12 +27,23 @@ fn chunk_splitter_factory() -> &'static ChunkSplitterFactory {
 /// 增大 K 值使 RRF 分数分布更均匀，避免向量检索的头部排名过度主导融合结果，
 /// 让 BM25 关键词匹配和 Reranker 有更多机会影响最终排序。
 const RRF_K: u32 = 60;
-/// BM25 关键词匹配的 RRF 权重倍数。
+
+/// 根据查询长度动态计算 BM25 RRF 权重。
 ///
-/// 当 chunk 被 BM25 命中（存在关键词匹配）时，其 RRF 分数乘以该权重。
-/// 值 > 1.0 使关键词精确匹配结果优先于纯语义相似结果。
-/// 推荐值 2.0（提升关键词精确匹配的权重）。
-const BM25_RRF_WEIGHT: f32 = 2.0;
+/// 短查询（1-2 个词）→ BM25 权重较高，利用关键词精确匹配能力；
+/// 长查询（>5 个词）→ BM25 权重降低，避免过多不相关关键词匹配干扰语义排序。
+fn compute_bm25_weight(query: &str) -> f32 {
+    let word_count = query.split(|c: char| !c.is_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .count();
+    if word_count <= 2 {
+        2.0
+    } else if word_count <= 5 {
+        1.5
+    } else {
+        0.8
+    }
+}
 
 /// 根据文件扩展名分类为 "Markdown" / "代码" / "数据" / "其他"
 fn classify_ext(ext: &str) -> &'static str {
@@ -281,7 +292,10 @@ impl Indexer {
 
             total_chunks += batch_chunks.len() as u32;
             total_vectors += vectors.len() as u32;
+            // 显式释放 vectors（向量数据可能很大）
+            drop(vectors);
             batch_chunks.clear();
+            batch_chunks.shrink_to_fit(); // 回收已释放 chunk 的预分配内存
 
             // 进度 85%：单批完成
             let done_pct = 20 + (file_count * 65 / total.max(1)) as u8;
@@ -475,14 +489,13 @@ impl Indexer {
         top_k: u32,
     ) -> Result<Vec<SearchHit>, String> {
         let store = self.get_lance_store(dir_path).await;
-        let bm25_dir = utils::get_bm25_dir(dir_path);
 
         // 候选池扩大到 top_k * 5，为 Reranker 提供更多候选
         let vec_k = (top_k * 5).max(15);
         let vec_hits = store.search_vectors(query_vector, vec_k).await.unwrap_or_default();
 
         let bm25_k = (top_k * 5).max(15);
-        let bm25_hits = match Bm25Index::open(&bm25_dir) {
+        let bm25_hits = match self.get_bm25_index(dir_path).await {
             Ok(idx) => idx.search(query, bm25_k).unwrap_or_default(),
             Err(_) => Vec::new(),
         };
@@ -490,7 +503,8 @@ impl Indexer {
         log::debug!("[indexer] hybrid_search query='{}' vec_k={} vec_hits={} bm25_k={} bm25_hits={}",
             query, vec_k, vec_hits.len(), bm25_k, bm25_hits.len());
 
-        let mut fused = rrf_fuse(&vec_hits, &bm25_hits, RRF_K);
+        let bm25_weight = compute_bm25_weight(query);
+        let mut fused = rrf_fuse(&vec_hits, &bm25_hits, RRF_K, bm25_weight);
         log::debug!("[indexer] after RRF fuse: candidates={}", fused.len());
 
         // Reranker 重排序（降级安全：模型不存在时静默跳过）
@@ -673,9 +687,32 @@ impl Indexer {
         save_metadata(&data_dir, &new_meta);
     }
 
+    /// 快速检查某文档是否已存在（limit(1) 避免全量加载）。
+    async fn has_document_chunks(&self, store: &LanceStore, doc_name: &str) -> bool {
+        let table = match store.open_table().await {
+            Ok(t) => t,
+            Err(_) => return false,
+        };
+        use lancedb::query::{ExecutableQuery, QueryBase};
+        use futures::TryStreamExt;
+        let escaped = crate::core::db::lance::escape_sql_string(doc_name);
+        let result = table
+            .query()
+            .only_if(&format!("doc_name = '{}'", escaped))
+            .limit(1)
+            .execute()
+            .await;
+        match result {
+            Ok(stream) => stream.try_collect::<Vec<_>>().await
+                .map(|batches| batches.iter().any(|b| b.num_rows() > 0))
+                .unwrap_or(false),
+            Err(_) => false,
+        }
+    }
+
     /// 统计某个 doc_name 下的 chunk 数量
     ///
-    /// 使用 only_if 过流式计数，避免 limit 截断导致计数不准。
+    /// 流式迭代计数，避免 try_collect 全量加载到内存。
     async fn count_document_chunks(&self, store: &LanceStore, doc_name: &str) -> u32 {
         let table = match store.open_table().await {
             Ok(t) => t,
@@ -683,17 +720,21 @@ impl Indexer {
         };
         use lancedb::query::{ExecutableQuery, QueryBase};
         use futures::TryStreamExt;
-        let escaped = doc_name.replace('\'', "''").replace('\\', "\\\\");
+        let escaped = crate::core::db::lance::escape_sql_string(doc_name);
         let result = table
             .query()
             .only_if(&format!("doc_name = '{}'", escaped))
             .execute()
             .await;
         match result {
-            Ok(stream) => match stream.try_collect::<Vec<_>>().await {
-                Ok(batches) => batches.iter().map(|b| b.num_rows()).sum::<usize>() as u32,
-                Err(_) => 0,
-            },
+            Ok(stream) => {
+                let mut count = 0u32;
+                let _ = stream.try_for_each(|batch| {
+                    count += batch.num_rows() as u32;
+                    futures::future::ready(Ok(()))
+                }).await;
+                count
+            }
             Err(_) => 0,
         }
     }
@@ -729,6 +770,7 @@ impl Indexer {
                 text: format!("[{}] {}", msg.role, msg.content),
                 path_depth: None,
                 path_json: None,
+                sentence_window: None,
             })
             .collect();
 
@@ -796,7 +838,7 @@ impl Indexer {
 
         // 1. 生成查询向量（1 次 ONNX 推理，放入 spawn_blocking 避免阻塞 Tokio）
         let query_string = query.to_string();
-        let query_embedding = tokio::task::spawn_blocking(move || utils::call_embedding(&[&query_string], None))
+        let query_embedding = tokio::task::spawn_blocking(move || utils::call_embedding_query(&query_string))
             .await
             .map_err(|e| format!("Embedding 任务执行失败: {}", e))??;
         let query_vec = query_embedding
@@ -815,8 +857,9 @@ impl Indexer {
             Err(_) => Vec::new(),
         };
 
-        // 4. RRF 融合+实际分数
-        let fused = rrf_fuse(&vec_hits, &bm25_hits, RRF_K);
+        // 4. RRF 融合+实际分数（对话搜索也使用自适应 BM25 权重）
+        let bm25_weight = compute_bm25_weight(query);
+        let fused = rrf_fuse(&vec_hits, &bm25_hits, RRF_K, bm25_weight);
 
         // 5. 转换为 (session_id, score, matched_text)
         let results = fused
@@ -890,11 +933,12 @@ impl Indexer {
         Ok(synced_count)
     }
 
-    /// ─── 增量索引（仅索引未在 LanceDB 中的文件）───
+    /// ─── 增量索引（仅索引未在 LanceDB 中的文件，批量化 Embedding）───
     ///
     /// 与 index_all 的区别：
     /// - 不清理已有索引（不调用 clear_inner）
-    /// - 逐个检查文件是否已存在 LanceDB 中，已存在的跳过
+    /// - 检查文件是否已存在 LanceDB 中，已存在的跳过
+    /// - 所有未索引文件的 chunk 合并为一批进行 Embedding（避免 N 次推理调用）
     /// - 适用于向已有索引的知识库添加新文件后，快速增量补索引
     pub async fn index_unindexed(
         &self,
@@ -922,39 +966,29 @@ impl Indexer {
         let store = self.get_lance_store(dir_path).await;
         store.create_table().await?;
 
-        // 筛选未索引的文件（chunk 数为 0）
-        let to_index: Vec<(String, String)> = files
-            .iter()
-            .filter_map(|f| {
-                let rel = f
-                    .strip_prefix(base_dir)
-                    .unwrap_or(f)
-                    .to_string_lossy()
-                    .to_string()
-                    .replace('\\', "/");
-                // 阻塞调用：count_document_chunks 是 async，但在 filter_map 中
-                // 无法直接 await。这里用 tokio::task::block_in_place + Handle 执行
-                // 实际使用更简洁的方式：收集路径后异步检查
-                Some((rel, f.to_string_lossy().to_string()))
-            })
-            .collect();
-
-        // 异步检查哪些文件未索引
-        progress(5, &format!("正在检查 {} 个文件的索引状态...", to_index.len()));
-        let mut unindexed: Vec<(String, String)> = Vec::new();
-        for (i, (rel, abs)) in to_index.iter().enumerate() {
-            let chunks = self.count_document_chunks(&store, rel).await;
-            if chunks == 0 {
-                unindexed.push((rel.clone(), abs.clone()));
+        // 异步检查哪些文件未索引（使用 limit(1) 快速判断，避免全量加载）
+        progress(5, &format!("正在检查 {} 个文件的索引状态...", total));
+        let mut unindexed_paths: Vec<(String, String)> = Vec::new();
+        for (i, file_path) in files.iter().enumerate() {
+            let rel = file_path
+                .strip_prefix(base_dir)
+                .unwrap_or(file_path)
+                .to_string_lossy()
+                .to_string()
+                .replace('\\', "/");
+            // 快速存在性检查：limit(1) 仅拉取一行，避免全表扫描开销
+            let has_chunks = self.has_document_chunks(&store, &rel).await;
+            if !has_chunks {
+                let abs = file_path.to_string_lossy().to_string();
+                unindexed_paths.push((rel, abs));
             }
-            // 每检查 500 个文件更新一次进度
             if i % 500 == 0 {
-                let pct = 5 + ((i + 1) * 5 / to_index.len().max(1)) as u8;
-                progress(pct.min(9), &format!("检查索引状态 {}/{}", i + 1, to_index.len()));
+                let pct = 5 + ((i + 1) * 5 / total.max(1) as usize) as u8;
+                progress(pct.min(9), &format!("检查索引状态 {}/{}", i + 1, total));
             }
         }
 
-        let unindexed_count = unindexed.len() as u32;
+        let unindexed_count = unindexed_paths.len() as u32;
         if unindexed_count == 0 {
             progress(100, "所有文件均已索引，无需增量");
             return Ok(KbIndexResult {
@@ -965,34 +999,81 @@ impl Indexer {
             });
         }
 
-        progress(10, &format!("发现 {} 个未索引文件，开始索引...", unindexed_count));
+        // 先读取 + 分块所有未索引文件，合并 DocumentChunk
+        progress(15, &format!("正在读取 {} 个未索引文件...", unindexed_count));
+        let cfg = self.config_store.read();
+        let mut all_file_data: Vec<(String, Vec<DocumentChunk>)> = Vec::new(); // (rel_path, chunks)
+        let mut total_new_chunks: u32 = 0;
+        let mut file_count: u32 = 0;
 
-        let mut file_count = 0u32;
-        let unindexed_total = unindexed.len();
-        for (idx, (rel, abs)) in unindexed.iter().enumerate() {
-            match self.index_file(dir_path, rel, abs).await {
-                Ok(()) => file_count += 1,
-                Err(e) => {
-                    log::warn!("[indexer] 增量索引失败 ({}): {}", rel, e);
-                }
+        for (idx, (rel, abs)) in unindexed_paths.iter().enumerate() {
+            let content = match read_file_content(Path::new(abs)) {
+                Some(c) if c.len() >= 10 => c,
+                _ => continue,
+            };
+            let ext = rel.rsplit('.').next().unwrap_or("txt");
+            let splitter = chunk_splitter_factory().get_splitter(ext);
+            let chunks = splitter.split(&content, cfg.chunk_size, cfg.chunk_overlap);
+            if chunks.is_empty() {
+                continue;
             }
-            let pct = 10 + ((idx + 1) * 90 / unindexed_total.max(1)) as u8;
-            progress(
-                pct.min(99),
-                &format!(
-                    "增量索引 ({}/{})",
-                    idx + 1,
-                    unindexed_total
-                ),
-            );
+            let doc_chunks = utils::build_document_chunks(rel, &chunks);
+            let n = doc_chunks.len() as u32;
+            total_new_chunks += n;
+            file_count += 1;
+            all_file_data.push((rel.clone(), doc_chunks));
+
+            let read_pct = 15 + ((idx + 1) * 5 / unindexed_paths.len().max(1)) as u8;
+            progress(read_pct.min(19), &format!("读取文件 {}/{} (累积 {} 个文本块)", idx + 1, unindexed_paths.len(), total_new_chunks));
         }
 
-        progress(100, &format!("增量索引完成: {} 个文件", file_count));
+        if all_file_data.is_empty() {
+            progress(100, "增量索引完成（无有效内容）");
+            return Ok(KbIndexResult { file_count: 0, chunk_count: 0, vector_count: 0, indexed_at: 0 });
+        }
+
+        // 合并所有 chunks，一次性批量 Embedding
+        let all_chunks: Vec<DocumentChunk> = all_file_data.iter()
+            .flat_map(|(_, chunks)| chunks.iter().cloned())
+            .collect();
+
+        progress(20, &format!("正在向量化 {} 个文本块（单批推理）...", all_chunks.len()));
+        let embed_progress = |done: usize, total_groups: usize, msg: &str| {
+            let embed_pct = 20 + (done * 60 / total_groups.max(1)) as u8;
+            progress(embed_pct.min(80), msg);
+        };
+        let all_vectors = self.embed_batch(&all_chunks, Some(&embed_progress)).await?;
+
+        // 分批写入 LanceDB + BM25
+        progress(82, "正在写入数据库...");
+        let bm25 = self.get_bm25_index(dir_path).await?;
+        for batch_idx in (0..all_chunks.len()).step_by(BATCH_CHUNK_LIMIT) {
+            let end = (batch_idx + BATCH_CHUNK_LIMIT).min(all_chunks.len());
+            let batch_chunks = &all_chunks[batch_idx..end];
+            let batch_vectors = &all_vectors[batch_idx..end];
+
+            store.add_chunks(batch_chunks, batch_vectors).await.map_err(|e| {
+                log::error!("[indexer] 增量索引 LanceDB 写入失败: {}", e);
+                e
+            })?;
+            bm25.add_documents(batch_chunks).map_err(|e| {
+                log::error!("[indexer] 增量索引 BM25 写入失败: {}", e);
+                e
+            })?;
+
+            let write_pct = 82 + ((batch_idx + BATCH_CHUNK_LIMIT) * 13 / all_chunks.len().max(1)) as u8;
+            progress(write_pct.min(95), &format!("写入数据库 {}/{} 文本块", end, all_chunks.len()));
+        }
+
+        // 批量更新元数据
+        self.update_metadata_delta(dir_path, file_count as i32, total_new_chunks as i32, all_vectors.len() as i32).await;
+
+        progress(100, &format!("增量索引完成: {} 文件, {} 文本块", file_count, total_new_chunks));
         Ok(KbIndexResult {
             file_count,
-            chunk_count: 0,
-            vector_count: 0,
-            indexed_at: 0,
+            chunk_count: total_new_chunks,
+            vector_count: all_vectors.len() as u32,
+            indexed_at: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64,
         })
     }
 }
@@ -1022,7 +1103,13 @@ pub(crate) fn scan_directory(base_dir: &Path, ignore: &IgnoreMatcher) -> Result<
         });
 
     for entry in walker {
-        let entry = entry.map_err(|e| format!("扫描目录失败: {}", e))?;
+        let entry = match entry {
+            Ok(e) => e,
+            Err(e) => {
+                log::warn!("[scan_directory] 跳过无法访问的目录: {}", e);
+                continue;
+            }
+        };
         if entry.file_type().is_file() {
             let file_name = entry.file_name().to_string_lossy().to_string();
             let rel_path = entry.path().strip_prefix(base_dir).unwrap_or(entry.path());
@@ -1109,7 +1196,7 @@ fn load_metadata(data_dir: &str) -> Option<IndexMeta> {
 ///
 /// 相比纯 RRF（分数 < 0.1），本方案既保留了排序质量，又提供了
 /// 语义上有意义的分数。
-fn rrf_fuse(vec_hits: &[SearchHit], bm25_hits: &[SearchHit], k: u32) -> Vec<SearchHit> {
+fn rrf_fuse(vec_hits: &[SearchHit], bm25_hits: &[SearchHit], k: u32, bm25_weight: f32) -> Vec<SearchHit> {
     use std::collections::HashMap;
 
     #[derive(Default)]
@@ -1120,6 +1207,7 @@ fn rrf_fuse(vec_hits: &[SearchHit], bm25_hits: &[SearchHit], k: u32) -> Vec<Sear
         score_bm25: f32,
         text: String,
         path_json: Option<String>,
+        sentence_window: Option<String>,
     }
 
     let mut score_map: HashMap<(String, u32), Entry> = HashMap::new();
@@ -1141,14 +1229,18 @@ fn rrf_fuse(vec_hits: &[SearchHit], bm25_hits: &[SearchHit], k: u32) -> Vec<Sear
         if entry.path_json.is_none() {
             entry.path_json = hit.path_json.clone();
         }
+        // 保存句子窗口上下文（BM25 结果无此字段）
+        if entry.sentence_window.is_none() {
+            entry.sentence_window = hit.sentence_window.clone();
+        }
     }
 
     // ── 遍历 BM25 结果集（关键词匹配，带权重 BM25_RRF_WEIGHT）──
     for (rank, hit) in bm25_hits.iter().enumerate() {
         let key = (hit.doc_name.clone(), hit.chunk_index);
         let entry = score_map.entry(key).or_default();
-        // BM25 匹配的 RRF 分数乘以权重，使关键词精确匹配优先
-        entry.rrf_score += BM25_RRF_WEIGHT / (k as f32 + rank as f32);
+        // BM25 匹配的 RRF 分数乘以动态权重，使关键词精确匹配优先
+        entry.rrf_score += bm25_weight / (k as f32 + rank as f32);
         if hit.score > entry.sim_score {
             entry.sim_score = hit.score;
         }
@@ -1175,6 +1267,7 @@ fn rrf_fuse(vec_hits: &[SearchHit], bm25_hits: &[SearchHit], k: u32) -> Vec<Sear
             score_vec: entry.score_vec.min(1.0).max(0.0),
             score_bm25: entry.score_bm25.min(1.0).max(0.0),
             path_json: entry.path_json,
+            sentence_window: entry.sentence_window,
         })
         .collect()
 }
