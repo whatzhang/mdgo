@@ -18,11 +18,11 @@ pub async fn kb_start_watcher(
 ) -> Result<(), String> {
     let state = app.state::<AppState>();
 
-    // 同步黑名单到全局 ConfigStore（保留原有分块/检索参数）
+    // 同步黑名单到全局 ConfigStore（保留已有分块/检索参数）
     state.config_store.update(IndexerConfig {
         dir_blacklist: dir_blacklist.clone(),
         file_blacklist: file_blacklist.clone(),
-        ..Default::default()
+        ..state.config_store.read()
     });
 
     // 注入带 Tauri 事件发射的错误回调（覆盖初始的仅 eprintln 版本）

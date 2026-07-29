@@ -11,12 +11,16 @@ use super::utils;
 #[derive(Debug, Clone)]
 pub struct ChunkResult {
     pub text: String,
-    /// 节点在树形结构中的深度（仅 OPML 文件有值）
+    /// 节点在树形结构中的深度（仅 OPML/FreeMind 文件有值）
     pub path_depth: Option<u32>,
-    /// 节点路径的 JSON 数组（仅 OPML 文件有值），如 `["项目计划","第一阶段"]`
+    /// 节点路径的 JSON 数组（仅 OPML/FreeMind 文件有值），如 `["项目计划","第一阶段"]`
     pub path_json: Option<String>,
     /// 句子级 chunk 的上下文窗口文本（SentenceWindow 用），存储该句子周边的扩展上下文
     pub sentence_window: Option<String>,
+    /// 符号名（仅代码文件有值），如函数名、类名
+    pub symbol_name: Option<String>,
+    /// 符号类型（仅代码文件有值），如 "function"、"class"、"method"
+    pub symbol_kind: Option<String>,
 }
 
 impl ChunkResult {
@@ -27,6 +31,33 @@ impl ChunkResult {
             path_depth: None,
             path_json: None,
             sentence_window: None,
+            symbol_name: None,
+            symbol_kind: None,
+        }
+    }
+
+    /// 创建一个带代码符号元数据的 chunk
+    pub fn code(text: String, symbol_name: Option<String>, symbol_kind: Option<String>) -> Self {
+        Self {
+            text,
+            path_depth: None,
+            path_json: None,
+            sentence_window: None,
+            symbol_name,
+            symbol_kind,
+        }
+    }
+
+    /// 创建一个文件概览 chunk（标记 symbol_kind = "file"）。
+    /// 文件概览 chunk 包含 imports 摘要、所有定义的符号名等，用于"按文件名/用途搜索"。
+    pub fn file_overview(text: String) -> Self {
+        Self {
+            text,
+            path_depth: None,
+            path_json: None,
+            sentence_window: None,
+            symbol_name: None,
+            symbol_kind: Some("file".to_string()),
         }
     }
 }
@@ -55,7 +86,447 @@ impl ChunkSplitter for PlainTextChunkSplitter {
     }
 }
 
-// ─── Markdown 分块器配置 ───
+// ─── 代码语言感知分割器 ───
+
+/// 代码语言感知分块器：按函数/类边界分割代码文件，并提取符号名。
+///
+/// # 原理（LangChain RecursiveCharacterTextSplitter 思路）
+/// 使用语言特定的结构化分隔符（如 \nfn \nclass \ndef ）作为高优先级切分点，
+/// 保证每个 chunk 尽可能保持在函数/类边界内。若单块超长，降级到通用分隔符。
+///
+/// # 符号提取
+/// 每个 chunk 的首行若匹配函数/类定义模式，则提取符号名（如 "parseJSON"），
+/// 填充到 `symbol_name` 和 `symbol_kind` 字段，用于后续 BM25 加权检索。
+pub struct CodeAwareChunkSplitter {
+    /// 语言特定分隔符列表（高优先级在前）
+    separators: Vec<&'static str>,
+    /// 语言特定符号提取正则（捕获组 1=符号名，组 2=符号类型）
+    symbol_pattern: Option<Regex>,
+}
+
+/// 所有代码语言的符号提取通用正则（匹配常见函数/类定义语法）
+static CODE_SYMBOL_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+    Regex::new(r"(?m)^[\t ]*(?:(?:pub\s+)?(?:async\s+)?(?:fn|def|function|func|async function|class|struct|enum|trait|interface|type|object|impl)\s+)(\w+)")
+        .expect("CODE_SYMBOL_RE 编译失败")
+});
+
+/// 语言特定分隔符映射表
+static CODE_LANG_SEPARATORS: std::sync::LazyLock<HashMap<&'static str, Vec<&'static str>>> =
+    std::sync::LazyLock::new(|| {
+        let mut m = HashMap::new();
+        // Python
+        m.insert("py", vec!["\nclass ", "\nasync def ", "\ndef ", "\n\n", "\n", " ", ""]);
+        // Rust
+        m.insert("rs", vec!["\nimpl ", "\ntrait ", "\nenum ", "\nstruct ", "\nfn ", "\n\n", "\n", " ", ""]);
+        // Go
+        m.insert("go", vec!["\nfunc ", "\ntype ", "\nstruct ", "\ninterface ", "\n\n", "\n", " ", ""]);
+        // JS/TS
+        m.insert("js", vec!["\nclass ", "\nfunction ", "\nexport ", "\nconst ", "\nlet ", "\nvar ", "\n\n", "\n", " ", ""]);
+        m.insert("ts", vec!["\nclass ", "\nfunction ", "\nexport ", "\ninterface ", "\ntype ", "\nconst ", "\nlet ", "\nvar ", "\n\n", "\n", " ", ""]);
+        m.insert("jsx", vec!["\nclass ", "\nfunction ", "\nexport ", "\nconst ", "\n\n", "\n", " ", ""]);
+        m.insert("tsx", vec!["\nclass ", "\nfunction ", "\nexport ", "\ninterface ", "\ntype ", "\nconst ", "\n\n", "\n", " ", ""]);
+        // Java
+        m.insert("java", vec!["\nclass ", "\ninterface ", "\nenum ", "\npublic ", "\nprivate ", "\nprotected ", "\n\n", "\n", " ", ""]);
+        // C/C++
+        m.insert("c", vec!["\nstruct ", "\nenum ", "\nunion ", "\n\n", "\n", " ", ""]);
+        m.insert("cpp", vec!["\nclass ", "\nstruct ", "\nenum ", "\nunion ", "\n\n", "\n", " ", ""]);
+        m.insert("h", vec!["\nstruct ", "\nenum ", "\nclass ", "\n\n", "\n", " ", ""]);
+        m.insert("hpp", vec!["\nclass ", "\nstruct ", "\nenum ", "\n\n", "\n", " ", ""]);
+        // C#
+        m.insert("cs", vec!["\nclass ", "\nstruct ", "\nenum ", "\ninterface ", "\npublic ", "\nprivate ", "\nprotected ", "\n\n", "\n", " ", ""]);
+        // Swift
+        m.insert("swift", vec!["\nclass ", "\nstruct ", "\nenum ", "\nfunc ", "\nvar ", "\nlet ", "\n\n", "\n", " ", ""]);
+        // Kotlin
+        m.insert("kt", vec!["\nclass ", "\nfun ", "\ninterface ", "\nobject ", "\n\n", "\n", " ", ""]);
+        // PHP
+        m.insert("php", vec!["\nclass ", "\nfunction ", "\n\n", "\n", " ", ""]);
+        // Ruby
+        m.insert("rb", vec!["\nclass ", "\ndef ", "\nmodule ", "\n\n", "\n", " ", ""]);
+        // Shell
+        m.insert("sh", vec!["\nfunction ", "\n\n", "\n", " ", ""]);
+        m.insert("bash", vec!["\nfunction ", "\n\n", "\n", " ", ""]);
+        m.insert("zsh", vec!["\nfunction ", "\n\n", "\n", " ", ""]);
+        // Lua
+        m.insert("lua", vec!["\nfunction ", "\n\n", "\n", " ", ""]);
+        // SQL
+        m.insert("sql", vec!["\nCREATE ", "\nALTER ", "\nDROP ", "\nINSERT ", "\nUPDATE ", "\nDELETE ", "\nSELECT ", "\n\n", "\n", " ", ""]);
+        // R
+        m.insert("r", vec!["\nfunction", "\nsetClass", "\nsetMethod", "\n\n", "\n", " ", ""]);
+        // Scala
+        m.insert("scala", vec!["\nclass ", "\nobject ", "\ntrait ", "\ndef ", "\n\n", "\n", " ", ""]);
+        // Dart
+        m.insert("dart", vec!["\nclass ", "\nvoid ", "\n\n", "\n", " ", ""]);
+        m
+    });
+
+impl CodeAwareChunkSplitter {
+    /// 根据文件扩展名创建对应的代码分块器
+    pub fn for_extension(ext: &str) -> Self {
+        let separators = CODE_LANG_SEPARATORS
+            .get(ext)
+            .cloned()
+            .unwrap_or_else(|| vec!["\n\n", "\n", " ", ""]);
+        let symbol_pattern = if CODE_LANG_SEPARATORS.contains_key(ext) {
+            Some(CODE_SYMBOL_RE.clone())
+        } else {
+            None
+        };
+        Self { separators, symbol_pattern }
+    }
+}
+
+impl ChunkSplitter for CodeAwareChunkSplitter {
+    fn split(&self, text: &str, max_size: usize, overlap: usize) -> Vec<ChunkResult> {
+        split_code_with_overview(text, self, max_size, overlap)
+    }
+}
+
+/// 递归分隔符切分：从最高优先级分隔符开始尝试，超长块降级到下一级分隔符。
+fn split_recursive_by_separators(text: &str, separators: &[&str], max_size: usize) -> Vec<String> {
+    if text.len() <= max_size || separators.is_empty() {
+        return vec![text.to_string()];
+    }
+
+    let sep = separators[0];
+    let rest = &separators[1..];
+
+    let mut parts = Vec::new();
+    if sep.is_empty() {
+        // 最后一级：按字符切分（避免 UTF-8 多字节字符被截断）
+        let chars: Vec<char> = text.chars().collect();
+        for chunk in chars.chunks(max_size) {
+            parts.push(chunk.iter().collect::<String>());
+        }
+    } else {
+        for part in text.split(sep) {
+            if part.is_empty() { continue; }
+            if part.len() <= max_size && rest.is_empty() {
+                parts.push(part.to_string());
+            } else if part.len() <= max_size {
+                parts.push(part.to_string());
+            } else {
+                // 超长，降级到下一级分隔符
+                let sub_parts = split_recursive_by_separators(part, rest, max_size);
+                parts.extend(sub_parts);
+            }
+        }
+    }
+
+    parts
+}
+
+/// 合并太小的块：相邻块合并直到达到 max_size * 0.4 或遇到不同符号
+fn merge_small_chunks(chunks: &[String], max_size: usize, overlap: usize) -> Vec<String> {
+    if chunks.len() <= 1 {
+        return chunks.to_vec();
+    }
+    let min_size = (max_size as f64 * 0.4) as usize;
+    let mut result = Vec::new();
+    let mut buffer = String::new();
+
+    for chunk in chunks {
+        if buffer.is_empty() {
+            buffer = chunk.clone();
+        } else if buffer.len() < min_size {
+            buffer.push('\n');
+            buffer.push_str(chunk);
+        } else {
+            result.push(std::mem::take(&mut buffer));
+            buffer = chunk.clone();
+        }
+    }
+    if !buffer.is_empty() {
+        result.push(buffer);
+    }
+
+    // overlap 处理：若还有空间，在块间插入 overlap 字符
+    if overlap > 0 && result.len() > 1 {
+        let overlap_size = overlap.min(max_size / 4);
+        if overlap_size > 10 {
+            let mut merged = Vec::new();
+            for i in 0..result.len() {
+                if i == 0 {
+                    merged.push(result[i].clone());
+                } else {
+                    let prev_tail: String = result[i - 1]
+                        .chars()
+                        .rev()
+                        .take(overlap_size)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                        .collect();
+                    let new_chunk = format!("{}\n{}", prev_tail, result[i]);
+                    merged.push(new_chunk);
+                }
+            }
+            return merged;
+        }
+    }
+
+    result
+}
+
+/// 符号感知的合并：不合并两个都有独立符号名的相邻 chunk，
+/// 保证每个函数/类定义保持独立 chunk 身份。
+/// 仅将无符号的小 chunk 合并到前一个有符号的 chunk 中。
+fn merge_small_chunks_symbol_aware(chunks: Vec<ChunkResult>, max_size: usize) -> Vec<ChunkResult> {
+    if chunks.len() <= 1 {
+        return chunks;
+    }
+    let min_size = (max_size as f64 * 0.4) as usize;
+    let mut result: Vec<ChunkResult> = Vec::new();
+
+    for chunk in chunks {
+        if let Some(prev) = result.last_mut() {
+            let prev_has_symbol = prev.symbol_name.is_some();
+            let curr_has_symbol = chunk.symbol_name.is_some();
+            let prev_too_small = prev.text.len() < min_size;
+
+            if prev_too_small && !curr_has_symbol {
+                // 前一个 chunk 太小且当前无符号：合并到前一个
+                let merged_text = format!("{}\n{}", prev.text, chunk.text);
+                *prev = ChunkResult {
+                    text: merged_text,
+                    path_depth: prev.path_depth.or(chunk.path_depth),
+                    path_json: prev.path_json.clone().or(chunk.path_json),
+                    sentence_window: prev.sentence_window.clone().or(chunk.sentence_window),
+                    symbol_name: prev.symbol_name.clone(),
+                    symbol_kind: prev.symbol_kind.clone(),
+                };
+                continue;
+            }
+            if !curr_has_symbol && !prev_has_symbol && prev.text.len() < min_size {
+                // 两个都无符号且前一个太小：合并
+                let merged_text = format!("{}\n{}", prev.text, chunk.text);
+                *prev = ChunkResult {
+                    text: merged_text,
+                    path_depth: prev.path_depth.or(chunk.path_depth),
+                    path_json: prev.path_json.clone().or(chunk.path_json),
+                    sentence_window: prev.sentence_window.clone().or(chunk.sentence_window),
+                    symbol_name: prev.symbol_name.clone(),
+                    symbol_kind: prev.symbol_kind.clone(),
+                };
+                continue;
+            }
+        }
+        result.push(chunk);
+    }
+
+    result
+}
+
+/// 从文本块首行提取符号名和类型
+///
+/// 检测逻辑：
+/// - 优先从 chunk 首行提取关键字（因为分隔符切分后关键字一般在行首）
+/// - 兼容 `.contains(" fn ")` 和 `.starts_with("fn ")`（不同切分场景）
+/// - 也检测 `pub/async/pub async` 前缀（Rust 等语言）
+fn extract_symbol_info(text: &str, re: &Regex) -> (Option<String>, Option<String>) {
+    if let Some(caps) = re.captures(text) {
+        let name = caps.get(1).map(|m| m.as_str().to_string());
+        let kind = detect_symbol_kind(text);
+        (name, kind)
+    } else {
+        (None, None)
+    }
+}
+
+/// 根据文本内容检测符号类型
+fn detect_symbol_kind(text: &str) -> Option<String> {
+    // 首行检测（最可靠——切分后关键字在行首）
+    let first_line = text.lines().next().unwrap_or(text);
+    // 同时检测 contains 和 starts_with，覆盖不同切分场景
+    let tests: &[(&str, &str)] = &[
+        ("class", "class"),
+        ("struct", "struct"),
+        ("enum", "enum"),
+        ("trait", "trait"),
+        ("interface", "interface"),
+        ("fn", "function"),
+        ("def", "function"),
+        ("function", "function"),
+        ("func", "function"),
+        ("type", "type"),
+    ];
+    for (kw, kind) in tests {
+        if first_line.contains(&format!(" {} ", kw))
+            || first_line.starts_with(&format!("{} ", kw))
+            || first_line.starts_with(&format!("pub {} ", kw))
+            || first_line.starts_with(&format!("async {} ", kw))
+            || first_line.starts_with(&format!("pub async {} ", kw))
+        {
+            return Some(kind.to_string());
+        }
+    }
+    Some("symbol".to_string())
+}
+
+/// 从代码文本中提取所有定义的符号名（函数、类、结构体等），去重并保持顺序。
+fn extract_all_symbols(text: &str) -> Vec<String> {
+    let re = Regex::new(r"(?m)^[\t ]*(?:(?:pub\s+)?(?:async\s+)?(?:fn|def|function|func|async function|class|struct|enum|trait|interface|type|object|impl)\s+)(\w+)")
+        .expect("extract_all_symbols regex 编译失败");
+    let mut seen = std::collections::HashSet::new();
+    let mut symbols = Vec::new();
+    for cap in re.captures_iter(text) {
+        if let Some(m) = cap.get(1) {
+            let name = m.as_str();
+            if seen.insert(name) {
+                symbols.push(name.to_string());
+            }
+        }
+    }
+    symbols
+}
+
+/// 从代码文本中提取文件概览信息，构建"文件概览 chunk"的文本内容。
+///
+/// 返回 None 表示无需概览（文件太小、无符号、无 imports）。
+fn build_file_overview_text(text: &str) -> Option<String> {
+    if text.len() < 80 {
+        return None;
+    }
+
+    // 收集导入语句（前 30 行）
+    let lines: Vec<&str> = text.lines().collect();
+    let import_re = Regex::new(r"^\s*(?:import\s|from\s|use\s|#include|require\b|pub\s+use|using\b)").unwrap();
+    let mut imports: Vec<&str> = Vec::new();
+    for line in lines.iter().take(30) {
+        if import_re.is_match(line) {
+            let trimmed = line.trim();
+            if !imports.contains(&trimmed) {
+                imports.push(trimmed);
+            }
+        }
+    }
+
+    let symbols = extract_all_symbols(text);
+
+    // 无符号也无 imports → 不需要单独概览（小文件或配置文件）
+    if symbols.is_empty() && imports.is_empty() {
+        return None;
+    }
+
+    let mut parts = Vec::new();
+
+    if !symbols.is_empty() {
+        let sym_str = symbols.iter().take(20).map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
+        if symbols.len() > 20 {
+            parts.push(format!("符号: {}... (共 {} 个)", sym_str, symbols.len()));
+        } else {
+            parts.push(format!("符号: {}", sym_str));
+        }
+    }
+
+    if !imports.is_empty() {
+        let imp_str = imports.iter().take(5).map(|s| s.to_string()).collect::<Vec<_>>().join("; ");
+        if imports.len() > 5 {
+            parts.push(format!("导入: {}... (共 {} 条)", imp_str, imports.len()));
+        } else {
+            parts.push(format!("导入: {}", imp_str));
+        }
+    }
+
+    Some(parts.join(" | "))
+}
+
+/// 检测文本是否主要是注释内容（判断比例是否 > 50%）。
+/// 支持：
+/// - # 注释（Python、Shell、Ruby）
+/// - // /* */ 注释（C、Rust、JS/TS）
+/// -- 注释（SQL）
+/// - """ ''' 文档字符串（Python）
+fn is_comment_block(text: &str) -> bool {
+    if text.len() < 5 {
+        return false;
+    }
+    let comment_chars = text
+        .chars()
+        .filter(|&c| c == '#' || c == '/' || c == '*' || c == ' ' || c == '\n' || c == '\t' || c == '-' || c == '"' || c == '\'')
+        .count();
+    comment_chars as f64 / text.len() as f64 > 0.5
+}
+
+/// 将相邻的注释块合并到后续的函数/类定义 chunk 中。
+///
+/// 例如：
+/// ```python
+/// # LRU Cache implementation
+/// # This is a doc comment
+/// class LRUCache:
+/// ```
+/// 当分隔符切分后，注释块和类定义被拆成两个 chunk。此函数检测相邻的
+/// "无符号的注释块 + 有符号的代码块" 模式，将注释合并到代码块前。
+fn merge_comment_into_func(chunks: Vec<ChunkResult>, max_size: usize) -> Vec<ChunkResult> {
+    if chunks.len() <= 1 {
+        return chunks;
+    }
+    let mut merged: Vec<ChunkResult> = Vec::with_capacity(chunks.len());
+    for chunk in chunks {
+        if let Some(prev) = merged.last_mut() {
+            // 当前 chunk 有符号（函数/类定义），前一个 chunk 是注释块
+            if chunk.symbol_name.is_some()
+                && prev.symbol_name.is_none()
+                && prev.symbol_kind.as_deref() != Some("file")
+                && prev.text.len() < max_size / 2
+                && is_comment_block(&prev.text)
+            {
+                let merged_text = format!("{}\n{}", prev.text, chunk.text);
+                *prev = ChunkResult::code(
+                    merged_text,
+                    chunk.symbol_name.clone(),
+                    chunk.symbol_kind.clone(),
+                );
+                continue;
+            }
+        }
+        merged.push(chunk);
+    }
+    merged
+}
+
+/// 增强的代码分块：先生成符号感知的代码块，再为文件生成一个概览 chunk。
+///
+/// # 概览 chunk 生成规则
+/// - 当文件包含 2 个以上符号或富含 imports 时，自动生成文件概览 chunk
+/// - 概览 chunk 的 `symbol_kind = Some("file")`，便于检索时识别
+/// - 概览 chunk 被插入到结果列表的最前面（chunk_index = 0）
+fn split_code_with_overview(
+    text: &str,
+    splitter: &CodeAwareChunkSplitter,
+    max_size: usize,
+    overlap: usize,
+) -> Vec<ChunkResult> {
+    // 1. 使用语言特定分隔符做递归切分
+    let raw_chunks = split_recursive_by_separators(text, &splitter.separators, max_size);
+    // 2. 简单合并太小的原始块（无符号信息，仅基于长度）
+    let chunks = merge_small_chunks(&raw_chunks, max_size, overlap);
+    // 3. 提取符号
+    let mut results: Vec<ChunkResult> = chunks
+        .into_iter()
+        .map(|t| {
+            let (symbol_name, symbol_kind) = if let Some(ref re) = splitter.symbol_pattern {
+                extract_symbol_info(&t, re)
+            } else {
+                (None, None)
+            };
+            ChunkResult::code(t, symbol_name, symbol_kind)
+        })
+        .collect();
+
+    // 4. 符号感知合并：不合并两个有独立符号的 chunk，保证函数边界
+    results = merge_small_chunks_symbol_aware(results, max_size);
+    // 5. 注释块合并：将相邻的注释/文档合并到后续的函数/类定义 chunk 中
+    results = merge_comment_into_func(results, max_size);
+
+    // 6. 生成文件概览 chunk（如果有足够符号或 imports）
+    if let Some(overview_text) = build_file_overview_text(text) {
+        let overview = ChunkResult::file_overview(overview_text);
+        results.insert(0, overview); // 插入最前面，chunk_index = 0
+    }
+
+    results
+}
 
 /// Markdown 分块器配置，支持业务灵活调整规则
 #[derive(Debug, Clone)]
@@ -596,7 +1067,7 @@ impl TreeProcessor {
         let char_count = combined.chars().count();
 
         if char_count <= max_size * 3 / 2 {
-            result.push(ChunkResult { text: combined, path_depth, path_json, sentence_window: None });
+            result.push(ChunkResult { text: combined, path_depth, path_json, sentence_window: None, symbol_name: None, symbol_kind: None });
             return;
         }
 
@@ -612,6 +1083,8 @@ impl TreeProcessor {
                 path_depth,
                 path_json: path_json.clone(),
                 sentence_window: None,
+                symbol_name: None,
+                symbol_kind: None,
             });
         }
     }
@@ -629,7 +1102,7 @@ impl TreeProcessor {
             format!("【上下文: {}】\n{}", prefix_str, body)
         };
         let (path_depth, path_json) = Self::path_to_metadata(path);
-        result.push(ChunkResult { text: combined, path_depth, path_json, sentence_window: None });
+        result.push(ChunkResult { text: combined, path_depth, path_json, sentence_window: None, symbol_name: None, symbol_kind: None });
     }
 
     // ─── DFS 遍历 ───
@@ -1055,6 +1528,8 @@ impl ChunkSplitter for SentenceWindowChunkSplitter {
                 path_depth: None,
                 path_json: None,
                 sentence_window: Some(window_text),
+                symbol_name: None,
+                symbol_kind: None,
             });
         }
 
@@ -1102,10 +1577,15 @@ impl ChunkSplitterFactory {
         // FreeMind 类型
         factory.exact.insert("mm", freemind);
 
-        // 纯文本类型（默认）
-        // 代码、配置文件等所有非 Markdown/OPML/FreeMind 类型都使用纯文本分割
+        // 代码文件类型（有语言特定分隔符的扩展名使用 CodeAwareChunkSplitter）
+        // 其余非 Markdown/OPML/FreeMind 类型使用 PlainTextChunkSplitter
         for ext in utils::KB_SUPPORTED_EXTS {
-            if ext != &"md" && ext != &"mdx" && ext != &"opml" && ext != &"mm" {
+            if ext == &"md" || ext == &"mdx" || ext == &"opml" || ext == &"mm" {
+                continue;
+            }
+            if CODE_LANG_SEPARATORS.contains_key(ext) {
+                factory.exact.insert(ext, Box::new(CodeAwareChunkSplitter::for_extension(ext)));
+            } else {
                 factory.exact.insert(ext, Box::new(PlainTextChunkSplitter));
             }
         }

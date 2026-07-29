@@ -593,6 +593,8 @@ pub fn build_document_chunks(rel_path: &str, chunks: &[ChunkResult]) -> Vec<Docu
                 path_depth: r.path_depth,
                 path_json: r.path_json.clone(),
                 sentence_window: r.sentence_window.clone(),
+                symbol_name: r.symbol_name.clone(),
+                symbol_kind: r.symbol_kind.clone(),
             }
         })
         .collect()

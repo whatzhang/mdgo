@@ -355,6 +355,10 @@ async fn run_debounce_loop(
                             continue;
                         }
                         log::debug!("[watcher] 处理修改: {}", path);
+                        if indexer.is_reindex_in_progress() {
+                            log::debug!("[watcher] 全量索引进行中，跳过增量索引: {}", path);
+                            continue;
+                        }
                         if let Err(e) = indexer.index_file(&dir_path, path, &abs_path).await {
                             log::error!("[watcher] 索引处理失败 ({}): {}", path, e);
                             on_error(&format!("增量索引失败 ({}): {}", path, e));

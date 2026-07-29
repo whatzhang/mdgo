@@ -17,8 +17,8 @@ impl Default for IndexerConfig {
         Self {
             dir_blacklist: Vec::new(),
             file_blacklist: Vec::new(),
-            chunk_size: 1000,
-            chunk_overlap: 200,
+            chunk_size: 1500,
+            chunk_overlap: 300,
             top_k: 10,
             min_score: 0.3,
         }

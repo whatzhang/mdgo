@@ -260,6 +260,7 @@
         select option {
             background: var(--todo-bg);
             color: var(--t1);
+            font-weight: normal;
         }
 
         #app-header {
@@ -1635,7 +1636,7 @@
             overflow-x: hidden;
             padding-left: 0.75rem;
             padding-right: 0.25rem;
-            padding-top: 2rem;
+            padding-top: 0.25rem;
             box-sizing: border-box;
         }
 
@@ -5186,10 +5187,10 @@
         /* 发送按钮：位于输入框右下角 */
         .chat-send-btn {
             position: absolute;
-            bottom: 0.5rem;
-            right: 0.5rem;
-            width: 2rem;
-            height: 2rem;
+            bottom: 0.75rem;
+            right: 0.75rem;
+            width: 1.7rem;
+            height: 1.7rem;
             border-radius: 50%;
             border: none;
             cursor: pointer;
@@ -5199,6 +5200,10 @@
             transition: all 0.15s;
             color: #fff;
             z-index: 1;
+        }
+        .chat-send-btn > svg{
+            transform: rotate(-90deg);
+            margin-bottom: 0.125rem;
         }
         .chat-send-btn:not(:disabled) {
             background: var(--color-primary, #0879e9);
@@ -15594,7 +15599,6 @@
                     <div class="knowledge-list" id="knowledge-list">
                         <div class="kb-empty" id="kb-empty-msg">
                             <span>当前目录尚未索引</span>
-                            <button onclick="indexCurrentDir('full')">开始索引</button>
                         </div>
 
                         <div class="kn-stats-grid" id="kb-stats-row1" style="display:none;">
@@ -26966,7 +26970,10 @@ kanban-plugin: basic
         }
         async function postSubProcessCodeAndDiagrams(container) {    
             const preElements = container.querySelectorAll('pre');
-            if (!preElements.length) return;
+            if (!preElements.length){ 
+                renderMath(container);
+                return;
+            }
             const BATCH_SIZE = 5;
             // Mermaid 并发限制为 3，避免渲染器过载
             const mermaidLimit = createConcurrencyLimiter(3);
@@ -27171,20 +27178,22 @@ kanban-plugin: basic
             }
 
             // ── 渲染 KaTeX 行内公式（auto-render 兜底） ──
-            if (typeof renderMathInElement === 'function') {
-                try {
-                    renderMathInElement(container, {
-                        delimiters: [
-                            { left: '$$', right: '$$', display: true },
-                            { left: '$', right: '$', display: false },
-                            { left: '\\(', right: '\\)', display: false },
-                            { left: '\\[', right: '\\]', display: true }
-                        ],
-                        throwOnError: false
-                    });
-                } catch (e) {
-                    console.warn('KaTeX auto-render 失败:', e);
-                }
+            renderMath(container);
+        }
+
+        function renderMath(container){
+            try {
+                renderMathInElement(container, {
+                    delimiters: [
+                        { left: '$$', right: '$$', display: true },
+                        { left: '$', right: '$', display: false },
+                        { left: '\\(', right: '\\)', display: false },
+                        { left: '\\[', right: '\\]', display: true }
+                    ],
+                    throwOnError: true
+                });
+            } catch (e) {
+                console.error('KaTeX auto-render 失败:', e);
             }
         }
 
@@ -28781,13 +28790,6 @@ kanban-plugin: basic
                 return data;
             } catch (e) {
                 console.error('读取标记数据失败:', e);
-                // 文件不存在时，创建内容为 {} 的默认标记文件
-                try {
-                    await writeFileByDirHandle(await getDataDir(), INDEX_MARKERS_FILE, '{}');
-                    console.log('已创建默认标记文件:', INDEX_MARKERS_FILE);
-                } catch (writeErr) {
-                    console.error('创建默认标记文件失败:', writeErr);
-                }
                 _markersMap = new Map();
                 return {};
             }
@@ -28795,6 +28797,7 @@ kanban-plugin: basic
 
         let _markersWriteLock = Promise.resolve();
         async function writeMarkers(data) {
+            if(isEmpty(data)) return;
             // 串行化写入，防止读-改-写竞态条件
             const prev = _markersWriteLock;
             let resolve;
@@ -35304,6 +35307,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (Array.isArray(obj)) return obj.length === 0;
             // 空对象
             if (obj && typeof obj === 'object') return Object.keys(obj).length === 0;
+            // 空 Map
+            if (obj && obj instanceof Map) return obj.size === 0;
             // 其他空值
             return !obj;
         }
@@ -50014,7 +50019,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     ragSettings = ragSettings || {};
                     document.getElementById('rag-setting-topk').value = cfg.top_k ?? 10;
                     document.getElementById('rag-setting-min-score').value = cfg.min_score ?? 0.3;
-                    document.getElementById('rag-setting-chunk-size').value = cfg.chunk_size ?? 1000;
+                    document.getElementById('rag-setting-chunk-size').value = cfg.chunk_size ?? 1500;
                     document.getElementById('rag-setting-chunk-overlap').value = cfg.chunk_overlap ?? 200;
                 }
             } catch (e) {
@@ -50108,7 +50113,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     _chatStreamingFullContent += delta;
                     if (!_chatStreamingDiv) {
                         removeChatTyping();
-                        if (_statusEl) _statusEl.remove();
                         const container = document.getElementById('chat-messages');
                         const div = getMessageAssistant();
                         container.appendChild(div);
@@ -50162,6 +50166,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         await highlightChatCodeBlocks(_chatStreamingDiv._body);
                     }
                     removeChatTyping();
+                    // 兜底：如果流式过程中未能创建 DOM（如 _statusEl 等异常导致 delta 处理中断），在此创建
+                    if (!_chatStreamingDiv && fullContent) {
+                        const container = document.getElementById('chat-messages');
+                        const div = getMessageAssistant();
+                        div._body.innerHTML = `<div class="markdown-body" style="zoom: 1;background: transparent;">${renderChatMarkdown(fullContent)}</div>`;
+                        container.appendChild(div);
+                        _chatStreamingDiv = div;
+                    }
                     // 追加引用来源 UI
                     if (sources.length > 0 && _chatStreamingDiv) {
                         renderChatSources(_chatStreamingDiv, sources);
@@ -50801,7 +50813,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         ragSettings = {
                             topK: cfg.top_k ?? 10,
                             minScore: cfg.min_score ?? 0.3,
-                            chunkSize: cfg.chunk_size ?? 1000,
+                            chunkSize: cfg.chunk_size ?? 1500,
                             chunkOverlap: cfg.chunk_overlap ?? 200,
                         };
                     }

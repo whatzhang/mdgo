@@ -35,6 +35,12 @@ pub struct RagSource {
     pub text: String,
     /// OPML 节点路径 JSON 数组（仅 OPML 文件有值）
     pub path_json: Option<String>,
+    /// 代码符号名（仅代码文件有值），前端可用于高亮匹配
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symbol_name: Option<String>,
+    /// 代码符号类型（仅代码文件有值）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symbol_kind: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -246,8 +252,10 @@ pub async fn kb_rag_query(
                     log::debug!("[rag_query] hybrid_search for query='{}' hits={} took={:?}",
                         &q, hits.len(), search_start.elapsed());
                     hits.into_iter()
-                        .enumerate()
-                        .map(|(rank, h)| (h, rank_to_score(rank)))
+                        .map(|h| {
+                            let score = h.score;
+                            (h, score)
+                        })
                         .collect::<Vec<_>>()
                 } else {
                     log::warn!("[rag_query] Embedding failed for query='{}', skipping", &q);
@@ -296,43 +304,51 @@ pub async fn kb_rag_query(
     }
     log::debug!("[rag_query] Stage3a: unique chunks after dedup={}", seen.len());
 
-    // 3b: 按 doc_name 聚合，每篇文档保留最高分的 chunk
-    let mut doc_map: HashMap<String, (SearchHit, f32)> = HashMap::new();
+    // 3b: 按 doc_name 聚合，保留该文档中所有达到阈值的 chunks（而非仅最高分 chunk）
+    //     同一文档的多个相关片段合并后能为 LLM 提供完整上下文。
+    let max_score_overall = seen.values().map(|(_, s)| *s).fold(0.0_f32, f32::max);
+    let doc_threshold = max_score_overall * 0.3; // 文档内保留分数 ≥ 最高分 30% 的所有 chunks
+    let mut doc_map: HashMap<String, Vec<(SearchHit, f32)>> = HashMap::new();
     for (hit, score) in seen.into_values() {
-        let doc_name = hit.doc_name.clone();
-        match doc_map.entry(doc_name) {
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                if score > entry.get().1 {
-                    entry.insert((hit, score));
-                }
-            }
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert((hit, score));
-            }
+        if score < doc_threshold {
+            continue;
         }
+        let doc_name = hit.doc_name.clone();
+        doc_map.entry(doc_name).or_default().push((hit, score));
+    }
+    // 每篇文档内按分数降序，最多保留 5 个 chunks
+    for chunks in doc_map.values_mut() {
+        chunks.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        chunks.truncate(5);
     }
     log::debug!("[rag_query] Stage3b: unique docs after doc-aggregation={}", doc_map.len());
 
-    // 3c: 排序 + 自适应阈值
-    let mut docs: Vec<(SearchHit, f32)> = doc_map.into_values().collect();
-    docs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    // 3c: 以每篇文档的最佳 chunk 分数作为文档的代表分排序，
+    //     应用自适应阈值，取 top 5 文档，但保留文档内所有通过的 chunks
+    let mut doc_scores: Vec<(Vec<(SearchHit, f32)>, f32)> = doc_map
+        .into_values()
+        .map(|chunks| {
+            let best = chunks.first().map(|(_, s)| *s).unwrap_or(0.0);
+            (chunks, best)
+        })
+        .collect();
+    doc_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-    let max_score = docs.first().map(|(_, s)| *s).unwrap_or(0.0);
-    let adapt_threshold = max_score * 0.5;
+    let max_doc_score = doc_scores.first().map(|(_, s)| *s).unwrap_or(0.0);
+    let adapt_threshold = max_doc_score * 0.5;
     let abs_min = rank_to_score(15);
     let final_threshold = adapt_threshold.max(abs_min);
 
-    let selected: Vec<(SearchHit, f32)> = docs
+    // 展平：选中文档 + 文档内所有通过阈值的 chunks
+    let selected: Vec<(SearchHit, f32)> = doc_scores
         .into_iter()
         .filter(|(_, s)| *s >= final_threshold)
         .take(5)
+        .flat_map(|(chunks, _)| chunks)
         .collect();
 
-    log::info!("[rag_query] Stage3c: threshold max_score={:.6} adapt={:.6} abs_min={:.6} final={:.6} selected={}",
-        max_score, adapt_threshold, abs_min, final_threshold, selected.len());
-    for (i, (hit, score)) in selected.iter().enumerate() {
-        log::debug!("[rag_query] Stage3c: selected[{}] doc={} score={:.6} chunk={}", i, hit.doc_name, score, hit.chunk_index);
-    }
+    log::info!("[rag_query] Stage3c: threshold max_score={:.6} adapt={:.6} abs_min={:.6} final={:.6} selected_chunks={}",
+        max_doc_score, adapt_threshold, abs_min, final_threshold, selected.len());
 
     if selected.is_empty() {
         log::warn!("[rag_query] Stage3: no docs passed threshold, aborting request_id={}", request_id);
@@ -343,34 +359,88 @@ pub async fn kb_rag_query(
 
     // ── Stage 4: 构建 context → LLM 生成 ──
     log::info!("[rag_query] Stage4: building context and LLM generation start request_id={}", request_id);
+    let status_msg = format!("正在生成回答（基于 {} 个相关片段）...", selected.len());
     let _ = app.emit(
         "rag:status",
         RagStatus {
             request_id: request_id.clone(),
             stage: "generating".into(),
-            message: format!("正在生成回答（基于 {} 篇文档）...", selected.len()),
+            message: status_msg,
         },
     );
 
-    // 优先使用 sentence_window（包含检索句子前后的上下文），fallback 到 chunk text
-    let context: String = selected
-        .iter()
-        .map(|(hit, _)| hit.sentence_window.as_deref().unwrap_or(&hit.text))
-        .collect::<Vec<&str>>()
-        .join("\n\n---\n\n");
+    // 按文档分组构建上下文：同一文档的多个 chunks 合并为一个段落块，
+    // 优先使用 sentence_window（包含检索句子前后的上下文），fallback 到 chunk text。
+    // Markdown/OPML/FreeMind 所有文档类型均适用。
+    let mut context_parts: Vec<String> = Vec::new();
+    let mut last_doc = String::new();
+    for (hit, _) in &selected {
+        let doc_name = &hit.doc_name;
+        let text = hit.sentence_window.as_deref().unwrap_or(&hit.text);
+        if *doc_name != last_doc {
+            if !last_doc.is_empty() {
+                context_parts.push(String::new()); // 文档间空行分隔
+            }
+            context_parts.push(format!("--- {} ---", doc_name));
+            last_doc = doc_name.clone();
+        }
+        context_parts.push(text.to_string());
+    }
+    let context = context_parts.join("\n");
     log::debug!("[rag_query] Stage4: context built char_len={}", context.len());
 
-    let sources: Vec<RagSource> = selected
-        .into_iter()
-        .map(|(hit, _)| RagSource {
-            doc_name: hit.doc_name.clone(),
-            score: hit.score,
-            text: hit.text.clone(),
-            path_json: hit.path_json.clone(),
-        })
-        .collect();
+    // 构建引用来源：按 doc_name 去重，同一文档只保留最高分条目，
+    // 但合并所有 chunks 的文本（去重文本内容），确保来源完备不冗余。
+    // 对 OPML/FreeMind：合并 path_json 层级路径展示。
+    let mut source_dedup: std::collections::HashMap<String, RagSource> = std::collections::HashMap::new();
+    for (hit, _) in &selected {
+        let doc_name = hit.doc_name.clone();
+        let text = hit.text.clone();
+        let path_json = hit.path_json.clone();
+        let score = hit.score;
+        match source_dedup.entry(doc_name.clone()) {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                let existing = entry.get_mut();
+                // 合并文本：仅当新文本未包含在已有文本中时才追加
+                if !existing.text.contains(&text) && !text.contains(&existing.text) {
+                    existing.text.push('\n');
+                    existing.text.push_str(&text);
+                }
+                // 取最高分
+                if score > existing.score {
+                    existing.score = score;
+                }
+                // 合并 path_json（OPML/FreeMind 路径追加）
+                if let Some(ref pj) = path_json {
+                    match existing.path_json {
+                        Some(ref mut existing_path) => {
+                            if !existing_path.contains(pj) {
+                                existing_path.push(',');
+                                existing_path.push_str(pj);
+                            }
+                        }
+                        None => {
+                            existing.path_json = Some(pj.clone());
+                        }
+                    }
+                }
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(RagSource {
+                    doc_name,
+                    score,
+                    text,
+                    path_json,
+                    symbol_name: hit.symbol_name.clone(),
+                    symbol_kind: hit.symbol_kind.clone(),
+                });
+            }
+        }
+    }
+    let mut sources: Vec<RagSource> = source_dedup.into_values().collect();
+    sources.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    log::debug!("[rag_query] Stage4: sources deduped count={}", sources.len());
     let sources_clone = sources.clone();
-    log::debug!("[rag_query] Stage4: sources count={}", sources.len());
 
     // 构建 System Prompt + Messages
     let system_prompt = format!(

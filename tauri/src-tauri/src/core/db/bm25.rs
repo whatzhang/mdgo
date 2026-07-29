@@ -173,6 +173,9 @@ impl Bm25Index {
             )
             .set_stored();
         builder.add_text_field("text", text_options);
+        // 代码符号字段（仅存储，不索引——符号加权在 RRF 融合后做）
+        builder.add_text_field("symbol_name", STORED);
+        builder.add_text_field("symbol_kind", STORED);
         builder.build()
     }
 
@@ -252,6 +255,8 @@ impl Bm25Index {
         let doc_name_field = schema.get_field("doc_name").unwrap();
         let chunk_index_field = schema.get_field("chunk_index").unwrap();
         let text_field = schema.get_field("text").unwrap();
+        let symbol_name_field = schema.get_field("symbol_name").unwrap();
+        let symbol_kind_field = schema.get_field("symbol_kind").unwrap();
 
         let mut writer = index
             .writer(50_000_000)
@@ -264,6 +269,8 @@ impl Bm25Index {
                     doc_name_field => chunk.doc_name.as_str(),
                     chunk_index_field => chunk.chunk_index as u64,
                     text_field => chunk.text.as_str(),
+                    symbol_name_field => chunk.symbol_name.as_deref().unwrap_or(""),
+                    symbol_kind_field => chunk.symbol_kind.as_deref().unwrap_or(""),
                 ))
                 .map_err(|e| format!("添加文档到 BM25 失败: {}", e))?;
         }
@@ -286,6 +293,8 @@ impl Bm25Index {
         let text_field = schema.get_field("text").unwrap();
         let doc_name_field = schema.get_field("doc_name").unwrap();
         let chunk_index_field = schema.get_field("chunk_index").unwrap();
+        let symbol_name_field = schema.get_field("symbol_name").unwrap();
+        let symbol_kind_field = schema.get_field("symbol_kind").unwrap();
 
         let reader = self.get_reader()?;
         let searcher = reader.searcher();
@@ -325,6 +334,16 @@ impl Bm25Index {
                 .get_first(chunk_index_field)
                 .and_then(|v| v.as_u64())
                 .unwrap_or(0) as u32;
+            let symbol_name = doc
+                .get_first(symbol_name_field)
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
+            let symbol_kind = doc
+                .get_first(symbol_kind_field)
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
 
             raw_scores.push(*score as f32);
             hits.push(SearchHit {
@@ -336,6 +355,8 @@ impl Bm25Index {
                 score_bm25: 0.0,
                 path_json: None,
                 sentence_window: None,
+                symbol_name,
+                symbol_kind,
             });
         }
 

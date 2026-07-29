@@ -32,10 +32,14 @@ pub struct DocumentChunk {
     pub text: String,
     /// OPML 节点在树中的深度（仅 OPML 文件有值）
     pub path_depth: Option<u32>,
-    /// OPML 节点路径的 JSON 数组（仅 OPML 文件有值）
+    /// OPML/FreeMind 节点路径的 JSON 数组
     pub path_json: Option<String>,
     /// 句子级 chunk 的上下文窗口文本（SentenceWindow 用）
     pub sentence_window: Option<String>,
+    /// 代码符号名（仅代码文件有值），如函数名、类名
+    pub symbol_name: Option<String>,
+    /// 代码符号类型（仅代码文件有值），如 "function"、"class"
+    pub symbol_kind: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -50,6 +54,10 @@ pub struct SearchHit {
     pub path_json: Option<String>,
     /// 句子级 chunk 的上下文窗口文本（SentenceWindow 用）
     pub sentence_window: Option<String>,
+    /// 代码符号名（仅代码文件有值）
+    pub symbol_name: Option<String>,
+    /// 代码符号类型（仅代码文件有值）
+    pub symbol_kind: Option<String>,
 }
 
 pub struct LanceStore {
@@ -99,6 +107,8 @@ impl LanceStore {
             let _ = Self::migrate_add_column(&table, "path_depth", DataType::UInt32).await;
             let _ = Self::migrate_add_column(&table, "path_json", DataType::Utf8).await;
             let _ = Self::migrate_add_column(&table, "sentence_window", DataType::Utf8).await;
+            let _ = Self::migrate_add_column(&table, "symbol_name", DataType::Utf8).await;
+            let _ = Self::migrate_add_column(&table, "symbol_kind", DataType::Utf8).await;
             return Ok(());
         }
 
@@ -111,6 +121,8 @@ impl LanceStore {
             Field::new("path_depth", DataType::UInt32, true),
             Field::new("path_json", DataType::Utf8, true),
             Field::new("sentence_window", DataType::Utf8, true),
+            Field::new("symbol_name", DataType::Utf8, true),
+            Field::new("symbol_kind", DataType::Utf8, true),
             Field::new(
                 "vector",
                 DataType::FixedSizeList(
@@ -196,6 +208,8 @@ impl LanceStore {
         let mut path_depth_arr: Vec<Option<u32>> = Vec::with_capacity(n);
         let mut path_json_arr: Vec<Option<&str>> = Vec::with_capacity(n);
         let mut sentence_window_arr: Vec<Option<&str>> = Vec::with_capacity(n);
+        let mut symbol_name_arr: Vec<Option<&str>> = Vec::with_capacity(n);
+        let mut symbol_kind_arr: Vec<Option<&str>> = Vec::with_capacity(n);
 
         for chunk in chunks {
             id_arr.push(chunk.id.as_str());
@@ -205,6 +219,8 @@ impl LanceStore {
             path_depth_arr.push(chunk.path_depth);
             path_json_arr.push(chunk.path_json.as_deref());
             sentence_window_arr.push(chunk.sentence_window.as_deref());
+            symbol_name_arr.push(chunk.symbol_name.as_deref());
+            symbol_kind_arr.push(chunk.symbol_kind.as_deref());
         }
 
         let vector_arrays: Vec<Option<Vec<Option<f32>>>> = vectors
@@ -226,6 +242,8 @@ impl LanceStore {
                 Field::new("path_depth", DataType::UInt32, true),
                 Field::new("path_json", DataType::Utf8, true),
                 Field::new("sentence_window", DataType::Utf8, true),
+                Field::new("symbol_name", DataType::Utf8, true),
+                Field::new("symbol_kind", DataType::Utf8, true),
                 Field::new(
                     "vector",
                     DataType::FixedSizeList(
@@ -244,6 +262,8 @@ impl LanceStore {
                 Arc::new(UInt32Array::from(path_depth_arr)),
                 Arc::new(StringArray::from(path_json_arr)),
                 Arc::new(StringArray::from(sentence_window_arr)),
+                Arc::new(StringArray::from(symbol_name_arr)),
+                Arc::new(StringArray::from(symbol_kind_arr)),
                 Arc::new(vector_arr),
             ],
         )
@@ -303,6 +323,12 @@ impl LanceStore {
             let sentence_windows = batch
                 .column_by_name("sentence_window")
                 .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+            let symbol_names = batch
+                .column_by_name("symbol_name")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+            let symbol_kinds = batch
+                .column_by_name("symbol_kind")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
 
             for i in 0..batch.num_rows() {
                 let dist = distances.value(i);
@@ -311,6 +337,12 @@ impl LanceStore {
                     if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
                 });
                 let sentence_window_val = sentence_windows.and_then(|arr| {
+                    if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
+                });
+                let symbol_name_val = symbol_names.and_then(|arr| {
+                    if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
+                });
+                let symbol_kind_val = symbol_kinds.and_then(|arr| {
                     if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
                 });
                 hits.push(SearchHit {
@@ -322,11 +354,116 @@ impl LanceStore {
                     score_bm25: 0.0,
                     path_json: path_json_val,
                     sentence_window: sentence_window_val,
+                    symbol_name: symbol_name_val,
+                    symbol_kind: symbol_kind_val,
                 });
             }
         }
 
         Ok(hits)
+    }
+
+    /// 获取所有已索引的文档名列表（去重）。
+    ///
+    /// 用于 `index_unindexed` 中批量判断哪些文件已索引，避免逐文件 O(N) 查询。
+    pub async fn list_document_names(&self) -> Result<std::collections::HashSet<String>, String> {
+        let table = self.open_table().await?;
+        let batches: Vec<RecordBatch> = table
+            .query()
+            .limit(10_000)
+            .execute()
+            .await
+            .map_err(|e| format!("扫描文档名失败: {}", e))?
+            .try_collect()
+            .await
+            .map_err(|e| format!("读取文档名失败: {}", e))?;
+
+        let mut names = std::collections::HashSet::new();
+        for batch in &batches {
+            let doc_names = batch
+                .column_by_name("doc_name")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+            if let Some(arr) = doc_names {
+                for i in 0..batch.num_rows() {
+                    if !arr.is_null(i) {
+                        names.insert(arr.value(i).to_string());
+                    }
+                }
+            }
+        }
+        Ok(names)
+    }
+
+    /// 获取指定文档中某个 chunk 的上下文窗口（前后相邻 chunks）。
+    ///
+    /// 用于后检索上下文扩展：命中某个 chunk 后，将 ±window 范围内的相邻 chunks
+    /// 一并拉取作为上下文，使 LLM 获得更完整的文档内容。
+    ///
+    /// 返回 `(chunk_index, text, path_json)` 列表，按 chunk_index 升序排列。
+    /// 适用于 Markdown（按文档顺序分块）、OPML/FreeMind（DFS 遍历顺序）所有文档类型。
+    pub async fn fetch_chunks_in_range(
+        &self,
+        doc_name: &str,
+        center_index: u32,
+        window: u32,
+    ) -> Result<Vec<(u32, String, Option<String>)>, String> {
+        let table = self.open_table().await?;
+        let start = center_index.saturating_sub(window);
+        let end = center_index + window;
+        // 最大期望结果数
+        let expected = (window * 2 + 1) as usize;
+
+        // 使用向量检索 + 大范围 top_k，在内存中按 doc_name + chunk_index 过滤。
+        // 原因：lancedb 0.31 的 Query 类型（不带 nearest_to）无 execute() 方法。
+        // 使用零向量 + Cosine 距离，所有结果分数 ≈ 1.0，不依赖向量质量。
+        let dim = get_local_embedding_dimension() as usize;
+        let query_vec = vec![0.0f32; dim];
+        let batches: Vec<RecordBatch> = table
+            .query()
+            .nearest_to(query_vec)
+            .map_err(|e| format!("nearest_to 失败: {}", e))?
+            .distance_type(DistanceType::Cosine)
+            .limit(2000) // 拉取较大候选池，确保目标范围 chunks 被覆盖
+            .execute()
+            .await
+            .map_err(|e| format!("上下文范围查询失败: {}", e))?
+            .try_collect()
+            .await
+            .map_err(|e| format!("读取上下文范围结果失败: {}", e))?;
+
+        let mut results = Vec::new();
+        for batch in &batches {
+            let doc_names = batch
+                .column_by_name("doc_name")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>())
+                .ok_or("缺少 doc_name 列")?;
+            let texts = batch
+                .column_by_name("text")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>())
+                .ok_or("缺少 text 列")?;
+            let chunk_idxs = batch
+                .column_by_name("chunk_index")
+                .and_then(|c| c.as_any().downcast_ref::<UInt32Array>())
+                .ok_or("缺少 chunk_index 列")?;
+            let path_jsons = batch
+                .column_by_name("path_json")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+
+            for i in 0..batch.num_rows() {
+                if doc_names.value(i) != doc_name { continue; }
+                let idx = chunk_idxs.value(i);
+                if idx < start || idx > end { continue; }
+                let path_json_val = path_jsons.and_then(|arr| {
+                    if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
+                });
+                results.push((idx, texts.value(i).to_string(), path_json_val));
+                if results.len() >= expected { break; }
+            }
+            if results.len() >= expected { break; }
+        }
+
+        results.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(results)
     }
 
     /// 仅删除当前表（不删除数据目录），用于知识库重新索引时保留对话索引数据

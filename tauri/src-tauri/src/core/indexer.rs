@@ -45,6 +45,63 @@ fn compute_bm25_weight(query: &str) -> f32 {
     }
 }
 
+/// 检测查询是否为"代码风格"的查询。
+///
+/// 代码查询的特征（满足任一即可）：
+/// - 包含 `::`、`->`、`()` 等代码特定符号
+/// - 包含 CamelCase 标识符（如 "LRUCache"、"parseJSON"）
+/// - 包含 snake_case 标识符（如 "lru_cache"、"index_all"）
+/// - 包含代码文件扩展名（如 ".py"、".rs"、".ts"）
+/// - 包含常见代码关键字（function、class、fn、def、struct）
+fn is_code_query(query: &str) -> bool {
+    // 代码语法特征
+    if query.contains("::") || query.contains("->") || query.contains("()") {
+        return true;
+    }
+    // 代码文件扩展名
+    if query.contains(".py") || query.contains(".rs") || query.contains(".ts")
+        || query.contains(".js") || query.contains(".go") || query.contains(".java")
+        || query.contains(".cpp") || query.contains(".c") || query.contains(".h")
+        || query.contains(".rb") || query.contains(".php")
+    {
+        return true;
+    }
+    // 代码关键字
+    let lower = query.to_lowercase();
+    // fn 单独处理：检查是否为独立词（fn()、fn_main、fn 都算）
+    let has_fn = query.split(|c: char| !c.is_alphanumeric())
+        .any(|word| word == "fn");
+    let code_keywords = [
+        "function", "class", "struct", "enum", "trait",
+        "interface", "namespace", "lambda", "async", "await",
+        "callback", "prototype", "constructor",
+    ];
+    if has_fn || code_keywords.iter().any(|kw| lower.contains(kw)) {
+        return true;
+    }
+    // CamelCase 检测：连续大写字母 + 小写字母（如 "LRUCache", "parseJSON"）
+    if query.chars().any(|c| c.is_uppercase()) {
+        // 至少一个完整的词包含大小写混合
+        let has_camel = query.split(|c: char| !c.is_alphanumeric())
+            .any(|word| {
+                word.len() >= 3
+                    && word.chars().any(|c| c.is_uppercase())
+                    && word.chars().any(|c| c.is_lowercase())
+                    && !word.chars().all(|c| c.is_uppercase())
+            });
+        if has_camel {
+            return true;
+        }
+    }
+    // snake_case 检测
+    let has_snake = query.split(|c: char| !c.is_alphanumeric())
+        .any(|word| word.contains('_') && word.len() >= 3);
+    if has_snake {
+        return true;
+    }
+    false
+}
+
 /// 根据文件扩展名分类为 "Markdown" / "代码" / "数据" / "其他"
 fn classify_ext(ext: &str) -> &'static str {
     match ext {
@@ -64,25 +121,24 @@ fn classify_ext(ext: &str) -> &'static str {
 
 /// 检查 parent_json 是否是 child_json 的**严格路径前缀**。
 ///
-/// path_json 序列化为 JSON 字符串数组（如 `["A","B"]`），简单的字符串 `starts_with`
-/// 会因 JSON 格式问题失效（`["A","B"].starts_with(["A"])` 返回 false）。
-///
-/// 本函数利用 JSON 数组特性：去掉父路径尾部 `]` 后，检查子路径是否以截断串开头
-/// 且下一个字符是 `,`（表示父路径最后一个元素后有更多元素）。
+/// path_json 序列化为 JSON 字符串数组（如 `["A","B"]`），使用 JSON 反序列化
+/// 确保正确性，避免因元素内包含逗号导致的字符串截断误判。
 fn is_path_prefix(parent_json: &str, child_json: &str) -> bool {
     if parent_json == child_json {
         return false;
     }
-    // 父路径去掉尾部 `]` 及可能的空白
-    let parent_trimmed = parent_json.trim_end_matches(']').trim_end();
-    if parent_trimmed.len() >= parent_json.len() {
+    let parent: Vec<String> = match serde_json::from_str(parent_json) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    let child: Vec<String> = match serde_json::from_str(child_json) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    if parent.len() >= child.len() {
         return false;
     }
-    if !child_json.starts_with(parent_trimmed) {
-        return false;
-    }
-    // 下一个字符必须是 `,`（表示父路径后还有更多元素）
-    child_json.as_bytes().get(parent_trimmed.len()) == Some(&b',')
+    parent.iter().zip(child.iter()).all(|(p, c)| p == c)
 }
 
 /// 知识库索引引擎（纯逻辑，不依赖 Tauri）
@@ -111,6 +167,8 @@ pub struct Indexer {
     chat_bm25_cache: Mutex<Option<(String, Arc<Bm25Index>)>>,
     /// 全量索引互斥锁（防止并发 kb_index）
     indexing_lock: Mutex<()>,
+    /// 全量索引进行中标记（用于 watcher 路径检查，避免元数据竞态）
+    reindex_in_progress: std::sync::atomic::AtomicBool,
 }
 
 impl Indexer {
@@ -122,7 +180,14 @@ impl Indexer {
             bm25_cache: Mutex::new(None),
             chat_bm25_cache: Mutex::new(None),
             indexing_lock: Mutex::new(()),
+            reindex_in_progress: std::sync::atomic::AtomicBool::new(false),
         }
+    }
+
+    /// 检测是否有全量索引正在执行（watcher 路径跳过 index_file 用）
+    pub fn is_reindex_in_progress(&self) -> bool {
+        self.reindex_in_progress
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// 获取或创建缓存的 LanceStore（Arc 共享，复用内部连接缓存）
@@ -203,34 +268,53 @@ impl Indexer {
         progress: impl Fn(u8, &str) + Send + Sync,
     ) -> Result<KbIndexResult, String> {
         let _guard = self.indexing_lock.lock().await;
+        self.reindex_in_progress
+            .store(true, std::sync::atomic::Ordering::Release);
 
         let config = self.config_store.read();
         let base_dir = Path::new(dir_path);
         if !base_dir.exists() {
+            self.reindex_in_progress
+                .store(false, std::sync::atomic::Ordering::Release);
             return Err(format!("目录不存在: {}", dir_path));
         }
+
+        // ── 单调递增进度辅助（AtomicU8 支持跨线程 &self 内部可变性） ──
+        let current_pct = std::sync::atomic::AtomicU8::new(0);
+        let set_progress = |pct: u32, msg: String| {
+            let pct_u8 = pct.min(100) as u8;
+            if pct_u8 > current_pct.load(std::sync::atomic::Ordering::Relaxed) {
+                current_pct.store(pct_u8, std::sync::atomic::Ordering::Relaxed);
+                progress(pct_u8, &msg);
+            }
+        };
+        let msg = |pct: u32, msg: &str| set_progress(pct, msg.to_string());
 
         // 清理旧索引数据 + 使缓存失效
         self.clear_inner(dir_path).await?;
         self.invalidate_cache().await;
 
-        progress(0, "正在扫描目录...");
+        msg(0, "正在扫描目录...");
         let ignore = IgnoreMatcher::new(&config.dir_blacklist, &config.file_blacklist);
         let files = scan_directory(base_dir, &ignore)?;
         let total = files.len() as u32;
         if total == 0 {
+            self.reindex_in_progress
+                .store(false, std::sync::atomic::Ordering::Release);
             return Err("目录中没有可索引的文件".into());
         }
-        progress(2, &format!("已发现 {} 个文件", total));
+        msg(2, &format!("已发现 {} 个文件", total));
 
         // 预创建 LanceDB 表和 BM25 索引
         let store = self.get_lance_store(dir_path).await;
         store.create_table().await?;
-
         let bm25 = self.get_bm25_index(dir_path).await?;
+        msg(5, "索引表就绪");
 
+        // ── 核心文件处理循环 ──
         let mut batch_chunks: Vec<DocumentChunk> = Vec::with_capacity(BATCH_CHUNK_LIMIT);
         let mut file_count = 0u32;
+        let mut batch_file_count = 0u32;
         let mut total_chunks = 0u32;
         let mut total_vectors = 0u32;
         let mut type_counts: std::collections::HashMap<&'static str, u32> = std::collections::HashMap::new();
@@ -246,7 +330,8 @@ impl Indexer {
                 .strip_prefix(base_dir)
                 .unwrap_or(file_path)
                 .to_string_lossy()
-                .to_string();
+                .to_string()
+                .replace('\\', "/");
 
             let ext = rel_path.rsplit('.').next().unwrap_or("txt");
             let ft = classify_ext(ext);
@@ -260,55 +345,60 @@ impl Indexer {
             let doc_chunks = utils::build_document_chunks(&rel_path, &chunks);
             batch_chunks.extend(doc_chunks);
             file_count += 1;
+            batch_file_count += 1;
 
-            // 读取进度：0% → 20%（基于已扫描的文件比例）
-            let read_pct = ((i + 1) * 20 / total.max(1) as usize) as u8;
+            // 以文件数为基准计算线性进度 5% → 95%
+            let base_pct = 5 + (file_count * 90 / total.max(1));
+            msg(
+                base_pct.min(94),
+                &format!("读取文件 {}/{} (已缓存 {} 个文本块)", file_count, total, batch_chunks.len()),
+            );
+
+            // 分批触发 Embedding
             if batch_chunks.len() < BATCH_CHUNK_LIMIT && i + 1 < total as usize {
-                progress(read_pct.min(19), &format!("读取文件 {}/{} (已缓存 {} 个文本块)", i + 1, total, batch_chunks.len()));
                 continue;
             }
 
-            // 进度 20%：模型加载（仅首次约需 30-60 秒，已预热则瞬间完成）
-            progress(20, "正在加载向量模型...");
+            // Embedding + 写入
+            let embed_start_file = file_count - batch_file_count + 1;
+            let embed_base = 5 + ((embed_start_file - 1) * 90 / total.max(1));
+            let embed_total_pct = (batch_file_count * 90 / total.max(1)).max(1); // 该批次占的百分点
 
-            // 向量化进度回调：嵌入过程中实时更新进度
             let total_chunks_pending = total_chunks + batch_chunks.len() as u32;
-            let embed_progress = |done: usize, total_groups: usize, msg: &str| {
-                // 向量化占比 20% → 80%
-                let embed_pct = 20 + (done * 60 / total_groups.max(1)) as u8;
-                progress(
-                    embed_pct.min(80),
-                    &format!("已完成 {} 文件 ({} 文本块) / {} 文件 - {}", file_count, total_chunks_pending, total, msg),
+            let embed_progress = |done: usize, total_groups: usize, _msg: &str| {
+                let pct = embed_base + (done as u32 * embed_total_pct / total_groups.max(1) as u32);
+                set_progress(
+                    pct.min(94),
+                    format!("已完成 {}/{} 文件 ({} 文本块) - 向量化中", file_count, total, total_chunks_pending),
                 );
             };
 
             let vectors = self.embed_batch(&batch_chunks, Some(&embed_progress)).await?;
 
-            // 进度 80% → 85%：写入数据库
-            progress(82, &format!("已完成 {} 文件 ({} 文本块) / {} 文件 - 写入数据库", file_count, total_chunks + batch_chunks.len() as u32, total));
+            set_progress(
+                embed_base + embed_total_pct,
+                format!("已完成 {}/{} 文件 ({} 文本块) - 写入数据库", file_count, total, total_chunks + batch_chunks.len() as u32),
+            );
 
             store.add_chunks(&batch_chunks, &vectors).await?;
             bm25.add_documents(&batch_chunks)?;
 
             total_chunks += batch_chunks.len() as u32;
             total_vectors += vectors.len() as u32;
-            // 显式释放 vectors（向量数据可能很大）
             drop(vectors);
             batch_chunks.clear();
-            batch_chunks.shrink_to_fit(); // 回收已释放 chunk 的预分配内存
+            batch_chunks.shrink_to_fit();
+            batch_file_count = 0;
 
-            // 进度 85%：单批完成
-            let done_pct = 20 + (file_count * 65 / total.max(1)) as u8;
-            progress(
-                done_pct.min(99),
-                &format!("已完成 {} 文件 ({} 文本块) / {} 文件", file_count, total_chunks, total),
+            set_progress(
+                embed_base + embed_total_pct,
+                format!("已完成 {}/{} 文件 ({} 文本块)", file_count, total, total_chunks),
             );
         }
 
         if total_chunks == 0 {
-            // 无有效内容时清理空索引表
             let _ = self.clear_inner(dir_path).await;
-            progress(100, "索引完成（无有效内容）");
+            msg(100, "索引完成（无有效内容）");
             return Err("未能从文件中提取有效内容".into());
         }
 
@@ -335,7 +425,9 @@ impl Indexer {
             log::error!("[indexer] 保存元数据失败: {}", e);
         }
 
-        progress(100, "索引完成");
+        set_progress(100, "索引完成".to_string());
+        self.reindex_in_progress
+            .store(false, std::sync::atomic::Ordering::Release);
         Ok(KbIndexResult { file_count, chunk_count: total_chunks, vector_count: total_vectors, indexed_at: now })
     }
 
@@ -399,26 +491,33 @@ impl Indexer {
     pub async fn remove_file(&self, dir_path: &str, rel_path: &str) -> Result<(), String> {
         let store = self.get_lance_store(dir_path).await;
         let mut deleted_chunks = 0u32;
+        let mut lance_ok = false;
+        let mut bm25_ok = false;
 
         if store.open_table().await.is_ok() {
             deleted_chunks = self.count_document_chunks(&store, rel_path).await;
-            if let Err(e) = store.delete_document(rel_path).await {
-                log::error!("[indexer] 删除 LanceDB 文档失败 ({}): {}", rel_path, e);
+            lance_ok = store.delete_document(rel_path).await.is_ok();
+            if !lance_ok {
+                log::error!("[indexer] 删除 LanceDB 文档失败: {}", rel_path);
             }
         }
 
         if let Ok(bm25) = self.get_bm25_index(dir_path).await {
-            if let Err(e) = bm25.delete_document(rel_path) {
-                log::error!("[indexer] 删除 BM25 文档失败 ({}): {}", rel_path, e);
+            bm25_ok = bm25.delete_document(rel_path).is_ok();
+            if !bm25_ok {
+                log::error!("[indexer] 删除 BM25 文档失败: {}", rel_path);
             }
         }
 
-        // 更新元数据（file_count = -1 表示文件被删除）
-        if deleted_chunks > 0 {
-            self.update_metadata_delta(dir_path, -1, -(deleted_chunks as i32), -(deleted_chunks as i32)).await;
+        // 更新元数据：只要至少一个后端删除成功，就用计数的 chunk 数更新
+        if lance_ok || bm25_ok {
+            if deleted_chunks > 0 {
+                self.update_metadata_delta(dir_path, -1, -(deleted_chunks as i32), -(deleted_chunks as i32)).await;
+            } else {
+                self.update_metadata_delta(dir_path, -1, 0, 0).await;
+            }
         } else {
-            // 即使没有 chunk 也要更新 file_count 和时间戳
-            self.update_metadata_delta(dir_path, -1, 0, 0).await;
+            log::warn!("[indexer] 所有后端删除均失败，跳过元数据更新: {}", rel_path);
         }
 
         Ok(())
@@ -554,6 +653,53 @@ impl Indexer {
             fused.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
         }
 
+        // ── 代码符号匹配加分 ──
+        // 当查询词与 chunk 的 symbol_name（函数名/类名等）匹配时额外加分，
+        // 使代码检索时，函数/类定义所在 chunk 获得更高排名。
+        // 精确匹配（符号名 == 查询词）：代码查询 0.5 分，普通查询 0.3 分。
+        // 部分包含：代码查询 0.25 分，普通查询 0.15 分。
+        // 文件概览 chunk（symbol_kind == "file"）匹配文件名时额外加分。
+        let has_code_symbols = fused.iter().any(|h| h.symbol_name.is_some() || h.symbol_kind.as_deref() == Some("file"));
+        if has_code_symbols && !query_tokens.is_empty() {
+            let is_code = is_code_query(query);
+            let (exact_boost, partial_boost) = if is_code { (0.5, 0.25) } else { (0.3, 0.15) };
+
+            for hit in fused.iter_mut() {
+                let sym_name = match hit.symbol_name.as_ref() {
+                    Some(n) => n,
+                    None => {
+                        // 文件概览 chunk：匹配 doc_name（即文件名）加分
+                        if hit.symbol_kind.as_deref() == Some("file") {
+                            let name_lower = hit.doc_name.to_lowercase();
+                            let file_matches = query_tokens
+                                .iter()
+                                .filter(|t| name_lower.contains(*t))
+                                .count();
+                            if file_matches > 0 {
+                                let boost = 0.2 * file_matches as f32;
+                                hit.score = (hit.score + boost).min(1.0);
+                            }
+                        }
+                        continue;
+                    }
+                };
+                let sym_lower = sym_name.to_lowercase();
+                let query_matches = query_tokens
+                    .iter()
+                    .filter(|t| sym_lower.contains(*t))
+                    .count();
+                if query_matches > 0 {
+                    // 精确匹配（符号名与查询词完全相同） → 更高加分
+                    let exact_match = query_tokens.iter().any(|t| sym_lower == *t);
+                    let boost = if exact_match { exact_boost } else { partial_boost };
+                    let boost = boost * query_matches as f32;
+                    hit.score = (hit.score + boost).min(1.0);
+                }
+            }
+            // 加分后重新排序
+            fused.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        }
+
         // ── OPML 层级去重 ──
         // 对于同一文档中具有路径前缀关系的 chunk（如父节点与子节点），保留最深节点。
         // 使用掩码方式：如果 A 的路径是 B 的路径的严格前缀，则标记 A 为冗余。
@@ -603,8 +749,61 @@ impl Indexer {
             fused = deduped;
         }
 
-        let result: Vec<SearchHit> = fused.into_iter().take(top_k as usize).collect();
+        let mut result: Vec<SearchHit> = fused.into_iter().take(top_k as usize).collect();
+
+        // ── 上下文扩展（Post-Retrieval Context Window） ──
+        // 为每个 top_k 结果的相邻 chunks 做上下文合并，填充 sentence_window。
+        // 适用于 Markdown（按文档顺序）、OPML/FreeMind（DFS 顺序）所有文档类型。
+        if !result.is_empty() {
+            let ctx_window = Self::compute_context_window(query);
+            for hit in result.iter_mut() {
+                match store.fetch_chunks_in_range(&hit.doc_name, hit.chunk_index, ctx_window).await {
+                    Ok(chunks) if chunks.len() > 1 => {
+                        let mut merged = String::new();
+                        let mut has_parent = false;
+                        for (idx, text, path_json) in &chunks {
+                            // OPML/FreeMind: 检测 path_json 是否为父节点（当前 chunk 路径的前缀）
+                            if *idx != hit.chunk_index && !has_parent && path_json.is_some() && hit.path_json.is_some() {
+                                if is_path_prefix(path_json.as_deref().unwrap(), hit.path_json.as_deref().unwrap()) {
+                                    has_parent = true;
+                                }
+                            }
+                            if merged.is_empty() {
+                                merged.push_str(text);
+                            } else {
+                                merged.push('\n');
+                                merged.push_str(text);
+                            }
+                        }
+                        // 仅当有实质扩展内容时才设置 sentence_window
+                        if merged.len() > hit.text.len() + 10 {
+                            hit.sentence_window = Some(merged);
+                        }
+                    }
+                    _ => {} // 无扩展内容则保持原样
+                }
+            }
+        }
+
         Ok(result)
+    }
+
+    /// 根据查询长度动态计算上下文扩展窗口大小。
+    ///
+    /// - 短查询（≤3 词）：需要较大上下文定位 → 窗口 3（±3 chunks）
+    /// - 中查询（4-10 词）：窗口 2
+    /// - 长查询（>10 词）：查询已经够具体 → 窗口 1
+    fn compute_context_window(query: &str) -> u32 {
+        let word_count = query.split(|c: char| !c.is_alphanumeric() && c != '\'' && c != '"')
+            .filter(|t| !t.is_empty())
+            .count();
+        if word_count <= 3 {
+            3
+        } else if word_count <= 10 {
+            2
+        } else {
+            1
+        }
     }
 
     // ─── 内部 Embedding（纯本地）───
@@ -764,13 +963,15 @@ impl Indexer {
             .iter()
             .enumerate()
             .map(|(i, msg)| DocumentChunk {
-                id: msg.id.clone(),
+                id: format!("chat:{}:{}", session.id, i),
                 doc_name: session.id.clone(),
                 chunk_index: i as u32,
                 text: format!("[{}] {}", msg.role, msg.content),
                 path_depth: None,
                 path_json: None,
                 sentence_window: None,
+                symbol_name: None,
+                symbol_kind: None,
             })
             .collect();
 
@@ -919,7 +1120,8 @@ impl Indexer {
                 .strip_prefix(base_dir)
                 .unwrap_or(file_path)
                 .to_string_lossy()
-                .to_string();
+                .to_string()
+                .replace('\\', "/");
 
             log::info!("[indexer] 启动同步: 索引修改文件 {}", rel_path);
             if let Err(e) = self.index_file(dir_path, &rel_path, &file_path.to_string_lossy()).await {
@@ -966,26 +1168,23 @@ impl Indexer {
         let store = self.get_lance_store(dir_path).await;
         store.create_table().await?;
 
-        // 异步检查哪些文件未索引（使用 limit(1) 快速判断，避免全量加载）
+        // 批量获取已索引文档名（一次查询而非逐文件检查）
         progress(5, &format!("正在检查 {} 个文件的索引状态...", total));
+        let existing_docs = store.list_document_names().await.unwrap_or_default();
+
         let mut unindexed_paths: Vec<(String, String)> = Vec::new();
-        for (i, file_path) in files.iter().enumerate() {
+        for file_path in files.iter() {
             let rel = file_path
                 .strip_prefix(base_dir)
                 .unwrap_or(file_path)
                 .to_string_lossy()
                 .to_string()
                 .replace('\\', "/");
-            // 快速存在性检查：limit(1) 仅拉取一行，避免全表扫描开销
-            let has_chunks = self.has_document_chunks(&store, &rel).await;
-            if !has_chunks {
-                let abs = file_path.to_string_lossy().to_string();
-                unindexed_paths.push((rel, abs));
+            if existing_docs.contains(&rel) {
+                continue;
             }
-            if i % 500 == 0 {
-                let pct = 5 + ((i + 1) * 5 / total.max(1) as usize) as u8;
-                progress(pct.min(9), &format!("检查索引状态 {}/{}", i + 1, total));
-            }
+            let abs = file_path.to_string_lossy().to_string();
+            unindexed_paths.push((rel, abs));
         }
 
         let unindexed_count = unindexed_paths.len() as u32;
@@ -1208,6 +1407,8 @@ fn rrf_fuse(vec_hits: &[SearchHit], bm25_hits: &[SearchHit], k: u32, bm25_weight
         text: String,
         path_json: Option<String>,
         sentence_window: Option<String>,
+        symbol_name: Option<String>,
+        symbol_kind: Option<String>,
     }
 
     let mut score_map: HashMap<(String, u32), Entry> = HashMap::new();
@@ -1233,6 +1434,11 @@ fn rrf_fuse(vec_hits: &[SearchHit], bm25_hits: &[SearchHit], k: u32, bm25_weight
         if entry.sentence_window.is_none() {
             entry.sentence_window = hit.sentence_window.clone();
         }
+        // 保存代码符号信息（BM25 结果可能有，但向量结果更准确）
+        if entry.symbol_name.is_none() {
+            entry.symbol_name = hit.symbol_name.clone();
+            entry.symbol_kind = hit.symbol_kind.clone();
+        }
     }
 
     // ── 遍历 BM25 结果集（关键词匹配，带权重 BM25_RRF_WEIGHT）──
@@ -1251,6 +1457,11 @@ fn rrf_fuse(vec_hits: &[SearchHit], bm25_hits: &[SearchHit], k: u32, bm25_weight
         if entry.text.is_empty() {
             entry.text = hit.text.clone();
         }
+        // BM25 可能含符号信息（向量结果未覆盖时使用）
+        if entry.symbol_name.is_none() {
+            entry.symbol_name = hit.symbol_name.clone();
+            entry.symbol_kind = hit.symbol_kind.clone();
+        }
     }
 
     // ── 按 RRF 排序，报告实际相似度 ──
@@ -1268,6 +1479,8 @@ fn rrf_fuse(vec_hits: &[SearchHit], bm25_hits: &[SearchHit], k: u32, bm25_weight
             score_bm25: entry.score_bm25.min(1.0).max(0.0),
             path_json: entry.path_json,
             sentence_window: entry.sentence_window,
+            symbol_name: entry.symbol_name,
+            symbol_kind: entry.symbol_kind,
         })
         .collect()
 }
