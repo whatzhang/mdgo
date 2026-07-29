@@ -19440,7 +19440,6 @@
             if (parseError) {
                 throw new Error('OPML XML解析失败: ' + parseError.textContent);
             }
-
             // 方案B+D: parseOutline 直接生成含 id/_parent 的树，消除 _buildTree 二次遍历
             const ID_BASE = Date.now().toString(36);
             let _opmlIdCounter = 0;
@@ -19451,6 +19450,7 @@
                 const local_images = outline.getAttribute("_local_images") || '';
                 const mubu_note = outline.getAttribute("_mubu_note") || '';
                 const color = outline.getAttribute("COLOR") || outline.getAttribute("color") || '';
+                if(!head && !note && !images && !local_images && !mubu_note) return null;
                 const node = {
                     id: 'opml_' + (++_opmlIdCounter) + '_' + ID_BASE,
                     head: head,
@@ -19466,7 +19466,8 @@
                 const ch = outline.children;
                 for (let i = 0; i < ch.length; i++) {
                     if (ch[i].tagName !== 'outline') continue;
-                    node.children.push(parseOutline(ch[i], node));
+                    const child = parseOutline(ch[i], node);
+                    if(child) node.children.push(child);
                 }
                 return node;
             }
@@ -19499,6 +19500,7 @@
             for (let i = 0; i < body.children.length; i++) {
                 if (body.children[i].tagName !== 'outline') continue;
                 const child = parseOutline(body.children[i], rootNode);
+                if(!child) continue;
                 if (!child.head) child.head = title;
                 rootNode.children.push(child);
             }
@@ -20149,6 +20151,7 @@
                     enable: false
                 },
                 default_event_handle: {
+                    enable_dblclick_handle: false,
                     enable_mousewheel_handle: false
                 }
             };
@@ -20438,9 +20441,9 @@
                 const overlay = document.createElement('div');
                 overlay.className = 'modal-overlay note-modal-overlay';
                 overlay.innerHTML = `
-                    <div class="input-modal" style="width:420px;">
+                    <div class="input-modal" style="width:35rem;">
                         <div class="input-modal-title">${isEdit ? '编辑备注' : '新增备注'}</div>
-                        <textarea class="input-modal-input" style="height:120px;resize:vertical;font-size:14px;line-height:1.5;padding:8px 10px;" placeholder="${api.placeholder || '请输入备注内容...'}"></textarea>
+                        <textarea class="input-modal-input" style="height:7.5rem;resize:vertical;font-size:13px;line-height:1.5;padding:0.5rem" placeholder="${api.placeholder || '请输入备注内容...'}"></textarea>
                         <div class="input-modal-buttons">
                             <button class="input-modal-btn input-modal-btn-delete">删除备注</button>
                             <button class="input-modal-btn input-modal-btn-cancel">取消</button>
@@ -20645,6 +20648,7 @@
                     const ta = document.createElement('textarea');
                     ta.className = 'jsmind-custom-edit';
                     ta.value = node.topic || '';
+                    ta.id = "textarea_" + node.id;
                     ta.setAttribute('data-node-id', node.id);
                     // 读取节点当前尺寸作为初始宽高
                     const nodeRect = nodeEl.getBoundingClientRect();
@@ -20659,35 +20663,39 @@
                     const nodeBorderLeft = parseFloat(nodeStyle.borderLeftWidth) || 0;
                     const nodeBorderRight = parseFloat(nodeStyle.borderRightWidth) || 0;
                     const offset = Math.max(nodePaddingTop, nodePaddingBottom, nodePaddingLeft, nodePaddingRight, nodeBorderTop, nodeBorderBottom, nodeBorderLeft, nodeBorderRight);
-                    ta.style.setProperty('left', -(offset + 2) + 'px');
-                    ta.style.setProperty('right', -(offset + 2) + 'px');
-                    ta.style.setProperty('top', -(offset + 2) + 'px');
-                    ta.style.setProperty('bottom', -(offset + 2) + 'px');
+                    const inset = offset + 2;
+                    ta.style.setProperty('left', -(inset) + 'px');
+                    ta.style.setProperty('right', -(inset) + 'px');
+                    ta.style.setProperty('top', -(inset) + 'px');
+                    ta.style.setProperty('bottom', -(inset) + 'px');
                     ta.style.setProperty('position', 'absolute');
-                    ta.style.setProperty('width', 'auto');
-                    ta.style.setProperty('height', 'auto');
                     if (nodeRect.width < 150) {
                         if (direction === 1) {
-                            ta.style.setProperty('right', -(offset + 2 + 150) + 'px');
+                            ta.style.setProperty('right', -(inset + 150) + 'px');
                         } else {
-                            ta.style.setProperty('left', -(offset + 2 + 150) + 'px');
+                            ta.style.setProperty('left', -(inset + 150) + 'px');
                         }
                     }
+                    if(nodeEl.classList.contains('jm-node-markdown')){
+                        nodeEl._origOverflow = nodeEl.style.overflow || '';
+                        nodeEl.style.overflow = 'visible';
+                    } 
+                    ta.style.setProperty('padding', '10px');
                     Object.assign(ta.style, {
-                        zIndex: '100',
+                        width: 'auto',
+                        height: 'auto',
+                        zIndex: '1000',
                         boxSizing: 'border-box',
-                        padding: '8px',
-                        margin: '0',
                         border: '1.5px solid var(--color-primary, #4A90D9)',
-                        borderRadius: '7px',
+                        borderRadius: '8px',
                         outline: 'none',
                         background: 'var(--color-bg, #fff)',
                         color: 'var(--color-text, #333)',
                         fontSize: '13px',
-                        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
+                        fontFamily: 'var(--font-family)',
                         lineHeight: '1.5',
-                        resize: 'both',
-                        overflow: 'hidden',
+                        resize: 'none',
+                        overflow: 'auto',
                         userSelect: 'text',
                         WebkitUserSelect: 'text',
                         boxShadow: '0 0 0 3px rgba(74,144,217,0.12)',
@@ -20695,17 +20703,8 @@
                         whiteSpace: 'pre-wrap',
                     });
                     if (node.isroot) ta.style.fontWeight = '600';
-                    // 自动调整高度
-                    const autoResize = () => {
-                        ta.style.height = 'auto';
-                        ta.style.height = Math.max(ta.scrollHeight, nodeRect.height) + 'px';
-                    };
-                    ta.addEventListener('input', autoResize);
-                    // 挂载到 jmnode 内部，天然跟随节点滚动，无需 scroll 监听
                     nodeEl.appendChild(ta);
                     ta.focus();
-                    ta.select();
-                    setTimeout(autoResize, 0);
                     self._customEditTA = ta;
                     // 键盘处理
                     ta.addEventListener('keydown', async function (e) {
@@ -20759,6 +20758,13 @@
                 const nodeId = ta.getAttribute('data-node-id');
                 this._customEditTA = null;
                 const newTopic = cancel ? null : ta.value.trim();
+                // 还原 markdown 节点的 overflow
+                const container = document.getElementById('jsmind_container');
+                const nodeEl = container && container.querySelector('jmnode[nodeid="' + nodeId + '"]');
+                if (nodeEl && nodeEl._origOverflow !== undefined) {
+                    nodeEl.style.overflow = nodeEl._origOverflow;
+                    delete nodeEl._origOverflow;
+                }
                 ta.remove();
                 this.editingNodeId = null;
                 // ESC 且内容为空 + 是本次会话新建的节点 → 撤销创建
@@ -22822,7 +22828,7 @@
         async function buildFreeMindNode(node, nodeId, isRoot = false) {
             // 1. 提取文本：优先 TEXT 属性，其次富文本 richcontent
             let text = node.getAttribute('TEXT') || node.getAttribute('text') || getMubuText(node) || extractRichText(node, 'NODE') || '';
-            // 2. 提取备注 
+            // 2. 提取备注 优先 note 属性，其次富文本 richcontent
             const note = extractRichText(node, 'NOTE');
             // 3. 提取链接、颜色、背景色等原生属性
             const link = node.getAttribute('LINK') || node.getAttribute('link') || '';
@@ -22834,6 +22840,7 @@
             let images = node.getAttribute('images') || '';
             try { if (localImagesAttr) images = images || decodeURIComponent(localImagesAttr); } catch { images = images || localImagesAttr; }
             const noteStr = node.getAttribute("note") || node.getAttribute("NOTE") || note || '';
+            if(!noteStr && !text && !localImagesAttr && !images) return null;
             // 4. 方向控制：根节点居中，子节点根据 POSITION 判断
             let dir = 'right';
             if (isRoot) {
