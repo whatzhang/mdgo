@@ -1631,7 +1631,7 @@
             height: 100%;
             overflow-y: auto;
             overflow-x: hidden;
-            padding-left: 0.75rem;
+            padding-left: 0.25rem;
             padding-right: 0.25rem;
             padding-top: 0.25rem;
             box-sizing: border-box;
@@ -1690,7 +1690,7 @@
         .mindmap-children::before {
             content: '';
             position: absolute;
-            left: 10px;
+            left: 7px;
             top: 0;
             bottom: 0;
             width: 1px;
@@ -1702,7 +1702,7 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            min-width: 24px;
+            min-width: 1rem;
             height: 22px;
             flex-shrink: 0;
         }
@@ -1804,8 +1804,8 @@
         /* 幕布风格的折叠图标 - 小三角形 */
         .mindmap-collapse {
             display: inline-flex;
-            width: 16px;
-            height: 16px;
+            width: 1rem;
+            height: 1rem;
             text-align: center;
             justify-content: center;
             align-items: center;
@@ -1814,6 +1814,7 @@
             color: var(--purple);
             font-size: 10px;
             border-radius: 2px;
+            padding-top: 0.25rem;
         }
 
         /* 展开状态：向下三角形 */
@@ -1828,8 +1829,8 @@
 
         .mindmap-collapse-child {
             display: inline-flex;
-            width: 8px;
-            height: 8px;
+            width: 0.5rem;
+            height: 0.5rem;
             text-align: center;
             justify-content: center;
             align-items: center;
@@ -1841,7 +1842,8 @@
 
         .mindmap-collapse-child::before {
             content: '●';
-            font-size: 6px;
+            font-size: 10px;
+            padding-top: 0.25rem;
         }
 
         .openresty-editor-container {
@@ -2046,7 +2048,8 @@
             cursor: pointer;
             padding: 0.125rem 0.375rem;
             border-radius: 0.375rem;
-            font-size: 0.813rem;
+            font-size: 13px;
+            font-weight: 500;
             color: var(--color-text);
             display: inline-flex;
             align-items: center;
@@ -2056,6 +2059,7 @@
 
         .markdown-selection-btn:hover {
             background: #f3f4f6;
+            color: var(--color-primary);
         }
 
         .markdown-selection-btn:active {
@@ -2143,7 +2147,8 @@
             height: 0.9375rem;
             padding: 0.125rem 0.175rem;
             border-radius: 0.375rem;
-            font-size: 0.813rem;
+            font-size: 13px;
+            font-weight: 500;
             background-color: transparent;
             color: var(--color-text);
             border: none;
@@ -2155,7 +2160,7 @@
 
         .color-option-search:hover {
             transform: scale(1.1);
-            font-weight: bold;
+            color: var(--color-primary);
         }
 
         .ob-highlight-focus {
@@ -21616,33 +21621,31 @@
                 // 查找 head-row 作为 textarea 挂载点
                 const headRow = nodeEl.querySelector('.mindmap-head-row');
                 if (!headRow) return;
-                // 创建 textarea
+                // 保存原始 HTML（用于 Escape 取消时恢复）
+                const originalHtml = headRow.innerHTML;
+                // 清空 headRow，用 textarea 替换现有内容（原地编辑）
                 const ta = document.createElement('textarea');
-                ta.className = 'jsmind-custom-edit';
                 ta.value = node.head || '';
                 ta.setAttribute('data-node-id', nodeId);
-                ta.setAttribute('rows', 3);
+                ta.dataset.originalHtml = originalHtml;
                 Object.assign(ta.style, {
-                    position: 'absolute', left: '0', right: '0', top: '-6px',
-                    width: '100%', minWidth: '200px',
-                    zIndex: '100', boxSizing: 'border-box',
-                    resize: 'vertical', overflow: 'hidden',
-                    padding: '8px 10px', margin: '0',
-                    border: '1px solid var(--color-primary, #4A90D9)',
-                    borderRadius: '6px', outline: 'none',
-                    background: 'var(--color-bg, #fff)',
+                    width: '100%', boxSizing: 'border-box',
+                    resize: 'none', overflow: 'hidden',
+                    margin: '0', padding: '0',
+                    border: 'none', outline: 'none', borderRadius: '0',
+                    background: 'transparent',
                     color: 'var(--color-text, #333)',
-                    fontSize: '13px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
-                    lineHeight: '1.5', userSelect: 'text', WebkitUserSelect: 'text',
-                    boxShadow: '0 0 0 3px rgba(74,144,217,0.12)',
+                    fontSize: '13px',
+                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
+                    lineHeight: '22px',
+                    userSelect: 'text', WebkitUserSelect: 'text',
                     wordBreak: 'break-word', whiteSpace: 'pre-wrap',
-
                 });
-                headRow.style.position = 'relative';
+                headRow.innerHTML = '';
                 headRow.appendChild(ta);
                 const autoResize = () => {
                     ta.style.height = 'auto';
-                    ta.style.height = Math.max(ta.scrollHeight, 28) + 'px';
+                    ta.style.height = Math.max(ta.scrollHeight, 22) + 'px';
                 };
                 ta.addEventListener('input', autoResize);
                 ta.focus();
@@ -21651,9 +21654,9 @@
                 this._customEditTA = ta;
                 // 键盘：Enter 保存，Escape 取消
                 const self = this;
-                ta.addEventListener('keydown', function (e) {
-                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.stopPropagation(); self._endEdit(false); }
-                    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); self._endEdit(true); }
+                ta.addEventListener('keydown', async function (e) {
+                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.stopPropagation(); await self._endEdit(false); }
+                    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); await self._endEdit(true); }
                 });
                 // 图片粘贴
                 ta.addEventListener('paste', function (e) {
@@ -21686,10 +21689,11 @@
                 const nodeId = ta.getAttribute('data-node-id');
                 this._customEditTA = null;
                 const newHead = cancel ? null : ta.value.trim();
-                ta.remove();
-                // 恢复 headRow position
+                const originalHtml = ta.dataset.originalHtml;
+                // 先读取所有数据，再操作 DOM
                 const headRow = this._container?.querySelector(`.mindmap-node[data-node-id="${nodeId}"] .mindmap-head-row`);
-                if (headRow) headRow.style.position = '';
+                // 清空 headRow 彻底移除 textarea 和所有旧内容，避免残留
+                if (headRow) headRow.innerHTML = '';
                 // ESC 且内容为空 + 是本次会话新建的节点 → 撤销创建
                 if (cancel && this._editingNewNodeId === nodeId) {
                     this._editingNewNodeId = null;
@@ -21700,11 +21704,15 @@
                     return;
                 }
                 this._editingNewNodeId = null;
-                if (!cancel && nodeId && newHead !== null) {
+                if (cancel) {
+                    // Escape 取消：恢复原始节点内容
+                    if (headRow && originalHtml) headRow.innerHTML = originalHtml;
+                    return;
+                }
+                if (nodeId && newHead !== null) {
                     const node = this._findNode(nodeId);
-                    if (node && node.head !== newHead) {
+                    if (node) {
                         node.head = newHead;
-                        // 更新 DOM
                         if (headRow) {
                             if (newHead) {
                                 if (hasMarkdown(newHead)) {
@@ -21744,7 +21752,7 @@
                     const nodeEl = this._container?.querySelector(`.mindmap-node[data-node-id="${node.id}"]`);
                     if (nodeEl) {
                         const headRow = nodeEl.querySelector('.mindmap-head-row');
-                        if (headRow) { headRow.innerHTML = getTitle(0, node.head); headRow.style.position = ''; }
+                        if (headRow) { headRow.innerHTML = getTitle(0, node.head); }
                         // 更新/创建图片行
                         let imgRow = nodeEl.querySelector('.mindmap-images-row');
                         if (!imgRow) {
@@ -26768,7 +26776,8 @@ kanban-plugin: basic
                 element = contentMain.querySelector('#' + CSS.escape(id));
             }
             if (element) {
-                element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                // 使用 block:'center' 避免将最后一个 OPML 节点滚动到顶部时露出底部 300px 留白
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 // 高亮效果：短暂闪烁
                 element.style.transition = 'background-color 0.5s ease';
                 element.style.backgroundColor = 'rgba(255, 235, 59, 0.3)';
