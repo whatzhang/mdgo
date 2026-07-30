@@ -104,7 +104,7 @@
         :root {
             --font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
             --font-mono: "JetBrains Mono", "SF Mono", "Menlo", "Consolas", monospace;
-            --color-a: #0969da;
+            --color-a: #165bfa;
             --color-primary: #165bfa;
             --color-primary-hover: #055bc5;
             --color-primary-active: #044eab;
@@ -493,12 +493,13 @@
             font-weight: bold;
             cursor: pointer;
             display: none;
-            align-items: center;
-            justify-content: center;
             padding: 0;
             border-radius: 50%;
             font-size: 0.875rem;
-            line-height: 1;
+            align-items: center;
+            justify-items: center;
+            align-content: center;
+            justify-content: center;
             text-decoration: none !important;
         }
 
@@ -1413,8 +1414,9 @@
         .btn {
             display: inline-flex;
             align-items: center;
+            justify-items: center;
+            align-content: center;
             justify-content: center;
-            line-height: 1;
             height: 1.75rem;
             padding: 0.313rem 0.625rem;
             border: none;
@@ -1598,7 +1600,6 @@
             color: var(--color-text-white);
             border-radius: 50%;
             font-size: 0.625rem;
-            line-height: 1;
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -1606,7 +1607,6 @@
             margin-right: 4px;
             flex-shrink: 0;
             padding: 0;
-            line-height: 1;
             transition: background-color var(--transition-normal);
         }
 
@@ -3105,8 +3105,9 @@
         .open-panel-btn {
             display: flex;
             align-items: center;
+            justify-items: center;
+            align-content: center;
             justify-content: center;
-            line-height: 1;
             padding: 0.5rem 1rem;
             font-size: 0.8125rem;
             border-radius: var(--radius-md);
@@ -3242,11 +3243,14 @@
             padding: 0;
             width: 1.5rem;
             height: 1.5rem;
-            line-height: 1.5rem;
             text-align: center;
             border-radius: var(--radius-sm);
             background: var(--color-bg-btn);
             color: var(--t1);
+            align-items: center;
+            justify-items: center;
+            align-content: center;
+            justify-content: center;
         }
 
         .json-result-list {
@@ -4278,7 +4282,10 @@
             flex-shrink: 0;
             padding: 2px;
             transition: color 0.2s;
-            line-height: 1;
+            align-items: center;
+            justify-items: center;
+            align-content: center;
+            justify-content: center;
         }
 
         .ai-history-btn-star:hover {
@@ -4296,7 +4303,10 @@
             flex-shrink: 0;
             padding: 2px 0 2px 0;
             transition: color 0.2s;
-            line-height: 1;
+            align-items: center;
+            justify-items: center;
+            align-content: center;
+            justify-content: center;
         }
 
         .ai-history-btn-delete:hover {
@@ -5825,14 +5835,16 @@
         .marker-clear-dot {
             background: #f1f5f9 !important;
             border-color: #94a3b8;
-            font-size: 10px;
+            font-size: 0.5rem;
             display: flex;
             align-items: center;
             justify-content: center;
             color: #64748b;
-            line-height: 1;
-            padding: 0;
-            font-family: inherit;
+            align-items: center;
+            justify-items: center;
+            align-content: center;
+            justify-content: center;
+            padding-bottom: 0.125rem;
         }
 
         .marker-tab-bar {
@@ -5847,12 +5859,12 @@
             font-size: 0.75rem;
             border: 1px solid #e2e8f0;
             border-radius: 0.375rem;
-            ;
             cursor: pointer;
             background: #f8fafc;
-            color: #334155;
+            color: var(--t0);
             transition: all 0.15s;
             white-space: nowrap;
+            outline: none;
         }
 
         .marker-tab-btn:hover {
@@ -5861,8 +5873,6 @@
 
         .marker-tab-btn.active {
             font-weight: 600;
-            box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
-            border-color: #94a3b8;
         }
 
         .marker-empty {
@@ -5889,7 +5899,10 @@
             transition: opacity 0.2s ease, background 0.2s ease;
             z-index: 10;
             font-family: var(--font-family);
-            line-height: 1;
+            align-items: center;
+            justify-items: center;
+            align-content: center;
+            justify-content: center;
             white-space: nowrap;
         }
 
@@ -6457,7 +6470,10 @@
             align-items: center;
             justify-content: center;
             font-size: 1.125rem;
-            line-height: 1;
+            align-items: center;
+            justify-items: center;
+            align-content: center;
+            justify-content: center;
             transition: all 0.15s;
         }
 
@@ -6637,7 +6653,10 @@
             align-items: center;
             justify-content: center;
             padding: 0;
-            line-height: 1;
+            align-items: center;
+            justify-items: center;
+            align-content: center;
+            justify-content: center;
             transition: background-color var(--transition-normal);
         }
 
@@ -7915,8 +7934,9 @@
             cursor: pointer;
             display: inline-flex;
             align-items: center;
+            justify-items: center;
+            align-content: center;
             justify-content: center;
-            line-height: 1;
             gap: 5px;
             transition: background 0.2s;
         }
@@ -8880,8 +8900,9 @@
             cursor: pointer;
             display: inline-flex;
             align-items: center;
+            justify-items: center;
+            align-content: center;
             justify-content: center;
-            line-height: 1;
             transition: all 0.2s;
         }
 
@@ -8901,8 +8922,9 @@
             background: #FEF2F2;
             display: inline-flex;
             align-items: center;
+            justify-items: center;
+            align-content: center;
             justify-content: center;
-            line-height: 1;
         }
 
         .todo-btn-danger:hover {
@@ -12376,10 +12398,11 @@
             cursor: pointer;
             display: flex;
             align-items: center;
+            justify-items: center;
+            align-content: center;
             justify-content: center;
             font-size: 0.875rem;
             font-weight: 600;
-            line-height: 1;
             transition: background 0.12s;
             padding: 0;
         }
@@ -13099,8 +13122,8 @@
 
         .mind-jsmind-toolbar {
             position: absolute;
-            left: 20px;
-            bottom: 20px;
+            left: 1rem;
+            bottom: 1rem;
             background: var(--color-bg);
             padding: 8px 5px;
             border-radius: 4px;
@@ -13190,7 +13213,10 @@
             font-size: 1rem;
             color: var(--color-text-secondary);
             padding: 0.25rem;
-            line-height: 1;
+            align-items: center;
+            justify-items: center;
+            align-content: center;
+            justify-content: center;
         }
 
         .setting-modal-close:hover {
@@ -19488,7 +19514,6 @@
             });
             return { details, dirPath: dirPathStr };
         }
-
         // 解析OPML文件内容,转换为树形数据结构
         function parseOPML(opmlText) {
             const parser = new DOMParser();
@@ -19503,19 +19528,28 @@
             let _opmlIdCounter = 0;
             function parseOutline(outline, parent) {
                 const head = outline.getAttribute("text") || outline.getAttribute("TEXT") || getMubuText(outline) || '';
-                const note = outline.getAttribute("NOTE") || outline.getAttribute("note") || '';
+                let  note = outline.getAttribute("NOTE") || outline.getAttribute("note") || '';
                 const images = outline.getAttribute("_mubu_images") || outline.getAttribute("images") || '';
                 const local_images = outline.getAttribute("_local_images") || '';
-                const mubu_note = outline.getAttribute("_mubu_note") || '';
+                let mubu_note = outline.getAttribute("_mubu_note") || '';
+                if(mubu_note) mubu_note = decodeURIComponent(mubu_note);
+                if(!note && mubu_note){
+                    try{
+                        const doc = parser.parseFromString(mubu_note, 'text/html');
+                        note = doc.body.textContent;
+                    } catch (e) {
+                        console.error("mubu_note 清洗失败！", e);
+                        note = mubu_note;
+                    }
+                }
                 const color = outline.getAttribute("COLOR") || outline.getAttribute("color") || '';
-                if (!head && !note && !images && !local_images && !mubu_note) return null;
+                if (!head && !note && !images && !local_images) return null;
                 const node = {
                     id: 'opml_' + (++_opmlIdCounter) + '_' + ID_BASE,
                     head: head,
                     note: note,
                     images: images,
                     local_images: local_images,
-                    mubu_note: mubu_note,
                     color: color,
                     children: [],
                     _parent: parent
@@ -19548,7 +19582,6 @@
                 note: '',
                 images: '',
                 local_images: '',
-                mubu_note: '',
                 color: '',
                 children: [],
                 _parent: null
@@ -19610,9 +19643,9 @@
                 text = '';
             }
             html += `</div>`;
-            if (node.mubu_note || node.note) {
+            if (node.note) {
                 html += `<div class="mindmap-note-row">`;
-                html += getTitleNote(node.mubu_note, node.note);
+                html += getTitleNote(node.note);
                 html += `</div>`;
             }
             if (node.images || node.local_images) {
@@ -19716,10 +19749,7 @@
                 return `<span class="mindmap-node-content-z">${title}</span>`;
             }
         }
-        function getTitleNote(mubu_note, note) {
-            let text;
-            mubu_note = mubu_note || '';
-            try { text = decodeURIComponent(mubu_note) || note; } catch { text = mubu_note || note || ''; }
+        function getTitleNote(text) {
             if (hasMarkdown(text)) {
                 const md = markedMd(parseObsidianToHTML(normalizeMarkdownTable(text)));
                 return `<div class="mindmap-node-note"><div class="markdown-body" style="zoom: 0.8;white-space: normal !important;">${md}</div></div>`;
@@ -20501,7 +20531,7 @@
                 overlay.innerHTML = `
                     <div class="input-modal" style="width:35rem;">
                         <div class="input-modal-title">${isEdit ? '编辑备注' : '新增备注'}</div>
-                        <textarea class="input-modal-input" style="height:7.5rem;resize:vertical;font-size:13px;line-height:1.5;padding:0.5rem" placeholder="${api.placeholder || '请输入备注内容...'}"></textarea>
+                        <textarea class="input-modal-input" style="height:7.5rem;font-size:13px;line-height:1.4;padding:0.5rem" placeholder="${api.placeholder || '请输入备注内容...'}"></textarea>
                         <div class="input-modal-buttons">
                             <button class="input-modal-btn input-modal-btn-delete">删除备注</button>
                             <button class="input-modal-btn input-modal-btn-cancel">取消</button>
@@ -21575,8 +21605,8 @@
                     this.toc.push({ id: node.id, text: escapeHtml(head), level: level + 1 });
                 }
                 html += `</div>`;
-                if (node.mubu_note || node.note) {
-                    html += `<div class="mindmap-note-row">${getTitleNote(node.mubu_note, node.note)}</div>`;
+                if (node.note) {
+                    html += `<div class="mindmap-note-row">${getTitleNote(node.note)}</div>`;
                 }
                 if (node.images || node.local_images) {
                     html += `<div class="mindmap-images-row">${getImage(node.local_images, node.images, node.id, true)}</div>`;
@@ -21859,7 +21889,7 @@
             _addChild(nodeId) {
                 const parent = this._findNode(nodeId);
                 if (!parent) return;
-                const child = { id: this._newId(), head: '', note: '', images: '', local_images: '', mubu_note: '', color: '', children: [], _parent: parent };
+                const child = { id: this._newId(), head: '', note: '', images: '', local_images: '', color: '', children: [], _parent: parent };
                 parent.children.push(child);
                 // 确保子容器存在且可见
                 let childrenEl = this._container?.querySelector(`.mindmap-children[data-node-id="${nodeId}"]`);
@@ -21893,7 +21923,7 @@
                 if (!node || !node._parent) { this._addChild(nodeId); return; }
                 const parent = node._parent;
                 const idx = parent.children.indexOf(node);
-                const sibling = { id: this._newId(), head: '', note: '', images: '', local_images: '', mubu_note: '', color: '', children: [], _parent: parent };
+                const sibling = { id: this._newId(), head: '', note: '', images: '', local_images: '', color: '', children: [], _parent: parent };
                 const childrenEl = this._container?.querySelector(`.mindmap-children[data-node-id="${parent.id}"]`);
                 const nodeEl = this._container?.querySelector(`.mindmap-node[data-node-id="${nodeId}"]`);
                 if (childrenEl && nodeEl) {
@@ -21916,7 +21946,7 @@
                 if (!node || !node._parent) return;
                 const oldParent = node._parent;
                 const idx = oldParent.children.indexOf(node);
-                const newParent = { id: this._newId(), head: '', note: '', images: '', local_images: '', mubu_note: '', color: '', children: [node], _parent: oldParent };
+                const newParent = { id: this._newId(), head: '', note: '', images: '', local_images: '', color: '', children: [node], _parent: oldParent };
                 node._parent = newParent;
                 oldParent.children[idx] = newParent;
                 // 重建父节点 DOM
@@ -21951,7 +21981,7 @@
                 const parent = node._parent;
                 const idx = parent.children.indexOf(node);
                 const deepClone = (src, p) => {
-                    const n = { id: this._newId(), head: src.head, note: src.note, images: src.images, local_images: src.local_images, mubu_note: src.mubu_note, color: src.color, children: [], _parent: p };
+                    const n = { id: this._newId(), head: src.head, note: src.note, images: src.images, local_images: src.local_images, color: src.color, children: [], _parent: p };
                     n.children = src.children.map(c => deepClone(c, n));
                     return n;
                 };
@@ -22138,7 +22168,7 @@
                 menu.style.top = pos.top;
                 const node = this._getSelected();
                 const hasImage = !!(node && (node.local_images || node.images));
-                const hasNote = !!(node && (node.note || node.mubu_note));
+                const hasNote = !!(node && node.note);
                 const groups = [
                     {
                         label: '节点创建', items: [
@@ -22188,16 +22218,16 @@
                 const node = this._findNode(nodeId);
                 if (!node) return;
                 TreeUIUtils.showNoteModal({
-                    getNote: () => node.note || node.mubu_note || '',
-                    setNote: (val) => { node.note = val; node.mubu_note = ''; this._updateNoteDOM(node); },
-                    onDelete: () => { node.note = ''; node.mubu_note = ''; this._updateNoteDOM(node); showNotification('✓ 备注已删除', 'success'); },
+                    getNote: () => node.note || '',
+                    setNote: (val) => { node.note = val; this._updateNoteDOM(node); },
+                    onDelete: () => { node.note = ''; this._updateNoteDOM(node); showNotification('✓ 备注已删除', 'success'); },
                     placeholder: '请输入备注内容（支持 Markdown）...'
                 });
             }
             _deleteNote() {
                 const node = this._getSelected();
-                if (!node || (!node.note && !node.mubu_note)) return;
-                node.note = ''; node.mubu_note = '';
+                if (!node || !node.note) return;
+                node.note = '';
                 this._updateNoteDOM(node);
                 showNotification('✓ 备注已删除', 'success');
             }
@@ -22208,8 +22238,8 @@
                 const contentCol = nodeEl.querySelector('.mindmap-content-column');
                 if (!contentCol) return;
                 let noteRow = nodeEl.querySelector('.mindmap-note-row');
-                if (node.note || node.mubu_note) {
-                    const noteHtml = getTitleNote(node.mubu_note, node.note);
+                if (node.note) {
+                    const noteHtml = getTitleNote(node.note);
                     if (noteRow) { noteRow.innerHTML = noteHtml; }
                     else {
                         noteRow = document.createElement('div');
@@ -22313,7 +22343,6 @@
                     if (node.note) attrs += ` note="${esc(node.note)}"`;
                     if (node.images) attrs += ` _images="${esc(node.images)}"`;
                     if (node.local_images) attrs += ` _local_images="${esc(node.local_images)}"`;
-                    if (node.mubu_note) attrs += ` _mubu_note="${esc(node.mubu_note)}"`;
                     if (node.color) attrs += ` COLOR="${esc(node.color)}"`;
                     if (node.children.length === 0) {
                         return `${indent}<outline${attrs}/>`;
@@ -22767,7 +22796,18 @@
 
                 var topic = outline.getAttribute('text') || outline.getAttribute('TEXT') || getMubuText(outline) || '';
                 var images = outline.getAttribute("_local_images") || outline.getAttribute("_mubu_images") || outline.getAttribute("images") || '';
-                const note = outline.getAttribute("NOTE") || outline.getAttribute("note") || outline.getAttribute("_mubu_note") || '';
+                let note = outline.getAttribute("NOTE") || outline.getAttribute("note") || '';
+                const mubu_note =  outline.getAttribute("_mubu_note") || '';
+                if(mubu_note) mubu_note = decodeURIComponent(mubu_note);
+                if(!note && mubu_note){
+                    try{
+                        const doc = parser.parseFromString(mubu_note, 'text/html');
+                        note = doc.body.textContent;
+                    } catch (e) {
+                        console.error("mubu_note 清洗失败！", e);
+                        note = mubu_note;
+                    }
+                }
                 try { if (images) images = decodeURIComponent(images); } catch { console.error('解码图片失败:', images); }
                 if (!topic && images) {
                     topic = '图片';
@@ -26761,7 +26801,8 @@ kanban-plugin: basic
                     for (const link of links) {
                         const label = escapeHtml(link.alias || link.target);
                         const target = escapeHtml(link.target);
-                        html += `<li><a data-target="${target}" data-label="${label}" onclick="scrollToTocLink(this)">${label}</a></li>`;
+                        const name = basename(label) || label;
+                        html += `<li><a data-target="${target}" data-label="${label}" title="${label}" onclick="scrollToTocLink(this)">${name}</a></li>`;
                     }
                     html += '</ul>';
                     return html;
