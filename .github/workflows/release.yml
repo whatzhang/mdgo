@@ -85,7 +85,7 @@ jobs:
       #    此步骤会自动：先执行 vite build（前端），再执行 cargo build --release（后端）
       #    最终生成安装包（Windows: .exe / macOS: .dmg）
       - name: 构建 Tauri 应用
-        uses: tauri-apps/tauri-action@v2
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
