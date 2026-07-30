@@ -156,8 +156,9 @@
                     blob: new Uint8Array(result.blob),
                 };
             } catch (error) {
-                console.error('[GitRust] readBlob error:', error);
-                throw new Error(`Git readBlob 失败: ${error}`);
+                // 文件不在该 commit 中属于正常情况（如新增文件在 parent commit 中不存在），返回 null
+                console.warn('[GitRust] readBlob error (file may not exist in commit):', error);
+                return null;
             }
         },
 

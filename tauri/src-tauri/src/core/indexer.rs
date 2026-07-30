@@ -886,29 +886,6 @@ impl Indexer {
         save_metadata(&data_dir, &new_meta);
     }
 
-    /// 快速检查某文档是否已存在（limit(1) 避免全量加载）。
-    async fn has_document_chunks(&self, store: &LanceStore, doc_name: &str) -> bool {
-        let table = match store.open_table().await {
-            Ok(t) => t,
-            Err(_) => return false,
-        };
-        use lancedb::query::{ExecutableQuery, QueryBase};
-        use futures::TryStreamExt;
-        let escaped = crate::core::db::lance::escape_sql_string(doc_name);
-        let result = table
-            .query()
-            .only_if(&format!("doc_name = '{}'", escaped))
-            .limit(1)
-            .execute()
-            .await;
-        match result {
-            Ok(stream) => stream.try_collect::<Vec<_>>().await
-                .map(|batches| batches.iter().any(|b| b.num_rows() > 0))
-                .unwrap_or(false),
-            Err(_) => false,
-        }
-    }
-
     /// 统计某个 doc_name 下的 chunk 数量
     ///
     /// 流式迭代计数，避免 try_collect 全量加载到内存。

@@ -15,7 +15,6 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/summerstyle/jsonTreeViewer/libs/jsonTree/jsonTree.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs/editor/editor.main.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-editor-dist@4.14.8/swagger-editor.min.css" />
-    <!-- 关键 CSS（页面核心功能依赖） -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5/github-markdown-light.min.css" />
     <link rel="stylesheet"
         href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/atom-one-dark.min.css" />
@@ -107,6 +106,7 @@
         :root {
             --font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
             --font-mono: "JetBrains Mono", "SF Mono", "Menlo", "Consolas", monospace;
+            --color-a: #0969da;
             --color-primary: #165bfa;
             --color-primary-hover: #055bc5;
             --color-primary-active: #044eab;
@@ -616,8 +616,9 @@
         #toc-container {
             width: 17%;
             position: relative;
-            height: 100%;
-            overflow-x: auto;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box; 
             padding: 2.5rem 0.25rem 0.25rem 0.25rem;
             background: var(--color-bg-secondary);
         }
@@ -626,9 +627,19 @@
             display: none;
         }
 
-        #toc {
+        #toc-link {
+            flex: 0 0 30%;   
             font-size: 0.75rem;
-            height: 100%;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        #toc {
+            flex: 0 0 70%;   
+            font-size: 0.75rem;
+            overflow-y: auto;
+            overflow-x: hidden;
         }
 
         #toc ul {
@@ -645,7 +656,7 @@
         }
 
         #toc a {
-            color: var(--color-primary);
+            color: var(--color-a);
             text-decoration: none;
             position: relative;
         }
@@ -669,6 +680,121 @@
             z-index: 1000;
             pointer-events: none;
             margin-top: 0.125rem;
+        }
+
+        /* TOC link 样式 */
+        #toc-link ul {
+            list-style: none;
+            padding-left: 0;
+            margin: 0;
+        }
+        #toc-link li {
+            margin-bottom: 0.5rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-size: 0.75rem;
+        }
+        #toc-link li::before {
+            content: '🔗';
+            margin-right: 0.25rem;
+            font-size: 0.65rem;
+        }
+        #toc-link a {
+            color: var(--color-a);
+            text-decoration: none;
+            cursor: pointer;
+        }
+        #toc-link a:hover {
+            text-decoration: underline;
+        }
+        #toc-link .toc-link-header {
+            flex-shrink: 0;
+        }
+        #toc-link .toc-link-tabs {
+            display: flex;
+            gap: 0;
+            border-bottom: 1px solid var(--color-border);
+            padding: 0;
+        }
+        #toc-link .toc-tab {
+            flex: 1;
+            background: none;
+            border: none;
+            padding: 0.3rem 0.35rem;
+            font-size: 0.7rem;
+            font-weight: 500;
+            color: var(--t2);
+            cursor: pointer;
+            transition: color 0.15s, box-shadow 0.15s;
+            position: relative;
+        }
+        #toc-link .toc-tab.active {
+            color: var(--color-warning);
+            font-weight: 600;
+        }
+        #toc-link .toc-tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: var(--color-warning);
+        }
+        #toc-link .toc-link-content {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            padding: 0.5rem 0;
+        }
+        #toc-link .toc-tab-panel {
+            display: none;
+            padding: 0;
+        }
+        #toc-link .toc-tab-panel.active {
+            display: block;
+        }
+        #toc-link .toc-link-empty {
+            display: flex;
+            color: var(--t2);
+            font-size: 0.7rem;
+            font-style: italic;
+            padding: 0.25rem 0;
+            align-content: center;
+            justify-content: center;
+        }
+        #toc-link .toc-tag-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.15rem;
+            padding: 0.25rem 0;
+        }
+        #toc-link .toc-tag-bubble {
+            display: inline-block;
+            background: #e1f5fe;
+            border: 1px solid #b3e5fc;
+            padding: 0.08rem 0.4rem;
+            border-radius: 0.75rem;
+            font-size: 0.7rem;
+            color: #2196f3;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            line-height: 1.4;
+            user-select: none;
+        }
+        #toc-link .toc-tag-bubble:hover {
+            background: #b3e5fc;
+            border-color: #4fc3f7;
+        }
+        body.dark #toc-link .toc-tag-bubble {
+            background: #1a3a4a;
+            border-color: #2a5a7a;
+            color: #4fc3f7;
+        }
+        body.dark #toc-link .toc-tag-bubble:hover {
+            background: #2a5a7a;
+            border-color: #4fc3f7;
         }
 
         /* TOC 切换按钮 - 半圆形,贴屏幕右侧边 */
@@ -762,24 +888,24 @@
         }
 
         #toc .level-2 {
-            padding-left: 1rem;
+            padding-left: 0.5rem;
             font-weight: bold;
         }
 
         #toc .level-3 {
-            padding-left: 2rem;
+            padding-left: 1rem;
         }
 
         #toc .level-4 {
-            padding-left: 3rem;
+            padding-left: 1.5rem;
         }
 
         #toc .level-5 {
-            padding-left: 4rem;
+            padding-left: 2rem;
         }
 
         #toc .level-6 {
-            padding-left: 5rem;
+            padding-left: 2.5rem;
         }
 
         #content-main {
@@ -1893,6 +2019,8 @@
             width: 100%;
             color: rgb(237, 5, 237);
             font-weight: 600;
+            align-content: center;
+            justify-content: center;
         }
 
         .editor-footer {
@@ -1905,7 +2033,7 @@
             justify-content: space-between;
             padding: 0 10px;
             font-size: 0.75rem;
-            font-weight: 600;
+            font-weight: 500;
             font-family: var(--font-family);
             user-select: none;
             box-sizing: border-box;
@@ -2270,9 +2398,9 @@
             display: inline-block;
             background-color: #e1f5fe;
             border: 1px solid #b3e5fc;
-            padding: 0 6px;
+            padding: 2px 8px;
             border-radius: 12px;
-            font-size: 0.9em;
+            font-size: 14px;
             color: #2196f3;
             margin-right: 4px;
             margin-bottom: 4px;
@@ -5160,7 +5288,7 @@
             padding: 0.25rem;
             margin-top: 0.25rem;
             margin-bottom: 1rem;
-            width: 70%;
+            width: 80%;
             align-self: center;
             background: var(--color-bg);
             flex-shrink: 0;
@@ -14489,6 +14617,7 @@
             <!-- Markdown/HTML 文档目录 -->
             <div id="toc-container" style="display: none;">
                 <div id="toc"></div>
+                <div id="toc-link"></div>
             </div>
             <!-- TOC 切换按钮 -->
             <div id="toc-toggle-btn" class="toc-toggle-btn" style="display: none;" onclick="toggleTocVisibility()"
@@ -15864,7 +15993,7 @@
                 key: 'Mermaid画图',
                 display: true,
                 ext: ".mmd",
-                systemPrompt: '你是一名专业的 Mermaid 图表工程师。请严格遵守以下规范生成 Mermaid 代码。\n【任务】根据用户的描述，生成语法正确、可直接在 Mermaid Live Editor / GitHub / Notion 中渲染的图表代码，代码语法严格遵循下面的不同图形的语法规则约束\n【支持的图表类型及关键语法约束】\n1. 流程图 (flowchart TD/LR/BT/RL)：\n   - 节点：A["文字"]，连接：-->（实线箭头）、---（实线）、-.->（虚线）、==>（粗箭头）\n   - 子图：subgraph "标题" ... end\n   - 样式：style A fill:#fff,stroke:#333\n2. 时序图 (sequenceDiagram)：\n   - 参与者：participant A / actor A\n   - 箭头：->>、-->>、->、-->>、-x、--x\n   - 激活：activate/deactivate，循环：loop ... end，备选：alt ... else ... end\n3. 类图 (classDiagram)：\n   - 类：class A { +字段:类型 +方法() }\n   - 关系：<|--、*--、o--、-->、..>\n4. 状态图 (stateDiagram-v2)：\n   - 状态：[ * ] 起始/终止，state "描述" as ID\n   - 转换：-->，条件：-->|条件文本|\n   - 注意：若状态描述包含冒号，使用 state "描述" as ID\n5. 甘特图 (gantt)：\n   - 必须包含 title 和 dateFormat\n   - 任务段：任务名 : 状态, 起点, 终点 （状态可选 done/active/crit，不加方括号）\n   - 示例：任务A : done, 2024-01-01, 2024-01-10\n6. ER图 (erDiagram)：\n   - 实体：ENTITY { 属性类型 属性名 }\n   - 关系：||--o{ 表示一对多，关系文本写在中间行\n7. 用户旅程图 (journey)：\n   - 标题：title，区段：section 区段名\n   - 任务：任务名: 评分: 角色1, 角色2\n8. Git图 (gitGraph)：\n   - 分支：branch 分支名，检出：checkout 分支名\n   - 提交：commit [id: "ID"] 或 commit "描述"\n9. 思维导图 (mindmap)：\n   - 必须使用纯缩进结构，禁止出现任何箭头（如 -->、---）和 subgraph 关键字\n   - 所有节点统一使用方括号 ["文本"]（包括根节点和各级子节点）\n   - 示例：\n     mindmap\n       ["根节点"]\n         ["子节点1"]\n           ["孙节点"]\n10. 饼图 (pie)：\n    - 标题：title，数据：分区名 : 数值\n11. 时间线 (timeline)：\n    - 标题：title，区段：section 区段名\n    - 事件：事件名 : 描述\n12. 看板 (kanban)：\n    - 列定义：列名[ "显示名" ]（如 Todo[ "待办" ]）\n    - 卡片：在列下方缩进写 [ "卡片内容" ]\n    - 示例：\n      kanban\n        Todo[ "待办" ]\n          [ "任务1" ]\n          [ "任务2" ]\n        Doing[ "进行中" ]\n13. 四象限图 (quadrantChart)：\n    - 标题：title，x轴：x-axis 左值 --> 右值，y轴：y-axis 底值 --> 顶值\n    - 象限：quadrant-1 区域描述，点：点 "名称" 在 [x, y]\n14. 桑基图 (sankey-beta)：\n    - 节点：节点列表，流动：源节点 --> 目标节点 : 流量值\n15. XY图表 (xychart-beta)：\n    - 标题：title，x轴：x-axis [值列表]，y轴：y-axis "单位"\n    - 数据：line [数据数组] 或 bar [数据数组]\n16. 块状图 (block-beta)：\n    - 布局声明：block-beta，列数：columns 数值\n    - 块定义：块名["标签"]，连接：-->，空格/换行控制布局\n17. 架构图 (architecture-beta)：\n    - 服务：service 名称(标签)，组：group 名称\n    - 连接：名称:连接类型 --> 名称\n18. 数据包图 (packet-beta)：\n    - 数据包定义：packet 名称 行数\n    - 字段：字段名: 位数\n【通用规则】\n- 代码必须包裹在 \`\`\`mermaid 代码块中，代码块前后不得有任何解释性文字、引导语或额外说明。\n- 第一行必须声明图表类型（如 flowchart TD 或 mindmap）。\n- 节点 ID 使用英文字母数字组合，显示文字用双引号包裹（如 A["显示文字"]）。\n- 双引号内的文字可包含中文、英文、括号、逗号等，无需转义。\n- 禁止未闭合的引号或方括号。\n- 所有节点必须有标签文字，禁止空节点。\n- 层级关系清晰，避免过多交叉连线。节点数超过15个建议使用子图分组（mindmap 除外）。\n- 样式颜色使用十六进制值，示例：style A fill:#e6f3ff,stroke:#333。\n- 不得嵌入任何版权素材、品牌标识或水印。\n【输出格式】\n- 只输出包含 Mermaid 代码块的原始结果。\n- 不添加任何注释、解释、引导语（如“以下是总结”、“根据您提供的”等）。\n- 直接输出代码块，不要有任何多余文字',
+                systemPrompt: '你是一名专业的 Mermaid 图表工程师。请严格遵守以下规范生成 Mermaid 代码。\n【任务】根据用户的描述，生成语法正确、可直接在 Mermaid Live Editor / GitHub / Notion 中渲染的图表代码，代码中不添加任何注释，代码语法严格遵循下面的不同图形的语法规则约束\n【支持的图表类型及关键语法约束】\n1. 流程图 (flowchart TD/LR/BT/RL)：\n   - 节点：A["文字"]，连接：-->（实线箭头）、---（实线）、-.->（虚线）、==>（粗箭头）\n   - 子图：subgraph "标题" ... end\n   - 样式：style A fill:#fff,stroke:#333\n2. 时序图 (sequenceDiagram)：\n   - 参与者：participant A / actor A\n   - 箭头：->>、-->>、->、-->>、-x、--x\n   - 激活：activate/deactivate，循环：loop ... end，备选：alt ... else ... end\n3. 类图 (classDiagram)：\n   - 类：class A { +字段:类型 +方法() }\n   - 关系：<|--、*--、o--、-->、..>\n4. 状态图 (stateDiagram-v2)：\n   - 状态：[ * ] 起始/终止，state "描述" as ID\n   - 转换：-->，条件：-->|条件文本|\n   - 注意：若状态描述包含冒号，使用 state "描述" as ID\n5. 甘特图 (gantt)：\n   - 必须包含 title 和 dateFormat\n   - 任务段：任务名 : 状态, 起点, 终点 （状态可选 done/active/crit，不加方括号）\n   - 示例：任务A : done, 2024-01-01, 2024-01-10\n6. ER图 (erDiagram)：\n   - 实体：ENTITY { 属性类型 属性名 }\n   - 关系：||--o{ 表示一对多，关系文本写在中间行\n7. 用户旅程图 (journey)：\n   - 标题：title，区段：section 区段名\n   - 任务：任务名: 评分: 角色1, 角色2\n8. Git图 (gitGraph)：\n   - 分支：branch 分支名，检出：checkout 分支名\n   - 提交：commit [id: "ID"] 或 commit "描述"\n9. 思维导图 (mindmap)：\n   - 必须使用纯缩进结构，禁止出现任何箭头（如 -->、---）和 subgraph 关键字\n   - 所有节点统一使用方括号 ["文本"]（包括根节点和各级子节点）\n   - 示例：\n     mindmap\n       ["根节点"]\n         ["子节点1"]\n           ["孙节点"]\n10. 饼图 (pie)：\n    - 标题：title，数据：分区名 : 数值\n11. 时间线 (timeline)：\n    - 标题：title，区段：section 区段名\n    - 事件：事件名 : 描述\n12. 看板 (kanban)：\n    - 列定义：列名[ "显示名" ]（如 Todo[ "待办" ]）\n    - 卡片：在列下方缩进写 [ "卡片内容" ]\n    - 示例：\n      kanban\n        Todo[ "待办" ]\n          [ "任务1" ]\n          [ "任务2" ]\n        Doing[ "进行中" ]\n13. 四象限图 (quadrantChart)：\n    - 标题：title，x轴：x-axis 左值 --> 右值，y轴：y-axis 底值 --> 顶值\n    - 象限：quadrant-1 区域描述，点：点 "名称" 在 [x, y]\n14. 桑基图 (sankey-beta)：\n    - 节点：节点列表，流动：源节点 --> 目标节点 : 流量值\n15. XY图表 (xychart-beta)：\n    - 标题：title，x轴：x-axis [值列表]，y轴：y-axis "单位"\n    - 数据：line [数据数组] 或 bar [数据数组]\n16. 块状图 (block-beta)：\n    - 布局声明：block-beta，列数：columns 数值\n    - 块定义：块名["标签"]，连接：-->，空格/换行控制布局\n17. 架构图 (architecture-beta)：\n    - 服务：service 名称(标签)，组：group 名称\n    - 连接：名称:连接类型 --> 名称\n18. 数据包图 (packet-beta)：\n    - 数据包定义：packet 名称 行数\n    - 字段：字段名: 位数\n【通用规则】\n- 代码必须包裹在 \`\`\`mermaid 代码块中，代码块前后不得有任何解释性文字、引导语或额外说明。\n- 第一行必须声明图表类型（如 flowchart TD 或 mindmap）。\n- 节点 ID 使用英文字母数字组合，显示文字用双引号包裹（如 A["显示文字"]）。\n- 双引号内的文字可包含中文、英文、括号、逗号等，无需转义。\n- 禁止未闭合的引号或方括号。\n- 所有节点必须有标签文字，禁止空节点。\n- 层级关系清晰，避免过多交叉连线。节点数超过15个建议使用子图分组（mindmap 除外）。\n- 样式颜色使用十六进制值，示例：style A fill:#e6f3ff,stroke:#333。\n- 不得嵌入任何版权素材、品牌标识或水印。\n【输出格式】\n- 只输出包含 Mermaid 代码块的原始结果。\n- 不添加任何注释、解释、引导语（如“以下是总结”、“根据您提供的”等）。\n- 直接输出代码块，不要有任何多余文字',
                 value: '解读分析文件内容，根据分析结果输出合适的 mermaid 图形代码，并严格遵守 Mermaid 语法规范，确保代码可直接渲染',
                 title: 'Mermaid 图'
             },
@@ -15872,7 +16001,7 @@
                 key: 'Drawio画图',
                 display: true,
                 ext: ".drawio",
-                systemPrompt: `你是一名专业的 draw.io (diagrams.net) 图表工程师。请严格遵守以下规范生成可导入 draw.io 的 XML 代码：\n【任务】根据用户的描述，生成完整的 draw.io XML 文件内容，可直接保存为 .drawio 或 .xml 文件并在 draw.io 中打开渲染。\n【输出格式要求】1.输出必须是完整的 XML 文档，包含 <mxfile> 和 <diagram> 根节点。2.图表内容包裹在 <mxGraphModel> 内，包含 <root> 节点。3.必须包含两个基础节点（id="0" 和 id="1"），它们是 draw.io 的保留根节点。4.每个图形元素使用 <mxCell> 标签定义，包含 id、value、style、vertex/edge、parent 等属性。5.连线使用 edge="1" 的 <mxCell>，通过 source 和 target 属性指定连接的节点 ID。\n【样式规范】节点 style 属性使用分号分隔的键值对。常用形状：ellipse（椭圆）、rhombus（菱形/判断）、cylinder（圆柱/数据库）、hexagon（六边形）、arrowRight（箭头）。配色使用柔和的商务色系：蓝色系 fillColor=#dae8fc;strokeColor=#6c8ebf，绿色系 fillColor=#d5e8d4;strokeColor=#82b366，橙色系 fillColor=#ffe6cc;strokeColor=#d6b656，红色系 fillColor=#f8cecc;strokeColor=#b85450。连线样式：edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;。字体大小统一12-14px，使用 html=1 启用HTML标签。\n【布局要求】节点尺寸统一（如 width=160 height=60），同级节点水平或垂直对齐，节点间距保持一致（建议水平间距80-100，垂直间距60-80），画布默认大小800x600根据内容动态调整。\n【质量要求】所有ID必须唯一且递增。每个连线必须有合法的source和target。XML必须格式良好（well-formed），可直接解析。生成的代码可在draw.io中零修改直接打开。\n【商业适用性】输出的XML代码为原始创作，用户可自由用于商业用途。不嵌入任何外部图片资源或品牌元素。图表风格专业、简洁，适合商业报告和技术文档。\n\n重要：1.输出代码不添加任何注释和说明\n2.不加"以下是总结、根据您提供的"等引导语，不添加任何解释性文字或评论，直接输出结果不要废话`,
+                systemPrompt: `你是一名专业的 draw.io (diagrams.net) 图表工程师。请严格遵守以下规范生成可导入 draw.io 的 XML 代码：\n【任务】根据用户的描述，生成完整的 draw.io XML 文件内容，可直接保存为 .drawio 或 .xml 文件并在 draw.io 中打开渲染，代码中不添加任何注释。\n【输出格式要求】1.输出必须是完整的 XML 文档，包含 <mxfile> 和 <diagram> 根节点。2.图表内容包裹在 <mxGraphModel> 内，包含 <root> 节点。3.必须包含两个基础节点（id="0" 和 id="1"），它们是 draw.io 的保留根节点。4.每个图形元素使用 <mxCell> 标签定义，包含 id、value、style、vertex/edge、parent 等属性。5.连线使用 edge="1" 的 <mxCell>，通过 source 和 target 属性指定连接的节点 ID。\n【样式规范】节点 style 属性使用分号分隔的键值对。常用形状：ellipse（椭圆）、rhombus（菱形/判断）、cylinder（圆柱/数据库）、hexagon（六边形）、arrowRight（箭头）。配色使用柔和的商务色系：蓝色系 fillColor=#dae8fc;strokeColor=#6c8ebf，绿色系 fillColor=#d5e8d4;strokeColor=#82b366，橙色系 fillColor=#ffe6cc;strokeColor=#d6b656，红色系 fillColor=#f8cecc;strokeColor=#b85450。连线样式：edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;。字体大小统一12-14px，使用 html=1 启用HTML标签。\n【布局要求】节点尺寸统一（如 width=160 height=60），同级节点水平或垂直对齐，节点间距保持一致（建议水平间距80-100，垂直间距60-80），画布默认大小800x600根据内容动态调整。\n【质量要求】所有ID必须唯一且递增。每个连线必须有合法的source和target。XML必须格式良好（well-formed），可直接解析。生成的代码可在draw.io中零修改直接打开。\n【商业适用性】输出的XML代码为原始创作，用户可自由用于商业用途。不嵌入任何外部图片资源或品牌元素。图表风格专业、简洁，适合商业报告和技术文档。\n\n重要：1.输出代码不添加任何注释和说明\n2.不加"以下是总结、根据您提供的"等引导语，不添加任何解释性文字或评论，直接输出结果不要废话`,
                 value: '解读分析文件内容，根据分析结果输出合适的 Drawio 图形代码，并严格遵守 Drawio XML 语法规范，确保代码可直接导入渲染',
                 title: 'Drawio 图'
             },
@@ -15880,7 +16009,7 @@
                 key: 'Excalidraw画图',
                 display: true,
                 ext: ".excalidraw",
-                systemPrompt: `你是一名专业的 Excalidraw 图表工程师。请严格遵守以下规范生成 Excalidraw JSON 代码：\n【任务】根据用户的描述，生成完整的 Excalidraw JSON 文件内容，可直接在 Excalidraw (excalidraw.com) 中通过"粘贴到画布"或"导入"功能加载渲染。\n【输出格式要求】1.输出必须是完整合法的 JSON 对象，包含顶层键：type、version、source、elements、appState、files。2.type 固定为 "excalidraw"，version 固定为 2，source 固定为 "https://excalidraw.com"。3.elements 为数组，包含所有图形元素。4.每个元素必须包含以下必需字段：id（唯一字符串）、type（rectangle|ellipse|diamond|line|arrow|text）、x/y（左上角坐标）、width/height（尺寸）、strokeColor（描边颜色十六进制）、backgroundColor（填充颜色，"transparent"表示透明）、fillStyle（hachure|cross-hatch|solid）、strokeWidth（1|2|4）、roughness（0精细|1中等|2手绘）、opacity（0-100）、angle（0弧度）、seed（随机整数）、version（版本号整数）、versionNonce（随机整数）、isDeleted（false）、boundElements（null或数组）、updated（时间戳）、link（null）、locked（false）、groupIds（空数组）。\n【文字元素特殊要求】type为"text"的元素额外需要：text（文字内容）、fontSize（建议16-28）、fontFamily（1手绘体|2等宽体|3衬线体|5默认体）、textAlign（left|center|right）、verticalAlign（top|middle）、baseline（约fontSize的0.7倍）、containerId（null或所属形状id）、originalText（与text相同）、lineHeight（1.25）。\n【箭头/连线元素要求】type为"arrow"或"line"的元素额外需要：points（[[0,0],[dx,dy],...]数组）、startBinding/endBinding（null或{elementId,focus,gap}）、startArrowhead/endArrowhead（null|arrow|dot|triangle）、lastCommittedPoint（null）。\n【风格规范】推荐roughness:1（保持手绘风格），推荐fillStyle:"hachure"（经典斜线填充）。配色方案：标题强调strokeColor="#1e1e1e"backgroundColor="#a5d8ff"，流程节点strokeColor="#1864ab"backgroundColor="#d0ebff"，判断节点strokeColor="#e67700"backgroundColor="#ffec99"，终止节点strokeColor="#2f9e44"backgroundColor="#d8f5a2"，警告错误strokeColor="#c92a2a"backgroundColor="#ffc9c9"。元素尺寸建议：标准节点160x60，判断菱形140x100，标题fontSize 28，正文fontSize 16-20。坐标系统从(0,0)开始，建议内容起始位置(200,100)。appState配置：{"viewBackgroundColor":"#ffffff","gridSize":null}。\n【质量要求】所有id必须唯一。绑定关系必须双向一致（形状的boundElements包含文字id，文字的containerId指向形状id）。JSON必须合法可解析，无尾逗号无注释。生成的JSON可在excalidraw.com中直接导入并正确渲染。seed和versionNonce使用随机正整数确保渲染一致性。\n【商业适用性】输出的JSON代码为原始创作，用户可自由用于商业用途。不嵌入外部图片或品牌素材。图表风格保持Excalidraw特色的手绘美感，同时信息结构专业清晰。\n\n重要：1.输出代码不添加任何注释和说明\n2.不加"以下是总结、根据您提供的"等引导语，不添加任何解释性文字或评论，直接输出结果不要废话`,
+                systemPrompt: `你是一名专业的 Excalidraw 图表工程师。请严格遵守以下规范生成 Excalidraw JSON 代码：\n【任务】根据用户的描述，生成完整的 Excalidraw JSON 文件内容，可直接在 Excalidraw (excalidraw.com) 中通过"粘贴到画布"或"导入"功能加载渲染，代码中不添加任何注释。\n【输出格式要求】1.输出必须是完整合法的 JSON 对象，包含顶层键：type、version、source、elements、appState、files。2.type 固定为 "excalidraw"，version 固定为 2，source 固定为 "https://excalidraw.com"。3.elements 为数组，包含所有图形元素。4.每个元素必须包含以下必需字段：id（唯一字符串）、type（rectangle|ellipse|diamond|line|arrow|text）、x/y（左上角坐标）、width/height（尺寸）、strokeColor（描边颜色十六进制）、backgroundColor（填充颜色，"transparent"表示透明）、fillStyle（hachure|cross-hatch|solid）、strokeWidth（1|2|4）、roughness（0精细|1中等|2手绘）、opacity（0-100）、angle（0弧度）、seed（随机整数）、version（版本号整数）、versionNonce（随机整数）、isDeleted（false）、boundElements（null或数组）、updated（时间戳）、link（null）、locked（false）、groupIds（空数组）。\n【文字元素特殊要求】type为"text"的元素额外需要：text（文字内容）、fontSize（建议16-28）、fontFamily（1手绘体|2等宽体|3衬线体|5默认体）、textAlign（left|center|right）、verticalAlign（top|middle）、baseline（约fontSize的0.7倍）、containerId（null或所属形状id）、originalText（与text相同）、lineHeight（1.25）。\n【箭头/连线元素要求】type为"arrow"或"line"的元素额外需要：points（[[0,0],[dx,dy],...]数组）、startBinding/endBinding（null或{elementId,focus,gap}）、startArrowhead/endArrowhead（null|arrow|dot|triangle）、lastCommittedPoint（null）。\n【风格规范】推荐roughness:1（保持手绘风格），推荐fillStyle:"hachure"（经典斜线填充）。配色方案：标题强调strokeColor="#1e1e1e"backgroundColor="#a5d8ff"，流程节点strokeColor="#1864ab"backgroundColor="#d0ebff"，判断节点strokeColor="#e67700"backgroundColor="#ffec99"，终止节点strokeColor="#2f9e44"backgroundColor="#d8f5a2"，警告错误strokeColor="#c92a2a"backgroundColor="#ffc9c9"。元素尺寸建议：标准节点160x60，判断菱形140x100，标题fontSize 28，正文fontSize 16-20。坐标系统从(0,0)开始，建议内容起始位置(200,100)。appState配置：{"viewBackgroundColor":"#ffffff","gridSize":null}。\n【质量要求】所有id必须唯一。绑定关系必须双向一致（形状的boundElements包含文字id，文字的containerId指向形状id）。JSON必须合法可解析，无尾逗号无注释。生成的JSON可在excalidraw.com中直接导入并正确渲染。seed和versionNonce使用随机正整数确保渲染一致性。\n【商业适用性】输出的JSON代码为原始创作，用户可自由用于商业用途。不嵌入外部图片或品牌素材。图表风格保持Excalidraw特色的手绘美感，同时信息结构专业清晰。\n\n重要：1.输出代码不添加任何注释和说明\n2.不加"以下是总结、根据您提供的"等引导语，不添加任何解释性文字或评论，直接输出结果不要废话`,
                 value: '解读分析文件内容，根据分析结果输出合适的 Excalidraw 图形代码，并严格遵守 Excalidraw JSON 语法规范，确保代码可直接导入渲染',
                 title: 'Excalidraw 图'
             },
@@ -16329,6 +16458,7 @@
         const contentEdit = document.getElementById('content-main-edit');
         const tocContainer = document.getElementById('toc-container');
         const tocElement = document.getElementById('toc');
+        const tocLinkElement = document.getElementById('toc-link');
         const sidebarElement = document.getElementById('sidebar');
         const topRightControls = document.getElementById('top-right-controls');
         const opmlOriginalButtons = document.getElementById('opml-original-buttons');
@@ -16849,8 +16979,8 @@
             previewInnerDiv.style.width = '50%';
             previewInnerDiv.style.display = 'flex';
             previewInnerDiv.innerHTML = '<div class="live-preview-container"><div class="live-preview-render" id="live-preview-render"><div class="markdown-body" id="live-preview-content"></div></div></div>';
-            contentEdit.appendChild(previewInnerDiv);
             contentEdit.appendChild(editorInnerDiv);
+            contentEdit.appendChild(previewInnerDiv);
             let initialContent = previewFileText || originalContent;
             const editorInner = document.getElementById('editor-inner-live');
             const previewContent = document.getElementById('live-preview-content');
@@ -23473,14 +23603,18 @@
         async function renderOriginalMarkdown(text) {
             const htmlContent = await markedParse(parseObsidianToHTML(text));
             contentMain.innerHTML = `<article id="content-article" class="markdown-body">${htmlContent}</article>`;
+            postProcessMarkdown(contentMain.querySelector('#content-article'));
             // 注入懒加载 CSS + 注册视口观察（浏览器模式）
             injectLazyImageStyles();
             lazyImageObserve(contentMain.querySelector('#content-article'));
             generateTOC(text, 'md');
-            postProcessMarkdown(contentMain.querySelector('#content-article'));
         }
 
         async function renderHTMLFile(text, relativePath) {
+            // HTML 文件不展示 TOC link
+            tocLinkElement.innerHTML = '';
+            tocLinkElement.style.display = 'none';
+            tocElement.style.flex = '1';
             if (isBookmarkHtml(text)) {
                 await renderBookmarkFromFileTree(text);
                 return;
@@ -23795,8 +23929,12 @@
                 showTocToggleBtn(false);
             } else {
                 contentMain.style.width = '';
-                tocContainer.style.display = 'block';
+                tocContainer.style.display = 'flex';
                 tocElement.innerHTML = buildTOC(headings);
+                // HTML 文件不展示 TOC link
+                tocLinkElement.innerHTML = '';
+                tocLinkElement.style.display = 'none';
+                tocElement.style.flex = '1';
                 showTocToggleBtn(true);
             }
         }
@@ -26569,45 +26707,211 @@ kanban-plugin: basic
             return result;
         }
 
-        function generateTOCFromHTML(headings) {
-            tocElement.innerHTML = '';
-            if (!headings || headings.length === 0) {
-                contentMain.style.width = '100%';
-                tocContainer.style.display = 'none';
-                showTocToggleBtn(false);
+        function extractLinks(text) {
+            if (typeof text !== 'string' || text.length === 0) return [];
+            // 覆盖常见图片、文档、媒体、压缩包
+            const EXT_SET = new Set([
+                'png', 'jpg', 'jpeg', 'gif', 'svg', 'bmp', 'tiff', 'webp', 'ico',
+                'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+                'odt', 'ods', 'odp',
+                'mp3', 'wav', 'flac', 'aac', 'ogg', 'wma',
+                'mp4', 'avi', 'mov', 'mkv', 'webm', 'wmv', 'm4v',
+                'zip', 'rar', '7z', 'tar', 'gz', 'bz2'
+            ]);
+            const REGEX = /(?:!?\[\[([^\[\]\|]+?)(?:\|([^\[\]]+?))?\]\])|(?:!?\[((?:[^\]\\]|\\.)+)\]\(([^)]+)\))|(?:<([a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^<>]+)>)/g;
+            const results = [];
+            let match;
+            while ((match = REGEX.exec(text)) !== null) {
+                const raw = match[0];
+                const isEmbed = raw[0] === '!';
+                let target, alias, type;
+                // --- 分支 1: Obsidian Wiki 链接 ---
+                if (match[1] !== undefined) {
+                    target = match[1];
+                    alias = match[2] || null;
+                    // 清理 target 中的锚点或块引用（可选优化，视需求而定，这里保留完整路径）
+                    type = isEmbed ? 'wikilink_embed' : 'wikilink';
+                } 
+                // --- 分支 2: 标准 Markdown 链接 ---
+                else if (match[3] !== undefined) {
+                    target = match[4];
+                    alias = match[3] || null;
+                    // 处理尖括号包裹的 URL (Obsidian 允许 [text](<url with space>))
+                    if (target.startsWith('<') && target.endsWith('>')) {
+                        target = target.slice(1, -1);
+                    }
+                    type = isEmbed ? 'markdown_image' : 'markdown_link';
+                } 
+                // --- 分支 3: 自动链接 <http://...> ---
+                else if (match[5] !== undefined) {
+                    target = match[5];
+                    alias = null;
+                    type = 'autolink';
+                } else {
+                    continue; 
+                }
+                let isAttachment = false;
+                const lastDotIndex = target.lastIndexOf('.');
+                if (lastDotIndex > 0) {
+                    const ext = target.slice(lastDotIndex + 1).toLowerCase();
+                    if (ext.length <= 10 && EXT_SET.has(ext)) {
+                        isAttachment = true;
+                    }
+                }
+                results.push({
+                    type,
+                    raw,
+                    target,
+                    alias,
+                    isEmbed,
+                    isAttachment
+                });
+            }
+            return results;
+        }
+        /** 从 Markdown 文本中提取标签 */
+        function extractTags(markdownText) {
+            if (typeof markdownText !== 'string' || !markdownText) return [];
+            // 1. 移除代码块
+            let text = markdownText.replace(/```[\s\S]*?```/g, '');
+            // 2. 移除行内代码
+            text = text.replace(/`[^`\n]+`/g, '');
+            // 3. 移除 YAML frontmatter
+            text = text.replace(/^---[\s\S]*?---/m, '');
+            const tags = new Set();
+            // 4. 提取 frontmatter 中的 tags
+            const fmMatch = markdownText.match(/^---[\s\S]*?---/m);
+            if (fmMatch) {
+                const fm = fmMatch[0];
+                // tags: [tag1, tag2]
+                const bracketMatch = fm.match(/tags:\s*\[([^\]]+)\]/);
+                if (bracketMatch) {
+                    bracketMatch[1].split(',').map(t => t.trim()).filter(t => t).forEach(t => tags.add(t));
+                }
+                // tags: #tag1, #tag2
+                const hashMatch = fm.match(/tags:\s*(#\S+(?:\s*,\s*#\S+)*)/);
+                if (hashMatch) {
+                    hashMatch[1].split(',').map(t => t.trim().replace(/^#/, '')).filter(t => t).forEach(t => tags.add(t));
+                }
+            }
+            // 5. 提取行内标签 #tag（排除 Markdown 标题 # Heading）
+            const tagRegex = /(?:^|\s)#([\w\/\-\u4e00-\u9fa5]+)/gm;
+            let match;
+            while ((match = tagRegex.exec(text)) !== null) {
+                tags.add(match[1]);
+            }
+            return [...tags];
+        }
+        /** 点击标签气泡时定位到文档中对应位置 */
+        function scrollToTag(tagName) {
+            const article = document.querySelector('#content-article');
+            if (!article) { showNotification('未找到文章容器', 'warning', 2000); return; }
+            const spans = article.querySelectorAll('.ob-tag');
+            let matched = null;
+            for (const span of spans) {
+                const text = span.textContent.trim();
+                if (text === '#' + tagName || text === tagName) {
+                    matched = span; break;
+                }
+            }
+            if (!matched) { showNotification('未在文档中找到该标签', 'warning', 2000); return; }
+            matched.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // 临时高亮
+            const prevBg = matched.style.backgroundColor;
+            const prevTrans = matched.style.transition;
+            matched.style.transition = 'background-color 0.3s ease';
+            matched.style.backgroundColor = 'rgba(255, 235, 59, 0.4)';
+            setTimeout(() => {
+                matched.style.backgroundColor = prevBg;
+                setTimeout(() => { matched.style.transition = prevTrans; }, 300);
+            }, 2000);
+        }
+        // TOC link 标签页定义（可扩展：后续 push 新标签即可）
+        const tocLinkTabs = [
+            { id: 'links', label: 'Links', render(markdownText) {
+                const links = extractLinks(markdownText);
+                if (links.length === 0) return '<div class="toc-link-empty">暂无链接</div>';
+                let html = '<ul>';
+                for (const link of links) {
+                    const label = escapeHtml(link.alias || link.target);
+                    const target = escapeHtml(link.target);
+                    html += `<li><a data-target="${target}" data-label="${label}" onclick="scrollToTocLink(this)">${label}</a></li>`;
+                }
+                html += '</ul>';
+                return html;
+            }},  { id: 'tags', label: 'Tags', render(markdownText) {
+                const tags = extractTags(markdownText);
+                if (tags.length === 0) return '<div class="toc-link-empty">暂无标签</div>';
+                return '<div class="toc-tag-container">' + tags.map(tag =>
+                    `<span class="toc-tag-bubble" onclick="scrollToTag('${escapeHtml(tag)}')">#${escapeHtml(tag)}</span>`
+                ).join('') + '</div>';
+            }}
+        ];
+
+        /** 切换 TOC link 标签页 */
+        function switchTocTab(tabId) {
+            // 更新 tab 按钮状态
+            const tabs = tocLinkElement.querySelectorAll('.toc-tab');
+            tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
+            // 更新 panel 状态
+            const panels = tocLinkElement.querySelectorAll('.toc-tab-panel');
+            panels.forEach(p => p.classList.toggle('active', p.dataset.tab === tabId));
+        }
+
+        async function generateTOCLinks(markdownText, type, opmlData){
+            if (type !== 'md'){
+                tocLinkElement.innerHTML = '';
+                tocLinkElement.style.display = 'none';
+                return; 
+            }
+            tocLinkElement.innerHTML = '';
+            tocLinkElement.style.display = 'flex';
+
+            // 渲染标签头
+            let headerHtml = '<div class="toc-link-tabs">';
+            for (const tab of tocLinkTabs) {
+                headerHtml += `<button class="toc-tab${tab.id === 'links' ? ' active' : ''}" data-tab="${tab.id}" onclick="switchTocTab('${tab.id}')">${tab.label}</button>`;
+            }
+            headerHtml += '</div>';
+
+            // 渲染各标签面板内容
+            let bodyHtml = '';
+            for (const tab of tocLinkTabs) {
+                const panelClass = tab.id === 'links' ? 'toc-tab-panel active' : 'toc-tab-panel';
+                bodyHtml += `<div class="${panelClass}" data-tab="${tab.id}">${tab.render(markdownText)}</div>`;
+            }
+
+            tocLinkElement.innerHTML = `<div class="toc-link-header">${headerHtml}</div><div class="toc-link-content">${bodyHtml}</div>`;
+        }
+
+        /**
+         * 在渲染的 Markdown 内容中查找匹配的链接并滚动到该位置
+         */
+        function scrollToTocLink(el) {
+            const target = el.dataset.target;
+            const alias = el.dataset.label;
+            const article = document.querySelector('#content-article');
+            if (!article) return;
+            // 查找匹配的 <a> 元素：优先按 href 匹配，再按文本匹配
+            const links = article.querySelectorAll('a');
+            let matched = null;
+            for (const link of links) {
+                const href = link.getAttribute('href') || '';
+                const text = link.textContent.trim();
+                if (href === target || text === alias || text === target) {
+                    matched = link;
+                    break;
+                }
+            }
+            if (!matched) {
+                showNotification('未在文档中找到该链接', 'warning', 2000);
                 return;
             }
-            contentMain.style.width = '';
-            tocContainer.style.display = 'block';
-            tocElement.innerHTML = buildTOC(headings);
-            tocContainer.style.display = 'block';
-            showTocToggleBtn(true);
-        }
-
-        //从HTML文本中提取标题  功能:解析HTML文本,提取h1-h6标签
-        function extractHTMLHeadings(htmlText) {
-            const headings = [];
-            let idCounter = 1;
-            const headingRegex = /<h([1-6])[^>]*>(.*?)<\/h[1-6]>/gi;
-            let match;
-            while ((match = headingRegex.exec(htmlText)) !== null) {
-                const level = parseInt(match[1]);
-                const text = match[2].replace(/<[^>]+>/g, '').trim();
-                const id = `heading-${idCounter++}`;
-                headings.push({ level, text, id });
-            }
-            return headings;
-        }
-
-        function addHeadingIDsToIframe(headings) {
-            const iframe = document.getElementById('temp-html-frame');
-            if (!iframe || !iframe.contentDocument) return;
-            const headingElements = iframe.contentDocument.querySelectorAll('h1, h2, h3, h4, h5, h6');
-            headingElements.forEach((element, index) => {
-                if (headings[index]) {
-                    element.id = headings[index].id;
-                }
-            });
+            matched.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // 高亮反馈
+            matched.style.transition = 'background-color 0.5s ease';
+            matched.style.backgroundColor = 'rgba(255, 235, 59, 0.3)';
+            setTimeout(() => { matched.style.backgroundColor = '';}, 2000);
         }
 
         // 从 Markdown 解析标题并生成目录侧栏
@@ -26627,13 +26931,23 @@ kanban-plugin: basic
             }
             // 有标题时恢复布局
             contentMain.style.width = '';
-            tocContainer.style.display = 'block';
+            tocContainer.style.display = 'flex';
             const tocHTML = buildTOC(headings);
             tocElement.innerHTML = tocHTML;
             // 为文档中的标题添加ID
             if (type === 'md') { addHeadingIDs(headings); }
-            tocContainer.style.display = 'block';
+            tocContainer.style.display = 'flex';
             showTocToggleBtn(true);
+            // Markdown 文件展示 TOC link，其他文件不展示
+            if (type === 'md') {
+                generateTOCLinks(markdownText, type, opmlData);
+                tocLinkElement.style.display = '';
+                tocElement.style.flex = '';
+            } else {
+                tocLinkElement.innerHTML = '';
+                tocLinkElement.style.display = 'none';
+                tocElement.style.flex = '1';
+            }
         }
 
         function extractMarkdownHeadings(markdownText) {
@@ -26808,7 +27122,7 @@ kanban-plugin: basic
             tocVisible = !tocVisible;
             const btn = document.getElementById('toc-toggle-btn');
             if (tocVisible) {
-                tocContainer.style.display = 'block';
+                tocContainer.style.display = 'flex';
                 contentMain.style.width = '';
                 btn.classList.add('collapsed');  // 显示时箭头朝外
             } else {
@@ -26878,7 +27192,7 @@ kanban-plugin: basic
                         contentMain.style.width = '100%';
                         btn.classList.remove('collapsed');  // 隐藏时箭头朝里
                     } else {
-                        tocContainer.style.display = 'block';
+                        tocContainer.style.display = 'flex';
                         contentMain.style.width = '';
                         btn.classList.add('collapsed');  // 显示时箭头朝外
                     }
