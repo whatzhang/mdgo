@@ -43,6 +43,8 @@ jobs:
             bundle_name: mdgo-macos-arm64
 
           # ── macOS Intel（.dmg） ──
+          # 注意：macos-13 是 GitHub 最后一个 Intel macOS runner
+          # 若 GitHub 废弃此 runner，需迁移到其他方案或仅保留 ARM64 构建
           - os: macos-13
             target: x86_64-apple-darwin
             bundle_name: mdgo-macos-intel
@@ -91,8 +93,8 @@ jobs:
         with:
           # 指定 Tauri 项目目录（包含 tauri.conf.json 的目录）
           projectPath: tauri
-          # 构建目标架构
-          target: ${{ matrix.target }}
+          # 构建参数：指定目标架构
+          args: --target ${{ matrix.target }}
 
       # ── 7. 上传构建产物 ──
       #    无论是否为 Release，都会作为 Actions 的 Artifact 保存
