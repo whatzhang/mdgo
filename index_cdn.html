@@ -253,10 +253,12 @@
         select {
             appearance: auto;
         }
+
         select:focus {
             outline: none;
             border-color: none;
         }
+
         select option {
             background: var(--todo-bg);
             color: var(--t1);
@@ -327,10 +329,11 @@
             border: none;
             border-radius: var(--radius-sm);
         }
+
         .sidebar-headers {
             display: flex;
             flex-direction: column;
-             padding-right: 4px;
+            padding-right: 4px;
         }
 
         #sidebar-header>* {
@@ -618,7 +621,7 @@
             position: relative;
             display: flex;
             flex-direction: column;
-            box-sizing: border-box; 
+            box-sizing: border-box;
             padding: 2.5rem 0.25rem 0.25rem 0.25rem;
             background: var(--color-bg-secondary);
         }
@@ -628,7 +631,7 @@
         }
 
         #toc-link {
-            flex: 0 0 30%;   
+            flex: 0 0 30%;
             font-size: 0.75rem;
             display: flex;
             flex-direction: column;
@@ -636,7 +639,7 @@
         }
 
         #toc {
-            flex: 0 0 70%;   
+            flex: 0 0 70%;
             font-size: 0.75rem;
             overflow-y: auto;
             overflow-x: hidden;
@@ -688,6 +691,7 @@
             padding-left: 0;
             margin: 0;
         }
+
         #toc-link li {
             margin-bottom: 0.5rem;
             white-space: nowrap;
@@ -695,28 +699,34 @@
             text-overflow: ellipsis;
             font-size: 0.75rem;
         }
+
         #toc-link li::before {
             content: '🔗';
             margin-right: 0.25rem;
             font-size: 0.65rem;
         }
+
         #toc-link a {
             color: var(--color-a);
             text-decoration: none;
             cursor: pointer;
         }
+
         #toc-link a:hover {
             text-decoration: underline;
         }
+
         #toc-link .toc-link-header {
             flex-shrink: 0;
         }
+
         #toc-link .toc-link-tabs {
             display: flex;
             gap: 0;
             border-bottom: 1px solid var(--color-border);
             padding: 0;
         }
+
         #toc-link .toc-tab {
             flex: 1;
             background: none;
@@ -729,10 +739,12 @@
             transition: color 0.15s, box-shadow 0.15s;
             position: relative;
         }
+
         #toc-link .toc-tab.active {
             color: var(--color-warning);
             font-weight: 600;
         }
+
         #toc-link .toc-tab.active::after {
             content: '';
             position: absolute;
@@ -742,19 +754,23 @@
             height: 1px;
             background: var(--color-warning);
         }
+
         #toc-link .toc-link-content {
             flex: 1;
             min-height: 0;
             overflow-y: auto;
             padding: 0.5rem 0;
         }
+
         #toc-link .toc-tab-panel {
             display: none;
             padding: 0;
         }
+
         #toc-link .toc-tab-panel.active {
             display: block;
         }
+
         #toc-link .toc-link-empty {
             display: flex;
             color: var(--t2);
@@ -764,12 +780,14 @@
             align-content: center;
             justify-content: center;
         }
+
         #toc-link .toc-tag-container {
             display: flex;
             flex-wrap: wrap;
             gap: 0.15rem;
             padding: 0.25rem 0;
         }
+
         #toc-link .toc-tag-bubble {
             display: inline-block;
             background: #e1f5fe;
@@ -783,15 +801,18 @@
             line-height: 1.4;
             user-select: none;
         }
+
         #toc-link .toc-tag-bubble:hover {
             background: #b3e5fc;
             border-color: #4fc3f7;
         }
+
         body.dark #toc-link .toc-tag-bubble {
             background: #1a3a4a;
             border-color: #2a5a7a;
             color: #4fc3f7;
         }
+
         body.dark #toc-link .toc-tag-bubble:hover {
             background: #2a5a7a;
             border-color: #4fc3f7;
@@ -1971,7 +1992,7 @@
 
         .mindmap-collapse-child::before {
             content: '●';
-            font-size: 10px;
+            font-size: 6px;
             padding-top: 0.25rem;
         }
 
@@ -4784,6 +4805,7 @@
             overflow: hidden;
             transition: width 0.2s ease, min-width 0.2s ease, padding 0.2s ease, border 0.2s ease;
         }
+
         .chat-history-panel.collapsed {
             width: 0;
             min-width: 0;
@@ -5260,11 +5282,11 @@
             font-size: 0.6875rem;
         }
 
-       .chat-message .msg-sources .source-item::before {
+        .chat-message .msg-sources .source-item::before {
             content: '';
             display: inline-block;
-            width:  0.75rem;
-            height:  0.75rem;
+            width: 0.75rem;
+            height: 0.75rem;
             flex-shrink: 0;
             align-self: flex-start;
             margin-top: 0.125rem;
@@ -5334,17 +5356,21 @@
             color: #fff;
             z-index: 1;
         }
-        .chat-send-btn > svg{
+
+        .chat-send-btn>svg {
             transform: rotate(-90deg);
             margin-bottom: 0.125rem;
         }
+
         .chat-send-btn:not(:disabled) {
             background: var(--color-primary, #0879e9);
         }
+
         .chat-send-btn:not(:disabled):hover {
             background: var(--color-primary-hover, #0550ae);
             transform: scale(1.05);
         }
+
         .chat-send-btn:disabled {
             background: #c8ccd0;
             cursor: not-allowed;
@@ -5503,6 +5529,7 @@
             align-items: center;
             gap: 8px;
         }
+
         .kb-toolbar-label {
             font-size: 0.75rem;
             color: var(--t2);
@@ -5703,10 +5730,12 @@
             transition: all 0.15s;
             flex-shrink: 0;
         }
+
         .rag-settings-btn:hover {
             background: var(--color-hover-bg, #f3f4f6);
             color: var(--color-text, #1f2328);
         }
+
         .rag-settings-btn.active {
             display: inline-flex;
             align-items: center;
@@ -5720,12 +5749,14 @@
             gap: 0.5rem;
             margin-bottom: 0.5rem;
         }
+
         .rag-settings-row label {
             font-size: 0.875rem;
             color: var(--color-text, #1f2328);
             flex-shrink: 0;
             min-width: 4rem;
         }
+
         .rag-settings-row input[type="number"] {
             width: 5rem;
             padding: 0.125rem 0.25rem;
@@ -5738,9 +5769,10 @@
             text-align: right;
             box-sizing: border-box;
         }
+
         .rag-settings-row input:focus {
             border-color: var(--color-primary, #0879e9);
-            box-shadow: 0 0 0 3px rgba(8,121,233,0.1);
+            box-shadow: 0 0 0 3px rgba(8, 121, 233, 0.1);
         }
 
         .hlyxcp {
@@ -13447,91 +13479,6 @@
             overflow: hidden;
         }
 
-        .time-module {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            height: 100%;
-            flex-shrink: 0;
-        }
-
-        .time-module .label {
-            letter-spacing: 0.5px;
-            text-transform: uppercase;
-        }
-
-        .progress-track {
-            width: 5rem;
-            height: 0.3rem;
-            background: #f3f4f5;
-            border-radius: 0.25rem;
-            overflow: hidden;
-            position: relative;
-            flex-shrink: 0;
-        }
-
-        .progress-track .progress-fill {
-            height: 100%;
-            border-radius: 4px;
-            transition: width 1s ease;
-            position: relative;
-        }
-
-        .progress-track .progress-fill::after {
-            content: '';
-            position: absolute;
-            right: 0;
-            top: 0;
-            width: 0.5rem;
-            height: 100%;
-            border-radius: 0.25rem;
-            filter: blur(0.125rem);
-            opacity: 0.4;
-        }
-
-        /* 今日进度 - 亮蓝色渐变 */
-        .progress-fill.today {
-            background: linear-gradient(90deg, #3b82f6, #6366f1);
-        }
-
-        .progress-fill.today::after {
-            background: #6366f1;
-        }
-
-        /* 本周进度 - 紫色渐变 */
-        .progress-fill.week {
-            background: linear-gradient(90deg, #a855f7, #d946ef);
-        }
-
-        .progress-fill.week::after {
-            background: #d946ef;
-        }
-
-        /* 本月进度 - 橙色渐变 */
-        .progress-fill.month {
-            background: linear-gradient(90deg, #f97316, #f59e0b);
-        }
-
-        .progress-fill.month::after {
-            background: #f59e0b;
-        }
-
-        /* 今年进度 - 亮绿色渐变 */
-        .progress-fill.year {
-            background: linear-gradient(90deg, #22c55e, #10b981);
-        }
-
-        .progress-fill.year::after {
-            background: #10b981;
-        }
-
-        /* ---- 进度数值 ---- */
-        .progress-value {
-            font-variant-numeric: tabular-nums;
-            min-width: 1rem;
-            text-align: right;
-        }
-
         /* ---- 右上角日程/节日预告 ---- */
         .header-upcoming {
             margin-left: auto;
@@ -13619,34 +13566,6 @@
         <div class="header-upcoming" id="headerUpcoming">
             <span class="upcoming-event" id="upcomingEvent">--</span>
             <span class="upcoming-festival" id="upcomingFestival">--</span>
-            <div class="time-module">
-                <span class="label">今日</span>
-                <div class="progress-track">
-                    <div class="progress-fill today" id="todayProgress" style="width:0%;"></div>
-                </div>
-                <span class="progress-value today-val" id="todayPercent">0%</span>
-            </div>
-            <div class="time-module">
-                <span class="label">本周</span>
-                <div class="progress-track">
-                    <div class="progress-fill week" id="weekProgress" style="width:0%;"></div>
-                </div>
-                <span class="progress-value week-val" id="weekPercent">0%</span>
-            </div>
-            <div class="time-module">
-                <span class="label">本月</span>
-                <div class="progress-track">
-                    <div class="progress-fill month" id="monthProgress" style="width:0%;"></div>
-                </div>
-                <span class="progress-value month-val" id="monthPercent">0%</span>
-            </div>
-            <div class="time-module">
-                <span class="label">今年</span>
-                <div class="progress-track">
-                    <div class="progress-fill year" id="yearProgress" style="width:0%;"></div>
-                </div>
-                <span class="progress-value year-val" id="yearPercent">0%</span>
-            </div>
         </div>
     </div>
     <div id="main-container">
@@ -13671,7 +13590,8 @@
                             <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
                         </svg>
                     </button>
-                    <button id="calendar-btn" class="btn btn-sm btn-primary" onclick="toggleFile('calendar')" title="日历日程">
+                    <button id="calendar-btn" class="btn btn-sm btn-primary" onclick="toggleFile('calendar')"
+                        title="日历日程">
                         <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                             <path
                                 d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H5V10h14v8zM7 12h5v5H7v-5z" />
@@ -13958,12 +13878,13 @@
             <div id="dashboard-container" class="dashboard-container" style="display: none;">
                 <div class="page-header">
                     <div>
-                        <div class="page-title">mdgo <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M14 11.5 Q12 13 10 13"/>
-                        <polyline points="10 7 9 7 8 7"/>
-                        <polyline points="16 7 15 7 14 7"/>
-                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                        </svg></div>
+                        <div class="page-title">mdgo <svg viewBox="0 0 24 24" width="20" height="20" fill="none"
+                                stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 11.5 Q12 13 10 13" />
+                                <polyline points="10 7 9 7 8 7" />
+                                <polyline points="16 7 15 7 14 7" />
+                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                            </svg></div>
                         <div class="page-subtitle">本地文档知识库 <a href="https://github.com/whatzhang/mdgo" target="_blank"
                                 style="color: var(--orange);">[github]</a>
                             <span id="dashboard-time" class="dashboard-time"></span>
@@ -15606,7 +15527,8 @@
                                     <button id="rag-settings-btn" class="rag-settings-btn" onclick="openRagSettings()"
                                         title="RAG 检索参数设置">
                                         <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                                            <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/>
+                                            <path
+                                                d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z" />
                                         </svg>
                                     </button>
                                 </div>
@@ -15619,7 +15541,8 @@
                             </div>
                         </div>
                         <!-- RAG 设置面板 -->
-                        <div id="rag-settings-overlay" class="modal-overlay" style="display:none;" onclick="closeRagSettings()">
+                        <div id="rag-settings-overlay" class="modal-overlay" style="display:none;"
+                            onclick="closeRagSettings()">
                             <div class="todo-modal" onclick="event.stopPropagation()" style="width:15rem">
                                 <div class="todo-modal-header">
                                     <div class="todo-modal-title">RAG 检索参数</div>
@@ -15629,22 +15552,29 @@
                                     <div class="rag-settings-row">
                                         <label>Top-K</label>
                                         <input type="number" id="rag-setting-topk" min="1" max="50" step="1" value="10">
-                                        <span class="setting-help" data-tippy-content="控制每次检索从知识库中返回的最相关结果数量。较大的值（如 20）会提供更多候选结果，但可能引入噪声；较小的值（如 5）更精确但可能遗漏相关信息。默认值 10 在多数场景下表现良好。">ⓘ</span>
+                                        <span class="setting-help"
+                                            data-tippy-content="控制每次检索从知识库中返回的最相关结果数量。较大的值（如 20）会提供更多候选结果，但可能引入噪声；较小的值（如 5）更精确但可能遗漏相关信息。默认值 10 在多数场景下表现良好。">ⓘ</span>
                                     </div>
                                     <div class="rag-settings-row">
                                         <label>最低分数</label>
-                                        <input type="number" id="rag-setting-min-score" min="0" max="1" step="0.05" value="0.3">
-                                        <span class="setting-help" data-tippy-content="相关性分数的过滤阈值（0~1）。只有得分 ≥ 此值的检索结果才会被送入 LLM 作为上下文。较高的阈值（如 0.5）可以过滤掉低质量匹配，但可能减少可用上下文；较低的阈值（如 0.1）会保留更多结果但可能引入噪声。">ⓘ</span>
+                                        <input type="number" id="rag-setting-min-score" min="0" max="1" step="0.05"
+                                            value="0.3">
+                                        <span class="setting-help"
+                                            data-tippy-content="相关性分数的过滤阈值（0~1）。只有得分 ≥ 此值的检索结果才会被送入 LLM 作为上下文。较高的阈值（如 0.5）可以过滤掉低质量匹配，但可能减少可用上下文；较低的阈值（如 0.1）会保留更多结果但可能引入噪声。">ⓘ</span>
                                     </div>
                                     <div class="rag-settings-row">
                                         <label>分块大小</label>
-                                        <input type="number" id="rag-setting-chunk-size" min="100" max="4000" step="50" value="1000">
-                                        <span class="setting-help" data-tippy-content="文档被切分成索引块时的目标字符数。较小的块（如 500）更精确但上下文可能不完整；较大的块（如 2000）上下文更丰富但检索精度可能下降。默认值 1000 在准确性和上下文完整性之间取得平衡。">ⓘ</span>
+                                        <input type="number" id="rag-setting-chunk-size" min="100" max="4000" step="50"
+                                            value="1000">
+                                        <span class="setting-help"
+                                            data-tippy-content="文档被切分成索引块时的目标字符数。较小的块（如 500）更精确但上下文可能不完整；较大的块（如 2000）上下文更丰富但检索精度可能下降。默认值 1000 在准确性和上下文完整性之间取得平衡。">ⓘ</span>
                                     </div>
                                     <div class="rag-settings-row">
                                         <label>分块重叠</label>
-                                        <input type="number" id="rag-setting-chunk-overlap" min="0" max="500" step="10" value="200">
-                                        <span class="setting-help" data-tippy-content="相邻文档块之间重叠的字符数。重叠可以避免因切分位置不当导致的关键信息被截断。较大的重叠（如 300）提供更好的连续性但增加存储开销；较小的重叠（如 100）节省空间但可能丢失边界信息。">ⓘ</span>
+                                        <input type="number" id="rag-setting-chunk-overlap" min="0" max="500" step="10"
+                                            value="200">
+                                        <span class="setting-help"
+                                            data-tippy-content="相邻文档块之间重叠的字符数。重叠可以避免因切分位置不当导致的关键信息被截断。较大的重叠（如 300）提供更好的连续性但增加存储开销；较小的重叠（如 100）节省空间但可能丢失边界信息。">ⓘ</span>
                                     </div>
                                 </div>
                                 <div class="todo-modal-footer">
@@ -15670,13 +15600,12 @@
                                 <span class="chat-turn-counter" id="chat-turn-counter" style="display:none;"></span>
                             </div>
                             <textarea id="chat-input" rows="4" placeholder="按下回车发送消息..."
-                                onkeydown="handleChatKeydown(event)"
-                                oninput="updateChatSendButton()" onfocus="updateChatSendButton()" onblur="updateChatSendButton()"></textarea>
-                            <button id="chat-send-btn" class="chat-send-btn" disabled
-                                onclick="handleChatSendClick()"
+                                onkeydown="handleChatKeydown(event)" oninput="updateChatSendButton()"
+                                onfocus="updateChatSendButton()" onblur="updateChatSendButton()"></textarea>
+                            <button id="chat-send-btn" class="chat-send-btn" disabled onclick="handleChatSendClick()"
                                 title="发送消息">
                                 <svg id="chat-send-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
                                 </svg>
                             </button>
                         </div>
@@ -15706,8 +15635,7 @@
                         <div class="kb-toolbar">
                             <span class="kb-toolbar-label">文件监听</span>
                             <label class="ai-result-sw-lark">
-                                <input type="checkbox" id="kb-watcher-checkbox"
-                                    onchange="toggleWatcher(this.checked)">
+                                <input type="checkbox" id="kb-watcher-checkbox" onchange="toggleWatcher(this.checked)">
                                 <span class="slider"></span>
                             </label>
                             <select class="btn btn-warning btn-sm" id="kb-index-select"
@@ -15716,8 +15644,7 @@
                                 <option value="full">全量重新索引</option>
                                 <option value="incremental">增量索引</option>
                             </select>
-                            <button class="btn btn-primary btn-sm"
-                                onclick="refreshKnowledgeStatus()">刷新</button>
+                            <button class="btn btn-primary btn-sm" onclick="refreshKnowledgeStatus()">刷新</button>
                         </div>
                     </div>
 
@@ -15848,7 +15775,7 @@
                                     <div class="stat-value" id="kb-stat-ai-ops">--</div>
                                     <div class="stat-label">AI操作</div>
                                 </div>
-                            </div>                           
+                            </div>
                         </div>
 
                         <div id="kb-dashboard-content" style="display:none;">
@@ -19583,7 +19510,7 @@
                 const local_images = outline.getAttribute("_local_images") || '';
                 const mubu_note = outline.getAttribute("_mubu_note") || '';
                 const color = outline.getAttribute("COLOR") || outline.getAttribute("color") || '';
-                if(!head && !note && !images && !local_images && !mubu_note) return null;
+                if (!head && !note && !images && !local_images && !mubu_note) return null;
                 const node = {
                     id: 'opml_' + (++_opmlIdCounter) + '_' + ID_BASE,
                     head: head,
@@ -19600,7 +19527,7 @@
                 for (let i = 0; i < ch.length; i++) {
                     if (ch[i].tagName !== 'outline') continue;
                     const child = parseOutline(ch[i], node);
-                    if(child) node.children.push(child);
+                    if (child) node.children.push(child);
                 }
                 return node;
             }
@@ -19633,7 +19560,7 @@
             for (let i = 0; i < body.children.length; i++) {
                 if (body.children[i].tagName !== 'outline') continue;
                 const child = parseOutline(body.children[i], rootNode);
-                if(!child) continue;
+                if (!child) continue;
                 if (!child.head) child.head = title;
                 rootNode.children.push(child);
             }
@@ -20809,10 +20736,10 @@
                             ta.style.setProperty('left', -(inset + 150) + 'px');
                         }
                     }
-                    if(nodeEl.classList.contains('jm-node-markdown')){
+                    if (nodeEl.classList.contains('jm-node-markdown')) {
                         nodeEl._origOverflow = nodeEl.style.overflow || '';
                         nodeEl.style.overflow = 'visible';
-                    } 
+                    }
                     ta.style.setProperty('padding', '10px');
                     Object.assign(ta.style, {
                         width: 'auto',
@@ -22973,7 +22900,7 @@
             let images = node.getAttribute('images') || '';
             try { if (localImagesAttr) images = images || decodeURIComponent(localImagesAttr); } catch { images = images || localImagesAttr; }
             const noteStr = node.getAttribute("note") || node.getAttribute("NOTE") || note || '';
-            if(!noteStr && !text && !localImagesAttr && !images) return null;
+            if (!noteStr && !text && !localImagesAttr && !images) return null;
             // 4. 方向控制：根节点居中，子节点根据 POSITION 判断
             let dir = 'right';
             if (isRoot) {
@@ -26731,7 +26658,7 @@ kanban-plugin: basic
                     alias = match[2] || null;
                     // 清理 target 中的锚点或块引用（可选优化，视需求而定，这里保留完整路径）
                     type = isEmbed ? 'wikilink_embed' : 'wikilink';
-                } 
+                }
                 // --- 分支 2: 标准 Markdown 链接 ---
                 else if (match[3] !== undefined) {
                     target = match[4];
@@ -26741,14 +26668,14 @@ kanban-plugin: basic
                         target = target.slice(1, -1);
                     }
                     type = isEmbed ? 'markdown_image' : 'markdown_link';
-                } 
+                }
                 // --- 分支 3: 自动链接 <http://...> ---
                 else if (match[5] !== undefined) {
                     target = match[5];
                     alias = null;
                     type = 'autolink';
                 } else {
-                    continue; 
+                    continue;
                 }
                 let isAttachment = false;
                 const lastDotIndex = target.lastIndexOf('.');
@@ -26828,24 +26755,28 @@ kanban-plugin: basic
         }
         // TOC link 标签页定义（可扩展：后续 push 新标签即可）
         const tocLinkTabs = [
-            { id: 'links', label: 'Links', render(markdownText) {
-                const links = extractLinks(markdownText);
-                if (links.length === 0) return '<div class="toc-link-empty">暂无链接</div>';
-                let html = '<ul>';
-                for (const link of links) {
-                    const label = escapeHtml(link.alias || link.target);
-                    const target = escapeHtml(link.target);
-                    html += `<li><a data-target="${target}" data-label="${label}" onclick="scrollToTocLink(this)">${label}</a></li>`;
+            {
+                id: 'links', label: 'Links', render(markdownText) {
+                    const links = extractLinks(markdownText);
+                    if (links.length === 0) return '<div class="toc-link-empty">暂无链接</div>';
+                    let html = '<ul>';
+                    for (const link of links) {
+                        const label = escapeHtml(link.alias || link.target);
+                        const target = escapeHtml(link.target);
+                        html += `<li><a data-target="${target}" data-label="${label}" onclick="scrollToTocLink(this)">${label}</a></li>`;
+                    }
+                    html += '</ul>';
+                    return html;
                 }
-                html += '</ul>';
-                return html;
-            }},  { id: 'tags', label: 'Tags', render(markdownText) {
-                const tags = extractTags(markdownText);
-                if (tags.length === 0) return '<div class="toc-link-empty">暂无标签</div>';
-                return '<div class="toc-tag-container">' + tags.map(tag =>
-                    `<span class="toc-tag-bubble" onclick="scrollToTag('${escapeHtml(tag)}')">#${escapeHtml(tag)}</span>`
-                ).join('') + '</div>';
-            }}
+            }, {
+                id: 'tags', label: 'Tags', render(markdownText) {
+                    const tags = extractTags(markdownText);
+                    if (tags.length === 0) return '<div class="toc-link-empty">暂无标签</div>';
+                    return '<div class="toc-tag-container">' + tags.map(tag =>
+                        `<span class="toc-tag-bubble" onclick="scrollToTag('${escapeHtml(tag)}')">#${escapeHtml(tag)}</span>`
+                    ).join('') + '</div>';
+                }
+            }
         ];
 
         /** 切换 TOC link 标签页 */
@@ -26858,11 +26789,11 @@ kanban-plugin: basic
             panels.forEach(p => p.classList.toggle('active', p.dataset.tab === tabId));
         }
 
-        async function generateTOCLinks(markdownText, type, opmlData){
-            if (type !== 'md'){
+        async function generateTOCLinks(markdownText, type, opmlData) {
+            if (type !== 'md') {
                 tocLinkElement.innerHTML = '';
                 tocLinkElement.style.display = 'none';
-                return; 
+                return;
             }
             tocLinkElement.innerHTML = '';
             tocLinkElement.style.display = 'flex';
@@ -26911,7 +26842,7 @@ kanban-plugin: basic
             // 高亮反馈
             matched.style.transition = 'background-color 0.5s ease';
             matched.style.backgroundColor = 'rgba(255, 235, 59, 0.3)';
-            setTimeout(() => { matched.style.backgroundColor = '';}, 2000);
+            setTimeout(() => { matched.style.backgroundColor = ''; }, 2000);
         }
 
         // 从 Markdown 解析标题并生成目录侧栏
@@ -27093,7 +27024,6 @@ kanban-plugin: basic
 
         function scrollToHeading(id, event) {
             if (event) event.preventDefault();
-            // 尝试在当前文档中查找
             let element = document.getElementById(id);
             // 如果没找到，在 contentMain 范围内再查一次
             if (!element) {
@@ -27291,16 +27221,16 @@ kanban-plugin: basic
                 containers = dom.querySelectorAll('.markdown-body');
             }
             for (const container of containers) {
-                try{
+                try {
                     await postSubProcessCodeAndDiagrams(container);
                 } catch (error) {
                     console.error('md 渲染失败:', error);
                 }
             }
         }
-        async function postSubProcessCodeAndDiagrams(container) {    
+        async function postSubProcessCodeAndDiagrams(container) {
             const preElements = container.querySelectorAll('pre');
-            if (!preElements.length){ 
+            if (!preElements.length) {
                 renderMath(container);
                 return;
             }
@@ -27511,7 +27441,7 @@ kanban-plugin: basic
             renderMath(container);
         }
 
-        function renderMath(container){
+        function renderMath(container) {
             try {
                 renderMathInElement(container, {
                     delimiters: [
@@ -29127,7 +29057,7 @@ kanban-plugin: basic
 
         let _markersWriteLock = Promise.resolve();
         async function writeMarkers(data) {
-            if(isEmpty(data)) return;
+            if (isEmpty(data)) return;
             // 串行化写入，防止读-改-写竞态条件
             const prev = _markersWriteLock;
             let resolve;
@@ -33878,7 +33808,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (dirHandle.path) {
                 // 先停止旧目录的文件监听
                 if (isTauriVisit()) {
-                    try {   await window.__TAURI__.core.invoke('kb_stop_watcher');   } catch (e) {  }
+                    try { await window.__TAURI__.core.invoke('kb_stop_watcher'); } catch (e) { }
                 }
                 showGlobalLoading('正在扫描目录文件...');
                 try {
@@ -34760,7 +34690,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         async function getDataDir() {
-           return await getOrCreateDirectory(getRootHandle(), '.mdgo');
+            return await getOrCreateDirectory(getRootHandle(), '.mdgo');
         }
 
         async function verifyPermission(handle) {
@@ -40020,7 +39950,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
             getNodeAt(canvasX, canvasY, nodes) {
                 if (!nodes) return null;
-                for (let i = nodes.length - 1; i >= 0; i--) {                    const node = nodes[i];
+                for (let i = nodes.length - 1; i >= 0; i--) {
+                    const node = nodes[i];
                     if (node.x === undefined || node.y === undefined) continue;
                     const dx = node.x - canvasX;
                     const dy = node.y - canvasY;
@@ -41034,7 +40965,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 toggleBtn.classList.toggle('collapsed');
                 toggleBtn.textContent = "›";
                 toggleBtn.title = "展开面板";
-            }else if(isCollapsed && !collapsed){
+            } else if (isCollapsed && !collapsed) {
                 toolbar.style.zoom = '1';
                 toggleBtn.style.zoom = '1';
                 toolbar.classList.toggle('collapsed');
@@ -43661,8 +43592,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     var page = _wcAllItems.slice(start, start + _wcPageSize);
                     _renderWordCloud(page);
                 };
-                  var demoBtn = document.createElement('button');
-                  demoBtn.id = 'wc-demo-btn';
+                var demoBtn = document.createElement('button');
+                demoBtn.id = 'wc-demo-btn';
                 demoBtn.className = 'btn btn-orange btn-ss';
                 demoBtn.textContent = '演示';
                 demoBtn.onclick = () => toggleDemoMode();
@@ -47919,7 +47850,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         currentRootPath = trimmedPath.replace(/[\/\\]+$/, '');
                         // 先停止旧目录的文件监听
                         if (isTauriVisit()) {
-                            try {  await window.__TAURI__.core.invoke('kb_stop_watcher');  } catch (e) { }
+                            try { await window.__TAURI__.core.invoke('kb_stop_watcher'); } catch (e) { }
                         }
                         //验证路径是否合法
                         if (!await checkDirPath()) {
@@ -48215,10 +48146,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         try {
                             currentEditor.layout();
                         } catch (e) { /* ignore */ }
-                    }else if(c === graphViewContainer){
+                    } else if (c === graphViewContainer) {
                         collapsedGraphToolbar(true);
-                        setTimeout(() => {  graphZoomOut(); }, 300);
-                    }else{
+                        setTimeout(() => { graphZoomOut(); }, 300);
+                    } else {
                         c.style.zoom = '1.4';
                     }
                     break;
@@ -48285,7 +48216,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 </button>
             `;
             _demoZoomControls.querySelector('#demo-zoom-in')?.addEventListener('click', () => {
-                if(_customDemoZoom('in')) return;
+                if (_customDemoZoom('in')) return;
                 if (_demoMmdCtrl) {
                     _demoMmdCtrl.zoomIn();
                 } else {
@@ -48294,7 +48225,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             });
             _demoZoomControls.querySelector('#demo-zoom-out')?.addEventListener('click', () => {
-                if(_customDemoZoom('out')) return;
+                if (_customDemoZoom('out')) return;
                 if (_demoMmdCtrl) {
                     _demoMmdCtrl.zoomOut();
                 } else {
@@ -48303,7 +48234,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             });
             _demoZoomControls.querySelector('#demo-zoom-reset')?.addEventListener('click', () => {
-                if(_customDemoZoom('reset')) return;
+                if (_customDemoZoom('reset')) return;
                 if (_demoMmdCtrl) {
                     _demoMmdCtrl.reset();
                 } else {
@@ -48354,20 +48285,20 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         function _customDemoZoom(type) {
-            if(!type) return false;
+            if (!type) return false;
             const containers = [contentMain, contentEdit, mermaidAppContainer, graphViewContainer];
             for (const c of containers) {
                 if (c && c.style.display !== 'none') {
-                    if(c === graphViewContainer){
-                        if(type === 'reset'){
-                            resetGraphView(); 
-                        }else if(type === 'in'){
-                            graphZoomIn(); 
-                        }else if(type === 'out'){
-                            graphZoomOut(); 
+                    if (c === graphViewContainer) {
+                        if (type === 'reset') {
+                            resetGraphView();
+                        } else if (type === 'in') {
+                            graphZoomIn();
+                        } else if (type === 'out') {
+                            graphZoomOut();
                         }
                     }
-                   return true;
+                    return true;
                 }
             }
             return false;
@@ -48387,7 +48318,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         c.style.zoom = c.dataset.demoPrevZoom;
                         delete c.dataset.demoPrevZoom;
                     }
-                    if(c === graphViewContainer){
+                    if (c === graphViewContainer) {
                         collapsedGraphToolbar(false);
                         setTimeout(() => { resetGraphView(); }, 300);
                     }
@@ -48766,26 +48697,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             _LAZY_IMG_PENDING.clear();
         }
         // ========== 图片懒加载系统结束 ==========
-        // 进度计算 — 高性能优化版
-        // 缓存 DOM 引用，消除重复的 document.getElementById()
-        let _progEl = null;
-        function _cacheProgEl() {
-            _progEl = {
-                tb: document.getElementById('todayProgress'),
-                tp: document.getElementById('todayPercent'),
-                wb: document.getElementById('weekProgress'),
-                wp: document.getElementById('weekPercent'),
-                mb: document.getElementById('monthProgress'),
-                mp: document.getElementById('monthPercent'),
-                yb: document.getElementById('yearProgress'),
-                yp: document.getElementById('yearPercent'),
-            };
-        }
-        // 月/年边界缓存（仅当月/年变化时重新计算）
-        let _prvYear = -1, _prvMonth = -1;
-        let _sMonth = 0, _monMs = 0, _sYear = 0, _yrMs = 0;
-        const _DAY_MS = 86400000;
-        const _WEEK_MS = 7 * _DAY_MS;
         // 格式化为 MM/DD HH:MM（用于日程列表显示）
         function _formatShortDateTime(date) {
             const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -48813,43 +48724,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 await window.__tauriInitPromise;
             }
             if (!(isTauriVisit() && navigator.userAgent.includes('Mac'))) return;
-            let el = _progEl;
-            if (!el) { _cacheProgEl(); el = _progEl; }
-
-            const now = Date.now();
-            const d = new Date(now);
-            const year = d.getFullYear();
-            const month = d.getMonth();
-
-            // 1) 今日进度 — 时间戳算术替代多次 new Date()
-            const stDay = now - (d.getHours() * 3600000 + d.getMinutes() * 60000 + d.getSeconds() * 1000 + d.getMilliseconds());
-            const pDay = Math.min(100, ((now - stDay) * 100 / _DAY_MS));
-            el.tb.style.width = pDay + '%';
-            el.tp.textContent = (pDay + 0.5 | 0) + '%';
-
-            // 2) 本周进度 — ISO 周（周一至周日）
-            const isoDay = d.getDay() || 7;
-            const pWeek = Math.min(100, ((now - (stDay - (isoDay - 1) * _DAY_MS)) * 100 / _WEEK_MS));
-            el.wb.style.width = pWeek + '%';
-            el.wp.textContent = (pWeek + 0.5 | 0) + '%';
-
-            // 3) 本月进度 — 惰性缓存
-            if (year !== _prvYear || month !== _prvMonth) {
-                if (year !== _prvYear) { _prvYear = year; _sYear = new Date(year, 0, 1).getTime(); _yrMs = new Date(year + 1, 0, 1).getTime() - _sYear; _prvMonth = -1; }
-                _prvMonth = month;
-                _sMonth = new Date(year, month, 1).getTime();
-                _monMs = new Date(year, month + 1, 1).getTime() - _sMonth;
-            }
-            const pMon = Math.min(100, ((now - _sMonth) * 100 / _monMs));
-            el.mb.style.width = pMon + '%';
-            el.mp.textContent = (pMon + 0.5 | 0) + '%';
-
-            // 4) 今年进度 — 使用已缓存值（第 3 步已确保 _sYear/_yrMs 最新）
-            const pYr = Math.min(100, ((now - _sYear) * 100 / _yrMs));
-            el.yb.style.width = pYr + '%';
-            el.yp.textContent = (pYr + 0.5 | 0) + '%';
-
-            // 5) 右上角日程/节日预告
             updateHeaderUpcoming();
         }
 
@@ -49325,7 +49199,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (btn) btn.classList.add('active');
             // 显示/隐藏 RAG 设置齿轮按钮
             const settingsBtn = document.getElementById('rag-settings-btn');
-            if (settingsBtn)  settingsBtn.classList.toggle('active', mode === 'rag');
+            if (settingsBtn) settingsBtn.classList.toggle('active', mode === 'rag');
             // 3. 查找是否有对应类型的最近会话
             const targetType = mode === 'rag' ? 'rag' : 'regular';
             const sessionOfType = chatSessions.find(s => s.type === targetType);
@@ -49834,7 +49708,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
             // 取消时通知后端
             const abortHandler = () => {
-                window.__TAURI__.core.invoke('kb_cancel_task', { requestId }).catch(() => {});
+                window.__TAURI__.core.invoke('kb_cancel_task', { requestId }).catch(() => { });
             };
             chatAbortController.signal.addEventListener('abort', abortHandler);
 
@@ -50428,7 +50302,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             // 取消时通知后端
             const abortHandler = () => {
                 console.debug('[rag] abort triggered requestId=' + requestId);
-                window.__TAURI__.core.invoke('kb_cancel_task', { requestId }).catch(() => {});
+                window.__TAURI__.core.invoke('kb_cancel_task', { requestId }).catch(() => { });
             };
             chatAbortController.signal.addEventListener('abort', abortHandler);
 
@@ -51123,7 +50997,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 showNotification('\u2717 连接失败: ' + e.message, 'error');
             } finally {
                 if (btn) { btn.disabled = false; btn.textContent = '测试连接'; }
-                 setTimeout(() => {
+                setTimeout(() => {
                     testLlmRtn.textContent = '';
                     testLlmRtn.style.display = 'none';
                 }, 5000);
@@ -51199,7 +51073,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 console.warn('设置日志级别失败:', e);
             }
         }
-        
+
         document.addEventListener('keydown', (e) => {
             if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === '+') {
                 e.preventDefault();
