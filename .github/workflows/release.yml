@@ -1,0 +1,141 @@
+name: Build & Release
+
+# ============================================================
+# 触发器：什么时候自动运行
+# ============================================================
+on:
+  # ── 方案一：推送代码到主分支时触发构建（但不发布）──
+  push:
+    branches: [main, master]
+
+  # ── 方案二：打 Git Tag 时触发完整发布 ──
+  #    例如：git tag v1.0.0 && git push origin v1.0.0
+  release:
+    types: [published]
+
+# ============================================================
+# 权限：让 workflow 能创建 Release
+# ============================================================
+permissions:
+  contents: write
+
+# ============================================================
+# 任务
+# ============================================================
+jobs:
+  # ──────────────────────────────────────────────────────────
+  # 子任务：构建应用（Windows x64 + macOS ARM64 + macOS Intel）
+  # ──────────────────────────────────────────────────────────
+  build:
+    strategy:
+      # 让三个平台独立构建，避免任一平台失败时取消其他平台
+      fail-fast: false
+      matrix:
+        include:
+          # ── Windows x64（NSIS 安装包） ──
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundle_name: mdgo-windows-x64
+
+          # ── macOS Apple Silicon（M1/M2/M3/M4，.dmg） ──
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            bundle_name: mdgo-macos-arm64
+
+          # ── macOS Intel（.dmg） ──
+          - os: macos-13
+            target: x86_64-apple-darwin
+            bundle_name: mdgo-macos-intel
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      # ── 1. 拉取你的代码 ──
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      # ── 2. 安装 Node.js（前端构建需要） ──
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          # 使用 package-lock.json 加速安装
+          cache: 'npm'
+          cache-dependency-path: tauri/package-lock.json
+
+      # ── 3. 安装 Rust 工具链 ──
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # ── 4. 安装 Rust 缓存（下次构建只需编译改动的代码，大幅提速） ──
+      - name: 启用 Rust 缓存
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Tauri 的 src-tauri 目录在 tauri/ 下面
+          workspaces: tauri/src-tauri
+
+      # ── 5. 安装前端依赖 ──
+      - name: 安装前端依赖
+        run: npm ci
+        working-directory: tauri
+
+      # ── 6. 构建 Tauri 桌面应用 ──
+      #    此步骤会自动：先执行 vite build（前端），再执行 cargo build --release（后端）
+      #    最终生成安装包（Windows: .exe / macOS: .dmg）
+      - name: 构建 Tauri 应用
+        uses: tauri-apps/tauri-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # 指定 Tauri 项目目录（包含 tauri.conf.json 的目录）
+          projectPath: tauri
+          # 构建目标架构
+          target: ${{ matrix.target }}
+
+      # ── 7. 上传构建产物 ──
+      #    无论是否为 Release，都会作为 Actions 的 Artifact 保存
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.bundle_name }}
+          path: |
+            tauri/src-tauri/target/release/bundle/nsis/*.exe
+            tauri/src-tauri/target/release/bundle/dmg/*.dmg
+          # 如果某个文件没找到，不报错（比如 Windows 上没有 DMG）
+          if-no-files-found: ignore
+
+  # ──────────────────────────────────────────────────────────
+  # 子任务：打包 AI 模型（bge-small-zh-v1.5）供用户下载
+  # ──────────────────────────────────────────────────────────
+  package-model:
+    # 仅在正式发布时运行
+    if: github.event_name == 'release'
+    # 等待所有应用构建完成后执行
+    needs: [build]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 打包模型文件
+        run: |
+          # 进入模型目录
+          cd tauri/src-tauri/models
+          # 将 bge-small-zh-v1.5 压缩为 zip
+          zip -r bge-small-zh-v1.5.zip bge-small-zh-v1.5/
+          # 计算 SHA256 校验值
+          sha256sum bge-small-zh-v1.5.zip > bge-small-zh-v1.5.zip.sha256
+          # 输出校验值到日志，方便查看
+          echo "===== SHA256 Checksum ====="
+          cat bge-small-zh-v1.5.zip.sha256
+
+      - name: 上传模型包到 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          # 要附加到 Release 的文件列表
+          files: |
+            tauri/src-tauri/models/bge-small-zh-v1.5.zip
+            tauri/src-tauri/models/bge-small-zh-v1.5.zip.sha256

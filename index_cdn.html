@@ -3491,7 +3491,7 @@
 
         .stats-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr;
+            grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr 1fr;
             gap: 0.625rem;
             width: 100%;
             box-sizing: border-box;
@@ -13978,19 +13978,7 @@
                             </svg></div>
                         <div class="stat-info">
                             <div class="stat-value" id="todayEdit">0</div>
-                            <div class="stat-label">今日修改</div>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon cyan"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
-                                stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                <circle cx="12" cy="12" r="10" />
-                                <line x1="12" y1="8" x2="12" y2="16" />
-                                <line x1="8" y1="12" x2="16" y2="12" />
-                            </svg></div>
-                        <div class="stat-info">
-                            <div class="stat-value" id="todayAdd">0</div>
-                            <div class="stat-label">今日新增</div>
+                            <div class="stat-label">今日新增修改</div>
                         </div>
                     </div>
                     <div class="stat-card">
@@ -29866,7 +29854,7 @@ kanban-plugin: basic
             // 单次遍历完成所有数据处理 (stats + heatmap + 活动列表预排序 + treemap 映射)
             const stats = await renderDashStats();
             // 更新统计卡片 (轻量操作,同步)
-            const { todayEdit, todayAdd, deletedCount, sortedByMtimeTop10 } = stats;
+            const { todayEdit, deletedCount, sortedByMtimeTop10 } = stats;
             const viewData = loadViewData();
             const todayMs = new Date().setHours(0, 0, 0, 0);
             document.getElementById('todayViewCount').innerText = viewData.sumList.filter(r => r.lastViewTime >= todayMs).length;
@@ -29874,7 +29862,6 @@ kanban-plugin: basic
             document.getElementById('totalFolders').innerText = data.stats.total_folders;
             document.getElementById('totalSpace').innerText = data.stats.total_size_str;
             document.getElementById('todayEdit').innerText = todayEdit;
-            document.getElementById('todayAdd').innerText = todayAdd;
             document.getElementById('deletedCount').innerText = deletedCount;
             const todayDuration_ = viewData.sumList
                 .filter(r => r.lastViewTime >= todayMs)
@@ -29926,7 +29913,7 @@ kanban-plugin: basic
             // 单次遍历完成所有数据处理 (stats + heatmap + 活动列表预排序)
             const stats = await renderDashStats();
             // 更新统计卡片 (轻量操作,同步)
-            const { todayEdit, todayAdd, deletedCount, sortedByMtimeTop10 } = stats;
+            const { todayEdit, deletedCount, sortedByMtimeTop10 } = stats;
             const viewData = loadViewData();
             const todayMs = new Date().setHours(0, 0, 0, 0);
             document.getElementById('todayViewCount').innerText = viewData.sumList.filter(r => r.lastViewTime >= todayMs).length;
@@ -29934,7 +29921,6 @@ kanban-plugin: basic
             document.getElementById('totalFolders').innerText = data.stats.total_folders;
             document.getElementById('totalSpace').innerText = data.stats.total_size_str;
             document.getElementById('todayEdit').innerText = todayEdit;
-            document.getElementById('todayAdd').innerText = todayAdd;
             document.getElementById('deletedCount').innerText = deletedCount;
             const todayDuration_ = viewData.sumList
                 .filter(r => r.lastViewTime >= todayMs)
@@ -30080,7 +30066,6 @@ kanban-plugin: basic
 
         // 板块1：统计数据预处理（一次遍历合并热力图/活动列表/treemap 所需数据）
         async function renderDashStats() {
-            let todayAdd = 0;
             let todayEdit = 0;
             const monthData = {};
             const monthCreateTrend = {};
@@ -30132,7 +30117,6 @@ kanban-plugin: basic
 
                 // 今日编辑/新增：时间戳比较比 toDateString 快 3-5 倍
                 if (editTs >= todayStart && editTs < tomorrowStart) todayEdit++;
-                if (createTs >= todayStart && createTs < tomorrowStart) todayAdd++;
 
                 // 今年数据：按日/月统计新增量
                 if (cYear === year) {
@@ -30194,8 +30178,7 @@ kanban-plugin: basic
             }
             const sortedByMtimeTop10 = top10.map(f => ({ time: f.mtime * 1000, name: f.name, path: f.path }));
 
-            return {
-                todayAdd, todayEdit, deletedCount,
+            return {todayEdit, deletedCount,
                 monthData, monthCreateTrend, year,
                 typeMap, extMap, docExtMap,
                 filesByDateTop10, fileSizeRangeMap,
