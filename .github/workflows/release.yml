@@ -60,7 +60,8 @@ jobs:
       - name: 安装 Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 使用 LTS 版本，避免版本弃用警告
+          node-version: lts/*
           # 使用 package-lock.json 加速安装
           cache: 'npm'
           cache-dependency-path: tauri/package-lock.json
@@ -105,13 +106,14 @@ jobs:
 
       # ── 8. 上传构建产物 ──
       #    无论是否为 Release，都会作为 Actions 的 Artifact 保存
+      #    注意：使用 --target 构建时，产物在 target/<target>/release/bundle/ 下
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.bundle_name }}
           path: |
-            tauri/src-tauri/target/release/bundle/nsis/*.exe
-            tauri/src-tauri/target/release/bundle/dmg/*.dmg
+            tauri/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
+            tauri/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
           # 如果某个文件没找到，不报错（比如 Windows 上没有 DMG）
           if-no-files-found: ignore
 
