@@ -86,3 +86,10 @@ ort = { version = "2.0.0-rc.11", features = ["ndarray", "coreml"] }
 # Intel Mac / Linux：tract-onnx 直接使用
 [target.'cfg(not(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64"))))'.dependencies]
 tract-onnx = "0.23"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true          # 剥离符号/调试信息（PDB/dSYM 本就不随包分发）
+panic = "abort"       # 移除 unwinding 运行时，再省几 MB（Tauri 兼容）
