@@ -103,6 +103,19 @@ pub fn run() {
     let on_changed: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
     let watcher = Arc::new(WatcherService::new(indexer.clone(), on_error, on_changed));
 
+    // ── 后台预下载 embedding 模型 ──
+    // 模型不随安装包内置，首次启动时静默在后台下载 zip → SHA-256 校验 → 解压部署，
+    // 不阻塞 UI；即使失败也不影响启动，首次使用 embedding 时自动重试。
+    std::thread::spawn(|| {
+        match crate::core::db::utils::ensure_model_ready() {
+            Ok(p) => log::info!("[startup] embedding 模型已就绪: {}", p.display()),
+            Err(e) => log::warn!(
+                "[startup] embedding 模型后台预下载失败: {}（首次使用时将重试）",
+                e
+            ),
+        }
+    });
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())

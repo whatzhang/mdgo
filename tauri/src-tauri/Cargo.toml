@@ -42,10 +42,14 @@ regex = "1"
 roxmltree = "0.20"
 
 # LLM 客户端 + 异步工具
-reqwest = { version = "0.12", features = ["stream", "json"] }
+reqwest = { version = "0.12", features = ["stream", "json", "blocking"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 futures = "0.3"
 bytes = "1"
+
+# 模型远程下载（zip 解压 + SHA-256 校验）
+zip = "2"
+sha2 = "0.10"
 
 # 日志
 log = "0.4"

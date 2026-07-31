@@ -316,8 +316,12 @@ fn post_process_batch(
     for i in 0..batch_size {
         let valid = valid_counts[i];
         if valid == 0 {
-            all_embeddings.push(vec![0.0f32; get_embedding_dimension()]);
-            continue;
+            // 防御：整条文本未产生任何有效 token（如纯空白），
+            // 显式报错而非写入全零向量，避免零向量入库污染检索结果
+            return Err(format!(
+                "[embedding] 第 {} 条文本未生成有效 token（可能为空白内容）",
+                i + 1
+            ));
         }
 
         let valid_len = masks[i].len();

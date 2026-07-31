@@ -15,9 +15,9 @@
         "label": "main",
         "title": "",
         "width": 1230,
-        "height": 740,
+        "height": 735,
         "minWidth": 1230,
-        "minHeight": 740,
+        "minHeight": 735,
         "decorations": true,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true
@@ -42,13 +42,6 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ],
-    "resources": [
-      "models/bge-small-zh-v1.5/model.onnx",
-      "models/bge-small-zh-v1.5/tokenizer.json",
-      "models/bge-small-zh-v1.5/config.json",
-      "models/bge-small-zh-v1.5/tokenizer_config.json",
-      "models/bge-small-zh-v1.5/special_tokens_map.json"
     ]
   }
 }

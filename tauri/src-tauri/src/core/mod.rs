@@ -5,6 +5,7 @@ pub mod types;
 mod chat_types;
 mod embedding;
 mod indexer;
+pub(crate) mod model_download;
 mod watcher;
 
 pub use chat_types::{ChatMessage, ChatMessageSource, ChatSession, ChatSessionSearchResult};

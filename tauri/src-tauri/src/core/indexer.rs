@@ -606,11 +606,14 @@ impl Indexer {
         let mut fused = rrf_fuse(&vec_hits, &bm25_hits, RRF_K, bm25_weight);
         log::debug!("[indexer] after RRF fuse: candidates={}", fused.len());
 
-        // Reranker 重排序（降级安全：模型不存在时静默跳过）
+        // Reranker 重排序（降级安全：模型不可用时静默跳过）
         if !fused.is_empty() {
             let candidates: Vec<&str> = fused.iter().map(|h| h.text.as_str()).collect();
-            let model_dir = utils::get_model_dir();
-            match crate::core::embedding::rerank(query, &candidates, &model_dir, 32) {
+            let rerank_result = utils::get_model_dir()
+                .and_then(|model_dir| {
+                    crate::core::embedding::rerank(query, &candidates, model_dir, 32)
+                });
+            match rerank_result {
                 Ok(scores) => {
                     log::debug!("[indexer] reranker applied: scores_count={}", scores.len());
                     // 将 reranker 分数写回 SearchHit（保留原始 RRF 排序作为 fallback）
@@ -622,8 +625,8 @@ impl Indexer {
                     // 按 reranker 分数降序排列
                     fused.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
                 }
-                Err(_) => {
-                    log::debug!("[indexer] reranker unavailable, using RRF ranking");
+                Err(e) => {
+                    log::debug!("[indexer] reranker unavailable ({}), using RRF ranking", e);
                     // Reranker 不可用，直接使用 RRF 排序结果
                 }
             }

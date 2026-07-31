@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use regex::Regex;
 use serde::Serialize;
@@ -281,14 +281,12 @@ pub struct KbProgress {
 
 /// 本地 BGE 模型输出的向量维度（动态获取，等于模型的 hidden_size）。
 ///
-/// 注意：首次调用时会触发模型初始化以确保返回正确的维度。
-/// 模型未初始化前默认返回 512（BGE-Small-ZH 实际为 384），
-/// 因此建表等操作应在此函数返回后再进行。
-pub fn get_local_embedding_dimension() -> u32 {
-    // 尝试初始化模型以确保获取真实的维度值
-    let model_dir = get_model_dir();
-    let _ = crate::core::embedding::ensure_initialized(model_dir);
-    crate::core::embedding::get_embedding_dimension() as u32
+/// 注意：首次调用时会触发模型初始化（可能触发远程下载）以确保返回正确的维度。
+/// 模型不可用时返回错误，调用方应阻止建表/检索等后续操作。
+pub fn get_local_embedding_dimension() -> Result<u32, String> {
+    let model_dir = get_model_dir()?;
+    crate::core::embedding::ensure_initialized(model_dir)?;
+    Ok(crate::core::embedding::get_embedding_dimension() as u32)
 }
 
 /// 本地 BGE 模型名称（从模型目录名提取，如 bge-small-zh-v1.5）。
@@ -296,75 +294,68 @@ pub fn get_local_embedding_model_name() -> String {
     crate::core::embedding::get_model_name()
 }
 
-/// 启动时解析模型文件的实际路径（纯本地，零网络依赖）。
-///
-/// # 搜索优先级
-/// 1. `MDGO_MODEL_DIR` 环境变量（用户/启动器手动指定）
-/// 2. 可执行文件同目录 `models/bge-small-zh-v1.5/`（Windows NSIS 打包）
-/// 3. macOS 资源目录 `<App.app>/Contents/Resources/models/bge-small-zh-v1.5/`
-/// 4. 开发模式 `CARGO_MANIFEST_DIR/models/bge-small-zh-v1.5/`
-fn resolve_model_dir() -> std::path::PathBuf {
-    // 1. 环境变量
-    if let Ok(dir) = std::env::var("MDGO_MODEL_DIR") {
-        let p = std::path::PathBuf::from(&dir);
-        if p.join("model.onnx").exists() {
-            return p;
-        }
-    }
-
-    // 2. 可执行文件同目录
-    if let Ok(exe) = std::env::current_exe() {
-        let candidates = [
-            exe.parent().map(|p| p.join("models").join("bge-small-zh-v1.5")),
-            // macOS: executable in MacOS/, resources in ../Resources/
-            exe.parent()
-                .and_then(|p| p.parent())
-                .map(|p| p.join("Resources").join("models").join("bge-small-zh-v1.5")),
-        ];
-        for candidate in candidates.iter().flatten() {
-            if candidate.join("model.onnx").exists() {
-                return candidate.clone();
-            }
-        }
-    }
-
-    // 3. 开发模式：CARGO_MANIFEST_DIR/models/bge-small-zh-v1.5
-    if cfg!(debug_assertions) {
-        if let Ok(cargo_dir) = std::env::var("CARGO_MANIFEST_DIR")
-            .or_else(|_| std::env::var("MDGO_CARGO_MANIFEST_DIR"))
-        {
-            let p = std::path::PathBuf::from(&cargo_dir)
-                .join("models")
-                .join("bge-small-zh-v1.5");
-            if p.join("model.onnx").exists() {
-                return p;
-            }
-        }
-        // fallback: env!("CARGO_MANIFEST_DIR") 编译时注入（core crate 在 core/ 下，需退回父目录）
-        #[cfg(debug_assertions)]
-        {
-            let p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .parent()
-                .unwrap()
-                .join("models")
-                .join("bge-small-zh-v1.5");
-            if p.join("model.onnx").exists() {
-                return p;
-            }
-        }
-    }
-
-    // 全部失败 → 返回默认路径并让调用者报错
-    log::error!("[local_embedding] 模型文件未找到，请检查安装包完整性");
-    std::path::PathBuf::from("models/bge-small-zh-v1.5")
-}
-
-/// 模型目录路径（惰性静态缓存，仅首次解析，终身复用）
+/// 模型目录路径（惰性缓存，仅首次解析成功，终身复用）
 static MODEL_DIR: OnceLock<PathBuf> = OnceLock::new();
 
-/// 获取模型目录路径（缓存版，首次调用后零开销）
-pub fn get_model_dir() -> &'static Path {
-    MODEL_DIR.get_or_init(|| resolve_model_dir())
+/// 模型下载互斥锁：防止多线程首次加载时并发下载同一模型
+static MODEL_DIR_LOCK: Mutex<()> = Mutex::new(());
+
+/// 最近一次模型加载失败原因（成功时清空；供 UI 区分"下载中/加载失败"）
+static MODEL_LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);
+
+/// 非阻塞检查模型是否已就绪（进程内路径缓存存在即视为就绪，零 IO）
+pub fn is_model_ready() -> bool {
+    MODEL_DIR.get().is_some()
+}
+
+/// 最近一次模型下载/加载失败原因（无失败则为 None）
+pub fn model_load_error() -> Option<String> {
+    MODEL_LAST_ERROR
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+}
+
+/// 确保模型可用：首次调用触发远程下载（下载 zip → SHA-256 校验 → 解压部署到缓存目录）。
+///
+/// 供启动时后台预下载与首次使用两种场景调用，内部加锁保证全局只下载一次。
+/// 下载失败不缓存错误（记录到 MODEL_LAST_ERROR 供状态展示），下次调用自动重试。
+pub fn ensure_model_ready() -> Result<&'static Path, String> {
+    if let Some(p) = MODEL_DIR.get() {
+        return Ok(p);
+    }
+
+    // 加锁防止并发重复下载，持锁期间其他线程等待
+    let _guard = MODEL_DIR_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    // 等待期间其他线程可能已完成下载
+    if let Some(p) = MODEL_DIR.get() {
+        return Ok(p);
+    }
+    let dir = match crate::core::model_download::ensure_model_downloaded() {
+        Ok(d) => {
+            *MODEL_LAST_ERROR
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = None;
+            d
+        }
+        Err(e) => {
+            *MODEL_LAST_ERROR
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = Some(e.clone());
+            return Err(e);
+        }
+    };
+    let _ = MODEL_DIR.set(dir);
+    Ok(MODEL_DIR.get().expect("刚 set 成功"))
+}
+
+/// 获取模型目录路径（缓存版，首次调用后零开销）。
+///
+/// 模型不随安装包内置，首次使用前自动后台下载部署（见 ensure_model_ready）。
+pub fn get_model_dir() -> Result<&'static Path, String> {
+    ensure_model_ready()
 }
 
 /// BGE 查询端指令前缀：为向量检索优化查询表示。
@@ -388,7 +379,7 @@ pub fn call_embedding(
         return Ok(Vec::new());
     }
 
-    let model_dir = get_model_dir();
+    let model_dir = get_model_dir()?;
     crate::core::embedding::call_embedding_parallel(texts, model_dir, progress)
 }
 

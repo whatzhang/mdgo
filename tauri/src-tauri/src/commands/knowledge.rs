@@ -232,14 +232,39 @@ pub async fn kb_dashboard_stats(
 }
 
 /// 获取嵌入模型信息（模型名称、向量维度、状态）
+///
+/// 模型下载由启动后台线程驱动；若尚未下载/部署完成，快速返回
+/// `downloading` / `error` 状态，避免前端 invoke 挂起等待下载结束。
+/// 已就绪时才进入 spawn_blocking 初始化 ONNX session 并返回真实维度。
 #[tauri::command]
 pub async fn kb_embedding_info() -> Result<crate::core::types::KbEmbeddingInfo, String> {
-    let dimension = crate::core::db::utils::get_local_embedding_dimension();
-    let model_name = crate::core::db::utils::get_local_embedding_model_name();
-    Ok(crate::core::types::KbEmbeddingInfo {
-        model_name,
-        dimension,
-        status: "loaded".into(),
+    use crate::core::db::utils as db_utils;
+
+    // 模型既未在进程内就绪，也未在磁盘缓存 → 返回下载中/失败状态（非阻塞）
+    if !db_utils::is_model_ready() && !crate::core::model_download::is_model_cached() {
+        let status = if db_utils::model_load_error().is_some() {
+            "error"
+        } else {
+            "downloading"
+        };
+        return Ok(crate::core::types::KbEmbeddingInfo {
+            model_name: db_utils::get_local_embedding_model_name(),
+            dimension: 0,
+            status: status.into(),
+        });
+    }
+
+    // 模型已就绪，在阻塞池中初始化并返回真实维度
+    tokio::task::spawn_blocking(|| {
+        let dimension = db_utils::get_local_embedding_dimension()?;
+        let model_name = db_utils::get_local_embedding_model_name();
+        Ok::<_, String>(crate::core::types::KbEmbeddingInfo {
+            model_name,
+            dimension,
+            status: "loaded".into(),
+        })
     })
+    .await
+    .map_err(|e| format!("Embedding 任务执行失败: {}", e))?
 }
 

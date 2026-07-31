@@ -3490,7 +3490,7 @@
         .stats-grid {
             display: grid;
             grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr 1fr;
-            gap: 0.625rem;
+            gap: 0.75rem;
             width: 100%;
             box-sizing: border-box;
             margin-bottom: 0.75rem;
@@ -3501,7 +3501,7 @@
         .kn-stats-grid {
             display: grid;
             grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr;
-            gap: 0.625rem;
+            gap: 0.75rem;
             width: 100%;
             box-sizing: border-box;
             flex-wrap: nowrap;
@@ -6788,7 +6788,7 @@
             display: flex;
             flex-direction: column;
             height: 100%;
-            gap: 6px;
+            gap: 8px;
         }
 
         .monitor-header {
@@ -50726,7 +50726,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const avg = kbStatus.file_count > 0 ? (kbStatus.vector_count / kbStatus.file_count).toFixed(1) : '--';
             const modelName = embInfo?.model_name || 'BGE-Small-ZH v1.5';
             const dim = embInfo?.dimension ?? 384;
-            container.innerHTML = '<span>模型:</span><span>' + modelName + '</span><span>维度:</span><span>' + dim + '</span><span>平均向量/文件:</span><span>' + avg + '</span><span>状态:</span><span style="color:#16a34a;">✓ 正常</span>';
+            let statusHtml = '<span style="color:#16a34a;">✓ 正常</span>';
+            if (embInfo?.status === 'downloading') {
+                statusHtml = '<span style="color:#d97706;">⏳ 模型下载中…</span>';
+            } else if (embInfo?.status === 'error') {
+                statusHtml = '<span style="color:#dc2626;">✗ 模型加载失败</span>';
+            }
+            container.innerHTML = '<span>模型:</span><span>' + modelName + '</span><span>维度:</span><span>' + dim + '</span><span>平均向量/文件:</span><span>' + avg + '</span><span>状态:</span>' + statusHtml;
         }
 
         function renderAIStats(aiStats) {

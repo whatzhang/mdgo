@@ -112,7 +112,12 @@ impl LanceStore {
             return Ok(());
         }
 
-        // 表不存在 → 创建新表（固定 384 维）
+        // 表不存在 → 创建新表（维度由本地 bge 模型决定）
+        // 维度获取可能在首次使用时触发模型下载/初始化（秒~分钟级），
+        // 移入 spawn_blocking 避免阻塞 Tokio worker
+        let dim = tokio::task::spawn_blocking(get_local_embedding_dimension)
+            .await
+            .map_err(|e| format!("获取模型维度任务失败: {}", e))??;
         let schema = Arc::new(Schema::new(vec![
             Field::new("id", DataType::Utf8, false),
             Field::new("text", DataType::Utf8, false),
@@ -127,7 +132,7 @@ impl LanceStore {
                 "vector",
                 DataType::FixedSizeList(
                     Arc::new(Field::new("item", DataType::Float32, true)),
-                    get_local_embedding_dimension() as i32,
+                    dim as i32,
                 ),
                 true,
             ),
@@ -416,7 +421,19 @@ impl LanceStore {
         // 使用向量检索 + 大范围 top_k，在内存中按 doc_name + chunk_index 过滤。
         // 原因：lancedb 0.31 的 Query 类型（不带 nearest_to）无 execute() 方法。
         // 使用零向量 + Cosine 距离，所有结果分数 ≈ 1.0，不依赖向量质量。
-        let dim = get_local_embedding_dimension() as usize;
+        // 维度直接从表 schema 读取，无需依赖 embedding 模型（模型不可用时上下文功能仍可用）。
+        let schema = table
+            .schema()
+            .await
+            .map_err(|e| format!("读取表 schema 失败: {}", e))?;
+        let dim = schema
+            .fields()
+            .iter()
+            .find_map(|f| match f.data_type() {
+                DataType::FixedSizeList(_, size) => Some(*size as usize),
+                _ => None,
+            })
+            .ok_or_else(|| "无法从表 schema 读取向量维度".to_string())?;
         let query_vec = vec![0.0f32; dim];
         let batches: Vec<RecordBatch> = table
             .query()

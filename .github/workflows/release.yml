@@ -136,35 +136,35 @@ jobs:
   # ──────────────────────────────────────────────────────────
   # 子任务：打包 AI 模型（bge-small-zh-v1.5）供用户下载
   # ──────────────────────────────────────────────────────────
-  package-model:
-    # 仅在正式发布时运行（网页发布 Release 或推送 v* 标签）
-    if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/')
-    # 等待所有应用构建完成后执行
-    needs: [build]
-    runs-on: ubuntu-latest
+  # package-model:
+  #   # 仅在正式发布时运行（网页发布 Release 或推送 v* 标签）
+  #   if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/')
+  #   # 等待所有应用构建完成后执行
+  #   needs: [build]
+  #   runs-on: ubuntu-latest
 
-    steps:
-      - name: 拉取代码
-        uses: actions/checkout@v4
+  #   steps:
+  #     - name: 拉取代码
+  #       uses: actions/checkout@v4
 
-      - name: 打包模型文件
-        run: |
-          # 进入模型目录
-          cd tauri/src-tauri/models
-          # 将 bge-small-zh-v1.5 压缩为 zip
-          zip -r bge-small-zh-v1.5.zip bge-small-zh-v1.5/
-          # 计算 SHA256 校验值
-          sha256sum bge-small-zh-v1.5.zip > bge-small-zh-v1.5.zip.sha256
-          # 输出校验值到日志，方便查看
-          echo "===== SHA256 Checksum ====="
-          cat bge-small-zh-v1.5.zip.sha256
+  #     - name: 打包模型文件
+  #       run: |
+  #         # 进入模型目录
+  #         cd tauri/src-tauri/models
+  #         # 将 bge-small-zh-v1.5 压缩为 zip
+  #         zip -r bge-small-zh-v1.5.zip bge-small-zh-v1.5/
+  #         # 计算 SHA256 校验值
+  #         sha256sum bge-small-zh-v1.5.zip > bge-small-zh-v1.5.zip.sha256
+  #         # 输出校验值到日志，方便查看
+  #         echo "===== SHA256 Checksum ====="
+  #         cat bge-small-zh-v1.5.zip.sha256
 
-      - name: 上传模型包到 Release
-        uses: softprops/action-gh-release@v2
-        with:
-          # 上传到与安装包相同的 Release（tag 名）
-          tag_name: ${{ github.ref_name }}
-          # 要附加到 Release 的文件列表
-          files: |
-            tauri/src-tauri/models/bge-small-zh-v1.5.zip
-            tauri/src-tauri/models/bge-small-zh-v1.5.zip.sha256
+  #     - name: 上传模型包到 Release
+  #       uses: softprops/action-gh-release@v2
+  #       with:
+  #         # 上传到与安装包相同的 Release（tag 名）
+  #         tag_name: ${{ github.ref_name }}
+  #         # 要附加到 Release 的文件列表
+  #         files: |
+  #           tauri/src-tauri/models/bge-small-zh-v1.5.zip
+  #           tauri/src-tauri/models/bge-small-zh-v1.5.zip.sha256
