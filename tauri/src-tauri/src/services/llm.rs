@@ -1,10 +1,12 @@
 use std::collections::HashSet;
-use std::time::Duration;
 
 use futures::StreamExt;
-use reqwest::Client;
+use rig_core::client::completion::CompletionClient;
+use rig_core::completion::{AssistantContent, CompletionModel, CompletionRequest, GetTokenUsage, Message, Usage};
+use rig_core::providers::openai;
+use rig_core::streaming::StreamedAssistantContent;
+use rig_core::OneOrMany;
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 // ─── 公共类型 ───
@@ -14,15 +16,6 @@ use tokio_util::sync::CancellationToken;
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
-}
-
-/// SSE 流式事件
-#[derive(Debug)]
-pub enum LLMEvent {
-    /// 内容增量
-    Delta(String),
-    /// 用量信息（OpenAI 格式）
-    Usage(UsageInfo),
 }
 
 /// OpenAI 格式的使用量
@@ -36,85 +29,78 @@ pub struct UsageInfo {
     pub total_tokens: u32,
 }
 
-// ─── SSE 响应解析（兼容 OpenAI / 本地 LLM 格式）───
+// ─── 工具函数 ───
 
-/// OpenAI 流式 chunk
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum SSEChunk {
-    Standard {
-        #[serde(default)]
-        choices: Vec<SSEChoice>,
-        #[serde(default)]
-        usage: Option<UsageInfo>,
-    },
-    /// 某些本地模型直接返回 text 字段而非 choices
-    Text {
-        #[serde(default)]
-        text: Option<String>,
-    },
-    /// 未知格式，静默跳过
-    Unknown {},
+/// 将配置中的 LLM 端点归一化为 Rig 的 base_url。
+///
+/// 配置可能携带完整路径（如 `http://host/v1/chat/completions`），而 Rig 的
+/// OpenAI provider 会自动拼接 `/chat/completions`，因此需要剥离该后缀。
+/// 注意只剥离 `/chat/completions`，保留版本前缀 `/v1`：否则 `.../v1/chat/completions`
+/// 会退化为 `.../chat/completions`，被部分网关（如 LM Studio 前置代理）拒绝。
+fn normalize_base_url(endpoint: &str) -> String {
+    let trimmed = endpoint.trim_end_matches('/');
+    let lower = trimmed.to_ascii_lowercase();
+    if let Some(idx) = lower.rfind("/chat/completions") {
+        return trimmed[..idx].to_string();
+    }
+    trimmed.to_string()
 }
 
-#[derive(Debug, Deserialize)]
-struct SSEChoice {
-    #[serde(default)]
-    delta: SSEDelta,
-    #[serde(default)]
-    text: Option<String>,
+/// 将项目内的 `ChatMessage` 转换为 Rig 的消息类型
+pub fn chat_message_to_rig(msg: &ChatMessage) -> Message {
+    match msg.role.as_str() {
+        "system" => Message::system(&msg.content),
+        "assistant" => Message::assistant(&msg.content),
+        _ => Message::user(&msg.content),
+    }
 }
 
-#[derive(Debug, Default, Deserialize)]
-struct SSEDelta {
-    #[serde(default)]
-    content: String,
-}
-
-/// 从 SSE 数据行中提取文本增量（兼容多种格式）
-fn extract_sse_content(data: &str) -> (String, Option<UsageInfo>) {
-    let chunk: SSEChunk = match serde_json::from_str(data) {
-        Ok(c) => c,
-        Err(_) => return (String::new(), None),
-    };
-    match chunk {
-        SSEChunk::Standard { choices, usage } => {
-            let mut content = String::new();
-            for choice in choices {
-                if let Some(text) = choice.text {
-                    content.push_str(&text);
-                } else {
-                    content.push_str(&choice.delta.content);
-                }
-            }
-            (content, usage)
-        }
-        SSEChunk::Text { text } => (text.unwrap_or_default(), None),
-        SSEChunk::Unknown {} => (String::new(), None),
+/// 将 Rig 的用量信息转换为项目内的 `UsageInfo`
+pub fn usage_to_info(usage: &Usage) -> UsageInfo {
+    UsageInfo {
+        prompt_tokens: usage.input_tokens as u32,
+        completion_tokens: usage.output_tokens as u32,
+        total_tokens: usage.total_tokens as u32,
     }
 }
 
 // ─── LLM 客户端 ───
 
-/// 兼容 OpenAI / 本地 LLM 的流式客户端
+/// 基于 Rig OpenAI provider（Chat Completions）的流式客户端。
+///
+/// 内部持有的 `CompletionModel` 通过 `reqwest::Client`（内部 Arc 共享连接池）
+/// 发请求，`Clone` 廉价，可安全缓存复用。
+///
+/// 已知限制：Rig 对流式请求默认注入 `stream_options: {"include_usage": true}`，
+/// 主流本地服务器（Ollama / llama.cpp / vLLM / LM Studio）均宽松忽略；若对接
+/// 严格校验参数的兼容网关返回 400，需自定义 Provider 扩展关闭该字段。
+#[derive(Clone)]
 pub struct LLMClient {
+    /// 归一化后的 base_url（不含 /chat/completions 后缀）
     endpoint: String,
     model: String,
-    api_key: String,
-    http: Client,
+    completion_model: openai::CompletionModel,
 }
 
 impl LLMClient {
-    pub fn new(endpoint: String, model: String, api_key: String) -> Self {
-        Self {
-            endpoint,
+    /// 构建客户端。配置非法（如 api_key 含非法 HTTP 头字符）时返回 Err。
+    pub fn new(endpoint: String, model: String, api_key: String) -> Result<Self, String> {
+        let base_url = normalize_base_url(&endpoint);
+
+        let client = openai::CompletionsClient::builder()
+            .api_key(&api_key)
+            .base_url(&base_url)
+            .build()
+            .map_err(|e| format!("创建 LLM 客户端失败: {}", e))?;
+        let completion_model = client.completion_model(&model);
+
+        log::debug!("[llm] LLMClient init base_url={} model={}", base_url, model);
+
+        Ok(Self {
+            endpoint: base_url,
             model,
-            api_key,
-            http: Client::builder()
-                .timeout(Duration::from_secs(300))
-                .build()
-                .expect("创建 HTTP 客户端失败"),
-        }
+            completion_model,
+        })
     }
 
     /// 快速判断配置是否有效
@@ -122,124 +108,15 @@ impl LLMClient {
         !self.endpoint.is_empty() && !self.model.is_empty()
     }
 
-    /// 流式对话补全
-    ///
-    /// 以 `mpsc` 频道的形式返回增量内容。调用方通过 `cancel` token 中止。
-    pub async fn stream_chat_completion(
-        &self,
-        messages: &[ChatMessage],
-        temperature: Option<f32>,
-        max_tokens: Option<u32>,
-        cancel: CancellationToken,
-    ) -> Result<mpsc::Receiver<LLMEvent>, String> {
-        let (tx, rx) = mpsc::channel::<LLMEvent>(64);
-
-        let body = serde_json::json!({
-            "model": self.model,
-            "messages": messages,
-            "stream": true,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        });
-
-        let client = self.http.clone();
-        let url = self.endpoint.clone();
-        let api_key = self.api_key.clone();
-
-        log::debug!("[llm] stream_chat_completion url={} model={} msg_count={} temp={:?} max_tokens={:?}",
-            url, self.model, messages.len(), temperature, max_tokens);
-
-        tokio::spawn(async move {
-            let mut builder = client.post(&url).json(&body);
-            if !api_key.is_empty() {
-                builder = builder.bearer_auth(&api_key);
-            }
-
-            let response = match builder.send().await {
-                Ok(r) => r,
-                Err(e) => {
-                    log::error!("[llm] HTTP request failed url={} err={}", url, e);
-                    let msg = format!("\n\n[网络错误] LLM 请求失败: {}", e);
-                    let _ = tx.send(LLMEvent::Delta(msg)).await;
-                    return;
-                }
-            };
-
-            log::debug!("[llm] HTTP response status={}", response.status());
-
-            if !response.status().is_success() {
-                let status = response.status();
-                let text = response.text().await.unwrap_or_default();
-                log::error!("[llm] HTTP error status={} body={}", status, text);
-                let msg = format!("\n\n[HTTP {}] LLM 返回错误: {}", status, text);
-                let _ = tx.send(LLMEvent::Delta(msg)).await;
-                return;
-            }
-
-            let mut buffer = String::new();
-            let mut stream = response.bytes_stream();
-            let mut total_bytes = 0u64;
-            let mut sse_line_count = 0u64;
-
-            loop {
-                tokio::select! {
-                    _ = cancel.cancelled() => {
-                        log::debug!("[llm] Stream cancelled url={}", url);
-                        break;
-                    }
-                    chunk = stream.next() => {
-                        match chunk {
-                            Some(Ok(bytes)) => {
-                                total_bytes += bytes.len() as u64;
-                                let s = String::from_utf8_lossy(&bytes);
-                                buffer.push_str(&s);
-
-                                // 逐行处理 SSE buffer
-                                loop {
-                                    if let Some(line_end) = buffer.find('\n') {
-                                        let line = buffer[..line_end].trim().to_string();
-                                        buffer = buffer[line_end + 1..].to_string();
-
-                                        if line.starts_with("data: ") {
-                                            let data = line[6..].trim().to_string();
-                                            if data.is_empty() || data == "[DONE]" {
-                                                continue;
-                                            }
-                                            let (content, usage) = extract_sse_content(&data);
-                                            if !content.is_empty() {
-                                                sse_line_count += 1;
-                                                let _ = tx.send(LLMEvent::Delta(content)).await;
-                                            }
-                                            if let Some(u) = usage {
-                                                log::debug!("[llm] Usage info: prompt_tokens={} completion_tokens={}", u.prompt_tokens, u.completion_tokens);
-                                                let _ = tx.send(LLMEvent::Usage(u)).await;
-                                            }
-                                        }
-                                    } else {
-                                        break;
-                                    }
-                                }
-                            }
-                            Some(Err(e)) => {
-                                log::warn!("[llm] SSE stream read error url={} err={}", url, e);
-                                break;
-                            }
-                            None => {
-                                log::debug!("[llm] SSE stream ended url={} total_bytes={} sse_lines={}", url, total_bytes, sse_line_count);
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
-        Ok(rx)
+    /// 获取底层 Rig 补全模型（用于构建 Agent）
+    pub fn completion_model(&self) -> &openai::CompletionModel {
+        &self.completion_model
     }
 
     /// 查询扩展：使用 LLM 将用户问题改写为多个搜索查询
     ///
-    /// 返回扩展后的查询列表（不包含原始问题）。失败时返回空 Vec。
+    /// 返回扩展后的查询列表（不包含原始问题）。请求失败或取消时返回空 Vec，
+    /// 由调用方降级为仅使用原始查询，避免错误文本污染检索。
     pub async fn expand_queries(
         &self,
         text: &str,
@@ -284,27 +161,100 @@ impl LLMClient {
         );
         system_msg.push_str(text);
 
-        let messages = vec![ChatMessage {
-            role: "user".to_string(),
-            content: system_msg,
-        }];
-
-        let mut rx = match self
-            .stream_chat_completion(&messages, Some(0.2), Some(300), cancel)
-            .await
-        {
-            Ok(rx) => rx,
-            Err(e) => {
-                log::warn!("[llm] expand_queries: stream_chat_completion failed: {}", e);
-                return Vec::new();
-            }
+        // 构造 Rig 请求（单条 user 消息，模型参数固定为低温度 + 短输出）
+        let request = CompletionRequest {
+            model: None,
+            preamble: None,
+            chat_history: OneOrMany::one(Message::user(system_msg)),
+            documents: Vec::new(),
+            tools: Vec::new(),
+            temperature: Some(0.2),
+            max_tokens: Some(300),
+            tool_choice: None,
+            additional_params: None,
+            output_schema: None,
+            record_telemetry_content: false,
         };
 
+        log::debug!(
+            "[llm] expand_queries request base_url={} model={}",
+            self.endpoint, self.model
+        );
+
+        // 直接驱动 Rig 流式请求；启动失败或流中出错时降级为非流式请求。
+        // 部分 OpenAI 兼容服务器（如本地 GGUF 网关）不支持 SSE 流式，对
+        // stream=true 的请求直接返回 HTTP 200 + application/json，Rig 流式
+        // 解析会报 InvalidContentType，此时改走非流式 completion 可正常返回。
+        let model = self.completion_model.clone();
         let mut full = String::new();
-        while let Some(event) = rx.recv().await {
-            if let LLMEvent::Delta(text) = event {
-                full.push_str(&text);
+        let mut stream_failed = false;
+
+        match model.stream(request.clone()).await {
+            Ok(mut stream) => {
+                loop {
+                    tokio::select! {
+                        _ = cancel.cancelled() => {
+                            log::debug!("[llm] expand_queries cancelled");
+                            break;
+                        }
+                        item = stream.next() => {
+                            match item {
+                                Some(Ok(StreamedAssistantContent::Text(text))) => {
+                                    full.push_str(&text.text);
+                                }
+                                Some(Ok(StreamedAssistantContent::Final(res))) => {
+                                    let usage = res.token_usage();
+                                    if usage.has_values() {
+                                        log::debug!(
+                                            "[llm] expand_queries usage: prompt_tokens={} completion_tokens={}",
+                                            usage.input_tokens, usage.output_tokens
+                                        );
+                                    }
+                                }
+                                Some(Ok(_)) => {}
+                                Some(Err(e)) => {
+                                    log::warn!("[llm] expand_queries stream 读取错误 err={}", e);
+                                    stream_failed = true;
+                                    break;
+                                }
+                                None => break,
+                            }
+                        }
+                    }
+                }
             }
+            Err(e) => {
+                log::warn!("[llm] expand_queries stream 启动失败 err={}", e);
+                stream_failed = true;
+            }
+        }
+
+        // 流式失败且未取消 → 非流式降级重试
+        if stream_failed && full.is_empty() && !cancel.is_cancelled() {
+            log::info!("[llm] expand_queries 非流式降级重试");
+            match model.completion(request).await {
+                Ok(response) => {
+                    for item in response.choice.iter() {
+                        if let AssistantContent::Text(text) = item {
+                            full.push_str(&text.text);
+                        }
+                    }
+                    if response.usage.has_values() {
+                        log::debug!(
+                            "[llm] expand_queries fallback usage: prompt_tokens={} completion_tokens={}",
+                            response.usage.input_tokens, response.usage.output_tokens
+                        );
+                    }
+                }
+                Err(e) => {
+                    log::warn!("[llm] expand_queries 非流式降级失败 err={}", e);
+                }
+            }
+        }
+
+        if full.trim().is_empty() {
+            log::debug!("[llm] expand_queries empty response");
+            return Vec::new();
         }
 
         log::debug!("[llm] expand_queries raw_response: {}", full);
@@ -365,5 +315,34 @@ impl LLMClient {
         // 3) 上限 3 个
         deduped.truncate(3);
         deduped
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_base_url;
+
+    #[test]
+    fn normalize_keeps_v1_prefix() {
+        // 完整路径：只剥 /chat/completions，保留 /v1，Rig 会再拼回 /v1/chat/completions
+        assert_eq!(
+            normalize_base_url("http://192.168.31.152:12345/v1/chat/completions"),
+            "http://192.168.31.152:12345/v1"
+        );
+    }
+
+    #[test]
+    fn normalize_no_v1_prefix() {
+        assert_eq!(
+            normalize_base_url("http://host:1234/chat/completions"),
+            "http://host:1234"
+        );
+    }
+
+    #[test]
+    fn normalize_bare_url_unchanged() {
+        assert_eq!(normalize_base_url("http://host:1234/v1"), "http://host:1234/v1");
+        assert_eq!(normalize_base_url("http://host:1234"), "http://host:1234");
+        assert_eq!(normalize_base_url("http://host:1234/"), "http://host:1234");
     }
 }

@@ -5372,7 +5372,6 @@
 
         .chat-send-btn>svg {
             transform: rotate(-90deg);
-            margin-bottom: 0.125rem;
         }
 
         .chat-send-btn:not(:disabled) {
@@ -13220,10 +13219,10 @@
         .setting-modal-body {
             flex: 1;
             overflow-y: auto;
-            padding: 1rem;
+            padding: 0.5rem 1rem;
             display: flex;
             flex-direction: column;
-            gap: 1rem;
+            gap: 0.75rem;
         }
 
         .setting-section {
@@ -15527,9 +15526,9 @@
                             <div>
                                 <div class="chat-mode-group">
                                     <button id="chat-mode-normal" class="btn btn-sm btn-mode active"
-                                        onclick="setChatMode('normal')">普通对话</button>
+                                        onclick="setChatMode('normal')">Chat</button>
                                     <button id="chat-mode-rag" class="btn btn-sm btn-mode" onclick="setChatMode('rag')"
-                                        style="display:none;">RAG</button>
+                                        style="display:none;">Agent</button>
                                     <button id="rag-settings-btn" class="rag-settings-btn" onclick="openRagSettings()"
                                         title="RAG 检索参数设置">
                                         <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
@@ -49261,7 +49260,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 // 流式响应中 → 显示方块停止图标，始终可用
                 btn.disabled = false;
                 btn.title = '停止生成';
-                icon.innerHTML = '<rect x="6" y="6" width="12" height="12" rx="2"/>';
+                icon.innerHTML = '<rect x="5" y="5" width="14" height="14" rx="2"/>';
             } else {
                 // 正常状态 → 根据输入内容决定是否可用
                 const hasText = input.value.trim().length > 0;
@@ -50409,10 +50408,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             });
                         }
                     }
-                    // 连带 sources 存入 chatMessages
-                    const msgEntry = { role: 'assistant', content: fullContent, sources: sources };
-                    chatMessages.push(msgEntry);
-                    updateTurnCounter();
+                    // 连带 sources 存入 chatMessages（空内容不 push，避免污染对话记录与回合计数）
+                    if (fullContent) {
+                        const msgEntry = { role: 'assistant', content: fullContent, sources: sources };
+                        chatMessages.push(msgEntry);
+                        updateTurnCounter();
+                    }
                     // 保存到数据库
                     if (currentSessionId && fullContent) {
                         try {

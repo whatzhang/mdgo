@@ -73,6 +73,8 @@ tokenizers = "0.22"
 notify = { version = "8", features = ["macos_kqueue"] }
 # PDF 提取
 pdf-extract = { version = "0.7", optional = true }
+rig-core = "0.41.0"
+rig-agent = { version = "0.41.0", default-features = false }
 
 # ─── ONNX Runtime / 推理引擎 按平台选择 ───
 # Windows：原生 ONNX Runtime + DirectML GPU

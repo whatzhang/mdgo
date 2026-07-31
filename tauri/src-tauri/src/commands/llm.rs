@@ -1,13 +1,20 @@
 use std::collections::HashMap;
 
-use futures::future::join_all;
+use futures::StreamExt;
+use rig_agent::agent::MultiTurnStreamItem;
+use rig_agent::completion::{Chat, CompletionModel};
+use rig_agent::streaming::StreamingChat;
+use rig_agent::Agent;
+use rig_core::completion::Message;
+use rig_core::streaming::StreamedAssistantContent;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
-use crate::services::llm::{ChatMessage, LLMClient};
+use crate::core::agent::{KbSearchConfig, aggregate_hits, build_chat_agent, build_rag_agent};
 use crate::core::{call_embedding_query, SearchHit};
+use crate::services::llm::{LLMClient, UsageInfo, chat_message_to_rig, usage_to_info};
 
 // ─── 后端消息长度预算 ───
 /// 消息总字符数上限（粗略估计 ~7500 tokens 的字符量，为 LLM 回复留出余量）
@@ -111,13 +118,8 @@ impl TaskRegistry {
 
 // ─── 辅助函数 ───
 
-/// RRF 风格 rank 归一化分数（用于跨查询公平比较）
-fn rank_to_score(rank: usize) -> f32 {
-    1.0 / (rank as f32 + 60.0)
-}
-
 /// 校验消息总字符数是否超过上限，超限时返回错误描述
-fn validate_messages_length(messages: &[ChatMessage]) -> Result<(), String> {
+fn validate_messages_length(messages: &[crate::services::llm::ChatMessage]) -> Result<(), String> {
     let total: usize = messages.iter().map(|m| m.content.len()).sum();
     if total > MAX_MESSAGE_CHARS {
         return Err(format!(
@@ -126,6 +128,68 @@ fn validate_messages_length(messages: &[ChatMessage]) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+/// 将消息列表转为 Rig history（去掉最后一条当前问题，它作为 prompt 单独发送）
+fn messages_to_history(messages: &[crate::services::llm::ChatMessage]) -> Vec<Message> {
+    messages[..messages.len().saturating_sub(1)]
+        .iter()
+        .map(chat_message_to_rig)
+        .collect()
+}
+
+/// 流式失败后的非流式降级重试。
+///
+/// 部分 OpenAI 兼容服务器（如本地 GGUF 网关）不支持 SSE 流式：对 `stream=true`
+/// 的请求直接返回 HTTP 200 + `application/json`，Rig 流式解析报
+/// `InvalidContentType`。此时改走 Agent 的非流式接口（底层为 `completion`，
+/// 请求体不注入 `stream`），可正常拿到完整回答，且保留 Agent 的工具/上下文行为。
+async fn complete_fallback<M>(
+    agent: &Agent<M>,
+    prompt: Message,
+    history: Vec<Message>,
+) -> Result<String, String>
+where
+    M: CompletionModel + 'static,
+{
+    let mut history = history;
+    agent
+        .chat(prompt, &mut history)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 发送错误事件（rag:error / llm:error）
+fn emit_command_error(app: &AppHandle, channel: &str, request_id: &str, message: String) {
+    let _ = app.emit(
+        channel,
+        CommandError {
+            request_id: request_id.to_string(),
+            message,
+        },
+    );
+}
+
+/// 获取或创建 LLM 客户端。
+///
+/// 按配置指纹缓存，复用内部 reqwest 连接池；配置热更新后指纹变化，自动重建。
+/// 构建失败（非法 api_key 等）返回 Err，由调用方转为错误事件。
+async fn get_or_create_llm_client(
+    state: &tauri::State<'_, crate::AppState>,
+    endpoint: &str,
+    model: &str,
+    api_key: &str,
+) -> Result<LLMClient, String> {
+    let fingerprint = format!("{}|{}|{}", endpoint, model, api_key);
+    let mut cache = state.llm_client_cache.lock().await;
+    if let Some((fp, client)) = cache.as_ref() {
+        if fp == &fingerprint {
+            return Ok(client.clone());
+        }
+    }
+    let client = LLMClient::new(endpoint.to_string(), model.to_string(), api_key.to_string())?;
+    *cache = Some((fingerprint, client.clone()));
+    Ok(client)
 }
 
 // ─── Tauri 命令 ───
@@ -140,7 +204,7 @@ pub async fn kb_cancel_task(
     Ok(())
 }
 
-/// RAG 查询：查询扩展 → 混合检索 → 文档聚合 → LLM 生成（全流式）
+/// RAG 查询：查询扩展 → 混合检索 → 文档聚合 → RAG Agent 生成（全流式）
 #[tauri::command]
 pub async fn kb_rag_query(
     app: AppHandle,
@@ -148,31 +212,36 @@ pub async fn kb_rag_query(
     task_registry: tauri::State<'_, TaskRegistry>,
     dir_path: String,
     query: String,
-    messages: Vec<ChatMessage>,
+    messages: Vec<crate::services::llm::ChatMessage>,
     request_id: String,
     top_k: u32,
 ) -> Result<(), String> {
     let cancel = task_registry.register(&request_id).await;
+    // 后端防御：限制 top_k 范围（前端 UI 为 1-50），防止异常参数触发全量检索/重排
+    let top_k = top_k.clamp(1, 50);
 
     log::info!("[rag_query] ENTRY request_id={} dir_path={} query_len={} msg_count={} top_k={}",
         request_id, dir_path, query.len(), messages.len(), top_k);
 
     // 从中央化内存配置读取 LLM 配置
     let llm_cfg = state.llm_config.read().unwrap_or_else(|e| e.into_inner()).clone();
-    let llm = LLMClient::new(llm_cfg.endpoint.clone(), llm_cfg.model.clone(), llm_cfg.api_key.clone());
     log::info!("[rag_query] LLM config loaded endpoint={} model={}",
         llm_cfg.endpoint, llm_cfg.model);
 
-    let emit_error = |msg: String| {
-        let _ = app.emit("rag:error", CommandError {
-            request_id: request_id.clone(),
-            message: msg,
-        });
+    // 构建 LLM 客户端（失败转为错误事件，避免 panic 与注册表泄漏）
+    let llm = match get_or_create_llm_client(&state, &llm_cfg.endpoint, &llm_cfg.model, &llm_cfg.api_key).await {
+        Ok(llm) => llm,
+        Err(e) => {
+            log::error!("[rag_query] LLMClient init failed request_id={} err={}", request_id, e);
+            emit_command_error(&app, "rag:error", &request_id, format!("LLM 客户端初始化失败: {}", e));
+            task_registry.unregister(&request_id).await;
+            return Ok(());
+        }
     };
 
     if !llm.is_configured() {
         log::warn!("[rag_query] LLM not configured, aborting request_id={}", request_id);
-        emit_error("LLM 未配置，请在设置中填写端点地址和模型名称".into());
+        emit_command_error(&app, "rag:error", &request_id, "LLM 未配置，请在设置中填写端点地址和模型名称".into());
         task_registry.unregister(&request_id).await;
         return Ok(());
     }
@@ -180,7 +249,7 @@ pub async fn kb_rag_query(
     // 后端兜底校验：消息总长度
     if let Err(e) = validate_messages_length(&messages) {
         log::warn!("[rag_query] validate_messages_length failed request_id={} err={}", request_id, e);
-        emit_error(e);
+        emit_command_error(&app, "rag:error", &request_id, e);
         task_registry.unregister(&request_id).await;
         return Ok(());
     }
@@ -251,12 +320,7 @@ pub async fn kb_rag_query(
                         .unwrap_or_default();
                     log::debug!("[rag_query] hybrid_search for query='{}' hits={} took={:?}",
                         &q, hits.len(), search_start.elapsed());
-                    hits.into_iter()
-                        .map(|h| {
-                            let score = h.score;
-                            (h, score)
-                        })
-                        .collect::<Vec<_>>()
+                    hits
                 } else {
                     log::warn!("[rag_query] Embedding failed for query='{}', skipping", &q);
                     Vec::new()
@@ -265,12 +329,26 @@ pub async fn kb_rag_query(
         })
         .collect();
 
-    let all_results = join_all(search_futures).await;
+    let all_results: Vec<Vec<SearchHit>> = {
+        // 可取消的并行检索（最多并发 4 个）：取消信号到达后停止消费新结果，
+        // 已启动的检索会自然完成，不会拖住取消响应。
+        let cancel_fut = {
+            let cancel = cancel.clone();
+            async move {
+                cancel.cancelled().await;
+            }
+        };
+        futures::stream::iter(search_futures)
+            .buffer_unordered(4)
+            .take_until(cancel_fut)
+            .collect()
+            .await
+    };
     log::info!("[rag_query] Stage2: all searches done request_id={} took={:?}",
         request_id, search_start.elapsed());
 
     // 展平所有结果
-    let all_hits: Vec<(SearchHit, f32)> = all_results.into_iter().flatten().collect();
+    let all_hits: Vec<SearchHit> = all_results.into_iter().flatten().collect();
     log::info!("[rag_query] Stage2: total raw hits={}", all_hits.len());
 
     if cancel.is_cancelled() {
@@ -280,85 +358,25 @@ pub async fn kb_rag_query(
 
     if all_hits.is_empty() {
         log::warn!("[rag_query] Stage2: no hits found, aborting request_id={}", request_id);
-        emit_error("知识库中未找到相关内容".into());
+        emit_command_error(&app, "rag:error", &request_id, "知识库中未找到相关内容".into());
         task_registry.unregister(&request_id).await;
         return Ok(());
     }
 
-    // ── Stage 3: 文档级聚合 + 自适应阈值 ──
+    // ── Stage 3: 文档级聚合 + 自适应阈值（core::agent::aggregate_hits）──
     log::info!("[rag_query] Stage3: aggregation start request_id={}", request_id);
-    // 3a: 按 doc_name + chunk_index 去重，保留最高 mergeScore
-    let mut seen: HashMap<(String, u32), (SearchHit, f32)> = HashMap::new();
-    for (hit, score) in all_hits.into_iter() {
-        let key = (hit.doc_name.clone(), hit.chunk_index);
-        match seen.entry(key) {
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                if score > entry.get().1 {
-                    entry.insert((hit, score));
-                }
-            }
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert((hit, score));
-            }
-        }
-    }
-    log::debug!("[rag_query] Stage3a: unique chunks after dedup={}", seen.len());
-
-    // 3b: 按 doc_name 聚合，保留该文档中所有达到阈值的 chunks（而非仅最高分 chunk）
-    //     同一文档的多个相关片段合并后能为 LLM 提供完整上下文。
-    let max_score_overall = seen.values().map(|(_, s)| *s).fold(0.0_f32, f32::max);
-    let doc_threshold = max_score_overall * 0.3; // 文档内保留分数 ≥ 最高分 30% 的所有 chunks
-    let mut doc_map: HashMap<String, Vec<(SearchHit, f32)>> = HashMap::new();
-    for (hit, score) in seen.into_values() {
-        if score < doc_threshold {
-            continue;
-        }
-        let doc_name = hit.doc_name.clone();
-        doc_map.entry(doc_name).or_default().push((hit, score));
-    }
-    // 每篇文档内按分数降序，最多保留 5 个 chunks
-    for chunks in doc_map.values_mut() {
-        chunks.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        chunks.truncate(5);
-    }
-    log::debug!("[rag_query] Stage3b: unique docs after doc-aggregation={}", doc_map.len());
-
-    // 3c: 以每篇文档的最佳 chunk 分数作为文档的代表分排序，
-    //     应用自适应阈值，取 top 5 文档，但保留文档内所有通过的 chunks
-    let mut doc_scores: Vec<(Vec<(SearchHit, f32)>, f32)> = doc_map
-        .into_values()
-        .map(|chunks| {
-            let best = chunks.first().map(|(_, s)| *s).unwrap_or(0.0);
-            (chunks, best)
-        })
-        .collect();
-    doc_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-    let max_doc_score = doc_scores.first().map(|(_, s)| *s).unwrap_or(0.0);
-    let adapt_threshold = max_doc_score * 0.5;
-    let abs_min = rank_to_score(15);
-    let final_threshold = adapt_threshold.max(abs_min);
-
-    // 展平：选中文档 + 文档内所有通过阈值的 chunks
-    let selected: Vec<(SearchHit, f32)> = doc_scores
-        .into_iter()
-        .filter(|(_, s)| *s >= final_threshold)
-        .take(5)
-        .flat_map(|(chunks, _)| chunks)
-        .collect();
-
-    log::info!("[rag_query] Stage3c: threshold max_score={:.6} adapt={:.6} abs_min={:.6} final={:.6} selected_chunks={}",
-        max_doc_score, adapt_threshold, abs_min, final_threshold, selected.len());
+    let selected: Vec<(SearchHit, f32)> = aggregate_hits(all_hits);
+    log::info!("[rag_query] Stage3: aggregation done request_id={} selected_chunks={}", request_id, selected.len());
 
     if selected.is_empty() {
         log::warn!("[rag_query] Stage3: no docs passed threshold, aborting request_id={}", request_id);
-        emit_error("未找到足够相关的内容（请尝试更换关键词或扩展知识库）".into());
+        emit_command_error(&app, "rag:error", &request_id, "未找到足够相关的内容（请尝试更换关键词或扩展知识库）".into());
         task_registry.unregister(&request_id).await;
         return Ok(());
     }
 
-    // ── Stage 4: 构建 context → LLM 生成 ──
-    log::info!("[rag_query] Stage4: building context and LLM generation start request_id={}", request_id);
+    // ── Stage 4: 构建 context → RAG Agent 生成 ──
+    log::info!("[rag_query] Stage4: building context and agent generation start request_id={}", request_id);
     let status_msg = format!("正在生成回答（基于 {} 个相关片段）...", selected.len());
     let _ = app.emit(
         "rag:status",
@@ -442,74 +460,137 @@ pub async fn kb_rag_query(
     log::debug!("[rag_query] Stage4: sources deduped count={}", sources.len());
     let sources_clone = sources.clone();
 
-    // 构建 System Prompt + Messages
-    let system_prompt = format!(
-        "你是一个知识库助手，请基于以下上下文回答问题。如果上下文中没有相关信息，请如实告知。\n\n上下文：\n{}",
-        context
-    );
-    let system_prompt_len = system_prompt.len();
-
-    let mut llm_messages = vec![ChatMessage {
-        role: "system".to_string(),
-        content: system_prompt,
-    }];
-    llm_messages.extend(messages);
-    log::debug!("[rag_query] Stage4: LLM messages total={} system_len={}",
-        llm_messages.len(), system_prompt_len);
-
     if cancel.is_cancelled() {
         log::info!("[rag_query] Cancelled before Stage4 stream request_id={}", request_id);
         task_registry.unregister(&request_id).await;
         return Ok(());
     }
 
+    // 构建 RAG Agent：预载检索上下文 + kb_search 工具（模型可补充检索）
+    let model = llm.completion_model().clone();
+    let search_config = KbSearchConfig {
+        dir_path: dir_path.clone(),
+        indexer: state.indexer.clone(),
+        default_top_k: top_k,
+    };
+    let agent = build_rag_agent(model, &context, search_config);
+
+    // 当前问题作为 prompt，历史消息（去掉最后一条当前问题）作为 history
+    let history = messages_to_history(&messages);
+    let mut stream = agent
+        .stream_chat(Message::user(query.clone()), history)
+        .into_future()
+        .await;
+
     // 流式生成
-    log::info!("[rag_query] Stage4: starting LLM stream request_id={}", request_id);
+    log::info!("[rag_query] Stage4: starting agent stream request_id={}", request_id);
     let llm_start = std::time::Instant::now();
-    let mut rx = match llm
-        .stream_chat_completion(&llm_messages, None, None, cancel.clone())
-        .await
-    {
-        Ok(rx) => rx,
-        Err(e) => {
-            log::error!("[rag_query] Stage4: LLM stream_chat_completion failed request_id={} err={}", request_id, e);
-            emit_error(format!("LLM 请求失败: {}", e));
+    let mut full_content = String::new();
+    let mut final_usage: Option<UsageInfo> = None;
+    let mut delta_count = 0u64;
+    let mut stream_failed = false;
+    while let Some(item) = stream.next().await {
+        if cancel.is_cancelled() {
+            log::info!("[rag_query] Cancelled during Stage4 stream request_id={} accumulated={}",
+                request_id, full_content.len());
+            // 取消时保留已生成的部分内容：通过 rag:done 交给前端落库
+            if !full_content.is_empty() {
+                let (prompt_tokens, completion_tokens) = final_usage
+                    .as_ref()
+                    .map(|u| (u.prompt_tokens, u.completion_tokens))
+                    .unwrap_or((0, 0));
+                let _ = app.emit(
+                    "rag:done",
+                    RagDone {
+                        request_id: request_id.clone(),
+                        content: full_content.clone(),
+                        sources: sources_clone.clone(),
+                        prompt_tokens,
+                        completion_tokens,
+                    },
+                );
+            }
             task_registry.unregister(&request_id).await;
             return Ok(());
         }
-    };
-
-    let mut full_content = String::new();
-    let mut final_usage: Option<crate::services::llm::UsageInfo> = None;
-    let mut delta_count = 0u64;
-    while let Some(event) = rx.recv().await {
-        match event {
-            crate::services::llm::LLMEvent::Delta(text) => {
-                full_content.push_str(&text);
+        match item {
+            Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(text))) => {
+                if text.text.is_empty() {
+                    continue;
+                }
+                full_content.push_str(&text.text);
                 delta_count += 1;
                 let _ = app.emit(
                     "rag:delta",
                     RagDelta {
                         request_id: request_id.clone(),
-                        content: text,
+                        content: text.text,
                     },
                 );
             }
-            crate::services::llm::LLMEvent::Usage(usage) => {
-                log::debug!("[rag_query] Stage4: received usage info request_id={} prompt={} completion={}",
-                    request_id, usage.prompt_tokens, usage.completion_tokens);
-                final_usage = Some(usage);
+            Ok(MultiTurnStreamItem::FinalResponse(res)) => {
+                let usage = res.usage();
+                if usage.has_values() {
+                    log::debug!("[rag_query] Stage4: agent final usage request_id={} prompt={} completion={}",
+                        request_id, usage.input_tokens, usage.output_tokens);
+                    final_usage = Some(usage_to_info(&usage));
+                }
+            }
+            Ok(MultiTurnStreamItem::CompletionCall(call)) => {
+                if call.usage.has_values() {
+                    final_usage = Some(usage_to_info(&call.usage));
+                }
+            }
+            Ok(_) => {}
+            Err(e) => {
+                log::warn!("[rag_query] Stage4: agent stream error request_id={} err={}", request_id, e);
+                stream_failed = true;
+                break;
             }
         }
-        if cancel.is_cancelled() {
-            log::info!("[rag_query] Cancelled during Stage4 stream request_id={} accumulated={}",
-                request_id, full_content.len());
-            task_registry.unregister(&request_id).await;
-            return Ok(());
-        }
     }
-    log::info!("[rag_query] Stage4: LLM stream done request_id={} took={:?} delta_count={} content_len={}",
+    log::info!("[rag_query] Stage4: agent stream done request_id={} took={:?} delta_count={} content_len={}",
         request_id, llm_start.elapsed(), delta_count, full_content.len());
+
+    // 流式失败且无任何内容 → 先走非流式降级重试，仍失败才显式报错，
+    // 避免静默失败或空消息污染前端
+    if stream_failed && full_content.is_empty() && !cancel.is_cancelled() {
+        log::warn!("[rag_query] Stage4: stream failed, falling back to non-streaming request_id={}", request_id);
+        match complete_fallback(&agent, Message::user(query.clone()), messages_to_history(&messages)).await {
+            Ok(content) => {
+                let content = content.trim().to_string();
+                if content.is_empty() {
+                    log::warn!("[rag_query] Stage4: non-streaming fallback returned empty request_id={}", request_id);
+                    emit_command_error(&app, "rag:error", &request_id, "LLM 生成失败，请检查模型服务是否可用".into());
+                } else {
+                    // 一次性推送完整内容：先 delta（保证前端创建消息 DOM），再 done 收尾
+                    let _ = app.emit(
+                        "rag:delta",
+                        RagDelta {
+                            request_id: request_id.clone(),
+                            content: content.clone(),
+                        },
+                    );
+                    let _ = app.emit(
+                        "rag:done",
+                        RagDone {
+                            request_id: request_id.clone(),
+                            content,
+                            sources: sources_clone,
+                            prompt_tokens: 0,
+                            completion_tokens: 0,
+                        },
+                    );
+                }
+            }
+            Err(e) => {
+                log::warn!("[rag_query] Stage4: non-streaming fallback failed request_id={} err={}", request_id, e);
+                emit_command_error(&app, "rag:error", &request_id, "LLM 生成失败，请检查模型服务是否可用".into());
+            }
+        }
+        task_registry.unregister(&request_id).await;
+        return Ok(());
+    }
 
     // ── Done ──
     let (prompt_tokens, completion_tokens) = final_usage
@@ -532,30 +613,33 @@ pub async fn kb_rag_query(
     Ok(())
 }
 
-/// 纯 LLM 对话
+/// 纯 LLM 对话（Rig Agent，无工具）
 #[tauri::command]
 pub async fn kb_llm_query(
     app: AppHandle,
     state: tauri::State<'_, crate::AppState>,
     task_registry: tauri::State<'_, TaskRegistry>,
-    messages: Vec<ChatMessage>,
+    messages: Vec<crate::services::llm::ChatMessage>,
     request_id: String,
 ) -> Result<(), String> {
     let cancel = task_registry.register(&request_id).await;
 
     // 从中央化内存配置读取 LLM 配置
     let llm_cfg = state.llm_config.read().unwrap_or_else(|e| e.into_inner()).clone();
-    let llm = LLMClient::new(llm_cfg.endpoint, llm_cfg.model, llm_cfg.api_key);
 
-    let emit_error = |msg: String| {
-        let _ = app.emit("llm:error", CommandError {
-            request_id: request_id.clone(),
-            message: msg,
-        });
+    // 构建 LLM 客户端（失败转为错误事件，避免 panic 与注册表泄漏）
+    let llm = match get_or_create_llm_client(&state, &llm_cfg.endpoint, &llm_cfg.model, &llm_cfg.api_key).await {
+        Ok(llm) => llm,
+        Err(e) => {
+            log::error!("[llm_query] LLMClient init failed request_id={} err={}", request_id, e);
+            emit_command_error(&app, "llm:error", &request_id, format!("LLM 客户端初始化失败: {}", e));
+            task_registry.unregister(&request_id).await;
+            return Ok(());
+        }
     };
 
     if !llm.is_configured() {
-        emit_error("LLM 未配置".into());
+        emit_command_error(&app, "llm:error", &request_id, "LLM 未配置".into());
         task_registry.unregister(&request_id).await;
         return Ok(());
     }
@@ -563,51 +647,125 @@ pub async fn kb_llm_query(
     // 后端兜底校验：消息总长度
     if let Err(e) = validate_messages_length(&messages) {
         log::warn!("[llm_query] validate_messages_length failed request_id={} err={}", request_id, e);
-        emit_error(e);
+        emit_command_error(&app, "llm:error", &request_id, e);
         task_registry.unregister(&request_id).await;
         return Ok(());
     }
 
-    let mut rx = match llm
-        .stream_chat_completion(&messages, None, None, cancel.clone())
-        .await
-    {
-        Ok(rx) => rx,
-        Err(e) => {
-            emit_error(format!("LLM 请求失败: {}", e));
+    if messages.is_empty() {
+        emit_command_error(&app, "llm:error", &request_id, "消息不能为空".into());
+        task_registry.unregister(&request_id).await;
+        return Ok(());
+    }
+
+    let prompt_content = messages.last().map(|m| m.content.clone()).unwrap_or_default();
+    let history = messages_to_history(&messages);
+
+    let agent = build_chat_agent(llm.completion_model().clone());
+    let mut stream = agent
+        .stream_chat(Message::user(prompt_content.clone()), history)
+        .into_future()
+        .await;
+
+    let mut full_content = String::new();
+    let mut stream_failed = false;
+    while let Some(item) = stream.next().await {
+        if cancel.is_cancelled() {
+            // 取消时保留已生成的部分内容：通过 llm:done 交给前端落库
+            if !full_content.is_empty() {
+                let _ = app.emit(
+                    "llm:done",
+                    LlmDone {
+                        request_id: request_id.clone(),
+                        content: full_content.clone(),
+                    },
+                );
+            }
             task_registry.unregister(&request_id).await;
             return Ok(());
         }
-    };
-
-    let mut full_content = String::new();
-    while let Some(event) = rx.recv().await {
-        match event {
-            crate::services::llm::LLMEvent::Delta(text) => {
-                full_content.push_str(&text);
+        match item {
+            Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(text))) => {
+                if text.text.is_empty() {
+                    continue;
+                }
+                full_content.push_str(&text.text);
                 let _ = app.emit(
                     "llm:delta",
                     LlmDelta {
                         request_id: request_id.clone(),
-                        content: text,
+                        content: text.text,
                     },
                 );
             }
-            crate::services::llm::LLMEvent::Usage(usage) => {
-                let _ = app.emit(
-                    "llm:usage",
-                    serde_json::json!({
-                        "request_id": request_id,
-                        "prompt_tokens": usage.prompt_tokens,
-                        "completion_tokens": usage.completion_tokens,
-                    }),
-                );
+            Ok(MultiTurnStreamItem::FinalResponse(res)) => {
+                let usage = res.usage();
+                if usage.has_values() {
+                    let _ = app.emit(
+                        "llm:usage",
+                        serde_json::json!({
+                            "request_id": request_id,
+                            "prompt_tokens": usage.input_tokens,
+                            "completion_tokens": usage.output_tokens,
+                        }),
+                    );
+                }
+            }
+            Ok(MultiTurnStreamItem::CompletionCall(call)) => {
+                if call.usage.has_values() {
+                    let _ = app.emit(
+                        "llm:usage",
+                        serde_json::json!({
+                            "request_id": request_id.clone(),
+                            "prompt_tokens": call.usage.input_tokens,
+                            "completion_tokens": call.usage.output_tokens,
+                        }),
+                    );
+                }
+            }
+            Ok(_) => {}
+            Err(e) => {
+                log::warn!("[llm_query] agent stream error request_id={} err={}", request_id, e);
+                stream_failed = true;
+                break;
             }
         }
-        if cancel.is_cancelled() {
-            task_registry.unregister(&request_id).await;
-            return Ok(());
+    }
+
+    // 流式失败且无任何内容 → 先走非流式降级重试，仍失败才显式报错，避免静默失败
+    if stream_failed && full_content.is_empty() && !cancel.is_cancelled() {
+        log::warn!("[llm_query] stream failed, falling back to non-streaming request_id={}", request_id);
+        match complete_fallback(&agent, Message::user(prompt_content), messages_to_history(&messages)).await {
+            Ok(content) => {
+                let content = content.trim().to_string();
+                if content.is_empty() {
+                    log::warn!("[llm_query] non-streaming fallback returned empty request_id={}", request_id);
+                    emit_command_error(&app, "llm:error", &request_id, "LLM 生成失败，请检查模型服务是否可用".into());
+                } else {
+                    // 一次性推送完整内容：先 delta（保证前端创建消息 DOM），再 done 收尾
+                    let _ = app.emit(
+                        "llm:delta",
+                        LlmDelta {
+                            request_id: request_id.clone(),
+                            content: content.clone(),
+                        },
+                    );
+                    let _ = app.emit(
+                        "llm:done",
+                        LlmDone {
+                            request_id: request_id.clone(),
+                            content,
+                        },
+                    );
+                }
+            }
+            Err(e) => {
+                log::warn!("[llm_query] non-streaming fallback failed request_id={} err={}", request_id, e);
+                emit_command_error(&app, "llm:error", &request_id, "LLM 生成失败，请检查模型服务是否可用".into());
+            }
         }
+        task_registry.unregister(&request_id).await;
+        return Ok(());
     }
 
     let _ = app.emit(

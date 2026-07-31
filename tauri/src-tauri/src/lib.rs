@@ -43,6 +43,8 @@ pub struct AppState {
     pub ai_history_stores: Mutex<HashMap<String, Arc<services::ai_history::AiHistoryStore>>>,
     /// LLM 连接配置（中央化，由前端保存后通过 kb_update_llm_config 更新）
     pub llm_config: RwLock<LlmConfig>,
+    /// LLM 客户端缓存（按配置指纹复用 reqwest 连接池；配置变化后自动重建）
+    pub llm_client_cache: tokio::sync::Mutex<Option<(String, services::llm::LLMClient)>>,
 }
 
 impl AppState {
@@ -129,6 +131,7 @@ pub fn run() {
             chat_stores: Mutex::new(HashMap::new()),
             ai_history_stores: Mutex::new(HashMap::new()),
             llm_config: RwLock::new(LlmConfig::default()),
+            llm_client_cache: tokio::sync::Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             commands::fs::read_dir_recursive,
