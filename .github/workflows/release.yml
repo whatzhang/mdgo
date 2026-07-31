@@ -5,8 +5,8 @@ name: Build & Release
 # ============================================================
 on:
   # ── 方案一：推送代码到主分支时触发构建（但不发布）──
-  push:
-    branches: [main, master]
+  # push:
+  #   branches: [main, master]
 
   # ── 方案二：打 Git Tag 时触发完整发布 ──
   #    例如：git tag v1.0.0 && git push origin v1.0.0
@@ -45,9 +45,9 @@ jobs:
           # ── macOS Intel（.dmg） ──
           # 注意：macos-13 是 GitHub 最后一个 Intel macOS runner
           # 若 GitHub 废弃此 runner，需迁移到其他方案或仅保留 ARM64 构建
-          - os: macos-13
-            target: x86_64-apple-darwin
-            bundle_name: mdgo-macos-intel
+          # - os: macos-13
+          #   target: x86_64-apple-darwin
+          #   bundle_name: mdgo-macos-intel
 
     runs-on: ${{ matrix.os }}
 
