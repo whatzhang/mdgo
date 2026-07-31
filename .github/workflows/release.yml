@@ -4,12 +4,13 @@ name: Build & Release
 # 触发器：什么时候自动运行
 # ============================================================
 on:
-  # ── 方案一：推送代码到主分支时触发构建（但不发布）──
-  # push:
-  #   branches: [main, master]
-
-  # ── 方案二：打 Git Tag 时触发完整发布 ──
+  # ── 方式一：推送 v* 标签时自动构建并发布 ──
   #    例如：git tag v1.0.0 && git push origin v1.0.0
+  push:
+    tags:
+      - 'v*'
+
+  # ── 方式二：在 GitHub 网页发布 Release 时触发 ──
   release:
     types: [published]
 
@@ -18,6 +19,14 @@ on:
 # ============================================================
 permissions:
   contents: write
+
+# ============================================================
+# 并发控制：同一 tag 触发的多个 run 只保留一个
+# 避免（push tag + release 事件双触发时）重复上传同名安装包冲突
+# ============================================================
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 
 # ============================================================
 # 任务
@@ -103,6 +112,14 @@ jobs:
           projectPath: tauri
           # 构建参数：指定目标架构
           args: --target ${{ matrix.target }}
+          # 上传目标 tag：push tag / release 事件时，ref_name 均等于对应 tag 名
+          # tauri-action 会找到该 tag 的 Release 并上传安装包；若不存在则自动创建
+          tagName: ${{ github.ref_name }}
+          # tag 推送且 Release 不存在时，用这个名字创建 Release
+          releaseName: ${{ github.ref_name }}
+          releaseBody: 'Mdgo ${{ github.ref_name }} 发布版本，安装包见下方 Assets 区。'
+          releaseDraft: false
+          prerelease: false
 
       # ── 8. 上传构建产物 ──
       #    无论是否为 Release，都会作为 Actions 的 Artifact 保存
@@ -114,15 +131,14 @@ jobs:
           path: |
             tauri/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
             tauri/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
-          # 如果某个文件没找到，不报错（比如 Windows 上没有 DMG）
-          if-no-files-found: ignore
+          if-no-files-found: warn
 
   # ──────────────────────────────────────────────────────────
   # 子任务：打包 AI 模型（bge-small-zh-v1.5）供用户下载
   # ──────────────────────────────────────────────────────────
   package-model:
-    # 仅在正式发布时运行
-    if: github.event_name == 'release'
+    # 仅在正式发布时运行（网页发布 Release 或推送 v* 标签）
+    if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/')
     # 等待所有应用构建完成后执行
     needs: [build]
     runs-on: ubuntu-latest
@@ -146,6 +162,8 @@ jobs:
       - name: 上传模型包到 Release
         uses: softprops/action-gh-release@v2
         with:
+          # 上传到与安装包相同的 Release（tag 名）
+          tag_name: ${{ github.ref_name }}
           # 要附加到 Release 的文件列表
           files: |
             tauri/src-tauri/models/bge-small-zh-v1.5.zip
