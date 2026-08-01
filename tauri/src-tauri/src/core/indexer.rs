@@ -402,6 +402,11 @@ impl Indexer {
             return Err("未能从文件中提取有效内容".into());
         }
 
+        // 全部数据写入完成后创建 IVF-PQ 向量索引（消除检索时的全表扫描；失败仅告警）
+        if let Err(e) = store.ensure_vector_index().await {
+            log::warn!("[indexer] 创建向量索引失败（检索将退化为全表扫描）: {}", e);
+        }
+
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -591,12 +596,27 @@ impl Indexer {
 
         // 候选池扩大到 top_k * 5，为 Reranker 提供更多候选
         let vec_k = (top_k * 5).max(15);
-        let vec_hits = store.search_vectors(query_vector, vec_k).await.unwrap_or_default();
+        let vec_hits = match store.search_vectors(query_vector, vec_k).await {
+            Ok(hits) => hits,
+            Err(e) => {
+                log::warn!("[indexer] 向量检索失败，本次查询退化为纯 BM25: {}", e);
+                Vec::new()
+            }
+        };
 
         let bm25_k = (top_k * 5).max(15);
         let bm25_hits = match self.get_bm25_index(dir_path).await {
-            Ok(idx) => idx.search(query, bm25_k).unwrap_or_default(),
-            Err(_) => Vec::new(),
+            Ok(idx) => match idx.search(query, bm25_k) {
+                Ok(hits) => hits,
+                Err(e) => {
+                    log::warn!("[indexer] BM25 检索失败，本次查询退化为纯向量: {}", e);
+                    Vec::new()
+                }
+            },
+            Err(e) => {
+                log::warn!("[indexer] 获取 BM25 索引失败: {}", e);
+                Vec::new()
+            }
         };
 
         log::debug!("[indexer] hybrid_search query='{}' vec_k={} vec_hits={} bm25_k={} bm25_hits={}",

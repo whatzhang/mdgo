@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use commands::llm::TaskRegistry;
 use commands::system::SystemMonitorState;
 use log::LevelFilter;
-use simplelog::{ColorChoice, Config, TerminalMode, TermLogger, WriteLogger};
+use simplelog::{ColorChoice, ConfigBuilder, TerminalMode, TermLogger, WriteLogger};
 use crate::core::{ConfigStore, Indexer, IndexerConfig, WatcherService};
 use std::sync::RwLock;
 
@@ -118,6 +118,12 @@ pub fn run() {
         }
     });
 
+    // ── 后台预热 Jieba 中文分词器 ──
+    // 词典加载约 1-2 秒，在启动时预热，避免首个 BM25 检索/索引请求被阻塞
+    std::thread::spawn(|| {
+        crate::core::db::bm25::warmup();
+    });
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -220,13 +226,25 @@ fn init_logging() {
     let log_path = log_dir.join("mdgo.log");
 
     // 创建文件日志（允许所有级别，由 log::set_max_level_filter 统一控制）
+    // Lance 向量库内部 I/O 的 Debug 日志（如读取文件批次细节）过于频繁，
+    // 按 target 前缀屏蔽，避免终端与日志文件被刷屏；
+    // 不影响应用层 [rag_query]/[llm_trace] 等自有日志。
+    let log_config = ConfigBuilder::new()
+        .add_filter_ignore_str("lance")
+        .add_filter_ignore_str("tantivy")
+        .add_filter_ignore_str("datafusion")
+        .build();
     let has_file_logger;
     let file_logger = match std::fs::create_dir_all(&log_dir)
         .and_then(|_| std::fs::File::create(&log_path))
     {
         Ok(file) => {
             has_file_logger = true;
-            Some(WriteLogger::new(LevelFilter::Trace, Config::default(), file))
+            Some(WriteLogger::new(
+                LevelFilter::Trace,
+                log_config.clone(),
+                file,
+            ))
         }
         Err(_) => {
             has_file_logger = false;
@@ -237,7 +255,7 @@ fn init_logging() {
     // 创建终端日志（允许所有级别，同上）
     let term_logger = TermLogger::new(
         LevelFilter::Trace,
-        Config::default(),
+        log_config,
         TerminalMode::Mixed,
         ColorChoice::Auto,
     );

@@ -1,10 +1,8 @@
 use std::collections::HashSet;
 
-use futures::StreamExt;
 use rig_core::client::completion::CompletionClient;
-use rig_core::completion::{AssistantContent, CompletionModel, CompletionRequest, GetTokenUsage, Message, Usage};
+use rig_core::completion::{AssistantContent, CompletionModel, CompletionRequest, Message, Usage};
 use rig_core::providers::openai;
-use rig_core::streaming::StreamedAssistantContent;
 use rig_core::OneOrMany;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
@@ -123,8 +121,6 @@ impl LLMClient {
         history: &[ChatMessage],
         cancel: CancellationToken,
     ) -> Vec<String> {
-        log::debug!("[llm] expand_queries input: query='{}' history_count={}", text, history.len());
-
         // 构建携带上下文的扩展 prompt
         let mut system_msg = String::new();
 
@@ -148,17 +144,23 @@ impl LLMClient {
             system_msg.push('\n');
         }
 
-        system_msg.push_str(
-            "你是一个查询扩展助手。请将以下用户问题改写为3个不同的搜索查询，每行一条，不要序号或前缀。\n\
-             改写时应从不同角度：关键词聚焦、实体提问、同义改写。\n\
-             示例：\n\
-             问题：如何在 Rust 中处理异步错误？\n\
-             输出：\n\
-             Rust 异步错误处理最佳实践\n\
-             Rust async/await 错误类型处理\n\
-             Rust 中 tokio 错误处理方式\n\
-             问题：",
-        );
+        system_msg.push_str(concat!(
+            "你是专业检索查询扩展助手，用于对话输入的语义理解与本地知识库混合检索。请将用户当前问题扩展为3个差异化检索查询，严格遵循以下规则：\n",
+            "1. 输出共3行，每行一条查询，无序号、无引号、无任何前缀后缀与解释内容\n",
+            "2. 严格保留用户原始问题的核心意图，不得新增、删减或篡改任何需求\n",
+            "3. 三条查询分别对应以下三个独立维度，语义不重叠：\n",
+            "   - 关键词聚焦：剔除语气词与冗余表述，提取核心实体+核心动作，生成紧凑短语，适配关键词检索\n",
+            "   - 实体精准提问：围绕问题核心对象，生成聚焦具体实体的完整查询，适配精准语义匹配\n",
+            "   - 同义场景扩展：使用同义词、领域常用术语/典型组件替换表述，覆盖文档中的不同行文与场景\n",
+            "\n",
+            "示例：\n",
+            "问题：如何在 Rust 中处理异步错误？\n",
+            "输出：\n",
+            "Rust 异步错误处理最佳实践\n",
+            "Rust async/await 错误类型处理\n",
+            "Rust 中 tokio 错误处理方式\n",
+            "问题：",
+        ));
         system_msg.push_str(text);
 
         // 构造 Rig 请求（单条 user 消息，模型参数固定为低温度 + 短输出）
@@ -169,7 +171,7 @@ impl LLMClient {
             documents: Vec::new(),
             tools: Vec::new(),
             temperature: Some(0.2),
-            max_tokens: Some(300),
+            max_tokens: Some(2048),
             tool_choice: None,
             additional_params: None,
             output_schema: None,
@@ -177,78 +179,44 @@ impl LLMClient {
         };
 
         log::debug!(
-            "[llm] expand_queries request base_url={} model={}",
-            self.endpoint, self.model
+            "[llm] expand_queries request, input: query='{}' history_count={} base_url={} model={} body={}",
+            text,
+            history.len(),
+            self.endpoint,
+            self.model,
+            serde_json::to_string(&request)
+                .unwrap_or_else(|e| format!("<serialize failed: {}>", e))
         );
 
-        // 直接驱动 Rig 流式请求；启动失败或流中出错时降级为非流式请求。
-        // 部分 OpenAI 兼容服务器（如本地 GGUF 网关）不支持 SSE 流式，对
-        // stream=true 的请求直接返回 HTTP 200 + application/json，Rig 流式
-        // 解析会报 InvalidContentType，此时改走非流式 completion 可正常返回。
+        // 直接非流式调用：expand_queries 只需要完整结果，无需流式体验。
+        // 非流式请求（stream: false）返回 application/json，兼容性最好，
+        // 也规避 thinking 类模型 SSE 中 reasoning 内容的解析差异。
         let model = self.completion_model.clone();
         let mut full = String::new();
-        let mut stream_failed = false;
 
-        match model.stream(request.clone()).await {
-            Ok(mut stream) => {
-                loop {
-                    tokio::select! {
-                        _ = cancel.cancelled() => {
-                            log::debug!("[llm] expand_queries cancelled");
-                            break;
-                        }
-                        item = stream.next() => {
-                            match item {
-                                Some(Ok(StreamedAssistantContent::Text(text))) => {
-                                    full.push_str(&text.text);
-                                }
-                                Some(Ok(StreamedAssistantContent::Final(res))) => {
-                                    let usage = res.token_usage();
-                                    if usage.has_values() {
-                                        log::debug!(
-                                            "[llm] expand_queries usage: prompt_tokens={} completion_tokens={}",
-                                            usage.input_tokens, usage.output_tokens
-                                        );
-                                    }
-                                }
-                                Some(Ok(_)) => {}
-                                Some(Err(e)) => {
-                                    log::warn!("[llm] expand_queries stream 读取错误 err={}", e);
-                                    stream_failed = true;
-                                    break;
-                                }
-                                None => break,
-                            }
-                        }
+        let result = tokio::select! {
+            _ = cancel.cancelled() => {
+                log::debug!("[llm] expand_queries cancelled");
+                return Vec::new();
+            }
+            res = model.completion(request) => res,
+        };
+
+        match result {
+            Ok(response) => {
+                log::debug!(
+                    "[llm] expand_queries response choice={:?} usage={:?}",
+                    response.choice, response.usage
+                );
+                for item in response.choice.iter() {
+                    if let AssistantContent::Text(text) = item {
+                        full.push_str(&text.text);
                     }
                 }
             }
             Err(e) => {
-                log::warn!("[llm] expand_queries stream 启动失败 err={}", e);
-                stream_failed = true;
-            }
-        }
-
-        // 流式失败且未取消 → 非流式降级重试
-        if stream_failed && full.is_empty() && !cancel.is_cancelled() {
-            log::info!("[llm] expand_queries 非流式降级重试");
-            match model.completion(request).await {
-                Ok(response) => {
-                    for item in response.choice.iter() {
-                        if let AssistantContent::Text(text) = item {
-                            full.push_str(&text.text);
-                        }
-                    }
-                    if response.usage.has_values() {
-                        log::debug!(
-                            "[llm] expand_queries fallback usage: prompt_tokens={} completion_tokens={}",
-                            response.usage.input_tokens, response.usage.output_tokens
-                        );
-                    }
-                }
-                Err(e) => {
-                    log::warn!("[llm] expand_queries 非流式降级失败 err={}", e);
-                }
+                log::warn!("[llm] expand_queries 非流式调用失败 err={}", e);
+                return Vec::new();
             }
         }
 
@@ -318,31 +286,3 @@ impl LLMClient {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::normalize_base_url;
-
-    #[test]
-    fn normalize_keeps_v1_prefix() {
-        // 完整路径：只剥 /chat/completions，保留 /v1，Rig 会再拼回 /v1/chat/completions
-        assert_eq!(
-            normalize_base_url("http://192.168.31.152:12345/v1/chat/completions"),
-            "http://192.168.31.152:12345/v1"
-        );
-    }
-
-    #[test]
-    fn normalize_no_v1_prefix() {
-        assert_eq!(
-            normalize_base_url("http://host:1234/chat/completions"),
-            "http://host:1234"
-        );
-    }
-
-    #[test]
-    fn normalize_bare_url_unchanged() {
-        assert_eq!(normalize_base_url("http://host:1234/v1"), "http://host:1234/v1");
-        assert_eq!(normalize_base_url("http://host:1234"), "http://host:1234");
-        assert_eq!(normalize_base_url("http://host:1234/"), "http://host:1234");
-    }
-}

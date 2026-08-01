@@ -447,7 +447,7 @@
             border: 1px solid var(--color-border, #d0d7de);
             border-radius: 0.375rem;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-            width: 6.5rem;
+            width: 6.8rem; 
             display: flex;
             flex-direction: column;
             z-index: 1000;
@@ -2175,6 +2175,7 @@
             transition: all 0.2s ease;
             z-index: 1000;
             width: auto;
+            font-family: var(--font-family);
         }
 
         @keyframes popIn {
@@ -2200,8 +2201,7 @@
             cursor: pointer;
             padding: 0.125rem 0.375rem;
             border-radius: 0.375rem;
-            font-size: 13px;
-            font-weight: 500;
+            font-size: 0.875rem;
             color: var(--color-text);
             display: inline-flex;
             align-items: center;
@@ -15690,7 +15690,7 @@
                                     </svg></div>
                                 <div class="stat-info">
                                     <div class="stat-value" id="kb-stat-unindexed">--</div>
-                                    <div class="stat-label">未索引的文件数</div>
+                                    <div class="stat-label">不支持索引文件数</div>
                                 </div>
                             </div>
                             <div class="stat-card">
@@ -15846,7 +15846,7 @@
                                     <div id="kb-ai-trend" style="height:7rem;"></div>
                                 </div>
                             </div>
-                            <div class="chart-card" style="margin-top:0.5rem;">
+                            <div class="chart-card">
                                 <div class="activity-column">
                                     <div class="chart-title">
                                         <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
@@ -16480,6 +16480,9 @@
             DOMPurify.setConfig({ ADD_ATTR: ['class'] });
         }
 
+        // 禁用 WebView 原生右键菜单（Windows/Linux 生效；macOS 部分原生菜单不受 JS 控制）。
+        document.addEventListener('contextmenu', (e) => e.preventDefault());
+
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', async () => {
             initDiffModel();
@@ -16603,7 +16606,7 @@
             } else if (type === 'fileGraph') {
                 await openFileGraph();
             } else if (type === 'noteGraph') {
-                await openNoteGraph(false);
+                await openNoteGraph();
             } else if (type === 'bookmarks') {
                 await toggleDashboardBookmarkView()
             } else if (type === 'dashboard') {
@@ -16670,8 +16673,10 @@
                 await dirCanvasDisplay(data.dirPathStr);
             } else if (type === 'openFileGraph') {
                 await openFileGraph(data.dirPathStr);
+            } else if (type === 'openNoteLinkGraph') {
+                await openNoteLinkGraph(data.relativePath);
             } else if (type === 'openFileType') {
-                openFileType(data.dirPathStr);
+               await openFileType(data.dirPathStr);
             } else if (type === 'restoreFile') {  //文件右键
                 await restoreFile(data.relativePath, data.fileSpan);
             } else if (type === 'deleteFile') {  //文件右键
@@ -19262,6 +19267,10 @@
                 dropdown.appendChild(_ddItem('🗂️ git记录', async (e) => {
                     e.stopPropagation();
                     await toggleFile('fileGitRecord', { relativePath: fileSpan.dataset.filePath });
+                }));
+                 dropdown.appendChild(_ddItem('🌐 Links图谱', async (e) => {
+                    e.stopPropagation();
+                    await toggleFile('openNoteLinkGraph', { relativePath: fileSpan.dataset.filePath });
                 }));
                 dropdown.appendChild(_ddItem('🔗 相对路径', async (e) => {
                     e.stopPropagation();
@@ -23568,6 +23577,7 @@
                 enterEditMode(false, text);
                 return;
             }
+            aiFabContainer.style.display = 'block';
             htmlCanBePng = true;
             setControlsState({ mdImageBtn: true });
             const htmlText = await replaceMediaUrl(text, true);
@@ -26649,6 +26659,34 @@ kanban-plugin: basic
             // final
             result.hasMarkdown = Object.values(result.features).some(Boolean);
             return result;
+        }
+        function buildLinkGraphData(tags, relativePath) {
+            if(!tags || tags.length === 0) return null;
+            const nodes = [];
+            const edges = [];
+            nodes.push({
+                id: 'root',
+                title: basename(relativePath),
+                path: relativePath,
+                ext: getExt(relativePath)
+            });
+            for(let i = 0; i < tags.length; i++){
+                const tag = tags[i];
+                nodes.push({
+                    id: i.toString(),
+                    title: basename(tag.alias || tag.target),
+                    path: tag.target,
+                    ext:  getExt(tag.target)
+                });
+                edges.push({
+                    target: 'root',
+                    source: i.toString(),
+                });
+            }
+            return {
+                nodes,
+                edges
+            };
         }
 
         function extractLinks(text) {
@@ -31880,23 +31918,13 @@ kanban-plugin: basic
          * @param {string} systemPrompt - 系统提示词
          * @param {object} [options]
          * @param {AbortSignal} [options.signal] - 中断信号
-         * @param {(fullContent: string) => void} [options.onDelta] - 流式中间结果回调（可选）
          * @returns {Promise<string>} AI 返回的完整文本
          */
-        async function callAIAPI(promptStr, systemPrompt, { signal, onDelta } = {}) {
+        async function callAIAPI(promptStr, systemPrompt, { signal } = {}) {
             const messages = [
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: promptStr }
             ];
-
-            // 尝试流式请求
-            try {
-                return await streamLlmChatCompletion(messages, { signal, onDelta });
-            } catch (streamErr) {
-                console.warn('流式请求失败，回退到非流式:', streamErr.message);
-            }
-
-            // 回退：非流式请求
             const response = await fetch(LOCAL_LLM_ENDPOINT, {
                 method: 'POST',
                 headers: {
@@ -31927,7 +31955,8 @@ kanban-plugin: basic
             const content = extractSSEContent(data)
                 || data.response
                 || data.output
-                || data.result;
+                || data.result
+                || data.choices?.[0]?.message?.reasoning_content;
             if (content) return content;
             console.error('未识别的 API 响应格式:', JSON.stringify(data));
             return '无法解析 API 响应，请检查 API 配置';
@@ -32125,6 +32154,89 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 showNotification(name + '操作失败！' + ((error && error.message) || error), 'error');
             }
         }
+        /**
+         * 健壮精细 HTML 清洗提取纯文本（浏览器环境）
+         * @param {string} html 原始HTML字符串
+         * @param {Object} [options] 配置项
+         * @param {boolean} [options.keepLineBreak=true] 是否保留段落换行
+         * @param {boolean} [options.removeHiddenEl=true] 是否移除页面隐藏元素文本
+         * @returns {string} 干净纯文本
+         */
+        function htmlToText(html, options = {}) {
+            const {
+                keepLineBreak = true,
+                removeHiddenEl = true
+            } = options;
+            // 空输入直接返回空
+            if (!html || typeof html !== 'string') return '';
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const body = doc.body;
+            // 1. 彻底移除不需要输出的节点列表
+            const removeTags = [
+                'script', 'style', 'noscript', 'iframe', 'svg',
+                'audio', 'video', 'canvas', 'template', 'head'
+            ];
+            removeTags.forEach(tag => {
+                body.querySelectorAll(tag).forEach(el => el.remove());
+            });
+            // 2. 删除所有 HTML 注释节点
+            const removeComments = (root) => {
+                const walker = document.createTreeWalker(
+                    root,
+                    NodeFilter.SHOW_COMMENT,
+                    null,
+                    false
+                );
+                let comment;
+                while ((comment = walker.nextNode())) {
+                    comment.remove();
+                }
+            };
+            removeComments(body);
+            // 3. 移除页面隐藏元素（display:none / hidden / visibility:hidden）
+            if (removeHiddenEl) {
+                const allElements = body.querySelectorAll('*');
+                allElements.forEach(el => {
+                    const style = getComputedStyle(el);
+                    const isHidden = el.hidden
+                        || style.display === 'none'
+                        || style.visibility === 'hidden';
+                    if (isHidden) el.remove();
+                });
+            }
+            // 4. 给块级/换行标签插入换行符，实现分段效果
+            if (keepLineBreak) {
+                const lineBreakTags = [
+                    'br', 'p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+                    'section', 'article', 'li', 'tr', 'blockquote'
+                ];
+                lineBreakTags.forEach(tag => {
+                    body.querySelectorAll(tag).forEach(el => {
+                        el.after(doc.createTextNode('\n'));
+                    });
+                });
+            }
+            // 5. 获取原始文本内容
+            let rawText = body.textContent || '';
+            // 6. 统一清理各类空白字符
+            rawText = rawText
+                // 1. &nbsp; 对应不间断空格替换为普通空格
+                .replace(/\u00A0/g, ' ')
+                // 2. 清除零宽空格、不可见特殊空白字符
+                .replace(/[\u200B-\u200D\uFEFF]/g, '')
+                // 3. 多个换行/制表符/空格统一处理
+                .replace(/[ \t]+/g, ' ');
+            if (keepLineBreak) {
+                // 保留换行：多行连续换行压缩为最多2个换行（区分段落）
+                rawText = rawText.replace(/\n{3,}/g, '\n\n');
+            } else {
+                // 不保留换行：所有换行替换成空格
+                rawText = rawText.replace(/\n+/g, ' ');
+            }
+            // 7. 首尾去空白，最终返回
+            return rawText.trim();
+        }
 
         async function handleAIAction(action) {
             const promptInput = document.getElementById('ai-prompt-input');
@@ -32161,7 +32273,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 fileName = currentFileName;
                 filePath = currentActiveItem ? currentActiveItem.dataset.filePath : '';
                 originalText = await getFileContent(currentFileHandle);
-                let content = originalText.length > LOCAL_LLM_CONTEXT_LENGTH ? originalText.substring(0, LOCAL_LLM_CONTEXT_LENGTH) : originalText;
+                let content = originalText;
+                if(getExt(fileName) === 'html'){
+                    content = htmlToText(originalText);
+                }
+                content = content.length > LOCAL_LLM_CONTEXT_LENGTH ? content.substring(0, LOCAL_LLM_CONTEXT_LENGTH) : content;
                 if (action === 'custom') {
                     promptStr = `请根据文件内容完成以下要求：${customPrompt}\n\n文件内容：${content}\n\n`;
                 } else if (PROMPTS[action]) {
@@ -39299,11 +39415,38 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             await switchToView(graphViewContainer, 'flex');
             await toggleGraphView(dirPath);
         }
+        async function openNoteLinkGraph(relativePath ) {
+            if(!relativePath) return;
+            await switchToView(graphViewContainer, 'flex');
+            graphMode = 'link';
+            const label = document.getElementById('graph-mode-toggle');
+            if (label) label.style.display = 'none';
+            const refreshBtn = document.getElementById('graph-refresh-btn');
+            if (refreshBtn) refreshBtn.style.display = 'none';
+
+            const handle = await getFileHandleByPath(relativePath);
+            if(!handle) return;
+            const content = await getFileContent(handle);
+            if(!content) return;
+            const tags = extractLinks(content);
+            if (!graphCanvas) initGraphCanvas();
+            loadGraphParams();
+            const data = await buildLinkGraphData(tags, relativePath);
+            if (data && data.nodes && data.nodes.length > 0) {
+                linkGraphCache = data;
+                processGraphData(data.nodes, data.edges);
+            } else {
+                await _doRefreshGraphData();
+            }
+        }
+
         async function openNoteGraph() {
             await switchToView(graphViewContainer, 'flex');
             graphMode = 'link';
             const label = document.getElementById('graph-mode-toggle');
             if (label) label.style.display = 'none';
+            const refreshBtn = document.getElementById('graph-refresh-btn');
+            if (refreshBtn) refreshBtn.style.display = 'flex';
             setGraphControlsDisabled(true);
             try {
                 if (!graphCanvas) initGraphCanvas();
@@ -39407,9 +39550,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             graphRootPath = dirPath;
             const label = document.getElementById('graph-mode-toggle');
             if (label) label.style.display = 'none';
-            setGraphControlsDisabled(true);
             const checkbox = document.getElementById('graph-mode-checkbox');
             if (checkbox) checkbox.checked = false;
+            const refreshBtn = document.getElementById('graph-refresh-btn');
+            if (refreshBtn) refreshBtn.style.display = 'flex';
+            setGraphControlsDisabled(true);
             try {
                 if (!graphCanvas) initGraphCanvas();
                 loadGraphParams();
@@ -39649,10 +39794,20 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const filterPath = graphParams.filterPath;
             const showIsolated = graphParams.showIsolated;
             const edgeArray = edges || [];
-            // 第一次遍历前，确保所有 id 为数字类型
+            // 统一节点 id 与边端点为字符串：链接图使用字符串 id（'root'/'0'），
+            // 文件图使用数字 id。若不统一，keepFlags/has 因类型不匹配全部 miss，
+            // 导致所有连线被过滤（表现为图上没有任何连线）
             for (let i = 0; i < nodes.length; i++) {
-                if (typeof nodes[i].id !== 'number') {
-                    nodes[i].id = Number(nodes[i].id);
+                if (typeof nodes[i].id !== 'string') {
+                    nodes[i].id = String(nodes[i].id);
+                }
+            }
+            for (let i = 0; i < edgeArray.length; i++) {
+                if (typeof edgeArray[i].source !== 'string') {
+                    edgeArray[i].source = String(edgeArray[i].source);
+                }
+                if (typeof edgeArray[i].target !== 'string') {
+                    edgeArray[i].target = String(edgeArray[i].target);
                 }
             }
             const degree = new Map();
@@ -47878,7 +48033,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                     GRAPHQL_ENDPOINT = graphqlVal;
                     NGINX_CONF_PATH = document.getElementById(inputId('nginx')).value.trim();
-                    LOCAL_LLM_ENDPOINT = llmEndpointVal;
+                    LOCAL_LLM_ENDPOINT = normalizeLlmEndpoint(llmEndpointVal);
                     LOCAL_LLM_TOKEN = document.getElementById(inputId('llmToken')).value.trim();
                     LOCAL_LLM_MODEL = document.getElementById(inputId('llmModel')).value.trim();
                     LOCAL_LLM_CONTEXT_LENGTH = contextLength;
@@ -47955,7 +48110,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 //赋值设置
                 GRAPHQL_ENDPOINT = setting.graphqlEndpoint;
                 NGINX_CONF_PATH = setting.nginxConfPath;
-                LOCAL_LLM_ENDPOINT = setting.localLlmEndpoint;
+                LOCAL_LLM_ENDPOINT = normalizeLlmEndpoint(setting.localLlmEndpoint);
                 LOCAL_LLM_TOKEN = setting.localLlmToken;
                 LOCAL_LLM_MODEL = setting.localLlmModel;
                 LOCAL_LLM_CONTEXT_LENGTH = setting.localLlmContextLength;
@@ -48906,73 +49061,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         /**
-         * 公共 SSE 流式 LLM 请求函数
-         *
-         * 封装 fetch + SSE 读取 + 多格式 delta 解析。
-         *
-         * @param {object[]} messages - 发送给 LLM 的消息数组
-         * @param {object} [options]
-         * @param {AbortSignal} [options.signal] - 中断信号
-         * @param {(fullContent: string) => void} [options.onDelta] - 每轮 delta 更新后回调（含完整内容）
-         * @param {(usage: object) => void} [options.onUsage] - 收到 usage 信息时回调
-         * @returns {Promise<string>} 完整生成内容
-         */
-        async function streamLlmChatCompletion(messages, { signal, onDelta, onUsage, temperature, max_tokens } = {}) {
-            const response = await fetch(LOCAL_LLM_ENDPOINT, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': LOCAL_LLM_TOKEN ? 'Bearer ' + LOCAL_LLM_TOKEN : '',
-                },
-                body: JSON.stringify({
-                    model: LOCAL_LLM_MODEL,
-                    messages: messages,
-                    stream: true,
-                    max_tokens: max_tokens || LOCAL_LLM_MAX_TOKENS,
-                    temperature: temperature !== undefined ? temperature : undefined,
-                }),
-                signal,
-            });
-            if (!response.ok) throw new Error('HTTP ' + response.status + ': ' + response.statusText);
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let fullContent = '';
-            let buffer = '';
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                buffer += decoder.decode(value, { stream: true });
-
-                // 按行分割处理，保留不完整的最后一行到 buffer
-                const lines = buffer.split('\n');
-                buffer = lines.pop() || ''; // 不完整的行留在 buffer
-
-                for (const rawLine of lines) {
-                    const line = rawLine.trim();
-                    if (!line.startsWith('data: ')) continue;
-                    const data = line.slice(6).trim();
-                    if (!data || data === '[DONE]') continue;
-
-                    try {
-                        const parsed = JSON.parse(data);
-                        if (parsed.usage && onUsage) {
-                            onUsage(parsed.usage);
-                        }
-                        const delta = extractSSEContent(parsed);
-                        if (delta) {
-                            fullContent += delta;
-                            if (onDelta) onDelta(fullContent);
-                        }
-                    } catch { /* skip malformed JSON lines */ }
-                }
-            }
-
-            return fullContent;
-        }
-
-        /**
          * 保存当前正在流式生成的部分消息到数据库
          * 仅在 chatStreaming 为 true 且有部分内容时生效
          * 调用后 chatStreaming 置为 false，已生成的内容会被持久化
@@ -49534,7 +49622,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         function getMessageAssistant() {
             const div = document.createElement('div');
             div.className = 'chat-message assistant';
-            div.appendChild(createMessageHeader('小助手', () => div._body ? div._body.textContent : '', () => _chatStreamingSources));
+            // 复制时优先取原始 Markdown 源码（流式过程中实时更新到 div._rawContent）
+            div.appendChild(createMessageHeader('小助手', () => div._rawContent || (div._body ? div._body.textContent : ''), () => _chatStreamingSources));
             const body = document.createElement('div');
             body.className = 'chat-message-body';
             div.appendChild(body);
@@ -49683,7 +49772,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         renderChatSessionList();
                         window.__TAURI__.core.invoke('chat_session_rename', {
                             dirPath: currentRootPath,
-                            sessionId: currentSessionId,
+                            id: currentSessionId,
                             title: text,
                         }).catch(e => console.warn('重命名会话失败:', e));
                     } else {
@@ -49750,6 +49839,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             }
                         };
                     }
+                    if (_chatStreamingDiv) {
+                        _chatStreamingDiv._rawContent = _chatStreamingFullContent;
+                    }
                     if (_chatStreamingDiv && _chatStreamingDiv._body) {
                         _chatStreamingDiv._body.innerHTML = `<div class="markdown-body" style="zoom: 1;background: transparent;">${renderChatMarkdown(_chatStreamingFullContent)}</div>`;
                     }
@@ -49763,7 +49855,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     if (e.payload.request_id !== requestId) return;
                     llmDone = true;
                     const fullContent = e.payload.content;
-                    // 流式结束后对代码块进行语法高亮
+                    // 流式结束后对代码块进行语法高亮（复制按钮读取原始 Markdown）
+                    if (_chatStreamingDiv) {
+                        _chatStreamingDiv._rawContent = fullContent;
+                    }
                     if (_chatStreamingDiv && _chatStreamingDiv._body) {
                         await highlightChatCodeBlocks(_chatStreamingDiv._body);
                     }
@@ -49815,7 +49910,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                     if (msg) {
                                         window.__TAURI__.core.invoke('chat_session_rename', {
                                             dirPath: currentRootPath,
-                                            sessionId: currentSessionId,
+                                            id: currentSessionId,
                                             title: msg,
                                         }).then(() => {
                                             cur.title = msg;
@@ -50347,6 +50442,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             }
                         };
                     }
+                    if (_chatStreamingDiv) {
+                        _chatStreamingDiv._rawContent = _chatStreamingFullContent;
+                    }
                     if (_chatStreamingDiv && _chatStreamingDiv._body) {
                         _chatStreamingDiv._body.innerHTML = `<div class="markdown-body" style="zoom: 1;background: transparent;">${renderChatMarkdown(_chatStreamingFullContent)}</div>`;
                     }
@@ -50378,7 +50476,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     if (promptTokens > 0) {
                         updateContextUsage(promptTokens, LOCAL_LLM_CONTEXT_LENGTH || 10000);
                     }
-                    // 流式结束后对代码块进行语法高亮
+                    // 流式结束后对代码块进行语法高亮（复制按钮读取原始 Markdown）
+                    if (_chatStreamingDiv) {
+                        _chatStreamingDiv._rawContent = fullContent;
+                    }
                     if (_chatStreamingDiv && _chatStreamingDiv._body) {
                         await highlightChatCodeBlocks(_chatStreamingDiv._body);
                     }
@@ -50387,6 +50488,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     if (!_chatStreamingDiv && fullContent) {
                         const container = document.getElementById('chat-messages');
                         const div = getMessageAssistant();
+                        div._rawContent = fullContent;
                         div._body.innerHTML = `<div class="markdown-body" style="zoom: 1;background: transparent;">${renderChatMarkdown(fullContent)}</div>`;
                         container.appendChild(div);
                         _chatStreamingDiv = div;
@@ -50471,7 +50573,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                 if (msg) {
                                     window.__TAURI__.core.invoke('chat_session_rename', {
                                         dirPath: currentRootPath,
-                                        sessionId: currentSessionId,
+                                        id: currentSessionId,
                                         title: msg,
                                     }).then(() => {
                                         cur.title = msg;
@@ -51102,5 +51204,22 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (level) setLogLevel(level.trim());
             }
         });
+
+         /**
+         * 规范化 LLM API 地址：自动补全 OpenAI 兼容路径尾缀 /chat/completions。
+         * - 已含 /chat/completions → 原样返回
+         * - 以 /v1 结尾（仅版本前缀）→ 补 /chat/completions
+         * - 其余（裸地址/自定义路径）→ 补 /v1/chat/completions
+         *   （LM Studio 网关拒绝缺 /v1 的 /chat/completions 路径，故必须保留版本前缀）
+         */
+        function normalizeLlmEndpoint(url) {
+            if (!url) return '';
+            let u = String(url).trim();
+            if (!u) return u;
+            u = u.replace(/\/+$/, '');
+            if (/\/chat\/completions$/i.test(u)) return u;
+            if (/\/v1$/i.test(u)) return u + '/chat/completions';
+            return u + '/v1/chat/completions';
+        }
     </script>
 </body>

@@ -216,7 +216,24 @@ fn run_batch(
 
 /// 初始化全局缓存：检查模型文件完整性，缓存 tokenizer.json 字节，创建 Session。
 /// 幂等安全，重复调用无副作用。
+///
+/// 并发安全：多个线程（如多路并行检索）同时首次调用时，通过双检锁保证
+/// 只执行一次完整初始化，其余调用等待后复用已缓存的 Session。
 pub(crate) fn ensure_initialized(models_dir: &Path) -> Result<(), String> {
+    // 快速路径（无锁）：已初始化直接返回，避免每次调用抢锁
+    if GLOBAL_SESSION.get().is_some() && MODEL_DIR.get().is_some() {
+        return Ok(());
+    }
+
+    // 慢路径（加锁）：并发首次调用时仅首个线程完整初始化
+    static INIT_LOCK: Mutex<()> = Mutex::new(());
+    let _guard = INIT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+    // 双检锁：获取锁后可能已被其他线程初始化，直接复用
+    if GLOBAL_SESSION.get().is_some() && MODEL_DIR.get().is_some() {
+        return Ok(());
+    }
+
     if let Some(cached) = MODEL_DIR.get() {
         if cached != &models_dir.to_string_lossy().as_ref() {
             log::warn!(
@@ -520,11 +537,20 @@ static RERANKER_TOKENIZER_JSON: OnceLock<Vec<u8>> = OnceLock::new();
 /// - config.json
 /// 如果 reranker 目录不存在，返回错误（调用方降级为不使用 reranker）。
 fn ensure_reranker_initialized(models_dir: &Path) -> Result<(), String> {
+    // 快速路径（无锁）：已初始化直接返回
+    if RERANKER_SESSION.get().is_some() && RERANKER_TOKENIZER_JSON.get().is_some() {
+        return Ok(());
+    }
+
     let reranker_dir = models_dir.join("reranker");
     if !reranker_dir.exists() {
         return Err("Reranker 模型目录不存在，跳过重排序".to_string());
     }
-    if RERANKER_SESSION.get().is_some() {
+
+    // 双检锁：并发首次调用时仅首个线程完整初始化，其余复用
+    static INIT_LOCK: Mutex<()> = Mutex::new(());
+    let _guard = INIT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    if RERANKER_SESSION.get().is_some() && RERANKER_TOKENIZER_JSON.get().is_some() {
         return Ok(());
     }
 

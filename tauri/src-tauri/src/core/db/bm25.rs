@@ -16,9 +16,21 @@ use super::lance::{DocumentChunk, SearchHit};
 ///
 /// 使用 jieba-rs 进行真正的词法切分，"机器学习" → ["机器", "学习"] 而非 ["机器", "器学", "学习"]。
 /// 英文/数字保持原有按字母数字 token 的处理。
-/// Jieba 实例通过 OnceLock 全局缓存，首次使用时加载词典。
+/// Jieba 实例通过 OnceLock 全局缓存，首次使用时加载词典（约 1-2 秒），
+/// 应用启动时通过 [warmup] 后台预热，避免阻塞首个检索/索引请求。
 #[derive(Clone)]
 struct JiebaTokenizer;
+
+/// 全局 Jieba 实例（词典加载成本高，仅初始化一次）
+static JIEBA: std::sync::OnceLock<jieba_rs::Jieba> = std::sync::OnceLock::new();
+
+/// 预热 Jieba 中文分词器（线程安全幂等，可在应用启动时后台调用）。
+pub fn warmup() {
+    let _ = JIEBA.get_or_init(|| {
+        log::info!("[bm25] 初始化 Jieba 中文分词...");
+        jieba_rs::Jieba::new()
+    });
+}
 
 struct JiebaTokenStream {
     tokens: Vec<(String, usize, usize)>, // (text, offset_from, offset_to)
@@ -30,7 +42,6 @@ impl Tokenizer for JiebaTokenizer {
     type TokenStream<'a> = JiebaTokenStream;
 
     fn token_stream<'a>(&mut self, text: &'a str) -> JiebaTokenStream {
-        static JIEBA: std::sync::OnceLock<jieba_rs::Jieba> = std::sync::OnceLock::new();
         let jieba = JIEBA.get_or_init(|| {
             log::info!("[bm25] 初始化 Jieba 中文分词...");
             jieba_rs::Jieba::new()

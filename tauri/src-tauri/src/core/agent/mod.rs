@@ -8,11 +8,55 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use rig_agent::agent::hook::{
+    AgentHook, CompletionCall, CompletionCallAction, CompletionResponse, HookContext, ObservationAction,
+};
 use rig_agent::agent::{Agent, AgentBuilder};
 use rig_agent::tool::{DynamicTool, ToolContext, ToolExecutionError, ToolOutput};
 use rig_core::providers::openai;
 
 use crate::core::{Indexer, SearchHit, call_embedding_query};
+
+/// 调试用 Hook：在每次 LLM API 调用边界打印请求消息与响应体内容。
+///
+/// 挂载到 AgentBuilder 后，无论流式（stream）还是非流式（completion）路径，
+/// 都能在模型调用前拿到完整请求消息列表（preamble + history + prompt），
+/// 在响应后拿到规范化响应内容与 token 用量。
+#[derive(Clone, Debug)]
+pub struct LlmTraceHook;
+
+impl AgentHook for LlmTraceHook {
+    async fn on_completion_call(
+        &self,
+        _ctx: &HookContext,
+        event: CompletionCall<'_>,
+    ) -> CompletionCallAction {
+        let mut messages = event.history.to_vec();
+        messages.push(event.prompt.clone());
+        log::debug!(
+            "[llm_trace] completion_call turn={} messages={}",
+            event.turn,
+            serde_json::to_string(&messages)
+                .unwrap_or_else(|e| format!("<serialize failed: {}>", e))
+        );
+        CompletionCallAction::Continue
+    }
+
+    async fn on_completion_response(
+        &self,
+        _ctx: &HookContext,
+        event: CompletionResponse<'_>,
+    ) -> ObservationAction {
+        log::debug!(
+            "[llm_trace] completion_response content={} usage={}",
+            serde_json::to_string(event.content)
+                .unwrap_or_else(|e| format!("<serialize failed: {}>", e)),
+            serde_json::to_string(&event.usage)
+                .unwrap_or_else(|e| format!("<serialize failed: {}>", e))
+        );
+        ObservationAction::Continue
+    }
+}
 
 /// RRF 风格 rank 归一化分数（用于跨查询公平比较）
 pub fn rank_to_score(rank: usize) -> f32 {
@@ -206,10 +250,11 @@ pub fn build_rag_agent(
         .preamble(&preamble)
         .dynamic_tool(build_kb_search_tool(search_config))
         .default_max_turns(4)
+        .add_hook(LlmTraceHook)
         .build()
 }
 
 /// 构建无工具纯对话 Agent
 pub fn build_chat_agent(model: openai::CompletionModel) -> Agent<openai::CompletionModel> {
-    AgentBuilder::new(model).build()
+    AgentBuilder::new(model).add_hook(LlmTraceHook).build()
 }

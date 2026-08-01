@@ -3,6 +3,8 @@ use arrow_array::{
     types::Float32Type,
 };
 use arrow_schema::{DataType, Field, Schema};
+use lancedb::index::vector::IvfSqIndexBuilder;
+use lancedb::index::Index as LanceIndex;
 use lancedb::query::{ExecutableQuery, QueryBase};
 use lancedb::DistanceType;
 use serde::{Deserialize, Serialize};
@@ -109,6 +111,10 @@ impl LanceStore {
             let _ = Self::migrate_add_column(&table, "sentence_window", DataType::Utf8).await;
             let _ = Self::migrate_add_column(&table, "symbol_name", DataType::Utf8).await;
             let _ = Self::migrate_add_column(&table, "symbol_kind", DataType::Utf8).await;
+            // 兼容旧表：补建向量索引（已有索引则瞬间跳过；构建失败不阻断，仅影响检索性能）
+            if let Err(e) = self.ensure_vector_index().await {
+                log::warn!("[lance] 确保向量索引失败（检索将退化为全表扫描）: {}", e);
+            }
             return Ok(());
         }
 
@@ -146,6 +152,56 @@ impl LanceStore {
         .map_err(|_| "LanceDB 创建表超时 (30s)".to_string())?
         .map_err(|e| format!("LanceDB 创建表失败: {}", e))?;
 
+        Ok(())
+    }
+
+    /// 确保向量表上存在向量索引（消除全表暴力扫描，大幅降低检索延迟）。
+    ///
+    /// - 已存在向量索引 → 直接返回（Lance 会自动维护后续增量数据）
+    /// - 表为空 → 跳过（全量重建时由 index_all 写入完成后再次调用）
+    /// - 构建失败仅记日志，不阻断查询（索引只影响性能，不影响正确性）
+    pub async fn ensure_vector_index(&self) -> Result<(), String> {
+        let table = self.open_table().await?;
+
+        let indices = table
+            .list_indices()
+            .await
+            .map_err(|e| format!("读取向量索引列表失败: {}", e))?;
+        if indices
+            .iter()
+            .any(|idx| idx.columns.iter().any(|c| c == "vector"))
+        {
+            return Ok(());
+        }
+
+        let row_count = table
+            .count_rows(None)
+            .await
+            .map_err(|e| format!("读取向量表行数失败: {}", e))?;
+        if row_count == 0 {
+            log::debug!("[lance] 向量表为空，跳过索引创建");
+            return Ok(());
+        }
+
+        // 距离类型必须与检索时一致（Cosine），否则搜索结果不准确。
+        // 索引选型与训练参数（36k 行实测）：
+        // - IVF-PQ 需做 32 个子向量的 kmeans 训练，512 维下超 10 分钟无法完成 → 弃用
+        // - IVF-SQ 仅做 IVF 分区 kmeans + 逐维 min/max 标量化，训练快 5-10 倍，
+        //   且 SQ 压缩率（1 字节/维）低于 PQ（32 字节/向量），召回率更高
+        // - sample_rate=128、max_iterations=20：削减 kmeans 训练量，召回损失可忽略
+        let builder = IvfSqIndexBuilder::default()
+            .distance_type(DistanceType::Cosine)
+            .sample_rate(128)
+            .max_iterations(20);
+        log::info!("[lance] 开始创建 IVF-SQ 向量索引（{} 行）...", row_count);
+        tokio::time::timeout(
+            Duration::from_secs(1800),
+            table.create_index(&["vector"], LanceIndex::IvfSq(builder)).execute(),
+        )
+        .await
+        .map_err(|_| "创建向量索引超时 (1800s)，训练任务可能仍在后台继续，下次启动将自动跳过已建索引".to_string())?
+        .map_err(|e| format!("创建向量索引失败: {}", e))?;
+        log::info!("[lance] IVF-SQ 向量索引创建完成");
         Ok(())
     }
 

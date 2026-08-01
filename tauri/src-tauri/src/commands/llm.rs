@@ -367,6 +367,13 @@ pub async fn kb_rag_query(
     log::info!("[rag_query] Stage3: aggregation start request_id={}", request_id);
     let selected: Vec<(SearchHit, f32)> = aggregate_hits(all_hits);
     log::info!("[rag_query] Stage3: aggregation done request_id={} selected_chunks={}", request_id, selected.len());
+    log::debug!(
+        "[rag_query] Stage3: selected docs={:?}",
+        selected
+            .iter()
+            .map(|(hit, score)| format!("{}:{:.3}", hit.doc_name, score))
+            .collect::<Vec<_>>()
+    );
 
     if selected.is_empty() {
         log::warn!("[rag_query] Stage3: no docs passed threshold, aborting request_id={}", request_id);
@@ -405,7 +412,11 @@ pub async fn kb_rag_query(
         context_parts.push(text.to_string());
     }
     let context = context_parts.join("\n");
-    log::debug!("[rag_query] Stage4: context built char_len={}", context.len());
+    log::debug!(
+        "[rag_query] Stage4: context built char_len={} preview={:?}",
+        context.len(),
+        context
+    );
 
     // 构建引用来源：按 doc_name 去重，同一文档只保留最高分条目，
     // 但合并所有 chunks 的文本（去重文本内容），确保来源完备不冗余。
@@ -514,6 +525,10 @@ pub async fn kb_rag_query(
             return Ok(());
         }
         match item {
+            Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::ToolCall { tool_call, .. })) => {
+                log::debug!("[rag_query] Stage4: model tool call name={} arguments={}",
+                    tool_call.function.name, tool_call.function.arguments);
+            }
             Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(text))) => {
                 if text.text.is_empty() {
                     continue;
@@ -685,6 +700,10 @@ pub async fn kb_llm_query(
             return Ok(());
         }
         match item {
+            Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::ToolCall { tool_call, .. })) => {
+                log::debug!("[llm_query] agent tool call name={} arguments={}",
+                    tool_call.function.name, tool_call.function.arguments);
+            }
             Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(text))) => {
                 if text.text.is_empty() {
                     continue;
