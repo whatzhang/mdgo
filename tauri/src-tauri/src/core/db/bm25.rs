@@ -75,13 +75,10 @@ fn segment_text(text: &str, jieba: &jieba_rs::Jieba) -> Vec<(String, usize, usiz
                 if word.trim().is_empty() {
                     continue;
                 }
-                // 通过指针算术计算 word 在原始文本中的字节偏移
-                // word 借用自 cjk_text，直接做指针差即可
-                let word_start = word.as_ptr() as usize;
-                let cjk_start = cjk_text.as_ptr() as usize;
-                let rel_offset = word_start.wrapping_sub(cjk_start);
-                let offset_from = cjk_base_offset + rel_offset;
-                let offset_to = offset_from + word.len();
+                // 使用 jieba 返回的字节偏移（byte_start/byte_end 相对 cjk_text），
+                // 叠加 CJK 段在原始文本中的起始偏移，避免指针算术（空词时可能产生无效偏移）
+                let offset_from = cjk_base_offset + token.byte_start;
+                let offset_to = cjk_base_offset + token.byte_end;
                 results.push((word.to_string(), offset_from, offset_to));
             }
             continue;
@@ -259,7 +256,23 @@ impl Bm25Index {
         if chunks.is_empty() {
             return Ok(());
         }
+        // 写入前先释放旧 reader 的 mmap 句柄，避免 Windows 下 commit 阶段删除
+        // 旧 segment 文件时被占用；commit 偶发失败（文件锁瞬时冲突）时重试一次
+        self.invalidate_reader();
+        match self.try_add_documents(chunks) {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                log::warn!("[bm25] 提交失败，释放句柄后重试: {}", e);
+                self.invalidate_reader();
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                self.try_add_documents(chunks)
+                    .map_err(|e2| format!("BM25 提交失败(重试后仍失败): {}", e2))
+            }
+        }
+    }
 
+    /// 单次写入+提交（失败由 add_documents 决定是否重试）
+    fn try_add_documents(&self, chunks: &[DocumentChunk]) -> Result<(), String> {
         let index = self.open_index()?;
         let schema = Self::schema();
         let doc_id_field = schema.get_field("doc_id").unwrap();
@@ -384,7 +397,26 @@ impl Bm25Index {
     }
 
     /// 删除指定文档的所有块（解决 C3：通过 doc_name 精确删除）
-    pub fn delete_document(&self, doc_name: &str) -> Result<(), String> {
+    ///
+    /// 返回实际删除的文档（chunk）数，调用方可据此判断是否真的删除了数据，
+    /// 避免对从未索引的文档误更新元数据。
+    pub fn delete_document(&self, doc_name: &str) -> Result<usize, String> {
+        // 与 add_documents 相同：先释放 reader 句柄，commit 失败重试一次
+        self.invalidate_reader();
+        match self.try_delete_document(doc_name) {
+            Ok(n) => Ok(n),
+            Err(e) => {
+                log::warn!("[bm25] 删除提交失败，释放句柄后重试: {}", e);
+                self.invalidate_reader();
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                self.try_delete_document(doc_name)
+                    .map_err(|e2| format!("BM25 提交删除失败(重试后仍失败): {}", e2))
+            }
+        }
+    }
+
+    /// 单次删除+提交（失败由 delete_document 决定是否重试）
+    fn try_delete_document(&self, doc_name: &str) -> Result<usize, String> {
         let index = self.open_index()?;
         let schema = Self::schema();
         let doc_name_field = schema.get_field("doc_name").unwrap();
@@ -395,8 +427,7 @@ impl Bm25Index {
 
         // Tantivy 使用 term 删除，返回删除的文档数
         let term = tantivy::Term::from_field_text(doc_name_field, doc_name);
-        let deleted_count = writer
-            .delete_term(term);
+        let deleted_count = writer.delete_term(term);
         log::debug!("[bm25] 删除文档 '{}': 删除了 {} 条", doc_name, deleted_count);
 
         writer
@@ -404,13 +435,15 @@ impl Bm25Index {
             .map_err(|e| format!("BM25 提交删除失败: {}", e))?;
 
         self.invalidate_reader();
-        Ok(())
+        Ok(deleted_count as usize)
     }
 
     /// 清空索引
     ///
     /// 直接删除整个目录再重建，比逐文件删除快得多。
     pub fn clear(&self) -> Result<(), String> {
+        // 先释放 reader 的 mmap 句柄，避免 Windows 下 remove_dir_all 删除被占用文件
+        self.invalidate_reader();
         let path = Path::new(&self.index_path);
         if path.exists() {
             fs::remove_dir_all(path).map_err(|e| format!("删除 BM25 目录失败: {}", e))?;

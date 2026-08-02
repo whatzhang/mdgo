@@ -13,6 +13,6 @@ pub use chat_types::{ChatMessage, ChatMessageSource, ChatSession, ChatSessionSea
 pub use config::{ConfigStore, IndexerConfig};
 pub use db::lance::SearchHit;
 pub use db::utils::{call_embedding_query, KbProgress};
-pub use indexer::Indexer;
+pub use indexer::{Indexer, RetrievalIntent, route_intent};
 pub use types::{KbIndexResult, KbStatus};
 pub use watcher::WatcherService;

@@ -171,7 +171,7 @@ impl LLMClient {
             documents: Vec::new(),
             tools: Vec::new(),
             temperature: Some(0.2),
-            max_tokens: Some(2048),
+            max_tokens: Some(1024),
             tool_choice: None,
             additional_params: None,
             output_schema: None,

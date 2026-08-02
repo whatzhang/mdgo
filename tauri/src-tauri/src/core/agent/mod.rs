@@ -15,7 +15,10 @@ use rig_agent::agent::{Agent, AgentBuilder};
 use rig_agent::tool::{DynamicTool, ToolContext, ToolExecutionError, ToolOutput};
 use rig_core::providers::openai;
 
-use crate::core::{Indexer, SearchHit, call_embedding_query};
+use crate::core::{Indexer, SearchHit, call_embedding_query, route_intent};
+
+/// 内置工具集：文件只读、目录列举、Git 状态查询（含工具调用轨迹总线）
+pub mod tools;
 
 /// 调试用 Hook：在每次 LLM API 调用边界打印请求消息与响应体内容。
 ///
@@ -58,13 +61,12 @@ impl AgentHook for LlmTraceHook {
     }
 }
 
-/// RRF 风格 rank 归一化分数（用于跨查询公平比较）
-pub fn rank_to_score(rank: usize) -> f32 {
-    1.0 / (rank as f32 + 60.0)
-}
-
 /// kb_search 工具允许的最大片段数（防止模型传入超大 top_k 触发全量检索/重排）
 const MAX_TOP_K: u32 = 20;
+
+/// 聚合后送入模型上下文的总字符上限（约 3K token，避免超出模型窗口）。
+/// kb_search 工具与 RAG 主链路共用此上限（单一来源）。
+pub(crate) const MAX_CONTEXT_CHARS: usize = 12_000;
 
 /// kb_search 工具的运行参数
 #[derive(Clone)]
@@ -75,6 +77,18 @@ pub struct KbSearchConfig {
     pub indexer: Arc<Indexer>,
     /// 默认返回的片段数量（模型未指定 top_k 时使用）
     pub default_top_k: u32,
+    /// 当前请求 ID（用于工具调用轨迹的事件关联）
+    pub request_id: String,
+    /// 目录黑名单（gitignore 语法，供 list_files/walk_dir 过滤，与索引/监视逻辑一致）
+    pub dir_blacklist: Vec<String>,
+    /// 文件黑名单（gitignore 语法，供 list_files/walk_dir 过滤，与索引/监视逻辑一致）
+    pub file_blacklist: Vec<String>,
+    /// 聚合绝对阈值（融合分数低于此值的命中不进入上下文）
+    pub min_score: f32,
+    /// 送入上下文的最大文档数
+    pub max_context_docs: usize,
+    /// 单文档最多保留的 chunk 数
+    pub max_chunks_per_doc: usize,
 }
 
 /// 执行一次完整检索：嵌入 → 混合检索 → 文档级聚合 → 生成模型可读文本。
@@ -92,30 +106,26 @@ pub async fn kb_search(cfg: &KbSearchConfig, query: &str, top_k: u32) -> Result<
     .next()
     .ok_or_else(|| "生成查询向量失败".to_string())?;
 
-    let hits = cfg.indexer.hybrid_search(&cfg.dir_path, &embedding, query, top_k).await?;
+    let intent = route_intent(query);
+    let hits = cfg
+        .indexer
+        .hybrid_search(&cfg.dir_path, &embedding, query, top_k, intent)
+        .await?;
     if hits.is_empty() {
         return Ok("知识库中未找到相关内容。".to_string());
     }
 
-    let selected = aggregate_hits(hits);
+    let selected = aggregate_hits(
+        hits,
+        cfg.min_score,
+        cfg.max_context_docs,
+        cfg.max_chunks_per_doc,
+    );
     if selected.is_empty() {
         return Ok("知识库中未找到足够相关的内容。".to_string());
     }
 
-    let mut parts: Vec<String> = Vec::new();
-    let mut last_doc = String::new();
-    for (hit, _) in &selected {
-        let text = hit.sentence_window.as_deref().unwrap_or(&hit.text);
-        if hit.doc_name != last_doc {
-            if !last_doc.is_empty() {
-                parts.push(String::new());
-            }
-            parts.push(format!("--- {} ---", hit.doc_name));
-            last_doc = hit.doc_name.clone();
-        }
-        parts.push(text.to_string());
-    }
-    Ok(parts.join("\n"))
+    Ok(build_context_text(&selected, MAX_CONTEXT_CHARS))
 }
 
 /// 构建 kb_search 工具。
@@ -162,21 +172,125 @@ pub fn build_kb_search_tool(cfg: KbSearchConfig) -> DynamicTool {
                     .map(|v| v.min(MAX_TOP_K))
                     .unwrap_or(cfg.default_top_k.min(MAX_TOP_K));
 
+                tools::record_tool_call(&cfg, "kb_search", &query);
                 match kb_search(&cfg, &query, top_k).await {
-                    Ok(text) => Ok(ToolOutput::text(text)),
-                    Err(e) => Err(ToolExecutionError::other(format!("知识库检索失败: {}", e))
-                        .with_model_output(ToolOutput::text(format!("知识库检索失败: {}", e)))),
+                    Ok(text) => {
+                        tools::record_tool_result(&cfg, "kb_search", true, &format!("{} 字符", text.chars().count()));
+                        Ok(ToolOutput::text(text))
+                    }
+                    Err(e) => {
+                        tools::record_tool_result(&cfg, "kb_search", false, &e);
+                        Err(ToolExecutionError::other(format!("知识库检索失败: {}", e))
+                            .with_model_output(ToolOutput::text(format!("知识库检索失败: {}", e))))
+                    }
                 }
             })
         },
     )
 }
 
-/// 文档级聚合：按 doc+chunk 去重 → 按文档分组 → 自适应阈值 → 取 top 5 文档。
+/// 执行代码符号检索：按符号名（函数/类/方法名等）精确或前缀匹配定位代码定义。
 ///
-/// 返回聚合后的 `(SearchHit, score)` 列表，score 为命中原始分。
-pub fn aggregate_hits(all_hits: Vec<SearchHit>) -> Vec<(SearchHit, f32)> {
-    // 3a: 按 doc_name + chunk_index 去重，保留最高 mergeScore
+/// 返回的文本按文档分组，供模型直接作为上下文。与 `kb_search`（语义检索）互补。
+pub async fn code_search(cfg: &KbSearchConfig, symbol: &str, top_k: u32) -> Result<String, String> {
+    let hits = cfg.indexer.search_symbols(&cfg.dir_path, symbol, top_k).await?;
+    if hits.is_empty() {
+        return Ok(format!("知识库中未找到与符号 '{}' 相关的代码。", symbol));
+    }
+
+    let mut parts: Vec<String> = Vec::new();
+    let mut last_doc = String::new();
+    for hit in &hits {
+        if hit.doc_name != last_doc {
+            if !last_doc.is_empty() {
+                parts.push(String::new());
+            }
+            parts.push(format!("--- {} ---", hit.doc_name));
+            last_doc = hit.doc_name.clone();
+        }
+        let kind = hit.symbol_kind.as_deref().unwrap_or("symbol");
+        let name = hit.symbol_name.as_deref().unwrap_or("");
+        let text = hit.sentence_window.as_deref().unwrap_or(&hit.text);
+        parts.push(format!("[{kind}] {name}\n{text}"));
+    }
+    Ok(parts.join("\n"))
+}
+
+/// 构建 code_lookup 工具。
+///
+/// 模型在问题涉及具体代码符号（函数名、类名、方法名等）时调用，按符号名
+/// 定位代码定义所在文件与片段，补充语义检索容易漏掉的"符号定义"命中。
+pub fn build_code_lookup_tool(cfg: KbSearchConfig) -> DynamicTool {
+    DynamicTool::new(
+        "code_lookup",
+        "在知识库中按符号名（函数名、类名、方法名、变量名等）定位代码定义位置。当问题涉及具体的函数/类/方法名、或需要查找某段代码在哪个文件实现时，调用本工具；符号名越精确，检索效果越好。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "symbol": {
+                    "type": "string",
+                    "description": "要查找的代码符号名，如 handle_timeout、LRUCache、parseJSON"
+                },
+                "top_k": {
+                    "type": "integer",
+                    "description": "期望返回的代码片段数量，默认 5"
+                }
+            },
+            "required": ["symbol"]
+        }),
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let cfg = cfg.clone();
+            Box::pin(async move {
+                let symbol = args
+                    .get("symbol")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                if symbol.is_empty() {
+                    return Err(ToolExecutionError::other("符号名为空").with_model_output(
+                        ToolOutput::text("请提供要查找的代码符号名"),
+                    ));
+                }
+                let top_k = args
+                    .get("top_k")
+                    .and_then(|t| t.as_u64())
+                    .map(|v| v as u32)
+                    .filter(|v| *v > 0)
+                    .map(|v| v.min(MAX_TOP_K))
+                    .unwrap_or(5);
+
+                tools::record_tool_call(&cfg, "code_lookup", &symbol);
+                match code_search(&cfg, &symbol, top_k).await {
+                    Ok(text) => {
+                        tools::record_tool_result(&cfg, "code_lookup", true, &format!("{} 字符", text.chars().count()));
+                        Ok(ToolOutput::text(text))
+                    }
+                    Err(e) => {
+                        tools::record_tool_result(&cfg, "code_lookup", false, &e);
+                        Err(ToolExecutionError::other(format!("代码检索失败: {}", e))
+                            .with_model_output(ToolOutput::text(format!("代码检索失败: {}", e))))
+                    }
+                }
+            })
+        },
+    )
+}
+
+/// 文档级聚合：按 doc+chunk 去重 → 绝对阈值过滤 → 每文档截断 → 按文档取 top-N。
+///
+/// 替换旧的"相对自适应阈值"方案（max*0.3 / max*0.5 在分数整体偏低时会放水，
+/// 在偏高时可能误杀）。融合分数已归一化到 [0,1]，`min_score` 作为绝对阈值有
+/// 确定语义，配合硬截断保证送入上下文的都是高置信命中。
+///
+/// 返回按文档分数降序、文档内按分数降序的 `(SearchHit, score)` 列表。
+pub fn aggregate_hits(
+    all_hits: Vec<SearchHit>,
+    min_score: f32,
+    max_docs: usize,
+    max_chunks_per_doc: usize,
+) -> Vec<(SearchHit, f32)> {
+    // 1. 按 doc_name + chunk_index 去重，保留最高分
     let mut seen: HashMap<(String, u32), (SearchHit, f32)> = HashMap::new();
     for hit in all_hits {
         let score = hit.score;
@@ -193,44 +307,85 @@ pub fn aggregate_hits(all_hits: Vec<SearchHit>) -> Vec<(SearchHit, f32)> {
         }
     }
 
-    // 3b: 按 doc_name 聚合，保留该文档中所有达到阈值的 chunks（而非仅最高分 chunk）
-    let max_score_overall = seen.values().map(|(_, s)| *s).fold(0.0_f32, f32::max);
-    let doc_threshold = max_score_overall * 0.3;
+    // 2. 按 doc_name 分组，绝对阈值过滤
     let mut doc_map: HashMap<String, Vec<(SearchHit, f32)>> = HashMap::new();
     for (hit, score) in seen.into_values() {
-        if score < doc_threshold {
+        if score < min_score {
             continue;
         }
         let doc_name = hit.doc_name.clone();
         doc_map.entry(doc_name).or_default().push((hit, score));
     }
-    // 每篇文档内按分数降序，最多保留 5 个 chunks
-    for chunks in doc_map.values_mut() {
-        chunks.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        chunks.truncate(5);
-    }
 
-    // 3c: 以每篇文档的最佳 chunk 分数作为文档代表分排序，应用自适应阈值，取 top 5 文档
-    let mut doc_scores: Vec<(Vec<(SearchHit, f32)>, f32)> = doc_map
+    // 3. 以每篇文档的最佳 chunk 分数作为文档代表分排序（同分按 doc_name 字典序保证确定性），
+    //    每篇文档内按分数降序截断，再取 top max_docs 文档
+    let mut doc_scores: Vec<(String, f32, Vec<(SearchHit, f32)>)> = doc_map
         .into_values()
-        .map(|chunks| {
+        .map(|mut chunks| {
+            chunks.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            chunks.truncate(max_chunks_per_doc.max(1));
             let best = chunks.first().map(|(_, s)| *s).unwrap_or(0.0);
-            (chunks, best)
+            let doc = chunks
+                .first()
+                .map(|(h, _)| h.doc_name.clone())
+                .unwrap_or_default();
+            (doc, best, chunks)
         })
         .collect();
-    doc_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-    let max_doc_score = doc_scores.first().map(|(_, s)| *s).unwrap_or(0.0);
-    let adapt_threshold = max_doc_score * 0.5;
-    let abs_min = rank_to_score(15);
-    let final_threshold = adapt_threshold.max(abs_min);
+    doc_scores.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.cmp(&b.0))
+    });
+    doc_scores.truncate(max_docs.max(1));
 
     doc_scores
         .into_iter()
-        .filter(|(_, s)| *s >= final_threshold)
-        .take(5)
-        .flat_map(|(chunks, _)| chunks)
+        .flat_map(|(_, _, chunks)| chunks)
         .collect()
+}
+
+/// 将聚合后的命中组装为模型可读的上下文文本。
+///
+/// 文档顺序（分数降序，即 `aggregate_hits` 输出顺序）保持不变；
+/// 文档内按 `chunk_index` 阅读顺序重排，保证送入模型的片段连贯可读。
+/// 总字符数受 `max_chars` 限制，超出部分截断。
+pub fn build_context_text(selected: &[(SearchHit, f32)], max_chars: usize) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    let mut used = 0usize;
+
+    let mut i = 0usize;
+    while i < selected.len() {
+        let doc = selected[i].0.doc_name.clone();
+        // 收集同文档连续片段（aggregate_hits 保证同文档相邻），按阅读顺序重排
+        let mut run: Vec<&SearchHit> = Vec::new();
+        while i < selected.len() && selected[i].0.doc_name == doc {
+            run.push(&selected[i].0);
+            i += 1;
+        }
+        run.sort_by_key(|h| h.chunk_index);
+
+        if !parts.is_empty() {
+            parts.push(String::new());
+        }
+        let header = format!("--- {} ---", doc);
+        if used + header.len() > max_chars {
+            break;
+        }
+        used += header.len();
+        parts.push(header);
+
+        for hit in run {
+            let text = hit.sentence_window.as_deref().unwrap_or(&hit.text);
+            if used + text.len() + 1 > max_chars {
+                break;
+            }
+            parts.push(text.to_string());
+            used += text.len() + 1;
+        }
+    }
+
+    parts.join("\n")
 }
 
 /// 构建 RAG 问答 Agent。
@@ -243,12 +398,16 @@ pub fn build_rag_agent(
     search_config: KbSearchConfig,
 ) -> Agent<openai::CompletionModel> {
     let preamble = format!(
-        "你是一个知识库助手，请优先基于系统提供的上下文回答问题；如果上下文信息不足，可以调用 kb_search 工具检索更多资料。回答时请结合检索到的内容，对引用内容标注来源。如果知识库中确实没有相关信息，请如实告知。\n\n上下文：\n{}",
+        "你是一个知识库助手，请优先基于系统提供的上下文回答问题；如果上下文信息不足，可以调用 kb_search 工具检索更多资料。当问题涉及具体代码符号（函数名、类名、方法名等）时，优先调用 code_lookup 工具定位代码定义。回答时请结合检索到的内容，对引用内容标注来源。如果知识库中确实没有相关信息，请如实告知。\n\n上下文：\n{}",
         context
     );
     AgentBuilder::new(model)
         .preamble(&preamble)
-        .dynamic_tool(build_kb_search_tool(search_config))
+        .dynamic_tool(build_kb_search_tool(search_config.clone()))
+        .dynamic_tool(build_code_lookup_tool(search_config.clone()))
+        .dynamic_tool(tools::build_read_file_tool(search_config.clone()))
+        .dynamic_tool(tools::build_list_files_tool(search_config.clone()))
+        .dynamic_tool(tools::build_git_status_tool(search_config))
         .default_max_turns(4)
         .add_hook(LlmTraceHook)
         .build()
@@ -257,4 +416,95 @@ pub fn build_rag_agent(
 /// 构建无工具纯对话 Agent
 pub fn build_chat_agent(model: openai::CompletionModel) -> Agent<openai::CompletionModel> {
     AgentBuilder::new(model).add_hook(LlmTraceHook).build()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hit(doc: &str, chunk: u32, score: f32) -> SearchHit {
+        SearchHit {
+            text: format!("text-{}-{}", doc, chunk),
+            doc_name: doc.to_string(),
+            chunk_index: chunk,
+            score,
+            score_vec: score,
+            score_bm25: 0.0,
+            path_json: None,
+            sentence_window: None,
+            symbol_name: None,
+            symbol_kind: None,
+        }
+    }
+
+    #[test]
+    fn aggregate_dedups_keep_max_score() {
+        let hits = vec![
+            hit("a.md", 0, 0.5),
+            hit("a.md", 0, 0.7), // 同 doc+chunk 重复，应保留最高分
+        ];
+        let selected = aggregate_hits(hits, 0.3, 4, 3);
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].1, 0.7);
+    }
+
+    #[test]
+    fn aggregate_filters_below_min_score() {
+        let hits = vec![
+            hit("a.md", 0, 0.8),
+            hit("b.md", 0, 0.2), // 低于绝对阈值 0.3，应被过滤
+        ];
+        let selected = aggregate_hits(hits, 0.3, 4, 3);
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].0.doc_name, "a.md");
+    }
+
+    #[test]
+    fn aggregate_truncates_docs_and_chunks() {
+        let hits = vec![
+            hit("a.md", 0, 0.9),
+            hit("a.md", 1, 0.8),
+            hit("a.md", 2, 0.7),
+            hit("a.md", 3, 0.6), // 第 4 块，应被 max_chunks_per_doc=3 截断
+            hit("b.md", 0, 0.1), // 最低分文档，应被 max_docs=1 截断
+        ];
+        let selected = aggregate_hits(hits, 0.3, 1, 3);
+        assert_eq!(selected.len(), 3);
+        assert!(selected.iter().all(|(h, _)| h.doc_name == "a.md"));
+    }
+
+    #[test]
+    fn aggregate_ties_broken_by_doc_name() {
+        let hits = vec![
+            hit("b.md", 0, 0.8),
+            hit("a.md", 0, 0.8), // 与 b.md 同分，按 doc_name 字典序应排在前面（确定性）
+        ];
+        let selected = aggregate_hits(hits, 0.3, 4, 3);
+        assert_eq!(selected.len(), 2);
+        assert_eq!(selected[0].0.doc_name, "a.md");
+        assert_eq!(selected[1].0.doc_name, "b.md");
+    }
+
+    #[test]
+    fn build_context_sorts_by_reading_order_and_caps() {
+        let hits = vec![
+            hit("a.md", 2, 0.9),
+            hit("a.md", 0, 0.8),
+            hit("a.md", 1, 0.7),
+            hit("b.md", 0, 0.5),
+        ];
+        let selected = aggregate_hits(hits, 0.3, 4, 3);
+        let text = build_context_text(&selected, usize::MAX);
+        // 文档 a 的片段应按 chunk_index 阅读顺序（0,1,2），而非分数顺序（2,0,1）
+        let a_pos = text.find("text-a.md-0").unwrap();
+        let b_pos = text.find("text-a.md-1").unwrap();
+        let c_pos = text.find("text-a.md-2").unwrap();
+        assert!(a_pos < b_pos && b_pos < c_pos, "文档内应按阅读顺序重排: {}", text);
+        // 文档按分数降序：a（0.9）在 b（0.5）之前
+        assert!(text.find("--- a.md ---").unwrap() < text.find("--- b.md ---").unwrap());
+
+        // 容量上限：max_chars 只允许头部与第一个片段
+        let capped = build_context_text(&selected, 32);
+        assert!(!capped.contains("text-a.md-1"), "超出上限的片段应被截断: {}", capped);
+    }
 }

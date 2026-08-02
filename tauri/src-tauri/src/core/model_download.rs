@@ -1,25 +1,36 @@
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use sha2::{Digest, Sha256};
+// ─── 下载源配置 ───
+//
+// 模型从 HuggingFace 官方仓库逐文件直链下载，不再依赖自托管
+// GitHub/Gitee Release 的 zip 包。按顺序依次尝试以下源：
+// 1. ModelScope（国内可达的 HF 仓库镜像，阿里系 CDN，最稳定）
+// 2. 中国境内官方镜像：hf-mirror.com（注意：其 LFS 大文件会回源到 AWS CDN）
+// 3. HuggingFace 主站（全球）：huggingface.co
+// 每个文件先尝试前面的源，全部失败后自动切换到下一个源。
 
-// ─── 模型下载配置 ───
+/// HuggingFace 官方主站
+pub const HF_ENDPOINT: &str = "https://huggingface.co";
+/// HuggingFace 中国境内官方镜像
+pub const HF_ENDPOINT_MIRROR: &str = "https://hf-mirror.com";
+/// ModelScope 首选源（HF 仓库镜像，URL 模板为 /models/{repo}/resolve/master/{path}）
+pub const HF_ENDPOINT_MODELSCOPE: &str = "https://modelscope.cn";
+
+// ─── Embedding 模型（bge-small-zh-v1.5）───
 
 /// 模型名称（缓存目录名，与仓库目录一致）
 pub const MODEL_NAME: &str = "bge-small-zh-v1.5";
-/// 模型 zip 下载地址（GitHub Release，主地址）
-pub const MODEL_ZIP_URL: &str =
-    "https://github.com/whatzhang/mdgo/releases/download/v1.0.0/bge-small-zh-v1.5.zip";
-/// 模型 zip 的 SHA-256 校验文件地址（内容为 64 位十六进制摘要）
-pub const MODEL_SHA256_URL: &str =
-    "https://github.com/whatzhang/mdgo/releases/download/v1.0.0/bge-small-zh-v1.5.zip.sha256";
-/// 备用 zip 下载地址（Gitee 镜像）：主地址下载失败且重试也失败时启用
-pub const MODEL_ZIP_URL_BACKUP: &str =
-    "https://gitee.com/whatzhangy/mdgo/releases/download/v1.0.0/bge-small-zh-v1.5.zip";
-/// 备用 SHA-256 校验文件地址（Gitee 镜像）
-pub const MODEL_SHA256_URL_BACKUP: &str =
-    "https://gitee.com/whatzhangy/mdgo/releases/download/v1.0.0/bge-small-zh-v1.5.zip.sha256";
+/// HuggingFace 仓库（Xenova 提供的 ONNX 导出版）
+pub const MODEL_REPO: &str = "Xenova/bge-small-zh-v1.5";
+/// 文件映射：(仓库内路径, 本地文件名)。权重放最后，先下载小文件。
+pub const MODEL_FILES: &[(&str, &str)] = &[
+    ("config.json", "config.json"),
+    ("tokenizer.json", "tokenizer.json"),
+    ("tokenizer_config.json", "tokenizer_config.json"),
+    ("special_tokens_map.json", "special_tokens_map.json"),
+    ("onnx/model.onnx", "model.onnx"),
+];
 
 /// 模型完整性必需文件（与 embedding::ensure_initialized 一致）
 const REQUIRED_FILES: [&str; 5] = [
@@ -30,8 +41,11 @@ const REQUIRED_FILES: [&str; 5] = [
     "special_tokens_map.json",
 ];
 
-/// 下载/解压/校验整体超时（大模型 zip 可能较大，放宽到 10 分钟）
+/// 单文件下载整体超时（小文件适用）
 const TOTAL_TIMEOUT: Duration = Duration::from_secs(600);
+/// 大权重（model.onnx）下载整体超时：1.1GB 在 <1MB/s 的慢网下也能完成，
+/// 避免 600s 内读不完导致自动下载反复失败
+const TOTAL_TIMEOUT_LARGE: Duration = Duration::from_secs(1800);
 /// 建连超时
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -76,118 +90,135 @@ pub fn model_root_dir() -> PathBuf {
     }
 }
 
+/// 指定模型名的缓存目录：{root}/{name}/
+fn cache_dir_for(root: &Path, name: &str) -> PathBuf {
+    root.join(name)
+}
+
 /// 模型缓存目录：{root}/bge-small-zh-v1.5/
 pub fn model_cache_dir() -> PathBuf {
-    model_root_dir().join(MODEL_NAME)
+    cache_dir_for(&model_root_dir(), MODEL_NAME)
 }
 
-/// 下载成功并完成完整性校验的标记文件（存在即认为缓存有效，避免半解压状态被误用）
-fn ready_marker() -> PathBuf {
-    model_cache_dir().join(".download_ok")
+/// 下载成功并完成完整性校验的标记文件（存在即认为缓存有效，避免半下载状态被误用）
+fn ready_marker_for(cache_dir: &Path) -> PathBuf {
+    cache_dir.join(".download_ok")
 }
 
-/// 模型是否已完整下载并部署到缓存目录
-pub fn is_model_cached() -> bool {
-    let cache_dir = model_cache_dir();
-    if !ready_marker().exists() || !cache_dir.join("model.onnx").exists() {
+/// 指定缓存目录的模型是否已完整下载并部署
+fn is_model_cached_impl(cache_dir: &Path, required_files: &[&str]) -> bool {
+    if !ready_marker_for(cache_dir).exists() || !cache_dir.join("model.onnx").exists() {
         return false;
     }
-    REQUIRED_FILES
+    required_files
         .iter()
         .all(|f| cache_dir.join(f).exists())
 }
 
-// ─── 下载 + 校验 + 解压 ───
+/// 模型是否已完整下载并部署到缓存目录
+pub fn is_model_cached() -> bool {
+    is_model_cached_impl(&model_cache_dir(), &REQUIRED_FILES)
+}
+
+// ─── 下载 + 校验 + 部署 ───
 
 /// 确保模型已下载并部署到本地缓存目录。
 ///
-/// 流程：下载 zip → 下载 sha256 摘要 → 校验 SHA-256 → 解压到临时目录 →
-/// 定位模型目录（兼容 zip 内含顶层文件夹）→ 部署到缓存目录 → 写入就绪标记。
+/// 流程：逐文件从 HuggingFace 仓库下载（ModelScope → hf-mirror → 主站）→ 校验 config.json →
+/// 部署到缓存目录 → 写入就绪标记。
 /// 任一环节失败会清理临时产物并返回错误，调用方下次可重试。
 pub fn ensure_model_downloaded() -> Result<PathBuf, String> {
-    let cache_dir = model_cache_dir();
-    if is_model_cached() {
-        return Ok(cache_dir);
+    ensure_model_downloaded_impl(
+        &model_cache_dir(),
+        MODEL_NAME,
+        MODEL_REPO,
+        MODEL_FILES,
+        &REQUIRED_FILES,
+    )
+}
+
+/// 泛化的模型下载/校验/部署流程。
+fn ensure_model_downloaded_impl(
+    cache_dir: &Path,
+    name: &str,
+    repo: &str,
+    files: &[(&str, &str)],
+    required_files: &[&str],
+) -> Result<PathBuf, String> {
+    if is_model_cached_impl(cache_dir, required_files) {
+        return Ok(cache_dir.to_path_buf());
     }
 
     let root = model_root_dir();
     std::fs::create_dir_all(&root)
         .map_err(|e| format!("创建模型缓存目录失败: {}", e))?;
 
-    let zip_path = root.join(format!("{}.zip", MODEL_NAME));
-    let sha_path = root.join(format!("{}.zip.sha256", MODEL_NAME));
-    let extract_tmp = root.join(format!("{}.extract", MODEL_NAME));
+    let tmp_dir = root.join(format!("{}.download", name));
+    if tmp_dir.exists() {
+        std::fs::remove_dir_all(&tmp_dir)
+            .map_err(|e| format!("清理下载临时目录失败: {}", e))?;
+    }
+    std::fs::create_dir_all(&tmp_dir)
+        .map_err(|e| format!("创建下载临时目录失败: {}", e))?;
 
-    // 无论成功失败，函数返回时统一清理临时产物（zip / sha / 解压临时目录），
-    // 避免失败路径在磁盘残留大文件或半成品目录
-    let _cleanup = TempCleanup::new(vec![
-        zip_path.clone(),
-        sha_path.clone(),
-        extract_tmp.clone(),
-    ]);
+    // 无论成功失败，函数返回时统一清理临时目录，避免失败路径在磁盘残留大文件
+    let _cleanup = TempCleanup::new(vec![tmp_dir.clone()]);
 
-    // ── 1. 下载 sha256 校验文件（先下载，文件小，失败成本低）──
-    //    同时确定下载源（主/备），后续 zip 强制同源，避免跨源校验失败
-    log::info!("[model_download] 本地未找到模型，开始远程下载...");
-    let sha_urls = [MODEL_SHA256_URL, MODEL_SHA256_URL_BACKUP];
-    let (source_index, source_name) =
-        download_with_fallback(&sha_urls, &sha_path, 0)?; // sha 文件小，跳过大小校验
-
-    // ── 2. 下载 zip（强制使用与 sha256 相同的源，保证同源）──
-    const MIN_ZIP_SIZE: u64 = 10 * 1024 * 1024; // 10 MB
-    let zip_urls = [MODEL_ZIP_URL, MODEL_ZIP_URL_BACKUP];
-    download_file_from_source(source_index, &zip_urls, &zip_path, MIN_ZIP_SIZE)?;
     log::info!(
-        "[model_download] zip 下载完成（源: {}）",
-        source_name
+        "[model_download] 本地未找到模型 {}，开始下载（ModelScope → hf-mirror → HuggingFace）...",
+        name
     );
 
-    // ── 3. 校验 SHA-256 ──
-    let expected_hex = read_sha256_file(&sha_path)?;
-    let actual_hex = sha256_hex(&zip_path)?;
-    if !actual_hex.eq_ignore_ascii_case(&expected_hex) {
-        return Err(format!(
-            "模型 SHA-256 校验失败: 期望 {}, 实际 {}",
-            expected_hex, actual_hex
-        ));
+    // ── 1. 逐文件下载（权重放最后，小文件失败可尽早暴露）──
+    const MIN_MODEL_SIZE: u64 = 10 * 1024 * 1024; // 大权重最小 10 MB，防 CDN 错误页
+    for (hf_path, local_name) in files {
+        let dest = tmp_dir.join(local_name);
+        let min_size = if *local_name == "model.onnx" {
+            MIN_MODEL_SIZE
+        } else {
+            1
+        };
+        // 大权重放宽整体超时，避免慢网下 600s 读不完而失败
+        let timeout = if *local_name == "model.onnx" {
+            TOTAL_TIMEOUT_LARGE
+        } else {
+            TOTAL_TIMEOUT
+        };
+        download_with_fallback(repo, hf_path, &dest, min_size, timeout)
+            .map_err(|e| format!("下载 {} 失败: {}", local_name, e))?;
     }
-    log::info!("[model_download] SHA-256 校验通过: {}", actual_hex);
 
-    // ── 4. 解压到临时目录 ──
-    if extract_tmp.exists() {
-        std::fs::remove_dir_all(&extract_tmp)
-            .map_err(|e| format!("清理解压临时目录失败: {}", e))?;
+    // ── 2. 校验 config.json 为合法 JSON（防错误页被当作配置写入）──
+    let config_path = tmp_dir.join("config.json");
+    let config_raw = std::fs::read_to_string(&config_path)
+        .map_err(|e| format!("读取 config.json 失败: {}", e))?;
+    if serde_json::from_str::<serde_json::Value>(&config_raw).is_err() {
+        return Err("config.json 不是合法 JSON，模型文件可能损坏".to_string());
     }
-    std::fs::create_dir_all(&extract_tmp)
-        .map_err(|e| format!("创建解压临时目录失败: {}", e))?;
-    extract_zip(&zip_path, &extract_tmp)?;
 
-    // ── 5. 定位模型目录（zip 可能包含顶层文件夹）──
-    let model_src = locate_model_dir(&extract_tmp)?;
-
-    // ── 6. 部署到缓存目录（先清空可能存在的半成品）──
+    // ── 3. 部署到缓存目录（先清空可能存在的半成品）──
     if cache_dir.exists() {
-        std::fs::remove_dir_all(&cache_dir)
+        std::fs::remove_dir_all(cache_dir)
             .map_err(|e| format!("清理模型缓存目录失败: {}", e))?;
     }
-    std::fs::create_dir_all(&cache_dir)
+    std::fs::create_dir_all(cache_dir)
         .map_err(|e| format!("创建模型缓存目录失败: {}", e))?;
-    copy_tree(&model_src, &cache_dir)?;
+    copy_tree(&tmp_dir, cache_dir)?;
 
-    // ── 7. 完整性检查 + 写入就绪标记 ──
-    for name in REQUIRED_FILES {
-        if !cache_dir.join(name).exists() {
-            return Err(format!("模型解压后缺少必需文件: {}", name));
+    // ── 4. 完整性检查 + 写入就绪标记 ──
+    for file_name in required_files {
+        if !cache_dir.join(file_name).exists() {
+            return Err(format!("模型缺少必需文件: {}", file_name));
         }
     }
-    std::fs::write(ready_marker(), b"ok")
+    std::fs::write(ready_marker_for(cache_dir), b"ok")
         .map_err(|e| format!("写入模型就绪标记失败: {}", e))?;
 
     log::info!(
         "[model_download] 模型下载并部署完成: {}",
         cache_dir.display()
     );
-    Ok(cache_dir)
+    Ok(cache_dir.to_path_buf())
 }
 
 // ─── 辅助函数 ───
@@ -214,22 +245,29 @@ impl Drop for TempCleanup {
     }
 }
 
-/// 按 URL 列表顺序下载文件到目标路径：每个地址最多尝试 `ATTEMPTS` 次（首次 + 1 次重试），
-/// 当前地址全部尝试失败后切换到下一个备用地址，直到所有地址耗尽。
+/// 从多个源按顺序下载单个文件：每个源最多尝试 `ATTEMPTS` 次（首次 + 1 次重试），
+/// 当前源全部失败后自动切换到下一个源。
 ///
-/// 返回成功源的索引（0=主地址，1=备用地址）和源名称（用于日志），供后续下载强制同源。
+/// 源顺序：ModelScope → hf-mirror 中国镜像 → HuggingFace 主站。
 /// 每次下载失败会记录该地址与原因，最终错误汇总所有失败信息（便于排查网络原因）。
-/// min_size: 最小字节数阈值，小于此值视为异常；传 0 跳过校验
-fn download_with_fallback(urls: &[&str], dest: &Path, min_size: u64) -> Result<(usize, String), String> {
+/// min_size: 最小字节数阈值，小于此值视为异常（如 CDN 错误页面）；传 1 表示仅要求非空
+/// timeout: 单次请求整体超时（含 body 传输），大权重由调用方传入更宽松的值
+fn download_with_fallback(
+    repo: &str,
+    hf_path: &str,
+    dest: &Path,
+    min_size: u64,
+    timeout: Duration,
+) -> Result<String, String> {
     const ATTEMPTS: usize = 2;
+    let endpoints = [HF_ENDPOINT_MODELSCOPE, HF_ENDPOINT_MIRROR, HF_ENDPOINT];
+    let source_names = ["ModelScope", "hf-mirror", "HuggingFace"];
     let mut errors: Vec<String> = Vec::new();
-    for (i, url) in urls.iter().enumerate() {
+    for (i, endpoint) in endpoints.iter().enumerate() {
+        let url = build_download_url(endpoint, repo, hf_path);
         for attempt in 0..ATTEMPTS {
-            match download_file(url, dest, min_size) {
-                Ok(()) => {
-                    let source_name = if i == 0 { "GitHub".to_string() } else { "Gitee".to_string() };
-                    return Ok((i, source_name));
-                }
+            match download_file(&url, dest, min_size, timeout) {
+                Ok(()) => return Ok(source_names[i].to_string()),
                 Err(e) => {
                     errors.push(format!("{} (第{}次): {}", url, attempt + 1, e));
                     log::warn!(
@@ -240,33 +278,34 @@ fn download_with_fallback(urls: &[&str], dest: &Path, min_size: u64) -> Result<(
                 }
             }
         }
-        if i + 1 < urls.len() {
+        if i + 1 < endpoints.len() {
             log::warn!(
-                "[model_download] 当前地址下载失败，切换备用地址: {}",
-                urls[i + 1]
+                "[model_download] 当前地址下载失败，切换到备用源: {}",
+                endpoints[i + 1]
             );
         }
     }
     Err(format!("所有下载地址均失败: {}", errors.join("; ")))
 }
 
-/// 从指定源索引下载文件（强制同源下载用）
-fn download_file_from_source(source_index: usize, urls: &[&str], dest: &Path, min_size: u64) -> Result<(), String> {
-    let url = urls.get(source_index).ok_or_else(|| {
-        format!(
-            "源索引 {} 超出 URL 列表范围",
-            source_index
-        )
-    })?;
-    download_file(url, dest, min_size)
+/// 构造文件直链：HuggingFace 系用 /{repo}/resolve/main/{path}，
+/// ModelScope 用 /models/{repo}/resolve/master/{path}（分支名不同）
+fn build_download_url(endpoint: &str, repo: &str, hf_path: &str) -> String {
+    if endpoint == HF_ENDPOINT_MODELSCOPE {
+        format!("{}/models/{}/resolve/master/{}", endpoint, repo, hf_path)
+    } else {
+        format!("{}/{}/resolve/main/{}", endpoint, repo, hf_path)
+    }
 }
 
-/// 单次下载文件到本地路径（流式写入，避免整包占用内存）
-/// min_size: 最小字节数阈值，小于此值视为异常响应（如 CDN 错误页面）；传 0 跳过校验
-fn download_file(url: &str, dest: &Path, min_size: u64) -> Result<(), String> {
+/// 单次下载文件到本地路径（流式写入，避免大文件占用内存）
+/// min_size: 最小字节数阈值，小于此值视为异常响应（如 CDN 错误页面）；传 1 表示仅要求非空
+/// timeout: 本次请求整体超时（含 body 传输）
+fn download_file(url: &str, dest: &Path, min_size: u64, timeout: Duration) -> Result<(), String> {
     let client = reqwest::blocking::Client::builder()
-        .timeout(TOTAL_TIMEOUT)
+        .timeout(timeout)
         .connect_timeout(CONNECT_TIMEOUT)
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
 
@@ -293,7 +332,7 @@ fn download_file(url: &str, dest: &Path, min_size: u64) -> Result<(), String> {
         .unwrap_or(0);
 
     // 文件大小校验：小于阈值视为异常响应（如 CDN 错误页面）
-    if min_size > 0 && size < min_size {
+    if size < min_size {
         let _ = std::fs::remove_file(dest);
         return Err(format!(
             "下载文件大小异常 ({} bytes < {}): 可能是错误响应，URL: {}",
@@ -303,92 +342,6 @@ fn download_file(url: &str, dest: &Path, min_size: u64) -> Result<(), String> {
 
     log::info!("[model_download] 下载完成: {} ({} bytes)", url, size);
     Ok(())
-}
-
-/// 读取 sha256 文件并提取 64 位十六进制摘要（兼容 `摘要 文件名` 两段式格式）
-fn read_sha256_file(path: &Path) -> Result<String, String> {
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| format!("读取校验文件失败 {}: {}", path.display(), e))?;
-    let hex = content
-        .split_whitespace()
-        .next()
-        .ok_or_else(|| format!("校验文件格式无效: {}", path.display()))?;
-    if hex.len() != 64 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Err(format!("校验文件内容无效: {}", hex));
-    }
-    Ok(hex.to_string())
-}
-
-/// 计算文件 SHA-256（分块读取，内存友好）
-fn sha256_hex(path: &Path) -> Result<String, String> {
-    let mut file = std::fs::File::open(path)
-        .map_err(|e| format!("打开文件失败 {}: {}", path.display(), e))?;
-    let mut hasher = Sha256::new();
-    let mut buf = [0u8; 1024 * 1024];
-    loop {
-        let n = file
-            .read(&mut buf)
-            .map_err(|e| format!("读取文件失败 {}: {}", path.display(), e))?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    Ok(format!("{:x}", hasher.finalize()))
-}
-
-/// 解压 zip 到目录（使用 enclosed_name 防 zip-slip 路径穿越）
-fn extract_zip(zip_path: &Path, out_dir: &Path) -> Result<(), String> {
-    let file = std::fs::File::open(zip_path)
-        .map_err(|e| format!("打开压缩包失败 {}: {}", zip_path.display(), e))?;
-    let mut archive = zip::ZipArchive::new(file)
-        .map_err(|e| format!("读取压缩包失败 {}: {}", zip_path.display(), e))?;
-
-    for i in 0..archive.len() {
-        let mut entry = archive
-            .by_index(i)
-            .map_err(|e| format!("读取压缩条目失败: {}", e))?;
-        let name = entry
-            .enclosed_name()
-            .ok_or_else(|| format!("压缩包包含不安全路径: {:?}", entry.name()))?;
-        let out_path = out_dir.join(name);
-
-        if entry.is_dir() {
-            std::fs::create_dir_all(&out_path)
-                .map_err(|e| format!("创建目录失败 {}: {}", out_path.display(), e))?;
-            continue;
-        }
-        if let Some(parent) = out_path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("创建目录失败 {}: {}", parent.display(), e))?;
-        }
-        let mut out = std::fs::File::create(&out_path)
-            .map_err(|e| format!("创建文件失败 {}: {}", out_path.display(), e))?;
-        std::io::copy(&mut entry, &mut out)
-            .map_err(|e| format!("写入文件失败 {}: {}", out_path.display(), e))?;
-    }
-    Ok(())
-}
-
-/// 在解压目录中定位包含 model.onnx 的目录（兼容 zip 内含顶层文件夹的布局）
-fn locate_model_dir(tmp: &Path) -> Result<PathBuf, String> {
-    if tmp.join("model.onnx").exists() {
-        return Ok(tmp.to_path_buf());
-    }
-    for entry in walkdir::WalkDir::new(tmp)
-        .min_depth(1)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
-        if entry.file_name() == "model.onnx" {
-            return Ok(entry
-                .path()
-                .parent()
-                .unwrap_or(tmp)
-                .to_path_buf());
-        }
-    }
-    Err("解压后的模型包中未找到 model.onnx".to_string())
 }
 
 /// 递归复制目录内容（仅文件，保留相对路径）

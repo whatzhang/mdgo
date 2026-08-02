@@ -546,7 +546,7 @@ impl Default for MarkdownSplitConfig {
         Self {
             full_parent_context: true,
             enable_setext_heading: true,
-            oversize_factor: 1.5,
+            oversize_factor: 1.25,
             min_body_reserve_chars: 50,
         }
     }
@@ -1066,7 +1066,7 @@ impl TreeProcessor {
         let (path_depth, path_json) = Self::path_to_metadata(path);
         let char_count = combined.chars().count();
 
-        if char_count <= max_size * 3 / 2 {
+        if char_count <= max_size * 6 / 5 {
             result.push(ChunkResult { text: combined, path_depth, path_json, sentence_window: None, symbol_name: None, symbol_kind: None });
             return;
         }
@@ -1155,7 +1155,7 @@ impl TreeProcessor {
                 let text = child.text().to_string();
                 let added = text.chars().count() + 2; // "- " overhead
                 // 如果加入后超出上限，先 flush 再继续
-                if max_size > 0 && buf_chars > 0 && buf_chars + added > max_size * 3 / 2 {
+                if max_size > 0 && buf_chars > 0 && buf_chars + added > max_size * 6 / 5 {
                     Self::flush_sibling_buf(&mut buf, &mut buf_chars, parent_path, result);
                 }
                 buf.push(text);

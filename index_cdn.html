@@ -735,8 +735,8 @@
             flex: 1;
             background: none;
             border: none;
-            padding: 0.3rem 0.35rem;
-            font-size: 0.75rem;
+            padding: 0.25rem 0.125rem;
+            font-size: 0.625rem;
             font-weight: 600;
             color: var(--t2);
             cursor: pointer;
@@ -761,8 +761,8 @@
         #toc-link .toc-link-content {
             flex: 1;
             min-height: 0;
-            overflow-y: auto;
-            padding: 0.5rem 0;
+            overflow: hidden;
+            padding: 0.25rem 0;
         }
 
         #toc-link .toc-tab-panel {
@@ -772,6 +772,13 @@
 
         #toc-link .toc-tab-panel.active {
             display: block;
+            height: 100%;
+            overflow-y: auto;
+        }
+
+        
+        #toc-link .toc-tab-panel.active:has(.mermaid-toc) {
+            overflow: hidden;
         }
 
         #toc-link .toc-link-empty {
@@ -779,9 +786,11 @@
             color: var(--t2);
             font-size: 0.7rem;
             font-style: italic;
-            padding: 0.25rem 0;
-            align-content: center;
             justify-content: center;
+            align-items: center;
+            width: 100%;
+            height: 100%;
+            box-sizing: border-box;
         }
 
         #toc-link .toc-tag-container {
@@ -867,7 +876,7 @@
         .sidebar-toggle-btn {
             position: fixed;
             left: 0;
-            top: 40%;
+            top: 50%;
             transform: translateY(-50%);
             width: 0.75rem;
             height: 2rem;
@@ -943,6 +952,28 @@
             overflow-y: auto;
             padding: 0;
             background: #1e1e1e;
+        }
+        .mermaid-toc {
+            height: 100%;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            margin: 0.125rem;
+            background: var(--color-bg-secondary);
+            cursor: grab;
+            user-select: none;
+            touch-action: none;
+        }
+        .mermaid-toc:active {
+            cursor: grabbing;
+        }
+        .mermaid-toc svg {
+            height: 100% !important;
+            width: auto;
+            max-width: none !important;
+            transform-origin: 0 0;
+            transition: transform 0.12s ease-out;
         }
 
         .mermaid-output {
@@ -4467,7 +4498,7 @@
         .ai-result-btn {
             font-size: 0.75rem;
             padding: 0.125rem 0.5rem !important;
-            color: var(--color-text-secondary);
+            color: var(--t2);
             background-color: var(--color-bg);
         }
 
@@ -5117,7 +5148,7 @@
 
         .chat-message-body {
             min-height: 1em;
-            padding: 0.5rem 0.75rem;
+            padding: 0.75rem;
         }
 
         /* ── 上下文使用率 ── */
@@ -5243,6 +5274,57 @@
             border-bottom-left-radius: 0.25rem;
         }
 
+        /* Agent 工具调用轨迹卡片 */
+        .tool-trace {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+            padding: 0.25rem 0.5rem 0;
+        }
+        .tool-card {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.2rem 0.75rem;
+            margin-top: 0.5rem;
+            border: 0.0625rem solid var(--color-border);
+            border-radius: 0.375rem;
+            background: var(--color-bg-soft, rgba(128, 128, 128, 0.06));
+            font-size: 0.75rem;
+            color: var(--t2);
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+        .tool-card .tool-icon {
+            flex-shrink: 0;
+        }
+        .tool-card .tool-name {
+            font-weight: 600;
+            color: var(--color-text);
+            white-space: nowrap;
+        }
+        .tool-card .tool-args {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-family: ui-monospace, Consolas, monospace;
+        }
+        .tool-card .tool-status {
+            flex-shrink: 0;
+            font-size: 0.7rem;
+        }
+        .tool-card.running .tool-status {
+            color: var(--color-warning);
+        }
+        .tool-card.ok .tool-status {
+            color: var(--color-success, #2ecc71);
+        }
+        .tool-card.fail .tool-status {
+            color: var(--color-danger, #e74c3c);
+        }
+
         .msg-rag {
             color: var(--color-warning) !important;
         }
@@ -5313,6 +5395,51 @@
             font-size: 0.6875rem;
             color: var(--t3);
             margin-left: auto;
+        }
+
+        .chat-message .msg-sources .source-item {
+            cursor: pointer;
+            transition: background-color 0.15s ease;
+        }
+
+        .chat-message .msg-sources .source-item:hover {
+            background-color: var(--b3);
+        }
+
+        /* 引用溯源：片段高亮（markdown 正文） */
+        mark.source-highlight,
+        .source-highlight {
+            background: #ffe066 !important;
+            color: inherit !important;
+            border-radius: 2px;
+            padding: 0 1px;
+            box-shadow: 0 0 0 2px rgba(255, 224, 102, 0.4);
+            animation: source-highlight-fade 3s ease forwards;
+        }
+
+        @keyframes source-highlight-fade {
+            0% { background: #ffe066 !important; }
+            70% { background: #ffe066 !important; }
+            100% { background: transparent; box-shadow: none; }
+        }
+
+        /* 引用溯源：编辑器整行高亮（Monaco 行装饰） */
+        .source-highlight-line {
+            background: rgba(255, 224, 102, 0.28) !important;
+            animation: source-highlight-fade 3s ease forwards;
+        }
+
+        /* 引用溯源：大纲节点高亮（OPML / FreeMind） */
+        .source-highlight-node {
+            animation: source-node-highlight 3s ease forwards;
+        }
+
+        @keyframes source-node-highlight {
+            0%, 70% {
+                background: #ffe066 !important;
+                border-radius: 4px;
+            }
+            100% { background: transparent; }
         }
 
         .chat-input-area {
@@ -5770,10 +5897,11 @@
         }
 
         .rag-settings-row input[type="number"] {
+            margin-left: auto;
             width: 5rem;
             padding: 0.125rem 0.25rem;
             font-size: 0.8125rem;
-            height: 1.5rem;
+            height: auto;
             line-height: 1.5;
             border: 1px solid var(--color-border, #d0d7de);
             border-radius: 0.3125rem;
@@ -8736,7 +8864,7 @@
         }
 
         .todo-modal-header {
-            padding: 0.75rem 1rem 0.75rem 1rem;
+            padding: 0.75rem 1rem;
             border-bottom: 1px solid var(--color-border-light);
             display: flex;
             justify-content: space-between;
@@ -8745,7 +8873,7 @@
 
         .todo-modal-title {
             font-size: 1rem;
-            font-weight: 600;
+            font-weight: 600; 
             color: var(--color-primary);
         }
 
@@ -11373,13 +11501,16 @@
 
         .markdown-body pre code.hljs {
             padding: 0 !important;
+            font-size: 13px !important;
+            font-family: var(--font-mono) !important;
         }
 
         .markdown-body .highlight pre,
         .markdown-body pre {
             padding: 1rem;
             overflow: auto;
-            font-size: 85%;
+            font-size: 13px;
+            font-family: var(--font-mono);
             line-height: 1.45;
             color: #abb2bf;
             background: #282c34;
@@ -14706,7 +14837,7 @@
             </div>
             <!-- AI 助手悬浮按钮（总结/分析/Mermaid 画图等） -->
             <div id="ai-fab-container" class="ai-fab-container" style="display: none;">
-                <div id="ai-fab-button" class="ai-fab-button">
+                <div id="ai-fab-button" class="ai-fab-button" onclick="aiPanelToggleCilck()">
                     <img src="data:image/jpeg;base64,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"
                         alt="AI" class="ai-fab-icon">
                 </div>
@@ -14714,11 +14845,13 @@
                     <div class="ai-panel-header-wrapper">
                         <div class="ai-panel-header">小助手</div>
                         <span id="ai-selection-count" style="font-size: 11px; color: #007af5; display: none;"></span>
-                        <span style="font-size: 11px; color: #64748b;">使用当前文件</span>
-                        <label class="ai-result-sw-lark">
-                            <input type="checkbox" checked>
-                            <span class="slider"></span>
-                        </label>
+                        <div id="ai-link-file">
+                            <span style="font-size: 11px; color: #64748b;">使用当前文件</span>
+                            <label class="ai-result-sw-lark">
+                                <input type="checkbox" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
                     </div>
                     <div class="ai-header-divider"></div>
                     <div class="ai-action-row" id="ai-action-row"></div>
@@ -15570,16 +15703,37 @@
                                     <div class="rag-settings-row">
                                         <label>分块大小</label>
                                         <input type="number" id="rag-setting-chunk-size" min="100" max="4000" step="50"
-                                            value="1000">
+                                            value="448">
                                         <span class="setting-help"
-                                            data-tippy-content="文档被切分成索引块时的目标字符数。较小的块（如 500）更精确但上下文可能不完整；较大的块（如 2000）上下文更丰富但检索精度可能下降。默认值 1000 在准确性和上下文完整性之间取得平衡。">ⓘ</span>
+                                            data-tippy-content="文档被切分成索引块时的目标字符数。默认值已按本地嵌入模型的 token 窗口（512）自动对齐（448 字符），避免长块被静默截断导致向量语义受损。更小的块（如 300）检索更精确；更大的块（如 1000）上下文更完整但可能超过模型窗口。">ⓘ</span>
                                     </div>
                                     <div class="rag-settings-row">
                                         <label>分块重叠</label>
                                         <input type="number" id="rag-setting-chunk-overlap" min="0" max="500" step="10"
-                                            value="200">
+                                            value="56">
                                         <span class="setting-help"
-                                            data-tippy-content="相邻文档块之间重叠的字符数。重叠可以避免因切分位置不当导致的关键信息被截断。较大的重叠（如 300）提供更好的连续性但增加存储开销；较小的重叠（如 100）节省空间但可能丢失边界信息。">ⓘ</span>
+                                            data-tippy-content="相邻文档块之间重叠的字符数。重叠可以避免因切分位置不当导致的关键信息被截断。默认值约为分块大小的 1/8；较大的重叠（如 200）提供更好的连续性但增加存储开销；较小的重叠（如 20）节省空间但可能丢失边界信息。">ⓘ</span>
+                                    </div>
+                                    <div class="rag-settings-row">
+                                        <label>语义融合权重</label>
+                                        <input type="number" id="rag-setting-fusion-alpha" min="0" max="1" step="0.05"
+                                            value="0.6">
+                                        <span class="setting-help"
+                                            data-tippy-content="向量/关键词融合权重 α（0~1）。越高越偏向语义向量检索，越低越偏向关键词（BM25）匹配。短查询会自动在基准值上略微降低向量权重以利用关键词精确匹配；长查询略微提高。默认 0.6 兼顾两者。">ⓘ</span>
+                                    </div>
+                                    <div class="rag-settings-row">
+                                        <label>最大文档数</label>
+                                        <input type="number" id="rag-setting-max-docs" min="1" max="10" step="1"
+                                            value="4">
+                                        <span class="setting-help"
+                                            data-tippy-content="送入 LLM 上下文的最大文档数。较大的值（如 6）提供更多来源但消耗更多上下文窗口；较小的值（如 2）更聚焦但可能遗漏次要来源。默认 4。">ⓘ</span>
+                                    </div>
+                                    <div class="rag-settings-row">
+                                        <label>单文档块数</label>
+                                        <input type="number" id="rag-setting-max-chunks" min="1" max="10" step="1"
+                                            value="3">
+                                        <span class="setting-help"
+                                            data-tippy-content="单篇文档最多送入 LLM 上下文的块数。较大的值（如 5）保留更完整的文档片段；较小的值（如 2）减少冗余。默认 3。">ⓘ</span>
                                     </div>
                                 </div>
                                 <div class="todo-modal-footer">
@@ -16315,6 +16469,7 @@
         // ====== 文件浏览时长追踪 ======
         let _browsingFilePath = null;       // 当前正在计时的文件路径
         let _browsingTimerStart = 0;        // 当前文件计时开始时间戳 (Date.now())
+        let _docLinks = [];                  // 文档链接数组
 
         function _startBrowsingTimer(filePath) {
             _browsingFilePath = filePath;
@@ -17691,6 +17846,9 @@
             const canvasSaveMenu = document.getElementById('canvas-save-menu');
             if (canvasSaveMenu) canvasSaveMenu.classList.remove('canvas-open');
             tocElement.innerHTML = '';
+            tocLinkElement.innerHTML = '';   // 清空在途的 TOC links 渲染，使旧 panel 脱离文档后自动失效
+            _docLinks = [];
+            restTocLinkGraph(true);
         }
 
         async function destroyEverything() {
@@ -18339,9 +18497,7 @@
                 saveBtn.title = '保存到此目录';
 
                 summary.appendChild(nameSpan);
-                if (depth !== 1) {
-                    summary.appendChild(saveBtn);
-                }
+                summary.appendChild(saveBtn);
 
                 // 点击 summary 切换展开/折叠（阻止原生 toggle 行为，由代码控制）
                 if (hasChildren) {
@@ -23562,7 +23718,12 @@
             // 注入懒加载 CSS + 注册视口观察（浏览器模式）
             injectLazyImageStyles();
             lazyImageObserve(contentMain.querySelector('#content-article'));
-            generateTOC(text, 'md');
+            // TOC 与 TOC links 异步生成：先渲染完文件主内容，避免阻塞首屏
+            if (typeof requestIdleCallback === 'function') {
+                requestIdleCallback(() => generateTOC(text, 'md'), { timeout: 300 });
+            } else {
+                setTimeout(() => generateTOC(text, 'md'), 0);
+            }
         }
 
         async function renderHTMLFile(text, relativePath) {
@@ -26734,12 +26895,17 @@ kanban-plugin: basic
                 } else {
                     continue;
                 }
-                let isAttachment = false;
+                let isAttachment = false, isFile = false;
                 const lastDotIndex = target.lastIndexOf('.');
                 if (lastDotIndex > 0) {
                     const ext = target.slice(lastDotIndex + 1).toLowerCase();
                     if (ext.length <= 10 && EXT_SET.has(ext)) {
                         isAttachment = true;
+                    }
+                    if (!ext || (!isDoc(ext) && !isCode(ext) && !isVideoFile(ext) && !isImage(ext) && !isRaw(ext))) {
+                        isFile = false;
+                    }else{
+                        isFile = true;
                     }
                 }
                 results.push({
@@ -26748,7 +26914,8 @@ kanban-plugin: basic
                     target,
                     alias,
                     isEmbed,
-                    isAttachment
+                    isAttachment,
+                    isFile
                 });
             }
             return results;
@@ -26810,11 +26977,51 @@ kanban-plugin: basic
                 setTimeout(() => { matched.style.transition = prevTrans; }, 300);
             }, 2000);
         }
+        function getDocLinks(markdownText) {
+            if(isEmpty(_docLinks)){
+                _docLinks = extractLinks(markdownText);
+            }
+            return _docLinks;
+        }
+        function escapeMermaidMindmapNode(text) {
+            return text.replace(/[\(\)\[\]\{\}\<\>\t\r\n]/g, ' ').trim();
+        }
         // TOC link 标签页定义（可扩展：后续 push 新标签即可）
         const tocLinkTabs = [
             {
-                id: 'links', label: 'Links', render(markdownText) {
-                    const links = extractLinks(markdownText);
+                id: 'toc-links-graph', label: 'Links', async render(markdownText) {
+                    const links = getDocLinks(markdownText);
+                    if (links.length === 0) return '<div class="toc-link-empty">暂无链接</div>';
+                    //拼接为mermaid 思维导图
+                    const uniqueId = `mermaid-toc-${crypto.randomUUID()}`;
+                    let code = 'mindmap\n   root(("'+ basename(currentFileName) +'"))';
+                    let file = '',other = '';
+                    for (const link of links) {
+                        let label = escapeHtml(link.alias || link.target);
+                        label = escapeMermaidMindmapNode(label);
+                        if(!!link.isFile){
+                            file += '\n         "' +  basename(label) + '"';
+                        }else{
+                            other += '\n         "' +  label+ '"';
+                        }
+                    }
+                    code += '\n      文档链接' + file;
+                    code += '\n      普通链接' + other;
+                    try {
+                        const { svg } = await mermaid.render('svg-' + uniqueId, code);
+                        const svgContainer = document.createElement('div');
+                        svgContainer.className = 'mermaid-toc';
+                        svgContainer.innerHTML = svg;
+                        return svgContainer.outerHTML;
+                    } catch (error) {
+                        console.error('Mermaid 渲染失败:', error);
+                        return '<div class="toc-link-empty">渲染失败！</div>';
+                    }
+                }
+            },
+            {
+                id: 'toc-links-list', label: 'Links列表', render(markdownText) {
+                    const links = getDocLinks(markdownText);
                     if (links.length === 0) return '<div class="toc-link-empty">暂无链接</div>';
                     let html = '<ul>';
                     for (const link of links) {
@@ -26827,7 +27034,7 @@ kanban-plugin: basic
                     return html;
                 }
             }, {
-                id: 'tags', label: 'Tags', render(markdownText) {
+                id: 'toc-tags', label: 'Tags', render(markdownText) {
                     const tags = extractTags(markdownText);
                     if (tags.length === 0) return '<div class="toc-link-empty">暂无标签</div>';
                     return '<div class="toc-tag-container">' + tags.map(tag =>
@@ -26837,12 +27044,87 @@ kanban-plugin: basic
             }
         ];
 
-        /** 切换 TOC link 标签页 */
+        let _tocGraph = { scale: 1, dx: 0, dy: 0, dragging: false, moved: false, startX: 0, startY: 0, startDx: 0, startDy: 0 };
+        function applyTocGraphTransform(svg) {
+            svg.style.transform = `translate(${_tocGraph.dx}px, ${_tocGraph.dy}px) scale(${_tocGraph.scale})`;
+        }
+        // 事件委托绑定在静态容器上，面板内容动态填充也生效
+        tocLinkElement.addEventListener('wheel', (e) => {
+            const wrap = e.target.closest('.mermaid-toc');
+            if (!wrap) return;
+            e.preventDefault();
+            const svg = wrap.querySelector('svg');
+            if (!svg) return;
+            const rect = wrap.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+            const oldScale = _tocGraph.scale;
+            let newScale = e.deltaY < 0 ? oldScale * 1.15 : oldScale / 1.15;
+            newScale = Math.min(8, Math.max(0.3, newScale));
+            // 以鼠标位置为锚点：补偿缩放导致的中心偏移
+            _tocGraph.dx = mx - (mx - _tocGraph.dx) * (newScale / oldScale);
+            _tocGraph.dy = my - (my - _tocGraph.dy) * (newScale / oldScale);
+            _tocGraph.scale = newScale;
+            applyTocGraphTransform(svg);
+        }, { passive: false });
+        tocLinkElement.addEventListener('mousedown', (e) => {
+            const wrap = e.target.closest('.mermaid-toc');
+            if (!wrap || e.button !== 0) return;
+            e.preventDefault();
+            _tocGraph.dragging = true;
+            _tocGraph.moved = false;
+            _tocGraph.startX = e.clientX;
+            _tocGraph.startY = e.clientY;
+            _tocGraph.startDx = _tocGraph.dx;
+            _tocGraph.startDy = _tocGraph.dy;
+            const svg = wrap.querySelector('svg');
+            if (svg) svg.style.transition = 'none'; // 拖动时不产生过渡拖影
+        });
+        // 拖动后阻止误触思维导图节点链接
+        tocLinkElement.addEventListener('click', (e) => {
+            if (_tocGraph.moved) {
+                e.preventDefault();
+                e.stopPropagation();
+                _tocGraph.moved = false;
+            }
+        }, true);
+        window.addEventListener('mousemove', (e) => {
+            if (!_tocGraph.dragging) return;
+            const dx = e.clientX - _tocGraph.startX;
+            const dy = e.clientY - _tocGraph.startY;
+            if (Math.abs(dx) + Math.abs(dy) > 3) _tocGraph.moved = true;
+            _tocGraph.dx = _tocGraph.startDx + dx;
+            _tocGraph.dy = _tocGraph.startDy + dy;
+            const svg = tocLinkElement.querySelector('.mermaid-toc svg');
+            if (svg) applyTocGraphTransform(svg);
+        });
+        window.addEventListener('mouseup', () => {
+            if (!_tocGraph.dragging) return;
+            _tocGraph.dragging = false;
+            const svg = tocLinkElement.querySelector('.mermaid-toc svg');
+            if (svg) svg.style.transition = '';
+        });
+        // 双击重置视图
+        tocLinkElement.addEventListener('dblclick', (e) => {
+            if (!e.target.closest('.mermaid-toc')) return;
+            restTocLinkGraph();
+        });
+        function restTocLinkGraph(resetGraphParams = false){
+            if(!!resetGraphParams){
+                _tocGraph = { scale: 1, dx: 0, dy: 0, dragging: false, moved: false, startX: 0, startY: 0, startDx: 0, startDy: 0 };
+                return;
+            }
+            _tocGraph.scale = 1;
+            _tocGraph.dx = 0;
+            _tocGraph.dy = 0;
+            const svg = tocLinkElement.querySelector('.mermaid-toc svg');
+            if (svg) applyTocGraphTransform(svg);
+        }
+
         function switchTocTab(tabId) {
-            // 更新 tab 按钮状态
+            restTocLinkGraph();
             const tabs = tocLinkElement.querySelectorAll('.toc-tab');
             tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
-            // 更新 panel 状态
             const panels = tocLinkElement.querySelectorAll('.toc-tab-panel');
             panels.forEach(p => p.classList.toggle('active', p.dataset.tab === tabId));
         }
@@ -26853,24 +27135,41 @@ kanban-plugin: basic
                 tocLinkElement.style.display = 'none';
                 return;
             }
+            // 新渲染：骨架会重建整个面板，上一文件的在途渲染（panel 已脱离文档）经 isConnected 校验自动失效
             tocLinkElement.innerHTML = '';
             tocLinkElement.style.display = 'flex';
-
-            // 渲染标签头
+            // 新文件重置思维导图视图
+            _tocGraph.scale = 1;
+            _tocGraph.dx = 0;
+            _tocGraph.dy = 0;
+            // 先渲染标签头：默认激活 Links图示（即使渲染慢也作为默认展示）
             let headerHtml = '<div class="toc-link-tabs">';
             for (const tab of tocLinkTabs) {
-                headerHtml += `<button class="toc-tab${tab.id === 'links' ? ' active' : ''}" data-tab="${tab.id}" onclick="switchTocTab('${tab.id}')">${tab.label}</button>`;
+                const active = tab.id === 'toc-links-graph' ? ' active' : '';
+                headerHtml += `<button class="toc-tab${active}" data-tab="${tab.id}" onclick="switchTocTab('${tab.id}')">${tab.label}</button>`;
             }
             headerHtml += '</div>';
-
-            // 渲染各标签面板内容
+            // 渲染各标签面板骨架（占位），避免串行等待慢速 tab 导致面板空白
             let bodyHtml = '';
             for (const tab of tocLinkTabs) {
-                const panelClass = tab.id === 'links' ? 'toc-tab-panel active' : 'toc-tab-panel';
-                bodyHtml += `<div class="${panelClass}" data-tab="${tab.id}">${tab.render(markdownText)}</div>`;
+                const panelClass = tab.id === 'toc-links-graph' ? 'toc-tab-panel active' : 'toc-tab-panel';
+                bodyHtml += `<div class="${panelClass}" data-tab="${tab.id}"><div class="toc-link-empty">暂无链接</div></div>`;
             }
-
             tocLinkElement.innerHTML = `<div class="toc-link-header">${headerHtml}</div><div class="toc-link-content">${bodyHtml}</div>`;
+            // 并行渲染全部 tab（含慢速的 mermaid 图示），互不阻塞；切换文件后旧 panel 已脱离文档，isConnected 校验自动丢弃过期结果
+            const panels = tocLinkElement.querySelectorAll('.toc-tab-panel');
+            await Promise.all(tocLinkTabs.map(async (tab, i) => {
+                const panel = panels[i];
+                try {
+                    const content = await tab.render(markdownText);
+                    if (!panel || !panel.isConnected) return; // 面板已被重建（切换了文件），丢弃
+                    panel.innerHTML = content;
+                } catch (e) {
+                    console.error('TOC tab 渲染失败:', tab.id, e);
+                    if (!panel || !panel.isConnected) return;
+                    panel.innerHTML = '<div class="toc-link-empty">渲染失败！</div>';
+                }
+            }));
         }
 
         /**
@@ -26929,9 +27228,10 @@ kanban-plugin: basic
             showTocToggleBtn(true);
             // Markdown 文件展示 TOC link，其他文件不展示
             if (type === 'md') {
-                generateTOCLinks(markdownText, type, opmlData);
                 tocLinkElement.style.display = '';
                 tocElement.style.flex = '';
+                // TOC links（含慢速的 mermaid 图示）异步渲染，不阻塞 TOC 树显示
+                setTimeout(() => generateTOCLinks(markdownText, type, opmlData), 0);
             } else {
                 tocLinkElement.innerHTML = '';
                 tocLinkElement.style.display = 'none';
@@ -30931,8 +31231,6 @@ kanban-plugin: basic
                 chartsResizeBound = true;
             }
             aiFabContainer.style.display = 'block';
-            const larkCheckbox = document.querySelector('.ai-result-sw-lark input');
-            if (larkCheckbox) larkCheckbox.checked = false;
             //监控面板展示
             const monitorPanel = dashboardContainer.querySelector('#monitor-panel');
             const fileSumPanel = dashboardContainer.querySelector('#file-sum-panel');
@@ -31757,10 +32055,11 @@ kanban-plugin: basic
                 larkCheckbox.addEventListener('change', function () {
                     aiResultLinkCurrentFile = this.checked;
                 });
+                larkCheckbox.checked = true;
             }
             aiResultSettingsInitialized = true;
         }
-
+        
         async function getAIHistoryData() {
             // Tauri 模式：使用适配器提供的函数
             if (isTauriVisit()) {
@@ -31963,24 +32262,25 @@ kanban-plugin: basic
             console.error('未识别的 API 响应格式:', JSON.stringify(data));
             return '无法解析 API 响应，请检查 API 配置';
         }
-
-        let _aiPanelToggleHandler = null;
-        function initAIPanelToggle() {
-            const aiButton = document.getElementById('ai-fab-button');
-            // 移除旧的监听器（如果存在）
-            if (_aiPanelToggleHandler) {
-                aiButton.removeEventListener('click', _aiPanelToggleHandler);
+        function aiPanelToggleCilck() {
+            aiPanelVisible = !aiPanelVisible;
+            if (aiPanelVisible) {
+                displayAiPanel(aiSelectionText);
+            } else {
+                hiddenAiPanel();
             }
-            // 定义新的处理器并存储引用
-            _aiPanelToggleHandler = () => {
-                aiPanelVisible = !aiPanelVisible;
-                if (aiPanelVisible) {
-                    displayAiPanel(aiSelectionText);
-                } else {
-                    hiddenAiPanel();
-                }
-            };
-            aiButton.addEventListener('click', _aiPanelToggleHandler);
+            const link = document.getElementById('ai-link-file');
+            if(dashboardContainer && dashboardContainer.style.display !== 'none'){
+                aiResultLinkCurrentFile = false;
+                const larkCheckbox = document.querySelector('.ai-result-sw-lark input');
+                if (larkCheckbox)  larkCheckbox.checked = false;
+                if (link) link.style.display = 'none';
+            }else{
+                if (link) link.style.display = 'block';
+            }
+        }
+
+        function initAIPanelToggle() {
             getAIHistoryData().then(() => {
                 renderAIHistory();
             });
@@ -49555,13 +49855,337 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         scoreSpan.textContent = s.score.toFixed(3);
                     }
 
-                    item.ondblclick = () => openFileFromPath(path);
+                    // 单击/双击引用项：打开引用文档并定位到片段位置（引用溯源）
+                    const locateSource = () => openSourceAndLocate(s);
+                    item.onclick = (e) => {
+                        e.stopPropagation();
+                        if (item._locateTimer) clearTimeout(item._locateTimer);
+                        // 防抖：避免双击触发两次定位
+                        item._locateTimer = setTimeout(locateSource, 250);
+                    };
+                    item.ondblclick = (e) => {
+                        e.stopPropagation();
+                        if (item._locateTimer) clearTimeout(item._locateTimer);
+                        locateSource();
+                    };
                     item.appendChild(infoDiv);
                     item.appendChild(scoreSpan);
                     details.appendChild(item);
                 }
             });
             container.appendChild(details);
+        }
+
+        // ─── 引用溯源：打开引用文档并定位/高亮到具体片段 ───
+
+        /**
+         * 打开引用来源文档并定位到引用片段位置（引用溯源闭环）。
+         * - markdown：在渲染正文中匹配片段文本并滚动高亮
+         * - OPML/FreeMind：按 path_json 层级路径定位并高亮节点
+         * - 其他类型：仅打开文件（提示手动定位）
+         */
+        async function openSourceAndLocate(source) {
+            const docName = source.doc_name || source.docName || '';
+            if (!docName) return;
+            await openFileFromPath(docName);
+            // 文件渲染为异步流程，延迟后等待渲染完成再定位
+            setTimeout(async () => {
+                try {
+                    await locateInOpenedFile(source);
+                } catch (e) {
+                    console.warn('引用定位失败:', e);
+                }
+            }, 150);
+        }
+
+        /** 在已打开的文档视图中定位引用片段 */
+        async function locateInOpenedFile(source) {
+            const docName = source.doc_name || source.docName || '';
+            const snippet = (source.snippet || source.text || '').trim();
+            const pathJson = source.path_json;
+            const ext = getExt(docName).toLowerCase();
+            // 大纲类文档：按层级路径定位节点
+            if ((ext === 'opml' || ext === 'mm') && pathJson) {
+                if (await locateOutlinePath(ext, pathJson)) return;
+            }
+            // markdown 文档：正文文本匹配定位
+            if (ext === 'md' && snippet) {
+                if (await locateSnippetInMarkdown(snippet)) return;
+            }
+            // 通用兜底：任意文件在原始文本/代码编辑器中按片段定位到行
+            if (snippet && await locateSnippetInRawText(docName, snippet)) return;
+            showNotification('已打开引用文件（未定位到精确位置，请手动查找）', 'info');
+        }
+
+        /**
+         * 通用兜底定位：在已打开文件的原始文本中匹配片段，滚动并高亮到对应行。
+         * - Monaco 编辑器（代码/纯文本）：revealLineInCenter + 整行高亮
+         * - 纯文本/格式化视图：DOM 文本节点匹配 + 高亮
+         * 返回是否命中。
+         */
+        async function locateSnippetInRawText(docName, snippet) {
+            const targetBase = ((docName || '').split('/').pop() || '').toLowerCase();
+            // 等待目标文件内容就绪（编辑器创建或 originalContent 写入；避免取到上一个文件的内容）
+            const ctx = await waitForContentRendered(() => {
+                if (targetBase && currentFileName && currentFileName.toLowerCase() !== targetBase) return null;
+                if (currentEditor) {
+                    const v = currentEditor.getValue();
+                    return v && v.trim() ? { editor: true } : null;
+                }
+                return originalContent && originalContent.trim() ? { editor: false } : null;
+            }, 4000);
+            if (!ctx) return false;
+
+            const raw = ctx.editor ? currentEditor.getValue() : originalContent;
+            const norm = (s) => s.replace(/\s+/g, ' ').trim();
+            const snippetLines = snippet.split('\n').map(norm).filter(l => l.length > 0);
+            if (snippetLines.length === 0) return false;
+
+            // 锚点：片段首行中最长的词（与原文逐字一致概率最高、区分度最大）
+            const anchor = snippetLines[0].split(' ').filter(w => w.length >= 2).sort((a, b) => b.length - a.length)[0];
+            if (!anchor) return false;
+
+            // 逐行扫描：先找含锚点的行，再按后续行与片段的重合度选择最优起点，
+            // 避免同词多次出现时定位到错误位置
+            const rawLines = raw.split('\n');
+            let bestIdx = -1;
+            let bestScore = -1;
+            for (let i = 0; i < rawLines.length; i++) {
+                if (!rawLines[i].includes(anchor)) continue;
+                let score = 0;
+                for (let j = 0; j < snippetLines.length; j++) {
+                    const rl = norm(rawLines[i + j] || '');
+                    if (!rl) break;
+                    if (rl === snippetLines[j] || rl.includes(snippetLines[j]) || snippetLines[j].includes(rl)) {
+                        score++;
+                    } else if (j > 0) {
+                        break;
+                    }
+                }
+                if (score > bestScore) { bestScore = score; bestIdx = i; }
+                if (bestScore >= snippetLines.length) break;
+            }
+            if (bestIdx === -1) return false;
+            const lineNo = bestIdx + 1; // 1-based
+
+            // Monaco 编辑器：滚动到行并整行高亮
+            if (ctx.editor && currentEditor) {
+                try {
+                    const ed = currentEditor;
+                    if (typeof ed.revealLineInCenter === 'function') ed.revealLineInCenter(lineNo);
+                    if (typeof ed.setPosition === 'function') ed.setPosition({ lineNumber: lineNo, column: 1 });
+                    if (typeof ed.focus === 'function') ed.focus();
+                    const deco = ed.createDecorationsCollection([{
+                        range: new monaco.Range(lineNo, 1, lineNo, 1),
+                        options: { isWholeLine: true, className: 'source-highlight-line' }
+                    }]);
+                    setTimeout(() => { try { deco.clear(); } catch (e) {} }, 3000);
+                    return true;
+                } catch (e) {
+                    console.warn('编辑器行定位失败:', e);
+                }
+            }
+
+            // 纯文本/格式化视图：DOM 文本节点匹配并高亮
+            const root = document.querySelector('#content-article') || contentMain;
+            const nodes = [];
+            const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+            while (walker.nextNode()) nodes.push(walker.currentNode);
+            if (nodes.length === 0) return false;
+            const cand = snippetLines[0].slice(0, 200);
+            const hit = findTextInNodes(nodes, cand) || findTextInNodes(nodes, anchor);
+            if (hit) {
+                highlightTextRange(hit.node, hit.start, hit.end);
+                return true;
+            }
+            return false;
+        }
+
+        /** 等待目标渲染视图就绪，返回渲染根节点（超时返回 null） */
+        async function waitForContentRendered(predicate, maxWait = 4000) {
+            const deadline = Date.now() + maxWait;
+            while (Date.now() < deadline) {
+                const root = predicate();
+                if (root) return root;
+                await new Promise(r => setTimeout(r, 80));
+            }
+            return null;
+        }
+
+        // ── markdown 正文片段匹配定位 ──
+
+        /** 在 markdown 渲染正文中匹配片段文本，滚动并高亮（返回是否命中） */
+        async function locateSnippetInMarkdown(snippet) {
+            const article = await waitForContentRendered(() => {
+                const el = document.querySelector('#content-article.markdown-body');
+                return el && el.textContent.trim().length > 0 ? el : null;
+            });
+            if (!article) return false;
+            const nodes = [];
+            const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT, null, false);
+            while (walker.nextNode()) nodes.push(walker.currentNode);
+            if (nodes.length === 0) return false;
+
+            // 候选：从完整片段逐步缩短（按空白分词），提升跨格式容错
+            const words = snippet.replace(/\s+/g, ' ').trim().split(/\s+/).filter(w => w.length > 0);
+            if (words.length === 0) return false;
+            const candidates = [];
+            const wordCounts = [Math.min(words.length, 10), 8, 6, 4, 3];
+            for (const k of wordCounts) {
+                const cand = words.slice(0, k).join(' ');
+                if (cand.length >= 8 && !candidates.includes(cand)) candidates.push(cand);
+            }
+            for (const cand of candidates) {
+                const hit = findTextInNodes(nodes, cand);
+                if (hit) {
+                    highlightTextRange(hit.node, hit.start, hit.end);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /** 在文本节点序列中查找片段（先单节点精确匹配，再跨节点词序列匹配） */
+        function findTextInNodes(nodes, needle) {
+            const words = needle.replace(/\s+/g, ' ').trim().split(/\s+/).filter(w => w.length > 0);
+            if (words.length === 0) return null;
+            // 1) 单文本节点内匹配（覆盖绝大多数 markdown 段落）
+            for (const node of nodes) {
+                const text = node.nodeValue || '';
+                if (!text) continue;
+                const normText = text.replace(/\s+/g, ' ');
+                const idx = normText.indexOf(needle);
+                if (idx !== -1) return { node, start: idx, end: idx + needle.length };
+            }
+            // 2) 跨节点词序列匹配（词间允许仅空白）
+            for (let i = 0; i < nodes.length; i++) {
+                const text = nodes[i].nodeValue || '';
+                let pos = text.indexOf(words[0]);
+                while (pos !== -1) {
+                    const hit = matchWordSequence(nodes, i, pos, words);
+                    if (hit) return hit;
+                    pos = text.indexOf(words[0], pos + 1);
+                }
+            }
+            return null;
+        }
+
+        /** 从指定节点与偏移开始，尝试连续匹配完整词序列 */
+        function matchWordSequence(nodes, startIdx, startPos, words) {
+            let nodeIdx = startIdx;
+            let offset = startPos + words[0].length;
+            let endOffset = offset;
+            for (let w = 1; w < words.length; w++) {
+                let text = nodes[nodeIdx].nodeValue || '';
+                let idx = text.indexOf(words[w], offset);
+                while (idx === -1) {
+                    // 当前节点剩余部分须为纯空白才允许跳转到下一节点继续匹配
+                    if (nodeIdx >= nodes.length - 1 || text.slice(offset).trim() !== '') return null;
+                    nodeIdx++;
+                    offset = 0;
+                    text = nodes[nodeIdx].nodeValue || '';
+                    idx = text.indexOf(words[w], offset);
+                }
+                offset = idx + words[w].length;
+                endOffset = offset;
+            }
+            return { node: nodes[startIdx], start: startPos, end: endOffset };
+        }
+
+        /** 高亮文本范围并滚动到视图（3 秒后自动移除高亮） */
+        function highlightTextRange(node, start, end) {
+            try {
+                const range = document.createRange();
+                range.setStart(node, Math.min(start, (node.nodeValue || '').length));
+                range.setEnd(node, Math.min(end, (node.nodeValue || '').length));
+                const mark = document.createElement('mark');
+                mark.className = 'source-highlight';
+                range.surroundContents(mark);
+                mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                setTimeout(() => {
+                    if (mark.isConnected) {
+                        const t = document.createTextNode(mark.textContent || '');
+                        mark.replaceWith(t);
+                    }
+                }, 3000);
+                return true;
+            } catch (e) {
+                // 跨节点/边界异常：降级为滚动到节点所在元素并短暂高亮
+                const parent = node.parentElement;
+                if (parent) {
+                    parent.classList.add('source-highlight');
+                    parent.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    setTimeout(() => parent.classList.remove('source-highlight'), 3000);
+                }
+                return true;
+            }
+        }
+
+        // ── OPML / FreeMind 大纲节点定位 ──
+
+        /** 按 path_json 层级路径定位大纲节点（OPML 用 OPMLHandle，FreeMind 用 jsMind），返回是否命中 */
+        async function locateOutlinePath(ext, pathJson) {
+            let arr = null;
+            try {
+                arr = JSON.parse(pathJson);
+            } catch (e) {
+                return false;
+            }
+            if (!Array.isArray(arr) || arr.length === 0) return false;
+            if (ext === 'opml') {
+                const handle = await waitForContentRendered(() => {
+                    return opmlHandle && opmlHandle.getTreeData && opmlHandle._container && opmlHandle._container.querySelector('.mindmap-node') ? opmlHandle : null;
+                }, 3000);
+                if (!handle) return false;
+                let node = handle.getTreeData();
+                for (let i = 0; i < arr.length; i++) {
+                    const target = String(arr[i]).trim();
+                    const child = (node.children || []).find(c => String(c.head || '').trim() === target);
+                    if (!child) break;
+                    node = child;
+                }
+                if (node && node.id) {
+                    handle._selectNode(node.id);
+                    const el = handle._container.querySelector(`.mindmap-node[data-node-id="${node.id}"]`);
+                    if (el) {
+                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        el.classList.add('source-highlight-node');
+                        setTimeout(() => el.classList.remove('source-highlight-node'), 3000);
+                    }
+                    return true;
+                }
+                return false;
+            }
+            if (ext === 'mm') {
+                const jm = await waitForContentRendered(() => {
+                    return jsMindHandle && jsMindHandle.jm ? jsMindHandle.jm : null;
+                }, 3000);
+                if (!jm) return false;
+                // 从根节点按标题逐级匹配
+                const findNodeByTitlePath = (start, titles, idx) => {
+                    if (idx >= titles.length) return start;
+                    const target = titles[idx].trim();
+                    const child = (start.children || []).find(c => String(c.topic || '').trim() === target);
+                    if (!child) return start;
+                    return findNodeByTitlePath(child, titles, idx + 1);
+                };
+                const root = jm.get_root();
+                if (!root) return false;
+                const node = findNodeByTitlePath(root, arr, 0);
+                if (node && node.id) {
+                    if (typeof jm.expand_node === 'function') jm.expand_node(node.id);
+                    jm.select_node(node.id);
+                    const el = jm.get_node(node.id) ? document.querySelector(`[data-nodeid="${node.id}"]`) : null;
+                    if (el) {
+                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        el.classList.add('source-highlight-node');
+                        setTimeout(() => el.classList.remove('source-highlight-node'), 3000);
+                    }
+                    return true;
+                }
+                return false;
+            }
+            return false;
         }
 
         async function addChatMessage(role, content, sources, mode) {
@@ -49635,6 +50259,71 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 updateStreamingStatus(div, _chatStreamingStatusMsg);
             }
             return div;
+        }
+
+        // ── 工具调用轨迹可视化 ──
+        // 渲染 Agent 工具调用卡片（🔧 工具名 + 参数 + 状态），挂在流式消息 div 上
+        function ensureStreamingAssistantDiv() {
+            if (_chatStreamingDiv) return _chatStreamingDiv;
+            removeChatTyping();
+            const container = document.getElementById('chat-messages');
+            const div = getMessageAssistant();
+            container.appendChild(div);
+            _chatStreamingDiv = div;
+            let _rafPending = false;
+            div._scroll = () => {
+                if (!_rafPending && window._chatAutoScroll !== false) {
+                    _rafPending = true;
+                    requestAnimationFrame(() => {
+                        _rafPending = false;
+                        if (window._chatAutoScroll !== false) {
+                            container.scrollTop = container.scrollHeight;
+                        }
+                    });
+                }
+            };
+            return div;
+        }
+        function ensureToolTrace(div) {
+            if (!div) return null;
+            if (!div._toolTrace) {
+                const trace = document.createElement('div');
+                trace.className = 'tool-trace';
+                div.insertBefore(trace, div._body);
+                div._toolTrace = trace;
+            }
+            return div._toolTrace;
+        }
+        // 统一处理 agent:tool_call / agent:tool_result（聊天与 RAG 两个事件块共用）
+        function handleAgentToolEvent(e, rid) {
+            const p = e.payload;
+            if (!p || p.request_id !== rid || p.tool === undefined) return;
+            const div = ensureStreamingAssistantDiv();
+            const trace = ensureToolTrace(div);
+            if (!trace) return;
+            const safeTool = escapeHtml(String(p.tool));
+            if (p.call_seq === undefined) {
+                // call 事件：新增卡片（执行中）
+                const card = document.createElement('div');
+                card.className = 'tool-card running';
+                card.dataset.seq = String(p.seq);
+                const args = escapeHtml(String(p.args_preview || '').slice(0, 80));
+                card.innerHTML = `<span class="tool-icon">🔧</span><span class="tool-name">${safeTool}</span><span class="tool-args">${args}</span><span class="tool-status">执行中…</span>`;
+                trace.appendChild(card);
+            } else {
+                // result 事件：按 call_seq 配对卡片并更新状态
+                const card = trace.querySelector(`.tool-card[data-seq="${p.call_seq}"]`);
+                if (card) {
+                    card.classList.remove('running');
+                    card.classList.add(p.ok ? 'ok' : 'fail');
+                    const st = card.querySelector('.tool-status');
+                    if (st) {
+                        st.textContent = p.ok ? '✓ 完成' : '✗ 失败';
+                        st.title = String(p.summary || '');
+                    }
+                }
+            }
+            if (div._scroll) div._scroll();
         }
 
         function showChatTyping() {
@@ -49936,6 +50625,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     removeChatTyping();
                     showNotification('✗ ' + e.payload.message, 'error');
                 }),
+                // 工具调用轨迹（预留：聊天 Agent 后续若接入工具同样可视化）
+                window.__TAURI__.event.listen('agent:tool_call', (e) => handleAgentToolEvent(e, requestId)),
+                window.__TAURI__.event.listen('agent:tool_result', (e) => handleAgentToolEvent(e, requestId)),
             ]);
 
             try {
@@ -50333,8 +51025,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     ragSettings = ragSettings || {};
                     document.getElementById('rag-setting-topk').value = cfg.top_k ?? 10;
                     document.getElementById('rag-setting-min-score').value = cfg.min_score ?? 0.3;
-                    document.getElementById('rag-setting-chunk-size').value = cfg.chunk_size ?? 1500;
-                    document.getElementById('rag-setting-chunk-overlap').value = cfg.chunk_overlap ?? 200;
+                    document.getElementById('rag-setting-chunk-size').value = cfg.chunk_size ?? 448;
+                    document.getElementById('rag-setting-chunk-overlap').value = cfg.chunk_overlap ?? 56;
+                    document.getElementById('rag-setting-fusion-alpha').value = cfg.fusion_alpha ?? 0.6;
+                    document.getElementById('rag-setting-max-docs').value = cfg.max_context_docs ?? 4;
+                    document.getElementById('rag-setting-max-chunks').value = cfg.max_chunks_per_doc ?? 3;
                 }
             } catch (e) {
                 console.warn('[rag-settings] 加载配置失败:', e);
@@ -50362,10 +51057,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         async function saveRagSettings() {
             const topK = parseInt(document.getElementById('rag-setting-topk').value) || 10;
             const minScore = parseFloat(document.getElementById('rag-setting-min-score').value) || 0.3;
-            const chunkSize = parseInt(document.getElementById('rag-setting-chunk-size').value) || 1000;
-            const chunkOverlap = parseInt(document.getElementById('rag-setting-chunk-overlap').value) || 200;
+            const chunkSize = parseInt(document.getElementById('rag-setting-chunk-size').value) || 448;
+            const chunkOverlap = parseInt(document.getElementById('rag-setting-chunk-overlap').value) || 56;
+            const fusionAlpha = parseFloat(document.getElementById('rag-setting-fusion-alpha').value) || 0.6;
+            const maxContextDocs = parseInt(document.getElementById('rag-setting-max-docs').value) || 4;
+            const maxChunksPerDoc = parseInt(document.getElementById('rag-setting-max-chunks').value) || 3;
             // 更新本地状态
-            ragSettings = { topK, minScore, chunkSize, chunkOverlap };
+            ragSettings = { topK, minScore, chunkSize, chunkOverlap, fusionAlpha, maxContextDocs, maxChunksPerDoc };
             // 持久化到后端
             try {
                 if (window.__TAURI__?.core?.invoke) {
@@ -50374,6 +51072,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         chunkOverlap,
                         topK,
                         minScore,
+                        fusionAlpha,
+                        maxContextDocs,
+                        maxChunksPerDoc,
                     });
                     showNotification('RAG 参数已保存', 'success');
                 }
@@ -50599,6 +51300,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     removeChatTyping();
                     showNotification('✗ ' + e.payload.message, 'error');
                 }),
+                // 工具调用轨迹（kb_search / code_lookup / read_file / list_files / git_status）
+                window.__TAURI__.event.listen('agent:tool_call', (e) => handleAgentToolEvent(e, requestId)),
+                window.__TAURI__.event.listen('agent:tool_result', (e) => handleAgentToolEvent(e, requestId)),
             ]);
 
             try {
@@ -51142,8 +51846,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         ragSettings = {
                             topK: cfg.top_k ?? 10,
                             minScore: cfg.min_score ?? 0.3,
-                            chunkSize: cfg.chunk_size ?? 1500,
-                            chunkOverlap: cfg.chunk_overlap ?? 200,
+                            chunkSize: cfg.chunk_size ?? 448,
+                            chunkOverlap: cfg.chunk_overlap ?? 56,
+                            fusionAlpha: cfg.fusion_alpha ?? 0.6,
+                            maxContextDocs: cfg.max_context_docs ?? 4,
+                            maxChunksPerDoc: cfg.max_chunks_per_doc ?? 3,
                         };
                     }
                 } catch (e) {

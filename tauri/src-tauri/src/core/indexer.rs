@@ -22,26 +22,141 @@ fn chunk_splitter_factory() -> &'static ChunkSplitterFactory {
     CHUNK_SPLITTER_FACTORY.get_or_init(ChunkSplitterFactory::new)
 }
 
-/// RRF 融合常数 K（值越大排名靠前的贡献越平滑，减少头部排名偏差）
-///
-/// 增大 K 值使 RRF 分数分布更均匀，避免向量检索的头部排名过度主导融合结果，
-/// 让 BM25 关键词匹配和 Reranker 有更多机会影响最终排序。
-const RRF_K: u32 = 60;
+/// 规范化路径字符串：统一 `/` 分隔符、去除 Windows verbatim（`\\?\`）前缀、
+/// Windows 下大小写不敏感（转小写）、去除尾部 `/`。
+fn norm_path(p: &str) -> String {
+    let mut s = p.replace('\\', "/");
+    s = s.trim_start_matches("//?/").to_string();
+    #[cfg(windows)]
+    {
+        s = s.to_lowercase();
+    }
+    s.trim_end_matches('/').to_string()
+}
 
-/// 根据查询长度动态计算 BM25 RRF 权重。
+/// 判断 `child` 是否位于 `base` 之内（或等于 base），规范化比较。
 ///
-/// 短查询（1-2 个词）→ BM25 权重较高，利用关键词精确匹配能力；
-/// 长查询（>5 个词）→ BM25 权重降低，避免过多不相关关键词匹配干扰语义排序。
-fn compute_bm25_weight(query: &str) -> f32 {
-    let word_count = query.split(|c: char| !c.is_alphanumeric())
-        .filter(|t| !t.is_empty())
+/// 处理 Windows 下 canonicalize 返回的 `\\?\` verbatim 前缀与用户传入普通路径的差异，
+/// 以及大小写不敏感的文件系统。
+fn path_is_within(base: &str, child: &str) -> bool {
+    let b = norm_path(base);
+    let c = norm_path(child);
+    c == b || c.starts_with(&format!("{}/", b))
+}
+
+/// 计算 `child` 相对 `base` 的相对路径（`/` 分隔），不在 base 内则返回 None。
+fn relative_to(base: &str, child: &str) -> Option<String> {
+    let b = norm_path(base);
+    let c = norm_path(child);
+    c.strip_prefix(&b)
+        .map(|r| r.trim_start_matches('/').to_string())
+}
+
+/// 检索意图（轻量级规则路由，替代单一 is_code_query 启发式）。
+///
+/// 不同意图限定不同的候选文件范围（元数据过滤），并决定是否注入代码符号命中，
+/// 从而减少跨类型文件的噪声匹配。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetrievalIntent {
+    /// 代码相关查询（函数/类/符号/接口等）→ 仅检索代码类文件
+    Code,
+    /// 文档/笔记查询（Markdown 等）→ 仅检索文档类文件
+    Document,
+    /// 大纲类查询（OPML/FreeMind 思维导图）→ 仅检索大纲类文件
+    Outline,
+    /// 通用查询 → 不限定文件类型
+    General,
+}
+
+/// 根据查询文本进行轻量级意图路由（规则启发式，无 LLM 开销）。
+///
+/// 优先判定代码（符号/关键字/代码语法特征），其次大纲（opml/思维导图等），
+/// 再文档（readme/markdown 等），默认通用。
+pub fn route_intent(query: &str) -> RetrievalIntent {
+    if is_code_query(query) {
+        return RetrievalIntent::Code;
+    }
+    let lower = query.to_lowercase();
+    // 仅使用具象的大纲文件格式词，避免泛化词"大纲"把普通文档查询误路由为 Outline
+    let outline_kws = [
+        "opml", "freemind", "free mind", "思维导图", "outline",
+    ];
+    if outline_kws.iter().any(|kw| lower.contains(kw)) {
+        return RetrievalIntent::Outline;
+    }
+    // 仅使用名词性文档词，避免动词性"说明/解释"等把中文代码提问误路由为文档
+    let doc_kws = ["readme", "markdown", "文档", "笔记", "文章"];
+    if doc_kws.iter().any(|kw| lower.contains(kw)) {
+        return RetrievalIntent::Document;
+    }
+    RetrievalIntent::General
+}
+
+/// 代码文件扩展名统一清单。
+///
+/// 单一来源：`classify_ext`（索引类型统计）与 `intent_allowed_exts`（意图过滤）
+/// 共用本清单，避免两套列表漂移导致"已索引的代码文件在 Code 意图下被漏检"。
+const CODE_EXTENSIONS: &[&str] = &[
+    "py", "js", "ts",  "rs", "go", "java", "lua", "sh",
+    "bat", "sql", "yaml", "yml", "toml", "conf",
+];
+
+/// 意图 → 允许检索的文件扩展名白名单（元数据过滤）。
+fn intent_allowed_exts(intent: RetrievalIntent) -> Option<&'static [&'static str]> {
+    match intent {
+        RetrievalIntent::Code => Some(CODE_EXTENSIONS),
+        RetrievalIntent::Document => Some(&["md", "markdown", "mdown", "rst", "txt"]),
+        RetrievalIntent::Outline => Some(&["opml", "mm"]),
+        RetrievalIntent::General => None,
+    }
+}
+
+/// 对检索结果做文件扩展名过滤（元数据过滤的内存实现）。
+///
+/// 候选池规模为 top_k*10 级别，内存过滤成本可忽略，且不依赖
+/// LanceDB/Tantivy 的过滤器语法，避免版本兼容问题。
+fn filter_hits_by_ext(hits: Vec<SearchHit>, exts: &[&str]) -> Vec<SearchHit> {
+    if exts.is_empty() {
+        return hits;
+    }
+    // 预构建小写后缀（如 ".rs"），避免闭包内对每个命中×每个扩展名重复分配
+    let suffixes: Vec<String> = exts
+        .iter()
+        .map(|e| format!(".{}", e.to_lowercase()))
+        .collect();
+    hits.into_iter()
+        .filter(|h| {
+            let name = h.doc_name.to_lowercase();
+            suffixes.iter().any(|s| name.ends_with(s))
+        })
+        .collect()
+}
+
+/// 计算向量/BM25 融合权重 α（0~1，越高越偏向语义向量）。
+///
+/// 在配置的基准权重上微调：短查询依赖关键词精确匹配 → 降低向量权重；
+/// 长查询语义丰富 → 略提高向量权重。
+///
+/// 对 CJK 中文做了显式感知：中文按字符数而非"词"计数（中文无空格分词），
+/// 避免整句中文被计为 1 个 token 导致所有中文查询都落入"短查询"分支。
+fn compute_alpha(query: &str, base_alpha: f32) -> f32 {
+    let ascii_words = query
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .filter(|t| !t.is_empty() && t.chars().any(|c| c.is_ascii()))
         .count();
-    if word_count <= 2 {
-        2.0
-    } else if word_count <= 5 {
-        1.5
+    let cjk_chars = query
+        .chars()
+        .filter(|c| !c.is_ascii() && c.is_alphabetic())
+        .count();
+    // 短查询：≤2 个 ASCII 词且中文 ≤6 字；长查询：≥5 个 ASCII 词或中文 ≥14 字
+    let is_short = ascii_words <= 2 && cjk_chars <= 6;
+    let is_long = ascii_words >= 5 || cjk_chars >= 14;
+    if is_short {
+        (base_alpha - 0.2).clamp(0.2, 1.0)
+    } else if is_long {
+        (base_alpha + 0.1).min(0.95)
     } else {
-        0.8
+        base_alpha
     }
 }
 
@@ -93,8 +208,8 @@ fn is_code_query(query: &str) -> bool {
             return true;
         }
     }
-    // snake_case 检测
-    let has_snake = query.split(|c: char| !c.is_alphanumeric())
+    // snake_case 检测（'_' 视为词内字符，避免 "handle_timeout" 被拆成两段而漏判）
+    let has_snake = query.split(|c: char| !(c.is_alphanumeric() || c == '_'))
         .any(|word| word.contains('_') && word.len() >= 3);
     if has_snake {
         return true;
@@ -102,19 +217,35 @@ fn is_code_query(query: &str) -> bool {
     false
 }
 
+/// 从查询中提取疑似代码符号的标识符 token（CamelCase / snake_case）。
+///
+/// 中文与数字 token 会被过滤（汉字的 is_uppercase/is_lowercase 均为 false），
+/// 仅保留形如 `handleTimeout`、`lru_cache`、`parseJSON` 的标识符，用于
+/// 代码符号精确检索（见 `hybrid_search` 的符号命中注入）。
+fn extract_symbol_tokens(query: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    for t in query.split(|c: char| !(c.is_alphanumeric() || c == '_')) {
+        let t = t.trim();
+        if t.len() < 2 || t.chars().all(|c| c.is_ascii_digit()) {
+            continue;
+        }
+        let has_upper = t.chars().any(|c| c.is_uppercase());
+        let has_lower = t.chars().any(|c| c.is_lowercase());
+        if (has_upper && has_lower) || t.contains('_') {
+            tokens.push(t.to_string());
+        }
+    }
+    tokens
+}
+
 /// 根据文件扩展名分类为 "Markdown" / "代码" / "数据" / "其他"
+///
+/// 代码扩展名与 `CODE_EXTENSIONS` 保持单一来源（供意图过滤共用）。
 fn classify_ext(ext: &str) -> &'static str {
     match ext {
         "md" | "markdown" | "mdown" | "rst" => "Markdown",
         "csv" | "tsv" | "jsonl" | "parquet" | "arrow" | "feather" => "数据",
-        _ if matches!(
-            ext,
-            "py" | "js" | "ts" | "rs" | "go" | "java" | "c" | "cpp" | "h"
-            | "hpp" | "css" | "scss" | "html" | "json" | "yaml" | "yml"
-            | "toml" | "xml" | "sql" | "sh" | "bash" | "zsh" | "fish"
-            | "ps1" | "bat" | "rb" | "php" | "swift" | "kt" | "scala"
-            | "dart" | "lua" | "r"
-        ) => "代码",
+        _ if CODE_EXTENSIONS.contains(&ext) => "代码",
         _ => "其他",
     }
 }
@@ -496,36 +627,73 @@ impl Indexer {
     pub async fn remove_file(&self, dir_path: &str, rel_path: &str) -> Result<(), String> {
         let store = self.get_lance_store(dir_path).await;
         let mut deleted_chunks = 0u32;
-        let mut lance_ok = false;
-        let mut bm25_ok = false;
+        let mut bm25_deleted = 0usize;
 
         if store.open_table().await.is_ok() {
             deleted_chunks = self.count_document_chunks(&store, rel_path).await;
-            lance_ok = store.delete_document(rel_path).await.is_ok();
-            if !lance_ok {
+            if store.delete_document(rel_path).await.is_err() {
                 log::error!("[indexer] 删除 LanceDB 文档失败: {}", rel_path);
             }
         }
 
-        if let Ok(bm25) = self.get_bm25_index(dir_path).await {
-            bm25_ok = bm25.delete_document(rel_path).is_ok();
-            if !bm25_ok {
-                log::error!("[indexer] 删除 BM25 文档失败: {}", rel_path);
+        // 仅在 BM25 索引目录已存在时清理，避免为从未索引的文件创建空索引目录
+        if Path::new(&utils::get_bm25_dir(dir_path)).exists() {
+            if let Ok(bm25) = self.get_bm25_index(dir_path).await {
+                match bm25.delete_document(rel_path) {
+                    Ok(n) => bm25_deleted = n,
+                    Err(e) => log::error!("[indexer] 删除 BM25 文档失败 ({}): {}", rel_path, e),
+                }
             }
         }
 
-        // 更新元数据：只要至少一个后端删除成功，就用计数的 chunk 数更新
-        if lance_ok || bm25_ok {
-            if deleted_chunks > 0 {
-                self.update_metadata_delta(dir_path, -1, -(deleted_chunks as i32), -(deleted_chunks as i32)).await;
-            } else {
-                self.update_metadata_delta(dir_path, -1, 0, 0).await;
-            }
+        // 仅当确实删除到数据时才更新元数据，避免未索引文件导致 file_count 虚减
+        if deleted_chunks > 0 || bm25_deleted > 0 {
+            let chunk_delta = -(deleted_chunks.max(bm25_deleted as u32) as i32);
+            self.update_metadata_delta(dir_path, -1, chunk_delta, chunk_delta).await;
         } else {
-            log::warn!("[indexer] 所有后端删除均失败，跳过元数据更新: {}", rel_path);
+            log::warn!("[indexer] 文件无索引数据，跳过元数据更新: {}", rel_path);
         }
 
         Ok(())
+    }
+
+    /// 收集源文件/目录下需要清理索引的相对路径列表（磁盘删除前调用，目录可遍历）
+    ///
+    /// 单文件返回自身；目录递归收集其下所有已索引文件（跳过 .mdgo 数据目录）。
+    /// 路径比较与相对路径计算均做规范化处理（统一分隔符、去除 Windows verbatim 前缀、大小写不敏感）。
+    pub async fn collect_remove_targets(
+        &self,
+        dir_path: &str,
+        abs_path: &str,
+    ) -> Result<Vec<String>, String> {
+        if !path_is_within(dir_path, abs_path) {
+            return Err(format!("路径不在知识库目录内: {}", abs_path));
+        }
+        let target = Path::new(abs_path);
+        let mut rels: Vec<String> = Vec::new();
+        if target.is_dir() {
+            for entry in walkdir::WalkDir::new(target)
+                .follow_links(false)
+                .into_iter()
+                .filter_entry(|e| !(e.file_type().is_dir() && e.file_name() == ".mdgo"))
+            {
+                let entry = match entry {
+                    Ok(e) => e,
+                    Err(e) => {
+                        log::warn!("[indexer] 收集待清理文件时跳过无法访问的路径: {}", e);
+                        continue;
+                    }
+                };
+                if entry.file_type().is_file() {
+                    if let Some(rel) = relative_to(dir_path, &entry.path().to_string_lossy()) {
+                        rels.push(rel);
+                    }
+                }
+            }
+        } else if let Some(rel) = relative_to(dir_path, abs_path) {
+            rels.push(rel);
+        }
+        Ok(rels)
     }
 
     // ─── 清除全部索引 ───
@@ -591,11 +759,18 @@ impl Indexer {
         query_vector: &[f32],
         query: &str,
         top_k: u32,
+        intent: RetrievalIntent,
     ) -> Result<Vec<SearchHit>, String> {
         let store = self.get_lance_store(dir_path).await;
+        let config = self.config_store.read();
+        let alpha = compute_alpha(query, config.fusion_alpha);
 
-        // 候选池扩大到 top_k * 5，为 Reranker 提供更多候选
-        let vec_k = (top_k * 5).max(15);
+        // 意图 → 文件扩展名白名单（元数据过滤）
+        let allowed_exts = intent_allowed_exts(intent);
+        let has_filter = allowed_exts.map(|e| !e.is_empty()).unwrap_or(false);
+
+        // 候选池扩大到 top_k * 5；启用元数据过滤时扩大到 top_k * 10 补偿召回损失
+        let vec_k = if has_filter { (top_k * 10).max(30) } else { (top_k * 5).max(15) };
         let vec_hits = match store.search_vectors(query_vector, vec_k).await {
             Ok(hits) => hits,
             Err(e) => {
@@ -604,7 +779,7 @@ impl Indexer {
             }
         };
 
-        let bm25_k = (top_k * 5).max(15);
+        let bm25_k = if has_filter { (top_k * 10).max(30) } else { (top_k * 5).max(15) };
         let bm25_hits = match self.get_bm25_index(dir_path).await {
             Ok(idx) => match idx.search(query, bm25_k) {
                 Ok(hits) => hits,
@@ -619,36 +794,48 @@ impl Indexer {
             }
         };
 
-        log::debug!("[indexer] hybrid_search query='{}' vec_k={} vec_hits={} bm25_k={} bm25_hits={}",
-            query, vec_k, vec_hits.len(), bm25_k, bm25_hits.len());
+        // 元数据过滤（内存实现）
+        let vec_hits = match allowed_exts {
+            Some(exts) => filter_hits_by_ext(vec_hits, exts),
+            None => vec_hits,
+        };
+        let bm25_hits = match allowed_exts {
+            Some(exts) => filter_hits_by_ext(bm25_hits, exts),
+            None => bm25_hits,
+        };
 
-        let bm25_weight = compute_bm25_weight(query);
-        let mut fused = rrf_fuse(&vec_hits, &bm25_hits, RRF_K, bm25_weight);
-        log::debug!("[indexer] after RRF fuse: candidates={}", fused.len());
+        log::debug!("[indexer] hybrid_search query='{}' intent={:?} alpha={:.2} vec_k={} vec_hits={} bm25_k={} bm25_hits={}",
+            query, intent, alpha, vec_k, vec_hits.len(), bm25_k, bm25_hits.len());
 
-        // Reranker 重排序（降级安全：模型不可用时静默跳过）
-        if !fused.is_empty() {
-            let candidates: Vec<&str> = fused.iter().map(|h| h.text.as_str()).collect();
-            let rerank_result = utils::get_model_dir()
-                .and_then(|model_dir| {
-                    crate::core::embedding::rerank(query, &candidates, model_dir, 32)
-                });
-            match rerank_result {
-                Ok(scores) => {
-                    log::debug!("[indexer] reranker applied: scores_count={}", scores.len());
-                    // 将 reranker 分数写回 SearchHit（保留原始 RRF 排序作为 fallback）
-                    for (i, hit) in fused.iter_mut().enumerate() {
-                        if i < scores.len() {
-                            hit.score = scores[i];
+        let mut fused = fuse_hits(vec_hits, bm25_hits, alpha);
+        log::debug!("[indexer] after score fuse: candidates={}", fused.len());
+
+        // ── 代码符号命中注入（代码查询专用）──
+        // 语义检索可能漏掉"符号定义"所在 chunk（符号名与语义向量距离远），
+        // 此处从查询中提取标识符 token，按符号名精确/前缀匹配补召回，
+        // 提升"XX 函数在哪个文件定义"类代码问答的召回率。
+        if intent == RetrievalIntent::Code {
+            let symbols = extract_symbol_tokens(query);
+            let mut seen: std::collections::HashSet<(String, u32)> =
+                fused.iter().map(|h| (h.doc_name.clone(), h.chunk_index)).collect();
+            let mut added = 0usize;
+            for symbol in symbols.into_iter().take(3) {
+                match self.search_symbols(dir_path, &symbol, 5).await {
+                    Ok(sym_hits) => {
+                        for hit in sym_hits {
+                            let key = (hit.doc_name.clone(), hit.chunk_index);
+                            if seen.insert(key) {
+                                fused.push(hit);
+                                added += 1;
+                            }
                         }
                     }
-                    // 按 reranker 分数降序排列
-                    fused.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+                    Err(e) => log::debug!("[indexer] 代码符号检索失败（忽略）: {}", e),
                 }
-                Err(e) => {
-                    log::debug!("[indexer] reranker unavailable ({}), using RRF ranking", e);
-                    // Reranker 不可用，直接使用 RRF 排序结果
-                }
+            }
+            if added > 0 {
+                log::debug!("[indexer] 注入代码符号命中: added={}", added);
+                fused.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
             }
         }
 
@@ -684,7 +871,7 @@ impl Indexer {
         // 文件概览 chunk（symbol_kind == "file"）匹配文件名时额外加分。
         let has_code_symbols = fused.iter().any(|h| h.symbol_name.is_some() || h.symbol_kind.as_deref() == Some("file"));
         if has_code_symbols && !query_tokens.is_empty() {
-            let is_code = is_code_query(query);
+            let is_code = intent == RetrievalIntent::Code;
             let (exact_boost, partial_boost) = if is_code { (0.5, 0.25) } else { (0.3, 0.15) };
 
             for hit in fused.iter_mut() {
@@ -809,6 +996,18 @@ impl Indexer {
         }
 
         Ok(result)
+    }
+
+    /// 按代码符号名检索（精确/前缀匹配 `symbol_name`），用于 Agent 的 `code_lookup` 工具
+    /// 与代码查询的符号命中注入。见 [`crate::core::db::lance::LanceStore::search_symbols`]。
+    pub async fn search_symbols(
+        &self,
+        dir_path: &str,
+        symbol: &str,
+        top_k: u32,
+    ) -> Result<Vec<SearchHit>, String> {
+        let store = self.get_lance_store(dir_path).await;
+        store.search_symbols(symbol, top_k).await
     }
 
     /// 根据查询长度动态计算上下文扩展窗口大小。
@@ -1058,9 +1257,10 @@ impl Indexer {
             Err(_) => Vec::new(),
         };
 
-        // 4. RRF 融合+实际分数（对话搜索也使用自适应 BM25 权重）
-        let bm25_weight = compute_bm25_weight(query);
-        let fused = rrf_fuse(&vec_hits, &bm25_hits, RRF_K, bm25_weight);
+        // 4. 分数加权融合（对话搜索也使用同样的融合权重）
+        let config = self.config_store.read();
+        let alpha = compute_alpha(query, config.fusion_alpha);
+        let fused = fuse_hits(vec_hits, bm25_hits, alpha);
 
         // 5. 转换为 (session_id, score, matched_text)
         let results = fused
@@ -1387,21 +1587,23 @@ fn load_metadata(data_dir: &str) -> Option<IndexMeta> {
     serde_json::from_str(&content).ok()
 }
 
-/// RRF 融合 + 实际分数报告
+/// 向量/BM25 分数加权融合（convex combination），替代纯排名 RRF。
 ///
-/// 排序使用 RRF（倒数排名融合），保留对双系统共识信号的敏感度；
-/// `score` 字段报告向量/BM25 的实际相似度最大值（归一化到 [0,1]），
-/// 确保前端阈值过滤（如 0.3）能正常工作。
+/// 融合分数 = α·vec + (1-α)·bm25，两路分数均已归一化到 [0,1]：
+/// - 向量分数：余弦相似度 `1 - distance`（LanceDB 已给出）
+/// - BM25 分数：按候选池最大值归一化（Bm25Index 已处理）
 ///
-/// 相比纯 RRF（分数 < 0.1），本方案既保留了排序质量，又提供了
-/// 语义上有意义的分数。
-fn rrf_fuse(vec_hits: &[SearchHit], bm25_hits: &[SearchHit], k: u32, bm25_weight: f32) -> Vec<SearchHit> {
+/// 双路命中取加权和；**单路命中直接使用该路自身分数（不折算）**——
+/// 因为分数已归一化，折算会把单路命中阈值抬高（如纯向量需 ≥0.75 才过
+/// min_score=0.3），系统性丢失"仅一路召回"的相关片段。融合分数始终落在
+/// [0,1]，`min_score` 作为绝对阈值有确定语义。元数据（path_json /
+/// sentence_window / symbol 等）优先取向量路结果，文本以向量路为基准、
+/// BM25 路兜底。
+fn fuse_hits(vec_hits: Vec<SearchHit>, bm25_hits: Vec<SearchHit>, alpha: f32) -> Vec<SearchHit> {
     use std::collections::HashMap;
 
     #[derive(Default)]
     struct Entry {
-        rrf_score: f32,
-        sim_score: f32,
         score_vec: f32,
         score_bm25: f32,
         text: String,
@@ -1413,74 +1615,217 @@ fn rrf_fuse(vec_hits: &[SearchHit], bm25_hits: &[SearchHit], k: u32, bm25_weight
 
     let mut score_map: HashMap<(String, u32), Entry> = HashMap::new();
 
-    // ── 遍历向量结果集 ──
-    for (rank, hit) in vec_hits.iter().enumerate() {
+    // ── 向量结果集 ──
+    for hit in vec_hits {
         let key = (hit.doc_name.clone(), hit.chunk_index);
         let entry = score_map.entry(key).or_default();
-        entry.rrf_score += 1.0 / (k as f32 + rank as f32);
-        if hit.score > entry.sim_score {
-            entry.sim_score = hit.score;
-        }
-        if hit.score_vec > entry.score_vec {
-            entry.score_vec = hit.score_vec;
-        }
-        // 向量结果集的 text 作为基准
+        entry.score_vec = entry.score_vec.max(hit.score);
         entry.text = hit.text.clone();
-        // 保存 OPML 层级路径（BM25 结果无此字段，优先使用向量结果的 path_json）
         if entry.path_json.is_none() {
             entry.path_json = hit.path_json.clone();
         }
-        // 保存句子窗口上下文（BM25 结果无此字段）
         if entry.sentence_window.is_none() {
             entry.sentence_window = hit.sentence_window.clone();
         }
-        // 保存代码符号信息（BM25 结果可能有，但向量结果更准确）
         if entry.symbol_name.is_none() {
             entry.symbol_name = hit.symbol_name.clone();
             entry.symbol_kind = hit.symbol_kind.clone();
         }
     }
 
-    // ── 遍历 BM25 结果集（关键词匹配，带权重 BM25_RRF_WEIGHT）──
-    for (rank, hit) in bm25_hits.iter().enumerate() {
+    // ── BM25 结果集 ──
+    for hit in bm25_hits {
         let key = (hit.doc_name.clone(), hit.chunk_index);
         let entry = score_map.entry(key).or_default();
-        // BM25 匹配的 RRF 分数乘以动态权重，使关键词精确匹配优先
-        entry.rrf_score += bm25_weight / (k as f32 + rank as f32);
-        if hit.score > entry.sim_score {
-            entry.sim_score = hit.score;
-        }
-        if hit.score_bm25 > entry.score_bm25 {
-            entry.score_bm25 = hit.score_bm25;
-        }
-        // 仅当 vec 未覆盖此 key 时才用 BM25 的 text
+        entry.score_bm25 = entry.score_bm25.max(hit.score);
+        // 仅当向量路未覆盖此 key 时才用 BM25 的文本
         if entry.text.is_empty() {
             entry.text = hit.text.clone();
         }
-        // BM25 可能含符号信息（向量结果未覆盖时使用）
         if entry.symbol_name.is_none() {
             entry.symbol_name = hit.symbol_name.clone();
             entry.symbol_kind = hit.symbol_kind.clone();
         }
     }
 
-    // ── 按 RRF 排序，报告实际相似度 ──
-    let mut entries: Vec<_> = score_map.drain().collect();
-    entries.sort_by(|a, b| b.1.rrf_score.partial_cmp(&a.1.rrf_score).unwrap_or(std::cmp::Ordering::Equal));
+    // 融合分数：双路命中取加权和；单路命中使用该路自身分数（避免阈值被抬高）
+    let fused_score = |e: &Entry| {
+        if e.score_vec > 0.0 && e.score_bm25 > 0.0 {
+            alpha * e.score_vec + (1.0 - alpha) * e.score_bm25
+        } else {
+            e.score_vec.max(e.score_bm25)
+        }
+    };
+
+    let mut entries: Vec<(String, u32, Entry)> = score_map
+        .drain()
+        .map(|((doc_name, chunk_index), e)| (doc_name, chunk_index, e))
+        .collect();
+
+    entries.sort_by(|a, b| {
+        fused_score(&b.2)
+            .partial_cmp(&fused_score(&a.2))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     entries
         .into_iter()
-        .map(|((doc_name, chunk_index), entry)| SearchHit {
-            text: entry.text,
-            doc_name,
-            chunk_index,
-            score: entry.sim_score.min(1.0).max(0.0),
-            score_vec: entry.score_vec.min(1.0).max(0.0),
-            score_bm25: entry.score_bm25.min(1.0).max(0.0),
-            path_json: entry.path_json,
-            sentence_window: entry.sentence_window,
-            symbol_name: entry.symbol_name,
-            symbol_kind: entry.symbol_kind,
+        .map(|(doc_name, chunk_index, e)| {
+            let score = fused_score(&e).clamp(0.0, 1.0);
+            SearchHit {
+                text: e.text,
+                doc_name,
+                chunk_index,
+                score,
+                score_vec: e.score_vec.clamp(0.0, 1.0),
+                score_bm25: e.score_bm25.clamp(0.0, 1.0),
+                path_json: e.path_json,
+                sentence_window: e.sentence_window,
+                symbol_name: e.symbol_name,
+                symbol_kind: e.symbol_kind,
+            }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn route_intent_detects_code() {
+        assert_eq!(route_intent("LRUCache 是怎么实现的"), RetrievalIntent::Code);
+        assert_eq!(route_intent("index_all 函数的逻辑"), RetrievalIntent::Code);
+        assert_eq!(route_intent("fn main 在哪定义"), RetrievalIntent::Code);
+    }
+
+    #[test]
+    fn route_intent_detects_outline_and_doc() {
+        assert_eq!(route_intent("这个思维导图的大纲结构"), RetrievalIntent::Outline);
+        assert_eq!(route_intent("README 文档说明"), RetrievalIntent::Document);
+    }
+
+    #[test]
+    fn route_intent_defaults_to_general() {
+        assert_eq!(route_intent("今天天气怎么样"), RetrievalIntent::General);
+        // 动词性"说明"不再误路由为 Document（防止中文代码提问被过滤掉代码文件）
+        assert_eq!(route_intent("请说明 fetch 的实现方式"), RetrievalIntent::General);
+        // 泛化词"大纲"不再误路由为 Outline（普通文档查询不会被限制到 opml/mm）
+        assert_eq!(route_intent("本文大纲是什么"), RetrievalIntent::General);
+    }
+
+    #[test]
+    fn compute_alpha_handles_cjk_and_short_queries() {
+        let close = |a: f32, b: f32| (a - b).abs() < 1e-5;
+        // 短英文关键词 → 降低向量权重，依赖关键词精确匹配
+        assert!(close(compute_alpha("fetch", 0.6), 0.4), "got {}", compute_alpha("fetch", 0.6));
+        // 中等长度中文查询不再被误判为"短查询"，保持基准权重
+        assert!(close(compute_alpha("索引配置如何热更新", 0.6), 0.6), "got {}", compute_alpha("索引配置如何热更新", 0.6));
+        // 较长中文查询（≥14 字）略提高向量权重
+        assert!(close(compute_alpha("如何在不重启的情况下热更新索引配置", 0.6), 0.7), "got {}", compute_alpha("如何在不重启的情况下热更新索引配置", 0.6));
+        // 超长混合查询略提高向量权重
+        assert!(
+            close(
+                compute_alpha("如何实现一个支持并发读写的缓存 并且能够自动清理过期条目 同时保证线程安全", 0.6),
+                0.7
+            ),
+            "got {}",
+            compute_alpha("如何实现一个支持并发读写的缓存 并且能够自动清理过期条目 同时保证线程安全", 0.6)
+        );
+    }
+
+    #[test]
+    fn fuse_hits_weights_both_sources() {
+        let v = SearchHit {
+            text: "t".into(),
+            doc_name: "a.rs".into(),
+            chunk_index: 0,
+            score: 0.8,
+            score_vec: 0.8,
+            score_bm25: 0.0,
+            path_json: None,
+            sentence_window: None,
+            symbol_name: None,
+            symbol_kind: None,
+        };
+        let b = SearchHit {
+            text: "t".into(),
+            doc_name: "a.rs".into(),
+            chunk_index: 0,
+            score: 0.6,
+            score_vec: 0.0,
+            score_bm25: 0.6,
+            path_json: None,
+            sentence_window: None,
+            symbol_name: None,
+            symbol_kind: None,
+        };
+        // 双路命中：0.6*0.8 + 0.4*0.6 = 0.72
+        let fused = fuse_hits(vec![v], vec![b], 0.6);
+        assert_eq!(fused.len(), 1);
+        assert!((fused[0].score - 0.72).abs() < 1e-5, "融合分数应为 0.72, got {}", fused[0].score);
+    }
+
+    #[test]
+    fn fuse_hits_single_source_keeps_own_score() {
+        // 仅向量命中：不再按 α 折算，保留自身分数（避免纯向量命中被 min_score 误过滤）
+        let vec_only = SearchHit {
+            text: "v".into(),
+            doc_name: "a.md".into(),
+            chunk_index: 0,
+            score: 0.5,
+            score_vec: 0.5,
+            score_bm25: 0.0,
+            path_json: None,
+            sentence_window: None,
+            symbol_name: None,
+            symbol_kind: None,
+        };
+        let fused = fuse_hits(vec![vec_only], Vec::new(), 0.6);
+        assert!(
+            (fused[0].score - 0.5).abs() < 1e-5,
+            "单路向量命中不应被折算, got {}",
+            fused[0].score
+        );
+
+        // 仅 BM25 命中：同样保留自身分数
+        let bm25_only = SearchHit {
+            text: "b".into(),
+            doc_name: "b.md".into(),
+            chunk_index: 0,
+            score: 0.6,
+            score_vec: 0.0,
+            score_bm25: 0.6,
+            path_json: None,
+            sentence_window: None,
+            symbol_name: None,
+            symbol_kind: None,
+        };
+        let fused = fuse_hits(Vec::new(), vec![bm25_only], 0.6);
+        assert!(
+            (fused[0].score - 0.6).abs() < 1e-5,
+            "单路 BM25 命中不应被折算, got {}",
+            fused[0].score
+        );
+    }
+
+    #[test]
+    fn filter_hits_by_ext_keeps_matching_only() {
+        let mk = |doc: &str| SearchHit {
+            text: "t".into(),
+            doc_name: doc.into(),
+            chunk_index: 0,
+            score: 0.5,
+            score_vec: 0.5,
+            score_bm25: 0.0,
+            path_json: None,
+            sentence_window: None,
+            symbol_name: None,
+            symbol_kind: None,
+        };
+        let hits = vec![mk("src/a.rs"), mk("docs/readme.md"), mk("notes/outline.opml")];
+        let filtered = filter_hits_by_ext(hits, &["rs"]);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].doc_name, "src/a.rs");
+    }
 }

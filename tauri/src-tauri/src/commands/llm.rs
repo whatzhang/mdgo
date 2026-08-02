@@ -12,8 +12,9 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
-use crate::core::agent::{KbSearchConfig, aggregate_hits, build_chat_agent, build_rag_agent};
-use crate::core::{call_embedding_query, SearchHit};
+use crate::core::agent::{KbSearchConfig, aggregate_hits, build_chat_agent, build_context_text, build_rag_agent};
+use crate::core::agent::tools::tool_call_bus;
+use crate::core::{call_embedding_query, route_intent, SearchHit};
 use crate::services::llm::{LLMClient, UsageInfo, chat_message_to_rig, usage_to_info};
 
 // ─── 后端消息长度预算 ───
@@ -170,6 +171,38 @@ fn emit_command_error(app: &AppHandle, channel: &str, request_id: &str, message:
     );
 }
 
+/// 转发该请求挂起的工具调用事件（消费式），供前端渲染工具调用轨迹。
+///
+/// 工具闭包在 Rig 流式内部执行，无法直接 emit Tauri 事件，故先写入
+/// [`crate::core::agent::tools::ToolCallBus`]，由流式循环在此处统一转发。
+fn emit_pending_tool_events(app: &AppHandle, request_id: &str) {
+    for event in tool_call_bus().drain(request_id) {
+        if event.kind == "call" {
+            let _ = app.emit(
+                "agent:tool_call",
+                serde_json::json!({
+                    "request_id": request_id,
+                    "seq": event.seq,
+                    "tool": event.tool,
+                    "args_preview": event.args_preview,
+                }),
+            );
+        } else {
+            let _ = app.emit(
+                "agent:tool_result",
+                serde_json::json!({
+                    "request_id": request_id,
+                    "seq": event.seq,
+                    "tool": event.tool,
+                    "call_seq": event.call_seq,
+                    "ok": event.ok,
+                    "summary": event.summary,
+                }),
+            );
+        }
+    }
+}
+
 /// 获取或创建 LLM 客户端。
 ///
 /// 按配置指纹缓存，复用内部 reqwest 连接池；配置热更新后指纹变化，自动重建。
@@ -313,9 +346,11 @@ pub async fn kb_rag_query(
 
                 if let Some(vec) = embedding {
                     let search_start = std::time::Instant::now();
+                    // 轻量级意图路由 + 元数据过滤（按文件类型限定候选范围）
+                    let intent = route_intent(&q);
                     let hits = state
                         .indexer
-                        .hybrid_search(&dir, &vec, &q, top_k)
+                        .hybrid_search(&dir, &vec, &q, top_k, intent)
                         .await
                         .unwrap_or_default();
                     log::debug!("[rag_query] hybrid_search for query='{}' hits={} took={:?}",
@@ -363,9 +398,15 @@ pub async fn kb_rag_query(
         return Ok(());
     }
 
-    // ── Stage 3: 文档级聚合 + 自适应阈值（core::agent::aggregate_hits）──
+    // ── Stage 3: 文档级聚合 + 绝对阈值（core::agent::aggregate_hits）──
     log::info!("[rag_query] Stage3: aggregation start request_id={}", request_id);
-    let selected: Vec<(SearchHit, f32)> = aggregate_hits(all_hits);
+    let kb_cfg = state.config_store.read();
+    let selected: Vec<(SearchHit, f32)> = aggregate_hits(
+        all_hits,
+        kb_cfg.min_score,
+        kb_cfg.max_context_docs,
+        kb_cfg.max_chunks_per_doc,
+    );
     log::info!("[rag_query] Stage3: aggregation done request_id={} selected_chunks={}", request_id, selected.len());
     log::debug!(
         "[rag_query] Stage3: selected docs={:?}",
@@ -394,24 +435,10 @@ pub async fn kb_rag_query(
         },
     );
 
-    // 按文档分组构建上下文：同一文档的多个 chunks 合并为一个段落块，
-    // 优先使用 sentence_window（包含检索句子前后的上下文），fallback 到 chunk text。
-    // Markdown/OPML/FreeMind 所有文档类型均适用。
-    let mut context_parts: Vec<String> = Vec::new();
-    let mut last_doc = String::new();
-    for (hit, _) in &selected {
-        let doc_name = &hit.doc_name;
-        let text = hit.sentence_window.as_deref().unwrap_or(&hit.text);
-        if *doc_name != last_doc {
-            if !last_doc.is_empty() {
-                context_parts.push(String::new()); // 文档间空行分隔
-            }
-            context_parts.push(format!("--- {} ---", doc_name));
-            last_doc = doc_name.clone();
-        }
-        context_parts.push(text.to_string());
-    }
-    let context = context_parts.join("\n");
+    // 按文档分组构建上下文：文档按分数降序、文档内按阅读顺序（chunk_index），
+    // 优先使用 sentence_window（包含检索句子前后的上下文），fallback 到 chunk text，
+    // 总字符数受 agent 模块的 MAX_CONTEXT_CHARS 限制避免超出模型窗口。
+    let context = build_context_text(&selected, crate::core::agent::MAX_CONTEXT_CHARS);
     log::debug!(
         "[rag_query] Stage4: context built char_len={} preview={:?}",
         context.len(),
@@ -483,6 +510,12 @@ pub async fn kb_rag_query(
         dir_path: dir_path.clone(),
         indexer: state.indexer.clone(),
         default_top_k: top_k,
+        request_id: request_id.clone(),
+        dir_blacklist: kb_cfg.dir_blacklist,
+        file_blacklist: kb_cfg.file_blacklist,
+        min_score: kb_cfg.min_score,
+        max_context_docs: kb_cfg.max_context_docs,
+        max_chunks_per_doc: kb_cfg.max_chunks_per_doc,
     };
     let agent = build_rag_agent(model, &context, search_config);
 
@@ -521,6 +554,9 @@ pub async fn kb_rag_query(
                     },
                 );
             }
+            // 取消时补发残留工具事件并清理总线
+            emit_pending_tool_events(&app, &request_id);
+            tool_call_bus().clear(&request_id);
             task_registry.unregister(&request_id).await;
             return Ok(());
         }
@@ -563,6 +599,8 @@ pub async fn kb_rag_query(
                 break;
             }
         }
+        // 转发工具调用轨迹（工具在 Rig 流式内部执行，结果已写入总线）
+        emit_pending_tool_events(&app, &request_id);
     }
     log::info!("[rag_query] Stage4: agent stream done request_id={} took={:?} delta_count={} content_len={}",
         request_id, llm_start.elapsed(), delta_count, full_content.len());
@@ -603,6 +641,9 @@ pub async fn kb_rag_query(
                 emit_command_error(&app, "rag:error", &request_id, "LLM 生成失败，请检查模型服务是否可用".into());
             }
         }
+        // 非流式降级期间可能执行过工具，补发一次并清理
+        emit_pending_tool_events(&app, &request_id);
+        tool_call_bus().clear(&request_id);
         task_registry.unregister(&request_id).await;
         return Ok(());
     }
@@ -624,6 +665,9 @@ pub async fn kb_rag_query(
         },
     );
 
+    // 收尾：补发残留工具事件并清理总线
+    emit_pending_tool_events(&app, &request_id);
+    tool_call_bus().clear(&request_id);
     task_registry.unregister(&request_id).await;
     Ok(())
 }

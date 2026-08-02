@@ -106,8 +106,9 @@ pub fn run() {
     let watcher = Arc::new(WatcherService::new(indexer.clone(), on_error, on_changed));
 
     // ── 后台预下载 embedding 模型 ──
-    // 模型不随安装包内置，首次启动时静默在后台下载 zip → SHA-256 校验 → 解压部署，
-    // 不阻塞 UI；即使失败也不影响启动，首次使用 embedding 时自动重试。
+    // 模型不随安装包内置，首次启动时静默在后台从 HuggingFace 仓库逐文件下载
+    // （ModelScope → hf-mirror 镜像 → HuggingFace 主站依次回退），不阻塞 UI；
+    // 即使失败也不影响启动，首次使用 embedding 时自动重试。
     std::thread::spawn(|| {
         match crate::core::db::utils::ensure_model_ready() {
             Ok(p) => log::info!("[startup] embedding 模型已就绪: {}", p.display()),
@@ -233,6 +234,7 @@ fn init_logging() {
         .add_filter_ignore_str("lance")
         .add_filter_ignore_str("tantivy")
         .add_filter_ignore_str("datafusion")
+        .add_filter_ignore_str("sqlparser")
         .build();
     let has_file_logger;
     let file_logger = match std::fs::create_dir_all(&log_dir)

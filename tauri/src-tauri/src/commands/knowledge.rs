@@ -40,6 +40,7 @@ pub async fn kb_index(
         chunk_overlap: chunk_overlap.unwrap_or(old_cfg.chunk_overlap),
         top_k: top_k.unwrap_or(old_cfg.top_k),
         min_score: min_score.unwrap_or(old_cfg.min_score),
+        ..old_cfg
     });
 
     // 暂停 watcher 增量处理（避免 index_all 与 watcher 并发写 DB）
@@ -120,6 +121,9 @@ pub async fn kb_update_indexer_config(
     chunk_overlap: Option<usize>,
     top_k: Option<u32>,
     min_score: Option<f32>,
+    fusion_alpha: Option<f32>,
+    max_context_docs: Option<usize>,
+    max_chunks_per_doc: Option<usize>,
 ) -> Result<(), String> {
     let state = app.state::<AppState>();
     let mut cfg = state.config_store.read();
@@ -127,6 +131,9 @@ pub async fn kb_update_indexer_config(
     if let Some(v) = chunk_overlap { cfg.chunk_overlap = v; }
     if let Some(v) = top_k { cfg.top_k = v; }
     if let Some(v) = min_score { cfg.min_score = v; }
+    if let Some(v) = fusion_alpha { cfg.fusion_alpha = v.clamp(0.0, 1.0); }
+    if let Some(v) = max_context_docs { cfg.max_context_docs = v.max(1); }
+    if let Some(v) = max_chunks_per_doc { cfg.max_chunks_per_doc = v.max(1); }
     state.config_store.update(cfg);
     Ok(())
 }
@@ -154,9 +161,12 @@ pub async fn kb_search_hybrid(
         .next()
         .ok_or("Embedding 返回空向量")?;
 
+    // 轻量级意图路由 + 元数据过滤（按文件类型限定候选范围）
+    let intent: crate::core::RetrievalIntent = crate::core::route_intent(&query);
+
     state
         .indexer
-        .hybrid_search(&dir_path, &query_vec, &query, top_k)
+        .hybrid_search(&dir_path, &query_vec, &query, top_k, intent)
         .await
 }
 

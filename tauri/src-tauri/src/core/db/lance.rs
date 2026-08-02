@@ -62,11 +62,25 @@ pub struct SearchHit {
     pub symbol_kind: Option<String>,
 }
 
+/// 代码符号条目缓存（search_symbols 内存过滤用，避免每次查询全表 LIKE 扫描）
+#[derive(Debug, Clone)]
+struct SymbolEntry {
+    text: String,
+    doc_name: String,
+    chunk_index: u32,
+    symbol_name: String,
+    symbol_kind: Option<String>,
+    path_json: Option<String>,
+    sentence_window: Option<String>,
+}
+
 pub struct LanceStore {
     uri: String,
     table_name: String,
     /// 缓存连接，同一实例内复用（解决 C4）
     db: Mutex<Option<lancedb::connection::Connection>>,
+    /// 代码符号名缓存（首次查询全量加载，写操作后自动失效）
+    symbol_cache: std::sync::Mutex<Option<Vec<SymbolEntry>>>,
 }
 
 impl LanceStore {
@@ -75,6 +89,7 @@ impl LanceStore {
             uri: base_uri.to_string(),
             table_name: table_name.to_string(),
             db: Mutex::new(None),
+            symbol_cache: std::sync::Mutex::new(None),
         }
     }
 
@@ -335,6 +350,8 @@ impl LanceStore {
             .map_err(|_| "LanceDB 写入超时 (120s)，请检查磁盘空间或数据一致性".to_string())?
             .map_err(|e| format!("LanceDB 写入失败: {}", e))?;
 
+        // 数据变更后失效符号缓存
+        self.invalidate_symbol_cache();
         Ok(())
     }
 
@@ -344,7 +361,29 @@ impl LanceStore {
         query: &[f32],
         top_k: u32,
     ) -> Result<Vec<SearchHit>, String> {
+        let t0 = std::time::Instant::now();
         let table = self.open_table().await?;
+        let open_elapsed = t0.elapsed();
+
+        // 诊断：输出当前向量索引状态（元数据读取，开销极小），
+        // 用于确认是否因缺少向量索引而退化为全表暴力扫描
+        match table.list_indices().await {
+            Ok(indices) => {
+                let has_vector = indices
+                    .iter()
+                    .any(|idx| idx.columns.iter().any(|c| c == "vector"));
+                log::debug!(
+                    "[lance] search_vectors 索引状态: has_vector_index={} indices={}",
+                    has_vector,
+                    indices
+                        .iter()
+                        .map(|i| i.columns.join(","))
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                );
+            }
+            Err(e) => log::debug!("[lance] search_vectors 读取索引状态失败: {}", e),
+        }
 
         let batches: Vec<arrow_array::RecordBatch> = table
             .query()
@@ -358,6 +397,7 @@ impl LanceStore {
             .try_collect()
             .await
             .map_err(|e| format!("读取检索结果失败: {}", e))?;
+        let query_elapsed = t0.elapsed();
 
         let mut hits = Vec::new();
         for batch in &batches {
@@ -421,8 +461,176 @@ impl LanceStore {
             }
         }
 
+        log::debug!(
+            "[lance] search_vectors open_table={:.3}s query={:.3}s total={:.3}s hits={}",
+            open_elapsed.as_secs_f64(),
+            query_elapsed.as_secs_f64(),
+            t0.elapsed().as_secs_f64(),
+            hits.len()
+        );
         Ok(hits)
     }
+
+    /// 按代码符号名检索（内存过滤 `symbol_name`），用于代码语义问答。
+    ///
+    /// 与向量检索互补：向量检索找"语义相关"，此函数精确找"符号定义"所在 chunk。
+    /// 只返回代码 chunk（`symbol_name` 非空），按匹配质量（精确 > 前缀 > 包含）排序。
+    ///
+    /// 性能：符号条目首次查询时全量加载进内存缓存（只读含符号的行），
+    /// 后续查询直接内存过滤（毫秒级），避免反复对 LanceDB 做全表 LIKE 扫描
+    /// （36k 行量级每次可达数秒）。写操作（add_chunks/delete 等）会自动失效缓存。
+    pub async fn search_symbols(
+        &self,
+        symbol: &str,
+        top_k: u32,
+    ) -> Result<Vec<SearchHit>, String> {
+        let sym = symbol.trim();
+        if sym.is_empty() {
+            return Ok(Vec::new());
+        }
+        let entries = self.get_symbol_entries().await?;
+        let sym_lower = sym.to_lowercase();
+
+        // (hit, 匹配质量)：0 精确匹配，1 前缀匹配，2 包含匹配
+        let mut hits: Vec<(SearchHit, u8)> = Vec::new();
+        for e in entries.iter() {
+            let sn = e.symbol_name.to_lowercase();
+            if !sn.contains(&sym_lower) {
+                continue;
+            }
+            let quality = if sn == sym_lower {
+                0u8
+            } else if sn.starts_with(&sym_lower) {
+                1u8
+            } else {
+                2u8
+            };
+            hits.push((
+                SearchHit {
+                    text: e.text.clone(),
+                    doc_name: e.doc_name.clone(),
+                    chunk_index: e.chunk_index,
+                    score: 0.0,
+                    score_vec: 0.0,
+                    score_bm25: 0.0,
+                    path_json: e.path_json.clone(),
+                    sentence_window: e.sentence_window.clone(),
+                    symbol_name: Some(e.symbol_name.clone()),
+                    symbol_kind: e.symbol_kind.clone(),
+                },
+                quality,
+            ));
+        }
+
+        hits.sort_by_key(|(_, q)| *q);
+        hits.truncate(top_k as usize);
+        // score 按匹配质量归一（供注入 RRF 融合时参考排序）
+        Ok(hits
+            .into_iter()
+            .enumerate()
+            .map(|(i, (mut h, q))| {
+                let base = if q == 0 { 0.95 } else if q == 1 { 0.85 } else { 0.7 };
+                h.score = (base - i as f32 * 0.02).max(0.1);
+                h
+            })
+            .collect())
+    }
+
+    /// 获取代码符号缓存条目（未缓存则全量加载）。
+    async fn get_symbol_entries(&self) -> Result<Vec<SymbolEntry>, String> {
+        {
+            let guard = self.symbol_cache.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(ref v) = *guard {
+                return Ok(v.clone());
+            }
+        }
+        let entries = self.load_symbol_entries().await?;
+        *self.symbol_cache.lock().unwrap_or_else(|e| e.into_inner()) = Some(entries.clone());
+        Ok(entries)
+    }
+
+    /// 全量加载符号条目：只读取 `symbol_name` 非空的行及所需列（不含 vector 列）。
+    async fn load_symbol_entries(&self) -> Result<Vec<SymbolEntry>, String> {
+        let table = self.open_table().await?;
+        let batches: Vec<arrow_array::RecordBatch> = table
+            .query()
+            .only_if("symbol_name IS NOT NULL")
+            .select(lancedb::query::Select::columns(&[
+                "text",
+                "doc_name",
+                "chunk_index",
+                "symbol_name",
+                "symbol_kind",
+                "path_json",
+                "sentence_window",
+            ]))
+            .execute()
+            .await
+            .map_err(|e| format!("LanceDB 符号条目加载失败: {}", e))?
+            .try_collect()
+            .await
+            .map_err(|e| format!("读取符号条目失败: {}", e))?;
+
+        let mut entries: Vec<SymbolEntry> = Vec::new();
+        for batch in &batches {
+            let texts = batch
+                .column_by_name("text")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>())
+                .ok_or("缺少 text 列")?;
+            let doc_names = batch
+                .column_by_name("doc_name")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>())
+                .ok_or("缺少 doc_name 列")?;
+            let chunk_idxs = batch
+                .column_by_name("chunk_index")
+                .and_then(|c| c.as_any().downcast_ref::<UInt32Array>())
+                .ok_or("缺少 chunk_index 列")?;
+            let symbol_names = batch
+                .column_by_name("symbol_name")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>())
+                .ok_or("缺少 symbol_name 列")?;
+            let symbol_kinds = batch
+                .column_by_name("symbol_kind")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+            let path_jsons = batch
+                .column_by_name("path_json")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+            let sentence_windows = batch
+                .column_by_name("sentence_window")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+
+            for i in 0..batch.num_rows() {
+                if symbol_names.is_null(i) {
+                    continue;
+                }
+                entries.push(SymbolEntry {
+                    text: texts.value(i).to_string(),
+                    doc_name: doc_names.value(i).to_string(),
+                    chunk_index: chunk_idxs.value(i),
+                    symbol_name: symbol_names.value(i).to_string(),
+                    symbol_kind: symbol_kinds.and_then(|arr| {
+                        if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
+                    }),
+                    path_json: path_jsons.and_then(|arr| {
+                        if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
+                    }),
+                    sentence_window: sentence_windows.and_then(|arr| {
+                        if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
+                    }),
+                });
+            }
+        }
+        log::debug!("[lance] 符号缓存加载完成: entries={}", entries.len());
+        Ok(entries)
+    }
+
+    /// 写操作后失效符号缓存（下次查询自动重新加载）
+    fn invalidate_symbol_cache(&self) {
+        if let Ok(mut guard) = self.symbol_cache.lock() {
+            *guard = None;
+        }
+    }
+
 
     /// 获取所有已索引的文档名列表（去重）。
     ///
@@ -543,9 +751,10 @@ impl LanceStore {
     pub async fn drop_table_only(&self) -> Result<(), String> {
         let db = self.get_connection().await?;
         let _ = db.drop_table(&self.table_name, &[]).await;
-        // 重置连接缓存
+        // 重置连接缓存与符号缓存
         let mut guard = self.db.lock().await;
         *guard = None;
+        self.invalidate_symbol_cache();
         Ok(())
     }
 
@@ -568,6 +777,7 @@ impl LanceStore {
             .delete(&predicate)
             .await
             .map_err(|e| format!("删除文档失败: {}", e))?;
+        self.invalidate_symbol_cache();
         Ok(())
     }
 

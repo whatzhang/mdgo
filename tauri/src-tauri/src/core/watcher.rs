@@ -78,6 +78,14 @@ impl WatcherService {
         }
     }
 
+    /// 当前正在监听的目录（watcher 未启动时为 None）
+    pub fn get_watch_dir(&self) -> Option<String> {
+        self.watch_dir
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
     /// 启动文件监听
     ///
     /// Idempotent：如已启动且在监听同一目录，直接返回 Ok。

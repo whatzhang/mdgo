@@ -3,6 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
+use tauri::{AppHandle, Manager};
+
 /// 安全规范化路径：先检查路径存在性，再调用 canonicalize 解析为绝对路径。
 /// 用于在文件操作前确保路径有效并阻止符号链接绕过。
 fn canonicalize_safe(path: &str) -> Result<PathBuf, String> {
@@ -232,18 +234,42 @@ pub fn write_file_binary(path: String, content: Vec<u8>) -> Result<(), String> {
     fs::write(p, &content).map_err(|e| format!("写入文件失败 ({}): {}", path, e))
 }
 
-/// 删除文件或目录
+/// 删除文件或目录（同时清理知识库索引：LanceDB 向量 + BM25 倒排索引）
 #[tauri::command]
-pub fn delete(path: String) -> Result<(), String> {
+pub async fn delete(app: AppHandle, path: String) -> Result<(), String> {
     if !is_path_safe(Path::new(&path)) {
         return Err("路径不安全".into());
     }
     let canon = canonicalize_safe(&path)?;
-    if canon.is_dir() {
-        fs::remove_dir_all(&canon).map_err(|e| format!("删除目录失败 ({}): {}", path, e))
-    } else {
-        fs::remove_file(&canon).map_err(|e| format!("删除文件失败 ({}): {}", path, e))
+    let canon_str = canon.to_string_lossy().to_string();
+    let state = app.state::<crate::AppState>();
+
+    // 磁盘删除前收集待清理索引的文件（目录需可遍历，否则无法获知目录下文件列表）
+    let kb_dir = state.watcher.get_watch_dir();
+    let mut pending: Vec<String> = Vec::new();
+    if let Some(ref dir) = kb_dir {
+        match state.indexer.collect_remove_targets(dir, &canon_str).await {
+            Ok(rels) => pending = rels,
+            Err(e) => log::warn!("[fs] 收集待清理索引失败 ({}): {}", path, e),
+        }
     }
+
+    // 删除磁盘文件/目录
+    if canon.is_dir() {
+        fs::remove_dir_all(&canon).map_err(|e| format!("删除目录失败 ({}): {}", path, e))?;
+    } else {
+        fs::remove_file(&canon).map_err(|e| format!("删除文件失败 ({}): {}", path, e))?;
+    }
+
+    // 同步清理知识库索引（磁盘已删除，清理失败不阻塞删除，仅记录）
+    if let Some(dir) = kb_dir {
+        for rel in &pending {
+            if let Err(e) = state.indexer.remove_file(&dir, rel).await {
+                log::error!("[fs] 清理删除文件的索引失败 ({}): {}", rel, e);
+            }
+        }
+    }
+    Ok(())
 }
 
 /// 重命名/移动文件
