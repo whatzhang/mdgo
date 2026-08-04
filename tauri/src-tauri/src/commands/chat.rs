@@ -182,10 +182,11 @@ pub async fn chat_message_save(
     role: String,
     content: String,
     token_count: i32,
+    tool_calls: Option<String>,
 ) -> Result<ChatMessage, String> {
     let store = state.get_chat_store(&dir_path)?;
     tokio::task::spawn_blocking(move || {
-        store.save_message(&session_id, &role, &content, token_count)
+        store.save_message(&session_id, &role, &content, token_count, tool_calls.as_deref())
     })
     .await
     .map_err(|e| format!("任务执行失败: {}", e))?

@@ -14,6 +14,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::core::agent::{KbSearchConfig, aggregate_hits, build_chat_agent, build_context_text, build_rag_agent};
 use crate::core::agent::tools::tool_call_bus;
+use crate::core::skill::context::{SkillExecutionContext, resolve_skill_context};
 use crate::core::{call_embedding_query, route_intent, SearchHit};
 use crate::services::llm::{LLMClient, UsageInfo, chat_message_to_rig, usage_to_info};
 
@@ -177,27 +178,42 @@ fn emit_command_error(app: &AppHandle, channel: &str, request_id: &str, message:
 /// [`crate::core::agent::tools::ToolCallBus`]，由流式循环在此处统一转发。
 fn emit_pending_tool_events(app: &AppHandle, request_id: &str) {
     for event in tool_call_bus().drain(request_id) {
-        if event.kind == "call" {
-            let _ = app.emit(
-                "agent:tool_call",
-                serde_json::json!({
-                    "request_id": request_id,
-                    "seq": event.seq,
-                    "tool": event.tool,
-                    "args_preview": event.args_preview,
-                }),
-            );
+        // 直接序列化 ToolCallEvent：skill_id 经 skip_serializing_if 仅在有值时输出，
+        // 避免手动重建 JSON 丢失字段（如技能来源 skill_id）。
+        let mut payload = match serde_json::to_value(&event) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        payload["request_id"] = serde_json::Value::String(request_id.to_string());
+        let channel = if event.kind == "call" {
+            "agent:tool_call"
         } else {
-            let _ = app.emit(
-                "agent:tool_result",
-                serde_json::json!({
-                    "request_id": request_id,
-                    "seq": event.seq,
-                    "tool": event.tool,
-                    "call_seq": event.call_seq,
-                    "ok": event.ok,
-                    "summary": event.summary,
-                }),
+            "agent:tool_result"
+        };
+        let _ = app.emit(channel, payload);
+    }
+}
+
+/// 记录一次技能执行（成功/失败/取消均计入，供知识库索引页指标展示）。
+/// 无技能命中的请求直接跳过（空上下文不产生记录）。
+fn record_skill_execution(
+    metrics: &crate::core::skill::metrics::SkillMetrics,
+    skill_ctx: Option<&SkillExecutionContext>,
+    start: std::time::Instant,
+    success: bool,
+    error_code: Option<&str>,
+) {
+    if let Some(ctx) = skill_ctx {
+        let duration_ms = start.elapsed().as_millis() as u64;
+        for m in &ctx.matches {
+            metrics.record_execution(
+                m.skill_id.clone(),
+                m.scope.clone(),
+                duration_ms,
+                success,
+                error_code.map(|s| s.to_string()),
+                m.match_level,
+                m.match_score,
             );
         }
     }
@@ -237,7 +253,7 @@ pub async fn kb_cancel_task(
     Ok(())
 }
 
-/// RAG 查询：查询扩展 → 混合检索 → 文档聚合 → RAG Agent 生成（全流式）
+/// RAG 查询：技能解析 → 查询扩展 → 混合检索 → 文档聚合 → RAG Agent 生成（全流式）
 #[tauri::command]
 pub async fn kb_rag_query(
     app: AppHandle,
@@ -248,6 +264,7 @@ pub async fn kb_rag_query(
     messages: Vec<crate::services::llm::ChatMessage>,
     request_id: String,
     top_k: u32,
+    session_id: Option<String>,
 ) -> Result<(), String> {
     let cancel = task_registry.register(&request_id).await;
     // 后端防御：限制 top_k 范围（前端 UI 为 1-50），防止异常参数触发全量检索/重排
@@ -286,6 +303,87 @@ pub async fn kb_rag_query(
         task_registry.unregister(&request_id).await;
         return Ok(());
     }
+
+    // ── Stage 0: 技能解析（手动触发 / 会话挂载 / 自动匹配）──
+    // 前置到检索之前：技能检索参数可覆盖主预检索与工具；手动触发时清理查询前缀。
+    let skill_resolved = {
+        let registry = state.skill_registry.clone();
+        // 会话挂载查询（rusqlite I/O）与技能解析（同步 ONNX 嵌入）同为阻塞操作，
+        // 一并移入 spawn_blocking 调度，避免阻塞异步运行时
+        let chat_store = match &session_id {
+            Some(_) => state.get_chat_store(&dir_path).ok(),
+            None => None,
+        };
+        let query_for_skill = query.clone();
+        let request_id_for_log = request_id.clone();
+        match tokio::task::spawn_blocking(move || {
+            let attached_skills: Vec<(String, String)> = match (&chat_store, &session_id) {
+                (Some(store), Some(sid)) => store
+                    .get_attached_skills(sid)
+                    .map(|list| list.into_iter().map(|(s, id, _v)| (s, id)).collect())
+                    .unwrap_or_default(),
+                _ => Vec::new(),
+            };
+            resolve_skill_context(
+                &query_for_skill,
+                &registry,
+                &attached_skills,
+                crate::core::db::utils::embed_texts_batch,
+            )
+        })
+        .await
+        {
+            Ok(Ok(v)) => v,
+            Ok(Err(e)) => {
+                log::warn!("[rag_query] 技能解析失败 request_id={} err={}", request_id_for_log, e);
+                None
+            }
+            Err(e) => {
+                log::warn!("[rag_query] 技能解析任务失败 request_id={} err={}", request_id_for_log, e);
+                None
+            }
+        }
+    };
+    let skill_ctx = skill_resolved.as_ref().map(|r| &r.context);
+    // 手动触发时使用清理后的查询（剥离 /技能名 前缀），其余场景保持原查询；
+    // filter 守卫：清理结果为空字符串时回退到原查询，避免空查询进入检索
+    let query = skill_resolved
+        .as_ref()
+        .map(|r| r.cleaned_query.clone())
+        .filter(|q| !q.trim().is_empty())
+        .unwrap_or(query);
+    if let Some(ctx) = skill_ctx {
+        state.skill_metrics.record_dispatch(true);
+        log::info!(
+            "[rag_query] Stage0: skills matched request_id={} skills={:?} manual={}",
+            request_id,
+            ctx.skill_ids,
+            skill_resolved.as_ref().map(|r| r.is_manual).unwrap_or(false)
+        );
+    } else {
+        state.skill_metrics.record_dispatch(false);
+        log::debug!("[rag_query] Stage0: no skills matched request_id={}", request_id);
+    }
+
+    // 技能检索参数覆盖（取最保守值：技能配置与全局配置取最小/最大值），
+    // 应用于主预检索（Stage 2/3）与 kb_search 工具（Stage 4）
+    let kb_cfg = state.config_store.read();
+    let effective_top_k = skill_ctx
+        .and_then(|c| c.top_k)
+        .unwrap_or(top_k)
+        .clamp(1, 50);
+    let effective_min_score = skill_ctx
+        .and_then(|c| c.min_score)
+        .map(|s| s.max(kb_cfg.min_score))
+        .unwrap_or(kb_cfg.min_score);
+    let effective_max_docs = skill_ctx
+        .and_then(|c| c.max_docs)
+        .map(|m| m.min(kb_cfg.max_context_docs))
+        .unwrap_or(kb_cfg.max_context_docs);
+    let effective_max_chunks = skill_ctx
+        .and_then(|c| c.max_chunks_per_doc)
+        .map(|m| m.min(kb_cfg.max_chunks_per_doc))
+        .unwrap_or(kb_cfg.max_chunks_per_doc);
 
     // ── Stage 1: 查询扩展 ──
     log::info!("[rag_query] Stage1: query expansion start request_id={}", request_id);
@@ -350,7 +448,7 @@ pub async fn kb_rag_query(
                     let intent = route_intent(&q);
                     let hits = state
                         .indexer
-                        .hybrid_search(&dir, &vec, &q, top_k, intent)
+                        .hybrid_search(&dir, &vec, &q, effective_top_k, intent)
                         .await
                         .unwrap_or_default();
                     log::debug!("[rag_query] hybrid_search for query='{}' hits={} took={:?}",
@@ -400,12 +498,11 @@ pub async fn kb_rag_query(
 
     // ── Stage 3: 文档级聚合 + 绝对阈值（core::agent::aggregate_hits）──
     log::info!("[rag_query] Stage3: aggregation start request_id={}", request_id);
-    let kb_cfg = state.config_store.read();
     let selected: Vec<(SearchHit, f32)> = aggregate_hits(
         all_hits,
-        kb_cfg.min_score,
-        kb_cfg.max_context_docs,
-        kb_cfg.max_chunks_per_doc,
+        effective_min_score,
+        effective_max_docs,
+        effective_max_chunks,
     );
     log::info!("[rag_query] Stage3: aggregation done request_id={} selected_chunks={}", request_id, selected.len());
     log::debug!(
@@ -504,20 +601,27 @@ pub async fn kb_rag_query(
         return Ok(());
     }
 
+    // ── Stage 4: 构建 context → RAG Agent 生成（技能解析与参数覆盖已在 Stage 0 完成）──
     // 构建 RAG Agent：预载检索上下文 + kb_search 工具（模型可补充检索）
     let model = llm.completion_model().clone();
+    // 取第一个匹配技能的 ID 作为工具轨迹标注来源
+    let primary_skill_id = skill_ctx.and_then(|c| c.skill_ids.first().cloned());
     let search_config = KbSearchConfig {
         dir_path: dir_path.clone(),
         indexer: state.indexer.clone(),
-        default_top_k: top_k,
+        default_top_k: effective_top_k,
         request_id: request_id.clone(),
         dir_blacklist: kb_cfg.dir_blacklist,
         file_blacklist: kb_cfg.file_blacklist,
-        min_score: kb_cfg.min_score,
-        max_context_docs: kb_cfg.max_context_docs,
-        max_chunks_per_doc: kb_cfg.max_chunks_per_doc,
+        min_score: effective_min_score,
+        max_context_docs: effective_max_docs,
+        max_chunks_per_doc: effective_max_chunks,
+        skill_id: primary_skill_id,
     };
-    let agent = build_rag_agent(model, &context, search_config);
+    let agent = build_rag_agent(model, &context, search_config, skill_ctx);
+
+    // 技能执行计时起点（进入生成阶段即视为执行开始）
+    let skill_exec_start = std::time::Instant::now();
 
     // 当前问题作为 prompt，历史消息（去掉最后一条当前问题）作为 history
     let history = messages_to_history(&messages);
@@ -557,6 +661,7 @@ pub async fn kb_rag_query(
             // 取消时补发残留工具事件并清理总线
             emit_pending_tool_events(&app, &request_id);
             tool_call_bus().clear(&request_id);
+            record_skill_execution(&state.skill_metrics, skill_ctx, skill_exec_start, false, Some("cancelled"));
             task_registry.unregister(&request_id).await;
             return Ok(());
         }
@@ -614,9 +719,11 @@ pub async fn kb_rag_query(
                 let content = content.trim().to_string();
                 if content.is_empty() {
                     log::warn!("[rag_query] Stage4: non-streaming fallback returned empty request_id={}", request_id);
+                    record_skill_execution(&state.skill_metrics, skill_ctx, skill_exec_start, false, Some("llm_stream_failed"));
                     emit_command_error(&app, "rag:error", &request_id, "LLM 生成失败，请检查模型服务是否可用".into());
                 } else {
                     // 一次性推送完整内容：先 delta（保证前端创建消息 DOM），再 done 收尾
+                    record_skill_execution(&state.skill_metrics, skill_ctx, skill_exec_start, true, None);
                     let _ = app.emit(
                         "rag:delta",
                         RagDelta {
@@ -638,6 +745,7 @@ pub async fn kb_rag_query(
             }
             Err(e) => {
                 log::warn!("[rag_query] Stage4: non-streaming fallback failed request_id={} err={}", request_id, e);
+                record_skill_execution(&state.skill_metrics, skill_ctx, skill_exec_start, false, Some("llm_stream_failed"));
                 emit_command_error(&app, "rag:error", &request_id, "LLM 生成失败，请检查模型服务是否可用".into());
             }
         }
@@ -649,6 +757,17 @@ pub async fn kb_rag_query(
     }
 
     // ── Done ──
+    // 流式正常结束但内容为空（模型零输出）：按失败处理并显式报错，
+    // 与"非流式降级返回空"的行为保持一致，避免空回复污染前端与指标
+    if full_content.trim().is_empty() {
+        log::warn!("[rag_query] Stage4: stream done but empty content request_id={}", request_id);
+        emit_pending_tool_events(&app, &request_id);
+        tool_call_bus().clear(&request_id);
+        record_skill_execution(&state.skill_metrics, skill_ctx, skill_exec_start, false, Some("llm_empty_output"));
+        emit_command_error(&app, "rag:error", &request_id, "LLM 生成失败，请检查模型服务是否可用".into());
+        task_registry.unregister(&request_id).await;
+        return Ok(());
+    }
     let (prompt_tokens, completion_tokens) = final_usage
         .map(|u| (u.prompt_tokens, u.completion_tokens))
         .unwrap_or((0, 0));
@@ -668,6 +787,7 @@ pub async fn kb_rag_query(
     // 收尾：补发残留工具事件并清理总线
     emit_pending_tool_events(&app, &request_id);
     tool_call_bus().clear(&request_id);
+    record_skill_execution(&state.skill_metrics, skill_ctx, skill_exec_start, true, None);
     task_registry.unregister(&request_id).await;
     Ok(())
 }
@@ -842,3 +962,4 @@ pub async fn kb_llm_query(
     task_registry.unregister(&request_id).await;
     Ok(())
 }
+

@@ -5,6 +5,12 @@
 //! - `SkillRegistry`：内存注册表（RwLock 读写分离）+ 全量重建 + DB 缓存同步
 //! - `SkillDb`：按目录打开 `.mdgo/mdgo.db` 并保证表结构（DDL 在 `core/db/schema.rs`）
 //! - 文件变更监控在独立的 `services/skill_watcher.rs`，不混入本模块
+//! - `matcher`：分层意图匹配算法（L1 关键词 / L2 语义 / L3 兜底）
+//! - `context`：技能执行上下文解析（手动触发 / 会话挂载 / 自动匹配的唯一入口）
+
+pub mod matcher;
+pub mod context;
+pub mod metrics;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -17,9 +23,6 @@ use crate::core::db::schema;
 
 /// 允许 Skill 声明的内置工具白名单（与 Rig Agent 注册的 5 个只读工具一致）
 pub const ALLOWED_TOOLS: &[&str] = &["kb_search", "code_lookup", "read_file", "list_files", "git_status"];
-
-/// 允许的输出格式枚举
-pub const ALLOWED_OUTPUT_FORMATS: &[&str] = &["text", "json", "markdown"];
 
 /// Skill 作用域（三层体系）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -64,26 +67,10 @@ pub struct TriggerRules {
     pub keywords: Vec<String>,
     #[serde(default = "default_similarity_threshold")]
     pub similarity_threshold: f32,
-    #[serde(default)]
-    pub r#type: String,
 }
 
 fn default_similarity_threshold() -> f32 {
     0.5
-}
-
-/// 入参 Schema 单条定义（预留扩展，v1 仅登记/展示/校验）
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ParamDef {
-    pub name: String,
-    #[serde(rename = "type", default)]
-    pub param_type: String,
-    #[serde(default)]
-    pub required: bool,
-    #[serde(default)]
-    pub description: String,
-    #[serde(default)]
-    pub default: Option<serde_json::Value>,
 }
 
 /// SKILL.md YAML frontmatter（字段顺序即写入顺序，与 PRD Schema 契约一致）
@@ -100,16 +87,6 @@ struct SkillFrontmatter {
     priority: u32,
     #[serde(default)]
     trigger_rules: TriggerRules,
-    #[serde(default)]
-    mutex: Vec<String>,
-    #[serde(default)]
-    token_budget: u32,
-    #[serde(default)]
-    input_schema: Vec<ParamDef>,
-    #[serde(default = "default_output_format")]
-    output_format: String,
-    #[serde(default = "default_timeout_ms")]
-    timeout_ms: u64,
     #[serde(default)]
     tools: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -133,12 +110,6 @@ struct SkillFrontmatter {
 fn default_priority() -> u32 {
     50
 }
-fn default_output_format() -> String {
-    "text".into()
-}
-fn default_timeout_ms() -> u64 {
-    30000
-}
 fn default_enabled() -> bool {
     true
 }
@@ -155,11 +126,6 @@ pub struct Skill {
     pub description: String,
     pub priority: u32,
     pub trigger_rules: TriggerRules,
-    pub mutex: Vec<String>,
-    pub token_budget: u32,
-    pub input_schema: Vec<ParamDef>,
-    pub output_format: String,
-    pub timeout_ms: u64,
     pub tools: Vec<String>,
     pub top_k: Option<u32>,
     pub min_score: Option<f32>,
@@ -183,11 +149,6 @@ pub struct SkillInput {
     pub description: String,
     pub priority: Option<u32>,
     pub trigger_rules: Option<TriggerRules>,
-    pub mutex: Option<Vec<String>>,
-    pub token_budget: Option<u32>,
-    pub input_schema: Option<Vec<ParamDef>>,
-    pub output_format: Option<String>,
-    pub timeout_ms: Option<u64>,
     pub tools: Option<Vec<String>>,
     pub top_k: Option<u32>,
     pub min_score: Option<f32>,
@@ -205,11 +166,6 @@ impl SkillInput {
         skill.description = self.description.clone();
         if let Some(v) = self.priority { skill.priority = v; }
         if let Some(v) = &self.trigger_rules { skill.trigger_rules = v.clone(); }
-        if let Some(v) = &self.mutex { skill.mutex = v.clone(); }
-        if let Some(v) = self.token_budget { skill.token_budget = v; }
-        if let Some(v) = &self.input_schema { skill.input_schema = v.clone(); }
-        if let Some(v) = &self.output_format { skill.output_format = v.clone(); }
-        if let Some(v) = self.timeout_ms { skill.timeout_ms = v; }
         if let Some(v) = &self.tools { skill.tools = v.clone(); }
         if let Some(v) = self.top_k { skill.top_k = Some(v); }
         if let Some(v) = self.min_score { skill.min_score = Some(v); }
@@ -230,11 +186,6 @@ impl SkillInput {
             description: self.description.clone(),
             priority: self.priority.unwrap_or(50),
             trigger_rules: self.trigger_rules.clone().unwrap_or_default(),
-            mutex: self.mutex.clone().unwrap_or_default(),
-            token_budget: self.token_budget.unwrap_or(0),
-            input_schema: self.input_schema.clone().unwrap_or_default(),
-            output_format: self.output_format.clone().unwrap_or_else(|| "text".into()),
-            timeout_ms: self.timeout_ms.unwrap_or(30000),
             tools: self.tools.clone().unwrap_or_default(),
             top_k: self.top_k,
             min_score: self.min_score,
@@ -308,11 +259,6 @@ pub fn parse_skill_md(
         description: fm.description,
         priority: fm.priority,
         trigger_rules: fm.trigger_rules,
-        mutex: fm.mutex,
-        token_budget: fm.token_budget,
-        input_schema: fm.input_schema,
-        output_format: fm.output_format,
-        timeout_ms: fm.timeout_ms,
         tools: fm.tools,
         top_k: fm.top_k,
         min_score: fm.min_score,
@@ -371,17 +317,6 @@ pub fn validate_skill(skill: &Skill) -> Vec<SkillFieldError> {
         errors.push(field_err("priority", "priority 必须在 0~100 之间"));
     }
 
-    if skill.timeout_ms == 0 {
-        errors.push(field_err("timeout_ms", "timeout_ms 必须大于 0"));
-    }
-
-    if !ALLOWED_OUTPUT_FORMATS.contains(&skill.output_format.as_str()) {
-        errors.push(field_err(
-            "output_format",
-            format!("output_format 非法: {}（应为 text/json/markdown）", skill.output_format),
-        ));
-    }
-
     for tool in &skill.tools {
         if !ALLOWED_TOOLS.contains(&tool.as_str()) {
             errors.push(field_err(
@@ -432,11 +367,6 @@ pub fn to_skill_md(skill: &Skill) -> Result<String, String> {
         description: skill.description.clone(),
         priority: skill.priority,
         trigger_rules: skill.trigger_rules.clone(),
-        mutex: skill.mutex.clone(),
-        token_budget: skill.token_budget,
-        input_schema: skill.input_schema.clone(),
-        output_format: skill.output_format.clone(),
-        timeout_ms: skill.timeout_ms,
         tools: skill.tools.clone(),
         top_k: skill.top_k,
         min_score: skill.min_score,
@@ -627,14 +557,15 @@ impl SkillStore {
 
 // ─── DB 缓存同步 ───
 
-/// 按目录打开 `.mdgo/mdgo.db` 并保证表结构（DDL 收敛在 schema.rs）
-pub struct SkillDb {
-    pub conn: Connection,
-}
+/// 技能 DB 缓存助手（无状态：连接由 [`SkillRegistry`] 按目录缓存复用）。
+///
+/// - `open_conn`：按目录打开 `.mdgo/mdgo.db` 并保证表结构（DDL 在 `core/db/schema.rs`）
+/// - `sync_all`：全量重建 skills 表缓存（事务化，失败整体回滚，避免半同步状态）
+pub struct SkillDb;
 
 impl SkillDb {
-    /// 打开目录数据库（创建父目录 + 建表），失败返回错误
-    pub fn open(dir_path: &str) -> Result<SkillDb, String> {
+    /// 打开目录数据库连接（创建父目录 + 建表），失败返回错误
+    pub fn open_conn(dir_path: &str) -> Result<Connection, String> {
         let db_dir = Path::new(dir_path).join(".mdgo");
         std::fs::create_dir_all(&db_dir)
             .map_err(|e| format!("创建数据库目录失败: {}", e))?;
@@ -643,17 +574,22 @@ impl SkillDb {
         conn.execute_batch("PRAGMA journal_mode=WAL;")
             .map_err(|e| format!("启用 WAL 失败: {}", e))?;
         schema::init_all(&conn)?;
-        Ok(SkillDb { conn })
+        Ok(conn)
     }
 
-    /// 全量重建 skills 表缓存（先清空再按合并后的注册表重灌）
-    pub fn sync_all(&self, skills: &[Skill]) -> Result<(), String> {
-        let conn = &self.conn;
-        conn.execute("DELETE FROM skills", [])
+    /// 全量重建 skills 表缓存（先清空再重灌，整个操作在一个事务中）。
+    ///
+    /// 任一步失败即整体回滚，避免 DELETE 成功后插入中断导致的半同步状态。
+    pub fn sync_all(conn: &Connection, skills: &[Skill]) -> Result<(), String> {
+        let txn = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("开启事务失败: {}", e))?;
+        txn.execute("DELETE FROM skills", [])
             .map_err(|e| format!("清空技能缓存失败: {}", e))?;
         for skill in skills {
-            schema::upsert_skill_row(conn, skill)?;
+            schema::upsert_skill_row(&txn, skill)?;
         }
+        txn.commit().map_err(|e| format!("提交事务失败: {}", e))?;
         Ok(())
     }
 }
@@ -667,6 +603,8 @@ pub struct SkillRegistry {
     inner: RwLock<HashMap<(SkillScope, String), Skill>>,
     /// 最近一次加载的目录（避免重复全量重建；写操作/watcher 会主动 reload）
     last_loaded_dir: RwLock<Option<String>>,
+    /// 按目录缓存的技能 DB 连接（避免每次 reload 重开连接；Connection 是 Send）
+    db_conns: std::sync::Mutex<HashMap<String, Connection>>,
 }
 
 impl SkillRegistry {
@@ -674,6 +612,7 @@ impl SkillRegistry {
         Self {
             inner: RwLock::new(HashMap::new()),
             last_loaded_dir: RwLock::new(None),
+            db_conns: std::sync::Mutex::new(HashMap::new()),
         }
     }
 
@@ -708,11 +647,24 @@ impl SkillRegistry {
             merged.insert((skill.scope, skill.id.clone()), skill);
         }
 
-        // 同步 DB 缓存（读多写少，失败不影响内存注册表）
-        if let Ok(db) = SkillDb::open(dir_path) {
-            let all: Vec<Skill> = merged.values().cloned().collect();
-            if let Err(e) = db.sync_all(&all) {
-                log::warn!("[skill] DB 缓存同步失败: {}", e);
+        // 同步 DB 缓存（读多写少，失败不影响内存注册表）：连接按目录缓存复用，
+        // 事务化重灌避免半同步状态；切换目录时释放其他目录的连接，防止长期泄漏
+        {
+            let mut cache = self.db_conns.lock().unwrap_or_else(|e| e.into_inner());
+            cache.retain(|d, _| d == dir_path);
+            if let std::collections::hash_map::Entry::Vacant(e) = cache.entry(dir_path.to_string()) {
+                match SkillDb::open_conn(dir_path) {
+                    Ok(conn) => {
+                        e.insert(conn);
+                    }
+                    Err(err) => log::warn!("[skill] 打开技能数据库失败: {}", err),
+                }
+            }
+            if let Some(conn) = cache.get(dir_path) {
+                let all: Vec<Skill> = merged.values().cloned().collect();
+                if let Err(e) = SkillDb::sync_all(conn, &all) {
+                    log::warn!("[skill] DB 缓存同步失败: {}", e);
+                }
             }
         }
 
@@ -757,12 +709,6 @@ impl SkillRegistry {
     pub fn get(&self, scope: SkillScope, id: &str) -> Option<Skill> {
         let guard = self.inner.read().unwrap_or_else(|e| e.into_inner());
         guard.get(&(scope, id.to_string())).cloned()
-    }
-
-    /// 取全部（供编排/匹配使用）
-    pub fn all(&self) -> Vec<Skill> {
-        let guard = self.inner.read().unwrap_or_else(|e| e.into_inner());
-        guard.values().cloned().collect()
     }
 }
 

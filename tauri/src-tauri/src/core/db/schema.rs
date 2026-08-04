@@ -8,7 +8,7 @@
 
 use rusqlite::Connection;
 
-use crate::core::skill::{Skill, SkillScope};
+use crate::core::skill::Skill;
 
 /// 系统内置 Skill 的 SKILL.md 原文（id → 内容）。
 /// 编译期 `include_str!` 嵌入二进制，保证 dev / 打包环境一致；
@@ -43,12 +43,7 @@ pub fn init_all(conn: &Connection) -> Result<(), String> {
             name               TEXT NOT NULL DEFAULT '',
             description        TEXT NOT NULL DEFAULT '',
             priority           INTEGER NOT NULL DEFAULT 50,
-            trigger_rules      TEXT NOT NULL DEFAULT '{}',-- JSON：type/keywords/similarity_threshold
-            mutex              TEXT NOT NULL DEFAULT '[]',-- JSON 数组：互斥 skill id
-            token_budget       INTEGER NOT NULL DEFAULT 0,-- 预留扩展
-            input_schema       TEXT NOT NULL DEFAULT '[]',-- JSON 数组：入参 schema
-            output_format      TEXT NOT NULL DEFAULT 'text',-- 预留扩展
-            timeout_ms         INTEGER NOT NULL DEFAULT 30000,
+            trigger_rules      TEXT NOT NULL DEFAULT '{}',-- JSON：keywords/similarity_threshold
             tools              TEXT NOT NULL DEFAULT '[]',-- JSON 数组：工具白名单
             top_k              INTEGER,
             min_score          REAL,
@@ -91,6 +86,9 @@ pub fn init_all(conn: &Connection) -> Result<(), String> {
         ",
     )
     .map_err(|e| format!("[schema] 建表失败: {}", e))?;
+
+    // 旧版本数据库迁移：删除已废弃的无消费列
+    migrate_drop_legacy_columns(conn)?;
     Ok(())
 }
 
@@ -98,12 +96,11 @@ pub fn init_all(conn: &Connection) -> Result<(), String> {
 pub fn upsert_skill_row(conn: &Connection, skill: &Skill) -> Result<(), String> {
     conn.execute(
         "INSERT OR REPLACE INTO skills (
-            id, scope, name, description, priority, trigger_rules, mutex, token_budget,
-            input_schema, output_format, timeout_ms, tools, top_k, min_score,
+            id, scope, name, description, priority, trigger_rules, tools, top_k, min_score,
             max_docs, max_chunks_per_doc, enabled, version, file_path, body, created_at, updated_at
         ) VALUES (
-            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
-            ?17, ?18, ?19, ?20, ?21, ?22
+            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+            ?13, ?14, ?15, ?16, ?17
         )",
         rusqlite::params![
             skill.id,
@@ -112,11 +109,6 @@ pub fn upsert_skill_row(conn: &Connection, skill: &Skill) -> Result<(), String> 
             skill.description,
             skill.priority as i64,
             serde_json::to_string(&skill.trigger_rules).unwrap_or_else(|_| "{}".into()),
-            serde_json::to_string(&skill.mutex).unwrap_or_else(|_| "[]".into()),
-            skill.token_budget as i64,
-            serde_json::to_string(&skill.input_schema).unwrap_or_else(|_| "[]".into()),
-            skill.output_format,
-            skill.timeout_ms as i64,
             serde_json::to_string(&skill.tools).unwrap_or_else(|_| "[]".into()),
             skill.top_k.map(|v| v as i64),
             skill.min_score,
@@ -134,54 +126,31 @@ pub fn upsert_skill_row(conn: &Connection, skill: &Skill) -> Result<(), String> 
     Ok(())
 }
 
-/// 从 DB 读取技能记录（M2 匹配调度 / 会话恢复用）。
-#[allow(dead_code)]
-pub fn load_skills_from_db(conn: &Connection) -> Result<Vec<Skill>, String> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, scope, name, description, priority, trigger_rules, mutex, token_budget,
-                    input_schema, output_format, timeout_ms, tools, top_k, min_score,
-                    max_docs, max_chunks_per_doc, enabled, version, file_path, body, created_at, updated_at
-             FROM skills",
-        )
-        .map_err(|e| format!("[schema] 查询技能失败: {}", e))?;
-
-    let rows = stmt
-        .query_map([], |row| {
-            let scope_str: String = row.get(1)?;
-            let trigger_rules_json: String = row.get(5)?;
-            let mutex_json: String = row.get(6)?;
-            let input_schema_json: String = row.get(8)?;
-            let tools_json: String = row.get(11)?;
-
-            Ok(Skill {
-                id: row.get(0)?,
-                scope: SkillScope::from_str(&scope_str).unwrap_or(SkillScope::Project),
-                name: row.get(2)?,
-                description: row.get(3)?,
-                priority: row.get::<_, i64>(4)? as u32,
-                trigger_rules: serde_json::from_str(&trigger_rules_json).unwrap_or_default(),
-                mutex: serde_json::from_str(&mutex_json).unwrap_or_default(),
-                token_budget: row.get::<_, i64>(7)? as u32,
-                input_schema: serde_json::from_str(&input_schema_json).unwrap_or_default(),
-                output_format: row.get(9)?,
-                timeout_ms: row.get::<_, i64>(10)? as u64,
-                tools: serde_json::from_str(&tools_json).unwrap_or_default(),
-                top_k: row.get::<_, Option<i64>>(12)?.map(|v| v as u32),
-                min_score: row.get(13)?,
-                max_docs: row.get::<_, Option<i64>>(14)?.map(|v| v as usize),
-                max_chunks_per_doc: row.get::<_, Option<i64>>(15)?.map(|v| v as usize),
-                enabled: row.get::<_, i64>(16)? != 0,
-                version: row.get::<_, i64>(17)? as u32,
-                file_path: row.get(18)?,
-                body: row.get(19)?,
-                created_at: row.get::<_, i64>(20)? as u64,
-                updated_at: row.get::<_, i64>(21)? as u64,
-            })
-        })
-        .map_err(|e| format!("[schema] 读取技能失败: {}", e))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("[schema] 读取技能失败: {}", e))?;
-
-    Ok(rows)
+/// 迁移：删除旧版本遗留的无消费列（mutex / token_budget / input_schema / output_format / timeout_ms）。
+/// SQLite 3.35+ 支持 `ALTER TABLE ... DROP COLUMN`，这些列无索引/无外键依赖，可安全删除。
+fn migrate_drop_legacy_columns(conn: &Connection) -> Result<(), String> {
+    let legacy_cols = [
+        "mutex",
+        "token_budget",
+        "input_schema",
+        "output_format",
+        "timeout_ms",
+    ];
+    let existing: Vec<String> = {
+        let mut stmt = conn
+            .prepare("PRAGMA table_info(skills)")
+            .map_err(|e| format!("[schema] 读取 skills 表结构失败: {}", e))?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(|e| format!("[schema] 读取 skills 表结构失败: {}", e))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("[schema] 读取 skills 表结构失败: {}", e))?
+    };
+    for col in legacy_cols {
+        if existing.iter().any(|c| c == col) {
+            conn.execute_batch(&format!("ALTER TABLE skills DROP COLUMN {col}"))
+                .map_err(|e| format!("[schema] 迁移失败（DROP COLUMN {col}）: {}", e))?;
+        }
+    }
+    Ok(())
 }

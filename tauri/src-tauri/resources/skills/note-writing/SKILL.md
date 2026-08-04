@@ -5,16 +5,9 @@ name: 读书笔记
 description: 当用户要求记录读书笔记、卡片式笔记、写作规范、提炼观点时触发。
 priority: 40
 trigger_rules:
-  type: hybrid
   keywords: ["读书笔记", "笔记", "卡片", "写作", "记录", "观点提炼"]
   similarity_threshold: 0.5
-mutex: []
-token_budget: 2000
-input_schema:
-  - { name: "topic", type: "string", required: true, description: "笔记主题或原文" }
-output_format: markdown
 roles: ["owner"]
-timeout_ms: 30000
 tools: []
 enabled: true
 version: 1

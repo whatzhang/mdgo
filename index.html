@@ -1039,7 +1039,6 @@
 
         /* 通用渲染错误展示：错误消息 + 原始源码 */
         .render-error-block {
-            border: 1px solid var(--color-danger);
             border-radius: var(--radius-md);
             background-color: var(--color-danger-light);
             margin: 0.5rem 0;
@@ -1048,7 +1047,7 @@
         .render-error-msg {
             color: var(--color-danger);
             font-weight: bold;
-            padding: 0.75rem 1rem 0.25rem;
+            padding: 0.5rem;
             font-size: 0.875rem;
             font-family: var(--font-family);
             white-space: normal;
@@ -1056,7 +1055,7 @@
 
         .render-error-code {
             margin: 0.5rem;
-            padding: 0.75rem;
+            padding: 0.5rem;
             background: var(--color-bg-primary, #fff);
             border: 1px solid var(--color-border, #ddd);
             border-radius: var(--radius-sm);
@@ -5173,7 +5172,7 @@
             display: flex;
             justify-content: flex-end;
             align-items: center;
-            padding: 0.125rem 0.5rem;
+            padding: 0 0.25rem;
             height: 1.25rem;
         }
 
@@ -5312,9 +5311,6 @@
             max-width: 100%;
             box-sizing: border-box;
         }
-        .tool-card .tool-icon {
-            flex-shrink: 0;
-        }
         .tool-card .tool-name {
             font-weight: 600;
             color: var(--color-text);
@@ -5331,6 +5327,19 @@
         .tool-card .tool-status {
             flex-shrink: 0;
             font-size: 0.7rem;
+        }
+        .tool-card .tool-skill-badge {
+            flex-shrink: 0;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.15rem;
+            padding: 0.1rem 0.4rem;
+            border-radius: 0.25rem;
+            background: var(--todo-event-blue-bg);
+            color: var(--color-primary, #3498db);
+            font-size: 0.65rem;
+            font-weight: 500;
+            white-space: nowrap;
         }
         .tool-card.running .tool-status {
             color: var(--color-warning);
@@ -5465,7 +5474,7 @@
             gap: 0.25rem;
             border-radius: 1rem;
             padding: 0.25rem;
-            margin-top: 0.25rem;
+            margin-top: 0.5rem;
             margin-bottom: 1rem;
             width: 80%;
             align-self: center;
@@ -5474,6 +5483,116 @@
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             transition: all 0.2s ease;
             position: relative;
+        }
+
+        /* 技能选择器（触发按钮 + 向上弹出面板） */
+        .chat-skill-picker {
+            position: relative;
+            margin-right: auto;
+            display: flex;
+            align-items: center;
+        }
+
+        .chat-skill-trigger {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.0625rem 0.5rem;
+            border-radius: 5px;
+            font-size: 0.72rem;
+            font-weight: 500;
+            cursor: pointer;
+            border: 1px solid var(--color-border, #d0d7de);
+            background: var(--color-bg-secondary, #fafafa);
+            color: var(--color-text-secondary, #8b949e);
+            line-height: 1.3;
+            transition: all 0.15s ease;
+            user-select: none;
+        }
+
+        .chat-skill-trigger:hover {
+            border-color: var(--color-primary, #165bfa);
+            color: var(--color-primary, #165bfa);
+            background: rgba(22, 91, 250, 0.05);
+        }
+
+        .chat-skill-trigger.active {
+            border-color: var(--color-primary, #165bfa);
+            background: var(--color-primary, #165bfa);
+            color: #fff;
+        }
+
+        .chat-skill-trigger .skill-count {
+            font-size: 0.65rem;
+            opacity: 0.85;
+        }
+
+        /* 向上弹出的技能选择面板 */
+        .chat-skill-popup {
+            position: absolute;
+            bottom: calc(100% + 0.375rem);
+            left: 0;
+            z-index: 120;
+            min-width: 15rem;
+            max-width: 20rem;
+            max-height: 16rem;
+            overflow-y: auto;
+            background: var(--color-bg, #fff);
+            border: 1px solid var(--color-border, #d0d7de);
+            border-radius: 0.5rem;
+            box-shadow: 0 0.375rem 1rem rgba(0, 0, 0, 0.12);
+            padding: 0.25rem;
+        }
+
+        .chat-skill-picker-row {
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+            padding: 0.35rem 0.5rem;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            font-size: 0.78rem;
+            color: var(--color-text, #333);
+            user-select: none;
+        }
+
+        .chat-skill-picker-row:hover {
+            background: rgba(22, 91, 250, 0.06);
+        }
+
+        .chat-skill-picker-row.active {
+            background: rgba(22, 91, 250, 0.1);
+            color: var(--color-primary, #165bfa);
+        }
+
+        .chat-skill-picker-row.disabled-row {
+            opacity: 0.5;
+            cursor: default;
+        }
+
+        .chat-skill-picker-row .row-check {
+            flex-shrink: 0;
+            width: 0.875rem;
+            text-align: center;
+            color: var(--color-primary, #165bfa);
+        }
+
+        .chat-skill-picker-row .row-name {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-weight: 500;
+        }
+
+        .chat-skill-picker-row .row-scope {
+            flex-shrink: 0;
+            font-size: 0.65rem;
+            padding: 0.0625rem 0.375rem;
+            border-radius: 0.5rem;
+            background: var(--color-bg-soft, rgba(128, 128, 128, 0.1));
+            color: var(--color-text-secondary, #8b949e);
         }
 
         .chat-input-area textarea {
@@ -5515,7 +5634,7 @@
         }
 
         .chat-send-btn>svg {
-            transform: rotate(-90deg);
+            transform: rotate(-45deg);
         }
 
         .chat-send-btn:not(:disabled) {
@@ -14153,7 +14272,7 @@
                         </div>
                     </div>
                 </div>
-                 <div class="activity-section-two">
+                 <div class="activity-section-two" id="ai-summary-panel" style="display: none;">
                     <div class="chart-card">
                         <div class="activity-column">
                             <div class="chart-title">最近修改</div>
@@ -15808,6 +15927,11 @@
                         <div class="chat-messages" id="chat-messages"></div>
                         <div class="chat-input-area">
                             <div class="chat-context-bar">
+                                <div class="chat-skill-picker" id="chat-skill-picker" style="display:none;">
+                                    <button class="chat-skill-trigger" id="chat-skill-trigger"
+                                        onclick="toggleSkillPicker(event)">技能</button>
+                                    <div class="chat-skill-popup" id="chat-skill-popup" style="display:none;"></div>
+                                </div>
                                 <div class="chat-context-usage" id="chat-context-usage" style="display:none;">
                                     <div class="context-ring-container">
                                         <svg class="context-ring-svg" viewBox="0 0 16 16">
@@ -16078,6 +16202,24 @@
                                     <div id="kb-ai-top-files" style="flex:1;overflow:auto;max-height:12.5rem;"></div>
                                 </div>
                             </div>
+                            <!-- 技能执行统计 -->
+                            <div class="chart-card">
+                                <div class="activity-column">
+                                    <div class="chart-title" style="display: flex; justify-content: space-between;">
+                                        <div><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                                            stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
+                                            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                                        </svg>技能执行统计</div>
+                                        <span id="kb-skill-summary"
+                                            style="font-size:0.6875rem;color:var(--t3);"></span>
+                                    </div>
+                                    <div id="kb-skill-metrics"
+                                        style="padding:0.5rem;font-size:0.75rem;color:var(--t2);overflow-x:auto;">
+                                        <div style="color:var(--t3);">暂无执行数据，使用 /技能名 或关键词触发技能后刷新查看</div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -16102,6 +16244,7 @@
                         <div class="skill-list" id="skill-list"></div>
                         <div class="skill-footer" id="skill-footer">
                             <button class="skill-create-btn" id="skill-create-btn" onclick="skillCreateNew()"><span>＋</span> 新增 Skill</button>
+                            <button class="skill-test-btn" id="skill-test-btn" onclick="skillTestMatch()" title="输入语句测试意图匹配（L1 关键词 / L2 语义 / L3 兜底）">🧪 测试匹配</button>
                         </div>
                     </div>
                     <!-- 右侧 60%：空态 / 详情 / 编辑 -->
@@ -16266,7 +16409,7 @@
             { key: '任务看板', value: 'toggleFile("kanban")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: '临时编辑器', value: 'toggleFile("tempEditor")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: '目录空间分析', value: 'toggleFile("dirSpace")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: 'RAG问答', value: 'toggleFile("aiChat")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
+            { key: '知识库Agent', value: 'toggleFile("aiChat")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
             { key: '知识库索引', value: 'toggleFile("knowledge")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
             { key: '技能管理', value: 'toggleFile("skill")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
         ]
@@ -27620,6 +27763,9 @@ kanban-plugin: basic
             const codePre = document.createElement('pre');
             codePre.className = 'render-error-code';
             codePre.textContent = sourceCode;
+            if (!codePre.querySelector('.code-copy-btn')) {
+                addCopyButton(codePre);
+            }
             container.appendChild(codePre);
         }
 
@@ -27925,13 +28071,21 @@ kanban-plugin: basic
             copyBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 const code = pre.querySelector('code');
-                const text = code ? code.textContent : pre.textContent;
+                let text;
+                if (code) {
+                    text = code.textContent;
+                } else {
+                    const clone = pre.cloneNode(true);
+                    const btn = clone.querySelector('.code-copy-btn');
+                    if (btn) btn.remove();
+                    text = clone.textContent;
+                }
                 await copyTextToClipboard(text);
                 copyBtn.textContent = '✓ 已复制';
                 copyBtn.classList.add('copied');
                 showNotification('✓ 代码已复制到剪贴板', 'success');
                 setTimeout(() => {
-                    copyBtn.textContent = '📋 复制';
+                    copyBtn.textContent = '复制';
                     copyBtn.classList.remove('copied');
                 }, 2000);
             });
@@ -31386,13 +31540,16 @@ kanban-plugin: basic
             //监控面板展示
             const monitorPanel = dashboardContainer.querySelector('#monitor-panel');
             const fileSumPanel = dashboardContainer.querySelector('#file-sum-panel');
+            const aiSummaryPanel = dashboardContainer.querySelector('#ai-summary-panel');
             if (isTauriVisit()) {
                 monitorPanel.style.display = 'flex';
                 fileSumPanel.style.display = 'none';
+                aiSummaryPanel.style.display = 'flex';
                 startTauriSystemMonitor();
             } else {
                 monitorPanel.style.display = 'none';
                 fileSumPanel.style.display = 'flex';
+                aiSummaryPanel.style.display = 'none';
             }
             // 监控初始化完成后设置激活标志（防止 initSystemMonitor → closeSystemMonitor 误复位）
             _dashboardMetricsActive = true;
@@ -49482,10 +49639,197 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         let _chatStreamingSources = null;   // RAG 模式下正在生成的消息的 sources
         let _chatStreamingStatusMsg = '';   // RAG 模式下当前搜索状态文本
         let _chatStreamingFullContent = ''; // 当前正在生成的消息完整内容
+        let _streamingToolCalls = [];       // 当前消息的工具调用记录（随消息持久化）
         // 会话与搜索状态（提前声明，避免 TDZ 风险）
         let chatSessions = [];
         let currentSessionId = null;
         let chatHistorySearchTimer = null;
+
+        // ====== 技能挂载状态 ======
+        let chatAttachedSkills = []; // 当前会话挂载的技能列表 [{scope, id, name}]
+        let skillChipsSubscribed = false; // skill:changed 事件只订阅一次
+
+        /**
+         * 订阅 skill:changed 事件（技能新增/启停后自动刷新技能选择器）
+         */
+        async function subscribeSkillChipsChanged() {
+            if (skillChipsSubscribed || !isTauriVisit() || !window.__TAURI__?.event) return;
+            skillChipsSubscribed = true;
+            try {
+                await window.__TAURI__.event.listen('skill:changed', () => {
+                    if (chatMode === 'rag') renderSkillChips();
+                });
+            } catch (e) {
+                console.warn('订阅 skill:changed 失败:', e);
+            }
+        }
+
+        /**
+         * 渲染技能选择器（触发按钮 + 向上弹出面板，面板中每个技能一行）
+         * 从后端获取可用技能列表并回显当前会话已挂载状态
+         */
+        async function renderSkillChips() {
+            const picker = document.getElementById('chat-skill-picker');
+            const trigger = document.getElementById('chat-skill-trigger');
+            const popup = document.getElementById('chat-skill-popup');
+            if (!picker || !trigger || !popup) return;
+
+            // 仅首次渲染时注册变更订阅
+            subscribeSkillChipsChanged();
+
+            // 仅在 Tauri 环境且 RAG 模式下显示
+            if (!isTauriVisit() || chatMode !== 'rag') {
+                picker.style.display = 'none';
+                popup.style.display = 'none';
+                return;
+            }
+
+            try {
+                // 获取所有启用的技能
+                const skills = await window.__TAURI__.core.invoke('skill_list', {
+                    dirPath: currentRootPath,
+                });
+                const enabledSkills = skills.filter(s => s.enabled);
+
+                if (enabledSkills.length === 0) {
+                    picker.style.display = 'none';
+                    popup.style.display = 'none';
+                    return;
+                }
+
+                // 获取当前会话挂载的技能
+                const attached = await loadAttachedSkills();
+
+                // 触发按钮显示已挂载数量
+                const attachedCount = attached.length;
+                trigger.innerHTML = `技能${attachedCount > 0 ? ` <span class="skill-count">(${attachedCount})</span>` : ''}`;
+                trigger.classList.toggle('active', attachedCount > 0);
+                picker.style.display = 'flex';
+
+                // 面板行列表（name/description 为用户可控字段，必须转义防注入）
+                const noSession = !currentSessionId;
+                const scopeLabels = { system: '系统', global: '全局', project: '当前目录' };
+                popup.innerHTML = enabledSkills.map(skill => {
+                    const isAttached = attached.some(a => a.scope === skill.scope && a.id === skill.id);
+                    const name = escapeHtml(skill.name);
+                    const description = escapeHtml(skill.description || skill.name);
+                    const scope = escapeHtml(skill.scope);
+                    const id = escapeHtml(skill.id);
+                    const scopeLabel = escapeHtml(scopeLabels[skill.scope] || skill.scope);
+                    return `
+                        <div class="chat-skill-picker-row ${isAttached ? 'active' : ''} ${noSession ? 'disabled-row' : ''}"
+                             data-scope="${scope}"
+                             data-id="${id}"
+                             data-name="${name}"
+                             onclick="toggleSkillFromPicker(this)"
+                             title="${id}, ${description}">
+                            <span class="row-check">${isAttached ? '✓' : '☐'}</span>
+                            <span class="row-name">${name}&nbsp;(${id})</span>
+                            <span class="row-scope ${scope}">${scopeLabel}</span>
+                        </div>
+                    `;
+                }).join('');
+            } catch (e) {
+                console.warn('渲染技能选择器失败:', e);
+                picker.style.display = 'none';
+            }
+        }
+
+        /**
+         * 开关技能选择面板（向上弹出）
+         */
+        function toggleSkillPicker(event) {
+            if (event) event.stopPropagation();
+            const popup = document.getElementById('chat-skill-popup');
+            if (!popup) return;
+            popup.style.display = popup.style.display === 'none' ? 'block' : 'none';
+        }
+
+        // 点击面板外区域时关闭技能选择面板
+        document.addEventListener('click', (ev) => {
+            const picker = document.getElementById('chat-skill-picker');
+            const popup = document.getElementById('chat-skill-popup');
+            if (picker && popup && !picker.contains(ev.target)) {
+                popup.style.display = 'none';
+            }
+        });
+
+        /**
+         * 面板行：切换技能挂载状态
+         */
+        async function toggleSkillFromPicker(rowEl) {
+            if (!currentRootPath) return;
+            // 会话尚未创建（RAG 模式首条消息才建会话）时给出明确提示，避免静默无效
+            if (rowEl.classList.contains('disabled-row')) {
+                showNotification('请先发送一条消息创建会话，再挂载技能', 'warning');
+                return;
+            }
+
+            const scope = rowEl.dataset.scope;
+            const id = rowEl.dataset.id;
+            const name = rowEl.dataset.name;
+            const isAttached = rowEl.classList.contains('active');
+
+            try {
+                if (isAttached) {
+                    // 卸载
+                    await window.__TAURI__.core.invoke('skill_detach', {
+                        dirPath: currentRootPath,
+                        sessionId: currentSessionId,
+                        scope,
+                        skillId: id,
+                    });
+                    rowEl.classList.remove('active');
+                    const check = rowEl.querySelector('.row-check');
+                    if (check) check.textContent = '☐';
+                    chatAttachedSkills = chatAttachedSkills.filter(s => !(s.scope === scope && s.id === id));
+                } else {
+                    // 挂载
+                    await window.__TAURI__.core.invoke('skill_attach', {
+                        dirPath: currentRootPath,
+                        sessionId: currentSessionId,
+                        scope,
+                        skillId: id,
+                    });
+                    rowEl.classList.add('active');
+                    const check = rowEl.querySelector('.row-check');
+                    if (check) check.textContent = '✓';
+                    chatAttachedSkills.push({ scope, id, name });
+                }
+                // 同步触发按钮上的已挂载数量
+                const trigger = document.getElementById('chat-skill-trigger');
+                if (trigger) {
+                    const count = chatAttachedSkills.length;
+                    trigger.innerHTML = `技能${count > 0 ? ` <span class="skill-count">(${count})</span>` : ''}`;
+                    trigger.classList.toggle('active', count > 0);
+                }
+            } catch (e) {
+                console.error('切换技能挂载失败:', e);
+                showNotification(`技能操作失败: ${e}`, 'error');
+            }
+        }
+
+        /**
+         * 加载当前会话挂载的技能
+         */
+        async function loadAttachedSkills() {
+            if (!currentSessionId || !currentRootPath) return [];
+            try {
+                const skills = await window.__TAURI__.core.invoke('skill_get_attached', {
+                    dirPath: currentRootPath,
+                    sessionId: currentSessionId,
+                });
+                chatAttachedSkills = skills.map(s => ({
+                    scope: s.scope,
+                    id: s.id,
+                    name: s.name,
+                }));
+                return chatAttachedSkills;
+            } catch (e) {
+                console.warn('加载挂载技能失败:', e);
+                return [];
+            }
+        }
 
         /**
          * 公共 SSE 流式 LLM 请求函数
@@ -49531,6 +49875,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     role: 'assistant',
                     content: partialContent,
                     tokenCount: 0,
+                    toolCalls: JSON.stringify(_streamingToolCalls),
                 });
                 // 同时保存 RAG sources（使用真实 message_id）
                 if (_chatStreamingSources && _chatStreamingSources.length > 0 && savedMsg && savedMsg.id) {
@@ -49557,6 +49902,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     role: 'assistant',
                     content: partialContent,
                     sources: _chatStreamingSources || [],
+                    toolCalls: _streamingToolCalls.slice(),
                 });
                 // 移除流式消息 DOM，避免后续重新渲染导致重复
                 if (_chatStreamingDiv && _chatStreamingDiv.parentNode) {
@@ -49755,6 +50101,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             // 显示/隐藏 RAG 设置齿轮按钮
             const settingsBtn = document.getElementById('rag-settings-btn');
             if (settingsBtn) settingsBtn.classList.toggle('active', mode === 'rag');
+            // 刷新技能 chips（仅 RAG 模式显示）
+            chatAttachedSkills = [];
+            await renderSkillChips();
             // 3. 查找是否有对应类型的最近会话
             const targetType = mode === 'rag' ? 'rag' : 'regular';
             const sessionOfType = chatSessions.find(s => s.type === targetType);
@@ -50340,7 +50689,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return false;
         }
 
-        async function addChatMessage(role, content, sources, mode) {
+        async function addChatMessage(role, content, sources, mode, toolCalls) {
             const container = document.getElementById('chat-messages');
             const div = document.createElement('div');
             div.className = 'chat-message ' + role;
@@ -50351,6 +50700,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 body.innerHTML = `<div class="markdown-body" style="zoom: 1;background: transparent;">${renderChatMarkdown(content)}</div>`;
                 div.appendChild(body);
                 div._body = body;
+                // 历史消息回放：重渲染工具调用轨迹（若已持久化）
+                if (toolCalls && toolCalls.length > 0) {
+                    renderToolTraceFromRecords(div, toolCalls);
+                }
             } else if (role === 'user') {
                 div.classList.add('msg-' + mode);
                 const body = document.createElement('div');
@@ -50446,6 +50799,21 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             return div._toolTrace;
         }
+        // 历史消息回放：根据持久化的工具调用记录重建轨迹卡片
+        function renderToolTraceFromRecords(div, records) {
+            const trace = document.createElement('div');
+            trace.className = 'tool-trace';
+            trace.innerHTML = records.map(tc => {
+                const cls = tc.ok === null || tc.ok === undefined ? 'running' : (tc.ok ? 'ok' : 'fail');
+                const statusText = tc.ok === null || tc.ok === undefined ? '执行中…' : (tc.ok ? '✓ 完成' : '✗ 失败');
+                const skillId = tc.skill_id ? String(tc.skill_id) : '';
+                const skillBadge = skillId
+                    ? `<span class="tool-skill-badge" title="技能触发: ${escapeHtml(skillId)}">⚡${escapeHtml(skillId.split(':').pop() || skillId)}</span>`
+                    : '';
+                return `<div class="tool-card ${cls}"><span class="tool-name">${escapeHtml(String(tc.tool || ''))}</span>${skillBadge}<span class="tool-args">${escapeHtml(String(tc.args_preview || '').slice(0, 80))}</span><span class="tool-status" title="${escapeHtml(String(tc.summary || ''))}">${statusText}</span></div>`;
+            }).join('');
+            div.insertBefore(trace, div._body);
+        }
         // 统一处理 agent:tool_call / agent:tool_result（聊天与 RAG 两个事件块共用）
         function handleAgentToolEvent(e, rid) {
             const p = e.payload;
@@ -50454,14 +50822,27 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const trace = ensureToolTrace(div);
             if (!trace) return;
             const safeTool = escapeHtml(String(p.tool));
-            if (p.call_seq === undefined) {
+            // 技能来源标签（如果有 skill_id）
+            const skillBadge = p.skill_id ? `<span class="tool-skill-badge" title="技能触发: ${escapeHtml(p.skill_id)}">⚡${escapeHtml(p.skill_id.split(':').pop() || p.skill_id)}</span>` : '';
+            // 以 kind 字段区分 call/result（call 事件后端序列化后含 call_seq:0，
+            // 不能再用 call_seq === undefined 判定）
+            if (p.kind === 'call') {
                 // call 事件：新增卡片（执行中）
                 const card = document.createElement('div');
                 card.className = 'tool-card running';
                 card.dataset.seq = String(p.seq);
                 const args = escapeHtml(String(p.args_preview || '').slice(0, 80));
-                card.innerHTML = `<span class="tool-icon">🔧</span><span class="tool-name">${safeTool}</span><span class="tool-args">${args}</span><span class="tool-status">执行中…</span>`;
+                card.innerHTML = `<span class="tool-name">${safeTool}</span>${skillBadge}<span class="tool-args">${args}</span><span class="tool-status">执行中…</span>`;
                 trace.appendChild(card);
+                // 记录到持久化列表（待 result 事件补全 ok/summary）
+                _streamingToolCalls.push({
+                    tool: String(p.tool),
+                    args_preview: String(p.args_preview || ''),
+                    skill_id: p.skill_id || null,
+                    seq: Number(p.seq),
+                    ok: null,
+                    summary: '',
+                });
             } else {
                 // result 事件：按 call_seq 配对卡片并更新状态
                 const card = trace.querySelector(`.tool-card[data-seq="${p.call_seq}"]`);
@@ -50473,6 +50854,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         st.textContent = p.ok ? '✓ 完成' : '✗ 失败';
                         st.title = String(p.summary || '');
                     }
+                }
+                // 配对持久化记录并补全结果状态
+                const rec = _streamingToolCalls.find(r => r.seq === Number(p.call_seq));
+                if (rec) {
+                    rec.ok = !!p.ok;
+                    rec.summary = String(p.summary || '');
                 }
             }
             if (div._scroll) div._scroll();
@@ -50645,6 +51032,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             _chatStreamingSources = null;
             _chatStreamingStatusMsg = '';
             _chatStreamingFullContent = '';
+            _streamingToolCalls = [];
             showChatTyping();
 
             const requestId = crypto.randomUUID();
@@ -50707,7 +51095,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                     removeChatTyping();
                     if (fullContent) {
-                        chatMessages.push({ role: 'assistant', content: fullContent });
+                        chatMessages.push({ role: 'assistant', content: fullContent, toolCalls: _streamingToolCalls.slice() });
                         updateTurnCounter();
                         const tokenCount = usageData?.completion_tokens || 0;
                         if (currentSessionId) {
@@ -50718,6 +51106,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                     role: 'assistant',
                                     content: fullContent,
                                     tokenCount,
+                                    toolCalls: JSON.stringify(_streamingToolCalls),
                                 });
                                 window.__TAURI__.core.invoke('chat_session_list', {
                                     dirPath: currentRootPath,
@@ -50809,6 +51198,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 _chatStreamingDiv = null;
                 _chatStreamingSources = null;
                 _chatStreamingFullContent = '';
+                _streamingToolCalls = [];
                 await rememberLastChatSession();
             }
         }
@@ -50883,7 +51273,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const title = escapeHtml(session.title) || '新对话';
             const activeClass = isActive ? ' active' : '';
             const favIcon = session.favorite ? '★' : '';
-            const typeBadge = session.type === 'rag' ? '<span class="rag-indicator">RAG</span>' : '';
+            const typeBadge = session.type === 'rag' ? '<span class="rag-indicator">agent</span>' : '';
 
             return `<div class="chat-history-item${activeClass}" data-session-id="${session.id}">
                 <div class="chat-history-item-title" onclick="switchChatSession('${session.id}')">${favIcon} ${typeBadge} ${title}</div>
@@ -50989,14 +51379,26 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         if (settingsBtn) settingsBtn.classList.toggle('active', newMode === 'rag');
                     }
                 }
-                // 5. 构建消息条目（含 sources）
-                chatMessages = messages.map(m => ({
-                    role: m.role,
-                    content: m.content,
-                    sources: sourcesMap[m.id] || [],
-                }));
+                // 5. 构建消息条目（含 sources 与工具调用轨迹）
+                chatMessages = messages.map(m => {
+                    let toolCalls = null;
+                    if (m.tool_calls) {
+                        try {
+                            toolCalls = JSON.parse(m.tool_calls);
+                            if (!Array.isArray(toolCalls)) toolCalls = null;
+                        } catch (e) {
+                            toolCalls = null;
+                        }
+                    }
+                    return {
+                        role: m.role,
+                        content: m.content,
+                        sources: sourcesMap[m.id] || [],
+                        toolCalls,
+                    };
+                });
                 container.innerHTML = '';
-                chatMessages.forEach(m => addChatMessage(m.role, m.content, m.sources, chatMode));
+                chatMessages.forEach(m => addChatMessage(m.role, m.content, m.sources, chatMode, m.toolCalls));
                 updateTurnCounter();
                 // 加载后立即显示上下文使用率（token_usage 已持久化在 chat_sessions 中）
                 const sessionTokenUsage = session ? session.token_usage || 0 : 0;
@@ -51008,6 +51410,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 renderChatSessionList();
                 // 6. 记录最后会话
                 await rememberLastChatSession();
+                // 7. 刷新技能 chips（加载当前会话挂载的技能）
+                chatAttachedSkills = [];
+                await renderSkillChips();
             } catch (e) {
                 console.error('加载会话消息失败:', e);
             }
@@ -51256,6 +51661,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             _chatStreamingSources = null;
             _chatStreamingStatusMsg = '';
             _chatStreamingFullContent = '';
+            _streamingToolCalls = [];
             showChatTyping();
 
             const requestId = crypto.randomUUID();
@@ -51365,7 +51771,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                     // 连带 sources 存入 chatMessages（空内容不 push，避免污染对话记录与回合计数）
                     if (fullContent) {
-                        const msgEntry = { role: 'assistant', content: fullContent, sources: sources };
+                        const msgEntry = { role: 'assistant', content: fullContent, sources: sources, toolCalls: _streamingToolCalls.slice() };
                         chatMessages.push(msgEntry);
                         updateTurnCounter();
                     }
@@ -51378,6 +51784,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                 role: 'assistant',
                                 content: fullContent,
                                 tokenCount: completionTokens,
+                                toolCalls: JSON.stringify(_streamingToolCalls),
                             });
                             // 保存引用来源
                             if (sources.length > 0 && savedMsg?.id) {
@@ -51470,6 +51877,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     messages: histMessages,
                     requestId,
                     topK: ragSettings?.topK ?? 10,
+                    sessionId: currentSessionId,
                 });
             } catch (err) {
                 console.error('[rag] invoke failed requestId=' + requestId + ' err=' + (err.message || err));
@@ -51487,6 +51895,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 _chatStreamingDiv = null;
                 _chatStreamingSources = null;
                 _chatStreamingFullContent = '';
+                _streamingToolCalls = [];
                 await rememberLastChatSession();
                 console.debug('[rag] cleanup done requestId=' + requestId);
             }
@@ -51520,12 +51929,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 return;
             }
             try {
-                const [kbStatus, chatStats, aiStats, scanData, embInfo] = await Promise.all([
+                const [kbStatus, chatStats, aiStats, scanData, embInfo, skillMetrics] = await Promise.all([
                     window.__TAURI__.core.invoke('kb_status', { dirPath: path }),
                     window.__TAURI__.core.invoke('kb_chat_stats', { dirPath: path }).catch(() => null),
                     window.__TAURI__.core.invoke('ai_history_stats', { dirPath: path }).catch(() => null),
                     window.__TAURI__.core.invoke('kb_dashboard_stats', { dirPath: path }).catch(() => null),
                     window.__TAURI__.core.invoke('kb_embedding_info').catch(() => null),
+                    window.__TAURI__.core.invoke('skill_metrics', { dirPath: path }).catch(() => null),
                 ]);
                 if (kbStatus && kbStatus.vector_count > 0) {
                     statusDot.className = 'kb-status-dot ready';
@@ -51551,6 +51961,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     renderHealthDetails(kbStatus, scanData);
                     renderVectorInfo(kbStatus, embInfo);
                     renderAIStats(aiStats);
+                    renderSkillMetrics(skillMetrics);
                 } else {
                     statusDot.className = 'kb-status-dot';
                     statusText.textContent = '尚未索引';
@@ -51777,12 +52188,49 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        function incrementalIndex() {
-            if (typeof window.__TAURI__ === 'undefined') {
-                window.showNotification('仅 Tauri 模式支持', 'error', 2000);
+        /** 渲染技能执行统计（skill_metrics 数据） */
+        function renderSkillMetrics(metrics) {
+            const container = document.getElementById('kb-skill-metrics');
+            const summaryEl = document.getElementById('kb-skill-summary');
+            if (!container) return;
+            if (!metrics || !metrics.total_dispatches) {
+                container.innerHTML = '<div style="color:var(--t3);">暂无执行数据，使用 /技能名 或关键词触发技能后刷新查看</div>';
+                if (summaryEl) summaryEl.textContent = '';
                 return;
             }
-            window.showNotification('增量索引开发中...', 'info', 2000);
+            const hitRate = Math.round((metrics.dispatch_hit_rate || 0) * 100) + '%';
+            const succRate = Math.round((metrics.global_success_rate || 0) * 100) + '%';
+            if (summaryEl) {
+                summaryEl.textContent = '调度 ' + metrics.total_dispatches + ' 次 · 命中 ' + hitRate +
+                    ' · 成功率 ' + succRate + ' · 平均 ' + Math.round(metrics.global_avg_duration_ms || 0) + 'ms';
+            }
+            const list = metrics.skills || [];
+            if (!list.length) {
+                container.innerHTML = '<div style="color:var(--t3);">已产生调度但尚无执行记录</div>';
+                return;
+            }
+            const rows = list.map(function (s) {
+                const sr = Math.round((s.success_rate || 0) * 100) + '%';
+                const levels = Object.entries(s.match_levels || {})
+                    .map(([k, v]) => k + '×' + v).join(' ') || '-';
+                return '<tr style="height: 1.5rem;">' +
+                    '<td>' + escapeHtml(s.skill_id) + '</td>' +
+                    '<td>' + escapeHtml(s.scope) + '</td>' +
+                    '<td>' + (s.total_calls || 0) + '</td>' +
+                    '<td>' + sr + '</td>' +
+                    '<td>' + Math.round(s.avg_duration_ms || 0) + 'ms</td>' +
+                    '<td>' + escapeHtml(levels) + '</td>' +
+                    '</tr>';
+            }).join('');
+            container.innerHTML = '<table style="width:100%;border-collapse:collapse;text-align:left;">' +
+                '<thead><tr style="color:var(--t3);border-bottom:1px solid var(--color-border);">' +
+                '<th style="padding:0.25rem 0">技能</th>' +
+                '<th style="padding:0.25rem 0">作用域</th>' +
+                '<th style="padding:0.25rem 0">调用</th>' +
+                '<th style="padding:0.25rem 0">成功率</th>' +
+                '<th style="padding:0.25rem 0">平均耗时</th>' +
+                '<th style="padding:0.25rem 0">匹配层级</th>' +
+                '</tr></thead><tbody>' + rows + '</tbody></table>';
         }
 
         /** 文件监听开关 */

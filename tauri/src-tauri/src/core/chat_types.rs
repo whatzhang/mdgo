@@ -21,6 +21,9 @@ pub struct ChatMessage {
     pub content: String,
     pub token_count: i32,
     pub created_at: u64,
+    /// 助手消息关联的工具调用轨迹（JSON 数组字符串），历史回放时重渲染用
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]

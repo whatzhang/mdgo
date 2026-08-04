@@ -5,17 +5,9 @@ name: 知识库综述
 description: 当用户要求对知识库、某个主题或一批文档进行总结、综述、概览、归纳时触发。
 priority: 60
 trigger_rules:
-  type: hybrid
   keywords: ["总结", "综述", "概览", "归纳", "要点", "summary", "overview"]
   similarity_threshold: 0.55
-mutex: ["kb-rewrite"]
-token_budget: 4000
-input_schema:
-  - { name: "query", type: "string", required: true, description: "综述主题" }
-  - { name: "max_docs", type: "number", required: false, description: "最大文档数", default: 6 }
-output_format: markdown
 roles: ["owner"]
-timeout_ms: 60000
 tools: [kb_search, read_file]
 top_k: 12
 min_score: 0.25

@@ -68,6 +68,7 @@ impl ChatStore {
                 content TEXT NOT NULL,
                 token_count INTEGER DEFAULT 0,
                 created_at INTEGER NOT NULL,
+                tool_calls TEXT DEFAULT '',
                 FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
             );
 
@@ -98,6 +99,17 @@ impl ChatStore {
         if !has_path_json {
             conn.execute_batch("ALTER TABLE chat_message_sources ADD COLUMN path_json TEXT DEFAULT ''")
                 .map_err(|e| format!("添加 path_json 列失败: {}", e))?;
+        }
+
+        // 兼容旧表：添加 tool_calls 列（如果不存在）
+        let has_tool_calls: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('chat_messages') WHERE name='tool_calls'")
+            .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i32>(0)))
+            .map(|count| count > 0)
+            .unwrap_or(false);
+        if !has_tool_calls {
+            conn.execute_batch("ALTER TABLE chat_messages ADD COLUMN tool_calls TEXT DEFAULT ''")
+                .map_err(|e| format!("添加 tool_calls 列失败: {}", e))?;
         }
 
         // 迁移旧数据：将秒级时间戳转换为毫秒级（一次性）
@@ -371,7 +383,7 @@ impl ChatStore {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, session_id, role, content, token_count, created_at FROM chat_messages WHERE session_id = ?1 ORDER BY created_at ASC",
+                "SELECT id, session_id, role, content, token_count, created_at, tool_calls FROM chat_messages WHERE session_id = ?1 ORDER BY created_at ASC",
             )
             .map_err(|e| format!("查询消息失败: {}", e))?;
 
@@ -383,6 +395,7 @@ impl ChatStore {
                 let content: String = row.get(3)?;
                 let token_count: i32 = row.get(4)?;
                 let created_at: u64 = row.get(5)?;
+                let tool_calls: Option<String> = row.get(6)?;
 
                 Ok(ChatMessage {
                     id,
@@ -391,6 +404,7 @@ impl ChatStore {
                     content,
                     token_count,
                     created_at,
+                    tool_calls: tool_calls.filter(|s| !s.trim().is_empty()),
                 })
             })
             .map_err(|e| format!("查询消息失败: {}", e))?
@@ -407,6 +421,7 @@ impl ChatStore {
         role: &str,
         content: &str,
         token_count: i32,
+        tool_calls: Option<&str>,
     ) -> Result<ChatMessage, String> {
         let now = unix_timestamp_now();
         let id = Uuid::new_v4().to_string();
@@ -433,8 +448,8 @@ impl ChatStore {
 
         // 插入消息
         if let Err(e) = conn.execute(
-            "INSERT INTO chat_messages (id, session_id, role, content, token_count, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![id, session_id, role, content, token_count, now],
+            "INSERT INTO chat_messages (id, session_id, role, content, token_count, created_at, tool_calls) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![id, session_id, role, content, token_count, now, tool_calls.unwrap_or("")],
         ) {
             conn.execute_batch("ROLLBACK").ok();
             return Err(format!("保存消息失败: {}", e));
@@ -459,6 +474,7 @@ impl ChatStore {
             content: content.to_string(),
             token_count,
             created_at: now,
+            tool_calls: tool_calls.map(|s| s.to_string()),
         })
     }
 
@@ -927,6 +943,63 @@ impl ChatStore {
         )
         .map_err(|e| format!("记录已索引消息数失败: {}", e))?;
         Ok(())
+    }
+
+    /// 会话挂载技能（保存快照到 DB）
+    pub fn attach_skill(
+        &self,
+        session_id: &str,
+        scope: &str,
+        skill_id: &str,
+        version: u32,
+    ) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT OR REPLACE INTO chat_session_skills (session_id, scope, skill_id, version)
+             VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![session_id, scope, skill_id, version],
+        )
+        .map_err(|e| format!("挂载技能失败: {}", e))?;
+        Ok(())
+    }
+
+    /// 会话卸载技能
+    pub fn detach_skill(
+        &self,
+        session_id: &str,
+        scope: &str,
+        skill_id: &str,
+    ) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "DELETE FROM chat_session_skills WHERE session_id = ?1 AND scope = ?2 AND skill_id = ?3",
+            rusqlite::params![session_id, scope, skill_id],
+        )
+        .map_err(|e| format!("卸载技能失败: {}", e))?;
+        Ok(())
+    }
+
+    /// 获取会话挂载的技能列表（含版本）
+    pub fn get_attached_skills(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<(String, String, u32)>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT scope, skill_id, version FROM chat_session_skills WHERE session_id = ?1",
+            )
+            .map_err(|e| format!("查询挂载技能失败: {}", e))?;
+
+        let attached: Vec<(String, String, u32)> = stmt
+            .query_map(rusqlite::params![session_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get::<_, i64>(2)? as u32))
+            })
+            .map_err(|e| format!("查询挂载技能失败: {}", e))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("查询挂载技能失败: {}", e))?;
+
+        Ok(attached)
     }
 }
 

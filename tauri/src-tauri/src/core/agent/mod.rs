@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use rig_agent::agent::hook::{
     AgentHook, CompletionCall, CompletionCallAction, CompletionResponse, HookContext, ObservationAction,
+    RequestPatch, ToolCall, ToolCallAction,
 };
 use rig_agent::agent::{Agent, AgentBuilder};
 use rig_agent::tool::{DynamicTool, ToolContext, ToolExecutionError, ToolOutput};
@@ -61,6 +62,89 @@ impl AgentHook for LlmTraceHook {
     }
 }
 
+/// 技能工具白名单 Hook（Rig 原生 `on_tool_call` 机制，兜底拦截）。
+///
+/// 拦截模型发起的工具调用：不在技能白名单内的工具返回 [`ToolCallAction::Skip`]，
+/// 将拦截原因反馈给模型，由 Agent 自主调整策略（换工具或直接回答），而非硬报错。
+///
+/// 语义（`Option` 区分三种状态，避免"无技能"与"技能无工具声明"混为一谈）：
+/// - `None`：无技能命中，无任何工具约束，放行全部
+/// - `Some(list)`：技能声明的白名单生效，非白名单工具被拦截（空列表 = 技能未声明工具，放行全部）
+#[derive(Clone, Debug)]
+pub struct SkillGateHook {
+    allowed: Option<Vec<String>>,
+}
+
+impl SkillGateHook {
+    pub fn new(allowed: Option<Vec<String>>) -> Self {
+        Self { allowed }
+    }
+}
+
+impl AgentHook for SkillGateHook {
+    async fn on_tool_call(
+        &self,
+        _ctx: &HookContext,
+        event: ToolCall<'_>,
+    ) -> ToolCallAction {
+        match &self.allowed {
+            // 无技能约束或技能未声明工具：放行全部
+            None => ToolCallAction::Run,
+            Some(list) if list.is_empty() => ToolCallAction::Run,
+            Some(list) => {
+                if list.iter().any(|t| t == event.tool_name) {
+                    ToolCallAction::Run
+                } else {
+                    log::warn!(
+                        "[skill_gate] 拦截未授权工具调用: {}（白名单: {:?}）",
+                        event.tool_name,
+                        self.allowed
+                    );
+                    ToolCallAction::Skip(format!(
+                        "工具 '{}' 不在当前技能允许的白名单内，请使用其他可用工具或直接回答。可用工具: {:?}",
+                        event.tool_name, self.allowed
+                    ))
+                }
+            }
+        }
+    }
+}
+
+/// 技能指令 Hook：在每个模型调用（completion call）边界动态注入技能指令。
+///
+/// 使用 Rig 原生 [`RequestPatch`] 机制：
+/// - `preamble`：每轮注入完整 preamble（基础角色 + 上下文 + 技能指令），
+///   替代原先"静态拼入 AgentBuilder"的方式，指令可随每次调用动态生效
+/// - `active_tools`：白名单非空时窄化本轮模型可见的工具列表（Rig 原生过滤，
+///   模型不会发起白名单外的调用，比仅靠运行时拦截更干净）
+#[derive(Clone, Debug)]
+pub struct SkillInstructionHook {
+    preamble: String,
+    allowed: Option<Vec<String>>,
+}
+
+impl SkillInstructionHook {
+    pub fn new(preamble: String, allowed: Option<Vec<String>>) -> Self {
+        Self { preamble, allowed }
+    }
+}
+
+impl AgentHook for SkillInstructionHook {
+    async fn on_completion_call(
+        &self,
+        _ctx: &HookContext,
+        _event: CompletionCall<'_>,
+    ) -> CompletionCallAction {
+        let mut patch = RequestPatch::new().preamble(&self.preamble);
+        if let Some(list) = &self.allowed {
+            if !list.is_empty() {
+                patch = patch.active_tools(list.iter().cloned());
+            }
+        }
+        CompletionCallAction::patch(patch)
+    }
+}
+
 /// kb_search 工具允许的最大片段数（防止模型传入超大 top_k 触发全量检索/重排）
 const MAX_TOP_K: u32 = 20;
 
@@ -89,6 +173,8 @@ pub struct KbSearchConfig {
     pub max_context_docs: usize,
     /// 单文档最多保留的 chunk 数
     pub max_chunks_per_doc: usize,
+    /// 触发本次请求的技能 ID（格式：scope:skill_id），用于工具调用轨迹标注
+    pub skill_id: Option<String>,
 }
 
 /// 执行一次完整检索：嵌入 → 混合检索 → 文档级聚合 → 生成模型可读文本。
@@ -392,24 +478,73 @@ pub fn build_context_text(selected: &[(SearchHit, f32)], max_chars: usize) -> St
 ///
 /// - `context`：预检索的知识库上下文，注入 system preamble
 /// - `search_config`：用于构建 kb_search 工具（模型可在生成过程中补充检索）
+/// - `skill_ctx`：技能执行上下文（可选），用于指令注入和工具白名单过滤
 pub fn build_rag_agent(
     model: openai::CompletionModel,
     context: &str,
     search_config: KbSearchConfig,
+    skill_ctx: Option<&crate::core::skill::context::SkillExecutionContext>,
 ) -> Agent<openai::CompletionModel> {
-    let preamble = format!(
-        "你是一个知识库助手，请优先基于系统提供的上下文回答问题；如果上下文信息不足，可以调用 kb_search 工具检索更多资料。当问题涉及具体代码符号（函数名、类名、方法名等）时，优先调用 code_lookup 工具定位代码定义。回答时请结合检索到的内容，对引用内容标注来源。如果知识库中确实没有相关信息，请如实告知。\n\n上下文：\n{}",
+    // 技能白名单（None = 无技能命中，无工具约束）
+    let allowed: Option<Vec<String>> = skill_ctx.map(|ctx| ctx.allowed_tools.clone());
+
+    // 工具提示按白名单条件化：仅当工具对当前技能可用时才诱导调用，
+    // 避免"诱导调用 → 被白名单拦截"的自相矛盾
+    let can_use = |tool: &str| {
+        allowed
+            .as_ref()
+            .map_or(true, |list| list.is_empty() || list.iter().any(|t| t == tool))
+    };
+    let mut hints: Vec<&str> = Vec::new();
+    if can_use("kb_search") {
+        hints.push("如果上下文信息不足，可以调用 kb_search 工具检索更多资料。");
+    }
+    if can_use("code_lookup") {
+        hints.push("当问题涉及具体代码符号（函数名、类名、方法名等）时，优先调用 code_lookup 工具定位代码定义。");
+    }
+
+    // 构建完整 preamble（基础角色 + 上下文 + 技能指令），
+    // 由 SkillInstructionHook 在每个模型调用边界动态注入
+    let mut preamble = format!(
+        "你是一个知识库助手，请优先基于系统提供的上下文回答问题；{}\n回答时请结合检索到的内容，对引用内容标注来源。如果知识库中确实没有相关信息，请如实告知。\n\n上下文：\n{}",
+        if hints.is_empty() { "请直接基于上下文回答。".to_string() } else { hints.join(" ") },
         context
     );
-    AgentBuilder::new(model)
-        .preamble(&preamble)
+    if let Some(ctx) = skill_ctx {
+        if !ctx.instructions.is_empty() {
+            preamble.push_str("\n\n---\n\n");
+            preamble.push_str("请遵循以下技能指令：\n\n");
+            preamble.push_str(&ctx.instructions);
+            log::info!(
+                "[agent] 注入技能指令: skills={:?} chars={}",
+                ctx.skill_ids,
+                ctx.instructions.len()
+            );
+        }
+    }
+    if let Some(list) = &allowed {
+        if !list.is_empty() {
+            log::info!("[agent] 技能白名单: {:?}", list);
+        }
+    }
+
+    let builder = AgentBuilder::new(model);
+
+    // 始终注册全部 5 个内置工具（泛型链式调用限制）；白名单经
+    // SkillInstructionHook 的 active_tools 每轮窄化广告列表（Rig 原生机制），
+    // SkillGateHook 作为兜底拦截模型越权调用。
+    let builder = builder
         .dynamic_tool(build_kb_search_tool(search_config.clone()))
         .dynamic_tool(build_code_lookup_tool(search_config.clone()))
         .dynamic_tool(tools::build_read_file_tool(search_config.clone()))
         .dynamic_tool(tools::build_list_files_tool(search_config.clone()))
-        .dynamic_tool(tools::build_git_status_tool(search_config))
+        .dynamic_tool(tools::build_git_status_tool(search_config));
+
+    builder
         .default_max_turns(4)
         .add_hook(LlmTraceHook)
+        .add_hook(SkillInstructionHook::new(preamble, allowed.clone()))
+        .add_hook(SkillGateHook::new(allowed))
         .build()
 }
 

@@ -90,11 +90,11 @@ async function skillLoadList() {
 }
 
 function skillShowEmpty() {
-    // 默认选中列表第一个
+    // 默认选中列表第一个；空列表时保持空白（由 skillRenderList 展示空态提示）
     const first = skillAllList[0];
-    skillSelectSkill(first.scope, first.id);
-    document.getElementById('skill-detail-view').style.display = 'none';
-    document.getElementById('skill-edit-view').style.display = 'none';
+    if (first) {
+        skillSelectSkill(first.scope, first.id);
+    }
 }
 
 /** 渲染左侧列表（作用域 + 关键词双重过滤） */
@@ -159,8 +159,6 @@ function skillRenderDetail(skill) {
     const writable = skill.scope !== 'system';
     const keywords = (skill.trigger_rules && skill.trigger_rules.keywords) || [];
     const tools = skill.tools || [];
-    const mutex = skill.mutex || [];
-    const params = skill.input_schema || [];
     const actions = [
         writable ? `<button class="btn btn-sm btn-primary" onclick="skillEditSkill('${skill.scope}','${skill.id}')">编辑</button>` : '',
         writable ? `<button class="btn btn-sm btn-warning" onclick="skillToggleEnabled('${skill.scope}','${skill.id}',${!skill.enabled})">${skill.enabled ? '停用' : '启用'}</button>` : '',
@@ -169,9 +167,6 @@ function skillRenderDetail(skill) {
 
     const metaItems = [
         ['优先级', String(skill.priority)],
-        ['输出格式', skill.output_format],
-        ['超时', skill.timeout_ms + 'ms'],
-        ['Token 预算', skill.token_budget || '-'],
         ['top_k', skill.top_k ?? '-'],
         ['min_score', skill.min_score ?? '-'],
         ['max_docs', skill.max_docs ?? '-'],
@@ -182,7 +177,6 @@ function skillRenderDetail(skill) {
     view.innerHTML = `
         <div class="skill-detail-wrap">
             <div class="skill-detail-header">
-                <div class="skill-detail-icon">🛠️</div>
                 <div class="skill-detail-title-box">
                     <div class="skill-detail-title">${escapeHtml(skill.name)}
                         <span class="skill-badge scope-${skill.scope}">${skillScopeName(skill.scope)}</span>
@@ -199,8 +193,6 @@ function skillRenderDetail(skill) {
             </div>
             ${keywords.length ? `<div class="skill-detail-section"><div class="skill-detail-section-title">触发关键词</div><div class="skill-tag-row">${keywords.map(k => `<span class="skill-tag-chip key">${escapeHtml(k)}</span>`).join('')}</div></div>` : ''}
             ${tools.length ? `<div class="skill-detail-section"><div class="skill-detail-section-title">可用工具</div><div class="skill-tag-row">${tools.map(t => `<span class="skill-tag-chip">${escapeHtml(t)}</span>`).join('')}</div></div>` : ''}
-            ${mutex.length ? `<div class="skill-detail-section"><div class="skill-detail-section-title">互斥技能</div><div class="skill-tag-row">${mutex.map(m => `<span class="skill-tag-chip">${escapeHtml(m)}</span>`).join('')}</div></div>` : ''}
-            ${params.length ? `<div class="skill-detail-section"><div class="skill-detail-section-title">入参 Schema</div><div class="skill-params-wrap"><table class="skill-params-table"><thead><tr><th>参数名</th><th>类型</th><th>必填</th><th>说明</th></tr></thead><tbody>${params.map(p => `<tr><td><span class="skill-param-name">${escapeHtml(p.name)}</span></td><td><span class="skill-param-type">${escapeHtml(p.type || p.param_type || '')}</span></td><td>${p.required ? '<span class="skill-param-required">必填</span>' : '<span class="skill-param-optional">可选</span>'}</td><td>${escapeHtml(p.description || '')}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
             <div class="skill-detail-section">
                 <div class="skill-detail-section-title">指令正文</div>
                 <div class="skill-detail-body"><div class="markdown-body" style="zoom: 0.8;">${markedMd(escapeHtml(skill.body) || '（空）')}</div></div>
@@ -246,11 +238,7 @@ function skillRenderEdit(skill) {
     const enabled = skill ? skill.enabled !== false : true;
     const keywords = (skill && skill.trigger_rules && skill.trigger_rules.keywords) || [];
     const tools = (skill && skill.tools) || [];
-    const mutex = (skill && skill.mutex) || [];
     const priority = skill ? skill.priority : 50;
-    const outputFormat = skill ? skill.output_format : 'markdown';
-    const timeout = skill ? skill.timeout_ms : 30000;
-    const tokenBudget = skill ? skill.token_budget : 2000;
     const topK = skill && skill.top_k != null ? skill.top_k : '';
     const minScore = skill && skill.min_score != null ? skill.min_score : '';
     const maxDocs = skill && skill.max_docs != null ? skill.max_docs : '';
@@ -284,31 +272,11 @@ function skillRenderEdit(skill) {
                     <input type="number" id="skill-f-priority" value="${priority}" min="0" max="100">
                 </div>
                 <div class="skill-form-field">
-                    <label>超时（ms）</label>
-                    <input type="number" id="skill-f-timeout" value="${timeout}" min="1">
-                </div>
-                <div class="skill-form-field">
                     <label>作用域</label>
                     <select id="skill-f-scope" ${isEdit ? 'disabled' : ''}> 
                         <option value="global" ${scope === 'global' ? 'selected' : ''}>全局（跨项目共享）</option>
                         <option value="project" ${scope === 'project' ? 'selected' : ''}>项目（当前目录 .mdgo/skills）</option>
                     </select>
-                </div>
-                <div class="skill-form-field">
-                    <label>输出格式</label>
-                    <select id="skill-f-output-format">
-                        <option value="markdown" ${outputFormat === 'markdown' ? 'selected' : ''}>markdown</option>
-                        <option value="text" ${outputFormat === 'text' ? 'selected' : ''}>text</option>
-                        <option value="json" ${outputFormat === 'json' ? 'selected' : ''}>json</option>
-                    </select>
-                </div>
-                <div class="skill-form-field">
-                    <label>Token 预算</label>
-                    <input type="number" id="skill-f-token-budget" value="${tokenBudget}" min="0" placeholder="0 表示无限制">
-                </div>
-                <div class="skill-form-field full">
-                    <label>互斥技能 ID（逗号分隔）</label>
-                    <input type="text" id="skill-f-mutex" value="${escapeHtml(mutex.join(', '))}" placeholder="kb-rewrite, other-skill" autocomplete="off">
                 </div>
                 <div class="skill-form-field">
                     <label>top_k（检索返回数）</label>
@@ -379,13 +347,11 @@ function skillValidateForm() {
     const body = (document.getElementById('skill-f-body')?.value || '').trim();
     const name = (document.getElementById('skill-f-name')?.value || '').trim();
     const priority = parseInt(document.getElementById('skill-f-priority')?.value || '50', 10);
-    const timeout = parseInt(document.getElementById('skill-f-timeout')?.value || '30000', 10);
 
     if (!id) errors.push('id 不能为空');
     else if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) errors.push('id 只能包含小写字母/数字/连字符，且以字母或数字开头');
     if (!name) errors.push('name 不能为空');
     if (isNaN(priority) || priority < 0 || priority > 100) errors.push('priority 必须在 0~100 之间');
-    if (isNaN(timeout) || timeout <= 0) errors.push('timeout_ms 必须大于 0');
     if (!description) errors.push('description 不能为空');
     if (!keywords.length) errors.push('keywords 不能为空');
     if (!body) errors.push('body 不能为空');
@@ -413,13 +379,8 @@ async function skillSaveSkill() {
         ? (skillEditKey ? skillEditKey.scope : '')
         : (document.getElementById('skill-f-scope')?.value || 'project');
     const priority = parseInt(document.getElementById('skill-f-priority')?.value || '50', 10);
-    const outputFormat = document.getElementById('skill-f-output-format')?.value || 'text';
-    const timeout = parseInt(document.getElementById('skill-f-timeout')?.value || '30000', 10);
     const keywords = (document.getElementById('skill-f-keywords')?.value || '')
         .split(/[,，]/).map(k => k.trim()).filter(Boolean);
-    const mutex = (document.getElementById('skill-f-mutex')?.value || '')
-        .split(/[,，]/).map(k => k.trim()).filter(Boolean);
-    const tokenBudget = parseInt(document.getElementById('skill-f-token-budget')?.value || '0', 10) || 0;
     const topKVal = (document.getElementById('skill-f-top-k')?.value || '').trim();
     const minScoreVal = (document.getElementById('skill-f-min-score')?.value || '').trim();
     const maxDocsVal = (document.getElementById('skill-f-max-docs')?.value || '').trim();
@@ -438,15 +399,17 @@ async function skillSaveSkill() {
         name,
         description,
         priority,
-        output_format: outputFormat,
-        timeout_ms: timeout,
-        token_budget: tokenBudget,
         trigger_rules: {
-            type: 'keyword',
             keywords,
-            similarity_threshold: (skillCurrent && skillCurrent.trigger_rules) ? skillCurrent.trigger_rules.similarity_threshold : 0.5,
+            // 编辑时保留原技能的自定义阈值，创建时用默认 0.5（UI 未提供该字段，避免编辑丢值）
+            similarity_threshold: (() => {
+                if (skillEditMode === 'edit' && skillEditKey) {
+                    const editing = skillAllList.find(s => s.scope === skillEditKey.scope && s.id === skillEditKey.id);
+                    return editing && editing.trigger_rules ? editing.trigger_rules.similarity_threshold : 0.5;
+                }
+                return 0.5;
+            })(),
         },
-        mutex,
         tools,
         enabled,
         body,
@@ -556,4 +519,48 @@ function skillScopeChange(value) {
         c.classList.toggle('active', (c.dataset.scope || '') === skillScopeFilter);
     });
     skillRenderList();
+}
+
+/** 意图匹配测试（调试入口，对应后端 skill_match 命令） */
+async function skillTestMatch() {
+    if (!window.__mdgoSkill) {
+        showNotification('技能管理仅在桌面版（Tauri）可用', 'error');
+        return;
+    }
+   showInputModal('输入测试语句（按 L1 关键词 → L2 语义 → L3 兜底匹配）', '', async (q) => {
+        try {
+            const results = await window.__mdgoSkill.skillMatch(skillDirPath, q);
+            document.getElementById('skill-edit-view').style.display = 'none';
+            const view = document.getElementById('skill-detail-view');
+            view.style.display = 'block';
+            if (!results.length) {
+                view.innerHTML = `<div class="skill-detail-wrap">
+                    <div class="skill-detail-title">意图匹配测试 <span class="skill-badge">无技能命中</span></div>
+                    <div class="skill-detail-section-title">语句</div>
+                    <div class="skill-detail-desc">${escapeHtml(q)}</div>
+                    <div class="skill-detail-desc" style="color:var(--t3);">未命中任何启用的技能，可尝试调整触发关键词或相似度阈值。</div>
+                </div>`;
+                return;
+            }
+            const rows = results.map(r => `
+                <div class="skill-list-item" style="margin-bottom:0.375rem;cursor:default;padding:0.5rem 0;">
+                    <div class="skill-item-info">
+                        <div class="skill-item-name">${escapeHtml(r.skill.name)}
+                            <span class="skill-badge scope-${r.skill.scope}">${skillScopeName(r.skill.scope)}</span>
+                            <span class="skill-badge enabled">${r.level}</span>
+                        </div>
+                        <div class="skill-item-meta"><span>ID: ${escapeHtml(r.skill.id)}</span>&nbsp;&nbsp;&nbsp;<span>得分: ${typeof r.score === 'number' ? r.score.toFixed(3) : r.score}</span></div>
+                    </div>
+                </div>`).join('');
+            view.innerHTML = `<div class="skill-detail-wrap">
+                <div class="skill-detail-title">意图匹配测试 <span class="skill-badge">命中 ${results.length} 个</span></div>
+                <div class="skill-detail-section-title">测试语句</div>
+                <div class="skill-detail-desc">${escapeHtml(q)}</div>
+                <div class="skill-detail-section-title">匹配结果</div>
+                ${rows}
+            </div>`;
+        } catch (e) {
+            showNotification('匹配失败: ' + e, 'error');
+        }
+    });
 }

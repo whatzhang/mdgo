@@ -14,6 +14,7 @@ use simplelog::{ColorChoice, ConfigBuilder, TerminalMode, TermLogger, WriteLogge
 use tauri::{Emitter, Manager};
 use crate::core::{ConfigStore, Indexer, IndexerConfig, WatcherService};
 use crate::core::skill::{SkillRegistry, SkillStore};
+use crate::core::skill::metrics::SkillMetrics;
 use crate::services::skill_watcher::SkillWatcherService;
 use std::sync::RwLock;
 
@@ -52,6 +53,8 @@ pub struct AppState {
     pub skill_registry: Arc<SkillRegistry>,
     /// Skill 目录变更监控（热更新不重启，独立单一职责服务）
     pub skill_watcher: Arc<SkillWatcherService>,
+    /// Skill 执行指标收集器（环形缓冲 + 聚合统计）
+    pub skill_metrics: Arc<SkillMetrics>,
 }
 
 impl AppState {
@@ -133,9 +136,10 @@ pub fn run() {
     });
 
     // ── Skill 体系初始化 ──
-    // 注册表（内存）+ 独立监控服务（热更新不重启）。
+    // 注册表（内存）+ 独立监控服务（热更新不重启）+ 指标收集器。
     // 首次打开目录时由 skill_list 懒加载注册表；全局目录不存在时自动创建。
     let skill_registry = Arc::new(SkillRegistry::new());
+    let skill_metrics = Arc::new(SkillMetrics::new());
     let on_skill_changed: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {
         log::debug!("[skill] 目录变更，注册表已刷新");
     });
@@ -163,6 +167,7 @@ pub fn run() {
             llm_client_cache: tokio::sync::Mutex::new(None),
             skill_registry,
             skill_watcher,
+            skill_metrics,
         })
         .setup(|app| {
             // 注入 skill:changed 事件：AppHandle 就绪后替换 watcher 回调
@@ -250,6 +255,11 @@ pub fn run() {
             commands::skill::skill_update,
             commands::skill::skill_delete,
             commands::skill::skill_set_enabled,
+            commands::skill::skill_match,
+            commands::skill::skill_attach,
+            commands::skill::skill_detach,
+            commands::skill::skill_get_attached,
+            commands::skill::skill_metrics,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

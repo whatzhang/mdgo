@@ -29,6 +29,14 @@
         skillDelete: (dirPath, scope, id) => invoke('skill_delete', { dirPath, scope, id }),
         /** 线上启停 */
         skillSetEnabled: (dirPath, scope, id, enabled) => invoke('skill_set_enabled', { dirPath, scope, id, enabled }),
+        /** 分层意图匹配（调试用：输入语句返回命中的技能） */
+        skillMatch: (dirPath, query) => invoke('skill_match', { dirPath, query }),
+        /** 会话挂载/卸载/查询 */
+        skillAttach: (dirPath, sessionId, scope, skillId) => invoke('skill_attach', { dirPath, sessionId, scope, skillId }),
+        skillDetach: (dirPath, sessionId, scope, skillId) => invoke('skill_detach', { dirPath, sessionId, scope, skillId }),
+        skillGetAttached: (dirPath, sessionId) => invoke('skill_get_attached', { dirPath, sessionId }),
+        /** 技能执行指标聚合 */
+        skillMetrics: (dirPath, skillId, since) => invoke('skill_metrics', { dirPath, skillId: skillId || null, since: since || null }),
         /** 注册表变更订阅（返回取消函数） */
         skillOnChanged: async (callback) => {
             const unlisten = await listen('skill:changed', () => callback());

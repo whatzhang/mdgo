@@ -28,6 +28,9 @@ pub struct ToolCallEvent {
     pub summary: String,
     /// 关联的 call 事件 seq（result 事件用它找到对应卡片）
     pub call_seq: u64,
+    /// 触发该工具调用的技能 ID（格式：scope:skill_id），用于前端显示技能来源
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skill_id: Option<String>,
 }
 
 /// 按 `request_id` 记录工具调用轨迹的全局总线。
@@ -47,7 +50,7 @@ impl ToolCallBus {
         }
     }
 
-    fn record_call(&self, request_id: &str, tool: &str, args_preview: &str) {
+    fn record_call(&self, request_id: &str, tool: &str, args_preview: &str, skill_id: Option<&str>) {
         let seq = self.seq.fetch_add(1, Ordering::Relaxed);
         if let Ok(mut map) = self.map.lock() {
             map.entry(request_id.to_string()).or_default().push(ToolCallEvent {
@@ -58,6 +61,7 @@ impl ToolCallBus {
                 ok: false,
                 summary: String::new(),
                 call_seq: 0,
+                skill_id: skill_id.map(|s| s.to_string()),
             });
         }
     }
@@ -77,6 +81,11 @@ impl ToolCallBus {
                 .find(|e| e.kind == "call" && e.tool == tool && referenced.insert(e.seq))
                 .map(|e| e.seq)
                 .unwrap_or(seq);
+            // 从配对的 call 事件中继承 skill_id
+            let skill_id = events
+                .iter()
+                .find(|e| e.seq == call_seq && e.kind == "call")
+                .and_then(|e| e.skill_id.clone());
             events.push(ToolCallEvent {
                 seq,
                 kind: "result".into(),
@@ -85,6 +94,7 @@ impl ToolCallBus {
                 ok,
                 summary: summary.into(),
                 call_seq,
+                skill_id,
             });
         }
     }
@@ -118,8 +128,9 @@ pub fn tool_call_bus() -> &'static ToolCallBus {
 }
 
 /// 记录工具调用开始（供命令层转发 `agent:tool_call`）。
+/// 技能来源 `skill_id` 直接取自 `cfg`，无需重复传参。
 pub fn record_tool_call(cfg: &KbSearchConfig, tool: &str, args_preview: &str) {
-    tool_call_bus().record_call(&cfg.request_id, tool, args_preview);
+    tool_call_bus().record_call(&cfg.request_id, tool, args_preview, cfg.skill_id.as_deref());
 }
 
 /// 记录工具调用结果（供命令层转发 `agent:tool_result`）。

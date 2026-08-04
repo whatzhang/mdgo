@@ -393,6 +393,28 @@ pub fn call_embedding_query(
     call_embedding(&[&prefixed], None)
 }
 
+/// 批量生成向量（一次 ONNX 批处理推理），供 Skill 语义匹配（L2）等
+/// "一查询对多文本"打分的场景使用，避免逐条串行推理。
+///
+/// 约定：`texts[0]` 为查询（自动加 BGE instruction 前缀），其余为被比对文档
+/// （不加前缀），与 BGE 官方"仅查询端加指令"的用法保持一致；
+/// 由调用方通过 `spawn_blocking` 调度避免阻塞异步运行时。
+pub fn embed_texts_batch(texts: &[String]) -> Result<Vec<Vec<f32>>, String> {
+    let prefixed: Vec<String> = texts
+        .iter()
+        .enumerate()
+        .map(|(i, t)| {
+            if i == 0 {
+                format!("{}{}", BGE_QUERY_INSTRUCTION, t)
+            } else {
+                t.clone()
+            }
+        })
+        .collect();
+    let refs: Vec<&str> = prefixed.iter().map(String::as_str).collect();
+    call_embedding(&refs, None)
+}
+
 // ─── 文本分块 ───
 
 /// 通用文本分隔符（按优先级从高到低）

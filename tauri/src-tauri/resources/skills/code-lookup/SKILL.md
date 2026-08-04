@@ -5,16 +5,9 @@ name: 代码定位
 description: 当用户询问某个函数、类、符号、变量在哪里定义、哪里使用，或要求定位代码实现时触发。
 priority: 50
 trigger_rules:
-  type: hybrid
   keywords: ["在哪", "定义", "实现", "函数", "类", "符号", "代码", "查找", "定位", "function", "class"]
   similarity_threshold: 0.5
-mutex: []
-token_budget: 2500
-input_schema:
-  - { name: "symbol", type: "string", required: true, description: "要定位的符号名" }
-output_format: markdown
 roles: ["owner"]
-timeout_ms: 45000
 tools: [code_lookup, read_file]
 top_k: 10
 min_score: 0.3
