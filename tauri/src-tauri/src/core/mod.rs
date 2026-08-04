@@ -2,6 +2,7 @@ pub mod db;
 pub mod config;
 pub mod types;
 pub mod agent;
+pub mod skill;
 
 mod chat_types;
 mod embedding;

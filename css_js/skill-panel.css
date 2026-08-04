@@ -1,0 +1,631 @@
+/* ===== 技能管理容器（skill 前缀隔离，样式对齐 index.html 设计体系） ===== */
+#skill-container {
+    display: none;
+    height: 100%;
+    width: 100%;
+}
+.skill-layout {
+    display: flex;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    background: var(--color-bg);
+}
+/* ── 左侧列表 40% ── */
+.skill-sidebar {
+    flex: 0 0 20%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    border-right: 1px solid var(--color-border-light);
+    background: var(--color-bg);
+}
+/* 搜索框（带 🔍 图标，聚焦高亮） */
+.skill-search-box {
+    position: relative;
+    display: flex;
+    align-items: center;
+    margin: 6px 0.5rem 0.375rem;
+    height: 1.7rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-bg-secondary);
+    transition: border-color var(--transition-normal), box-shadow var(--transition-normal), background var(--transition-normal);
+    flex-shrink: 0;
+    overflow: hidden;
+}
+.skill-search-box .skill-search-icon {
+    position: absolute;
+    left: 0.625rem;
+    font-size: 0.8125rem;
+    color: var(--color-text-tertiary);
+    pointer-events: none;
+    line-height: 1;
+}
+#skill-search-input {
+    width: 100%;
+    height: 100%;
+    padding: 0 1.625rem 0 1.875rem;
+    border: none;
+    font-weight: 400;
+    font-size: 0.8125rem;
+    box-sizing: border-box;
+    background: transparent;
+    color: var(--color-text);
+    outline: none;
+}
+#skill-search-input::placeholder {
+    color: var(--color-text-tertiary);
+}
+.skill-search-box:focus-within {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(22, 91, 250, 0.12);
+    background: var(--color-bg);
+}
+#skill-search-clear {
+    width: 1rem;
+    height: 1rem;
+    border: none;
+    background: var(--color-bg-btn);
+    color: var(--color-text-secondary);
+    border-radius: 50%;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-right: 0.5rem;
+    line-height: 1;
+    padding: 0;
+}
+#skill-search-clear:hover {
+    background: var(--color-text-tertiary);
+    color: var(--color-text-white);
+}
+/* 作用域筛选 chips */
+.skill-scope-chips {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.375rem 0.5rem 0.5rem;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+.skill-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.5rem;    
+    font-size: 0.75rem;     
+    line-height: 1;   
+    color: var(--t2);         
+    border-radius: var(--radius-md); 
+    border: 1px solid var(--color-border-light);
+}
+.skill-chip:hover {
+    font-weight: 600;   
+}
+.skill-chip.active {
+    background: var(--color-primary-bg);
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    font-weight: 600;
+}
+/* 技能列表 */
+.skill-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.25rem 0.5rem 0.625rem;
+}
+.skill-list-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+    margin-bottom: 2px;
+    user-select: none;
+}
+.skill-list-item:hover {
+    background: var(--color-bg-secondary);
+}
+.skill-list-item.active {
+    background: var(--color-primary-bg);
+}
+.skill-list-item.active .skill-item-name {
+    color: var(--color-primary);
+    font-weight: 600;
+}
+/* 名称首字符头像块 */
+.skill-item-avatar {
+    width: 2.125rem;
+    height: 2.125rem;
+    border-radius: var(--radius-lg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.875rem;
+    font-weight: 600;
+    flex-shrink: 0;
+    background: var(--color-bg-secondary);
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border-light);
+    transition: all var(--transition-fast);
+}
+.skill-list-item.active .skill-item-avatar {
+    background: var(--color-primary-bg);
+    color: var(--color-primary);
+    border-color: rgba(22, 91, 250, 0.25);
+}
+.skill-item-info {
+    flex: 1;
+    min-width: 0;
+}
+.skill-item-name {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--color-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: color var(--transition-fast);
+}
+.skill-item-meta {
+    font-size: 0.75rem;
+    color: var(--color-text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 0.25rem;
+}
+.skill-item-tag {
+    display: inline-flex;
+    font-size: 0.6875rem;
+    color: var(--t2);
+    margin-right: 0.5rem;
+    align-items: center;
+    justify-content: center;
+}
+.skill-empty-list {
+    padding-top: 1.75rem;
+    text-align: center;
+    font-size: 0.8125rem;
+    color: var(--color-text-tertiary);
+}
+/* 底部创建按钮 */
+.skill-footer {
+    padding: 0.5rem 0.75rem;
+    flex-shrink: 0;
+    background: var(--color-bg);
+}
+.skill-create-btn {
+    width: 100%;
+    height: 1.7rem;
+    border: none;
+    border-radius: var(--radius-lg);
+    background: var(--color-primary);
+    color: var(--color-text-white);
+    cursor: pointer;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    box-shadow: var(--shadow-ss);
+    transition: background-color var(--transition-normal), box-shadow var(--transition-normal), transform var(--transition-normal);
+    font-family: inherit;
+}
+.skill-create-btn:hover {
+    background: var(--color-primary-hover);
+    box-shadow: var(--shadow-sm);
+    transform: translateY(-1px);
+}
+.skill-create-btn:active {
+    background: var(--color-primary-active);
+    transform: translateY(0);
+}
+/* ── 右侧详情区 60% ── */
+.skill-main {
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+    background: var(--color-bg);
+    position: relative;
+    padding: 6px 0.75rem 0.75rem 0.75rem;
+}
+/* 详情/编辑视图容器 */
+.skill-detail-view,
+.skill-edit-view {
+    display: none;
+}
+/* 详情卡片 */
+.skill-detail-wrap {
+    padding: 0.75rem;
+    padding-top: 0;
+}
+.skill-detail-header {
+    display: flex;
+    align-items: center;
+    gap: 0.9375rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--color-border-light);
+    flex-wrap: wrap;
+}
+.skill-detail-icon {
+    width: 3.125rem;
+    height: 3.125rem;
+    border-radius: var(--radius-lg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    background: var(--color-primary-bg);
+    flex-shrink: 0;
+}
+.skill-detail-title-box {
+    flex: 1;
+    min-width: 12.5rem;
+}
+.skill-detail-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--color-text);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    letter-spacing: -0.01em;
+}
+.skill-detail-subtitle {
+    font-size: 0.75rem;
+    color: var(--color-text-tertiary);
+    margin-top: 2px;
+}
+/* 徽章 */
+.skill-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.125rem 0.5rem;
+    border-radius: var(--radius-md);
+    font-size: 0.75rem;
+    font-weight: 500;
+    border: 1px solid var(--color-border-light);
+    color: var(--color-text-secondary);
+    background: var(--color-bg-secondary);
+    white-space: nowrap;
+}
+.skill-badge.scope-system { color: var(--color-warning); border-color: rgba(110, 64, 201, 0.3); background: rgba(110, 64, 201, 0.06); }
+.skill-badge.scope-global { color: var(--color-primary); border-color: rgba(22, 91, 250, 0.3); background: var(--color-primary-bg); }
+.skill-badge.scope-project { color: var(--color-success); border-color: rgba(26, 127, 55, 0.3); background: rgba(26, 127, 55, 0.06); }
+.skill-badge.enabled { color: var(--color-success); border-color: rgba(26, 127, 55, 0.3); background: rgba(26, 127, 55, 0.06); }
+.skill-badge.disabled { color: var(--color-text-tertiary); border-color: var(--color-border-light); background: var(--color-bg-secondary); }
+.skill-item-tag.enabled { color: var(--color-success); }
+.skill-item-tag.disabled { color: var(--color-text-tertiary); }
+.skill-detail-actions {
+    display: flex;
+    gap: 0.4375rem;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+/* 元信息行 */
+.skill-detail-meta {
+    display: flex;
+    gap: 1.125rem;
+    flex-wrap: wrap;
+    padding: 0.875rem 0;
+    font-size: 0.8125rem;
+    color: var(--color-text-secondary);
+}
+.skill-detail-meta .skill-meta-item {
+    display: flex;
+    align-items: center;
+    gap: 0.3125rem;
+    white-space: nowrap;
+}
+.skill-detail-meta .skill-meta-label {
+    color: var(--color-text-tertiary);
+    font-weight: 500;
+}
+.skill-detail-meta .skill-meta-value {
+    font-weight: 600;
+    color: var(--color-text);
+}
+/* 分区 */
+.skill-detail-section {
+    margin-top: 1rem;
+}
+.skill-detail-section-title {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--color-text);
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.375rem;
+    border-bottom: 1px solid var(--color-border-light);
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+}
+.skill-detail-desc {
+    font-size: 0.8125rem;
+    color: var(--color-text-secondary);
+    line-height: 1.7;
+    padding: 0.625rem 0.875rem;
+    background: var(--color-bg-secondary);
+    border-radius: var(--radius-md);
+}
+/* 参数表格 */
+.skill-params-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--color-border-light);
+    border-radius: var(--radius-md);
+    background: var(--color-bg);
+}
+.skill-params-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8125rem;
+}
+.skill-params-table th,
+.skill-params-table td {
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--color-border-light);
+    white-space: nowrap;
+    color: var(--color-text);
+}
+.skill-params-table th {
+    background: var(--color-bg-panel);
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    font-size: 0.8125rem;
+    letter-spacing: 0.02em;
+}
+.skill-params-table tbody tr:last-child td {
+    border-bottom: none;
+}
+.skill-params-table tbody tr:hover td {
+    background: var(--color-bg-secondary);
+}
+.skill-param-name {
+    display: inline-flex;
+    align-items: center;
+    background: var(--color-primary-bg);
+    padding: 0.125rem 0.5rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.8125rem;
+    color: var(--color-primary);
+}
+.skill-param-type {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.8125rem;
+    color: var(--color-text-secondary);
+    background: var(--color-bg-secondary);
+    padding: 0.125rem 0.5rem;
+    border-radius: var(--radius-sm);
+}
+.skill-param-required {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.8125rem;
+    color: var(--color-danger);
+    background: var(--color-danger-light);
+    padding: 0.125rem 0.5rem;
+    border-radius: var(--radius-sm);
+}
+.skill-param-optional {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.8125rem;
+    color: var(--color-text-tertiary);
+    background: var(--color-bg-secondary);
+    padding: 0.125rem 0.5rem;
+    border-radius: var(--radius-sm);
+}
+/* 标签 chips */
+.skill-tag-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+}
+.skill-tag-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.5rem;
+    color: var(--todo-event-purple-text);
+    background: var(--todo-event-purple-bg);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    transition: all var(--transition-fast);
+    justify-content: center;
+    justify-items: center;
+}
+.skill-tag-chip.key{
+    color: var(--todo-event-green-text);
+    background: var(--todo-event-green-bg);
+}
+.skill-tag-chip:hover {
+    scale: 1.02;
+}
+/* 指令正文 */
+.skill-detail-body {
+    font-family: var(--font-family);
+    font-size: 0.8125rem;
+    color: var(--color-text);
+    line-height: 1.7;
+    white-space: normal;
+    word-break: break-word;
+    border: 1px solid var(--color-border-light);
+    border-radius: var(--radius-md);
+    padding: 0.75rem 0.875rem;
+    background: var(--color-bg-panel);
+    overflow-y: auto;
+    cursor: text;
+}
+/* ── 编辑视图 ── */
+.skill-edit-wrap {
+    padding: 0.75rem;
+    padding-top: 0;
+}
+.skill-edit-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding-bottom: 0.875rem;
+    border-bottom: 1px solid var(--color-border-light);
+    margin-bottom: 1rem;
+}
+.skill-edit-title {
+    flex: 1;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--t1);
+    letter-spacing: -0.01em;
+}
+.skill-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem 1rem;
+}
+.skill-form-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.skill-form-field.full {
+    grid-column: 1 / -1;
+}
+.skill-form-field label {
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+    font-weight: 600;
+}
+.skill-form-field input[type="text"],
+.skill-form-field input[type="number"],
+.skill-form-field select,
+.skill-form-field textarea {
+    font-size: 0.8125rem;
+    color: var(--color-text);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 0.375rem 0.5625rem;
+    outline: none;
+    font-family: inherit;
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+    box-sizing: border-box;
+    width: 100%;
+}
+#skill-f-description{
+    resize: vertical;
+    min-height: 3rem;
+    line-height: 1.6;
+}
+.skill-form-field input:focus,
+.skill-form-field select:focus,
+.skill-form-field textarea:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(22, 91, 250, 0.12);
+}
+.skill-form-field input[readonly] {
+    background: var(--color-bg-panel);
+    color: var(--color-text-tertiary);
+}
+.skill-form-field textarea {
+    resize: vertical;
+    min-height: 8rem;
+    line-height: 1.6;
+}
+.skill-form-tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem 0.625rem;
+}
+.skill-form-tool {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.8125rem;
+    font-weight: 500 !important;
+    cursor: pointer;
+    padding: 0.25rem 0.5625rem;
+    border-radius: var(--radius-md);
+    color: var(--todo-event-purple-text) !important;
+    background: var(--todo-event-purple-bg);
+    transition: all var(--transition-fast);
+    user-select: none;
+}
+.skill-form-tool:hover {
+    border-color:  var(--todo-event-purple-text);
+}
+.skill-form-tool input {
+    accent-color: var(--todo-event-purple-text);
+    width: 0.75rem;
+    height: 0.75rem;
+}
+/* 启停开关 */
+.skill-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+    background: var(--color-bg-panel);
+    border: 1px solid var(--color-border-light);
+    border-radius: var(--radius-md);
+}
+.skill-toggle-row .skill-toggle-label {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--color-text);
+}
+.skill-toggle-row .skill-toggle-hint {
+    font-size: 0.8125rem;
+    color: var(--color-text-tertiary);
+    margin-top: 1px;
+}
+.skill-icon-box {
+  width: 2.5rem;           
+  height: 2.5rem;            
+  border-radius: 0.75rem;      
+  background-color: rgb(250 245 255 / 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;              
+}
+
+.skill-icon-svg {
+  width: 1.25rem;          
+  height: 1.25rem;   
+  color: rgb(147 51 234 / 1);      
+}
+
+.skill-icon-box.global {
+    background-color: rgb(240 253 244 / 1);
+}
+.skill-icon-svg.global {
+    color: rgb(22 163 74 / 1);
+}
+
+.skill-icon-box.project {
+    background-color: rgb(253 242 248 / 1);
+}
+.skill-icon-svg.project {
+    color: rgb(219 39 119 / 1);
+}
+.skill-chip.global {
+    color: rgb(22 163 74 / 1);
+}
+.skill-chip.project {
+    color: rgb(219 39 119 / 1);
+}
+.skill-chip.system {
+     color: rgb(147 51 234 / 1);    
+}

@@ -146,6 +146,7 @@
             --radius-xl: 10px;
             --radius-xxl: 12px;
             --transition-normal: 0.2s ease;
+            --transition-fast: 0.12s ease;
             --color-bg-header: #e1e5e8;
             --color-bg-empty: #ebedf0;
             --window-header-bg: #edeff1;
@@ -1530,6 +1531,18 @@
         .btn-orange:active {
             background-color: var(--color-orange-active);
         }
+         .btn-danger {
+            background-color: var(--color-danger);
+            color: var(--color-text-white);
+        }
+
+        .btn-danger:hover {
+            background-color: var(--color-danger-hover);
+        }
+
+        .btn-danger:active {
+            background-color: var(--color-danger-active);
+        }
 
         .btn-sm {
             height: 1.65rem;
@@ -2112,6 +2125,8 @@
         }
 
         .editor-notification {
+            display: flex;
+            flex-wrap: wrap;  
             position: fixed;
             right: 1.25rem;
             background: transparent;
@@ -2122,6 +2137,7 @@
             z-index: 10000;
             font-size: 0.8125rem;
             width: auto;
+            max-width: 30rem;
             text-align: center;
             line-height: 1.4;
             cursor: default;
@@ -5280,7 +5296,7 @@
             display: flex;
             flex-direction: column;
             gap: 0.25rem;
-            padding: 0.25rem 0.5rem 0;
+            padding: 0.25rem 0.75rem 0;
         }
         .tool-card {
             display: flex;
@@ -13716,6 +13732,7 @@
             box-sizing: border-box;
         }
     </style>
+    <link rel="stylesheet" href="./css_js/skill-panel.css" />
 </head>
 
 <body>
@@ -16065,6 +16082,35 @@
                     </div>
                 </div>
             </div>
+            <!-- ====== 技能管理容器（左 40% 列表 / 右 60% 详情） ====== -->
+            <div id="skill-container" style="display: none;">
+                <div class="skill-layout" id="skill-layout">
+                    <!-- 左侧 40%：搜索框 + 筛选 chips + 技能列表 + footer 新增按钮 -->
+                    <div class="skill-sidebar" id="skill-sidebar">
+                        <div class="skill-search-box" id="skill-search-box">
+                            <span class="skill-search-icon">🔍</span>
+                            <input type="text" id="skill-search-input" placeholder="搜索技能名称..."
+                                onkeydown="skillHandleSearchKeydown(event)" oninput="skillHandleSearchInput()">
+                            <button id="skill-search-clear" onclick="skillClearSearch()" style="display:none;">✕</button>
+                        </div>
+                        <div class="skill-scope-chips" id="skill-scope-chips">
+                            <button class="skill-chip active" data-scope="" onclick="skillScopeChange('')">全部</button>
+                            <button class="skill-chip system" data-scope="system" onclick="skillScopeChange('system')">系统</button>
+                            <button class="skill-chip global" data-scope="global" onclick="skillScopeChange('global')">全局</button>
+                            <button class="skill-chip project" data-scope="project" onclick="skillScopeChange('project')">项目</button>
+                        </div>
+                        <div class="skill-list" id="skill-list"></div>
+                        <div class="skill-footer" id="skill-footer">
+                            <button class="skill-create-btn" id="skill-create-btn" onclick="skillCreateNew()"><span>＋</span> 新增 Skill</button>
+                        </div>
+                    </div>
+                    <!-- 右侧 60%：空态 / 详情 / 编辑 -->
+                    <div class="skill-main" id="skill-main">
+                        <div class="skill-detail-view" id="skill-detail-view" style="display:none;"></div>
+                        <div class="skill-edit-view" id="skill-edit-view" style="display:none;"></div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
     <script>
@@ -16222,6 +16268,7 @@
             { key: '目录空间分析', value: 'toggleFile("dirSpace")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: 'RAG问答', value: 'toggleFile("aiChat")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
             { key: '知识库索引', value: 'toggleFile("knowledge")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
+            { key: '技能管理', value: 'toggleFile("skill")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
         ]
         // 高亮字体颜色（深色系，确保可读性）
         const HIGHLIGHT_FONT_COLORS = [
@@ -16631,6 +16678,7 @@
         const gitRecordsContainer = document.getElementById('git-records-container');
         const chatContainer = document.getElementById('chat-container');
         const knowledgeContainer = document.getElementById('knowledge-container');
+        const skillContainer = document.getElementById('skill-container');
         const jmSaveOpmlBtn = document.getElementById('jsmind-save-opml-btn');
         const opmlSaveMmBtn = document.getElementById('opml-save-mm-btn');
         const jmImgBtn = document.getElementById('jsmind-image-btn');
@@ -16646,7 +16694,8 @@
             iframeCommonContainer, mermaidAppContainer, timelineAppContainer,
             graphqlPlaygroundContainer, regexTestContainer, calendarContainer,
             cronViewContainer, videoViewContainer, gitRecordsContainer,
-            swaggerEditorContainer, dirSpaceContainer, chatContainer, knowledgeContainer
+            swaggerEditorContainer, dirSpaceContainer, chatContainer, knowledgeContainer,
+            skillContainer
         ];
 
         const AUX_CONTROLS = [
@@ -16866,6 +16915,8 @@
                 await openAiChat();
             } else if (type === 'knowledge') {
                 await openKnowledgeBase();
+            } else if (type === 'skill') {
+                await openSkillManager();
             } else if (type === 'fileType') {
                 await openFileType();
             } else if (type === 'picLayoutDisplay') {  //目录右键
@@ -16905,6 +16956,8 @@
             } else if (type === 'aiChat') {
                 aiFabContainer.style.display = 'none';
             } else if (type === 'knowledge') {
+                aiFabContainer.style.display = 'none';
+            } else if (type === 'skill') {
                 aiFabContainer.style.display = 'none';
             } else if (type === 'dirCanvasDisplay') {
                 dirCanvasDisplayFlag = true;
@@ -52030,4 +52083,5 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return u + '/v1/chat/completions';
         }
     </script>
+    <script src="./css_js/skill-panel.js"></script>
 </body>

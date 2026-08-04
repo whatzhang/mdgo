@@ -11,7 +11,10 @@ use commands::llm::TaskRegistry;
 use commands::system::SystemMonitorState;
 use log::LevelFilter;
 use simplelog::{ColorChoice, ConfigBuilder, TerminalMode, TermLogger, WriteLogger};
+use tauri::{Emitter, Manager};
 use crate::core::{ConfigStore, Indexer, IndexerConfig, WatcherService};
+use crate::core::skill::{SkillRegistry, SkillStore};
+use crate::services::skill_watcher::SkillWatcherService;
 use std::sync::RwLock;
 
 /// LLM 连接配置（中央化，由前端保存后通过命令更新）
@@ -45,6 +48,10 @@ pub struct AppState {
     pub llm_config: RwLock<LlmConfig>,
     /// LLM 客户端缓存（按配置指纹复用 reqwest 连接池；配置变化后自动重建）
     pub llm_client_cache: tokio::sync::Mutex<Option<(String, services::llm::LLMClient)>>,
+    /// Skill 注册表（内存读写分离 + DB 缓存同步）
+    pub skill_registry: Arc<SkillRegistry>,
+    /// Skill 目录变更监控（热更新不重启，独立单一职责服务）
+    pub skill_watcher: Arc<SkillWatcherService>,
 }
 
 impl AppState {
@@ -125,6 +132,21 @@ pub fn run() {
         crate::core::db::bm25::warmup();
     });
 
+    // ── Skill 体系初始化 ──
+    // 注册表（内存）+ 独立监控服务（热更新不重启）。
+    // 首次打开目录时由 skill_list 懒加载注册表；全局目录不存在时自动创建。
+    let skill_registry = Arc::new(SkillRegistry::new());
+    let on_skill_changed: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {
+        log::debug!("[skill] 目录变更，注册表已刷新");
+    });
+    let skill_watcher = Arc::new(SkillWatcherService::new(
+        skill_registry.clone(),
+        on_skill_changed,
+    ));
+    if let Err(e) = std::fs::create_dir_all(SkillStore::global_skills_dir()) {
+        log::warn!("[skill] 创建全局技能目录失败: {}", e);
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -139,6 +161,17 @@ pub fn run() {
             ai_history_stores: Mutex::new(HashMap::new()),
             llm_config: RwLock::new(LlmConfig::default()),
             llm_client_cache: tokio::sync::Mutex::new(None),
+            skill_registry,
+            skill_watcher,
+        })
+        .setup(|app| {
+            // 注入 skill:changed 事件：AppHandle 就绪后替换 watcher 回调
+            let handle = app.handle().clone();
+            let skill_watcher = app.state::<AppState>().skill_watcher.clone();
+            skill_watcher.set_on_changed(Arc::new(move || {
+                let _ = handle.emit("skill:changed", ());
+            }));
+            Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::fs::read_dir_recursive,
@@ -210,6 +243,13 @@ pub fn run() {
             commands::llm::kb_rag_query,
             commands::llm::kb_llm_query,
             commands::llm::kb_cancel_task,
+            // Skill 管理命令
+            commands::skill::skill_list,
+            commands::skill::skill_get,
+            commands::skill::skill_create,
+            commands::skill::skill_update,
+            commands::skill::skill_delete,
+            commands::skill::skill_set_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

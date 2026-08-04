@@ -38,6 +38,9 @@ rusqlite = { version = "0.34", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
 regex = "1"
 
+# YAML 解析（Skill 元数据 SKILL.md frontmatter）
+serde_yaml = "0.9"
+
 # XML 解析（OPML）
 roxmltree = "0.20"
 
