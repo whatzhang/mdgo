@@ -1,8 +1,9 @@
 // ====== 技能管理（Skill Manager，skill 前缀隔离） ======
 // 依赖主页面全局：skillContainer / escapeHtml / showConfirmModal / showNotification
 // getRootHandle / getDirPath / isTauriVisit / switchToView（加载顺序：本文件须在主页内联脚本之后）
-// 工具白名单常量（与后端 core/skill.rs ALLOWED_TOOLS 一致）
-const ALLOWED_SKILL_TOOLS = ['kb_search', 'code_lookup', 'read_file', 'list_files', 'git_status'];
+// 技能可声明的工具白名单（后端 ALLOWED_TOOLS 的子集；
+// activate_skill / deactivate_skill 为系统常驻管理工具，不可由技能声明）
+const ALLOWED_SKILL_TOOLS = ['kb_search', 'code_lookup', 'read', 'edit', 'delete', 'list_files', 'render_mermaid', 'git_status'];
 const SKILL_SCOPE_NAMES = { system: '系统', global: '全局', project: '当前目录' };
 
 let skillDirPath = '';          // 当前根目录路径（打开面板时刷新）
@@ -103,9 +104,8 @@ function skillRenderList() {
     skillFilteredList = skillAllList.filter(s => {
         if (skillScopeFilter && s.scope !== skillScopeFilter) return false;
         if (!kw) return true;
-        // 搜索范围：id + name + description + 触发关键词
-        const keywords = (s.trigger_rules && s.trigger_rules.keywords) || [];
-        const searchText = (s.id + ' ' + s.name + ' ' + s.description + ' ' + keywords.join(' ')).toLowerCase();
+        // 搜索范围：id + name + description
+        const searchText = (s.id + ' ' + s.name + ' ' + s.description).toLowerCase();
         return searchText.includes(kw);
     });
     const listEl = document.getElementById('skill-list');
@@ -157,7 +157,6 @@ function skillRenderDetail(skill) {
     view.style.display = 'block';
 
     const writable = skill.scope !== 'system';
-    const keywords = (skill.trigger_rules && skill.trigger_rules.keywords) || [];
     const tools = skill.tools || [];
     const actions = [
         writable ? `<button class="btn btn-sm btn-primary" onclick="skillEditSkill('${skill.scope}','${skill.id}')">编辑</button>` : '',
@@ -191,7 +190,6 @@ function skillRenderDetail(skill) {
                 <div class="skill-detail-section-title">描述</div>
                 <div class="skill-detail-desc">${escapeHtml(skill.description) || '（无描述）'}</div>
             </div>
-            ${keywords.length ? `<div class="skill-detail-section"><div class="skill-detail-section-title">触发关键词</div><div class="skill-tag-row">${keywords.map(k => `<span class="skill-tag-chip key">${escapeHtml(k)}</span>`).join('')}</div></div>` : ''}
             ${tools.length ? `<div class="skill-detail-section"><div class="skill-detail-section-title">可用工具</div><div class="skill-tag-row">${tools.map(t => `<span class="skill-tag-chip">${escapeHtml(t)}</span>`).join('')}</div></div>` : ''}
             <div class="skill-detail-section">
                 <div class="skill-detail-section-title">指令正文</div>
@@ -236,7 +234,6 @@ function skillRenderEdit(skill) {
     const isEdit = skillEditMode === 'edit';
     const scope = skill ? skill.scope : 'global';
     const enabled = skill ? skill.enabled !== false : true;
-    const keywords = (skill && skill.trigger_rules && skill.trigger_rules.keywords) || [];
     const tools = (skill && skill.tools) || [];
     const priority = skill ? skill.priority : 50;
     const topK = skill && skill.top_k != null ? skill.top_k : '';
@@ -252,7 +249,7 @@ function skillRenderEdit(skill) {
             </div>
             <div class="skill-form-grid">
                 <div class="skill-form-field">
-                    <label>ID（小写字母/数字/连字符）</label>
+                    <label>ID（字母/数字/连字符/下划线/空格/中文，不能含 / 或 \）</label>
                     <input type="text" id="skill-f-id" value="${escapeHtml(skill ? skill.id : '')}" ${isEdit ? 'readonly' : ''} placeholder="my-skill" autocomplete="off">
                 </div>
                 <div class="skill-form-field">
@@ -260,10 +257,6 @@ function skillRenderEdit(skill) {
                     <input type="text" id="skill-f-name" value="${escapeHtml(skill ? skill.name : '')}" placeholder="技能名称" autocomplete="off">
                 </div>
                 <div class="skill-form-field full">
-                    <label>触发关键词（逗号分隔）</label>
-                    <input type="text" id="skill-f-keywords" value="${escapeHtml(keywords.join(', '))}" placeholder="总结, 摘要" autocomplete="off">
-                </div>
-                <div class="skill-form-field full" style="height: auto;">
                     <label>描述</label>
                     <textarea id="skill-f-description" placeholder="一句话描述技能用途">${escapeHtml(skill ? skill.description : '')}</textarea>
                 </div>
@@ -343,17 +336,18 @@ function skillValidateForm() {
     const errors = [];
     const id = (document.getElementById('skill-f-id')?.value || '').trim();
     const description = (document.getElementById('skill-f-description')?.value || '').trim();
-    const keywords = (document.getElementById('skill-f-keywords')?.value || '').trim().split(',');
     const body = (document.getElementById('skill-f-body')?.value || '').trim();
     const name = (document.getElementById('skill-f-name')?.value || '').trim();
     const priority = parseInt(document.getElementById('skill-f-priority')?.value || '50', 10);
 
     if (!id) errors.push('id 不能为空');
-    else if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) errors.push('id 只能包含小写字母/数字/连字符，且以字母或数字开头');
+    else if (id !== id.trim()) errors.push('id 不能包含首尾空白');
+    else if (id.length > 128) errors.push('id 长度不能超过 128');
+    else if (id === '.' || id === '..') errors.push('id 不能为 . 或 ..');
+    else if (/[/\\]/.test(id) || /[\x00-\x1f\x7f]/.test(id)) errors.push('id 不能包含路径分隔符或控制字符');
     if (!name) errors.push('name 不能为空');
     if (isNaN(priority) || priority < 0 || priority > 100) errors.push('priority 必须在 0~100 之间');
     if (!description) errors.push('description 不能为空');
-    if (!keywords.length) errors.push('keywords 不能为空');
     if (!body) errors.push('body 不能为空');
 
     if (errors.length){
@@ -379,8 +373,6 @@ async function skillSaveSkill() {
         ? (skillEditKey ? skillEditKey.scope : '')
         : (document.getElementById('skill-f-scope')?.value || 'project');
     const priority = parseInt(document.getElementById('skill-f-priority')?.value || '50', 10);
-    const keywords = (document.getElementById('skill-f-keywords')?.value || '')
-        .split(/[,，]/).map(k => k.trim()).filter(Boolean);
     const topKVal = (document.getElementById('skill-f-top-k')?.value || '').trim();
     const minScoreVal = (document.getElementById('skill-f-min-score')?.value || '').trim();
     const maxDocsVal = (document.getElementById('skill-f-max-docs')?.value || '').trim();
@@ -392,24 +384,12 @@ async function skillSaveSkill() {
     if (!id) { showNotification('请填写 ID', 'error'); return; }
     if (!name) { showNotification('请填写名称', 'error'); return; }
     if (!description) { showNotification('请填写描述', 'error'); return; }
-    if (!keywords.length) { showNotification('请填写关键词', 'error'); return; }
     if (!body) { showNotification('请填写指令正文', 'error'); return; }
 
     const input = {
         name,
         description,
         priority,
-        trigger_rules: {
-            keywords,
-            // 编辑时保留原技能的自定义阈值，创建时用默认 0.5（UI 未提供该字段，避免编辑丢值）
-            similarity_threshold: (() => {
-                if (skillEditMode === 'edit' && skillEditKey) {
-                    const editing = skillAllList.find(s => s.scope === skillEditKey.scope && s.id === skillEditKey.id);
-                    return editing && editing.trigger_rules ? editing.trigger_rules.similarity_threshold : 0.5;
-                }
-                return 0.5;
-            })(),
-        },
         tools,
         enabled,
         body,
@@ -519,48 +499,4 @@ function skillScopeChange(value) {
         c.classList.toggle('active', (c.dataset.scope || '') === skillScopeFilter);
     });
     skillRenderList();
-}
-
-/** 意图匹配测试（调试入口，对应后端 skill_match 命令） */
-async function skillTestMatch() {
-    if (!window.__mdgoSkill) {
-        showNotification('技能管理仅在桌面版（Tauri）可用', 'error');
-        return;
-    }
-   showInputModal('输入测试语句（按 L1 关键词 → L2 语义 → L3 兜底匹配）', '', async (q) => {
-        try {
-            const results = await window.__mdgoSkill.skillMatch(skillDirPath, q);
-            document.getElementById('skill-edit-view').style.display = 'none';
-            const view = document.getElementById('skill-detail-view');
-            view.style.display = 'block';
-            if (!results.length) {
-                view.innerHTML = `<div class="skill-detail-wrap">
-                    <div class="skill-detail-title">意图匹配测试 <span class="skill-badge">无技能命中</span></div>
-                    <div class="skill-detail-section-title">语句</div>
-                    <div class="skill-detail-desc">${escapeHtml(q)}</div>
-                    <div class="skill-detail-desc" style="color:var(--t3);">未命中任何启用的技能，可尝试调整触发关键词或相似度阈值。</div>
-                </div>`;
-                return;
-            }
-            const rows = results.map(r => `
-                <div class="skill-list-item" style="margin-bottom:0.375rem;cursor:default;padding:0.5rem 0;">
-                    <div class="skill-item-info">
-                        <div class="skill-item-name">${escapeHtml(r.skill.name)}
-                            <span class="skill-badge scope-${r.skill.scope}">${skillScopeName(r.skill.scope)}</span>
-                            <span class="skill-badge enabled">${r.level}</span>
-                        </div>
-                        <div class="skill-item-meta"><span>ID: ${escapeHtml(r.skill.id)}</span>&nbsp;&nbsp;&nbsp;<span>得分: ${typeof r.score === 'number' ? r.score.toFixed(3) : r.score}</span></div>
-                    </div>
-                </div>`).join('');
-            view.innerHTML = `<div class="skill-detail-wrap">
-                <div class="skill-detail-title">意图匹配测试 <span class="skill-badge">命中 ${results.length} 个</span></div>
-                <div class="skill-detail-section-title">测试语句</div>
-                <div class="skill-detail-desc">${escapeHtml(q)}</div>
-                <div class="skill-detail-section-title">匹配结果</div>
-                ${rows}
-            </div>`;
-        } catch (e) {
-            showNotification('匹配失败: ' + e, 'error');
-        }
-    });
 }

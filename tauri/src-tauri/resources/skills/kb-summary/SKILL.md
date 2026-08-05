@@ -4,13 +4,10 @@ scope: system
 name: 知识库综述
 description: 当用户要求对知识库、某个主题或一批文档进行总结、综述、概览、归纳时触发。
 priority: 60
-trigger_rules:
-  keywords: ["总结", "综述", "概览", "归纳", "要点", "summary", "overview"]
-  similarity_threshold: 0.55
 roles: ["owner"]
-tools: [kb_search, read_file]
+tools: [kb_search, read]
 top_k: 12
-min_score: 0.25
+min_score: 0.5
 max_docs: 6
 enabled: true
 version: 1
@@ -25,7 +22,7 @@ updated_at: 1754200000000
 
 ## 执行步骤
 1. 先用 kb_search 从多个角度检索（可检索 2~3 轮，每次聚焦单一角度）
-2. 对高相关文档用 read_file 精读关键章节
+2. 对高相关文档用 read 精读关键章节
 3. 按主题归纳，而非按文档罗列
 
 ## 输出规范

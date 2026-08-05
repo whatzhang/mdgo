@@ -5,10 +5,11 @@
 //! - `SkillRegistry`：内存注册表（RwLock 读写分离）+ 全量重建 + DB 缓存同步
 //! - `SkillDb`：按目录打开 `.mdgo/mdgo.db` 并保证表结构（DDL 在 `core/db/schema.rs`）
 //! - 文件变更监控在独立的 `services/skill_watcher.rs`，不混入本模块
-//! - `matcher`：分层意图匹配算法（L1 关键词 / L2 语义 / L3 兜底）
-//! - `context`：技能执行上下文解析（手动触发 / 会话挂载 / 自动匹配的唯一入口）
+//! - `matcher`：分层意图匹配算法（已废弃，决策移交 LLM，模块已删除）
+//! - `activation`：技能激活状态（L2 加载核心，LLM 驱动 activate_skill/deactivate_skill）
+//! - `context`：技能预激活上下文解析（手动触发 / 会话挂载）
 
-pub mod matcher;
+pub mod activation;
 pub mod context;
 pub mod metrics;
 
@@ -21,8 +22,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::db::schema;
 
-/// 允许 Skill 声明的内置工具白名单（与 Rig Agent 注册的 5 个只读工具一致）
-pub const ALLOWED_TOOLS: &[&str] = &["kb_search", "code_lookup", "read_file", "list_files", "git_status"];
+/// 允许 Skill 声明的内置工具白名单（与 Rig Agent 注册的内置工具一致）。
+/// 白名单仅为声明约束：技能声明了系统外的工具名时直接忽略，不做强类型校验。
+pub const ALLOWED_TOOLS: &[&str] = &[
+    "kb_search", "code_lookup", "read", "edit", "delete", "list_files", "render_mermaid", "git_status",
+    "activate_skill", "deactivate_skill",
+];
 
 /// Skill 作用域（三层体系）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -60,17 +65,13 @@ impl SkillScope {
     }
 }
 
-/// 触发规则（L1 关键词 / L2 语义阈值的配置载体）
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct TriggerRules {
-    #[serde(default)]
-    pub keywords: Vec<String>,
-    #[serde(default = "default_similarity_threshold")]
-    pub similarity_threshold: f32,
-}
-
-fn default_similarity_threshold() -> f32 {
-    0.5
+/// 作用域覆盖优先级（同名技能：项目 > 全局 > 系统）
+fn scope_rank(scope: SkillScope) -> u8 {
+    match scope {
+        SkillScope::System => 0,
+        SkillScope::Global => 1,
+        SkillScope::Project => 2,
+    }
 }
 
 /// SKILL.md YAML frontmatter（字段顺序即写入顺序，与 PRD Schema 契约一致）
@@ -85,8 +86,6 @@ struct SkillFrontmatter {
     description: String,
     #[serde(default = "default_priority")]
     priority: u32,
-    #[serde(default)]
-    trigger_rules: TriggerRules,
     #[serde(default)]
     tools: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -125,7 +124,6 @@ pub struct Skill {
     pub name: String,
     pub description: String,
     pub priority: u32,
-    pub trigger_rules: TriggerRules,
     pub tools: Vec<String>,
     pub top_k: Option<u32>,
     pub min_score: Option<f32>,
@@ -148,7 +146,6 @@ pub struct SkillInput {
     pub name: String,
     pub description: String,
     pub priority: Option<u32>,
-    pub trigger_rules: Option<TriggerRules>,
     pub tools: Option<Vec<String>>,
     pub top_k: Option<u32>,
     pub min_score: Option<f32>,
@@ -165,8 +162,13 @@ impl SkillInput {
         skill.name = self.name.clone();
         skill.description = self.description.clone();
         if let Some(v) = self.priority { skill.priority = v; }
-        if let Some(v) = &self.trigger_rules { skill.trigger_rules = v.clone(); }
-        if let Some(v) = &self.tools { skill.tools = v.clone(); }
+        if let Some(v) = &self.tools {
+            skill.tools = v
+                .iter()
+                .filter(|t| ALLOWED_TOOLS.contains(&t.as_str()))
+                .cloned()
+                .collect();
+        }
         if let Some(v) = self.top_k { skill.top_k = Some(v); }
         if let Some(v) = self.min_score { skill.min_score = Some(v); }
         if let Some(v) = self.max_docs { skill.max_docs = Some(v); }
@@ -185,8 +187,13 @@ impl SkillInput {
             name: self.name.clone(),
             description: self.description.clone(),
             priority: self.priority.unwrap_or(50),
-            trigger_rules: self.trigger_rules.clone().unwrap_or_default(),
-            tools: self.tools.clone().unwrap_or_default(),
+            tools: self
+                .tools
+                .clone()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|t| ALLOWED_TOOLS.contains(&t.as_str()))
+                .collect(),
             top_k: self.top_k,
             min_score: self.min_score,
             max_docs: self.max_docs,
@@ -252,13 +259,12 @@ pub fn parse_skill_md(
         None => default_scope,
     };
 
-    let skill = Skill {
+    let mut skill = Skill {
         id: fm.id,
         scope,
         name: fm.name,
         description: fm.description,
         priority: fm.priority,
-        trigger_rules: fm.trigger_rules,
         tools: fm.tools,
         top_k: fm.top_k,
         min_score: fm.min_score,
@@ -271,6 +277,11 @@ pub fn parse_skill_md(
         created_at: fm.created_at,
         updated_at: fm.updated_at,
     };
+
+    // 白名单仅为声明：不在系统白名单中的工具名直接忽略，不视为加载失败
+    skill
+        .tools
+        .retain(|t| ALLOWED_TOOLS.contains(&t.as_str()));
 
     let errors = validate_skill(&skill);
     if errors.is_empty() {
@@ -305,7 +316,7 @@ pub fn validate_skill(skill: &Skill) -> Vec<SkillFieldError> {
     } else if !is_valid_skill_id(&skill.id) {
         errors.push(field_err(
             "id",
-            "id 只能包含小写字母/数字/连字符，且以字母或数字开头",
+            "id 含非法字符（不允许路径分隔符 / \\、控制字符与首尾空白，长度 ≤ 128）",
         ));
     }
 
@@ -317,22 +328,7 @@ pub fn validate_skill(skill: &Skill) -> Vec<SkillFieldError> {
         errors.push(field_err("priority", "priority 必须在 0~100 之间"));
     }
 
-    for tool in &skill.tools {
-        if !ALLOWED_TOOLS.contains(&tool.as_str()) {
-            errors.push(field_err(
-                "tools",
-                format!("tools 包含未知工具: {}（白名单: {:?}）", tool, ALLOWED_TOOLS),
-            ));
-        }
-    }
-
-    let st = skill.trigger_rules.similarity_threshold;
-    if !(0.0..=1.0).contains(&st) {
-        errors.push(field_err(
-            "trigger_rules",
-            "trigger_rules.similarity_threshold 必须在 0~1 之间",
-        ));
-    }
+    // 工具白名单仅为声明：不做强类型校验，系统外的工具名在加载时被忽略（见 parse_skill_md）
 
     errors
 }
@@ -344,18 +340,31 @@ fn field_err(field: &str, message: impl Into<String>) -> SkillFieldError {
     }
 }
 
-fn is_valid_skill_id(id: &str) -> bool {
-    if id.is_empty() {
-        return false;
-    }
-    let bytes = id.as_bytes();
-    let first_ok = bytes[0].is_ascii_lowercase() || bytes[0].is_ascii_digit();
-    if !first_ok {
-        return false;
-    }
-    bytes[1..]
+/// 将字段级错误列表格式化为可读错误串
+fn format_skill_field_errors(errors: &[SkillFieldError]) -> String {
+    errors
         .iter()
-        .all(|&b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        .map(|e| format!("{}: {}", e.field, e.message))
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// 兼容主流通用 skill 命名（允许大小写、Unicode、空格、点、下划线等），
+/// 仅做安全底线校验：非空、长度限制、禁止控制字符与路径分隔符（防路径穿越）。
+fn is_valid_skill_id(id: &str) -> bool {
+    if id.trim().is_empty() {
+        return false;
+    }
+    if id != id.trim() {
+        return false; // 首尾不允许空白，避免目录名歧义
+    }
+    if id.len() > 128 {
+        return false;
+    }
+    if id == "." || id == ".." {
+        return false; // 防路径穿越
+    }
+    !id.chars().any(|c| c.is_control() || c == '/' || c == '\\')
 }
 
 /// 将 Skill 序列化为完整 SKILL.md 全文（frontmatter + 正文）
@@ -366,7 +375,6 @@ pub fn to_skill_md(skill: &Skill) -> Result<String, String> {
         name: skill.name.clone(),
         description: skill.description.clone(),
         priority: skill.priority,
-        trigger_rules: skill.trigger_rules.clone(),
         tools: skill.tools.clone(),
         top_k: skill.top_k,
         min_score: skill.min_score,
@@ -456,17 +464,14 @@ impl SkillStore {
             .collect()
     }
 
-    /// 扫描全局目录下全部 Skill（目录不存在按空处理）
-    pub fn scan_global() -> Vec<Skill> {
-        Self::scan_dir(&Self::global_skills_dir(), SkillScope::Global)
-    }
-
-    /// 扫描项目目录下全部 Skill（目录不存在按空处理）
-    pub fn scan_project(dir_path: &str) -> Vec<Skill> {
-        Self::scan_dir(&Self::project_skills_dir(dir_path), SkillScope::Project)
-    }
-
-    fn scan_dir(scope_dir: &Path, scope: SkillScope) -> Vec<Skill> {
+    /// 扫描目录下全部 Skill，并收集解析失败项（供前端消息提醒）。
+    ///
+    /// 失败项格式：`{文件路径}: {字段}: {原因}`，多个字段错误以 `; ` 分隔。
+    fn scan_dir_with_errors(
+        scope_dir: &Path,
+        scope: SkillScope,
+        errors: &mut Vec<String>,
+    ) -> Vec<Skill> {
         if !scope_dir.exists() {
             return Vec::new();
         }
@@ -494,14 +499,17 @@ impl SkillStore {
                         skill_md.to_string_lossy().to_string(),
                     ) {
                         Ok(skill) => skills.push(skill),
-                        Err(e) => log::warn!(
-                            "[skill] 解析失败 ({}): {:?}",
-                            skill_md.display(),
-                            e
-                        ),
+                        Err(field_errors) => {
+                            let detail = format_skill_field_errors(&field_errors);
+                            log::warn!("[skill] 解析失败 ({}): {}", skill_md.display(), detail);
+                            errors.push(format!("{}: {}", skill_md.display(), detail));
+                        }
                     }
                 }
-                Err(e) => log::warn!("[skill] 读取失败 ({}): {}", skill_md.display(), e),
+                Err(e) => {
+                    log::warn!("[skill] 读取失败 ({}): {}", skill_md.display(), e);
+                    errors.push(format!("{}: 读取失败: {}", skill_md.display(), e));
+                }
             }
         }
         skills
@@ -605,6 +613,8 @@ pub struct SkillRegistry {
     last_loaded_dir: RwLock<Option<String>>,
     /// 按目录缓存的技能 DB 连接（避免每次 reload 重开连接；Connection 是 Send）
     db_conns: std::sync::Mutex<HashMap<String, Connection>>,
+    /// 最近一次 reload 的加载失败项（供命令层转发前端提醒；读走即清空）
+    load_errors: std::sync::Mutex<Vec<String>>,
 }
 
 impl SkillRegistry {
@@ -613,6 +623,7 @@ impl SkillRegistry {
             inner: RwLock::new(HashMap::new()),
             last_loaded_dir: RwLock::new(None),
             db_conns: std::sync::Mutex::new(HashMap::new()),
+            load_errors: std::sync::Mutex::new(Vec::new()),
         }
     }
 
@@ -638,13 +649,26 @@ impl SkillRegistry {
         for skill in SkillStore::scan_system() {
             merged.insert((skill.scope, skill.id.clone()), skill);
         }
-        // 2. 用户全局（覆盖系统同名）
-        for skill in SkillStore::scan_global() {
+        // 2. 用户全局（覆盖系统同名） + 3. 用户项目（覆盖全局同名）
+        let mut load_errors: Vec<String> = Vec::new();
+        for skill in SkillStore::scan_dir_with_errors(
+            &SkillStore::global_skills_dir(),
+            SkillScope::Global,
+            &mut load_errors,
+        ) {
             merged.insert((skill.scope, skill.id.clone()), skill);
         }
-        // 3. 用户项目（覆盖全局同名）
-        for skill in SkillStore::scan_project(dir_path) {
+        for skill in SkillStore::scan_dir_with_errors(
+            &SkillStore::project_skills_dir(dir_path),
+            SkillScope::Project,
+            &mut load_errors,
+        ) {
             merged.insert((skill.scope, skill.id.clone()), skill);
+        }
+        // 保存本次加载失败项（供命令层转发前端提醒）
+        {
+            let mut guard = self.load_errors.lock().unwrap_or_else(|e| e.into_inner());
+            *guard = load_errors;
         }
 
         // 同步 DB 缓存（读多写少，失败不影响内存注册表）：连接按目录缓存复用，
@@ -709,6 +733,34 @@ impl SkillRegistry {
     pub fn get(&self, scope: SkillScope, id: &str) -> Option<Skill> {
         let guard = self.inner.read().unwrap_or_else(|e| e.into_inner());
         guard.get(&(scope, id.to_string())).cloned()
+    }
+
+    /// 跨作用域查找启用技能（供 activate_skill 工具使用）。
+    ///
+    /// 同名多作用域时按「项目 > 全局 > 系统」覆盖优先级，取优先级最高的启用技能；
+    /// 未启用或不存在返回 None。
+    pub fn find_enabled(&self, id: &str) -> Option<Skill> {
+        let guard = self.inner.read().unwrap_or_else(|e| e.into_inner());
+        let mut best: Option<&Skill> = None;
+        for skill in guard.values() {
+            if skill.id != id || !skill.enabled {
+                continue;
+            }
+            let replace = match best {
+                None => true,
+                Some(b) => scope_rank(skill.scope) > scope_rank(b.scope),
+            };
+            if replace {
+                best = Some(skill);
+            }
+        }
+        best.cloned()
+    }
+
+    /// 取走最近一次 reload 的加载失败项（消费后清空，用于转发前端提醒）
+    pub fn take_load_errors(&self) -> Vec<String> {
+        let mut guard = self.load_errors.lock().unwrap_or_else(|e| e.into_inner());
+        std::mem::take(&mut *guard)
     }
 }
 

@@ -1,18 +1,23 @@
-//! Agent 内置工具集：文件只读、目录列举、Git 状态查询（全部只读，无写操作）。
+//! Agent 内置工具集：文件读取/编辑/删除、目录列举、Git 状态查询、技能参考读取。
+//!
+//! 读写协议对齐 Codex / Claude Code：`read` 只读（含技能参考文档），
+//! `edit` / `delete` 写操作被严格限制在打开目录内（并排除 `.mdgo` 内部数据）。
 //!
 //! 所有工具调用都会实时写入 [`ToolCallBus`]，由 commands 层转发为
 //! `agent:tool_call` / `agent:tool_result` 事件，前端据此渲染调用轨迹卡片。
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use rig_agent::tool::{DynamicTool, ToolContext, ToolExecutionError, ToolOutput};
 use serde::Serialize;
 
 use crate::core::agent::KbSearchConfig;
 use crate::core::db::utils::IgnoreMatcher;
+use crate::core::skill::activation::ActiveSkillState;
+use crate::core::skill::SkillRegistry;
 
 /// 单条工具调用事件（`kind = "call"` 或 `kind = "result"`）
 #[derive(Debug, Clone, Serialize)]
@@ -128,9 +133,18 @@ pub fn tool_call_bus() -> &'static ToolCallBus {
 }
 
 /// 记录工具调用开始（供命令层转发 `agent:tool_call`）。
-/// 技能来源 `skill_id` 直接取自 `cfg`，无需重复传参。
+///
+/// 技能来源 `skill_id` 动态解析：优先取「已激活技能中声明了该工具」的技能，
+/// 同时覆盖预激活与 LLM 激活两条路径；无声明时回退到预激活主技能（`cfg.skill_id`）。
 pub fn record_tool_call(cfg: &KbSearchConfig, tool: &str, args_preview: &str) {
-    tool_call_bus().record_call(&cfg.request_id, tool, args_preview, cfg.skill_id.as_deref());
+    let skill_id = cfg
+        .skill_state
+        .activated()
+        .iter()
+        .find(|s| s.tools.iter().any(|t| t == tool))
+        .map(|s| format!("{}:{}", s.scope.as_str(), s.id))
+        .or_else(|| cfg.skill_id.clone());
+    tool_call_bus().record_call(&cfg.request_id, tool, args_preview, skill_id.as_deref());
 }
 
 /// 记录工具调用结果（供命令层转发 `agent:tool_result`）。
@@ -138,38 +152,71 @@ pub fn record_tool_result(cfg: &KbSearchConfig, tool: &str, ok: bool, summary: &
     tool_call_bus().record_result(&cfg.request_id, tool, ok, summary);
 }
 
-// ─────────────────────────── 只读文件工具 ───────────────────────────
+// ─────────────────────────── 文件读取工具 ───────────────────────────
 
 /// 单次读取上限（避免大文件撑爆模型上下文）
 const MAX_FILE_READ_CHARS: usize = 8192;
 /// 目录列举上限
 const MAX_LIST_ITEMS: usize = 60;
 
-/// 将相对路径安全解析到知识库根目录内（防路径穿越）。
-fn safe_resolve(dir_path: &str, rel: &str) -> Result<PathBuf, String> {
-    let base = std::fs::canonicalize(dir_path)
-        .map_err(|e| format!("无法访问知识库目录: {}", e))?;
+/// 将相对路径安全解析到指定根目录内（防路径穿越）。
+fn safe_resolve_in(base_dir: &Path, rel: &str) -> Result<PathBuf, String> {
+    let base = std::fs::canonicalize(base_dir)
+        .map_err(|e| format!("无法访问目录: {}", e))?;
     let full = std::fs::canonicalize(base.join(rel))
         .map_err(|e| format!("文件不存在: {}", e))?;
     if !full.starts_with(&base) {
-        return Err("路径越界：仅允许访问知识库目录内的文件".into());
+        return Err("路径越界：仅允许访问限定目录内的文件".into());
     }
     Ok(full)
 }
 
-pub async fn read_file(cfg: &KbSearchConfig, rel_path: &str) -> Result<String, String> {
-    let full = safe_resolve(&cfg.dir_path, rel_path)?;
-    let meta = std::fs::metadata(&full).map_err(|e| format!("读取文件信息失败: {}", e))?;
+/// 将相对路径安全解析到知识库根目录内（防路径穿越）。
+fn safe_resolve(dir_path: &str, rel: &str) -> Result<PathBuf, String> {
+    safe_resolve_in(Path::new(dir_path), rel)
+}
+
+/// 读取已解析路径的文本内容（目录拒绝、超长截断）。
+fn read_text(full: &Path, display: &str) -> Result<String, String> {
+    let meta = std::fs::metadata(full).map_err(|e| format!("读取文件信息失败: {}", e))?;
     if meta.is_dir() {
-        return Err(format!("{} 是目录，请改用 list_files 查看目录内容", rel_path));
+        return Err(format!("{} 是目录，请改用 list_files 查看目录内容", display));
     }
-    let data = std::fs::read(&full).map_err(|e| format!("读取文件失败: {}", e))?;
+    let data = std::fs::read(full).map_err(|e| format!("读取文件失败: {}", e))?;
     let text = String::from_utf8_lossy(&data).into_owned();
     if text.chars().count() > MAX_FILE_READ_CHARS {
         let truncated: String = text.chars().take(MAX_FILE_READ_CHARS).collect();
         return Ok(format!("{truncated}\n\n[内容过长，已截断前 {MAX_FILE_READ_CHARS} 字符]"));
     }
     Ok(text)
+}
+
+/// 读取知识库（当前打开目录）内文件或当前激活技能的参考文档（渐进式披露 L3）。
+///
+/// 解析顺序：
+/// 1. 知识库目录内的相对路径（如 `docs/note.md`）
+/// 2. 当前激活技能目录下的相对路径（如 `references/flowchart.md`），
+///    按激活技能逐一尝试；技能基础目录由 `cfg.skill_bases` 提供，仅限已激活技能
+pub async fn read(cfg: &KbSearchConfig, rel_path: &str) -> Result<String, String> {
+    match safe_resolve(&cfg.dir_path, rel_path) {
+        Ok(full) => return read_text(&full, rel_path),
+        Err(e) if cfg.skill_state.activated().is_empty() => return Err(e),
+        Err(_) => {}
+    }
+    let mut last_err = "文件不存在（知识库内与已激活技能的参考目录均未找到）".to_string();
+    for skill in cfg.skill_state.activated() {
+        for (scope, base) in &cfg.skill_bases {
+            if scope != skill.scope.as_str() {
+                continue;
+            }
+            let dir = Path::new(base).join(&skill.id);
+            match safe_resolve_in(&dir, rel_path) {
+                Ok(full) => return read_text(&full, rel_path),
+                Err(e) => last_err = e,
+            }
+        }
+    }
+    Err(last_err)
 }
 
 pub async fn list_files(cfg: &KbSearchConfig, pattern: &str, max_items: u32) -> Result<String, String> {
@@ -273,6 +320,82 @@ pub async fn git_status(cfg: &KbSearchConfig) -> Result<String, String> {
     Ok(format!("Git 状态（共 {total} 项改动）：\n{}", head.join("\n")))
 }
 
+// ─────────────────────────── 文件编辑/删除工具（限打开目录） ───────────────────────────
+
+/// 判断相对路径是否指向 `.mdgo` 内部数据（配置/技能/索引，禁止编辑/删除）。
+fn is_mdgo_internal(rel: &str) -> bool {
+    let norm = rel.trim_start_matches(['/', '\\']);
+    norm.eq_ignore_ascii_case(".mdgo")
+        || norm.starts_with(".mdgo/")
+        || norm.starts_with(".mdgo\\")
+}
+
+/// 编辑知识库（当前打开目录）内文本文件：将唯一匹配的 old_string 精确替换为 new_string。
+///
+/// 安全边界：路径经 `safe_resolve` 限制在打开目录内，且拒绝 `.mdgo` 内部数据。
+pub async fn edit_file(
+    cfg: &KbSearchConfig,
+    rel_path: &str,
+    old_string: &str,
+    new_string: &str,
+) -> Result<String, String> {
+    if old_string.is_empty() {
+        return Err("old_string 不能为空".into());
+    }
+    if is_mdgo_internal(rel_path) {
+        return Err(".mdgo 为应用内部数据目录（配置/技能/索引），不允许编辑".into());
+    }
+    let full = safe_resolve(&cfg.dir_path, rel_path)?;
+    let meta = std::fs::metadata(&full).map_err(|e| format!("读取文件信息失败: {}", e))?;
+    if meta.is_dir() {
+        return Err(format!("{} 是目录，仅支持编辑文本文件", rel_path));
+    }
+    if meta.len() > 1024 * 1024 {
+        return Err(format!("{} 超过 1MB，请改用其他方式编辑", rel_path));
+    }
+    let data = std::fs::read(&full).map_err(|e| format!("读取文件失败: {}", e))?;
+    let content = String::from_utf8_lossy(&data).into_owned();
+    let occurrences: Vec<usize> = content.match_indices(old_string).map(|(i, _)| i).collect();
+    match occurrences.len() {
+        0 => Err("未在文件中找到与 old_string 完全匹配的内容，请先使用 read 读取文件确认原文（注意换行符、空格、大小写需完全一致）".into()),
+        1 => {
+            let start = occurrences[0];
+            let mut new_content = String::with_capacity(content.len() + new_string.len());
+            new_content.push_str(&content[..start]);
+            new_content.push_str(new_string);
+            new_content.push_str(&content[start + old_string.len()..]);
+            std::fs::write(&full, new_content.as_bytes())
+                .map_err(|e| format!("写入文件失败: {}", e))?;
+            Ok(format!(
+                "已更新 {}：替换 1 处（{} 字符 → {} 字符）",
+                rel_path,
+                old_string.chars().count(),
+                new_string.chars().count()
+            ))
+        }
+        n => Err(format!(
+            "old_string 在文件中出现 {} 次，请提供更长的上下文使其唯一匹配",
+            n
+        )),
+    }
+}
+
+/// 删除知识库（当前打开目录）内的一个文件（不可恢复）。
+///
+/// 安全边界：路径经 `safe_resolve` 限制在打开目录内，且拒绝 `.mdgo` 内部数据。
+pub async fn delete_file(cfg: &KbSearchConfig, rel_path: &str) -> Result<String, String> {
+    if is_mdgo_internal(rel_path) {
+        return Err(".mdgo 为应用内部数据目录（配置/技能/索引），不允许删除".into());
+    }
+    let full = safe_resolve(&cfg.dir_path, rel_path)?;
+    let meta = std::fs::metadata(&full).map_err(|e| format!("读取文件信息失败: {}", e))?;
+    if meta.is_dir() {
+        return Err(format!("{} 是目录，delete 仅支持删除文件，不支持目录", rel_path));
+    }
+    std::fs::remove_file(&full).map_err(|e| format!("删除文件失败: {}", e))?;
+    Ok(format!("已删除文件 {}", rel_path))
+}
+
 // ─────────────────────────── 工具构建 ───────────────────────────
 
 fn tool_error(tool: &str, msg: &str) -> ToolExecutionError {
@@ -280,17 +403,243 @@ fn tool_error(tool: &str, msg: &str) -> ToolExecutionError {
         .with_model_output(ToolOutput::text(msg.to_string()))
 }
 
-/// 构建 read_file 工具：读取知识库内文本文件（相对路径，最大 8K 字符）。
-pub fn build_read_file_tool(cfg: KbSearchConfig) -> DynamicTool {
+/// 截断长字符串（用于工具轨迹参数摘要，避免撑爆事件负载）
+fn truncate(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        s.to_string()
+    } else {
+        let head: String = s.chars().take(max_chars).collect();
+        format!("{head}…")
+    }
+}
+
+/// 构建 activate_skill 工具：模型依据 L1 技能目录自主决策激活技能（渐进式披露 L2）。
+///
+/// 激活后：SKILL.md 正文经 [`ActiveSkillState`] 由 SkillInstructionHook 注入后续
+/// 模型调用；技能声明的检索工具（kb_search / code_lookup 等）加入可见工具；
+/// 技能目录加入 read 工具的 L3 参考白名单。
+pub fn build_activate_skill_tool(
+    registry: Arc<SkillRegistry>,
+    state: Arc<ActiveSkillState>,
+) -> DynamicTool {
     DynamicTool::new(
-        "read_file",
-        "读取知识库目录下的一个文本文件（相对路径，如 docs/note.md），最大返回前 8192 字符。当需要查看某个笔记、文档或代码文件的完整内容时调用。",
+        "activate_skill",
+        "激活一个技能以加载其详细指令（SKILL.md 正文）并解锁其声明的专用工具。技能 ID 见常驻技能目录；仅当目录中的技能与当前任务明确相关时才调用。激活后：1) 该技能指令将注入后续对话；2) 其声明的检索工具（如 kb_search）将可用；3) 可用 read 工具读取其 references/ 下的参考资料。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "skill_id": {
+                    "type": "string",
+                    "description": "技能目录中的技能 ID，如 kb-search、code-lookup"
+                }
+            },
+            "required": ["skill_id"]
+        }),
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let registry = registry.clone();
+            let state = state.clone();
+            Box::pin(async move {
+                let id = args
+                    .get("skill_id")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                if id.is_empty() {
+                    return Err(tool_error("activate_skill", "skill_id 为空"));
+                }
+                let skill = registry.find_enabled(&id).ok_or_else(|| {
+                    tool_error(
+                        "activate_skill",
+                        &format!("技能 '{}' 不存在或未启用，请从技能目录中选择", id),
+                    )
+                })?;
+                let body_len = skill.body.trim().chars().count();
+                state.activate(skill.clone());
+                let mut msg = format!(
+                    "技能已激活：{}（{}），其指令已注入（{} 字符）。",
+                    skill.name, id, body_len
+                );
+                if !skill.description.trim().is_empty() {
+                    msg.push_str(&format!(" 说明：{}", skill.description.trim()));
+                }
+                if !skill.tools.is_empty() {
+                    msg.push_str(&format!(
+                        " 专用工具：{}",
+                        skill.tools
+                            .iter()
+                            .map(|t| format!("`{t}`"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ));
+                }
+                Ok(ToolOutput::text(msg))
+            })
+        },
+    )
+}
+
+/// 构建 deactivate_skill 工具：释放已激活技能（停止指令注入与专用工具，渐进式披露回退）。
+pub fn build_deactivate_skill_tool(state: Arc<ActiveSkillState>) -> DynamicTool {
+    DynamicTool::new(
+        "deactivate_skill",
+        "停用一个此前已激活的技能：其指令不再注入，其声明的专用工具将不再可用。当某技能不再适用于当前任务、或需要避免多余指令干扰时调用。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "skill_id": {
+                    "type": "string",
+                    "description": "要停用的技能 ID"
+                }
+            },
+            "required": ["skill_id"]
+        }),
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let state = state.clone();
+            Box::pin(async move {
+                let id = args
+                    .get("skill_id")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                if id.is_empty() {
+                    return Err(tool_error("deactivate_skill", "skill_id 为空"));
+                }
+                if state.deactivate(&id) {
+                    Ok(ToolOutput::text(format!("技能已停用：{id}")))
+                } else {
+                    Err(tool_error(
+                        "deactivate_skill",
+                        &format!("技能 '{}' 当前未激活，无需停用", id),
+                    ))
+                }
+            })
+        },
+    )
+}
+
+/// 构建 read 工具：读取知识库内文件或当前激活技能的参考文档。
+pub fn build_read_tool(cfg: KbSearchConfig) -> DynamicTool {
+    DynamicTool::new(
+        "read",
+        "读取文件内容，最大返回前 8192 字符。支持两类路径：1) 知识库目录内的相对路径（如 docs/note.md，可读取打开目录中的所有文件，含子目录）；2) 当前激活技能的参考文档路径（如 references/flowchart.md，通常由技能 SKILL.md 中以相对链接给出）。当需要查看文件完整内容、或查阅技能参考文档时调用。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "文件相对路径：知识库内路径，或技能参考文档路径（如 references/flowchart.md）"
+                }
+            },
+            "required": ["path"]
+        }),
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let cfg = cfg.clone();
+            Box::pin(async move {
+                let rel = args
+                    .get("path")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                if rel.is_empty() {
+                    return Err(tool_error("read", "文件路径为空，请提供 path 参数"));
+                }
+                record_tool_call(&cfg, "read", &rel);
+                match read(&cfg, &rel).await {
+                    Ok(text) => {
+                        record_tool_result(&cfg, "read", true, &format!("{} 字符", text.chars().count()));
+                        Ok(ToolOutput::text(text))
+                    }
+                    Err(e) => {
+                        record_tool_result(&cfg, "read", false, &e);
+                        Err(tool_error("read", &e))
+                    }
+                }
+            })
+        },
+    )
+}
+
+/// 构建 edit 工具：将打开目录内文件中的唯一匹配片段替换为新内容。
+pub fn build_edit_tool(cfg: KbSearchConfig) -> DynamicTool {
+    DynamicTool::new(
+        "edit",
+        "编辑当前打开知识库目录内的一个文本文件：将文件中与 old_string 完全匹配且唯一出现的片段替换为 new_string。只允许操作当前打开目录内的文件，不能操作目录外的文件，也不允许修改 .mdgo 内部数据。修改前建议先用 read 读取文件确认原文。",
         serde_json::json!({
             "type": "object",
             "properties": {
                 "rel_path": {
                     "type": "string",
                     "description": "文件在知识库根目录下的相对路径，如 docs/note.md"
+                },
+                "old_string": {
+                    "type": "string",
+                    "description": "待替换的原文片段，必须与文件内容完全一致（含换行与空格），且在文件中唯一出现"
+                },
+                "new_string": {
+                    "type": "string",
+                    "description": "替换后的新内容"
+                }
+            },
+            "required": ["rel_path", "old_string", "new_string"]
+        }),
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let cfg = cfg.clone();
+            Box::pin(async move {
+                let rel = args
+                    .get("rel_path")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                let old_string = args
+                    .get("old_string")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                let new_string = args
+                    .get("new_string")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                if rel.is_empty() {
+                    return Err(tool_error("edit", "rel_path 为空"));
+                }
+                let preview = format!(
+                    "{}: {} → {}",
+                    rel,
+                    truncate(&old_string, 40),
+                    truncate(&new_string, 40)
+                );
+                record_tool_call(&cfg, "edit", &preview);
+                match edit_file(&cfg, &rel, &old_string, &new_string).await {
+                    Ok(text) => {
+                        record_tool_result(&cfg, "edit", true, &text);
+                        Ok(ToolOutput::text(text))
+                    }
+                    Err(e) => {
+                        record_tool_result(&cfg, "edit", false, &e);
+                        Err(tool_error("edit", &e))
+                    }
+                }
+            })
+        },
+    )
+}
+
+/// 构建 delete 工具：删除打开目录内的一个文件。
+pub fn build_delete_tool(cfg: KbSearchConfig) -> DynamicTool {
+    DynamicTool::new(
+        "delete",
+        "删除当前打开知识库目录内的一个文件（不可恢复）。只允许删除当前打开目录内的文件，不能操作目录外的文件，不允许删除目录，也不允许删除 .mdgo 内部数据。删除前请确认用户意图。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "rel_path": {
+                    "type": "string",
+                    "description": "文件在知识库根目录下的相对路径，如 docs/old-note.md"
                 }
             },
             "required": ["rel_path"]
@@ -305,18 +654,17 @@ pub fn build_read_file_tool(cfg: KbSearchConfig) -> DynamicTool {
                     .trim()
                     .to_string();
                 if rel.is_empty() {
-                    return Err(ToolExecutionError::other("文件路径为空")
-                        .with_model_output(ToolOutput::text("请提供要读取的文件相对路径")));
+                    return Err(tool_error("delete", "rel_path 为空"));
                 }
-                record_tool_call(&cfg, "read_file", &rel);
-                match read_file(&cfg, &rel).await {
+                record_tool_call(&cfg, "delete", &rel);
+                match delete_file(&cfg, &rel).await {
                     Ok(text) => {
-                        record_tool_result(&cfg, "read_file", true, &format!("{} 字符", text.chars().count()));
+                        record_tool_result(&cfg, "delete", true, &text);
                         Ok(ToolOutput::text(text))
                     }
                     Err(e) => {
-                        record_tool_result(&cfg, "read_file", false, &e);
-                        Err(tool_error("read_file", &e))
+                        record_tool_result(&cfg, "delete", false, &e);
+                        Err(tool_error("delete", &e))
                     }
                 }
             })
@@ -398,6 +746,111 @@ pub fn build_git_status_tool(cfg: KbSearchConfig) -> DynamicTool {
                         Err(tool_error("git_status", &e))
                     }
                 }
+            })
+        },
+    )
+}
+
+// ─────────────────────────── Mermaid 工具（前端调用） ───────────────────────────
+
+/// 构建 render_mermaid 工具：调用前端同步函数 `window.mermaidTool(code, type)` 处理 mermaid 图表。
+///
+/// 双模式：`type="check"` 仅校验语法正确性；`type="render"`（默认）渲染为 SVG。
+/// 通过全局前端调用器（setup 阶段初始化）执行 eval + 事件回调。
+pub fn build_render_mermaid_tool(cfg: KbSearchConfig) -> DynamicTool {
+    DynamicTool::new(
+        "render_mermaid",
+        "处理 mermaid 图表（流程图/时序图/类图等）：type=check 时校验 mermaid 语法是否正确，type=render（默认）时把 mermaid 语法文本渲染为图表。当需要校验一段 mermaid 语法、或生成图表时调用。处理在桌面端前端执行，返回结果摘要。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "description": "mermaid 语法文本，如 flowchart LR\\n  A-->B"
+                },
+                "type": {
+                    "type": "string",
+                    "enum": ["check", "render"],
+                    "description": "check=仅校验语法正确性；render=渲染图表（默认）"
+                }
+            },
+            "required": ["code"]
+        }),
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let cfg = cfg.clone();
+            Box::pin(async move {
+                let code = args
+                    .get("code")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                if code.is_empty() {
+                    return Err(tool_error("render_mermaid", "mermaid 代码为空"));
+                }
+                // 模式归一化：非 check 一律视为 render（默认）
+                let mode = args
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("render");
+                let mode = if mode == "check" { "check" } else { "render" };
+
+                // 轨迹参数摘要：取前 80 字符，避免长代码撑爆事件负载
+                let preview: String = code.chars().take(80).collect();
+                let preview = if mode == "check" {
+                    format!("[check] {preview}")
+                } else {
+                    preview
+                };
+                record_tool_call(&cfg, "render_mermaid", &preview);
+
+                let invoker = match crate::core::global_invoker() {
+                    Some(v) => v,
+                    None => {
+                        record_tool_result(&cfg, "render_mermaid", false, "前端调用器未初始化");
+                        return Err(tool_error("render_mermaid", "前端调用器未初始化（仅桌面版可用）"));
+                    }
+                };
+                let args = match (serde_json::to_string(&code), serde_json::to_string(mode)) {
+                    (Ok(c), Ok(t)) => vec![c, t],
+                    (Err(e), _) | (_, Err(e)) => {
+                        record_tool_result(&cfg, "render_mermaid", false, &e.to_string());
+                        return Err(tool_error("render_mermaid", &e.to_string()));
+                    }
+                };
+                let ret = match invoker.call_global_fn("mermaidTool", &args).await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        record_tool_result(&cfg, "render_mermaid", false, &e.to_string());
+                        return Err(tool_error("render_mermaid", &e.to_string()));
+                    }
+                };
+
+                // 前端返回结构：{ success, msg, data: { svg? } }
+                let ok = ret.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+                let msg = ret
+                    .get("msg")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if !ok {
+                    record_tool_result(&cfg, "render_mermaid", false, &msg);
+                    return Err(tool_error("render_mermaid", &msg));
+                }
+                // 按模式返回不同摘要：check 报语法正确，render 报 SVG 规模
+                let summary = if mode == "check" {
+                    "语法正确".to_string()
+                } else {
+                    let svg_len = ret
+                        .pointer("/data/svg")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.chars().count())
+                        .unwrap_or(0);
+                    format!("渲染成功（SVG {} 字符）", svg_len)
+                };
+                record_tool_result(&cfg, "render_mermaid", true, &summary);
+                // 只返回摘要，不把整段 SVG 塞给模型（避免撑爆上下文）
+                Ok(ToolOutput::text(format!("{summary}：{msg}")))
             })
         },
     )

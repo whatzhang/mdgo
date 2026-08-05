@@ -27,6 +27,14 @@ pub const SYSTEM_SKILL_MD: &[(&str, &str)] = &[
         include_str!("../../../resources/skills/code-lookup/SKILL.md"),
     ),
     (
+        "kb-search",
+        include_str!("../../../resources/skills/kb-search/SKILL.md"),
+    ),
+    (
+        "mermaid",
+        include_str!("../../../resources/skills/mermaid/SKILL.md"),
+    ),
+    (
         "note-writing",
         include_str!("../../../resources/skills/note-writing/SKILL.md"),
     ),
@@ -43,7 +51,6 @@ pub fn init_all(conn: &Connection) -> Result<(), String> {
             name               TEXT NOT NULL DEFAULT '',
             description        TEXT NOT NULL DEFAULT '',
             priority           INTEGER NOT NULL DEFAULT 50,
-            trigger_rules      TEXT NOT NULL DEFAULT '{}',-- JSON：keywords/similarity_threshold
             tools              TEXT NOT NULL DEFAULT '[]',-- JSON 数组：工具白名单
             top_k              INTEGER,
             min_score          REAL,
@@ -74,7 +81,7 @@ pub fn init_all(conn: &Connection) -> Result<(), String> {
             request_id   TEXT NOT NULL,
             scope        TEXT NOT NULL,
             skill_id     TEXT NOT NULL,
-            match_level  TEXT NOT NULL,      -- L1/L2/L3/attached/manual
+            match_level  TEXT NOT NULL,      -- attached/manual/llm（激活来源）
             score        REAL,
             state        TEXT NOT NULL,      -- pending/running/success/failed/degraded
             duration_ms  INTEGER,
@@ -96,11 +103,11 @@ pub fn init_all(conn: &Connection) -> Result<(), String> {
 pub fn upsert_skill_row(conn: &Connection, skill: &Skill) -> Result<(), String> {
     conn.execute(
         "INSERT OR REPLACE INTO skills (
-            id, scope, name, description, priority, trigger_rules, tools, top_k, min_score,
+            id, scope, name, description, priority, tools, top_k, min_score,
             max_docs, max_chunks_per_doc, enabled, version, file_path, body, created_at, updated_at
         ) VALUES (
             ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
-            ?13, ?14, ?15, ?16, ?17
+            ?13, ?14, ?15, ?16
         )",
         rusqlite::params![
             skill.id,
@@ -108,7 +115,6 @@ pub fn upsert_skill_row(conn: &Connection, skill: &Skill) -> Result<(), String> 
             skill.name,
             skill.description,
             skill.priority as i64,
-            serde_json::to_string(&skill.trigger_rules).unwrap_or_else(|_| "{}".into()),
             serde_json::to_string(&skill.tools).unwrap_or_else(|_| "[]".into()),
             skill.top_k.map(|v| v as i64),
             skill.min_score,
@@ -126,10 +132,11 @@ pub fn upsert_skill_row(conn: &Connection, skill: &Skill) -> Result<(), String> 
     Ok(())
 }
 
-/// 迁移：删除旧版本遗留的无消费列（mutex / token_budget / input_schema / output_format / timeout_ms）。
+/// 迁移：删除旧版本遗留的无消费列（trigger_rules / mutex / token_budget / input_schema / output_format / timeout_ms）。
 /// SQLite 3.35+ 支持 `ALTER TABLE ... DROP COLUMN`，这些列无索引/无外键依赖，可安全删除。
 fn migrate_drop_legacy_columns(conn: &Connection) -> Result<(), String> {
     let legacy_cols = [
+        "trigger_rules",
         "mutex",
         "token_budget",
         "input_schema",

@@ -4,9 +4,6 @@ scope: system
 name: 仓库状态汇报
 description: 当用户询问工作区状态、改动、变更、未提交、diff、最近的提交记录时触发。
 priority: 55
-trigger_rules:
-  keywords: ["状态", "改动", "变更", "未提交", "工作区", "提交记录", "git", "status"]
-  similarity_threshold: 0.5
 roles: ["owner"]
 tools: [git_status, list_files]
 enabled: true

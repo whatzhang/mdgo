@@ -1,12 +1,15 @@
 //! RAG Agent 模块：kb_search 工具 + Agent 构建（基于 Rig Agent）
 //!
 //! - [`build_kb_search_tool`]：将「嵌入 → 混合检索 → 文档聚合」封装为模型可调用的工具
-//! - [`build_rag_agent`]：携带检索上下文与 kb_search 工具的知识库问答 Agent
+//! - [`build_rag_agent`]：携带检索上下文与检索/文件/技能工具的 Agent（渐进式披露三级加载）
 //! - [`build_chat_agent`]：无工具纯对话 Agent
 //! - [`aggregate_hits`]：文档级聚合逻辑（与检索结果共享）
+//! - [`SkillGateHook`] / [`SkillInstructionHook`]：由 [`ActiveSkillState`] 驱动的技能指令注入与工具兜底拦截
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::SystemTime;
 
 use rig_agent::agent::hook::{
     AgentHook, CompletionCall, CompletionCallAction, CompletionResponse, HookContext, ObservationAction,
@@ -15,11 +18,98 @@ use rig_agent::agent::hook::{
 use rig_agent::agent::{Agent, AgentBuilder};
 use rig_agent::tool::{DynamicTool, ToolContext, ToolExecutionError, ToolOutput};
 use rig_core::providers::openai;
+use tauri::{AppHandle, Manager};
 
+use crate::core::skill::activation::ActiveSkillState;
+use crate::core::skill::SkillRegistry;
 use crate::core::{Indexer, SearchHit, call_embedding_query, route_intent};
+
+/// 规约文档缓存：(文件名 → (最后修改时间, 内容))。
+///
+/// 进程级缓存 + mtime 热重载：mtime 未变化时直接复用缓存内容，
+/// 避免每条消息请求都在磁盘热路径上读文件；规约文件变更后下一次
+/// 请求自动重读（无需重启应用）。对齐 OpenClaw 的缓存策略，
+/// 同时借鉴 Codex「会话内加载一次」的语义（未变更时零读盘）。
+static RULES_CACHE: OnceLock<Mutex<HashMap<String, (SystemTime, String)>>> = OnceLock::new();
+
+fn rules_cache() -> &'static Mutex<HashMap<String, (SystemTime, String)>> {
+    RULES_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// 解析规约文件绝对路径：运行时资源目录（打包后）优先，源码资源目录（开发期）回退。
+fn resolve_agent_rules_path(app: &AppHandle, name: &str) -> Option<PathBuf> {
+    if let Ok(dir) = app.path().resource_dir() {
+        let candidate = dir.join("agent").join(name);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    let fallback = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("resources")
+        .join("agent")
+        .join(name);
+    fallback.exists().then_some(fallback)
+}
+
+/// 内置兜底规约（资源文件缺失或为空时），保证任何环境下 Agent 都有明确的中文回答约束。
+fn builtin_agent_rules(name: &str) -> String {
+    format!(
+        "你是 mdgo 应用的{}助手。默认使用简体中文回答；若用户使用其他语言提问，则跟随用户语言。",
+        if name.starts_with("rag") { "知识库" } else { "对话" }
+    )
+}
+
+/// 加载 Agent 规约文档（resources/agent/{name}）。
+///
+/// 使用进程级缓存 + mtime 热重载：
+/// - 缓存命中且文件 mtime 未变 → 直接返回缓存内容（零磁盘 I/O，请求热路径不受影响）
+/// - mtime 变化或首次加载 → 读盘并更新缓存（规约修改后下一次请求自动生效）
+/// - 文件缺失/为空 → 返回内置兜底规约
+pub fn load_agent_rules(app: &AppHandle, name: &str) -> String {
+    let path = match resolve_agent_rules_path(app, name) {
+        Some(p) => p,
+        None => return builtin_agent_rules(name),
+    };
+
+    let mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
+    {
+        let cache = rules_cache().lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((cached_mtime, content)) = cache.get(name) {
+            if let Some(actual) = mtime {
+                if actual == *cached_mtime {
+                    return content.clone();
+                }
+            }
+        }
+    }
+
+    // mtime 变化或首次加载：读盘并更新缓存
+    let content = std::fs::read_to_string(&path).unwrap_or_default();
+    if content.trim().is_empty() {
+        rules_cache()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(name);
+        return builtin_agent_rules(name);
+    }
+    let mut cache = rules_cache().lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(actual) = mtime {
+        cache.insert(name.to_string(), (actual, content.clone()));
+    }
+    content
+}
 
 /// 内置工具集：文件只读、目录列举、Git 状态查询（含工具调用轨迹总线）
 pub mod tools;
+
+/// 始终可用的基础工具（不随技能白名单窄化，对齐主流 Agent：文件操作与技能管理常驻）。
+///
+/// 检索类工具（kb_search / code_lookup）不在此列：它们仅当已激活技能声明时
+/// 才可见可调——决策权在 LLM（先 activate_skill 再检索）。
+pub const BASE_TOOLS: &[&str] = &[
+    "activate_skill", "deactivate_skill", "read", "list_files", "edit", "delete",
+    "render_mermaid", "git_status",
+];
 
 /// 调试用 Hook：在每次 LLM API 调用边界打印请求消息与响应体内容。
 ///
@@ -37,12 +127,14 @@ impl AgentHook for LlmTraceHook {
     ) -> CompletionCallAction {
         let mut messages = event.history.to_vec();
         messages.push(event.prompt.clone());
-        log::debug!(
-            "[llm_trace] completion_call turn={} messages={}",
-            event.turn,
-            serde_json::to_string(&messages)
+        if log::log_enabled!(log::Level::Debug) {
+            log::debug!(
+                "[llm_trace] [调用 LLM API] 次数={}, 请求消息=\n{}",
+                event.turn,
+                serde_json::to_string_pretty(&messages)
                 .unwrap_or_else(|e| format!("<serialize failed: {}>", e))
-        );
+            );
+        }
         CompletionCallAction::Continue
     }
 
@@ -51,33 +143,35 @@ impl AgentHook for LlmTraceHook {
         _ctx: &HookContext,
         event: CompletionResponse<'_>,
     ) -> ObservationAction {
-        log::debug!(
-            "[llm_trace] completion_response content={} usage={}",
-            serde_json::to_string(event.content)
+        if log::log_enabled!(log::Level::Debug) {
+            log::debug!(
+                "[llm_trace]  [调用 LLM API] token用量={}, 响应内容=\n{} ",
+                 serde_json::to_string_pretty(&event.usage)
                 .unwrap_or_else(|e| format!("<serialize failed: {}>", e)),
-            serde_json::to_string(&event.usage)
+                serde_json::to_string_pretty(&event.content)
                 .unwrap_or_else(|e| format!("<serialize failed: {}>", e))
-        );
+            );
+        }
         ObservationAction::Continue
     }
 }
 
 /// 技能工具白名单 Hook（Rig 原生 `on_tool_call` 机制，兜底拦截）。
 ///
-/// 拦截模型发起的工具调用：不在技能白名单内的工具返回 [`ToolCallAction::Skip`]，
-/// 将拦截原因反馈给模型，由 Agent 自主调整策略（换工具或直接回答），而非硬报错。
+/// 从 [`ActiveSkillState`] 动态读取当前激活技能的声明工具（决策在 LLM，此处仅做安全兜底）：
+/// - 基础工具（[`BASE_TOOLS`]）始终放行
+/// - 检索类工具（kb_search / code_lookup）仅在已激活技能声明时放行
 ///
-/// 语义（`Option` 区分三种状态，避免"无技能"与"技能无工具声明"混为一谈）：
-/// - `None`：无技能命中，无任何工具约束，放行全部
-/// - `Some(list)`：技能声明的白名单生效，非白名单工具被拦截（空列表 = 技能未声明工具，放行全部）
+/// 拦截时将原因反馈给模型，由 Agent 自主调整策略（先 activate_skill 或改用其他工具），
+/// 而非硬报错。
 #[derive(Clone, Debug)]
 pub struct SkillGateHook {
-    allowed: Option<Vec<String>>,
+    state: Arc<ActiveSkillState>,
 }
 
 impl SkillGateHook {
-    pub fn new(allowed: Option<Vec<String>>) -> Self {
-        Self { allowed }
+    pub fn new(state: Arc<ActiveSkillState>) -> Self {
+        Self { state }
     }
 }
 
@@ -87,45 +181,45 @@ impl AgentHook for SkillGateHook {
         _ctx: &HookContext,
         event: ToolCall<'_>,
     ) -> ToolCallAction {
-        match &self.allowed {
-            // 无技能约束或技能未声明工具：放行全部
-            None => ToolCallAction::Run,
-            Some(list) if list.is_empty() => ToolCallAction::Run,
-            Some(list) => {
-                if list.iter().any(|t| t == event.tool_name) {
-                    ToolCallAction::Run
-                } else {
-                    log::warn!(
-                        "[skill_gate] 拦截未授权工具调用: {}（白名单: {:?}）",
-                        event.tool_name,
-                        self.allowed
-                    );
-                    ToolCallAction::Skip(format!(
-                        "工具 '{}' 不在当前技能允许的白名单内，请使用其他可用工具或直接回答。可用工具: {:?}",
-                        event.tool_name, self.allowed
-                    ))
-                }
-            }
+        if BASE_TOOLS.contains(&event.tool_name) {
+            return ToolCallAction::Run;
         }
+        let declared: Vec<String> = self.state.allowed_tools().unwrap_or_default();
+        if declared.iter().any(|t| t == event.tool_name) {
+            return ToolCallAction::Run;
+        }
+        log::warn!(
+            "[skill_gate] 拦截未授权工具调用: {}（当前激活技能声明: {:?}）",
+            event.tool_name,
+            declared
+        );
+        ToolCallAction::Skip(format!(
+            "工具 '{}' 当前不可用（未由任何已激活技能声明）。可先调用 activate_skill 激活声明该工具的技能，或改用其他工具。",
+            event.tool_name
+        ))
     }
 }
 
-/// 技能指令 Hook：在每个模型调用（completion call）边界动态注入技能指令。
+/// 技能指令 Hook：每个模型调用（completion call）边界动态注入
+/// L1 技能目录（常驻）+ 已激活技能的 L2 指令正文，并窄化本轮模型可见的工具列表。
 ///
 /// 使用 Rig 原生 [`RequestPatch`] 机制：
-/// - `preamble`：每轮注入完整 preamble（基础角色 + 上下文 + 技能指令），
-///   替代原先"静态拼入 AgentBuilder"的方式，指令可随每次调用动态生效
-/// - `active_tools`：白名单非空时窄化本轮模型可见的工具列表（Rig 原生过滤，
-///   模型不会发起白名单外的调用，比仅靠运行时拦截更干净）
+/// - `preamble`：基础角色 + 预检索上下文 + L1 技能目录（静态）+ 已激活技能指令（动态）
+/// - `active_tools`：基础工具 ∪ 已激活技能声明工具（Rig 原生过滤，模型不会发起范围外的调用）
 #[derive(Clone, Debug)]
 pub struct SkillInstructionHook {
-    preamble: String,
-    allowed: Option<Vec<String>>,
+    /// 静态基础 preamble（基础角色 + 预检索上下文 + L1 技能目录）
+    base_preamble: String,
+    /// 激活状态（动态读取 L2 指令与工具白名单）
+    state: Arc<ActiveSkillState>,
 }
 
 impl SkillInstructionHook {
-    pub fn new(preamble: String, allowed: Option<Vec<String>>) -> Self {
-        Self { preamble, allowed }
+    pub fn new(base_preamble: String, state: Arc<ActiveSkillState>) -> Self {
+        Self {
+            base_preamble,
+            state,
+        }
     }
 }
 
@@ -135,12 +229,26 @@ impl AgentHook for SkillInstructionHook {
         _ctx: &HookContext,
         _event: CompletionCall<'_>,
     ) -> CompletionCallAction {
-        let mut patch = RequestPatch::new().preamble(&self.preamble);
-        if let Some(list) = &self.allowed {
-            if !list.is_empty() {
-                patch = patch.active_tools(list.iter().cloned());
+        // L2：已激活技能的指令正文（多技能按激活顺序拼接）
+        let mut preamble = self.base_preamble.clone();
+        let instructions = self.state.instructions();
+        if !instructions.is_empty() {
+            preamble.push_str("\n\n---\n\n");
+            preamble.push_str("请遵循以下已激活技能的指令：\n\n");
+            preamble.push_str(&instructions);
+        }
+        let mut patch = RequestPatch::new().preamble(&preamble);
+
+        // 可见工具 = 基础工具 ∪ 已激活技能声明工具
+        let mut visible: Vec<String> = BASE_TOOLS.iter().map(|t| t.to_string()).collect();
+        if let Some(declared) = self.state.allowed_tools() {
+            for t in declared {
+                if !visible.iter().any(|v| v == &t) {
+                    visible.push(t);
+                }
             }
         }
+        patch = patch.active_tools(visible);
         CompletionCallAction::patch(patch)
     }
 }
@@ -175,12 +283,20 @@ pub struct KbSearchConfig {
     pub max_chunks_per_doc: usize,
     /// 触发本次请求的技能 ID（格式：scope:skill_id），用于工具调用轨迹标注
     pub skill_id: Option<String>,
+    /// 当前请求的激活技能状态（`read` 工具按需读取 L3 references；钩子动态注入 L2 指令）
+    pub skill_state: Arc<ActiveSkillState>,
+    /// 各作用域技能基础目录（(scope, 绝对路径)），`read` 工具据此定位已激活技能的 references
+    pub skill_bases: Vec<(String, String)>,
+    /// 检索命中收集器：kb_search / code_lookup 工具将聚合后的命中写入，
+    /// 命令层在请求结束（rag:done）时合并进引用来源列表，供前端渲染"引用"。
+    pub search_sink: Arc<tokio::sync::Mutex<Vec<(SearchHit, f32)>>>,
 }
 
 /// 执行一次完整检索：嵌入 → 混合检索 → 文档级聚合 → 生成模型可读文本。
 ///
 /// 返回的文本按文档分组，同文档的多个片段合并，供模型直接作为上下文。
 pub async fn kb_search(cfg: &KbSearchConfig, query: &str, top_k: u32) -> Result<String, String> {
+    log::debug!("[skill] kb_search: query={}, top_k={}", query, top_k);
     let embedding = tokio::task::spawn_blocking({
         let query = query.to_string();
         move || call_embedding_query(&query)
@@ -201,6 +317,7 @@ pub async fn kb_search(cfg: &KbSearchConfig, query: &str, top_k: u32) -> Result<
         return Ok("知识库中未找到相关内容。".to_string());
     }
 
+    let hits_len = hits.len();
     let selected = aggregate_hits(
         hits,
         cfg.min_score,
@@ -211,6 +328,12 @@ pub async fn kb_search(cfg: &KbSearchConfig, query: &str, top_k: u32) -> Result<
         return Ok("知识库中未找到足够相关的内容。".to_string());
     }
 
+    // 命中回传：合并进 rag:done 的引用来源（供前端渲染"引用"）
+    cfg.search_sink
+        .lock()
+        .await
+        .extend(selected.iter().cloned());
+    log::debug!("[skill] kb_search 结果: 选中={}， 命中={} ，min_score={}， max_context_docs={}， max_chunks_per_doc={}", selected.len(), hits_len, cfg.min_score, cfg.max_context_docs, cfg.max_chunks_per_doc);
     Ok(build_context_text(&selected, MAX_CONTEXT_CHARS))
 }
 
@@ -299,6 +422,13 @@ pub async fn code_search(cfg: &KbSearchConfig, symbol: &str, top_k: u32) -> Resu
         let text = hit.sentence_window.as_deref().unwrap_or(&hit.text);
         parts.push(format!("[{kind}] {name}\n{text}"));
     }
+
+    // 命中回传：合并进 rag:done 的引用来源（供前端渲染"引用"）
+    cfg.search_sink
+        .lock()
+        .await
+        .extend(hits.iter().map(|h| (h.clone(), h.score)));
+
     Ok(parts.join("\n"))
 }
 
@@ -474,83 +604,73 @@ pub fn build_context_text(selected: &[(SearchHit, f32)], max_chars: usize) -> St
     parts.join("\n")
 }
 
-/// 构建 RAG 问答 Agent。
+/// 构建 RAG 问答 Agent（渐进式披露三级加载）。
 ///
 /// - `context`：预检索的知识库上下文，注入 system preamble
-/// - `search_config`：用于构建 kb_search 工具（模型可在生成过程中补充检索）
-/// - `skill_ctx`：技能执行上下文（可选），用于指令注入和工具白名单过滤
+/// - `search_config`：用于构建检索/文件工具（模型可在生成过程中补充检索）
+/// - `registry`：技能注册表（activate_skill 工具据此查找技能，LLM 自主决策 L2 加载）
+/// - `catalog`：L1 技能目录（id + description，会话全程常驻，模型始终知道自己有哪些技能）
+///
+/// 工具与指令由 [`SkillInstructionHook`] / [`SkillGateHook`] 依据共享的
+/// [`ActiveSkillState`]（在 `search_config.skill_state` 中）动态驱动。
 pub fn build_rag_agent(
     model: openai::CompletionModel,
     context: &str,
     search_config: KbSearchConfig,
-    skill_ctx: Option<&crate::core::skill::context::SkillExecutionContext>,
+    registry: Arc<SkillRegistry>,
+    catalog: String,
+    base: String,
 ) -> Agent<openai::CompletionModel> {
-    // 技能白名单（None = 无技能命中，无工具约束）
-    let allowed: Option<Vec<String>> = skill_ctx.map(|ctx| ctx.allowed_tools.clone());
+    let skill_state = search_config.skill_state.clone();
 
-    // 工具提示按白名单条件化：仅当工具对当前技能可用时才诱导调用，
-    // 避免"诱导调用 → 被白名单拦截"的自相矛盾
-    let can_use = |tool: &str| {
-        allowed
-            .as_ref()
-            .map_or(true, |list| list.is_empty() || list.iter().any(|t| t == tool))
+    // base 为 Agent 规约（resources/agent/rag_agent.md，由调用方经 load_agent_rules
+    // 从资源目录加载，打包后跟随安装包）；此处仅追加动态的检索上下文与技能目录。
+    let mut preamble = if context.trim().is_empty() {
+        base
+    } else {
+        format!("{}\n\n检索到的知识库上下文：\n{}", base, context)
     };
-    let mut hints: Vec<&str> = Vec::new();
-    if can_use("kb_search") {
-        hints.push("如果上下文信息不足，可以调用 kb_search 工具检索更多资料。");
-    }
-    if can_use("code_lookup") {
-        hints.push("当问题涉及具体代码符号（函数名、类名、方法名等）时，优先调用 code_lookup 工具定位代码定义。");
-    }
-
-    // 构建完整 preamble（基础角色 + 上下文 + 技能指令），
-    // 由 SkillInstructionHook 在每个模型调用边界动态注入
-    let mut preamble = format!(
-        "你是一个知识库助手，请优先基于系统提供的上下文回答问题；{}\n回答时请结合检索到的内容，对引用内容标注来源。如果知识库中确实没有相关信息，请如实告知。\n\n上下文：\n{}",
-        if hints.is_empty() { "请直接基于上下文回答。".to_string() } else { hints.join(" ") },
-        context
-    );
-    if let Some(ctx) = skill_ctx {
-        if !ctx.instructions.is_empty() {
-            preamble.push_str("\n\n---\n\n");
-            preamble.push_str("请遵循以下技能指令：\n\n");
-            preamble.push_str(&ctx.instructions);
-            log::info!(
-                "[agent] 注入技能指令: skills={:?} chars={}",
-                ctx.skill_ids,
-                ctx.instructions.len()
-            );
-        }
-    }
-    if let Some(list) = &allowed {
-        if !list.is_empty() {
-            log::info!("[agent] 技能白名单: {:?}", list);
-        }
+    if !catalog.trim().is_empty() {
+        preamble.push_str("\n\n---\n\n");
+        preamble.push_str(&catalog);
+        log::info!("[agent] L1 技能目录注入: chars={}", catalog.len());
     }
 
     let builder = AgentBuilder::new(model);
 
-    // 始终注册全部 5 个内置工具（泛型链式调用限制）；白名单经
-    // SkillInstructionHook 的 active_tools 每轮窄化广告列表（Rig 原生机制），
-    // SkillGateHook 作为兜底拦截模型越权调用。
+    // 始终注册全部内置工具；每轮模型可见的工具列表由 SkillInstructionHook
+    // 依据激活状态窄化（active_tools），SkillGateHook 作为兜底拦截越权调用。
     let builder = builder
         .dynamic_tool(build_kb_search_tool(search_config.clone()))
         .dynamic_tool(build_code_lookup_tool(search_config.clone()))
-        .dynamic_tool(tools::build_read_file_tool(search_config.clone()))
+        .dynamic_tool(tools::build_activate_skill_tool(registry.clone(), skill_state.clone()))
+        .dynamic_tool(tools::build_deactivate_skill_tool(skill_state.clone()))
+        .dynamic_tool(tools::build_read_tool(search_config.clone()))
+        .dynamic_tool(tools::build_edit_tool(search_config.clone()))
+        .dynamic_tool(tools::build_delete_tool(search_config.clone()))
         .dynamic_tool(tools::build_list_files_tool(search_config.clone()))
+        .dynamic_tool(tools::build_render_mermaid_tool(search_config.clone()))
         .dynamic_tool(tools::build_git_status_tool(search_config));
 
     builder
         .default_max_turns(4)
         .add_hook(LlmTraceHook)
-        .add_hook(SkillInstructionHook::new(preamble, allowed.clone()))
-        .add_hook(SkillGateHook::new(allowed))
+        .add_hook(SkillInstructionHook::new(preamble, skill_state.clone()))
+        .add_hook(SkillGateHook::new(skill_state))
         .build()
 }
 
 /// 构建无工具纯对话 Agent
-pub fn build_chat_agent(model: openai::CompletionModel) -> Agent<openai::CompletionModel> {
-    AgentBuilder::new(model).add_hook(LlmTraceHook).build()
+pub fn build_chat_agent(
+    model: openai::CompletionModel,
+    base: String,
+) -> Agent<openai::CompletionModel> {
+    // Chat 模式无 L1 技能目录注入，角色与语言约束来自调用方传入的规约
+    // （resources/agent/chat_agent.md，经 load_agent_rules 从资源目录加载）
+    AgentBuilder::new(model)
+        .preamble(&base)
+        .add_hook(LlmTraceHook)
+        .build()
 }
 
 #[cfg(test)]

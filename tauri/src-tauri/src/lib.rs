@@ -176,6 +176,10 @@ pub fn run() {
             skill_watcher.set_on_changed(Arc::new(move || {
                 let _ = handle.emit("skill:changed", ());
             }));
+            // 初始化全局前端调用器（供 Agent 工具 render_mermaid 等调用 window 同步函数）
+            if let Err(e) = crate::core::init_global_invoker(app.handle()) {
+                log::warn!("[frontend] 初始化全局前端调用器失败: {}", e);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -255,7 +259,6 @@ pub fn run() {
             commands::skill::skill_update,
             commands::skill::skill_delete,
             commands::skill::skill_set_enabled,
-            commands::skill::skill_match,
             commands::skill::skill_attach,
             commands::skill::skill_detach,
             commands::skill::skill_get_attached,

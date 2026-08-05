@@ -92,7 +92,7 @@ impl LLMClient {
             .map_err(|e| format!("创建 LLM 客户端失败: {}", e))?;
         let completion_model = client.completion_model(&model);
 
-        log::debug!("[llm] LLMClient init base_url={} model={}", base_url, model);
+        log::debug!("[llm] LLMClient init base_url={}，api_key={}， model={}", base_url, api_key, model);
 
         Ok(Self {
             endpoint: base_url,
@@ -178,34 +178,26 @@ impl LLMClient {
             record_telemetry_content: false,
         };
 
-        log::debug!(
-            "[llm] expand_queries request, input: query='{}' history_count={} base_url={} model={} body={}",
-            text,
-            history.len(),
-            self.endpoint,
-            self.model,
-            serde_json::to_string(&request)
-                .unwrap_or_else(|e| format!("<serialize failed: {}>", e))
-        );
+        log::debug!("[llm] [输入语义扩展] input: query='{}' history_count={} ", text, history.len());
 
         // 直接非流式调用：expand_queries 只需要完整结果，无需流式体验。
         // 非流式请求（stream: false）返回 application/json，兼容性最好，
         // 也规避 thinking 类模型 SSE 中 reasoning 内容的解析差异。
         let model = self.completion_model.clone();
         let mut full = String::new();
-
+        
         let result = tokio::select! {
             _ = cancel.cancelled() => {
-                log::debug!("[llm] expand_queries cancelled");
+                log::debug!("[llm] [输入语义扩展] cancelled");
                 return Vec::new();
             }
             res = model.completion(request) => res,
         };
-
+        
         match result {
             Ok(response) => {
                 log::debug!(
-                    "[llm] expand_queries response choice={:?} usage={:?}",
+                    "[llm] [输入语义扩展] response choice={:?} usage={:?}",
                     response.choice, response.usage
                 );
                 for item in response.choice.iter() {
@@ -215,17 +207,15 @@ impl LLMClient {
                 }
             }
             Err(e) => {
-                log::warn!("[llm] expand_queries 非流式调用失败 err={}", e);
+                log::warn!("[llm] [输入语义扩展] 非流式调用失败 err={}", e);
                 return Vec::new();
             }
         }
 
         if full.trim().is_empty() {
-            log::debug!("[llm] expand_queries empty response");
+            log::debug!("[llm] [输入语义扩展] empty response");
             return Vec::new();
         }
-
-        log::debug!("[llm] expand_queries raw_response: {}", full);
 
         // 解析结果为查询列表：按行分割，去除编号/前缀
         let lines: Vec<String> = full
@@ -282,6 +272,7 @@ impl LLMClient {
 
         // 3) 上限 3 个
         deduped.truncate(3);
+        log::debug!("[llm] [输入语义扩展] output: {:?}", deduped);
         deduped
     }
 }

@@ -5634,7 +5634,7 @@
         }
 
         .chat-send-btn>svg {
-            transform: rotate(-45deg);
+            transform: rotate(-90deg);
         }
 
         .chat-send-btn:not(:disabled) {
@@ -13850,6 +13850,9 @@
             height: 100%;
             box-sizing: border-box;
         }
+        .mermaid-output>svg {
+            max-height: 50rem;
+        }
     </style>
     <link rel="stylesheet" href="./css_js/skill-panel.css" />
 </head>
@@ -15856,7 +15859,9 @@
                             <div id="chat-header-actions">
                                 <button class="btn btn-orange btn-sm" onclick="clearChatMessages()"
                                     title="清空对话">清空</button>
-                                <button class="btn btn-sm" id="toggle-history-btn" onclick="toggleChatHistory()"
+                                <button class="btn btn-warning btn-sm" onclick="createNewChatSession()"
+                                    title="新建对话">新建对话</button>
+                                <button class="btn btn-primary btn-sm" id="toggle-history-btn" onclick="toggleChatHistory()"
                                     title="展开历史面板">对话历史</button>
                             </div>
                         </div>
@@ -16244,7 +16249,6 @@
                         <div class="skill-list" id="skill-list"></div>
                         <div class="skill-footer" id="skill-footer">
                             <button class="skill-create-btn" id="skill-create-btn" onclick="skillCreateNew()"><span>＋</span> 新增 Skill</button>
-                            <button class="skill-test-btn" id="skill-test-btn" onclick="skillTestMatch()" title="输入语句测试意图匹配（L1 关键词 / L2 语义 / L3 兜底）">🧪 测试匹配</button>
                         </div>
                     </div>
                     <!-- 右侧 60%：空态 / 详情 / 编辑 -->
@@ -16911,6 +16915,7 @@
                 Promise.resolve(initMonacoEditor()),// 初始化编辑器
                 Promise.resolve(initDashboard()), // 初始化时间进度条
                 Promise.resolve(initTauriWindowState()), // Tauri 窗口状态（最大化/还原）
+                Promise.resolve(initSkillLoadErrorNotify()), // 技能加载失败全局提醒
                 Promise.resolve(RAGInit()), // 初始化RAG
             ]);
         }
@@ -26887,6 +26892,12 @@ kanban-plugin: basic
                 console.error('重新加载白板数据失败:', error);
             }
         }
+        function parseWiki(html){
+            return html.replace(/\[\[([^\|#\]]+)(?:\|([^\]]+))?\]\]([\r\n]*)/g, (match, link, alias, newlines) => {
+                const displayText = alias || link;
+                return `<a href="${link}" target="_blank" class="ob-internal-link">${displayText}</a>${newlines}`;
+            });
+        }
 
         function parseObsidianToHTML(text) {
             // 先移除代码块内容，避免在代码块内错误处理
@@ -26915,10 +26926,7 @@ kanban-plugin: basic
                 return `<div class="ob-embedded-note" data-source="${fileName}">[Embedded: ${fileName}]</div>`;
             });
             // 处理双链 (WikiLinks)  匹配 [[文件名|显示文本]] 或 [[文件名]],捕获末尾换行保证不丢失
-            html = html.replace(/\[\[([^\|#\]]+)(?:\|([^\]]+))?\]\]([\r\n]*)/g, (match, link, alias, newlines) => {
-                const displayText = alias || link;
-                return `<a href="${link}" target="_blank" class="ob-internal-link">${displayText}</a>${newlines}`;
-            });
+            html = parseWiki(html);
             // 处理标注 (Callouts)
             const calloutClasses = {
                 note: 'ob-callout-note',
@@ -28891,7 +28899,7 @@ kanban-plugin: basic
 
         function renderChatMarkdown(text) {
             if (!text) return '';
-            const rawHtml = markedMd(text);
+            const rawHtml = markedMd(parseWiki(text));
             try {
                 return typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(rawHtml) : rawHtml;
             } catch (e) {
@@ -49640,6 +49648,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         let _chatStreamingStatusMsg = '';   // RAG 模式下当前搜索状态文本
         let _chatStreamingFullContent = ''; // 当前正在生成的消息完整内容
         let _streamingToolCalls = [];       // 当前消息的工具调用记录（随消息持久化）
+        let _partialAutoSaved = false;      // 半截消息自动保存防重（finalize 保存后 query 兜底不再重复入库）
         // 会话与搜索状态（提前声明，避免 TDZ 风险）
         let chatSessions = [];
         let currentSessionId = null;
@@ -49661,6 +49670,30 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 });
             } catch (e) {
                 console.warn('订阅 skill:changed 失败:', e);
+            }
+        }
+
+        /**
+         * 全局技能加载失败提醒（应用启动时注册一次）。
+         * 后端 skill_list 扫描到非法 SKILL.md 时通过 skill:load_errors 事件通知，
+         * 前端逐条 toast 提醒用户修复；无监听时事件静默丢弃，不影响功能。
+         */
+        let _skillLoadErrorNotifyReady = false;
+        async function initSkillLoadErrorNotify() {
+            if (_skillLoadErrorNotifyReady || !isTauriVisit() || !window.__TAURI__?.event) return;
+            _skillLoadErrorNotifyReady = true;
+            try {
+                await window.__TAURI__.event.listen('skill:load_errors', (event) => {
+                    const errors = event.payload;
+                    if (!Array.isArray(errors) || errors.length === 0) return;
+                    const brief = String(errors[0] || '').length > 140
+                        ? String(errors[0]).slice(0, 140) + '…'
+                        : String(errors[0] || '');
+                    const extra = errors.length > 1 ? `（另有 ${errors.length - 1} 个技能加载失败）` : '';
+                    showNotification(`技能加载失败: ${brief}${extra}`, 'error');
+                });
+            } catch (e) {
+                console.warn('订阅 skill:load_errors 失败:', e);
             }
         }
 
@@ -49864,6 +49897,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
          * 调用后 chatStreaming 置为 false，已生成的内容会被持久化
          */
         async function savePartialAssistantMessage() {
+            // finalize 切换会话时已主动保存 → query 路径兜底直接跳过，避免重复入库
+            if (_partialAutoSaved) return;
             if (!chatStreaming || !currentSessionId) return;
             const partialContent = _chatStreamingFullContent || (_chatStreamingDiv ? _chatStreamingDiv.textContent : '');
             if (!partialContent || partialContent.trim().length === 0) return;
@@ -49904,10 +49939,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     sources: _chatStreamingSources || [],
                     toolCalls: _streamingToolCalls.slice(),
                 });
-                // 移除流式消息 DOM，避免后续重新渲染导致重复
-                if (_chatStreamingDiv && _chatStreamingDiv.parentNode) {
-                    _chatStreamingDiv.remove();
-                }
+                // 保存成功才置位（失败不置位，允许 query 兜底路径重试）
+                _partialAutoSaved = true;
+                // 保留流式消息 DOM（中断/断联场景用户仍可见半截内容）；
+                // 重新加载会话时 loadChatMessages 会先清空容器再从数据库重渲染，不会产生重复
                 // 刷新会话列表
                 const sessions = await window.__TAURI__.core.invoke('chat_session_list', {
                     dirPath: currentRootPath,
@@ -49926,11 +49961,24 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
          */
         async function finalizeCurrentSession() {
             if (!chatStreaming) return;
-            // 1. 中断流式请求 → 触发 query 函数 catch 块自动保存部分消息 + finally 块清理状态
+            // 1. 中断流式请求 → 后端收到 kb_cancel_task 后停止生成
             chatAbortController?.abort();
-            // 2. 等 query 函数的 finally 块完成状态清理后再执行后续操作
-            await new Promise(resolve => setTimeout(resolve, 0));
-            // 3. 兜底清理（query finally 已清理，此处仅防异常路径）
+            // 2. 主动保存半截消息（chatStreaming 仍为 true 时落库 + 入内存）。
+            //    query 函数 catch/finally 的 savePartialAssistantMessage 有 !chatStreaming 守卫，
+            //    此处保存后 query 路径不会再重复入库（天然防重）。
+            try {
+                await savePartialAssistantMessage();
+            } catch (e) {
+                console.warn('切换会话时保存半截消息失败:', e);
+            }
+            // 3. 等待 query 函数 finally 完成状态清理（超时兜底，避免 LLM 服务无响应导致挂起）。
+            //    若此处过早清空 _chatStreamingFullContent，query finally 的兜底保存将读到空内容，
+            //    半截消息就会在切换会话/模式后丢失。
+            const deadline = Date.now() + 2000;
+            while (chatStreaming && Date.now() < deadline) {
+                await new Promise(resolve => setTimeout(resolve, 50));
+            }
+            // 4. 兜底清理（query finally 已清理，此处仅防异常路径）
             chatStreaming = false;
             chatAbortController = null;
             _chatStreamingDiv = null;
@@ -49954,10 +50002,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (msgCount === 0) return;
             // 条数无变化 → 内容无变动 → 跳过
             if (_indexedSessionMsgCounts.get(currentSessionId) === msgCount) return;
-            _indexedSessionMsgCounts.set(currentSessionId, msgCount);
             window.__TAURI__.core.invoke('chat_session_index_current', {
                 dirPath: currentRootPath,
                 sessionId: id,
+            }).then(() => {
+                // 仅 invoke 成功后记录该条数：失败时不置位，下次切换可重试。
+                // 必须用入参 id 而非 currentSessionId：Promise 回调执行时
+                // currentSessionId 可能已被改写（创建新会话/清空会话），防止错键。
+                // 注意后端为后台异步执行（返回即 spawn 任务），索引期间新到达的
+                // 消息由后端追平循环补齐，此处记录不影响正确性。
+                _indexedSessionMsgCounts.set(id, msgCount);
             }).catch(e => console.warn('索引当前会话失败:', e));
         }
 
@@ -50195,6 +50249,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         dirPath: currentRootPath,
                         sessionId: currentSessionId,
                     });
+                    // 清空后旧条数记录已失效，必须移除：否则"清空后重发相同条数消息"会
+                    // 因条数与 map 命中而被跳过，新消息永远无法触发后端增量索引
+                    _indexedSessionMsgCounts.delete(currentSessionId);
                 } catch (e) {
                     console.warn('清空消息记录失败:', e);
                 }
@@ -51038,6 +51095,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const requestId = crypto.randomUUID();
             let usageData = null;
             let llmDone = false;
+            let partialSaved = false; // 防止错误/断联路径重复保存半截消息
+            _partialAutoSaved = false; // 新一轮请求重置自动保存防重
 
             // 取消时通知后端
             const abortHandler = () => {
@@ -51160,10 +51219,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         updateContextUsage(usageData.prompt_tokens, LOCAL_LLM_CONTEXT_LENGTH || 10000);
                     }
                 }),
-                window.__TAURI__.event.listen('llm:error', (e) => {
+                window.__TAURI__.event.listen('llm:error', async (e) => {
                     if (e.payload.request_id !== requestId) return;
                     llmDone = true;
                     removeChatTyping();
+                    // 生成失败/断联：保留已生成的部分内容（落库 + 入内存），
+                    // 避免重新打开页面后回复的半截消息消失
+                    if (!partialSaved && _chatStreamingFullContent && _chatStreamingFullContent.trim()) {
+                        partialSaved = true;
+                        await savePartialAssistantMessage();
+                    }
                     showNotification('✗ ' + e.payload.message, 'error');
                 }),
                 // 工具调用轨迹（预留：聊天 Agent 后续若接入工具同样可视化）
@@ -51185,13 +51250,24 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 });
             } catch (err) {
                 if (err.name !== 'AbortError' && !llmDone) {
+                    // 断联/网络失败：保留已生成的部分内容，避免重新打开页面后丢失
+                    if (!partialSaved && _chatStreamingFullContent && _chatStreamingFullContent.trim()) {
+                        partialSaved = true;
+                        await savePartialAssistantMessage();
+                    }
                     showNotification('✗ LLM 请求失败: ' + err.message, 'error');
                 } else if (err.name === 'AbortError' && !llmDone) {
+                    partialSaved = true;
                     await savePartialAssistantMessage();
                 }
             } finally {
                 chatAbortController?.signal.removeEventListener('abort', abortHandler);
                 unlisteners.forEach(u => u());
+                // 兜底：请求结束但未正常 done、半截内容仍未保存时落库（覆盖事件/调用顺序竞态）
+                if (!partialSaved && !llmDone && _chatStreamingFullContent && _chatStreamingFullContent.trim()) {
+                    partialSaved = true;
+                    await savePartialAssistantMessage();
+                }
                 chatStreaming = false;
                 updateChatSendButton();
                 chatAbortController = null;
@@ -51666,6 +51742,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
             const requestId = crypto.randomUUID();
             let ragDone = false;
+            let partialSaved = false; // 防止错误/断联路径重复保存半截消息
+            _partialAutoSaved = false; // 新一轮请求重置自动保存防重
             console.debug('[rag] requestId=' + requestId);
 
             // 取消时通知后端
@@ -51730,6 +51808,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                     const fullContent = e.payload.content;
                     const sources = e.payload.sources || [];
+                    // 降级路径均依赖此变量，不赋值会导致引用在保存/断联时丢失
+                    _chatStreamingSources = sources;
                     const promptTokens = e.payload.prompt_tokens || 0;
                     const completionTokens = e.payload.completion_tokens || 0;
                     // 更新上下文使用率（模型上下文窗口占用率）
@@ -51847,7 +51927,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         }).catch(e => console.warn('刷新列表失败:', e));
                     }
                 }),
-                window.__TAURI__.event.listen('rag:error', (e) => {
+                window.__TAURI__.event.listen('rag:error', async (e) => {
                     if (e.payload.request_id !== requestId) return;
                     console.error('[rag] error event requestId=' + requestId + ' msg=' + e.payload.message);
                     ragDone = true;
@@ -51857,9 +51937,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         if (st) st.remove();
                     }
                     removeChatTyping();
+                    // 生成失败/断联：保留已生成的部分内容（落库 + 入内存），
+                    // 避免重新打开页面后回复的半截消息消失
+                    if (!partialSaved && _chatStreamingFullContent && _chatStreamingFullContent.trim()) {
+                        partialSaved = true;
+                        await savePartialAssistantMessage();
+                    }
                     showNotification('✗ ' + e.payload.message, 'error');
                 }),
-                // 工具调用轨迹（kb_search / code_lookup / read_file / list_files / git_status）
+                // 工具调用轨迹（kb_search / code_lookup / read / edit / delete / list_files / render_mermaid / git_status）
                 window.__TAURI__.event.listen('agent:tool_call', (e) => handleAgentToolEvent(e, requestId)),
                 window.__TAURI__.event.listen('agent:tool_result', (e) => handleAgentToolEvent(e, requestId)),
             ]);
@@ -51882,13 +51968,24 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             } catch (err) {
                 console.error('[rag] invoke failed requestId=' + requestId + ' err=' + (err.message || err));
                 if (err.name !== 'AbortError' && !ragDone) {
+                    // 断联/网络失败：保留已生成的部分内容，避免重新打开页面后丢失
+                    if (!partialSaved && _chatStreamingFullContent && _chatStreamingFullContent.trim()) {
+                        partialSaved = true;
+                        await savePartialAssistantMessage();
+                    }
                     showNotification('✗ RAG 查询失败: ' + (err.message || err), 'error');
                 } else if (err.name === 'AbortError' && !ragDone) {
+                    partialSaved = true;
                     await savePartialAssistantMessage();
                 }
             } finally {
                 chatAbortController?.signal.removeEventListener('abort', abortHandler);
                 unlisteners.forEach(u => u());
+                // 兜底：请求结束但未正常 done、半截内容仍未保存时落库（覆盖事件/调用顺序竞态）
+                if (!partialSaved && !ragDone && _chatStreamingFullContent && _chatStreamingFullContent.trim()) {
+                    partialSaved = true;
+                    await savePartialAssistantMessage();
+                }
                 chatStreaming = false;
                 updateChatSendButton();
                 chatAbortController = null;
@@ -52194,7 +52291,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const summaryEl = document.getElementById('kb-skill-summary');
             if (!container) return;
             if (!metrics || !metrics.total_dispatches) {
-                container.innerHTML = '<div style="color:var(--t3);">暂无执行数据，使用 /技能名 或关键词触发技能后刷新查看</div>';
+                container.innerHTML = '<div style="color:var(--t3);">暂无执行数据，使用 /技能名 或挂载技能后刷新查看</div>';
                 if (summaryEl) summaryEl.textContent = '';
                 return;
             }
@@ -52211,7 +52308,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             const rows = list.map(function (s) {
                 const sr = Math.round((s.success_rate || 0) * 100) + '%';
-                const levels = Object.entries(s.match_levels || {})
+                const levels = Object.entries(s.activation_sources || {})
                     .map(([k, v]) => k + '×' + v).join(' ') || '-';
                 return '<tr style="height: 1.5rem;">' +
                     '<td>' + escapeHtml(s.skill_id) + '</td>' +
@@ -52229,7 +52326,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 '<th style="padding:0.25rem 0">调用</th>' +
                 '<th style="padding:0.25rem 0">成功率</th>' +
                 '<th style="padding:0.25rem 0">平均耗时</th>' +
-                '<th style="padding:0.25rem 0">匹配层级</th>' +
+                '<th style="padding:0.25rem 0">激活来源</th>' +
                 '</tr></thead><tbody>' + rows + '</tbody></table>';
         }
 
@@ -52357,7 +52454,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             progressWrap.style.display = '';
 
             const path = getDirPath(dirHandle);
-            console.log('[KB] incremental index, path =', path, 'isTauriVisit =', isTauriVisit());
 
             if (isTauriVisit()) {
                 try {
@@ -52506,14 +52602,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        document.addEventListener('keydown', (e) => {
-            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === '+') {
-                e.preventDefault();
-                const level = prompt('设置日志级别 (off / error / warn / info / debug / trace):', 'info');
-                if (level) setLogLevel(level.trim());
-            }
-        });
-
          /**
          * 规范化 LLM API 地址：自动补全 OpenAI 兼容路径尾缀 /chat/completions。
          * - 已含 /chat/completions → 原样返回
@@ -52530,6 +52618,23 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (/\/v1$/i.test(u)) return u + '/chat/completions';
             return u + '/v1/chat/completions';
         }
+
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === '+') {
+                e.preventDefault();
+                const level = prompt('设置日志级别 (off / error / warn / info / debug / trace):', 'info');
+                if (level) setLogLevel(level.trim());
+            }
+        });
+        
+        document.addEventListener('click', function (e) {
+            const mdLink = e.target.closest('.markdown-body a');
+            if (!mdLink) return;
+            const link = e.target.closest('a');
+            if (!link) return;
+            e.preventDefault();
+        }, false);
     </script>
     <script src="./css_js/skill-panel.js"></script>
+    <script src="./css_js/function-call.js"></script>
 </body>

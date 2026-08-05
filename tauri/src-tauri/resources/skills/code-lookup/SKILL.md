@@ -4,13 +4,10 @@ scope: system
 name: 代码定位
 description: 当用户询问某个函数、类、符号、变量在哪里定义、哪里使用，或要求定位代码实现时触发。
 priority: 50
-trigger_rules:
-  keywords: ["在哪", "定义", "实现", "函数", "类", "符号", "代码", "查找", "定位", "function", "class"]
-  similarity_threshold: 0.5
 roles: ["owner"]
-tools: [code_lookup, read_file]
+tools: [code_lookup, read]
 top_k: 10
-min_score: 0.3
+min_score: 0.5
 enabled: true
 version: 1
 created_at: 1754200000000
@@ -24,7 +21,7 @@ updated_at: 1754200000000
 
 ## 执行步骤
 1. 先用 code_lookup 检索符号相关的代码片段
-2. 对命中的关键文件用 read_file 读取完整上下文
+2. 对命中的关键文件用 read 读取完整上下文
 3. 汇总定义位置与关键实现逻辑
 
 ## 输出规范

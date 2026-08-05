@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio::sync::Mutex;
 
-use crate::core::chat_types::{ChatMessage, ChatSession};
+use crate::core::chat_types::ChatMessage;
 use crate::core::config::ConfigStore;
 use crate::core::db::bm25::Bm25Index;
 use crate::core::db::chunk_splitter::ChunkSplitterFactory;
@@ -294,8 +294,6 @@ pub struct Indexer {
     chat_lance_cache: Mutex<Option<(String, Arc<LanceStore>)>>,
     /// 文档 BM25 缓存（目录 = bm25）
     bm25_cache: Mutex<Option<(String, Arc<Bm25Index>)>>,
-    /// 对话 BM25 缓存（目录 = chat_bm25）
-    chat_bm25_cache: Mutex<Option<(String, Arc<Bm25Index>)>>,
     /// 全量索引互斥锁（防止并发 kb_index）
     indexing_lock: Mutex<()>,
     /// 全量索引进行中标记（用于 watcher 路径检查，避免元数据竞态）
@@ -309,7 +307,6 @@ impl Indexer {
             lance_cache: Mutex::new(None),
             chat_lance_cache: Mutex::new(None),
             bm25_cache: Mutex::new(None),
-            chat_bm25_cache: Mutex::new(None),
             indexing_lock: Mutex::new(()),
             reindex_in_progress: std::sync::atomic::AtomicBool::new(false),
         }
@@ -365,24 +362,6 @@ impl Indexer {
         let store = Arc::new(LanceStore::new(&data_dir, "chat_vectors"));
         *cache = Some((dir_path.to_string(), Arc::clone(&store)));
         store
-    }
-
-    /// 获取或创建缓存的对话 Bm25Index（目录 = chat_bm25）
-    async fn get_chat_bm25_index(&self, dir_path: &str) -> Result<Arc<Bm25Index>, String> {
-        let mut cache = self.chat_bm25_cache.lock().await;
-        if let Some((ref cached_dir, ref store)) = *cache {
-            if cached_dir == dir_path {
-                return Ok(Arc::clone(store));
-            }
-        }
-        let bm25_dir = utils::get_chat_bm25_dir(dir_path);
-        let index = if Path::new(&bm25_dir).exists() {
-            Arc::new(Bm25Index::open(&bm25_dir)?)
-        } else {
-            Arc::new(Bm25Index::create(&bm25_dir)?)
-        };
-        *cache = Some((dir_path.to_string(), Arc::clone(&index)));
-        Ok(index)
     }
 
     /// 使文档缓存失效（clear 或 index_all 后调用）
@@ -590,26 +569,8 @@ impl Indexer {
         let store = self.get_lance_store(dir_path).await;
         store.create_table().await?;
 
-        // 统计旧 chunk 数，用于元数据差值计算（避免每次 index 后 chunk_count 累积增长）
+         // 统计旧 chunk 数，用于元数据差值计算（避免每次 index 后 chunk_count 累积增长）
         let old_chunks = self.count_document_chunks(&store, rel_path).await;
-        if let Err(e) = store.delete_document(rel_path).await {
-            log::warn!("[indexer] 删除旧 LanceDB 数据失败 ({}): {}，将继续写入新数据", rel_path, e);
-        }
-        store.add_chunks(&doc_chunks, &vectors).await.map_err(|e| {
-            log::error!("[indexer] 写入 LanceDB 失败 ({}): {}", rel_path, e);
-            e
-        })?;
-
-        // ── BM25：先删后写 ──
-        if let Ok(bm25) = self.get_bm25_index(dir_path).await {
-            if let Err(e) = bm25.delete_document(rel_path) {
-                log::warn!("[indexer] 删除 BM25 旧数据失败 ({}): {}，将继续写入新数据", rel_path, e);
-            }
-            bm25.add_documents(&doc_chunks).map_err(|e| {
-                log::error!("[indexer] 写入 BM25 失败 ({}): {}", rel_path, e);
-                e
-            })?;
-        }
 
         // 写入成功后更新元数据（用新旧差值，避免重复 index 导致数据膨胀）
         let new_count = doc_chunks.len() as i32;
@@ -617,8 +578,28 @@ impl Indexer {
         let chunk_delta = new_count - old_count;
         let vector_delta = new_count - old_count; // 每个 chunk 生成一个向量
         let file_delta = if old_chunks == 0 { 1 } else { 0 };
-        self.update_metadata_delta(dir_path, file_delta, chunk_delta, vector_delta).await;
+        log::info!("[indexer] 更新元数据,new_count: {}, old_count: {}, file_delta: {}, chunk_delta: {}, vector_delta: {}", new_count, old_count, file_delta, chunk_delta, vector_delta);
 
+        if let Err(e) = store.delete_document(rel_path).await {
+            log::warn!("[indexer] 删除旧 LanceDB 数据失败, err: {}", e);
+        }
+        store.add_chunks(&doc_chunks, &vectors).await.map_err(|e| {
+            log::error!("[indexer] 写入 LanceDB 失败, err: {}", e);
+            e
+        })?;
+
+        // ── BM25：先删后写 ──
+        if let Ok(bm25) = self.get_bm25_index(dir_path).await {
+            if let Err(e) = bm25.delete_document(rel_path) {
+                log::warn!("[indexer] 删除 BM25 旧数据失败, err: {}", e);
+            }
+            bm25.add_documents(&doc_chunks).map_err(|e| {
+                log::error!("[indexer] 写入 BM25 失败, err: {}", e);
+                e
+            })?;
+        }
+       
+        self.update_metadata_delta(dir_path, file_delta, chunk_delta, vector_delta).await;
         Ok(())
     }
 
@@ -649,6 +630,7 @@ impl Indexer {
         // 仅当确实删除到数据时才更新元数据，避免未索引文件导致 file_count 虚减
         if deleted_chunks > 0 || bm25_deleted > 0 {
             let chunk_delta = -(deleted_chunks.max(bm25_deleted as u32) as i32);
+            log::info!("[indexer] 更新元数据,删除 chunk 数: {}, BM25 删除 chunk 数: {}, chunk_delta: {}", deleted_chunks, bm25_deleted, chunk_delta);
             self.update_metadata_delta(dir_path, -1, chunk_delta, chunk_delta).await;
         } else {
             log::warn!("[indexer] 文件无索引数据，跳过元数据更新: {}", rel_path);
@@ -721,11 +703,16 @@ impl Indexer {
 
         self.invalidate_cache().await;
 
+        log::debug!("[indexer] 清除全部索引完成: {}", dir_path);
         Ok(())
     }
 
-    // ─── 状态查询 ───
-
+    /**
+     * 查询知识库索引状态
+     * 
+     * @param dir_path 知识库目录路径
+     * @returns 知识库索引状态
+     */
     pub async fn status(&self, dir_path: &str) -> Result<KbStatus, String> {
         let data_dir = utils::get_data_dir(dir_path);
         let store = self.get_lance_store(dir_path).await;
@@ -751,8 +738,18 @@ impl Indexer {
         })
     }
 
-    // ─── 混合检索 ───
-
+    /**
+     * 混合检索
+     * 
+     * 混合检索将向量检索和 BM25 检索结果进行融合，根据配置的 alpha 权重进行加权。
+     * 
+     * @param dir_path 知识库目录路径
+     * @param query_vector 查询向量
+     * @param query 查询文本
+     * @param top_k 返回结果数量
+     * @param intent 检索意图（用于元数据过滤）
+     * @returns 混合检索结果列表
+     */
     pub async fn hybrid_search(
         &self,
         dir_path: &str,
@@ -774,7 +771,7 @@ impl Indexer {
         let vec_hits = match store.search_vectors(query_vector, vec_k).await {
             Ok(hits) => hits,
             Err(e) => {
-                log::warn!("[indexer] 向量检索失败，本次查询退化为纯 BM25: {}", e);
+                log::warn!("[indexer] [混合检索] 向量检索失败，本次查询退化为纯 BM25, top_k: {}, vec_k: {}, error: {}", vec_k, vec_k, e);
                 Vec::new()
             }
         };
@@ -784,12 +781,12 @@ impl Indexer {
             Ok(idx) => match idx.search(query, bm25_k) {
                 Ok(hits) => hits,
                 Err(e) => {
-                    log::warn!("[indexer] BM25 检索失败，本次查询退化为纯向量: {}", e);
+                    log::warn!("[indexer] [混合检索] BM25 检索失败，本次查询退化为纯向量, top_k: {}, bm25_k: {}, error: {}", bm25_k, bm25_k, e);
                     Vec::new()
                 }
             },
             Err(e) => {
-                log::warn!("[indexer] 获取 BM25 索引失败: {}", e);
+                log::warn!("[indexer] [混合检索] 获取 BM25 索引失败, top_k: {}, bm25_k: {}, error: {}", bm25_k, bm25_k, e);
                 Vec::new()
             }
         };
@@ -804,11 +801,12 @@ impl Indexer {
             None => bm25_hits,
         };
 
-        log::debug!("[indexer] hybrid_search query='{}' intent={:?} alpha={:.2} vec_k={} vec_hits={} bm25_k={} bm25_hits={}",
+        log::debug!("[indexer] [混合检索] query='{}' intent={:?} alpha={:.2} vec_k={} vec_hits={} bm25_k={} bm25_hits={}",
             query, intent, alpha, vec_k, vec_hits.len(), bm25_k, bm25_hits.len());
 
         let mut fused = fuse_hits(vec_hits, bm25_hits, alpha);
-        log::debug!("[indexer] after score fuse: candidates={}", fused.len());
+        log::debug!("[indexer] [混合检索] 混合检索 score fuse: candidates={}", fused.len());
+
 
         // ── 代码符号命中注入（代码查询专用）──
         // 语义检索可能漏掉"符号定义"所在 chunk（符号名与语义向量距离远），
@@ -830,14 +828,15 @@ impl Indexer {
                             }
                         }
                     }
-                    Err(e) => log::debug!("[indexer] 代码符号检索失败（忽略）: {}", e),
+                    Err(e) => log::error!("[indexer] [混合检索] 代码符号检索失败（忽略）, symbol: {}, error: {}", symbol, e),
                 }
             }
             if added > 0 {
-                log::debug!("[indexer] 注入代码符号命中: added={}", added);
+                log::debug!("[indexer] [混合检索] 注入代码符号命中: added={}", added);
                 fused.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
             }
         }
+        log::debug!("[indexer] [混合检索] 注入代码符号命中: candidates={}", fused.len());
 
         // ── 文件名匹配加分 ──
         // 当查询词与 doc_name 匹配时额外加分，提升"按文件名搜索"的召回准确率
@@ -862,6 +861,7 @@ impl Indexer {
             // 加分后重新排序
             fused.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
         }
+        log::debug!("[indexer] [混合检索] 注入文件名匹配加分: candidates={}", fused.len());
 
         // ── 代码符号匹配加分 ──
         // 当查询词与 chunk 的 symbol_name（函数名/类名等）匹配时额外加分，
@@ -909,6 +909,7 @@ impl Indexer {
             // 加分后重新排序
             fused.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
         }
+        log::debug!("[indexer] [混合检索] 注入代码符号匹配加分: candidates={}", fused.len());
 
         // ── OPML 层级去重 ──
         // 对于同一文档中具有路径前缀关系的 chunk（如父节点与子节点），保留最深节点。
@@ -958,6 +959,7 @@ impl Indexer {
             deduped.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
             fused = deduped;
         }
+        log::debug!("[indexer] [混合检索] 注入 OPML 层级去重: candidates={}", fused.len());
 
         let mut result: Vec<SearchHit> = fused.into_iter().take(top_k as usize).collect();
 
@@ -993,10 +995,12 @@ impl Indexer {
                     _ => {} // 无扩展内容则保持原样
                 }
             }
+            log::debug!("[indexer] [混合检索] 注入上下文扩展: candidates={}， ctx_window={}", result.len(), ctx_window);
         }
 
         Ok(result)
     }
+
 
     /// 按代码符号名检索（精确/前缀匹配 `symbol_name`），用于 Agent 的 `code_lookup` 工具
     /// 与代码查询的符号命中注入。见 [`crate::core::db::lance::LanceStore::search_symbols`]。
@@ -1041,7 +1045,7 @@ impl Indexer {
     ) -> Result<Vec<Vec<f32>>, String> {
         use tokio::sync::mpsc;
 
-        log::debug!("[indexer] embed_batch 开始，共 {} 个文本块", chunks.len());
+        log::debug!("[indexer] 【Embedding 批量处理】 开始，共 {} 个文本块", chunks.len());
 
         let texts: Vec<String> = chunks.iter().map(|c| c.text.clone()).collect();
         let (progress_tx, mut progress_rx) = mpsc::unbounded_channel::<(usize, usize, String)>();
@@ -1068,14 +1072,14 @@ impl Indexer {
                     result = Some(match joined {
                         Ok(Ok(v)) => Ok(v),
                         Ok(Err(e)) => Err(e),
-                        Err(e) => Err(format!("Embedding 任务执行失败: {}", e)),
+                        Err(e) => Err(format!("Embedding 任务执行失败, error={}", e)),
                     });
                 }
             }
         }
 
         let all_vectors = result.unwrap()?;
-        log::debug!("[indexer] embed_batch 完成，共 {} 个向量", all_vectors.len());
+        log::debug!("[indexer] 【Embedding 批量处理】 完成，共 {} 个向量", all_vectors.len());
         Ok(all_vectors)
     }
 
@@ -1137,40 +1141,45 @@ impl Indexer {
         }
     }
 
-    // ─── 对话会话索引（chat_vectors / chat_bm25，与文档索引分离）───
+    // ─── 对话会话索引（chat_vectors，与文档索引分离；增量追加，无 BM25）───
 
-    /// 索引一个会话的所有消息到对话向量库和 BM25 索引。
+    /// 增量索引会话消息到对话向量库。
     ///
     /// - 单条消息作为一个 chunk
-    /// - `doc_name` = `session.id`（便于按会话删除）
-    /// - `chunk_index` = 消息在会话中的序号
+    /// - `doc_name` = `session_id`（便于按会话删除）
+    /// - `chunk_index` = 消息在会话中的全局序号（= `start_from + offset`，保持稳定）
     /// - `text` = `[role] content`（包含角色前缀，提升检索语义）
-    ///
-    /// 调用前应确保该会话已结束（用户新建了下一个会话）。
+    /// - `messages` = 未索引的增量消息（调用方已按 `start_from` 拉取）；`start_from` =
+    ///   已索引消息条数，仅用于计算全局序号，写入时不删除已有数据
     pub async fn index_chat_session(
         &self,
         dir_path: &str,
-        session: &ChatSession,
+        session_id: &str,
         messages: &[ChatMessage],
+        start_from: usize,
     ) -> Result<(), String> {
+        // 无新增消息 → 跳过（幂等，避免无意义的 embedding）
         if messages.is_empty() {
             return Ok(());
         }
 
-        // 构建 DocumentChunk 列表（单条消息 = 一个 chunk）
+        // 构建新增消息的 DocumentChunk（单条消息 = 一个 chunk）
         let chunks: Vec<DocumentChunk> = messages
             .iter()
             .enumerate()
-            .map(|(i, msg)| DocumentChunk {
-                id: format!("chat:{}:{}", session.id, i),
-                doc_name: session.id.clone(),
-                chunk_index: i as u32,
-                text: format!("[{}] {}", msg.role, msg.content),
-                path_depth: None,
-                path_json: None,
-                sentence_window: None,
-                symbol_name: None,
-                symbol_kind: None,
+            .map(|(offset, msg)| {
+                let i = start_from + offset; // 全局序号，保证 chunk_index 与消息一一对应
+                DocumentChunk {
+                    id: format!("chat:{}:{}", session_id, i),
+                    doc_name: session_id.to_string(),
+                    chunk_index: i as u32,
+                    text: format!("[{}] {}", msg.role, msg.content),
+                    path_depth: None,
+                    path_json: None,
+                    sentence_window: None,
+                    symbol_name: None,
+                    symbol_kind: None,
+                }
             })
             .collect();
 
@@ -1181,22 +1190,24 @@ impl Indexer {
             utils::call_embedding(&refs, None)
         })
         .await
-        .map_err(|e| format!("Embedding 任务执行失败: {}", e))??;
+        .map_err(|e| format!("Embedding 任务执行失败: chunk_count={}, {}", chunks.len(), e))??;
 
-        // 写入 LanceDB（chat_vectors 表）：先删后写，保证幂等
-        let store = self.get_chat_lance_store(dir_path).await;
-        store.create_table().await?;
-        let _ = store.delete_document(&session.id).await;
-        store.add_chunks(&chunks, &vectors).await?;
-
-        // 写入 BM25（chat_bm25 索引）：先删后写
-        let bm25 = self.get_chat_bm25_index(dir_path).await?;
-        let _ = bm25.delete_document(&session.id);
-        bm25.add_documents(&chunks)?;
+        // 增量写入 LanceDB（chat_vectors 表）：只追加新增消息，不删除已有数据。
+        //
+        // 与 index_all / index_unindexed 共用 indexing_lock 串行化：Lance 的 writer
+        // 基于目录锁，并发写同一索引目录会失败。聊天索引是低频操作，串行等待代价可忽略。
+        {
+            let _guard = self.indexing_lock.lock().await;
+            let store = self.get_chat_lance_store(dir_path).await;
+            store.create_table().await?;
+            store.add_chunks(&chunks, &vectors).await?;
+        }
 
         log::info!(
-            "[indexer] 对话会话 {} 已索引（{} 条消息）",
-            session.id,
+            "[indexer] [对话增量索引] 会话ID={}， 增量索引（新增 {} 条，游标 {} → {}）",
+            session_id,
+            chunks.len(),
+            start_from,
             messages.len()
         );
         Ok(())
@@ -1204,6 +1215,10 @@ impl Indexer {
 
     /// 从对话索引中删除指定会话的所有消息
     pub async fn remove_chat_session(&self, dir_path: &str, session_id: &str) -> Result<(), String> {
+        // 与 index_chat_session / index_all 共用 indexing_lock 串行化，
+        // 避免并发 writer 目录锁冲突
+        let _guard = self.indexing_lock.lock().await;
+
         let store = self.get_chat_lance_store(dir_path).await;
         if store.open_table().await.is_ok() {
             if let Err(e) = store.delete_document(session_id).await {
@@ -1211,21 +1226,15 @@ impl Indexer {
             }
         }
 
-        if let Ok(bm25) = self.get_chat_bm25_index(dir_path).await {
-            if let Err(e) = bm25.delete_document(session_id) {
-                log::error!("[indexer] 删除对话 BM25 失败 ({}): {}", session_id, e);
-            }
-        }
-
         Ok(())
     }
 
-    /// 混合检索对话：向量检索 + BM25 全文检索 + RRF 融合。
+    /// 向量检索对话：仅向量召回（BM25 已移除）。
     ///
     /// 返回 `(session_id, score, matched_text)` 列表，调用方根据 session_id
     /// 去 SQLite 查会话元信息组装最终结果。
     ///
-    /// 与文档搜索（`hybrid_search`）完全隔离，只查 `chat_vectors` / `chat_bm25`。
+    /// 与文档搜索（`hybrid_search`）完全隔离，只查 `chat_vectors`。
     pub async fn search_chat_sessions(
         &self,
         dir_path: &str,
@@ -1238,32 +1247,22 @@ impl Indexer {
 
         // 1. 生成查询向量（1 次 ONNX 推理，放入 spawn_blocking 避免阻塞 Tokio）
         let query_string = query.to_string();
-        let query_embedding = tokio::task::spawn_blocking(move || utils::call_embedding_query(&query_string))
+        let query_string_clone = query_string.clone();
+        let query_embedding = tokio::task::spawn_blocking(move || utils::call_embedding_query(&query_string_clone))
             .await
-            .map_err(|e| format!("Embedding 任务执行失败: {}", e))??;
+            .map_err(|e| format!("Embedding 任务执行失败: query={}, {}", query_string, e))??;
         let query_vec = query_embedding
             .first()
-            .ok_or_else(|| "查询向量为空".to_string())?;
+            .ok_or_else(|| format!("查询向量为空: {}", query_string))?;
 
         // 2. 向量检索（chat_vectors 表）
         let store = self.get_chat_lance_store(dir_path).await;
         let vec_k = (top_k * 2).max(10);
         let vec_hits = store.search_vectors(query_vec, vec_k).await.unwrap_or_default();
+        log::debug!("[indexer] [对话向量检索] 完成，共 {} 个命中项，top_k={}", vec_hits.len(), top_k);
 
-        // 3. BM25 检索（chat_bm25 索引）
-        let bm25_k = (top_k * 2).max(10);
-        let bm25_hits = match self.get_chat_bm25_index(dir_path).await {
-            Ok(idx) => idx.search(query, bm25_k).unwrap_or_default(),
-            Err(_) => Vec::new(),
-        };
-
-        // 4. 分数加权融合（对话搜索也使用同样的融合权重）
-        let config = self.config_store.read();
-        let alpha = compute_alpha(query, config.fusion_alpha);
-        let fused = fuse_hits(vec_hits, bm25_hits, alpha);
-
-        // 5. 转换为 (session_id, score, matched_text)
-        let results = fused
+        // 3. 转换为 (session_id, score, matched_text)
+        let results = vec_hits
             .into_iter()
             .take(top_k as usize)
             .map(|hit| (hit.doc_name, hit.score, hit.text))
@@ -1284,13 +1283,13 @@ impl Indexer {
         let indexed_at = meta.as_ref().map(|m| m.indexed_at).unwrap_or(0);
 
         if indexed_at == 0 {
-            log::info!("[indexer] sync_on_start: 无索引记录，跳过启动同步（由 index_all 全量处理）");
+            log::info!("[indexer] [启动同步] 无索引记录，跳过启动同步（由 index_all 全量处理）");
             return Ok(0);
         }
 
         let base_dir = Path::new(dir_path);
         if !base_dir.exists() {
-            return Err(format!("目录不存在: {}", dir_path));
+            return Err(format!("[indexer] [启动同步] 目录不存在: {}", dir_path));
         }
 
         let config = self.config_store.read();
@@ -1323,15 +1322,15 @@ impl Indexer {
                 .to_string()
                 .replace('\\', "/");
 
-            log::info!("[indexer] 启动同步: 索引修改文件 {}", rel_path);
             if let Err(e) = self.index_file(dir_path, &rel_path, &file_path.to_string_lossy()).await {
-                log::warn!("[indexer] 启动同步: 文件 {} 索引失败: {}", rel_path, e);
+                log::warn!("[indexer] [启动同步] 文件 {} error: {}", rel_path, e);
                 continue;
             }
             synced_count += 1;
+            log::debug!("[indexer] [启动同步] 索引修改文件成功 rel_path={}，synced_count={}", rel_path, synced_count);
         }
 
-        log::info!("[indexer] 启动同步完成: 共同步 {} 个文件", synced_count);
+        log::info!("[indexer] [启动同步] 共同步 {} 个文件", synced_count);
         Ok(synced_count)
     }
 
@@ -1362,7 +1361,7 @@ impl Indexer {
         if total == 0 {
             return Err("目录中没有可索引的文件".into());
         }
-        progress(3, &format!("已发现 {} 个文件，正在检查已索引状态...", total));
+        progress(3, &format!("共有 {} 个文件，正在检查已索引状态...", total));
 
         // 确保 LanceDB 表存在
         let store = self.get_lance_store(dir_path).await;
@@ -1397,6 +1396,7 @@ impl Indexer {
                 indexed_at: 0,
             });
         }
+        log::debug!("[indexer] [增量索引] 共发现 {} 个未索引文件, 共 {} 个文件", unindexed_count, total);
 
         // 先读取 + 分块所有未索引文件，合并 DocumentChunk
         progress(15, &format!("正在读取 {} 个未索引文件...", unindexed_count));
@@ -1452,11 +1452,11 @@ impl Indexer {
             let batch_vectors = &all_vectors[batch_idx..end];
 
             store.add_chunks(batch_chunks, batch_vectors).await.map_err(|e| {
-                log::error!("[indexer] 增量索引 LanceDB 写入失败: {}", e);
+                log::error!("[indexer] [增量索引] LanceDB 写入失败: {}", e);
                 e
             })?;
             bm25.add_documents(batch_chunks).map_err(|e| {
-                log::error!("[indexer] 增量索引 BM25 写入失败: {}", e);
+                log::error!("[indexer] [增量索引] BM25 写入失败: {}", e);
                 e
             })?;
 
@@ -1468,6 +1468,8 @@ impl Indexer {
         self.update_metadata_delta(dir_path, file_count as i32, total_new_chunks as i32, all_vectors.len() as i32).await;
 
         progress(100, &format!("增量索引完成: {} 文件, {} 文本块", file_count, total_new_chunks));
+        log::info!("[indexer] [增量索引] 共索引 {} 个文件, {} 个文本块, {} 个向量", file_count, total_new_chunks, all_vectors.len() as u32);
+        
         Ok(KbIndexResult {
             file_count,
             chunk_count: total_new_chunks,
@@ -1491,7 +1493,7 @@ pub(crate) fn scan_directory(base_dir: &Path, ignore: &IgnoreMatcher) -> Result<
             }
             if e.file_type().is_dir() {
                 let name = e.file_name().to_string_lossy();
-                if name == ".mdgo" {
+                if name == ".mdgo" || name == utils::TRASH_DIR_NAME {
                     return false;
                 }
                 let rel_path = e.path().strip_prefix(base_dir).unwrap_or(e.path());
@@ -1524,6 +1526,7 @@ pub(crate) fn scan_directory(base_dir: &Path, ignore: &IgnoreMatcher) -> Result<
             }
         }
     }
+    log::debug!("[scan_directory] 共发现 {} 个文件", files.len());
     Ok(files)
 }
 
@@ -1534,6 +1537,7 @@ fn read_file_content(path: &Path) -> Option<String> {
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_lowercase();
+    log::debug!("[indexer] 读取文件 {}, 扩展名: {}", path.display(), ext);
 
     #[cfg(feature = "pdf-extract")]
     if ext == "pdf" {
@@ -1541,14 +1545,14 @@ fn read_file_content(path: &Path) -> Option<String> {
             Ok(text) => {
                 let trimmed = text.trim();
                 if trimmed.is_empty() {
-                    log::warn!("跳过 PDF 文件 {}: 未提取到文本内容", path.display());
+                    log::warn!("[indexer] 跳过 PDF 文件 {}: 未提取到文本内容", path.display());
                     None
                 } else {
                     Some(trimmed.to_string())
                 }
             }
             Err(e) => {
-                log::warn!("跳过 PDF 文件 {}: 提取文本失败: {}", path.display(), e);
+                log::warn!("[indexer] 跳过 PDF 文件 {}: 提取文本失败: {}", path.display(), e);
                 None
             }
         };
@@ -1559,7 +1563,7 @@ fn read_file_content(path: &Path) -> Option<String> {
         Ok(c) => Some(c),
         Err(e) => {
             log::warn!(
-                "跳过文件 {}: {}",
+                "[indexer] 跳过文件 {}: {}",
                 path.display(),
                 if e.kind() == std::io::ErrorKind::InvalidData {
                     "非 UTF-8 编码".to_string()
@@ -1602,6 +1606,8 @@ fn load_metadata(data_dir: &str) -> Option<IndexMeta> {
 fn fuse_hits(vec_hits: Vec<SearchHit>, bm25_hits: Vec<SearchHit>, alpha: f32) -> Vec<SearchHit> {
     use std::collections::HashMap;
 
+    log::debug!("[indexer] [加权融合] 合并 {} 个向量命中和 {} 个 BM25 命中, 权重: {}", vec_hits.len(), bm25_hits.len(), alpha);
+
     #[derive(Default)]
     struct Entry {
         score_vec: f32,
@@ -1618,7 +1624,7 @@ fn fuse_hits(vec_hits: Vec<SearchHit>, bm25_hits: Vec<SearchHit>, alpha: f32) ->
     // ── 向量结果集 ──
     for hit in vec_hits {
         let key = (hit.doc_name.clone(), hit.chunk_index);
-        let entry = score_map.entry(key).or_default();
+        let entry = score_map.entry(key.clone()).or_default();
         entry.score_vec = entry.score_vec.max(hit.score);
         entry.text = hit.text.clone();
         if entry.path_json.is_none() {
@@ -1631,12 +1637,13 @@ fn fuse_hits(vec_hits: Vec<SearchHit>, bm25_hits: Vec<SearchHit>, alpha: f32) ->
             entry.symbol_name = hit.symbol_name.clone();
             entry.symbol_kind = hit.symbol_kind.clone();
         }
+        log::debug!("[indexer] [加权融合], 向量命中: key={:?}, score_vec={}, text: {}, path_json: {}, symbol_name: {}, symbol_kind: {}", key, entry.score_vec, entry.text, entry.path_json.as_deref().unwrap_or("None"), entry.symbol_name.as_deref().unwrap_or("None"), entry.symbol_kind.as_deref().unwrap_or("None"));
     }
 
     // ── BM25 结果集 ──
     for hit in bm25_hits {
         let key = (hit.doc_name.clone(), hit.chunk_index);
-        let entry = score_map.entry(key).or_default();
+        let entry = score_map.entry(key.clone()).or_default();
         entry.score_bm25 = entry.score_bm25.max(hit.score);
         // 仅当向量路未覆盖此 key 时才用 BM25 的文本
         if entry.text.is_empty() {
@@ -1646,6 +1653,7 @@ fn fuse_hits(vec_hits: Vec<SearchHit>, bm25_hits: Vec<SearchHit>, alpha: f32) ->
             entry.symbol_name = hit.symbol_name.clone();
             entry.symbol_kind = hit.symbol_kind.clone();
         }
+        log::debug!("[indexer] [加权融合], BM25 命中: key={:?}, score_bm25={}, text: {}, symbol_name: {}, symbol_kind: {}", key, entry.score_bm25, entry.text, entry.symbol_name.as_deref().unwrap_or("None"), entry.symbol_kind.as_deref().unwrap_or("None"));
     }
 
     // 融合分数：双路命中取加权和；单路命中使用该路自身分数（避免阈值被抬高）
@@ -1668,7 +1676,7 @@ fn fuse_hits(vec_hits: Vec<SearchHit>, bm25_hits: Vec<SearchHit>, alpha: f32) ->
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    entries
+    let results: Vec<SearchHit> = entries
         .into_iter()
         .map(|(doc_name, chunk_index, e)| {
             let score = fused_score(&e).clamp(0.0, 1.0);
@@ -1685,7 +1693,10 @@ fn fuse_hits(vec_hits: Vec<SearchHit>, bm25_hits: Vec<SearchHit>, alpha: f32) ->
                 symbol_kind: e.symbol_kind,
             }
         })
-        .collect()
+        .collect();
+
+    log::debug!("[indexer] [加权融合] 合并 {} 个命中", results.len());
+    results
 }
 
 #[cfg(test)]

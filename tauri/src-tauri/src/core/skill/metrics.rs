@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
-use super::matcher::MatchLevel;
+use super::activation::ActivationSource;
 
 /// 单次执行记录
 #[derive(Debug, Clone)]
@@ -20,7 +20,7 @@ pub struct ExecutionRecord {
     pub duration_ms: u64,
     pub success: bool,
     pub error_code: Option<String>,
-    pub match_level: MatchLevel,
+    pub source: ActivationSource,
     pub match_score: f32,
 }
 
@@ -47,8 +47,8 @@ pub struct SkillMetricsSummary {
     pub p95_duration_ms: f64,
     /// 错误码分布
     pub error_codes: HashMap<String, u64>,
-    /// 匹配层级分布
-    pub match_levels: HashMap<String, u64>,
+    /// 激活来源分布（attached / manual / llm）
+    pub activation_sources: HashMap<String, u64>,
     /// 平均匹配分数
     pub avg_match_score: f32,
     /// 最后调用时间 (毫秒时间戳)
@@ -116,7 +116,7 @@ impl SkillMetrics {
         duration_ms: u64,
         success: bool,
         error_code: Option<String>,
-        match_level: MatchLevel,
+        source: ActivationSource,
         match_score: f32,
     ) {
         let now = SystemTime::now()
@@ -131,7 +131,7 @@ impl SkillMetrics {
             duration_ms,
             success,
             error_code,
-            match_level,
+            source,
             match_score,
         };
 
@@ -252,11 +252,11 @@ fn summarize_skill(key: String, records: Vec<ExecutionRecord>) -> SkillMetricsSu
         }
     }
 
-    // 匹配层级分布（复用 matcher::MatchLevel::as_str，与序列化输出大小写一致）
-    let mut match_levels: HashMap<String, u64> = HashMap::new();
+    // 激活来源分布（复用 ActivationSource::as_str，与序列化输出大小写一致）
+    let mut activation_sources: HashMap<String, u64> = HashMap::new();
     for record in &records {
-        let level_str = record.match_level.as_str();
-        *match_levels.entry(level_str.to_string()).or_insert(0) += 1;
+        let level_str = record.source.as_str();
+        *activation_sources.entry(level_str.to_string()).or_insert(0) += 1;
     }
 
     // 平均匹配分数
@@ -288,7 +288,7 @@ fn summarize_skill(key: String, records: Vec<ExecutionRecord>) -> SkillMetricsSu
         p50_duration_ms: p50,
         p95_duration_ms: p95,
         error_codes,
-        match_levels,
+        activation_sources,
         avg_match_score: avg_score,
         last_call_at: last_call,
     }

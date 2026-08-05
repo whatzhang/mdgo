@@ -106,7 +106,7 @@ fn create_session(model_path: &Path) -> Result<SessionType, String> {
         .into_runnable()
         .map_err(|e| format!("模型编译失败: {}", e))?;
 
-    log::info!("[ort_embedding] tract-onnx session 创建成功");
+    log::info!("[ort_embedding] tract-onnx session 创建成功, 模型路径: {}", model_path.display());
     Ok(model)
 }
 
@@ -138,7 +138,7 @@ fn create_session(model_path: &Path) -> Result<SessionType, String> {
         .commit_from_file(model_path)
         .map_err(|e| format!("加载 ONNX 模型失败: {}", e))?;
 
-    log::info!("[ort_embedding] 原生 ORT session 创建成功");
+    log::info!("[ort_embedding] 原生 ORT session 创建成功, 模型路径: {}", model_path.display());
     Ok(session)
 }
 
@@ -200,7 +200,7 @@ fn run_batch(
     let type_tensor: Tensor = token_type_ids.into_dyn().into();
 
     // 兼容 2 输入（无 token_type_ids）与 3 输入模型
-    let outputs = if session.inputs.len() <= 2 {
+    let outputs = if session.model().inputs.len() <= 2 {
         session.run(tvec!(
             input_tensor.into(),
             mask_tensor.into(),
@@ -283,15 +283,12 @@ pub(crate) fn ensure_initialized(models_dir: &Path) -> Result<(), String> {
             .map_err(|e| format!("解析 config.json 失败: {}", e))?;
     let hs = config["hidden_size"].as_u64().unwrap_or(512) as usize;
     let _ = HIDDEN_SIZE.set(hs);
-    log::info!("[ort_embedding] 从 config.json 读取 hidden_size={}", hs);
 
     let ms = config["max_position_embeddings"].as_u64().unwrap_or(512) as usize;
     let _ = MAX_SEQ_LEN.set(ms);
-    log::info!("[ort_embedding] 从 config.json 读取 max_position_embeddings={}", ms);
 
     let pt = config["pad_token_id"].as_i64().unwrap_or(0);
     let _ = PAD_TOKEN_ID.set(pt);
-    log::info!("[ort_embedding] 从 config.json 读取 pad_token_id={}", pt);
 
     let model_path = models_dir.join("model.onnx");
     let session = create_session(&model_path)?;
@@ -300,10 +297,10 @@ pub(crate) fn ensure_initialized(models_dir: &Path) -> Result<(), String> {
 
     // OnceLock::set 仅首次成功，后续静默失败，保证幂等
     let _ = TOKENIZER_JSON.set(tokenizer_raw);
-    let _ = MODEL_DIR.set(model_dir_str);
+    let _ = MODEL_DIR.set(model_dir_str.clone());
     let _ = GLOBAL_SESSION.set(Mutex::new(session));
 
-    log::info!("[ort_embedding] 初始化完成");
+    log::info!("[ort_embedding] 初始化完成, 模型目录: {}, hidden_size: {}, max_position_embeddings: {}, pad_token_id: {}", model_dir_str, hs, ms, pt);
     Ok(())
 }
 
@@ -488,7 +485,7 @@ pub fn call_embedding_parallel(
         let guard = session_mutex
             .lock()
             .unwrap_or_else(|e| {
-                log::warn!("[ort_embedding] tract session mutex 中毒，已恢复");
+                log::warn!("[ort_embedding] tract session mutex 锁获取失败，已恢复（session 可能处于不一致状态）");
                 e.into_inner()
             });
         Arc::clone(&guard)
@@ -498,7 +495,7 @@ pub fn call_embedding_parallel(
     let mut session = session_mutex
         .lock()
         .unwrap_or_else(|e| {
-            log::warn!("[ort_embedding] ORT session mutex 中毒，已恢复（session 可能处于不一致状态）");
+            log::warn!("[ort_embedding] ORT session mutex 锁获取失败，已恢复（session 可能处于不一致状态）");
             e.into_inner()
         });
 

@@ -4,9 +4,6 @@ scope: system
 name: 读书笔记
 description: 当用户要求记录读书笔记、卡片式笔记、写作规范、提炼观点时触发。
 priority: 40
-trigger_rules:
-  keywords: ["读书笔记", "笔记", "卡片", "写作", "记录", "观点提炼"]
-  similarity_threshold: 0.5
 roles: ["owner"]
 tools: []
 enabled: true

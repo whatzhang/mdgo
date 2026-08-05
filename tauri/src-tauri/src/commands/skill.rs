@@ -1,11 +1,10 @@
-//! Skill 管理命令层（M1 基础管理 + M2 意图匹配 + M2 会话挂载）。
+//! Skill 管理命令层（M1 基础管理 + M2 会话挂载）。
 //!
 //! 命令均基于 `SkillRegistry`（内存注册表）+ `SkillStore`（文件读写），
 //! 写路径（创建/更新/删除/启停）先落盘 → 重建注册表 → 广播 `skill:changed`。
 
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::core::skill::matcher::{match_skills, MatchResult};
 use crate::core::skill::{Skill, SkillFieldError, SkillInput, SkillScope, SkillStore, validate_skill};
 use crate::AppState;
 
@@ -30,6 +29,7 @@ fn emit_changed(app: &AppHandle) {
 /// 技能列表（支持按作用域过滤）。
 ///
 /// 首次访问时重建注册表；此后由写操作 / watcher 负责热更新。
+/// 重建后若存在加载失败项（非法 SKILL.md 等），通过 `skill:load_errors` 事件转发前端提醒。
 #[tauri::command]
 pub async fn skill_list(
     app: AppHandle,
@@ -39,6 +39,11 @@ pub async fn skill_list(
     let state = app.state::<AppState>();
     state.skill_registry.ensure_loaded(&dir_path)?;
     state.skill_watcher.set_current_dir(&dir_path);
+    // 消费加载失败项并转发前端（无监听时静默丢弃，不影响列表返回）
+    let load_errors = state.skill_registry.take_load_errors();
+    if !load_errors.is_empty() {
+        let _ = app.emit("skill:load_errors", &load_errors);
+    }
     let scope_filter = match scope {
         Some(s) => Some(parse_scope(&s)?),
         None => None,
@@ -187,37 +192,6 @@ fn unix_timestamp_now() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
-}
-
-/// 分层意图匹配（调试用）
-///
-/// 返回匹配结果列表，包含技能、匹配层级、得分。
-#[tauri::command]
-pub async fn skill_match(
-    app: AppHandle,
-    dir_path: String,
-    query: String,
-) -> Result<Vec<MatchResult>, String> {
-    let state = app.state::<AppState>();
-    state.skill_registry.ensure_loaded(&dir_path)?;
-
-    // 获取所有启用的技能
-    let skills = state.skill_registry.list(None);
-    let enabled_skills: Vec<Skill> = skills.into_iter().filter(|s| s.enabled).collect();
-
-    if enabled_skills.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    // 同步批量嵌入（ONNX 推理）在 spawn_blocking 中调度，
-    // 避免阻塞异步运行时（消除旧实现 Handle::block_on 在异步上下文的 panic 风险）
-    let results = tokio::task::spawn_blocking(move || {
-        match_skills(&query, &enabled_skills, crate::core::db::utils::embed_texts_batch)
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking failed: {}", e))??;
-
-    Ok(results)
 }
 
 /// 会话挂载技能（保存快照到 DB）

@@ -86,6 +86,9 @@ impl ChatStore {
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+
+            -- 消息按会话查询（增量索引、幂等筛查、消息读取）高频执行，必须走索引避免全表扫描
+            CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id);
             ",
         )
         .map_err(|e| format!("建表失败: {}", e))?;
@@ -378,17 +381,59 @@ impl ChatStore {
         Ok(sessions)
     }
 
-    /// 按 created_at ASC 返回会话消息
+    /// 按 created_at ASC（同毫秒按 rowid 插入序破平）返回会话全部消息
     pub fn get_session_messages(&self, session_id: &str) -> Result<Vec<ChatMessage>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, session_id, role, content, token_count, created_at, tool_calls FROM chat_messages WHERE session_id = ?1 ORDER BY created_at ASC",
+                "SELECT id, session_id, role, content, token_count, created_at, tool_calls FROM chat_messages WHERE session_id = ?1 ORDER BY created_at ASC, rowid ASC",
             )
             .map_err(|e| format!("查询消息失败: {}", e))?;
 
         let messages = stmt
             .query_map(rusqlite::params![session_id], |row| {
+                let id: String = row.get(0)?;
+                let session_id: String = row.get(1)?;
+                let role: String = row.get(2)?;
+                let content: String = row.get(3)?;
+                let token_count: i32 = row.get(4)?;
+                let created_at: u64 = row.get(5)?;
+                let tool_calls: Option<String> = row.get(6)?;
+
+                Ok(ChatMessage {
+                    id,
+                    session_id,
+                    role,
+                    content,
+                    token_count,
+                    created_at,
+                    tool_calls: tool_calls.filter(|s| !s.trim().is_empty()),
+                })
+            })
+            .map_err(|e| format!("查询消息失败: {}", e))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("读取消息失败: {}", e))?;
+
+        Ok(messages)
+    }
+
+    /// 按全局序号起点返回会话消息（增量索引用：只拉 `start_from` 之后的未索引部分）。
+    ///
+    /// 序号 = `ORDER BY created_at ASC, rowid ASC` 的数组下标，与索引侧 `chunk_index` 定义一致。
+    pub fn get_session_messages_from(
+        &self,
+        session_id: &str,
+        start_from: usize,
+    ) -> Result<Vec<ChatMessage>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, session_id, role, content, token_count, created_at, tool_calls FROM chat_messages WHERE session_id = ?1 ORDER BY created_at ASC, rowid ASC LIMIT -1 OFFSET ?2",
+            )
+            .map_err(|e| format!("查询消息失败: {}", e))?;
+
+        let messages = stmt
+            .query_map(rusqlite::params![session_id, start_from as i64], |row| {
                 let id: String = row.get(0)?;
                 let session_id: String = row.get(1)?;
                 let role: String = row.get(2)?;
@@ -427,6 +472,41 @@ impl ChatStore {
         let id = Uuid::new_v4().to_string();
 
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        // 幂等筛查：用户消息重复提交（双击发送/网络重试）时，若该会话最后一条消息
+        // 与本次提交同 role 同 content，直接返回已存在消息，避免重复入库与重复索引。
+        // 仅针对 user 消息：assistant 消息由流式保存路径自身去重；AI 回复后用户重发
+        // 相同内容（此时最后一条是 assistant）不受影响。
+        if role == "user" {
+            let last = conn.query_row(
+                "SELECT id, session_id, role, content, token_count, created_at, tool_calls FROM chat_messages WHERE session_id = ?1 ORDER BY created_at ASC, rowid DESC LIMIT 1",
+                rusqlite::params![session_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, i32>(4)?,
+                        row.get::<_, u64>(5)?,
+                        row.get::<_, Option<String>>(6)?,
+                    ))
+                },
+            );
+            if let Ok((last_id, last_sid, last_role, last_content, last_tokens, last_created, last_tools)) = last {
+                if last_role == role && last_content == content {
+                    return Ok(ChatMessage {
+                        id: last_id,
+                        session_id: last_sid,
+                        role: last_role,
+                        content: last_content,
+                        token_count: last_tokens,
+                        created_at: last_created,
+                        tool_calls: last_tools.filter(|s| !s.trim().is_empty()),
+                    });
+                }
+            }
+        }
 
         conn.execute_batch("BEGIN TRANSACTION")
             .map_err(|e| format!("开启事务失败: {}", e))?;
@@ -643,11 +723,11 @@ impl ChatStore {
 
     /// 混合搜索会话。
     ///
-    /// **新架构**：向量检索和 BM25 检索由 `Indexer::search_chat_sessions` 完成
-    /// （查询预索引的 `chat_vectors` / `chat_bm25`，只需 1 次 query embedding）。
+    /// **新架构**：向量检索由 `Indexer::search_chat_sessions` 完成
+    /// （查询预索引的 `chat_vectors`，只需 1 次 query embedding）。
     /// 本方法负责 SQL LIKE 文本匹配 + 根据 Indexer 返回的 session_id 组装最终结果。
     ///
-    /// - `indexer_hits`: Indexer 混合检索返回的 `(session_id, score, matched_text)` 列表
+    /// - `indexer_hits`: Indexer 向量检索返回的 `(session_id, score, matched_text)` 列表
     pub fn search_sessions(
         &self,
         query_text: &str,
@@ -943,6 +1023,85 @@ impl ChatStore {
         )
         .map_err(|e| format!("记录已索引消息数失败: {}", e))?;
         Ok(())
+    }
+
+    /// 获取会话索引进度：返回 `(已索引消息数, 实际消息数)`。
+    ///
+    /// 单次 DB 访问完成（增量索引的追平循环每轮调用一次），实际消息数读取的是
+    /// `chat_sessions.message_count`（而非入参快照），保证索引期间新到达的消息
+    /// 能被追平循环感知。游标键不存在（从未索引 / 已清空）按 0 处理。
+    pub fn get_index_progress(&self, session_id: &str) -> Result<(u32, u32), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        let total: u32 = conn
+            .query_row(
+                "SELECT message_count FROM chat_sessions WHERE id = ?1",
+                rusqlite::params![session_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("查询会话消息数失败: {}", e))?;
+
+        let key = format!("indexed_msg_count_{}", session_id);
+        let indexed: u32 = match conn.query_row(
+            "SELECT value FROM chat_config WHERE key = ?1",
+            rusqlite::params![key],
+            |row| row.get::<_, String>(0),
+        ) {
+            Ok(v) => v
+                .parse::<u32>()
+                .map_err(|e| format!("解析已索引消息数失败: {}", e))?,
+            Err(rusqlite::Error::QueryReturnedNoRows) => 0,
+            Err(e) => return Err(format!("查询已索引消息数失败: {}", e)),
+        };
+
+        Ok((indexed, total))
+    }
+
+    /// 校验会话消息区间 `[start_from, start_from + expected_ids.len())` 与调用方
+    /// 拉取时的快照完全一致（按与增量索引完全相同的排序比对消息 id）。
+    ///
+    /// 用于索引提交前的乐观并发校验：索引执行期间会话可能被并发删除/清空/替换
+    /// （前端"离开会话触发索引后立即删除/清空"是常见操作，embedding 耗时窗口
+    /// 足以重叠）。若区间消息已变更，本次写入的向量将成孤儿/错误召回，应回滚。
+    /// 会话已被删除时返回 `Ok(false)`。
+    pub fn verify_chat_messages_unmodified(
+        &self,
+        session_id: &str,
+        start_from: usize,
+        expected_ids: &[String],
+    ) -> Result<bool, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        let session_exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM chat_sessions WHERE id = ?1",
+                rusqlite::params![session_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("校验会话存在性失败: {}", e))?;
+        if session_exists == 0 {
+            return Ok(false);
+        }
+
+        if expected_ids.is_empty() {
+            return Ok(true);
+        }
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT id FROM chat_messages WHERE session_id = ?1 ORDER BY created_at ASC, rowid ASC LIMIT ?2 OFFSET ?3",
+            )
+            .map_err(|e| format!("校验消息失败: {}", e))?;
+        let actual_ids: Vec<String> = stmt
+            .query_map(
+                rusqlite::params![session_id, expected_ids.len() as i64, start_from as i64],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(|e| format!("校验消息失败: {}", e))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("读取校验消息失败: {}", e))?;
+
+        Ok(actual_ids == expected_ids)
     }
 
     /// 会话挂载技能（保存快照到 DB）

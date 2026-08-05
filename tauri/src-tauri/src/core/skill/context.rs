@@ -1,65 +1,54 @@
-//! Skill 执行上下文解析：意图匹配的唯一入口（单一职责原则）
+//! Skill 预激活上下文解析（渐进式披露 L1/L2 的预激活入口）。
 //!
-//! 收敛三种技能激活方式的解析逻辑，避免散落在各命令中的重复实现：
-//! 1. 手动触发（`/技能名`）：剥离前缀得到 `cleaned_query`，标记 `MatchLevel::Manual`
-//! 2. 会话挂载（chat_session_skills 快照）：标记 `MatchLevel::Attached`
-//! 3. 自动意图匹配（L1 关键词 / L2 语义 / L3 兜底）
+//! 技能激活决策已完全交由 LLM：本模块不做任何本地匹配（关键词 / embedding /
+//! 语义 / 模糊），仅处理查询启动时的两类显式预激活：
+//! 1. 手动触发（`/技能名`）：剥离前缀得到 `cleaned_query`，来源 [`ActivationSource::Manual`]
+//! 2. 会话挂载（chat_session_skills 快照）：来源 [`ActivationSource::Attached`]
 //!
-//! 全部技能参数（指令 / 工具白名单 / 检索覆盖）由 [`SkillExecutionContext::from_skills`]
-//! 统一聚合。本模块为纯逻辑层（core），会话挂载数据由调用方提取后以
-//! `(scope, skill_id)` 列表注入，不直接依赖 services 层（依赖倒置）。
+//! 预激活技能写入共享的 [`ActiveSkillState`]，由 Agent 钩子（L2 指令动态注入）与
+//! 技能工具（activate_skill / deactivate_skill）统一读写；本模块只负责「解析 + 写入」。
+//! 会话挂载数据由调用方提取后以 `(scope, skill_id)` 列表注入，不直接依赖
+//! services 层（依赖倒置）。
 
-use crate::core::skill::matcher::{match_skills, MatchLevel};
+use crate::core::skill::activation::{ActivationSource, ActiveSkillState};
 use crate::core::skill::{Skill, SkillRegistry, SkillScope};
 
-/// 自动匹配最多入选的技能数（只取最优单个技能，避免多技能指令互相干扰）
-const MAX_MATCHED_SKILLS: usize = 1;
-
-/// 单条技能匹配明细（供指标埋点与日志追踪）
+/// 单条技能激活明细（供指标埋点与日志追踪）
 #[derive(Debug, Clone)]
 pub struct SkillMatchInfo {
     /// 技能 ID（不含 scope 前缀）
     pub skill_id: String,
     /// 作用域（system / global / project）
     pub scope: String,
-    /// 匹配层级
-    pub match_level: MatchLevel,
-    /// 匹配分数
+    /// 激活来源（attached / manual / llm）
+    pub source: ActivationSource,
+    /// 置信度（显式激活固定为 1.0）
     pub match_score: f32,
 }
 
-/// 技能执行上下文（供 Agent 集成使用）
+/// 预激活技能的执行参数（供预检索与工具默认参数使用）
 ///
-/// 包含已匹配技能的聚合配置，用于：
-/// - 指令注入（合并所有技能的 body）
-/// - 工具白名单（取并集）
-/// - 检索参数覆盖（取最保守值）
+/// 仅聚合预激活技能的检索参数覆盖（取最保守值）；指令与工具白名单
+/// 由 [`ActiveSkillState`] 在请求期间动态提供，不在此重复。
 #[derive(Debug, Clone, Default)]
 pub struct SkillExecutionContext {
-    /// 合并后的指令正文（多技能按优先级拼接）
-    pub instructions: String,
-    /// 允许的工具白名单（取并集）
-    pub allowed_tools: Vec<String>,
-    /// 检索参数覆盖（取最保守值）
     pub top_k: Option<u32>,
     pub min_score: Option<f32>,
     pub max_docs: Option<usize>,
     pub max_chunks_per_doc: Option<usize>,
     /// 参与的技能 ID 列表（scope:skill_id，用于日志追踪与指标埋点）
     pub skill_ids: Vec<String>,
-    /// 匹配明细（每个技能对应的层级/分数，供指标埋点）
+    /// 激活明细（每个技能对应的来源/分数，供指标埋点）
     pub matches: Vec<SkillMatchInfo>,
 }
 
 impl SkillExecutionContext {
-    /// 从匹配结果构建执行上下文
-    pub fn from_skills(skills: &[(Skill, MatchLevel, f32)]) -> Self {
+    /// 从预激活技能列表聚合执行上下文
+    pub fn from_skills(skills: &[(Skill, ActivationSource, f32)]) -> Self {
         if skills.is_empty() {
             return Self::default();
         }
 
-        let mut instructions = String::new();
-        let mut allowed_tools: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut top_k: Option<u32> = None;
         let mut min_score: Option<f32> = None;
         let mut max_docs: Option<usize> = None;
@@ -71,27 +60,14 @@ impl SkillExecutionContext {
         let mut sorted_skills = skills.to_vec();
         sorted_skills.sort_by(|a, b| b.0.priority.cmp(&a.0.priority));
 
-        for (skill, level, score) in &sorted_skills {
+        for (skill, source, score) in &sorted_skills {
             skill_ids.push(format!("{}:{}", skill.scope.as_str(), skill.id));
             matches.push(SkillMatchInfo {
                 skill_id: skill.id.clone(),
                 scope: skill.scope.as_str().into(),
-                match_level: *level,
+                source: *source,
                 match_score: *score,
             });
-
-            // 合并指令（用分隔符区分不同技能）
-            if !skill.body.trim().is_empty() {
-                if !instructions.is_empty() {
-                    instructions.push_str("\n\n---\n\n");
-                }
-                instructions.push_str(&format!("## {}\n\n{}", skill.name, skill.body.trim()));
-            }
-
-            // 工具白名单取并集
-            for tool in &skill.tools {
-                allowed_tools.insert(tool.clone());
-            }
 
             // 检索参数取最保守值（最小 top_k、最大 min_score、最小 max_docs）
             if let Some(v) = skill.top_k {
@@ -109,8 +85,6 @@ impl SkillExecutionContext {
         }
 
         Self {
-            instructions,
-            allowed_tools: allowed_tools.into_iter().collect(),
             top_k,
             min_score,
             max_docs,
@@ -138,7 +112,7 @@ fn merge_max<T: PartialOrd + Copy>(acc: &mut Option<T>, v: T) {
     });
 }
 
-/// 技能解析结果（含清理后的查询）
+/// 预激活解析结果（含清理后的查询）
 #[derive(Debug, Clone)]
 pub struct ResolvedSkillContext {
     pub context: SkillExecutionContext,
@@ -148,28 +122,30 @@ pub struct ResolvedSkillContext {
     pub is_manual: bool,
 }
 
-/// 解析技能上下文（唯一入口，同步函数）。
+/// 解析预激活技能（唯一入口，同步函数）。
 ///
-/// `attached_skills` 为会话挂载的技能 `(scope, skill_id)` 列表（由调用方从
-/// ChatStore 提取后注入，避免 core 依赖 services 层）。
+/// 只处理两类显式预激活，命中后直接写入 `state`（LLM 决策前的显式用户意图）：
+/// 1. 手动触发 `/技能名`（最高优先级）
+/// 2. 会话挂载（`attached_skills` 由调用方从 ChatStore 提取后注入）
 ///
-/// `call_embedding` 为同步批量嵌入闭包（内部做 ONNX 批处理推理），
-/// 由调用方负责在 `spawn_blocking` 中调度，避免阻塞异步运行时。
-pub fn resolve_skill_context(
+/// 未命中返回 `None`：表示本请求无预激活技能，技能是否激活完全交由 LLM
+/// 依据 L1 技能目录自主决策。
+pub fn resolve_preactivated(
     query: &str,
     registry: &SkillRegistry,
     attached_skills: &[(String, String)],
-    call_embedding: impl Fn(&[String]) -> Result<Vec<Vec<f32>>, String>,
+    state: &ActiveSkillState,
 ) -> Result<Option<ResolvedSkillContext>, String> {
-    // 1. 手动触发（/技能名）：最高优先级，跳过挂载与自动匹配
+    // 1. 手动触发（/技能名）：最高优先级，跳过挂载
     if let Some((skill, cleaned)) = resolve_manual_trigger(query, registry) {
         log::info!(
-            "[skill_context] 手动触发: {}:{} cleaned_query={:?}",
+            "[skill_context] 手动预激活: {}:{} cleaned_query={:?}",
             skill.scope.as_str(),
             skill.id,
             cleaned
         );
-        let selected = vec![(skill, MatchLevel::Manual, 1.0)];
+        state.activate(skill.clone());
+        let selected = vec![(skill, ActivationSource::Manual, 1.0)];
         return Ok(Some(ResolvedSkillContext {
             context: SkillExecutionContext::from_skills(&selected),
             cleaned_query: cleaned,
@@ -177,38 +153,20 @@ pub fn resolve_skill_context(
         }));
     }
 
-    let mut selected_skills: Vec<(Skill, MatchLevel, f32)> = Vec::new();
-
-    // 2. 会话挂载（直接入选，不参与匹配）
+    // 2. 会话挂载（直接入选，不参与任何匹配）
+    let mut selected_skills: Vec<(Skill, ActivationSource, f32)> = Vec::new();
     for (scope_str, skill_id) in attached_skills {
         if let Some(sc) = SkillScope::from_str(scope_str) {
             if let Some(skill) = registry.get(sc, skill_id) {
                 if skill.enabled {
-                    selected_skills.push((skill, MatchLevel::Attached, 1.0));
-                }
-            }
-        }
-    }
-
-    // 3. 无显式技能时执行自动匹配（L1/L2/L3）
-    if selected_skills.is_empty() {
-        let enabled_skills: Vec<Skill> = registry
-            .list(None)
-            .into_iter()
-            .filter(|s| s.enabled)
-            .collect();
-
-        if !enabled_skills.is_empty() {
-            match match_skills(query, &enabled_skills, call_embedding)? {
-                results if !results.is_empty() => {
-                    selected_skills.extend(
-                        results
-                            .into_iter()
-                            .take(MAX_MATCHED_SKILLS)
-                            .map(|r| (r.skill, r.level, r.score)),
+                    log::info!(
+                        "[skill_context] 会话挂载预激活: {}:{}",
+                        skill.scope.as_str(),
+                        skill.id
                     );
+                    state.activate(skill.clone());
+                    selected_skills.push((skill, ActivationSource::Attached, 1.0));
                 }
-                _ => return Ok(None),
             }
         }
     }
@@ -275,6 +233,60 @@ fn resolve_manual_trigger(query: &str, registry: &SkillRegistry) -> Option<(Skil
     None
 }
 
+/// 构建 L1 技能目录（渐进式披露 L1 元数据，会话全程常驻）。
+///
+/// 列出全部启用技能（同名多作用域取优先级最高者），供模型自主决策是否
+/// 调用 `activate_skill` 激活。由 Agent 钩子注入每次模型调用的 preamble。
+pub fn build_skill_catalog(registry: &SkillRegistry) -> String {
+    let mut best_by_id: std::collections::HashMap<String, Skill> = std::collections::HashMap::new();
+    for skill in registry.list(None) {
+        if !skill.enabled {
+            continue;
+        }
+        match best_by_id.get(&skill.id) {
+            Some(existing) if scope_rank(existing.scope) >= scope_rank(skill.scope) => {}
+            _ => {
+                best_by_id.insert(skill.id.clone(), skill);
+            }
+        }
+    }
+
+    let mut skills: Vec<Skill> = best_by_id.into_values().collect();
+    skills.sort_by(|a, b| {
+        b.priority
+            .cmp(&a.priority)
+            .then_with(|| scope_rank(a.scope).cmp(&scope_rank(b.scope)))
+    });
+
+    if skills.is_empty() {
+        return String::new();
+    }
+    let lines: Vec<String> = skills
+        .iter()
+        .map(|s| {
+            let desc = if s.description.trim().is_empty() {
+                "（无描述）".to_string()
+            } else {
+                s.description.trim().to_string()
+            };
+            format!("- `{}`（{}）：{}", s.id, s.scope.as_str(), desc)
+        })
+        .collect();
+    format!(
+        "可用技能目录（skill_id 作为 activate_skill 的入参；当任务与某技能相关时先激活再执行）：\n{}",
+        lines.join("\n")
+    )
+}
+
+/// 作用域覆盖优先级（同名技能：项目 > 全局 > 系统）
+fn scope_rank(scope: SkillScope) -> u8 {
+    match scope {
+        SkillScope::System => 0,
+        SkillScope::Global => 1,
+        SkillScope::Project => 2,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,20 +294,14 @@ mod tests {
 
     /// 构建一个最小可用的注册表（含一个 project 作用域技能）。
     /// `tag` 用于区分每个测试的临时目录，避免并行测试互相覆盖文件。
-    fn registry_with_skill(tag: &str, id: &str, keywords: &[&str], enabled: bool) -> SkillRegistry {
+    fn registry_with_skill(tag: &str, id: &str, enabled: bool) -> SkillRegistry {
         let dir = std::env::temp_dir()
             .join("mdgo-skill-context-test")
             .join(tag);
         let _ = std::fs::create_dir_all(dir.join(".mdgo").join("skills").join(id));
         let md = format!(
-            "---\nid: {}\nscope: project\nname: test\npriority: 50\ntrigger_rules:\n  keywords: [{}]\nenabled: {}\n---\n测试正文\n",
-            id,
-            keywords
-                .iter()
-                .map(|k| format!("\"{}\"", k))
-                .collect::<Vec<_>>()
-                .join(", "),
-            enabled
+            "---\nid: {}\nscope: project\nname: test\npriority: 50\nenabled: {}\n---\n测试正文\n",
+            id, enabled
         );
         std::fs::write(
             dir.join(".mdgo").join("skills").join(id).join("SKILL.md"),
@@ -308,94 +314,73 @@ mod tests {
     }
 
     #[test]
-    fn manual_trigger_strips_prefix_and_marks_manual() {
-        let registry = registry_with_skill("manual-trigger", "calc", &["计算"], true);
-        let resolved = resolve_skill_context(
-            "/calc 1+1 等于几",
-            &registry,
-            &[],
-            |_| unreachable!("手动触发不应调用嵌入"),
-        )
-        .unwrap()
-        .unwrap();
+    fn manual_trigger_strips_prefix_and_activates() {
+        let registry = registry_with_skill("manual-trigger", "calc", true);
+        let state = ActiveSkillState::new();
+        let resolved = resolve_preactivated("/calc 1+1 等于几", &registry, &[], &state)
+            .unwrap()
+            .unwrap();
         assert!(resolved.is_manual);
         assert_eq!(resolved.cleaned_query, "1+1 等于几");
         assert_eq!(resolved.context.skill_ids, vec!["project:calc"]);
+        // 预激活技能已写入共享状态（L2 指令由钩子读取）
+        let activated_ids: Vec<String> = state
+            .activated()
+            .iter()
+            .map(|s| format!("{}:{}", s.scope.as_str(), s.id))
+            .collect();
+        assert_eq!(activated_ids, vec!["project:calc"]);
     }
 
     #[test]
     fn manual_trigger_empty_remainder_falls_back_to_trigger() {
         // `/calc` 无剩余内容：cleaned_query 回退为完整触发语句，避免空查询进入检索
-        let registry = registry_with_skill("manual-empty", "calc", &["计算"], true);
-        let resolved = resolve_skill_context(
-            "/calc",
-            &registry,
-            &[],
-            |_| unreachable!("手动触发不应调用嵌入"),
-        )
-        .unwrap()
-        .unwrap();
+        let registry = registry_with_skill("manual-empty", "calc", true);
+        let state = ActiveSkillState::new();
+        let resolved = resolve_preactivated("/calc", &registry, &[], &state)
+            .unwrap()
+            .unwrap();
         assert!(resolved.is_manual);
         assert_eq!(resolved.cleaned_query, "/calc");
     }
 
     #[test]
-    fn l1_keyword_match_fires_without_embedding() {
-        let registry = registry_with_skill("l1-keyword", "code-review", &["审查代码"], true);
-        let resolved = resolve_skill_context(
-            "请帮我审查代码",
-            &registry,
-            &[],
-            |_| unreachable!("L1 命中不应调用嵌入"),
-        )
-        .unwrap()
-        .unwrap();
-        assert!(!resolved.is_manual);
-        assert_eq!(resolved.cleaned_query, "请帮我审查代码");
-    }
-
-    #[test]
-    fn no_match_returns_none() {
-        let registry = registry_with_skill("no-match", "calc", &["计算"], true);
-        let resolved = resolve_skill_context(
-            "今天天气怎么样",
-            &registry,
-            &[],
-            |texts| {
-                // 模拟嵌入模型：返回与输入等量的零向量（低于阈值，不会命中）
-                Ok(vec![vec![0.0f32; 64]; texts.len()])
-            },
-        )
-        .unwrap();
+    fn no_preactivation_returns_none() {
+        let registry = registry_with_skill("no-match", "calc", true);
+        let state = ActiveSkillState::new();
+        let resolved = resolve_preactivated("今天天气怎么样", &registry, &[], &state).unwrap();
         assert!(resolved.is_none());
+        assert!(state.activated().is_empty());
     }
 
     #[test]
     fn attached_skills_bypass_matching() {
-        let registry = registry_with_skill("attached-bypass", "calc", &["完全不匹配"], true);
-        let resolved = resolve_skill_context(
+        let registry = registry_with_skill("attached-bypass", "calc", true);
+        let state = ActiveSkillState::new();
+        let resolved = resolve_preactivated(
             "hello world",
             &registry,
             &[("project".to_string(), "calc".to_string())],
-            |_| unreachable!("挂载技能不应调用嵌入"),
+            &state,
         )
         .unwrap()
         .unwrap();
         assert_eq!(resolved.context.skill_ids, vec!["project:calc"]);
+        let activated_ids: Vec<String> = state
+            .activated()
+            .iter()
+            .map(|s| format!("{}:{}", s.scope.as_str(), s.id))
+            .collect();
+        assert_eq!(activated_ids, vec!["project:calc"]);
     }
 
     #[test]
-    fn disabled_skill_manual_falls_back_to_auto_match() {
-        // 手动触发技能已停用 → 回落到自动匹配；零向量嵌入低于阈值 → 最终无命中
-        let registry = registry_with_skill("disabled-manual", "calc", &["计算"], false);
-        let resolved = resolve_skill_context(
-            "/calc hi",
-            &registry,
-            &[],
-            |texts| Ok(vec![vec![0.0f32; 64]; texts.len()]),
-        )
-        .unwrap();
+    fn disabled_skill_manual_is_rejected() {
+        let registry = registry_with_skill("disabled-manual", "calc", false);
+        let state = ActiveSkillState::new();
+        let resolved = resolve_preactivated("/calc hi", &registry, &[], &state).unwrap();
         assert!(resolved.is_none());
+        assert!(state.activated().is_empty());
     }
 
     #[test]

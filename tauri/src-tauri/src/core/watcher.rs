@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use tokio::sync::{mpsc, oneshot};
 
+use crate::core::db::utils;
 use crate::core::indexer::Indexer;
 
 /// 文件变更事件（带时间戳，用于防抖排序）
@@ -140,8 +141,12 @@ impl WatcherService {
             for event_path in &event.paths {
                 let abs_path = event_path.to_string_lossy().to_string();
 
-                // 排除 .mdgo 数据目录
-                if abs_path.contains(".mdgo") {
+                // 排除 .mdgo 数据目录与垃圾箱目录（垃圾桶内文件不索引、不监听）
+                if abs_path.contains(".mdgo")
+                    || abs_path
+                        .split(['\\', '/'])
+                        .any(|c| c == utils::TRASH_DIR_NAME)
+                {
                     continue;
                 }
 
