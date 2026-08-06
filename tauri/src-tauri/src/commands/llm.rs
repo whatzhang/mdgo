@@ -325,50 +325,77 @@ fn emit_pending_tool_events(app: &AppHandle, request_id: &str) {
     }
 }
 
-/// 记录一次技能执行（成功/失败/取消均计入，供知识库索引页指标展示）。
+/// 收集本次请求的技能执行输入（预激活 ∪ LLM 动态激活 ∪ 中途停用，去重），供批量落库。
+///
+/// 耗时按技能独立计时：优先取该技能「激活时刻 → 请求结束」的实际时长
+/// （`ActiveSkillState::activated_elapsed`），查不到时回退请求总时长。
+/// 中途被停用的技能经 `deactivated_elapsed` 补录，避免激活后又停用的执行漏记。
+fn collect_skill_exec_inputs(
+    skill_ctx: Option<&SkillExecutionContext>,
+    active_skills: &ActiveSkillState,
+    fallback_duration_ms: u64,
+) -> Vec<crate::core::skill::metrics::ExecInput> {
+    use crate::core::skill::metrics::ExecInput;
+    use std::collections::{HashMap, HashSet};
+
+    let mut recorded: HashSet<(String, String)> = HashSet::new();
+    let mut inputs: Vec<ExecInput> = Vec::new();
+
+    // 各技能的实际耗时（scope:id → ms）：轻量读取一次（不克隆 Skill body）
+    let active = active_skills.activated_elapsed();
+    let mut elapsed_by_key: HashMap<String, u64> = HashMap::new();
+    for (scope, id, elapsed) in &active {
+        elapsed_by_key.insert(format!("{}:{}", scope, id), *elapsed);
+    }
+
+    // 预激活技能（手动触发 / 会话挂载）
+    if let Some(ctx) = skill_ctx {
+        for m in &ctx.matches {
+            recorded.insert((m.scope.clone(), m.skill_id.clone()));
+            let key = format!("{}:{}", m.scope, m.skill_id);
+            let duration = elapsed_by_key
+                .get(&key)
+                .copied()
+                .unwrap_or(fallback_duration_ms);
+            inputs.push(ExecInput {
+                skill_id: m.skill_id.clone(),
+                scope: m.scope.clone(),
+                source: m.source,
+                match_score: m.match_score,
+                duration_ms: duration,
+            });
+        }
+    }
+    // LLM 会话中激活的技能（当前激活 + 中途停用，不在预激活上下文内）：按 Llm 来源补录，避免重复
+    let deactivated = active_skills.deactivated_elapsed();
+    for (scope, id, elapsed) in active.iter().chain(deactivated.iter()) {
+        let key = (scope.clone(), id.clone());
+        if recorded.insert(key) {
+            inputs.push(ExecInput {
+                skill_id: id.clone(),
+                scope: scope.clone(),
+                source: ActivationSource::Llm,
+                match_score: 1.0,
+                duration_ms: *elapsed,
+            });
+        }
+    }
+    inputs
+}
+
+/// 批量记录技能执行结果（在 spawn_blocking 中调用，避免阻塞 async runtime）。
 ///
 /// 记录范围 = 预激活技能（手动触发/会话挂载，`skill_ctx.matches`）
 /// ∪ 请求期间 LLM 经 `activate_skill` 激活的技能（主路径，`active_skills`），
 /// 保证 LLM 驱动的激活同样进入指标闭环，而不是只统计预激活。
 fn record_skill_execution(
     metrics: &crate::core::skill::metrics::SkillMetrics,
-    skill_ctx: Option<&SkillExecutionContext>,
-    active_skills: &ActiveSkillState,
-    start: std::time::Instant,
+    dir_path: &str,
+    inputs: Vec<crate::core::skill::metrics::ExecInput>,
     success: bool,
     error_code: Option<&str>,
 ) {
-    let duration_ms = start.elapsed().as_millis() as u64;
-    let mut recorded: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
-    if let Some(ctx) = skill_ctx {
-        for m in &ctx.matches {
-            recorded.insert((m.scope.clone(), m.skill_id.clone()));
-            metrics.record_execution(
-                m.skill_id.clone(),
-                m.scope.clone(),
-                duration_ms,
-                success,
-                error_code.map(|s| s.to_string()),
-                m.source,
-                m.match_score,
-            );
-        }
-    }
-    // LLM 会话中动态激活的技能（不在预激活上下文内）：按 Llm 来源补录，避免重复
-    for skill in active_skills.activated() {
-        let key = (skill.scope.as_str().to_string(), skill.id.clone());
-        if recorded.insert(key) {
-            metrics.record_execution(
-                skill.id.clone(),
-                skill.scope.as_str().to_string(),
-                duration_ms,
-                success,
-                error_code.map(|s| s.to_string()),
-                ActivationSource::Llm,
-                1.0,
-            );
-        }
-    }
+    metrics.record_execution_batch(dir_path, inputs, success, error_code);
 }
 
 /// 获取或创建 LLM 客户端。
@@ -503,8 +530,16 @@ pub async fn kb_rag_query(
         .map(|r| r.cleaned_query.clone())
         .filter(|q| !q.trim().is_empty())
         .unwrap_or(query);
+    // 调度计数：总数在请求起始计入（仅自增 total，不阻塞请求主链路）；
+    // 是否命中由请求结束时按实际激活情况补记（见 4 个终态点，覆盖预激活 ∪ LLM 动态激活）。
+    {
+        let metrics = state.skill_metrics.clone();
+        let dir = dir_path.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            metrics.record_dispatch(&dir, false);
+        });
+    }
     if let Some(ctx) = skill_ctx {
-        state.skill_metrics.record_dispatch(true);
         log::debug!(
             "[kb_rag_query] [0]: skills 手动触发 request_id={} skills={:?} manual={}",
             request_id,
@@ -512,7 +547,6 @@ pub async fn kb_rag_query(
             skill_resolved.as_ref().map(|r| r.is_manual).unwrap_or(false)
         );
     } else {
-        state.skill_metrics.record_dispatch(false);
         log::debug!(
             "[kb_rag_query] [0]: 自动触发技能（技能激活交由 LLM 决策）request_id={}",
             request_id
@@ -796,7 +830,19 @@ pub async fn kb_rag_query(
             // 取消时补发残留工具事件并清理总线
             emit_pending_tool_events(&app, &request_id);
             tool_call_bus().clear(&request_id);
-            record_skill_execution(&state.skill_metrics, skill_ctx, &active_skills, skill_exec_start, false, Some("cancelled"));
+            {
+                let inputs = collect_skill_exec_inputs(skill_ctx, &active_skills, skill_exec_start.elapsed().as_millis() as u64);
+                let matched = !inputs.is_empty();
+                let metrics = state.skill_metrics.clone();
+                let dir = dir_path.clone();
+                let _ = tokio::task::spawn_blocking(move || {
+                    if matched {
+                        metrics.record_dispatch_matched(&dir);
+                    }
+                    record_skill_execution(&metrics, &dir, inputs, false, Some("cancelled"));
+                })
+                .await;
+            }
             task_registry.unregister(&request_id).await;
             return Ok(());
         }
@@ -851,7 +897,19 @@ pub async fn kb_rag_query(
         log::info!("[kb_rag_query] [4]: 流式响应失败 request_id={}", request_id);
         emit_pending_tool_events(&app, &request_id);
         tool_call_bus().clear(&request_id);
-        record_skill_execution(&state.skill_metrics, skill_ctx, &active_skills, skill_exec_start, false, Some("llm_stream_failed"));
+        {
+            let inputs = collect_skill_exec_inputs(skill_ctx, &active_skills, skill_exec_start.elapsed().as_millis() as u64);
+            let matched = !inputs.is_empty();
+            let metrics = state.skill_metrics.clone();
+            let dir = dir_path.clone();
+            let _ = tokio::task::spawn_blocking(move || {
+                if matched {
+                    metrics.record_dispatch_matched(&dir);
+                }
+                record_skill_execution(&metrics, &dir, inputs, false, Some("llm_stream_failed"));
+            })
+            .await;
+        }
         emit_command_error(&app, "rag:error", &request_id, "LLM 生成失败，请检查模型服务是否可用".into());
         task_registry.unregister(&request_id).await;
         return Ok(());
@@ -864,7 +922,19 @@ pub async fn kb_rag_query(
         log::warn!("[kb_rag_query] [4]: 响应完成但内容为空 request_id={}", request_id);
         emit_pending_tool_events(&app, &request_id);
         tool_call_bus().clear(&request_id);
-        record_skill_execution(&state.skill_metrics, skill_ctx, &active_skills, skill_exec_start, false, Some("llm_empty_output"));
+        {
+            let inputs = collect_skill_exec_inputs(skill_ctx, &active_skills, skill_exec_start.elapsed().as_millis() as u64);
+            let matched = !inputs.is_empty();
+            let metrics = state.skill_metrics.clone();
+            let dir = dir_path.clone();
+            let _ = tokio::task::spawn_blocking(move || {
+                if matched {
+                    metrics.record_dispatch_matched(&dir);
+                }
+                record_skill_execution(&metrics, &dir, inputs, false, Some("llm_empty_output"));
+            })
+            .await;
+        }
         emit_command_error(&app, "rag:error", &request_id, "LLM 生成失败，请检查模型服务是否可用".into());
         task_registry.unregister(&request_id).await;
         return Ok(());
@@ -890,7 +960,19 @@ pub async fn kb_rag_query(
     // 收尾：补发残留工具事件并清理总线
     emit_pending_tool_events(&app, &request_id);
     tool_call_bus().clear(&request_id);
-    record_skill_execution(&state.skill_metrics, skill_ctx, &active_skills, skill_exec_start, true, None);
+    {
+        let inputs = collect_skill_exec_inputs(skill_ctx, &active_skills, skill_exec_start.elapsed().as_millis() as u64);
+        let matched = !inputs.is_empty();
+        let metrics = state.skill_metrics.clone();
+        let dir = dir_path.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            if matched {
+                metrics.record_dispatch_matched(&dir);
+            }
+            record_skill_execution(&metrics, &dir, inputs, true, None);
+        })
+        .await;
+    }
     task_registry.unregister(&request_id).await;
     Ok(())
 }

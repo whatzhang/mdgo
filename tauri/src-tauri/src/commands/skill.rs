@@ -296,6 +296,8 @@ pub async fn skill_get_attached(
 /// 获取技能执行指标聚合数据
 ///
 /// 返回全局或指定技能的执行统计，包括成功率、耗时分布、错误码等。
+/// 按目录聚合（各目录写入自己的 .mdgo/mdgo.db），DB 为唯一事实源，
+/// 无内存缓冲；DB 读写均在 spawn_blocking 中执行，避免阻塞 async runtime。
 #[tauri::command]
 pub async fn skill_metrics(
     app: AppHandle,
@@ -304,12 +306,15 @@ pub async fn skill_metrics(
     since: Option<u64>,
 ) -> Result<crate::core::skill::metrics::GlobalMetricsSummary, String> {
     let state = app.state::<AppState>();
-    state.skill_registry.ensure_loaded(&dir_path)?;
-    
-    let summary = state.skill_metrics.get_summary(
-        skill_id.as_deref(),
-        since,
-    );
-    
-    Ok(summary)
+    let registry = state.skill_registry.clone();
+    let metrics = state.skill_metrics.clone();
+    let dir = dir_path.clone();
+    let sid = skill_id.clone();
+
+    tokio::task::spawn_blocking(move || -> Result<crate::core::skill::metrics::GlobalMetricsSummary, String> {
+        registry.ensure_loaded(&dir)?;
+        Ok(metrics.get_summary(&dir, sid.as_deref(), since))
+    })
+    .await
+    .map_err(|e| format!("技能指标聚合任务失败: {}", e))?
 }

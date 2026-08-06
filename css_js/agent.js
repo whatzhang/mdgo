@@ -344,7 +344,7 @@ function skillValidateForm() {
     else if (id !== id.trim()) errors.push('id 不能包含首尾空白');
     else if (id.length > 128) errors.push('id 长度不能超过 128');
     else if (id === '.' || id === '..') errors.push('id 不能为 . 或 ..');
-    else if (/[/\\]/.test(id) || /[\x00-\x1f\x7f]/.test(id)) errors.push('id 不能包含路径分隔符或控制字符');
+    else if (/[/\\"'`]/.test(id) || /[\x00-\x1f\x7f]/.test(id)) errors.push('id 不能包含路径分隔符、引号或控制字符');
     if (!name) errors.push('name 不能为空');
     if (isNaN(priority) || priority < 0 || priority > 100) errors.push('priority 必须在 0~100 之间');
     if (!description) errors.push('description 不能为空');
@@ -518,27 +518,34 @@ function showPromptModal(promptItem) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
-        <div class="prompt-modal">
-            <div class="prompt-modal-title">${escapeHtml(title)}</div>
-            <div class="prompt-modal-field">
-                <label>Prompt 名称</label>
-                <input type="text" class="prompt-modal-name" placeholder="输入名称" value="${escapeHtml(name)}" autocomplete="off">
+        <div class="todo-modal" onclick="event.stopPropagation()" style="width:50rem">
+            <div class="todo-modal-header">
+                <div class="todo-modal-title">${escapeHtml(title)}</div>
+                <button class="todo-modal-close" id="prompt-modal-close">×</button>
             </div>
-            <div class="prompt-modal-field">
-                <label>Prompt 内容</label>
-                <textarea class="prompt-modal-content" rows="5" placeholder="输入 prompt 内容...">${escapeHtml(content)}</textarea>
+            <div class="todo-modal-body">
+                <div class="prompt-modal-field">
+                    <label>Prompt 名称</label>
+                    <input type="text" class="prompt-modal-name" placeholder="输入名称" value="${escapeHtml(name)}" autocomplete="off">
+                </div>
+                <div class="prompt-modal-field">
+                    <label>Prompt 内容</label>
+                    <textarea class="prompt-modal-content" rows="10" placeholder="输入 prompt 内容...">${escapeHtml(content)}</textarea>
+                </div>
             </div>
-            <div class="prompt-modal-buttons">
-                <button class="prompt-modal-btn prompt-modal-btn-cancel">取消</button>
-                <button class="prompt-modal-btn prompt-modal-btn-confirm">确定</button>
+            <div class="todo-modal-footer">
+                <button class="todo-btn-secondary" id="prompt-modal-cancel" onclick="close()">取消</button>
+                <button class="todo-btn-primary" id="prompt-modal-confirm" onclick="save()">保存</button>
             </div>
         </div>`;
     document.body.appendChild(overlay);
 
     const nameInput = overlay.querySelector('.prompt-modal-name');
     const contentInput = overlay.querySelector('.prompt-modal-content');
-    const cancelBtn = overlay.querySelector('.prompt-modal-btn-cancel');
-    const confirmBtn = overlay.querySelector('.prompt-modal-btn-confirm');
+    const cancelBtn = overlay.querySelector('#prompt-modal-cancel');
+    const confirmBtn = overlay.querySelector('#prompt-modal-confirm');
+    const closeBtn = overlay.querySelector('#prompt-modal-close');
+    closeBtn.addEventListener('click', close);
 
     nameInput.focus();
     nameInput.select();
@@ -659,12 +666,12 @@ async function renderPromptList() {
                 <span class="row-content">${escapeHtml(p.content)}</span>
                 <div class="row-actions" onclick="event.stopPropagation()">
                     <button class="row-action-btn" title="编辑" onclick="editPromptFromRow(this)">
-                        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
                         </svg>
                     </button>
                     <button class="row-action-btn delete" title="删除" onclick="deletePromptFromRow(this)">
-                        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                         </svg>
                     </button>

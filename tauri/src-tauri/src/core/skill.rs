@@ -316,7 +316,7 @@ pub fn validate_skill(skill: &Skill) -> Vec<SkillFieldError> {
     } else if !is_valid_skill_id(&skill.id) {
         errors.push(field_err(
             "id",
-            "id 含非法字符（不允许路径分隔符 / \\、控制字符与首尾空白，长度 ≤ 128）",
+            "id 含非法字符（不允许路径分隔符 / \\、引号、控制字符与首尾空白，长度 ≤ 128）",
         ));
     }
 
@@ -350,7 +350,7 @@ fn format_skill_field_errors(errors: &[SkillFieldError]) -> String {
 }
 
 /// 兼容主流通用 skill 命名（允许大小写、Unicode、空格、点、下划线等），
-/// 仅做安全底线校验：非空、长度限制、禁止控制字符与路径分隔符（防路径穿越）。
+/// 仅做安全底线校验：非空、长度限制、禁止控制字符、路径分隔符与引号（防路径穿越及前端 DOM/JS 注入）。
 fn is_valid_skill_id(id: &str) -> bool {
     if id.trim().is_empty() {
         return false;
@@ -364,7 +364,9 @@ fn is_valid_skill_id(id: &str) -> bool {
     if id == "." || id == ".." {
         return false; // 防路径穿越
     }
-    !id.chars().any(|c| c.is_control() || c == '/' || c == '\\')
+    // 引号（' " `）会被前端拼入内联事件与 HTML 属性，一并禁止
+    !id.chars()
+        .any(|c| c.is_control() || c == '/' || c == '\\' || c == '\'' || c == '"' || c == '`')
 }
 
 /// 将 Skill 序列化为完整 SKILL.md 全文（frontmatter + 正文）

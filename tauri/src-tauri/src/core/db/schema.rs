@@ -75,7 +75,8 @@ pub fn init_all(conn: &Connection) -> Result<(), String> {
             FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
         );
 
-        -- 指标聚合（预留，为其他业务前置准备；M3 启用）
+        -- 指标聚合：单次技能执行明细（按目录写入各自 .mdgo/mdgo.db）。
+        -- 仅保留执行元数据（耗时/结果/来源/错误码），不记录入参与出参。
         CREATE TABLE IF NOT EXISTS skill_exec_metrics (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
             request_id   TEXT NOT NULL,
@@ -89,6 +90,15 @@ pub fn init_all(conn: &Connection) -> Result<(), String> {
             tokens_out   INTEGER,
             error_code   TEXT,
             created_at   INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_skill_exec_metrics_created
+            ON skill_exec_metrics (created_at);
+
+        -- 调度统计（每目录一行聚合，见 metrics.rs；记录本次请求是否命中技能）
+        CREATE TABLE IF NOT EXISTS skill_dispatch_stats (
+            id                 INTEGER PRIMARY KEY CHECK (id = 1),
+            total_dispatches   INTEGER NOT NULL DEFAULT 0,
+            matched_dispatches INTEGER NOT NULL DEFAULT 0
         );
         ",
     )

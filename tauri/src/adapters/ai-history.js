@@ -80,9 +80,9 @@
     /**
      * getAIHistoryData — 从 SQLite 查询 AI 历史记录列表
      *
-     * Rust 后端返回 ORDER BY created_at DESC（最新在前），
-     * 但前端 renderAIHistory() 做 slice().reverse() 期望最旧在前。
-     * 因此加载后反转一次以保持兼容。
+     * Rust 后端返回顺序：收藏全部在前、非收藏最近 10 条在后，各组内按
+     * created_at DESC（新在前）。渲染由 renderAIHistory 显式排序
+     * （收藏置顶 + 组内时间降序），此处保持后端顺序即可，无需再反转。
      */
     window.getAIHistoryDataTauri = async function () {
         // 如果已有数据，直接返回
@@ -95,13 +95,13 @@
             return [];
         }
         try {
+            // 只加载「收藏全部 + 最近 10 条非收藏」（面板空间有限，不需要 200 条）
             const items = await invoke('ai_history_list', {
                 dirPath: path,
-                limit: 200,
+                limit: 10,
                 offset: 0,
             });
-            // Rust 返回 newest-first，反转成 oldest-first
-            window.aiHistory = (items || []).map(_toFrontendFormat).reverse();
+            window.aiHistory = (items || []).map(_toFrontendFormat);
             return window.aiHistory;
         } catch (e) {
             console.error('[TauriAIHistory] 读取失败:', e);
@@ -152,7 +152,7 @@
             if (!window.aiHistory) {
                 window.aiHistory = [];
             }
-            // push 追加到尾部，保持 oldest-first 顺序
+            // push 追加到数组末尾；渲染时由 renderAIHistory 显式排序，此处顺序无关紧要
             window.aiHistory.push(frontendItem);
             // 本地 LRU 淘汰防止内存无限增长
             _localLruEvict();
@@ -187,15 +187,10 @@
                     item.favorite = newFav ? 1 : 0;
                 }
             }
-            // 局部更新星标图标
+            // 重新渲染：收藏状态变化后条目需在「收藏置顶」分组间移动
             const listEl = document.getElementById('ai-history-list');
-            if (listEl) {
-                const itemEl = listEl.querySelector(`[id="${id}"]`);
-                const starEl = itemEl && itemEl.querySelector('.ai-history-btn-star');
-                if (starEl) {
-                    starEl.textContent = newFav ? '★' : '☆';
-                    starEl.classList.toggle('active', newFav);
-                }
+            if (listEl && typeof renderAIHistory === 'function') {
+                renderAIHistory();
             }
             window.showNotification(
                 newFav ? '⭐ 收藏成功' : '已取消收藏',

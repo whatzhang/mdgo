@@ -23,7 +23,7 @@ pub async fn ai_history_list(
 ) -> Result<Vec<crate::services::ai_history::AiHistoryItem>, String> {
     let store = state.get_ai_history_store(&dir_path)?;
     tokio::task::spawn_blocking(move || {
-        store.list(limit.unwrap_or(100), offset.unwrap_or(0))
+        store.list(limit.unwrap_or(10), offset.unwrap_or(0))
     })
     .await
     .map_err(|e| format!("任务执行失败: {}", e))?

@@ -492,6 +492,8 @@ const MAX_GREP_LINES_PER_FILE: usize = 10;
 const MAX_GREP_LINE_CHARS: usize = 200;
 /// 参与搜索的文件大小上限（跳过超大文件，避免拖慢工具调用）
 const MAX_GREP_FILE_BYTES: u64 = 2 * 1024 * 1024;
+/// 单次搜索累计扫描字节上限（超出即停止，避免大知识库下串行读全库拖慢模型轮次）
+const MAX_GREP_SCAN_BYTES: u64 = 50 * 1024 * 1024;
 
 /// 在知识库目录内所有文本文件中搜索关键词（大小写不敏感子串匹配），
 /// 返回 `文件路径:行号:匹配行`，供模型先定位再精读（配合 read + offset）。
@@ -507,42 +509,67 @@ pub async fn grep_files(cfg: &KbSearchConfig, pattern: &str, max_files: u32) -> 
     let entries = get_or_refresh_cache(&cfg.dir_path, &cfg.dir_blacklist, &cfg.file_blacklist)?;
     let limit = (max_files as usize).clamp(1, MAX_GREP_FILES);
 
-    let mut hits: Vec<(String, Vec<(usize, String)>)> = Vec::new();
-    for (rel, size) in entries {
-        if hits.len() >= limit {
-            break;
-        }
-        // 跳过超大文件（文本文件通常远小于此阈值）
-        if size > MAX_GREP_FILE_BYTES {
-            continue;
-        }
-        let full = match safe_resolve(&cfg.dir_path, &rel) {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-        let Ok(data) = std::fs::read(&full) else { continue };
-        // 含 NUL 字节视为二进制文件，跳过
-        if data.contains(&0) {
-            continue;
-        }
-        let text = String::from_utf8_lossy(&data);
-        let mut matches: Vec<(usize, String)> = Vec::new();
-        for (idx, line) in text.lines().enumerate() {
-            if line.to_lowercase().contains(&needle) {
-                let display: String = line.chars().take(MAX_GREP_LINE_CHARS).collect();
-                matches.push((idx + 1, display));
-                if matches.len() >= MAX_GREP_LINES_PER_FILE {
-                    break;
+    // 先基于缓存廉价筛选候选文件（目录项、超限文件直接跳过，无磁盘 IO）
+    let candidates: Vec<(String, u64)> = entries
+        .iter()
+        .filter(|(rel, size)| !rel.ends_with('/') && *size <= MAX_GREP_FILE_BYTES)
+        .cloned()
+        .collect();
+
+    // 文件读取与匹配为 CPU/IO 密集操作，移到阻塞线程执行，避免阻塞 tokio 执行线程
+    let dir_path = cfg.dir_path.clone();
+    let (hits, truncated) = tokio::task::spawn_blocking(move || {
+        let mut hits: Vec<(String, Vec<(usize, String)>)> = Vec::new();
+        let mut scanned: u64 = 0;
+        let mut truncated = false;
+        for (rel, _) in candidates {
+            if hits.len() >= limit {
+                break;
+            }
+            if scanned >= MAX_GREP_SCAN_BYTES {
+                truncated = true;
+                break;
+            }
+            let full = match safe_resolve(&dir_path, &rel) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            let Ok(data) = std::fs::read(&full) else { continue };
+            scanned = scanned.saturating_add(data.len() as u64);
+            if scanned >= MAX_GREP_SCAN_BYTES {
+                // 已到达累计扫描上限：本文件已读入，继续匹配，但后续文件不再扫描
+                truncated = true;
+            }
+            // 含 NUL 字节视为二进制文件，跳过
+            if data.contains(&0) {
+                continue;
+            }
+            let text = String::from_utf8_lossy(&data);
+            let mut matches: Vec<(usize, String)> = Vec::new();
+            for (idx, line) in text.lines().enumerate() {
+                if line.to_lowercase().contains(&needle) {
+                    let display: String = line.chars().take(MAX_GREP_LINE_CHARS).collect();
+                    matches.push((idx + 1, display));
+                    if matches.len() >= MAX_GREP_LINES_PER_FILE {
+                        break;
+                    }
                 }
             }
+            if !matches.is_empty() {
+                hits.push((rel, matches));
+            }
         }
-        if !matches.is_empty() {
-            hits.push((rel, matches));
-        }
-    }
+        (hits, truncated)
+    })
+    .await
+    .map_err(|e| format!("搜索文件内容失败: {}", e))?;
 
     if hits.is_empty() {
-        return Ok(format!("未找到包含“{}”的文件。", pattern));
+        let mut msg = format!("未找到包含“{}”的文件。", pattern);
+        if truncated {
+            msg.push_str("（已到达单次扫描上限，可能未覆盖全部文件）");
+        }
+        return Ok(msg);
     }
     let mut out = format!("搜索“{}”命中 {} 个文件：\n", pattern, hits.len());
     for (rel, matches) in hits {
@@ -550,6 +577,9 @@ pub async fn grep_files(cfg: &KbSearchConfig, pattern: &str, max_files: u32) -> 
         for (no, line) in matches {
             out.push_str(&format!("  {no}: {line}\n"));
         }
+    }
+    if truncated {
+        out.push_str("\n（已到达单次扫描上限，结果可能不完整）");
     }
     Ok(out)
 }

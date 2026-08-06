@@ -25,7 +25,7 @@ pub fn prompt_create(
     }
     store.create(&UpsertPromptRequest {
         name: name.trim().to_string(),
-        content,
+        content: content.trim().to_string(),
     })
 }
 
@@ -45,7 +45,7 @@ pub fn prompt_update(
     }
     store.update(&id, &UpsertPromptRequest {
         name: name.trim().to_string(),
-        content,
+        content: content.trim().to_string(),
     })
 }
 

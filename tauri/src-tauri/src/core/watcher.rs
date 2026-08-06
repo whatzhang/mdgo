@@ -73,6 +73,8 @@ pub struct WatcherService {
     // ── Skill 监控 ──
     /// Skill 注册表（通过 set_skill_registry 注入）
     skill_registry: Mutex<Option<Arc<SkillRegistry>>>,
+    /// Skill 目录的 notify watcher 实例（存入结构体，避免函数返回即 drop 导致监听失效）
+    skill_notify_watcher: Mutex<Option<RecommendedWatcher>>,
     /// Skill 事件通道发送端（notify 原生线程 → skill debounce loop）
     skill_event_tx: Mutex<Option<mpsc::UnboundedSender<SkillDirEvent>>>,
     /// Skill 停止信号
@@ -107,6 +109,7 @@ impl WatcherService {
             on_error: Mutex::new(on_error),
             on_changed: Mutex::new(on_changed),
             skill_registry: Mutex::new(None),
+            skill_notify_watcher: Mutex::new(None),
             skill_event_tx: Mutex::new(None),
             skill_stop_tx: Mutex::new(None),
             skill_debounce_handle: Mutex::new(None),
@@ -446,6 +449,8 @@ impl WatcherService {
             run_skill_debounce_loop(rx, stop_rx, registry, dir, on_skill_changed).await;
         });
 
+        // 保存 watcher 实例（先 drop 旧实例，避免 mem::forget 泄漏与重复监听）
+        *self.skill_notify_watcher.lock().unwrap_or_else(|e| e.into_inner()) = Some(notify_watcher);
         *self.skill_event_tx.lock().unwrap_or_else(|e| e.into_inner()) = Some(tx);
         *self.skill_stop_tx.lock().unwrap_or_else(|e| e.into_inner()) = Some(stop_tx);
         *self.skill_debounce_handle.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
@@ -458,6 +463,8 @@ impl WatcherService {
     }
 
     fn stop_skill_inner(&self) {
+        // 先 drop notify watcher（释放 OS 监听句柄，停止事件产生）
+        *self.skill_notify_watcher.lock().unwrap_or_else(|e| e.into_inner()) = None;
         if let Some(tx) = self.skill_stop_tx.lock().unwrap_or_else(|e| e.into_inner()).take() {
             let _ = tx.send(());
         }

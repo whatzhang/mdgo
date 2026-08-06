@@ -222,21 +222,39 @@ impl AiHistoryStore {
         })
     }
 
-    /// 列出 AI 历史记录，按创建时间降序
+    /// 列出 AI 历史记录：收藏项全部 + 最近 `limit` 条非收藏项。
+    ///
+    /// 面板空间有限，只加载「收藏 + 最近 N 条非收藏」（默认 N=10）：
+    /// 收藏优先展示，组内按创建时间降序。
     pub fn list(&self, limit: u32, offset: u32) -> Result<Vec<AiHistoryItem>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, type, label, prompt, result, file_name, file_path, created_at, last_access_at, favorite, token_count, prompt_length, result_length
-                 FROM ai_history ORDER BY created_at DESC LIMIT ?1 OFFSET ?2",
-            )
-            .map_err(|e| format!("查询失败: {}", e))?;
+        let cols = "id, type, label, prompt, result, file_name, file_path, created_at, last_access_at, favorite, token_count, prompt_length, result_length";
 
-        let items = stmt
+        // 收藏项全部（收藏数量已由 add 的 LRU 上限约束）
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT {cols} FROM ai_history WHERE favorite = 1 ORDER BY created_at DESC"
+            ))
+            .map_err(|e| format!("查询失败: {}", e))?;
+        let mut items = stmt
+            .query_map([], map_row)
+            .map_err(|e| format!("查询失败: {}", e))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("读取失败: {}", e))?;
+
+        // 最近 limit 条非收藏项
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT {cols} FROM ai_history WHERE favorite = 0 ORDER BY created_at DESC LIMIT ?1 OFFSET ?2"
+            ))
+            .map_err(|e| format!("查询失败: {}", e))?;
+        let recents = stmt
             .query_map(rusqlite::params![limit, offset], map_row)
             .map_err(|e| format!("查询失败: {}", e))?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("读取失败: {}", e))?;
+
+        items.extend(recents);
         Ok(items)
     }
 

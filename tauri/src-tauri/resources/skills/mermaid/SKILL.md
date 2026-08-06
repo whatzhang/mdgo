@@ -1,102 +1,78 @@
 ---
 id: mermaid
 scope: system
-name: Mermaid 图表
-description: 根据用户需求生成 Mermaid 图表。支持流程图、时序图、类图、ER 图、甘特图以及其他 18 种图表类型。
+name: Mermaid Diagram
+description: Generate syntax-correct Mermaid diagram code (flowchart, sequence, class, ER, gantt, mindmap, etc.) from user requirements. Trigger when the user wants a diagram, flowchart, chart, or diagram-as-code embedded in Markdown.
 priority: 60
 roles: ["owner"]
 tools: [read]
 enabled: true
-version: 1
+version: 2
 created_at: 1754200000000
 updated_at: 1754200000000
 ---
 
 # Mermaid Diagram Generator
 
-Generate high-quality Mermaid diagram code based on user requirements.
+Generate **syntax-correct** Mermaid code. Diagrams are text-as-code with automatic layout; embed in Markdown via `mermaid` code blocks.
 
-## When to use / when NOT to use
+## Routing (do NOT use for)
+- Pixel-precise layout, custom positioning, branded icons → **drawio**
+- Hand-drawn / sketchy / freeform whiteboard → **excalidraw** / **tldraw**
+- Strict conventional UML → **plantuml**
 
-**Use this skill for:** diagrams-as-code with automatic layout (flowchart, sequence, class, state, ER, gantt, mindmap, architecture) — text source that lives in git and embeds in Markdown.
-
-**Do NOT use it — route elsewhere — for:**
-- Pixel-precise placement, custom layout, branded icons, or heavy styling → **drawio**.
-- A hand-drawn / sketchy aesthetic → **excalidraw** or **tldraw**.
-- A freeform whiteboard or freehand strokes → **tldraw**.
-- Strict, conventional UML notation → **plantuml**.
-
-## Mandatory Constraints
-
-- Handle all Chinese text strictly: wrap all labels in double quotation marks. Avoid syntax failures caused by line breaks, special symbols and Chinese punctuation.
-- Do not mix syntax for different diagram types. Only one diagram type is permitted within a single code block.
+## Mandatory rules
+1. **Read first**: before generating, `read` the reference file of the chosen type (`references/<file>`). Never generate uncommon types from memory.
+2. **Quote all labels**: wrap every label in double quotes, especially Chinese / non-ASCII / special characters. e.g. `A["提交订单"]`. Never put unquoted Chinese or punctuation in labels.
+3. **One type per block**: never mix diagram types inside one code block.
+4. **Never use lowercase `end`** as a node/label/state name — it breaks parsing. Use `End`, `END`, quotes, `(end)`, or `["end"]` instead.
+5. **No styling unless asked**: do NOT add themes, `init` directives, or style blocks unless the user explicitly requests them. Default theme only.
 
 ## Workflow
+1. Pick the diagram type matching the request.
+2. `read` `references/<file>` for that type.
+3. Generate the diagram and output it in a single `mermaid` code block. Nothing else after the block.
 
-1. **Understand Requirements**: Analyze user description to determine the most suitable diagram type
-2. **Read Documentation**: Read the corresponding syntax reference for the diagram type using the `read` tool with the reference path from the table below (e.g. `references/flowchart.md`)
-3. **Generate Code**: Generate Mermaid code following the specification
-4. **Apply Styling**: Apply appropriate themes and style configurations
-5. **Deliver Code** (always): Output the final Mermaid code wrapped in a ```mermaid code block
+## Type → reference
+| Type | File |
+| ---- | ---- |
+| Flowchart | [flowchart.md](references/flowchart.md) |
+| Sequence | [sequenceDiagram.md](references/sequenceDiagram.md) |
+| Class | [classDiagram.md](references/classDiagram.md) |
+| State | [stateDiagram.md](references/stateDiagram.md) |
+| ER | [entityRelationshipDiagram.md](references/entityRelationshipDiagram.md) |
+| Gantt | [gantt.md](references/gantt.md) |
+| Pie | [pie.md](references/pie.md) |
+| Mindmap | [mindmap.md](references/mindmap.md) |
+| Timeline | [timeline.md](references/timeline.md) |
+| Git graph | [gitgraph.md](references/gitgraph.md) |
+| Quadrant | [quadrantChart.md](references/quadrantChart.md) |
+| Requirement | [requirementDiagram.md](references/requirementDiagram.md) |
+| C4 | [c4.md](references/c4.md) |
+| Sankey | [sankey.md](references/sankey.md) |
+| XY chart | [xyChart.md](references/xyChart.md) |
+| Block | [block.md](references/block.md) |
+| Packet | [packet.md](references/packet.md) |
+| Kanban | [kanban.md](references/kanban.md) |
+| Architecture | [architecture.md](references/architecture.md) |
+| Radar | [radar.md](references/radar.md) |
+| Treemap | [treemap.md](references/treemap.md) |
+| User journey | [userJourney.md](references/userJourney.md) |
+| ZenUML | [zenuml.md](references/zenuml.md) |
+| Wardley | [wardley.md](references/wardley.md) |
+| Venn | [venn.md](references/venn.md) |
+| Tree view | [treeView.md](references/treeView.md) |
+| Swimlanes | [swimlanes.md](references/swimlanes.md) |
+| Railroad | [railroad.md](references/railroad.md) |
+| Ishikawa | [ishikawa.md](references/ishikawa.md) |
+| Event modeling | [eventmodeling.md](references/eventmodeling.md) |
+| Cynefin | [cynefin.md](references/cynefin.md) |
+| Examples | [examples.md](references/examples.md) |
 
-## Diagram Type Reference
-
-Select the appropriate diagram type and read the corresponding documentation:
-
-| Type | Documentation | Use Cases |
-| ---- | ------------- | --------- |
-| Flowchart | [flowchart.md](references/flowchart.md) | Processes, decisions, steps |
-| Sequence Diagram | [sequenceDiagram.md](references/sequenceDiagram.md) | Interactions, messaging, API calls |
-| Class Diagram | [classDiagram.md](references/classDiagram.md) | Class structure, inheritance, associations |
-| State Diagram | [stateDiagram.md](references/stateDiagram.md) | State machines, state transitions |
-| ER Diagram | [entityRelationshipDiagram.md](references/entityRelationshipDiagram.md) | Database design, entity relationships |
-| Gantt Chart | [gantt.md](references/gantt.md) | Project planning, timelines |
-| Pie Chart | [pie.md](references/pie.md) | Proportions, distributions |
-| Mindmap | [mindmap.md](references/mindmap.md) | Hierarchical structures, knowledge graphs |
-| Timeline | [timeline.md](references/timeline.md) | Historical events, milestones |
-| Git Graph | [gitgraph.md](references/gitgraph.md) | Branches, merges, versions |
-| Quadrant Chart | [quadrantChart.md](references/quadrantChart.md) | Four-quadrant analysis |
-| Requirement Diagram | [requirementDiagram.md](references/requirementDiagram.md) | Requirements traceability |
-| C4 Diagram | [c4.md](references/c4.md) | System architecture (C4 model) |
-| Sankey Diagram | [sankey.md](references/sankey.md) | Flow, conversions |
-| XY Chart | [xyChart.md](references/xyChart.md) | Line charts, bar charts |
-| Block Diagram | [block.md](references/block.md) | System components, modules |
-| Packet Diagram | [packet.md](references/packet.md) | Network protocols, data structures |
-| Kanban | [kanban.md](references/kanban.md) | Task management, workflows |
-| Architecture Diagram | [architecture.md](references/architecture.md) | System architecture |
-| Radar Chart | [radar.md](references/radar.md) | Multi-dimensional comparison |
-| Treemap | [treemap.md](references/treemap.md) | Hierarchical data visualization |
-| User Journey | [userJourney.md](references/userJourney.md) | User experience flows |
-| ZenUML | [zenuml.md](references/zenuml.md) | Sequence diagrams (code style) |
-
-## Configuration & Themes
-
-- [Theming](references/config-theming.md) - Custom colors and styles
-- [Directives](references/config-directives.md) - Diagram-level configuration
-- [Layouts](references/config-layouts.md) - Layout direction and spacing
-- [Configuration](references/config-configuration.md) - Global settings
-- [Math](references/config-math.md) - LaTeX math support
-
-## Output Specification
-
-Generated Mermaid code should:
-
-1. Be wrapped in ```mermaid code blocks
-2. Have correct syntax that renders directly
-3. Have clear structure with proper line breaks and indentation
-4. Use semantic node naming
-5. Include styling when needed to improve visual appearance
-
-## Example Output
-
-```mermaid
-flowchart TD
-    A[Start] --> B{Condition}
-    B -->|Yes| C[Execute]
-    B -->|No| D[End]
-    C --> D
-```
-
----
-
-User requirements: $ARGUMENTS
+## Optional config (only if the user explicitly asks)
+- Themes/colors: [config-theming.md](references/config-theming.md)
+- Directives: [config-directives.md](references/config-directives.md)
+- Layout: [config-layouts.md](references/config-layouts.md)
+- Math/LaTeX: [config-math.md](references/config-math.md)
+- Tidy tree: [config-tidy-tree.md](references/config-tidy-tree.md)
+- Global config: [config-configuration.md](references/config-configuration.md)

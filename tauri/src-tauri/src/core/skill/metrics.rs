@@ -1,17 +1,24 @@
 //! 技能指标聚合模块
 //!
 //! 提供技能调度和执行的监控指标，包括命中率、成功率、耗时分布、错误码等。
+//!
+//! 设计：**SQLite 为唯一事实源**（按目录写入各自 `.mdgo/mdgo.db`）。
+//! - 写入：`record_dispatch` / `record_execution_batch` 同步落库（单事务）
+//! - 读取：`get_summary` 直接按目录查询聚合，无内存缓冲，天然无截断 / 竞态
+//! - 明细仅含执行元数据（耗时 / 结果 / 来源 / 错误码），不记录入参出参
+//! - 连接按目录缓存复用（`conns`），避免每次调用重开连接与全量 DDL
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::RwLock;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use rusqlite::{params, Connection};
 use serde::Serialize;
 
 use super::activation::ActivationSource;
 
-/// 单次执行记录
+/// 单次执行记录（聚合中间态，由 DB 行读出）
 #[derive(Debug, Clone)]
 pub struct ExecutionRecord {
     pub skill_id: String,
@@ -22,6 +29,16 @@ pub struct ExecutionRecord {
     pub error_code: Option<String>,
     pub source: ActivationSource,
     pub match_score: f32,
+}
+
+/// 一次批量执行输入（由命令层收集后经 spawn_blocking 落库）
+pub struct ExecInput {
+    pub skill_id: String,
+    pub scope: String,
+    pub source: ActivationSource,
+    pub match_score: f32,
+    /// 该技能自激活到请求结束的耗时（按技能独立计时）
+    pub duration_ms: u64,
 }
 
 /// 技能指标摘要
@@ -82,91 +99,262 @@ pub struct GlobalMetricsSummary {
     pub until: u64,
 }
 
-/// 技能指标收集器
+/// 技能指标收集器（全局单例；无内存数据态，DB 为唯一事实源）
 pub struct SkillMetrics {
-    /// 执行记录环形缓冲（保留最近 10000 条）
-    records: RwLock<Vec<ExecutionRecord>>,
-    /// 全局调度统计
-    total_dispatches: AtomicU64,
-    matched_dispatches: AtomicU64,
+    /// 按目录复用的 SQLite 连接（每目录一把锁，不同目录读写互不阻塞；首次打开时建表）
+    conns: Mutex<HashMap<String, Arc<Mutex<Connection>>>>,
+    /// 各目录最近一次过期明细清理时刻（毫秒），用于节流 90 天过期清理
+    last_cleanup: Mutex<HashMap<String, i64>>,
 }
 
 impl SkillMetrics {
     pub fn new() -> Self {
         Self {
-            records: RwLock::new(Vec::new()),
-            total_dispatches: AtomicU64::new(0),
-            matched_dispatches: AtomicU64::new(0),
+            conns: Mutex::new(HashMap::new()),
+            last_cleanup: Mutex::new(HashMap::new()),
         }
     }
 
-    /// 记录一次调度
-    pub fn record_dispatch(&self, matched: bool) {
-        self.total_dispatches.fetch_add(1, Ordering::Relaxed);
-        if matched {
-            self.matched_dispatches.fetch_add(1, Ordering::Relaxed);
-        }
-    }
-
-    /// 记录一次执行
-    pub fn record_execution(
+    /// 在指定目录连接上执行闭包（首次打开并初始化表结构，之后复用缓存连接）。
+    ///
+    /// 采用「外层 map 锁仅做连接查找/插入，释放后取每目录连接锁执行 SQL」的两级锁，
+    /// 避免不同目录的读写被同一把全局锁串行化。
+    fn with_conn<T>(
         &self,
-        skill_id: String,
-        scope: String,
-        duration_ms: u64,
-        success: bool,
-        error_code: Option<String>,
-        source: ActivationSource,
-        match_score: f32,
-    ) {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
-
-        let record = ExecutionRecord {
-            skill_id,
-            scope,
-            timestamp: now,
-            duration_ms,
-            success,
-            error_code,
-            source,
-            match_score,
+        dir_path: &str,
+        f: impl FnOnce(&Connection) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let conn = {
+            let mut guard = self
+                .conns
+                .lock()
+                .map_err(|e| format!("技能指标连接锁失效: {}", e))?;
+            match guard.get(dir_path) {
+                Some(c) => Arc::clone(c),
+                None => {
+                    let db_dir = Path::new(dir_path).join(".mdgo");
+                    std::fs::create_dir_all(&db_dir)
+                        .map_err(|e| format!("创建数据库目录失败: {}", e))?;
+                    let conn = Connection::open(db_dir.join("mdgo.db"))
+                        .map_err(|e| format!("打开技能指标数据库失败: {}", e))?;
+                    conn.execute_batch("PRAGMA journal_mode=WAL;")
+                        .map_err(|e| format!("启用 WAL 失败: {}", e))?;
+                    // ChatStore / AiHistoryStore / Indexer 均以独立连接打开同一 mdgo.db，
+                    // WAL 下写写互斥；必须设置忙等待，否则并发写直接 SQLITE_BUSY 丢指标
+                    conn.execute_batch("PRAGMA busy_timeout=5000;")
+                        .map_err(|e| format!("设置 busy_timeout 失败: {}", e))?;
+                    crate::core::db::schema::init_all(&conn)?;
+                    let shared = Arc::new(Mutex::new(conn));
+                    guard.insert(dir_path.to_string(), Arc::clone(&shared));
+                    shared
+                }
+            }
         };
+        let guard = conn.lock().map_err(|e| format!("技能指标连接锁失效: {}", e))?;
+        f(&guard)
+    }
 
-        let mut records = self.records.write().unwrap_or_else(|e| e.into_inner());
-        records.push(record);
-
-        // 保留最近 10000 条
-        if records.len() > 10000 {
-            let drain_count = records.len() - 10000;
-            records.drain(0..drain_count);
+    /// 记录一次调度（matched = 是否命中技能）。单事务幂等累加。
+    ///
+    /// 调度计数采用「起始计总数 + 结束补命中」两段式：
+    /// - 请求起始调用本方法（matched 传 false，仅 total 自增，不阻塞请求主链路）；
+    /// - 请求结束时若有技能实际激活，由 `record_dispatch_matched` 补记命中。
+    /// 命中判定因此覆盖「预激活 ∪ LLM 动态激活」，避免 LLM 激活被计为 miss。
+    pub fn record_dispatch(&self, dir_path: &str, matched: bool) {
+        let r = self.with_conn(dir_path, |conn| -> Result<(), String> {
+            let tx = conn
+                .unchecked_transaction()
+                .map_err(|e| e.to_string())?;
+            tx.execute(
+                "INSERT OR IGNORE INTO skill_dispatch_stats (id, total_dispatches, matched_dispatches) VALUES (1, 0, 0)",
+                [],
+            )
+            .map_err(|e| e.to_string())?;
+            tx.execute(
+                "UPDATE skill_dispatch_stats SET
+                     total_dispatches = total_dispatches + 1,
+                     matched_dispatches = matched_dispatches + ?1
+                 WHERE id = 1",
+                params![if matched { 1 } else { 0 }],
+            )
+            .map_err(|e| e.to_string())?;
+            tx.commit().map_err(|e| e.to_string())
+        });
+        if let Err(e) = r {
+            log::error!("[skill-metrics] 调度统计落盘失败: {}", e);
         }
     }
 
-    /// 获取聚合指标
-    pub fn get_summary(&self, skill_id: Option<&str>, since: Option<u64>) -> GlobalMetricsSummary {
-        let records = self.records.read().unwrap_or_else(|e| e.into_inner());
+    /// 请求结束时补记一次命中（matched_dispatches + 1），修正命中率口径。
+    pub fn record_dispatch_matched(&self, dir_path: &str) {
+        let r = self.with_conn(dir_path, |conn| -> Result<(), String> {
+            conn.execute(
+                "INSERT OR IGNORE INTO skill_dispatch_stats (id, total_dispatches, matched_dispatches) VALUES (1, 0, 0)",
+                [],
+            )
+            .map_err(|e| e.to_string())?;
+            conn.execute(
+                "UPDATE skill_dispatch_stats SET matched_dispatches = matched_dispatches + 1 WHERE id = 1",
+                [],
+            )
+            .map_err(|e| e.to_string())?;
+            Ok(())
+        });
+        if let Err(e) = r {
+            log::error!("[skill-metrics] 调度命中补记失败: {}", e);
+        }
+    }
+
+    /// 批量记录一次请求的执行明细（单事务；每技能一行），并节流清理 90 天前过期明细。
+    pub fn record_execution_batch(
+        &self,
+        dir_path: &str,
+        inputs: Vec<ExecInput>,
+        success: bool,
+        error_code: Option<&str>,
+    ) {
+        if inputs.is_empty() {
+            return;
+        }
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+        // 过期清理节流：每目录每小时至多执行一次，避免每次写入都附带范围 DELETE
+        let need_cleanup = {
+            let mut guard = self.last_cleanup.lock().unwrap_or_else(|e| e.into_inner());
+            let last = guard.get(dir_path).copied().unwrap_or(0);
+            if now - last >= 3600_000 {
+                guard.insert(dir_path.to_string(), now);
+                true
+            } else {
+                false
+            }
+        };
+        let r = self.with_conn(dir_path, |conn| -> Result<(), String> {
+            let tx = conn
+                .unchecked_transaction()
+                .map_err(|e| e.to_string())?;
+            {
+                let mut stmt = tx
+                    .prepare(
+                        "INSERT INTO skill_exec_metrics
+                            (request_id, scope, skill_id, match_level, score, state, duration_ms, error_code, created_at)
+                         VALUES ('', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                    )
+                    .map_err(|e| e.to_string())?;
+                for inp in inputs {
+                    stmt.execute(params![
+                        inp.scope,
+                        inp.skill_id,
+                        inp.source.as_str(),
+                        inp.match_score,
+                        if success { "success" } else { "failed" },
+                        inp.duration_ms as i64,
+                        error_code,
+                        now,
+                    ])
+                    .map_err(|e| e.to_string())?;
+                }
+            }
+            if need_cleanup {
+                tx.execute(
+                    "DELETE FROM skill_exec_metrics WHERE created_at < ?1",
+                    params![now - 90 * 24 * 3600 * 1000_i64],
+                )
+                .map_err(|e| e.to_string())?;
+            }
+            tx.commit().map_err(|e| e.to_string())
+        });
+        if let Err(e) = r {
+            log::error!("[skill-metrics] 执行明细落盘失败: {}", e);
+        }
+    }
+
+    /// 获取聚合指标：直接按目录从 DB 聚合（最近 50 条执行明细 + 调度计数）。
+    ///
+    /// 只统计「最近 50 条」执行明细（看板窗口需求）；since 过滤在 SQL 内完成。
+    pub fn get_summary(
+        &self,
+        dir_path: &str,
+        skill_id: Option<&str>,
+        since: Option<u64>,
+    ) -> GlobalMetricsSummary {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64;
-
         let since_ts = since.unwrap_or(0);
         let until_ts = now;
 
-        // 过滤时间范围内的记录
-        let filtered: Vec<_> = records
-            .iter()
-            .filter(|r| r.timestamp >= since_ts)
-            .filter(|r| skill_id.map_or(true, |id| r.skill_id == id))
-            .cloned()
-            .collect();
+        // 执行明细：每个技能各自取「最近 50 条」（窗口按技能独立，避免技能互相挤出）。
+        // 用 ROW_NUMBER 分区窗口实现，since 过滤在 SQL 内完成。
+        let records: Vec<ExecutionRecord> = self
+            .with_conn(dir_path, |conn| {
+                let mut stmt = conn
+                    .prepare(
+                        "SELECT scope, skill_id, match_level, score, state, duration_ms, error_code, created_at
+                         FROM (
+                             SELECT scope, skill_id, match_level, score, state, duration_ms, error_code, created_at,
+                                    ROW_NUMBER() OVER (PARTITION BY scope, skill_id ORDER BY created_at DESC) AS rn
+                             FROM skill_exec_metrics
+                             WHERE created_at >= ?1 AND (?2 IS NULL OR skill_id = ?2)
+                         )
+                         WHERE rn <= 50
+                         ORDER BY created_at DESC",
+                    )
+                    .map_err(|e| e.to_string())?;
+                let rows = stmt
+                    .query_map(params![since_ts as i64, skill_id], |row| {
+                        Ok(ExecutionRecord {
+                            skill_id: row.get(1)?,
+                            scope: row.get(0)?,
+                            timestamp: row.get::<_, i64>(7)? as u64,
+                            duration_ms: row.get::<_, i64>(5)?.max(0) as u64,
+                            success: matches!(row.get::<_, String>(4)?.as_str(), "success"),
+                            error_code: row.get(6)?,
+                            source: ActivationSource::from_str(&row.get::<_, String>(2)?),
+                            match_score: row.get::<_, f64>(3)? as f32,
+                        })
+                    })
+                    .map_err(|e| e.to_string())?;
+                Ok(rows.filter_map(Result::ok).collect())
+            })
+            .unwrap_or_else(|e| {
+                log::error!("[skill-metrics] 指标读取失败: {}", e);
+                Vec::new()
+            });
+
+        // 全局平均耗时：按明细加权（sum/count），而非各技能均值的简单平均，避免被低频技能稀释
+        let global_avg_duration = if !records.is_empty() {
+            records.iter().map(|r| r.duration_ms as f64).sum::<f64>() / records.len() as f64
+        } else {
+            0.0
+        };
+
+        // 调度计数（来自 DB，重启后仍准确）
+        let (total_dispatches, matched_dispatches) = self
+            .with_conn(dir_path, |conn| {
+                conn.query_row(
+                    "SELECT total_dispatches, matched_dispatches FROM skill_dispatch_stats WHERE id = 1",
+                    [],
+                    |row| Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64)),
+                )
+                .map_err(|e| e.to_string())
+            })
+            .unwrap_or_else(|e| {
+                log::warn!("[skill-metrics] 调度计数读取失败: {}", e);
+                (0, 0)
+            });
+        let dispatch_hit_rate = if total_dispatches > 0 {
+            matched_dispatches as f32 / total_dispatches as f32
+        } else {
+            0.0
+        };
 
         // 按技能分组
         let mut skill_groups: HashMap<String, Vec<ExecutionRecord>> = HashMap::new();
-        for record in filtered {
+        for record in records {
             let key = format!("{}:{}", record.scope, record.skill_id);
             skill_groups.entry(key).or_default().push(record);
         }
@@ -180,26 +368,11 @@ impl SkillMetrics {
         // 按总调用次数降序排序
         skills.sort_by(|a, b| b.total_calls.cmp(&a.total_calls));
 
-        // 全局统计
-        let total_dispatches = self.total_dispatches.load(Ordering::Relaxed);
-        let matched_dispatches = self.matched_dispatches.load(Ordering::Relaxed);
-        let dispatch_hit_rate = if total_dispatches > 0 {
-            matched_dispatches as f32 / total_dispatches as f32
-        } else {
-            0.0
-        };
-
         let total_executions: u64 = skills.iter().map(|s| s.total_calls).sum();
         let total_successes: u64 = skills.iter().map(|s| s.success_count).sum();
         let total_failures: u64 = skills.iter().map(|s| s.failure_count).sum();
         let global_success_rate = if total_executions > 0 {
             total_successes as f32 / total_executions as f32
-        } else {
-            0.0
-        };
-
-        let global_avg_duration = if !skills.is_empty() {
-            skills.iter().map(|s| s.avg_duration_ms).sum::<f64>() / skills.len() as f64
         } else {
             0.0
         };
