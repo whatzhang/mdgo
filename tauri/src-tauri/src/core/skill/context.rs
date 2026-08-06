@@ -272,10 +272,12 @@ pub fn build_skill_catalog(registry: &SkillRegistry) -> String {
             format!("- `{}`（{}）：{}", s.id, s.scope.as_str(), desc)
         })
         .collect();
-    format!(
+    let catalog = format!(
         "可用技能目录（skill_id 作为 activate_skill 的入参；当任务与某技能相关时先激活再执行）：\n{}",
         lines.join("\n")
-    )
+    );
+    log::debug!("[skill_context] 构建skill目录: {}", catalog);
+    catalog
 }
 
 /// 作用域覆盖优先级（同名技能：项目 > 全局 > 系统）

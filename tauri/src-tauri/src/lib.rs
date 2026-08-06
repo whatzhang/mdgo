@@ -15,7 +15,8 @@ use tauri::{Emitter, Manager};
 use crate::core::{ConfigStore, Indexer, IndexerConfig, WatcherService};
 use crate::core::skill::{SkillRegistry, SkillStore};
 use crate::core::skill::metrics::SkillMetrics;
-use crate::services::skill_watcher::SkillWatcherService;
+use crate::services::prompt::PromptStore;
+
 use std::sync::RwLock;
 
 /// LLM 连接配置（中央化，由前端保存后通过命令更新）
@@ -51,8 +52,7 @@ pub struct AppState {
     pub llm_client_cache: tokio::sync::Mutex<Option<(String, services::llm::LLMClient)>>,
     /// Skill 注册表（内存读写分离 + DB 缓存同步）
     pub skill_registry: Arc<SkillRegistry>,
-    /// Skill 目录变更监控（热更新不重启，独立单一职责服务）
-    pub skill_watcher: Arc<SkillWatcherService>,
+    
     /// Skill 执行指标收集器（环形缓冲 + 聚合统计）
     pub skill_metrics: Arc<SkillMetrics>,
 }
@@ -136,20 +136,19 @@ pub fn run() {
     });
 
     // ── Skill 体系初始化 ──
-    // 注册表（内存）+ 独立监控服务（热更新不重启）+ 指标收集器。
+    // 注册表（内存）+ 指标收集器。
+    // Skill 目录监控已合并到 WatcherService 中，由 watcher.start() 时自动启动。
     // 首次打开目录时由 skill_list 懒加载注册表；全局目录不存在时自动创建。
     let skill_registry = Arc::new(SkillRegistry::new());
     let skill_metrics = Arc::new(SkillMetrics::new());
-    let on_skill_changed: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {
-        log::debug!("[skill] 目录变更，注册表已刷新");
-    });
-    let skill_watcher = Arc::new(SkillWatcherService::new(
-        skill_registry.clone(),
-        on_skill_changed,
-    ));
+    watcher.set_skill_registry(skill_registry.clone());
     if let Err(e) = std::fs::create_dir_all(SkillStore::global_skills_dir()) {
         log::warn!("[skill] 创建全局技能目录失败: {}", e);
     }
+
+    // ── Prompt 存储初始化 ──
+    let prompt_store = PromptStore::new()
+        .expect("初始化 PromptStore 失败");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -157,6 +156,7 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .manage(SystemMonitorState::new())
         .manage(TaskRegistry::new())
+        .manage(prompt_store)
         .manage(AppState {
             config_store,
             indexer,
@@ -166,19 +166,16 @@ pub fn run() {
             llm_config: RwLock::new(LlmConfig::default()),
             llm_client_cache: tokio::sync::Mutex::new(None),
             skill_registry,
-            skill_watcher,
             skill_metrics,
         })
         .setup(|app| {
             // 注入 skill:changed 事件：AppHandle 就绪后替换 watcher 回调
             let handle = app.handle().clone();
-            let skill_watcher = app.state::<AppState>().skill_watcher.clone();
-            skill_watcher.set_on_changed(Arc::new(move || {
-                let _ = handle.emit("skill:changed", ());
-            }));
-            // 初始化全局前端调用器（供 Agent 工具 render_mermaid 等调用 window 同步函数）
-            if let Err(e) = crate::core::init_global_invoker(app.handle()) {
-                log::warn!("[frontend] 初始化全局前端调用器失败: {}", e);
+            {
+                let watcher = app.state::<AppState>().watcher.clone();
+                watcher.set_on_skill_changed(Arc::new(move || {
+                    let _ = handle.emit("skill:changed", ());
+                }));
             }
             Ok(())
         })
@@ -224,6 +221,7 @@ pub fn run() {
             commands::config::kb_update_llm_config,
             commands::fs_watcher::kb_start_watcher,
             commands::fs_watcher::kb_stop_watcher,
+            commands::fs_watcher::kb_set_indexing_enabled,
             // AI 历史记录命令
             commands::ai_history::ai_history_add,
             commands::ai_history::ai_history_list,
@@ -263,6 +261,11 @@ pub fn run() {
             commands::skill::skill_detach,
             commands::skill::skill_get_attached,
             commands::skill::skill_metrics,
+            // Prompt 模板命令
+            commands::prompt::prompt_list,
+            commands::prompt::prompt_create,
+            commands::prompt::prompt_update,
+            commands::prompt::prompt_delete,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -288,6 +291,7 @@ fn init_logging() {
         .add_filter_ignore_str("tantivy")
         .add_filter_ignore_str("datafusion")
         .add_filter_ignore_str("sqlparser")
+        .add_filter_ignore_str("tao::platform_imp")
         .build();
     let has_file_logger;
     let file_logger = match std::fs::create_dir_all(&log_dir)

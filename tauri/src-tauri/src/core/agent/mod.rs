@@ -96,6 +96,7 @@ pub fn load_agent_rules(app: &AppHandle, name: &str) -> String {
     if let Some(actual) = mtime {
         cache.insert(name.to_string(), (actual, content.clone()));
     }
+    log::debug!("[agent_rules] 加载 Agent 规约: path={}", path.display());
     content
 }
 
@@ -107,32 +108,44 @@ pub mod tools;
 /// 检索类工具（kb_search / code_lookup）不在此列：它们仅当已激活技能声明时
 /// 才可见可调——决策权在 LLM（先 activate_skill 再检索）。
 pub const BASE_TOOLS: &[&str] = &[
-    "activate_skill", "deactivate_skill", "read", "list_files", "edit", "delete",
-    "render_mermaid", "git_status",
+    "activate_skill", "deactivate_skill", "read", "list_files", "grep", "edit", "delete",
+    "git_status",
 ];
 
-/// 调试用 Hook：在每次 LLM API 调用边界打印请求消息与响应体内容。
+/// Agent 单次请求的模型调用总预算（激活技能 + 文件读取 + 检索等流程通常需要多轮）。
+///
+/// 语义 = 模型调用次数上限（1-based）：第 1 次调用 turn=1，turn=6 是最后一次，
+/// 第 7 次请求触发 MaxTurnsError。超出预算的流程由轮次预算预警 Hook 引导模型提前收尾。
+const DEFAULT_MAX_TURNS: usize = 6;
+
+/// 调试用 Hook：在每次 LLM API 调用边界打印完整请求体与响应体。
 ///
 /// 挂载到 AgentBuilder 后，无论流式（stream）还是非流式（completion）路径，
-/// 都能在模型调用前拿到完整请求消息列表（preamble + history + prompt），
-/// 在响应后拿到规范化响应内容与 token 用量。
+/// 都能在模型调用前拿到完整请求体（消息列表 + 运行上下文），
+/// 在响应后拿到完整响应体（内容 + token 用量 + 消息 ID）。
 #[derive(Clone, Debug)]
 pub struct LlmTraceHook;
 
 impl AgentHook for LlmTraceHook {
     async fn on_completion_call(
         &self,
-        _ctx: &HookContext,
+        ctx: &HookContext,
         event: CompletionCall<'_>,
     ) -> CompletionCallAction {
-        let mut messages = event.history.to_vec();
-        messages.push(event.prompt.clone());
         if log::log_enabled!(log::Level::Debug) {
+            let mut messages = event.history.to_vec();
+            messages.push(event.prompt.clone());
+            let request_body = serde_json::json!({
+                "turn": event.turn,
+                "run_id": ctx.run_id().as_str(),
+                "agent_name": ctx.agent_name(),
+                "is_streaming": ctx.is_streaming(),
+                "messages": messages,
+            });
             log::debug!(
-                "[llm_trace] [调用 LLM API] 次数={}, 请求消息=\n{}",
-                event.turn,
-                serde_json::to_string_pretty(&messages)
-                .unwrap_or_else(|e| format!("<serialize failed: {}>", e))
+                "[llm_trace] >>> LLM 请求\n{}",
+                serde_json::to_string_pretty(&request_body)
+                    .unwrap_or_else(|e| format!("<serialize failed: {}>", e))
             );
         }
         CompletionCallAction::Continue
@@ -144,12 +157,15 @@ impl AgentHook for LlmTraceHook {
         event: CompletionResponse<'_>,
     ) -> ObservationAction {
         if log::log_enabled!(log::Level::Debug) {
+            let response_body = serde_json::json!({
+                "message_id": event.message_id,
+                "usage": event.usage,
+                "content": event.content,
+            });
             log::debug!(
-                "[llm_trace]  [调用 LLM API] token用量={}, 响应内容=\n{} ",
-                 serde_json::to_string_pretty(&event.usage)
-                .unwrap_or_else(|e| format!("<serialize failed: {}>", e)),
-                serde_json::to_string_pretty(&event.content)
-                .unwrap_or_else(|e| format!("<serialize failed: {}>", e))
+                "[llm_trace] <<< LLM 响应\n{}",
+                serde_json::to_string_pretty(&response_body)
+                    .unwrap_or_else(|e| format!("<serialize failed: {}>", e))
             );
         }
         ObservationAction::Continue
@@ -178,9 +194,16 @@ impl SkillGateHook {
 impl AgentHook for SkillGateHook {
     async fn on_tool_call(
         &self,
-        _ctx: &HookContext,
+        ctx: &HookContext,
         event: ToolCall<'_>,
     ) -> ToolCallAction {
+        // 防重复调用熔断（对所有工具生效，含基础工具）：同一 run 内
+        // 「连续相同 (工具, 参数)」调用 ≥2 次后，第 3 次起跳过并引导模型
+        // 改变策略，避免死循环浪费轮次预算。
+        if let Some(warning) = tools::guard_duplicate_call(ctx.run_id().as_str(), event.tool_name, event.args) {
+            log::warn!("[loop_guard] 熔断重复工具调用: {}", warning);
+            return ToolCallAction::Skip(warning);
+        }
         if BASE_TOOLS.contains(&event.tool_name) {
             return ToolCallAction::Run;
         }
@@ -194,7 +217,7 @@ impl AgentHook for SkillGateHook {
             declared
         );
         ToolCallAction::Skip(format!(
-            "工具 '{}' 当前不可用（未由任何已激活技能声明）。可先调用 activate_skill 激活声明该工具的技能，或改用其他工具。",
+            "工具 '{}' 当前不可用（未由任何已激活技能声明）。可先声明该工具的技能，或改用其他工具。",
             event.tool_name
         ))
     }
@@ -212,13 +235,17 @@ pub struct SkillInstructionHook {
     base_preamble: String,
     /// 激活状态（动态读取 L2 指令与工具白名单）
     state: Arc<ActiveSkillState>,
+    /// 本次请求的模型调用总预算（对齐 AgentBuilder::default_max_turns，
+    /// 用于轮次预算预警：剩余不足时引导模型提前收敛）
+    max_turns: usize,
 }
 
 impl SkillInstructionHook {
-    pub fn new(base_preamble: String, state: Arc<ActiveSkillState>) -> Self {
+    pub fn new(base_preamble: String, state: Arc<ActiveSkillState>, max_turns: usize) -> Self {
         Self {
             base_preamble,
             state,
+            max_turns,
         }
     }
 }
@@ -227,7 +254,7 @@ impl AgentHook for SkillInstructionHook {
     async fn on_completion_call(
         &self,
         _ctx: &HookContext,
-        _event: CompletionCall<'_>,
+        event: CompletionCall<'_>,
     ) -> CompletionCallAction {
         // L2：已激活技能的指令正文（多技能按激活顺序拼接）
         let mut preamble = self.base_preamble.clone();
@@ -236,6 +263,16 @@ impl AgentHook for SkillInstructionHook {
             preamble.push_str("\n\n---\n\n");
             preamble.push_str("请遵循以下已激活技能的指令：\n\n");
             preamble.push_str(&instructions);
+        }
+        // 轮次预算预警：剩余模型调用轮次不足时（turn 从 1 开始计数），
+        // 强制引导模型停止调用工具、基于已有信息直接给出最终答案，
+        // 避免在第 6 次请求时触发 MaxTurnsError 导致整段回答丢失。
+        let remaining = self.max_turns.saturating_sub(event.turn);
+        if remaining <= 1 {
+            preamble.push_str(&format!(
+                "\n\n[预算提醒] 本次请求的模型调用预算为 {} 轮，当前已到最后 {} 轮。请停止调用任何工具，直接基于已有信息生成最终答案；如果信息不足，请如实说明缺口。",
+                self.max_turns, remaining.max(1)
+            ));
         }
         let mut patch = RequestPatch::new().preamble(&preamble);
 
@@ -633,8 +670,9 @@ pub fn build_rag_agent(
     if !catalog.trim().is_empty() {
         preamble.push_str("\n\n---\n\n");
         preamble.push_str(&catalog);
-        log::info!("[agent] L1 技能目录注入: chars={}", catalog.len());
     }
+
+    log::info!("[kb_rag_query] [4]: L1 技能目录注入: chars={}, preamble_len={}", catalog.len(), preamble.len());
 
     let builder = AgentBuilder::new(model);
 
@@ -646,16 +684,18 @@ pub fn build_rag_agent(
         .dynamic_tool(tools::build_activate_skill_tool(registry.clone(), skill_state.clone()))
         .dynamic_tool(tools::build_deactivate_skill_tool(skill_state.clone()))
         .dynamic_tool(tools::build_read_tool(search_config.clone()))
+        .dynamic_tool(tools::build_grep_tool(search_config.clone()))
         .dynamic_tool(tools::build_edit_tool(search_config.clone()))
         .dynamic_tool(tools::build_delete_tool(search_config.clone()))
         .dynamic_tool(tools::build_list_files_tool(search_config.clone()))
-        .dynamic_tool(tools::build_render_mermaid_tool(search_config.clone()))
         .dynamic_tool(tools::build_git_status_tool(search_config));
 
     builder
-        .default_max_turns(4)
+        // 模型调用总预算：技能激活 + 文件读取 + 检索等流程通常需要多轮；
+        // 剩余不足时由 SkillInstructionHook 注入预算预警引导模型提前收敛
+        .default_max_turns(DEFAULT_MAX_TURNS)
         .add_hook(LlmTraceHook)
-        .add_hook(SkillInstructionHook::new(preamble, skill_state.clone()))
+        .add_hook(SkillInstructionHook::new(preamble, skill_state.clone(), DEFAULT_MAX_TURNS))
         .add_hook(SkillGateHook::new(skill_state))
         .build()
 }

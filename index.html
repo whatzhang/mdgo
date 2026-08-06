@@ -589,14 +589,15 @@
         }
 
         .chat-message>details>summary::before {
+            display: inline-block;
             width: 0.625rem;
             height: 0.625rem;
             content: '▶';
-            display: inline-block;
-            line-height: 0.75rem;
-            text-align: center;
             font-size: 0.625rem !important;
+            line-height: 0.625rem;
+            text-align: center;
             background-image: none;
+            flex-shrink: 0;
         }
 
         .chat-message>details[open]>summary::before {
@@ -1450,6 +1451,7 @@
             justify-items: center;
             align-content: center;
             justify-content: center;
+            vertical-align: middle;
             height: 1.75rem;
             padding: 0.313rem 0.625rem;
             border: none;
@@ -5101,50 +5103,77 @@
             background: rgba(74, 144, 217, 0.04);
         }
 
-        /* ── 操作按钮（共用） ── */
-        .chat-message-action-btn {
-            font-size: 0.6875rem;
-            font-weight: 500;
+        /* ── 消息底部操作按钮（复制/保存，hover 淡入显示，ChatGPT/豆包风格） ── */
+        .chat-message-footer {
             display: flex;
+            gap: 0.25rem;
+            justify-content: flex-end;
+            margin-top: 0.25rem;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s ease, visibility 0.2s ease;
+            margin-left: 1.25rem;
+        }
+
+        .chat-message:hover .chat-message-footer {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        /* 纯 SVG 图标按钮（不随消息重建，事件走容器级委托） */
+        .chat-message-action-btn {
+            width: 1.75rem;
+            height: 1.75rem;
+            display: inline-flex;
             align-items: center;
             justify-content: center;
-            border-radius: 0.25rem;
-            cursor: pointer;
-            background: var(--color-bg, #fff);
-            border: 1px solid var(--border-color, #e0e0e0);
+            border: none;
+            background: transparent;
+            border-radius: 0.375rem;
             color: var(--t2, #666);
-            padding: 1px 0.25rem;
-            transition: all 0.15s;
-            box-shadow: 0 0.0625rem 0.125rem rgba(0, 0, 0, 0.06);
+            cursor: pointer;
+            transition: background 0.15s ease, color 0.15s ease;
         }
 
         .chat-message-action-btn:hover {
-            background: var(--hover-bg, #f0f0f0);
-            color: var(--accent, #4a90d9);
+            background: rgba(0, 0, 0, 0.06);
+            color: var(--t0, #333);
         }
 
         /* ── 助手消息头部 ── */
         .chat-message-header {
             display: flex;
-            height: 1rem;
-            justify-content: space-between;
+            justify-content: flex-start;
             align-items: center;
-            padding: 0.5rem 0.75rem;
             border-top-left-radius: 0.625rem;
             border-top-right-radius: 0.625rem;
-            background: #ededed;
+            background: transparent;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        /* 消息头部 AI 头像：覆盖 .ai-fab-icon 的 100% 尺寸，固定为圆形小头像 */
+        .chat-message-header .chat-message-avatar.ai-fab-icon {
+            width: 1.5rem;
+            height: 1.5rem;
+            border-radius: 0.25rem;
+            flex-shrink: 0;
         }
 
         .chat-message-header-title {
-            font-size: 0.75rem;
+            font-size: 0.875rem;
             font-weight: 600;
+            line-height: 1;
             color: var(--t2);
             user-select: none;
+            display: inline-flex;
+            align-items: center;
         }
 
         .chat-message-header-actions {
             display: none;
             gap: 0.25rem;
+            margin-left: auto;
         }
 
         .chat-message-header-status {
@@ -5155,7 +5184,6 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            margin: 0 0.5rem;
         }
 
         .chat-message-header:hover .chat-message-header-actions {
@@ -5164,7 +5192,8 @@
 
         .chat-message-body {
             min-height: 1em;
-            padding: 0.75rem;
+            padding: 0.5rem;
+            margin-left: 1rem;
         }
 
         /* ── 上下文使用率 ── */
@@ -5174,6 +5203,9 @@
             align-items: center;
             padding: 0 0.25rem;
             height: 1.25rem;
+            font-size: 0.6875rem;
+            font-family: var(--font-family);
+            gap: 0.5rem;
         }
 
         .chat-context-usage {
@@ -5250,7 +5282,6 @@
         .chat-turn-counter {
             font-size: 0.7rem;
             color: var(--color-text-secondary, #888);
-            margin-left: 0.5rem;
             white-space: nowrap;
             user-select: none;
         }
@@ -5272,22 +5303,18 @@
             line-height: 1.5;
             word-break: break-word;
             white-space: pre-wrap;
-            box-shadow: 0 0.25rem 0.5rem rgba(0, 0, 0, 0.15);
             transition: all 0.2s ease;
+            background-color: transparent;
         }
 
         .chat-message.user {
             align-self: flex-end;
-            background: var(--color-bg);
             color: var(--color-primary);
-            border-bottom-right-radius: 0.25rem;
         }
 
         .chat-message.assistant {
             align-self: flex-start;
-            background: var(--color-bg);
             color: var(--color-text);
-            border-bottom-left-radius: 0.25rem;
         }
 
         /* Agent 工具调用轨迹卡片 */
@@ -5295,17 +5322,19 @@
             display: flex;
             flex-direction: column;
             gap: 0.25rem;
-            padding: 0.25rem 0.75rem 0;
+            padding: 0.5rem;
+            margin: 0.25rem;
+            margin-top: 0;
+            margin-left: 1.25rem;
         }
         .tool-card {
             display: flex;
             align-items: center;
             gap: 0.4rem;
-            padding: 0.2rem 0.75rem;
-            margin-top: 0.5rem;
-            border: 0.0625rem solid var(--color-border);
+            padding: 0.2rem 0;
+            margin-top: 0.25rem;
             border-radius: 0.375rem;
-            background: var(--color-bg-soft, rgba(128, 128, 128, 0.06));
+            background: transparent;
             font-size: 0.75rem;
             color: var(--t2);
             max-width: 100%;
@@ -5356,15 +5385,18 @@
         }
 
         .chat-message .msg-sources {
-            padding: 0.25rem 0.5rem;
+            padding: 0.25rem 0.25rem;
             border-top: 0.0625rem solid var(--color-border);
             font-size: 0.75rem;
             color: var(--t2);
+            margin-left: 1.25rem;
         }
 
         .chat-message .msg-sources summary {
+            display: flex;
             cursor: pointer;
             color: var(--color-primary);
+            align-items: center;
         }
 
         .chat-message .msg-sources .source-item {
@@ -5475,7 +5507,7 @@
             border-radius: 1rem;
             padding: 0.25rem;
             margin-top: 0.5rem;
-            margin-bottom: 1rem;
+            margin-bottom: 0.75rem;
             width: 80%;
             align-self: center;
             background: var(--color-bg);
@@ -5485,57 +5517,56 @@
             position: relative;
         }
 
-        /* 技能选择器（触发按钮 + 向上弹出面板） */
-        .chat-skill-picker {
+        /* ── 输入框工具栏图标（技能、Prompt、及后续扩展） ── */
+        .chat-toolbar-icons {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex: 1;
             position: relative;
-            margin-right: auto;
+        }
+
+        .chat-toolbar-icon {
             display: flex;
             align-items: center;
         }
 
-        .chat-skill-trigger {
+        .chat-toolbar-btn {
             display: inline-flex;
             align-items: center;
-            gap: 0.5rem;
-            padding: 0.0625rem 0.5rem;
-            border-radius: 5px;
             font-size: 0.72rem;
             font-weight: 500;
             cursor: pointer;
-            border: 1px solid var(--color-border, #d0d7de);
-            background: var(--color-bg-secondary, #fafafa);
-            color: var(--color-text-secondary, #8b949e);
-            line-height: 1.3;
-            transition: all 0.15s ease;
+            color: var(--t2, #8b949e);
+            background-color: transparent;
             user-select: none;
+            padding: 0;
+            border: none;
+            line-height: 1;
+        }
+        .chat-toolbar-btn:hover {
+            color: var(--color-warning);
+        }
+        .chat-toolbar-btn.active {
+            color: var(--color-warning);
         }
 
-        .chat-skill-trigger:hover {
-            border-color: var(--color-primary, #165bfa);
-            color: var(--color-primary, #165bfa);
-            background: rgba(22, 91, 250, 0.05);
-        }
-
-        .chat-skill-trigger.active {
-            border-color: var(--color-primary, #165bfa);
-            background: var(--color-primary, #165bfa);
-            color: #fff;
-        }
-
-        .chat-skill-trigger .skill-count {
+        .chat-toolbar-badge {
             font-size: 0.65rem;
             opacity: 0.85;
+            margin-left: 0.125rem;
         }
 
-        /* 向上弹出的技能选择面板 */
-        .chat-skill-popup {
+        /* 向上弹出的工具栏面板 */
+        .chat-toolbar-popup {
             position: absolute;
             bottom: calc(100% + 0.375rem);
             left: 0;
+            right: 0;
             z-index: 120;
-            min-width: 15rem;
-            max-width: 20rem;
-            max-height: 16rem;
+            max-height: 20rem;
+            min-width: 10rem;
+            max-width: 15rem;
             overflow-y: auto;
             background: var(--color-bg, #fff);
             border: 1px solid var(--color-border, #d0d7de);
@@ -5543,15 +5574,19 @@
             box-shadow: 0 0.375rem 1rem rgba(0, 0, 0, 0.12);
             padding: 0.25rem;
         }
-
+        .chat-toolbar-popup.long {
+            width: 90%;
+            max-width: 90%;
+        }
+        
         .chat-skill-picker-row {
             display: flex;
             align-items: center;
             gap: 0.375rem;
             padding: 0.35rem 0.5rem;
-            border-radius: 0.375rem;
             cursor: pointer;
             font-size: 0.78rem;
+            line-height: 1.2;
             color: var(--color-text, #333);
             user-select: none;
         }
@@ -5595,20 +5630,30 @@
             color: var(--color-text-secondary, #8b949e);
         }
 
+        .chat-textarea-wrap {
+            flex: 1;
+            border-radius: 0.75rem;
+            background: #f5f3f3;
+            padding: 0.5rem;
+            display: flex;
+            min-height: 0;
+        }
+
         .chat-input-area textarea {
             flex: 1;
             resize: none;
-            border-radius: 0.75rem;
-            padding: 0.5rem 0.625rem;
+            border-radius: 0;
+            padding: 0;
             font-size: 0.875rem;
             font-family: var(--font-family);
             font-weight: 500;
             line-height: 1.3;
-            background: #f5f3f3;
+            background: transparent;
             color: var(--t0);
             max-height: 7.5rem;
             outline: none;
             border: none;
+            box-sizing: border-box;
         }
 
         .chat-input-area textarea:focus {
@@ -13854,7 +13899,7 @@
             max-height: 50rem;
         }
     </style>
-    <link rel="stylesheet" href="./css_js/skill-panel.css" />
+    <link rel="stylesheet" href="./css_js/agent.css" />
 </head>
 
 <body>
@@ -15931,11 +15976,27 @@
                         </div>
                         <div class="chat-messages" id="chat-messages"></div>
                         <div class="chat-input-area">
-                            <div class="chat-context-bar">
-                                <div class="chat-skill-picker" id="chat-skill-picker" style="display:none;">
-                                    <button class="chat-skill-trigger" id="chat-skill-trigger"
-                                        onclick="toggleSkillPicker(event)">技能</button>
-                                    <div class="chat-skill-popup" id="chat-skill-popup" style="display:none;"></div>
+                            <div class="chat-context-bar" id="chat-context-bar">
+                                <div class="chat-toolbar-icons">
+                                    <div class="chat-toolbar-icon" id="chat-skill-picker" style="display:none;">
+                                        <button class="chat-toolbar-btn" id="chat-skill-trigger" title="skill"
+                                            onclick="toggleSkillPicker(event)">
+                                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"  width="16" height="16" >
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                            </svg>
+                                            <span class="chat-toolbar-badge" id="skill-count"></span>
+                                        </button>
+                                    </div>
+                                    <div class="chat-toolbar-icon" id="chat-prompt-picker" style="display:none;">
+                                        <button class="chat-toolbar-btn" id="chat-prompt-trigger" title="prompt"
+                                            onclick="togglePromptPicker(event)">
+                                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <div class="chat-toolbar-popup" id="chat-skill-popup" style="display:none;"></div>
+                                    <div class="chat-toolbar-popup long" id="chat-prompt-popup" style="display:none;"></div>
                                 </div>
                                 <div class="chat-context-usage" id="chat-context-usage" style="display:none;">
                                     <div class="context-ring-container">
@@ -15950,12 +16011,14 @@
                                 </div>
                                 <span class="chat-turn-counter" id="chat-turn-counter" style="display:none;"></span>
                             </div>
-                            <textarea id="chat-input" rows="4" placeholder="按下回车发送消息..."
+                            <div class="chat-textarea-wrap">
+                                <textarea id="chat-input" rows="4" placeholder="按下回车发送消息..."
                                 onkeydown="handleChatKeydown(event)" oninput="updateChatSendButton()"
                                 onfocus="updateChatSendButton()" onblur="updateChatSendButton()"></textarea>
+                            </div>
                             <button id="chat-send-btn" class="chat-send-btn" disabled onclick="handleChatSendClick()"
                                 title="发送消息">
-                                <svg id="chat-send-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                                <svg id="chat-send-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
                                     <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
                                 </svg>
                             </button>
@@ -16413,9 +16476,9 @@
             { key: '任务看板', value: 'toggleFile("kanban")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: '临时编辑器', value: 'toggleFile("tempEditor")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: '目录空间分析', value: 'toggleFile("dirSpace")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: '知识库Agent', value: 'toggleFile("aiChat")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
-            { key: '知识库索引', value: 'toggleFile("knowledge")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
-            { key: '技能管理', value: 'toggleFile("skill")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
+            { key: '知识库面板', value: 'toggleFile("knowledge")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
+            { key: 'Agent', value: 'toggleFile("aiChat")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
+            { key: 'Skill', value: 'toggleFile("skill")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
         ]
         // 高亮字体颜色（深色系，确保可读性）
         const HIGHLIGHT_FONT_COLORS = [
@@ -34574,6 +34637,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 } finally {
                     hideGlobalLoading(true);
                 }
+                // 目录打开后自动启动 watcher（静默运行），索引开关默认关闭
+                if (isTauriVisit()) {
+                    setTimeout(startWatcherIfNeeded, 500);
+                    // 切换目录时索引开关默认关闭，需要用户手动开启
+                    safeLocalStorageSet('KB_WATCHER_ENABLED', 'false');
+                    setTimeout(() => {
+                        window.__TAURI__.core.invoke('kb_set_indexing_enabled', { enabled: false }).catch(() => {});
+                    }, 800);
+                }
             } else {
                 openSetting(true);
             }
@@ -48649,6 +48721,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         safeLocalStorageSet(PERMISSION_TIME_KEY, Date.now().toString());
                         await idbPut(DIRECTORY_STORE_NAME, 'handles', 'default', getRootHandle());
                         await initAll();
+                        // 目录变更后自动启动 watcher（静默运行），索引开关默认关闭
+                        if (isTauriVisit()) {
+                            setTimeout(startWatcherIfNeeded, 500);
+                            safeLocalStorageSet('KB_WATCHER_ENABLED', 'false');
+                            setTimeout(() => {
+                                window.__TAURI__.core.invoke('kb_set_indexing_enabled', { enabled: false }).catch(() => {});
+                            }, 800);
+                        }
                     }
                     GRAPHQL_ENDPOINT = graphqlVal;
                     NGINX_CONF_PATH = document.getElementById(inputId('nginx')).value.trim();
@@ -49698,12 +49778,29 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         /**
+         * 同步所有 toolbar 图标可见性（数据驱动，新增图标只需追加 ID 到数组）。
+         *
+         * 目前包含：技能选择器、Prompt 模板选择器。后续新增图标只需在
+         * TOOLBAR_ICON_IDS 中添加对应 ID 即可，无需修改任何逻辑代码。
+         */
+        const TOOLBAR_ICON_IDS = ['chat-skill-picker', 'chat-prompt-picker'];
+
+        function syncToolbarIcons(visible) {
+            const display = visible ? 'flex' : 'none';
+            TOOLBAR_ICON_IDS.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = display;
+            });
+        }
+
+        /**
          * 渲染技能选择器（触发按钮 + 向上弹出面板，面板中每个技能一行）
          * 从后端获取可用技能列表并回显当前会话已挂载状态
          */
         async function renderSkillChips() {
             const picker = document.getElementById('chat-skill-picker');
             const trigger = document.getElementById('chat-skill-trigger');
+            const skillCount = document.getElementById('skill-count');
             const popup = document.getElementById('chat-skill-popup');
             if (!picker || !trigger || !popup) return;
 
@@ -49714,8 +49811,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (!isTauriVisit() || chatMode !== 'rag') {
                 picker.style.display = 'none';
                 popup.style.display = 'none';
+                syncToolbarIcons(false);
                 return;
             }
+
+            // RAG 模式：同步所有 toolbar 图标可见性
+            syncToolbarIcons(true);
 
             try {
                 // 获取所有启用的技能
@@ -49735,7 +49836,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
                 // 触发按钮显示已挂载数量
                 const attachedCount = attached.length;
-                trigger.innerHTML = `技能${attachedCount > 0 ? ` <span class="skill-count">(${attachedCount})</span>` : ''}`;
+                skillCount.innerHTML = attachedCount > 0 ? `${attachedCount}` : '';
                 trigger.classList.toggle('active', attachedCount > 0);
                 picker.style.display = 'flex';
 
@@ -49757,7 +49858,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                              onclick="toggleSkillFromPicker(this)"
                              title="${id}, ${description}">
                             <span class="row-check">${isAttached ? '✓' : '☐'}</span>
-                            <span class="row-name">${name}&nbsp;(${id})</span>
+                            <span class="row-name">${name}</span>
                             <span class="row-scope ${scope}">${scopeLabel}</span>
                         </div>
                     `;
@@ -49775,15 +49876,43 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (event) event.stopPropagation();
             const popup = document.getElementById('chat-skill-popup');
             if (!popup) return;
-            popup.style.display = popup.style.display === 'none' ? 'block' : 'none';
+            const isOpening = popup.style.display === 'none';
+            // 打开 skill 面板时关闭 prompt 面板
+            if (isOpening) {
+                const promptPopup = document.getElementById('chat-prompt-popup');
+                if (promptPopup) promptPopup.style.display = 'none';
+            }
+            popup.style.display = isOpening ? 'block' : 'none';
         }
 
-        // 点击面板外区域时关闭技能选择面板
+        /**
+         * 开关 Prompt 模板选择面板（向上弹出）
+         */
+        function togglePromptPicker(event) {
+            if (event) event.stopPropagation();
+            const popup = document.getElementById('chat-prompt-popup');
+            if (!popup) return;
+            const isOpening = popup.style.display === 'none';
+            // 打开 prompt 面板时关闭 skill 面板
+            if (isOpening) {
+                const skillPopup = document.getElementById('chat-skill-popup');
+                if (skillPopup) skillPopup.style.display = 'none';
+                renderPromptList();
+            }
+            popup.style.display = isOpening ? 'block' : 'none';
+        }
+
+        // 点击面板外区域时关闭技能选择面板和 prompt 面板
         document.addEventListener('click', (ev) => {
             const picker = document.getElementById('chat-skill-picker');
             const popup = document.getElementById('chat-skill-popup');
             if (picker && popup && !picker.contains(ev.target)) {
                 popup.style.display = 'none';
+            }
+            const promptPicker = document.getElementById('chat-prompt-picker');
+            const promptPopup = document.getElementById('chat-prompt-popup');
+            if (promptPicker && promptPopup && !promptPicker.contains(ev.target)) {
+                promptPopup.style.display = 'none';
             }
         });
 
@@ -49831,9 +49960,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
                 // 同步触发按钮上的已挂载数量
                 const trigger = document.getElementById('chat-skill-trigger');
-                if (trigger) {
+                const skillCount = document.getElementById('skill-count');
+                if (trigger && skillCount) {
                     const count = chatAttachedSkills.length;
-                    trigger.innerHTML = `技能${count > 0 ? ` <span class="skill-count">(${count})</span>` : ''}`;
+                    skillCount.innerHTML =  count > 0 ? `${count}` : '';
                     trigger.classList.toggle('active', count > 0);
                 }
             } catch (e) {
@@ -50137,6 +50267,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
+        /** 将 localStorage 中的索引开关状态同步到后端 */
+        async function syncIndexingEnabled() {
+            if (!isTauriVisit()) return;
+            const enabled = safeLocalStorageGet('KB_WATCHER_ENABLED') === 'true';
+            try {
+                await window.__TAURI__.core.invoke('kb_set_indexing_enabled', { enabled });
+            } catch (e) {
+                console.warn('[watcher] 同步索引开关失败:', e);
+            }
+        }
+
         async function setChatMode(mode) {
             // 非 Tauri 模式只允许普通对话
             if (!isTauriVisit() && mode !== 'normal') {
@@ -50272,11 +50413,99 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 showNotification('对话已清空', 'info');
             }
         }
+        // ── 消息底部操作按钮：SVG 图标常量（模块级，仅定义一次，不随消息重建） ──
+        const MSG_ACTION_ICONS = {
+            copy: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+            save: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+        };
+
+        // ── ISP: 共享数据读取（复制/保存共用，最小依赖接口） ──
+        function getMessagePlainText(messageEl) {
+            return messageEl._rawContent || (messageEl._body ? messageEl._body.textContent : '');
+        }
+
+        function getMessageSources(messageEl) {
+            return messageEl._chatSources || [];
+        }
+
+        // ── SRP: 复制动作 ──
+        async function copyMessageContent(messageEl) {
+            const text = getMessagePlainText(messageEl);
+            if (!text) return;
+            try {
+                await navigator.clipboard.writeText(text);
+                showNotification('已复制到剪贴板', 'success', 1000);
+            } catch (err) {
+                try {
+                    await window.__TAURI__.core.invoke('copy_to_clipboard', { text });
+                } catch (e) {
+                    console.warn('复制失败:', e);
+                }
+            }
+        }
+
+        // ── SRP: 保存动作（有引用来源时以双链形式追加到文件末尾） ──
+        async function saveMessageContent(messageEl) {
+            let text = getMessagePlainText(messageEl);
+            if (!text) return;
+            const sources = getMessageSources(messageEl);
+            if (sources.length > 0) {
+                const seen = new Set();
+                const links = [];
+                for (const s of sources) {
+                    const path = s.docName || s.doc_name || '';
+                    if (path && !seen.has(path)) {
+                        seen.add(path);
+                        links.push('- [[' + path + ']]');
+                    }
+                }
+                if (links.length > 0) {
+                    text = text + '\n\n## 引用\n\n' + links.join('\n');
+                }
+            }
+            await saveMessageToFile(text);
+        }
+
+        // ── OCP: 动作策略表（新增动作只需追加一个表项 + 一个处理器函数） ──
+        const MSG_ACTION_HANDLERS = {
+            copy: copyMessageContent,
+            save: saveMessageContent,
+        };
+
+        // ── SRP: 事件路由（容器级唯一委托监听器，零元素级监听器，无泄漏） ──
+        (function bindMessageActionDelegation() {
+            const container = document.getElementById('chat-messages');
+            if (!container) return;
+            container.addEventListener('click', (e) => {
+                const btn = e.target.closest('.chat-message-action-btn');
+                if (!btn) return;
+                const msg = btn.closest('.chat-message');
+                const handler = MSG_ACTION_HANDLERS[btn.dataset.action];
+                if (handler && msg) handler(msg);
+            });
+        })();
+
+        // ── SRP: footer 构建（纯展示，动作由 data-action 声明、策略表路由） ──
+        function createMessageFooter() {
+            const footer = document.createElement('div');
+            footer.className = 'chat-message-footer';
+            footer.innerHTML =
+                '<button class="chat-message-action-btn" data-action="copy" title="复制">' + MSG_ACTION_ICONS.copy + '</button>' +
+                '<button class="chat-message-action-btn" data-action="save" title="保存">' + MSG_ACTION_ICONS.save + '</button>';
+            return footer;
+        }
 
         // ── 公共方法：创建消息 header + 操作按钮 ──
         function createMessageHeader(titleText, getContent, getSources) {
             const header = document.createElement('div');
             header.className = 'chat-message-header';
+
+            // 头像：复用 AI 悬浮按钮的头像图片（克隆 DOM 避免复制大段 base64）
+            const fabImg = document.querySelector('#ai-fab-button .ai-fab-icon');
+            const avatar = fabImg ? fabImg.cloneNode(true) : document.createElement('img');
+            avatar.className = 'chat-message-avatar ai-fab-icon';
+            avatar.alt = 'AI';
+            header.appendChild(avatar);
 
             const title = document.createElement('span');
             title.className = 'chat-message-header-title';
@@ -50286,48 +50515,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const actions = document.createElement('div');
             actions.className = 'chat-message-header-actions';
 
-            const copyBtn = document.createElement('button');
-            copyBtn.className = 'chat-message-action-btn';
-            copyBtn.textContent = '复制';
-            copyBtn.onclick = function (e) {
-                e.stopPropagation();
-                const text = typeof getContent === 'function' ? getContent() : getContent;
-                if (!text) return;
-                navigator.clipboard.writeText(text).then(() => {
-                    showNotification('已复制到剪贴板', 'success', 1000);
-                }).catch(() => {
-                    window.__TAURI__.core.invoke('copy_to_clipboard', { text }).catch(console.error);
-                });
-            };
-
-            const saveBtn = document.createElement('button');
-            saveBtn.className = 'chat-message-action-btn';
-            saveBtn.textContent = '保存';
-            saveBtn.onclick = async function (e) {
-                e.stopPropagation();
-                let text = typeof getContent === 'function' ? getContent() : getContent;
-                if (!text) return;
-                // 如果有引用来源，以双链形式追加到文件末尾
-                const sources = typeof getSources === 'function' ? getSources() : getSources;
-                if (sources && sources.length > 0) {
-                    const seen = new Set();
-                    const links = [];
-                    for (const s of sources) {
-                        const path = s.docName || s.doc_name || '';
-                        if (path && !seen.has(path)) {
-                            seen.add(path);
-                            links.push('- [[' + path + ']]');
-                        }
-                    }
-                    if (links.length > 0) {
-                        text = text + '\n\n## 引用\n\n' + links.join('\n');
-                    }
-                }
-                await saveMessageToFile(text);
-            };
-
-            actions.appendChild(copyBtn);
-            actions.appendChild(saveBtn);
+            
             header.appendChild(actions);
             return header;
         }
@@ -50771,7 +50959,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 div.textContent = content;
             }
             if (sources && sources.length > 0) {
+                div._chatSources = sources;
                 renderChatSources(div, sources);
+            }
+            // 助手消息底部追加操作按钮（复制/保存，hover 显示），必须为最后一个子元素
+            if (role === 'assistant') {
+                div.appendChild(createMessageFooter());
             }
             container.appendChild(div);
             if (window._chatAutoScroll !== false) {
@@ -51836,7 +52029,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                     // 追加引用来源 UI
                     if (sources.length > 0 && _chatStreamingDiv) {
+                        _chatStreamingDiv._chatSources = sources;
                         renderChatSources(_chatStreamingDiv, sources);
+                    }
+                    // 生成完成后追加底部操作按钮（复制/保存，hover 显示），必须为最后一个子元素
+                    if (_chatStreamingDiv) {
+                        _chatStreamingDiv.appendChild(createMessageFooter());
                     }
                     // 流式结束后滚动到底部，确保最新消息和引用完整可见 
                     if (window._chatAutoScroll !== false) {
@@ -51945,7 +52143,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                     showNotification('✗ ' + e.payload.message, 'error');
                 }),
-                // 工具调用轨迹（kb_search / code_lookup / read / edit / delete / list_files / render_mermaid / git_status）
+                // 工具调用轨迹（kb_search / code_lookup / read / edit / delete / list_files / git_status）
                 window.__TAURI__.event.listen('agent:tool_call', (e) => handleAgentToolEvent(e, requestId)),
                 window.__TAURI__.event.listen('agent:tool_result', (e) => handleAgentToolEvent(e, requestId)),
             ]);
@@ -52330,18 +52528,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 '</tr></thead><tbody>' + rows + '</tbody></table>';
         }
 
-        /** 文件监听开关 */
+        /** 文件监听开关：控制索引业务，不控制 watcher 启停 */
         async function toggleWatcher(enabled) {
             safeLocalStorageSet('KB_WATCHER_ENABLED', enabled ? 'true' : 'false');
-            if (enabled) {
-                await startWatcherIfNeeded();
-            } else {
-                if (!isTauriVisit()) return;
-                try {
-                    await window.__TAURI__.core.invoke('kb_stop_watcher');
-                } catch (e) {
-                    console.warn('[watcher] 停止失败:', e);
-                }
+            if (!isTauriVisit()) return;
+            try {
+                await window.__TAURI__.core.invoke('kb_set_indexing_enabled', { enabled });
+            } catch (e) {
+                console.warn('[watcher] 设置索引开关失败:', e);
             }
         }
         /** select 索引选项变更 */
@@ -52581,9 +52775,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 } catch (e) {
                     console.warn('注册 chat-index 事件监听失败:', e);
                 }
-                // 应用启动时，如果 toggle 为 ON 且 root 目录就绪，自动启动 watcher
-                if (safeLocalStorageGet('KB_WATCHER_ENABLED') === 'true' && getRootHandle()) {
+                // 应用启动时，root 目录就绪即自动启动 watcher（静默运行），并同步索引开关
+                if (getRootHandle()) {
                     setTimeout(startWatcherIfNeeded, 500);
+                    setTimeout(syncIndexingEnabled, 1000);
                 }
             }
         }
@@ -52635,6 +52830,5 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             e.preventDefault();
         }, false);
     </script>
-    <script src="./css_js/skill-panel.js"></script>
-    <script src="./css_js/function-call.js"></script>
+    <script src="./css_js/agent.js" defer></script>
 </body>

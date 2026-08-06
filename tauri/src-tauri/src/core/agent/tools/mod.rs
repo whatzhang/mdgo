@@ -9,7 +9,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
+use std::time::{Duration, Instant};
 
 use rig_agent::tool::{DynamicTool, ToolContext, ToolExecutionError, ToolOutput};
 use serde::Serialize;
@@ -159,6 +160,207 @@ const MAX_FILE_READ_CHARS: usize = 8192;
 /// 目录列举上限
 const MAX_LIST_ITEMS: usize = 60;
 
+// ─────────────────────────── 重复调用熔断（Loop Guard） ───────────────────────────
+
+/// 单个 run 的 (工具名, 规范化参数) 连续调用记录，按 run_id 隔离。
+struct LoopGuardEntry {
+    calls: Vec<(String, String)>,
+    updated_at: Instant,
+}
+
+static LOOP_GUARD: OnceLock<Mutex<HashMap<String, LoopGuardEntry>>> = OnceLock::new();
+
+fn loop_guard() -> &'static Mutex<HashMap<String, LoopGuardEntry>> {
+    LOOP_GUARD.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// 将工具参数 JSON 规范化（对象键排序后扁平拼接），
+/// 避免模型调整键顺序导致的误判。
+fn canonical_args(args: &str) -> String {
+    fn canon(v: &serde_json::Value) -> String {
+        match v {
+            serde_json::Value::Object(map) => {
+                let mut entries: Vec<(String, String)> = map
+                    .iter()
+                    .map(|(k, val)| (k.clone(), canon(val)))
+                    .collect();
+                entries.sort();
+                entries
+                    .iter()
+                    .map(|(k, val)| format!("{k}={val}"))
+                    .collect::<Vec<_>>()
+                    .join("&")
+            }
+            _ => v.to_string(),
+        }
+    }
+    match serde_json::from_str(args) {
+        Ok(v) => canon(&v),
+        Err(_) => args.to_string(),
+    }
+}
+
+/// run 内防重复调用（Hook 层在工具执行前调用）。
+///
+/// 检测「连续相同 (工具, 规范化参数)」的已执行次数：同一调用连续出现 ≥2 次后，
+/// 第 3 次起返回熔断提示（`None` = 放行）。只统计连续重复，因此
+/// `read(A) → edit(A) → read(A)` 这类「改后再读」不会被误判。
+pub fn guard_duplicate_call(run_id: &str, tool: &str, args: &str) -> Option<String> {
+    let key = canonical_args(args);
+    let mut map = loop_guard().lock().unwrap_or_else(|e| e.into_inner());
+    // 定期清理过期 run 记录，防止长时间运行内存膨胀
+    if map.len() > 64 {
+        let cutoff = Instant::now() - Duration::from_secs(60);
+        map.retain(|_, e| e.updated_at >= cutoff);
+    }
+    let entry = map.entry(run_id.to_string()).or_insert_with(|| LoopGuardEntry {
+        calls: Vec::new(),
+        updated_at: Instant::now(),
+    });
+    entry.updated_at = Instant::now();
+
+    let mut streak = 0;
+    for (t, k) in entry.calls.iter().rev() {
+        if t == tool && k == &key {
+            streak += 1;
+        } else {
+            break;
+        }
+    }
+    if streak >= 2 {
+        return Some(format!(
+            "防重复调用：'{}' 已使用相同参数（{}）连续调用过 {} 次，重复执行只会得到相同结果。请更换参数或改用其他策略（如 read 可指定 offset 分页续读），或基于已有信息直接给出答案，不要再次重复相同调用。",
+            tool, key, streak
+        ));
+    }
+    entry.calls.push((tool.to_string(), key));
+    None
+}
+
+// ─────────────────────────── 文件列表缓存 ───────────────────────────
+
+/// 缓存的文件列表快照
+struct FileListSnapshot {
+    /// (relative_path, file_size)，已按路径排序，已通过 ignore 过滤
+    entries: Vec<(String, u64)>,
+    updated_at: Instant,
+}
+
+/// 全局文件列表缓存，按目录路径索引
+static FILE_LIST_CACHE: OnceLock<RwLock<HashMap<String, FileListSnapshot>>> = OnceLock::new();
+
+/// 缓存 TTL：30 分钟后自动刷新（watcher 会在文件变更时主动失效，TTL 仅为兜底）
+const CACHE_TTL: Duration = Duration::from_secs(30 * 60);
+/// 目录遍历深度上限（防止深层嵌套导致栈溢出）
+const WALK_MAX_DEPTH: usize = 10;
+
+/// 获取缓存管理器
+fn file_list_cache() -> &'static RwLock<HashMap<String, FileListSnapshot>> {
+    FILE_LIST_CACHE.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+/// 失效指定目录的缓存（供文件监视器在文件变更时调用）
+///
+/// 内部会 canonicalize 路径，与缓存 key 保持一致。
+pub fn invalidate_file_list_cache(dir_path: &str) {
+    let canonical = std::fs::canonicalize(dir_path)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| dir_path.to_string());
+    if let Some(cache) = FILE_LIST_CACHE.get() {
+        if let Ok(mut map) = cache.write() {
+            map.remove(&canonical);
+        }
+    }
+}
+
+/// 获取或刷新文件列表缓存（读锁检查 → 写锁 double-check → 刷新）
+///
+/// 缓存 key 使用 canonicalized 路径，确保符号链接、大小写变体共享同一份缓存。
+fn get_or_refresh_cache(
+    dir_path: &str,
+    dir_blacklist: &[String],
+    file_blacklist: &[String],
+) -> Result<Vec<(String, u64)>, String> {
+    let base = std::fs::canonicalize(dir_path)
+        .map_err(|e| format!("无法访问知识库目录: {}", e))?;
+    let cache_key = base.to_string_lossy().to_string();
+
+    let cache = file_list_cache();
+
+    // 快速路径：读锁检查缓存是否有效
+    {
+        let map = cache.read().unwrap_or_else(|e| e.into_inner());
+        if let Some(snapshot) = map.get(&cache_key) {
+            if snapshot.updated_at.elapsed() < CACHE_TTL {
+                return Ok(snapshot.entries.clone());
+            }
+        }
+    }
+
+    // 慢路径：获取写锁后 double-check（避免多线程重复刷新）
+    let mut map = cache.write().unwrap_or_else(|e| e.into_inner());
+    if let Some(snapshot) = map.get(&cache_key) {
+        if snapshot.updated_at.elapsed() < CACHE_TTL {
+            return Ok(snapshot.entries.clone());
+        }
+    }
+
+    let ignore = IgnoreMatcher::new(dir_blacklist, file_blacklist);
+
+    let mut entries: Vec<(String, u64)> = Vec::new();
+    walk_dir_all(&base, &base, &ignore, 0, &mut entries);
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+    map.insert(cache_key, FileListSnapshot {
+        entries: entries.clone(),
+        updated_at: Instant::now(),
+    });
+
+    Ok(entries)
+}
+
+/// 遍历目录收集所有文件（无数量限制，已通过 ignore 过滤，深度上限 WALK_MAX_DEPTH）
+fn walk_dir_all(
+    base: &PathBuf,
+    dir: &PathBuf,
+    ignore: &IgnoreMatcher,
+    depth: usize,
+    out: &mut Vec<(String, u64)>,
+) {
+    if depth > WALK_MAX_DEPTH {
+        return;
+    }
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        let rel = path
+            .strip_prefix(base)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        if path.is_dir() {
+            if !ignore.is_kb_dir_allowed(&name, &rel) {
+                continue;
+            }
+            out.push((format!("{rel}/"), 0));
+            walk_dir_all(base, &path, ignore, depth + 1, out);
+        } else {
+            if !ignore.is_kb_file_allowed(&name, &rel) {
+                continue;
+            }
+            if let Ok(meta) = path.metadata() {
+                out.push((rel, meta.len()));
+            }
+        }
+    }
+}
+
+// ─────────────────────────── 文件列表工具 ───────────────────────────
+
 /// 将相对路径安全解析到指定根目录内（防路径穿越）。
 fn safe_resolve_in(base_dir: &Path, rel: &str) -> Result<PathBuf, String> {
     let base = std::fs::canonicalize(base_dir)
@@ -176,31 +378,51 @@ fn safe_resolve(dir_path: &str, rel: &str) -> Result<PathBuf, String> {
     safe_resolve_in(Path::new(dir_path), rel)
 }
 
-/// 读取已解析路径的文本内容（目录拒绝、超长截断）。
-fn read_text(full: &Path, display: &str) -> Result<String, String> {
+/// 读取已解析路径的文本内容（目录拒绝、超长分页）。
+///
+/// `offset` 为字符偏移（从 0 开始）：返回 `[offset, offset + MAX_FILE_READ_CHARS)` 区间的内容。
+/// 文件仍有后续内容时，截断提示会给出总字符数与下一次读取的 offset，供模型分页续读，
+/// 避免模型为读取长文件剩余部分而反复从头重读（浪费多轮工具调用）。
+fn read_text(full: &Path, display: &str, offset: usize) -> Result<String, String> {
     let meta = std::fs::metadata(full).map_err(|e| format!("读取文件信息失败: {}", e))?;
     if meta.is_dir() {
         return Err(format!("{} 是目录，请改用 list_files 查看目录内容", display));
     }
     let data = std::fs::read(full).map_err(|e| format!("读取文件失败: {}", e))?;
     let text = String::from_utf8_lossy(&data).into_owned();
-    if text.chars().count() > MAX_FILE_READ_CHARS {
-        let truncated: String = text.chars().take(MAX_FILE_READ_CHARS).collect();
-        return Ok(format!("{truncated}\n\n[内容过长，已截断前 {MAX_FILE_READ_CHARS} 字符]"));
+    let total = text.chars().count();
+    if offset >= total {
+        return Ok(format!("[已达文件末尾（共 {total} 字符），offset={offset} 超出范围]"));
     }
-    Ok(text)
+    let chunk: String = text.chars().skip(offset).take(MAX_FILE_READ_CHARS).collect();
+    if offset + MAX_FILE_READ_CHARS >= total {
+        Ok(chunk)
+    } else {
+        Ok(format!(
+            "{chunk}\n\n[内容过长：已显示第 {}~{} 字符（共 {total} 字符）。可再次调用 read 并指定 offset={} 读取后续内容]",
+            offset + 1,
+            offset + chunk.chars().count(),
+            offset + MAX_FILE_READ_CHARS
+        ))
+    }
 }
 
 /// 读取知识库（当前打开目录）内文件或当前激活技能的参考文档（渐进式披露 L3）。
+///
+/// `offset` 为字符偏移（从 0 开始，长文件分页续读用，见 [`read_text`]）。
 ///
 /// 解析顺序：
 /// 1. 知识库目录内的相对路径（如 `docs/note.md`）
 /// 2. 当前激活技能目录下的相对路径（如 `references/flowchart.md`），
 ///    按激活技能逐一尝试；技能基础目录由 `cfg.skill_bases` 提供，仅限已激活技能
-pub async fn read(cfg: &KbSearchConfig, rel_path: &str) -> Result<String, String> {
+pub async fn read(cfg: &KbSearchConfig, rel_path: &str, offset: usize) -> Result<String, String> {
     match safe_resolve(&cfg.dir_path, rel_path) {
-        Ok(full) => return read_text(&full, rel_path),
-        Err(e) if cfg.skill_state.activated().is_empty() => return Err(e),
+        Ok(full) => return read_text(&full, rel_path, offset),
+        Err(e) if cfg.skill_state.activated().is_empty() => {
+            // 无任何激活技能：若目标是技能参考路径，明确指出需先激活技能，
+            // 避免模型误以为文件不存在而反复尝试（浪费多轮工具调用）
+            return Err(skill_ref_hint(rel_path, e));
+        }
         Err(_) => {}
     }
     let mut last_err = "文件不存在（知识库内与已激活技能的参考目录均未找到）".to_string();
@@ -211,86 +433,177 @@ pub async fn read(cfg: &KbSearchConfig, rel_path: &str) -> Result<String, String
             }
             let dir = Path::new(base).join(&skill.id);
             match safe_resolve_in(&dir, rel_path) {
-                Ok(full) => return read_text(&full, rel_path),
+                Ok(full) => return read_text(&full, rel_path, offset),
                 Err(e) => last_err = e,
             }
         }
     }
-    Err(last_err)
+    Err(skill_ref_hint(rel_path, last_err))
+}
+
+/// 当读取路径指向技能参考文档（`references/` 开头）而解析失败时，
+/// 在原错误信息后追加「需先 activate_skill 激活对应技能」的引导。
+fn skill_ref_hint(rel_path: &str, base_err: String) -> String {
+    if rel_path.starts_with("references/") {
+        format!(
+            "{}。提示：references/ 开头的路径是技能参考文档，需先调用 activate_skill 激活对应技能后才能读取。",
+            base_err
+        )
+    } else {
+        base_err
+    }
 }
 
 pub async fn list_files(cfg: &KbSearchConfig, pattern: &str, max_items: u32) -> Result<String, String> {
-    let base = std::fs::canonicalize(&cfg.dir_path)
-        .map_err(|e| format!("无法访问知识库目录: {}", e))?;
-    // 与全项目一致：目录/文件黑名单（gitignore 语法），与索引、监视逻辑使用同一套过滤
-    let ignore = IgnoreMatcher::new(&cfg.dir_blacklist, &cfg.file_blacklist);
+    let entries = get_or_refresh_cache(&cfg.dir_path, &cfg.dir_blacklist, &cfg.file_blacklist)?;
     let pattern = pattern.trim().to_lowercase();
     let max = (max_items as usize).clamp(1, MAX_LIST_ITEMS);
-    let mut items: Vec<(String, u64)> = Vec::new();
-    walk_dir(&base, &base, &pattern, 0, max, &ignore, &mut items);
-    items.sort_by(|a, b| a.0.cmp(&b.0));
 
-    if items.is_empty() {
+    let matched: Vec<&(String, u64)> = if pattern.is_empty() {
+        entries.iter().take(max).collect()
+    } else {
+        entries
+            .iter()
+            .filter(|(rel, _)| rel.to_lowercase().contains(&pattern))
+            .take(max)
+            .collect()
+    };
+
+    if matched.is_empty() {
         return Ok(format!(
             "目录中未找到匹配的文件（模式：{}）",
             if pattern.is_empty() { "全部" } else { &pattern }
         ));
     }
-    let lines: Vec<String> = items
+    let lines: Vec<String> = matched
         .iter()
         .map(|(rel, size)| format!("{rel}  ({} 字节)", size))
         .collect();
-    Ok(format!("共 {} 项：\n{}", items.len(), lines.join("\n")))
+    Ok(format!("共 {} 项：\n{}", lines.len(), lines.join("\n")))
 }
 
-fn walk_dir(
-    base: &PathBuf,
-    dir: &PathBuf,
-    pattern: &str,
-    depth: usize,
-    max: usize,
-    ignore: &IgnoreMatcher,
-    out: &mut Vec<(String, u64)>,
-) {
-    if out.len() >= max || depth > 3 {
-        return;
+// ─────────────────────────── 内容搜索工具（grep） ───────────────────────────
+
+/// 单次搜索最多返回的命中文件数
+const MAX_GREP_FILES: usize = 20;
+/// 单文件最多返回的匹配行数
+const MAX_GREP_LINES_PER_FILE: usize = 10;
+/// 匹配行最大显示长度（超长截断）
+const MAX_GREP_LINE_CHARS: usize = 200;
+/// 参与搜索的文件大小上限（跳过超大文件，避免拖慢工具调用）
+const MAX_GREP_FILE_BYTES: u64 = 2 * 1024 * 1024;
+
+/// 在知识库目录内所有文本文件中搜索关键词（大小写不敏感子串匹配），
+/// 返回 `文件路径:行号:匹配行`，供模型先定位再精读（配合 read + offset）。
+pub async fn grep_files(cfg: &KbSearchConfig, pattern: &str, max_files: u32) -> Result<String, String> {
+    let pattern = pattern.trim();
+    if pattern.is_empty() {
+        return Err("搜索关键词为空，请提供 pattern 参数".to_string());
     }
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-    for entry in entries.flatten() {
-        if out.len() >= max {
+    if pattern.chars().count() < 2 {
+        return Err("搜索关键词过短（至少 2 个字符），请提供更具体的关键词".to_string());
+    }
+    let needle = pattern.to_lowercase();
+    let entries = get_or_refresh_cache(&cfg.dir_path, &cfg.dir_blacklist, &cfg.file_blacklist)?;
+    let limit = (max_files as usize).clamp(1, MAX_GREP_FILES);
+
+    let mut hits: Vec<(String, Vec<(usize, String)>)> = Vec::new();
+    for (rel, size) in entries {
+        if hits.len() >= limit {
             break;
         }
-        let path = entry.path();
-        let name = entry.file_name().to_string_lossy().to_string();
-        let rel = path
-            .strip_prefix(base)
-            .unwrap_or(&path)
-            .to_string_lossy()
-            .replace('\\', "/");
-        if path.is_dir() {
-            // 目录黑名单过滤（对齐前端 isSkipDir：gitignore 语法 + 隐藏目录）
-            if !ignore.is_kb_dir_allowed(&name, &rel) {
-                continue;
-            }
-            if pattern.is_empty() || rel.to_lowercase().contains(pattern) {
-                out.push((format!("{rel}/"), 0));
-            }
-            walk_dir(base, &path, pattern, depth + 1, max, ignore, out);
-        } else {
-            // 文件黑名单过滤（对齐前端 isSkipFile：gitignore 语法 + 隐藏/临时文件）
-            if !ignore.is_kb_file_allowed(&name, &rel) {
-                continue;
-            }
-            if pattern.is_empty() || rel.to_lowercase().contains(pattern) {
-                if let Ok(meta) = path.metadata() {
-                    out.push((rel, meta.len()));
+        // 跳过超大文件（文本文件通常远小于此阈值）
+        if size > MAX_GREP_FILE_BYTES {
+            continue;
+        }
+        let full = match safe_resolve(&cfg.dir_path, &rel) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        let Ok(data) = std::fs::read(&full) else { continue };
+        // 含 NUL 字节视为二进制文件，跳过
+        if data.contains(&0) {
+            continue;
+        }
+        let text = String::from_utf8_lossy(&data);
+        let mut matches: Vec<(usize, String)> = Vec::new();
+        for (idx, line) in text.lines().enumerate() {
+            if line.to_lowercase().contains(&needle) {
+                let display: String = line.chars().take(MAX_GREP_LINE_CHARS).collect();
+                matches.push((idx + 1, display));
+                if matches.len() >= MAX_GREP_LINES_PER_FILE {
+                    break;
                 }
             }
         }
+        if !matches.is_empty() {
+            hits.push((rel, matches));
+        }
     }
+
+    if hits.is_empty() {
+        return Ok(format!("未找到包含“{}”的文件。", pattern));
+    }
+    let mut out = format!("搜索“{}”命中 {} 个文件：\n", pattern, hits.len());
+    for (rel, matches) in hits {
+        out.push_str(&format!("\n{rel}\n"));
+        for (no, line) in matches {
+            out.push_str(&format!("  {no}: {line}\n"));
+        }
+    }
+    Ok(out)
+}
+
+/// 构建 grep 工具：在知识库内搜索文件内容。
+pub fn build_grep_tool(cfg: KbSearchConfig) -> DynamicTool {
+    DynamicTool::new(
+        "grep",
+        "在知识库目录内的所有文本文件中搜索指定关键词（大小写不敏感子串匹配），返回\"文件路径:行号:匹配行\"。当需要定位某个术语/函数/配置出现在哪些文件、或不想整读大文件时调用；典型用法是先用 grep 定位，再用 read 工具精读相关行（read 支持 offset 分页）。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "pattern": {
+                    "type": "string",
+                    "description": "要搜索的关键词或短语（至少 2 个字符），大小写不敏感"
+                },
+                "max_files": {
+                    "type": "integer",
+                    "description": "最多返回命中文件数，默认 10，最大 20"
+                }
+            },
+            "required": ["pattern"]
+        }),
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let cfg = cfg.clone();
+            Box::pin(async move {
+                let pattern = args
+                    .get("pattern")
+                    .and_then(|p| p.as_str())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                if pattern.is_empty() {
+                    return Err(tool_error("grep", "搜索关键词为空，请提供 pattern 参数"));
+                }
+                let max_files = args
+                    .get("max_files")
+                    .and_then(|m| m.as_u64())
+                    .map(|v| v as u32)
+                    .unwrap_or(10);
+                record_tool_call(&cfg, "grep", &pattern);
+                match grep_files(&cfg, &pattern, max_files).await {
+                    Ok(text) => {
+                        record_tool_result(&cfg, "grep", true, &format!("{} 字符", text.chars().count()));
+                        Ok(ToolOutput::text(text))
+                    }
+                    Err(e) => {
+                        record_tool_result(&cfg, "grep", false, &e);
+                        Err(tool_error("grep", &e))
+                    }
+                }
+            })
+        },
+    )
 }
 
 // ─────────────────────────── Git 状态工具（只读） ───────────────────────────
@@ -523,13 +836,17 @@ pub fn build_deactivate_skill_tool(state: Arc<ActiveSkillState>) -> DynamicTool 
 pub fn build_read_tool(cfg: KbSearchConfig) -> DynamicTool {
     DynamicTool::new(
         "read",
-        "读取文件内容，最大返回前 8192 字符。支持两类路径：1) 知识库目录内的相对路径（如 docs/note.md，可读取打开目录中的所有文件，含子目录）；2) 当前激活技能的参考文档路径（如 references/flowchart.md，通常由技能 SKILL.md 中以相对链接给出）。当需要查看文件完整内容、或查阅技能参考文档时调用。",
+        "读取文件内容，单次最多返回 8192 字符，支持分页续读。支持两类路径：1) 知识库目录内的相对路径（如 docs/note.md，可读取打开目录中的所有文件，含子目录）；2) 当前激活技能的参考文档路径（如 references/flowchart.md，通常由技能 SKILL.md 中以相对链接给出；未激活技能时无法读取，需先 activate_skill）。当返回内容末尾提示\"内容过长\"时，内容只显示了第 1~8192 字符，若需要文件后续部分，请再次调用本工具并指定 offset 参数（如 offset=8192）继续读取，不要从头重读全文。",
         serde_json::json!({
             "type": "object",
             "properties": {
                 "path": {
                     "type": "string",
                     "description": "文件相对路径：知识库内路径，或技能参考文档路径（如 references/flowchart.md）"
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": "字符偏移量（从 0 开始），用于分页续读长文件。首次读取省略；截断提示中会给出下次应使用的 offset"
                 }
             },
             "required": ["path"]
@@ -546,8 +863,17 @@ pub fn build_read_tool(cfg: KbSearchConfig) -> DynamicTool {
                 if rel.is_empty() {
                     return Err(tool_error("read", "文件路径为空，请提供 path 参数"));
                 }
-                record_tool_call(&cfg, "read", &rel);
-                match read(&cfg, &rel).await {
+                let offset = args
+                    .get("offset")
+                    .and_then(|o| o.as_u64())
+                    .unwrap_or(0) as usize;
+                let args_preview = if offset == 0 {
+                    rel.clone()
+                } else {
+                    format!("{rel} (offset={offset})")
+                };
+                record_tool_call(&cfg, "read", &args_preview);
+                match read(&cfg, &rel, offset).await {
                     Ok(text) => {
                         record_tool_result(&cfg, "read", true, &format!("{} 字符", text.chars().count()));
                         Ok(ToolOutput::text(text))
@@ -751,107 +1077,3 @@ pub fn build_git_status_tool(cfg: KbSearchConfig) -> DynamicTool {
     )
 }
 
-// ─────────────────────────── Mermaid 工具（前端调用） ───────────────────────────
-
-/// 构建 render_mermaid 工具：调用前端同步函数 `window.mermaidTool(code, type)` 处理 mermaid 图表。
-///
-/// 双模式：`type="check"` 仅校验语法正确性；`type="render"`（默认）渲染为 SVG。
-/// 通过全局前端调用器（setup 阶段初始化）执行 eval + 事件回调。
-pub fn build_render_mermaid_tool(cfg: KbSearchConfig) -> DynamicTool {
-    DynamicTool::new(
-        "render_mermaid",
-        "处理 mermaid 图表（流程图/时序图/类图等）：type=check 时校验 mermaid 语法是否正确，type=render（默认）时把 mermaid 语法文本渲染为图表。当需要校验一段 mermaid 语法、或生成图表时调用。处理在桌面端前端执行，返回结果摘要。",
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "string",
-                    "description": "mermaid 语法文本，如 flowchart LR\\n  A-->B"
-                },
-                "type": {
-                    "type": "string",
-                    "enum": ["check", "render"],
-                    "description": "check=仅校验语法正确性；render=渲染图表（默认）"
-                }
-            },
-            "required": ["code"]
-        }),
-        move |_ctx: &mut ToolContext, args: serde_json::Value| {
-            let cfg = cfg.clone();
-            Box::pin(async move {
-                let code = args
-                    .get("code")
-                    .and_then(|s| s.as_str())
-                    .unwrap_or_default()
-                    .trim()
-                    .to_string();
-                if code.is_empty() {
-                    return Err(tool_error("render_mermaid", "mermaid 代码为空"));
-                }
-                // 模式归一化：非 check 一律视为 render（默认）
-                let mode = args
-                    .get("type")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("render");
-                let mode = if mode == "check" { "check" } else { "render" };
-
-                // 轨迹参数摘要：取前 80 字符，避免长代码撑爆事件负载
-                let preview: String = code.chars().take(80).collect();
-                let preview = if mode == "check" {
-                    format!("[check] {preview}")
-                } else {
-                    preview
-                };
-                record_tool_call(&cfg, "render_mermaid", &preview);
-
-                let invoker = match crate::core::global_invoker() {
-                    Some(v) => v,
-                    None => {
-                        record_tool_result(&cfg, "render_mermaid", false, "前端调用器未初始化");
-                        return Err(tool_error("render_mermaid", "前端调用器未初始化（仅桌面版可用）"));
-                    }
-                };
-                let args = match (serde_json::to_string(&code), serde_json::to_string(mode)) {
-                    (Ok(c), Ok(t)) => vec![c, t],
-                    (Err(e), _) | (_, Err(e)) => {
-                        record_tool_result(&cfg, "render_mermaid", false, &e.to_string());
-                        return Err(tool_error("render_mermaid", &e.to_string()));
-                    }
-                };
-                let ret = match invoker.call_global_fn("mermaidTool", &args).await {
-                    Ok(v) => v,
-                    Err(e) => {
-                        record_tool_result(&cfg, "render_mermaid", false, &e.to_string());
-                        return Err(tool_error("render_mermaid", &e.to_string()));
-                    }
-                };
-
-                // 前端返回结构：{ success, msg, data: { svg? } }
-                let ok = ret.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-                let msg = ret
-                    .get("msg")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                if !ok {
-                    record_tool_result(&cfg, "render_mermaid", false, &msg);
-                    return Err(tool_error("render_mermaid", &msg));
-                }
-                // 按模式返回不同摘要：check 报语法正确，render 报 SVG 规模
-                let summary = if mode == "check" {
-                    "语法正确".to_string()
-                } else {
-                    let svg_len = ret
-                        .pointer("/data/svg")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.chars().count())
-                        .unwrap_or(0);
-                    format!("渲染成功（SVG {} 字符）", svg_len)
-                };
-                record_tool_result(&cfg, "render_mermaid", true, &summary);
-                // 只返回摘要，不把整段 SVG 塞给模型（避免撑爆上下文）
-                Ok(ToolOutput::text(format!("{summary}：{msg}")))
-            })
-        },
-    )
-}

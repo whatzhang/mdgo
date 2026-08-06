@@ -38,7 +38,7 @@ pub async fn skill_list(
 ) -> Result<Vec<Skill>, String> {
     let state = app.state::<AppState>();
     state.skill_registry.ensure_loaded(&dir_path)?;
-    state.skill_watcher.set_current_dir(&dir_path);
+    state.watcher.ensure_skill_watching(&dir_path);
     // 消费加载失败项并转发前端（无监听时静默丢弃，不影响列表返回）
     let load_errors = state.skill_registry.take_load_errors();
     if !load_errors.is_empty() {

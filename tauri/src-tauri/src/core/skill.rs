@@ -4,7 +4,7 @@
 //! - `SkillStore`：目录解析 + SKILL.md 文件读写 + 三目录扫描（不含监控）
 //! - `SkillRegistry`：内存注册表（RwLock 读写分离）+ 全量重建 + DB 缓存同步
 //! - `SkillDb`：按目录打开 `.mdgo/mdgo.db` 并保证表结构（DDL 在 `core/db/schema.rs`）
-//! - 文件变更监控在独立的 `services/skill_watcher.rs`，不混入本模块
+//! - 文件变更监控已合并到 `core/watcher.rs` 的 `WatcherService`，不混入本模块
 //! - `matcher`：分层意图匹配算法（已废弃，决策移交 LLM，模块已删除）
 //! - `activation`：技能激活状态（L2 加载核心，LLM 驱动 activate_skill/deactivate_skill）
 //! - `context`：技能预激活上下文解析（手动触发 / 会话挂载）
@@ -25,7 +25,7 @@ use crate::core::db::schema;
 /// 允许 Skill 声明的内置工具白名单（与 Rig Agent 注册的内置工具一致）。
 /// 白名单仅为声明约束：技能声明了系统外的工具名时直接忽略，不做强类型校验。
 pub const ALLOWED_TOOLS: &[&str] = &[
-    "kb_search", "code_lookup", "read", "edit", "delete", "list_files", "render_mermaid", "git_status",
+    "kb_search", "code_lookup", "read", "edit", "delete", "list_files", "git_status",
     "activate_skill", "deactivate_skill",
 ];
 

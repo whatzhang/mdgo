@@ -3,7 +3,6 @@ pub mod config;
 pub mod types;
 pub mod agent;
 pub mod skill;
-mod frontend_invoker;
 
 mod chat_types;
 mod embedding;
@@ -15,7 +14,6 @@ pub use chat_types::{ChatMessage, ChatMessageSource, ChatSession, ChatSessionSea
 pub use config::{ConfigStore, IndexerConfig};
 pub use db::lance::SearchHit;
 pub use db::utils::{call_embedding_query, KbProgress};
-pub use frontend_invoker::{global_invoker, init_global_invoker};
 pub use indexer::{Indexer, RetrievalIntent, route_intent};
 pub use types::{KbIndexResult, KbStatus};
 pub use watcher::WatcherService;

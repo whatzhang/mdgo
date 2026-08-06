@@ -9,5 +9,6 @@ pub mod git_types;
 pub mod knowledge;
 pub mod llm;
 pub mod open_url;
+pub mod prompt;
 pub mod skill;
 pub mod system;

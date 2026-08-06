@@ -49,3 +49,13 @@ pub async fn kb_stop_watcher(app: AppHandle) -> Result<(), String> {
     state.watcher.stop();
     Ok(())
 }
+
+/// 设置索引开关（true = 对文件变更执行增量索引；false = 仅监听并失效缓存）
+///
+/// 即使索引关闭，watcher 仍持续运行并失效文件列表缓存，保证 list_files 数据新鲜。
+#[tauri::command]
+pub async fn kb_set_indexing_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    state.watcher.set_indexing_enabled(enabled);
+    Ok(())
+}

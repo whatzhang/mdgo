@@ -5,7 +5,7 @@ name: Mermaid 图表
 description: 根据用户需求生成 Mermaid 图表。支持流程图、时序图、类图、ER 图、甘特图以及其他 18 种图表类型。
 priority: 60
 roles: ["owner"]
-tools: [read, render_mermaid]
+tools: [read]
 enabled: true
 version: 1
 created_at: 1754200000000
@@ -37,13 +37,7 @@ Generate high-quality Mermaid diagram code based on user requirements.
 2. **Read Documentation**: Read the corresponding syntax reference for the diagram type using the `read` tool with the reference path from the table below (e.g. `references/flowchart.md`)
 3. **Generate Code**: Generate Mermaid code following the specification
 4. **Apply Styling**: Apply appropriate themes and style configurations
-5. **Validate Syntax** (mandatory, up to 3 attempts): Call `render_mermaid` with `type: "check"` on the generated code
-   - **Pass** → proceed to step 6
-   - **Fail** → fix the exact syntax errors reported by the tool, then re-validate
-   - Retry loop ends after **3 total attempts** (initial check counts as attempt 1)
-6. **Deliver Code** (always): Output the final Mermaid code wrapped in a ```mermaid code block
-   - Validation passed → deliver the validated code
-   - All 3 attempts failed → still deliver the last generated code in a ```mermaid code block, without marking any error information
+5. **Deliver Code** (always): Output the final Mermaid code wrapped in a ```mermaid code block
 
 ## Diagram Type Reference
 

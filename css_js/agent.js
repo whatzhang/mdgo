@@ -3,7 +3,7 @@
 // getRootHandle / getDirPath / isTauriVisit / switchToView（加载顺序：本文件须在主页内联脚本之后）
 // 技能可声明的工具白名单（后端 ALLOWED_TOOLS 的子集；
 // activate_skill / deactivate_skill 为系统常驻管理工具，不可由技能声明）
-const ALLOWED_SKILL_TOOLS = ['kb_search', 'code_lookup', 'read', 'edit', 'delete', 'list_files', 'render_mermaid', 'git_status'];
+const ALLOWED_SKILL_TOOLS = ['kb_search', 'code_lookup', 'read', 'edit', 'delete', 'list_files', 'git_status'];
 const SKILL_SCOPE_NAMES = { system: '系统', global: '全局', project: '当前目录' };
 
 let skillDirPath = '';          // 当前根目录路径（打开面板时刷新）
@@ -499,4 +499,215 @@ function skillScopeChange(value) {
         c.classList.toggle('active', (c.dataset.scope || '') === skillScopeFilter);
     });
     skillRenderList();
+}
+
+// ====== Prompt 模板管理（Prompt CRUD） ======
+// 依赖主页面全局：escapeHtml / showNotification / showConfirmModal / isTauriVisit
+
+/** 打开 Prompt 编辑模态框（创建/编辑） */
+function showPromptModal(promptItem) {
+    const isEdit = !!promptItem;
+    const title = isEdit ? '编辑 Prompt' : '新建 Prompt';
+    const name = isEdit ? promptItem.name : '';
+    const content = isEdit ? promptItem.content : '';
+
+    // 移除已有模态框
+    const existing = document.querySelector('.modal-overlay .prompt-modal');
+    if (existing) existing.closest('.modal-overlay').remove();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+        <div class="prompt-modal">
+            <div class="prompt-modal-title">${escapeHtml(title)}</div>
+            <div class="prompt-modal-field">
+                <label>Prompt 名称</label>
+                <input type="text" class="prompt-modal-name" placeholder="输入名称" value="${escapeHtml(name)}" autocomplete="off">
+            </div>
+            <div class="prompt-modal-field">
+                <label>Prompt 内容</label>
+                <textarea class="prompt-modal-content" rows="5" placeholder="输入 prompt 内容...">${escapeHtml(content)}</textarea>
+            </div>
+            <div class="prompt-modal-buttons">
+                <button class="prompt-modal-btn prompt-modal-btn-cancel">取消</button>
+                <button class="prompt-modal-btn prompt-modal-btn-confirm">确定</button>
+            </div>
+        </div>`;
+    document.body.appendChild(overlay);
+
+    const nameInput = overlay.querySelector('.prompt-modal-name');
+    const contentInput = overlay.querySelector('.prompt-modal-content');
+    const cancelBtn = overlay.querySelector('.prompt-modal-btn-cancel');
+    const confirmBtn = overlay.querySelector('.prompt-modal-btn-confirm');
+
+    nameInput.focus();
+    nameInput.select();
+
+    let closed = false;
+    let submitting = false;
+    function close() {
+        if (closed) return;
+        closed = true;
+        document.removeEventListener('keydown', escHandler);
+        overlay.remove();
+    }
+
+    function escHandler(e) {
+        if (e.key === 'Escape') close();
+    }
+    document.addEventListener('keydown', escHandler);
+
+    cancelBtn.addEventListener('click', close);
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) close();
+    });
+
+    confirmBtn.addEventListener('click', async () => {
+        if (submitting || closed) return;
+        const newName = nameInput.value.trim();
+        const newContent = contentInput.value.trim();
+        if (!newName) {
+            showNotification('请输入 Prompt 名称', 'warning');
+            return;
+        }
+        if (!newContent) {
+            showNotification('请输入 Prompt 内容', 'warning');
+            return;
+        }
+        submitting = true;
+        confirmBtn.disabled = true;
+        try {
+            if (isEdit) {
+                await window.__TAURI__.core.invoke('prompt_update', {
+                    id: promptItem.id,
+                    name: newName,
+                    content: newContent,
+                });
+                showNotification('Prompt 已更新');
+            } else {
+                await window.__TAURI__.core.invoke('prompt_create', {
+                    name: newName,
+                    content: newContent,
+                });
+                showNotification('Prompt 已创建');
+            }
+            close();
+            await renderPromptList();
+        } catch (e) {
+            showNotification('操作失败: ' + e, 'error');
+            submitting = false;
+            confirmBtn.disabled = false;
+        }
+    });
+}
+
+/** 打开编辑指定 prompt 的模态框（从行元素 data 属性读取） */
+function editPromptFromRow(rowEl) {
+    const id = rowEl.closest('.prompt-popup-row').dataset.id || '';
+    const name = rowEl.closest('.prompt-popup-row').dataset.name || '';
+    const content = rowEl.closest('.prompt-popup-row').dataset.content || '';
+    if (!id) return;
+    showPromptModal({ id, name, content });
+}
+
+/** 删除 Prompt（从行元素 data 属性读取，确认后执行） */
+function deletePromptFromRow(rowEl) {
+    const row = rowEl.closest('.prompt-popup-row');
+    const id = row.dataset.id || '';
+    const name = row.dataset.name || '';
+    if (!id) return;
+    showConfirmModal('删除 Prompt', `确定删除 Prompt「${escapeHtml(name)}」吗？删除后不可恢复。`, async (ok) => {
+        if (!ok) return;
+        try {
+            await window.__TAURI__.core.invoke('prompt_delete', { id });
+            showNotification('Prompt 已删除');
+            await renderPromptList();
+        } catch (e) {
+            showNotification('删除失败: ' + e, 'error');
+        }
+    });
+}
+
+/** 渲染 Prompt 弹出面板列表 */
+async function renderPromptList() {
+    const popup = document.getElementById('chat-prompt-popup');
+    if (!popup) return;
+
+    if (!isTauriVisit()) {
+        popup.innerHTML = '<div class="prompt-popup-empty">仅桌面版可用</div>';
+        return;
+    }
+
+    try {
+        const prompts = await window.__TAURI__.core.invoke('prompt_list');
+        if (!prompts || prompts.length === 0) {
+            popup.innerHTML = `
+                <div class="prompt-popup-empty">暂无 Prompt 模板</div>
+                <div class="prompt-popup-footer">
+                    <button class="prompt-settings-btn" onclick="event.stopPropagation(); showPromptModal()">
+                        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                        </svg>
+                    </button>
+                </div>`;
+            return;
+        }
+
+        const rows = prompts.map(p => `
+            <div class="prompt-popup-row" data-id="${escapeHtml(p.id)}" data-name="${escapeHtml(p.name)}" data-content="${escapeHtml(p.content)}" onclick="insertPromptFromRow(this)">
+                <span class="row-name">${escapeHtml(p.name)}</span>
+                <span class="row-content">${escapeHtml(p.content)}</span>
+                <div class="row-actions" onclick="event.stopPropagation()">
+                    <button class="row-action-btn" title="编辑" onclick="editPromptFromRow(this)">
+                        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                        </svg>
+                    </button>
+                    <button class="row-action-btn delete" title="删除" onclick="deletePromptFromRow(this)">
+                        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        `).join('');
+
+        popup.innerHTML = `
+            <div class="prompt-popup-list">${rows}</div>
+            <div class="prompt-popup-footer">
+                <button class="prompt-settings-btn" onclick="event.stopPropagation(); showPromptModal()">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                        </svg>
+                </button>
+            </div>`;
+    } catch (e) {
+        console.warn('加载 Prompt 列表失败:', e);
+        popup.innerHTML = '<div class="prompt-popup-empty">加载失败</div>';
+    }
+}
+
+/** 从行元素读取 content 并插入到聊天输入框 */
+function insertPromptFromRow(rowEl) {
+    const content = rowEl.dataset.content || '';
+    insertPromptContent(content);
+}
+
+/** 将 Prompt 内容插入到聊天输入框 */
+function insertPromptContent(content) {
+    const input = document.getElementById('chat-input');
+    if (!input) return;
+    const old = input.value;
+    if (old && !old.endsWith('\n')) {
+        input.value = old + '\n' + content;
+    } else if (old) {
+        input.value = old + content;
+    } else {
+        input.value = content;
+    }
+    input.focus();
+    updateChatSendButton();
+    // 关闭弹出面板
+    const popup = document.getElementById('chat-prompt-popup');
+    if (popup) popup.style.display = 'none';
 }
