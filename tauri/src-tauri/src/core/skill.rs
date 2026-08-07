@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 
-use rusqlite::Connection;
+use rusqlite::{Connection, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 
 use crate::core::db::schema;
@@ -26,7 +26,7 @@ use crate::core::db::schema;
 /// 白名单仅为声明约束：技能声明了系统外的工具名时直接忽略，不做强类型校验。
 pub const ALLOWED_TOOLS: &[&str] = &[
     "kb_search", "code_lookup", "read", "edit", "delete", "list_files", "git_status",
-    "activate_skill", "deactivate_skill",
+    "activate_skill", "deactivate_skill", "pomodoro",
 ];
 
 /// Skill 作用域（三层体系）
@@ -590,9 +590,10 @@ impl SkillDb {
     /// 全量重建 skills 表缓存（先清空再重灌，整个操作在一个事务中）。
     ///
     /// 任一步失败即整体回滚，避免 DELETE 成功后插入中断导致的半同步状态。
-    pub fn sync_all(conn: &Connection, skills: &[Skill]) -> Result<(), String> {
+    pub fn sync_all(conn: &mut Connection, skills: &[Skill]) -> Result<(), String> {
+        // 写事务 IMMEDIATE：WAL 下避免 DEFERRED 读快照升级失败的 SQLITE_BUSY_SNAPSHOT
         let txn = conn
-            .unchecked_transaction()
+            .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|e| format!("开启事务失败: {}", e))?;
         txn.execute("DELETE FROM skills", [])
             .map_err(|e| format!("清空技能缓存失败: {}", e))?;
@@ -686,7 +687,7 @@ impl SkillRegistry {
                     Err(err) => log::warn!("[skill] 打开技能数据库失败: {}", err),
                 }
             }
-            if let Some(conn) = cache.get(dir_path) {
+            if let Some(conn) = cache.get_mut(dir_path) {
                 let all: Vec<Skill> = merged.values().cloned().collect();
                 if let Err(e) = SkillDb::sync_all(conn, &all) {
                     log::warn!("[skill] DB 缓存同步失败: {}", e);

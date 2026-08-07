@@ -434,7 +434,7 @@ pub async fn kb_cancel_task(
 
 /// RAG 查询：技能解析 → 查询扩展 → 混合检索 → 文档聚合 → RAG Agent 生成（全流式）
 #[tauri::command]
-pub async fn kb_rag_query(
+pub async fn agent_query(
     app: AppHandle,
     state: tauri::State<'_, crate::AppState>,
     task_registry: tauri::State<'_, TaskRegistry>,
@@ -449,7 +449,7 @@ pub async fn kb_rag_query(
     // 后端防御：限制 top_k 范围（前端 UI 为 1-50），防止异常参数触发全量检索/重排
     let top_k = top_k.clamp(1, 50);
 
-    log::info!("[kb_rag_query] [0]: 开始RAG查询: request_id={} dir_path={} query_len={} msg_count={} top_k={}",
+    log::info!("[agent_query] [0]: 开始 agent: request_id={} dir_path={} query_len={} msg_count={} top_k={}",
         request_id, dir_path, query.len(), messages.len(), top_k);
 
     // 从中央化内存配置读取 LLM 配置
@@ -459,7 +459,7 @@ pub async fn kb_rag_query(
     let llm = match get_or_create_llm_client(&state, &llm_cfg.endpoint, &llm_cfg.model, &llm_cfg.api_key).await {
         Ok(llm) => llm,
         Err(e) => {
-            log::error!("[kb_rag_query] [0]: LLMClient 初始化失败: request_id={} err={}", request_id, e);
+            log::error!("[agent_query] [0]: LLMClient 初始化失败: request_id={} err={}", request_id, e);
             emit_command_error(&app, "rag:error", &request_id, format!("LLM 客户端初始化失败: {}", e));
             task_registry.unregister(&request_id).await;
             return Ok(());
@@ -467,7 +467,7 @@ pub async fn kb_rag_query(
     };
 
     if !llm.is_configured() {
-        log::warn!("[kb_rag_query] [0]: LLM 未配置: request_id={}", request_id);
+        log::warn!("[agent_query] [0]: LLM 未配置: request_id={}", request_id);
         emit_command_error(&app, "rag:error", &request_id, "LLM 未配置，请在设置中填写端点地址和模型名称".into());
         task_registry.unregister(&request_id).await;
         return Ok(());
@@ -513,11 +513,11 @@ pub async fn kb_rag_query(
         {
             Ok(Ok(v)) => v,
             Ok(Err(e)) => {
-                log::warn!("[kb_rag_query] [0]: 技能预激活失败 request_id={} err={}", request_id_for_log, e);
+                log::warn!("[agent_query] [0]: 技能预激活失败 request_id={} err={}", request_id_for_log, e);
                 None
             }
             Err(e) => {
-                log::warn!("[kb_rag_query] [0]: 技能预激活任务失败 request_id={} err={}", request_id_for_log, e);
+                log::warn!("[agent_query] [0]: 技能预激活任务失败 request_id={} err={}", request_id_for_log, e);
                 None
             }
         }
@@ -541,14 +541,14 @@ pub async fn kb_rag_query(
     }
     if let Some(ctx) = skill_ctx {
         log::debug!(
-            "[kb_rag_query] [0]: skills 手动触发 request_id={} skills={:?} manual={}",
+            "[agent_query] [0]: skills 手动触发 request_id={} skills={:?} manual={}",
             request_id,
             ctx.skill_ids,
             skill_resolved.as_ref().map(|r| r.is_manual).unwrap_or(false)
         );
     } else {
         log::debug!(
-            "[kb_rag_query] [0]: 自动触发技能（技能激活交由 LLM 决策）request_id={}",
+            "[agent_query] [0]: 自动触发技能（技能激活交由 LLM 决策）request_id={}",
             request_id
         );
     }
@@ -594,17 +594,17 @@ pub async fn kb_rag_query(
         let expanded = llm.expand_queries(&query, &messages, cancel.clone()).await;
         let mut queries = vec![query.clone()];
         queries.extend(expanded);
-        log::debug!("[kb_rag_query] [1]: 查询扩展完成 request_id={} total_queries={} queries={:?}", request_id, queries.len(), queries);
+        log::debug!("[agent_query] [1]: 查询扩展完成 request_id={} total_queries={} queries={:?}", request_id, queries.len(), queries);
 
         // 检查取消
         if cancel.is_cancelled() {
-            log::debug!("[kb_rag_query] [1]: 对话取消，直接结束 request_id={}", request_id);
+            log::debug!("[agent_query] [1]: 对话取消，直接结束 request_id={}", request_id);
             task_registry.unregister(&request_id).await;
             return Ok(());
         }
 
         // ── Stage 2: 多查询混合检索（并行）──
-        log::debug!("[kb_rag_query] [2]: 混合检索开始 request_id={} 语义扩展数量={}",  request_id, queries.len());
+        log::debug!("[agent_query] [2]: 混合检索开始 request_id={} 语义扩展数量={}",  request_id, queries.len());
         let _ = app.emit(
             "rag:status",
             RagStatus {
@@ -633,7 +633,7 @@ pub async fn kb_rag_query(
                     .and_then(|e| e.ok())
                     .and_then(|v| v.into_iter().next());
 
-                    log::debug!("[kb_rag_query] [2]: 语义扩展query向量化 query={} 耗时={:?} success={}",
+                    log::debug!("[agent_query] [2]: 语义扩展query向量化 query={} 耗时={:?} success={}",
                         &q, embed_start.elapsed(), embedding.is_some());
 
                     if let Some(vec) = embedding {
@@ -646,12 +646,12 @@ pub async fn kb_rag_query(
                             .await
                             .unwrap_or_default();
 
-                        log::debug!("[kb_rag_query] [2]: 语义扩展query混合检索， query={} 命中 {} 条文档耗时={:?}",
+                        log::debug!("[agent_query] [2]: 语义扩展query混合检索， query={} 命中 {} 条文档耗时={:?}",
                             &q, hits.len(), start.elapsed());
 
                         hits
                     } else {
-                        log::warn!("[kb_rag_query] [2]: 语义扩展query向量化失败 query={} skipping", &q);
+                        log::warn!("[agent_query] [2]: 语义扩展query向量化失败 query={} skipping", &q);
                         Vec::new()
                     }
                 }
@@ -676,10 +676,10 @@ pub async fn kb_rag_query(
 
         // 展平所有结果
         let all_hits: Vec<SearchHit> = all_results.into_iter().flatten().collect();
-        log::debug!("[kb_rag_query] [2]: 语义扩展query混合检索最终结果， request_id={} 命中 {} 条文档, 耗时={:?}", request_id, all_hits.len(), search_start.elapsed());
+        log::debug!("[agent_query] [2]: 语义扩展query混合检索最终结果， request_id={} 命中 {} 条文档, 耗时={:?}", request_id, all_hits.len(), search_start.elapsed());
 
         if cancel.is_cancelled() {
-            log::debug!("[kb_rag_query] [2]: 对话取消，直接结束 request_id={}", request_id);
+            log::debug!("[agent_query] [2]: 对话取消，直接结束 request_id={}", request_id);
             task_registry.unregister(&request_id).await;
             return Ok(());
         }
@@ -687,7 +687,7 @@ pub async fn kb_rag_query(
         // 预检索结果提取：无命中时降级为空上下文，交由 Agent 按需使用工具
         'retrieval: {
             if all_hits.is_empty() {
-                log::warn!("[kb_rag_query] [3]: 预检索降级为空上下文（agentic 模式）request_id={}", request_id);
+                log::warn!("[agent_query] [3]: 预检索降级为空上下文（agentic 模式）request_id={}", request_id);
                 break 'retrieval (String::new(), Vec::new(), 0usize);
             }
 
@@ -699,7 +699,7 @@ pub async fn kb_rag_query(
                 effective_max_chunks,
             );
             if log::log_enabled!(log::Level::Debug) {
-                log::debug!("[kb_rag_query] [3]: 文档聚合结果， request_id={} 命中 {} 条文档, effective_min_score={}， effective_max_docs={}, effective_max_chunks={}， doc=\n{:?}",
+                log::debug!("[agent_query] [3]: 文档聚合结果， request_id={} 命中 {} 条文档, effective_min_score={}， effective_max_docs={}, effective_max_chunks={}， doc=\n{:?}",
                  request_id, selected.len(), effective_min_score, effective_max_docs, effective_max_chunks, 
                   selected.iter()
                     .map(|(hit, score)| format!("{} : {:.3}", hit.doc_name, score))
@@ -708,7 +708,7 @@ pub async fn kb_rag_query(
             }
  
             if selected.is_empty() {
-                log::info!("[kb_rag_query] [3]: 没有文档符合阈值，预检索降级为空上下文（agentic 模式）request_id={}", request_id);
+                log::info!("[agent_query] [3]: 没有文档符合阈值，预检索降级为空上下文（agentic 模式）request_id={}", request_id);
                 break 'retrieval (String::new(), Vec::new(), 0usize);
             }
 
@@ -716,25 +716,25 @@ pub async fn kb_rag_query(
             // 优先使用 sentence_window（包含检索句子前后的上下文），fallback 到 chunk text，
             // 总字符数受 agent 模块的 MAX_CONTEXT_CHARS 限制避免超出模型窗口。
             let context = build_context_text(&selected, crate::core::agent::MAX_CONTEXT_CHARS);
-            log::debug!( "[kb_rag_query] [3]: 上下文构建结果， request_id={} 命中 {} 条文档, char_len={} preview={:?}",
+            log::debug!( "[agent_query] [3]: 上下文构建结果， request_id={} 命中 {} 条文档, char_len={} preview={:?}",
                 request_id, selected.len(), context.len(), context
             );
 
             // 构建引用来源（按 doc_name 去重，合并文本/path_json，取最高分；
             // 对 OPML/FreeMind 合并 path_json 层级路径展示）
             let sources = build_sources(&selected);
-            log::debug!("[kb_rag_query] [3]: 引用来源去重结果， request_id={} 命中 {} 条文档, count={}", request_id, selected.len(), sources.len());
+            log::debug!("[agent_query] [3]: 引用来源去重结果， request_id={} 命中 {} 条文档, count={}", request_id, selected.len(), sources.len());
 
             (context, sources, selected.len())
         }
     } else {
-        log::info!("[kb_rag_query] [3]: 未命中检索技能，跳过预检索（agentic 模式）request_id={}", request_id);
+        log::info!("[agent_query] [3]: 未命中检索技能，跳过预检索（agentic 模式）request_id={}", request_id);
         (String::new(), Vec::new(), 0usize)
     };
     let sources_clone = sources.clone();
 
     // ── Stage 4: 构建 context → RAG Agent 生成（技能解析与参数覆盖已在 Stage 0 完成）──
-    log::debug!("[kb_rag_query] [4]: 构建 context → Agent 生成 request_id={}", request_id);
+    log::debug!("[agent_query] [4]: 构建 context → Agent 生成 request_id={}", request_id);
     let status_msg = match selected_count {
         0 => "正在生成回答...".to_string(),
         n => format!("正在生成回答（基于 {} 个相关片段）...", n),
@@ -749,7 +749,7 @@ pub async fn kb_rag_query(
     );
 
     if cancel.is_cancelled() {
-        log::debug!("[kb_rag_query] [4]: 对话取消，直接结束 request_id={}", request_id);
+        log::debug!("[agent_query] [4]: 对话取消，直接结束 request_id={}", request_id);
         task_registry.unregister(&request_id).await;
         return Ok(());
     }
@@ -777,6 +777,7 @@ pub async fn kb_rag_query(
         skill_state: active_skills.clone(),
         skill_bases,
         search_sink: search_sink.clone(),
+        app_handle: app.clone(),
     };
     // Agent 规约（角色/语言/安全边界）从资源目录加载，打包后跟随安装包
     let agent_rules = load_agent_rules(&app, "rag_agent.md");
@@ -788,7 +789,7 @@ pub async fn kb_rag_query(
         catalog,
         agent_rules,
     );
-    log::debug!("[kb_rag_query] [4]: 构建 Agent 完成 request_id={}", request_id);
+    log::debug!("[agent_query] [4]: 构建 Agent 完成 request_id={}", request_id);
 
     // 技能执行计时起点（进入生成阶段即视为执行开始）
     let skill_exec_start = std::time::Instant::now();
@@ -806,9 +807,10 @@ pub async fn kb_rag_query(
     let mut final_usage: Option<UsageInfo> = None;
     let mut delta_count = 0u64;
     let mut stream_failed = false;
+    let mut last_tool_summary: Option<String> = None;
     while let Some(item) = stream.next().await {
         if cancel.is_cancelled() {
-            log::debug!("[kb_rag_query] [4]: 对话取消，直接结束 request_id={} accumulated={}",
+            log::debug!("[agent_query] [4]: 对话取消，直接结束 request_id={} accumulated={}",
                 request_id, full_content.len());
             // 取消时保留已生成的部分内容：通过 rag:done 交给前端落库
             if !full_content.is_empty() {
@@ -848,7 +850,7 @@ pub async fn kb_rag_query(
         }
         match item {
             Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::ToolCall { tool_call, .. })) => {
-                log::debug!("[kb_rag_query] [4]: 工具调用: name={} arguments={}",
+                log::debug!("[agent_query] [4]: 工具调用: name={} arguments={}",
                     tool_call.function.name, tool_call.function.arguments);
             }
             Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(text))) => {
@@ -868,7 +870,7 @@ pub async fn kb_rag_query(
             Ok(MultiTurnStreamItem::FinalResponse(res)) => {
                 let usage = res.usage();
                 if usage.has_values() {
-                    log::debug!("[kb_rag_query] [4]: Agent 最终 token 使用: request_id={} input_tokens={} output_tokens={}",
+                    log::debug!("[agent_query] [4]: Agent 最终 token 使用: request_id={} input_tokens={} output_tokens={}",
                         request_id, usage.input_tokens, usage.output_tokens);
                     final_usage = Some(usage_to_info(&usage));
                 }
@@ -880,21 +882,25 @@ pub async fn kb_rag_query(
             }
             Ok(_) => {}
             Err(e) => {
-                log::warn!("[kb_rag_query] [4]: Agent 流式响应错误: request_id={} err={}", request_id, e);
+                log::warn!("[agent_query] [4]: Agent 流式响应错误: request_id={} err={}", request_id, e);
                 stream_failed = true;
                 break;
             }
+        }
+        // 捕获最后一个成功的工具调用结果（用于兜底：模型调用工具成功但未生成文本时）
+        if let Some(summary) = tool_call_bus().peek_last_success_summary(&request_id) {
+            last_tool_summary = Some(summary);
         }
         // 转发工具调用轨迹（工具在 Rig 流式内部执行，结果已写入总线）
         emit_pending_tool_events(&app, &request_id);
     }
     
-     log::debug!("[kb_rag_query] [4]: Agent 流式响应完成: request_id={} took={:?} delta_count={} content_len={}",
+     log::debug!("[agent_query] [4]: Agent 流式响应完成: request_id={} took={:?} delta_count={} content_len={}",
         request_id, llm_start.elapsed(), delta_count, full_content.len());
 
     // 流式失败且无任何内容 → 显式报错，避免静默失败或空消息污染前端
     if stream_failed && full_content.is_empty() && !cancel.is_cancelled() {
-        log::info!("[kb_rag_query] [4]: 流式响应失败 request_id={}", request_id);
+        log::info!("[agent_query] [4]: 流式响应失败 request_id={}", request_id);
         emit_pending_tool_events(&app, &request_id);
         tool_call_bus().clear(&request_id);
         {
@@ -916,34 +922,40 @@ pub async fn kb_rag_query(
     }
 
     // ── Done ──
-    // 流式正常结束但内容为空（模型零输出）：按失败处理并显式报错，
-    // 避免空回复污染前端与指标
+    // 流式正常结束但内容为空：若工具调用成功，以工具结果兜底；否则报错。
     if full_content.trim().is_empty() {
-        log::warn!("[kb_rag_query] [4]: 响应完成但内容为空 request_id={}", request_id);
-        emit_pending_tool_events(&app, &request_id);
-        tool_call_bus().clear(&request_id);
-        {
-            let inputs = collect_skill_exec_inputs(skill_ctx, &active_skills, skill_exec_start.elapsed().as_millis() as u64);
-            let matched = !inputs.is_empty();
-            let metrics = state.skill_metrics.clone();
-            let dir = dir_path.clone();
-            let _ = tokio::task::spawn_blocking(move || {
-                if matched {
-                    metrics.record_dispatch_matched(&dir);
-                }
-                record_skill_execution(&metrics, &dir, inputs, false, Some("llm_empty_output"));
-            })
-            .await;
+        if let Some(summary) = last_tool_summary.take() {
+            log::info!("[agent_query] [4]: 模型未生成文本但工具调用成功，以工具结果兜底 request_id={} summary={}",
+                request_id, summary);
+            full_content = summary;
+            // 继续走到 rag:done 正常发射
+        } else {
+            log::warn!("[agent_query] [4]: 响应完成但内容为空 request_id={}", request_id);
+            emit_pending_tool_events(&app, &request_id);
+            tool_call_bus().clear(&request_id);
+            {
+                let inputs = collect_skill_exec_inputs(skill_ctx, &active_skills, skill_exec_start.elapsed().as_millis() as u64);
+                let matched = !inputs.is_empty();
+                let metrics = state.skill_metrics.clone();
+                let dir = dir_path.clone();
+                let _ = tokio::task::spawn_blocking(move || {
+                    if matched {
+                        metrics.record_dispatch_matched(&dir);
+                    }
+                    record_skill_execution(&metrics, &dir, inputs, false, Some("llm_empty_output"));
+                })
+                .await;
+            }
+            emit_command_error(&app, "rag:error", &request_id, "LLM 生成失败，请检查模型服务是否可用".into());
+            task_registry.unregister(&request_id).await;
+            return Ok(());
         }
-        emit_command_error(&app, "rag:error", &request_id, "LLM 生成失败，请检查模型服务是否可用".into());
-        task_registry.unregister(&request_id).await;
-        return Ok(());
     }
     let (prompt_tokens, completion_tokens) = final_usage
         .map(|u| (u.prompt_tokens, u.completion_tokens))
         .unwrap_or((0, 0));
 
-    log::debug!("[kb_rag_query] [4]: 响应完成: request_id={} content_len={} sources={} tokens_in={} tokens_out={}",
+    log::debug!("[agent_query] [4]: 响应完成: request_id={} content_len={} sources={} tokens_in={} tokens_out={}",
         request_id, full_content.len(), sources_clone.len(), prompt_tokens, completion_tokens);
 
     let _ = app.emit(

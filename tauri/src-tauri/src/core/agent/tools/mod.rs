@@ -125,6 +125,23 @@ impl ToolCallBus {
             map.remove(request_id);
         }
     }
+
+    /// 查看最后一个成功工具调用的结果摘要（不消费，不 drain）。
+    ///
+    /// 用于兜底：模型调用了工具并成功返回结果，但未生成文本回复时，
+    /// 将工具结果作为最终回复内容，避免空内容报错。
+    pub fn peek_last_success_summary(&self, request_id: &str) -> Option<String> {
+        if let Ok(map) = self.map.lock() {
+            if let Some(events) = map.get(request_id) {
+                return events
+                    .iter()
+                    .rev()
+                    .find(|e| e.kind == "result" && e.ok)
+                    .map(|e| e.summary.clone());
+            }
+        }
+        None
+    }
 }
 
 static TOOL_CALL_BUS: OnceLock<ToolCallBus> = OnceLock::new();
@@ -1104,6 +1121,107 @@ pub fn build_git_status_tool(cfg: KbSearchConfig) -> DynamicTool {
                 }
             })
         },
+    )
+}
+
+// ─────────────────────────── 前端通信桥工具 ───────────────────────────
+
+/// 通用前端桥工具构建器：Rust 工具闭包 ↔ 前端业务 handler 的标准通道。
+///
+/// 后续新增「与番茄钟类似的业务」（纪念日、待办、定时任务等）时，只需：
+/// 1. 调用本构建器生成 [`DynamicTool`]（传 name / description / schema / default_action）
+/// 2. 前端注册同名 handler（监听 `frontend_bridge:request` 事件）
+/// 即可复用整套请求/响应协议，无需重复实现事件发射与结果等待逻辑（开闭原则）。
+///
+/// 协议细节见 [`crate::core::bridge`]。单任务语义等业务规则由前端 handler
+/// 内部保证，不暴露给模型。
+fn build_bridge_tool(
+    cfg: KbSearchConfig,
+    name: &str,
+    description: &str,
+    schema: serde_json::Value,
+    default_action: &str,
+) -> DynamicTool {
+    let name_for_tool = name.to_string();
+    let closure_name = name.to_string();
+    let default_action = default_action.to_string();
+    DynamicTool::new(
+        &name_for_tool,
+        description,
+        schema,
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let cfg = cfg.clone();
+            let tool = closure_name.clone();
+            let default_action = default_action.clone();
+            Box::pin(async move {
+                // 动作：显式指定优先，缺失/为空时回退默认动作（如 status）
+                let action = args
+                    .get("action")
+                    .and_then(|a| a.as_str())
+                    .filter(|a| !a.trim().is_empty())
+                    .map(|a| a.trim().to_string())
+                    .unwrap_or(default_action);
+                let preview = truncate(&serde_json::to_string(&args).unwrap_or_default(), 120);
+                record_tool_call(&cfg, &tool, &preview);
+                let app_handle = cfg.app_handle.clone();
+                match crate::core::bridge::request(&app_handle, &tool, &action, args).await {
+                    Ok(text) => {
+                        record_tool_result(&cfg, &tool, true, &truncate(&text, 200));
+                        Ok(ToolOutput::text(text))
+                    }
+                    Err(e) => {
+                        record_tool_result(&cfg, &tool, false, &truncate(&e, 200));
+                        Err(tool_error(&tool, &e))
+                    }
+                }
+            })
+        },
+    )
+}
+
+/// 构建 pomodoro 工具：控制前端番茄钟业务（定时/专注/休息/自动衔接/停止/状态查询）。
+///
+/// 动作与参数对齐 `resources/skills/pomodoro/SKILL.md`：
+/// - `start`：开始计时，`mode` 为 `focus`（专注，默认 25 分钟）或 `break`（休息，默认 5 分钟），
+///   可选 `minutes` 自定义时长（1-180）
+/// - `autoBreak` / `autoFocus`：开启/关闭自动衔接，`openEnable` 布尔值
+/// - `stop`：停止当前计时；`status`：查询当前运行状态
+///
+/// 单任务语义（每次 start 前先关闭旧任务，系统同时只存在一个定时）是
+/// 前端 `PomodoroService` 的内部逻辑，不向模型暴露——模型只需声明意图，
+/// 唯一性保证由业务层负责。
+pub fn build_pomodoro_tool(cfg: KbSearchConfig) -> DynamicTool {
+    build_bridge_tool(
+        cfg,
+        "pomodoro",
+        "控制番茄钟（专注计时器）。动作：start 开始计时（mode=focus 专注，默认 25 分钟；mode=break 休息，默认 5 分钟；可选 minutes 自定义时长，范围 1-180）；autoBreak 开启/关闭自动开始休息（openEnable 布尔值）；autoFocus 开启/关闭自动开始专注（openEnable 布尔值）；stop 停止当前计时；status 查询当前运行状态。当用户要求定时、开始、停止、查询番茄钟或设置自动衔接时调用。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["start", "autoBreak", "autoFocus", "stop", "status"],
+                    "description": "要执行的动作"
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": ["focus", "break"],
+                    "description": "计时模式，仅 start 使用：focus 专注 / break 休息"
+                },
+                "minutes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 180,
+                    "description": "自定义时长（分钟），仅 start 使用；focus 默认 25，break 默认 5"
+                },
+                "openEnable": {
+                    "type": "boolean",
+                    "description": "是否开启，仅 autoBreak / autoFocus 使用：true 开启，false 关闭"
+                }
+            },
+            "required": ["action"]
+        }),
+        "status",
     )
 }
 

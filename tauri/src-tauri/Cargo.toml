@@ -17,7 +17,7 @@ pdf-extract = ["dep:pdf-extract"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset"] }
+tauri = { version = "2", features = ["protocol-asset", "tray-icon", "image-png"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-store = "2"
@@ -36,7 +36,10 @@ rusqlite = { version = "0.34", features = ["bundled"] }
 
 # 工具
 uuid = { version = "1", features = ["v4"] }
+dashmap = "6"
 regex = "1"
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
 
 # YAML 解析（Skill 元数据 SKILL.md frontmatter）
 serde_yaml = "0.9"

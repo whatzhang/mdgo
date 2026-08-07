@@ -33,6 +33,9 @@ impl ChatStore {
         // 启用 WAL 模式，支持多连接并发读写（与 AiHistoryStore 共享同一文件）
         conn.execute_batch("PRAGMA journal_mode=WAL;")
             .map_err(|e| format!("启用 WAL 模式失败: {}", e))?;
+        // WAL 下写写互斥；必须设置忙等待，否则并发写直接 SQLITE_BUSY
+        conn.execute_batch("PRAGMA busy_timeout=5000;")
+            .map_err(|e| format!("设置 busy_timeout 失败: {}", e))?;
         Self::init_tables(&conn)?;
 
         Ok(Self {
@@ -140,7 +143,8 @@ impl ChatStore {
 
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
 
-        conn.execute_batch("BEGIN TRANSACTION")
+        // 写事务统一 IMMEDIATE（WAL 下避免 DEFERRED 读快照升级失败的 SQLITE_BUSY_SNAPSHOT）
+        conn.execute_batch("BEGIN IMMEDIATE TRANSACTION")
             .map_err(|e| format!("开启事务失败: {}", e))?;
 
         let insert_result = conn.execute(
@@ -211,7 +215,8 @@ impl ChatStore {
     pub fn delete_session(&self, id: &str) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
 
-        conn.execute_batch("BEGIN TRANSACTION")
+        // 写事务统一 IMMEDIATE（WAL 下避免 DEFERRED 读快照升级失败的 SQLITE_BUSY_SNAPSHOT）
+        conn.execute_batch("BEGIN IMMEDIATE TRANSACTION")
             .map_err(|e| format!("开启事务失败: {}", e))?;
 
         let affected = conn
@@ -508,7 +513,8 @@ impl ChatStore {
             }
         }
 
-        conn.execute_batch("BEGIN TRANSACTION")
+        // 写事务统一 IMMEDIATE（WAL 下避免 DEFERRED 读快照升级失败的 SQLITE_BUSY_SNAPSHOT）
+        conn.execute_batch("BEGIN IMMEDIATE TRANSACTION")
             .map_err(|e| format!("开启事务失败: {}", e))?;
 
         // 验证会话存在
@@ -563,7 +569,8 @@ impl ChatStore {
         let now = unix_timestamp_now();
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
 
-        conn.execute_batch("BEGIN TRANSACTION")
+        // 写事务统一 IMMEDIATE（WAL 下避免 DEFERRED 读快照升级失败的 SQLITE_BUSY_SNAPSHOT）
+        conn.execute_batch("BEGIN IMMEDIATE TRANSACTION")
             .map_err(|e| format!("开启事务失败: {}", e))?;
 
         if let Err(e) = conn.execute(
@@ -599,7 +606,7 @@ impl ChatStore {
         Ok(())
     }
 
-    /// 保存消息的引用来源（RAG 模式）
+    /// 保存消息的引用来源（Agent 模式）
     ///
     /// 先删除该 message_id 下已有的 sources，再插入新的，保证幂等。
     pub fn save_message_sources(
@@ -609,7 +616,8 @@ impl ChatStore {
     ) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
 
-        conn.execute_batch("BEGIN TRANSACTION")
+        // 写事务统一 IMMEDIATE（WAL 下避免 DEFERRED 读快照升级失败的 SQLITE_BUSY_SNAPSHOT）
+        conn.execute_batch("BEGIN IMMEDIATE TRANSACTION")
             .map_err(|e| format!("开启事务失败: {}", e))?;
 
         // 先删除已有 sources（保证幂等，避免重复调用产生脏数据）

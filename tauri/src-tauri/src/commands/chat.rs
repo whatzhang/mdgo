@@ -207,9 +207,11 @@ pub async fn chat_session_create(
     }
 
     // 3. 创建新会话（超出上限时自动删除最旧的，返回被删 ID）
-    let (session, deleted_ids) = tokio::task::spawn_blocking(move || store.create_session(&title, &session_type))
-        .await
-        .map_err(|e| format!("任务执行失败: {}", e))??;
+    let (session, deleted_ids) = tokio::task::spawn_blocking(move || {
+        crate::core::db::with_busy_retry(3, || store.create_session(&title, &session_type))
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))??;
 
     // 4. 清理被自动删除会话的向量+BM25 索引
     if !deleted_ids.is_empty() {
@@ -240,9 +242,11 @@ pub async fn chat_session_delete(
     let id_for_index = id.clone();
 
     // 1. 从 SQLite 删除会话（CASCADE 删除消息 + sources）
-    tokio::task::spawn_blocking(move || store.delete_session(&id))
-        .await
-        .map_err(|e| format!("任务执行失败: {}", e))??;
+    tokio::task::spawn_blocking(move || {
+        crate::core::db::with_busy_retry(3, || store.delete_session(&id))
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))??;
 
     // 2. 从对话索引中删除（向量 + BM25）
     if let Err(e) = indexer.remove_chat_session(&dir_path, &id_for_index).await {
@@ -260,9 +264,11 @@ pub async fn chat_session_rename(
     title: String,
 ) -> Result<(), String> {
     let store = state.get_chat_store(&dir_path)?;
-    tokio::task::spawn_blocking(move || store.rename_session(&id, &title))
-        .await
-        .map_err(|e| format!("任务执行失败: {}", e))?
+    tokio::task::spawn_blocking(move || {
+        crate::core::db::with_busy_retry(3, || store.rename_session(&id, &title))
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
 }
 
 #[tauri::command]
@@ -272,9 +278,11 @@ pub async fn chat_session_toggle_favorite(
     id: String,
 ) -> Result<bool, String> {
     let store = state.get_chat_store(&dir_path)?;
-    tokio::task::spawn_blocking(move || store.toggle_favorite(&id))
-        .await
-        .map_err(|e| format!("任务执行失败: {}", e))?
+    tokio::task::spawn_blocking(move || {
+        crate::core::db::with_busy_retry(3, || store.toggle_favorite(&id))
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
 }
 
 #[tauri::command]
@@ -328,7 +336,9 @@ pub async fn chat_message_save(
 ) -> Result<ChatMessage, String> {
     let store = state.get_chat_store(&dir_path)?;
     tokio::task::spawn_blocking(move || {
-        store.save_message(&session_id, &role, &content, token_count, tool_calls.as_deref())
+        crate::core::db::with_busy_retry(3, || {
+            store.save_message(&session_id, &role, &content, token_count, tool_calls.as_deref())
+        })
     })
     .await
     .map_err(|e| format!("任务执行失败: {}", e))?
@@ -346,9 +356,11 @@ pub async fn chat_session_clear_messages(
     let sid = session_id.clone();
 
     // 1. 清空 SQLite 中的消息
-    tokio::task::spawn_blocking(move || store.clear_session_messages(&session_id))
-        .await
-        .map_err(|e| format!("任务执行失败: {}", e))??;
+    tokio::task::spawn_blocking(move || {
+        crate::core::db::with_busy_retry(3, || store.clear_session_messages(&session_id))
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))??;
 
     // 2. 从对话索引中删除该会话的所有已索引消息
     if let Err(e) = indexer.remove_chat_session(&dir_path, &sid).await {
@@ -366,9 +378,11 @@ pub async fn chat_message_sources_save(
     sources: Vec<ChatMessageSource>,
 ) -> Result<(), String> {
     let store = state.get_chat_store(&dir_path)?;
-    tokio::task::spawn_blocking(move || store.save_message_sources(&message_id, &sources))
-        .await
-        .map_err(|e| format!("任务执行失败: {}", e))?
+    tokio::task::spawn_blocking(move || {
+        crate::core::db::with_busy_retry(3, || store.save_message_sources(&message_id, &sources))
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
 }
 
 #[tauri::command]
@@ -483,9 +497,11 @@ pub async fn chat_session_set_last(
     mode: String,
 ) -> Result<(), String> {
     let store = state.get_chat_store(&dir_path)?;
-    tokio::task::spawn_blocking(move || store.set_last_session(&session_id, &mode))
-        .await
-        .map_err(|e| format!("任务执行失败: {}", e))?
+    tokio::task::spawn_blocking(move || {
+        crate::core::db::with_busy_retry(3, || store.set_last_session(&session_id, &mode))
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
 }
 
 #[derive(Debug, serde::Serialize)]

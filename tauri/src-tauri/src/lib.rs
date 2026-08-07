@@ -3,8 +3,10 @@
 mod commands;
 mod core;
 mod services;
+mod tray;
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use commands::llm::TaskRegistry;
@@ -150,7 +152,13 @@ pub fn run() {
     let prompt_store = PromptStore::new()
         .expect("初始化 PromptStore 失败");
 
-    tauri::Builder::default()
+    // 托盘创建是否成功：决定 Windows/Linux 关闭按钮是否拦截为「隐藏到托盘」。
+    // 托盘不可用（如 Linux 无托盘宿主）时走系统原生关闭逻辑，避免窗口隐藏后无法恢复。
+    let tray_ok = Arc::new(AtomicBool::new(false));
+    #[cfg(not(target_os = "macos"))]
+    let tray_ok_for_close = tray_ok.clone();
+
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_store::Builder::new().build())
@@ -168,7 +176,7 @@ pub fn run() {
             skill_registry,
             skill_metrics,
         })
-        .setup(|app| {
+        .setup(move |app| {
             // 注入 skill:changed 事件：AppHandle 就绪后替换 watcher 回调
             let handle = app.handle().clone();
             {
@@ -177,10 +185,23 @@ pub fn run() {
                     let _ = handle.emit("skill:changed", ());
                 }));
             }
+            // 初始化系统托盘（关闭到托盘 / 左键显示 / 右键菜单：显示、退出）。
+            // 托盘是外围功能：创建失败不阻断启动（如 Linux 无托盘宿主），降级为无托盘模式。
+            match crate::tray::setup_tray(app) {
+                Ok(()) => tray_ok.store(true, Ordering::Relaxed),
+                Err(e) => log::warn!("[tray] 系统托盘创建失败，应用将以无托盘模式运行: {}", e),
+            }
+            // 启动 WebSocket 通信桥（替代 Tauri 事件/命令，Rust 工具闭包 ↔ 前端）
+            tauri::async_runtime::spawn(async move {
+                match crate::core::bridge::start_server().await {
+                    Ok(port) => log::info!("[setup] WebSocket 桥已启动: 127.0.0.1:{}", port),
+                    Err(e) => log::error!("[setup] WebSocket 桥启动失败: {}", e),
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::fs::read_dir_recursive,
+            commands::fs::scan_dir_full,
             commands::fs::read_dir,
             commands::fs::read_file,
             commands::fs::read_file_binary,
@@ -247,9 +268,11 @@ pub fn run() {
             commands::chat::chat_session_set_last,
             commands::chat::chat_session_get_last,
             // LLM 命令
-            commands::llm::kb_rag_query,
+            commands::llm::agent_query,
             commands::llm::kb_llm_query,
             commands::llm::kb_cancel_task,
+            // 前端通信桥命令（WebSocket）
+            commands::bridge::get_bridge_port,
             // Skill 管理命令
             commands::skill::skill_list,
             commands::skill::skill_get,
@@ -266,9 +289,33 @@ pub fn run() {
             commands::prompt::prompt_create,
             commands::prompt::prompt_update,
             commands::prompt::prompt_delete,
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        ]);
+
+    // Windows/Linux：拦截主窗口关闭请求，点击右上角关闭按钮 → 隐藏到系统托盘。
+    // 仅当托盘创建成功时才拦截；托盘不可用时走系统原生关闭逻辑，避免窗口隐藏后无法恢复。
+    // macOS：遵循系统原生逻辑（红 X 关闭窗口，进程保留、Dock 可见），不注册拦截。
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.on_window_event(move |window, event| {
+        if window.label() == "main" {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if tray_ok_for_close.load(Ordering::Relaxed) {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        }
+    });
+
+    builder
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app_handle, _event| {
+            // macOS：点击 Dock 图标 → 恢复/重新打开主窗口（系统原生习惯）
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = _event {
+                crate::tray::show_main_window(_app_handle);
+            }
+        });
 }
 
 /// 初始化日志系统：文件日志（Debug）+ 终端日志（Info）双输出。

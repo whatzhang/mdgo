@@ -100,6 +100,9 @@ impl AiHistoryStore {
         // 启用 WAL 模式，支持多连接并发读写（与 ChatStore 共享同一文件）
         conn.execute_batch("PRAGMA journal_mode=WAL;")
             .map_err(|e| format!("启用 WAL 模式失败: {}", e))?;
+        // WAL 下写写互斥；必须设置忙等待，否则并发写直接 SQLITE_BUSY
+        conn.execute_batch("PRAGMA busy_timeout=5000;")
+            .map_err(|e| format!("设置 busy_timeout 失败: {}", e))?;
         // 启用外键约束（每个连接独立设置，保持与 ChatStore 一致）
         conn.execute_batch("PRAGMA foreign_keys = ON;")
             .map_err(|e| format!("启用外键约束失败: {}", e))?;

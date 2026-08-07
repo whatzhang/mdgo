@@ -1,4 +1,5 @@
 pub mod ai_history;
+pub mod bridge;
 pub mod chat;
 pub mod clipboard;
 pub mod config;

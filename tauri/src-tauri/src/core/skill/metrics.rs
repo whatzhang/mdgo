@@ -2,9 +2,12 @@
 //!
 //! 提供技能调度和执行的监控指标，包括命中率、成功率、耗时分布、错误码等。
 //!
-//! 设计：**SQLite 为唯一事实源**（按目录写入各自 `.mdgo/mdgo.db`）。
-//! - 写入：`record_dispatch` / `record_execution_batch` 同步落库（单事务）
-//! - 读取：`get_summary` 直接按目录查询聚合，无内存缓冲，天然无截断 / 竞态
+//! 设计：**SQLite 为最终事实源**（按目录写入各自 `.mdgo/mdgo.db`）。
+//! - 调度计数（`record_dispatch` / `record_dispatch_matched`）：先累加内存，
+//!   每次请求结束统一批量落库（与执行明细同批），并设阈值兜底，
+//!   将单请求 2~3 次写合并为 1 次，降低与 ChatStore / AiHistoryStore 的写锁竞争
+//! - 执行明细：`record_execution_batch` 单事务批量落库
+//! - 读取：`get_summary` 读取前先冲刷待落库计数，保证口径一致
 //! - 明细仅含执行元数据（耗时 / 结果 / 来源 / 错误码），不记录入参出参
 //! - 连接按目录缓存复用（`conns`），避免每次调用重开连接与全量 DDL
 
@@ -13,7 +16,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, TransactionBehavior};
 use serde::Serialize;
 
 use super::activation::ActivationSource;
@@ -99,19 +102,32 @@ pub struct GlobalMetricsSummary {
     pub until: u64,
 }
 
-/// 技能指标收集器（全局单例；无内存数据态，DB 为唯一事实源）
+/// 待落库的调度计数（内存累积态，批量 flush，降低写锁竞争）
+#[derive(Default, Clone, Copy)]
+struct PendingDispatch {
+    total: u64,
+    matched: u64,
+}
+
+/// 技能指标收集器（全局单例；调度计数内存累积 + 批量落库，执行明细直写）
 pub struct SkillMetrics {
     /// 按目录复用的 SQLite 连接（每目录一把锁，不同目录读写互不阻塞；首次打开时建表）
     conns: Mutex<HashMap<String, Arc<Mutex<Connection>>>>,
     /// 各目录最近一次过期明细清理时刻（毫秒），用于节流 90 天过期清理
     last_cleanup: Mutex<HashMap<String, i64>>,
+    /// 各目录待落库的调度计数（record_dispatch 高频调用先累加内存，请求结束或达阈值时统一落库）
+    pending: Mutex<HashMap<String, PendingDispatch>>,
 }
+
+/// 调度计数批量落库阈值：内存累积达到该值即触发一次写，避免异常中断路径长期滞留
+const DISPATCH_FLUSH_THRESHOLD: u64 = 16;
 
 impl SkillMetrics {
     pub fn new() -> Self {
         Self {
             conns: Mutex::new(HashMap::new()),
             last_cleanup: Mutex::new(HashMap::new()),
+            pending: Mutex::new(HashMap::new()),
         }
     }
 
@@ -122,7 +138,7 @@ impl SkillMetrics {
     fn with_conn<T>(
         &self,
         dir_path: &str,
-        f: impl FnOnce(&Connection) -> Result<T, String>,
+        f: impl FnOnce(&mut Connection) -> Result<T, String>,
     ) -> Result<T, String> {
         let conn = {
             let mut guard = self
@@ -150,20 +166,66 @@ impl SkillMetrics {
                 }
             }
         };
-        let guard = conn.lock().map_err(|e| format!("技能指标连接锁失效: {}", e))?;
-        f(&guard)
+        let mut guard = conn.lock().map_err(|e| format!("技能指标连接锁失效: {}", e))?;
+        f(&mut guard)
     }
 
-    /// 记录一次调度（matched = 是否命中技能）。单事务幂等累加。
+    /// 记录一次调度（matched = 是否命中技能）。
     ///
     /// 调度计数采用「起始计总数 + 结束补命中」两段式：
     /// - 请求起始调用本方法（matched 传 false，仅 total 自增，不阻塞请求主链路）；
     /// - 请求结束时若有技能实际激活，由 `record_dispatch_matched` 补记命中。
     /// 命中判定因此覆盖「预激活 ∪ LLM 动态激活」，避免 LLM 激活被计为 miss。
+    ///
+    /// 高频路径先累加内存（`pending`），请求结束或达阈值时统一落库，
+    /// 将单请求 2~3 次写合并为 1 次，降低与 ChatStore / AiHistoryStore 的写锁竞争。
     pub fn record_dispatch(&self, dir_path: &str, matched: bool) {
+        {
+            let mut guard = self.pending.lock().unwrap_or_else(|e| e.into_inner());
+            let p = guard.entry(dir_path.to_string()).or_default();
+            p.total += 1;
+            if matched {
+                p.matched += 1;
+            }
+        }
+        if let Some(pending) = self.take_pending_dispatch(dir_path, DISPATCH_FLUSH_THRESHOLD) {
+            self.flush_dispatch_pending(dir_path, pending);
+        }
+    }
+
+    /// 请求结束时补记一次命中（matched_dispatches + 1），修正命中率口径。
+    pub fn record_dispatch_matched(&self, dir_path: &str) {
+        {
+            let mut guard = self.pending.lock().unwrap_or_else(|e| e.into_inner());
+            guard.entry(dir_path.to_string()).or_default().matched += 1;
+        }
+        if let Some(pending) = self.take_pending_dispatch(dir_path, DISPATCH_FLUSH_THRESHOLD) {
+            self.flush_dispatch_pending(dir_path, pending);
+        }
+    }
+
+    /// 取出指定目录达到阈值的待落库计数（未达阈值返回 None；取出后内存归零）。
+    fn take_pending_dispatch(&self, dir_path: &str, threshold: u64) -> Option<PendingDispatch> {
+        let mut guard = self.pending.lock().unwrap_or_else(|e| e.into_inner());
+        let p = guard.entry(dir_path.to_string()).or_default();
+        if p.total >= threshold {
+            let taken = *p;
+            *p = PendingDispatch::default();
+            Some(taken)
+        } else {
+            None
+        }
+    }
+
+    /// 将指定目录的待落库调度计数写入 DB（单事务幂等累加）。
+    fn flush_dispatch_pending(&self, dir_path: &str, pending: PendingDispatch) {
+        if pending.total == 0 {
+            return;
+        }
         let r = self.with_conn(dir_path, |conn| -> Result<(), String> {
+            // 写事务 IMMEDIATE：WAL 下避免 DEFERRED 读快照升级失败的 SQLITE_BUSY_SNAPSHOT
             let tx = conn
-                .unchecked_transaction()
+                .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(|e| e.to_string())?;
             tx.execute(
                 "INSERT OR IGNORE INTO skill_dispatch_stats (id, total_dispatches, matched_dispatches) VALUES (1, 0, 0)",
@@ -172,36 +234,16 @@ impl SkillMetrics {
             .map_err(|e| e.to_string())?;
             tx.execute(
                 "UPDATE skill_dispatch_stats SET
-                     total_dispatches = total_dispatches + 1,
-                     matched_dispatches = matched_dispatches + ?1
+                     total_dispatches = total_dispatches + ?1,
+                     matched_dispatches = matched_dispatches + ?2
                  WHERE id = 1",
-                params![if matched { 1 } else { 0 }],
+                params![pending.total as i64, pending.matched as i64],
             )
             .map_err(|e| e.to_string())?;
             tx.commit().map_err(|e| e.to_string())
         });
         if let Err(e) = r {
             log::error!("[skill-metrics] 调度统计落盘失败: {}", e);
-        }
-    }
-
-    /// 请求结束时补记一次命中（matched_dispatches + 1），修正命中率口径。
-    pub fn record_dispatch_matched(&self, dir_path: &str) {
-        let r = self.with_conn(dir_path, |conn| -> Result<(), String> {
-            conn.execute(
-                "INSERT OR IGNORE INTO skill_dispatch_stats (id, total_dispatches, matched_dispatches) VALUES (1, 0, 0)",
-                [],
-            )
-            .map_err(|e| e.to_string())?;
-            conn.execute(
-                "UPDATE skill_dispatch_stats SET matched_dispatches = matched_dispatches + 1 WHERE id = 1",
-                [],
-            )
-            .map_err(|e| e.to_string())?;
-            Ok(())
-        });
-        if let Err(e) = r {
-            log::error!("[skill-metrics] 调度命中补记失败: {}", e);
         }
     }
 
@@ -213,6 +255,11 @@ impl SkillMetrics {
         success: bool,
         error_code: Option<&str>,
     ) {
+        // 每次请求结束统一冲刷该目录待落库调度计数（无论是否有技能激活），
+        // 将本请求生命周期内的 2~3 次调度写合并为 1 次落库
+        if let Some(pending) = self.take_pending_dispatch(dir_path, 1) {
+            self.flush_dispatch_pending(dir_path, pending);
+        }
         if inputs.is_empty() {
             return;
         }
@@ -232,8 +279,9 @@ impl SkillMetrics {
             }
         };
         let r = self.with_conn(dir_path, |conn| -> Result<(), String> {
+            // 写事务 IMMEDIATE：WAL 下避免 DEFERRED 读快照升级失败的 SQLITE_BUSY_SNAPSHOT
             let tx = conn
-                .unchecked_transaction()
+                .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(|e| e.to_string())?;
             {
                 let mut stmt = tx
@@ -331,6 +379,11 @@ impl SkillMetrics {
         } else {
             0.0
         };
+
+        // 读取前先冲刷待落库调度计数，保证聚合口径与已落库数据一致
+        if let Some(pending) = self.take_pending_dispatch(dir_path, 1) {
+            self.flush_dispatch_pending(dir_path, pending);
+        }
 
         // 调度计数（来自 DB，重启后仍准确）
         let (total_dispatches, matched_dispatches) = self

@@ -1,4 +1,4 @@
-//! RAG Agent 模块：kb_search 工具 + Agent 构建（基于 Rig Agent）
+//! Agent 模块：kb_search 工具 + Agent 构建（基于 Rig Agent）
 //!
 //! - [`build_kb_search_tool`]：将「嵌入 → 混合检索 → 文档聚合」封装为模型可调用的工具
 //! - [`build_rag_agent`]：携带检索上下文与检索/文件/技能工具的 Agent（渐进式披露三级加载）
@@ -22,6 +22,8 @@ use tauri::{AppHandle, Manager};
 
 use crate::core::skill::activation::ActiveSkillState;
 use crate::core::skill::SkillRegistry;
+
+use self::tool_registry::ToolRegistry;
 use crate::core::{Indexer, SearchHit, call_embedding_query, route_intent};
 
 /// 规约文档缓存：(文件名 → (最后修改时间, 内容))。
@@ -102,6 +104,8 @@ pub fn load_agent_rules(app: &AppHandle, name: &str) -> String {
 
 /// 内置工具集：文件只读、目录列举、Git 状态查询（含工具调用轨迹总线）
 pub mod tools;
+/// 工具注册表：按技能组织工具定义，统一管理工具的注册与构建
+pub mod tool_registry;
 
 /// 始终可用的基础工具（不随技能白名单窄化，对齐主流 Agent：文件操作与技能管理常驻）。
 ///
@@ -294,7 +298,7 @@ impl AgentHook for SkillInstructionHook {
 const MAX_TOP_K: u32 = 20;
 
 /// 聚合后送入模型上下文的总字符上限（约 3K token，避免超出模型窗口）。
-/// kb_search 工具与 RAG 主链路共用此上限（单一来源）。
+/// kb_search 工具与 Agent 主链路共用此上限（单一来源）。
 pub(crate) const MAX_CONTEXT_CHARS: usize = 12_000;
 
 /// kb_search 工具的运行参数
@@ -327,6 +331,8 @@ pub struct KbSearchConfig {
     /// 检索命中收集器：kb_search / code_lookup 工具将聚合后的命中写入，
     /// 命令层在请求结束（rag:done）时合并进引用来源列表，供前端渲染"引用"。
     pub search_sink: Arc<tokio::sync::Mutex<Vec<(SearchHit, f32)>>>,
+    /// 应用句柄：供前端通信桥工具（如 pomodoro）emit 事件并等待前端回传。
+    pub app_handle: tauri::AppHandle,
 }
 
 /// 执行一次完整检索：嵌入 → 混合检索 → 文档级聚合 → 生成模型可读文本。
@@ -641,7 +647,7 @@ pub fn build_context_text(selected: &[(SearchHit, f32)], max_chars: usize) -> St
     parts.join("\n")
 }
 
-/// 构建 RAG 问答 Agent（渐进式披露三级加载）。
+/// 构建 Agent（渐进式披露三级加载）。
 ///
 /// - `context`：预检索的知识库上下文，注入 system preamble
 /// - `search_config`：用于构建检索/文件工具（模型可在生成过程中补充检索）
@@ -650,6 +656,9 @@ pub fn build_context_text(selected: &[(SearchHit, f32)], max_chars: usize) -> St
 ///
 /// 工具与指令由 [`SkillInstructionHook`] / [`SkillGateHook`] 依据共享的
 /// [`ActiveSkillState`]（在 `search_config.skill_state` 中）动态驱动。
+///
+/// 工具注册通过 [`ToolRegistry`] 统一管理：新增工具只需在 [`create_tool_registry`]
+/// 中添加一行 `register` 调用，无需逐个手写 `.dynamic_tool(...)`。
 pub fn build_rag_agent(
     model: openai::CompletionModel,
     context: &str,
@@ -672,23 +681,27 @@ pub fn build_rag_agent(
         preamble.push_str(&catalog);
     }
 
-    log::info!("[kb_rag_query] [4]: L1 技能目录注入: chars={}, preamble_len={}", catalog.len(), preamble.len());
-
-    let builder = AgentBuilder::new(model);
+    log::info!("[agent_query] [4]: L1 技能目录注入: chars={}, preamble_len={}", catalog.len(), preamble.len());
 
     // 始终注册全部内置工具；每轮模型可见的工具列表由 SkillInstructionHook
     // 依据激活状态窄化（active_tools），SkillGateHook 作为兜底拦截越权调用。
-    let builder = builder
-        .dynamic_tool(build_kb_search_tool(search_config.clone()))
-        .dynamic_tool(build_code_lookup_tool(search_config.clone()))
-        .dynamic_tool(tools::build_activate_skill_tool(registry.clone(), skill_state.clone()))
-        .dynamic_tool(tools::build_deactivate_skill_tool(skill_state.clone()))
-        .dynamic_tool(tools::build_read_tool(search_config.clone()))
-        .dynamic_tool(tools::build_grep_tool(search_config.clone()))
-        .dynamic_tool(tools::build_edit_tool(search_config.clone()))
-        .dynamic_tool(tools::build_delete_tool(search_config.clone()))
-        .dynamic_tool(tools::build_list_files_tool(search_config.clone()))
-        .dynamic_tool(tools::build_git_status_tool(search_config));
+    //
+    // 工具通过 ToolRegistry 统一管理：注册表按技能组织，新增工具只需一行 register。
+    let tool_reg = create_tool_registry();
+    let tools = tool_reg.build_all(&search_config);
+    let mut iter = tools.into_iter();
+    // AgentBuilder 类型状态：第一个 dynamic_tool 从 NoToolConfig → WithBuilderTools
+    let first = iter.next().expect("ToolRegistry 必须至少注册一个工具");
+    let mut builder = AgentBuilder::new(model).dynamic_tool(first);
+    for tool in iter {
+        builder = builder.dynamic_tool(tool);
+    }
+
+    // activate_skill / deactivate_skill 依赖 SkillRegistry/ActiveSkillState，
+    // 不走通用注册表（参数签名不同），直接注册。
+    builder = builder
+        .dynamic_tool(tools::build_activate_skill_tool(registry, skill_state.clone()))
+        .dynamic_tool(tools::build_deactivate_skill_tool(skill_state.clone()));
 
     builder
         // 模型调用总预算：技能激活 + 文件读取 + 检索等流程通常需要多轮；
@@ -698,6 +711,37 @@ pub fn build_rag_agent(
         .add_hook(SkillInstructionHook::new(preamble, skill_state.clone(), DEFAULT_MAX_TURNS))
         .add_hook(SkillGateHook::new(skill_state))
         .build()
+}
+
+/// 创建工具注册表，注册所有业务工具。
+///
+/// 新增工具只需在此函数中添加一行 `register` 调用即可。
+/// 工具的可见性由技能声明（`tools: [...]`）和 `active_tools` 过滤控制：
+/// - BASE_TOOLS 中的工具始终可见
+/// - 其余工具仅当已激活技能声明时才可见
+///
+/// 200+ 工具场景下，每个工具一行 `register`，按技能分组注释，维护成本低。
+fn create_tool_registry() -> ToolRegistry {
+    let mut reg = ToolRegistry::new();
+
+    // ── 检索类工具（kb-search / code-lookup 技能声明） ──
+    reg.register("kb_search", Box::new(build_kb_search_tool));
+    reg.register("code_lookup", Box::new(build_code_lookup_tool));
+
+    // ── 文件操作工具（BASE_TOOLS，始终可见） ──
+    reg.register("read", Box::new(tools::build_read_tool));
+    reg.register("grep", Box::new(tools::build_grep_tool));
+    reg.register("edit", Box::new(tools::build_edit_tool));
+    reg.register("delete", Box::new(tools::build_delete_tool));
+    reg.register("list_files", Box::new(tools::build_list_files_tool));
+
+    // ── Git 工具（repo-status 技能声明） ──
+    reg.register("git_status", Box::new(tools::build_git_status_tool));
+
+    // ── 番茄钟工具（pomodoro 技能声明，非 BASE_TOOLS） ──
+    reg.register("pomodoro", Box::new(tools::build_pomodoro_tool));
+
+    reg
 }
 
 /// 构建无工具纯对话 Agent

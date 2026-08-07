@@ -9,7 +9,7 @@ pub async fn ai_history_add(
     item: crate::services::ai_history::AddAiHistoryRequest,
 ) -> Result<crate::services::ai_history::AiHistoryItem, String> {
     let store = state.get_ai_history_store(&dir_path)?;
-    tokio::task::spawn_blocking(move || store.add(&item))
+    tokio::task::spawn_blocking(move || crate::core::db::with_busy_retry(3, || store.add(&item)))
         .await
         .map_err(|e| format!("任务执行失败: {}", e))?
 }
@@ -36,7 +36,7 @@ pub async fn ai_history_delete(
     id: String,
 ) -> Result<bool, String> {
     let store = state.get_ai_history_store(&dir_path)?;
-    tokio::task::spawn_blocking(move || store.delete(&id))
+    tokio::task::spawn_blocking(move || crate::core::db::with_busy_retry(3, || store.delete(&id)))
         .await
         .map_err(|e| format!("任务执行失败: {}", e))?
 }
@@ -48,9 +48,11 @@ pub async fn ai_history_toggle_favorite(
     id: String,
 ) -> Result<bool, String> {
     let store = state.get_ai_history_store(&dir_path)?;
-    tokio::task::spawn_blocking(move || store.toggle_favorite(&id))
-        .await
-        .map_err(|e| format!("任务执行失败: {}", e))?
+    tokio::task::spawn_blocking(move || {
+        crate::core::db::with_busy_retry(3, || store.toggle_favorite(&id))
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
 }
 
 #[tauri::command]
@@ -60,9 +62,11 @@ pub async fn ai_history_update_access_time(
     id: String,
 ) -> Result<(), String> {
     let store = state.get_ai_history_store(&dir_path)?;
-    tokio::task::spawn_blocking(move || store.update_access_time(&id))
-        .await
-        .map_err(|e| format!("任务执行失败: {}", e))?
+    tokio::task::spawn_blocking(move || {
+        crate::core::db::with_busy_retry(3, || store.update_access_time(&id))
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
 }
 
 #[tauri::command]
@@ -75,7 +79,9 @@ pub async fn ai_history_update_file_path(
 ) -> Result<(), String> {
     let store = state.get_ai_history_store(&dir_path)?;
     tokio::task::spawn_blocking(move || {
-        store.update_file_path(&old_file_path, &new_file_name, &new_file_path)
+        crate::core::db::with_busy_retry(3, || {
+            store.update_file_path(&old_file_path, &new_file_name, &new_file_path)
+        })
     })
     .await
     .map_err(|e| format!("任务执行失败: {}", e))?

@@ -1,7 +1,7 @@
 ---
 id: mermaid
 scope: system
-name: Mermaid Diagram
+name: Mermaid 图表
 description: Generate syntax-correct Mermaid diagram code (flowchart, sequence, class, ER, gantt, mindmap, etc.) from user requirements. Trigger when the user wants a diagram, flowchart, chart, or diagram-as-code embedded in Markdown.
 priority: 60
 roles: ["owner"]

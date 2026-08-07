@@ -5,6 +5,8 @@ use std::time::UNIX_EPOCH;
 
 use tauri::{AppHandle, Manager};
 
+use crate::core::db::utils::IgnoreMatcher;
+
 /// 安全规范化路径：先检查路径存在性，再调用 canonicalize 解析为绝对路径。
 /// 用于在文件操作前确保路径有效并阻止符号链接绕过。
 fn canonicalize_safe(path: &str) -> Result<PathBuf, String> {
@@ -52,9 +54,20 @@ pub struct FileMeta {
     pub is_dir: bool,
 }
 
-/// 递归扫描目录，返回所有文件和目录的扁平列表
+// =====================================================
+// 全量扫描（单次 IPC）— 供前端 scanDirToIndexByLocal 使用
+// 忽略规则复用 core::db::utils::IgnoreMatcher（与知识库索引/监视/Agent 工具共用同一套黑名单语义）
+// =====================================================
+
+/// 全量扫描目录：walkdir 单次遍历 + IgnoreMatcher 黑名单过滤，一次 IPC 返回全部文件/目录条目。
+/// 返回 path 为相对根目录的相对路径（正斜杠分隔），不含根目录自身；根目录自身条目被排除。
 #[tauri::command]
-pub fn read_dir_recursive(path: String) -> Result<Vec<FileEntry>, String> {
+pub fn scan_dir_full(
+    path: String,
+    ignore_dirs: Vec<String>,
+    ignore_files: Vec<String>,
+    max_depth: Option<usize>,
+) -> Result<Vec<FileEntry>, String> {
     if !is_path_safe(Path::new(&path)) {
         return Err("路径不安全".into());
     }
@@ -63,63 +76,77 @@ pub fn read_dir_recursive(path: String) -> Result<Vec<FileEntry>, String> {
         return Err(format!("不是目录: {}", path));
     }
 
-    let mut entries = Vec::new();
+    let ignore = IgnoreMatcher::new(&ignore_dirs, &ignore_files);
+    let depth = max_depth.unwrap_or(usize::MAX);
 
+    let mut entries = Vec::new();
     let walker = walkdir::WalkDir::new(&canon)
         .follow_links(false)
+        .max_depth(depth)
         .into_iter()
         .filter_entry(|e| {
-            !e.file_name()
-                .to_str()
-                .map(|s| s.starts_with('.'))
-                .unwrap_or(false)
+            // 根目录自身不参与过滤（walkdir 的入口）
+            if e.depth() == 0 {
+                return true;
+            }
+            let rel = match e.path().strip_prefix(&canon) {
+                Ok(r) => r.to_string_lossy().replace('\\', "/"),
+                Err(_) => return true,
+            };
+            if e.file_type().is_dir() {
+                !ignore.should_skip_dir(&rel)
+            } else {
+                !ignore.should_skip_file(&rel)
+            }
         });
 
     for entry in walker {
-        match entry {
-            Ok(entry) => {
-                let metadata = match entry.metadata() {
-                    Ok(m) => m,
-                    Err(_) => continue,
-                };
-
-                let rel_path = entry
-                    .path()
-                    .to_string_lossy()
-                    .to_string();
-
-                let modified = metadata
-                    .modified()
-                    .ok()
-                    .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
-
-                let created = metadata
-                    .created()
-                    .ok()
-                    .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
-
-                entries.push(FileEntry {
-                    name: entry
-                        .file_name()
-                        .to_string_lossy()
-                        .to_string(),
-                    path: rel_path,
-                    kind: if metadata.is_dir() {
-                        "directory".to_string()
-                    } else {
-                        "file".to_string()
-                    },
-                    size: metadata.len(),
-                    modified,
-                    created,
-                });
-            }
-            Err(_) => continue,
+        let Ok(entry) = entry else { continue };
+        // 排除根目录自身
+        if entry.depth() == 0 {
+            continue;
         }
+        let metadata = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        let rel = match entry.path().strip_prefix(&canon) {
+            Ok(r) => r.to_string_lossy().replace('\\', "/"),
+            Err(_) => continue,
+        };
+        if rel.is_empty() {
+            continue;
+        }
+
+        let modified = metadata
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        let created = metadata
+            .created()
+            .ok()
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        entries.push(FileEntry {
+            name: entry
+                .file_name()
+                .to_string_lossy()
+                .to_string(),
+            path: rel,
+            kind: if metadata.is_dir() {
+                "directory".to_string()
+            } else {
+                "file".to_string()
+            },
+            size: metadata.len(),
+            modified,
+            created,
+        });
     }
 
     Ok(entries)
@@ -338,4 +365,115 @@ pub fn get_file_meta(path: String) -> Result<FileMeta, String> {
         is_file: metadata.is_file(),
         is_dir: metadata.is_dir(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 与前端默认黑名单保持一致
+    fn default_ignore_dirs() -> Vec<String> {
+        [
+            ".*/",
+            "$*/",
+            "assets/",
+            "node_modules/",
+            "vendor/",
+            "dist/",
+            "build/",
+            "target/",
+            "__pycache__/",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
+    }
+
+    fn default_ignore_files() -> Vec<String> {
+        [".*", "$*", "*.tmp", "*.log", "!.gitignore"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+    }
+
+    fn make_temp_scan_tree(root: &Path) {
+        fs::create_dir_all(root.join("sub/deep")).unwrap();
+        fs::create_dir_all(root.join("node_modules/pkg")).unwrap();
+        fs::write(root.join("a.md"), "a").unwrap();
+        fs::write(root.join(".hidden.md"), "h").unwrap();
+        fs::write(root.join(".gitignore"), "git").unwrap();
+        fs::write(root.join("sub/b.txt"), "b").unwrap();
+        fs::write(root.join("sub/deep/c.tmp"), "c").unwrap();
+        fs::write(root.join("node_modules/pkg/x.js"), "x").unwrap();
+    }
+
+    #[test]
+    fn test_scan_dir_full_filters_and_relative_paths() {
+        let root = std::env::temp_dir().join(format!(
+            "mdgo_scan_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        make_temp_scan_tree(&root);
+
+        let entries = scan_dir_full(
+            root.to_string_lossy().to_string(),
+            default_ignore_dirs(),
+            default_ignore_files(),
+            Some(20),
+        )
+        .unwrap();
+
+        let paths: Vec<String> = entries.iter().map(|e| e.path.clone()).collect();
+        // 根目录自身不出现
+        assert!(!paths.contains(&String::new()));
+        // 黑名单目录及其内容被过滤
+        assert!(!paths.iter().any(|p| p.starts_with("node_modules")));
+        assert!(!paths.iter().any(|p| p.starts_with(".hidden.md")));
+        // 黑名单文件被过滤，但 .gitignore 因 !.gitignore 取反保留
+        assert!(!paths.iter().any(|p| p.ends_with(".tmp")));
+        assert!(paths.contains(&"a.md".to_string()));
+        assert!(paths.contains(&".gitignore".to_string()));
+        assert!(paths.contains(&"sub/b.txt".to_string()));
+        // 空目录保留
+        assert!(paths.contains(&"sub/deep".to_string()));
+        assert!(paths.contains(&"sub".to_string()));
+        // 路径统一正斜杠分隔
+        assert!(paths.iter().all(|p| !p.contains('\\')));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn test_scan_dir_full_max_depth() {
+        let root = std::env::temp_dir().join(format!(
+            "mdgo_scan_depth_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(root.join("l1/l2/l3/l4")).unwrap();
+        fs::write(root.join("l1/l2/l3/l4/x.txt"), "x").unwrap();
+
+        let entries = scan_dir_full(
+            root.to_string_lossy().to_string(),
+            default_ignore_dirs(),
+            default_ignore_files(),
+            Some(3),
+        )
+        .unwrap();
+        // 深度限制：l1/l2/l3/l4 在第 4 层，应被过滤
+        assert!(!entries.iter().any(|e| e.path.starts_with("l1/l2/l3/l4")));
+        assert!(entries.iter().any(|e| e.path == "l1"));
+        assert!(entries.iter().any(|e| e.path == "l1/l2"));
+        assert!(entries.iter().any(|e| e.path == "l1/l2/l3"));
+
+        let _ = fs::remove_dir_all(&root);
+    }
 }

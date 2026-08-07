@@ -19,7 +19,6 @@
     <link rel="stylesheet"
         href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/atom-one-dark.min.css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono&display=swap" />
-    <link rel="stylesheet" href="https://unpkg.com/graphiql@3.0.6/graphiql.min.css" />
     <link rel="stylesheet" href="https://unpkg.com/tippy.js@6/dist/tippy.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jsmind@0.9.1/style/jsmind.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.1/dist/katex.min.css">
@@ -81,8 +80,6 @@
     <script src="https://cdn.jsdelivr.net/npm/jsonpath@1.3.0/jsonpath.min.js"></script>
     <!-- cronstrue：cron 表达式解析，内置中文 -->
     <script src="https://cdn.jsdelivr.net/npm/cronstrue@3.14.0/dist/cronstrue-i18n.min.js"></script>
-    <!-- GraphiQL（UMD，必须在 define 清理前加载） -->
-    <script src="https://unpkg.com/graphiql@3.0.6/graphiql.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/regulex@0.0.5/dist/regulex.js"></script>
     <script>
         // 抢先加载 regulex 模块并缓存，避免后面 almond.js 劫持 define 导致加载失败
@@ -102,6 +99,7 @@
     <!-- ECharts 词云扩展 -->
     <script src="https://cdn.jsdelivr.net/npm/echarts-wordcloud@2/dist/echarts-wordcloud.min.js"></script>
 
+    <script src="./css_js/agent.js"></script>
     <style>
         :root {
             --font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -4981,16 +4979,23 @@
         }
 
         .rag-indicator {
-            display: inline-block;
+            display: inline-flex;
             background: linear-gradient(135deg, #667eea, #764ba2);
             color: #fff;
             font-size: 0.625rem;
             font-weight: 600;
-            padding: 0.0625rem 0.3125rem;
-            border-radius: 0.1875rem;
+            padding: 0.125rem 0.25rem;
+            border-radius: 0.25rem;
             margin-right: 0.25rem;
             vertical-align: middle;
             line-height: 1.4;
+            width: 2rem;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .rag-indicator.chat{
+            background: linear-gradient(135deg, #e6a260, #65a876);
         }
 
         .chat-history-item-date {
@@ -8572,7 +8577,7 @@
             background: var(--todo-bg);
             border-radius: var(--radius-lg);
             margin-bottom: 0.5rem;
-            border-left: 3px solid var(--color-primary);
+            border-left: 0.25rem solid var(--color-primary);
             cursor: pointer;
             transition: all 0.2s;
         }
@@ -8831,7 +8836,7 @@
 
         .todo-event-item.todo-cron-sidebar {
             opacity: 0.8;
-            border-left: 2px dashed currentColor;
+            border-left-style: dashed;
         }
 
         .todo-add-event-hint {
@@ -14666,8 +14671,6 @@
                     </div>
                 </div>
             </div>
-            <!-- GraphQL IDE（GraphiQL） -->
-            <div id="graphql-container" class="graphql-container" style="display: none;"></div>
             <!-- GraphQL Playground（备用 IDE） -->
             <div id="graphql-playground-container" class="graphql-container" style="display: none;"></div>
             <!-- OpenResty Nginx 配置编辑器 -->
@@ -16452,7 +16455,6 @@
         };
         let DASHBOARD_BUTTON = [
             { key: '行为记录分析', value: 'analyzeFileOs()', display: false, fileProtocolDisplay: false, tauriDisplay: false },
-            { key: 'GraphiQL', value: 'toggleFile("graphiQL")', display: true, fileProtocolDisplay: false, tauriDisplay: false },
             { key: 'GraphQLPlayground', value: 'toggleFile("graphQLPlayground")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: 'OpenResty', value: 'toggleFile("openRestyEditor")', display: true, fileProtocolDisplay: false, tauriDisplay: false },
             { key: 'Swagger', value: 'toggleFile("swaggerDemo")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
@@ -16870,7 +16872,6 @@
         const dirSpaceContainer = document.getElementById('dir-space-container');
         const dashboardContainer = document.getElementById('dashboard-container');
         const dashboardButtons = document.getElementById('tools-buttons-container');
-        const graphqlContainer = document.getElementById('graphql-container');
         const graphqlPlaygroundContainer = document.getElementById('graphql-playground-container');
         const openrestyEditorContainer = document.getElementById('openresty-editor-container');
         const iframeCommonContainer = document.getElementById('iframe-common-container');
@@ -16900,12 +16901,11 @@
         // 所有主视图容器的集合（切换视图时隐藏其他容器用）
         const MAIN_VIEW_CONTAINERS = [
             contentMain, contentEdit, contentCommonContainer, dashboardContainer,
-            graphqlContainer, openrestyEditorContainer, graphViewContainer,
+            skillContainer, openrestyEditorContainer, graphViewContainer,
             iframeCommonContainer, mermaidAppContainer, timelineAppContainer,
             graphqlPlaygroundContainer, regexTestContainer, calendarContainer,
             cronViewContainer, videoViewContainer, gitRecordsContainer,
             swaggerEditorContainer, dirSpaceContainer, chatContainer, knowledgeContainer,
-            skillContainer
         ];
 
         const AUX_CONTROLS = [
@@ -16924,7 +16924,14 @@
         function initMonacoEditor() {
             if (!monacoInitPromise) {
                 monacoInitPromise = new Promise((resolve) => {
-                    require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs' } });
+                    require.config({ paths: {
+					    'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs' },
+                        'vs/nls': {
+                            availableLanguages: {
+                                '*': 'zh-cn'
+                            }
+                        } 
+                    });
                     require(['vs/editor/editor.main'], () => {
                         initFormatProviders();
                         resolve();
@@ -16966,6 +16973,7 @@
         async function initAll() {
             if (!await initTreeBrowser()) return; // 初始化文件树
             await Promise.all([
+                Promise.resolve(startBridgeTauri()), // 初始化桥
                 Promise.resolve(wsConnect()), // 初始化WebSocket连接
                 Promise.resolve(initAiActionRow()), // 初始化AI相关组件
                 Promise.resolve(initAIPanelToggle()), // 初始化AI面板切换按钮
@@ -17078,8 +17086,6 @@
                 await randomOpen();
             } else if (type === 'renderFile') {
                 await renderFile(data.relativePath, data.fileSpan);
-            } else if (type === 'graphiQL') {
-                await openGraphiQL();
             } else if (type === 'graphQLPlayground') {
                 await openGraphQLPlayground();
             } else if (type === 'openRestyEditor') {
@@ -17616,6 +17622,45 @@
                     if (t.system) systems.push(name);
                 });
                 return systems;
+            },
+            // ── 截止时刻计时（deadline）──
+            // 基于 endAt 时间戳计时，页面隐藏/后台节流不影响精度（权威值 = endAt - Date.now()）。
+            // 双保险唤醒：
+            //   1. system 定时器（1s tick，页面隐藏时继续运行，对齐现有 TimerManager 设计）
+            //   2. 一次性 setTimeout（非链式定时器，不受浏览器强节流影响，精确唤醒）
+            // onTick(remainingMs) 每秒回调一次（隐藏时可能被节流）；到点后执行 onComplete()（只触发一次）。
+            setDeadline(name, endAt, onTick, onComplete) {
+                this.clearDeadline(name);
+                if (endAt - Date.now() <= 0) {
+                    if (onComplete) onComplete();
+                    return;
+                }
+                let fired = false;
+                const handler = () => {
+                    if (fired) return;
+                    const remaining = endAt - Date.now();
+                    if (remaining <= 0) {
+                        fired = true;
+                        this.clearDeadline(name);
+                        if (onComplete) onComplete();
+                    } else if (onTick) {
+                        onTick(remaining);
+                    }
+                };
+                // system 定时器：页面隐藏时继续 tick（节流只影响 onTick 频率，不影响精度）
+                this.set(name, handler, 1000, true);
+                // 一次性精确唤醒（到点必然触发 onComplete，最多受 1s 后台节流影响）
+                this.timeoutTimers.set(name + ':dl', setTimeout(handler, endAt - Date.now()));
+            },
+            clearDeadline(name) {
+                this.clear(name);
+                if (this.timeoutTimers.has(name + ':dl')) {
+                    clearTimeout(this.timeoutTimers.get(name + ':dl'));
+                    this.timeoutTimers.delete(name + ':dl');
+                }
+            },
+            hasDeadline(name) {
+                return this.timers.has(name) || this.timeoutTimers.has(name + ':dl');
             }
         };
 
@@ -18182,7 +18227,6 @@
                 Promise.resolve(picLayoutDestroy()),
                 Promise.resolve(cleanupKanban()),
                 Promise.resolve(destroySwaggerEditor()),
-                Promise.resolve(destroyGraphiQL()),
                 Promise.resolve(cleanupCommonIframe()),
                 Promise.resolve(destroyRegesTest()),
                 Promise.resolve(destroyJSONPage()),
@@ -27168,8 +27212,8 @@ kanban-plugin: basic
             };
         }
 
-        function extractLinks(text) {
-            if (typeof text !== 'string' || text.length === 0) return [];
+        function extractLinks(markdownText) {
+            if (typeof markdownText !== 'string' || markdownText.length === 0) return [];
             // 覆盖常见图片、文档、媒体、压缩包
             const EXT_SET = new Set([
                 'png', 'jpg', 'jpeg', 'gif', 'svg', 'bmp', 'tiff', 'webp', 'ico',
@@ -27179,6 +27223,12 @@ kanban-plugin: basic
                 'mp4', 'avi', 'mov', 'mkv', 'webm', 'wmv', 'm4v',
                 'zip', 'rar', '7z', 'tar', 'gz', 'bz2'
             ]);
+            // 1. 移除代码块
+            let text = markdownText.replace(/```[\s\S]*?```/g, '');
+            // 2. 移除行内代码
+            text = text.replace(/`[^`\n]+`/g, '');
+            // 3. 移除 YAML frontmatter
+            text = text.replace(/^---[\s\S]*?---/m, '');
             const REGEX = /(?:!?\[\[([^\[\]\|]+?)(?:\|([^\[\]]+?))?\]\])|(?:!?\[((?:[^\]\\]|\\.)+)\]\(([^)]+)\))|(?:<([a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^<>]+)>)/g;
             const results = [];
             let match;
@@ -30258,52 +30308,15 @@ kanban-plugin: basic
             const nowSec = Math.floor(now.getTime() / 1000);
             const nowMs = now.getTime();
 
-            // ====== 阶段1：快速 DFS 收集所有文件引用（不读取文件内容，极快） ======
-            const allDirPaths = new Set();
+            // ====== 阶段1+2：收集文件列表与元数据 ======
+            // Tauri 模式：后端单次 IPC 全量扫描（walkdir + 忽略规则），消除每目录 read_dir / 每文件 get_file_meta 的 IPC 洪水
+            // 浏览器模式：DFS 遍历 + Worker 池并发读取元数据
+            let fileList;
+            let allDirPaths;
             let totalFolders = 0;
-            const fileEntryList = []; // { entry: FileSystemFileHandle, childRel: string }
-
-            const stack = [{ handle: rootHandle, relPath: '', depth: 0 }];
-            while (stack.length > 0) {
-                const { handle: dirHandle, relPath: relRoot, depth } = stack.pop();
-                if (depth > MAX_DIR_DEPTH || isSkipDir(relRoot)) continue;
-                const dirs = [];
-                try {
-                    // 优化：直接遍历处理，无中间 entries 数组
-                    for await (const entry of dirHandle.values()) {
-                        // 文件夹/文件名中的斜杠和反斜杠替换为下横杠，避免破坏路径结构
-                        const name = entry.name.replace(/[\/\\]/g, '_');
-                        if (entry.kind === 'directory') {
-                            const childRel = relRoot ? relRoot + SLASH + name : name;
-                            if (isSkipDir(childRel)) continue;
-                            dirs.push({ entry, childRel });
-                        } else {
-                            const childRel = relRoot ? relRoot + SLASH + name : name;
-                            if (isSkipFile(childRel)) continue;
-                            fileEntryList.push({ entry, childRel });
-                        }
-                    }
-                } catch (e) { continue; }
-
-                // 子目录逆序入栈（保持 DFS 顺序）
-                for (let i = dirs.length - 1; i >= 0; i--) {
-                    stack.push({ handle: dirs[i].entry, relPath: dirs[i].childRel, depth: depth + 1 });
-                }
-                if (relRoot) {
-                    totalFolders++;
-                    allDirPaths.add(relRoot);
-                }
-            }
-
-            // ====== 阶段2：Worker 池并发读取文件元数据（与遍历解耦，最大化 I/O 并行度） ======
-            const totalFileCount = fileEntryList.length;
-            // 优化：预分配数组，消除 push() 的动态扩容开销
-            const fileList = new Array(totalFileCount);
             let totalFiles = 0;
             let totalSize = 0;
-            const BATCH = 500;
-            const MAX_WORKERS = 16;
-
+            const _fileTypeFn = (ext) => _EXT_TYPE_MAP[ext] || '其他';
             // 优化：格式化结果缓存 — 相同时间戳的文件共享格式字符串
             const _timeStrCache = new Map();
             const _fmtTimeFast = (ts) => {
@@ -30320,7 +30333,6 @@ kanban-plugin: basic
                 _timeStrCache.set(ts, s);
                 return s;
             };
-
             // 优化：用整数比较链替代 Math.log/Math.pow，2万次调用可省 ~30ms
             const _fmtSize = (bytes) => {
                 if (bytes <= 0) return '0 B';
@@ -30331,80 +30343,159 @@ kanban-plugin: basic
                 return (bytes / 1099511627776).toFixed(2) + ' TB';
             };
 
-            const _fileTypeFn = (ext) => _EXT_TYPE_MAP[ext] || '其他';
-
-            async function _processOneFile(item) {
-                const { entry, childRel } = item;
-                const name = entry.name;
-                const ext = getExt(name);
-                const extLower = ext.toLowerCase();
-                try {
-                    let sizeBytes, mtimeMs;
-                    if (isTauriVisit()) {
-                        const meta = await entry.getFileMeta();
-                        sizeBytes = meta.size;
-                        mtimeMs = (meta.modified && meta.modified > 0) ? meta.modified * 1000 : nowMs;
-                    } else {
-                        const file = await entry.getFile();
-                        sizeBytes = file.size;
-                        mtimeMs = (file.lastModified && file.lastModified > 0) ? file.lastModified : nowMs;
+            if (isTauriVisit() && rootHandle.path) {
+                const scanResult = await window.__TAURI__.core.invoke('scan_dir_full', {
+                    path: rootHandle.path,
+                    ignoreDirs: DIR_BLACKLIST,
+                    ignoreFiles: FILE_BLACKLIST,
+                    maxDepth: MAX_DIR_DEPTH,
+                });
+                allDirPaths = new Set();
+                // 后端已按黑名单过滤，全部为有效条目；预分配数组避免 push 扩容
+                fileList = new Array(scanResult.length);
+                let wpos = 0;
+                for (let si = 0; si < scanResult.length; si++) {
+                    const e = scanResult[si];
+                    if (e.kind === 'directory') {
+                        if (e.path) { allDirPaths.add(e.path); totalFolders++; }
+                        continue;
                     }
-                    const mtimeSec = Math.floor(mtimeMs / 1000);
-                    return {
-                        name, ext: extLower, path: childRel,
-                        size: sizeBytes, ctime: mtimeSec, mtime: mtimeSec,
-                        fileType: _fileTypeFn(extLower),
-                        subType: getFileTypeByExt(extLower)
+                    const name = e.name;
+                    const ext = getExt(name);
+                    const extLower = ext.toLowerCase();
+                    const mtimeSec = (e.modified && e.modified > 0) ? e.modified : nowSec;
+                    const timeStr = _fmtTimeFast(mtimeSec);
+                    fileList[wpos++] = {
+                        "name": name, "ext": extLower,
+                        "file_type": _fileTypeFn(extLower), "sub_type": getFileTypeByExt(extLower),
+                        "size": e.size, "size_str": _fmtSize(e.size),
+                        "ctime": mtimeSec, "mtime": mtimeSec,
+                        "ctime_str": timeStr, "mtime_str": timeStr,
+                        "ctime_date_str": timeStr.slice(0, 10),
+                        "mtime_date_str": timeStr.slice(0, 10),
+                        "path": e.path,
                     };
-                } catch (e) { return null; }
-            }
+                    totalFiles++;
+                    totalSize += e.size;
+                }
+                fileList.length = wpos;
+            } else {
+                // ====== 阶段1：快速 DFS 收集所有文件引用（不读取文件内容，极快） ======
+                allDirPaths = new Set();
+                const fileEntryList = []; // { entry: FileSystemFileHandle, childRel: string }
 
-            const totalBatches = Math.ceil(totalFileCount / BATCH);
-            let nextBatchIdx = 0;
-            let completedBatches = 0;
-            let writePos = 0;
+                const stack = [{ handle: rootHandle, relPath: '', depth: 0 }];
+                while (stack.length > 0) {
+                    const { handle: dirHandle, relPath: relRoot, depth } = stack.pop();
+                    if (depth > MAX_DIR_DEPTH || isSkipDir(relRoot)) continue;
+                    const dirs = [];
+                    try {
+                        // 优化：直接遍历处理，无中间 entries 数组
+                        for await (const entry of dirHandle.values()) {
+                            // 文件夹/文件名中的斜杠和反斜杠替换为下横杠，避免破坏路径结构
+                            const name = entry.name.replace(/[\/\\]/g, '_');
+                            if (entry.kind === 'directory') {
+                                const childRel = relRoot ? relRoot + SLASH + name : name;
+                                if (isSkipDir(childRel)) continue;
+                                dirs.push({ entry, childRel });
+                            } else {
+                                const childRel = relRoot ? relRoot + SLASH + name : name;
+                                if (isSkipFile(childRel)) continue;
+                                fileEntryList.push({ entry, childRel });
+                            }
+                        }
+                    } catch (e) { continue; }
 
-            async function _batchWorker() {
-                while (nextBatchIdx < totalBatches) {
-                    const idx = nextBatchIdx++;
-                    const start = idx * BATCH;
-                    const end = Math.min(start + BATCH, totalFileCount);
-                    const batch = fileEntryList.slice(start, end);
-                    const results = await Promise.all(batch.map(_processOneFile));
-                    for (let i = 0; i < results.length; i++) {
-                        const r = results[i];
-                        if (!r) continue;
-                        const timeStr = _fmtTimeFast(r.mtime);
-                        // 优化：直接写入预分配数组 writePos 位置
-                        fileList[writePos++] = {
-                            "name": r.name, "ext": r.ext,
-                            "file_type": r.fileType, "sub_type": r.subType,
-                            "size": r.size, "size_str": _fmtSize(r.size),
-                            "ctime": r.ctime, "mtime": r.mtime,
-                            "ctime_str": timeStr, "mtime_str": timeStr,
-                            "ctime_date_str": timeStr.slice(0, 10),
-                            "mtime_date_str": timeStr.slice(0, 10),
-                            "path": r.path,
-                        };
-                        totalFiles++;
-                        totalSize += r.size;
+                    // 子目录逆序入栈（保持 DFS 顺序）
+                    for (let i = dirs.length - 1; i >= 0; i--) {
+                        stack.push({ handle: dirs[i].entry, relPath: dirs[i].childRel, depth: depth + 1 });
                     }
-                    completedBatches++;
-                    // 每完成 20 批让出主线程一次（批量更大、频率更低，减少上下文切换开销）
-                    if (completedBatches % 20 === 0) {
-                        await yieldToMain();
+                    if (relRoot) {
+                        totalFolders++;
+                        allDirPaths.add(relRoot);
                     }
                 }
-            }
 
-            const workerCount = Math.min(MAX_WORKERS, totalBatches);
-            const workers = [];
-            for (let i = 0; i < workerCount; i++) {
-                workers.push(_batchWorker());
+                // ====== 阶段2：Worker 池并发读取文件元数据（与遍历解耦，最大化 I/O 并行度） ======
+                const totalFileCount = fileEntryList.length;
+                // 优化：预分配数组，消除 push() 的动态扩容开销
+                fileList = new Array(totalFileCount);
+                const BATCH = 500;
+                const MAX_WORKERS = 16;
+
+                async function _processOneFile(item) {
+                    const { entry, childRel } = item;
+                    const name = entry.name;
+                    const ext = getExt(name);
+                    const extLower = ext.toLowerCase();
+                    try {
+                        let sizeBytes, mtimeMs;
+                        if (isTauriVisit()) {
+                            const meta = await entry.getFileMeta();
+                            sizeBytes = meta.size;
+                            mtimeMs = (meta.modified && meta.modified > 0) ? meta.modified * 1000 : nowMs;
+                        } else {
+                            const file = await entry.getFile();
+                            sizeBytes = file.size;
+                            mtimeMs = (file.lastModified && file.lastModified > 0) ? file.lastModified : nowMs;
+                        }
+                        const mtimeSec = Math.floor(mtimeMs / 1000);
+                        return {
+                            name, ext: extLower, path: childRel,
+                            size: sizeBytes, ctime: mtimeSec, mtime: mtimeSec,
+                            fileType: _fileTypeFn(extLower),
+                            subType: getFileTypeByExt(extLower)
+                        };
+                    } catch (e) { return null; }
+                }
+
+                const totalBatches = Math.ceil(totalFileCount / BATCH);
+                let nextBatchIdx = 0;
+                let completedBatches = 0;
+                let writePos = 0;
+
+                async function _batchWorker() {
+                    while (nextBatchIdx < totalBatches) {
+                        const idx = nextBatchIdx++;
+                        const start = idx * BATCH;
+                        const end = Math.min(start + BATCH, totalFileCount);
+                        const batch = fileEntryList.slice(start, end);
+                        const results = await Promise.all(batch.map(_processOneFile));
+                        for (let i = 0; i < results.length; i++) {
+                            const r = results[i];
+                            if (!r) continue;
+                            const timeStr = _fmtTimeFast(r.mtime);
+                            // 优化：直接写入预分配数组 writePos 位置
+                            fileList[writePos++] = {
+                                "name": r.name, "ext": r.ext,
+                                "file_type": r.fileType, "sub_type": r.subType,
+                                "size": r.size, "size_str": _fmtSize(r.size),
+                                "ctime": r.ctime, "mtime": r.mtime,
+                                "ctime_str": timeStr, "mtime_str": timeStr,
+                                "ctime_date_str": timeStr.slice(0, 10),
+                                "mtime_date_str": timeStr.slice(0, 10),
+                                "path": r.path,
+                            };
+                            totalFiles++;
+                            totalSize += r.size;
+                        }
+                        completedBatches++;
+                        // 每完成 20 批让出主线程一次（批量更大、频率更低，减少上下文切换开销）
+                        if (completedBatches % 20 === 0) {
+                            await yieldToMain();
+                        }
+                    }
+                }
+
+                const workerCount = Math.min(MAX_WORKERS, totalBatches);
+                const workers = [];
+                for (let i = 0; i < workerCount; i++) {
+                    workers.push(_batchWorker());
+                }
+                await Promise.all(workers);
+                // 优化：截断数组至实际写入量（读失败的文件会留下空洞）
+                fileList.length = writePos;
             }
-            await Promise.all(workers);
-            // 优化：截断数组至实际写入量（读失败的文件会留下空洞）
-            fileList.length = writePos;
 
             // ====== 阶段3：构建 fileListMap 和 folderTree（单次遍历，减少字符串操作） ======
             const fileListMap = {};
@@ -33279,44 +33370,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 });
                 graphqlInitialized = true;
             }
-        }
-
-
-        async function destroyGraphiQL() {
-            if (graphqlReactRoot) {
-                await graphqlReactRoot.unmount();
-                graphqlReactRoot = null;
-                graphqlContainer.innerHTML = '';
-            }
-        }
-
-        async function openGraphiQL() {
-            await switchToView(graphqlContainer);
-            const defaultQuery = `query {
-  heartbeat {
-    status
-    timestamp
-    service
-  }
-}`;
-            graphqlReactRoot = ReactDOM.createRoot(graphqlContainer);
-            graphqlReactRoot.render(
-                React.createElement(GraphiQL, {
-                    fetcher: async (params) => {
-                        return fetch(GRAPHQL_ENDPOINT, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(params),
-                        }).then(res => res.json())
-                            .catch(err => ({ errors: [{ message: err.message }] }));
-                    },
-                    defaultQuery,
-                    theme: 'light',
-                    defaultEditorToolsVisibility: true,
-                    confirmCloseTab: true,
-                    shouldPersistHeaders: true,
-                })
-            );
         }
 
         async function openOpenRestyEditor() {
@@ -47856,39 +47909,303 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             openrestyEditorContainer.innerHTML = '';
         }
 
-        // ========== 番茄钟状态 ==========
+        // ========== 番茄钟：底层服务（SoundPlayer / Notifier / Store / Service，纯前端，Tauri 与本地 HTML 双模式兼容） ==========
         const POMODORO_CFG = {
             circumference: 2 * Math.PI * 45,
             storageKey: 'mdgo-pomodoro'
         };
 
-        let pomodoroState = {
-            mode: 'pomodoro',
-            timeLeft: 25 * 60,
-            totalTime: 25 * 60,
-            isRunning: false,
-            timerId: null,
-            pendingAutoId: null,
-            streak: 0
+        // ── 声音播放器：Web Audio 合成旋律（无需资源文件，双模式通用） ──
+        const SoundPlayer = {
+            _ctx: null,
+            _ensureCtx() {
+                if (!this._ctx) {
+                    const AC = window.AudioContext || window.webkitAudioContext;
+                    if (!AC) return null;
+                    this._ctx = new AC();
+                }
+                return this._ctx;
+            },
+            // 播放音符序列 [{f: 频率Hz, t: 起始偏移秒, d: 时长秒, g: 音量}]
+            play(notes) {
+                const ctx = this._ensureCtx();
+                if (!ctx) return;
+                if (ctx.state === 'suspended') ctx.resume().catch(() => { });
+                const now = ctx.currentTime;
+                notes.forEach(({ f, t = 0, d = 0.8, g = 0.12 }) => {
+                    try {
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.type = 'sine';
+                        osc.frequency.value = f;
+                        const s = now + t;
+                        gain.gain.setValueAtTime(0, s);
+                        gain.gain.linearRampToValueAtTime(g, s + 0.02);
+                        gain.gain.exponentialRampToValueAtTime(0.001, s + d);
+                        osc.start(s);
+                        osc.stop(s + d + 0.05);
+                    } catch (_) { }
+                });
+            },
+            // 专注完成：C 大调上行和弦分解（明亮）
+            playComplete() {
+                this.play([
+                    { f: 523.25, t: 0 },
+                    { f: 659.25, t: 0.18 },
+                    { f: 783.99, t: 0.36 },
+                    { f: 1046.50, t: 0.54, d: 1.2 }
+                ]);
+            },
+            // 休息结束：下行（柔和收尾）
+            playBreakEnd() {
+                this.play([
+                    { f: 1046.50, t: 0, g: 0.08 },
+                    { f: 783.99, t: 0.18, g: 0.08 },
+                    { f: 659.25, t: 0.36, g: 0.08 },
+                    { f: 523.25, t: 0.54, d: 1.0, g: 0.10 }
+                ]);
+            },
+            // 按钮点击短提示（兼容原 paySound）
+            beep() {
+                this.play([
+                    { f: 523.25, t: 0, d: 0.4 },
+                    { f: 659.25, t: 0.12, d: 0.4 }
+                ]);
+            }
         };
 
-        function pomodoroLoadState() {
-            const saved = safeLocalStorageGet(POMODORO_CFG.storageKey);
-            if (saved) {
-                const data = JSON.parse(saved);
-                const today = new Date().toDateString();
-                pomodoroState.streak = data.lastDate === today ? (data.streak || 0) : 0;
+        // ── 通知器：右下角提示 + 音乐 + 隐藏期待提醒（关键时间点触发） ──
+        const PomodoroNotifier = {
+            _pending: null,
+            // 阶段完成提醒：右下角 toast + 播放音乐；页面隐藏（托盘/后台标签）时记录待提醒，可见时补发
+            notify(mode) {
+                const isFocus = mode === 'pomodoro';
+                const text = isFocus ? '专注完成！休息一下吧' : '休息结束！准备开始工作';
+                if (document.hidden) {
+                    // 页面隐藏：音频可能被挂起，记录待提醒并尽力播放
+                    this._pending = { text, isFocus };
+                    if (isFocus) SoundPlayer.playComplete(); else SoundPlayer.playBreakEnd();
+                    this._tryWebNotification(text);
+                    return;
+                }
+                showNotification(text, isFocus ? 'success' : 'info');
+                if (isFocus) SoundPlayer.playComplete(); else SoundPlayer.playBreakEnd();
+                this._tryWebNotification(text);
+            },
+            // 回到可见时补发隐藏期间错过的提醒
+            flushPending() {
+                if (!this._pending) return;
+                const { text, isFocus } = this._pending;
+                this._pending = null;
+                showNotification(text, isFocus ? 'success' : 'info');
+                if (isFocus) SoundPlayer.playComplete(); else SoundPlayer.playBreakEnd();
+            },
+            // 浏览器模式增强：Web Notification（需用户授权；Tauri 模式无权限则跳过）
+            _tryWebNotification(text) {
+                if (typeof Notification === 'undefined') return;
+                try {
+                    if (Notification.permission === 'granted') {
+                        new Notification('番茄钟', { body: text, silent: true });
+                    } else if (Notification.permission === 'default' && !isTauriVisit()) {
+                        Notification.requestPermission().catch(() => { });
+                    }
+                } catch (_) { }
             }
+        };
+
+        // ── 持久化：设置 + 截止时刻会话快照（刷新/重启后自动恢复） ──
+        const PomodoroStore = {
+            KEY: POMODORO_CFG.storageKey,
+            SETTINGS_KEY: 'mdgo-pomodoro-settings',
+            loadSettings() {
+                const saved = safeLocalStorageGet(this.SETTINGS_KEY);
+                if (!saved) return null;
+                try { return JSON.parse(saved); } catch (_) { return null; }
+            },
+            saveSettings(settings) {
+                safeLocalStorageSet(this.SETTINGS_KEY, JSON.stringify(settings));
+            },
+            loadSession() {
+                const saved = safeLocalStorageGet(this.KEY);
+                if (!saved) return null;
+                try { return JSON.parse(saved); } catch (_) { return null; }
+            },
+            // running 时记录截止时刻 endAt；暂停时记录剩余 remainingMs
+            saveSession(state) {
+                safeLocalStorageSet(this.KEY, JSON.stringify({
+                    streak: state.streak,
+                    lastDate: new Date().toDateString(),
+                    running: state.isRunning,
+                    mode: state.mode,
+                    endAt: state.isRunning ? state.endAt : 0,
+                    remainingMs: state.isRunning ? 0 : state.timeLeft * 1000,
+                    totalMs: state.totalTime * 1000
+                }));
+            }
+        };
+
+        // ── 服务层：番茄钟状态机 + 截止时刻计时 + 自动衔接（纯逻辑，不触碰 DOM） ──
+        const PomodoroService = {
+            state: {
+                mode: 'pomodoro',
+                timeLeft: 25 * 60,   // 剩余秒数（running 时由 endAt - Date.now() 换算，后台节流不影响精度）
+                totalTime: 25 * 60,
+                isRunning: false,
+                endAt: 0,            // 截止时刻时间戳（running 时有效）
+                streak: 0
+            },
+            _render: null,           // UI 渲染回调（由 UI 层注入）
+            _onPhaseComplete: null,  // 阶段完成动画回调（由 UI 层注入）
+
+            // 启动/继续：注册截止时刻计时
+            start() {
+                if (this.state.isRunning) return;
+                // 完成后重新开始：从头开启一个新的完整会话
+                if (this.state.timeLeft <= 0) this.state.timeLeft = this.state.totalTime;
+                this.state.endAt = Date.now() + this.state.timeLeft * 1000;
+                this.state.isRunning = true;
+                TimerManager.setDeadline('pomodoro', this.state.endAt,
+                    () => {   // onTick：换算剩余秒数并刷新 UI
+                        this.state.timeLeft = Math.max(0, Math.ceil((this.state.endAt - Date.now()) / 1000));
+                        if (this._render) this._render();
+                    },
+                    () => this.complete()
+                );
+                PomodoroStore.saveSession(this.state);
+                if (this._render) this._render();
+            },
+
+            // 暂停：按截止时刻冻结剩余时间
+            pause() {
+                if (!this.state.isRunning) return;
+                this.state.timeLeft = Math.max(0, Math.ceil((this.state.endAt - Date.now()) / 1000));
+                this.state.isRunning = false;
+                this.state.endAt = 0;
+                TimerManager.clearDeadline('pomodoro');
+                PomodoroStore.saveSession(this.state);
+                if (this._render) this._render();
+            },
+
+            toggle() {
+                if (this.state.isRunning) this.pause();
+                else this.start();
+            },
+
+            // 停止（保留剩余时间）
+            stop() {
+                this.state.isRunning = false;
+                this.state.endAt = 0;
+                TimerManager.clearDeadline('pomodoro');
+                TimerManager.clearTimeout('pomodoroAuto');
+            },
+
+            // 重置：回到当前模式初始时长
+            reset() {
+                this.stop();
+                this.state.timeLeft = this.state.totalTime;
+                PomodoroStore.saveSession(this.state);
+                if (this._render) this._render();
+            },
+
+            // 按指定时长与模式开始一个全新任务（供前端通信桥调用）。
+            // 单任务语义：每次 start 前先关闭旧任务（含暂停未完成、自动衔接中的），
+            // 系统同时只存在一个定时。此保证是业务内部逻辑，不暴露给模型。
+            startWith(minutes, mode) {
+                this.stop();   // 关闭旧任务：停止计时并取消自动衔接定时（pomodoroAuto）
+                this.state.mode = mode === 'short' || mode === 'long' ? mode : 'pomodoro';
+                this.state.totalTime = Math.max(1, Math.min(180, minutes || 25)) * 60;
+                this.state.timeLeft = this.state.totalTime;
+                PomodoroStore.saveSession(this.state);
+                this.start();
+            },
+
+            // 切换模式（停止当前计时）
+            switchMode(mode, settings) {
+                this.stop();
+                this.state.mode = mode;
+                this.state.totalTime = settings[mode] * 60;
+                this.state.timeLeft = this.state.totalTime;
+                PomodoroStore.saveSession(this.state);
+            },
+
+            // 关键时间点：阶段完成（专注完成 / 休息结束）
+            complete() {
+                this.stop();
+                const settings = pomodoroGetSettings();
+                if (this.state.mode === 'pomodoro') {
+                    this.state.streak++;
+                    PomodoroStore.saveSession(this.state);
+                    PomodoroNotifier.notify('pomodoro');
+                    // 自动开始休息（每 4 个专注后长休息）
+                    if (settings.autoBreak) {
+                        TimerManager.setTimeout('pomodoroAuto', () => {
+                            if (!document.querySelector('.pomodoro-container')) return;
+                            const next = this.state.streak % 4 === 0 ? 'long' : 'short';
+                            this.switchMode(next, settings);
+                            this.start();
+                        }, 1500);
+                    }
+                } else {
+                    PomodoroStore.saveSession(this.state);
+                    PomodoroNotifier.notify('break');
+                    // 自动开始专注
+                    if (settings.autoPomodoro) {
+                        TimerManager.setTimeout('pomodoroAuto', () => {
+                            if (!document.querySelector('.pomodoro-container')) return;
+                            this.switchMode('pomodoro', settings);
+                            this.start();
+                        }, 1500);
+                    }
+                }
+                if (this._onPhaseComplete) this._onPhaseComplete();
+                if (this._render) this._render();
+            },
+
+            // 从持久化快照恢复会话（刷新/重新打开番茄钟后）；返回是否恢复成功
+            restore(cfg) {
+                const s = PomodoroStore.loadSession();
+                if (!s) return false;
+                const today = new Date().toDateString();
+                this.state.streak = s.lastDate === today ? (s.streak || 0) : 0;
+                if (s.running && s.endAt) {
+                    const remain = s.endAt - Date.now();
+                    this.state.mode = s.mode || 'pomodoro';
+                    this.state.totalTime = s.totalMs ? Math.round(s.totalMs / 1000) : (cfg[s.mode] || 25) * 60;
+                    if (remain > 0) {
+                        // 仍在运行：恢复模式并续跑
+                        this.state.timeLeft = Math.max(1, Math.ceil(remain / 1000));
+                        this.start();
+                    } else {
+                        // 已到期（页面关闭期间错过）：直接进入完成流程
+                        this.state.timeLeft = 0;
+                        this.complete();
+                    }
+                    return true;
+                }
+                if (s.remainingMs) {
+                    // 上次为暂停状态：恢复暂停展示（不自动续跑）
+                    this.state.mode = s.mode || 'pomodoro';
+                    this.state.totalTime = s.totalMs ? Math.round(s.totalMs / 1000) : (cfg[s.mode] || 25) * 60;
+                    this.state.timeLeft = Math.max(1, Math.round(s.remainingMs / 1000));
+                    return true;
+                }
+                return false;
+            }
+        };
+
+        function paySound() {
+            SoundPlayer.beep();
         }
 
-        function pomodoroSaveState() {
-            safeLocalStorageSet(POMODORO_CFG.storageKey, JSON.stringify({
-                streak: pomodoroState.streak,
-                lastDate: new Date().toDateString()
-            }));
-        }
-
+        // ========== 渲染 UI（入口函数名保持不变，模板/样式零改动） ==========
         function pomodoroGetSettings() {
+            // 离开番茄钟视图时（DOM 不存在）读取持久化设置，避免默认值误判自动衔接
+            if (!document.querySelector('.pomodoro-container')) {
+                return PomodoroStore.loadSettings() ||
+                    { pomodoro: 25, short: 5, long: 15, autoBreak: true, autoPomodoro: false };
+            }
             const getVal = id => {
                 const el = document.getElementById(id);
                 if (!el) return 25;
@@ -47908,17 +48225,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             };
         }
 
-        // ========== 渲染 UI ==========
         async function openPomodoro() {
             await switchToView(contentMain);
             aiFabContainer.style.display = 'none';
-            pomodoroLoadState();
-            const cfg = {
-                pomodoro: 25, short: 5, long: 15
-            };
-            pomodoroState.mode = 'pomodoro';
-            pomodoroState.totalTime = cfg.pomodoro * 60;
-            pomodoroState.timeLeft = pomodoroState.totalTime;
             contentMain.innerHTML = `
             <div class="pomodoro-container">
                 <div class="pomodoro-mode-tabs">
@@ -47978,31 +48287,40 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     </div>
                 </div>
             </div>`;
-            pomodoroUpdateUI();
+            // 应用持久化设置到输入控件（默认值兜底）
+            const savedCfg = PomodoroStore.loadSettings();
+            if (savedCfg) {
+                const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+                setVal('pomoPomodoro', savedCfg.pomodoro ?? 25);
+                setVal('pomoShort', savedCfg.short ?? 5);
+                setVal('pomoLong', savedCfg.long ?? 15);
+                const setOn = (id, on) => { const el = document.getElementById(id); if (el) el.classList.toggle('on', !!on); };
+                setOn('pomoAutoBreak', savedCfg.autoBreak !== false);
+                setOn('pomoAutoPomodoro', savedCfg.autoPomodoro === true);
+            }
+            const cfg = pomodoroGetSettings();
+            // 注入 UI 回调后恢复会话（运行中续跑 / 暂停展示 / 无会话则默认专注模式）
+            PomodoroService._render = () => pomodoroUpdateUI();
+            PomodoroService._onPhaseComplete = () => {
+                const wr = document.getElementById('pomoTimerWrapper');
+                if (wr) {
+                    wr.classList.add('pomodoro-timer-complete');
+                    setTimeout(() => wr.classList.remove('pomodoro-timer-complete'), 500);
+                }
+            };
+            if (!PomodoroService.restore(cfg)) {
+                PomodoroService.state.mode = 'pomodoro';
+                PomodoroService.state.totalTime = cfg.pomodoro * 60;
+                PomodoroService.state.timeLeft = PomodoroService.state.totalTime;
+            }
+            // 同步模式标签样式与完整 UI
+            pomodoroSyncModeUI(PomodoroService.state.mode);
+            pomodoroRefreshUI();
         }
 
-        function destroyPomodoro() {
-            pomodoroStop();
-            if (pomodoroState.pendingAutoId) {
-                clearTimeout(pomodoroState.pendingAutoId);
-                pomodoroState.pendingAutoId = null;
-            }
-            pomodoroSaveState();
-            document.title = '本地文档知识库';
-        }
-
-        // ========== 计时器逻辑 ==========
-        function pomodoroSwitch(mode) {
-            pomodoroStop();
-            if (pomodoroState.pendingAutoId) {
-                clearTimeout(pomodoroState.pendingAutoId);
-                pomodoroState.pendingAutoId = null;
-            }
-            pomodoroState.mode = mode;
-            pomodoroState.totalTime = pomodoroGetSettings()[mode] * 60;
-            pomodoroState.timeLeft = pomodoroState.totalTime;
+        // 同步模式相关的 UI 样式（标签激活态/容器色调/进度条颜色/按钮色调/开关颜色）
+        function pomodoroSyncModeUI(mode) {
             const modeClass = mode === 'short' ? 'short' : mode === 'long' ? 'long' : '';
-            // 更新容器背景色调
             const container = document.querySelector('.pomodoro-container');
             if (container) {
                 container.classList.remove('mode-pomodoro', 'mode-short', 'mode-long');
@@ -48016,144 +48334,120 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             });
             const prog = document.getElementById('pomoProgress');
-            if (prog) {
-                prog.className = 'pomodoro-timer-progress' + (modeClass ? ' ' + modeClass : '');
-            }
+            if (prog) prog.className = 'pomodoro-timer-progress' + (modeClass ? ' ' + modeClass : '');
             const btn = document.getElementById('pomoStartBtn');
             if (btn) {
                 btn.classList.remove('short-mode', 'long-mode');
                 if (modeClass) btn.classList.add(modeClass + '-mode');
             }
-            // 切换开关的颜色
             document.querySelectorAll('.pomodoro-toggle-switch.on').forEach(el => {
                 el.classList.remove('short-color', 'long-color');
                 if (modeClass) el.classList.add(modeClass + '-color');
             });
-            pomodoroUpdateUI();
+        }
+
+        function destroyPomodoro() {
+            // 只清理 UI 层；正在运行的计时由截止时刻继续驱动（后台运行需求）
+            TimerManager.clearTimeout('pomodoroAuto');
+            PomodoroStore.saveSession(PomodoroService.state);
+            PomodoroService._render = null;
+            PomodoroService._onPhaseComplete = null;
+            document.title = '本地文档知识库';
+        }
+
+        // ========== 计时器入口（薄封装，委托服务层） ==========
+        function pomodoroSwitch(mode) {
+            PomodoroService.switchMode(mode, pomodoroGetSettings());
+            pomodoroSyncModeUI(mode);
+            pomodoroRefreshUI();
         }
 
         function pomodoroToggle() {
-            if (pomodoroState.isRunning) pomodoroPause();
-            else pomodoroStart();
-        }
-
-        function pomodoroSetIcon(type) {
-            const ic = document.getElementById('pomoStartIcon');
-            if (!ic) return;
-            if (type === 'play') ic.innerHTML = '<path d="M8 5v14l11-7z"/>';
-            else if (type === 'pause') ic.innerHTML = '<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>';
+            PomodoroService.toggle();
+            pomodoroRefreshUI();
         }
 
         function pomodoroStart() {
-            pomodoroState.isRunning = true;
-            document.getElementById('pomoTimerWrapper')?.classList.add('pomodoro-timer-running');
-            const st = document.getElementById('pomoStartText');
-            if (st) st.textContent = '暂停';
-            pomodoroSetIcon('pause');
-            const lb = document.getElementById('pomoLabel');
-            if (lb) lb.textContent = pomodoroState.mode === 'pomodoro' ? '专注中...' : '休息中...';
-            pomodoroState.timerId = setInterval(() => {
-                pomodoroState.timeLeft--;
-                pomodoroUpdateUI();
-                if (pomodoroState.timeLeft <= 0) pomodoroComplete();
-            }, 1000);
+            PomodoroService.start();
+            pomodoroRefreshUI();
         }
 
         function pomodoroPause() {
-            pomodoroState.isRunning = false;
-            if (pomodoroState.timerId) {
-                clearInterval(pomodoroState.timerId);
-                pomodoroState.timerId = null;
-            }
-            document.getElementById('pomoTimerWrapper')?.classList.remove('pomodoro-timer-running');
-            const st = document.getElementById('pomoStartText');
-            if (st) st.textContent = '继续';
-            pomodoroSetIcon('play');
-            const lb = document.getElementById('pomoLabel');
-            if (lb) lb.textContent = '已暂停';
+            PomodoroService.pause();
+            pomodoroRefreshUI();
         }
 
         function pomodoroStop() {
-            pomodoroState.isRunning = false;
-            if (pomodoroState.timerId) {
-                clearInterval(pomodoroState.timerId);
-                pomodoroState.timerId = null;
-            }
-            document.getElementById('pomoTimerWrapper')?.classList.remove('pomodoro-timer-running');
-        }
-
-        function pomodoroReset() {
-            pomodoroStop();
-            if (pomodoroState.pendingAutoId) {
-                clearTimeout(pomodoroState.pendingAutoId);
-                pomodoroState.pendingAutoId = null;
-            }
-            pomodoroState.timeLeft = pomodoroState.totalTime;
-            const st = document.getElementById('pomoStartText');
-            if (st) st.textContent = '开始';
-            pomodoroSetIcon('play');
-            pomodoroUpdateUI();
-            const labels = { pomodoro: '准备开始专注', short: '准备短休息', long: '准备长休息' };
-            const lb = document.getElementById('pomoLabel');
-            if (lb) lb.textContent = labels[pomodoroState.mode] || '';
+            PomodoroService.stop();
+            pomodoroRefreshUI();
         }
 
         function pomodoroComplete() {
-            pomodoroStop();
-            const wr = document.getElementById('pomoTimerWrapper');
-            if (wr) {
-                wr.classList.add('pomodoro-timer-complete');
-                setTimeout(() => wr.classList.remove('pomodoro-timer-complete'), 500);
-            }
-            if (pomodoroState.mode === 'pomodoro') {
-                pomodoroState.streak++;
-                pomodoroSaveState();
-                showNotification('🎉 专注完成！休息一下吧', 'success');
-                paySound();
-                if (pomodoroGetSettings().autoBreak) {
-                    pomodoroState.pendingAutoId = setTimeout(() => {
-                        pomodoroState.pendingAutoId = null;
-                        if (!document.querySelector('.pomodoro-container')) return;
-                        const next = pomodoroState.streak % 4 === 0 ? 'long' : 'short';
-                        pomodoroSwitch(next);
-                        pomodoroStart();
-                    }, 1500);
-                }
-            } else {
-                pomodoroSaveState();
-                showNotification('☕ 休息结束！准备开始工作', 'info');
-                paySound();
-                if (pomodoroGetSettings().autoPomodoro) {
-                    pomodoroState.pendingAutoId = setTimeout(() => {
-                        pomodoroState.pendingAutoId = null;
-                        if (!document.querySelector('.pomodoro-container')) return;
-                        pomodoroSwitch('pomodoro');
-                        pomodoroStart();
-                    }, 1500);
-                }
-            }
-            const s = pomodoroGetSettings();
-            showNotification(pomodoroState.mode === 'pomodoro' ? '专注完成！休息一下吧' : '休息结束！准备开始工作', 'info');
+            PomodoroService.complete();
+            pomodoroRefreshUI();
         }
+
+        function pomodoroReset() {
+            PomodoroService.reset();
+            pomodoroRefreshUI();
+        }
+
+        // 刷新全部 UI：按钮文案/图标/标签/运行态/进度/标题
+        function pomodoroRefreshUI() {
+            const st = PomodoroService.state;
+            const wrap = document.getElementById('pomoTimerWrapper');
+            if (wrap) wrap.classList.toggle('pomodoro-timer-running', st.isRunning);
+            const stTxt = document.getElementById('pomoStartText');
+            if (stTxt) {
+                stTxt.textContent = st.isRunning ? '暂停'
+                    : (st.timeLeft > 0 && st.timeLeft < st.totalTime) ? '继续' : '开始';
+            }
+            const ic = document.getElementById('pomoStartIcon');
+            if (ic) {
+                ic.innerHTML = st.isRunning
+                    ? '<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>'
+                    : '<path d="M8 5v14l11-7z"/>';
+            }
+            const lb = document.getElementById('pomoLabel');
+            if (lb) {
+                if (st.isRunning) lb.textContent = st.mode === 'pomodoro' ? '专注中...' : '休息中...';
+                else if (st.timeLeft > 0 && st.timeLeft < st.totalTime) lb.textContent = '已暂停';
+                else lb.textContent = { pomodoro: '准备开始专注', short: '准备短休息', long: '准备长休息' }[st.mode] || '';
+            }
+            pomodoroUpdateUI();
+        }
+
         function pomodoroUpdateUI() {
-            const m = Math.floor(pomodoroState.timeLeft / 60);
-            const s = pomodoroState.timeLeft % 60;
+            const st = PomodoroService.state;
+            const m = Math.floor(st.timeLeft / 60);
+            const s = st.timeLeft % 60;
             const d = document.getElementById('pomoDisplay');
             if (d) d.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
             const p = document.getElementById('pomoProgress');
             if (p) {
-                p.style.strokeDashoffset = POMODORO_CFG.circumference * (1 - pomodoroState.timeLeft / pomodoroState.totalTime);
+                p.style.strokeDashoffset = POMODORO_CFG.circumference * (1 - st.timeLeft / st.totalTime);
             }
-            document.title = pomodoroState.isRunning
-                ? `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')} - 番茄时钟`
-                : '本地文档知识库';
+            // 仅在番茄钟视图可见时更新标题，避免后台运行干扰其他视图标题
+            if (document.querySelector('.pomodoro-container')) {
+                document.title = st.isRunning
+                    ? `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')} - 番茄时钟`
+                    : '本地文档知识库';
+            }
         }
 
         function pomodoroApplySettings() {
             if (!document.querySelector('.pomodoro-container')) return;
-            pomodoroState.totalTime = pomodoroGetSettings()[pomodoroState.mode] * 60;
-            pomodoroState.timeLeft = pomodoroState.totalTime;
-            pomodoroUpdateUI();
+            const s = pomodoroGetSettings();
+            PomodoroStore.saveSettings(s);
+            const st = PomodoroService.state;
+            st.totalTime = s[st.mode] * 60;
+            // 运行中不打断计时，仅更新进度基准；未运行时重置剩余时间
+            if (!st.isRunning) {
+                st.timeLeft = st.totalTime;
+                pomodoroRefreshUI();
+            } else {
+                pomodoroUpdateUI();
+            }
         }
 
         function pomodoroToggleSwitch(el) {
@@ -48161,25 +48455,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             pomodoroApplySettings();
         }
 
-        function paySound() {
-            try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                [523.25, 659.25, 783.99, 1046.50].forEach((freq, idx) => {
-                    const osc = ctx.createOscillator();
-                    const gain = ctx.createGain();
-                    osc.connect(gain);
-                    gain.connect(ctx.destination);
-                    osc.type = 'sine';
-                    osc.frequency.value = freq;
-                    const t = ctx.currentTime + idx * 0.18;
-                    gain.gain.setValueAtTime(0, t);
-                    gain.gain.linearRampToValueAtTime(0.12, t + 0.02);
-                    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
-                    osc.start(t);
-                    osc.stop(t + 0.45);
-                });
-            } catch (_) { }
-        }
+        // 回到可见时：补发隐藏期间错过的完成提醒，并校正后台节流后的显示
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) return;
+            PomodoroNotifier.flushPending();
+            if (document.querySelector('.pomodoro-container')) {
+                const st = PomodoroService.state;
+                if (st.isRunning) st.timeLeft = Math.max(0, Math.ceil((st.endAt - Date.now()) / 1000));
+                pomodoroUpdateUI();
+            }
+        });
 
         async function dirCanvasDisplay(dirPath) {
             if (!dirPath) return;
@@ -50029,6 +50314,29 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         /**
+         * 保存聊天消息到数据库，带重试（应对瞬时 SQLite 锁/繁忙等抖动）。
+         * 失败后按 200ms/600ms/1800ms 退避重试，最多 3 次；
+         * 全部失败则抛出最后一次错误，由调用方决定是否通知用户。
+         * 重试保证流式回复在历史中不因一次瞬时锁冲突而永久丢失。
+         */
+        async function saveChatMessageWithRetry(msg) {
+            const MAX_ATTEMPTS = 3;
+            let lastErr = null;
+            for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+                try {
+                    return await window.__TAURI__.core.invoke('chat_message_save', msg);
+                } catch (e) {
+                    lastErr = e;
+                    if (attempt < MAX_ATTEMPTS) {
+                        console.warn('[chat] 保存消息失败，第 ' + attempt + ' 次重试: ' + (e.message || e));
+                        await new Promise(r => setTimeout(r, 200 * Math.pow(3, attempt - 1)));
+                    }
+                }
+            }
+            throw lastErr;
+        }
+
+        /**
          * 保存当前正在流式生成的部分消息到数据库
          * 仅在 chatStreaming 为 true 且有部分内容时生效
          * 调用后 chatStreaming 置为 false，已生成的内容会被持久化
@@ -50040,8 +50348,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const partialContent = _chatStreamingFullContent || (_chatStreamingDiv ? _chatStreamingDiv.textContent : '');
             if (!partialContent || partialContent.trim().length === 0) return;
             try {
-                // 保存消息正文，拿到数据库生成的真实 message_id
-                const savedMsg = await window.__TAURI__.core.invoke('chat_message_save', {
+                // 保存消息正文，拿到数据库生成的真实 message_id（带重试）
+                const savedMsg = await saveChatMessageWithRetry({
                     dirPath: currentRootPath,
                     sessionId: currentSessionId,
                     role: 'assistant',
@@ -51244,7 +51552,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (currentSessionId) {
                 try {
                     const userTokenCount = estimateTokenCount(text);
-                    await window.__TAURI__.core.invoke('chat_message_save', {
+                    await saveChatMessageWithRetry({
                         dirPath: currentRootPath,
                         sessionId: currentSessionId,
                         role: 'user',
@@ -51347,82 +51655,95 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     if (e.payload.request_id !== requestId) return;
                     llmDone = true;
                     const fullContent = e.payload.content;
-                    // 流式结束后对代码块进行语法高亮（复制按钮读取原始 Markdown）
-                    if (_chatStreamingDiv) {
-                        _chatStreamingDiv._rawContent = fullContent;
-                    }
-                    if (_chatStreamingDiv && _chatStreamingDiv._body) {
-                        await highlightChatCodeBlocks(_chatStreamingDiv._body);
-                    }
-                    // 生成完成后追加底部操作按钮（复制/保存，hover 显示），必须为最后一个子元素
-                    if (_chatStreamingDiv) {
-                        _chatStreamingDiv.appendChild(createMessageFooter());
-                    }
-                    removeChatTyping();
+                    // 立即快照本次响应所需数据为局部变量：
+                    // finally 会清空 _chatStreamingDiv / _streamingToolCalls / _chatStreamingFullContent，
+                    // 必须先固化，保证落库不受竞态影响。
+                    const toolCallsSnapshot = _streamingToolCalls.slice();
+                    const streamingDiv = _chatStreamingDiv;
+                    const tokenCount = usageData?.completion_tokens || 0;
+                    // 内存态（当前会话立即可见，不依赖落库结果）
                     if (fullContent) {
-                        chatMessages.push({ role: 'assistant', content: fullContent, toolCalls: _streamingToolCalls.slice() });
+                        chatMessages.push({ role: 'assistant', content: fullContent, toolCalls: toolCallsSnapshot });
                         updateTurnCounter();
-                        const tokenCount = usageData?.completion_tokens || 0;
-                        if (currentSessionId) {
-                            try {
-                                await window.__TAURI__.core.invoke('chat_message_save', {
-                                    dirPath: currentRootPath,
-                                    sessionId: currentSessionId,
-                                    role: 'assistant',
-                                    content: fullContent,
-                                    tokenCount,
-                                    toolCalls: JSON.stringify(_streamingToolCalls),
-                                });
-                                window.__TAURI__.core.invoke('chat_session_list', {
-                                    dirPath: currentRootPath,
-                                }).then(sessions => {
-                                    chatSessions = sessions;
-                                    renderChatSessionList();
-                                }).catch(e => console.warn('刷新会话列表失败:', e));
-                            } catch (e) {
-                                console.warn('保存助手消息失败:', e);
-                            }
-                        }
-                        // 记录到 AI 历史（使 AI 使用统计包含聊天对话）
-                        if (isTauriVisit()) {
-                            window.addAIHistoryItemTauri({
-                                dirPath: currentRootPath, // 显式传入路径，避免依赖 _getDirPath()
-                                type: 'chat',
-                                label: (chatMessages[0]?.content || '对话').slice(0, 50),
-                                prompt: text,
-                                result: fullContent,
-                                fileName: '',
-                                filePath: '',
-                                tokenCount: tokenCount || 0,
-                            }).catch(e => console.warn('记录 AI 历史失败:', e));
-                        }
-                        // 重命名"新对话"（容错：防止 sendChatMessage 中因竞态未能更新）
-                        if (currentSessionId) {
+                    }
+                    // ===== 落库优先：先持久化再做 UI 后处理（UI 异常不得阻断保存） =====
+                    if (currentSessionId && fullContent) {
+                        try {
+                            await saveChatMessageWithRetry({
+                                dirPath: currentRootPath,
+                                sessionId: currentSessionId,
+                                role: 'assistant',
+                                content: fullContent,
+                                tokenCount,
+                                toolCalls: JSON.stringify(toolCallsSnapshot),
+                            });
                             window.__TAURI__.core.invoke('chat_session_list', {
                                 dirPath: currentRootPath,
                             }).then(sessions => {
-                                const cur = sessions.find(s => s.id === currentSessionId);
-                                if (cur && (cur.title === '新对话' || !cur.title)) {
-                                    const msg = chatMessages[0]?.content || '';
-                                    if (msg) {
-                                        window.__TAURI__.core.invoke('chat_session_rename', {
-                                            dirPath: currentRootPath,
-                                            id: currentSessionId,
-                                            title: msg,
-                                        }).then(() => {
-                                            cur.title = msg;
-                                            chatSessions = sessions;
-                                            renderChatSessionList();
-                                        }).catch(e => console.warn('重命名失败:', e));
-                                    }
-                                }
-                            }).catch(e => console.warn('刷新列表失败:', e));
+                                chatSessions = sessions;
+                                renderChatSessionList();
+                            }).catch(e => console.warn('刷新会话列表失败:', e));
+                        } catch (e) {
+                            console.error('[chat] 保存助手消息失败（重试后仍失败）:', e);
+                            showNotification('⚠ 回复未能保存到对话历史，请检查数据库', 'warning');
                         }
                     }
-                    // 更新上下文使用率（模型上下文窗口占用率）
-                    // 优先使用 API 返回的 prompt_tokens，不可用时保留上次的值
-                    if (usageData && usageData.prompt_tokens) {
-                        updateContextUsage(usageData.prompt_tokens, LOCAL_LLM_CONTEXT_LENGTH || 10000);
+                    // 记录到 AI 历史（使 AI 使用统计包含聊天对话）
+                    if (isTauriVisit() && fullContent) {
+                        window.addAIHistoryItemTauri({
+                            dirPath: currentRootPath, // 显式传入路径，避免依赖 _getDirPath()
+                            type: 'chat',
+                            label: (chatMessages[0]?.content || '对话').slice(0, 50),
+                            prompt: text,
+                            result: fullContent,
+                            fileName: '',
+                            filePath: '',
+                            tokenCount: tokenCount || 0,
+                        }).catch(e => console.warn('记录 AI 历史失败:', e));
+                    }
+                    // ===== UI 后处理（异常隔离，不影响持久化结果） =====
+                    try {
+                        // 流式结束后对代码块进行语法高亮（复制按钮读取原始 Markdown）
+                        if (streamingDiv) {
+                            streamingDiv._rawContent = fullContent;
+                        }
+                        if (streamingDiv && streamingDiv._body) {
+                            await highlightChatCodeBlocks(streamingDiv._body);
+                        }
+                        // 生成完成后追加底部操作按钮（复制/保存，hover 显示），必须为最后一个子元素
+                        if (streamingDiv) {
+                            streamingDiv.appendChild(createMessageFooter());
+                        }
+                        removeChatTyping();
+                        // 更新上下文使用率（模型上下文窗口占用率）
+                        // 优先使用 API 返回的 prompt_tokens，不可用时保留上次的值
+                        if (usageData && usageData.prompt_tokens) {
+                            updateContextUsage(usageData.prompt_tokens, LOCAL_LLM_CONTEXT_LENGTH || 10000);
+                        }
+                    } catch (e) {
+                        console.error('[chat] done UI 后处理异常:', e);
+                    }
+                    // 重命名"新对话"（容错：防止 sendChatMessage 中因竞态未能更新）
+                    if (currentSessionId && fullContent) {
+                        window.__TAURI__.core.invoke('chat_session_list', {
+                            dirPath: currentRootPath,
+                        }).then(sessions => {
+                            const cur = sessions.find(s => s.id === currentSessionId);
+                            if (cur && (cur.title === '新对话' || !cur.title)) {
+                                const msg = chatMessages[0]?.content || '';
+                                if (msg) {
+                                    window.__TAURI__.core.invoke('chat_session_rename', {
+                                        dirPath: currentRootPath,
+                                        id: currentSessionId,
+                                        title: msg,
+                                    }).then(() => {
+                                        cur.title = msg;
+                                        chatSessions = sessions;
+                                        renderChatSessionList();
+                                    }).catch(e => console.warn('重命名失败:', e));
+                                }
+                            }
+                        }).catch(e => console.warn('刷新列表失败:', e));
                     }
                 }),
                 window.__TAURI__.event.listen('llm:error', async (e) => {
@@ -51551,15 +51872,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const ts = Number(session.created_at);
             // 兼容秒级和毫秒级时间戳
             const date = new Date(ts < 100000000000 ? ts * 1000 : ts);
-            const dateStr = (date.getMonth() + 1) + '/' + date.getDate();
+            const dateStr = (date.getMonth() + 1) + '-' + date.getDate();
             const title = escapeHtml(session.title) || '新对话';
             const activeClass = isActive ? ' active' : '';
             const favIcon = session.favorite ? '★' : '';
-            const typeBadge = session.type === 'rag' ? '<span class="rag-indicator">agent</span>' : '';
+            const count = session.message_count || 0;
+            const typeBadge = session.type === 'rag' ? '<span class="rag-indicator">agent</span>' : '<span class="rag-indicator chat">chat</span>';
 
             return `<div class="chat-history-item${activeClass}" data-session-id="${session.id}">
                 <div class="chat-history-item-title" onclick="switchChatSession('${session.id}')">${favIcon} ${typeBadge} ${title}</div>
-                <span class="chat-history-item-date">${dateStr}</span>
+                <span class="chat-history-item-date">${dateStr}<span style="width: 0.8rem;margin-left: 0.25rem;">(${count})</span></span>
                 <button class="chat-history-item-more" onclick="toggleSessionMenu(event, '${session.id}')">⋮</button>
                 <div class="chat-history-item-more-menu" id="menu-${session.id}">
                     <div class="chat-history-item-more-menu-item" onclick="renameChatSession('${session.id}')">重命名</div>
@@ -52008,74 +52330,36 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     console.debug('[rag] done event requestId=' + requestId + ' content_len=' + (e.payload.content || '').length + ' sources=' + (e.payload.sources || []).length + ' tokens_in=' + e.payload.prompt_tokens + ' tokens_out=' + e.payload.completion_tokens);
                     ragDone = true;
                     _chatStreamingStatusMsg = '';
-                    if (_chatStreamingDiv) {
-                        const st = _chatStreamingDiv.querySelector('.chat-message-header-status');
-                        if (st) st.remove();
-                    }
+                    // 立即快照本次响应所需数据为局部变量：
+                    // finally 会清空 _chatStreamingDiv / _streamingToolCalls / _chatStreamingFullContent，
+                    // 必须先固化，保证落库与 UI 后处理不受竞态影响。
                     const fullContent = e.payload.content;
                     const sources = e.payload.sources || [];
-                    // 降级路径均依赖此变量，不赋值会导致引用在保存/断联时丢失
-                    _chatStreamingSources = sources;
                     const promptTokens = e.payload.prompt_tokens || 0;
                     const completionTokens = e.payload.completion_tokens || 0;
-                    // 更新上下文使用率（模型上下文窗口占用率）
-                    // 优先使用 API 返回的 prompt_tokens，不可用时保留上次的值
-                    if (promptTokens > 0) {
-                        updateContextUsage(promptTokens, LOCAL_LLM_CONTEXT_LENGTH || 10000);
+                    const toolCallsSnapshot = _streamingToolCalls.slice();
+                    let streamingDiv = _chatStreamingDiv;
+                    // 降级路径均依赖此变量，不赋值会导致引用在保存/断联时丢失
+                    _chatStreamingSources = sources;
+                    if (streamingDiv) {
+                        const st = streamingDiv.querySelector('.chat-message-header-status');
+                        if (st) st.remove();
                     }
-                    // 流式结束后对代码块进行语法高亮（复制按钮读取原始 Markdown）
-                    if (_chatStreamingDiv) {
-                        _chatStreamingDiv._rawContent = fullContent;
-                    }
-                    if (_chatStreamingDiv && _chatStreamingDiv._body) {
-                        await highlightChatCodeBlocks(_chatStreamingDiv._body);
-                    }
-                    removeChatTyping();
-                    // 兜底：如果流式过程中未能创建 DOM（如 _statusEl 等异常导致 delta 处理中断），在此创建
-                    if (!_chatStreamingDiv && fullContent) {
-                        const container = document.getElementById('chat-messages');
-                        const div = getMessageAssistant();
-                        div._rawContent = fullContent;
-                        div._body.innerHTML = `<div class="markdown-body" style="zoom: 1;background: transparent;">${renderChatMarkdown(fullContent)}</div>`;
-                        container.appendChild(div);
-                        _chatStreamingDiv = div;
-                    }
-                    // 追加引用来源 UI
-                    if (sources.length > 0 && _chatStreamingDiv) {
-                        _chatStreamingDiv._chatSources = sources;
-                        renderChatSources(_chatStreamingDiv, sources);
-                    }
-                    // 生成完成后追加底部操作按钮（复制/保存，hover 显示），必须为最后一个子元素
-                    if (_chatStreamingDiv) {
-                        _chatStreamingDiv.appendChild(createMessageFooter());
-                    }
-                    // 流式结束后滚动到底部，确保最新消息和引用完整可见 
-                    if (window._chatAutoScroll !== false) {
-                        const chatContainer = document.getElementById('chat-messages');
-                        if (chatContainer) {
-                            requestAnimationFrame(() => {
-                                if (window._chatAutoScroll !== false) {
-                                    chatContainer.scrollTop = chatContainer.scrollHeight;
-                                }
-                            });
-                        }
-                    }
-                    // 连带 sources 存入 chatMessages（空内容不 push，避免污染对话记录与回合计数）
+                    // 内存态（当前会话立即可见，不依赖落库结果）
                     if (fullContent) {
-                        const msgEntry = { role: 'assistant', content: fullContent, sources: sources, toolCalls: _streamingToolCalls.slice() };
-                        chatMessages.push(msgEntry);
+                        chatMessages.push({ role: 'assistant', content: fullContent, sources: sources, toolCalls: toolCallsSnapshot });
                         updateTurnCounter();
                     }
-                    // 保存到数据库
+                    // ===== 落库优先：先持久化再做 UI 后处理（UI 异常不得阻断保存） =====
                     if (currentSessionId && fullContent) {
                         try {
-                            const savedMsg = await window.__TAURI__.core.invoke('chat_message_save', {
+                            const savedMsg = await saveChatMessageWithRetry({
                                 dirPath: currentRootPath,
                                 sessionId: currentSessionId,
                                 role: 'assistant',
                                 content: fullContent,
                                 tokenCount: completionTokens,
-                                toolCalls: JSON.stringify(_streamingToolCalls),
+                                toolCalls: JSON.stringify(toolCallsSnapshot),
                             });
                             // 保存引用来源
                             if (sources.length > 0 && savedMsg?.id) {
@@ -52099,11 +52383,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             chatSessions = sessions;
                             renderChatSessionList();
                         } catch (e) {
-                            console.warn('保存助手消息失败:', e);
+                            console.error('[rag] 保存助手消息失败（重试后仍失败）:', e);
+                            showNotification('⚠ 回复未能保存到对话历史，请检查数据库', 'warning');
                         }
                     }
                     // 记录到 AI 历史（使 AI 使用统计包含 RAG 对话）
-                    if (isTauriVisit()) {
+                    if (isTauriVisit() && fullContent) {
                         window.addAIHistoryItemTauri({
                             dirPath: currentRootPath, // 显式传入路径
                             type: 'chat',
@@ -52114,6 +52399,53 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             filePath: '',
                             tokenCount: completionTokens || 0,
                         }).catch(e => console.warn('记录 AI 历史失败:', e));
+                    }
+                    // ===== UI 后处理（异常隔离，不影响持久化结果） =====
+                    try {
+                        // 更新上下文使用率（模型上下文窗口占用率）
+                        // 优先使用 API 返回的 prompt_tokens，不可用时保留上次的值
+                        if (promptTokens > 0) {
+                            updateContextUsage(promptTokens, LOCAL_LLM_CONTEXT_LENGTH || 10000);
+                        }
+                        // 流式结束后对代码块进行语法高亮（复制按钮读取原始 Markdown）
+                        if (streamingDiv) {
+                            streamingDiv._rawContent = fullContent;
+                        }
+                        if (streamingDiv && streamingDiv._body) {
+                            await highlightChatCodeBlocks(streamingDiv._body);
+                        }
+                        removeChatTyping();
+                        // 兜底：如果流式过程中未能创建 DOM（如 _statusEl 等异常导致 delta 处理中断），在此创建
+                        if (!streamingDiv && fullContent) {
+                            const container = document.getElementById('chat-messages');
+                            const div = getMessageAssistant();
+                            div._rawContent = fullContent;
+                            div._body.innerHTML = `<div class="markdown-body" style="zoom: 1;background: transparent;">${renderChatMarkdown(fullContent)}</div>`;
+                            container.appendChild(div);
+                            streamingDiv = div;
+                        }
+                        // 追加引用来源 UI
+                        if (sources.length > 0 && streamingDiv) {
+                            streamingDiv._chatSources = sources;
+                            renderChatSources(streamingDiv, sources);
+                        }
+                        // 生成完成后追加底部操作按钮（复制/保存，hover 显示），必须为最后一个子元素
+                        if (streamingDiv) {
+                            streamingDiv.appendChild(createMessageFooter());
+                        }
+                        // 流式结束后滚动到底部，确保最新消息和引用完整可见 
+                        if (window._chatAutoScroll !== false) {
+                            const chatContainer = document.getElementById('chat-messages');
+                            if (chatContainer) {
+                                requestAnimationFrame(() => {
+                                    if (window._chatAutoScroll !== false) {
+                                        chatContainer.scrollTop = chatContainer.scrollHeight;
+                                    }
+                                });
+                            }
+                        }
+                    } catch (e) {
+                        console.error('[rag] done UI 后处理异常:', e);
                     }
                     // 重命名"新对话"（容错：防止 sendChatMessage 中因竞态未能更新）
                     if (currentSessionId) {
@@ -52168,7 +52500,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (estTokens > 0) {
                     updateContextUsage(estTokens, LOCAL_LLM_CONTEXT_LENGTH || 10000);
                 }
-                await window.__TAURI__.core.invoke('kb_rag_query', {
+                await window.__TAURI__.core.invoke('agent_query', {
                     dirPath: path,
                     query: text,
                     messages: histMessages,
@@ -52846,6 +53178,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (!link) return;
             e.preventDefault();
         }, false);
+
+        async function startBridgeTauri() {
+            if(!isTauriVisit()) return;
+            if(FrontendBridge) FrontendBridge.start();
+        }
     </script>
     <script src="./css_js/agent.js" defer></script>
 </body>
