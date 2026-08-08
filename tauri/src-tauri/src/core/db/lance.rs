@@ -462,7 +462,7 @@ impl LanceStore {
         }
 
         log::debug!(
-            "[lance] search_vectors open_table={:.3}s query={:.3}s total={:.3}s hits={}",
+            "[lance] [向量查库结果] open_table={:.3}s query={:.3}s total={:.3}s hits={}",
             open_elapsed.as_secs_f64(),
             query_elapsed.as_secs_f64(),
             t0.elapsed().as_secs_f64(),

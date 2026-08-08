@@ -18106,7 +18106,6 @@
             if (!await initTreeBrowser()) return; // 初始化文件树
             await Promise.all([
                 Promise.resolve(startBridgeTauri()), // 初始化桥
-                Promise.resolve(wsConnect()), // 初始化WebSocket连接
                 Promise.resolve(initAiActionRow()), // 初始化AI相关组件
                 Promise.resolve(initAIPanelToggle()), // 初始化AI面板切换按钮
                 Promise.resolve(initAIResultSettings()),// 初始化AI结果设置
@@ -38786,16 +38785,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        let _wsClient = null;
-        let _wsReconnectCount = 0;
-        const _wsMaxReconnect = 3;
-
-        const WS_HANDLERS = {
-            heartbeat: () => {
-            },
-            metrics: (data) => _handleWsMetrics(data),
-        };
-
         // 处理 WebSocket 推送的系统监控数据（仅仪表盘可见时更新 DOM）
         function _handleWsMetrics(data) {
             const d = data.data || data;
@@ -38915,65 +38904,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             result += m + '分';
             return result;
         };
-
-        // 连接 WebSocket（仅 http 模式下生效）
-        function wsConnect() {
-            if (isLocalVisit() || isTauriVisit()) return;
-            wsDisconnect();
-            try {
-                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                const wsUrl = `${protocol}//${window.location.host}/ws`;
-                _wsClient = new WebSocket(wsUrl);
-
-                _wsClient.onopen = () => {
-                    _wsReconnectCount = 0;
-                };
-
-                _wsClient.onmessage = (event) => {
-                    try {
-                        if (!isRootHandleAvailable()) return;
-                        const msg = JSON.parse(event.data);
-                        const handler = WS_HANDLERS[msg.type];
-                        if (handler) {
-                            handler(msg);
-                        }
-                    } catch (e) {
-                        // 忽略解析错误
-                    }
-                };
-
-                _wsClient.onclose = () => {
-                    _wsClient = null;
-                    _wsReconnectCount++;
-                    if (_wsReconnectCount > _wsMaxReconnect) return;
-                    const delay = Math.min(3000 * Math.pow(1.5, _wsReconnectCount - 1), 30000);
-                    TimerManager.setTimeout('wsReconnect', () => wsConnect(), delay);
-                };
-
-                _wsClient.onerror = () => {
-                    // onclose 会自动触发
-                };
-            } catch (e) {
-                console.error('WebSocket 连接失败:', e.message);
-            }
-        }
-
-        // 断开 WebSocket
-        function wsDisconnect() {
-            TimerManager.clear('wsReconnect');
-            if (_wsClient) {
-                _wsClient.onclose = null;
-                _wsClient.close();
-                _wsClient = null;
-            }
-        }
-
-        // 通过 WebSocket 发消息
-        function wsSend(msg) {
-            if (_wsClient && _wsClient.readyState === WebSocket.OPEN) {
-                _wsClient.send(JSON.stringify(msg));
-            }
-        }
 
         // 仪表盘 resize 处理（持有引用方便移除）
         function resizeDashboardCharts() {

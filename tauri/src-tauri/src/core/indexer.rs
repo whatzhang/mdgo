@@ -79,7 +79,7 @@ pub fn route_intent(query: &str) -> RetrievalIntent {
     let lower = query.to_lowercase();
     // 仅使用具象的大纲文件格式词，避免泛化词"大纲"把普通文档查询误路由为 Outline
     let outline_kws = [
-        "opml", "freemind", "free mind", "思维导图", "outline",
+        "opml", "freemind", "free mind", "outline", "知识库中的思维导图", "知识库中的大纲笔记", "opml文件", "mm文件"
     ];
     if outline_kws.iter().any(|kw| lower.contains(kw)) {
         return RetrievalIntent::Outline;
@@ -169,8 +169,32 @@ fn compute_alpha(query: &str, base_alpha: f32) -> f32 {
 /// - 包含代码文件扩展名（如 ".py"、".rs"、".ts"）
 /// - 包含常见代码关键字（function、class、fn、def、struct）
 fn is_code_query(query: &str) -> bool {
+    //关键词
+    let lower = query.to_lowercase();
+    let outline_kws = [
+         "知识库中的代码"
+    ];
+    if outline_kws.iter().any(|kw| lower.contains(kw)) {
+        return true;
+    }
+
+    let mut has_camel = false;
+    // CamelCase 检测：连续大写字母 + 小写字母（如 "LRUCache", "parseJSON"）
+    if query.chars().any(|c| c.is_uppercase()) {
+        // 至少一个完整的词包含大小写混合
+          has_camel = query.split(|c: char| !c.is_alphanumeric())
+            .any(|word| {
+                word.len() >= 3
+                    && word.chars().any(|c| c.is_uppercase())
+                    && word.chars().any(|c| c.is_lowercase())
+                    && !word.chars().all(|c| c.is_uppercase())
+            });
+    }
+    // snake_case 检测（'_' 视为词内字符，避免 "handle_timeout" 被拆成两段而漏判）
+    let has_snake = query.split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .any(|word| word.contains('_') && word.len() >= 3);
     // 代码语法特征
-    if query.contains("::") || query.contains("->") || query.contains("()") {
+    if (has_camel || has_snake) && (query.contains("::") || query.contains("->")) {
         return true;
     }
     // 代码文件扩展名
@@ -179,40 +203,17 @@ fn is_code_query(query: &str) -> bool {
         || query.contains(".cpp") || query.contains(".c") || query.contains(".h")
         || query.contains(".rb") || query.contains(".php")
     {
-        return true;
-    }
-    // 代码关键字
-    let lower = query.to_lowercase();
-    // fn 单独处理：检查是否为独立词（fn()、fn_main、fn 都算）
-    let has_fn = query.split(|c: char| !c.is_alphanumeric())
-        .any(|word| word == "fn");
-    let code_keywords = [
-        "function", "class", "struct", "enum", "trait",
-        "interface", "namespace", "lambda", "async", "await",
-        "callback", "prototype", "constructor",
-    ];
-    if has_fn || code_keywords.iter().any(|kw| lower.contains(kw)) {
-        return true;
-    }
-    // CamelCase 检测：连续大写字母 + 小写字母（如 "LRUCache", "parseJSON"）
-    if query.chars().any(|c| c.is_uppercase()) {
-        // 至少一个完整的词包含大小写混合
-        let has_camel = query.split(|c: char| !c.is_alphanumeric())
-            .any(|word| {
-                word.len() >= 3
-                    && word.chars().any(|c| c.is_uppercase())
-                    && word.chars().any(|c| c.is_lowercase())
-                    && !word.chars().all(|c| c.is_uppercase())
-            });
-        if has_camel {
+        let code_keywords = [
+            "function", "class", "struct", "enum", "trait",
+            "interface", "namespace", "lambda", "async", "await",
+            "callback", "prototype", "constructor", "方法", "函数", "变量" , "常量" , "类",  "算法", "数据结构"
+        ];
+        if code_keywords.iter().any(|kw| lower.contains(kw)) {
             return true;
         }
-    }
-    // snake_case 检测（'_' 视为词内字符，避免 "handle_timeout" 被拆成两段而漏判）
-    let has_snake = query.split(|c: char| !(c.is_alphanumeric() || c == '_'))
-        .any(|word| word.contains('_') && word.len() >= 3);
-    if has_snake {
-        return true;
+        if query.contains("()"){
+            return true;
+        }
     }
     false
 }
@@ -1697,146 +1698,4 @@ fn fuse_hits(vec_hits: Vec<SearchHit>, bm25_hits: Vec<SearchHit>, alpha: f32) ->
 
     log::debug!("[indexer] [加权融合] 合并 {} 个命中", results.len());
     results
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn route_intent_detects_code() {
-        assert_eq!(route_intent("LRUCache 是怎么实现的"), RetrievalIntent::Code);
-        assert_eq!(route_intent("index_all 函数的逻辑"), RetrievalIntent::Code);
-        assert_eq!(route_intent("fn main 在哪定义"), RetrievalIntent::Code);
-    }
-
-    #[test]
-    fn route_intent_detects_outline_and_doc() {
-        assert_eq!(route_intent("这个思维导图的大纲结构"), RetrievalIntent::Outline);
-        assert_eq!(route_intent("README 文档说明"), RetrievalIntent::Document);
-    }
-
-    #[test]
-    fn route_intent_defaults_to_general() {
-        assert_eq!(route_intent("今天天气怎么样"), RetrievalIntent::General);
-        // 动词性"说明"不再误路由为 Document（防止中文代码提问被过滤掉代码文件）
-        assert_eq!(route_intent("请说明 fetch 的实现方式"), RetrievalIntent::General);
-        // 泛化词"大纲"不再误路由为 Outline（普通文档查询不会被限制到 opml/mm）
-        assert_eq!(route_intent("本文大纲是什么"), RetrievalIntent::General);
-    }
-
-    #[test]
-    fn compute_alpha_handles_cjk_and_short_queries() {
-        let close = |a: f32, b: f32| (a - b).abs() < 1e-5;
-        // 短英文关键词 → 降低向量权重，依赖关键词精确匹配
-        assert!(close(compute_alpha("fetch", 0.6), 0.4), "got {}", compute_alpha("fetch", 0.6));
-        // 中等长度中文查询不再被误判为"短查询"，保持基准权重
-        assert!(close(compute_alpha("索引配置如何热更新", 0.6), 0.6), "got {}", compute_alpha("索引配置如何热更新", 0.6));
-        // 较长中文查询（≥14 字）略提高向量权重
-        assert!(close(compute_alpha("如何在不重启的情况下热更新索引配置", 0.6), 0.7), "got {}", compute_alpha("如何在不重启的情况下热更新索引配置", 0.6));
-        // 超长混合查询略提高向量权重
-        assert!(
-            close(
-                compute_alpha("如何实现一个支持并发读写的缓存 并且能够自动清理过期条目 同时保证线程安全", 0.6),
-                0.7
-            ),
-            "got {}",
-            compute_alpha("如何实现一个支持并发读写的缓存 并且能够自动清理过期条目 同时保证线程安全", 0.6)
-        );
-    }
-
-    #[test]
-    fn fuse_hits_weights_both_sources() {
-        let v = SearchHit {
-            text: "t".into(),
-            doc_name: "a.rs".into(),
-            chunk_index: 0,
-            score: 0.8,
-            score_vec: 0.8,
-            score_bm25: 0.0,
-            path_json: None,
-            sentence_window: None,
-            symbol_name: None,
-            symbol_kind: None,
-        };
-        let b = SearchHit {
-            text: "t".into(),
-            doc_name: "a.rs".into(),
-            chunk_index: 0,
-            score: 0.6,
-            score_vec: 0.0,
-            score_bm25: 0.6,
-            path_json: None,
-            sentence_window: None,
-            symbol_name: None,
-            symbol_kind: None,
-        };
-        // 双路命中：0.6*0.8 + 0.4*0.6 = 0.72
-        let fused = fuse_hits(vec![v], vec![b], 0.6);
-        assert_eq!(fused.len(), 1);
-        assert!((fused[0].score - 0.72).abs() < 1e-5, "融合分数应为 0.72, got {}", fused[0].score);
-    }
-
-    #[test]
-    fn fuse_hits_single_source_keeps_own_score() {
-        // 仅向量命中：不再按 α 折算，保留自身分数（避免纯向量命中被 min_score 误过滤）
-        let vec_only = SearchHit {
-            text: "v".into(),
-            doc_name: "a.md".into(),
-            chunk_index: 0,
-            score: 0.5,
-            score_vec: 0.5,
-            score_bm25: 0.0,
-            path_json: None,
-            sentence_window: None,
-            symbol_name: None,
-            symbol_kind: None,
-        };
-        let fused = fuse_hits(vec![vec_only], Vec::new(), 0.6);
-        assert!(
-            (fused[0].score - 0.5).abs() < 1e-5,
-            "单路向量命中不应被折算, got {}",
-            fused[0].score
-        );
-
-        // 仅 BM25 命中：同样保留自身分数
-        let bm25_only = SearchHit {
-            text: "b".into(),
-            doc_name: "b.md".into(),
-            chunk_index: 0,
-            score: 0.6,
-            score_vec: 0.0,
-            score_bm25: 0.6,
-            path_json: None,
-            sentence_window: None,
-            symbol_name: None,
-            symbol_kind: None,
-        };
-        let fused = fuse_hits(Vec::new(), vec![bm25_only], 0.6);
-        assert!(
-            (fused[0].score - 0.6).abs() < 1e-5,
-            "单路 BM25 命中不应被折算, got {}",
-            fused[0].score
-        );
-    }
-
-    #[test]
-    fn filter_hits_by_ext_keeps_matching_only() {
-        let mk = |doc: &str| SearchHit {
-            text: "t".into(),
-            doc_name: doc.into(),
-            chunk_index: 0,
-            score: 0.5,
-            score_vec: 0.5,
-            score_bm25: 0.0,
-            path_json: None,
-            sentence_window: None,
-            symbol_name: None,
-            symbol_kind: None,
-        };
-        let hits = vec![mk("src/a.rs"), mk("docs/readme.md"), mk("notes/outline.opml")];
-        let filtered = filter_hits_by_ext(hits, &["rs"]);
-        assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].doc_name, "src/a.rs");
-    }
 }

@@ -141,7 +141,7 @@ goto :eof
 :check_rust
 echo [INFO]  Checking Rust code compilation...
 pushd "%TAURI_SRC%"
-cargo check
+cargo check -j 1
 if errorlevel 1 (
     echo [ERROR] Rust code compilation failed
     popd
@@ -154,7 +154,7 @@ goto :eof
 :run_tests
 echo [INFO]  Running Rust tests...
 pushd "%TAURI_SRC%"
-cargo test
+cargo test -j 1
 set TEST_EXIT_CODE=%ERRORLEVEL%
 popd
 

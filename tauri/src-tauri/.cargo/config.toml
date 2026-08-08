@@ -14,3 +14,6 @@ rustflags = ["-C", "target-feature=-crt-static"]
 [env]
 CFLAGS = "-MD"
 CXXFLAGS = "-MD"
+
+[build]
+jobs = 1

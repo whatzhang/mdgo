@@ -122,7 +122,7 @@ fn create_session(model_path: &Path) -> Result<SessionType, String> {
         builder = builder
             .with_execution_providers([ort::ep::DirectML::default().build()])
             .map_err(|e| format!("设置 DirectML GPU 执行提供者失败: {}", e))?;
-        log::info!("[ort_embedding] 启用 DirectML (Windows GPU)，CPU 为默认回退");
+        log::info!("[ort_embedding] 启用 windows embedding 模型驱动");
     }
 
     // macOS Apple Silicon（M 系列）：CoreML GPU 加速
@@ -131,14 +131,14 @@ fn create_session(model_path: &Path) -> Result<SessionType, String> {
         builder = builder
             .with_execution_providers([ort::ep::CoreML::default().build()])
             .map_err(|e| format!("设置 CoreML GPU 执行提供者失败: {}", e))?;
-        log::info!("[ort_embedding] 启用 CoreML (macOS Apple Silicon GPU)，CPU 为默认回退");
+        log::info!("[ort_embedding] 启用 macos embedding 模型驱动");
     }
 
     let session = builder
         .commit_from_file(model_path)
         .map_err(|e| format!("加载 ONNX 模型失败: {}", e))?;
 
-    log::info!("[ort_embedding] 原生 ORT session 创建成功, 模型路径: {}", model_path.display());
+    log::info!("[ort_embedding] embedding session 创建成功, 模型路径: {}", model_path.display());
     Ok(session)
 }
 
