@@ -15,17 +15,17 @@ pub fn prompt_list(
 pub fn prompt_create(
     store: State<'_, PromptStore>,
     name: String,
-    content: String,
+    prompt: String,
 ) -> Result<PromptItem, String> {
     if name.trim().is_empty() {
         return Err("名称不能为空".to_string());
     }
-    if content.trim().is_empty() {
+    if prompt.trim().is_empty() {
         return Err("内容不能为空".to_string());
     }
     store.create(&UpsertPromptRequest {
         name: name.trim().to_string(),
-        content: content.trim().to_string(),
+        prompt: prompt.trim().to_string(),
     })
 }
 
@@ -35,17 +35,17 @@ pub fn prompt_update(
     store: State<'_, PromptStore>,
     id: String,
     name: String,
-    content: String,
+    prompt: String,
 ) -> Result<PromptItem, String> {
     if name.trim().is_empty() {
         return Err("名称不能为空".to_string());
     }
-    if content.trim().is_empty() {
+    if prompt.trim().is_empty() {
         return Err("内容不能为空".to_string());
     }
     store.update(&id, &UpsertPromptRequest {
         name: name.trim().to_string(),
-        content: content.trim().to_string(),
+        prompt: prompt.trim().to_string(),
     })
 }
 

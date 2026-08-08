@@ -11,7 +11,7 @@ use uuid::Uuid;
 pub struct PromptItem {
     pub id: String,
     pub name: String,
-    pub content: String,
+    pub prompt: String,
     pub created_at: u64,
     pub updated_at: u64,
 }
@@ -19,7 +19,7 @@ pub struct PromptItem {
 #[derive(Debug, Deserialize)]
 pub struct UpsertPromptRequest {
     pub name: String,
-    pub content: String,
+    pub prompt: String,
 }
 
 /// 全局 Prompt 存储（SQLite，位于用户数据目录）
@@ -70,12 +70,36 @@ impl PromptStore {
             "CREATE TABLE IF NOT EXISTS prompts (
                 id         TEXT PRIMARY KEY,
                 name       TEXT NOT NULL,
-                content    TEXT NOT NULL DEFAULT '',
+                prompt     TEXT NOT NULL DEFAULT '',
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
             );",
         )
         .map_err(|e| format!("创建 prompts 表失败: {}", e))?;
+        Self::migrate_content_to_prompt(conn)?;
+        Ok(())
+    }
+
+    /// 兼容旧版本：早期字段名为 content，统一重命名为 prompt（SQLite >= 3.25 支持 RENAME COLUMN）
+    fn migrate_content_to_prompt(conn: &Connection) -> Result<(), String> {
+        let has_content: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM pragma_table_info('prompts') WHERE name = 'content')",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        let has_prompt: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM pragma_table_info('prompts') WHERE name = 'prompt')",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if has_content && !has_prompt {
+            conn.execute_batch("ALTER TABLE prompts RENAME COLUMN content TO prompt;")
+                .map_err(|e| format!("迁移 prompts 表字段失败: {}", e))?;
+        }
         Ok(())
     }
 
@@ -90,14 +114,14 @@ impl PromptStore {
     pub fn list(&self) -> Result<Vec<PromptItem>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
-            .prepare("SELECT id, name, content, created_at, updated_at FROM prompts ORDER BY updated_at DESC")
+            .prepare("SELECT id, name, prompt, created_at, updated_at FROM prompts ORDER BY updated_at DESC")
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map([], |row| {
                 Ok(PromptItem {
                     id: row.get(0)?,
                     name: row.get(1)?,
-                    content: row.get(2)?,
+                    prompt: row.get(2)?,
                     created_at: row.get(3)?,
                     updated_at: row.get(4)?,
                 })
@@ -116,14 +140,14 @@ impl PromptStore {
         let now = Self::now_ms();
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute(
-            "INSERT INTO prompts (id, name, content, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![id, req.name, req.content, now, now],
+            "INSERT INTO prompts (id, name, prompt, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![id, req.name, req.prompt, now, now],
         )
         .map_err(|e| format!("创建 prompt 失败: {}", e))?;
         Ok(PromptItem {
             id,
             name: req.name.clone(),
-            content: req.content.clone(),
+            prompt: req.prompt.clone(),
             created_at: now,
             updated_at: now,
         })
@@ -135,8 +159,8 @@ impl PromptStore {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let affected = conn
             .execute(
-                "UPDATE prompts SET name = ?1, content = ?2, updated_at = ?3 WHERE id = ?4",
-                rusqlite::params![req.name, req.content, now, id],
+                "UPDATE prompts SET name = ?1, prompt = ?2, updated_at = ?3 WHERE id = ?4",
+                rusqlite::params![req.name, req.prompt, now, id],
             )
             .map_err(|e| format!("更新 prompt 失败: {}", e))?;
         if affected == 0 {
@@ -145,13 +169,13 @@ impl PromptStore {
         // 读取更新后的完整记录
         let item = conn
             .query_row(
-                "SELECT id, name, content, created_at, updated_at FROM prompts WHERE id = ?1",
+                "SELECT id, name, prompt, created_at, updated_at FROM prompts WHERE id = ?1",
                 rusqlite::params![id],
                 |row| {
                     Ok(PromptItem {
                         id: row.get(0)?,
                         name: row.get(1)?,
-                        content: row.get(2)?,
+                        prompt: row.get(2)?,
                         created_at: row.get(3)?,
                         updated_at: row.get(4)?,
                     })

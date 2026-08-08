@@ -99,7 +99,6 @@
     <!-- ECharts 词云扩展 -->
     <script src="https://cdn.jsdelivr.net/npm/echarts-wordcloud@2/dist/echarts-wordcloud.min.js"></script>
 
-    <script src="./css_js/agent.js"></script>
     <style>
         :root {
             --font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -983,11 +982,38 @@
             background: var(--color-bg-secondary);
             padding: 1rem;
             border-radius: var(--radius-md);
+            position: relative; /* 容纳右上角查看按钮 */
         }
 
         .mermaid-output svg {
             max-width: 100%;
             height: auto;
+        }
+
+        /* 查看按钮：样式与代码块复制按钮一致，hover 淡入 */
+        .mermaid-view-btn {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            color: var(--t1);
+            background: transparent;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s ease, background 0.2s ease;
+            z-index: 10;
+            align-items: center;
+            justify-items: center;
+            align-content: center;
+            justify-content: center;
+        }
+
+        .mermaid-output:hover .mermaid-view-btn,
+        .mermaid-output:focus-within .mermaid-view-btn {
+            opacity: 1;
+        }
+
+        .mermaid-view-btn:hover {
+             color: var(--color-primary);
         }
 
         .mermaid-error-block {
@@ -2224,6 +2250,8 @@
             z-index: 1000;
             width: auto;
             font-family: var(--font-family);
+            font-weight: 500;
+            font-size: 0.8125rem;
         }
 
         @keyframes popIn {
@@ -2247,14 +2275,11 @@
             border: none;
             background: transparent;
             cursor: pointer;
-            padding: 0.125rem 0.375rem;
             border-radius: 0.375rem;
-            font-size: 0.875rem;
             color: var(--color-text);
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 2px;
         }
 
         .markdown-selection-btn:hover {
@@ -2294,7 +2319,12 @@
         .color-options {
             display: block;
             align-items: center;
-            gap: 5px;
+            gap: 0.25rem;
+        }
+        .color-options-text {
+            display: block;
+            align-items: center;
+            gap: 0.125rem;
         }
 
         .color-option-text {
@@ -2326,29 +2356,30 @@
             border: none;
             border-radius: 3px;
             cursor: pointer;
-            transition: transform 0.15s ease;
+            transition: transform 0.15s ease, margin 0.15s ease;
             padding: 0;
             position: relative;
             background-clip: padding-box;
             align-items: center;
             justify-content: center;
+            box-sizing: border-box;
         }
 
         .color-option-bg:hover {
             transform: scale(1.15);
+            margin: 0 1.125px;
         }
 
         .color-option-bg.active {
             transform: scale(1.3);
+            margin: 0 2.25px;
         }
 
         .color-option-search {
             width: auto;
             height: 0.9375rem;
-            padding: 0.125rem 0.175rem;
+            padding: 0.125rem 0.125rem;
             border-radius: 0.375rem;
-            font-size: 13px;
-            font-weight: 500;
             background-color: transparent;
             color: var(--color-text);
             border: none;
@@ -2359,7 +2390,6 @@
         }
 
         .color-option-search:hover {
-            transform: scale(1.1);
             color: var(--color-primary);
         }
 
@@ -5316,6 +5346,12 @@
             color: var(--color-primary);
         }
 
+        /* 先注释掉，后面会有用 */
+        /* .chat-message.user .chat-message-body {
+            max-height: 10rem;
+            overflow-y: auto;
+        } */
+
         .chat-message.assistant {
             align-self: flex-start;
             color: var(--color-text);
@@ -5350,12 +5386,11 @@
             white-space: nowrap;
         }
         .tool-card .tool-args {
-            flex: 1;
-            min-width: 0;
+            width: auto;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
-            font-family: ui-monospace, Consolas, monospace;
+            font-family: var(--font-mono);
         }
         .tool-card .tool-status {
             flex-shrink: 0;
@@ -5573,10 +5608,10 @@
             max-width: 15rem;
             overflow-y: auto;
             background: var(--color-bg, #fff);
-            border: 1px solid var(--color-border, #d0d7de);
             border-radius: 0.5rem;
-            box-shadow: 0 0.375rem 1rem rgba(0, 0, 0, 0.12);
+            box-shadow: 0 0.25rem 0.5rem rgba(0, 0, 0, 0.12);
             padding: 0.25rem;
+            overflow-x: hidden;
         }
         .chat-toolbar-popup.long {
             width: 90%;
@@ -6136,7 +6171,7 @@
             height: 13px;
             border-radius: 50%;
             cursor: pointer;
-            transition: transform 0.15s, box-shadow 0.15s;
+            transition: transform 0.15s, box-shadow 0.15s, margin 0.15s;
             border: 1px solid transparent;
             flex-shrink: 0;
             padding: 0;
@@ -6146,7 +6181,8 @@
 
         .marker-color-dot:hover {
             transform: scale(1.25);
-            box-shadow: 0 0 6px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 0 6px rgba(0, 0, 0, 0.3);           
+            margin: 0 1.625px;
         }
 
         .marker-clear-dot {
@@ -6205,22 +6241,16 @@
             position: absolute;
             top: 0.5rem;
             right: 0.5rem;
-            padding: 0.25rem 0.5rem;
-            font-size: 0.75rem;
-            color: #c9d1d9;
-            background: rgba(110, 118, 129, 0.4);
-            border: 1px solid rgba(110, 118, 129, 0.2);
-            border-radius: 0.375rem;
+            color: var(--color-text-white);
+            background: transparent;
             cursor: pointer;
             opacity: 0;
             transition: opacity 0.2s ease, background 0.2s ease;
             z-index: 10;
-            font-family: var(--font-family);
             align-items: center;
             justify-items: center;
             align-content: center;
             justify-content: center;
-            white-space: nowrap;
         }
 
         pre:hover .code-copy-btn,
@@ -6229,13 +6259,7 @@
         }
 
         .code-copy-btn:hover {
-            background: rgba(110, 118, 129, 0.6);
-        }
-
-        .code-copy-btn.copied {
-            color: #3fb950;
-            background: rgba(63, 185, 80, 0.2);
-            border-color: rgba(63, 185, 80, 0.3);
+            color: var(--todo-bg-hover);
         }
 
         .ai-result-sw-lark {
@@ -7301,17 +7325,29 @@
         .tippy-box[data-theme~='custom'] {
             background-color: var(--color-bg);
             color: var(--color-text);
-            border: 1px solid var(--color-border);
-            font-size: 13px;
-            font-weight: 400;
-            border-radius: 8px;
-            padding: 3px 0;
+            font-size: 0.875rem;
+            font-weight: normal;
+            border-radius: 0.5rem;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             transition: all 0.2s ease;
         }
 
         .tippy-box[data-theme~='custom'] .tippy-content {
-            padding: 4px 12px;
+            padding: 0.5rem;
+            white-space: pre-line;
+            word-break: break-word;
+            max-height: 40vh;
+            max-width: 70vw;
+            overflow-y: auto; 
+            font-family: var(--font-family);
+            font-size: 0.875rem;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transition: all 0.2s ease;
+        }
+        .tippy-box[data-theme~='custom'] .tippy-content::-webkit-scrollbar {
+            display: none;
         }
 
         .tippy-box[data-theme~='custom']>.tippy-svg-arrow {
@@ -13385,6 +13421,9 @@
             height: 100%;
             box-sizing: border-box;
         }
+        #jsmind-help:hover {
+            color: var(--color-primary);
+        }
 
         /* 快捷键帮助面板 */
         .jsmind-help-panel {
@@ -13395,13 +13434,17 @@
             border-radius: var(--radius-xxl);
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
             padding: 16px;
-            width: 450px;
-            height: auto;
-            overflow-y: hidden;
+            width: 50%;
+            height: 80%;
+            overflow-y: auto;
             z-index: 1000;
             opacity: 1;
             pointer-events: all;
             transform: translate(-50%, -50%) scale(1);
+            box-sizing: border-box;
+        }
+        .jsmind-help-panel::-webkit-scrollbar {
+            display: none;  
         }
 
         .jsmind-help-panel h2 {
@@ -13902,8 +13945,792 @@
         .mermaid-output>svg {
             max-height: 50rem;
         }
+        /* ===== 技能管理容器（skill 前缀隔离，样式对齐 index.html 设计体系） ===== */
+        #skill-container {
+            display: none;
+            height: 100%;
+            width: 100%;
+        }
+        .skill-layout {
+            display: flex;
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+            background: var(--color-bg);
+        }
+        /* ── 左侧列表 40% ── */
+        .skill-sidebar {
+            flex: 0 0 20%;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            border-right: 1px solid var(--color-border-light);
+            background: var(--color-bg);
+        }
+        /* 搜索框（带 🔍 图标，聚焦高亮） */
+        .skill-search-box {
+            position: relative;
+            display: flex;
+            align-items: center;
+            margin: 6px 0.5rem 0.375rem;
+            height: 1.7rem;
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-lg);
+            background: var(--color-bg-secondary);
+            transition: border-color var(--transition-normal), box-shadow var(--transition-normal), background var(--transition-normal);
+            flex-shrink: 0;
+            overflow: hidden;
+        }
+        .skill-search-box .skill-search-icon {
+            position: absolute;
+            left: 0.625rem;
+            font-size: 0.8125rem;
+            color: var(--color-text-tertiary);
+            pointer-events: none;
+            line-height: 1;
+        }
+        #skill-search-input {
+            width: 100%;
+            height: 100%;
+            padding: 0 1.625rem 0 1.875rem;
+            border: none;
+            font-weight: 400;
+            font-size: 0.8125rem;
+            box-sizing: border-box;
+            background: transparent;
+            color: var(--color-text);
+            outline: none;
+        }
+        #skill-search-input::placeholder {
+            color: var(--color-text-tertiary);
+        }
+        .skill-search-box:focus-within {
+            border-color: var(--color-primary);
+            box-shadow: 0 0 0 3px rgba(22, 91, 250, 0.12);
+            background: var(--color-bg);
+        }
+        #skill-search-clear {
+            width: 1rem;
+            height: 1rem;
+            border: none;
+            background: var(--color-bg-btn);
+            color: var(--color-text-secondary);
+            border-radius: 50%;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            margin-right: 0.5rem;
+            line-height: 1;
+            padding: 0;
+        }
+        #skill-search-clear:hover {
+            background: var(--color-text-tertiary);
+            color: var(--color-text-white);
+        }
+        /* 作用域筛选 chips */
+        .skill-scope-chips {
+            display: flex;
+            gap: 0.75rem;
+            padding: 0.375rem 0.5rem 0.5rem;
+            flex-shrink: 0;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .skill-chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.5rem;    
+            font-size: 0.75rem; 
+            font-weight: 500 !important;
+            line-height: 1;   
+            color: var(--t2);         
+            border-radius: var(--radius-md); 
+            border: 1px solid var(--color-border-light);
+            box-sizing: border-box;
+        }
+        .skill-chip:hover {
+            border-color: var(--color-primary);
+        }
+        .skill-chip.active {
+            background: var(--color-primary-bg);
+            border-color: var(--color-primary);
+            color: var(--color-primary);
+            font-weight: 600 !important;
+        }
+        /* 技能列表 */
+        .skill-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.25rem 0.5rem 0.625rem;
+        }
+        .skill-list-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            border-radius: var(--radius-lg);
+            cursor: pointer;
+            transition: background var(--transition-fast);
+            margin-bottom: 2px;
+            user-select: none;
+        }
+        .skill-list-item:hover {
+            background: var(--color-bg-secondary);
+        }
+        .skill-list-item.active {
+            background: var(--color-primary-bg);
+        }
+        .skill-list-item.active .skill-item-name {
+            color: var(--color-primary);
+            font-weight: 600;
+        }
+        /* 名称首字符头像块 */
+        .skill-item-avatar {
+            width: 2.125rem;
+            height: 2.125rem;
+            border-radius: var(--radius-lg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.875rem;
+            font-weight: 600;
+            flex-shrink: 0;
+            background: var(--color-bg-secondary);
+            color: var(--color-text-secondary);
+            border: 1px solid var(--color-border-light);
+            transition: all var(--transition-fast);
+        }
+        .skill-list-item.active .skill-item-avatar {
+            background: var(--color-primary-bg);
+            color: var(--color-primary);
+            border-color: rgba(22, 91, 250, 0.25);
+        }
+        .skill-item-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .skill-item-name {
+            font-size: 0.8125rem;
+            font-weight: 500;
+            color: var(--color-text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            transition: color var(--transition-fast);
+        }
+        .skill-item-meta {
+            font-size: 0.75rem;
+            color: var(--color-text-tertiary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-top: 0.25rem;
+        }
+        .skill-item-tag {
+            display: inline-flex;
+            font-size: 0.6875rem;
+            color: var(--t2);
+            margin-right: 0.5rem;
+            align-items: center;
+            justify-content: center;
+        }
+        .skill-empty-list {
+            padding-top: 1.75rem;
+            text-align: center;
+            font-size: 0.8125rem;
+            color: var(--color-text-tertiary);
+        }
+        /* 底部创建按钮 */
+        .skill-footer {
+            padding: 0.5rem 0.75rem;
+            flex-shrink: 0;
+            background: var(--color-bg);
+        }
+        .skill-create-btn {
+            width: 100%;
+            height: 1.7rem;
+            border: none;
+            border-radius: var(--radius-lg);
+            background: var(--color-primary);
+            color: var(--color-text-white);
+            cursor: pointer;
+            font-size: 0.8125rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.375rem;
+            box-shadow: var(--shadow-ss);
+            transition: background-color var(--transition-normal), box-shadow var(--transition-normal), transform var(--transition-normal);
+            font-family: inherit;
+        }
+        .skill-create-btn:hover {
+            background: var(--color-primary-hover);
+            box-shadow: var(--shadow-sm);
+            transform: translateY(-1px);
+        }
+        .skill-create-btn:active {
+            background: var(--color-primary-active);
+            transform: translateY(0);
+        }
+        /* ── 右侧详情区 60% ── */
+        .skill-main {
+            flex: 1;
+            min-width: 0;
+            overflow-y: auto;
+            background: var(--color-bg);
+            position: relative;
+            padding: 0.75rem;
+        }
+        /* 详情/编辑视图容器 */
+        .skill-detail-view,
+        .skill-edit-view {
+            display: none;
+        }
+        /* 详情卡片 */
+        .skill-detail-wrap {
+            padding: 0.75rem;
+            padding-top: 0;
+        }
+        .skill-detail-header {
+            display: flex;
+            align-items: center;
+            gap: 0.9375rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--color-border-light);
+            flex-wrap: wrap;
+        }
+        .skill-detail-title-box {
+            flex: 1;
+            min-width: 12.5rem;
+        }
+        .skill-detail-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--t1);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            letter-spacing: -0.01em;
+        }
+        .skill-detail-subtitle {
+            font-size: 0.75rem;
+            color: var(--color-text-tertiary);
+            margin-top: 0.5rem;
+        }
+        /* 徽章 */
+        .skill-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.125rem 0.5rem;
+            border-radius: var(--radius-md);
+            font-size: 0.75rem;
+            font-weight: 500;
+            border: 1px solid var(--color-border-light);
+            color: var(--color-text-secondary);
+            background: var(--color-bg-secondary);
+            white-space: nowrap;
+        }
+        .skill-badge.scope-system { color: var(--color-warning); border-color: rgba(110, 64, 201, 0.3); background: rgba(110, 64, 201, 0.06); }
+        .skill-badge.scope-global { color: var(--color-primary); border-color: rgba(22, 91, 250, 0.3); background: var(--color-primary-bg); }
+        .skill-badge.scope-project { color: var(--color-success); border-color: rgba(26, 127, 55, 0.3); background: rgba(26, 127, 55, 0.06); }
+        .skill-badge.enabled { color: var(--color-success); border-color: rgba(26, 127, 55, 0.3); background: rgba(26, 127, 55, 0.06); }
+        .skill-badge.disabled { color: var(--color-text-tertiary); border-color: var(--color-border-light); background: var(--color-bg-secondary); }
+        .skill-item-tag.enabled { color: var(--color-success); }
+        .skill-item-tag.disabled { color: var(--color-text-tertiary); }
+        .skill-detail-actions {
+            display: flex;
+            gap: 0.4375rem;
+            flex-shrink: 0;
+            margin-left: auto;
+        }
+        /* 元信息行 */
+        .skill-detail-meta {
+            display: flex;
+            gap: 1.125rem;
+            flex-wrap: wrap;
+            padding: 0.875rem 0;
+            font-size: 0.8125rem;
+            color: var(--color-text-secondary);
+        }
+        .skill-detail-meta .skill-meta-item {
+            display: flex;
+            align-items: center;
+            gap: 0.3125rem;
+            white-space: nowrap;
+        }
+        .skill-detail-meta .skill-meta-label {
+            color: var(--color-text-tertiary);
+            font-weight: 500;
+        }
+        .skill-detail-meta .skill-meta-value {
+            font-weight: 600;
+            color: var(--t1);
+        }
+        /* 分区 */
+        .skill-detail-section {
+            margin-top: 1rem;
+        }
+        .skill-detail-section-title {
+            font-size: 0.8125rem;
+            font-weight: 600;
+            color: var(--color-text);
+            margin: 0.5rem 0;
+            padding-bottom: 0.25rem;
+            border-bottom: 1px solid var(--color-border-light);
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+        }
+        .skill-detail-desc {
+            font-size: 0.8125rem;
+            color: var(--color-text-secondary);
+            line-height: 1.7;
+            padding: 0.625rem 0.875rem;
+            background: var(--color-bg-secondary);
+            border-radius: var(--radius-md);
+        }
+        /* 参数表格 */
+        .skill-params-wrap {
+            overflow-x: auto;
+            border: 1px solid var(--color-border-light);
+            border-radius: var(--radius-md);
+            background: var(--color-bg);
+        }
+        .skill-params-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8125rem;
+        }
+        .skill-params-table th,
+        .skill-params-table td {
+            padding: 0.5rem 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--color-border-light);
+            white-space: nowrap;
+            color: var(--color-text);
+        }
+        .skill-params-table th {
+            background: var(--color-bg-panel);
+            font-weight: 600;
+            color: var(--color-text-secondary);
+            font-size: 0.8125rem;
+            letter-spacing: 0.02em;
+        }
+        .skill-params-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+        .skill-params-table tbody tr:hover td {
+            background: var(--color-bg-secondary);
+        }
+        .skill-param-name {
+            display: inline-flex;
+            align-items: center;
+            background: var(--color-primary-bg);
+            padding: 0.125rem 0.5rem;
+            border-radius: var(--radius-sm);
+            font-size: 0.8125rem;
+            color: var(--color-primary);
+        }
+        .skill-param-type {
+            display: inline-flex;
+            align-items: center;
+            font-size: 0.8125rem;
+            color: var(--color-text-secondary);
+            background: var(--color-bg-secondary);
+            padding: 0.125rem 0.5rem;
+            border-radius: var(--radius-sm);
+        }
+        .skill-param-required {
+            display: inline-flex;
+            align-items: center;
+            font-size: 0.8125rem;
+            color: var(--color-danger);
+            background: var(--color-danger-light);
+            padding: 0.125rem 0.5rem;
+            border-radius: var(--radius-sm);
+        }
+        .skill-param-optional {
+            display: inline-flex;
+            align-items: center;
+            font-size: 0.8125rem;
+            color: var(--color-text-tertiary);
+            background: var(--color-bg-secondary);
+            padding: 0.125rem 0.5rem;
+            border-radius: var(--radius-sm);
+        }
+        /* 标签 chips */
+        .skill-tag-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.375rem;
+        }
+        .skill-tag-chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.5rem;
+            color: var(--todo-event-purple-text);
+            background: var(--todo-event-purple-bg);
+            font-size: 0.8125rem;
+            font-weight: 500;
+            transition: all var(--transition-fast);
+            justify-content: center;
+            justify-items: center;
+        }
+        .skill-tag-chip.key{
+            color: var(--todo-event-green-text);
+            background: var(--todo-event-green-bg);
+        }
+        .skill-tag-chip:hover {
+            scale: 1.02;
+        }
+        /* 指令正文 */
+        .skill-detail-body {
+            font-family: var(--font-family);
+            font-size: 0.8125rem;
+            color: var(--color-text);
+            line-height: 1.7;
+            white-space: normal;
+            word-break: break-word;
+            border: 1px solid var(--color-border-light);
+            border-radius: var(--radius-md);
+            padding: 0.75rem 0.875rem;
+            background: var(--color-bg-panel);
+            overflow-y: auto;
+            cursor: text;
+        }
+        /* ── 编辑视图 ── */
+        .skill-edit-wrap {
+            padding: 0.75rem;
+            padding-top: 0;
+        }
+        .skill-edit-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding-bottom: 0.875rem;
+            border-bottom: 1px solid var(--color-border-light);
+            margin-bottom: 1rem;
+        }
+        .skill-edit-title {
+            flex: 1;
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--t1);
+            letter-spacing: -0.01em;
+        }
+        .skill-form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem 1rem;
+        }
+        .skill-form-field {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        .skill-form-field.full {
+            grid-column: 1 / -1;
+        }
+        .skill-form-field label {
+            font-size: 0.75rem;
+            color: var(--color-text-secondary);
+            font-weight: 600;
+        }
+        .skill-form-field input[type="text"],
+        .skill-form-field input[type="number"],
+        .skill-form-field select,
+        .skill-form-field textarea {
+            font-size: 0.8125rem;
+            color: var(--color-text);
+            background: var(--color-bg);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-md);
+            padding: 0.375rem 0.5625rem;
+            outline: none;
+            font-family: inherit;
+            transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+            box-sizing: border-box;
+            width: 100%;
+        }
+        #skill-f-description{
+            resize: vertical;
+            min-height: 3rem;
+            line-height: 1.6;
+        }
+        .skill-form-field input:focus,
+        .skill-form-field select:focus,
+        .skill-form-field textarea:focus {
+            border-color: var(--color-primary);
+            box-shadow: 0 0 0 3px rgba(22, 91, 250, 0.12);
+        }
+        .skill-form-field input[readonly] {
+            background: var(--color-bg-panel);
+            color: var(--color-text-tertiary);
+        }
+        .skill-form-field textarea {
+            resize: vertical;
+            min-height: 8rem;
+            line-height: 1.6;
+        }
+        .skill-form-tools {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.375rem 0.625rem;
+        }
+        .skill-form-tool {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            font-size: 0.8125rem;
+            font-weight: 500 !important;
+            cursor: pointer;
+            padding: 0.25rem 0.5625rem;
+            border-radius: var(--radius-md);
+            color: var(--todo-event-purple-text) !important;
+            background: var(--todo-event-purple-bg);
+            transition: all var(--transition-fast);
+            user-select: none;
+        }
+        .skill-form-tool:hover {
+            border-color:  var(--todo-event-purple-text);
+        }
+        .skill-form-tool input {
+            accent-color: var(--todo-event-purple-text);
+            width: 0.75rem;
+            height: 0.75rem;
+        }
+        /* 启停开关 */
+        .skill-toggle-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.5rem 0.75rem;
+            background: var(--color-bg-panel);
+            border: 1px solid var(--color-border-light);
+            border-radius: var(--radius-md);
+        }
+        .skill-toggle-row .skill-toggle-label {
+            font-size: 0.8125rem;
+            font-weight: 600;
+            color: var(--color-text);
+        }
+        .skill-toggle-row .skill-toggle-hint {
+            font-size: 0.8125rem;
+            color: var(--color-text-tertiary);
+            margin-top: 1px;
+        }
+        .skill-icon-box {
+        width: 2.5rem;           
+        height: 2.5rem;            
+        border-radius: 0.75rem;      
+        background-color: rgb(250 245 255 / 1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;              
+        }
+
+        .skill-icon-svg {
+        width: 1.25rem;          
+        height: 1.25rem;   
+        color: rgb(147 51 234 / 1);      
+        }
+
+        .skill-icon-box.global {
+            background-color: rgb(240 253 244 / 1);
+        }
+        .skill-icon-svg.global {
+            color: rgb(22 163 74 / 1);
+        }
+
+        .skill-icon-box.project {
+            background-color: rgb(253 242 248 / 1);
+        }
+        .skill-icon-svg.project {
+            color: rgb(219 39 119 / 1);
+        }
+        .skill-chip.global {
+            color: rgb(22 163 74 / 1);
+        }
+        .skill-chip.project {
+            color: rgb(219 39 119 / 1);
+        }
+        .skill-chip.system {
+            color: rgb(147 51 234 / 1);   
+        }
+        .row-scope.global {
+            color: rgb(22 163 74 / 1);
+        }
+        .row-scope.system {
+            color: rgb(147 51 234 / 1);
+        }
+        .row-scope.project {
+            color: rgb(219 39 119 / 1);
+        }
+
+        /* ── 弹出面板内 prompt 列表行 ── */
+        .prompt-popup-row {
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+            padding: 0.35rem 0.5rem;
+            cursor: pointer;
+            font-size: 0.8125rem;
+            line-height: 1.4;
+            color: var(--color-text, #333);
+            user-select: none;
+        }
+        .prompt-popup-row:hover {
+            background: rgba(22, 91, 250, 0.06);
+        }
+        .prompt-popup-row .row-name {
+            flex: 1;
+            min-width: 0;
+            max-width: 4rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-weight: 600;
+            color: var(--t1);
+        }
+        .prompt-popup-row .row-content {
+            flex: 1;
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-weight: normal;
+        }
+        .prompt-popup-row .row-scope {
+            width: 1.5rem;
+            font-size: 0.6875rem;
+            padding: 0.125rem 0.25rem;
+            border-radius: 0.5rem;
+            background: var(--color-bg-soft, rgba(128, 128, 128, 0.1));
+            font-weight: normal;
+        }
+        .prompt-popup-row .row-actions {
+            visibility: hidden;
+            gap: 0.125rem;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+        }
+        .prompt-popup-row:hover .row-actions {
+            visibility: visible;
+        }
+        .prompt-popup-row .row-action-btn {
+            width: 1rem;
+            height: 1rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: none;
+            background: transparent;
+            color: var(--color-text-tertiary, #8b949e);
+            cursor: pointer;
+            border-radius: 0.25rem;
+            padding: 0;
+            transition: color var(--transition-fast), background var(--transition-fast);
+        }
+        .prompt-popup-row .row-action-btn:hover {
+            color: var(--color-primary, #165bfa);
+            background: rgba(22, 91, 250, 0.08);
+        }
+        .prompt-popup-row .row-action-btn.delete:hover {
+            color: var(--color-danger, #dc2626);
+            background: rgba(220, 38, 38, 0.08);
+        }
+
+        /* ── 弹出面板底部设置按钮 ── */
+        .prompt-popup-footer {
+            display: flex;
+            align-items: center;
+            padding: 0.125rem 0.125rem;
+            border-top: 1px solid var(--color-border-light, #e8eaed);
+        }
+        .prompt-settings-btn {
+            display: inline-flex;
+            align-items: center;
+            font-size: 0.72rem;
+            font-weight: 500;
+            color: var(--color-text-secondary, #8b949e);
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            padding: 0.25rem 0.25rem;
+            border-radius: 0.375rem;
+            transition: color var(--transition-fast), background var(--transition-fast);
+            font-family: inherit;
+        }
+        .prompt-settings-btn:hover {
+            color: var(--color-primary, #165bfa);
+            background: rgba(22, 91, 250, 0.06);
+        }
+        .prompt-settings-btn svg {
+            flex-shrink: 0;
+        }
+
+        .prompt-modal-field {
+            margin-bottom: 0.5rem;
+        }
+        .prompt-modal-field label {
+            display: block;
+            font-size: 12px;
+            color: var(--color-text-secondary, #8b949e);
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+        .prompt-modal-field input,
+        .prompt-modal-field textarea {
+            width: 100%;
+            padding: 0.25rem 0.5rem;
+            font-size: 0.75rem;
+            border: 1px solid var(--color-border, #d0d7de);
+            border-radius: var(--radius-md);
+            outline: none;
+            box-sizing: border-box;
+            font-family: inherit;
+            background: var(--color-bg);
+            color: var(--color-text);
+        }
+        .prompt-modal-field input:focus,
+        .prompt-modal-field textarea:focus {
+            border-color: var(--color-primary, #0879e9);
+            box-shadow: 0 0 0 3px rgba(8, 121, 233, 0.1);
+        }
+        .prompt-modal-field textarea {
+            resize: vertical;
+            min-height: 5rem;
+            line-height: 1.5;
+        }
+
+        .prompt-popup-empty {
+            padding: 1rem 0.5rem;
+            text-align: center;
+            font-size: 0.75rem;
+            color: var(--color-text-tertiary, #8b949e);
+        }
+
+        .prompt-modal-name {
+            font-size: 0.75rem;
+        }
+
+        .prompt-modal-content {
+            font-size: 0.75rem;
+        }
     </style>
-    <link rel="stylesheet" href="./css_js/agent.css" />
 </head>
 
 <body>
@@ -14784,35 +15611,6 @@
                         </div>
                     </div>
                 </div>
-                <!-- Mermaid 全屏遮罩层 -->
-                <div class="mermaid-fullscreen-overlay" id="mermaid-fullscreen-overlay">
-                    <button class="mermaid-fullscreen-close-btn" id="mermaid-fullscreen-close-btn" title="关闭">✕</button>
-                    <div class="mermaid-fullscreen-svg-wrap" id="mermaid-fullscreen-svg-wrap"></div>
-                    <div class="mermaid-fullscreen-zoom-bar" id="mermaid-fullscreen-zoom-bar"
-                        onclick="event.stopPropagation()">
-                        <button id="mermaid-fs-zoom-out" title="缩小">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                                stroke-linecap="round" stroke-linejoin="round">
-                                <line x1="5" y1="12" x2="19" y2="12"></line>
-                            </svg>
-                        </button>
-                        <span class="mermaid-fs-zoom-label" id="mermaid-fs-zoom-label">100%</span>
-                        <button id="mermaid-fs-zoom-in" title="放大">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                                stroke-linecap="round" stroke-linejoin="round">
-                                <line x1="12" y1="5" x2="12" y2="19"></line>
-                                <line x1="5" y1="12" x2="19" y2="12"></line>
-                            </svg>
-                        </button>
-                        <button id="mermaid-fs-zoom-reset" title="重置缩放">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                                stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
-                                <path d="M3 3v5h5"></path>
-                            </svg>
-                        </button>
-                    </div>
-                </div>
             </div>
             <!-- 文件时间线（热力图 + vis-timeline） -->
             <div class="timeline-app-container" id="timeline-app-container" style="display: none;">
@@ -15119,7 +15917,7 @@
                     onmouseleave="handleSelectColorPickerMouseLeave()">
                     <div id="selection-font-colors" class="color-options"></div>
                     <div id="selection-bg-colors" class="color-options"></div>
-                    <div id="selection-comment" class="color-options"></div>
+                    <div id="selection-comment" class="color-options-text"></div>
                 </div>
             </div>
             <!-- 正则表达式测试工作台 -->
@@ -16326,6 +17124,34 @@
             </div>
         </div>
     </div>
+    <div class="mermaid-fullscreen-overlay" id="mermaid-fullscreen-overlay">
+        <button class="mermaid-fullscreen-close-btn" id="mermaid-fullscreen-close-btn" title="关闭">✕</button>
+        <div class="mermaid-fullscreen-svg-wrap" id="mermaid-fullscreen-svg-wrap"></div>
+        <div class="mermaid-fullscreen-zoom-bar" id="mermaid-fullscreen-zoom-bar"
+            onclick="event.stopPropagation()">
+            <button id="mermaid-fs-zoom-out" title="缩小">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+            </button>
+            <span class="mermaid-fs-zoom-label" id="mermaid-fs-zoom-label">100%</span>
+            <button id="mermaid-fs-zoom-in" title="放大">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+            </button>
+            <button id="mermaid-fs-zoom-reset" title="重置缩放">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                    <path d="M3 3v5h5"></path>
+                </svg>
+            </button>
+        </div>
+    </div>
     <script>
         // ====== 后端服务地址 ======
         let GRAPHQL_ENDPOINT = 'http://localhost:8091/graphql';
@@ -16561,6 +17387,310 @@
             },
         ]
 
+            const AI_SELECTION_ACTIONS = [
+  {
+    index: 2,
+    type:'system',
+    name: '解释',
+    id: 'explain',
+    display: true,
+    prompt: `你是一个专业、耐心的知识解释助手。
+
+## 任务
+对用户选中的文本进行清晰、准确的解释。
+
+## 规则
+1. **识别内容类型**，自动调整解释策略：
+   - **专业术语/概念**：给出定义，然后用通俗语言解释，必要时举例。
+   - **代码片段**：逐行或逐块解释逻辑，说明输入输出和关键 API。
+   - **外语文本**：先翻译为中文，再解释语义和语境含义。
+   - **古文/文言文**：提供白话翻译，并解释典故和修辞。
+   - **数学公式/逻辑表达式**：用自然语言拆解含义，给出直观理解。
+2. 解释层次：先给一句话概括，再展开细节。
+3. 如果文本涉及多个知识点，按重要性排序逐一解释。
+4. 保持客观中立，不添加主观评价。
+5. 适度使用类比帮助理解，但要标注"类比说明"以区分精确定义。
+6. 如果文本本身已经很直白，简要确认即可，不要过度解读。
+
+## 输出格式
+- 先给出**一句话总结**
+- 再给出**分点详细解释**
+- 如有必要，最后提供**延伸阅读建议**（1-2 条）
+
+## 语言
+使用与用户相同的语言进行解释。如果用户未明确指定，使用中文。`
+  },
+  {
+    index: 3,
+    type:'system',
+    name: '翻译',
+    id: 'translate',
+    display: true,
+    prompt: `你是一个专业翻译引擎，兼具 DeepL 的精准度和 ChatGPT 的自然表达能力。
+
+## 任务
+将用户选中的文本翻译为**目标语言**。
+
+## 核心规则
+
+### 语言检测
+- 自动检测源语言。
+- 如果源语言是中文 → 翻译为**英文**。
+- 如果源语言是英文或其他外语 → 翻译为**中文**。
+- 如果用户在上下文中指定了目标语言，以用户指定为准。
+
+### 翻译原则
+1. **信达雅优先级**：准确 > 通顺 > 优美。在不歪曲原意的前提下追求自然表达。
+2. **保留专有名词**：
+   - 广为人知的品牌/产品名保留原文（如 GitHub、Kubernetes）。
+   - 小众术语首次出现时用"中文译名（原文）"格式。
+   - 人名、地名使用通用译名，无通用译名时保留原文。
+3. **保留格式结构**：
+   - 原文的段落、列表、标题层级原样保留。
+   - 代码块、变量名、命令行不翻译。
+   - URL、邮箱地址不翻译。
+4. **风格匹配**：
+   - 正式文本 → 翻译为正式风格
+   - 口语化文本 → 翻译为口语风格
+   - 技术文档 → 使用行业通用术语
+   - 营销文案 → 允许意译以贴合目标语言文化
+5. **数字和单位**：
+   - 阿拉伯数字保留不变。
+   - 单位根据目标语言习惯转换（如 英里 ↔ 公里），如不确定则保留原单位。
+
+### 特殊场景处理
+- **代码注释**：只翻译注释部分，代码逻辑保持不变。
+- **表格内容**：逐单元格翻译，保持表格结构。
+- **引文/诗句**：优先使用已有的知名译本，如无则提供意译并标注。
+- **歧义文本**：翻译最可能的含义，如有重大歧义，在译文后用括号注明另一种理解。
+
+## 输出格式
+直接输出翻译结果，不添加额外解释。
+如果需要补充说明（如术语解释、文化背景），在译文之后用分隔线隔开，以"📝 译注"开头。`
+  },
+  {
+    index: 4,
+    type:'system',
+    name: '总结',
+    id: 'summary',
+    display: true,
+    prompt: `你是一个高效的信息提炼助手，擅长从大量文本中精准提取核心信息。
+
+## 任务
+对用户选中的文本进行摘要总结。
+
+## 规则
+
+### 内容识别与策略调整
+根据文本长度和类型，自动选择总结策略：
+
+- **短文本（< 100 字）**：原文已足够精炼，改为提炼核心关键词 + 一句话概括。
+- **中等文本（100-1000 字）**：3-5 句话概括主旨和要点。
+- **长文本（> 1000 字）**：分层总结——先给一段话的概述，再列要点。
+
+### 总结原则
+1. **不遗漏关键信息**：识别并保留文本中的核心论点、关键数据、重要结论。
+2. **去除冗余**：删除重复表述、过渡性语句、举例说明（除非例子本身就是关键论据）。
+3. **保持客观**：忠实于原文观点，不加入个人理解或评价。
+4. **保留关键数据**：具体的数字、日期、人名、产品名等必须保留。
+5. **结构化输出**：
+   - 议论文/分析文 → 按论点结构组织
+   - 新闻/事件 → 按 5W1H 组织
+   - 技术文档 → 按功能模块/步骤组织
+   - 会议记录/对话 → 按议题和决策组织
+
+### 输出格式
+**一句话概括**：[用不超过 30 字概括全文核心]
+
+**要点提炼**：
+1. [要点一]
+2. [要点二]
+3. [要点三]
+...
+
+**关键词**：[3-5 个关键词，用逗号分隔]
+
+（如果文本较短，可省略"要点提炼"和"关键词"部分）`
+  },
+  {
+    index: 5,
+    type:'system',
+    name: '重写',
+    id: 'rewrite',
+    display: true,
+    prompt: `你是一个专业的文字重写专家，能够在保持原意的前提下，用全新的表达方式重新组织文本。
+
+## 任务
+对用户选中的文本进行完全重写。
+
+## 核心原则
+1. **语义零损失**：重写后的文本必须完整传达原文的所有信息和含义，不得遗漏关键内容。
+2. **表达全刷新**：避免使用原文的句式结构和用词，用全新的方式表达相同意思。要求改写率 ≥ 70%。
+3. **风格一致性**：保持原文的正式/非正式风格和语气基调，不擅自改变文本的定位。
+4. **流畅自然**：重写后的文本应读起来像是原创文章，而非机械替换。
+
+## 重写策略
+根据文本类型采用不同策略：
+
+- **信息型文本**（技术文档、说明文）：
+  重点重组句子结构，替换同义词，调整段落逻辑顺序，但保留所有技术细节和专业术语。
+
+- **论述型文本**（议论文、分析文）：
+  保留核心论点，但换用不同的论据表达方式、论证逻辑和修辞手法。
+
+- **描述型文本**（产品介绍、营销文案）：
+  更大幅度地调整表达，可以改变叙述角度、修辞方式，但核心卖点和信息不变。
+
+- **代码相关文本**：
+  只重写注释和文档描述，代码本身保持不变。
+
+## 禁止事项
+- 不改变原文的事实和数据
+- 不添加原文没有的信息
+- 不改变原文的立场和倾向
+- 不删除原文的关键内容
+- 不改变代码逻辑
+
+## 输出格式
+直接输出重写后的文本，不添加额外说明。`
+  },
+  {
+    index: 6,
+    type:'system',
+    name: '语法检查',
+    id: 'grammarCheck',
+    display: true,
+    prompt: `你是一个专业的语法审校专家，精通中文和英文的语法规则、标点规范和表达习惯。
+
+## 任务
+对用户选中的文本进行全面的语法和表达检查。
+
+## 检查维度
+
+### 1. 基础语法
+- 主谓一致性、时态一致性、代词指代明确
+- 语序是否正确、句子成分是否完整（残缺/赘余）
+- 虚词使用是否准确（的/地/得、了/着/过、in/on/at 等）
+
+### 2. 标点符号
+- 中英文标点是否混用（中文语境应使用全角标点）
+- 引号、括号是否配对
+- 逗号/句号使用是否恰当（特别注意逗号粘连 comma splice）
+
+### 3. 用词准确性
+- 近义词是否用错（如"截止/截至"、"反应/反映"）
+- 是否存在错别字
+- 英文拼写是否正确
+
+### 4. 表达规范
+- 是否存在歧义句
+- 长句是否需要拆分以提高可读性
+- 口语化表达在正式文本中是否合适
+- 专业术语使用是否准确
+
+### 5. 格式一致性
+- 数字格式是否统一（阿拉伯数字 vs 中文数字）
+- 单位格式是否规范
+- 中英文之间是否有空格（建议有）
+- 英文大小写是否规范
+
+## 输出格式
+
+### 如果没有发现问题：
+✅ 未发现明显的语法或表达问题。
+
+### 如果发现问题，按以下格式输出：
+
+**原文**：[引用有问题的原文片段]
+**问题类型**：[语法/标点/用词/表达/格式]
+**问题说明**：[简要说明哪里有问题，为什么]
+**建议修改**：[给出修改后的文本]
+
+---
+
+**修改后全文**：
+[将所有修改应用后的完整文本]
+
+## 规则
+- 指出问题时要具体，引用原文片段，不要笼统地说"第三段有问题"。
+- 如果某个表达虽然不太规范但在口语或特定语境中可接受，标注为"建议优化"而非"错误"。
+- 尊重作者的写作风格和个人表达习惯，只修改确实有误的地方。
+- 涉及主观判断的表达（如观点、立场），不做修改建议。`
+  },
+  {
+    index: 7,
+    type:'system',
+    name: '润色',
+    id: 'polish',
+    display: true,
+    prompt: `你是一个资深的文字润色专家，专注于提升文本的表达质量和可读性，同时保留作者的个人风格和核心意思。
+
+## 任务
+对用户选中的文本进行润色优化。
+
+## 与"重写"的区别
+- **重写**：追求表达的全面刷新，改写率 ≥ 70%。
+- **润色**：保留原文骨架和大部分表达，只在必要处做精准优化，改动率 ≤ 30%。
+
+## 润色维度
+
+### 1. 词语优化
+- 将模糊词替换为精确词（"很多" → "超过 200 个"，如果上下文有数据支撑）
+- 将口语化表达提升为书面化（如果原文是书面风格）
+- 消除"基本上"、"其实"、"然后"等口语赘词（仅在书面语境中）
+- 用更有画面感的动词替换平淡动词
+
+### 2. 句式优化
+- 长句拆分：将超过 40 字的长句拆分为多个短句
+- 短句合并：多个碎片化的短句如果逻辑紧密，可适当合并
+- 调整语序以突出重点信息
+- 消除"头重脚轻"的句子结构
+
+### 3. 节奏优化
+- 长短句交替使用，避免节奏单调
+- 并列结构保持对称
+- 关键论点用短句强调
+
+### 4. 逻辑优化
+- 在段落之间添加适当的过渡
+- 调整论点排列顺序使逻辑更清晰
+- 补充必要的连接词（"因此"、"然而"、"具体来说"）
+
+### 5. 风格统一
+- 检查全文用词风格是否一致
+- 确保正式/非正式程度前后统一
+- 专业术语使用是否前后一致
+
+## 禁止事项
+- 不改变原文的核心意思和立场
+- 不添加原文没有的信息或观点
+- 不改变作者的人称视角
+- 不将简单的话说复杂（润色是做减法，不是做加法）
+- 不改变代码内容
+
+## 输出格式
+直接输出润色后的文本。
+
+如果做了较为重要的改动，在文末附上**修改摘要**，简要列出 3-5 处关键优化及理由。`
+  },
+  {
+    index: 8,
+    type:'tool',
+    name: '小助手',
+    id: 'xiaodi',
+    display: true,
+    prompt: ``
+  },
+  {
+    index: 9,
+    type:'tool',
+    name: '自定义',
+    icon: `<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94L14.4 2.81a.488.488 0 00-.48-.41H9.6c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.488.488 0 00-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.63-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z"></path></svg>`,
+    id: 'custom',
+    display: true,
+    prompt: ``
+  }
+];
         // ====== 系统常量 ======
         const DOT = '.';
         const DOUBLE_DOT = '..';
@@ -16580,7 +17710,9 @@
         const PERMISSION_TIME_KEY = 'permission_timestamp'; // 授权时间戳键名
         const TREE_LOAD_TIME_KEY = 'tree_load_duration'; // 文件树加载时长键名
         const FILE_SCAN_TIME_KEY = 'file_scan_duration'; // 文件扫描时长键名
-        const DIRECTORY_STORE_NAME = 'idb-data-store';
+        const DIRECTORY_STORE_NAME = 'idb-data-store';  // 目录数据存储键名
+        const CUSTOM_PROMPT_NAME = 'custom_prompt';  // 自定义提示键名
+
 
 
         // ====== 目录名常量 ======
@@ -16924,7 +18056,7 @@
         function initMonacoEditor() {
             if (!monacoInitPromise) {
                 monacoInitPromise = new Promise((resolve) => {
-                    require.config({ paths: {
+                    require.config({ paths: { 
 					    'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs' },
                         'vs/nls': {
                             availableLanguages: {
@@ -18204,6 +19336,9 @@
             tocLinkElement.innerHTML = '';   // 清空在途的 TOC links 渲染，使旧 panel 脱离文档后自动失效
             _docLinks = [];
             restTocLinkGraph(true);
+            _selectAiCustomPrompt = false;
+            // 视图切换时若自定义 Prompt 弹窗仍打开，一并关闭，避免遗留遮罩与监听
+            if (_closeCustomPromptPopup) _closeCustomPromptPopup();
         }
 
         async function destroyEverything() {
@@ -19059,6 +20194,8 @@
             }
             function escHandler(e) {
                 if (e.key === 'Escape') {
+                    // 仅当确认框为最上层弹窗时响应 Escape，避免连带关闭下层弹窗（如 Prompt 自定义列表）
+                    if (typeof _isTopModalOverlay === 'function' && !_isTopModalOverlay(overlay)) return;
                     close();
                     callback(false);
                 }
@@ -20688,11 +21825,11 @@
             const div = document.createElement('div');
             div.className = 'jsmind-container';
             div.id = 'jsmind_container';
-            html += `<button id="jsmind-help" class="btn btn-sm" style="position: absolute;top: 9px;left: 10px;display: flex; z-index: 1000;padding: 0;width: 20px; height: 20px;background: var(--color-bg-secondary);" onclick="handleHelpClick(event)">
+            html += `<button id="jsmind-help" style="position: absolute;top: 9px;left: 10px;display: flex; z-index: 1000;background: transparent;" onclick="handleHelpClick(event)">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <circle cx="12" cy="12" r="10" stroke="#2b2f36" stroke-width="2"/>
-                            <path d="M9.2 9.2C9.2 7.7 10.4 6.5 12 6.5C13.6 6.5 14.8 7.7 14.8 9.2C14.8 10.8 12 11 12 12.8V13.5" stroke="#2b2f36" stroke-width="2" stroke-linecap="round"/>
-                            <circle cx="12" cy="17" r="1.3" fill="#2b2f36"/>
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+                        <path d="M9.2 9.2C9.2 7.7 10.4 6.5 12 6.5C13.6 6.5 14.8 7.7 14.8 9.2C14.8 10.8 12 11 12 12.8V13.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <circle cx="12" cy="17" r="1.3" fill="currentColor"/>
                         </svg>
                     </button>`;
             html += `<div class="mind-jsmind-toolbar">
@@ -27980,6 +29117,8 @@ kanban-plugin: basic
                             svgContainer.className = 'mermaid-output';
                             svgContainer.innerHTML = svg;
                             el.replaceWith(svgContainer);
+                            // 右上角添加「查看」按钮，支持全屏拖拽缩放
+                            attachMermaidViewButton(svgContainer);
                         } catch (error) {
                             console.error('Mermaid 渲染失败:', error);
                             // 清理 mermaid 创建的残留元素
@@ -28188,7 +29327,7 @@ kanban-plugin: basic
             pre.style.position = 'relative';
             const copyBtn = document.createElement('button');
             copyBtn.className = 'code-copy-btn';
-            copyBtn.textContent = '复制';
+            copyBtn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
             copyBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 const code = pre.querySelector('code');
@@ -28202,13 +29341,7 @@ kanban-plugin: basic
                     text = clone.textContent;
                 }
                 await copyTextToClipboard(text);
-                copyBtn.textContent = '✓ 已复制';
-                copyBtn.classList.add('copied');
                 showNotification('✓ 代码已复制到剪贴板', 'success');
-                setTimeout(() => {
-                    copyBtn.textContent = '复制';
-                    copyBtn.classList.remove('copied');
-                }, 2000);
             });
             pre.appendChild(copyBtn);
         }
@@ -31364,7 +32497,7 @@ kanban-plugin: basic
                     <div class="activity-content">
                         <div class="activity-file" title="${i.path}">${i.name}</div>
                     </div>` +
-                (i.type ? `<div class="dashboard-tag" style="${i.color ? 'color: ' + i.color + ';' : ''}">${i.type}${i.action ? ` : ${i.action}` : ''}</div></div>` : `</div>`)
+                (i.type ? `<div class="dashboard-tag" style="${i.color ? 'color: ' + i.color + ';' : 'color: var(--todo-event-orange-text);'}">${i.type}${i.action ? ` : ${i.action}` : ''}</div></div>` : `</div>`)
             ).join('');
             renderMarkerDash();
             await yieldToMain();
@@ -34410,6 +35543,65 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             document.removeEventListener('keydown', mermaidEscHandler);
         }
 
+        /**
+         * 打开全屏查看指定 SVG（复用编辑页面的全屏遮罩与缩放控制器）。
+         * 同时作为编辑页全屏按钮与消息内「查看」按钮的公共入口。
+         */
+        function openMermaidFullscreen(svgEle) {
+            const overlay = document.getElementById('mermaid-fullscreen-overlay');
+            const svgWrap = document.getElementById('mermaid-fullscreen-svg-wrap');
+            if (!overlay || !svgWrap || !svgEle) return false;
+
+            // 幂等保护：若已在全屏状态，先关闭清理，避免 keydown 监听器重复注册
+            if (overlay.classList.contains('active')) {
+                fsCloseOverlay();
+            }
+
+            // 克隆 SVG，保留原始 viewBox
+            const svgClone = svgEle.cloneNode(true);
+            if (!svgClone.getAttribute('viewBox')) {
+                const bbox = svgEle.getBBox();
+                svgClone.setAttribute('viewBox', `0 0 ${bbox.width || 800} ${bbox.height || 600}`);
+            }
+            // 移除固定宽高，让容器自适应
+            svgClone.removeAttribute('width');
+            svgClone.removeAttribute('height');
+
+            svgWrap.innerHTML = '';
+            svgWrap.appendChild(svgClone);
+            // 激活或复用全屏控制器
+            if (fullscreenCtrl) {
+                fullscreenCtrl.setTarget(svgClone);
+                fullscreenCtrl.setEnabled(true);
+                fullscreenCtrl.reset();
+            }
+            fsSetZoom(100);
+            overlay.classList.add('active');
+            document.addEventListener('keydown', mermaidEscHandler);
+            return true;
+        }
+
+        /**
+         * 在 mermaid-output 容器右上角添加「查看」按钮（样式同代码块复制按钮）。
+         * 重复渲染时自动去重，避免叠加多个按钮与监听器。
+         */
+        function attachMermaidViewButton(container) {
+            if (!container || container.querySelector('.mermaid-view-btn')) return;
+            const btn = document.createElement('button');
+            btn.className = 'mermaid-view-btn';
+            btn.innerHTML = `<svg width="12" height="12" fill="currentColor" x="0px" y="0px" viewBox="0 0 256 256"   xml:space="preserve">
+<path d="M256,229.484l-81.427-81.427c9.903-14.981,15.679-32.917,15.679-52.181C190.253,43.562,147.691,1,95.376,1
+	S0.5,43.562,0.5,95.876s42.562,94.876,94.876,94.876c19.521,0,37.683-5.929,52.783-16.077L229.484,256L256,229.484z M20.5,95.876
+	C20.5,54.589,54.089,21,95.376,21c41.287,0,74.876,33.589,74.876,74.876c0,41.287-33.59,74.876-74.876,74.876
+	C54.089,170.753,20.5,137.163,20.5,95.876z"/>
+</svg>`;
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openMermaidFullscreen(container.querySelector('svg'));
+            });
+            container.appendChild(btn);
+        }
+
         function fsSetZoom(level) {
             if (!fullscreenCtrl) return;
             fullscreenCtrl.setZoom(level);
@@ -34434,8 +35626,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         async function handleMermaidFullscreenToggleClick(e) {
             e.stopPropagation();
             const overlay = document.getElementById('mermaid-fullscreen-overlay');
-            const svgWrap = document.getElementById('mermaid-fullscreen-svg-wrap');
-            if (!overlay || !svgWrap) return;
+            if (!overlay) return;
 
             if (overlay.classList.contains('active')) {
                 fsCloseOverlay();
@@ -34449,27 +35640,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 return;
             }
 
-            // 克隆 SVG，保留原始 viewBox
-            const svgClone = svgEle.cloneNode(true);
-            if (!svgClone.getAttribute('viewBox')) {
-                const bbox = svgEle.getBBox();
-                svgClone.setAttribute('viewBox', `0 0 ${bbox.width || 800} ${bbox.height || 600}`);
-            }
-            // 移除固定宽高，让容器自适应
-            svgClone.removeAttribute('width');
-            svgClone.removeAttribute('height');
-
-            svgWrap.innerHTML = '';
-            svgWrap.appendChild(svgClone);
-            // 激活或创建全屏控制器
-            if (fullscreenCtrl) {
-                fullscreenCtrl.setTarget(svgClone);
-                fullscreenCtrl.setEnabled(true);
-                fullscreenCtrl.reset();
-            }
-            fsSetZoom(100);
-            overlay.classList.add('active');
-            document.addEventListener('keydown', mermaidEscHandler);
+            await openMermaidFullscreen(svgEle);
         }
 
         function initMermaidEventListeners() {
@@ -36563,7 +37734,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             document.addEventListener('selectionchange', _handleSelectionChangeCore);
             document.addEventListener('mouseup', _handleMouseUpCore);
             document.addEventListener('mousedown', (e) => {
-                if (!selectionToolbar.contains(e.target) && !_toolbarHideSuppressed) {
+                // 点击弹窗（modal-overlay）内部不隐藏选区工具栏，保证弹窗内操作（如执行自定义 Prompt）期间选区状态仍可用
+                if (!selectionToolbar.contains(e.target) && !_toolbarHideSuppressed
+                    && !(e.target && e.target.closest && e.target.closest('.modal-overlay'))) {
                     hideMarkdownSelectionToolbar();
                 }
             });
@@ -36750,7 +37923,23 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 });
             } else if (selectedType === 'ai') {
                 commentContainer.innerHTML = '';
-                selectColorPicker.classList.remove('visible');
+                displaySelectionToolbar([commentContainer]);
+                AI_SELECTION_ACTIONS.forEach(item => {
+                    if (!!item.display) {
+                        const btn = document.createElement('button');
+                        btn.type = 'button';
+                        btn.className = 'color-option-search';
+                        btn.dataset.type = 'ai';
+                        btn.dataset.query = item.id;
+                        if(item.icon) btn.innerHTML = item.icon;
+                        else btn.textContent = item.name;
+                        btn.onclick = async (e) => {
+                            e.stopPropagation();
+                            await aiMarkdownSelectionText(item.id);
+                        };
+                        commentContainer.appendChild(btn);
+                    }
+                });
             }
         }
 
@@ -36804,7 +37993,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }, {
             id: 'selection-ai-btn',
             html: `<button type="button" id="selection-ai-btn" class="markdown-selection-btn"
-                onclick="handleMarkdownToolbarAction('ai')" onmouseenter="handleSelectToolMouseEnter('ai')" onmouseleave="handleSelectToolMouseLeave()">
+                onmouseenter="handleSelectToolMouseEnter('ai')" onmouseleave="handleSelectToolMouseLeave()">
                 AI
             </button>`,
             ext: []
@@ -36826,12 +38015,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 offsetLeft = iframeRect.left;
             }
 
-            const aiWork = !aiFabContainer.style.display !== 'none';
             selectionToolsBarBtns.innerHTML = '';
             let html = '';
             for (const item of selectionToolBtns) {
                 if (isEmpty(item.ext) || item.ext.includes(ext)) {
-                    if (item.id === 'selection-ai-btn' && !aiWork) continue;
                     html += item.html;
                 }
             }
@@ -36872,9 +38059,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     break;
                 case 'clear':
                     await clearMarkdownTextMark();
-                    break;
-                case 'ai':
-                    displayAiPanel(markdownSelectionState.text);
                     break;
                 default:
                     break;
@@ -37075,12 +38259,286 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             openUrlInBrowser(`${query}${encodeURIComponent(key)}`);
         }
 
-        async function dealWithTippy(dom = document) {
+        async function aiMarkdownSelectionText(id, customPrompt = ''){
+            if(!id) return;
+            if (!markdownSelectionState || !markdownSelectionState.range || !markdownSelectionState.text ||
+                !markdownSelectionState.range.commonAncestorContainer || !markdownSelectionState.range.commonAncestorContainer.isConnected) {
+                console.warn('搜索失败: 选区已失效');
+                showNotification('搜索失败，请重新选择文本', 'error');
+                return;
+            }
+            const key = markdownSelectionState.text;
+            if(id==='xiaodi'){
+                displayAiPanel(markdownSelectionState.text);
+            }else if(id==='custom'){
+                await showCustomPromptPopup();
+            }else{
+                let item = AI_SELECTION_ACTIONS.find(i => i.id === id);
+                if (!item && customPrompt) {
+                    // 自定义模板：以模板内容作为 prompt 执行
+                    item = { id, name: '自定义模板', prompt: customPrompt };
+                }
+                if (!item) return;
+                const notification = showNotification(`正在${item.name}, 请稍等...`, 'info', 0);
+                try{
+                    let promptStr = item.prompt + '\n\n所选文本为：\n' + key;
+                    const processedResult = await callAIAPI(promptStr, '');
+                    const fileName = currentFileName;
+                    const filePath = currentActiveItem ? currentActiveItem.dataset.filePath : '';
+                    const now = new Date();
+                    const time = now.getTime();
+                    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+                    await addAIHistoryItem({
+                        type: id,
+                        label: item.name,
+                        prompt: item.prompt,
+                        result: processedResult,
+                        fileName: fileName,
+                        filePath: filePath,
+                        date: dateStr,
+                        lastAccess: time
+                    });
+                    recordOperation(fileName, filePath, OPERATION_TYPES.AI, time, item.name);
+                    await showAIResultModal(id, item.name, processedResult, fileName, filePath);
+                } catch (e) { 
+                    console.error('ai 操作异常:', e);
+                } finally{
+                    notification.dismiss();
+                }
+            }
+        }
+        let _customPrompts = [];
+        let _customPromptsErr = false;
+        function getCustomPrompts() {
+            try {
+                const raw = safeLocalStorageGet(CUSTOM_PROMPT_NAME);
+                const parsed = raw ? JSON.parse(raw) : [];
+                _customPrompts = Array.isArray(parsed) ? parsed : [];
+                return _customPrompts;
+            } catch (e) {
+                console.error('获取自定义 Prompt 模板异常:', e);
+                _customPromptsErr = true;
+                return [];
+            }
+        }
+        function saveCustomPrompts() {
+            if(_customPromptsErr) {
+                showNotification('保存失败!');
+                return;
+            }
+            try {
+                //剔除system类型prompt
+                _customPrompts = _customPrompts.filter(i => i.type === 'custom');
+                safeLocalStorageSet(CUSTOM_PROMPT_NAME, JSON.stringify(_customPrompts));
+            } catch (e) {
+               console.error('保存自定义 Prompt 模板异常:', e);
+            } finally{
+                _customPrompts = [];
+            }
+        }
+        async function selectAiCustomPrompt(isEdit, promptId, newName, newPrompt){
+            if (!newPrompt || !newName) return;
+            if (isEdit) {
+                if (isTauriVisit()) {
+                    // Tauri 模式下模板保存在后端数据库，_customPrompts 为空，需直接按 id 更新
+                    await window.__TAURI__.core.invoke('prompt_update', {
+                        id: promptId,
+                        name: newName,
+                        prompt: newPrompt,
+                    });
+                    showNotification('Prompt 已更新');
+                } else {
+                    const item = _customPrompts.find(i => i.id === promptId);
+                    if (item) {
+                        item.name = newName;
+                        item.prompt = newPrompt;
+                        saveCustomPrompts();
+                    }
+                }
+            } else {
+                if (isTauriVisit()) {
+                    await window.__TAURI__.core.invoke('prompt_create', {
+                        name: newName,
+                        prompt: newPrompt,
+                    });
+                    showNotification('Prompt 已创建');
+                } else {
+                    const item = {};
+                    item.type = 'custom';
+                    item.id = crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 9));
+                    item.name = newName;
+                    item.prompt = newPrompt;
+                    item.display = true;
+                    _customPrompts.push(item);
+                    saveCustomPrompts();
+                }
+            }
+            await refreshCustomPromptsDisplayList();
+        }
+        async function selectAiCustomPromptDelete(promptId){
+            if (isTauriVisit()) {
+                await window.__TAURI__.core.invoke('prompt_delete', { id: promptId });
+                showNotification('Prompt 已删除');
+            }else{
+                const index = _customPrompts.findIndex(item => item.id === promptId);
+                if (index !== -1) {
+                    _customPrompts.splice(index, 1);
+                }
+                saveCustomPrompts();
+            }
+            await refreshCustomPromptsDisplayList();
+        }
+        async function refreshCustomPromptsDisplayList(){
+            const overlay = document.getElementById('modal-overlay-custom-prompt');
+            if (!overlay) return;
+            const body = overlay.querySelector('.todo-modal-body');
+            if (!body) return;
+            let prompts = [];
+            try {
+                prompts = await getCustomPromptListData();
+            } catch (e) {
+                console.warn('刷新 Prompt 列表失败:', e);
+                _customPromptListCache = [];
+            }
+            body.innerHTML = buildCustomPromptBodyHtml(prompts);
+            // 列表重建后为新的行重新绑定 tippy
+            dealWithTippy(body, { maxWidth: '70vw', allowHTML: false });
+        }
+        function getCustomPromptsDisplayList(prompts){
+            return  prompts.map(p => `
+                    <div class="prompt-popup-row" data-id="${escapeHtml(p.id)}" onclick="runSelectionCustomPrompt(this)">
+                        <span class="row-name" id="prompt-name-${escapeHtml(p.id)}">${escapeHtml(p.name)}</span>
+                        ${p.type === 'system' ? `<span class="row-scope system">系统</span>` : ''}
+                        <span class="row-content" id="prompt-content-${escapeHtml(p.id)}" title="${escapeHtml(p.prompt)}">${escapeHtml(p.prompt)}</span>
+                        ${p.type === 'custom' ? `<div class="row-actions" onclick="event.stopPropagation()">
+                            <button class="row-action-btn" title="编辑" onclick="editPromptFromRow(this)">
+                                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                                </svg>
+                            </button>
+                            <button class="row-action-btn delete" title="删除" onclick="deletePromptFromRow(this)">
+                                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                </svg>
+                            </button>
+                        </div>` : ''}
+                    </div>
+                `).join('');
+        }
+
+        let _closeCustomPromptPopup = null; // 自定义 Prompt 弹窗的关闭函数（供模板行点击执行时先关闭弹窗）
+        let _customPromptListCache = [];    // 当前弹窗展示的完整列表缓存（系统动作 + 自定义模板）
+
+        /** 判断 overlay 是否为当前最上层的模态遮罩（避免 Escape 连带关闭下层弹窗） */
+        function _isTopModalOverlay(overlay) {
+            const overlays = Array.from(document.querySelectorAll('.modal-overlay'));
+            const idx = overlays.indexOf(overlay);
+            return idx !== -1 && idx === overlays.length - 1;
+        }
+
+        /** 汇总自定义 Prompt 弹窗的完整列表（系统动作 + 自定义模板），并缓存到 _customPromptListCache */
+        async function getCustomPromptListData() {
+            const prompts = [...AI_SELECTION_ACTIONS.filter(i => i.type === 'system')];
+            if (isTauriVisit()) {
+                const db = await window.__TAURI__.core.invoke('prompt_list');
+                for (let i = 0; i < db.length; i++) {
+                    const item = db[i];
+                    item.type = 'custom';
+                    prompts.push(item);
+                }
+            } else {
+                const db = await getCustomPrompts();
+                for (let i = 0; i < db.length; i++) prompts.push(db[i]);
+            }
+            _customPromptListCache = prompts;
+            return prompts;
+        }
+
+        function buildCustomPromptBodyHtml(prompts) {
+            if (!prompts || prompts.length === 0) {
+                return `<div class="prompt-popup-empty">暂无 Prompt 模板</div>`;
+            }
+            return `<div class="prompt-popup-list" id="prompt-popup-list-custom">${getCustomPromptsDisplayList(prompts)}</div>`;
+        }
+
+        /** 点击自定义 Prompt 弹窗中的模板行：先关闭弹窗，再对所选文本执行该模板 */
+        async function runSelectionCustomPrompt(rowEl) {
+            const row = rowEl.closest('.prompt-popup-row');
+            const id = row ? row.dataset.id : '';
+            if (!id) return;
+            let promptText = '';
+            if (!AI_SELECTION_ACTIONS.some(i => i.id === id)) {
+                const item = _customPromptListCache.find(p => p.id === id);
+                if (!item) return;
+                promptText = item.prompt || '';
+            }
+            if (_closeCustomPromptPopup) _closeCustomPromptPopup();
+            await aiMarkdownSelectionText(id, promptText);
+        }
+
+        async function showCustomPromptPopup(){
+            const existing = document.getElementById('modal-overlay-custom-prompt');
+            if (existing) existing.remove();
+            _selectAiCustomPrompt = true;
+            let prompts = [];
+            try {
+                prompts = await getCustomPromptListData();
+            } catch (e) {
+                console.warn('加载 Prompt 列表失败:', e);
+                _customPromptListCache = [];
+            }
+            const html = buildCustomPromptBodyHtml(prompts);
+
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-overlay';
+            overlay.id = 'modal-overlay-custom-prompt';
+            overlay.innerHTML = `
+                <div class="todo-modal" onclick="event.stopPropagation()" style="width:70%">
+                    <div class="todo-modal-header">
+                        <div class="todo-modal-title">Prompt 自定义</div>
+                        <button class="todo-modal-close" id="prompt-custom-close">×</button>
+                    </div>
+                    <div class="todo-modal-body">${html}</div>
+                    <div class="todo-modal-footer">
+                        <button class="todo-btn-primary" onclick="event.stopPropagation(); showPromptModal()">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>`;
+            document.body.appendChild(overlay);
+            // 行内容省略号截断，hover 时用 tippy 展示完整 prompt
+            dealWithTippy(overlay, { maxWidth: '70vw', allowHTML: false });
+            let closed = false;
+            function close() {
+                if (closed) return;
+                _selectAiCustomPrompt = false;
+                closed = true;
+                _closeCustomPromptPopup = null;
+                document.removeEventListener('keydown', escHandler);
+                overlay.remove();
+            }
+            _closeCustomPromptPopup = close;
+            const closeBtn = overlay.querySelector('#prompt-custom-close');
+            closeBtn.addEventListener('click', close);
+            function escHandler(e) {
+                // 仅当本弹窗为最上层弹窗时才响应 Escape，避免连带关闭上层的新增/编辑窗口
+                if (e.key === 'Escape' && _isTopModalOverlay(overlay)) close();
+            }
+            document.addEventListener('keydown', escHandler);
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) close();
+            });
+        }
+
+        async function dealWithTippy(dom = document, options = {}) {
             const targets = dom.querySelectorAll('span[title]');
             if (!targets.length) return;
             tippy(targets, {
                 theme: 'custom',
                 appendTo: dom,
+                interactive: true,
                 content: (ref) => {
                     return ref.getAttribute('data-tippy') || ref.title;
                 },
@@ -37091,7 +38549,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         ref.setAttribute('data-tippy', ref.title);
                     }
                     ref.removeAttribute('title');
-                }
+                },
+                ...options,
             });
         }
 
@@ -53183,6 +54642,919 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if(!isTauriVisit()) return;
             if(FrontendBridge) FrontendBridge.start();
         }
+        // ====== 技能管理（Skill Manager，skill 前缀隔离） ======
+        // 依赖主页面全局：skillContainer / escapeHtml / showConfirmModal / showNotification
+        // getRootHandle / getDirPath / isTauriVisit / switchToView（加载顺序：本文件须在主页内联脚本之后）
+        // 技能可声明的工具白名单（后端 ALLOWED_TOOLS 的子集；
+        // activate_skill / deactivate_skill 为系统常驻管理工具，不可由技能声明）
+        const ALLOWED_SKILL_TOOLS = ['kb_search', 'code_lookup', 'read', 'edit', 'delete', 'list_files', 'git_status', 'pomodoro'];
+        const SKILL_SCOPE_NAMES = { system: '系统', global: '全局', project: '当前目录' };
+
+        let skillDirPath = '';          // 当前根目录路径（打开面板时刷新）
+        let skillAllList = [];          // 后端返回的全量技能（按 priority 排序）
+        let skillFilteredList = [];     // 前端筛选后的列表
+        let skillCurrent = null;        // 当前选中技能（完整对象，含 body）
+        let skillScopeFilter = '';      // 作用域筛选：'' | system | global | project
+        let skillSearchTerm = '';       // 搜索关键词
+        let skillEditMode = 'create';   // create | edit
+        let skillEditKey = null;        // 编辑目标 {scope, id}
+        let skillChangedSubscribed = false; // skill:changed 事件只订阅一次
+
+        function skillGetDirPath() {
+            const handle = getRootHandle();
+            return handle ? getDirPath(handle) : '';
+        }
+
+        function skillFormatTime(ms) {
+            if (!ms) return '-';
+            try {
+                const d = new Date(ms);
+                const p = (n) => String(n).padStart(2, '0');
+                return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+            } catch {
+                return String(ms);
+            }
+        }
+
+        function skillScopeName(scope) {
+            return SKILL_SCOPE_NAMES[scope] || scope;
+        }
+
+        /** 打开技能管理面板（Tauri 专用） */
+        async function openSkillManager() {
+            if (!isTauriVisit() || !window.__mdgoSkill) {
+                showNotification('技能管理仅在桌面版（Tauri）可用', 'error');
+                return;
+            }
+            const dirPath = skillGetDirPath();
+            if (!dirPath) {
+                showNotification('请先打开根目录', 'error');
+                return;
+            }
+            await switchToView(skillContainer, 'flex');
+            skillDirPath = dirPath;
+            skillSubscribeChanged();
+            await skillLoadList();
+        }
+
+        /** 订阅注册表变更事件（只订阅一次；写操作/文件变更后自动刷新列表） */
+        async function skillSubscribeChanged() {
+            if (skillChangedSubscribed || !window.__mdgoSkill) return;
+            skillChangedSubscribed = true;
+            try {
+                await window.__mdgoSkill.skillOnChanged(() => {
+                    if (skillDirPath) skillLoadList();
+                });
+            } catch (e) {
+                console.warn('[SkillPanel] skill:changed 订阅失败:', e);
+            }
+        }
+
+        /** 从后端拉取全量技能并渲染 */
+        async function skillLoadList() {
+            try {
+                skillAllList = await window.__mdgoSkill.skillList(skillDirPath, null);
+                skillAllList.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+            } catch (e) {
+                showNotification('加载技能失败: ' + e, 'error');
+                return;
+            }
+            // 保留选中态：列表刷新后若当前选中技能仍存在则沿用
+            if (skillCurrent) {
+                const cur = skillAllList.find(s => s.scope === skillCurrent.scope && s.id === skillCurrent.id);
+                if (cur) {
+                    skillCurrent = cur;
+                    skillRenderList(); // 重新渲染以更新 active 状态
+                    return;
+                }
+            }
+            skillRenderList();
+            
+            skillCurrent = null;
+            skillShowEmpty();
+        }
+
+        function skillShowEmpty() {
+            // 默认选中列表第一个；空列表时保持空白（由 skillRenderList 展示空态提示）
+            const first = skillAllList[0];
+            if (first) {
+                skillSelectSkill(first.scope, first.id);
+            }
+        }
+
+        /** 渲染左侧列表（作用域 + 关键词双重过滤） */
+        function skillRenderList() {
+            const kw = skillSearchTerm.trim().toLowerCase();
+            skillFilteredList = skillAllList.filter(s => {
+                if (skillScopeFilter && s.scope !== skillScopeFilter) return false;
+                if (!kw) return true;
+                // 搜索范围：id + name + description
+                const searchText = (s.id + ' ' + s.name + ' ' + s.description).toLowerCase();
+                return searchText.includes(kw);
+            });
+            const listEl = document.getElementById('skill-list');
+            if (!listEl) return;
+            if (!skillFilteredList.length) {
+                listEl.innerHTML = `<div class="skill-empty-list">${skillAllList.length ? '没有匹配的技能' : '暂无技能，点击下方按钮新建'}</div>`;
+                return;
+            }
+            listEl.innerHTML = skillFilteredList.map(s => `
+                <div class="skill-list-item ${skillCurrent && skillCurrent.scope === s.scope && skillCurrent.id === s.id ? 'active' : ''}"
+                    onclick="skillSelectSkill('${s.scope}','${s.id}')">
+                    <div class="skill-item-avatar">
+                        <div class="skill-icon-box ${s.scope}">
+                            <svg class="skill-icon-svg ${s.scope}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="skill-item-info">
+                        <div class="skill-item-name">${escapeHtml(s.name)}</div>
+                        <div class="skill-item-meta"><span class="skill-item-tag ${s.enabled ? 'enabled' : 'disabled'}" id="skill-tag-${s.id}">${s.enabled ? '已启用' : '已停用'}</span><span>${escapeHtml(s.id)}</span></div>
+                    </div>
+                </div>`).join('');
+        }
+
+        /** 选中技能并渲染详情 */
+        async function skillSelectSkill(scope, id) {
+            const cached = skillAllList.find(s => s.scope === scope && s.id === id);
+            try {
+                // 详情需要完整正文，从后端实时获取
+                const skill = await window.__mdgoSkill.skillGet(skillDirPath, scope, id);
+                skillCurrent = skill;
+                if (cached) {
+                    Object.assign(cached, skill);
+                } else {
+                    skillAllList.push(skill);
+                }
+            } catch (e) {
+                showNotification('加载技能详情失败: ' + e, 'error');
+                return;
+            }
+            skillRenderList();
+            skillRenderDetail(skillCurrent);
+        }
+
+        function skillRenderDetail(skill) {
+            document.getElementById('skill-edit-view').style.display = 'none';
+            const view = document.getElementById('skill-detail-view');
+            view.style.display = 'block';
+
+            const writable = skill.scope !== 'system';
+            const tools = skill.tools || [];
+            const actions = [
+                writable ? `<button class="btn btn-sm btn-primary" onclick="skillEditSkill('${skill.scope}','${skill.id}')">编辑</button>` : '',
+                writable ? `<button class="btn btn-sm btn-warning" onclick="skillToggleEnabled('${skill.scope}','${skill.id}',${!skill.enabled})">${skill.enabled ? '停用' : '启用'}</button>` : '',
+                writable ? `<button class="btn btn-sm btn-danger" onclick="skillDeleteSkill('${skill.scope}','${skill.id}')">删除</button>` : '',
+            ].join('');
+
+            const metaItems = [
+                ['优先级', String(skill.priority)],
+                ['top_k', skill.top_k ?? '-'],
+                ['min_score', skill.min_score ?? '-'],
+                ['max_docs', skill.max_docs ?? '-'],
+                ['max_chunks', skill.max_chunks_per_doc ?? '-'],
+            ].map(([label, value]) => `
+                <span class="skill-meta-item"><span class="skill-meta-label">${label}</span><span class="skill-meta-value">${escapeHtml(String(value))}</span></span>`).join('');
+
+            view.innerHTML = `
+                <div class="skill-detail-wrap">
+                    <div class="skill-detail-header">
+                        <div class="skill-detail-title-box">
+                            <div class="skill-detail-title">${escapeHtml(skill.name)}
+                                <span class="skill-badge scope-${skill.scope}">${skillScopeName(skill.scope)}</span>
+                                <span class="skill-badge ${skill.enabled ? 'enabled' : 'disabled'}">${skill.enabled ? '已启用' : '已停用'}</span>
+                            </div>
+                            <div class="skill-detail-subtitle">ID: ${escapeHtml(skill.id)} · v${skill.version} · 更新于 ${skillFormatTime(skill.updated_at)}</div>
+                        </div>
+                        <div class="skill-detail-actions">${actions}</div>
+                    </div>
+                    <div class="skill-detail-meta">${metaItems}</div>
+                    <div class="skill-detail-section">
+                        <div class="skill-detail-section-title">描述</div>
+                        <div class="skill-detail-desc">${escapeHtml(skill.description) || '（无描述）'}</div>
+                    </div>
+                    ${tools.length ? `<div class="skill-detail-section"><div class="skill-detail-section-title">可用工具</div><div class="skill-tag-row">${tools.map(t => `<span class="skill-tag-chip">${escapeHtml(t)}</span>`).join('')}</div></div>` : ''}
+                    <div class="skill-detail-section">
+                        <div class="skill-detail-section-title">指令正文</div>
+                        <div class="skill-detail-body"><div class="markdown-body" style="zoom: 0.8;">${markedMd(escapeHtml(skill.body) || '（空）')}</div></div>
+                    </div>
+                </div>`;
+        }
+
+        /** 新建（默认 project 作用域） */
+        function skillCreateNew() {
+            const dirPath = skillGetDirPath();
+            if (!dirPath) {
+                showNotification('请先打开根目录', 'error');
+                return;
+            }
+            skillEditMode = 'create';
+            skillEditKey = null;
+            skillRenderEdit(null);
+        }
+
+        /** 编辑已有技能（仅用户级） */
+        function skillEditSkill(scope, id) {
+            const skill = skillAllList.find(s => s.scope === scope && s.id === id);
+            if (!skill) {
+                showNotification('技能不存在，请刷新列表', 'error');
+                return;
+            }
+            if (skill.scope === 'system') {
+                showNotification('系统内置技能不可编辑', 'error');
+                return;
+            }
+            skillEditMode = 'edit';
+            skillEditKey = { scope, id };
+            skillRenderEdit(skill);
+        }
+
+        function skillRenderEdit(skill) {
+            document.getElementById('skill-detail-view').style.display = 'none';
+            const view = document.getElementById('skill-edit-view');
+            view.style.display = 'block';
+
+            const isEdit = skillEditMode === 'edit';
+            const scope = skill ? skill.scope : 'global';
+            const enabled = skill ? skill.enabled !== false : true;
+            const tools = (skill && skill.tools) || [];
+            const priority = skill ? skill.priority : 50;
+            const topK = skill && skill.top_k != null ? skill.top_k : '';
+            const minScore = skill && skill.min_score != null ? skill.min_score : '';
+            const maxDocs = skill && skill.max_docs != null ? skill.max_docs : '';
+            const maxChunksPerDoc = skill && skill.max_chunks_per_doc != null ? skill.max_chunks_per_doc : '';
+            view.innerHTML = `
+                <div class="skill-edit-wrap">
+                    <div class="skill-edit-header">
+                        <div class="skill-edit-title">${isEdit ? '编辑技能' : '新建技能'}</div>
+                        <button class="btn" onclick="skillBackToDetail()">取消</button>
+                        <button class="btn btn-primary" onclick="skillSaveSkill()">保存</button>
+                    </div>
+                    <div class="skill-form-grid">
+                        <div class="skill-form-field">
+                            <label>ID（字母/数字/连字符/下划线/空格/中文，不能含 / 或 \）</label>
+                            <input type="text" id="skill-f-id" value="${escapeHtml(skill ? skill.id : '')}" ${isEdit ? 'readonly' : ''} placeholder="my-skill" autocomplete="off">
+                        </div>
+                        <div class="skill-form-field">
+                            <label>名称</label>
+                            <input type="text" id="skill-f-name" value="${escapeHtml(skill ? skill.name : '')}" placeholder="技能名称" autocomplete="off">
+                        </div>
+                        <div class="skill-form-field full">
+                            <label>描述</label>
+                            <textarea id="skill-f-description" placeholder="一句话描述技能用途">${escapeHtml(skill ? skill.description : '')}</textarea>
+                        </div>
+                        <div class="skill-form-field">
+                            <label>优先级（0-100）</label>
+                            <input type="number" id="skill-f-priority" value="${priority}" min="0" max="100">
+                        </div>
+                        <div class="skill-form-field">
+                            <label>作用域</label>
+                            <select id="skill-f-scope" ${isEdit ? 'disabled' : ''}> 
+                                <option value="global" ${scope === 'global' ? 'selected' : ''}>全局（跨项目共享）</option>
+                                <option value="project" ${scope === 'project' ? 'selected' : ''}>项目（当前目录 .mdgo/skills）</option>
+                            </select>
+                        </div>
+                        <div class="skill-form-field">
+                            <label>top_k（检索返回数）</label>
+                            <input type="number" id="skill-f-top-k" value="${topK}" min="1" placeholder="留空使用默认">
+                        </div>
+                        <div class="skill-form-field">
+                            <label>min_score（最低相似度）</label>
+                            <input type="number" id="skill-f-min-score" value="${minScore}" min="0" max="1" step="0.01" placeholder="留空使用默认">
+                        </div>
+                        <div class="skill-form-field">
+                            <label>max_docs（最大文档数）</label>
+                            <input type="number" id="skill-f-max-docs" value="${maxDocs}" min="1" placeholder="留空使用默认">
+                        </div>
+                        <div class="skill-form-field">
+                            <label>max_chunks_per_doc</label>
+                            <input type="number" id="skill-f-max-chunks" value="${maxChunksPerDoc}" min="1" placeholder="留空使用默认">
+                        </div>
+                        <div class="skill-form-field full">
+                            <label>可用工具</label>
+                            <div class="skill-form-tools" id="skill-f-tools">
+                                ${ALLOWED_SKILL_TOOLS.map(t => `<label class="skill-form-tool"><input type="checkbox" value="${t}" ${tools.includes(t) ? 'checked' : ''}> ${t}</label>`).join('')}
+                            </div>
+                        </div>
+                        <div class="skill-form-field full">
+                            <label>启用状态</label>
+                            <div class="skill-toggle-row">
+                                <div>
+                                    <div class="skill-toggle-label">${enabled ? '已启用' : '已停用'}</div>
+                                    <div class="skill-toggle-hint">停用后该技能不会被触发执行</div>
+                                </div>
+                                <label class="ai-result-sw-lark">
+                                    <input type="checkbox" id="skill-f-enabled" ${enabled ? 'checked' : ''} onchange="skillUpdateEnabledLabel()">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="skill-form-field full">
+                            <label>指令正文（Markdown）</label>
+                            <textarea id="skill-f-body" oninput="skillValidateForm()" placeholder="# 技能指令&#10;当你收到任务时...">${escapeHtml(skill ? skill.body : '')}</textarea>
+                        </div>
+                    </div>
+                </div>`;
+        }
+
+        /** 启停开关标签同步 */
+        function skillUpdateEnabledLabel() {
+            const toggle = document.getElementById('skill-f-enabled');
+            if (!toggle) return;
+            const label = toggle.closest('.skill-toggle-row')?.querySelector('.skill-toggle-label');
+            if (label) label.textContent = toggle.checked ? '已启用' : '已停用';
+        }
+
+        /** 返回详情视图（编辑中取消/返回） */
+        function skillBackToDetail() {
+            if (skillCurrent) {
+                skillRenderDetail(skillCurrent);
+            } else {
+                skillShowEmpty();
+            }
+        }
+
+        /** 前端字段级校验（与后端 validate_skill 约定一致） */
+        function skillValidateForm() {
+            const errors = [];
+            const id = (document.getElementById('skill-f-id')?.value || '').trim();
+            const description = (document.getElementById('skill-f-description')?.value || '').trim();
+            const body = (document.getElementById('skill-f-body')?.value || '').trim();
+            const name = (document.getElementById('skill-f-name')?.value || '').trim();
+            const priority = parseInt(document.getElementById('skill-f-priority')?.value || '50', 10);
+
+            if (!id) errors.push('id 不能为空');
+            else if (id !== id.trim()) errors.push('id 不能包含首尾空白');
+            else if (id.length > 128) errors.push('id 长度不能超过 128');
+            else if (id === '.' || id === '..') errors.push('id 不能为 . 或 ..');
+            else if (/[/\\"'`]/.test(id) || /[\x00-\x1f\x7f]/.test(id)) errors.push('id 不能包含路径分隔符、引号或控制字符');
+            if (!name) errors.push('name 不能为空');
+            if (isNaN(priority) || priority < 0 || priority > 100) errors.push('priority 必须在 0~100 之间');
+            if (!description) errors.push('description 不能为空');
+            if (!body) errors.push('body 不能为空');
+
+            if (errors.length){
+                showNotification('⚠ ' + errors.join('；'), 'warning');
+                return false;
+            }
+            return true;
+        }
+
+        /** 保存（创建/更新） */
+        async function skillSaveSkill() {
+            if (!window.__mdgoSkill) {
+                showNotification('技能管理仅在桌面版（Tauri）可用', 'error');
+                return;
+            }
+            if (!skillValidateForm()) {
+                return;
+            }
+            const id = (document.getElementById('skill-f-id')?.value || '').trim();
+            const name = (document.getElementById('skill-f-name')?.value || '').trim();
+            const description = (document.getElementById('skill-f-description')?.value || '').trim();
+            const scope = skillEditMode === 'edit'
+                ? (skillEditKey ? skillEditKey.scope : '')
+                : (document.getElementById('skill-f-scope')?.value || 'project');
+            const priority = parseInt(document.getElementById('skill-f-priority')?.value || '50', 10);
+            const topKVal = (document.getElementById('skill-f-top-k')?.value || '').trim();
+            const minScoreVal = (document.getElementById('skill-f-min-score')?.value || '').trim();
+            const maxDocsVal = (document.getElementById('skill-f-max-docs')?.value || '').trim();
+            const maxChunksVal = (document.getElementById('skill-f-max-chunks')?.value || '').trim();
+            const tools = Array.from(document.querySelectorAll('#skill-f-tools input:checked')).map(i => i.value);
+            const enabled = document.getElementById('skill-f-enabled')?.checked ?? true;
+            const body = document.getElementById('skill-f-body')?.value || '';
+
+            if (!id) { showNotification('请填写 ID', 'error'); return; }
+            if (!name) { showNotification('请填写名称', 'error'); return; }
+            if (!description) { showNotification('请填写描述', 'error'); return; }
+            if (!body) { showNotification('请填写指令正文', 'error'); return; }
+
+            const input = {
+                name,
+                description,
+                priority,
+                tools,
+                enabled,
+                body,
+            };
+            // 可选检索参数：留空则不传（后端保留原值或 null）
+            if (topKVal) input.top_k = parseInt(topKVal, 10);
+            if (minScoreVal) input.min_score = parseFloat(minScoreVal);
+            if (maxDocsVal) input.max_docs = parseInt(maxDocsVal, 10);
+            if (maxChunksVal) input.max_chunks_per_doc = parseInt(maxChunksVal, 10);
+            try {
+                if (skillEditMode === 'edit' && skillEditKey) {
+                    await window.__mdgoSkill.skillUpdate(skillDirPath, scope, id, input);
+                    showNotification('技能已更新');
+                } else {
+                    input.id = id;
+                    await window.__mdgoSkill.skillCreate(skillDirPath, scope, input);
+                    showNotification('技能已创建');
+                }
+                skillEditMode = 'create';
+                skillEditKey = null;
+                await skillLoadList();
+                skillCurrent = skillAllList.find(s => s.scope === scope && s.id === id) || null;
+                if (skillCurrent) skillRenderDetail(skillCurrent);
+                else skillShowEmpty();
+            } catch (e) {
+                showNotification('保存失败: ' + e, 'error');
+            }
+        }
+
+        /** 启停切换 */
+        async function skillToggleEnabled(scope, id, enabled) {
+            if (!window.__mdgoSkill) return;
+            try {
+                const updated = await window.__mdgoSkill.skillSetEnabled(skillDirPath, scope, id, enabled);
+                const idx = skillAllList.findIndex(s => s.scope === scope && s.id === id);
+                if (idx >= 0) skillAllList[idx] = updated;
+                skillCurrent = updated;
+                skillRenderList();
+                skillRenderDetail(updated);
+                const tagEl = document.getElementById(`skill-tag-${id}`);
+                if (tagEl) {
+                    if (enabled){
+                        tagEl.textContent = '已启用';
+                        tagEl.classList.remove('disabled');
+                        tagEl.classList.add('enabled');
+                    } else{
+                        tagEl.textContent = '已停用';
+                        tagEl.classList.remove('enabled');
+                        tagEl.classList.add('disabled');
+                    } 
+                }
+                showNotification(`技能已${enabled ? '启用' : '停用'}`);
+            } catch (e) {
+                showNotification('操作失败: ' + e, 'error');
+            }
+        }
+
+        /** 删除（确认后执行） */
+        function skillDeleteSkill(scope, id) {
+            const skill = skillAllList.find(s => s.scope === scope && s.id === id);
+            showConfirmModal('删除技能', `确定删除技能「${skill ? skill.name : id}」（${id}）吗？删除后不可恢复。`, async (ok) => {
+                if (!ok) return;
+                try {
+                    await window.__mdgoSkill.skillDelete(skillDirPath, scope, id);
+                    showNotification('技能已删除');
+                    skillCurrent = null;
+                    await skillLoadList();
+                    skillShowEmpty();
+                } catch (e) {
+                    showNotification('删除失败: ' + e, 'error');
+                }
+            });
+        }
+
+        /** 搜索框输入（实时过滤 + 清空按钮显隐） */
+        function skillHandleSearchInput() {
+            const input = document.getElementById('skill-search-input');
+            const clearBtn = document.getElementById('skill-search-clear');
+            if (!input) return;
+            skillSearchTerm = input.value;
+            if (clearBtn) clearBtn.style.display = skillSearchTerm ? 'flex' : 'none';
+            skillRenderList();
+        }
+
+        /** 搜索框回车 */
+        function skillHandleSearchKeydown(e) {
+            if (e.key === 'Enter') {
+                skillSearchTerm = document.getElementById('skill-search-input').value;
+                skillRenderList();
+            }
+        }
+
+        /** 清空搜索 */
+        function skillClearSearch() {
+            skillSearchTerm = '';
+            const input = document.getElementById('skill-search-input');
+            if (input) input.value = '';
+            const clearBtn = document.getElementById('skill-search-clear');
+            if (clearBtn) clearBtn.style.display = 'none';
+            skillRenderList();
+        }
+
+        /** 作用域筛选切换（chips 高亮同步） */
+        function skillScopeChange(value) {
+            skillScopeFilter = value || '';
+            document.querySelectorAll('#skill-scope-chips .skill-chip').forEach(c => {
+                c.classList.toggle('active', (c.dataset.scope || '') === skillScopeFilter);
+            });
+            skillRenderList();
+        }
+
+        // ====== Prompt 模板管理（Prompt CRUD） ======
+        // 依赖主页面全局：escapeHtml / showNotification / showConfirmModal / isTauriVisit
+
+        /** 打开 Prompt 编辑模态框（创建/编辑） */
+        function showPromptModal(promptItem) {
+            const isEdit = !!promptItem;
+            const title = isEdit ? '编辑 Prompt' : '新建 Prompt';
+            const name = isEdit ? promptItem.name : '';
+            // 全局统一使用 prompt 字段（Tauri 数据库与本地存储一致）
+            const promptText = isEdit ? (promptItem.prompt ?? '') : '';
+
+            // 移除已存在的 Prompt 编辑弹窗（避免重复叠加）
+            const existing = document.querySelector('.modal-overlay .prompt-modal-field');
+            if (existing) existing.closest('.modal-overlay').remove();
+
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-overlay';
+            overlay.innerHTML = `
+                <div class="todo-modal" onclick="event.stopPropagation()" style="width:50rem">
+                    <div class="todo-modal-header">
+                        <div class="todo-modal-title">${escapeHtml(title)}</div>
+                        <button class="todo-modal-close" id="prompt-modal-close">×</button>
+                    </div>
+                    <div class="todo-modal-body">
+                        <div class="prompt-modal-field">
+                            <label>Prompt 名称</label>
+                            <input type="text" class="prompt-modal-name" placeholder="输入名称" value="${escapeHtml(name)}" autocomplete="off">
+                        </div>
+                        <div class="prompt-modal-field">
+                            <label>Prompt 内容</label>
+                            <textarea class="prompt-modal-content" rows="10" placeholder="输入 prompt 内容...">${escapeHtml(promptText)}</textarea>
+                        </div>
+                    </div>
+                    <div class="todo-modal-footer">
+                        <button class="todo-btn-secondary" id="prompt-modal-cancel">取消</button>
+                        <button class="todo-btn-primary" id="prompt-modal-confirm">保存</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(overlay);
+
+            const nameInput = overlay.querySelector('.prompt-modal-name');
+            const promptInput = overlay.querySelector('.prompt-modal-content');
+            const cancelBtn = overlay.querySelector('#prompt-modal-cancel');
+            const confirmBtn = overlay.querySelector('#prompt-modal-confirm');
+            const closeBtn = overlay.querySelector('#prompt-modal-close');
+            closeBtn.addEventListener('click', close);
+
+            nameInput.focus();
+            nameInput.select();
+
+            let closed = false;
+            let submitting = false;
+            function close() {
+                if (closed) return;
+                closed = true;
+                document.removeEventListener('keydown', escHandler);
+                overlay.remove();
+            }
+
+            function escHandler(e) {
+                if (e.key !== 'Escape') return;
+                // 仅关闭最上层弹窗，避免连带关闭下层弹窗（如 Prompt 自定义列表）
+                if (typeof _isTopModalOverlay === 'function' && !_isTopModalOverlay(overlay)) return;
+                close();
+            }
+            document.addEventListener('keydown', escHandler);
+
+            cancelBtn.addEventListener('click', close);
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) close();
+            });
+
+            confirmBtn.addEventListener('click', async () => {
+                if (submitting || closed) return;
+                const newName = nameInput.value.trim();
+                const newPrompt = promptInput.value.trim();
+                if (!newName) {
+                    showNotification('请输入 Prompt 名称', 'warning');
+                    return;
+                }
+                if (!newPrompt) {
+                    showNotification('请输入 Prompt 内容', 'warning');
+                    return;
+                }
+                submitting = true;
+                confirmBtn.disabled = true;
+                try {
+                    if (_selectAiCustomPrompt) {
+                        let promptId = isEdit ? promptItem.id : '';
+                        await selectAiCustomPrompt(isEdit, promptId, newName, newPrompt);
+                        // 保存成功后关闭新增/编辑窗口；下层 Prompt 自定义列表保持打开
+                        close();
+                        return;
+                    }
+                    if (isEdit) {
+                        await window.__TAURI__.core.invoke('prompt_update', {
+                            id: promptItem.id,
+                            name: newName,
+                            prompt: newPrompt,
+                        });
+                        showNotification('Prompt 已更新');
+                    } else {
+                        await window.__TAURI__.core.invoke('prompt_create', {
+                            name: newName,
+                            prompt: newPrompt,
+                        });
+                        showNotification('Prompt 已创建');
+                    }
+                    close();
+                    await renderPromptList();
+                } catch (e) {
+                    showNotification('操作失败: ' + e, 'error');
+                    submitting = false;
+                    confirmBtn.disabled = false;
+                }
+            });
+        }
+
+        /** 打开编辑指定 prompt 的模态框（从行元素 data 属性读取） */
+        function editPromptFromRow(rowEl) {
+            const row = rowEl.closest('.prompt-popup-row');
+            const id = row.dataset.id || '';
+            if (!id) return;
+            const name = row.querySelector(`#prompt-name-${id}`).textContent.trim() || '';
+            const prompt = row.querySelector(`#prompt-content-${id}`).textContent.trim() || '';
+            showPromptModal({ id, name, prompt });
+        }
+
+        /** 删除 Prompt（从行元素 data 属性读取，确认后执行） */
+        function deletePromptFromRow(rowEl) {
+            const row = rowEl.closest('.prompt-popup-row');
+            const id = row.dataset.id || '';
+            const name = row.querySelector(`#prompt-name-${id}`).textContent.trim() || '';
+            if (!id || !name) return;
+            showConfirmModal('删除 Prompt', `确定删除 Prompt「${escapeHtml(name)}」吗？删除后不可恢复。`, async (ok) => {
+                if (!ok) return;
+                try {
+                    if (_selectAiCustomPrompt) {
+                        await selectAiCustomPromptDelete(id);
+                        return;
+                    }
+                    await window.__TAURI__.core.invoke('prompt_delete', { id });
+                    showNotification('Prompt 已删除');
+                    await renderPromptList();
+                } catch (e) {
+                    showNotification('删除失败: ' + e, 'error');
+                }
+            });
+        }
+
+        /** 渲染 Prompt 弹出面板列表 */
+        async function renderPromptList() {
+            const popup = document.getElementById('chat-prompt-popup');
+            if (!popup) return;
+
+            if (!isTauriVisit()) {
+                popup.innerHTML = '<div class="prompt-popup-empty">仅桌面版可用</div>';
+                return;
+            }
+
+            try {
+                const prompts = await window.__TAURI__.core.invoke('prompt_list');
+                if (!prompts || prompts.length === 0) {
+                    popup.innerHTML = `
+                        <div class="prompt-popup-empty">暂无 Prompt 模板</div>
+                        <div class="prompt-popup-footer">
+                            <button class="prompt-settings-btn" onclick="event.stopPropagation(); showPromptModal()">
+                                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                                </svg>
+                            </button>
+                        </div>`;
+                    return;
+                }
+
+                const rows = prompts.map(p => `
+                    <div class="prompt-popup-row" data-id="${escapeHtml(p.id)}" onclick="insertPromptFromRow(this)">
+                        <span class="row-name" id="prompt-name-${escapeHtml(p.id)}">${escapeHtml(p.name)}</span>
+                        <span class="row-content" id="prompt-content-${escapeHtml(p.id)}" title="${escapeHtml(p.prompt || '')}">${escapeHtml(p.prompt || '')}</span>
+                        <div class="row-actions" onclick="event.stopPropagation()">
+                            <button class="row-action-btn" title="编辑" onclick="editPromptFromRow(this)">
+                                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                                </svg>
+                            </button>
+                            <button class="row-action-btn delete" title="删除" onclick="deletePromptFromRow(this)">
+                                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+
+                popup.innerHTML = `
+                    <div class="prompt-popup-list">${rows}</div>
+                    <div class="prompt-popup-footer">
+                        <button class="prompt-settings-btn" onclick="event.stopPropagation(); showPromptModal()">
+                            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                            </svg>
+                        </button>
+                    </div>`;
+                // 行内容省略号截断，hover 时用 tippy 展示完整 prompt
+                // 挂载到 body：popup 容器带 overflow 裁剪，弹框上移时会被容器的上边沿裁掉一半
+                if (typeof dealWithTippy === 'function') dealWithTippy(popup, { appendTo: document.body, maxWidth: '60vw', allowHTML: false });
+            } catch (e) {
+                console.warn('加载 Prompt 列表失败:', e);
+                popup.innerHTML = '<div class="prompt-popup-empty">加载失败</div>';
+            }
+        }
+
+        /** 从行元素读取 content 并插入到聊天输入框 */
+        function insertPromptFromRow(rowEl) {
+            const row = rowEl.closest('.prompt-popup-row');
+            const id = row.dataset.id || '';
+            const prompt = row.querySelector(`#prompt-content-${id}`).textContent.trim() || '';
+            insertPromptContent(prompt);
+        }
+
+        /** 将 Prompt 内容插入到聊天输入框 */
+        function insertPromptContent(content) {
+            const input = document.getElementById('chat-input');
+            if (!input) return;
+            const old = input.value;
+            if (old && !old.endsWith('\n')) {
+                input.value = old + '\n' + content;
+            } else if (old) {
+                input.value = old + content;
+            } else {
+                input.value = content;
+            }
+            input.focus();
+            updateChatSendButton();
+            // 关闭弹出面板
+            const popup = document.getElementById('chat-prompt-popup');
+            if (popup) popup.style.display = 'none';
+        }
+
+        // ====== 前端通信桥（FrontendBridge）：WebSocket 双向通道，替代 Tauri 事件/命令 ======
+        // 依赖主页面全局：isTauriVisit / PomodoroService / pomodoroRefreshUI / pomodoroSyncModeUI
+        // 协议：Rust 工具闭包 → WebSocket {type:"request", ...} → 本桥路由到对应业务 handler →
+        // 回传 WebSocket {type:"result", ...}。新增业务只需 register 一个 handler，无需改动协议层。
+        //
+        // 高可用设计：自动重连 + 不依赖就绪门控，超时是 Rust 侧唯一安全网。
+        const FrontendBridge = {
+            _handlers: {},      // tool → (action, args) => string | Promise<string>
+            _ws: null,
+            _started: false,
+            _reconnectTimer: null,
+            _reconnectDelay: 500,
+
+            // 注册业务处理器（如番茄钟 pomodoro）
+            register(tool, handler) {
+                this._handlers[tool] = handler;
+            },
+
+            // 启动桥（仅 Tauri 模式；本地 HTML 模式无后端命令，直接跳过）
+            start() {
+                if (this._started) return;
+                this._started = true;
+                if (!isTauriVisit()) return;
+                // 获取 WebSocket 端口 → 建立连接
+                this._getPortAndConnect();
+                console.log('FrontendBridge 启动');
+            },
+
+            _getPortAndConnect() {
+                if (!window.__TAURI__) {
+                    setTimeout(() => this._getPortAndConnect(), 500);
+                    return;
+                }
+                window.__TAURI__.core.invoke('get_bridge_port')
+                    .then(port => {
+                        console.log('FrontendBridge WebSocket 端口:', port);
+                        this._connect(port);
+                    })
+                    .catch(() => {
+                        // 服务端尚未就绪，延迟重试
+                        setTimeout(() => this._getPortAndConnect(), 500);
+                    });
+            },
+
+            _connect(port) {
+                if (this._ws) {
+                    try { this._ws.close(); } catch (_) {}
+                    this._ws = null;
+                }
+                const url = `ws://127.0.0.1:${port}`;
+                console.log('FrontendBridge 连接 WebSocket:', url);
+                const ws = new WebSocket(url);
+                ws.onopen = () => {
+                    console.log('FrontendBridge WebSocket 已连接');
+                    // 上报就绪（best-effort，仅用于观测）
+                    ws.send(JSON.stringify({ type: 'ready', ready: true }));
+                };
+                ws.onmessage = (event) => {
+                    try {
+                        const msg = JSON.parse(event.data);
+                        if (msg.type === 'request') {
+                            this._dispatch(msg);
+                        }
+                    } catch (e) {
+                        console.warn('FrontendBridge 无法解析消息:', event.data);
+                    }
+                };
+                ws.onclose = () => {
+                    console.log('FrontendBridge WebSocket 断开，将重连');
+                    this._ws = null;
+                    this._scheduleReconnect(port);
+                };
+                ws.onerror = (e) => {
+                    console.error('FrontendBridge WebSocket 错误:', e);
+                };
+                this._ws = ws;
+            },
+
+            _scheduleReconnect(port) {
+                if (this._reconnectTimer) return;
+                this._reconnectDelay = Math.min(this._reconnectDelay * 2, 5000);
+                this._reconnectTimer = setTimeout(() => {
+                    this._reconnectTimer = null;
+                    this._connect(port);
+                }, this._reconnectDelay);
+            },
+
+            // 分发请求：查找 handler → 执行（同步或异步）→ 回传结果
+            _dispatch({ request_id, tool, action, args }) {
+                console.log('FrontendBridge 收到请求:', { request_id, tool, action, args });
+                const reply = (ok, message) => {
+                    if (!this._ws || this._ws.readyState !== WebSocket.OPEN) return;
+                    this._ws.send(JSON.stringify({
+                        type: 'result',
+                        request_id,
+                        ok,
+                        message: message == null ? 'ok' : String(message)
+                    }));
+                };
+                const handler = this._handlers[tool];
+                if (!handler) {
+                    reply(false, `未注册的业务处理器: ${tool}`);
+                    return;
+                }
+                let result;
+                try {
+                    result = handler(action, args || {});
+                } catch (err) {
+                    reply(false, String((err && err.message) || err));
+                    return;
+                }
+                if (result && typeof result.then === 'function') {
+                    result.then(
+                        msg => reply(true, msg == null ? 'ok' : String(msg)),
+                        err => reply(false, String((err && err.message) || err))
+                    );
+                } else {
+                    reply(true, result == null ? 'ok' : String(result));
+                }
+            }
+        };
+
+        // ── 番茄钟业务 handler：调用前端番茄钟方法（PomodoroService），单任务语义在业务层内部保证 ──
+        FrontendBridge.register('pomodoro', (action, args) => {
+            const st = PomodoroService.state;
+            switch (action) {
+                case 'status': {
+                    const running = st.isRunning;
+                    const remain = running
+                        ? Math.max(0, Math.ceil((st.endAt - Date.now()) / 1000))
+                        : st.timeLeft;
+                    const mm = Math.floor(remain / 60);
+                    const ss = remain % 60;
+                    const modeName = st.mode === 'short' ? '短休息' : st.mode === 'long' ? '长休息' : '专注';
+                    const phase = running ? '进行中' : (st.timeLeft > 0 && st.timeLeft < st.totalTime) ? '已暂停' : '未开始';
+                    return `${modeName}${phase}：剩余 ${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}，总时长 ${st.totalTime / 60} 分钟`;
+                }
+                case 'start': {
+                    const isBreak = args.mode === 'break';
+                    const minutes = Math.max(1, Math.min(180, parseInt(args.minutes, 10) || (isBreak ? 5 : 25)));
+                    const mode = isBreak ? 'short' : 'pomodoro';
+                    PomodoroService.startWith(minutes, mode);
+                    pomodoroSyncModeUI(mode);
+                    pomodoroRefreshUI();
+                    return `已开始 ${minutes} 分钟${isBreak ? '休息' : '专注'}`;
+                }
+                case 'autoBreak': {
+                    const s = PomodoroStore.loadSettings() || { pomodoro: 25, short: 5, long: 15, autoBreak: true, autoPomodoro: false };
+                    s.autoBreak = !!args.openEnable;
+                    PomodoroStore.saveSettings(s);
+                    const el = document.getElementById('pomoAutoBreak');
+                    if (el) el.classList.toggle('on', s.autoBreak);
+                    return `已${s.autoBreak ? '开启' : '关闭'}自动开始休息`;
+                }
+                case 'autoFocus': {
+                    const s = PomodoroStore.loadSettings() || { pomodoro: 25, short: 5, long: 15, autoBreak: true, autoPomodoro: false };
+                    s.autoPomodoro = !!args.openEnable;
+                    PomodoroStore.saveSettings(s);
+                    const el = document.getElementById('pomoAutoPomodoro');
+                    if (el) el.classList.toggle('on', s.autoPomodoro);
+                    return `已${s.autoPomodoro ? '开启' : '关闭'}自动开始专注`;
+                }
+                case 'stop': {
+                    if (!st.isRunning && st.timeLeft >= st.totalTime) return '当前没有进行中的计时';
+                    PomodoroService.reset();
+                    pomodoroRefreshUI();
+                    return '已停止番茄钟';
+                }
+                default:
+                    return `未知动作: ${action}`;
+            }
+        });
     </script>
-    <script src="./css_js/agent.js" defer></script>
 </body>
