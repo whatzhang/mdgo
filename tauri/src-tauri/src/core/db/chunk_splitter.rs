@@ -4,6 +4,9 @@ use std::sync::OnceLock;
 use regex::Regex;
 
 use super::utils;
+use crate::core::document::chunk_engine::{Chunk, ChunkEngine, SemanticChunkEngine};
+use crate::core::document::text_split::char_len;
+use crate::core::document::{ComrakMarkdownParser, MarkdownParser};
 
 // ─── ChunkSplitter 特质（策略模式） ───
 
@@ -21,6 +24,11 @@ pub struct ChunkResult {
     pub symbol_name: Option<String>,
     /// 符号类型（仅代码文件有值），如 "function"、"class"、"method"
     pub symbol_kind: Option<String>,
+    /// 向量化文本（AST 语义分块用）：与 `text` 分离，避免标题词稀释正文语义；
+    /// `None` 表示向量化时直接使用 `text`。
+    pub embedding_text: Option<String>,
+    /// 分块类型（AST 语义分块用）：paragraph/code/table/list/quote/section 等
+    pub chunk_type: Option<String>,
 }
 
 impl ChunkResult {
@@ -33,6 +41,8 @@ impl ChunkResult {
             sentence_window: None,
             symbol_name: None,
             symbol_kind: None,
+            embedding_text: None,
+            chunk_type: None,
         }
     }
 
@@ -45,6 +55,8 @@ impl ChunkResult {
             sentence_window: None,
             symbol_name,
             symbol_kind,
+            embedding_text: None,
+            chunk_type: None,
         }
     }
 
@@ -58,6 +70,30 @@ impl ChunkResult {
             sentence_window: None,
             symbol_name: None,
             symbol_kind: Some("file".to_string()),
+            embedding_text: None,
+            chunk_type: None,
+        }
+    }
+}
+
+/// AST 语义 chunk → 对外分块结果。
+///
+/// 转换保持在 `db` 层（依赖 `document`），维持 `document` 为纯基础层的分层方向：
+/// heading_path 映射到 path_depth / path_json。
+impl From<Chunk> for ChunkResult {
+    fn from(chunk: Chunk) -> Self {
+        let path_depth = (!chunk.path.is_empty()).then_some(chunk.path.len() as u32);
+        let path_json = (!chunk.path.is_empty())
+            .then(|| serde_json::to_string(&chunk.path).unwrap_or_default());
+        ChunkResult {
+            text: chunk.text,
+            path_depth,
+            path_json,
+            sentence_window: None,
+            symbol_name: None,
+            symbol_kind: None,
+            embedding_text: Some(chunk.embedding_text),
+            chunk_type: Some(chunk.chunk_type),
         }
     }
 }
@@ -183,7 +219,7 @@ impl ChunkSplitter for CodeAwareChunkSplitter {
 
 /// 递归分隔符切分：从最高优先级分隔符开始尝试，超长块降级到下一级分隔符。
 fn split_recursive_by_separators(text: &str, separators: &[&str], max_size: usize) -> Vec<String> {
-    if text.len() <= max_size || separators.is_empty() {
+    if char_len(text) <= max_size || separators.is_empty() {
         return vec![text.to_string()];
     }
 
@@ -200,9 +236,7 @@ fn split_recursive_by_separators(text: &str, separators: &[&str], max_size: usiz
     } else {
         for part in text.split(sep) {
             if part.is_empty() { continue; }
-            if part.len() <= max_size && rest.is_empty() {
-                parts.push(part.to_string());
-            } else if part.len() <= max_size {
+            if char_len(part) <= max_size {
                 parts.push(part.to_string());
             } else {
                 // 超长，降级到下一级分隔符
@@ -227,7 +261,7 @@ fn merge_small_chunks(chunks: &[String], max_size: usize, overlap: usize) -> Vec
     for chunk in chunks {
         if buffer.is_empty() {
             buffer = chunk.clone();
-        } else if buffer.len() < min_size {
+        } else if char_len(&buffer) < min_size {
             buffer.push('\n');
             buffer.push_str(chunk);
         } else {
@@ -281,7 +315,7 @@ fn merge_small_chunks_symbol_aware(chunks: Vec<ChunkResult>, max_size: usize) ->
         if let Some(prev) = result.last_mut() {
             let prev_has_symbol = prev.symbol_name.is_some();
             let curr_has_symbol = chunk.symbol_name.is_some();
-            let prev_too_small = prev.text.len() < min_size;
+            let prev_too_small = char_len(&prev.text) < min_size;
 
             if prev_too_small && !curr_has_symbol {
                 // 前一个 chunk 太小且当前无符号：合并到前一个
@@ -293,10 +327,12 @@ fn merge_small_chunks_symbol_aware(chunks: Vec<ChunkResult>, max_size: usize) ->
                     sentence_window: prev.sentence_window.clone().or(chunk.sentence_window),
                     symbol_name: prev.symbol_name.clone(),
                     symbol_kind: prev.symbol_kind.clone(),
+                    embedding_text: prev.embedding_text.clone().or(chunk.embedding_text),
+                    chunk_type: prev.chunk_type.clone().or(chunk.chunk_type),
                 };
                 continue;
             }
-            if !curr_has_symbol && !prev_has_symbol && prev.text.len() < min_size {
+            if !curr_has_symbol && !prev_has_symbol && char_len(&prev.text) < min_size {
                 // 两个都无符号且前一个太小：合并
                 let merged_text = format!("{}\n{}", prev.text, chunk.text);
                 *prev = ChunkResult {
@@ -306,6 +342,8 @@ fn merge_small_chunks_symbol_aware(chunks: Vec<ChunkResult>, max_size: usize) ->
                     sentence_window: prev.sentence_window.clone().or(chunk.sentence_window),
                     symbol_name: prev.symbol_name.clone(),
                     symbol_kind: prev.symbol_kind.clone(),
+                    embedding_text: prev.embedding_text.clone().or(chunk.embedding_text),
+                    chunk_type: prev.chunk_type.clone().or(chunk.chunk_type),
                 };
                 continue;
             }
@@ -383,7 +421,7 @@ fn extract_all_symbols(text: &str) -> Vec<String> {
 ///
 /// 返回 None 表示无需概览（文件太小、无符号、无 imports）。
 fn build_file_overview_text(text: &str) -> Option<String> {
-    if text.len() < 80 {
+    if char_len(text) < 80 {
         return None;
     }
 
@@ -437,14 +475,16 @@ fn build_file_overview_text(text: &str) -> Option<String> {
 /// -- 注释（SQL）
 /// - """ ''' 文档字符串（Python）
 fn is_comment_block(text: &str) -> bool {
-    if text.len() < 5 {
+    let total_chars = char_len(text);
+    if total_chars < 5 {
         return false;
     }
     let comment_chars = text
         .chars()
         .filter(|&c| c == '#' || c == '/' || c == '*' || c == ' ' || c == '\n' || c == '\t' || c == '-' || c == '"' || c == '\'')
         .count();
-    comment_chars as f64 / text.len() as f64 > 0.5
+    // 分子分母统一按字符计数（原实现分子用 chars、分母用 bytes，单位混算导致比例失真）
+    comment_chars as f64 / total_chars as f64 > 0.5
 }
 
 /// 将相邻的注释块合并到后续的函数/类定义 chunk 中。
@@ -468,7 +508,7 @@ fn merge_comment_into_func(chunks: Vec<ChunkResult>, max_size: usize) -> Vec<Chu
             if chunk.symbol_name.is_some()
                 && prev.symbol_name.is_none()
                 && prev.symbol_kind.as_deref() != Some("file")
-                && prev.text.len() < max_size / 2
+                && char_len(&prev.text) < max_size / 2
                 && is_comment_block(&prev.text)
             {
                 let merged_text = format!("{}\n{}", prev.text, chunk.text);
@@ -531,8 +571,6 @@ fn split_code_with_overview(
 /// Markdown 分块器配置，支持业务灵活调整规则
 #[derive(Debug, Clone)]
 pub struct MarkdownSplitConfig {
-    /// 是否携带完整父级标题链路作为上下文前缀
-    pub full_parent_context: bool,
     /// 开启 Setext 标题识别（=== / --- 二级标题）
     pub enable_setext_heading: bool,
     /// 单章节宽松上限系数，字符数超过则二次拆分
@@ -544,7 +582,6 @@ pub struct MarkdownSplitConfig {
 impl Default for MarkdownSplitConfig {
     fn default() -> Self {
         Self {
-            full_parent_context: true,
             enable_setext_heading: true,
             oversize_factor: 1.25,
             min_body_reserve_chars: 50,
@@ -552,37 +589,18 @@ impl Default for MarkdownSplitConfig {
     }
 }
 
-/// 章节标题栈节点，缓存完整标题前缀避免重复拼接
-#[derive(Debug)]
-struct HeadingNode {
-    level: usize,
-    cached_prefix: String,
-}
-
-/// 行解析状态机：区分普通文本 / 代码块
-#[derive(Debug, Default)]
-enum ParseState {
-    #[default]
-    Normal,
-    /// 代码块，存储起始反引号数量（3/4等）
-    CodeBlock(usize),
-}
-
-// ─── Markdown 文档分割器（增强版） ───
+// ─── Markdown 文档分割器（AST 语义分块版） ───
 
 /// Markdown 文档分割器
 ///
-/// 按标题层级（# ~ ######）划分段落，每个 chunk 注入父级标题路径作为前缀。
-/// 超过 max_size 的长段落回退到 split_text 切分。
+/// **全 AST 方案**：Markdown → comrak 完整解析 → `DocumentNode` 文档树 →
+/// `SemanticChunkEngine` 语义分块。
 ///
-/// 增强特性：
-/// - 代码块状态机屏蔽代码块内 # 标题误识别
-/// - 全文本长度统一使用 chars().count() 字符计数
-/// - 安全无溢出可用正文长度计算
-/// - 标题文本强制 trim()
-/// - Setext 二级标题支持
-/// - 列表/引用行屏蔽标题匹配
-/// - Windows \r\n 换行兼容
+/// 与旧版（行切片 + 长度切分）相比的收益：
+/// - 标题层级成为结构性父节点，heading_path（path_json）随之产生
+/// - 段落 / 列表 / 表格 / 代码块作为整体参与分组，**不再中途截断语义单元**
+/// - `text`（上下文文本）与 `embedding_text`（向量化文本）分离，标题不稀释向量
+/// - 无标题文档同样按块边界分组（旧版退化为字符切分）
 #[derive(Debug, Clone)]
 pub struct MarkdownChunkSplitter {
     config: MarkdownSplitConfig,
@@ -599,88 +617,6 @@ impl MarkdownChunkSplitter {
     pub fn with_config(config: MarkdownSplitConfig) -> Self {
         Self { config }
     }
-
-    // 1. ATX 标题正则：兼容 #标题 / # 标题，自动剔除首尾空白
-    fn atx_heading_re() -> &'static Regex {
-        static RE: OnceLock<Regex> = OnceLock::new();
-        RE.get_or_init(|| Regex::new(r"^(#{1,6})\s*(.+?)\s*$").unwrap())
-    }
-
-    // 2. 代码块起始/结束正则：匹配 ``` / ````
-    fn code_block_re() -> &'static Regex {
-        static RE: OnceLock<Regex> = OnceLock::new();
-        RE.get_or_init(|| Regex::new(r"^(`{3,})").unwrap())
-    }
-
-    // 3. Setext 二级标题分隔线：=== / ---
-    fn setext_line_re() -> &'static Regex {
-        static RE: OnceLock<Regex> = OnceLock::new();
-        RE.get_or_init(|| Regex::new(r"^(=+|-+)\s*$").unwrap())
-    }
-
-    // 4. 列表/引用前缀：行首 > / - / * / 数字. ，这类行不识别 ATX 标题
-    fn list_quote_prefix_re() -> &'static Regex {
-        static RE: OnceLock<Regex> = OnceLock::new();
-        RE.get_or_init(|| Regex::new(r"^(\s*>|\s*[-*]\s|\s*\d+\.)").unwrap())
-    }
-
-    /// 构建当前标题栈完整上下文前缀
-    fn build_stack_prefix(stack: &[HeadingNode], full_context: bool) -> String {
-        let mut buf = String::new();
-        if !full_context && !stack.is_empty() {
-            // 仅保留最近一级标题，减少 token 占用
-            let last = stack.last().unwrap();
-            buf.push_str(&last.cached_prefix);
-            return buf;
-        }
-        for node in stack {
-            buf.push_str(&node.cached_prefix);
-        }
-        buf
-    }
-
-    /// 内部封装章节入块逻辑，统一空过滤、字符长度校验、安全拆分
-    fn push_section(
-        config: &MarkdownSplitConfig,
-        result: &mut Vec<ChunkResult>,
-        stack: &[HeadingNode],
-        lines: &[&str],
-        start: usize,
-        end: usize,
-        max_chars: usize,
-        overlap: usize,
-    ) {
-        if end <= start {
-            return;
-        }
-        // 拼接章节正文
-        let body_raw = lines[start..end].join("\n");
-        let body_trim = body_raw.trim();
-        if body_trim.is_empty() {
-            return; // 过滤纯空白章节
-        }
-
-        // 拼接标题上下文前缀
-        let prefix = Self::build_stack_prefix(stack, config.full_parent_context);
-        let combined = format!("{}{}", prefix, body_raw);
-        let combined_char_count = combined.chars().count();
-        let max_single_chars = (max_chars as f32 * config.oversize_factor) as usize;
-
-        if combined_char_count <= max_single_chars {
-            result.push(ChunkResult::plain(combined));
-            return;
-        }
-
-        // 超长章节：二次拆分，安全计算可用正文字符数，杜绝下溢
-        let prefix_char_count = prefix.chars().count();
-        let min_reserve = config.min_body_reserve_chars;
-        let available_body_chars = max_chars.saturating_sub(prefix_char_count).max(min_reserve);
-
-        let body_chunks = utils::split_text_char_based(&body_raw, available_body_chars, overlap);
-        for chunk in body_chunks {
-            result.push(ChunkResult::plain(format!("{}{}", prefix, chunk)));
-        }
-    }
 }
 
 impl Default for MarkdownChunkSplitter {
@@ -692,177 +628,29 @@ impl Default for MarkdownChunkSplitter {
 impl ChunkSplitter for MarkdownChunkSplitter {
     fn split(&self, text: &str, max_chars: usize, overlap: usize) -> Vec<ChunkResult> {
         let config = &self.config;
-        let mut result = Vec::new();
-        result.reserve(text.chars().count() / max_chars.max(1) + 10); // 预分配容量
 
-        // 预处理：统一换行符，消除 Windows \r\n
-        let uniform_text = text.replace("\r\n", "\n");
-        let lines: Vec<&str> = uniform_text.lines().collect();
-        let atx_re = Self::atx_heading_re();
-        let code_re = Self::code_block_re();
-        let setext_re = Self::setext_line_re();
-        let list_quote_re = Self::list_quote_prefix_re();
-
-        // 全局状态
-        let mut parse_state = ParseState::default();
-        let mut heading_stack: Vec<HeadingNode> = Vec::new();
-        let mut section_start = 0usize;
-        let mut setext_candidate: Option<(usize, String)> = None;
-
-        // 无 # 且关闭 Setext 时，降级为分隔符感知的段落分割（保留段落结构）
-        let has_hash = uniform_text.contains('#');
-        if !has_hash && !config.enable_setext_heading {
-            return utils::split_text_with_separators(
-                &uniform_text, max_chars, overlap, &["\n\n", "\n", ". ", "。"]
-            ).into_iter().map(ChunkResult::plain).collect();
+        if text.trim().is_empty() {
+            return Vec::new();
         }
 
-        for (line_idx, line) in lines.iter().enumerate() {
-            // 1. 处理代码块状态切换
-            if let Some(caps) = code_re.captures(line) {
-                let backtick_count = caps.get(1).unwrap().as_str().chars().count();
-                match &parse_state {
-                    ParseState::Normal => parse_state = ParseState::CodeBlock(backtick_count),
-                    ParseState::CodeBlock(open_count) if open_count == &backtick_count => {
-                        parse_state = ParseState::Normal;
-                    }
-                    ParseState::CodeBlock(_) => {}
-                }
-                setext_candidate = None;
-                continue;
-            }
+        // 全 AST 解析：换行符归一化与 FrontMatter 剥离由 Document Parser 统一处理
+        // （唯一 normalize 点，行号切片基于同一份文本，保持一致）。
+        // 标题层级、代码块、表格、列表、引用均由 CommonMark/GFM 解析器保证，
+        // 不再按行号做章节边界切片，语义单元（段落/列表项/代码行）不会被截断。
+        let parser = ComrakMarkdownParser;
+        let document = parser.parse(text, !config.enable_setext_heading);
 
-            // 代码块内完全跳过标题解析
-            if matches!(parse_state, ParseState::CodeBlock(_)) {
-                setext_candidate = None;
-                continue;
-            }
-
-            // 2. Setext 标题逻辑（=== / ---）
-            if config.enable_setext_heading {
-                if setext_re.is_match(line) {
-                    if let Some((prev_idx, title)) = setext_candidate.take() {
-                        // --- 仅在候选标题较短（≤100 字符）时视为 H2，
-                        // 避免长段落前的 --- 分割线被误识别为 Setext 标题
-                        let is_h1 = line.starts_with('=');
-                        if !is_h1 && title.chars().count() > 100 {
-                            // --- 且候选文本过长 → 视为 HR（分割线），跳过
-                            setext_candidate = None;
-                            continue;
-                        }
-                        // 先保存上一段落
-                        if !heading_stack.is_empty() {
-                            Self::push_section(
-                                config,
-                                &mut result,
-                                &heading_stack,
-                                &lines,
-                                section_start,
-                                prev_idx,
-                                max_chars,
-                                overlap,
-                            );
-                        }
-                        // 压入标题栈（=== 为 H1，--- 为 H2）
-                        let setext_level = if is_h1 { 1 } else { 2 };
-                        while let Some(top) = heading_stack.last() {
-                            if top.level >= setext_level {
-                                heading_stack.pop();
-                            } else {
-                                break;
-                            }
-                        }
-                        let tag = "#".repeat(setext_level);
-                        let prefix = format!("{} {}\n", tag, title);
-                        heading_stack.push(HeadingNode {
-                            level: setext_level,
-                            cached_prefix: prefix,
-                        });
-                        section_start = line_idx + 1;
-                    }
-                    continue;
-                }
-                // 记录可能作为 Setext 标题的上一行文本
-                // 排除列表/引用行中的 ---/===（应被视为 <hr> 而非标题）
-                if !line.trim_start().is_empty() && !list_quote_re.is_match(line) {
-                    setext_candidate = Some((line_idx, line.trim_start().to_string()));
-                } else {
-                    setext_candidate = None;
-                }
-            }
-
-            // 3. 跳过列表/引用行，不识别 ATX 标题
-            if list_quote_re.is_match(line) {
-                continue;
-            }
-
-            // 4. ATX # 标题匹配
-            if let Some(caps) = atx_re.captures(line) {
-                // 先输出当前未闭合章节
-                if !heading_stack.is_empty() {
-                    Self::push_section(
-                        config,
-                        &mut result,
-                        &heading_stack,
-                        &lines,
-                        section_start,
-                        line_idx,
-                        max_chars,
-                        overlap,
-                    );
-                }
-
-                // 解析标题层级+文本，强制 trim 清除空白
-                let level = caps.get(1).unwrap().as_str().chars().count();
-                let raw_text = caps.get(2).unwrap().as_str();
-                let heading_text = raw_text.trim().to_string();
-                if heading_text.is_empty() {
-                    section_start = line_idx + 1;
-                    continue;
-                }
-
-                // 栈弹出：清除同级、更高级标题
-                while let Some(top) = heading_stack.last() {
-                    if top.level >= level {
-                        heading_stack.pop();
-                    } else {
-                        break;
-                    }
-                }
-
-                // 缓存标题前缀，避免重复拼接
-                let tag = "#".repeat(level);
-                let cached_prefix = format!("{} {}\n", tag, heading_text);
-                heading_stack.push(HeadingNode {
-                    level,
-                    cached_prefix,
-                });
-                section_start = line_idx + 1;
-                setext_candidate = None;
-            }
-        }
-
-        // 处理文档末尾剩余章节
-        if !heading_stack.is_empty() {
-            Self::push_section(
-                config,
-                &mut result,
-                &heading_stack,
-                &lines,
-                section_start,
-                lines.len(),
-                max_chars,
-                overlap,
-            );
-        }
-
-        // 兜底：未识别任何标题，降级纯文本分割
-        if result.is_empty() {
-            return utils::split_text_char_based(&uniform_text, max_chars, overlap)
-                .into_iter().map(ChunkResult::plain).collect();
-        }
-
-        result
+        let engine = SemanticChunkEngine::new(
+            max_chars,
+            overlap,
+            config.oversize_factor,
+            config.min_body_reserve_chars,
+        );
+        engine
+            .build(&document)
+            .into_iter()
+            .map(ChunkResult::from)
+            .collect()
     }
 }
 
@@ -1067,7 +855,16 @@ impl TreeProcessor {
         let char_count = combined.chars().count();
 
         if char_count <= max_size * 6 / 5 {
-            result.push(ChunkResult { text: combined, path_depth, path_json, sentence_window: None, symbol_name: None, symbol_kind: None });
+            result.push(ChunkResult {
+                text: combined,
+                path_depth,
+                path_json,
+                sentence_window: None,
+                symbol_name: None,
+                symbol_kind: None,
+                embedding_text: None,
+                chunk_type: None,
+            });
             return;
         }
 
@@ -1085,6 +882,8 @@ impl TreeProcessor {
                 sentence_window: None,
                 symbol_name: None,
                 symbol_kind: None,
+                embedding_text: None,
+                chunk_type: None,
             });
         }
     }
@@ -1102,7 +901,16 @@ impl TreeProcessor {
             format!("【上下文: {}】\n{}", prefix_str, body)
         };
         let (path_depth, path_json) = Self::path_to_metadata(path);
-        result.push(ChunkResult { text: combined, path_depth, path_json, sentence_window: None, symbol_name: None, symbol_kind: None });
+        result.push(ChunkResult {
+            text: combined,
+            path_depth,
+            path_json,
+            sentence_window: None,
+            symbol_name: None,
+            symbol_kind: None,
+            embedding_text: None,
+            chunk_type: None,
+        });
     }
 
     // ─── DFS 遍历 ───
@@ -1530,6 +1338,8 @@ impl ChunkSplitter for SentenceWindowChunkSplitter {
                 sentence_window: Some(window_text),
                 symbol_name: None,
                 symbol_kind: None,
+                embedding_text: None,
+                chunk_type: None,
             });
         }
 

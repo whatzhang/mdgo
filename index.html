@@ -15509,7 +15509,7 @@
                 <div class="mermaid-app">
                     <div class="mermaid-toolbar" id="mermaid-toolbar">
                         <button class="mermaid-tb mermaid-tab-btn mermaid-fixed-btn" data-type="all">测试渲染</button>
-                        <div class="mermaid-toolbar-left" id="mermaid-toolbar-left">
+                        <div class="mermaid-toolbar-left" id="mermaid-toolbar-left" style="display: none;">
                             <button class="mermaid-tb mermaid-tab-btn" data-type="flowchart">流程图</button>
                             <button class="mermaid-tb mermaid-tab-btn" data-type="sequence">时序图</button>
                             <button class="mermaid-tb mermaid-tab-btn" data-type="class">类图</button>
@@ -16742,7 +16742,7 @@
                                         <input type="number" id="rag-setting-chunk-overlap" min="0" max="500" step="10"
                                             value="56">
                                         <span class="setting-help"
-                                            data-tippy-content="相邻文档块之间重叠的字符数。重叠可以避免因切分位置不当导致的关键信息被截断。默认值约为分块大小的 1/8；较大的重叠（如 200）提供更好的连续性但增加存储开销；较小的重叠（如 20）节省空间但可能丢失边界信息。">ⓘ</span>
+                                            data-tippy-content="相邻文档块之间重叠的字符数。该值仅对按字符切分的格式（代码、大纲等）生效；Markdown 已启用语义边界分块（标题/段落/代码/表格边界），正常分块不重叠，此值仅影响超长块的二次拆分。">ⓘ</span>
                                     </div>
                                     <div class="rag-settings-row">
                                         <label>语义融合权重</label>
@@ -16764,6 +16764,48 @@
                                             value="3">
                                         <span class="setting-help"
                                             data-tippy-content="单篇文档最多送入 LLM 上下文的块数。较大的值（如 5）保留更完整的文档片段；较小的值（如 2）减少冗余。默认 3。">ⓘ</span>
+                                    </div>
+                                    <div class="rag-settings-row">
+                                        <label>候选池大小</label>
+                                        <input type="number" id="rag-setting-candidate-k" min="10" max="500" step="10"
+                                            value="100">
+                                        <span class="setting-help"
+                                            data-tippy-content="向量/关键词每路召回的候选数上限，再经 RRF 融合。较大的值召回更全但精排/融合耗时更长；较小的值更快但可能漏召回。默认 100。">ⓘ</span>
+                                    </div>
+                                    <div class="rag-settings-row">
+                                        <label>RRF 常数 K</label>
+                                        <input type="number" id="rag-setting-rrf-k" min="1" max="200" step="1"
+                                            value="60">
+                                        <span class="setting-help"
+                                            data-tippy-content="RRF 融合常数（业界标准 k=60）。越小越放大排名靠前结果的权重，越大越平滑。默认 60。">ⓘ</span>
+                                    </div>
+                                    <div class="rag-settings-row">
+                                        <label>向量最低分</label>
+                                        <input type="number" id="rag-setting-vec-min-score" min="0" max="1" step="0.05"
+                                            value="0.35">
+                                        <span class="setting-help"
+                                            data-tippy-content="向量路候选的余弦相似度阈值（0~1），低于此值的结果直接丢弃（精排启用时交由精排阈值裁决）。默认 0.35。">ⓘ</span>
+                                    </div>
+                                    <div class="rag-settings-row">
+                                        <label>精排最低分</label>
+                                        <input type="number" id="rag-setting-rerank-min-score" min="0" max="1" step="0.05"
+                                            value="0.2">
+                                        <span class="setting-help"
+                                            data-tippy-content="Cross-Encoder 精排后 sigmoid 相关性阈值（0~1），低于此值的结果被丢弃。启用精排时取代向量阈值做最终裁决。默认 0.2。">ⓘ</span>
+                                    </div>
+                                    <div class="rag-settings-row">
+                                        <label>关键词命中比例</label>
+                                        <input type="number" id="rag-setting-bm25-msm" min="0" max="1" step="0.05"
+                                            value="0.6">
+                                        <span class="setting-help"
+                                            data-tippy-content="BM25 minimum_should_match：查询词中至少多大比例的词命中才算候选。0.6 表示 10 词需命中 6 词，过滤掉只命中单个虚词的低相关文档。默认 0.6。">ⓘ</span>
+                                    </div>
+                                    <div class="rag-settings-row">
+                                        <label>启用精排</label>
+                                        <input type="checkbox" id="rag-setting-reranker-enabled" checked
+                                            style="width:auto;margin:0;">
+                                        <span class="setting-help"
+                                            data-tippy-content="启用本地 bge-reranker Cross-Encoder 对候选结果精排。首次启用会自动后台下载模型（约 1.1GB），下载完成前自动降级为 RRF 排序，检索永不阻断。">ⓘ</span>
                                     </div>
                                 </div>
                                 <div class="todo-modal-footer">
@@ -35030,7 +35072,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             isMermaidFileDisplay = false;
             await switchToView(mermaidAppContainer);
             const toolbar = mermaidAppContainer.querySelector(".mermaid-toolbar");
+            const toolbarLeft = mermaidAppContainer.querySelector("#mermaid-toolbar-left");
             if (fileText) {
+                if (toolbarLeft) toolbarLeft.style.display = "none";
                 isMermaidFileDisplay = true;
                 inlineMmdCtrl.setEnabled(true);
                 if (!toolbar.classList.contains("mermaid-toolbar-btn-right")) {
@@ -35038,6 +35082,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
                 setControlsState({ commonToolControls: true, demoBtn: true });
             } else {
+                if (toolbarLeft) toolbarLeft.style.display = "flex";
                 toolbar.classList.remove("mermaid-toolbar-btn-right");
             }
             const resizer = document.querySelector("#mermaid-resizer");
@@ -53578,6 +53623,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     document.getElementById('rag-setting-fusion-alpha').value = cfg.fusion_alpha ?? 0.6;
                     document.getElementById('rag-setting-max-docs').value = cfg.max_context_docs ?? 4;
                     document.getElementById('rag-setting-max-chunks').value = cfg.max_chunks_per_doc ?? 3;
+                    document.getElementById('rag-setting-candidate-k').value = cfg.candidate_k ?? 100;
+                    document.getElementById('rag-setting-rrf-k').value = cfg.rrf_k ?? 60;
+                    document.getElementById('rag-setting-vec-min-score').value = cfg.vec_min_score ?? 0.35;
+                    document.getElementById('rag-setting-rerank-min-score').value = cfg.rerank_min_score ?? 0.2;
+                    document.getElementById('rag-setting-bm25-msm').value = cfg.bm25_msm_ratio ?? 0.6;
+                    document.getElementById('rag-setting-reranker-enabled').checked = cfg.reranker_enabled ?? true;
                 }
             } catch (e) {
                 console.warn('[rag-settings] 加载配置失败:', e);
@@ -53610,8 +53661,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const fusionAlpha = parseFloat(document.getElementById('rag-setting-fusion-alpha').value) || 0.6;
             const maxContextDocs = parseInt(document.getElementById('rag-setting-max-docs').value) || 4;
             const maxChunksPerDoc = parseInt(document.getElementById('rag-setting-max-chunks').value) || 3;
+            const candidateK = parseInt(document.getElementById('rag-setting-candidate-k').value) || 100;
+            const rrfK = parseInt(document.getElementById('rag-setting-rrf-k').value) || 60;
+            const vecMinScore = parseFloat(document.getElementById('rag-setting-vec-min-score').value) || 0.35;
+            const rerankMinScore = parseFloat(document.getElementById('rag-setting-rerank-min-score').value) || 0.2;
+            const bm25MsmRatio = parseFloat(document.getElementById('rag-setting-bm25-msm').value) || 0.6;
+            const rerankerEnabled = document.getElementById('rag-setting-reranker-enabled').checked;
             // 更新本地状态
-            ragSettings = { topK, minScore, chunkSize, chunkOverlap, fusionAlpha, maxContextDocs, maxChunksPerDoc };
+            ragSettings = { topK, minScore, chunkSize, chunkOverlap, fusionAlpha, maxContextDocs, maxChunksPerDoc, candidateK, rrfK, vecMinScore, rerankMinScore, bm25MsmRatio, rerankerEnabled };
             // 持久化到后端
             try {
                 if (window.__TAURI__?.core?.invoke) {
@@ -53623,6 +53680,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         fusionAlpha,
                         maxContextDocs,
                         maxChunksPerDoc,
+                        candidateK,
+                        rrfK,
+                        vecMinScore,
+                        rerankMinScore,
+                        bm25MsmRatio,
+                        rerankerEnabled,
                     });
                     showNotification('RAG 参数已保存', 'success');
                 }

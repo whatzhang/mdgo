@@ -20,7 +20,7 @@ use crate::core::agent::tools::tool_call_bus;
 use crate::core::skill::activation::{ActivationSource, ActiveSkillState};
 use crate::core::skill::context::{SkillExecutionContext, build_skill_catalog, resolve_preactivated};
 use crate::core::skill::SkillStore;
-use crate::core::{call_embedding_query, route_intent, SearchHit};
+use crate::core::{call_embedding_query, SearchHit};
 use crate::services::llm::{LLMClient, UsageInfo, chat_message_to_rig, usage_to_info};
 
 // ─── 后端消息长度预算 ───
@@ -638,11 +638,9 @@ pub async fn agent_query(
 
                     if let Some(vec) = embedding {
                         let start = std::time::Instant::now();
-                        // 轻量级意图路由 + 元数据过滤（按文件类型限定候选范围）
-                        let intent = route_intent(&q);
                         let hits = state
                             .indexer
-                            .hybrid_search(&dir, &vec, &q, effective_top_k, intent)
+                            .hybrid_search(&dir, &vec, &q, effective_top_k)
                             .await
                             .unwrap_or_default();
 

@@ -3,12 +3,16 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use tantivy::collector::TopDocs;
-use tantivy::query::QueryParser;
+use tantivy::query::{
+    BooleanQuery, BoostQuery, Occur, Query, QueryParser, TermQuery,
+};
 use tantivy::schema::*;
 use tantivy::tokenizer::{
     LowerCaser, RemoveLongFilter, TextAnalyzer, Token, TokenStream, Tokenizer,
 };
-use tantivy::{doc, Index, IndexReader, ReloadPolicy, TantivyDocument};
+use tantivy::{
+    doc, Index, IndexReader, ReloadPolicy, Searcher, TantivyDocument, Term,
+};
 
 use super::lance::{DocumentChunk, SearchHit};
 
@@ -69,7 +73,9 @@ fn segment_text(text: &str, jieba: &jieba_rs::Jieba) -> Vec<(String, usize, usiz
             }
             let cjk_text: String = chars[start..i].iter().collect();
             let cjk_base_offset = char_offset_to_byte(text, start); // CJK 段在原始文本中的字节起始
-            for token in jieba.cut(&cjk_text, false) {
+            // hmm=true 开启隐马尔可夫未知词识别：词典未收录的新词（人名、技术术语等）
+            // 通过 Viterbi 动态规划切出，提升 BM25 对新词的召回；已收录词典词的切分不受影响
+            for token in jieba.cut(&cjk_text, true) {
                 let word = token.word;
                 // 跳过空白分词结果
                 if word.trim().is_empty() {
@@ -161,6 +167,154 @@ fn chinese_text_analyzer() -> TextAnalyzer {
         .build()
 }
 
+/// 标识符分词器：把 `字母/数字/_` 连续段视为一个 token。
+///
+/// 用于 `symbol_name` 字段（Field BM25 升级）：
+/// - `lru_cache` → 单个 token，而非 jieba 切出的 ["lru", "cache"]
+/// - `parseJSON` → 单个 token（经 LowerCaser 后为 `parsejson`），
+///   代码问答"parseJSON 在哪里定义"可直接命中
+#[derive(Clone)]
+struct IdentifierTokenizer;
+
+struct IdentifierTokenStream {
+    tokens: Vec<(String, usize, usize)>, // (text, offset_from, offset_to)
+    pos: usize,
+    current_token: Token,
+}
+
+impl Tokenizer for IdentifierTokenizer {
+    type TokenStream<'a> = IdentifierTokenStream;
+
+    fn token_stream<'a>(&mut self, text: &'a str) -> IdentifierTokenStream {
+        IdentifierTokenStream {
+            tokens: segment_identifiers(text),
+            pos: 0,
+            current_token: Token::default(),
+        }
+    }
+}
+
+/// 将文本按 `字母/数字/_` 连续段切分为标识符 token。
+///
+/// CJK 表意文字（汉字等）属于 `is_alphanumeric()` 但**语义上每个字是独立词元**：
+/// 若与 ASCII 拼进同一 token（如 `文档介绍`），BM25 单字查询"介绍"将无法命中。
+/// 因此 CJK 字符各自成为独立单字 token，ASCII 标识符仍保持整体（C2）。
+fn segment_identifiers(text: &str) -> Vec<(String, usize, usize)> {
+    let mut tokens = Vec::new();
+    let mut current: Option<(String, usize)> = None; // (token 文本, 起始字节)
+    for (i, c) in text.char_indices() {
+        if c.is_ascii_alphanumeric() || c == '_' {
+            match &mut current {
+                Some((s, _)) => s.push(c),
+                None => current = Some((c.to_string(), i)),
+            }
+        } else {
+            // 分隔符（含中文标点、/、. 等）：结束当前 ASCII token
+            if let Some((s, start)) = current.take() {
+                tokens.push((s, start, i));
+            }
+            // CJK 等非 ASCII 字母：独立单字 token，保证单字/双字查询可命中
+            if c.is_alphabetic() {
+                tokens.push((c.to_string(), i, i + c.len_utf8()));
+            }
+        }
+    }
+    if let Some((s, start)) = current.take() {
+        tokens.push((s, start, text.len()));
+    }
+    tokens
+}
+
+impl IdentifierTokenStream {
+    fn fill_current_token(&mut self) {
+        if let Some((text, offset_from, offset_to)) = self.tokens.get(self.pos) {
+            self.current_token = Token {
+                offset_from: *offset_from,
+                offset_to: *offset_to,
+                position: self.pos,
+                text: text.clone(),
+                ..Default::default()
+            };
+        }
+    }
+}
+
+impl TokenStream for IdentifierTokenStream {
+    fn advance(&mut self) -> bool {
+        if self.pos >= self.tokens.len() {
+            return false;
+        }
+        self.fill_current_token();
+        self.pos += 1;
+        true
+    }
+
+    fn token(&self) -> &Token {
+        &self.current_token
+    }
+
+    fn token_mut(&mut self) -> &mut Token {
+        &mut self.current_token
+    }
+}
+
+/// 构建标识符分词器（小写化，便于大小写不敏感匹配）
+fn identifier_analyzer() -> TextAnalyzer {
+    TextAnalyzer::builder(IdentifierTokenizer)
+        .filter(RemoveLongFilter::limit(120))
+        .filter(LowerCaser)
+        .build()
+}
+
+/// BM25 索引 schema 版本号（v4：text 字段仅索引纯正文 + 新增 display_text 展示字段）。
+///
+/// tantivy 的 schema 变更后旧索引目录无法复用，开发阶段直接删除重建；
+/// `open()` 读取标记文件内容，与当前版本不符即自动重建，避免旧目录报错阻断启动。
+/// 标记文件名与版本号保持一致（C1）。
+const SCHEMA_VERSION: &str = "4";
+const SCHEMA_MARKER: &str = ".schema_v4";
+
+/// 依据 doc_name 提取文件名主干（title 字段）：`src/tools/parse_json.rs` → `parse_json`
+fn file_title(doc_name: &str) -> String {
+    Path::new(doc_name)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| doc_name.to_string())
+}
+
+/// 从 path_json（JSON 数组，如 `["Kubernetes","Network","Calico"]`）提取标题层级文本
+/// （heading 字段）：解析失败或为空时返回空串。
+fn heading_text(path_json: &Option<String>) -> String {
+    let arr: Vec<String> = match path_json.as_deref().map(serde_json::from_str) {
+        Some(Ok(v)) => v,
+        _ => return String::new(),
+    };
+    arr.join(" ")
+}
+
+/// 提取 chunk 的纯正文（供 text 字段索引，B5）。
+///
+/// AST 语义分块产物的 `embedding_text` = 紧凑标题路径（= heading_text(path_json)）+ 正文，
+/// 剥离该前缀即得纯正文；无路径或无法剥离时回退到 `chunk.text`（保持原行为，
+/// 避免 text 字段重复索引标题词导致 heading 字段 boost 失效）。
+fn body_text(chunk: &DocumentChunk) -> String {
+    if let Some(prefix) = chunk
+        .path_json
+        .as_deref()
+        .and_then(|pj| serde_json::from_str::<Vec<String>>(pj).ok())
+        .filter(|arr| !arr.is_empty())
+        .map(|arr| arr.join(" "))
+    {
+        if let Some(emb) = chunk.embedding_text.as_deref() {
+            let mark = format!("{}\n", prefix);
+            if let Some(rest) = emb.strip_prefix(&mark) {
+                return rest.to_string();
+            }
+        }
+    }
+    chunk.text.clone()
+}
+
 pub struct Bm25Index {
     index_path: String,
     reader: Mutex<Option<IndexReader>>,
@@ -170,9 +324,21 @@ impl Bm25Index {
     fn schema() -> Schema {
         let mut builder = Schema::builder();
         builder.add_text_field("doc_id", STRING | STORED);
+        // 完整相对路径：doc_name 保持 STRING（delete_document 依赖整串 term 精确删除），
+        // file_path 为分词字段（标识符分词，下划线整体匹配）用于路径模糊检索
         builder.add_text_field("doc_name", STRING | STORED);
+        let file_path_options = TextOptions::default()
+            .set_indexing_options(
+                TextFieldIndexing::default()
+                    .set_tokenizer("identifier")
+                    .set_index_option(IndexRecordOption::WithFreqsAndPositions),
+            )
+            .set_stored();
+        builder.add_text_field("file_path", file_path_options);
         builder.add_u64_field("chunk_index", STORED);
-        // text 字段使用 Jieba 中文分词器（索引时用，需在 Index 上注册同名 tokenizer）
+        // 正文（jieba 分词），权重 1.0。
+        // v4 起仅索引**纯正文**（剥离标题前缀），标题词只经 heading 字段（boost 2.5）加权，
+        // 消除 text + heading 双重计数导致的标题词过度加权（B5）
         let text_options = TextOptions::default()
             .set_indexing_options(
                 TextFieldIndexing::default()
@@ -181,23 +347,74 @@ impl Bm25Index {
             )
             .set_stored();
         builder.add_text_field("text", text_options);
-        // 代码符号字段（仅存储，不索引——符号加权在 RRF 融合后做）
-        builder.add_text_field("symbol_name", STORED);
+        // 展示文本（仅存储）：上下文文本（含 Markdown 标题渲染），供检索结果展示/回传 LLM
+        builder.add_text_field("display_text", STORED);
+        // 文件名主干（jieba 分词），权重 3.0（文档主题的最强单点信号）
+        let title_options = TextOptions::default()
+            .set_indexing_options(
+                TextFieldIndexing::default()
+                    .set_tokenizer("jieba_chinese")
+                    .set_index_option(IndexRecordOption::WithFreqsAndPositions),
+            )
+            .set_stored();
+        builder.add_text_field("title", title_options);
+        // 标题层级路径（jieba 分词），权重 2.5（heading_path → path_json）
+        let heading_options = TextOptions::default()
+            .set_indexing_options(
+                TextFieldIndexing::default()
+                    .set_tokenizer("jieba_chinese")
+                    .set_index_option(IndexRecordOption::WithFreqsAndPositions),
+            )
+            .set_stored();
+        builder.add_text_field("heading", heading_options);
+        // 代码符号名（标识符分词，整体匹配），权重 2.0
+        let symbol_options = TextOptions::default()
+            .set_indexing_options(
+                TextFieldIndexing::default()
+                    .set_tokenizer("identifier")
+                    .set_index_option(IndexRecordOption::WithFreqsAndPositions),
+            )
+            .set_stored();
+        builder.add_text_field("symbol_name", symbol_options);
+        // 代码符号类型（仅存储）
         builder.add_text_field("symbol_kind", STORED);
+        // 分块类型（仅存储，供前端/未来 GraphRAG 使用）
+        builder.add_text_field("chunk_type", STORED);
         builder.build()
     }
 
-    /// 在 Index 上注册中文分词器（用于 "text" 字段）
+    /// 在 Index 上注册分词器（text/heading/title 用 jieba，symbol_name 用 identifier）
     fn register_tokenizers(index: &Index) {
         index
             .tokenizers()
             .register("jieba_chinese", chinese_text_analyzer());
+        index
+            .tokenizers()
+            .register("identifier", identifier_analyzer());
     }
 
-    /// 打开已有索引
+    /// 打开已有索引。
+    ///
+    /// schema 版本不匹配（开发阶段升级）时自动删除重建，不做数据迁移。
     pub fn open(path: &str) -> Result<Self, String> {
         if !Path::new(path).exists() {
             return Err(format!("BM25 索引目录不存在: {}", path));
+        }
+        // 标记缺失或版本不符（schema 变更）→ 重建
+        let marker_path = Path::new(path).join(SCHEMA_MARKER);
+        let version = fs::read_to_string(&marker_path).unwrap_or_default();
+        if version.trim() != SCHEMA_VERSION {
+            log::warn!(
+                "[bm25] 检测到 schema 版本不匹配（期望 {}，实际 {:?}），自动重建",
+                SCHEMA_VERSION,
+                version
+            );
+            // 旧目录删除失败时中止重建：在残留文件上 Index::create_in_dir 可能产生
+            // 半新半旧的不一致索引（C1）
+            let p = Path::new(path);
+            fs::remove_dir_all(p)
+                .map_err(|e| format!("删除旧 BM25 索引目录失败（无法重建）: {}", e))?;
+            return Self::create(path);
         }
         Ok(Self {
             index_path: path.to_string(),
@@ -215,6 +432,9 @@ impl Bm25Index {
         let index = Index::create_in_dir(path, schema)
             .map_err(|e| format!("创建 BM25 索引失败: {}", e))?;
         Self::register_tokenizers(&index);
+        // 写入 schema 版本标记
+        fs::write(p.join(SCHEMA_MARKER), SCHEMA_VERSION)
+            .map_err(|e| format!("写入 BM25 schema 版本标记失败: {}", e))?;
         Ok(Self {
             index_path: path.to_string(),
             reader: Mutex::new(None),
@@ -277,24 +497,36 @@ impl Bm25Index {
         let schema = Self::schema();
         let doc_id_field = schema.get_field("doc_id").unwrap();
         let doc_name_field = schema.get_field("doc_name").unwrap();
+        let file_path_field = schema.get_field("file_path").unwrap();
         let chunk_index_field = schema.get_field("chunk_index").unwrap();
         let text_field = schema.get_field("text").unwrap();
+        let display_text_field = schema.get_field("display_text").unwrap();
+        let title_field = schema.get_field("title").unwrap();
+        let heading_field = schema.get_field("heading").unwrap();
         let symbol_name_field = schema.get_field("symbol_name").unwrap();
         let symbol_kind_field = schema.get_field("symbol_kind").unwrap();
+        let chunk_type_field = schema.get_field("chunk_type").unwrap();
 
         let mut writer = index
             .writer(50_000_000)
             .map_err(|e| format!("创建 BM25 writer 失败: {}", e))?;
 
         for chunk in chunks {
+            // text 仅索引纯正文（B5），展示文本单独存 display_text
+            let body = body_text(chunk);
             writer
                 .add_document(doc!(
                     doc_id_field => chunk.id.as_str(),
                     doc_name_field => chunk.doc_name.as_str(),
+                    file_path_field => chunk.doc_name.as_str(),
                     chunk_index_field => chunk.chunk_index as u64,
-                    text_field => chunk.text.as_str(),
+                    text_field => body.as_str(),
+                    display_text_field => chunk.text.as_str(),
+                    title_field => file_title(&chunk.doc_name).as_str(),
+                    heading_field => heading_text(&chunk.path_json).as_str(),
                     symbol_name_field => chunk.symbol_name.as_deref().unwrap_or(""),
                     symbol_kind_field => chunk.symbol_kind.as_deref().unwrap_or(""),
+                    chunk_type_field => chunk.chunk_type.as_deref().unwrap_or(""),
                 ))
                 .map_err(|e| format!("添加文档到 BM25 失败: {}", e))?;
         }
@@ -310,25 +542,119 @@ impl Bm25Index {
         Ok(())
     }
 
-    /// 关键词检索（BM25 分数）
-    pub fn search(&self, query_str: &str, top_k: u32) -> Result<Vec<SearchHit>, String> {
+    /// 关键词检索（BM25 分数，**minimum_should_match 严格语义**，供混合检索管线使用）。
+    ///
+    /// 解决"查询出许多不相关文档"的核心缺陷：QueryParser 默认词间 OR，
+    /// 长查询只命中一个词的低相关文档也会被召回。本方法改为：
+    /// - 查询词经 jieba（中文）+ 标识符（英文/下划线）分词、停用词过滤
+    /// - 每个词在 text/title/heading/symbol/file_path 字段任一命中即算该词命中（保留 Field Boost）
+    /// - 词间必须满足 `msm_ratio` 比例的词命中（默认 0.6）才进入候选
+    /// - 查询词过少（≤1）或分词为空时退化为宽松 OR（QueryParser），避免收窄过度
+    pub fn search_with_plan(
+        &self,
+        query_str: &str,
+        top_k: u32,
+        msm_ratio: f32,
+    ) -> Result<Vec<SearchHit>, String> {
         let index = self.open_index()?;
+        let reader = self.get_reader()?;
+        let searcher = reader.searcher();
+
+        let terms = segment_query_terms(query_str);
+        let query: Box<dyn Query> = if terms.len() <= 1 {
+            // 单/零词：退化 OR，避免 msm 导致"仅有的一个词"反而被过滤
+            let parser = Self::build_query_parser(&index);
+            parser
+                .parse_query(&escape_query(query_str))
+                .map_err(|e| format!("解析 BM25 查询失败: {}", e))?
+        } else {
+            Self::build_msm_query(&terms, msm_ratio)
+        };
+
+        Self::collect_hits(&searcher, query, top_k)
+    }
+
+    /// 构建带 Field Boost 的 QueryParser（title > heading > symbol > file_path > text）。
+    fn build_query_parser(index: &Index) -> QueryParser {
         let schema = Self::schema();
         let text_field = schema.get_field("text").unwrap();
+        let title_field = schema.get_field("title").unwrap();
+        let heading_field = schema.get_field("heading").unwrap();
+        let symbol_name_field = schema.get_field("symbol_name").unwrap();
+        let file_path_field = schema.get_field("file_path").unwrap();
+
+        let mut parser = QueryParser::for_index(
+            index,
+            vec![
+                text_field,
+                title_field,
+                heading_field,
+                symbol_name_field,
+                file_path_field,
+            ],
+        );
+        parser.set_field_boost(text_field, 1.0);
+        parser.set_field_boost(title_field, 3.0);
+        parser.set_field_boost(heading_field, 2.5);
+        parser.set_field_boost(symbol_name_field, 2.0);
+        parser.set_field_boost(file_path_field, 1.0);
+        parser
+    }
+
+    /// 构建 minimum_should_match 语义的 BooleanQuery。
+    ///
+    /// 结构：`OR(词1, 词2, ..., 词n)`，其中每个词 = `OR(text/title/heading/symbol/path 的 TermQuery)`
+    /// 且任一字段命中即算该词命中；词间最低命中数 = `ceil(n * msm_ratio)`。
+    fn build_msm_query(terms: &[String], msm_ratio: f32) -> Box<dyn Query> {
+        let schema = Self::schema();
+        let fields_with_boost: Vec<(Field, f32)> = vec![
+            (schema.get_field("text").unwrap(), 1.0),
+            (schema.get_field("title").unwrap(), 3.0),
+            (schema.get_field("heading").unwrap(), 2.5),
+            (schema.get_field("symbol_name").unwrap(), 2.0),
+            (schema.get_field("file_path").unwrap(), 1.0),
+        ];
+
+        // 词间最低命中数（1..=n，避免 msm_ratio=0 时仍要求 0 个词导致全召回）
+        let min_should = ((terms.len() as f32) * msm_ratio.max(0.0)).ceil().max(1.0) as u32;
+
+        let mut clauses: Vec<(Occur, Box<dyn Query>)> = Vec::with_capacity(terms.len());
+        for term in terms {
+            let mut sub: Vec<(Occur, Box<dyn Query>)> = Vec::with_capacity(fields_with_boost.len());
+            for (field, boost) in &fields_with_boost {
+                let tq = TermQuery::new(
+                    Term::from_field_text(*field, term),
+                    IndexRecordOption::WithFreqsAndPositions,
+                );
+                sub.push((Occur::Should, Box::new(BoostQuery::new(Box::new(tq), *boost))));
+            }
+            clauses.push((Occur::Should, Box::new(BooleanQuery::new(sub))));
+        }
+
+        log::debug!(
+            "[bm25] msm 查询构建: terms={:?} min_should={}",
+            terms,
+            min_should
+        );
+        let mut bq = BooleanQuery::new(clauses);
+        bq.set_minimum_number_should_match(min_should as usize);
+        Box::new(bq)
+    }
+
+    /// 执行查询并收集结果（公共逻辑：读取 doc 字段 + BM25 分数归一化到 [0,1]）。
+    fn collect_hits(
+        searcher: &Searcher,
+        query: Box<dyn Query>,
+        top_k: u32,
+    ) -> Result<Vec<SearchHit>, String> {
+        let schema = Self::schema();
+        let text_field = schema.get_field("text").unwrap();
+        let display_text_field = schema.get_field("display_text").unwrap();
         let doc_name_field = schema.get_field("doc_name").unwrap();
         let chunk_index_field = schema.get_field("chunk_index").unwrap();
         let symbol_name_field = schema.get_field("symbol_name").unwrap();
         let symbol_kind_field = schema.get_field("symbol_kind").unwrap();
-
-        let reader = self.get_reader()?;
-        let searcher = reader.searcher();
-
-        let mut query_parser = QueryParser::for_index(&index, vec![text_field, doc_name_field]);
-        query_parser.set_field_boost(doc_name_field, 2.0);
-        let escaped_query = escape_query(query_str);
-        let query = query_parser
-            .parse_query(&escaped_query)
-            .map_err(|e| format!("解析 BM25 查询失败: {}", e))?;
+        let chunk_type_field = schema.get_field("chunk_type").unwrap();
 
         let collector = TopDocs::with_limit(top_k as usize).order_by_score();
         let top_docs = searcher
@@ -350,8 +676,12 @@ impl Bm25Index {
                 .unwrap_or("")
                 .to_string();
             let text = doc
-                .get_first(text_field)
+                .get_first(display_text_field)
                 .and_then(|v| v.as_str())
+                .or_else(|| {
+                    // 旧索引（无 display_text）回退到 text 字段，避免读到纯正文而丢失标题上下文
+                    doc.get_first(text_field).and_then(|v| v.as_str())
+                })
                 .unwrap_or("")
                 .to_string();
             let chunk_index = doc
@@ -368,6 +698,11 @@ impl Bm25Index {
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty())
                 .map(|s| s.to_string());
+            let chunk_type = doc
+                .get_first(chunk_type_field)
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
 
             raw_scores.push(*score as f32);
             hits.push(SearchHit {
@@ -381,6 +716,8 @@ impl Bm25Index {
                 sentence_window: None,
                 symbol_name,
                 symbol_kind,
+                chunk_type,
+                score_rerank: None,
             });
         }
 
@@ -452,9 +789,57 @@ impl Bm25Index {
         let schema = Self::schema();
         Index::create_in_dir(&self.index_path, schema)
             .map_err(|e| format!("重建 BM25 索引失败: {}", e))?;
+        // 重建后写回 schema 版本标记（与 create 保持一致）
+        fs::write(path.join(SCHEMA_MARKER), SCHEMA_VERSION)
+            .map_err(|e| format!("写入 BM25 schema 版本标记失败: {}", e))?;
         self.invalidate_reader();
         Ok(())
     }
+}
+
+/// 查询词切分：jieba 中文切词 + 英文/数字 token 化 + 停用词过滤 + 去重。
+///
+/// 供 [`Bm25Index::search_with_plan`] 使用，与索引侧分词器对齐：
+/// - CJK 文本 → jieba 词（与 text/title/heading 字段一致）
+/// - ASCII 连续字母数字 → 单个 token（与 text 字段及 symbol 字段小写化一致）
+/// - 过滤中英文常见停用词，避免"的/是/the/and"等虚词占据 msm 命中配额
+///
+/// 下划线标识符（如 `lru_cache`）会被拆为 `lru`/`cache`：符号名整体匹配
+/// 由符号路召回（`QueryPlan.symbols`）兜底，此处保持与 text 字段切分一致。
+fn segment_query_terms(query: &str) -> Vec<String> {
+    let jieba = JIEBA.get_or_init(|| {
+        log::info!("[bm25] 初始化 Jieba 中文分词...");
+        jieba_rs::Jieba::new()
+    });
+    let mut terms: Vec<String> = Vec::new();
+    for (text, _, _) in segment_text(query, jieba) {
+        let t = text.trim();
+        if t.is_empty() || is_stopword(t) {
+            continue;
+        }
+        // 索引侧分词器（chinese_text_analyzer / identifier_analyzer）均挂 LowerCaser，
+        // TermQuery 必须用小写词才能命中（如 "ParseJSON" → "parsejson"）；CJK 词不受影响。
+        let lower = t.to_lowercase();
+        if !terms.iter().any(|s| s == &lower) {
+            terms.push(lower);
+        }
+    }
+    terms
+}
+
+/// 中英文常见停用词（保守清单：仅过滤无实义的虚词，避免误伤技术词汇）。
+fn is_stopword(term: &str) -> bool {
+    const STOPWORDS: &[&str] = &[
+        // 中文虚词
+        "的", "了", "是", "在", "和", "与", "及", "或", "并", "这", "那", "而", "之", "也", "都",
+        "就", "很", "又", "被", "把", "对", "为", "于", "以", "其", "如", "若",
+        // 英文虚词（小写化后比较）
+        "a", "an", "the", "and", "or", "of", "to", "in", "on", "for", "is", "are", "was", "were",
+        "be", "been", "with", "as", "at", "by", "it", "its", "this", "that", "these", "those",
+        "from", "into", "about", "which", "what", "how", "when", "where", "why", "who",
+        "can", "could", "will", "would", "should", "may", "might", "must", "not", "no", "yes",
+    ];
+    STOPWORDS.contains(&term.to_lowercase().as_str())
 }
 
 /// 转义 Tantivy QueryParser 特殊字符，防止用户输入含特殊符号时解析失败。
@@ -472,3 +857,4 @@ fn escape_query(input: &str) -> String {
     }
     output
 }
+

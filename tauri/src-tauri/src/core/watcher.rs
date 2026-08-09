@@ -485,8 +485,11 @@ impl WatcherService {
 /// 防抖处理主循环
 ///
 /// 策略：
-/// - 同一文件在 1200000ms（20分钟） 内收到多个事件时，只保留最后一次，文件变动事件 → 写入 pending 表（更新/覆盖同路径旧事件） 每 30000ms tick 触发 → 扫描 pending 表
-/// - 对于 Modify/Remove 冲突（同路径），比较时间戳，最新的优先
+/// - 同一文件在防抖窗口（2 秒）内收到多个事件时，只保留最后一次（带时间戳排序）
+/// - 每 500ms 检查一次 pending 表，达到静默期的事件进入处理
+/// - Modify/Remove 冲突（同路径）按最新时间戳优先
+/// - 处理期：删除事件逐个处理（无 Embedding 开销）；修改事件合并为一批
+///   调用 `index_files_batch`（一次 Embedding 推理覆盖整批，替代逐文件独立推理）
 /// - 暂停期间事件继续收集但延迟处理，恢复时收到 ClearPending 命令清空过期事件
 /// - 通过 stop_rx 实现优雅退出
 async fn run_debounce_loop(
@@ -501,11 +504,20 @@ async fn run_debounce_loop(
     on_changed: Arc<dyn Fn() + Send + Sync>,
 ) {
     let dir_path = dir_path.to_string();
-    let debounce_delay = Duration::from_millis(1200000);
-    let check_interval = Duration::from_millis(30000);
+    let debounce_delay = Duration::from_millis(2000);
+    let check_interval = Duration::from_millis(500);
+    // 突发抑制（A2）：目录拷贝/解压期间事件持续到达，若仍按静默期逐个处理，
+    // 会每 ~2s 触发一次批量 embedding，与拷贝形成 CPU 竞争。
+    // 策略：距上一条事件不足 burst_quiet 视为"仍在突发"，暂缓整批处理；
+    // 突发持续时间超过 burst_max_wait 时强制处理（防饿死）。
+    let burst_quiet = Duration::from_millis(1500);
+    let burst_max_wait = Duration::from_secs(60);
 
     // 待处理事件表：rel_path → (最后一次时间戳, 是否为 Remove)
     let mut pending: HashMap<String, (Instant, bool)> = HashMap::new();
+    // 最近一条事件到达时间 / 当前突发起始时间
+    let mut last_event_at: Option<Instant> = None;
+    let mut burst_since: Option<Instant> = None;
 
     loop {
         let tick = tokio::time::sleep(check_interval);
@@ -513,6 +525,12 @@ async fn run_debounce_loop(
 
         tokio::select! {
             Some(event) = rx.recv() => {
+                let now = Instant::now();
+                // 距上一条事件超过 burst_quiet → 上一轮突发已平息，本轮视为新突发
+                if last_event_at.map_or(true, |t| now.duration_since(t) >= burst_quiet) {
+                    burst_since = Some(now);
+                }
+                last_event_at = Some(now);
                 match pending.get(&event.rel_path) {
                     Some((existing_time, _)) if *existing_time > event.timestamp => {
                         // 旧事件，保留现有的
@@ -539,8 +557,17 @@ async fn run_debounce_loop(
                     continue;
                 }
 
-                // 定时检查：找出已达到静默期的事件
                 let now = Instant::now();
+                // 突发抑制：事件仍在密集到达 → 暂缓处理（等待拷贝/解压结束）
+                if let (Some(start), Some(last)) = (burst_since, last_event_at) {
+                    if now.duration_since(start) < burst_max_wait
+                        && now.duration_since(last) < burst_quiet
+                    {
+                        continue;
+                    }
+                }
+
+                // 定时检查：找出已达到静默期的事件
                 let mut to_process: Vec<(String, bool)> = Vec::new();
 
                 pending.retain(|path, (time, is_remove)| {
@@ -552,12 +579,31 @@ async fn run_debounce_loop(
                     }
                 });
 
-                // 处理到期事件：索引开关关闭时仅跳过索引，不跳过缓存失效
+                if to_process.is_empty() {
+                    continue;
+                }
+
+                // 拆分删除事件与修改事件（已不存在的文件视作删除）
+                let mut removes: Vec<String> = Vec::new();
+                let mut modifies: Vec<(String, String)> = Vec::new();
                 for (path, is_remove) in &to_process {
-                    if !indexing_enabled.load(Ordering::Acquire) {
-                        continue;
+                    let abs_path = format!("{}/{}", dir_path, path);
+                    if *is_remove || !Path::new(&abs_path).exists() {
+                        removes.push(path.clone());
+                    } else {
+                        modifies.push((path.clone(), abs_path));
                     }
-                    if *is_remove {
+                }
+
+                // 全量索引进行中：跳过整批增量处理（避免元数据竞态）
+                if indexer.is_reindex_in_progress() {
+                    log::debug!(
+                        "[watcher] 全量索引进行中，跳过 {} 条增量事件",
+                        to_process.len()
+                    );
+                } else if indexing_enabled.load(Ordering::Acquire) {
+                    // 删除事件逐个处理（无 Embedding 开销）
+                    for path in &removes {
                         log::debug!("[watcher] 处理删除: {}", path);
                         if let Err(e) = indexer.remove_file(&dir_path, path).await {
                             log::error!("[watcher] 删除处理失败 ({}): {}", path, e);
@@ -565,27 +611,17 @@ async fn run_debounce_loop(
                         } else {
                             on_changed();
                         }
-                    } else {
-                        let abs_path = format!("{}/{}", dir_path, path);
-                        if !Path::new(&abs_path).exists() {
-                            // 文件已不存在，视作删除
-                            log::debug!("[watcher] 文件已不存在，转删除: {}", path);
-                            if let Err(e) = indexer.remove_file(&dir_path, path).await {
-                                log::error!("[watcher] 删除处理失败 ({}): {}", path, e);
-                                on_error(&format!("增量删除失败 ({}): {}", path, e));
-                            } else {
-                                on_changed();
-                            }
-                            continue;
-                        }
-                        log::debug!("[watcher] 处理修改: {}", path);
-                        if indexer.is_reindex_in_progress() {
-                            log::debug!("[watcher] 全量索引进行中，跳过增量索引: {}", path);
-                            continue;
-                        }
-                        if let Err(e) = indexer.index_file(&dir_path, path, &abs_path).await {
-                            log::error!("[watcher] 索引处理失败 ({}): {}", path, e);
-                            on_error(&format!("增量索引失败 ({}): {}", path, e));
+                    }
+                    // 修改事件批量索引（单批 Embedding）
+                    if !modifies.is_empty() {
+                        log::debug!("[watcher] 批量索引 {} 个文件", modifies.len());
+                        if let Err(e) = indexer.index_files_batch(&dir_path, &modifies).await {
+                            log::error!(
+                                "[watcher] 批量索引失败 ({} 个文件): {}",
+                                modifies.len(),
+                                e
+                            );
+                            on_error(&format!("增量索引失败: {}", e));
                         } else {
                             on_changed();
                         }
@@ -593,9 +629,7 @@ async fn run_debounce_loop(
                 }
 
                 // 有文件变更时失效文件列表缓存（无论索引开关是否打开）
-                if !to_process.is_empty() {
-                    invalidate_file_list_cache(&dir_path);
-                }
+                invalidate_file_list_cache(&dir_path);
             }
             _ = &mut stop_rx => {
                 log::info!("[watcher] 防抖循环收到停止信号，退出");

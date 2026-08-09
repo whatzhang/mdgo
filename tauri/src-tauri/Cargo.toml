@@ -38,6 +38,8 @@ rusqlite = { version = "0.34", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
 dashmap = "6"
 regex = "1"
+# Markdown AST 解析（结构识别，替代正则状态机）
+comrak = { version = "0.54", default-features = false }
 tokio-tungstenite = "0.24"
 futures-util = "0.3"
 

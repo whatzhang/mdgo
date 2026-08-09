@@ -124,6 +124,12 @@ pub async fn kb_update_indexer_config(
     fusion_alpha: Option<f32>,
     max_context_docs: Option<usize>,
     max_chunks_per_doc: Option<usize>,
+    candidate_k: Option<u32>,
+    rrf_k: Option<u32>,
+    vec_min_score: Option<f32>,
+    rerank_min_score: Option<f32>,
+    bm25_msm_ratio: Option<f32>,
+    reranker_enabled: Option<bool>,
 ) -> Result<(), String> {
     let state = app.state::<AppState>();
     let mut cfg = state.config_store.read();
@@ -134,6 +140,12 @@ pub async fn kb_update_indexer_config(
     if let Some(v) = fusion_alpha { cfg.fusion_alpha = v.clamp(0.0, 1.0); }
     if let Some(v) = max_context_docs { cfg.max_context_docs = v.max(1); }
     if let Some(v) = max_chunks_per_doc { cfg.max_chunks_per_doc = v.max(1); }
+    if let Some(v) = candidate_k { cfg.candidate_k = v.max(10); }
+    if let Some(v) = rrf_k { cfg.rrf_k = v.max(1); }
+    if let Some(v) = vec_min_score { cfg.vec_min_score = v.clamp(0.0, 1.0); }
+    if let Some(v) = rerank_min_score { cfg.rerank_min_score = v.clamp(0.0, 1.0); }
+    if let Some(v) = bm25_msm_ratio { cfg.bm25_msm_ratio = v.clamp(0.0, 1.0); }
+    if let Some(v) = reranker_enabled { cfg.reranker_enabled = v; }
     state.config_store.update(cfg);
     Ok(())
 }
@@ -161,12 +173,9 @@ pub async fn kb_search_hybrid(
         .next()
         .ok_or("Embedding 返回空向量")?;
 
-    // 轻量级意图路由 + 元数据过滤（按文件类型限定候选范围）
-    let intent: crate::core::RetrievalIntent = crate::core::route_intent(&query);
-
     state
         .indexer
-        .hybrid_search(&dir_path, &query_vec, &query, top_k, intent)
+        .hybrid_search(&dir_path, &query_vec, &query, top_k)
         .await
 }
 

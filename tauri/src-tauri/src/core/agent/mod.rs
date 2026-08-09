@@ -24,7 +24,7 @@ use crate::core::skill::activation::ActiveSkillState;
 use crate::core::skill::SkillRegistry;
 
 use self::tool_registry::ToolRegistry;
-use crate::core::{Indexer, SearchHit, call_embedding_query, route_intent};
+use crate::core::{Indexer, SearchHit, call_embedding_query};
 
 /// 规约文档缓存：(文件名 → (最后修改时间, 内容))。
 ///
@@ -351,10 +351,9 @@ pub async fn kb_search(cfg: &KbSearchConfig, query: &str, top_k: u32) -> Result<
     .next()
     .ok_or_else(|| "生成查询向量失败".to_string())?;
 
-    let intent = route_intent(query);
     let hits = cfg
         .indexer
-        .hybrid_search(&cfg.dir_path, &embedding, query, top_k, intent)
+        .hybrid_search(&cfg.dir_path, &embedding, query, top_k)
         .await?;
     if hits.is_empty() {
         return Ok("知识库中未找到相关内容。".to_string());

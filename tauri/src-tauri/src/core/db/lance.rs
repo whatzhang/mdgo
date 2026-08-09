@@ -42,6 +42,11 @@ pub struct DocumentChunk {
     pub symbol_name: Option<String>,
     /// 代码符号类型（仅代码文件有值），如 "function"、"class"
     pub symbol_kind: Option<String>,
+    /// 向量化文本（AST 语义分块用）：与 `text` 分离，`None` 表示直接用 `text`。
+    /// 仅用于写入前向量化，不落库。
+    pub embedding_text: Option<String>,
+    /// 分块类型（AST 语义分块用）：paragraph/code/table/list/quote/section 等
+    pub chunk_type: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -60,6 +65,10 @@ pub struct SearchHit {
     pub symbol_name: Option<String>,
     /// 代码符号类型（仅代码文件有值）
     pub symbol_kind: Option<String>,
+    /// 分块类型（AST 语义分块用）
+    pub chunk_type: Option<String>,
+    /// 精排分数（本地 bge-reranker sigmoid 相关性分数，仅精排启用时有值）
+    pub score_rerank: Option<f32>,
 }
 
 /// 代码符号条目缓存（search_symbols 内存过滤用，避免每次查询全表 LIKE 扫描）
@@ -72,6 +81,7 @@ struct SymbolEntry {
     symbol_kind: Option<String>,
     path_json: Option<String>,
     sentence_window: Option<String>,
+    chunk_type: Option<String>,
 }
 
 pub struct LanceStore {
@@ -126,6 +136,7 @@ impl LanceStore {
             let _ = Self::migrate_add_column(&table, "sentence_window", DataType::Utf8).await;
             let _ = Self::migrate_add_column(&table, "symbol_name", DataType::Utf8).await;
             let _ = Self::migrate_add_column(&table, "symbol_kind", DataType::Utf8).await;
+            let _ = Self::migrate_add_column(&table, "chunk_type", DataType::Utf8).await;
             // 兼容旧表：补建向量索引（已有索引则瞬间跳过；构建失败不阻断，仅影响检索性能）
             if let Err(e) = self.ensure_vector_index().await {
                 log::warn!("[lance] 确保向量索引失败（检索将退化为全表扫描）: {}", e);
@@ -149,6 +160,7 @@ impl LanceStore {
             Field::new("sentence_window", DataType::Utf8, true),
             Field::new("symbol_name", DataType::Utf8, true),
             Field::new("symbol_kind", DataType::Utf8, true),
+            Field::new("chunk_type", DataType::Utf8, true),
             Field::new(
                 "vector",
                 DataType::FixedSizeList(
@@ -286,6 +298,7 @@ impl LanceStore {
         let mut sentence_window_arr: Vec<Option<&str>> = Vec::with_capacity(n);
         let mut symbol_name_arr: Vec<Option<&str>> = Vec::with_capacity(n);
         let mut symbol_kind_arr: Vec<Option<&str>> = Vec::with_capacity(n);
+        let mut chunk_type_arr: Vec<Option<&str>> = Vec::with_capacity(n);
 
         for chunk in chunks {
             id_arr.push(chunk.id.as_str());
@@ -297,6 +310,7 @@ impl LanceStore {
             sentence_window_arr.push(chunk.sentence_window.as_deref());
             symbol_name_arr.push(chunk.symbol_name.as_deref());
             symbol_kind_arr.push(chunk.symbol_kind.as_deref());
+            chunk_type_arr.push(chunk.chunk_type.as_deref());
         }
 
         let vector_arrays: Vec<Option<Vec<Option<f32>>>> = vectors
@@ -320,6 +334,7 @@ impl LanceStore {
                 Field::new("sentence_window", DataType::Utf8, true),
                 Field::new("symbol_name", DataType::Utf8, true),
                 Field::new("symbol_kind", DataType::Utf8, true),
+                Field::new("chunk_type", DataType::Utf8, true),
                 Field::new(
                     "vector",
                     DataType::FixedSizeList(
@@ -340,6 +355,7 @@ impl LanceStore {
                 Arc::new(StringArray::from(sentence_window_arr)),
                 Arc::new(StringArray::from(symbol_name_arr)),
                 Arc::new(StringArray::from(symbol_kind_arr)),
+                Arc::new(StringArray::from(chunk_type_arr)),
                 Arc::new(vector_arr),
             ],
         )
@@ -355,11 +371,35 @@ impl LanceStore {
         Ok(())
     }
 
-    /// 向量检索
+    /// 向量检索（无预过滤）。
     pub async fn search_vectors(
         &self,
         query: &[f32],
         top_k: u32,
+    ) -> Result<Vec<SearchHit>, String> {
+        self.search_vectors_impl(query, top_k, None).await
+    }
+
+    /// 带 SQL 预过滤的向量检索（**Filter 前置**）。
+    ///
+    /// `filter_sql` 在 ANN 检索前限定候选行范围（如 `LOWER(doc_name) LIKE '%.rs'`），
+    /// 保证被过滤类型外的文档不占用候选池名额——旧"检索后过滤"方案中，
+    /// 大量无关文档会把相关候选挤出 `top_k` 窗口，是本项目"查出许多不相关文档"的
+    /// 核心根因之一。
+    pub async fn search_vectors_with_filter(
+        &self,
+        query: &[f32],
+        top_k: u32,
+        filter_sql: &str,
+    ) -> Result<Vec<SearchHit>, String> {
+        self.search_vectors_impl(query, top_k, Some(filter_sql)).await
+    }
+
+    async fn search_vectors_impl(
+        &self,
+        query: &[f32],
+        top_k: u32,
+        filter_sql: Option<&str>,
     ) -> Result<Vec<SearchHit>, String> {
         let t0 = std::time::Instant::now();
         let table = self.open_table().await?;
@@ -385,12 +425,16 @@ impl LanceStore {
             Err(e) => log::debug!("[lance] search_vectors 读取索引状态失败: {}", e),
         }
 
-        let batches: Vec<arrow_array::RecordBatch> = table
+        let mut query_builder = table
             .query()
             .nearest_to(query)
             .map_err(|e| format!("查询向量格式错误: {}", e))?
             .distance_type(DistanceType::Cosine)
-            .limit(top_k as usize)
+            .limit(top_k as usize);
+        if let Some(sql) = filter_sql {
+            query_builder = query_builder.only_if(sql);
+        }
+        let batches: Vec<arrow_array::RecordBatch> = query_builder
             .execute()
             .await
             .map_err(|e| format!("LanceDB 检索失败: {}", e))?
@@ -430,6 +474,9 @@ impl LanceStore {
             let symbol_kinds = batch
                 .column_by_name("symbol_kind")
                 .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+            let chunk_types = batch
+                .column_by_name("chunk_type")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
 
             for i in 0..batch.num_rows() {
                 let dist = distances.value(i);
@@ -446,6 +493,9 @@ impl LanceStore {
                 let symbol_kind_val = symbol_kinds.and_then(|arr| {
                     if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
                 });
+                let chunk_type_val = chunk_types.and_then(|arr| {
+                    if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
+                });
                 hits.push(SearchHit {
                     text: texts.value(i).to_string(),
                     doc_name: doc_names.value(i).to_string(),
@@ -457,6 +507,8 @@ impl LanceStore {
                     sentence_window: sentence_window_val,
                     symbol_name: symbol_name_val,
                     symbol_kind: symbol_kind_val,
+                    chunk_type: chunk_type_val,
+                    score_rerank: None,
                 });
             }
         }
@@ -517,6 +569,8 @@ impl LanceStore {
                     sentence_window: e.sentence_window.clone(),
                     symbol_name: Some(e.symbol_name.clone()),
                     symbol_kind: e.symbol_kind.clone(),
+                    chunk_type: e.chunk_type.clone(),
+                    score_rerank: None,
                 },
                 quality,
             ));
@@ -563,6 +617,7 @@ impl LanceStore {
                 "symbol_kind",
                 "path_json",
                 "sentence_window",
+                "chunk_type",
             ]))
             .execute()
             .await
@@ -598,6 +653,9 @@ impl LanceStore {
             let sentence_windows = batch
                 .column_by_name("sentence_window")
                 .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+            let chunk_types = batch
+                .column_by_name("chunk_type")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
 
             for i in 0..batch.num_rows() {
                 if symbol_names.is_null(i) {
@@ -615,6 +673,9 @@ impl LanceStore {
                         if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
                     }),
                     sentence_window: sentence_windows.and_then(|arr| {
+                        if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
+                    }),
+                    chunk_type: chunk_types.and_then(|arr| {
                         if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
                     }),
                 });
@@ -663,29 +724,28 @@ impl LanceStore {
         Ok(names)
     }
 
-    /// 获取指定文档中某个 chunk 的上下文窗口（前后相邻 chunks）。
+    /// 获取指定文档 `[start, end]` 闭区间内的所有 chunks（任意区间版本）。
     ///
-    /// 用于后检索上下文扩展：命中某个 chunk 后，将 ±window 范围内的相邻 chunks
-    /// 一并拉取作为上下文，使 LLM 获得更完整的文档内容。
+    /// 供混合检索 Context 扩展使用：多个命中 chunk 可合并为一次区间查询
+    /// （区间并集），避免同文档重复全表扫描。
     ///
-    /// 返回 `(chunk_index, text, path_json)` 列表，按 chunk_index 升序排列。
-    /// 适用于 Markdown（按文档顺序分块）、OPML/FreeMind（DFS 遍历顺序）所有文档类型。
-    pub async fn fetch_chunks_in_range(
+    /// 实现说明：lancedb 0.31 的 Query 类型（不带 nearest_to）无 execute() 方法，
+    /// 因此仍走零向量 + Cosine 的向量查询；通过 `only_if(doc_name = ...)` 把
+    /// 扫描范围限制到单文档行（SQL 预过滤），从根本上避免全表 limit 截断风险
+    /// （旧实现 limit(2000) 在行数超过上限时目标 chunk 可能被丢弃）。
+    pub async fn fetch_chunks_between(
         &self,
         doc_name: &str,
-        center_index: u32,
-        window: u32,
+        start: u32,
+        end: u32,
     ) -> Result<Vec<(u32, String, Option<String>)>, String> {
+        if end < start {
+            return Ok(Vec::new());
+        }
         let table = self.open_table().await?;
-        let start = center_index.saturating_sub(window);
-        let end = center_index + window;
-        // 最大期望结果数
-        let expected = (window * 2 + 1) as usize;
+        let expected = (end - start + 1) as usize;
 
-        // 使用向量检索 + 大范围 top_k，在内存中按 doc_name + chunk_index 过滤。
-        // 原因：lancedb 0.31 的 Query 类型（不带 nearest_to）无 execute() 方法。
-        // 使用零向量 + Cosine 距离，所有结果分数 ≈ 1.0，不依赖向量质量。
-        // 维度直接从表 schema 读取，无需依赖 embedding 模型（模型不可用时上下文功能仍可用）。
+        // 维度直接从表 schema 读取，无需依赖 embedding 模型（模型不可用时上下文功能仍可用）
         let schema = table
             .schema()
             .await
@@ -699,12 +759,16 @@ impl LanceStore {
             })
             .ok_or_else(|| "无法从表 schema 读取向量维度".to_string())?;
         let query_vec = vec![0.0f32; dim];
+        // SQL 单引号转义（doc_name 可能含引号），与搜索路径的过滤语义一致
+        let escaped = doc_name.replace('\'', "''");
+        let filter_sql = format!("doc_name = '{}'", escaped);
         let batches: Vec<RecordBatch> = table
             .query()
             .nearest_to(query_vec)
             .map_err(|e| format!("nearest_to 失败: {}", e))?
+            .only_if(&filter_sql)
             .distance_type(DistanceType::Cosine)
-            .limit(2000) // 拉取较大候选池，确保目标范围 chunks 被覆盖
+            .limit(5000) // 单文档行规模，5000 上限覆盖超大文档；仍远超典型 chunk 数
             .execute()
             .await
             .map_err(|e| format!("上下文范围查询失败: {}", e))?

@@ -41,6 +41,53 @@ const REQUIRED_FILES: [&str; 5] = [
     "special_tokens_map.json",
 ];
 
+// ─── Reranker 模型（bge-reranker-base）───
+
+/// Reranker 模型名称（缓存目录名）
+pub const RERANKER_MODEL_NAME: &str = "bge-reranker-base";
+/// HuggingFace 仓库（Xenova 提供的 ONNX 导出版，XLM-RoBERTa 架构）
+pub const RERANKER_MODEL_REPO: &str = "Xenova/bge-reranker-base";
+/// 文件映射：(仓库内路径, 本地文件名)。权重放最后，先下载小文件。
+pub const RERANKER_MODEL_FILES: &[(&str, &str)] = &[
+    ("config.json", "config.json"),
+    ("tokenizer.json", "tokenizer.json"),
+    ("tokenizer_config.json", "tokenizer_config.json"),
+    ("special_tokens_map.json", "special_tokens_map.json"),
+    ("onnx/model.onnx", "model.onnx"),
+];
+
+/// Reranker 完整性必需文件（与 search::rerank::ensure_initialized 一致）
+const RERANKER_REQUIRED_FILES: [&str; 5] = [
+    "model.onnx",
+    "tokenizer.json",
+    "config.json",
+    "tokenizer_config.json",
+    "special_tokens_map.json",
+];
+
+/// Reranker 模型缓存目录：{root}/bge-reranker-base/
+pub fn reranker_cache_dir() -> PathBuf {
+    cache_dir_for(&model_root_dir(), RERANKER_MODEL_NAME)
+}
+
+/// Reranker 模型是否已完整下载并部署
+pub fn is_reranker_cached() -> bool {
+    is_model_cached_impl(&reranker_cache_dir(), &RERANKER_REQUIRED_FILES)
+}
+
+/// 确保 Reranker 模型已下载并部署到本地缓存目录（复用 Embedding 的下载/校验/部署流程）。
+///
+/// 下载源优先级与 Embedding 模型一致：ModelScope → hf-mirror → HuggingFace。
+pub fn ensure_reranker_downloaded() -> Result<PathBuf, String> {
+    ensure_model_downloaded_impl(
+        &reranker_cache_dir(),
+        RERANKER_MODEL_NAME,
+        RERANKER_MODEL_REPO,
+        RERANKER_MODEL_FILES,
+        &RERANKER_REQUIRED_FILES,
+    )
+}
+
 /// 单文件下载整体超时（小文件适用）
 const TOTAL_TIMEOUT: Duration = Duration::from_secs(600);
 /// 大权重（model.onnx）下载整体超时：1.1GB 在 <1MB/s 的慢网下也能完成，

@@ -16,6 +16,18 @@ pub struct IndexerConfig {
     pub max_context_docs: usize,
     /// 单文档最多保留并送入上下文的 chunk 数
     pub max_chunks_per_doc: usize,
+    /// 每路召回（向量/BM25）的候选池大小（Filter 前置后的检索上限）
+    pub candidate_k: u32,
+    /// RRF 融合常数 k（Azure / Elasticsearch / Weaviate 通用取值 60）
+    pub rrf_k: u32,
+    /// 纯向量命中（无 BM25 佐证）的绝对余弦阈值，过滤语义噪声
+    pub vec_min_score: f32,
+    /// 精排器 sigmoid 相关性阈值，低于此值的候选被丢弃
+    pub rerank_min_score: f32,
+    /// BM25 词间最低命中比例（minimum_should_match，0.6 = 至少 60% 查询词命中）
+    pub bm25_msm_ratio: f32,
+    /// 是否启用本地 cross-encoder 精排（模型未就绪时自动降级 RRF 排序）
+    pub reranker_enabled: bool,
 }
 
 impl Default for IndexerConfig {
@@ -32,6 +44,12 @@ impl Default for IndexerConfig {
             fusion_alpha: 0.6,
             max_context_docs: 4,
             max_chunks_per_doc: 3,
+            candidate_k: 100,
+            rrf_k: 60,
+            vec_min_score: 0.35,
+            rerank_min_score: 0.2,
+            bm25_msm_ratio: 0.6,
+            reranker_enabled: true,
         }
     }
 }

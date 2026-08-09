@@ -398,11 +398,6 @@ pub fn call_embedding_query(
 
 // ─── 文本分块 ───
 
-/// 通用文本分隔符（按优先级从高到低）
-pub const GENERIC_TEXT_SEPARATORS: &[&str] = &[
-    "\n\n", "\n", ". ", "。", "！", "？", "，", " ",
-];
-
 /// Markdown 专用分隔符（含标题模式，仅用于结构化 Markdown 文本）
 #[allow(dead_code)]
 pub const MARKDOWN_TEXT_SEPARATORS: &[&str] = &[
@@ -413,79 +408,10 @@ pub const MARKDOWN_TEXT_SEPARATORS: &[&str] = &[
 ///
 /// 使用 `GENERIC_TEXT_SEPARATORS` 作为分隔符优先级列表。
 /// 预先计算所有字符的字节偏移，避免重复遍历。
-pub fn split_text(text: &str, max_size: usize, overlap: usize) -> Vec<String> {
-    split_text_with_separators(text, max_size, overlap, GENERIC_TEXT_SEPARATORS)
-}
-
-/// 使用自定义分隔符优先级列表进行文本切分。
 ///
-/// 按优先级从高到低尝试在每个窗口内寻找分隔符位置切分，
-/// 保证块内语义完整性。max_size 为单块最大字符数，
-/// overlap 为前后块重叠字符数。
-pub fn split_text_with_separators(
-    text: &str,
-    max_size: usize,
-    overlap: usize,
-    separators: &[&str],
-) -> Vec<String> {
-    let chars: Vec<char> = text.chars().collect();
-    let total = chars.len();
-
-    if total <= max_size {
-        return vec![text.to_string()];
-    }
-
-    // 预计算每个字符位置的字节偏移（一次性 O(n)，避免循环内重复计算）
-    let byte_offsets: Vec<usize> = std::iter::once(0)
-        .chain(text.char_indices().skip(1).map(|(i, _)| i))
-        .chain(std::iter::once(text.len()))
-        .collect();
-
-    let mut chunks = Vec::new();
-    let mut start = 0usize;
-
-    while start < total {
-        let mut end = (start + max_size).min(total);
-
-        if end < total {
-            let mut best_sep_pos = start;
-            // 使用预计算的字节偏移取窗口子串
-            let window_start_byte = byte_offsets[start];
-            let window_end_byte = byte_offsets[end];
-            let window = &text[window_start_byte..window_end_byte];
-
-            for sep in separators {
-                if let Some(rel_byte) = window.rfind(sep) {
-                    let sep_end_byte = rel_byte + sep.len();
-                    let sep_char_count = window[..sep_end_byte].chars().count();
-                    let candidate = start + sep_char_count;
-                    if candidate > best_sep_pos
-                        && candidate - start < (max_size as f64 * 1.5) as usize
-                    {
-                        best_sep_pos = candidate;
-                    }
-                }
-            }
-            if best_sep_pos > start {
-                end = best_sep_pos;
-            }
-        }
-
-        let start_byte = byte_offsets[start];
-        let end_byte = byte_offsets[end];
-        chunks.push(text[start_byte..end_byte].to_string());
-
-        let next_start = if end > overlap { end - overlap } else { end };
-        // 防止无限循环：确保每次迭代都有进展
-        if next_start <= start {
-            start = end;
-        } else {
-            start = next_start;
-        }
-    }
-
-    chunks.retain(|c| !c.trim().is_empty());
-    chunks
+/// 实现位于 `document::text_split`（基础层），此处委托以保留公开 API。
+pub fn split_text(text: &str, max_size: usize, overlap: usize) -> Vec<String> {
+    crate::core::document::text_split::split_text(text, max_size, overlap)
 }
 
 /// 基于 Unicode chars 切割文本，严格按字符计数，避免多字节字符截断乱码。
@@ -589,6 +515,8 @@ pub fn build_document_chunks(rel_path: &str, chunks: &[ChunkResult]) -> Vec<Docu
                 sentence_window: r.sentence_window.clone(),
                 symbol_name: r.symbol_name.clone(),
                 symbol_kind: r.symbol_kind.clone(),
+                embedding_text: r.embedding_text.clone(),
+                chunk_type: r.chunk_type.clone(),
             }
         })
         .collect()
