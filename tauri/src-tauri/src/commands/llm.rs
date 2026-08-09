@@ -565,6 +565,8 @@ pub async fn agent_query(
         .and_then(|c| c.min_score)
         .unwrap_or(kb_cfg.min_score)
         .clamp(0.0, 1.0);
+    // 精排 sigmoid 阈值：与 pipeline 内精排阈值同语义，供下游聚合按分数域裁决
+    let effective_rerank_min_score = kb_cfg.rerank_min_score.clamp(0.0, 1.0);
     let effective_max_docs = skill_ctx
         .and_then(|c| c.max_docs)
         .unwrap_or(kb_cfg.max_context_docs)
@@ -693,14 +695,27 @@ pub async fn agent_query(
             let selected: Vec<(SearchHit, f32)> = aggregate_hits(
                 all_hits,
                 effective_min_score,
+                effective_rerank_min_score,
                 effective_max_docs,
                 effective_max_chunks,
             );
             if log::log_enabled!(log::Level::Debug) {
+                // 打印每个进入引用的命中的完整分数域（doc_name / score / score_rerank / symbol / vec / bm25），
+                // 用于核对"代码文件混入引用"的根因：意图路由结果 + 精排 sigmoid 分数是否恰好通过阈值。
                 log::debug!("[agent_query] [3]: 文档聚合结果， request_id={} 命中 {} 条文档, effective_min_score={}， effective_max_docs={}, effective_max_chunks={}， doc=\n{:?}",
-                 request_id, selected.len(), effective_min_score, effective_max_docs, effective_max_chunks, 
+                 request_id, selected.len(), effective_min_score, effective_max_docs, effective_max_chunks,
                   selected.iter()
-                    .map(|(hit, score)| format!("{} : {:.3}", hit.doc_name, score))
+                    .map(|(hit, score)| {
+                        format!(
+                            "{} : {:.3} (rerank={:?} symbol={:?} vec={:.3} bm25={:.3})",
+                            hit.doc_name,
+                            score,
+                            hit.score_rerank,
+                            hit.symbol_name,
+                            hit.score_vec,
+                            hit.score_bm25
+                        )
+                    })
                     .collect::<Vec<_>>()
                 );
             }
@@ -769,6 +784,7 @@ pub async fn agent_query(
         dir_blacklist: kb_cfg.dir_blacklist,
         file_blacklist: kb_cfg.file_blacklist,
         min_score: effective_min_score,
+        rerank_min_score: effective_rerank_min_score,
         max_context_docs: effective_max_docs,
         max_chunks_per_doc: effective_max_chunks,
         skill_id: primary_skill_id,

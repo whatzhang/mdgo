@@ -1,0 +1,161 @@
+# 知识库混合检索 —— 逻辑清单（存档契约）
+
+> 本文档为 **P0 + P1 + P2 检索重构** 完成后的最终逻辑契约。
+> **后续所有更改必须以此为标准**：改动前逐条对照，任何与本文档冲突的改动
+> 需先更新本文档并经评审，不得"先改代码、后补文档"。
+>
+> 状态：**已生效（2026-08-09）**　适用范围：`tauri/src-tauri` 检索链路全栈
+>
+> 配套文档：[RETRIEVAL_TECH_DESIGN.md](./RETRIEVAL_TECH_DESIGN.md)
+
+---
+
+## 0. 编号约定
+
+| 前缀 | 领域 |
+|------|------|
+| ARCH | 架构分层 / 依赖倒置 |
+| FLOW | 管线流程顺序 |
+| RECALL | 多路召回 |
+| FUSE | RRF 融合 |
+| THRESHOLD | 阈值体系 |
+| SCORE | 分数域契约 |
+| RERANK | 精排 |
+| DIVERSITY | 多样性 |
+| CTX | 上下文构建 |
+| CONFIG | 配置语义 |
+| FAILOVER | 降级 / 容错 |
+| MODEL | 模型与 Broker |
+
+---
+
+## 1. 架构层（ARCH）
+
+- **ARCH-1**：检索管线为五层流水线，顺序固定：
+  `Query Understanding → Multi-Recall → RRF Fusion → Threshold+Rerank → Diversity → Context`（P0 关键修复：Filter 前置，绝不允许回到 Retrieve→Fusion→Filter）。
+- **ARCH-2**：查询理解、融合、精排按 SRP 拆分独立模块：`search/query_plan`、`search/rrf`、`search/rerank`，入口统一由 `core::search` 导出。
+- **ARCH-3**：依赖倒置——管线只依赖 `QueryPlanner` trait（`plan(&str)->QueryPlan`）与 `Reranker` trait（`rerank(&str,&[SearchHit],f32)->Result<Vec<SearchHit>,String>`），不依赖具体实现。新增路由/精排实现必须实现 trait，禁止在管线内直接 new 具体类型以外的分支。
+- **ARCH-4**：`hybrid_search` 不接收 `intent` 参数——检索意图**唯一来源**为管线内部 `RuleQueryPlanner.plan()`，调用方不得重复计算意图（禁止双信息源）。
+
+## 2. 流程顺序（FLOW）
+
+- **FLOW-1**（Filter 前置）：检索前先由 `QueryPlan.allowed_exts` 生成过滤条件。
+  - 向量路：`search_vectors_with_filter` 在 LanceDB 查询层用 `only_if` SQL 预过滤（`ext_filter_sql`，LOWER 归一）。
+  - BM25 路：tantivy 无 SQL 级过滤，在 `search_with_plan` 严格检索**之后**做内存过滤（`filter_hits_by_ext`）。
+  - 符号路：与 BM25 路一致，符号命中也做扩展名内存过滤。
+- **FLOW-2**：候选池规模 `vec_k = bm25_k = max(candidate_k, top_k)`。
+- **FLOW-3**：向量与 BM25 两路并行（`tokio::join!`），符号路独立并行召回（`join_all`），互不依赖。
+- **FLOW-4**：阈值过滤必须在 RRF 融合之后（融合后才有统一排序），精排在阈值之后。
+- **FLOW-5**：`Diversity → Context → take(top_k)` 顺序固定：先去重聚簇，再注入上下文，最后截断。
+
+## 3. 多路召回（RECALL）
+
+- **RECALL-1**：三路召回——向量（语义）+ BM25（关键词，msm 严格）+ 代码符号（Code 意图专用）。
+- **RECALL-2**：BM25 生产检索必须走 `search_with_plan`（minimum_should_match 语义），**禁止**回退到旧宽松 OR 的 `Bm25Index::search`（已删除）。
+- **RECALL-3**：msm 词间最低命中数 = `ceil(词数 × bm25_msm_ratio)`，下限 1；每词 = 5 字段（text/title/heading/symbol_name/file_path）任一命中即算命中，字段 boost 固定（title 3.0 / heading 2.5 / symbol_name 2.0 / file_path 1.0 / text 1.0）。
+- **RECALL-4**：查询词切分必须用 `segment_query_terms`（jieba 中文 + ASCII token + 停用词 + 去重），与索引侧分词器对齐。
+- **RECALL-5**：查询词数 ≤1 时退化为宽松 OR（QueryParser），避免"唯一词被 msm 过滤"。
+- **RECALL-6**：符号路仅 Code 意图且 `symbols` 非空时触发；每符号取前 5 条、最多 3 个符号。
+- **RECALL-7**：符号匹配质量分级（`search_symbols`）：精确 0.95 / 前缀 0.85 / 包含 0.7，同名逐条递减 0.02，下限 0.1；该分数只用于符号路召回排序，**不进 RRF 分数域**。
+
+## 4. RRF 融合（FUSE）
+
+- **FUSE-1**：融合算法固定为 RRF（rank-based），`score = w / (k + rank + 1)`，k = `rrf_k`（默认 60）。
+- **FUSE-2**：禁止恢复 alpha 线性加权（`alpha*vec + (1-alpha)*bm25`）。`fusion_alpha` 仅作为每路权重偏置：`weight_vec = alpha`、`weight_bm25 = 1 - alpha`、`weight_symbol = 1.0`。
+- **FUSE-3**：alpha 动态计算（`compute_alpha`）：intent 增量（Code −0.2 / Document +0.1 / Outline +0.05 / General 0）+ 查询长度（短查询 −0.2、长查询 +0.1）+ clamp [0.3, 0.95]；CJK 按字符数计。
+- **FUSE-4**：融合按 `(doc_name, chunk_index)` 合并，RRF 分数归一化到 [0,1]（除以本批最高分）；`score_vec`/`score_bm25` 保留各路原始分。
+- **FUSE-5**：符号路命中在融合中**不写** `score_vec`/`score_bm25`（保持 0），其存活由 `symbol_name` 信号承载（见 THRESHOLD-2）。
+- **FUSE-6**：融合结果元数据合并规则——Vec 路覆盖 text 并补全 path_json/sentence_window/chunk_type；Bm25 路仅填充空缺；Symbol 路不改写元数据。
+
+## 5. 阈值体系（THRESHOLD）
+
+- **THRESHOLD-1**：`vec_min_score`（默认 0.35）是**纯向量命中**（无 BM25 佐证、非符号命中）的绝对余弦阈值，语义 = 过滤无监督语义噪声。**精排激活时该层让位**（见 THRESHOLD-3）。
+- **THRESHOLD-2**：符号命中（`symbol_name.is_some()`）在 pipeline 内**无条件放行**——符号精确匹配是强信号，且其 RRF 归一化分无判别力，禁止用阈值误杀。
+- **THRESHOLD-3**：`rerank_active = reranker_enabled && is_reranker_cached()`。激活时向量候选不按 `vec_min_score` 提前砍（避免"cosine 低但 cross-encoder 判高"的候选被误杀），相关性裁决整体移交精排 sigmoid 阈值。
+- **THRESHOLD-4**：pipeline 内完整过滤条件（顺序）：
+  `score_bm25 > 0 || symbol_name.is_some() || rerank_active || score_vec >= vec_min_score`。
+- **THRESHOLD-5**：下游消费方（`aggregate_hits`）必须按 **SCORE 分数域契约** 三域裁决（见 SCORE-2），禁止恢复"单一日志/单一阈值裁决所有命中"。
+
+## 6. 分数域契约（SCORE）
+
+- **SCORE-1**：`SearchHit.score` 在整个链路承载三种域，域由字段自描述：
+  - `score_rerank: Some(s)` ⇒ sigmoid 域（精排激活，`score == s`）
+  - `score_rerank: None` ⇒ RRF 归一化域（精排未激活/失败回退）
+  - `score_vec` / `score_bm25` 恒为各路的原始 cosine / 归一化 BM25 分（供阈值判据，非排序主键）
+- **SCORE-2**：下游三域裁决（`aggregate_hits`，唯一权威实现）：
+  | 命中特征 | 裁决阈值 |
+  |---|---|
+  | `score_rerank.is_some()` | `rerank_min_score`（精排模型判定门槛） |
+  | `symbol_name.is_some()` 且未精排 | **完全放行**（符号强信号） |
+  | 其余（RRF 域） | `min_score`（融合兜底） |
+- **SCORE-3**：禁止在 pipeline 内 `score_rerank` 之外另造"精排标记"；禁止下游用 `score_rerank` 以外的字段推断精排状态。
+- **SCORE-4**：精排输出覆盖 `score = sigmoid` 且写入 `score_rerank`；失败回退时不得残留部分精排分数（单次检索内域必须统一）。
+
+## 7. 精排（RERANK）
+
+- **RERANK-1**：精排模型固定 `Xenova/bge-reranker-base`（cross-encoder，XLM-RoBERTa），sigmoid 输出相关性概率。
+- **RERANK-2**：passage 前缀拼接 `doc_name`（文件名信号 feature 化），禁止恢复旧"文件名事后加分"逻辑。
+- **RERANK-3**：批量推理 `BATCH_SIZE = 16`；tokenizer 按线程缓存；序列截断到 `max_position_embeddings`。
+- **RERANK-4**：精排过滤 `score < rerank_min_score` 的候选；输出按 sigmoid 降序。
+- **RERANK-5**：`LocalBgeReranker` 为无状态结构体，Session 为全局单例（`GLOBAL_SESSION`，Mutex 双检锁），禁止每次检索重建 Session。
+
+## 8. 多样性（DIVERSITY）
+
+- **DIVERSITY-1**：OPML/FreeMind 文档（`.opml`/`.mm`）按 `path_json` 严格前缀去重（保留最深节点），仅对大纲类文档生效，禁止对 Markdown 启用（会误删合法父节）。
+- **DIVERSITY-2**：文件聚簇——每文档最多保留 `max_chunks_per_doc`（默认 3）个 chunk。
+- **DIVERSITY-3**：最终结果 `take(top_k)`。
+
+## 9. 上下文构建（CTX）
+
+- **CTX-1**：上下文窗口 `compute_context_window(query)`：词数 ≤3 → 3、≤10 → 2、否则 1。
+- **CTX-2**：按 doc_name 分组，同文档命中合并为**一次**区间查询（`fetch_chunks_between`，`only_if(doc_name=...)` + 零向量 Cosine + limit 5000），多文档并行（`join_all`）。
+- **CTX-3**：命中 chunk 取 ±window 子窗口；OPML 父节点（`is_path_prefix`）检测并入。
+- **CTX-4**：仅当合并文本比原 text 长 10 字符以上才写入 `sentence_window`。
+- **CTX-5**：下游 `build_context_text`：文档内按 `chunk_index` 阅读序重排，优先 `sentence_window`，总长 ≤ `MAX_CONTEXT_CHARS = 12_000`。
+
+## 10. 配置语义（CONFIG）
+
+- **CONFIG-1**：配置字段与语义（默认值）——变更默认值必须同步本清单：
+
+| 字段 | 默认 | 语义 | 生效位置 |
+|---|---|---|---|
+| `fusion_alpha` | 0.6 | RRF 向量路权重偏置 | pipeline RRF |
+| `candidate_k` | 100 | 每路召回上限（`max(candidate_k, top_k)`） | pipeline 召回 |
+| `rrf_k` | 60 | RRF 常数 k | pipeline RRF |
+| `vec_min_score` | 0.35 | 纯向量命中绝对余弦阈值（精排激活时让位） | pipeline 阈值 |
+| `rerank_min_score` | 0.2 | 精排 sigmoid 阈值（pipeline 内 + 下游 sigmoid 域裁决） | pipeline + 下游 |
+| `bm25_msm_ratio` | 0.6 | BM25 词间最低命中比例 | pipeline BM25 |
+| `reranker_enabled` | true | 是否启用精排（未就绪自动降级） | pipeline |
+| `min_score` | 0.3 | RRF 域融合兜底阈值（下游） | 下游 aggregate_hits |
+| `max_context_docs` | 4 | 送入上下文的最大文档数 | 下游 |
+| `max_chunks_per_doc` | 3 | 单文档最多 chunk（聚簇 + 下游截断） | pipeline + 下游 |
+| `top_k` | 10 | 检索返回数 | pipeline + 下游 |
+
+- **CONFIG-2**：`kb_update_indexer_config` 参数校验：分数/比例类 clamp [0,1]（`fusion_alpha`/`vec_min_score`/`rerank_min_score`/`bm25_msm_ratio`），`candidate_k ≥ 10`、`rrf_k ≥ 1`、`max_context_docs ≥ 1`、`max_chunks_per_doc ≥ 1`。
+- **CONFIG-3**：技能覆盖（llm.rs `effective_*`）：`effective_min_score = skill_ctx.min_score.unwrap_or(kb_cfg.min_score)`；`effective_rerank_min_score = kb_cfg.rerank_min_score`（精排阈值不支持技能覆盖，只取全局配置）。
+
+## 11. 降级 / 容错（FAILOVER）
+
+- **FAILOVER-1**：精排失败/任务异常 → 回退 RRF 排序候选，**检索永不阻断**。
+- **FAILOVER-2**：模型未缓存 → 后台触发一次下载（`trigger_reranker_download_background`，进程内单飞 + 失败 120s 防抖），本次回退 RRF。
+- **FAILOVER-3**：向量检索失败 → 退化为纯 BM25；BM25 检索失败 → 退化为纯向量；符号检索失败 → 忽略（仅丢符号佐证）。
+- **FAILOVER-4**：降级路径的质量安全网 = 下游 `aggregate_hits` 按分数域兜底（RRF 域 `min_score`），禁止以"已降级"为由绕过下游过滤。
+
+## 12. 模型与 Broker（MODEL）
+
+- **MODEL-1**：精排模型下载走 `model_download` 统一流程（多源：ModelScope → hf-mirror → HuggingFace），缓存目录 `{root}/bge-reranker-base/`，完整性校验文件 `model.onnx` / `tokenizer.json` / `config.json`。
+- **MODEL-2**：Broker 加载（参考 `embedding.rs`）：Windows → DirectML **GPU 优先**，`commit_from_file` 失败自动回退 CPU；macOS Apple Silicon → CoreML 同理；Intel Mac / Linux → tract-onnx 纯 CPU。
+- **MODEL-3**：模型就绪判定 `is_reranker_cached()` = 三个必需文件齐全（磁盘级检查）。
+
+---
+
+## 变更评审对照表（改代码前逐条打勾）
+
+- [ ] 是否触及 FLOW 顺序（Filter 前置 / 阈值在融合后 / Diversity→Context 顺序）？
+- [ ] 是否改变召回语义（msm / 符号路分级 / 三路并行）？
+- [ ] 是否引入新分数域或在 `score` 上叠加手工分？
+- [ ] 是否改动 `aggregate_hits` 的三域裁决逻辑或参数签名？
+- [ ] 是否改动阈值默认值？若是，必须同步 CONFIG-1 与本清单。
+- [ ] 是否改动 `hybrid_search` 签名（禁止重加 intent 参数）？
+- [ ] 是否引入新的精排/路由实现？必须实现 `Reranker`/`QueryPlanner` trait。
+- [ ] 降级路径是否仍满足 FAILOVER-1~4？

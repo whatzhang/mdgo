@@ -17755,8 +17755,6 @@
         const DIRECTORY_STORE_NAME = 'idb-data-store';  // 目录数据存储键名
         const CUSTOM_PROMPT_NAME = 'custom_prompt';  // 自定义提示键名
 
-
-
         // ====== 目录名常量 ======
         const DELETED_DIR_NAME = 'mdgo_trash';         // 垃圾箱文件名
         const DIARY_DIR_NAME = 'mdgo_diary';         // 日记文件名
@@ -19543,6 +19541,7 @@
                             await navigateToDir(newRelativePath, false);
                             recordOperation(dirName, newRelativePath, OPERATION_TYPES.CREATE);
                             showNotification(`✓ 已创建目录: ${newRelativePath}`, 'success');
+                            scanDashboardData(true);
                         }
                     } catch (error) {
                         console.error('创建目录失败:', error);
@@ -19610,6 +19609,7 @@
                         } else {
                             showNotification(`✗ 创建文件失败: ${newRelativePath}`, 'error');
                         }
+                        scanDashboardData(true);
                     } catch (error) {
                         console.error('创建文件失败:', error);
                         showNotification('✗ 创建文件失败: ' + error.message, 'error');
@@ -19687,6 +19687,7 @@
                     if (fileSpan) clickFileSpan(newRelativePath, fileSpan);
                     recordOperation(fileName, newRelativePath, !isCreate ? OPERATION_TYPES.SAVE : OPERATION_TYPES.CREATE);
                     showNotification(`✓ 文件已保存: ${newRelativePath}`, 'success');
+                    scanDashboardData(true);
                 };
                 if (fileExists) {
                     await navigateToFile(newRelativePath);
@@ -25002,6 +25003,7 @@
                         const fileSpan = document.querySelector('.file-item[data-file-path="' + newRelativePath + '"]');
                         if (fileSpan) clickFileSpan(newRelativePath, fileSpan);
                     }
+                    scanDashboardData(true);
                 }
             } catch (error) {
                 console.error('保存 SVG 失败:', error);
@@ -30670,6 +30672,7 @@ kanban-plugin: basic
                         const fileSpan = document.querySelector('.file-item[data-file-path="' + newRelativePath + '"]');
                         if (fileSpan) clickFileSpan(newRelativePath, fileSpan);
                     }
+                    scanDashboardData(true);
                 }
                 recordOperation(newFileName, newRelativePath, OPERATION_TYPES.COPY);
                 showNotification(`✓ 已复制为 ${newFileName}`, 'success');
@@ -30725,6 +30728,7 @@ kanban-plugin: basic
                     }
                 });
             }
+            scanDashboardData(true);
         }
 
         async function deletedEmpty(relativePath, message) {
@@ -30866,6 +30870,7 @@ kanban-plugin: basic
                         }
                         recordOperation(fileName, originalPath, OPERATION_TYPES.RESTORE);
                         showNotification(`✓ 文件已还原: ${originalPath}`, 'success');
+                        scanDashboardData(true);
                     };
                     if (fileExists) {
                         await navigateToFile(originalPath);
@@ -34476,6 +34481,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             safeLocalStorageSet(LAST_FILE_KEY, newRelativePath);
             showNotification(`✓ 已保存为 ${newRelativePath}`, 'success');
+            scanDashboardData(true);
         }
 
         async function clickFileSpan(newRelativePath, fileSpan, expand = true) {

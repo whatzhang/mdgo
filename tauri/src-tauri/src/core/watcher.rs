@@ -19,6 +19,16 @@ struct FileEvent {
     timestamp: Instant,
 }
 
+/// 判断 notify 错误是否为良性：被监听路径或其子目录被删除/移动时，
+/// 平台 watcher 会报 "路径不存在"（用户正常操作，非应用故障），应忽略。
+fn is_benign_notify_error(e: &notify::Error) -> bool {
+    match &e.kind {
+        notify::ErrorKind::PathNotFound => true,
+        notify::ErrorKind::Io(err) => err.kind() == std::io::ErrorKind::NotFound,
+        _ => false,
+    }
+}
+
 /// 防抖循环内部控制消息
 enum DebounceCmd {
     /// 清空 pending 事件表（index_all 完成后调用，避免处理过期事件）
@@ -176,7 +186,11 @@ impl WatcherService {
             let event = match event {
                 Ok(e) => e,
                 Err(e) => {
-                    log::error!("[watcher] 文件监听错误: {}", e);
+                    if is_benign_notify_error(&e) {
+                        log::debug!("[watcher] 文件监听路径已删除/移动（良性，忽略）: {}", e);
+                    } else {
+                        log::error!("[watcher] 文件监听错误: {}", e);
+                    }
                     return;
                 }
             };
@@ -406,7 +420,11 @@ impl WatcherService {
             let event = match event {
                 Ok(e) => e,
                 Err(e) => {
-                    log::error!("[watcher] Skill 监听错误: {}", e);
+                    if is_benign_notify_error(&e) {
+                        log::debug!("[watcher] Skill 监听路径已删除/移动（良性，忽略）: {}", e);
+                    } else {
+                        log::error!("[watcher] Skill 监听错误: {}", e);
+                    }
                     return;
                 }
             };

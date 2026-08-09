@@ -260,6 +260,8 @@ pub fn guard_duplicate_call(run_id: &str, tool: &str, args: &str) -> Option<Stri
 struct FileListSnapshot {
     /// (relative_path, file_size)，已按路径排序，已通过 ignore 过滤
     entries: Vec<(String, u64)>,
+    /// 构建快照时的黑白名单指纹：黑名单变更后立即失效，避免复用旧过滤结果
+    blacklist_fp: u64,
     updated_at: Instant,
 }
 
@@ -290,9 +292,25 @@ pub fn invalidate_file_list_cache(dir_path: &str) {
     }
 }
 
+/// 由黑白名单生成指纹：任何黑名单条目的增删改都会改变指纹，
+/// 使缓存快照失效并触发重建，保证 grep/list_files 始终按最新黑名单过滤。
+fn blacklist_fingerprint(dir_blacklist: &[String], file_blacklist: &[String]) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    let mut dirs = dir_blacklist.to_vec();
+    dirs.sort();
+    let mut files = file_blacklist.to_vec();
+    files.sort();
+    dirs.hash(&mut h);
+    files.hash(&mut h);
+    h.finish()
+}
+
 /// 获取或刷新文件列表缓存（读锁检查 → 写锁 double-check → 刷新）
 ///
-/// 缓存 key 使用 canonicalized 路径，确保符号链接、大小写变体共享同一份缓存。
+/// 缓存 key 使用 canonicalized 路径，确保符号链接、大小写变体共享同一份缓存；
+/// 快照携带黑白名单指纹，黑名单变更时自动重建，避免复用旧过滤结果。
 fn get_or_refresh_cache(
     dir_path: &str,
     dir_blacklist: &[String],
@@ -301,14 +319,15 @@ fn get_or_refresh_cache(
     let base = std::fs::canonicalize(dir_path)
         .map_err(|e| format!("无法访问知识库目录: {}", e))?;
     let cache_key = base.to_string_lossy().to_string();
+    let fp = blacklist_fingerprint(dir_blacklist, file_blacklist);
 
     let cache = file_list_cache();
 
-    // 快速路径：读锁检查缓存是否有效
+    // 快速路径：读锁检查缓存是否有效（TTL 内且黑名单指纹一致）
     {
         let map = cache.read().unwrap_or_else(|e| e.into_inner());
         if let Some(snapshot) = map.get(&cache_key) {
-            if snapshot.updated_at.elapsed() < CACHE_TTL {
+            if snapshot.updated_at.elapsed() < CACHE_TTL && snapshot.blacklist_fp == fp {
                 return Ok(snapshot.entries.clone());
             }
         }
@@ -317,7 +336,7 @@ fn get_or_refresh_cache(
     // 慢路径：获取写锁后 double-check（避免多线程重复刷新）
     let mut map = cache.write().unwrap_or_else(|e| e.into_inner());
     if let Some(snapshot) = map.get(&cache_key) {
-        if snapshot.updated_at.elapsed() < CACHE_TTL {
+        if snapshot.updated_at.elapsed() < CACHE_TTL && snapshot.blacklist_fp == fp {
             return Ok(snapshot.entries.clone());
         }
     }
@@ -330,6 +349,7 @@ fn get_or_refresh_cache(
 
     map.insert(cache_key, FileListSnapshot {
         entries: entries.clone(),
+        blacklist_fp: fp,
         updated_at: Instant::now(),
     });
 
@@ -503,18 +523,316 @@ pub async fn list_files(cfg: &KbSearchConfig, pattern: &str, max_items: u32) -> 
 
 /// 单次搜索最多返回的命中文件数
 const MAX_GREP_FILES: usize = 20;
-/// 单文件最多返回的匹配行数
+/// 单文件最多返回的匹配行数（context=0 时即最大输出行数）
 const MAX_GREP_LINES_PER_FILE: usize = 10;
 /// 匹配行最大显示长度（超长截断）
 const MAX_GREP_LINE_CHARS: usize = 200;
+/// context>0 时单文件最多输出的行数上限（含上下文行，防止输出爆炸）
+const MAX_GREP_CONTEXT_OUTPUT_LINES: usize = 40;
+/// 单次搜索最终文本总字符上限（超出即截断并提示缩小范围）
+const MAX_GREP_OUTPUT_CHARS: usize = 60_000;
 /// 参与搜索的文件大小上限（跳过超大文件，避免拖慢工具调用）
 const MAX_GREP_FILE_BYTES: u64 = 2 * 1024 * 1024;
 /// 单次搜索累计扫描字节上限（超出即停止，避免大知识库下串行读全库拖慢模型轮次）
-const MAX_GREP_SCAN_BYTES: u64 = 50 * 1024 * 1024;
+const MAX_GREP_SCAN_BYTES: u64 = 200 * 1024 * 1024;
+/// glob 模式单条长度上限（超长视为无效，防滥用）
+const MAX_GLOB_PATTERN_CHARS: usize = 128;
+
+/// 解析后的搜索模式：引号包裹 → 精确连续短语；否则多关键词。
+#[derive(Debug, Clone)]
+struct ParsedPattern {
+    /// 精确短语模式（引号包裹）：整体作为连续子串匹配，不拆词
+    exact: bool,
+    /// 关键词列表（已小写化）
+    terms: Vec<String>,
+}
+
+/// 解析 pattern：
+/// - 首尾均为双引号（长度≥2）→ 精确短语：剥离引号后整体连续匹配（如 `"fn main()"`）
+/// - 否则按空白拆分为多个关键词（同时清理残缺的引号字符，提升模型传参鲁棒性）
+fn parse_pattern(pattern: &str) -> ParsedPattern {
+    let pattern = pattern.trim();
+    if pattern.len() >= 2 && pattern.starts_with('"') && pattern.ends_with('"') {
+        let inner = pattern[1..pattern.len() - 1].trim();
+        if !inner.is_empty() {
+            return ParsedPattern {
+                exact: true,
+                terms: vec![inner.to_lowercase()],
+            };
+        }
+    }
+    ParsedPattern {
+        exact: false,
+        terms: pattern
+            .trim_matches('"')
+            .split_whitespace()
+            .map(|t| t.to_lowercase())
+            .collect(),
+    }
+}
+
+/// 轻量 glob 匹配器：仅服务于单次 grep 的 include/exclude 临时过滤，
+/// 不污染全局文件列表缓存（全局黑白名单仍由 IgnoreMatcher 负责）。
+struct GlobMatcher {
+    patterns: Vec<regex::Regex>,
+}
+
+impl GlobMatcher {
+    fn new(patterns: &[String]) -> Self {
+        let patterns = patterns
+            .iter()
+            .filter_map(|p| {
+                let p = p.trim();
+                if p.is_empty() || p.chars().count() > MAX_GLOB_PATTERN_CHARS {
+                    return None;
+                }
+                glob_to_regex(p).and_then(|re| regex::Regex::new(&re).ok())
+            })
+            .collect();
+        Self { patterns }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.patterns.is_empty()
+    }
+
+    fn is_match(&self, rel: &str) -> bool {
+        self.patterns.iter().any(|re| re.is_match(rel))
+    }
+}
+
+/// 将 glob 模式编译为正则：
+/// - `*` → `[^/]*`；`?` → `[^/]`；`**` → `.*`；`**/` → `(?:.*/)?`
+/// - 含 `/` 或 `/` 开头 → 锚定根目录；不含 `/` → 匹配任意层级下的 basename
+/// - 以 `/**` 结尾 → 目录全包含语义（目录本身及其下全部文件）
+/// - 无通配符的裸名（如 `src`、`target/`）→ 自动展开为子树语义 `src/**`，
+///   与 IgnoreMatcher 的目录规则对齐：既匹配条目本身，也匹配其下全部文件，
+///   避免 `include:["src"]` 静默零命中、`exclude:["target"]` 漏排目录树
+fn glob_to_regex(pat: &str) -> Option<String> {
+    let mut p = pat;
+    let dir_all = p.ends_with("/**");
+    if dir_all {
+        p = &p[..p.len() - 3];
+    }
+    // 以 `/` 结尾（如 "target/"）→ 目录语义
+    let trailing_slash = p.ends_with('/') && p.len() > 1;
+    if trailing_slash {
+        p = &p[..p.len() - 1];
+    }
+    if p.is_empty() {
+        return None;
+    }
+    let anchored = p.starts_with('/');
+    if anchored {
+        p = &p[1..];
+    }
+    let has_slash = p.contains('/');
+    // 裸名（无通配符、无斜杠）或目录写法 → 展开为"条目本身 + 其下全部文件"
+    let bare_name = !p.contains('*') && !p.contains('?') && !has_slash;
+    let expand_tree = dir_all || trailing_slash || bare_name;
+
+    let mut re = String::new();
+    if anchored || has_slash {
+        re.push('^');
+    } else {
+        re.push_str("(?:^|.*/)"); // 无斜杠 → 匹配任意层级下的同名 basename
+    }
+    let mut chars = p.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '*' => {
+                if chars.peek() == Some(&'*') {
+                    chars.next();
+                    if chars.peek() == Some(&'/') {
+                        chars.next();
+                        re.push_str("(?:.*/)?");
+                    } else {
+                        re.push_str(".*");
+                    }
+                } else {
+                    re.push_str("[^/]*");
+                }
+            }
+            '?' => re.push_str("[^/]"),
+            '.' | '+' | '(' | ')' | '{' | '}' | '[' | ']' | '|' | '^' | '$' | '\\' => {
+                re.push('\\');
+                re.push(c);
+            }
+            _ => re.push(c),
+        }
+    }
+    if expand_tree {
+        re.push_str("(?:/.*)?");
+    }
+    re.push('$');
+    Some(re)
+}
+
+/// 扫描单个文件内容，返回 (文件是否命中, 输出行列表)。
+///
+/// - 文件级规则：AND 模式要求全部关键词出现在文件中（可不同行）；OR 模式任一关键词出现即命中；
+///   精确短语模式要求短语连续出现。
+/// - 行级展示：展示包含任一关键词/短语的行；`context>0` 时附带上下文行并用 `>` 标记命中行。
+/// - `list_only=true` 只判定命中不生成行输出。
+fn scan_content(
+    text: &str,
+    parsed: &ParsedPattern,
+    mode_and: bool,
+    context: usize,
+    list_only: bool,
+) -> (bool, Vec<String>) {
+    let lines: Vec<&str> = text.lines().collect();
+    let n = lines.len();
+    let lower_lines: Vec<String> = lines.iter().map(|l| l.to_lowercase()).collect();
+
+    // 行级命中 = 包含任一关键词（精确短语时即短语本身）
+    let mut line_hit = vec![false; n];
+    let mut any_hit = false;
+    for (i, lower) in lower_lines.iter().enumerate() {
+        let hit = parsed.terms.iter().any(|t| lower.contains(t.as_str()));
+        line_hit[i] = hit;
+        any_hit |= hit;
+    }
+    if !any_hit {
+        return (false, Vec::new());
+    }
+    // 文件级 AND：全部关键词都出现在文件中（可在不同行）
+    if !parsed.exact && mode_and {
+        let all_present = parsed
+            .terms
+            .iter()
+            .all(|t| lower_lines.iter().any(|l| l.contains(t.as_str())));
+        if !all_present {
+            return (false, Vec::new());
+        }
+    }
+    if list_only {
+        return (true, Vec::new());
+    }
+
+    // 命中行总数（用于超限提示）
+    let total_matched = line_hit.iter().filter(|b| **b).count();
+    // 命中行号（最多 MAX_GREP_LINES_PER_FILE 个，与旧行为一致）：
+    // AND 多关键词模式优先展示包含"最稀有词"的行，避免稀有词所在行被前面大量
+    // 命中行挤掉，导致模型误判文件未含该词（文件级命中本身是正确的）。
+    let match_idxs: Vec<usize> = if !parsed.exact && mode_and && parsed.terms.len() > 1 {
+        let counts: Vec<usize> = parsed
+            .terms
+            .iter()
+            .map(|t| lower_lines.iter().filter(|l| l.contains(t.as_str())).count())
+            .collect();
+        let rare_term = &parsed.terms
+            [counts.iter().enumerate().min_by_key(|(_, c)| **c).map(|(i, _)| i).unwrap_or(0)];
+        let mut picked: Vec<usize> = Vec::new();
+        let mut picked_set = vec![false; n];
+        // 第一优先：包含稀有词的行（保持行序）
+        for i in 0..n {
+            if line_hit[i] && lower_lines[i].contains(rare_term.as_str()) {
+                picked.push(i);
+                picked_set[i] = true;
+            }
+        }
+        // 补齐其余命中行（保持行序，上限 MAX_GREP_LINES_PER_FILE）
+        for i in 0..n {
+            if picked.len() >= MAX_GREP_LINES_PER_FILE {
+                break;
+            }
+            if line_hit[i] && !picked_set[i] {
+                picked.push(i);
+                picked_set[i] = true;
+            }
+        }
+        picked
+    } else {
+        (0..n)
+            .filter(|&i| line_hit[i])
+            .take(MAX_GREP_LINES_PER_FILE)
+            .collect()
+    };
+    if match_idxs.is_empty() {
+        return (true, Vec::new());
+    }
+
+    // 构建输出窗口（context=0 只含命中行；>0 为命中行 ±context）
+    let mut include = vec![false; n];
+    for &i in &match_idxs {
+        if context == 0 {
+            include[i] = true;
+        } else {
+            let lo = i.saturating_sub(context);
+            let hi = (i + context + 1).min(n);
+            for j in lo..hi {
+                include[j] = true;
+            }
+        }
+    }
+
+    let mut out: Vec<String> = Vec::new();
+    if context == 0 {
+        // 兼容旧输出格式：`  行号: 内容`
+        for i in 0..n {
+            if include[i] {
+                let display: String = lines[i].chars().take(MAX_GREP_LINE_CHARS).collect();
+                out.push(format!("  {}: {}", i + 1, display));
+            }
+        }
+        if total_matched > match_idxs.len() {
+            out.push(format!(
+                "  ... 另有 {} 个匹配行未展示",
+                total_matched - match_idxs.len()
+            ));
+        }
+        return (true, out);
+    }
+
+    // context>0：`>` 标记命中行，空格前缀为上下文行；非连续区间用 `--` 分隔
+    let mut emitted = 0usize;
+    let mut prev_included = false;
+    for i in 0..n {
+        if !include[i] {
+            prev_included = false;
+            continue;
+        }
+        if emitted >= MAX_GREP_CONTEXT_OUTPUT_LINES {
+            break;
+        }
+        if !prev_included && !out.is_empty() {
+            out.push("  --".to_string());
+        }
+        let display: String = lines[i].chars().take(MAX_GREP_LINE_CHARS).collect();
+        let marker = if line_hit[i] { ">" } else { " " };
+        out.push(format!("{} {:>3}: {}", marker, i + 1, display));
+        prev_included = true;
+        emitted += 1;
+    }
+    if total_matched > match_idxs.len() {
+        out.push(format!(
+            "  -- 另有 {} 个匹配行未展示",
+            total_matched - match_idxs.len()
+        ));
+    }
+    (true, out)
+}
 
 /// 在知识库目录内所有文本文件中搜索关键词（大小写不敏感子串匹配），
 /// 返回 `文件路径:行号:匹配行`，供模型先定位再精读（配合 read + offset）。
-pub async fn grep_files(cfg: &KbSearchConfig, pattern: &str, max_files: u32) -> Result<String, String> {
+///
+/// 模式：
+/// - `pattern` 以空白分隔多个关键词：默认 AND（文件需同时包含全部词，可不同行），
+///   `match_mode="or"` 时任一关键词出现即命中
+/// - `pattern` 用双引号包裹（如 `"fn main()"`）→ 精确连续短语匹配
+/// - `include`/`exclude` 用 glob 限定/排除文件（仅本次搜索生效，不污染全局缓存）
+/// - `context_lines` 展示命中行前后上下文；`list_only=true` 仅返回文件名
+pub async fn grep_files(
+    cfg: &KbSearchConfig,
+    pattern: &str,
+    max_files: u32,
+    include: &[String],
+    exclude: &[String],
+    context_lines: usize,
+    match_mode: &str,
+    list_only: bool,
+) -> Result<String, String> {
     let pattern = pattern.trim();
     if pattern.is_empty() {
         return Err("搜索关键词为空，请提供 pattern 参数".to_string());
@@ -522,23 +840,41 @@ pub async fn grep_files(cfg: &KbSearchConfig, pattern: &str, max_files: u32) -> 
     if pattern.chars().count() < 2 {
         return Err("搜索关键词过短（至少 2 个字符），请提供更具体的关键词".to_string());
     }
-    let needle = pattern.to_lowercase();
-    let entries = get_or_refresh_cache(&cfg.dir_path, &cfg.dir_blacklist, &cfg.file_blacklist)?;
+    let parsed = parse_pattern(pattern);
+    if parsed.terms.is_empty() {
+        return Err("搜索关键词为空，请提供 pattern 参数".to_string());
+    }
+    let mode_and = match_mode != "or";
+    let context = context_lines.min(5);
     let limit = (max_files as usize).clamp(1, MAX_GREP_FILES);
 
-    // 先基于缓存廉价筛选候选文件（目录项、超限文件直接跳过，无磁盘 IO）
-    let candidates: Vec<(String, u64)> = entries
-        .iter()
-        .filter(|(rel, size)| !rel.ends_with('/') && *size <= MAX_GREP_FILE_BYTES)
-        .cloned()
-        .collect();
-
-    // 文件读取与匹配为 CPU/IO 密集操作，移到阻塞线程执行，避免阻塞 tokio 执行线程
+    // 缓存读取（冷缓存时为全量目录遍历）、候选过滤与文件匹配均为 CPU/IO 密集
+    // 操作，整体移到阻塞线程执行，避免阻塞 tokio 执行线程与 agent 异步循环，
+    // 也避免大知识库冷缓存时首次 grep 卡死（遍历无取消机制，绝不能跑在 async 线程上）。
     let dir_path = cfg.dir_path.clone();
-    let (hits, truncated) = tokio::task::spawn_blocking(move || {
-        let mut hits: Vec<(String, Vec<(usize, String)>)> = Vec::new();
+    let dir_blacklist = cfg.dir_blacklist.clone();
+    let file_blacklist = cfg.file_blacklist.clone();
+    let include_owned = include.to_vec();
+    let exclude_owned = exclude.to_vec();
+    let parsed_for_search = parsed.clone();
+    let (hits, truncated, skipped) = tokio::task::spawn_blocking(move || {
+        let entries = get_or_refresh_cache(&dir_path, &dir_blacklist, &file_blacklist)?;
+        let include_matcher = GlobMatcher::new(&include_owned);
+        let exclude_matcher = GlobMatcher::new(&exclude_owned);
+
+        // 候选文件过滤：全局缓存 → 大小上限 → 本次 include/exclude glob（内存过滤，不污染缓存）
+        let candidates: Vec<(String, u64)> = entries
+            .iter()
+            .filter(|(rel, size)| !rel.ends_with('/') && *size <= MAX_GREP_FILE_BYTES)
+            .filter(|(rel, _)| include_matcher.is_empty() || include_matcher.is_match(rel))
+            .filter(|(rel, _)| !exclude_matcher.is_match(rel))
+            .cloned()
+            .collect();
+
+        let mut hits: Vec<(String, Vec<String>)> = Vec::new();
         let mut scanned: u64 = 0;
         let mut truncated = false;
+        let mut skipped = 0u32;
         for (rel, _) in candidates {
             if hits.len() >= limit {
                 break;
@@ -547,11 +883,18 @@ pub async fn grep_files(cfg: &KbSearchConfig, pattern: &str, max_files: u32) -> 
                 truncated = true;
                 break;
             }
+            // 解析/读取失败静默跳过并计数，输出时提示，避免模型把"文件不可读"误判为"未找到"
             let full = match safe_resolve(&dir_path, &rel) {
                 Ok(p) => p,
-                Err(_) => continue,
+                Err(_) => {
+                    skipped += 1;
+                    continue;
+                }
             };
-            let Ok(data) = std::fs::read(&full) else { continue };
+            let Ok(data) = std::fs::read(&full) else {
+                skipped += 1;
+                continue;
+            };
             scanned = scanned.saturating_add(data.len() as u64);
             if scanned >= MAX_GREP_SCAN_BYTES {
                 // 已到达累计扫描上限：本文件已读入，继续匹配，但后续文件不再扫描
@@ -562,60 +905,155 @@ pub async fn grep_files(cfg: &KbSearchConfig, pattern: &str, max_files: u32) -> 
                 continue;
             }
             let text = String::from_utf8_lossy(&data);
-            let mut matches: Vec<(usize, String)> = Vec::new();
-            for (idx, line) in text.lines().enumerate() {
-                if line.to_lowercase().contains(&needle) {
-                    let display: String = line.chars().take(MAX_GREP_LINE_CHARS).collect();
-                    matches.push((idx + 1, display));
-                    if matches.len() >= MAX_GREP_LINES_PER_FILE {
-                        break;
-                    }
-                }
+            let (matched, lines) = scan_content(&text, &parsed_for_search, mode_and, context, list_only);
+            if !matched {
+                continue;
             }
-            if !matches.is_empty() {
-                hits.push((rel, matches));
+            if list_only {
+                hits.push((rel, Vec::new()));
+            } else if !lines.is_empty() {
+                hits.push((rel, lines));
             }
         }
-        (hits, truncated)
+        Ok::<_, String>((hits, truncated, skipped))
     })
     .await
-    .map_err(|e| format!("搜索文件内容失败: {}", e))?;
+    .map_err(|e| format!("搜索文件内容失败: {}", e))??;
+
+    // 读取失败提示：区分"术语不存在"与"文件不可读"，避免误导模型
+    let skip_note = if skipped > 0 {
+        format!("\n（注：{} 个文件读取失败被跳过，结果可能不完整）", skipped)
+    } else {
+        String::new()
+    };
 
     if hits.is_empty() {
-        let mut msg = format!("未找到包含“{}”的文件。", pattern);
+        // 精确短语未命中时剥离引号，避免文案出现嵌套引号（如 未找到包含“"fn main()"”）
+        let display_pattern = if parsed.exact { pattern.trim_matches('"') } else { pattern };
+        let mut msg = if parsed.terms.len() == 1 {
+            format!("未找到包含“{}”的文件。", display_pattern)
+        } else if mode_and {
+            format!("未找到同时包含“{}”的文件。", parsed.terms.join("”和“"))
+        } else {
+            format!("未找到包含“{}”任一关键词的文件。", parsed.terms.join("”或“"))
+        };
         if truncated {
-            msg.push_str("（已到达单次扫描上限，可能未覆盖全部文件）");
+            msg.push_str(&truncate_hint());
         }
+        msg.push_str(&skip_note);
         return Ok(msg);
     }
+
     let mut out = format!("搜索“{}”命中 {} 个文件：\n", pattern, hits.len());
-    for (rel, matches) in hits {
-        out.push_str(&format!("\n{rel}\n"));
-        for (no, line) in matches {
-            out.push_str(&format!("  {no}: {line}\n"));
+    // 上限按"字符"统计（与 MAX_GREP_OUTPUT_CHARS 语义一致），避免中文内容提前截断
+    let mut chars = out.chars().count();
+    let mut output_truncated = false;
+    for (rel, lines) in hits {
+        if list_only {
+            // 仅文件名：直接换行列出
+            let item = format!("{rel}\n");
+            let item_chars = item.chars().count();
+            if chars + item_chars > MAX_GREP_OUTPUT_CHARS {
+                output_truncated = true;
+                break;
+            }
+            chars += item_chars;
+            out.push_str(&item);
+        } else {
+            let mut block = format!("\n{rel}\n");
+            for line in &lines {
+                block.push_str(line);
+                block.push('\n');
+            }
+            let block_chars = block.chars().count();
+            if chars + block_chars > MAX_GREP_OUTPUT_CHARS {
+                output_truncated = true;
+                break;
+            }
+            chars += block_chars;
+            out.push_str(&block);
         }
     }
-    if truncated {
-        out.push_str("\n（已到达单次扫描上限，结果可能不完整）");
+    if output_truncated {
+        out.push_str(&truncate_hint());
+    } else if truncated {
+        out.push_str(&truncate_hint());
     }
+    out.push_str(&skip_note);
     Ok(out)
 }
 
+/// 扫描字节/输出字符截断时的可执行优化建议（引导模型下一步动作）。
+fn truncate_hint() -> String {
+    "\n⚠️ 搜索已达到单次扫描/输出上限，结果存在截断。\n建议方案：\n1. 使用 include 参数限定文件后缀缩小扫描范围（如 include:[\"*.rs\"]）\n2. 使用更精准的关键词减少匹配范围\n3. 拆分搜索，分多次查询不同目录\n".to_string()
+}
+
+/// 解析 include/exclude 参数：兼容数组与逗号分隔字符串（模型常传错类型），
+/// 避免类型不符被静默忽略导致过滤失效。
+fn parse_str_list(v: &serde_json::Value) -> Vec<String> {
+    match v {
+        serde_json::Value::Array(arr) => arr
+            .iter()
+            .filter_map(|x| x.as_str().map(|s| s.to_string()))
+            .collect(),
+        serde_json::Value::String(s) => s
+            .split(',')
+            .map(|p| p.trim().to_string())
+            .filter(|p| !p.is_empty())
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
 /// 构建 grep 工具：在知识库内搜索文件内容。
+///
+/// 参数与使用策略对齐 Claude Code / GitHub Codex 的 grep 习惯；新增参数全部带默认值，
+/// 旧调用（仅 pattern/max_files）行为保持不变。
 pub fn build_grep_tool(cfg: KbSearchConfig) -> DynamicTool {
     DynamicTool::new(
         "grep",
-        "在知识库目录内的所有文本文件中搜索指定关键词（大小写不敏感子串匹配），返回\"文件路径:行号:匹配行\"。当需要定位某个术语/函数/配置出现在哪些文件、或不想整读大文件时调用；典型用法是先用 grep 定位，再用 read 工具精读相关行（read 支持 offset 分页）。",
+        "在知识库目录内的文本文件中搜索关键词（大小写不敏感子串匹配，跳过二进制与超大文件）。输出格式：每个命中文件先输出一行相对路径，随后每行\"  行号: 内容\"；context_lines>0 时匹配行以 \">\" 开头、上下文行以空格开头、非连续区间用 \"--\" 分隔；list_only=true 时仅输出文件名。pattern 支持多关键词（空格分隔）：默认 and 模式（文件需同时包含所有词，词可出现在不同行），可设 match_mode=\"or\"（含任一词即命中）；用双引号包裹 pattern 可精确搜索连续短语（如 pattern=\"\\\"fn main()\\\"\"）。include/exclude 支持 glob 与目录名：include:[\"*.rs\",\"*.md\"] 限定文件类型，exclude:[\"target/**\",\"dist/**\"] 排除目录，目录名（如 \"src\"）自动展开为其下全部文件。\n使用建议：\n- 快速定位哪些文件包含目标文本：list_only=true（只返回文件名，省 token）\n- 需要看懂代码片段周边逻辑：context_lines=3（返回命中行前后 3 行，最大 5）\n- 缩小搜索范围减少耗时：include:[\"*.rs\"] 或 include:[\"src\"]（目录名）\n- 搜索连续代码片段：用双引号包裹 pattern，如 pattern=\"\\\"fn handle_request(\\\"\"\n- 多个术语任选其一：match_mode=\"or\"\n定位后建议用 read 工具精读相关行（read 支持 offset 分页）。",
         serde_json::json!({
             "type": "object",
             "properties": {
                 "pattern": {
                     "type": "string",
-                    "description": "要搜索的关键词或短语（至少 2 个字符），大小写不敏感"
+                    "description": "搜索文本（至少 2 个字符），大小写不敏感；多个词以空格分隔默认 AND 匹配（文件需同时包含所有词）；用双引号包裹（如 \"fn main()\"）开启精确连续短语匹配"
                 },
                 "max_files": {
                     "type": "integer",
+                    "default": 10,
+                    "minimum": 1,
+                    "maximum": 20,
                     "description": "最多返回命中文件数，默认 10，最大 20"
+                },
+                "include": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "glob 包含过滤器，仅扫描匹配的文件，例：[\"*.rs\",\"*.md\"]；目录名（如 \"src\"）自动展开为该目录下全部文件；也可传逗号分隔字符串"
+                },
+                "exclude": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "glob 排除过滤器，例：[\"target/**\",\"dist/**\"]；目录名（如 \"target\"）自动排除整个目录树；也可传逗号分隔字符串"
+                },
+                "context_lines": {
+                    "type": "integer",
+                    "default": 0,
+                    "minimum": 0,
+                    "maximum": 5,
+                    "description": "匹配行前后展示的上下文行数（最大 5，防止超长输出）"
+                },
+                "match_mode": {
+                    "type": "string",
+                    "enum": ["and", "or"],
+                    "default": "and",
+                    "description": "多关键词匹配策略：and 文件必须包含所有词；or 文件包含任意一个词"
+                },
+                "list_only": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "只输出匹配的文件名称，不展示匹配行（等效 grep -l）"
                 }
             },
             "required": ["pattern"]
@@ -637,8 +1075,53 @@ pub fn build_grep_tool(cfg: KbSearchConfig) -> DynamicTool {
                     .and_then(|m| m.as_u64())
                     .map(|v| v as u32)
                     .unwrap_or(10);
-                record_tool_call(&cfg, "grep", &pattern);
-                match grep_files(&cfg, &pattern, max_files).await {
+                let include: Vec<String> = parse_str_list(args.get("include").unwrap_or(&serde_json::Value::Null));
+                let exclude: Vec<String> = parse_str_list(args.get("exclude").unwrap_or(&serde_json::Value::Null));
+                let context_lines = args
+                    .get("context_lines")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as usize)
+                    .unwrap_or(0);
+                let match_mode = args
+                    .get("match_mode")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("and")
+                    .to_string();
+                let list_only = args
+                    .get("list_only")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+
+                // 工具轨迹参数预览：pattern + 非默认的关键参数（压缩后纳入日志）
+                let mut preview = pattern.clone();
+                if !include.is_empty() {
+                    preview.push_str(&format!(" include={}", include.join(",")));
+                }
+                if !exclude.is_empty() {
+                    preview.push_str(&format!(" exclude={}", exclude.join(",")));
+                }
+                if context_lines > 0 {
+                    preview.push_str(&format!(" context={}", context_lines));
+                }
+                if match_mode == "or" {
+                    preview.push_str(" mode=or");
+                }
+                if list_only {
+                    preview.push_str(" list_only");
+                }
+                record_tool_call(&cfg, "grep", &preview);
+                match grep_files(
+                    &cfg,
+                    &pattern,
+                    max_files,
+                    &include,
+                    &exclude,
+                    context_lines,
+                    &match_mode,
+                    list_only,
+                )
+                .await
+                {
                     Ok(text) => {
                         record_tool_result(&cfg, "grep", true, &format!("{} 字符", text.chars().count()));
                         Ok(ToolOutput::text(text))
@@ -1223,5 +1706,197 @@ pub fn build_pomodoro_tool(cfg: KbSearchConfig) -> DynamicTool {
         }),
         "status",
     )
+}
+
+#[cfg(test)]
+mod grep_tests {
+    use super::*;
+
+    fn parsed(terms: &[&str]) -> ParsedPattern {
+        ParsedPattern {
+            exact: false,
+            terms: terms.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn parse_pattern_handles_exact_phrase() {
+        let p = parse_pattern("\"fn main()\"");
+        assert!(p.exact);
+        assert_eq!(p.terms, vec!["fn main()".to_string()]);
+    }
+
+    #[test]
+    fn parse_pattern_splits_keywords() {
+        let p = parse_pattern("LRU python");
+        assert!(!p.exact);
+        assert_eq!(p.terms, vec!["lru".to_string(), "python".to_string()]);
+    }
+
+    #[test]
+    fn parse_pattern_cleans_stray_quotes() {
+        let p = parse_pattern("\"LRU python");
+        assert!(!p.exact);
+        assert_eq!(p.terms, vec!["lru".to_string(), "python".to_string()]);
+    }
+
+    #[test]
+    fn scan_and_requires_all_terms_in_file() {
+        let text = "# LRU Cache\nclass LRUCache:\n    pass\n";
+        let p = parsed(&["lru", "python"]);
+        // 文件不包含 python → AND 不命中
+        let (hit, _) = scan_content(text, &p, true, 0, false);
+        assert!(!hit);
+
+        let text2 = "# LRU cache in Python\nclass LRUCache:\n    pass\n";
+        let (hit, lines) = scan_content(text2, &p, true, 0, false);
+        assert!(hit);
+        // 展示包含任一关键词的行（兼容旧格式 `  行号: 内容`）
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains("LRU cache in Python"));
+        assert!(lines[1].contains("LRUCache"));
+    }
+
+    #[test]
+    fn scan_or_matches_any_term() {
+        let text = "no match here\n";
+        let p = parsed(&["lru", "python"]);
+        let (hit, _) = scan_content(text, &p, false, 0, false);
+        assert!(!hit);
+
+        let text2 = "just python\n";
+        let (hit, _) = scan_content(text2, &p, false, 0, false);
+        assert!(hit);
+    }
+
+    #[test]
+    fn scan_exact_phrase_requires_contiguous() {
+        let p = ParsedPattern {
+            exact: true,
+            terms: vec!["lru cache".to_string()],
+        };
+        let (hit, _) = scan_content("LRU Cache is here\n", &p, true, 0, false);
+        assert!(hit);
+        // 单词被分隔 → 不是连续短语
+        let (hit, _) = scan_content("LRU 和 Cache 分开\n", &p, true, 0, false);
+        assert!(!hit);
+    }
+
+    #[test]
+    fn scan_context_marks_match_lines() {
+        let text = "line1\nline2\nLRU here\nline4\nline5\n";
+        let p = parsed(&["lru"]);
+        let (hit, lines) = scan_content(text, &p, true, 1, false);
+        assert!(hit);
+        // 命中行为第 3 行，窗口 = ±1 → 第 2/3/4 行（共 3 行）
+        assert_eq!(lines.len(), 3);
+        assert!(lines.iter().any(|l| l.starts_with("> ")));
+        assert!(lines.iter().any(|l| l.starts_with("  ")));
+        assert!(lines.iter().all(|l| l.contains("line") || l.contains("LRU")));
+    }
+
+    #[test]
+    fn scan_list_only_no_lines() {
+        let text = "LRU here\n";
+        let p = parsed(&["lru"]);
+        let (hit, lines) = scan_content(text, &p, true, 0, true);
+        assert!(hit);
+        assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn glob_include_matches_ext() {
+        let m = GlobMatcher::new(&["*.rs".to_string(), "*.md".to_string()]);
+        assert!(m.is_match("src/main.rs"));
+        assert!(m.is_match("README.md"));
+        assert!(m.is_match("target/x.rs")); // *.rs 为 basename 匹配，任意层级均命中
+        assert!(!m.is_match("src/main.py"));
+        assert!(!m.is_match("docs/guide.txt"));
+    }
+
+    #[test]
+    fn glob_exclude_dir_all() {
+        let m = GlobMatcher::new(&["target/**".to_string()]);
+        assert!(m.is_match("target/x.rs"));
+        assert!(m.is_match("target/sub/y.rs"));
+        assert!(!m.is_match("src/main.rs"));
+    }
+
+    #[test]
+    fn blacklist_fingerprint_changes_with_config() {
+        let empty = blacklist_fingerprint(&[], &[]);
+        let with_dir = blacklist_fingerprint(&["target/**".to_string()], &[]);
+        let with_file = blacklist_fingerprint(&[], &["*.log".to_string()]);
+        assert_ne!(empty, with_dir);
+        assert_ne!(empty, with_file);
+        assert_ne!(with_dir, with_file);
+
+        // 顺序无关：同一集合不同顺序指纹一致
+        let a = blacklist_fingerprint(&["b/**".to_string(), "a/**".to_string()], &["x.txt".to_string()]);
+        let b = blacklist_fingerprint(&["a/**".to_string(), "b/**".to_string()], &["x.txt".to_string()]);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn glob_double_star_any_depth() {
+        let m = GlobMatcher::new(&["**/tests/**".to_string()]);
+        assert!(m.is_match("src/tests/foo.rs"));
+        assert!(m.is_match("tests/foo.rs"));
+        assert!(!m.is_match("src/main.rs"));
+    }
+
+    #[test]
+    fn glob_bare_dir_name_expands_to_subtree() {
+        // include:["src"] 应匹配 src 目录树（裸目录名子树语义，避免静默零命中）
+        let m = GlobMatcher::new(&["src".to_string()]);
+        assert!(m.is_match("src/main.rs"));
+        assert!(m.is_match("src/sub/deep.rs"));
+        assert!(!m.is_match("other/main.rs"));
+        assert!(!m.is_match("docs/src-note.md")); // 既不在 src 树下也不以 src 结尾
+
+        // exclude:["target"] 应排除 target 目录树
+        let m = GlobMatcher::new(&["target".to_string()]);
+        assert!(m.is_match("target/debug/app"));
+        assert!(m.is_match("target"));
+        assert!(!m.is_match("src/main.rs"));
+    }
+
+    #[test]
+    fn glob_trailing_slash_dir() {
+        let m = GlobMatcher::new(&["dist/".to_string()]);
+        assert!(m.is_match("dist/bundle.js"));
+        assert!(!m.is_match("src/index.js"));
+    }
+
+    #[test]
+    fn parse_str_list_accepts_array_and_string() {
+        use serde_json::json;
+        assert_eq!(
+            parse_str_list(&json!(["*.rs", "*.md"])),
+            vec!["*.rs".to_string(), "*.md".to_string()]
+        );
+        assert_eq!(
+            parse_str_list(&json!("*.rs, *.md")),
+            vec!["*.rs".to_string(), "*.md".to_string()]
+        );
+        assert_eq!(parse_str_list(&json!(123)), Vec::<String>::new());
+    }
+
+    #[test]
+    fn scan_and_prefers_rare_term_line() {
+        // term1 占满前 10 行、term2 只出现在第 11 行 → 展示必须包含 term2 所在行
+        let mut text = String::new();
+        for i in 0..10 {
+            text.push_str(&format!("alpha line {}\n", i));
+        }
+        text.push_str("beta only here\n");
+        let p = parsed(&["alpha", "beta"]);
+        let (hit, lines) = scan_content(&text, &p, true, 0, false);
+        assert!(hit);
+        assert!(lines.iter().any(|l| l.contains("beta only here")));
+        assert!(lines.iter().any(|l| l.contains("alpha line")));
+        // 11 个命中行 > 展示上限 10 → 输出超限提示
+        assert!(lines.iter().any(|l| l.contains("另有 1 个匹配行未展示")));
+    }
 }
 

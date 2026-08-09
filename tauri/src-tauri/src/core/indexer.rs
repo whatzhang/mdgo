@@ -949,7 +949,19 @@ impl Indexer {
             .await
             {
                 Ok(Ok(hits)) => {
-                    log::debug!("[indexer] [混合检索] 精排完成: {} → {}", candidates.len(), hits.len());
+                    if log::log_enabled!(log::Level::Debug) {
+                        let detail: Vec<String> = hits
+                            .iter()
+                            .map(|h| format!("{}: {:.3}", h.doc_name, h.score))
+                            .collect();
+                        log::debug!(
+                            "[indexer] [混合检索] 精排完成: {} → {} 通过阈值({}), sigmoid分数:\n{:?}",
+                            candidates.len(),
+                            hits.len(),
+                            rerank_min_score,
+                            detail
+                        );
+                    }
                     hits
                 }
                 Ok(Err(e)) => {

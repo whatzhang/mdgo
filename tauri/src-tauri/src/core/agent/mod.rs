@@ -316,8 +316,10 @@ pub struct KbSearchConfig {
     pub dir_blacklist: Vec<String>,
     /// 文件黑名单（gitignore 语法，供 list_files/walk_dir 过滤，与索引/监视逻辑一致）
     pub file_blacklist: Vec<String>,
-    /// 聚合绝对阈值（融合分数低于此值的命中不进入上下文）
+    /// 聚合绝对阈值（融合分数低于此值的命中不进入上下文；RRF 域）
     pub min_score: f32,
+    /// 精排 sigmoid 阈值（`score_rerank` 非空的命中按此阈值裁决；与 pipeline 内精排阈值同语义）
+    pub rerank_min_score: f32,
     /// 送入上下文的最大文档数
     pub max_context_docs: usize,
     /// 单文档最多保留的 chunk 数
@@ -363,6 +365,7 @@ pub async fn kb_search(cfg: &KbSearchConfig, query: &str, top_k: u32) -> Result<
     let selected = aggregate_hits(
         hits,
         cfg.min_score,
+        cfg.rerank_min_score,
         cfg.max_context_docs,
         cfg.max_chunks_per_doc,
     );
@@ -542,9 +545,18 @@ pub fn build_code_lookup_tool(cfg: KbSearchConfig) -> DynamicTool {
 /// 确定语义，配合硬截断保证送入上下文的都是高置信命中。
 ///
 /// 返回按文档分数降序、文档内按分数降序的 `(SearchHit, score)` 列表。
+///
+/// # 分数域契约（与 `Indexer::hybrid_search` 输出对齐）
+/// `SearchHit.score` 在不同阶段承载不同分数域，本函数按域选择阈值：
+/// - `score_rerank: Some(_)`：sigmoid 域（精排激活）→ 用 `rerank_min_score`（模型判定门槛，
+///   与 pipeline 内精排阈值同语义，幂等兜底）
+/// - `symbol_name: Some(_)` 且未精排：符号强信号 → 完全放行（符号路召回已按匹配质量
+///   分级截断，且其 RRF 归一化分无判别力，不受融合阈值约束）
+/// - 其余：RRF 归一化域（精排未激活/失败回退）→ 用 `min_score`（融合兜底阈值）
 pub fn aggregate_hits(
     all_hits: Vec<SearchHit>,
     min_score: f32,
+    rerank_min_score: f32,
     max_docs: usize,
     max_chunks_per_doc: usize,
 ) -> Vec<(SearchHit, f32)> {
@@ -565,10 +577,19 @@ pub fn aggregate_hits(
         }
     }
 
-    // 2. 按 doc_name 分组，绝对阈值过滤
+    // 2. 按 doc_name 分组，分数域感知的绝对阈值过滤（见函数文档的分数域契约）
     let mut doc_map: HashMap<String, Vec<(SearchHit, f32)>> = HashMap::new();
     for (hit, score) in seen.into_values() {
-        if score < min_score {
+        let is_sigmoid = hit.score_rerank.is_some();
+        let is_symbol = hit.symbol_name.is_some();
+        let pass = if is_sigmoid {
+            score >= rerank_min_score
+        } else if is_symbol {
+            true
+        } else {
+            score >= min_score
+        };
+        if !pass {
             continue;
         }
         let doc_name = hit.doc_name.clone();
