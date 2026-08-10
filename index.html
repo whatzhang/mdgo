@@ -2945,9 +2945,9 @@
         .new-file-dropdown-panel {
             display: none;
             position: absolute;
-            top: 40px;
-            left: 125px;
-            background: var(--color-bg);
+            top: 2.5rem;
+            left: 7rem;
+            background: var(--color-bg-secondary);
             border-radius: 10px;
             width: auto;
             height: auto;
@@ -2957,42 +2957,35 @@
         }
 
         .new-file-modal {
-            background: var(--color-bg-secondary);
-            border-radius: 10px;
-            padding: 8px;
+            padding: 0.5rem;
             width: auto;
             height: auto;
         }
 
-        .new-file-modal-title {
-            font-size: 0.75rem;
-            color: var(--color-text);
-            margin-bottom: 0.5rem;
-        }
-
         .new-file-modal-grid {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 6px;
-            margin-bottom: 2px;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.35rem;
         }
 
         .new-file-modal-item {
-            padding: 4px 3px;
+            padding: 0.125rem 0.125rem;
             border: 1px solid var(--color-border, #bbc3ca);
-            border-radius: 6px;
+
+            border-radius: 0.25rem;
             background: transparent;
-            font-size: 11px;
-            color: var(--t1);
-            font-weight: 600;
+            font-size: 0.8125rem;
+            font-weight: normal;
+            color: var(--t0);
+            font-weight: normal;
             cursor: pointer;
             text-align: center;
-            transition: background 0.15s, border-color 0.15s;
+            transition: background 0.2s ease;
         }
 
         .new-file-modal-item:hover {
-            background: #f0f0f0;
-            border-color: #0879e9;
+            background: var(--todo-bg-hover);
+            border-color: var(--color-primary);
         }
 
         /* 目录 summary 上显示 more-btn（复用 file-item 的 hover 规则） */
@@ -10217,8 +10210,7 @@
         }
 
         .graph-toolbar-top .graph-toolbar-buttons button {
-            min-width: 24px;
-            height: 26px;
+            height: 1.75rem;
         }
 
         .graph-toolbar-filter-row {
@@ -10229,7 +10221,7 @@
             width: 100%;
             padding: 3px 26px 3px 8px;
             font-size: 12px;
-            height: 26px;
+            height: 1.75rem;
             box-sizing: border-box;
         }
 
@@ -14808,7 +14800,6 @@
             </div>
             <div id="new-file-dropdown-panel" class="new-file-dropdown-panel">
                 <div class="new-file-modal">
-                    <div class="new-file-modal-title">新建文件</div>
                     <div class="new-file-modal-grid" id="new-file-modal-grid"></div>
                 </div>
             </div>
@@ -15151,13 +15142,11 @@
                 </div>
                  <div class="activity-section-two" id="ai-summary-panel" style="display: none;">
                     <div class="chart-card">
-                        <div class="activity-column">
-                            <div class="chart-title">最近修改</div>
+                        <div class="activity-column" id="ai-summary-left">
                         </div>
                     </div>
                     <div class="chart-card">
-                        <div class="activity-column">
-                            <div class="chart-title">最近修改</div>
+                        <div class="activity-column" id="ai-summary-right">
                         </div>
                     </div>
                 </div>
@@ -17284,25 +17273,38 @@
             { key: '日记', name: "diary.md", ext: ".md" },
             { key: '文本', name: "untitled.txt", ext: ".txt" },
             { key: 'md', name: "untitled.md", ext: ".md" },
-            { key: 'json', name: "untitled.json", ext: ".json" },
-            { key: 'yaml', name: "untitled.yaml", ext: ".yaml" },
-            { key: 'py', name: "untitled.py", ext: ".py" },
-            { key: 'java', name: "untitled.java", ext: ".java" },
-            { key: 'sql', name: "untitled.sql", ext: ".sql" },
+            { key: '看板', name: 'untitled.canvas', ext: ".md", custom: true, param: 'kanban' },
             { key: 'canvas', name: 'untitled.canvas', ext: ".canvas", custom: true, param: 'canvas' },
             { key: '白板', name: 'untitled.excalidraw', ext: ".excalidraw", custom: true, param: 'whiteboard' },
-            { key: 'mermaid', name: 'untitled.mmd', ext: ".mmd", custom: true, param: 'mermaid' },
+            { key: '图表', name: 'untitled.mmd', ext: ".mmd", custom: true, param: 'mermaid' },
         ]
         // 右键菜单中的快捷操作
-        const NEW_DIR = [
-            { key: '📁 新建目录', name: "新建目录", click: "createDirByParentDir" },
+        const DIR_ITEMS = [
             { key: '📄 新建文件', name: "untitled.txt", click: "createFileByParentDir" },
+            { key: '📁 新建目录', name: "新建目录", click: "createDirByParentDir" },
+            { key: '📂 打开目录', name: "打开目录", click: "openDirSystem", isTauri: true },
+            { key: '🔄 还原目录', name: "还原目录", click: "restoreDir", isTauri: true, isDeleted: true },
+            { key: '🗑️ 永久删除', name: "永久删除", click: "deleteDirForever", isDeleted: true },
+            { key: '🗑️ 删除目录', name: "删除目录", click: "deleteDir", isTauri: true},
             { key: '🌄 图片墙', name: "图片墙", click: "picLayoutDisplay" },
             { key: '🌐 文件图谱', name: '文件图谱', click: 'openFileGraph' },
-            { key: '🔗 文档白板', name: "文档白板", click: "dirCanvasDisplay" },
+            { key: '📃 文档白板', name: "文档白板", click: "dirCanvasDisplay" },
             { key: '📚️ 文件词云', name: "文件词云", click: "openWordCloudFile" },
             { key: '🏷️ 类型分布', name: "类型分布", click: "openFileType" },
             { key: '标记', name: "标记", click: "markDir" },
+        ]
+        // 右键菜单中的快捷操作（文件）
+        const FILE_ITEMS = [
+            { key: '🔄 还原文件', name: "还原文件", click: "restoreFile", isDeleted: true },
+            { key: '🗑️ 永久删除', name: "永久删除", click: "deleteFile", isDeleted: true, isForever: true },
+            { key: '📝 复制文件', name: "复制文件", click: "copyFile", isDeleted: false },
+            { key: '📄 打开文件', name: "打开文件", click: "openFileSystem", isDeleted: false, isTauri: true },
+            { key: '🗂️ git记录', name: "git记录", click: "fileGitRecord" , isDeleted: false },
+            { key: '🌐 Links图谱', name: "Links图谱", click: "openNoteLinkGraph" , isDeleted: false },
+            { key: '🔗 相对路径', name:'相对路径', click: 'copyRelPath', isDeleted: false , isRel: true},
+            { key: '🔗 绝对路径', name:'绝对路径', click: 'copyAbsPath', isDeleted: false , isRel: false},
+            { key: '🗑️ 删除文件', name:'删除文件', click: 'deleteFile', isDeleted: false , isForever: false},
+            { key: '标记', name: "标记", click: "markFile", isDeleted: false },
         ]
         // 操作类型枚举（用于操作记录展示）
         const OPERATION_TYPES = {
@@ -18156,7 +18158,7 @@
                 Promise.resolve(initDashboard()), // 初始化时间进度条
                 Promise.resolve(initTauriWindowState()), // Tauri 窗口状态（最大化/还原）
                 Promise.resolve(initSkillLoadErrorNotify()), // 技能加载失败全局提醒
-                Promise.resolve(RAGInit()), // 初始化RAG
+                Promise.resolve(AgentInit()), // 初始化RAG
             ]);
         }
 
@@ -20905,6 +20907,14 @@
             }
             return div;
         }
+        // 下拉菜单项
+        const _ddItem = (text, clickHandler) => {
+            const el = document.createElement('button');
+            el.className = 'file-item-more-dropdown-item';
+            el.textContent = text;
+            el.addEventListener('click', clickHandler);
+            return el;
+        };
         // 创建单个文件树项 DOM
         async function createFileItem(name, relativePath, depth, iconType = '') {
             const np = normalizePath(relativePath);
@@ -20914,6 +20924,8 @@
             fileSpan.style.paddingLeft = (depth * 13) + 1 + 'px';
             const inDeleted = isInDeletedDir(np);
             if (inDeleted) fileSpan.classList.add('deleted-file');
+            // 垃圾箱子目录内的文件只能随目录整体还原，隐藏"还原文件"，仅保留"永久删除"
+            const inDeletedSubdir = inDeleted && np.startsWith(DELETED_DIR_NAME + SLASH) && np.slice(DELETED_DIR_NAME.length + 1).includes(SLASH);
 
             const textSpan = document.createElement('span');
             textSpan.className = 'file-item-text';
@@ -20933,50 +20945,36 @@
             moreBtn.innerHTML = _SVG_MORE_BTN;
             const dropdown = document.createElement('div');
             dropdown.className = 'file-item-more-dropdown';
-            // 下拉菜单项
-            const _ddItem = (text, clickHandler) => {
-                const el = document.createElement('button');
-                el.className = 'file-item-more-dropdown-item';
-                el.textContent = text;
-                el.addEventListener('click', clickHandler);
-                return el;
-            };
 
-            if (inDeleted) {
-                dropdown.appendChild(_ddItem('🔄 还原文件', async (e) => {
+            // 操作项（来自 FILE_ITEMS 配置）
+            for (const action of FILE_ITEMS) {
+                if (action.click === 'markFile') continue; // 标记走独立颜色选择器
+                if (!!action.isTauri && !isTauriVisit()) continue; // 跳过 Tauri 操作
+                const label = action.key;
+                const click = action.click;
+                if (inDeleted) {
+                    if (!action.isDeleted) continue;
+                    if (inDeletedSubdir && action.click === 'restoreFile') continue; // 子目录内文件不可单独还原
+                }else{
+                    if (action.isDeleted) continue;
+                }
+                dropdown.appendChild(_ddItem(label, async (e) => {
                     e.stopPropagation();
-                    await toggleFile('restoreFile', { relativePath: fileSpan.dataset.filePath, fileSpan: fileSpan });
-                }));
-                dropdown.appendChild(_ddItem('🗑️ 永久删除', async (e) => {
-                    e.stopPropagation();
-                    await toggleFile('deleteFile', { relativePath: fileSpan.dataset.filePath, isForever: true, fileSpan: fileSpan });
-                }));
-            } else {
-                dropdown.appendChild(_ddItem('📄 复制文件', async (e) => {
-                    e.stopPropagation();
-                    await toggleFile('copyFile', { relativePath: fileSpan.dataset.filePath });
-                }));
-                dropdown.appendChild(_ddItem('🗂️ git记录', async (e) => {
-                    e.stopPropagation();
-                    await toggleFile('fileGitRecord', { relativePath: fileSpan.dataset.filePath });
-                }));
-                 dropdown.appendChild(_ddItem('🌐 Links图谱', async (e) => {
-                    e.stopPropagation();
-                    await toggleFile('openNoteLinkGraph', { relativePath: fileSpan.dataset.filePath });
-                }));
-                dropdown.appendChild(_ddItem('🔗 相对路径', async (e) => {
-                    e.stopPropagation();
-                    await copyCurrentFilePath(fileSpan.dataset.filePath, true);
-                }));
-                dropdown.appendChild(_ddItem('🖇️ 绝对路径', async (e) => {
-                    e.stopPropagation();
-                    await copyCurrentFilePath(fileSpan.dataset.filePath, false);
-                }));
-                dropdown.appendChild(_ddItem('🗑️ 删除文件', async (e) => {
-                    e.stopPropagation();
-                    await toggleFile('deleteFile', { relativePath: fileSpan.dataset.filePath, isForever: false, fileSpan: fileSpan });
-                }));
-                // 颜色选择器
+                    if (click === 'restoreFile') {
+                        await toggleFile(click, { relativePath: fileSpan.dataset.filePath, fileSpan: fileSpan });
+                    } else if (click === 'deleteFile') {
+                        await toggleFile(click, { relativePath: fileSpan.dataset.filePath, isForever: action.isForever, fileSpan: fileSpan });
+                    } else if (click === 'copyRelPath' || click === 'copyAbsPath') {
+                        await copyCurrentFilePath(fileSpan.dataset.filePath, action.isRel);
+                    } else if (click === 'openFileSystem') {
+                        await openFileOrDirFromSystem(fileSpan.dataset.filePath, true);
+                    } else {
+                        await toggleFile(click, { relativePath: fileSpan.dataset.filePath });
+                    }
+                }));  
+            }
+            if (!inDeleted){
+                // 颜色选择器（垃圾箱内文件也可标记，不做 inDeleted 限制）
                 const crPicker = document.createElement('div');
                 crPicker.className = 'marker-color-picker';
                 for (let i = 0; i < _MARKER_COLORS.length; i++) {
@@ -21071,6 +21069,7 @@
             const nameLow = depth === 0 ? name.toLowerCase() : '';
             const nameSpan = document.createElement('span');
             nameSpan.className = 'file-name';
+            const isDeletedDir = nameLow === DELETED_DIR_NAME;
             if (depth === 0) {
                 nameSpan.style.fontSize = '13px';
                 nameSpan.style.fontWeight = '500';
@@ -21095,11 +21094,9 @@
             summary.style.paddingLeft = (depth * 13) + 'px';
             const btnContainer = document.createElement('div');
             btnContainer.className = 'file-item-buttons';
-
             // 标记圆点（与文件一致）
             const markerDiv = document.createElement('div');
             markerDiv.className = 'file-item-marker';
-
             // 更多操作菜单（与文件一致）
             const moreMenu = document.createElement('div');
             moreMenu.className = 'file-item-more-menu';
@@ -21108,67 +21105,85 @@
             moreBtn.innerHTML = _SVG_MORE_BTN;
             const dropdown = document.createElement('div');
             dropdown.className = 'file-item-more-dropdown';
-
-            // _ddItem 辅助函数（目录版本使用 <button> 避免触发 <details> toggle）
-            const _ddItem = (text, clickHandler) => {
-                const el = document.createElement('button');
-                el.className = 'file-item-more-dropdown-item';
-                el.textContent = text;
-                el.addEventListener('click', clickHandler);
-                return el;
-            };
-
-            // 操作项（来自 NEW_DIR 配置）
-            for (const action of NEW_DIR) {
-                if (action.click === 'markDir') continue; // 标记走独立颜色选择器
-                const label = action.key;
-                dropdown.appendChild(_ddItem(label, async (e) => {
-                    e.stopPropagation();
-                    if (action.click === 'createFileByParentDir') {
-                        await createNewFileInDir(dirPathStr, action.name, false);
-                    } else if (action.click === 'createDirByParentDir') {
-                        await createNewFileInDir(dirPathStr, action.name, true);
+            if(!isDeletedDir){
+                // 操作项（来自 DIR_ITEMS 配置）
+                // 仅垃圾箱根目录下第一层的目录（被删除的目录本体）显示"还原目录/永久删除"；嵌套子目录只显示"永久删除"
+                const trashRest = dirPathStr.startsWith(DELETED_DIR_NAME + SLASH) ? dirPathStr.slice(DELETED_DIR_NAME.length + 1) : '';
+                const dirInDeleted = trashRest !== '' && !trashRest.includes(SLASH); // 垃圾箱根目录下第一层目录（被删除的目录本体）
+                const dirInDeletedSub = trashRest.includes(SLASH);
+                for (const action of DIR_ITEMS) {
+                    if (action.click === 'markDir') continue; // 标记走独立颜色选择器
+                    if (!!action.isTauri && !isTauriVisit()) continue; // 跳过 Tauri 操作
+                    if (dirInDeleted) {
+                        if (!action.isDeleted) continue;
+                    } else if (dirInDeletedSub) {
+                        // 垃圾箱嵌套子目录只显示"永久删除"，其余不显示
+                        if (action.click !== 'deleteDirForever') continue;
                     } else {
-                        await toggleFile(action.click, { dirPathStr: dirPathStr });
+                        if (action.isDeleted) continue;
                     }
+                    const label = action.key;
+                    dropdown.appendChild(_ddItem(label, async (e) => {
+                        e.stopPropagation();
+                        if (action.click === 'createFileByParentDir') {
+                            await createNewFileInDir(dirPathStr, action.name, false);
+                        } else if (action.click === 'createDirByParentDir') {
+                            await createNewFileInDir(dirPathStr, action.name, true);
+                        } else if (action.click === 'openDirSystem') {
+                            await openFileOrDirFromSystem(dirPathStr, false);
+                        } else if (action.click === 'deleteDir') {
+                            await deleteDirToTrash(dirPathStr);
+                        } else if (action.click === 'restoreDir') {
+                            await restoreDirFromTrash(dirPathStr);
+                        } else if (action.click === 'deleteDirForever') {
+                            await deleteDirForeverFromTrash(dirPathStr);
+                        } else {
+                            await toggleFile(action.click, { dirPathStr: dirPathStr });
+                        }
+                    }));
+                }
+                if(!dirInDeleted && !dirInDeletedSub){
+                    // 颜色选择器（目录版本使用 <button> 避免触发 <details> toggle）
+                    const crPicker = document.createElement('div');
+                    crPicker.className = 'marker-color-picker';
+                    for (let i = 0; i < _MARKER_COLORS.length; i++) {
+                        const dot = document.createElement('button');
+                        dot.className = 'marker-color-dot';
+                        dot.style.background = _MARKER_COLORS[i];
+                        dot.title = _MARKER_COLOR_NAMES[i];
+                        dot.addEventListener('click', async (e) => {
+                            e.stopPropagation();
+                            try {
+                                await setFileMarker({ name: dirPathStr }, dirPathStr, markerDiv, _MARKER_COLOR_NAMES[i], _MARKER_COLORS[i], 'dir');
+                            } catch (err) {
+                                console.error('设置目录标记失败:', err);
+                            }
+                        });
+                        crPicker.appendChild(dot);
+                    }
+                    const clearDot = document.createElement('button');
+                    clearDot.className = 'marker-color-dot marker-clear-dot';
+                    clearDot.textContent = '✕';
+                    clearDot.title = '取消标记';
+                    clearDot.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        try {
+                            await clearFileMarker(dirPathStr, markerDiv);
+                        } catch (err) {
+                            console.error('清除目录标记失败:', err);
+                        }
+                    });
+                    crPicker.appendChild(clearDot);
+                    dropdown.appendChild(crPicker);
+                }
+            }else{
+                dropdown.appendChild(_ddItem('🚮 清空垃圾', async (e) => {
+                    e.stopPropagation();
+                    await clearTrash(dirPathStr);
                 }));
             }
-
-            // 颜色选择器（目录版本使用 <button> 避免触发 <details> toggle）
-            const crPicker = document.createElement('div');
-            crPicker.className = 'marker-color-picker';
-            for (let i = 0; i < _MARKER_COLORS.length; i++) {
-                const dot = document.createElement('button');
-                dot.className = 'marker-color-dot';
-                dot.style.background = _MARKER_COLORS[i];
-                dot.title = _MARKER_COLOR_NAMES[i];
-                dot.addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    try {
-                        await setFileMarker({ name: dirPathStr }, dirPathStr, markerDiv, _MARKER_COLOR_NAMES[i], _MARKER_COLORS[i], 'dir');
-                    } catch (err) {
-                        console.error('设置目录标记失败:', err);
-                    }
-                });
-                crPicker.appendChild(dot);
-            }
-            const clearDot = document.createElement('button');
-            clearDot.className = 'marker-color-dot marker-clear-dot';
-            clearDot.textContent = '✕';
-            clearDot.title = '取消标记';
-            clearDot.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                try {
-                    await clearFileMarker(dirPathStr, markerDiv);
-                } catch (err) {
-                    console.error('清除目录标记失败:', err);
-                }
-            });
-            crPicker.appendChild(clearDot);
-            dropdown.appendChild(crPicker);
-
             moreMenu.appendChild(moreBtn);
-            moreMenu.appendChild(dropdown);
+            if(dropdown.children.length > 0) moreMenu.appendChild(dropdown);
             btnContainer.appendChild(moreMenu);
             btnContainer.appendChild(markerDiv);
             summary.appendChild(btnContainer);
@@ -22126,7 +22141,6 @@
                 } else {
                     if (jsMindHandle) await jsMindHandle.jsmind_saveAsImage();
                 }
-                showNotification('✓ 图片导出成功！', 'success');
             } catch (err) {
                 console.error('导出图片失败:', err);
                 showNotification(`✗ 导出图片导出失败: ${err.message}`, 'error');
@@ -22745,9 +22759,7 @@
                 const title = targetFileName || (this.jm.get_root().topic + '.png');
                 try {
                     await buildPng(targetElement, title, bounds);
-                    showNotification('✓ 思维导图导出图片成功', 'success', 1000);
                 } catch (err) {
-                    showNotification('✗ 思维导图导出图片失败', 'error', 2000);
                     console.error('思维导图导出图片失败:', err);
                 }
             }
@@ -29732,6 +29744,7 @@ kanban-plugin: basic
             link.download = name;
             link.href = canvas.toDataURL('image/png');
             link.click();
+            showNotification('图片导出成功！', 'success');
         }
 
         let isExporting = false; // 导出状态
@@ -29781,7 +29794,6 @@ kanban-plugin: basic
                     return;
                 }
                 await buildPng(targetElement, fileName);
-                showNotification('图片导出成功！', 'success');
             } catch (err) {
                 console.error('导出图片失败:', err);
                 showNotification(`导出失败: ${err.message}`, 'error');
@@ -30882,6 +30894,96 @@ kanban-plugin: basic
                 } catch (error) {
                     console.error('还原文件失败:', error);
                     showNotification('✗ 还原失败: ' + error.message, 'error');
+                }
+            });
+        }
+
+        // ===== 目录移动垃圾箱 / 还原（重逻辑在 Rust 端，前端仅调用） =====
+
+        // 删除目录：调用 Rust 端 move_dir_to_trash 递归移动到垃圾箱（mdgo_trash）
+        async function deleteDirToTrash(dirPathStr) {
+            if (!isTauriVisit()) return;
+            const np = normalizePath(dirPathStr);
+            const dirName = basename(np);
+            showConfirmModal('确认删除', `确定要将目录 "${dirName}" 及其下所有内容移动到 垃圾箱（${DELETED_DIR_NAME}） 目录吗?`, async (confirmed) => {
+                if (!confirmed) return;
+                try {
+                    await window.__TAURI__.core.invoke('move_dir_to_trash', { path: np });
+                    recordOperation(dirName, np, OPERATION_TYPES.DELETE);
+                    await clearMarker(np, true);
+                    // 若当前打开的文件位于被删目录下，关闭视图
+                    const activePath = currentActiveItem ? normalizePath(currentActiveItem.dataset.filePath || '') : '';
+                    if (activePath && (activePath === np || activePath.startsWith(np + SLASH))) {
+                        toggleDashboardView(false);
+                    }
+                    // 重建目录树（垃圾箱中会出现新目录）
+                    await scanDashboardData(true);
+                    await renderDirectory(getRootHandle(), _scanData, true);
+                    showNotification(`✓ 目录已移动到 ${DELETED_DIR_NAME} 目录`, 'success');
+                } catch (err) {
+                    showNotification('✗ 移动目录到垃圾箱失败: ' + (err && err.message ? err.message : err), 'error');
+                }
+            });
+        }
+
+        // 还原目录：调用 Rust 端 restore_dir_from_trash 将垃圾箱中的目录复制回初始位置
+        async function restoreDirFromTrash(dirPathStr) {
+            if (!isTauriVisit()) return;
+            const np = normalizePath(dirPathStr);
+            const dirName = basename(np);
+            showConfirmModal('确认还原', `确定要将目录 "${dirName}" 还原到初始位置吗?`, async (confirmed) => {
+                if (!confirmed) return;
+                try {
+                    const originalPath = await window.__TAURI__.core.invoke('restore_dir_from_trash', { path: np });
+                    await clearMarker(np, true);
+                    recordOperation(basename(originalPath), originalPath, OPERATION_TYPES.RESTORE);
+                    // 重建目录树（原位置出现还原的目录）
+                    await scanDashboardData(true);
+                    await renderDirectory(getRootHandle(), _scanData, true);
+                    showNotification(`✓ 目录已还原: ${originalPath}`, 'success');
+                } catch (err) {
+                    showNotification('✗ 还原目录失败: ' + (err && err.message ? err.message : err), 'error');
+                }
+            });
+        }
+
+        // 永久删除目录：Tauri 模式调用 Rust delete 命令；本地模式用父目录 removeEntry 递归删除
+        async function deleteDirForeverFromTrash(dirPathStr) {
+            const np = normalizePath(dirPathStr);
+            const dirName = basename(np);
+            showConfirmModal('确认永久删除', `确定要永久删除目录 "${dirName}" 及其下所有内容吗？此操作不可恢复。`, async (confirmed) => {
+                if (!confirmed) return;
+                try {
+                    if (isTauriVisit()) {
+                        const absPath = joinPath(getRootHandle().path, np);
+                        await window.__TAURI__.core.invoke('delete', { path: absPath });
+                    } else {
+                        // 本地模式：定位目标目录的父目录后递归删除
+                        const rootHandle = getRootHandle();
+                        const parts = np.split(SLASH);
+                        let parent = rootHandle;
+                        for (let i = 0; i < parts.length - 1; i++) {
+                            parent = await parent.getDirectoryHandle(parts[i]);
+                        }
+                        await parent.removeEntry(parts[parts.length - 1], { recursive: true });
+                    }
+                    const trashRest = np.startsWith(DELETED_DIR_NAME + SLASH) ? np.slice(DELETED_DIR_NAME.length + 1) : '';
+                    const isRootDeleted = trashRest !== '' && !trashRest.includes(SLASH);
+                    if (isRootDeleted) {
+                        await removeFromDeletedIndex(dirName);
+                    }
+                    recordOperation(dirName, np, OPERATION_TYPES.DELETE_PERMANENT);
+                    await clearMarker(np, true);
+                    // 若当前打开的文件位于被删目录下，关闭视图
+                    const activePath = currentActiveItem ? normalizePath(currentActiveItem.dataset.filePath || '') : '';
+                    if (activePath && (activePath === np || activePath.startsWith(np + SLASH))) {
+                        toggleDashboardView(false);
+                    }
+                    await scanDashboardData(true);
+                    await renderDirectory(getRootHandle(), _scanData, true);
+                    showNotification(`✓ 目录 "${dirName}" 已永久删除`, 'success');
+                } catch (err) {
+                    showNotification('✗ 永久删除目录失败: ' + (err && err.message ? err.message : err), 'error');
                 }
             });
         }
@@ -32883,8 +32985,9 @@ kanban-plugin: basic
             if (isTauriVisit()) {
                 monitorPanel.style.display = 'flex';
                 fileSumPanel.style.display = 'none';
-                aiSummaryPanel.style.display = 'flex';
+                aiSummaryPanel.style.display = 'grid';
                 startTauriSystemMonitor();
+                startAiSummary();
             } else {
                 monitorPanel.style.display = 'none';
                 fileSumPanel.style.display = 'flex';
@@ -39798,6 +39901,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     link.download = 'regex-railroad.png';
                     link.href = canvas.toDataURL('image/png');
                     link.click();
+                    showNotification('图片导出成功！', 'success');
                 };
                 img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgStr)));
             };
@@ -45404,6 +45508,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             a.href = url;
                             a.download = filename.replace(/\.[^.]+$/, '_preview.jpg');
                             a.click();
+                            showNotification('预览已下载', 'success');
                             setTimeout(() => URL.revokeObjectURL(url), 5000);
                         } else {
                             alert('此文件不包含内嵌 JPEG 预览');
@@ -52071,6 +52176,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const container = document.getElementById('chat-messages');
                 if (container) container.innerHTML = '';
                 updateTurnCounter();
+                // 重置上下文使用率，避免残留上个模式（如 Agent/RAG）的用量显示
+                updateContextUsage(0, LOCAL_LLM_CONTEXT_LENGTH || 10000);
                 renderChatSessionList();
                 if (mode === 'rag') {
                     showNotification('RAG 模式：使用当前目录作为知识库', 'info');
@@ -53448,6 +53555,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     updateContextUsage(sessionTokenUsage, LOCAL_LLM_CONTEXT_LENGTH || 10000);
                 } else if (chatMessages.length > 0) {
                     updateContextUsage(estimateMessagesTokens(chatMessages), LOCAL_LLM_CONTEXT_LENGTH || 10000);
+                } else {
+                    // 空会话：重置为 0，避免残留上个模式/会话的用量显示
+                    updateContextUsage(0, LOCAL_LLM_CONTEXT_LENGTH || 10000);
                 }
                 renderChatSessionList();
                 // 6. 记录最后会话
@@ -54528,7 +54638,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        async function RAGInit() {
+        async function AgentInit() {
             // Tauri 模式下显示 RAG/Agent 模式按钮
             if (isTauriVisit()) {
                 const ragBtn = document.getElementById('chat-mode-rag');
@@ -54552,11 +54662,23 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     console.warn('[rag] 加载配置失败:', e);
                 }
 
-                // 监听知识库文件变更事件，自动刷新状态
+                // 监听知识库文件变更事件，自动刷新状态（携带变更文件相对路径，前端 800ms 防抖合并）
                 try {
                     const { listen } = window.__TAURI__.event;
-                    listen('kb-watcher-event', () => {
-                        refreshKnowledgeStatus();
+                    let kbWatcherTimer = null;
+                    const kbWatcherPaths = new Set();
+                    listen('kb-watcher-event', (e) => {
+                        const paths = Array.isArray(e && e.payload) ? e.payload : [];
+                        for (const p of paths) {
+                            if (typeof p === 'string' && p) kbWatcherPaths.add(p);
+                        }
+                        if (kbWatcherTimer) clearTimeout(kbWatcherTimer);
+                        kbWatcherTimer = setTimeout(() => {
+                            kbWatcherTimer = null;
+                            const changedPaths = Array.from(kbWatcherPaths);
+                            kbWatcherPaths.clear();
+                            if(knowledgeContainer.style.display !== 'none') refreshKnowledgeStatus();
+                        }, 800);
                     });
                 } catch (e) {
                     console.warn('注册 watcher 事件监听失败:', e);
@@ -54644,7 +54766,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         // getRootHandle / getDirPath / isTauriVisit / switchToView（加载顺序：本文件须在主页内联脚本之后）
         // 技能可声明的工具白名单（后端 ALLOWED_TOOLS 的子集；
         // activate_skill / deactivate_skill 为系统常驻管理工具，不可由技能声明）
-        const ALLOWED_SKILL_TOOLS = ['kb_search', 'code_lookup', 'read', 'edit', 'delete', 'list_files', 'git_status', 'pomodoro'];
+        const ALLOWED_SKILL_TOOLS = ['kb_search', 'code_lookup', 'read', 'edit', 'delete', 'grep', 'list_files', 'git_status', 'pomodoro'];
         const SKILL_SCOPE_NAMES = { system: '系统', global: '全局', project: '当前目录' };
 
         let skillDirPath = '';          // 当前根目录路径（打开面板时刷新）
@@ -55553,5 +55675,63 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     return `未知动作: ${action}`;
             }
         });
+        async function openFileOrDirFromSystem(filePath, isFile){
+            if(!isTauriVisit()) return;
+            // 传入相对路径，后端按配置的根目录自动拼接
+            try {
+                await window.__TAURI__.core.invoke('show_file_dir_window', {
+                    path: filePath,
+                    isFile: isFile,
+                });
+            } catch (err) {
+                showNotification('打开系统资源管理器失败: ' + (err && err.message ? err.message : err), 'error');
+            }
+        }
+        // 清空垃圾箱：Tauri 模式调用 Rust 端 clear_trash；本地模式用 File System Access API 删除
+        async function clearTrash(dirPathStr) {
+            const np = normalizePath(dirPathStr);
+            showConfirmModal('清空垃圾箱', '确定要清空垃圾箱吗？将永久删除垃圾箱内所有文件与目录，此操作不可恢复。', async (confirmed) => {
+                if (!confirmed) return;
+                try {
+                    let count = 0;
+                    if (isTauriVisit()) {
+                        count = await window.__TAURI__.core.invoke('clear_trash', { path: np });
+                    } else {
+                        // 本地模式：遍历垃圾箱逐项递归删除，并重置删除索引记录
+                        const rootHandle = getRootHandle();
+                        let trashHandle = null;
+                        try {
+                            trashHandle = await rootHandle.getDirectoryHandle(DELETED_DIR_NAME);
+                        } catch (e) {
+                            trashHandle = null; // 垃圾箱不存在，视为已清空
+                        }
+                        if (trashHandle) {
+                            for await (const [name] of trashHandle.entries()) {
+                                await trashHandle.removeEntry(name, { recursive: true });
+                                count++;
+                            }
+                        }
+                        const rtn = await getAssetsData(INDEX_DELETED_FILE);
+                        await writeFileHandle(rtn.fileHandle, JSON.stringify({}));
+                    }
+                    // 重建目录树（垃圾箱被清空，删除记录被重置）
+                    await scanDashboardData(true);
+                    await renderDirectory(getRootHandle(), _scanData, true);
+                    showNotification(`✓ 垃圾箱已清空（${count} 项）`, 'success');
+                } catch (err) {
+                    showNotification('✗ 清空垃圾箱失败: ' + (err && err.message ? err.message : err), 'error');
+                }
+            });
+        }
+        async function startAiSummary(){
+            if(!isTauriVisit()) return;
+            const left = document.getElementById('ai-summary-left');
+            const right = document.getElementById('ai-summary-right');
+            // TODO 调用 Rust 端 ai_summary 函数，获取摘要内容
+            // const result =  await window.__TAURI__.core.invoke('ai_summary');
+            // if(result){
+              
+            // }
+        }
     </script>
 </body>

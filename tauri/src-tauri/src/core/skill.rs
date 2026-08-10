@@ -25,7 +25,7 @@ use crate::core::db::schema;
 /// 允许 Skill 声明的内置工具白名单（与 Rig Agent 注册的内置工具一致）。
 /// 白名单仅为声明约束：技能声明了系统外的工具名时直接忽略，不做强类型校验。
 pub const ALLOWED_TOOLS: &[&str] = &[
-    "kb_search", "code_lookup", "read", "edit", "delete", "list_files", "git_status",
+    "kb_search", "code_lookup", "read", "edit", "delete", "list_files", "grep", "git_status",
     "activate_skill", "deactivate_skill", "pomodoro",
 ];
 

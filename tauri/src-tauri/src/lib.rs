@@ -114,7 +114,7 @@ pub fn run() {
         log::error!("[watcher-err] {}", msg);
     });
     // watcher 变更回调（初始无操作，启动时由 fs_watcher 注入真实 Tauri 事件发射器）
-    let on_changed: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+    let on_changed: Arc<dyn Fn(&[String]) + Send + Sync> = Arc::new(|_paths: &[String]| {});
     let watcher = Arc::new(WatcherService::new(indexer.clone(), on_error, on_changed));
 
     // ── 后台预下载 embedding 模型 ──
@@ -208,11 +208,15 @@ pub fn run() {
             commands::fs::write_file,
             commands::fs::write_file_binary,
             commands::fs::delete,
+            commands::fs::move_dir_to_trash,
+            commands::fs::restore_dir_from_trash,
+            commands::fs::clear_trash,
             commands::fs::rename,
             commands::fs::create_dir,
             commands::fs::exists,
             commands::fs::get_file_meta,
             commands::open_url::open_url,
+            commands::open_url::show_file_dir_window,
             commands::git::git_log,
             commands::git::git_status_matrix,
             commands::git::git_checkout,

@@ -16,6 +16,8 @@ use crate::core::skill::{SkillRegistry, SkillStore};
 struct FileEvent {
     rel_path: String,
     is_remove: bool,
+    /// 目录事件（新建/删除目录）仅通知前端刷新，不参与索引
+    is_dir: bool,
     timestamp: Instant,
 }
 
@@ -77,8 +79,8 @@ pub struct WatcherService {
     running: AtomicBool,
     /// 增量索引错误回调（用于通知前端）
     on_error: Mutex<Arc<dyn Fn(&str) + Send + Sync>>,
-    /// 增量索引成功回调（通知前端刷新面板）
-    on_changed: Mutex<Arc<dyn Fn() + Send + Sync>>,
+    /// 增量索引成功回调（通知前端刷新面板，携带发生变更的文件相对路径列表）
+    on_changed: Mutex<Arc<dyn Fn(&[String]) + Send + Sync>>,
 
     // ── Skill 监控 ──
     /// Skill 注册表（通过 set_skill_registry 注入）
@@ -103,7 +105,7 @@ impl WatcherService {
     pub fn new(
         indexer: Arc<Indexer>,
         on_error: Arc<dyn Fn(&str) + Send + Sync>,
-        on_changed: Arc<dyn Fn() + Send + Sync>,
+        on_changed: Arc<dyn Fn(&[String]) + Send + Sync>,
     ) -> Self {
         Self {
             indexer,
@@ -208,17 +210,24 @@ impl WatcherService {
             for event_path in &event.paths {
                 let abs_path = event_path.to_string_lossy().to_string();
 
+                // 目录事件判断：
+                // - 新建/删除目录按事件变体（Create/Remove 的 Folder）
+                // - 目录重命名（Modify Name 的新路径，仍存在且为目录）
+                let is_dir = matches!(
+                    event.kind,
+                    EventKind::Create(notify::event::CreateKind::Folder)
+                        | EventKind::Remove(notify::event::RemoveKind::Folder)
+                ) || (matches!(
+                    event.kind,
+                    EventKind::Modify(notify::event::ModifyKind::Name(_))
+                ) && event_path.is_dir());
+
                 // 排除 .mdgo 数据目录与垃圾箱目录（垃圾桶内文件不索引、不监听）
                 if abs_path.contains(".mdgo")
                     || abs_path
                         .split(['\\', '/'])
                         .any(|c| c == utils::TRASH_DIR_NAME)
                 {
-                    continue;
-                }
-
-                // 跳过目录事件（仅处理文件）
-                if event_path.is_dir() {
                     continue;
                 }
 
@@ -231,15 +240,20 @@ impl WatcherService {
                     None => continue,
                 };
 
-                // 检查黑白名单
+                // 黑白名单：目录事件按目录规则（dirOnly），文件事件按文件规则
                 let name = event_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                if !ignore.is_kb_file_allowed(name, &rel) {
+                if is_dir {
+                    if !ignore.is_kb_dir_allowed(name, &rel) {
+                        continue;
+                    }
+                } else if !ignore.is_kb_file_allowed(name, &rel) {
                     continue;
                 }
 
                 let _ = notify_tx.send(FileEvent {
                     rel_path: rel,
                     is_remove,
+                    is_dir,
                     timestamp: Instant::now(),
                 });
             }
@@ -349,7 +363,7 @@ impl WatcherService {
     }
 
     /// 替换变更通知回调（用于在 AppHandle 可用后注入 Tauri 事件）
-    pub fn set_on_changed(&self, on_changed: Arc<dyn Fn() + Send + Sync>) {
+    pub fn set_on_changed(&self, on_changed: Arc<dyn Fn(&[String]) + Send + Sync>) {
         *self.on_changed.lock().unwrap_or_else(|e| e.into_inner()) = on_changed;
     }
 
@@ -519,7 +533,7 @@ async fn run_debounce_loop(
     paused: Arc<AtomicBool>,
     indexing_enabled: Arc<AtomicBool>,
     on_error: Arc<dyn Fn(&str) + Send + Sync>,
-    on_changed: Arc<dyn Fn() + Send + Sync>,
+    on_changed: Arc<dyn Fn(&[String]) + Send + Sync>,
 ) {
     let dir_path = dir_path.to_string();
     let debounce_delay = Duration::from_millis(2000);
@@ -531,8 +545,8 @@ async fn run_debounce_loop(
     let burst_quiet = Duration::from_millis(1500);
     let burst_max_wait = Duration::from_secs(60);
 
-    // 待处理事件表：rel_path → (最后一次时间戳, 是否为 Remove)
-    let mut pending: HashMap<String, (Instant, bool)> = HashMap::new();
+    // 待处理事件表：rel_path → (最后一次时间戳, 是否为 Remove, 是否为目录)
+    let mut pending: HashMap<String, (Instant, bool, bool)> = HashMap::new();
     // 最近一条事件到达时间 / 当前突发起始时间
     let mut last_event_at: Option<Instant> = None;
     let mut burst_since: Option<Instant> = None;
@@ -550,11 +564,14 @@ async fn run_debounce_loop(
                 }
                 last_event_at = Some(now);
                 match pending.get(&event.rel_path) {
-                    Some((existing_time, _)) if *existing_time > event.timestamp => {
+                    Some((existing_time, _, _)) if *existing_time > event.timestamp => {
                         // 旧事件，保留现有的
                     }
                     _ => {
-                        pending.insert(event.rel_path, (event.timestamp, event.is_remove));
+                        pending.insert(
+                            event.rel_path,
+                            (event.timestamp, event.is_remove, event.is_dir),
+                        );
                     }
                 }
             }
@@ -586,11 +603,11 @@ async fn run_debounce_loop(
                 }
 
                 // 定时检查：找出已达到静默期的事件
-                let mut to_process: Vec<(String, bool)> = Vec::new();
+                let mut to_process: Vec<(String, bool, bool)> = Vec::new();
 
-                pending.retain(|path, (time, is_remove)| {
+                pending.retain(|path, (time, is_remove, is_dir)| {
                     if now.duration_since(*time) >= debounce_delay {
-                        to_process.push((path.clone(), *is_remove));
+                        to_process.push((path.clone(), *is_remove, *is_dir));
                         false
                     } else {
                         true
@@ -601,10 +618,15 @@ async fn run_debounce_loop(
                     continue;
                 }
 
-                // 拆分删除事件与修改事件（已不存在的文件视作删除）
+                // 拆分删除事件、修改事件与目录事件（目录仅通知前端刷新，不参与索引）
                 let mut removes: Vec<String> = Vec::new();
                 let mut modifies: Vec<(String, String)> = Vec::new();
-                for (path, is_remove) in &to_process {
+                let mut dir_changes: Vec<String> = Vec::new();
+                for (path, is_remove, is_dir) in &to_process {
+                    if *is_dir {
+                        dir_changes.push(path.clone());
+                        continue;
+                    }
                     let abs_path = format!("{}/{}", dir_path, path);
                     if *is_remove || !Path::new(&abs_path).exists() {
                         removes.push(path.clone());
@@ -619,30 +641,45 @@ async fn run_debounce_loop(
                         "[watcher] 全量索引进行中，跳过 {} 条增量事件",
                         to_process.len()
                     );
-                } else if indexing_enabled.load(Ordering::Acquire) {
-                    // 删除事件逐个处理（无 Embedding 开销）
-                    for path in &removes {
-                        log::debug!("[watcher] 处理删除: {}", path);
-                        if let Err(e) = indexer.remove_file(&dir_path, path).await {
-                            log::error!("[watcher] 删除处理失败 ({}): {}", path, e);
-                            on_error(&format!("增量删除失败 ({}): {}", path, e));
-                        } else {
-                            on_changed();
+                } else {
+                    // 收集本次实际发生变更的相对路径（含目录事件），防抖合并后统一通知前端刷新
+                    let mut changed_paths: Vec<String> = dir_changes;
+                    if indexing_enabled.load(Ordering::Acquire) {
+                        // 删除事件逐个处理（无 Embedding 开销）
+                        for path in &removes {
+                            log::debug!("[watcher] 处理删除: {}", path);
+                            if let Err(e) = indexer.remove_file(&dir_path, path).await {
+                                log::error!("[watcher] 删除处理失败 ({}): {}", path, e);
+                                on_error(&format!("增量删除失败 ({}): {}", path, e));
+                            } else {
+                                changed_paths.push(path.clone());
+                            }
                         }
+                        // 修改事件批量索引（单批 Embedding）
+                        if !modifies.is_empty() {
+                            log::debug!("[watcher] 批量索引 {} 个文件", modifies.len());
+                            if let Err(e) = indexer.index_files_batch(&dir_path, &modifies).await {
+                                log::error!(
+                                    "[watcher] 批量索引失败 ({} 个文件): {}",
+                                    modifies.len(),
+                                    e
+                                );
+                                on_error(&format!("增量索引失败: {}", e));
+                            } else {
+                                changed_paths.extend(modifies.iter().map(|(p, _)| p.clone()));
+                            }
+                        }
+                    } else {
+                        // 索引开关关闭：仅监听不索引，仍上报本次变更路径供前端刷新文件列表
+                        changed_paths.extend(
+                            to_process
+                                .iter()
+                                .filter(|(_, _, is_dir)| !is_dir)
+                                .map(|(p, _, _)| p.clone()),
+                        );
                     }
-                    // 修改事件批量索引（单批 Embedding）
-                    if !modifies.is_empty() {
-                        log::debug!("[watcher] 批量索引 {} 个文件", modifies.len());
-                        if let Err(e) = indexer.index_files_batch(&dir_path, &modifies).await {
-                            log::error!(
-                                "[watcher] 批量索引失败 ({} 个文件): {}",
-                                modifies.len(),
-                                e
-                            );
-                            on_error(&format!("增量索引失败: {}", e));
-                        } else {
-                            on_changed();
-                        }
+                    if !changed_paths.is_empty() {
+                        on_changed(&changed_paths);
                     }
                 }
 
