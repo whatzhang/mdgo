@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 
 use rig_agent::tool::{DynamicTool, ToolContext, ToolExecutionError, ToolOutput};
 use serde::Serialize;
+use tauri::Manager;
 
 use crate::core::agent::KbSearchConfig;
 use crate::core::db::utils::IgnoreMatcher;
@@ -43,6 +44,10 @@ pub struct ToolCallEvent {
 ///
 /// 工具闭包在 Rig 流式内部执行，无法直接访问 Tauri 事件发射器，
 /// 因此先写入本总线，由 `commands/llm.rs` 的流式循环按请求 drain 并转发。
+/// 全局总线跟踪的并发请求桶上限：超过后清空最旧（工具轨迹是辅助展示，丢失无害），
+/// 防止异常路径（如子代理被取消）遗留的桶永久占用内存。
+const MAX_TRACKED_REQUESTS: usize = 64;
+
 pub struct ToolCallBus {
     seq: AtomicU64,
     map: Mutex<HashMap<String, Vec<ToolCallEvent>>>,
@@ -59,6 +64,10 @@ impl ToolCallBus {
     fn record_call(&self, request_id: &str, tool: &str, args_preview: &str, skill_id: Option<&str>) {
         let seq = self.seq.fetch_add(1, Ordering::Relaxed);
         if let Ok(mut map) = self.map.lock() {
+            // 容量治理：超过上限清空（对齐 bridge 的 MAX_PENDING 治理思想）
+            if map.len() >= MAX_TRACKED_REQUESTS {
+                map.clear();
+            }
             map.entry(request_id.to_string()).or_default().push(ToolCallEvent {
                 seq,
                 kind: "call".into(),
@@ -75,6 +84,10 @@ impl ToolCallBus {
     fn record_result(&self, request_id: &str, tool: &str, ok: bool, summary: &str) {
         let seq = self.seq.fetch_add(1, Ordering::Relaxed);
         if let Ok(mut map) = self.map.lock() {
+            // 容量治理：超过上限清空（轨迹是辅助展示，丢失无害）
+            if map.len() >= MAX_TRACKED_REQUESTS {
+                map.clear();
+            }
             let events = map.entry(request_id.to_string()).or_default();
             // 配对到该工具第一个"尚无对应 result"的 call（并行同名调用时也能正确配对）
             let mut referenced: std::collections::HashSet<u64> = events
@@ -1900,3 +1913,224 @@ mod grep_tests {
     }
 }
 
+// ─────────────────────────── 子代理深度调研工具（只读、隔离上下文） ───────────────────────────
+
+/// 构建 deep_research 工具：派生隔离上下文的只读子代理执行深度调研。
+///
+/// 子代理使用独立 request_id 与只读工具子集（kb_search/code_lookup/read/grep/
+/// list_files/git_status，不含 edit/delete/技能激活），不修改任何文件；
+/// 返回有界摘要，完整输出经 read_subagent_result 分页读取（对齐 Reasonix
+/// read_subagent_result 的"结果隔离 + 按需分页"思想）。
+pub fn build_deep_research_tool(cfg: KbSearchConfig) -> DynamicTool {
+    DynamicTool::new(
+        "deep_research",
+        "派生一个隔离上下文的只读子代理进行深度调研：它可以检索知识库（kb_search）、读取与搜索文件（read/grep/list_files），适合需要阅读大量文件、跨文档总结、独立调查的任务。子代理不修改任何文件，也不共享当前对话的技能激活状态。返回有界摘要（含 subagent_id）；若需完整结果，用 read_subagent_result 指定 subagent_id 分页读取。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "task": {
+                    "type": "string",
+                    "description": "调研任务描述：说明要调查什么、产出什么形式的结论"
+                },
+                "max_turns": {
+                    "type": "integer",
+                    "description": "可选，子代理轮次上限（默认 12，最大 30）",
+                    "minimum": 1,
+                    "maximum": 30
+                }
+            },
+            "required": ["task"]
+        }),
+        {
+            let cfg = cfg.clone();
+            move |_ctx: &mut ToolContext, args: serde_json::Value| {
+                let cfg = cfg.clone();
+                Box::pin(async move { run_deep_research(cfg, &args).await })
+            }
+        },
+    )
+}
+
+/// 构建 read_subagent_result 工具：分页读取一次 deep_research 的完整输出。
+pub fn build_read_subagent_result_tool(cfg: KbSearchConfig) -> DynamicTool {
+    DynamicTool::new(
+        "read_subagent_result",
+        "按 subagent_id 分页读取一次 deep_research 子代理调研的完整输出。offset 为字符偏移（默认 0），max_chars 控制本次读取长度（默认 8192）。首次读取可省略 offset；若返回末尾提示已截断，用上次 offset + 返回长度作为下次 offset 继续。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "subagent_id": {
+                    "type": "string",
+                    "description": "deep_research 返回的 subagent_id"
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": "字符偏移（默认 0）",
+                    "minimum": 0
+                },
+                "max_chars": {
+                    "type": "integer",
+                    "description": "本次读取最大字符数（默认 8192，最大 60000）",
+                    "minimum": 1,
+                    "maximum": 60000
+                }
+            },
+            "required": ["subagent_id"]
+        }),
+        {
+            let cfg = cfg.clone();
+            move |_ctx: &mut ToolContext, args: serde_json::Value| {
+                let cfg = cfg.clone();
+                Box::pin(async move {
+                    let id = args
+                        .get("subagent_id")
+                        .and_then(|s| s.as_str())
+                        .unwrap_or_default()
+                        .trim()
+                        .to_string();
+                    if id.is_empty() {
+                        return Err(tool_error("read_subagent_result", "subagent_id 不能为空"));
+                    }
+                    let offset = args
+                        .get("offset")
+                        .and_then(|o| o.as_u64())
+                        .unwrap_or(0) as usize;
+                    let max_chars = args
+                        .get("max_chars")
+                        .and_then(|o| o.as_u64())
+                        .map(|v| v as usize)
+                        .unwrap_or(8192)
+                        .clamp(1, 60_000);
+                    record_tool_call(&cfg, "read_subagent_result", &format!("{id} (offset={offset})"));
+                    let state = cfg.app_handle.state::<crate::AppState>();
+                    let full = match state.subagent_results.get(&id) {
+                        Some(text) => text,
+                        None => {
+                            record_tool_result(&cfg, "read_subagent_result", false, "subagent_id 不存在或已过期");
+                            return Err(tool_error(
+                                "read_subagent_result",
+                                &format!("subagent_id 不存在或已过期: {id}"),
+                            ));
+                        }
+                    };
+                    let total = full.chars().count();
+                    if offset >= total {
+                        record_tool_result(
+                            &cfg,
+                            "read_subagent_result",
+                            true,
+                            &format!("已达末尾 {total} 字符"),
+                        );
+                        return Ok(ToolOutput::text(format!(
+                            "(已读取到末尾：该调研共 {total} 字符，offset={offset} 已超出)"
+                        )));
+                    }
+                    let slice: String = full.chars().skip(offset).take(max_chars).collect();
+                    let next_offset = offset + slice.chars().count();
+                    record_tool_result(
+                        &cfg,
+                        "read_subagent_result",
+                        true,
+                        &format!("{next_offset}/{total} 字符"),
+                    );
+                    let mut out = slice;
+                    if next_offset < total {
+                        out.push_str(&format!(
+                            "\n\n…(已显示 {next_offset}/{total} 字符，继续调用请用 offset={next_offset})"
+                        ));
+                    }
+                    Ok(ToolOutput::text(out))
+                })
+            }
+        },
+    )
+}
+
+/// 执行一次 deep_research：从 AppState 组装子代理并运行（独立 request_id + 全量入存储）。
+async fn run_deep_research(
+    cfg: KbSearchConfig,
+    args: &serde_json::Value,
+) -> Result<ToolOutput, ToolExecutionError> {
+    use crate::core::subagent::{
+        SubagentRunner, SubagentSpec, SUBAGENT_MAX_TURNS, SUBAGENT_SUMMARY_CHARS,
+    };
+    let task = args
+        .get("task")
+        .and_then(|s| s.as_str())
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if task.is_empty() {
+        return Err(tool_error("deep_research", "task 不能为空"));
+    }
+    let max_turns = args
+        .get("max_turns")
+        .and_then(|m| m.as_u64())
+        .map(|v| v as usize)
+        .unwrap_or(SUBAGENT_MAX_TURNS)
+        .clamp(1, 30);
+
+    record_tool_call(
+        &cfg,
+        "deep_research",
+        &format!("task_len={} max_turns={}", task.len(), max_turns),
+    );
+
+    // 从 AppState 取 LLM 配置并构建客户端（复用命令层同款缓存工厂）
+    let state = cfg.app_handle.state::<crate::AppState>();
+    let llm_cfg = state
+        .llm_config
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    let llm = match state
+        .llm_client_for(&llm_cfg.endpoint, &llm_cfg.model, &llm_cfg.api_key)
+        .await
+    {
+        Ok(client) => client,
+        Err(e) => {
+            record_tool_result(&cfg, "deep_research", false, &format!("LLM 构建失败: {e}"));
+            return Err(tool_error("deep_research", &format!("LLM 未配置或构建失败: {e}")));
+        }
+    };
+    let base_rules = crate::core::agent::load_agent_rules(&cfg.app_handle, "rag_agent.md");
+
+    // 独立 request_id：子代理工具轨迹/事件与父链完全隔离
+    let sub_request_id = format!("sub-{}", uuid::Uuid::new_v4());
+    let spec = SubagentSpec {
+        request_id: sub_request_id.clone(),
+        task,
+        max_turns,
+        summary_chars: SUBAGENT_SUMMARY_CHARS,
+    };
+    let outcome = SubagentRunner::run(
+        llm.completion_model().clone(),
+        cfg.clone(),
+        state.skill_registry.clone(),
+        base_rules,
+        &spec,
+    )
+    .await;
+
+    // 完整输出入存储（LRU 有界：最多保留 16 条，按最近访问淘汰）
+    state
+        .subagent_results
+        .insert(sub_request_id.clone(), outcome.full_output.clone());
+
+    let mut out = format!(
+        "子代理调研完成(subagent_id={sub_request_id}, max_turns={max_turns}, failed={})\n\n{}",
+        outcome.failed, outcome.summary
+    );
+    if outcome.failed {
+        out.push_str("\n\n提示：调研未完成，可重试或检查 LLM 配置。");
+    } else {
+        out.push_str("\n\n如需完整输出，调用 read_subagent_result，参数 subagent_id=\"{sub_request_id}\"。");
+    }
+    record_tool_result(
+        &cfg,
+        "deep_research",
+        !outcome.failed,
+        &format!("{} 字符摘要", outcome.summary.chars().count()),
+    );
+    Ok(ToolOutput::text(out))
+}

@@ -6,7 +6,7 @@
 //! - [`aggregate_hits`]：文档级聚合逻辑（与检索结果共享）
 //! - [`SkillGateHook`] / [`SkillInstructionHook`]：由 [`ActiveSkillState`] 驱动的技能指令注入与工具兜底拦截
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::SystemTime;
@@ -19,9 +19,14 @@ use rig_agent::agent::{Agent, AgentBuilder};
 use rig_agent::tool::{DynamicTool, ToolContext, ToolExecutionError, ToolOutput};
 use rig_core::providers::openai;
 use tauri::{AppHandle, Manager};
+use tokio_util::sync::CancellationToken;
 
+use crate::core::approval::ApprovalGate;
+use crate::core::approval::hook::ApprovalGateHook;
 use crate::core::skill::activation::ActiveSkillState;
 use crate::core::skill::SkillRegistry;
+
+pub mod planner;
 
 use self::tool_registry::ToolRegistry;
 use crate::core::{Indexer, SearchHit, call_embedding_query};
@@ -113,14 +118,14 @@ pub mod tool_registry;
 /// 才可见可调——决策权在 LLM（先 activate_skill 再检索）。
 pub const BASE_TOOLS: &[&str] = &[
     "activate_skill", "deactivate_skill", "read", "list_files", "grep", "edit", "delete",
-    "git_status",
+    "git_status", "deep_research", "read_subagent_result",
 ];
 
 /// Agent 单次请求的模型调用总预算（激活技能 + 文件读取 + 检索等流程通常需要多轮）。
 ///
 /// 语义 = 模型调用次数上限（1-based）：第 1 次调用 turn=1，turn=6 是最后一次，
 /// 第 7 次请求触发 MaxTurnsError。超出预算的流程由轮次预算预警 Hook 引导模型提前收尾。
-const DEFAULT_MAX_TURNS: usize = 6;
+pub const DEFAULT_MAX_TURNS: usize = 6;
 
 /// 调试用 Hook：在每次 LLM API 调用边界打印完整请求体与响应体。
 ///
@@ -128,7 +133,16 @@ const DEFAULT_MAX_TURNS: usize = 6;
 /// 都能在模型调用前拿到完整请求体（消息列表 + 运行上下文），
 /// 在响应后拿到完整响应体（内容 + token 用量 + 消息 ID）。
 #[derive(Clone, Debug)]
-pub struct LlmTraceHook;
+pub struct LlmTraceHook {
+    /// 关联的请求 ID（build_rag_agent 传入；build_chat_agent 无检索链路时为 None）
+    request_id: Option<String>,
+}
+
+impl LlmTraceHook {
+    pub fn new(request_id: Option<String>) -> Self {
+        Self { request_id }
+    }
+}
 
 impl AgentHook for LlmTraceHook {
     async fn on_completion_call(
@@ -142,6 +156,7 @@ impl AgentHook for LlmTraceHook {
             let request_body = serde_json::json!({
                 "turn": event.turn,
                 "run_id": ctx.run_id().as_str(),
+                "request_id": self.request_id,
                 "agent_name": ctx.agent_name(),
                 "is_streaming": ctx.is_streaming(),
                 "messages": messages,
@@ -187,11 +202,13 @@ impl AgentHook for LlmTraceHook {
 #[derive(Clone, Debug)]
 pub struct SkillGateHook {
     state: Arc<ActiveSkillState>,
+    /// 是否放行全部已注册工具（子代理等受限场景：只读白名单已过滤注册表，无需技能声明）
+    allow_all: bool,
 }
 
 impl SkillGateHook {
-    pub fn new(state: Arc<ActiveSkillState>) -> Self {
-        Self { state }
+    pub fn new(state: Arc<ActiveSkillState>, allow_all: bool) -> Self {
+        Self { state, allow_all }
     }
 }
 
@@ -208,7 +225,7 @@ impl AgentHook for SkillGateHook {
             log::warn!("[loop_guard] 熔断重复工具调用: {}", warning);
             return ToolCallAction::Skip(warning);
         }
-        if BASE_TOOLS.contains(&event.tool_name) {
+        if BASE_TOOLS.contains(&event.tool_name) || self.allow_all {
             return ToolCallAction::Run;
         }
         let declared: Vec<String> = self.state.allowed_tools().unwrap_or_default();
@@ -242,14 +259,23 @@ pub struct SkillInstructionHook {
     /// 本次请求的模型调用总预算（对齐 AgentBuilder::default_max_turns，
     /// 用于轮次预算预警：剩余不足时引导模型提前收敛）
     max_turns: usize,
+    /// 是否按技能体系窄化模型可见工具（主对话 true；子代理等受限场景 false，
+    /// 此时模型可见全部已注册工具——注册表层已用白名单过滤，天然安全）
+    narrow_tools: bool,
 }
 
 impl SkillInstructionHook {
-    pub fn new(base_preamble: String, state: Arc<ActiveSkillState>, max_turns: usize) -> Self {
+    pub fn new(
+        base_preamble: String,
+        state: Arc<ActiveSkillState>,
+        max_turns: usize,
+        narrow_tools: bool,
+    ) -> Self {
         Self {
             base_preamble,
             state,
             max_turns,
+            narrow_tools,
         }
     }
 }
@@ -280,16 +306,20 @@ impl AgentHook for SkillInstructionHook {
         }
         let mut patch = RequestPatch::new().preamble(&preamble);
 
-        // 可见工具 = 基础工具 ∪ 已激活技能声明工具
-        let mut visible: Vec<String> = BASE_TOOLS.iter().map(|t| t.to_string()).collect();
-        if let Some(declared) = self.state.allowed_tools() {
-            for t in declared {
-                if !visible.iter().any(|v| v == &t) {
-                    visible.push(t);
+        // 可见工具 = 基础工具 ∪ 已激活技能声明工具。
+        // narrow_tools=false（子代理等受限场景）时不设 active_tools：
+        // 模型可见全部已注册工具（注册表层已用白名单过滤）。
+        if self.narrow_tools {
+            let mut visible: Vec<String> = BASE_TOOLS.iter().map(|t| t.to_string()).collect();
+            if let Some(declared) = self.state.allowed_tools() {
+                for t in declared {
+                    if !visible.iter().any(|v| v == &t) {
+                        visible.push(t);
+                    }
                 }
             }
+            patch = patch.active_tools(visible);
         }
-        patch = patch.active_tools(visible);
         CompletionCallAction::patch(patch)
     }
 }
@@ -335,6 +365,9 @@ pub struct KbSearchConfig {
     pub search_sink: Arc<tokio::sync::Mutex<Vec<(SearchHit, f32)>>>,
     /// 应用句柄：供前端通信桥工具（如 pomodoro）emit 事件并等待前端回传。
     pub app_handle: tauri::AppHandle,
+    /// 当前请求的取消令牌：deep_research 等长耗时工具据此在父链取消时快速中止
+    /// （无外部取消源的场景为 None）。
+    pub cancel: Option<CancellationToken>,
 }
 
 /// 执行一次完整检索：嵌入 → 混合检索 → 文档级聚合 → 生成模型可读文本。
@@ -686,6 +719,15 @@ pub fn build_rag_agent(
     registry: Arc<SkillRegistry>,
     catalog: String,
     base: String,
+    // 审批门(破坏性操作确认);None = 不启用(保持原行为)
+    approval_gate: Option<Arc<ApprovalGate>>,
+    // 模型调用总预算(轮次上限):主对话用 DEFAULT_MAX_TURNS,子代理等场景可传更大值
+    max_turns: usize,
+    // 工具白名单:Some(子集) 时只注册白名单内工具(子代理只读调研);None = 全量
+    tool_whitelist: Option<&HashSet<String>>,
+    // 是否启用技能体系的 active_tools 窄化与工具门禁:
+    // 主对话 true(工具可见性/放行由技能声明决定);子代理 false(白名单已过滤,全放行)
+    narrow_tools: bool,
 ) -> Agent<openai::CompletionModel> {
     let skill_state = search_config.skill_state.clone();
 
@@ -707,11 +749,13 @@ pub fn build_rag_agent(
     // 依据激活状态窄化（active_tools），SkillGateHook 作为兜底拦截越权调用。
     //
     // 工具通过 ToolRegistry 统一管理：注册表按技能组织，新增工具只需一行 register。
-    let tool_reg = create_tool_registry();
+    let tool_reg = create_tool_registry(tool_whitelist);
     let tools = tool_reg.build_all(&search_config);
     let mut iter = tools.into_iter();
-    // AgentBuilder 类型状态：第一个 dynamic_tool 从 NoToolConfig → WithBuilderTools
-    let first = iter.next().expect("ToolRegistry 必须至少注册一个工具");
+    // AgentBuilder 类型状态：第一个 dynamic_tool 从 NoToolConfig → WithBuilderTools。
+    // 工具白名单恒非空（全量或只读子集均有内置工具），此处不会 panic；若未来引入
+    // 空白名单场景，需先解决类型状态机约束再放开。
+    let first = iter.next().expect("ToolRegistry 必须至少注册一个工具（白名单不能为空）");
     let mut builder = AgentBuilder::new(model).dynamic_tool(first);
     for tool in iter {
         builder = builder.dynamic_tool(tool);
@@ -719,18 +763,28 @@ pub fn build_rag_agent(
 
     // activate_skill / deactivate_skill 依赖 SkillRegistry/ActiveSkillState，
     // 不走通用注册表（参数签名不同），直接注册。
-    builder = builder
-        .dynamic_tool(tools::build_activate_skill_tool(registry, skill_state.clone()))
-        .dynamic_tool(tools::build_deactivate_skill_tool(skill_state.clone()));
+    // 尊重工具白名单：受限场景（如只读子代理）白名单不含技能激活时跳过注册，
+    // 避免子代理通过激活技能注入 SKILL.md 指令（提示注入面）。
+    if tool_whitelist.is_none_or(|set| set.contains("activate_skill")) {
+        builder = builder
+            .dynamic_tool(tools::build_activate_skill_tool(registry, skill_state.clone()));
+    }
+    if tool_whitelist.is_none_or(|set| set.contains("deactivate_skill")) {
+        builder = builder.dynamic_tool(tools::build_deactivate_skill_tool(skill_state.clone()));
+    }
 
-    builder
+    let mut builder = builder
         // 模型调用总预算：技能激活 + 文件读取 + 检索等流程通常需要多轮；
         // 剩余不足时由 SkillInstructionHook 注入预算预警引导模型提前收敛
-        .default_max_turns(DEFAULT_MAX_TURNS)
-        .add_hook(LlmTraceHook)
-        .add_hook(SkillInstructionHook::new(preamble, skill_state.clone(), DEFAULT_MAX_TURNS))
-        .add_hook(SkillGateHook::new(skill_state))
-        .build()
+        .default_max_turns(max_turns)
+        .add_hook(LlmTraceHook::new(Some(search_config.request_id.clone())))
+        .add_hook(SkillInstructionHook::new(preamble, skill_state.clone(), max_turns, narrow_tools))
+        .add_hook(SkillGateHook::new(skill_state, !narrow_tools));
+    // 审批门(可选)：先技能白名单、后审批，避免对「本就不该调用的工具」弹窗打扰用户。
+    if let Some(gate) = approval_gate {
+        builder = builder.add_hook(ApprovalGateHook::new(gate));
+    }
+    builder.build()
 }
 
 /// 创建工具注册表，注册所有业务工具。
@@ -741,25 +795,52 @@ pub fn build_rag_agent(
 /// - 其余工具仅当已激活技能声明时才可见
 ///
 /// 200+ 工具场景下，每个工具一行 `register`，按技能分组注释，维护成本低。
-fn create_tool_registry() -> ToolRegistry {
+fn create_tool_registry(only: Option<&HashSet<String>>) -> ToolRegistry {
     let mut reg = ToolRegistry::new();
+    let want = |name: &str| only.is_none_or(|set| set.contains(name));
 
     // ── 检索类工具（kb-search / code-lookup 技能声明） ──
-    reg.register("kb_search", Box::new(build_kb_search_tool));
-    reg.register("code_lookup", Box::new(build_code_lookup_tool));
+    if want("kb_search") {
+        reg.register("kb_search", Box::new(build_kb_search_tool));
+    }
+    if want("code_lookup") {
+        reg.register("code_lookup", Box::new(build_code_lookup_tool));
+    }
 
     // ── 文件操作工具（BASE_TOOLS，始终可见） ──
-    reg.register("read", Box::new(tools::build_read_tool));
-    reg.register("grep", Box::new(tools::build_grep_tool));
-    reg.register("edit", Box::new(tools::build_edit_tool));
-    reg.register("delete", Box::new(tools::build_delete_tool));
-    reg.register("list_files", Box::new(tools::build_list_files_tool));
+    if want("read") {
+        reg.register("read", Box::new(tools::build_read_tool));
+    }
+    if want("grep") {
+        reg.register("grep", Box::new(tools::build_grep_tool));
+    }
+    if want("edit") {
+        reg.register("edit", Box::new(tools::build_edit_tool));
+    }
+    if want("delete") {
+        reg.register("delete", Box::new(tools::build_delete_tool));
+    }
+    if want("list_files") {
+        reg.register("list_files", Box::new(tools::build_list_files_tool));
+    }
 
     // ── Git 工具（repo-status 技能声明） ──
-    reg.register("git_status", Box::new(tools::build_git_status_tool));
+    if want("git_status") {
+        reg.register("git_status", Box::new(tools::build_git_status_tool));
+    }
 
     // ── 番茄钟工具（pomodoro 技能声明，非 BASE_TOOLS） ──
-    reg.register("pomodoro", Box::new(tools::build_pomodoro_tool));
+    if want("pomodoro") {
+        reg.register("pomodoro", Box::new(tools::build_pomodoro_tool));
+    }
+
+    // ── 子代理工具（全量注册；只读子代理注册表经白名单排除，防无限递归） ──
+    if want("deep_research") {
+        reg.register("deep_research", Box::new(tools::build_deep_research_tool));
+    }
+    if want("read_subagent_result") {
+        reg.register("read_subagent_result", Box::new(tools::build_read_subagent_result_tool));
+    }
 
     reg
 }
@@ -773,6 +854,6 @@ pub fn build_chat_agent(
     // （resources/agent/chat_agent.md，经 load_agent_rules 从资源目录加载）
     AgentBuilder::new(model)
         .preamble(&base)
-        .add_hook(LlmTraceHook)
+        .add_hook(LlmTraceHook::new(None))
         .build()
 }

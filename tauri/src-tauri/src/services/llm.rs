@@ -1,4 +1,7 @@
 use std::collections::HashSet;
+use std::time::Duration;
+
+use async_trait::async_trait;
 
 use rig_core::client::completion::CompletionClient;
 use rig_core::completion::{AssistantContent, CompletionModel, CompletionRequest, Message, Usage};
@@ -44,15 +47,6 @@ fn normalize_base_url(endpoint: &str) -> String {
     trimmed.to_string()
 }
 
-/// 将项目内的 `ChatMessage` 转换为 Rig 的消息类型
-pub fn chat_message_to_rig(msg: &ChatMessage) -> Message {
-    match msg.role.as_str() {
-        "system" => Message::system(&msg.content),
-        "assistant" => Message::assistant(&msg.content),
-        _ => Message::user(&msg.content),
-    }
-}
-
 /// 将 Rig 的用量信息转换为项目内的 `UsageInfo`
 pub fn usage_to_info(usage: &Usage) -> UsageInfo {
     UsageInfo {
@@ -72,6 +66,12 @@ pub fn usage_to_info(usage: &Usage) -> UsageInfo {
 /// 已知限制：Rig 对流式请求默认注入 `stream_options: {"include_usage": true}`，
 /// 主流本地服务器（Ollama / llama.cpp / vLLM / LM Studio）均宽松忽略；若对接
 /// 严格校验参数的兼容网关返回 400，需自定义 Provider 扩展关闭该字段。
+/// LLM HTTP 请求级总超时（秒）：作用于每一次 LLM 请求（含 SSE 流式读取期），
+/// 防止服务端挂起导致请求永久悬挂。正常单轮生成远低于该值；子代理等多轮
+/// 流程每轮独立计超时，不叠加；父链取消时由 drop 传播中止，此超时仅兜底
+/// 极端挂起场景。
+const LLM_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
+
 #[derive(Clone)]
 pub struct LLMClient {
     /// 归一化后的 base_url（不含 /chat/completions 后缀）
@@ -85,9 +85,19 @@ impl LLMClient {
     pub fn new(endpoint: String, model: String, api_key: String) -> Result<Self, String> {
         let base_url = normalize_base_url(&endpoint);
 
+        // 注入带超时的 http client：rig_core 对 reqwest::Client 直接实现了
+        // HttpClientExt，CompletionsClient::builder().http_client(...) 可注入。
+        // 注意必须用 rig_core 重新导出的 reqwest(0.13) 类型——rig 的 HttpClientExt
+        // 只对该版本实现；mdgo 直接依赖的 reqwest 0.12 是不同 crate 实例，不满足约束。
+        // timeout 为请求级总时长（含 SSE 流式），300s 内正常生成不受影响，仅兜底挂起。
+        let http_client = rig_core::http_client::ReqwestClient::builder()
+            .timeout(LLM_REQUEST_TIMEOUT)
+            .build()
+            .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
         let client = openai::CompletionsClient::builder()
             .api_key(&api_key)
             .base_url(&base_url)
+            .http_client(http_client)
             .build()
             .map_err(|e| format!("创建 LLM 客户端失败: {}", e))?;
         let completion_model = client.completion_model(&model);
@@ -275,5 +285,172 @@ impl LLMClient {
         log::debug!("[llm] [输入语义扩展] output: {:?}", deduped);
         deduped
     }
+
+    /// 轻量任务规划：对复杂任务产出结构化计划 JSON 文本。
+    ///
+    /// 失败/取消返回 `None`，由调用方降级为"不规划"继续原流程（fail-open）；
+    /// 规划是一次独立非流式调用，不占用 Agent 的 `DEFAULT_MAX_TURNS` 执行预算。
+    pub async fn generate_plan_json(
+        &self,
+        query: &str,
+        history: &[ChatMessage],
+        cancel: CancellationToken,
+    ) -> Option<String> {
+        // 构建规划 prompt（附最近对话上下文）
+        let mut system_msg = String::new();
+        let recent_count = history.len().min(4);
+        if recent_count > 0 {
+            system_msg.push_str("对话历史（最近几条）：\n");
+            for msg in history.iter().rev().take(recent_count).rev() {
+                let role_label = match msg.role.as_str() {
+                    "user" => "用户",
+                    _ => "助手",
+                };
+                let content = if msg.content.len() > 200 {
+                    let truncated: String = msg.content.chars().take(200).collect();
+                    format!("{}...", truncated)
+                } else {
+                    msg.content.clone()
+                };
+                system_msg.push_str(&format!("{}: {}\n", role_label, content));
+            }
+            system_msg.push('\n');
+        }
+
+        system_msg.push_str(concat!(
+            "你是任务规划助手。用户将提出一个需要多步骤执行的复杂任务。请输出一个 JSON 计划，严格遵循以下格式（除 JSON 外不要输出任何其他内容、注释或代码围栏）：\n",
+            "{\"goal\": \"一句话任务目标\", \"steps\": [\"步骤1\", \"步骤2\", ...], \"acceptance\": [\"可验证的验收标准1\", ...], \"risks\": [\"风险或注意点1\", ...]}\n",
+            "要求：\n",
+            "1. goal 一句话概括目标，不含冗长描述\n",
+            "2. steps 3-8 步，具体、可执行、按顺序\n",
+            "3. acceptance 2-5 条，每条可客观验证\n",
+            "4. risks 列出主要风险或前置条件，无则给空数组\n",
+            "\n用户任务：",
+        ));
+        system_msg.push_str(query);
+
+        // 构造 Rig 请求（非流式，与 expand_queries 同构；不用 output_schema 保证网关兼容）
+        let request = CompletionRequest {
+            model: None,
+            preamble: None,
+            chat_history: OneOrMany::one(Message::user(system_msg)),
+            documents: Vec::new(),
+            tools: Vec::new(),
+            temperature: Some(0.3),
+            max_tokens: Some(1024),
+            tool_choice: None,
+            additional_params: None,
+            output_schema: None,
+            record_telemetry_content: false,
+        };
+
+        log::debug!("[llm] [任务规划] input: query_len={} history_count={}", query.len(), history.len());
+
+        let model = self.completion_model.clone();
+        let result = tokio::select! {
+            _ = cancel.cancelled() => {
+                log::debug!("[llm] [任务规划] cancelled");
+                return None;
+            }
+            res = model.completion(request) => res,
+        };
+
+        match result {
+            Ok(response) => {
+                let mut full = String::new();
+                for item in response.choice.iter() {
+                    if let AssistantContent::Text(text) = item {
+                        full.push_str(&text.text);
+                    }
+                }
+                let trimmed = full.trim();
+                if trimmed.is_empty() {
+                    log::warn!("[llm] [任务规划] 空响应");
+                    return None;
+                }
+                log::debug!("[llm] [任务规划] response_len={}", trimmed.len());
+                Some(trimmed.to_string())
+            }
+            Err(e) => {
+                log::warn!("[llm] [任务规划] 规划调用失败 err={}", e);
+                None
+            }
+        }
+    }
 }
 
+
+// ─── 历史摘要(上下文压缩用):将一段对话历史压缩为要点摘要 ───
+
+#[async_trait]
+impl crate::core::context::HistorySummarizer for LLMClient {
+    async fn summarize(
+        &self,
+        turns: &[crate::core::context::ChatTurn],
+        max_chars: usize,
+        cancel: CancellationToken,
+    ) -> Option<String> {
+        if turns.is_empty() {
+            return Some(String::new());
+        }
+        let mut prompt = format!(
+            "你是对话历史压缩助手。请将以下对话压缩为不超过 {max_chars} 字的要点摘要，只输出摘要正文，不要任何前后缀。必须保留：关键事实、已做的决定、未完成事项、用户的偏好与约束；不得编造内容。\n\n对话：\n"
+        );
+        for t in turns {
+            let label = match t.role.as_str() {
+                "user" => "用户",
+                "assistant" => "助手",
+                "system" => "系统",
+                _ => "其他",
+            };
+            prompt.push_str(&format!("{label}: {}\n", t.content));
+        }
+
+        // 构造 Rig 请求(非流式调用模式与 expand_queries 一致:
+        // stream=false 返回 application/json,兼容性最好)
+        let request = CompletionRequest {
+            model: None,
+            preamble: None,
+            chat_history: OneOrMany::one(Message::user(prompt)),
+            documents: Vec::new(),
+            tools: Vec::new(),
+            temperature: Some(0.3),
+            max_tokens: Some((max_chars / 2).clamp(128, 2048) as u64),
+            tool_choice: None,
+            additional_params: None,
+            output_schema: None,
+            record_telemetry_content: false,
+        };
+
+        let model = self.completion_model.clone();
+        let result = tokio::select! {
+            _ = cancel.cancelled() => {
+                log::debug!("[llm] [历史摘要] cancelled");
+                return None;
+            }
+            res = model.completion(request) => res,
+        };
+
+        match result {
+            Ok(response) => {
+                let mut full = String::new();
+                for item in response.choice.iter() {
+                    if let AssistantContent::Text(text) = item {
+                        full.push_str(&text.text);
+                    }
+                }
+                let trimmed = full.trim().to_string();
+                if trimmed.is_empty() {
+                    log::warn!("[llm] [历史摘要] 空响应");
+                    None
+                } else {
+                    Some(trimmed)
+                }
+            }
+            Err(e) => {
+                log::warn!("[llm] [历史摘要] 非流式调用失败 err={}", e);
+                None
+            }
+        }
+    }
+}

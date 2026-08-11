@@ -53883,6 +53883,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                     if (_chatStreamingDiv) _chatStreamingDiv._scroll();
                 }),
+                window.__TAURI__.event.listen('trace:event', (e) => {
+                    const payload = e.payload ? e.payload : {};
+                    const tid = payload.request_id;
+                    const tev = payload.events;
+                    if (!tid) return;
+                    if (!Array.isArray(tev)) return;
+                    const existing = window.__chatTraceMap[tid] ? window.__chatTraceMap[tid] : [];
+                    window.__chatTraceMap[tid] = existing.concat(tev);
+                }),
                 window.__TAURI__.event.listen('rag:status', (e) => {
                     if (e.payload.request_id !== requestId) return;
                     _chatStreamingStatusMsg = e.payload.message;
@@ -53911,6 +53920,20 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         const st = streamingDiv.querySelector('.chat-message-header-status');
                         if (st) st.remove();
                     }
+                    // 渲染阶段耗时面板（trace:event 按 request_id 收集）
+                    const traceEvents = window.__chatTraceMap[requestId] ? window.__chatTraceMap[requestId] : [];
+                    if (streamingDiv) {
+                        if (traceEvents.length) {
+                            try {
+                                const panel = document.createElement('div');
+                                panel.innerHTML = renderTracePanel(traceEvents);
+                                streamingDiv.appendChild(panel.firstChild);
+                            } catch (err) {
+                                console.warn('[trace] 渲染阶段面板失败:', err);
+                            }
+                        }
+                    }
+                    delete window.__chatTraceMap[requestId];
                     // 内存态（当前会话立即可见，不依赖落库结果）
                     if (fullContent) {
                         chatMessages.push({ role: 'assistant', content: fullContent, sources: sources, toolCalls: toolCallsSnapshot });
@@ -54702,12 +54725,96 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 } catch (e) {
                     console.warn('注册 chat-index 事件监听失败:', e);
                 }
+                // 监听 AI 工具审批请求（编辑/删除文件确认）：系统弹窗 → IPC 回传
+                try {
+                    const { listen } = window.__TAURI__.event;
+                    listen('approval:request', async (e) => {
+                        const { request_id, tool, summary, detail } = (e.payload || {});
+                        if (!request_id) return;
+                        const opName = tool === 'delete' ? '删除文件' : tool === 'edit' ? '修改文件' : '执行操作';
+                        const message = `${summary || ''}${detail ? '\n\n' + detail : ''}`;
+                        let approved = false;
+                        try {
+                            approved = await showConfirmModalAsync(`AI 请求${opName}`, message);
+                        } catch (err) {
+                            console.warn('[approval] 确认框异常:', err);
+                        }
+                        try {
+                            await window.__TAURI__.core.invoke('approval_respond', {
+                                requestId: request_id,
+                                approved,
+                                reason: approved ? null : '用户拒绝了此操作',
+                            });
+                        } catch (err) {
+                            console.warn('[approval] 回传审批结果失败:', err);
+                        }
+                    });
+                } catch (e) {
+                    console.warn('注册 approval 审批监听失败:', e);
+                }
+                // 监听 AI 任务计划确认请求（plan:request）：展示计划，用户批准/拒绝经 IPC 回传
+                try {
+                    const { listen } = window.__TAURI__.event;
+                    listen('plan:request', async (e) => {
+                        const { plan_id, plan } = (e.payload || {});
+                        if (!plan_id) return;
+                        const p = plan || {};
+                        const goal = p.goal ? '目标：' + p.goal : '';
+                        const steps = Array.isArray(p.steps) ? p.steps.map((s, i) => (i + 1) + '. ' + s).join('\n') : '(无步骤)';
+                        const acceptance = Array.isArray(p.acceptance) && p.acceptance.length ? '\n\n验收标准：\n' + p.acceptance.map(a => '· ' + a).join('\n') : '';
+                        const message = goal + '\n\n步骤：\n' + steps + acceptance;
+                        let approved = false;
+                        try {
+                            approved = await showConfirmModalAsync('AI 任务计划，请确认是否执行', message);
+                        } catch (err) {
+                            console.warn('[plan] 计划确认框异常:', err);
+                        }
+                        try {
+                            await window.__TAURI__.core.invoke('plan_respond', {
+                                planId: plan_id,
+                                approved,
+                                reason: approved ? null : '用户未批准此计划',
+                            });
+                        } catch (err) {
+                            console.warn('[plan] 回传计划确认结果失败:', err);
+                        }
+                    });
+                } catch (e) {
+                    console.warn('注册 plan 计划确认监听失败:', e);
+                }
                 // 应用启动时，root 目录就绪即自动启动 watcher（静默运行），并同步索引开关
                 if (getRootHandle()) {
                     setTimeout(startWatcherIfNeeded, 500);
                     setTimeout(syncIndexingEnabled, 1000);
                 }
             }
+        }
+
+        // ── Trace 阶段面板：按 request_id 渲染阶段耗时（trace:event）──
+        window.__chatTraceMap = {};
+        function traceEscapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, function (ch) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+            });
+        }
+        function renderTracePanel(events) {
+            if (!events) return '';
+            if (!events.length) return '';
+            const rows = events.map(function (ev) {
+                let icon = '▶';
+                if (ev.status === 'ok') icon = '✅';
+                else if (ev.status === 'error') icon = '❌';
+                else if (ev.status === 'cancelled') icon = '⛔';
+                else if (ev.status === 'denied') icon = '🚫';
+                const dur = ev.status === 'start' ? '' : (ev.duration_ms + 'ms');
+                const detail = ev.detail ? (' — ' + traceEscapeHtml(ev.detail)) : '';
+                return '<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 4px;font-size:12px;line-height:1.5;">'
+                    + '<span style="color:#888;">' + icon + ' ' + traceEscapeHtml(ev.stage) + detail + '</span>'
+                    + '<span style="color:#888;white-space:nowrap;">' + dur + '</span></div>';
+            }).join('');
+            return '<details style="margin-top:8px;border:1px solid #333;border-radius:6px;padding:6px 8px;">'
+                + '<summary style="cursor:pointer;font-size:12px;color:#888;user-select:none;">⚙ 阶段耗时（trace）</summary>'
+                + '<div style="margin-top:4px;">' + rows + '</div></details>';
         }
 
         async function highlightChatCodeBlocks(dom) {
@@ -55675,6 +55782,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     return `未知动作: ${action}`;
             }
         });
+
+        // 工具审批已迁移到 Tauri IPC：listen('approval:request') + invoke('approval_respond')
+        // （见 initTauriEventListeners 区域），不再走 WebSocket 桥。
+
         async function openFileOrDirFromSystem(filePath, isFile){
             if(!isTauriVisit()) return;
             // 传入相对路径，后端按配置的根目录自动拼接

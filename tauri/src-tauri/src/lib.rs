@@ -7,19 +7,26 @@ mod tray;
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use commands::llm::TaskRegistry;
 use commands::system::SystemMonitorState;
 use log::LevelFilter;
-use simplelog::{ColorChoice, ConfigBuilder, TerminalMode, TermLogger, WriteLogger};
 use tauri::{Emitter, Manager};
+use tracing_subscriber::filter::Targets;
+use tracing_subscriber::prelude::*;
+use crate::core::subagent::LruResultStore;
 use crate::core::{ConfigStore, Indexer, IndexerConfig, WatcherService};
 use crate::core::skill::{SkillRegistry, SkillStore};
 use crate::core::skill::metrics::SkillMetrics;
+use crate::core::approval::policy::DestructiveWritePolicy;
+use crate::core::approval::transport::IpcApprovalTransport;
+use crate::core::agent::planner::PlanDecision;
+use crate::core::approval::{ApprovalGate, ApprovalOutcome};
 use crate::services::prompt::PromptStore;
 
 use std::sync::RwLock;
+use std::time::Duration;
 
 /// LLM 连接配置（中央化，由前端保存后通过命令更新）
 #[derive(Clone, Debug)]
@@ -57,9 +64,44 @@ pub struct AppState {
     
     /// Skill 执行指标收集器（环形缓冲 + 聚合统计）
     pub skill_metrics: Arc<SkillMetrics>,
+    /// 工具审批门（破坏性操作确认）；None = 未启用（保持原行为）
+    pub approval_gate: Option<Arc<ApprovalGate>>,
+    /// 审批挂起表（IPC 审批通道与 approval_respond 共享，单一数据源）
+    pub approval_pending:
+        Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<ApprovalOutcome>>>>,
+    /// 规划确认挂起表（plan:request 与 plan_respond 共享，单一数据源）
+    pub plan_pending:
+        Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<PlanDecision>>>>,
+    /// 子代理完整输出存储（LRU 有界：最多保留 16 条，按最近访问淘汰）
+    pub subagent_results: Arc<LruResultStore>,
 }
 
 impl AppState {
+    /// 获取或创建 LLM 客户端（按配置指纹缓存，复用 reqwest 连接池；配置热更新后自动重建）。
+    ///
+    /// 供 commands 层与工具闭包（子代理深度调研）共用，避免 core 层反向依赖 commands 层。
+    pub async fn llm_client_for(
+        &self,
+        endpoint: &str,
+        model: &str,
+        api_key: &str,
+    ) -> Result<services::llm::LLMClient, String> {
+        let fingerprint = format!("{}|{}|{}", endpoint, model, api_key);
+        let mut cache = self.llm_client_cache.lock().await;
+        if let Some((fp, client)) = cache.as_ref() {
+            if fp == &fingerprint {
+                return Ok(client.clone());
+            }
+        }
+        let client = services::llm::LLMClient::new(
+            endpoint.to_string(),
+            model.to_string(),
+            api_key.to_string(),
+        )?;
+        *cache = Some((fingerprint, client.clone()));
+        Ok(client)
+    }
+
     /// 获取或创建指定目录的 ChatStore
     pub fn get_chat_store(&self, dir_path: &str) -> Result<Arc<services::chat::ChatStore>, String> {
         let mut stores = self.chat_stores.lock().map_err(|e| e.to_string())?;
@@ -165,18 +207,40 @@ pub fn run() {
         .manage(SystemMonitorState::new())
         .manage(TaskRegistry::new())
         .manage(prompt_store)
-        .manage(AppState {
-            config_store,
-            indexer,
-            watcher,
-            chat_stores: Mutex::new(HashMap::new()),
-            ai_history_stores: Mutex::new(HashMap::new()),
-            llm_config: RwLock::new(LlmConfig::default()),
-            llm_client_cache: tokio::sync::Mutex::new(None),
-            skill_registry,
-            skill_metrics,
-        })
         .setup(move |app| {
+            // ── 组装工具审批门（破坏性操作确认，需 AppHandle 以走前端桥）──
+            // 策略：edit / delete 需用户确认；通道：WebSocket 桥调前端弹窗；
+            // 超时 60s，超时/通道异常默认拒绝（fail-closed）。
+            let policies: Vec<Box<dyn crate::core::approval::ApprovalPolicy>> =
+                vec![Box::new(DestructiveWritePolicy::new(true))];
+            // 审批挂起表：IPC 通道与 approval_respond 共享（依赖注入，非全局静态）
+            let approval_pending: Arc<
+                Mutex<HashMap<String, tokio::sync::oneshot::Sender<ApprovalOutcome>>>,
+            > = Arc::new(Mutex::new(HashMap::new()));
+            let approval_gate = Arc::new(ApprovalGate::new(
+                policies,
+                Box::new(IpcApprovalTransport::new(
+                    app.handle().clone(),
+                    approval_pending.clone(),
+                )),
+                Duration::from_secs(60),
+            ));
+            app.manage(AppState {
+                config_store,
+                indexer,
+                watcher,
+                chat_stores: Mutex::new(HashMap::new()),
+                ai_history_stores: Mutex::new(HashMap::new()),
+                llm_config: RwLock::new(LlmConfig::default()),
+                llm_client_cache: tokio::sync::Mutex::new(None),
+                skill_registry,
+                skill_metrics,
+                approval_gate: Some(approval_gate),
+                approval_pending,
+                plan_pending: Arc::new(Mutex::new(HashMap::new())),
+                subagent_results: Arc::new(LruResultStore::new(16)),
+            });
+
             // 注入 skill:changed 事件：AppHandle 就绪后替换 watcher 回调
             let handle = app.handle().clone();
             {
@@ -275,6 +339,8 @@ pub fn run() {
             commands::llm::agent_query,
             commands::llm::kb_llm_query,
             commands::llm::kb_cancel_task,
+            commands::approval::approval_respond,
+            commands::plan::plan_respond,
             // 前端通信桥命令（WebSocket）
             commands::bridge::get_bridge_port,
             // Skill 管理命令
@@ -322,63 +388,87 @@ pub fn run() {
         });
 }
 
-/// 初始化日志系统：文件日志（Debug）+ 终端日志（Info）双输出。
+/// tracing 侧日志过滤句柄（热重载；set_log_level 通过它更新默认级别，
+/// 与 log::set_max_level 保持同步，rig span 与 log:: 桥接事件同受控制）。
+pub static LOG_LEVEL_HANDLE: OnceLock<
+    tracing_subscriber::reload::Handle<
+        tracing_subscriber::filter::Targets,
+        tracing_subscriber::registry::Registry,
+    >,
+> = OnceLock::new();
+
+/// 构造日志过滤 Targets（init_logging 与 set_log_level 共用，单一来源）。
+pub fn log_filter_targets(
+    level: tracing::level_filters::LevelFilter,
+) -> tracing_subscriber::filter::Targets {
+    Targets::new()
+        .with_target("lance", tracing::level_filters::LevelFilter::OFF)
+        .with_target("tantivy", tracing::level_filters::LevelFilter::OFF)
+        .with_target("datafusion", tracing::level_filters::LevelFilter::OFF)
+        .with_target("sqlparser", tracing::level_filters::LevelFilter::OFF)
+        .with_target("tao::platform_imp", tracing::level_filters::LevelFilter::OFF)
+        .with_default(level)
+}
+
+/// 初始化日志系统：基于 tracing 的统一输出（文件 + 终端双输出）。
 ///
 /// 日志文件路径：
 /// - macOS/Linux: `~/Library/Logs/mdgo/mdgo.log` / `~/.cache/mdgo/logs/mdgo.log`
 /// - Windows: `%APPDATA%/mdgo/logs/mdgo.log`
 ///
 /// **注意**：日志目录不会在项目目录内，避免触发 Tauri 开发服务器的文件监听重建循环。
+///
+/// 与旧 simplelog 实现的行为对齐：
+/// - 文件 + 终端双输出，文件创建失败降级为仅终端（sink）
+/// - 按 target 前缀屏蔽高频第三方日志（lance/tantivy/datafusion/sqlparser/tao）
+/// - 级别上限：dev=DEBUG，release=WARN
+///
+/// 新增收益：rig 内部的 tracing span/event 进入同一输出（此前 100% 丢失）；
+/// 现有 `log::` 宏经 `tracing_log::LogTracer` 桥接继续工作。
 fn init_logging() {
     let log_dir = log_dir_global();
     let log_path = log_dir.join("mdgo.log");
 
-    // 创建文件日志（允许所有级别，由 log::set_max_level_filter 统一控制）
-    // Lance 向量库内部 I/O 的 Debug 日志（如读取文件批次细节）过于频繁，
-    // 按 target 前缀屏蔽，避免终端与日志文件被刷屏；
-    // 不影响应用层 [rag_query]/[llm_trace] 等自有日志。
-    let log_config = ConfigBuilder::new()
-        .add_filter_ignore_str("lance")
-        .add_filter_ignore_str("tantivy")
-        .add_filter_ignore_str("datafusion")
-        .add_filter_ignore_str("sqlparser")
-        .add_filter_ignore_str("tao::platform_imp")
-        .build();
-    let has_file_logger;
-    let file_logger = match std::fs::create_dir_all(&log_dir)
+    // log:: → tracing 桥接：现有 log:: 宏进入统一 subscriber（target 保留）
+    let _ = tracing_log::LogTracer::init();
+
+    // 级别上限 + 高频第三方 target 屏蔽（行为与原 ignore 列表对齐）
+    let level = if cfg!(debug_assertions) {
+        tracing::level_filters::LevelFilter::DEBUG
+    } else {
+        tracing::level_filters::LevelFilter::WARN
+    };
+    let filter = crate::log_filter_targets(level);
+    let (filter_layer, filter_handle) = tracing_subscriber::reload::Layer::new(filter);
+    let _ = LOG_LEVEL_HANDLE.set(filter_handle);
+
+    // 终端输出（彩色）
+    let term_layer = tracing_subscriber::fmt::layer()
+        .with_ansi(true)
+        .with_writer(std::io::stdout);
+
+    // 文件输出（Mutex<Box<dyn Write>> 实现 MakeWriter；创建失败降级为 sink，仅终端输出）
+    let mut has_file_logger = false;
+    let file_writer: Mutex<Box<dyn std::io::Write + Send + Sync>> = match std::fs::create_dir_all(&log_dir)
         .and_then(|_| std::fs::File::create(&log_path))
     {
         Ok(file) => {
             has_file_logger = true;
-            Some(WriteLogger::new(
-                LevelFilter::Trace,
-                log_config.clone(),
-                file,
-            ))
+            Mutex::new(Box::new(file))
         }
-        Err(_) => {
-            has_file_logger = false;
-            None
-        }
+        Err(_) => Mutex::new(Box::new(std::io::sink())),
     };
+    let file_layer = tracing_subscriber::fmt::layer()
+        .with_ansi(false)
+        .with_writer(file_writer);
 
-    // 创建终端日志（允许所有级别，同上）
-    let term_logger = TermLogger::new(
-        LevelFilter::Trace,
-        log_config,
-        TerminalMode::Mixed,
-        ColorChoice::Auto,
-    );
+    let subscriber = tracing_subscriber::registry()
+        .with(filter_layer)
+        .with(term_layer)
+        .with(file_layer);
+    let _ = tracing::subscriber::set_global_default(subscriber);
 
-    let mut loggers: Vec<Box<dyn simplelog::SharedLogger>> = Vec::with_capacity(2);
-    loggers.push(term_logger);
-    if let Some(file) = file_logger {
-        loggers.push(file);
-    }
-
-    let _ = simplelog::CombinedLogger::init(loggers);
-
-    // dev: Debug 级别方便调试；release: 只记录 Warn 以上
+    // 仅约束 log:: 宏侧（与旧实现一致）；tracing 侧由 Targets 过滤
     if cfg!(debug_assertions) {
         log::set_max_level(LevelFilter::Debug);
     } else {
@@ -392,7 +482,7 @@ fn init_logging() {
 
 /// 跨平台日志根目录（不依赖 Tauri API，纯标准库实现）。
 ///
-/// - Windows: `%APPDATA%/mdgo/logs/`
+/// - Windows: `%APPDATA%/com.mdgo/logs/`
 /// - macOS:   `~/Library/Logs/mdgo/`
 /// - Linux:   `~/.cache/mdgo/logs/`
 fn log_dir_global() -> std::path::PathBuf {

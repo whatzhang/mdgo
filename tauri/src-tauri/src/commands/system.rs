@@ -587,9 +587,21 @@ pub fn stop_monitor(state: tauri::State<'_, SystemMonitorState>) {
     state.running.store(false, Ordering::SeqCst);
 }
 
-/// 设置日志级别（热切换，即时生效）
+/// 设置日志级别（热切换，即时生效）。
+///
+/// 同时更新两侧：log:: 宏侧（log::set_max_level）与 tracing 侧
+/// （经 LOG_LEVEL_HANDLE 热重载 Targets，rig span 与 log:: 桥接事件同受控制）。
 #[tauri::command]
 pub fn set_log_level(level: String) {
+    let tracing_level = match level.to_lowercase().as_str() {
+        "off" => Some(tracing::level_filters::LevelFilter::OFF),
+        "error" => Some(tracing::level_filters::LevelFilter::ERROR),
+        "warn" => Some(tracing::level_filters::LevelFilter::WARN),
+        "info" => Some(tracing::level_filters::LevelFilter::INFO),
+        "debug" => Some(tracing::level_filters::LevelFilter::DEBUG),
+        "trace" => Some(tracing::level_filters::LevelFilter::TRACE),
+        _ => None,
+    };
     match level.to_lowercase().as_str() {
         "off" => log::set_max_level(log::LevelFilter::Off),
         "error" => log::set_max_level(log::LevelFilter::Error),
@@ -598,6 +610,12 @@ pub fn set_log_level(level: String) {
         "debug" => log::set_max_level(log::LevelFilter::Debug),
         "trace" => log::set_max_level(log::LevelFilter::Trace),
         _ => return,
+    }
+    // tracing 侧热重载（构造新的 Targets，与 init_logging 共用单一来源）
+    if let Some(tracing_level) = tracing_level {
+        if let Some(handle) = crate::LOG_LEVEL_HANDLE.get() {
+            let _ = handle.reload(crate::log_filter_targets(tracing_level));
+        }
     }
     log::info!("[config] 日志级别已切换为: {}", level);
 }

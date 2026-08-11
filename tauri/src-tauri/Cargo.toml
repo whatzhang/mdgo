@@ -58,6 +58,10 @@ bytes = "1"
 # 日志
 log = "0.4"
 simplelog = "0.12"
+# 可观测性:捕获 rig 内部 tracing span(此前 100% 丢失);tracing-log 桥接现有 log:: 宏
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt"] }
+tracing-log = "0.2"
 # 日期时间格式化（垃圾箱目录命名）
 chrono = "0.4"
 
@@ -74,11 +78,12 @@ rayon = "1.10"
 # 中文分词（Jieba，替换简单 Bigram）
 jieba-rs = "0.10"
 # 分词
-tokenizers = "0.22"
+tokenizers = { version = "0.22.2", default-features = false, features = ["onig"] }
 # 文件监听
 notify = { version = "8", features = ["macos_kqueue"] }
 # PDF 提取
 pdf-extract = { version = "0.7", optional = true }
+async-trait = "0.1"
 rig-core = "0.41.0"
 rig-agent = { version = "0.41.0", default-features = false }
 anyhow = "1.0.104"
@@ -102,3 +107,25 @@ lto = "thin"
 codegen-units = 1
 strip = true          # 剥离符号/调试信息（PDB/dSYM 本就不随包分发）
 panic = "abort"       # 移除 unwinding 运行时，再省几 MB（Tauri 兼容）
+
+# ============== 开发 / 测试 加速 ==============
+# 目标：明显缩短 cargo build / cargo test / cargo run 的时间。
+# - opt-level=1：保留可断点；重编/测试运行都比 opt-level=0 快很多
+# - debug="line-tables-only"：跳过完整 debug 符号生成，链接阶段显著加速
+# - codegen-units=256：增强模块内并行
+# - incremental：默认 true，显式声明意图
+# 第三方 crate 也走 opt-level=1（dev-deps 同理），温重编收益最大
+[profile.dev]
+opt-level = 1
+debug = "line-tables-only"
+codegen-units = 256
+incremental = true
+
+[profile.dev.package."*"]
+opt-level = 1
+
+# 单测同样走 opt-level=1 + line-tables-only：测试运行快 3-5x，断点仍可用
+[profile.test]
+opt-level = 1
+debug = "line-tables-only"
+codegen-units = 256

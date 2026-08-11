@@ -141,7 +141,7 @@ goto :eof
 :check_rust
 echo [INFO]  Checking Rust code compilation...
 pushd "%TAURI_SRC%"
-cargo check -j 1
+cargo check
 if errorlevel 1 (
     echo [ERROR] Rust code compilation failed
     popd

@@ -1,3 +1,4 @@
+pub mod approval;
 pub mod ai_history;
 pub mod bridge;
 pub mod chat;
@@ -10,6 +11,7 @@ pub mod git_types;
 pub mod knowledge;
 pub mod llm;
 pub mod open_url;
+pub mod plan;
 pub mod prompt;
 pub mod skill;
 pub mod system;

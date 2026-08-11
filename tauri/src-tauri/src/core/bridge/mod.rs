@@ -167,12 +167,26 @@ pub async fn request(
     action: &str,
     args: serde_json::Value,
 ) -> Result<String, String> {
+    request_with_timeout(_app, tool, action, args, REQUEST_TIMEOUT).await
+}
+
+/// 发起一次前端调用并等待结果，支持自定义超时（审批等交互场景）。
+///
+/// 语义与 [`request`] 一致，仅超时由调用方指定；挂起表容量清扫按同一超时判定。
+/// 超时语义为 fail-closed：调用方按超时视为失败/拒绝处理。
+pub async fn request_with_timeout(
+    _app: &tauri::AppHandle,
+    tool: &str,
+    action: &str,
+    args: serde_json::Value,
+    timeout: Duration,
+) -> Result<String, String> {
     let request_id = Uuid::new_v4().to_string();
     let (tx, rx) = oneshot::channel::<BridgeReply>();
 
     // 容量治理：超过上限先清扫过期条目
     if bridge().pending.len() >= MAX_PENDING {
-        let cutoff = Instant::now() - REQUEST_TIMEOUT;
+        let cutoff = Instant::now() - timeout;
         bridge().pending.retain(|_, p| p.created_at >= cutoff);
     }
 
@@ -209,13 +223,13 @@ pub async fn request(
     }
 
     // 等待前端回传或超时
-    let reply = tokio::time::timeout(REQUEST_TIMEOUT, rx).await;
+    let reply = tokio::time::timeout(timeout, rx).await;
     let reply = match reply {
         Err(_elapsed) => {
             bridge().pending.remove(&request_id);
             return Err(format!(
                 "等待前端响应超时（{}s）：{tool}/{action}",
-                REQUEST_TIMEOUT.as_secs()
+                timeout.as_secs()
             ));
         }
         Ok(Err(_)) => {

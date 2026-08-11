@@ -6,6 +6,10 @@ pub mod agent;
 pub mod skill;
 pub mod bridge;
 pub mod search;
+pub mod approval;
+pub mod context;
+pub mod subagent;
+pub mod trace;
 
 mod chat_types;
 mod embedding;

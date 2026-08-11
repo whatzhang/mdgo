@@ -254,6 +254,7 @@ impl SkillMetrics {
         inputs: Vec<ExecInput>,
         success: bool,
         error_code: Option<&str>,
+        request_id: &str,
     ) {
         // 每次请求结束统一冲刷该目录待落库调度计数（无论是否有技能激活），
         // 将本请求生命周期内的 2~3 次调度写合并为 1 次落库
@@ -288,11 +289,12 @@ impl SkillMetrics {
                     .prepare(
                         "INSERT INTO skill_exec_metrics
                             (request_id, scope, skill_id, match_level, score, state, duration_ms, error_code, created_at)
-                         VALUES ('', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                     )
                     .map_err(|e| e.to_string())?;
                 for inp in inputs {
                     stmt.execute(params![
+                        request_id,
                         inp.scope,
                         inp.skill_id,
                         inp.source.as_str(),
