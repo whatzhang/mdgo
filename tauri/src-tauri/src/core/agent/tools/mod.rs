@@ -25,6 +25,7 @@ use crate::core::skill::SkillRegistry;
 use crate::core::subagent::{
     SubagentMode, SubagentRunner, SubagentSpec, SUBAGENT_MAX_TURNS, SUBAGENT_SUMMARY_CHARS,
 };
+use crate::core::SearchHit;
 
 mod cache;
 
@@ -248,6 +249,8 @@ pub fn record_tool_result(cfg: &KbSearchConfig, tool: &str, ok: bool, summary: &
 const MAX_FILE_READ_CHARS: usize = 8192;
 /// 目录列举上限
 const MAX_LIST_ITEMS: usize = 60;
+/// 引用来源片段截断上限（read / grep 读取的知识库内容作为引用 snippet 的字符数上限）
+const MAX_SOURCE_SNIPPET_CHARS: usize = 800;
 
 // ─────────────────────────── 重复调用熔断（Loop Guard） ───────────────────────────
 
@@ -530,6 +533,35 @@ fn read_text(full: &Path, display: &str, offset: usize) -> Result<String, String
     Ok(result)
 }
 
+/// 将一次知识库内容读取/搜索命中记录为引用来源（score=0 表示非检索命中，引用列表中排后）。
+///
+/// 供 `read` / `grep` 等「直接读取知识库文件」的工具调用：这些路径此前不产生引用，
+/// 导致同一 Agent 回答中引用「有时有、有时无」。命中写入 `search_sink` 后，
+/// 在 `rag:done` 发射前由 `merge_search_sink` 与预检索来源合并，保证
+/// 凡是用到知识库内容都有引用可查。
+async fn push_kb_source(cfg: &KbSearchConfig, doc_name: &str, snippet: &str) {
+    let text: String = snippet.chars().take(MAX_SOURCE_SNIPPET_CHARS).collect();
+    if text.trim().is_empty() {
+        return;
+    }
+    let hit = SearchHit {
+        text,
+        doc_name: doc_name.to_string(),
+        chunk_index: 0,
+        score: 0.0,
+        score_vec: 0.0,
+        score_bm25: 0.0,
+        path_json: None,
+        sentence_window: None,
+        symbol_name: None,
+        symbol_kind: None,
+        chunk_type: None,
+        score_rerank: None,
+    };
+    let mut guard = cfg.search_sink.lock().await;
+    guard.push((hit, 0.0));
+}
+
 /// 读取知识库（当前打开目录）内文件或当前激活技能的参考文档（渐进式披露 L3）。
 ///
 /// `offset` 为字符偏移（从 0 开始，长文件分页续读用，见 [`read_text`]）。
@@ -540,7 +572,13 @@ fn read_text(full: &Path, display: &str, offset: usize) -> Result<String, String
 ///    按激活技能逐一尝试；技能基础目录由 `cfg.skill_bases` 提供，仅限已激活技能
 pub async fn read(cfg: &KbSearchConfig, rel_path: &str, offset: usize) -> Result<String, String> {
     match safe_resolve(&cfg.dir_path, rel_path) {
-        Ok(full) => return read_text(&full, rel_path, offset),
+        Ok(full) => {
+            let result = read_text(&full, rel_path, offset)?;
+            // 读取的是知识库（当前打开目录）内文件 → 记录为引用来源，
+            // 使「直接读文件」的回答同样展示引用（与预检索/检索工具来源一致）
+            push_kb_source(cfg, rel_path, &result).await;
+            return Ok(result);
+        }
         Err(e) if cfg.skill_state.activated().is_empty() => {
             // 无任何激活技能：若目标是技能参考路径，明确指出需先激活技能，
             // 避免模型误以为文件不存在而反复尝试（浪费多轮工具调用）
@@ -1012,6 +1050,16 @@ pub async fn grep_files(
     } else {
         String::new()
     };
+
+    // 将 grep 命中的知识库文件记录为引用来源（模型使用的知识库内容对用户透明），
+    // 与 read / 预检索 / kb_search 的来源路径保持一致
+    if !list_only {
+        for (rel, lines) in &hits {
+            if !lines.is_empty() {
+                push_kb_source(cfg, rel, &lines.join("\n")).await;
+            }
+        }
+    }
 
     if hits.is_empty() {
         // 精确短语未命中时剥离引号，避免文案出现嵌套引号（如 未找到包含“"fn main()"”）

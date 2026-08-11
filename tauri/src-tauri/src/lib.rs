@@ -501,16 +501,8 @@ pub fn log_filter_targets(
     // 框架/第三方库统一 WARN；高频噪音 target 直接 OFF。
     // `level` 为调用方传入的全局级别（init 默认 INFO；set_log_level 热切换控制 mdgo_lib）。
     Targets::new()
-        .with_target("lance", tracing::level_filters::LevelFilter::OFF)
-        .with_target("tantivy", tracing::level_filters::LevelFilter::OFF)
-        .with_target("datafusion", tracing::level_filters::LevelFilter::OFF)
-        .with_target("sqlparser", tracing::level_filters::LevelFilter::OFF)
-        .with_target("tao::platform_imp", tracing::level_filters::LevelFilter::OFF)
-        .with_target("ort", tracing::level_filters::LevelFilter::OFF)
         // 自己代码：按 level（默认 INFO，热切换可开 DEBUG/TRACE）
         .with_target("mdgo_lib", level)
-        // 框架/第三方（h2/hyper/reqwest/tower/rusqlite/rig 等）：仅 WARN 及以上
-        // （其 DEBUG/INFO 帧、连接日志为噪音；WARN/ERROR 仍可见）
         .with_default(tracing::level_filters::LevelFilter::WARN)
 }
 
@@ -537,9 +529,12 @@ fn init_logging() {
     // log:: → tracing 桥接：现有 log:: 宏进入统一 subscriber（target 保留）
     let _ = tracing_log::LogTracer::init();
 
-    // 级别上限 + target 过滤（规范化：自己代码默认 INFO，框架 WARN）
-    // 默认统一 INFO（开发与打包一致；需要 DEBUG/TRACE 时用 Ctrl+Shift+= 热切换）
-    let level = tracing::level_filters::LevelFilter::INFO;
+    // 级别上限 + 高频第三方 target 屏蔽（行为与原 ignore 列表对齐）
+    let level = if cfg!(debug_assertions) {
+        tracing::level_filters::LevelFilter::INFO
+    } else {
+        tracing::level_filters::LevelFilter::WARN
+    };
     let filter = crate::log_filter_targets(level);
     let (filter_layer, filter_handle) = tracing_subscriber::reload::Layer::new(filter);
     let _ = LOG_LEVEL_HANDLE.set(filter_handle);
@@ -575,8 +570,11 @@ fn init_logging() {
     let _ = tracing::subscriber::set_global_default(subscriber);
 
     // 仅约束 log:: 宏侧（与旧实现一致）；tracing 侧由 Targets 过滤
-    // 规范化：统一 INFO（与 tracing 侧默认一致；框架侧由 Targets 的 WARN 兜底）
-    log::set_max_level(LevelFilter::Info);
+    if cfg!(debug_assertions) {
+        log::set_max_level(LevelFilter::Debug);
+    } else {
+        log::set_max_level(LevelFilter::Warn);
+    }
 
     if has_file_logger {
         log::info!("日志文件: {}", log_path.display());

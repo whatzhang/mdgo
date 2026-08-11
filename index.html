@@ -2212,6 +2212,44 @@
             opacity: calc(0.92 - var(--notif-layer, 0) * 0.14);
         }
 
+        /* 持久通知（sticky）：不自动消失，右上角叉号手动关闭 */
+        .editor-notification.sticky {
+            padding-right: 1.6rem; /* 为右上角关闭按钮留位 */
+        }
+
+        .editor-notification.sticky::before {
+            background: rgb(86, 90, 110);
+            opacity: calc(0.92 - var(--notif-layer, 0) * 0.14);
+        }
+
+        .editor-notification.sticky > span {
+            flex: 1;
+            text-align: center;
+            white-space: pre-line; /* 保留多行提示（如 plan 拒绝原因）的换行 */
+        }
+
+        /* 右上角关闭按钮（仅 sticky 通知） */
+        .editor-notification-close {
+            position: absolute;
+            top: 0.25rem;
+            right: 0.35rem;
+            border: none;
+            background: transparent;
+            color: inherit;
+            font-size: 1rem;
+            line-height: 1;
+            padding: 0.15rem 0.35rem;
+            border-radius: 0.3125rem;
+            cursor: pointer;
+            opacity: 0.65;
+            transition: opacity 0.2s ease, background-color 0.2s ease;
+        }
+
+        .editor-notification-close:hover {
+            opacity: 1;
+            background: rgba(255, 255, 255, 0.18);
+        }
+
         @keyframes notificationFadeIn {
             from {
                 opacity: 0;
@@ -3093,7 +3131,7 @@
             background: var(--color-bg);
             border-radius: 10px;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-            padding: 15px;
+           
             min-width: 240px;
             max-width: 315px;
         }
@@ -3101,21 +3139,26 @@
         .confirm-modal-title {
             font-size: 14px;
             color: var(--color-primary, var(--color-primary-light));
-            margin-bottom: 10px;
+            border-bottom: 1px solid var(--color-border, #bbc3ca);
+            padding: 0.5rem 1rem;
             font-weight: 600;
         }
 
         .confirm-modal-message {
             font-size: 13px;
             color: var(--t2);
-            margin-bottom: 15px;
+            padding: 1rem;
             line-height: 1.5;
+            white-space: pre-line;
+            word-break: break-word;
+            overflow-wrap: break-word;
         }
 
         .confirm-modal-buttons {
             display: flex;
             justify-content: flex-end;
             gap: 8px;
+            padding: 0.5rem 1rem;
         }
 
         .confirm-modal-btn {
@@ -5136,7 +5179,6 @@
             display: flex;
             gap: 0.25rem;
             justify-content: flex-end;
-            margin-top: 0.25rem;
             opacity: 0;
             visibility: hidden;
             transition: opacity 0.2s ease, visibility 0.2s ease;
@@ -18226,6 +18268,7 @@
             else { FILE_TEXT_CACHE.clear(); }
         }
         async function toggleFile(type, data = {}) {
+            if (!(await confirmInterruptStreaming('切换视图'))) return;
             if (!isRootHandleAvailable()) {
                 showNotification('✗ 请先打开根目录', 'error');
                 return;
@@ -20218,13 +20261,15 @@
             }
         }
 
-        function showConfirmModal(title, message, callback) {
+        function showConfirmModal(title, message, callback, options) {
+            const opts = options || {};
             const overlay = document.createElement('div');
             overlay.id = 'confirm-modal-overlay';
             overlay.className = 'modal-overlay';
-            overlay.innerHTML = `<div class="confirm-modal">
+            const modalStyle = opts.modalStyle || '';
+            overlay.innerHTML = `<div class="confirm-modal" ${modalStyle ? `style="${modalStyle}"` : ''}>
                      <div class="confirm-modal-title">${escapeHtml(title)}</div>
-                     <div class="confirm-modal-message">${escapeHtml(message)}</div>
+                     <div class="confirm-modal-message" ${opts.modelBodyStyle ? `style="${opts.modelBodyStyle}"` : ''}>${escapeHtml(message)}</div>
                      <div class="confirm-modal-buttons">
                          <button class="confirm-modal-btn confirm-modal-btn-cancel">取消</button>
                          <button class="confirm-modal-btn confirm-modal-btn-confirm">确认</button>
@@ -20246,6 +20291,8 @@
                 if (e.key === 'Escape') {
                     // 仅当确认框为最上层弹窗时响应 Escape，避免连带关闭下层弹窗（如 Prompt 自定义列表）
                     if (typeof _isTopModalOverlay === 'function' && !_isTopModalOverlay(overlay)) return;
+                    // 强制确认类弹窗（AI 权限/计划审批）：不允许 Esc 关闭，用户只能点确认或取消
+                    if (opts.blockEsc) return;
                     close();
                     callback(false);
                 }
@@ -20261,6 +20308,8 @@
             });
             overlay.addEventListener('click', (e) => {
                 if (e.target === overlay) {
+                    // 强制确认类弹窗（AI 权限/计划审批）：点击空白区域不关闭，用户只能点确认或取消
+                    if (opts.blockOutsideClick) return;
                     close();
                     callback(false);
                 }
@@ -25219,24 +25268,52 @@
 
         // 显示通知，返回通知对象供主动删除。
         // duration 为可见时长(ms)，设为 0 表示不自动消失，需手动调用 item.dismiss()。
+        // type='sticky'：持久通知——右下角一直存在，右上角显示叉号，只有点击叉号才消失。
         function showNotification(text, type = 'success', duration = 3000) {
-            // 超过最大数量时，移除最早的一条（跳过动画，同时清理其定时器）
+            // sticky 类型强制不自动消失
+            const isSticky = type === 'sticky';
+            if (isSticky) duration = 0;
+            // 超过最大数量时，移除最早的一条（跳过动画，同时清理其定时器）；
+            // sticky 通知仅能手动关闭，不参与数量上限淘汰（保持"一直存在"）
             while (_activeNotifications.length >= NOTIFICATION_MAX_COUNT) {
-                _dismissNotification(_activeNotifications[0], true);
+                const victim = _activeNotifications.find(n => !n.sticky);
+                if (!victim) break; // 全部为 sticky 时允许超出上限，不再自动淘汰
+                _dismissNotification(victim, true);
             }
 
             const notification = document.createElement('div');
             notification.className = 'editor-notification ' + type;
             notification.setAttribute('role', 'alert');
-            notification.textContent = text;
+            if (isSticky) {
+                // 持久通知：文本 + 右上角叉号关闭按钮
+                const textSpan = document.createElement('span');
+                textSpan.textContent = text;
+                const closeBtn = document.createElement('button');
+                closeBtn.type = 'button';
+                closeBtn.className = 'editor-notification-close';
+                closeBtn.setAttribute('aria-label', '关闭通知');
+                closeBtn.innerHTML = '&times;';
+                notification.appendChild(textSpan);
+                notification.appendChild(closeBtn);
+            } else {
+                notification.textContent = text;
+            }
             document.body.appendChild(notification);
 
-            const item = { el: notification, _timer: null };
+            const item = { el: notification, _timer: null, sticky: isSticky };
             _activeNotifications.push(item);
             _repositionNotifications();
 
-            // duration > 0 时设置自动消失定时器（duration=0 永不自动消失）
-            if (duration > 0) {
+            if (isSticky) {
+                // sticky：只有点击右上角叉号才消失
+                const closeBtn = notification.querySelector('.editor-notification-close');
+                if (closeBtn) {
+                    closeBtn.addEventListener('click', () => {
+                        _dismissNotification(item);
+                    });
+                }
+            } else if (duration > 0) {
+                // duration > 0 时设置自动消失定时器（duration=0 永不自动消失）
                 item._timer = setTimeout(() => {
                     item._timer = null;
                     _dismissNotification(item);
@@ -34780,11 +34857,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return false;
         }
 
-        function showConfirmModalAsync(title, message) {
+        function showConfirmModalAsync(title, message, options) {
             return new Promise((resolve) => {
                 showConfirmModal(title, message, (confirmed) => {
                     resolve(confirmed);
-                });
+                }, options);
             });
         }
 
@@ -52012,6 +52089,21 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         /**
+         * 会话生成中时，弹出确认框提示"中断生成"。
+         * 用户切换页面/新建会话/切换会话/切换模式/清空或删除会话等操作前调用，
+         * 避免流式生成被无感知打断。无进行中会话时直接放行（返回 true）。
+         * 用户取消时返回 false，调用方应中止后续切换逻辑。
+         */
+        async function confirmInterruptStreaming(actionLabel) {
+            if (!chatStreaming) return true;
+            const confirmed = await showConfirmModalAsync(
+                '中断生成',
+                `当前会话正在生成回复，${actionLabel || '该操作'}将中断生成。\n\n已生成的部分内容会自动保存到对话历史，不会丢失。是否继续？`
+            );
+            return confirmed;
+        }
+
+        /**
          * 收尾当前会话：中断流式输出 + 保存部分消息 + 清理流状态
          * 所有"离开当前会话"的操作（切换会话、切换模式、切换页面、新建会话、删除会话）
          * 都必须先调用此函数，确保数据不丢失
@@ -52213,6 +52305,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             // 相同模式不处理
             if (chatMode === mode) return;
+            if (!(await confirmInterruptStreaming('切换模式'))) return;
             // 1. 收尾当前会话（保存正在生成的消息）
             await finalizeCurrentSession();
             // 2. 切换模式
@@ -52306,6 +52399,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         async function clearChatMessages(silent = false) {
+            if (!silent && !(await confirmInterruptStreaming('清空对话'))) return;
             // 先收尾当前会话（中断流 + 保存部分消息）
             await finalizeCurrentSession();
             chatMessages = [];
@@ -52450,13 +52544,18 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         })();
 
         // ── SRP: footer 构建（纯展示，动作由 data-action 声明、策略表路由） ──
-        function createMessageFooter() {
+        function createMessageFooter(type = 'assistant') {
             const footer = document.createElement('div');
             footer.className = 'chat-message-footer';
-            footer.innerHTML =
-                '<button class="chat-message-action-btn" data-action="copy" title="复制">' + MSG_ACTION_ICONS.copy + '</button>' +
-                '<button class="chat-message-action-btn" data-action="save" title="保存">' + MSG_ACTION_ICONS.save + '</button>' +
-                '<button class="chat-message-action-btn" data-action="fork" title="从此处派生分支会话">' + MSG_ACTION_ICONS.fork + '</button>';
+            if (type === 'assistant') {
+                footer.innerHTML =
+                    '<button class="chat-message-action-btn" data-type="assistant" data-action="copy" title="复制">' + MSG_ACTION_ICONS.copy + '</button>' +
+                    '<button class="chat-message-action-btn" data-type="assistant" data-action="save" title="保存">' + MSG_ACTION_ICONS.save + '</button>' +
+                    '<button class="chat-message-action-btn" data-type="assistant" data-action="fork" title="从此处派生分支会话">' + MSG_ACTION_ICONS.fork + '</button>';
+            }else if (type === 'user') {
+                footer.innerHTML =
+                    '<button class="chat-message-action-btn" data-type="user" data-action="copy" title="复制">' + MSG_ACTION_ICONS.copy + '</button>';
+            }
             return footer;
         }
 
@@ -52903,15 +53002,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const container = document.getElementById('chat-messages');
             const div = document.createElement('div');
             div.className = 'chat-message ' + role;
+            
+            div._rawContent = content;
             if (role === 'assistant') {
                 div.appendChild(createMessageHeader('小助手', content, sources));
                 const body = document.createElement('div');
                 body.className = 'chat-message-body';
                 body.innerHTML = `<div class="markdown-body" style="zoom: 1;background: transparent;">${renderChatMarkdown(content)}</div>`;
-                div.appendChild(body);
                 div._body = body;
-                // 历史回放：保存原始 Markdown 供复制/保存按钮使用（与流式路径行为一致）
-                div._rawContent = content;
+                div.appendChild(body);
                 // 历史消息回放：重渲染工具调用轨迹（若已持久化）
                 if (toolCalls && toolCalls.length > 0) {
                     renderToolTraceFromRecords(div, toolCalls);
@@ -52921,41 +53020,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const body = document.createElement('div');
                 body.className = 'chat-message-body';
                 body.textContent = content;
+                div._body = body;
                 div.appendChild(body);
-                // P1-11：从此消息处派生分支会话（hover 显示）
-                const forkBtn = document.createElement('button');
-                forkBtn.className = 'msg-fork-btn';
-                forkBtn.textContent = '分支';
-                forkBtn.title = '从此消息处派生新会话（分支点之后的消息不复制，可改写重发）';
-                forkBtn.style.cssText = 'position:absolute;right:0.4rem;top:0.3rem;font-size:0.7rem;padding:1px 6px;border:1px solid #ccc;border-radius:4px;background:transparent;color:#888;cursor:pointer;opacity:0;transition:opacity .15s;z-index:3;';
-                forkBtn.onmouseenter = () => { forkBtn.style.opacity = '1'; };
-                forkBtn.onmouseleave = () => { forkBtn.style.opacity = '0'; };
-                forkBtn.onclick = async (ev) => {
-                    ev.stopPropagation();
-                    const idx = chatMessages.findIndex(m => m.role === 'user' && m.content === content);
-                    if (idx < 0 || !currentRootPath || !currentSessionId) {
-                        showNotification('无法分支：缺少会话上下文', 'warning');
-                        return;
-                    }
-                    try {
-                        const srcTitle = (chatSessions.find(s => s.id === currentSessionId) || {}).title || '会话';
-                        const newSession = await window.__TAURI__.core.invoke('chat_fork', {
-                            dirPath: currentRootPath,
-                            sessionId: currentSessionId,
-                            messageSeq: idx + 1,
-                            title: '分支 ' + srcTitle,
-                        });
-                        // 分支会话必须入内存列表并刷新，否则切走后不可达（review 修复）
-                        chatSessions.unshift(newSession);
-                        renderChatSessionList();
-                        await switchChatSession(newSession.id);
-                        showNotification('已创建分支会话（从此处改写重发）', 'success');
-                    } catch (e) {
-                        showNotification('分支失败: ' + (e.message || e), 'error');
-                    }
-                };
-                div.style.position = 'relative';
-                div.appendChild(forkBtn);
             } else {
                 div.textContent = content;
             }
@@ -52966,6 +53032,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             // 助手消息底部追加操作按钮（复制/保存，hover 显示），必须为最后一个子元素
             if (role === 'assistant') {
                 div.appendChild(createMessageFooter());
+            }else{
+                 div.appendChild(createMessageFooter('user'));
             }
             container.appendChild(div);
             if (window._chatAutoScroll !== false) {
@@ -53697,6 +53765,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         });
 
         async function createNewChatSession() {
+            if (!(await confirmInterruptStreaming('新建会话'))) return;
             // 1. 收尾当前会话（保存正在生成的消息）
             await finalizeCurrentSession();
             // 将当前会话异步索引，确保可被搜索召回
@@ -53728,6 +53797,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         async function switchChatSession(sessionId, skipFinalize = false) {
             if (sessionId === currentSessionId) return;
+            if (!skipFinalize && !(await confirmInterruptStreaming('切换会话'))) return;
             // 1. 收尾当前会话（保存正在生成的消息）
             if (!skipFinalize) {
                 await finalizeCurrentSession();
@@ -53818,6 +53888,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         async function deleteChatSession(sessionId) {
             if (!confirm('确定要删除这个对话吗？')) return;
+            if (currentSessionId === sessionId && !(await confirmInterruptStreaming('删除会话'))) return;
             // 如果删除的是当前会话，先收尾
             if (currentSessionId === sessionId) {
                 await finalizeCurrentSession();
@@ -54323,7 +54394,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                     showNotification('✗ ' + e.payload.message, 'error');
                 }),
-                // 工具调用轨迹（kb_search / code_lookup / read / edit / delete / list_files / git_status）
                 window.__TAURI__.event.listen('agent:tool_call', (e) => handleAgentToolEvent(e, requestId)),
                 window.__TAURI__.event.listen('agent:tool_result', (e) => handleAgentToolEvent(e, requestId)),
             ]);
@@ -54981,7 +55051,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         const message = `${summary || ''}${detail ? '\n\n' + detail : ''}`;
                         let approved = false;
                         try {
-                            approved = await showConfirmModalAsync(`AI 请求${opName}`, message);
+                            approved = await showConfirmModalAsync(`AI 请求${opName}`, message, { blockOutsideClick: true, blockEsc: true });
                         } catch (err) {
                             console.warn('[approval] 确认框异常:', err);
                         }
@@ -55015,7 +55085,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         const message = goal + '\n\n步骤：\n' + steps + acceptance + touchpoints + risks + nonGoals + rollback;
                         let approved = false;
                         try {
-                            approved = await showConfirmModalAsync('AI 任务计划，请确认是否执行', message);
+                            approved = await showConfirmModalAsync('AI 任务计划，请确认是否执行', message, { blockOutsideClick: true, blockEsc: true, modalStyle: 'max-width: 40%;width: 40%;', modelBodyStyle: 'height: 32rem;overflow-y: auto;' });
                         } catch (err) {
                             console.warn('[plan] 计划确认框异常:', err);
                         }
@@ -55031,6 +55101,18 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     });
                 } catch (e) {
                     console.warn('注册 plan 计划确认监听失败:', e);
+                }
+                // 监听计划未获批准事件（超时/通道异常，非用户主动拒绝）：
+                // 右下角 sticky 常驻提醒，用户点击叉号自行关闭
+                try {
+                    const { listen } = window.__TAURI__.event;
+                    listen('plan:rejected', (e) => {
+                        const payload = (e && e.payload) || {};
+                        const reason = payload.reason ? '原因：' + payload.reason : '';
+                        showNotification('AI 任务计划未获批准，任务已中止。\n' + reason, 'sticky');
+                    });
+                } catch (e) {
+                    console.warn('注册 plan:rejected 监听失败:', e);
                 }
                 // 应用启动时，root 目录就绪即自动启动 watcher（静默运行），并同步索引开关
                 if (getRootHandle()) {
@@ -55123,7 +55205,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         // getRootHandle / getDirPath / isTauriVisit / switchToView（加载顺序：本文件须在主页内联脚本之后）
         // 技能可声明的工具白名单（后端 ALLOWED_TOOLS 的子集；
         // activate_skill / deactivate_skill 为系统常驻管理工具，不可由技能声明）
-        const ALLOWED_SKILL_TOOLS = ['kb_search', 'code_lookup', 'read', 'edit', 'delete', 'grep', 'list_files', 'git_status', 'pomodoro'];
+        const ALLOWED_SKILL_TOOLS = [
+            {key:'kb_search', label:'知识库搜索'},
+            {key:'code_lookup', label:'代码查找'}, 
+            {key:'read', label:'读取文件'}, 
+            {key:'edit', label:'编辑文件'}, 
+            {key:'delete', label:'删除文件'}, 
+            {key:'grep', label:'全局搜索'}, 
+            {key:'list_files', label:'列出文件'}, 
+            {key:'git_status', label:'获取 Git 状态'}, 
+            {key:'pomodoro', label:'番茄钟'}];
+        
         const SKILL_SCOPE_NAMES = { system: '系统', global: '全局', project: '当前目录' };
 
         let skillDirPath = '';          // 当前根目录路径（打开面板时刷新）
@@ -55278,6 +55370,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
             const writable = skill.scope !== 'system';
             const tools = skill.tools || [];
+            const toolsNames = tools.map(t => ALLOWED_SKILL_TOOLS.find(tt => tt.key === t)?.label || t);
             const actions = [
                 writable ? `<button class="btn btn-sm btn-primary" onclick="skillEditSkill('${skill.scope}','${skill.id}')">编辑</button>` : '',
                 writable ? `<button class="btn btn-sm btn-warning" onclick="skillToggleEnabled('${skill.scope}','${skill.id}',${!skill.enabled})">${skill.enabled ? '停用' : '启用'}</button>` : '',
@@ -55310,7 +55403,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         <div class="skill-detail-section-title">描述</div>
                         <div class="skill-detail-desc">${escapeHtml(skill.description) || '（无描述）'}</div>
                     </div>
-                    ${tools.length ? `<div class="skill-detail-section"><div class="skill-detail-section-title">可用工具</div><div class="skill-tag-row">${tools.map(t => `<span class="skill-tag-chip">${escapeHtml(t)}</span>`).join('')}</div></div>` : ''}
+                    ${toolsNames.length ? `<div class="skill-detail-section"><div class="skill-detail-section-title">可用工具</div><div class="skill-tag-row">${toolsNames.map(t => `<span class="skill-tag-chip">${escapeHtml(t)}</span>`).join('')}</div></div>` : ''}
                     <div class="skill-detail-section">
                         <div class="skill-detail-section-title">指令正文</div>
                         <div class="skill-detail-body"><div class="markdown-body" style="zoom: 0.8;">${markedMd(escapeHtml(skill.body) || '（空）')}</div></div>
@@ -55410,7 +55503,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         <div class="skill-form-field full">
                             <label>可用工具</label>
                             <div class="skill-form-tools" id="skill-f-tools">
-                                ${ALLOWED_SKILL_TOOLS.map(t => `<label class="skill-form-tool"><input type="checkbox" value="${t}" ${tools.includes(t) ? 'checked' : ''}> ${t}</label>`).join('')}
+                                ${ALLOWED_SKILL_TOOLS.map(t => `<label class="skill-form-tool" title="${t.label}"><input type="checkbox" value="${t.key}" ${tools.includes(t.key) ? 'checked' : ''}> ${t.label}</label>`).join('')}
                             </div>
                         </div>
                         <div class="skill-form-field full">

@@ -894,6 +894,20 @@ pub async fn agent_query(
                         "[agent_query] [0.5]: 计划未获批准，中止执行 request_id={} reason={}",
                         request_id, reason
                     );
+                    // 非用户主动拒绝（超时/通道异常）：前端右下角 sticky 提醒，用户自行点叉号关闭；
+                    // 用户主动点「拒绝」时用户已知情，不重复打扰
+                    if !matches!(
+                        outcome,
+                        Ok(Ok(crate::core::agent::planner::PlanDecision::Denied(_)))
+                    ) {
+                        let _ = app.emit(
+                            "plan:rejected",
+                            serde_json::json!({
+                                "request_id": request_id.clone(),
+                                "reason": reason,
+                            }),
+                        );
+                    }
                     // content 置空：拒绝原因经日志/前端计划卡片传达，空内容使前端
                     // `if (fullContent)` 跳过 push 与落库，避免污染对话历史
                     let _ = app.emit(
