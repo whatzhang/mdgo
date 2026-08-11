@@ -81,10 +81,10 @@ mdgo 的存储选型**整体合理**（SQLite 承载结构化持久、LanceDB+BM
 
 ## 4. 落地建议
 
-- **✅ 已完成（2026-08，commit `561c605`）**：
+- **✅ 已完成（2026-08，commit `561c605` + `4efd4fd`）**：
   - **O2 记忆过期**：`expires_at` 启用（list/search 过滤），remember 工具支持 `expires_in_days`。
   - **O3 记忆 FTS5**：`memory_fts` 虚拟表 + bm25 排序检索（写后全量重建，FTS 不可用降级关键词打分）；顺带修复历史残留触发器导致的 SQLITE_ERROR。
-- **O1（记忆向量）**：收益最高且复用现有 `core/embedding.rs` + `core/search/rrf.rs`，建议作为下一个落地项（独立一轮：异步 embedding + 全局记忆向量库 + 融合检索 + 模型可用性降级）。
+  - **O1 记忆向量检索**：`MemoryVectorIndex`（内存向量索引 + 惰性增量，embedding 依赖倒置可测）+ `search_hybrid`（关键词 ∪ 向量，按 id RRF 融合，向量路失败降级关键词）；接入 search_memory 工具与生成前注入。
 - **O4（会话写入批量化）**：评审已注明"先量测真实写频率再决定"；改动涉及前端保存链路与后端事务，需量测数据支撑后谨慎实施。
 - **O5** 属工程重构，可与前端设置面板统一改造合并。
 
