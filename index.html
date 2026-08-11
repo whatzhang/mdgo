@@ -52974,6 +52974,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const card = document.createElement('div');
                 card.className = 'tool-card running';
                 card.dataset.seq = String(p.seq);
+                // P1-14：记录开始时间，供 result 事件计算耗时徽标
+                card.dataset.startTs = String(Date.now());
                 const args = escapeHtml(String(p.args_preview || '').slice(0, 80));
                 card.innerHTML = `<span class="tool-name">${safeTool}</span>${skillBadge}<span class="tool-args">${args}</span><span class="tool-status">执行中…</span>`;
                 trace.appendChild(card);
@@ -53000,6 +53002,27 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         st.textContent = p.ok ? '✓ 完成' : '✗ 失败';
                         st.title = String(p.summary || '');
                     }
+                    // P1-14：耗时徽标（call 事件记录的开始时间）
+                    const startTs = Number(card.dataset.startTs || 0);
+                    if (startTs > 0) {
+                        const cost = document.createElement('span');
+                        cost.className = 'tool-cost';
+                        cost.textContent = ((Date.now() - startTs) / 1000).toFixed(1) + 's';
+                        cost.style.cssText = 'margin-left:0.4rem;font-size:0.65rem;color:#999;';
+                        card.appendChild(cost);
+                    }
+                    // P1-14：点击卡片展开/收起完整结果摘要（可检视过程）
+                    const detail = document.createElement('div');
+                    detail.className = 'tool-detail';
+                    detail.style.cssText = 'display:none;margin-top:0.3rem;padding:0.3rem 0.5rem;background:rgba(0,0,0,0.04);border-radius:4px;font-size:0.72rem;color:#666;white-space:pre-wrap;word-break:break-all;max-height:12rem;overflow:auto;';
+                    detail.textContent = String(p.summary || '');
+                    card.appendChild(detail);
+                    card.style.cursor = 'pointer';
+                    card.addEventListener('click', (ev) => {
+                        ev.stopPropagation();
+                        const d = card.querySelector('.tool-detail');
+                        if (d) d.style.display = d.style.display === 'none' ? 'block' : 'none';
+                    });
                 }
                 // 配对持久化记录并补全结果状态（含完整结果文本，供历史回放）
                 const rec = _streamingToolCalls.find(r => r.seq === Number(p.call_seq));
