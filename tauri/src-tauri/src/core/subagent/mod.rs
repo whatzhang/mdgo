@@ -25,12 +25,14 @@ use crate::core::skill::SkillRegistry;
 ///
 /// 明确不含：
 /// - `edit` / `delete`：写操作（子代理只做调研，天然绕过审批弹窗）
+/// - `remember` / `forget`：记忆写操作（子代理不得污染全局记忆）
 /// - `activate_skill` / `deactivate_skill`：技能激活（子代理不共享父链技能态）
 /// - `pomodoro`：前端交互工具（子代理无人机交互界面）
 /// - `deep_research` / `read_subagent_result`：防无限递归嵌套
 pub fn read_only_tool_set() -> HashSet<String> {
     [
         "kb_search", "code_lookup", "read", "grep", "list_files", "git_status",
+        "search_memory",
     ]
     .iter()
     .map(|s| s.to_string())

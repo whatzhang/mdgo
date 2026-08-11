@@ -2190,3 +2190,172 @@ async fn run_deep_research(
     );
     Ok(ToolOutput::text(out))
 }
+
+// ─────────────────────────── 长期记忆工具（P0-2） ───────────────────────────
+
+/// 构建 remember 工具：写入一条跨会话长期记忆。
+///
+/// 记忆随会话持久化（全局用户数据目录），后续请求按关键词检索注入，
+/// 沉淀用户偏好、项目约定与已验证结论。
+pub fn build_remember_tool(cfg: KbSearchConfig) -> DynamicTool {
+    DynamicTool::new(
+        "remember",
+        "把一条长期记忆写入跨会话存储（用户偏好、项目约定、已验证结论等），后续对话可检索引用。title 一句话概括，body 写完整事实；keywords 用空格分隔便于检索。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "title": { "type": "string", "description": "记忆标题（一句话概括）" },
+                "body": { "type": "string", "description": "记忆正文（完整事实/偏好/约定）" },
+                "keywords": { "type": "string", "description": "检索关键词，空格分隔（可选）" },
+                "scope": { "type": "string", "enum": ["project", "global"], "description": "作用域：project=当前知识库，global=全部（默认 project）" },
+                "kind": { "type": "string", "enum": ["fact", "preference", "reference"], "description": "记忆类型（默认 fact）" }
+            },
+            "required": ["title", "body"]
+        }),
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let cfg = cfg.clone();
+            Box::pin(async move {
+                let preview: String = args
+                    .get("title")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or_default()
+                    .chars()
+                    .take(40)
+                    .collect();
+                record_tool_call(&cfg, "remember", &preview, Some(&args));
+                let input: crate::core::memory::MemoryInput =
+                    serde_json::from_value(args).map_err(|e| tool_error("remember", &e.to_string()))?;
+                let state = cfg.app_handle.state::<crate::AppState>();
+                match state.memory_store.create(&input) {
+                    Ok(item) => {
+                        let msg = format!(
+                            "已保存记忆（id={}，revision={}）：{}\n{}",
+                            item.id, item.revision, item.title, item.body
+                        );
+                        record_tool_result(&cfg, "remember", true, &format!("id={} revision={}", item.id, item.revision), Some(&msg));
+                        Ok(ToolOutput::text(msg))
+                    }
+                    Err(e) => {
+                        record_tool_result(&cfg, "remember", false, &e, Some(&e));
+                        Err(tool_error("remember", &e))
+                    }
+                }
+            })
+        },
+    )
+}
+
+/// 构建 forget 工具：删除一条记忆。
+pub fn build_forget_tool(cfg: KbSearchConfig) -> DynamicTool {
+    DynamicTool::new(
+        "forget",
+        "删除一条已保存的长期记忆（需要记忆 id，可用 search_memory 查询得到）。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "id": { "type": "string", "description": "要删除的记忆 id" }
+            },
+            "required": ["id"]
+        }),
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let cfg = cfg.clone();
+            Box::pin(async move {
+                let id = args
+                    .get("id")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                record_tool_call(&cfg, "forget", &format!("id={}", id), Some(&args));
+                if id.is_empty() {
+                    let e = "记忆 id 不能为空".to_string();
+                    record_tool_result(&cfg, "forget", false, &e, Some(&e));
+                    return Err(tool_error("forget", &e));
+                }
+                let state = cfg.app_handle.state::<crate::AppState>();
+                match state.memory_store.delete(&id) {
+                    Ok(true) => {
+                        let msg = format!("已删除记忆 {id}");
+                        record_tool_result(&cfg, "forget", true, &msg, Some(&msg));
+                        Ok(ToolOutput::text(msg))
+                    }
+                    Ok(false) => {
+                        let e = format!("记忆 {id} 不存在或已删除");
+                        record_tool_result(&cfg, "forget", false, &e, Some(&e));
+                        Err(tool_error("forget", &e))
+                    }
+                    Err(e) => {
+                        record_tool_result(&cfg, "forget", false, &e, Some(&e));
+                        Err(tool_error("forget", &e))
+                    }
+                }
+            })
+        },
+    )
+}
+
+/// 构建 search_memory 工具：按关键词检索相关长期记忆（只读）。
+pub fn build_search_memory_tool(cfg: KbSearchConfig) -> DynamicTool {
+    DynamicTool::new(
+        "search_memory",
+        "按关键词检索跨会话长期记忆（用户偏好、项目约定、已验证结论）。在需要回忆用户此前说过/偏好什么、或复用此前结论时调用。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string", "description": "检索关键词（空格分隔多个词）" },
+                "limit": { "type": "integer", "description": "最多返回条数（默认 5，最大 20）" }
+            },
+            "required": ["query"]
+        }),
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let cfg = cfg.clone();
+            Box::pin(async move {
+                let query = args
+                    .get("query")
+                    .and_then(|q| q.as_str())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                let limit = args
+                    .get("limit")
+                    .and_then(|l| l.as_u64())
+                    .map(|v| v as usize)
+                    .unwrap_or(5)
+                    .clamp(1, 20);
+                record_tool_call(&cfg, "search_memory", &format!("query={} limit={}", query, limit), Some(&args));
+                if query.is_empty() {
+                    let e = "检索关键词不能为空".to_string();
+                    record_tool_result(&cfg, "search_memory", false, &e, Some(&e));
+                    return Err(tool_error("search_memory", &e));
+                }
+                let state = cfg.app_handle.state::<crate::AppState>();
+                match state.memory_store.search(&query, limit) {
+                    Ok(items) => {
+                        if items.is_empty() {
+                            let msg = format!("未找到与「{query}」相关的记忆");
+                            record_tool_result(&cfg, "search_memory", true, &msg, Some(&msg));
+                            return Ok(ToolOutput::text(msg));
+                        }
+                        let mut out = String::from("相关长期记忆：\n");
+                        for (i, item) in items.iter().enumerate() {
+                            out.push_str(&format!(
+                                "{}. [{}] {}（id={}）\n   {}\n",
+                                i + 1,
+                                item.kind,
+                                item.title,
+                                item.id,
+                                item.body
+                            ));
+                        }
+                        record_tool_result(&cfg, "search_memory", true, &format!("{} 条", items.len()), Some(&out));
+                        Ok(ToolOutput::text(out))
+                    }
+                    Err(e) => {
+                        record_tool_result(&cfg, "search_memory", false, &e, Some(&e));
+                        Err(tool_error("search_memory", &e))
+                    }
+                }
+            })
+        },
+    )
+}

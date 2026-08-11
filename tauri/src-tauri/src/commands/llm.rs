@@ -20,7 +20,7 @@ use crate::core::agent::{
 };
 use crate::core::agent::tools::tool_call_bus;
 use crate::core::context::{
-    ChatTurn, ContextCompressor, SummarizeThenWindowCompressor,
+    ChatTurn, ContextCompressor, SummarizeThenWindowCompressor, tokens_to_chars_budget,
 };
 use crate::core::skill::activation::{ActivationSource, ActiveSkillState};
 use crate::core::skill::context::{SkillExecutionContext, build_skill_catalog, resolve_preactivated};
@@ -31,6 +31,10 @@ use crate::services::llm::{LLMClient, UsageInfo, usage_to_info};
 // ─── 后端消息长度预算 ───
 /// 消息总字符数上限（粗略估计 ~7500 tokens 的字符量，为 LLM 回复留出余量）
 const MAX_MESSAGE_CHARS: usize = 30_000;
+/// 历史上下文压缩预算（token 估算，P0-5）：经 `ApproxTokenEstimator` 换算为字符预算
+/// （`tokens_to_chars_budget`），语义从「字符上限」升级为「token 预算」；
+/// 精确 tokenizer 接入后仅需替换估算器，压缩器与命令层无需改动。
+const MAX_MESSAGE_TOKENS: usize = 15_000;
 /// 摘要压缩时，摘要消息的最大字符数（约 1.5K token，为后续轮次留出余量）
 const SUMMARY_MAX_CHARS: usize = 6_000;
 
@@ -181,7 +185,9 @@ async fn prepare_history(
             tool_call_id: m.tool_call_id.clone(),
         })
         .collect();
-    compressor.compress(&turns, MAX_MESSAGE_CHARS, cancel).await
+    compressor
+        .compress(&turns, tokens_to_chars_budget(MAX_MESSAGE_TOKENS), cancel)
+        .await
 }
 
 /// 将压缩后的历史轮次转为 Rig history
@@ -1116,6 +1122,20 @@ pub async fn agent_query(
     } else {
         context
     };
+
+    // P0-2：注入相关长期记忆（top-k 关键词检索；检索失败/无命中不注入）。
+    // 记忆检索为纯内存打分（MemoryStore::search），阻塞短查询直接执行。
+    let memory_block = match state.memory_store.search(&query, 3) {
+        Ok(items) if !items.is_empty() => {
+            let mut s = String::from("\n\n【长期记忆（与本问题相关，供参考）】\n");
+            for it in &items {
+                s.push_str(&format!("- {}：{}\n", it.title, it.body));
+            }
+            s
+        }
+        _ => String::new(),
+    };
+    let context = format!("{}{}", context, memory_block);
 
     // 构建 RAG Agent：预载检索上下文 + 检索/文件/技能工具（模型可补充检索、按需激活技能）
     let model = llm.completion_model().clone();

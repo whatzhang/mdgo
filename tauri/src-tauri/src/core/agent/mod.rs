@@ -119,6 +119,7 @@ pub mod tool_registry;
 pub const BASE_TOOLS: &[&str] = &[
     "activate_skill", "deactivate_skill", "read", "list_files", "grep", "edit", "delete",
     "git_status", "deep_research", "read_subagent_result",
+    "remember", "forget", "search_memory",
 ];
 
 /// Agent 单次请求的模型调用总预算（激活技能 + 文件读取 + 检索等流程通常需要多轮）。
@@ -840,6 +841,17 @@ fn create_tool_registry(only: Option<&HashSet<String>>) -> ToolRegistry {
     }
     if want("read_subagent_result") {
         reg.register("read_subagent_result", Box::new(tools::build_read_subagent_result_tool));
+    }
+
+    // ── 长期记忆工具（BASE_TOOLS；remember/forget 为写操作，子代理白名单排除） ──
+    if want("remember") {
+        reg.register("remember", Box::new(tools::build_remember_tool));
+    }
+    if want("forget") {
+        reg.register("forget", Box::new(tools::build_forget_tool));
+    }
+    if want("search_memory") {
+        reg.register("search_memory", Box::new(tools::build_search_memory_tool));
     }
 
     reg

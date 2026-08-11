@@ -74,6 +74,8 @@ pub struct AppState {
         Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<PlanDecision>>>>,
     /// 子代理完整输出存储（LRU 有界：最多保留 16 条，按最近访问淘汰）
     pub subagent_results: Arc<LruResultStore>,
+    /// 跨会话长期记忆存储（全局用户数据目录）
+    pub memory_store: Arc<crate::core::memory::MemoryStore>,
 }
 
 impl AppState {
@@ -239,6 +241,10 @@ pub fn run() {
                 approval_pending,
                 plan_pending: Arc::new(Mutex::new(HashMap::new())),
                 subagent_results: Arc::new(LruResultStore::new(16)),
+                memory_store: Arc::new(
+                    crate::core::memory::MemoryStore::new()
+                        .expect("初始化 MemoryStore 失败"),
+                ),
             });
 
             // 注入 skill:changed 事件：AppHandle 就绪后替换 watcher 回调
