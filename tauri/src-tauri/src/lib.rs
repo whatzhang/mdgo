@@ -496,6 +496,14 @@ pub fn log_filter_targets(
         .with_target("datafusion", tracing::level_filters::LevelFilter::OFF)
         .with_target("sqlparser", tracing::level_filters::LevelFilter::OFF)
         .with_target("tao::platform_imp", tracing::level_filters::LevelFilter::OFF)
+        // 网络库 DEBUG 帧/连接日志（h2::codec::framed_read 等）纯噪音：
+        // 仅保留 INFO 及以上（warn/error 仍可见）
+        .with_target("h2", tracing::level_filters::LevelFilter::INFO)
+        .with_target("hyper", tracing::level_filters::LevelFilter::INFO)
+        .with_target("reqwest", tracing::level_filters::LevelFilter::INFO)
+        .with_target("tower", tracing::level_filters::LevelFilter::INFO)
+        .with_target("want", tracing::level_filters::LevelFilter::INFO)
+        .with_target("mio", tracing::level_filters::LevelFilter::INFO)
         .with_default(level)
 }
 
@@ -509,7 +517,8 @@ pub fn log_filter_targets(
 ///
 /// 与旧 simplelog 实现的行为对齐：
 /// - 文件 + 终端双输出，文件创建失败降级为仅终端（sink）
-/// - 按 target 前缀屏蔽高频第三方日志（lance/tantivy/datafusion/sqlparser/tao）
+/// - 按 target 前缀屏蔽高频第三方日志（lance/tantivy/datafusion/sqlparser/tao），
+///   网络库（h2/hyper/reqwest/tower/want/mio）仅保留 INFO 及以上（DEBUG 帧/连接日志为噪音）
 /// - 级别上限：dev=DEBUG，release=WARN
 ///
 /// 新增收益：rig 内部的 tracing span/event 进入同一输出（此前 100% 丢失）；
