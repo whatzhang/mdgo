@@ -81,11 +81,11 @@ mdgo 的存储选型**整体合理**（SQLite 承载结构化持久、LanceDB+BM
 
 ## 4. 落地建议
 
-- **✅ 已完成（2026-08，commit `561c605` + `4efd4fd`）**：
+- **✅ 已完成（2026-08，commit `561c605` + `4efd4fd` + `1eb62da`）**：
   - **O2 记忆过期**：`expires_at` 启用（list/search 过滤），remember 工具支持 `expires_in_days`。
   - **O3 记忆 FTS5**：`memory_fts` 虚拟表 + bm25 排序检索（写后全量重建，FTS 不可用降级关键词打分）；顺带修复历史残留触发器导致的 SQLITE_ERROR。
   - **O1 记忆向量检索**：`MemoryVectorIndex`（内存向量索引 + 惰性增量，embedding 依赖倒置可测）+ `search_hybrid`（关键词 ∪ 向量，按 id RRF 融合，向量路失败降级关键词）；接入 search_memory 工具与生成前注入。
+  - **O5 配置统一加载层**：Tauri 模式统一经后端 `kb_save_setting`/`kb_load_setting`（写 setting.json + 同步内存 LlmConfig，消除前端 FSA 与后端双写竞争）；本地模式（直接浏览器打开 index.html）保持现状 JSON 文件直写；后端失败回退本地写入不阻断。
 - **O4（会话写入批量化）**：评审已注明"先量测真实写频率再决定"；改动涉及前端保存链路与后端事务，需量测数据支撑后谨慎实施。
-- **O5** 属工程重构，可与前端设置面板统一改造合并。
 
 > 备注：本评审为源码静态核实；O4 的"写放大"严重度建议在真实长会话场景用日志/指标验证后确认优先级。
