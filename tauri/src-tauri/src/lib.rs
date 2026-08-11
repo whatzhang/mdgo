@@ -394,6 +394,8 @@ pub fn run() {
             commands::config::kb_config_write,
             commands::config::kb_config_delete,
             commands::config::kb_update_llm_config,
+            commands::config::kb_save_setting,
+            commands::config::kb_load_setting,
             commands::fs_watcher::kb_start_watcher,
             commands::fs_watcher::kb_stop_watcher,
             commands::fs_watcher::kb_set_indexing_enabled,

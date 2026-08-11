@@ -138,3 +138,107 @@ pub async fn kb_update_llm_config(
     log::info!("[config] LLM 配置已更新: endpoint={}, model={}", setting_path.display(), &model);
     Ok(())
 }
+
+// ─────────────────────────── 统一配置入口（O5） ───────────────────────────
+
+/// 从全量设置对象中提取 LLM 段（camelCase 键，空串归一为 None）。
+fn extract_llm_fields(settings: &serde_json::Value) -> (String, String, String, Option<String>, Option<String>, Option<String>) {
+    let get = |k: &str| {
+        settings
+            .get(k)
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string()
+    };
+    let norm = |s: String| if s.is_empty() { None } else { Some(s) };
+    (
+        get("localLlmEndpoint"),
+        get("localLlmModel"),
+        get("localLlmToken"),
+        norm(get("localLlmPlannerModel")),
+        norm(get("localLlmSummaryModel")),
+        norm(get("localLlmReasoningEffort")),
+    )
+}
+
+/// 保存全量设置（O5：Tauri 模式统一配置入口）。
+///
+/// 写 `{dir}/.mdgo/setting.json`（全量 JSON，前端 settingsJson 原样落盘），
+/// 并提取 LLM 段同步内存 `LlmConfig`（规划/摘要模型、推理等级一并生效）。
+/// 本地模式（无 Tauri）不调用本命令，由前端 File System Access 直写 JSON 保持现状。
+#[tauri::command]
+pub async fn kb_save_setting(
+    state: State<'_, AppState>,
+    dir_path: String,
+    settings: serde_json::Value,
+) -> Result<(), String> {
+    // 1. 写全量 setting.json（pretty）
+    let setting_path = std::path::Path::new(&dir_path)
+        .join(".mdgo")
+        .join("setting.json");
+    if let Some(parent) = setting_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("创建配置目录失败: {}", e))?;
+    }
+    let json_str = serde_json::to_string_pretty(&settings)
+        .map_err(|e| format!("序列化配置失败: {}", e))?;
+    std::fs::write(&setting_path, &json_str)
+        .map_err(|e| format!("写入配置文件失败: {}", e))?;
+
+    // 2. 提取 LLM 段同步内存（前端可能只保存非 LLM 段时 settings 缺 LLM 键 → 空，不覆盖）
+    let (endpoint, model, api_key, planner, summary, effort) = extract_llm_fields(&settings);
+    if !endpoint.is_empty() || !model.is_empty() {
+        let mut cfg = state.llm_config.write().unwrap_or_else(|e| e.into_inner());
+        cfg.endpoint = endpoint;
+        cfg.model = model;
+        cfg.api_key = api_key;
+        cfg.planner_model = planner;
+        cfg.summary_model = summary;
+        cfg.reasoning_effort = effort;
+    }
+
+    log::info!("[config] 全量设置已保存: {}", setting_path.display());
+    Ok(())
+}
+
+/// 读取全量设置（O5：Tauri 模式统一配置入口）。
+///
+/// 读 `{dir}/.mdgo/setting.json`（不存在返回空对象）；内存 `LlmConfig` 非空时
+/// 用其覆盖 LLM 段（内存为最近一次保存的权威值，避免启动顺序导致文件旧值残留）。
+#[tauri::command]
+pub async fn kb_load_setting(
+    state: State<'_, AppState>,
+    dir_path: String,
+) -> Result<serde_json::Value, String> {
+    let setting_path = std::path::Path::new(&dir_path)
+        .join(".mdgo")
+        .join("setting.json");
+    let mut config: serde_json::Value = std::fs::read_to_string(&setting_path)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+
+    // 内存 LLM 配置优先（仅当已配置时覆盖，避免空配置误清文件值）
+    let cfg = state.llm_config.read().unwrap_or_else(|e| e.into_inner()).clone();
+    if !cfg.endpoint.is_empty() || !cfg.model.is_empty() {
+        if let Some(obj) = config.as_object_mut() {
+            obj.insert("localLlmEndpoint".into(), Value::String(cfg.endpoint));
+            obj.insert("localLlmModel".into(), Value::String(cfg.model));
+            obj.insert("localLlmToken".into(), Value::String(cfg.api_key));
+            match &cfg.planner_model {
+                Some(v) => obj.insert("localLlmPlannerModel".into(), Value::String(v.clone())),
+                None => obj.remove("localLlmPlannerModel"),
+            };
+            match &cfg.summary_model {
+                Some(v) => obj.insert("localLlmSummaryModel".into(), Value::String(v.clone())),
+                None => obj.remove("localLlmSummaryModel"),
+            };
+            match &cfg.reasoning_effort {
+                Some(v) => obj.insert("localLlmReasoningEffort".into(), Value::String(v.clone())),
+                None => obj.remove("localLlmReasoningEffort"),
+            };
+        }
+    }
+    Ok(config)
+}

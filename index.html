@@ -50612,20 +50612,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         randomDirBlacklist: RANDOM_DIR_BLACKLIST,
                         htmlCodeShowBlacklist: HTML_CODE_SHOW_BLACKLIST
                     }, null, 4);
-                    await writeFileByDirHandle(await getDataDir(), SETTING_FILE, settingsJson);
+                    await saveAppSettings(settingsJson);
                     compileAllRules();
-                    // 同步 LLM 配置到后端（中央化配置入口）
-                    if (window.__TAURI__ && currentRootPath) {
-                        window.__TAURI__.core.invoke('kb_update_llm_config', {
-                            dirPath: currentRootPath,
-                            endpoint: LOCAL_LLM_ENDPOINT,
-                            model: LOCAL_LLM_MODEL,
-                            apiKey: LOCAL_LLM_TOKEN,
-                            plannerModel: LOCAL_LLM_PLANNER_MODEL || null,
-                            summaryModel: LOCAL_LLM_SUMMARY_MODEL || null,
-                            reasoningEffort: LOCAL_LLM_REASONING_EFFORT || null,
-                        }).catch(e => console.warn('同步 LLM 配置到后端失败:', e));
-                    }
                     await closeModal(true);
                     const data = await scanDashboardData(true);
                     await Promise.all([renderDirectory(getRootHandle(), data), toggleDashboardView(true, data)]);
@@ -50660,11 +50648,54 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return true;
         }
 
-        async function loadSetting() {
+        /**
+         * 保存全量设置（O5 双模式适配）：
+         * - Tauri 模式：统一走后端 kb_save_setting（写 setting.json + 同步内存 LLM 配置）
+         * - 本地模式（直接浏览器打开 index.html）：保持现状，File System Access 直写 JSON
+         * 后端失败时回退本地写入（不阻断）。
+         */
+        async function saveAppSettings(settingsJson) {
+            if (window.__TAURI__ && currentRootPath) {
+                try {
+                    await window.__TAURI__.core.invoke('kb_save_setting', {
+                        dirPath: currentRootPath,
+                        settings: JSON.parse(settingsJson),
+                    });
+                    return;
+                } catch (e) {
+                    console.warn('Tauri 保存设置到后端失败，回退本地文件:', e);
+                }
+            }
+            await writeFileByDirHandle(await getDataDir(), SETTING_FILE, settingsJson);
+        }
+
+        /**
+         * 加载全量设置（O5 双模式适配）：
+         * - Tauri 模式：走后端 kb_load_setting（文件 + 内存 LLM 配置合并）
+         * - 本地模式：保持现状，File System Access 读 JSON
+         * 返回设置对象（无配置时返回 {}）。
+         */
+        async function loadAppSettings() {
+            if (window.__TAURI__ && currentRootPath) {
+                try {
+                    const setting = await window.__TAURI__.core.invoke('kb_load_setting', { dirPath: currentRootPath });
+                    if (setting && typeof setting === 'object') return setting;
+                } catch (e) {
+                    console.warn('Tauri 加载设置失败，回退本地文件:', e);
+                }
+            }
             try {
                 const fh = await getFileHandleByDirHandle(await getDataDir(), SETTING_FILE);
                 const text = await getFileContent(fh);
-                const setting = JSON.parse(text);
+                return JSON.parse(text);
+            } catch (e) {
+                return {};
+            }
+        }
+
+        async function loadSetting() {
+            try {
+                const setting = await loadAppSettings();
                 //赋值设置
                 GRAPHQL_ENDPOINT = setting.graphqlEndpoint;
                 NGINX_CONF_PATH = setting.nginxConfPath;
