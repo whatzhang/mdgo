@@ -46,6 +46,8 @@ pub enum DenialCategory {
     ChannelUnavailable,
     /// 等待用户确认超时,默认拒绝
     Timeout,
+    /// 策略级拒绝(P2-19:配置规则直接禁止,不弹窗)
+    PolicyDenied,
 }
 
 /// 一次审批的拒绝详情
@@ -73,7 +75,19 @@ impl ApprovalOutcome {
 ///
 /// 返回 `None` = 放行;`Some(request)` = 需要审批。
 pub trait ApprovalPolicy: Send + Sync {
+    /// 判定是否需要审批(返回请求则走用户确认通道;None = 放行)
     fn evaluate(&self, tool: &str, args: &Value) -> Option<ApprovalRequest>;
+
+    /// 策略级放行(P2-19):命中直接放行并短路其余策略(如配置 allow 规则覆盖默认 ask)。
+    fn allow(&self, _tool: &str, _args: &Value) -> bool {
+        false
+    }
+
+    /// 策略级拒绝(P2-19):返回拒绝原因则直接禁止该工具调用(不弹窗)。
+    /// 默认不拒绝;配置策略(`ConfigApprovalPolicy`)按规则覆盖。
+    fn deny(&self, _tool: &str, _args: &Value) -> Option<String> {
+        None
+    }
 }
 
 /// 审批通道抽象:向用户展示请求并等待决定(依赖倒置)。
@@ -128,6 +142,18 @@ impl ApprovalGate {
 
     /// 检查一次工具调用。`Ok(())` = 放行;`Err(denial)` = 拒绝,携带原因类别。
     pub async fn check(&self, run_id: &str, tool: &str, args: &Value) -> Result<(), ApprovalDenial> {
+        // 0a. 策略级放行(配置 allow 规则直接放行并短路其余策略)
+        if self.policies.iter().any(|p| p.allow(tool, args)) {
+            return Ok(());
+        }
+        // 0b. 策略级拒绝(配置规则直接禁止,不弹窗、不缓存——每次调用都被拒)
+        if let Some(reason) = self.policies.iter().find_map(|p| p.deny(tool, args)) {
+            return Err(ApprovalDenial {
+                category: DenialCategory::PolicyDenied,
+                reason,
+            });
+        }
+
         // 1. 策略判定:首个命中者决定是否需要审批(无命中 → 放行)
         let Some(req) = self.policies.iter().find_map(|p| p.evaluate(tool, args)) else {
             return Ok(());

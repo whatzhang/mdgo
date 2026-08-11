@@ -213,8 +213,24 @@ pub fn run() {
             // ── 组装工具审批门（破坏性操作确认，需 AppHandle 以走前端桥）──
             // 策略：edit / delete 需用户确认；通道：WebSocket 桥调前端弹窗；
             // 超时 60s，超时/通道异常默认拒绝（fail-closed）。
-            let policies: Vec<Box<dyn crate::core::approval::ApprovalPolicy>> =
+            let mut policies: Vec<Box<dyn crate::core::approval::ApprovalPolicy>> =
                 vec![Box::new(DestructiveWritePolicy::new(true))];
+            // P2-19：配置驱动审批策略（%APPDATA%/com.mdgo/approval.yaml）。
+            // allow/deny 规则短路默认策略（如"只读模式"= deny edit/delete）；
+            // 配置缺失/解析失败保留默认（edit/delete 需确认），不阻断启动。
+            match crate::core::approval::policy::load_approval_rules(
+                &crate::core::approval::policy::default_rules_path(),
+            ) {
+                Ok(rules) if !rules.is_empty() => {
+                    policies.insert(
+                        0,
+                        Box::new(crate::core::approval::policy::ConfigApprovalPolicy::new(rules)),
+                    );
+                    log::info!("[approval] 已加载配置审批策略（{} 条规则）", policies.len() - 1);
+                }
+                Ok(_) => {}
+                Err(e) => log::warn!("[approval] 加载审批策略配置失败，使用默认策略: {}", e),
+            }
             // 审批挂起表：IPC 通道与 approval_respond 共享（依赖注入，非全局静态）
             let approval_pending: Arc<
                 Mutex<HashMap<String, tokio::sync::oneshot::Sender<ApprovalOutcome>>>,

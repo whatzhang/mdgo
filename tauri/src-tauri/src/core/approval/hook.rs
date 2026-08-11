@@ -75,5 +75,10 @@ fn skip_message(tool: &str, denial: &super::ApprovalDenial) -> String {
             "{op}操作的确认已超时,系统已按拒绝处理。请勿重试相同操作;如需执行,请让用户重新发起请求。注意:不要请求用户输入'确认'或'取消'等文字,审批由系统弹窗处理,不在对话中进行。",
             op = op
         ),
+        DenialCategory::PolicyDenied => format!(
+            "{op}操作已被审批策略禁止,无法执行({reason})。请勿尝试该操作或请求用户确认——这是系统级策略限制,不是用户可解除的审批。请改用其他方式完成任务。",
+            op = op,
+            reason = denial.reason
+        ),
     }
 }
