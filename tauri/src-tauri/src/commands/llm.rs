@@ -1172,9 +1172,16 @@ pub async fn agent_query(
         context
     };
 
-    // P0-2：注入相关长期记忆（top-k 关键词检索；检索失败/无命中不注入）。
-    // 记忆检索为纯内存打分（MemoryStore::search），阻塞短查询直接执行。
-    let memory_block = match state.memory_store.search(&query, 3) {
+    // P0-2/O1：注入相关长期记忆（关键词 ∪ 向量融合检索，RRF；embedding
+    // 不可用时 search_hybrid 内部降级纯关键词；检索失败/无命中不注入）。
+    let memory_block = match crate::core::memory::search_hybrid(
+        state.memory_store.clone(),
+        state.memory_vectors.clone(),
+        &query,
+        3,
+    )
+    .await
+    {
         Ok(items) if !items.is_empty() => {
             let mut s = String::from("\n\n【长期记忆（与本问题相关，供参考）】\n");
             for it in &items {

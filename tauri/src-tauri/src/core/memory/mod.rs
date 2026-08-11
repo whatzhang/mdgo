@@ -14,8 +14,10 @@
 //! 工具面：`remember`（写入）/ `forget`（删除）/ `search_memory`（只读检索）
 //! 注册进 Agent 工具集，子代理只读白名单含 `search_memory`。
 
+pub mod vector;
+
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
@@ -382,6 +384,59 @@ impl MemoryStore {
             }
         }
     }
+}
+
+/// 融合检索（O1）：关键词（FTS5/降级）∪ 向量 top-k，按 id RRF 融合。
+///
+/// - embedding 为同步 ONNX 阻塞推理，移入 `spawn_blocking`；
+/// - 向量路失败（模型未下载/向量化失败）自动降级为纯关键词（现状行为）；
+/// - 记忆规模小，向量索引为内存惰性增量（`MemoryVectorIndex::sync`）。
+pub async fn search_hybrid(
+    store: Arc<MemoryStore>,
+    index: Arc<vector::MemoryVectorIndex>,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<MemoryItem>, String> {
+    // 1. 关键词检索（同步，FTS5 优先）
+    let kw_hits: Vec<(String, f32)> = store
+        .search(query, limit.saturating_mul(2))?
+        .into_iter()
+        .map(|m| (m.id.clone(), 1.0))
+        .collect();
+
+    // 2. 向量检索（spawn_blocking；失败降级忽略向量路）
+    let q = query.to_string();
+    let lim = limit;
+    let store2 = store.clone();
+    let index2 = index.clone();
+    let vec_hits: Vec<(String, f32)> = tokio::task::spawn_blocking(move || -> Result<Vec<(String, f32)>, String> {
+        // 惰性增量索引：对比全量 id 与已索引集，为新增记忆补 embedding
+        let all: Vec<String> = store2.list(None, 100)?.into_iter().map(|m| m.id).collect();
+        index2.sync(&all, |id| store2.get(id).ok().flatten().map(|m| (m.title, m.body)))?;
+        let q_emb = crate::core::db::utils::call_embedding_query(&q)
+            .map_err(|e| format!("查询向量化失败: {e}"))?
+            .into_iter()
+            .next()
+            .ok_or_else(|| "查询向量为空".to_string())?;
+        Ok(index2.search(&q_emb, lim.saturating_mul(2)))
+    })
+    .await
+    .map_err(|e| format!("记忆向量检索任务失败: {e}"))?
+    .unwrap_or_default();
+
+    // 3. RRF 融合（按 id），按序取回完整条目
+    let fused_ids = vector::rrf_fuse_memory(&kw_hits, &vec_hits, limit);
+    let mut out = Vec::with_capacity(fused_ids.len());
+    for id in fused_ids {
+        if let Some(item) = store.get(&id)? {
+            out.push(item);
+        }
+    }
+    if out.is_empty() {
+        // 融合为空（如双路均无命中/向量路失败）回退关键词
+        return store.search(query, limit);
+    }
+    Ok(out)
 }
 
 fn row_to_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryItem> {

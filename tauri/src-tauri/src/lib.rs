@@ -109,6 +109,8 @@ pub struct AppState {
     pub subagent_results: Arc<LruResultStore>,
     /// 跨会话长期记忆存储（全局用户数据目录）
     pub memory_store: Arc<crate::core::memory::MemoryStore>,
+    /// 记忆向量索引（O1：内存惰性增量，embedding 本地 BGE 模型）
+    pub memory_vectors: Arc<crate::core::memory::vector::MemoryVectorIndex>,
 }
 
 impl AppState {
@@ -320,6 +322,9 @@ pub fn run() {
                     crate::core::memory::MemoryStore::new()
                         .expect("初始化 MemoryStore 失败"),
                 ),
+                memory_vectors: Arc::new(crate::core::memory::vector::MemoryVectorIndex::new(
+                    Arc::new(crate::core::memory::vector::LocalEmbedder),
+                )),
             });
 
             // 注入 skill:changed 事件：AppHandle 就绪后替换 watcher 回调

@@ -2496,7 +2496,15 @@ pub fn build_search_memory_tool(cfg: KbSearchConfig) -> DynamicTool {
                     return Err(tool_error("search_memory", &e));
                 }
                 let state = cfg.app_handle.state::<crate::AppState>();
-                match state.memory_store.search(&query, limit) {
+                // O1：融合检索（关键词 ∪ 向量，RRF；embedding 失败降级关键词）
+                match crate::core::memory::search_hybrid(
+                    state.memory_store.clone(),
+                    state.memory_vectors.clone(),
+                    &query,
+                    limit,
+                )
+                .await
+                {
                     Ok(items) => {
                         if items.is_empty() {
                             let msg = format!("未找到与「{query}」相关的记忆");
