@@ -192,7 +192,8 @@
             if (listEl && typeof renderAIHistory === 'function') {
                 renderAIHistory();
             }
-            window.showNotification(
+            // 统一经全局通知通道（Notify）发送
+            window.Notify.show(
                 newFav ? '⭐ 收藏成功' : '已取消收藏',
                 newFav ? 'success' : 'info',
                 1000

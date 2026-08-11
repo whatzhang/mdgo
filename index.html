@@ -2170,12 +2170,13 @@
             transition: opacity 0.3s ease, transform 0.2s ease, bottom 0.35s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease;
         }
 
-        /* 背景层：通过 --notif-layer 控制透明度，实现自下往上逐层变淡 */
         .editor-notification::before {
             content: '';
             position: absolute;
             inset: 0;
             border-radius: 0.625rem;
+            background: var(--notif-bg, rgb(90, 90, 110));
+            opacity: calc(0.92 - var(--notif-layer, 0) * 0.14);
             z-index: -1;
             transition: opacity 0.35s ease;
         }
@@ -2192,43 +2193,18 @@
             pointer-events: none;
         }
 
-        .editor-notification.success::before {
-            background: rgb(26, 127, 55);
-            opacity: calc(0.92 - var(--notif-layer, 0) * 0.14);
-        }
-
-        .editor-notification.error::before {
-            background: rgb(207, 34, 46);
-            opacity: calc(0.92 - var(--notif-layer, 0) * 0.14);
-        }
-
-        .editor-notification.warning::before {
-            background: rgb(207, 150, 0);
-            opacity: calc(0.92 - var(--notif-layer, 0) * 0.14);
-        }
-
-        .editor-notification.info::before {
-            background: rgb(58, 131, 240);
-            opacity: calc(0.92 - var(--notif-layer, 0) * 0.14);
-        }
-
-        /* 持久通知（sticky）：不自动消失，右上角叉号手动关闭 */
-        .editor-notification.sticky {
+        /* 可关闭通知（closable 类型，如 sticky）：右上角叉号手动关闭 */
+        .editor-notification.closable {
             padding-right: 1.6rem; /* 为右上角关闭按钮留位 */
         }
 
-        .editor-notification.sticky::before {
-            background: rgb(86, 90, 110);
-            opacity: calc(0.92 - var(--notif-layer, 0) * 0.14);
-        }
-
-        .editor-notification.sticky > span {
+        .editor-notification.closable > span {
             flex: 1;
             text-align: center;
             white-space: pre-line; /* 保留多行提示（如 plan 拒绝原因）的换行 */
         }
 
-        /* 右上角关闭按钮（仅 sticky 通知） */
+        /* 右上角关闭按钮（closable 类型） */
         .editor-notification-close {
             position: absolute;
             top: 0.25rem;
@@ -5213,6 +5189,19 @@
         .chat-message-action-btn:hover {
             background: rgba(0, 0, 0, 0.06);
             color: var(--t0, #333);
+        }
+
+        /* 消息时间（footer 内，时:分格式，随 footer hover 显示；
+           与操作按钮同高并垂直居中，保证水平线对齐） */
+        .chat-message-time {
+            display: inline-flex;
+            align-items: center;
+            height: 1.75rem; /* 与 .chat-message-action-btn 同高 */
+            font-size: 0.75rem;
+            color: var(--t3, #999);
+            line-height: 1;
+            user-select: none;
+            white-space: nowrap;
         }
 
         /* ── 助手消息头部 ── */
@@ -25223,109 +25212,172 @@
             }
         }
 
-        // 通知管理器：支持多条堆叠显示，最早展示的自动消失，返回通知对象供主动删除
-        const NOTIFICATION_MAX_COUNT = 5;
-        const NOTIFICATION_GAP = 8;
-        const NOTIFICATION_BOTTOM = 24;
-        const _activeNotifications = [];
-
-        function _repositionNotifications() {
-            // 读阶段：一次性收集所有高度，避免读写交替导致多次重排
-            const heights = new Array(_activeNotifications.length);
-            for (let i = 0; i < _activeNotifications.length; i++) {
-                heights[i] = _activeNotifications[i].el.getBoundingClientRect().height;
+        /**
+         * 类型配置项：
+         *   duration   默认自动关闭时长(ms)，0 = 不自动关闭（常驻）
+         *   closable   是否显示右上角叉号（仅手动关闭）
+         *   background 背景色（经 --notif-bg 注入，无需改 CSS）
+         *   label      类型说明（可选）
+         *
+         * 用法示例：
+         *   Notify.success('保存成功') / Notify.error('操作失败') / Notify.warning('警告')
+         *   Notify.sticky('AI 任务计划未获批准，任务已中止。\n原因：…')   // 常驻 + 叉号
+         *   const h = Notify.show('正在处理', 'info', 0); h.dismiss();
+         *   Notify.registerType('urgent', { duration: 0, closable: true, background: 'rgb(...)' });
+         */
+        const Notify = (function () {
+            // ── 内部常量（SRP：仅通知模块持有，外部不可见）──
+            const MAX_COUNT = 5;
+            const GAP = 8;
+            const BOTTOM = 24;
+            const DEFAULT_BG = 'rgb(90, 90, 110)';
+            // ── 内部状态 ──
+            const _active = [];
+            // ── 类型注册表（OCP 扩展点）──
+            const _types = new Map();
+            /** 注册通知类型：新类型仅需注册配置，核心流程无需改动 */
+            function registerType(name, config) {
+                if (!name || typeof name !== 'string' || !config) return false;
+                _types.set(name, {
+                    duration: 3000,
+                    closable: false,
+                    background: DEFAULT_BG,
+                    ...config,
+                });
+                return true;
             }
-            // 写阶段：统一设置位置与层级透明度
-            let bottom = NOTIFICATION_BOTTOM;
-            for (let i = 0; i < _activeNotifications.length; i++) {
-                const el = _activeNotifications[i].el;
-                el.style.bottom = bottom + 'px';
-                el.style.setProperty('--notif-layer', i);
-                bottom += heights[i] + NOTIFICATION_GAP;
-            }
-        }
-
-        function _dismissNotification(item, skipTransition = false) {
-            const idx = _activeNotifications.indexOf(item);
-            if (idx === -1) return;
-            _activeNotifications.splice(idx, 1);
-            // 清除可能残留的自动消失定时器
-            if (item._timer) {
-                clearTimeout(item._timer);
-                item._timer = null;
-            }
-            const el = item.el;
-            if (skipTransition) {
-                el.remove();
-            } else {
-                el.classList.add('dismissing');
-                setTimeout(() => {
-                    if (el.parentNode) el.remove();
-                }, 300);
-            }
-            _repositionNotifications();
-        }
-
-        // 显示通知，返回通知对象供主动删除。
-        // duration 为可见时长(ms)，设为 0 表示不自动消失，需手动调用 item.dismiss()。
-        // type='sticky'：持久通知——右下角一直存在，右上角显示叉号，只有点击叉号才消失。
-        function showNotification(text, type = 'success', duration = 3000) {
-            // sticky 类型强制不自动消失
-            const isSticky = type === 'sticky';
-            if (isSticky) duration = 0;
-            // 超过最大数量时，移除最早的一条（跳过动画，同时清理其定时器）；
-            // sticky 通知仅能手动关闭，不参与数量上限淘汰（保持"一直存在"）
-            while (_activeNotifications.length >= NOTIFICATION_MAX_COUNT) {
-                const victim = _activeNotifications.find(n => !n.sticky);
-                if (!victim) break; // 全部为 sticky 时允许超出上限，不再自动淘汰
-                _dismissNotification(victim, true);
-            }
-
-            const notification = document.createElement('div');
-            notification.className = 'editor-notification ' + type;
-            notification.setAttribute('role', 'alert');
-            if (isSticky) {
-                // 持久通知：文本 + 右上角叉号关闭按钮
-                const textSpan = document.createElement('span');
-                textSpan.textContent = text;
-                const closeBtn = document.createElement('button');
-                closeBtn.type = 'button';
-                closeBtn.className = 'editor-notification-close';
-                closeBtn.setAttribute('aria-label', '关闭通知');
-                closeBtn.innerHTML = '&times;';
-                notification.appendChild(textSpan);
-                notification.appendChild(closeBtn);
-            } else {
-                notification.textContent = text;
-            }
-            document.body.appendChild(notification);
-
-            const item = { el: notification, _timer: null, sticky: isSticky };
-            _activeNotifications.push(item);
-            _repositionNotifications();
-
-            if (isSticky) {
-                // sticky：只有点击右上角叉号才消失
-                const closeBtn = notification.querySelector('.editor-notification-close');
-                if (closeBtn) {
-                    closeBtn.addEventListener('click', () => {
-                        _dismissNotification(item);
-                    });
+            // 内置类型预注册（颜色与原 CSS 各类型保持一致）
+            registerType('success', { duration: 3000, background: 'rgb(26, 127, 55)', label: '成功' });
+            registerType('error',   { duration: 3000, background: 'rgb(207, 34, 46)', label: '错误' });
+            registerType('warning', { duration: 3000, background: 'rgb(207, 150, 0)', label: '警告' });
+            registerType('info',    { duration: 3000, background: 'rgb(58, 131, 240)', label: '信息' });
+            // sticky：右下角常驻 + 右上角叉号，只有点击叉号才消失
+            registerType('sticky',  { duration: 0, closable: true, background: 'rgb(86, 90, 110)', label: '持续通知' });
+            // ── 定位：读/写分离避免多次重排 ──
+            function _reposition() {
+                const heights = new Array(_active.length);
+                for (let i = 0; i < _active.length; i++) {
+                    heights[i] = _active[i].el.getBoundingClientRect().height;
                 }
-            } else if (duration > 0) {
-                // duration > 0 时设置自动消失定时器（duration=0 永不自动消失）
-                item._timer = setTimeout(() => {
-                    item._timer = null;
-                    _dismissNotification(item);
-                }, duration + 300);
+                let bottom = BOTTOM;
+                for (let i = 0; i < _active.length; i++) {
+                    const el = _active[i].el;
+                    el.style.bottom = bottom + 'px';
+                    el.style.setProperty('--notif-layer', i);
+                    bottom += heights[i] + GAP;
+                }
             }
-
-            // 返回通知对象，调用方可主动删除（例如调用 item.dismiss()）
-            item.dismiss = function () {
-                _dismissNotification(item);
+            // ── 销毁：从队列移除 + 清理定时器 + 退场动画 ──
+            function _dismiss(item, skipTransition = false) {
+                const idx = _active.indexOf(item);
+                if (idx === -1) return;
+                _active.splice(idx, 1);
+                item.isActive = false;
+                if (item._timer) {
+                    clearTimeout(item._timer);
+                    item._timer = null;
+                }
+                const el = item.el;
+                if (skipTransition) {
+                    el.remove();
+                } else {
+                    el.classList.add('dismissing');
+                    setTimeout(() => {
+                        if (el.parentNode) el.remove();
+                    }, 300);
+                }
+                _reposition();
+            }
+            // ── 渲染：按类型配置构建 DOM（closable 渲染文本 + 叉号）──
+            function _render(text, config) {
+                const el = document.createElement('div');
+                el.className = 'editor-notification';
+                el.setAttribute('role', 'alert');
+                el.style.setProperty('--notif-bg', config.background || DEFAULT_BG);
+                if (config.closable) {
+                    el.classList.add('closable');
+                    const textSpan = document.createElement('span');
+                    textSpan.textContent = text;
+                    const closeBtn = document.createElement('button');
+                    closeBtn.type = 'button';
+                    closeBtn.className = 'editor-notification-close';
+                    closeBtn.setAttribute('aria-label', '关闭通知');
+                    closeBtn.innerHTML = '&times;';
+                    el.appendChild(textSpan);
+                    el.appendChild(closeBtn);
+                } else {
+                    el.textContent = text;
+                }
+                return el;
+            }
+            // ── 统一入口（DIP）：所有通知都经此通道 ──
+            function show(text, type = 'success', duration) {
+                const config = _types.get(type) || _types.get('info') || {};
+                // 显式 duration 优先，否则用类型默认；0 = 常驻（不自动关闭）
+                const effectiveDuration = duration !== undefined ? duration : (config.duration || 0);
+                // 数量上限淘汰：不可自动关闭（常驻）通知仅能手动关闭，不参与淘汰（保持"一直存在"）
+                while (_active.length >= MAX_COUNT) {
+                    const victim = _active.find(it => it._autoDismissible);
+                    if (!victim) break; // 全部为常驻通知时允许超出上限，不再自动淘汰
+                    _dismiss(victim, true);
+                }
+                const el = _render(text, config);
+                document.body.appendChild(el);
+                // LSP：统一通知句柄契约
+                const item = {
+                    el,
+                    type,
+                    isActive: true,
+                    sticky: type === 'sticky',
+                    _timer: null,
+                    _autoDismissible: effectiveDuration > 0,
+                };
+                item.dismiss = () => _dismiss(item);
+                _active.push(item);
+                _reposition();
+                // closable：右上角叉号，唯一手动关闭途径
+                if (config.closable) {
+                    const closeBtn = el.querySelector('.editor-notification-close');
+                    if (closeBtn) {
+                        closeBtn.addEventListener('click', () => _dismiss(item));
+                    }
+                }
+                // 自动关闭（effectiveDuration > 0 时）
+                if (effectiveDuration > 0) {
+                    item._timer = setTimeout(() => {
+                        item._timer = null;
+                        _dismiss(item);
+                    }, effectiveDuration + 300);
+                }
+                return item;
+            }
+            // ── 清空全部（跳过动画，供页面销毁/重置使用）──
+            function clear() {
+                while (_active.length) _dismiss(_active[0], true);
+            }
+            // ── 查询当前活跃通知（只读快照）──
+            function getActive() {
+                return _active.slice();
+            }
+            // ISP：仅暴露最小接口集
+            return {
+                show,
+                notify: show,                    // 语义化别名
+                success: (text) => show(text, 'success'),
+                error:   (text) => show(text, 'error'),
+                warning: (text) => show(text, 'warning'),
+                info:    (text) => show(text, 'info'),
+                sticky:  (text) => show(text, 'sticky'),
+                dismiss: _dismiss,
+                clear,
+                getActive,
+                registerType,
             };
-
-            return item;
+        })();
+        // 全局通道挂载；历史 showNotification 兼容适配（转发同一通道，后续新代码统一用 Notify）
+        window.Notify = Notify;
+        function showNotification(text, type, duration) {
+            return Notify.show(text, type, duration);
         }
 
         let mdIsKanban = false; // 是否为看板格式
@@ -52072,6 +52124,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     content: partialContent,
                     sources: _chatStreamingSources || [],
                     toolCalls: _streamingToolCalls.slice(),
+                    created_at: Date.now(),
                 });
                 // 保存成功才置位（失败不置位，允许 query 兜底路径重试）
                 _partialAutoSaved = true;
@@ -52544,7 +52597,19 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         })();
 
         // ── SRP: footer 构建（纯展示，动作由 data-action 声明、策略表路由） ──
-        function createMessageFooter(type = 'assistant') {
+        /** 将时间戳格式化为「时:分」（如 13:22，24 小时制）；无效输入返回空字符串 */
+        function formatHourMinute(ts) {
+            const t = Number(ts);
+            if (!Number.isFinite(t) || t <= 0) return '';
+            // 兼容秒级/毫秒级时间戳
+            const d = new Date(t < 100000000000 ? t * 1000 : t);
+            if (isNaN(d.getTime())) return '';
+            const hh = String(d.getHours()).padStart(2, '0');
+            const mm = String(d.getMinutes()).padStart(2, '0');
+            return hh + ':' + mm;
+        }
+
+        function createMessageFooter(type = 'assistant', timestamp) {
             const footer = document.createElement('div');
             footer.className = 'chat-message-footer';
             if (type === 'assistant') {
@@ -52553,8 +52618,19 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     '<button class="chat-message-action-btn" data-type="assistant" data-action="save" title="保存">' + MSG_ACTION_ICONS.save + '</button>' +
                     '<button class="chat-message-action-btn" data-type="assistant" data-action="fork" title="从此处派生分支会话">' + MSG_ACTION_ICONS.fork + '</button>';
             }else if (type === 'user') {
+                footer.style.paddingRight = '0.5rem';
                 footer.innerHTML =
                     '<button class="chat-message-action-btn" data-type="user" data-action="copy" title="复制">' + MSG_ACTION_ICONS.copy + '</button>';
+            }
+            // 消息时间（时:分格式）：无效时间戳不显示
+            if (timestamp) {
+                const timeStr = formatHourMinute(timestamp);
+                if (timeStr) {
+                    const timeEl = document.createElement('span');
+                    timeEl.className = 'chat-message-time';
+                    timeEl.textContent = timeStr;
+                    footer.appendChild(timeEl);
+                }
             }
             return footer;
         }
@@ -52998,7 +53074,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return false;
         }
 
-        async function addChatMessage(role, content, sources, mode, toolCalls) {
+        async function addChatMessage(role, content, sources, mode, toolCalls, timestamp) {
             const container = document.getElementById('chat-messages');
             const div = document.createElement('div');
             div.className = 'chat-message ' + role;
@@ -53029,11 +53105,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 div._chatSources = sources;
                 renderChatSources(div, sources);
             }
-            // 助手消息底部追加操作按钮（复制/保存，hover 显示），必须为最后一个子元素
+            // 助手消息底部追加操作按钮（复制/保存，hover 显示）+ 消息时间，必须为最后一个子元素
             if (role === 'assistant') {
-                div.appendChild(createMessageFooter());
+                div.appendChild(createMessageFooter('assistant', timestamp));
             }else{
-                 div.appendChild(createMessageFooter('user'));
+                 div.appendChild(createMessageFooter('user', timestamp));
             }
             container.appendChild(div);
             if (window._chatAutoScroll !== false) {
@@ -53403,8 +53479,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             input.value = '';
             updateChatSendButton();
-            addChatMessage('user', text, null, chatMode);
-            chatMessages.push({ role: 'user', content: text });
+            addChatMessage('user', text, null, chatMode, undefined, Date.now());
+            chatMessages.push({ role: 'user', content: text, created_at: Date.now() });
             updateTurnCounter();
             // 保存用户消息（估算 token 数，用于 token_usage 统计）
             if (currentSessionId) {
@@ -53521,7 +53597,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     const tokenCount = usageData?.completion_tokens || 0;
                     // 内存态（当前会话立即可见，不依赖落库结果）
                     if (fullContent) {
-                        chatMessages.push({ role: 'assistant', content: fullContent, toolCalls: toolCallsSnapshot });
+                        chatMessages.push({ role: 'assistant', content: fullContent, toolCalls: toolCallsSnapshot, created_at: Date.now() });
                         updateTurnCounter();
                     }
                     // ===== 落库优先：先持久化再做 UI 后处理（UI 异常不得阻断保存） =====
@@ -53570,7 +53646,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         }
                         // 生成完成后追加底部操作按钮（复制/保存，hover 显示），必须为最后一个子元素
                         if (streamingDiv) {
-                            streamingDiv.appendChild(createMessageFooter());
+                            streamingDiv.appendChild(createMessageFooter('assistant', Date.now()));
                         }
                         removeChatTyping();
                         // 更新上下文使用率（模型上下文窗口占用率）
@@ -53860,10 +53936,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         content: m.content,
                         sources: sourcesMap[m.id] || [],
                         toolCalls,
+                        created_at: m.created_at || Date.now(),
                     };
                 });
                 container.innerHTML = '';
-                chatMessages.forEach(m => addChatMessage(m.role, m.content, m.sources, chatMode, m.toolCalls));
+                chatMessages.forEach(m => addChatMessage(m.role, m.content, m.sources, chatMode, m.toolCalls, m.created_at));
                 updateTurnCounter();
                 // 加载后立即显示上下文使用率（token_usage 已持久化在 chat_sessions 中）
                 const sessionTokenUsage = session ? session.token_usage || 0 : 0;
@@ -54253,7 +54330,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     delete window.__chatTraceMap[requestId];
                     // 内存态（当前会话立即可见，不依赖落库结果）
                     if (fullContent) {
-                        chatMessages.push({ role: 'assistant', content: fullContent, sources: sources, toolCalls: toolCallsSnapshot });
+                        chatMessages.push({ role: 'assistant', content: fullContent, sources: sources, toolCalls: toolCallsSnapshot, created_at: Date.now() });
                         updateTurnCounter();
                     }
                     // ===== 落库优先：先持久化再做 UI 后处理（UI 异常不得阻断保存） =====
@@ -54335,9 +54412,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             streamingDiv._chatSources = sources;
                             renderChatSources(streamingDiv, sources);
                         }
-                        // 生成完成后追加底部操作按钮（复制/保存，hover 显示），必须为最后一个子元素
+                        // 生成完成后追加底部操作按钮（复制/保存，hover 显示）+ 消息时间，必须为最后一个子元素
                         if (streamingDiv) {
-                            streamingDiv.appendChild(createMessageFooter());
+                            streamingDiv.appendChild(createMessageFooter('assistant', Date.now()));
                         }
                         // 流式结束后滚动到底部，确保最新消息和引用完整可见 
                         if (window._chatAutoScroll !== false) {
@@ -55109,7 +55186,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     listen('plan:rejected', (e) => {
                         const payload = (e && e.payload) || {};
                         const reason = payload.reason ? '原因：' + payload.reason : '';
-                        showNotification('AI 任务计划未获批准，任务已中止。\n' + reason, 'sticky');
+                        Notify.sticky('AI 任务计划未获批准，任务已中止。\n' + reason);
                     });
                 } catch (e) {
                     console.warn('注册 plan:rejected 监听失败:', e);
@@ -55150,7 +55227,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         async function highlightChatCodeBlocks(dom) {
-            await postProcessCodeAndDiagrams(dom);
+            try {
+                await postProcessCodeAndDiagrams(dom);
+            } finally {
+                if (window._chatAutoScroll !== false) {
+                    const scroller = document.getElementById('chat-messages');
+                    if (scroller) scroller.scrollTop = scroller.scrollHeight;
+                }
+            }
         }
 
         async function setLogLevel(level) {
