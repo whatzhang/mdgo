@@ -54,6 +54,8 @@ reqwest = { version = "0.12", features = ["stream", "json", "blocking"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 futures = "0.3"
 bytes = "1"
+# HTTP 状态码类型（rig-core 传递依赖，测试重试判定时直接使用）
+http = "1"
 
 # 日志
 log = "0.4"

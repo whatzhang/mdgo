@@ -5312,6 +5312,7 @@ dependencies = [
  "dashmap",
  "futures",
  "futures-util",
+ "http",
  "jieba-rs",
  "lancedb",
  "log",

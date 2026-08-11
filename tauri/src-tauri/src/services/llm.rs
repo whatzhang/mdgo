@@ -4,7 +4,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 
 use rig_core::client::completion::CompletionClient;
-use rig_core::completion::{AssistantContent, CompletionModel, CompletionRequest, Message, Usage};
+use rig_core::completion::{
+    AssistantContent, CompletionError, CompletionModel, CompletionRequest, CompletionResponse,
+    Message, Usage,
+};
 use rig_core::providers::openai;
 use rig_core::OneOrMany;
 use serde::{Deserialize, Serialize};
@@ -81,6 +84,96 @@ pub fn usage_to_info(usage: &Usage) -> UsageInfo {
 /// 极端挂起场景。
 const LLM_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 
+// ─── LLM 调用重试（P0-4）：非流式调用指数退避，对齐 Pi provider retry ───
+/// 最大重试次数（首次调用之外的额外尝试次数；总尝试 = 重试次数 + 1）
+const LLM_RETRY_MAX: usize = 3;
+/// 退避起始延迟（毫秒），此后每次翻倍
+const LLM_RETRY_BASE_MS: u64 = 2000;
+/// 退避延迟上限（毫秒）
+const LLM_RETRY_MAX_MS: u64 = 60_000;
+
+/// 判断 HTTP 状态码是否可重试（429 限流 / 408 超时 / 5xx 服务端错误）
+pub(crate) fn is_retryable_status_code(code: u16) -> bool {
+    code == 429 || code == 408 || (500..=599).contains(&code)
+}
+
+/// 判断 rig 补全错误是否为瞬时错误（可重试）。
+///
+/// - `HttpError`：连接/超时/流中断类视为瞬时；HTTP 状态码按 `is_retryable_status_code` 判定
+/// - `ProviderResponse`：带状态码则按码判定，无状态码保守重试
+/// - `ProviderError`：provider 文本错误（429/5xx 常在此处），保守重试
+/// - 其余（JsonError/UrlError/RequestError/ResponseError）：确定性错误，不重试
+pub(crate) fn is_retryable_completion_error(e: &CompletionError) -> bool {
+    match e {
+        CompletionError::HttpError(http_err) => match http_err {
+            rig_core::http_client::Error::InvalidStatusCode(s)
+            | rig_core::http_client::Error::InvalidStatusCodeWithMessage(s, _) => {
+                is_retryable_status_code(s.as_u16())
+            }
+            // 连接错误/超时/流中断/协议错误：瞬时
+            rig_core::http_client::Error::Instance(_)
+            | rig_core::http_client::Error::StreamEnded
+            | rig_core::http_client::Error::Protocol(_) => true,
+            // InvalidHeaderValue / NoHeaders / InvalidContentType：确定性
+            _ => false,
+        },
+        CompletionError::ProviderResponse(pe) => pe
+            .status
+            .map(|s| is_retryable_status_code(s.as_u16()))
+            .unwrap_or(true),
+        CompletionError::ProviderError(_) => true,
+        _ => false,
+    }
+}
+
+/// 泛型指数退避重试循环（依赖倒置：调用方注入"执行一次"的闭包与可重试判定）。
+///
+/// - 可重试错误：退避 `base_delay * 2^attempt`（上限 `max_delay`）后重试，至多 `max_retries` 次
+/// - 不可重试错误 / 达到上限：立即返回
+/// - 退避期间监听 `cancel`：取消后立即返回当前错误，不继续等待
+pub(crate) async fn retry_loop<F, Fut, T, E>(
+    mut call: F,
+    is_retryable: fn(&E) -> bool,
+    max_retries: usize,
+    base_delay: Duration,
+    max_delay: Duration,
+    cancel: CancellationToken,
+) -> Result<T, E>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T, E>>,
+    E: std::fmt::Display,
+{
+    let mut attempt = 0usize;
+    loop {
+        if cancel.is_cancelled() {
+            // 取消时不发起新尝试：透传当前错误（若尚未调用则返回一个不可重试语义）
+        }
+        match call().await {
+            Ok(value) => return Ok(value),
+            Err(e) => {
+                if attempt >= max_retries || !is_retryable(&e) {
+                    return Err(e);
+                }
+                let delay = base_delay
+                    .saturating_mul(2u32.saturating_pow(attempt as u32))
+                    .min(max_delay);
+                log::warn!(
+                    "[llm] 调用失败，{}ms 后第 {} 次重试: {}",
+                    delay.as_millis(),
+                    attempt + 1,
+                    e
+                );
+                tokio::select! {
+                    _ = cancel.cancelled() => return Err(e),
+                    _ = tokio::time::sleep(delay) => {}
+                }
+                attempt += 1;
+            }
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct LLMClient {
     /// 归一化后的 base_url（不含 /chat/completions 后缀）
@@ -128,6 +221,29 @@ impl LLMClient {
     /// 获取底层 Rig 补全模型（用于构建 Agent）
     pub fn completion_model(&self) -> &openai::CompletionModel {
         &self.completion_model
+    }
+
+    /// 非流式补全 + 指数退避重试（P0-4）。
+    ///
+    /// 仅对瞬时错误（429/408/5xx/连接/超时/流中断）重试；
+    /// 重试间隔受 `cancel` 控制（取消即中止，不再等待）。
+    /// 流式主链路（agent 生成）不做请求级重试：rig agent 流重放会重复执行
+    /// 工具副作用，由 300s 超时 + 用户重试兜底（设计取舍，见规划文档 P0-4）。
+    async fn completion_with_retry(
+        &self,
+        request: CompletionRequest,
+        cancel: CancellationToken,
+    ) -> Result<CompletionResponse<openai::CompletionResponse>, CompletionError> {
+        let model = self.completion_model.clone();
+        retry_loop(
+            || model.completion(request.clone()),
+            is_retryable_completion_error,
+            LLM_RETRY_MAX,
+            Duration::from_millis(LLM_RETRY_BASE_MS),
+            Duration::from_millis(LLM_RETRY_MAX_MS),
+            cancel,
+        )
+        .await
     }
 
     /// 查询扩展：使用 LLM 将用户问题改写为多个搜索查询
@@ -202,16 +318,10 @@ impl LLMClient {
         // 直接非流式调用：expand_queries 只需要完整结果，无需流式体验。
         // 非流式请求（stream: false）返回 application/json，兼容性最好，
         // 也规避 thinking 类模型 SSE 中 reasoning 内容的解析差异。
-        let model = self.completion_model.clone();
         let mut full = String::new();
-        
-        let result = tokio::select! {
-            _ = cancel.cancelled() => {
-                log::debug!("[llm] [输入语义扩展] cancelled");
-                return Vec::new();
-            }
-            res = model.completion(request) => res,
-        };
+
+        // 非流式补全 + 指数退避重试（取消在重试循环内响应，失败降级为原查询）
+        let result = self.completion_with_retry(request, cancel.clone()).await;
         
         match result {
             Ok(response) => {
@@ -355,14 +465,7 @@ impl LLMClient {
 
         log::debug!("[llm] [任务规划] input: query_len={} history_count={}", query.len(), history.len());
 
-        let model = self.completion_model.clone();
-        let result = tokio::select! {
-            _ = cancel.cancelled() => {
-                log::debug!("[llm] [任务规划] cancelled");
-                return None;
-            }
-            res = model.completion(request) => res,
-        };
+        let result = self.completion_with_retry(request, cancel.clone()).await;
 
         match result {
             Ok(response) => {
@@ -431,14 +534,7 @@ impl crate::core::context::HistorySummarizer for LLMClient {
             record_telemetry_content: false,
         };
 
-        let model = self.completion_model.clone();
-        let result = tokio::select! {
-            _ = cancel.cancelled() => {
-                log::debug!("[llm] [历史摘要] cancelled");
-                return None;
-            }
-            res = model.completion(request) => res,
-        };
+        let result = self.completion_with_retry(request, cancel.clone()).await;
 
         match result {
             Ok(response) => {
@@ -461,5 +557,175 @@ impl crate::core::context::HistorySummarizer for LLMClient {
                 None
             }
         }
+    }
+}
+
+// ─── 重试逻辑单元测试（P0-4） ───
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    async fn retry_calls_times_until_success(max_failures: usize) -> usize {
+        // 返回「实际调用次数」，失败前 max_failures 次返回 Err，之后返回 Ok
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls_inner = calls.clone();
+        let result = retry_loop(
+            move || {
+                let calls = calls_inner.clone();
+                async move {
+                    let n = calls.fetch_add(1, Ordering::Relaxed) + 1;
+                    if n <= max_failures {
+                        Err::<u32, String>(format!("transient {n}"))
+                    } else {
+                        Ok::<u32, String>(42)
+                    }
+                }
+            },
+            |_| true,
+            3,
+            Duration::from_millis(1),
+            Duration::from_millis(10),
+            CancellationToken::new(),
+        )
+        .await;
+        assert_eq!(result, Ok(42));
+        calls.load(Ordering::Relaxed)
+    }
+
+    #[tokio::test]
+    async fn retry_loop_retries_transient_errors() {
+        // 429 类瞬时错误：重试 2 次后成功（共 3 次调用）
+        assert_eq!(retry_calls_times_until_success(2).await, 3);
+    }
+
+    #[tokio::test]
+    async fn retry_loop_succeeds_first_try_without_retry() {
+        assert_eq!(retry_calls_times_until_success(0).await, 1);
+    }
+
+    #[tokio::test]
+    async fn retry_loop_gives_up_after_max_retries() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls_inner = calls.clone();
+        let result = retry_loop(
+            move || {
+                let calls = calls_inner.clone();
+                async move {
+                    calls.fetch_add(1, Ordering::Relaxed);
+                    Err::<u32, String>("always fails".into())
+                }
+            },
+            |_| true,
+            2,
+            Duration::from_millis(1),
+            Duration::from_millis(10),
+            CancellationToken::new(),
+        )
+        .await;
+        assert!(result.is_err());
+        // 总尝试 = max_retries + 1 = 3
+        assert_eq!(calls.load(Ordering::Relaxed), 3);
+    }
+
+    #[tokio::test]
+    async fn retry_loop_no_retry_on_fatal_error() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls_inner = calls.clone();
+        let result = retry_loop(
+            move || {
+                let calls = calls_inner.clone();
+                async move {
+                    calls.fetch_add(1, Ordering::Relaxed);
+                    Err::<u32, String>("bad request".into())
+                }
+            },
+            |_| false,
+            3,
+            Duration::from_millis(1),
+            Duration::from_millis(10),
+            CancellationToken::new(),
+        )
+        .await;
+        assert!(result.is_err());
+        assert_eq!(calls.load(Ordering::Relaxed), 1, "确定性错误不重试");
+    }
+
+    #[tokio::test]
+    async fn retry_loop_aborts_when_cancelled_during_backoff() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let cancel = CancellationToken::new();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls_inner = calls.clone();
+        let cancel_inner = cancel.clone();
+        let started = std::time::Instant::now();
+        let result = retry_loop(
+            move || {
+                let calls = calls_inner.clone();
+                let cancel = cancel_inner.clone();
+                async move {
+                    let n = calls.fetch_add(1, Ordering::Relaxed) + 1;
+                    // 首次调用失败后触发取消（退避等待期间应立即返回，不等待 60s 上限）
+                    if n == 1 {
+                        cancel.cancel();
+                    }
+                    Err::<u32, String>("transient".into())
+                }
+            },
+            |_| true,
+            5,
+            Duration::from_secs(60),
+            Duration::from_secs(60),
+            cancel.clone(),
+        )
+        .await;
+        assert!(result.is_err());
+        assert!(started.elapsed() < Duration::from_secs(5), "取消后不应继续退避等待");
+        assert_eq!(calls.load(Ordering::Relaxed), 1, "取消后不再重试");
+    }
+
+    #[test]
+    fn retryable_status_code_covers_transient() {
+        assert!(is_retryable_status_code(429));
+        assert!(is_retryable_status_code(408));
+        assert!(is_retryable_status_code(500));
+        assert!(is_retryable_status_code(503));
+        assert!(!is_retryable_status_code(400));
+        assert!(!is_retryable_status_code(401));
+        assert!(!is_retryable_status_code(404));
+    }
+
+    #[test]
+    fn retryable_completion_error_classification() {
+        // ProviderError：保守重试
+        assert!(is_retryable_completion_error(&CompletionError::ProviderError(
+            "rate limited".into()
+        )));
+        // ResponseError（解析失败）：不重试
+        assert!(!is_retryable_completion_error(&CompletionError::ResponseError(
+            "bad json".into()
+        )));
+        // HttpError::Instance（连接/超时类）：重试
+        assert!(is_retryable_completion_error(&CompletionError::HttpError(
+            rig_core::http_client::Error::Instance(Box::new(std::io::Error::other("conn reset")))
+        )));
+        // HttpError 带 429 状态码：重试
+        assert!(is_retryable_completion_error(&CompletionError::HttpError(
+            rig_core::http_client::Error::InvalidStatusCodeWithMessage(
+                http::StatusCode::TOO_MANY_REQUESTS,
+                "rate limit".into(),
+            )
+        )));
+        // HttpError 带 400 状态码：不重试
+        assert!(!is_retryable_completion_error(&CompletionError::HttpError(
+            rig_core::http_client::Error::InvalidStatusCodeWithMessage(
+                http::StatusCode::BAD_REQUEST,
+                "bad".into(),
+            )
+        )));
     }
 }
