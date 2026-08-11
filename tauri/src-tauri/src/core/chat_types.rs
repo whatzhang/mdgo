@@ -1,5 +1,19 @@
 use serde::{Deserialize, Serialize};
 
+/// 一次模型发起的工具调用（OpenAI 协议视图）。
+///
+/// 与 rig 的 `ToolCall` 解耦（依赖倒置）：本项目会话层只依赖本 DTO，
+/// 由转换层（`commands::llm::chat_turns_to_history`）映射为 rig 消息。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ToolCallDto {
+    /// 工具调用 ID（`call_*`），用于与 tool 结果消息的 `tool_call_id` 配对
+    pub id: String,
+    /// 工具名
+    pub name: String,
+    /// 参数 JSON 字符串（模型原始产出，回放时原样解析）
+    pub arguments: String,
+}
+
 #[derive(Debug, Serialize, Clone)]
 pub struct ChatSession {
     pub id: String,

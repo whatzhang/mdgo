@@ -18,7 +18,7 @@ pub(crate) mod model_download;
 mod pipeline;
 mod watcher;
 
-pub use chat_types::{ChatMessage, ChatMessageSource, ChatSession, ChatSessionSearchResult};
+pub use chat_types::{ChatMessage, ChatMessageSource, ChatSession, ChatSessionSearchResult, ToolCallDto};
 pub use config::{ConfigStore, IndexerConfig};
 pub use db::lance::SearchHit;
 pub use db::utils::{call_embedding_query, KbProgress};

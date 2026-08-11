@@ -459,14 +459,14 @@ pub fn build_kb_search_tool(cfg: KbSearchConfig) -> DynamicTool {
                     .map(|v| v.min(MAX_TOP_K))
                     .unwrap_or(cfg.default_top_k.min(MAX_TOP_K));
 
-                tools::record_tool_call(&cfg, "kb_search", &query);
+                tools::record_tool_call(&cfg, "kb_search", &query, Some(&args));
                 match kb_search(&cfg, &query, top_k).await {
                     Ok(text) => {
-                        tools::record_tool_result(&cfg, "kb_search", true, &format!("{} 字符", text.chars().count()));
+                        tools::record_tool_result(&cfg, "kb_search", true, &format!("{} 字符", text.chars().count()), Some(&text));
                         Ok(ToolOutput::text(text))
                     }
                     Err(e) => {
-                        tools::record_tool_result(&cfg, "kb_search", false, &e);
+                        tools::record_tool_result(&cfg, "kb_search", false, &e, Some(&e));
                         Err(ToolExecutionError::other(format!("知识库检索失败: {}", e))
                             .with_model_output(ToolOutput::text(format!("知识库检索失败: {}", e))))
                     }
@@ -554,14 +554,14 @@ pub fn build_code_lookup_tool(cfg: KbSearchConfig) -> DynamicTool {
                     .map(|v| v.min(MAX_TOP_K))
                     .unwrap_or(5);
 
-                tools::record_tool_call(&cfg, "code_lookup", &symbol);
+                tools::record_tool_call(&cfg, "code_lookup", &symbol, Some(&args));
                 match code_search(&cfg, &symbol, top_k).await {
                     Ok(text) => {
-                        tools::record_tool_result(&cfg, "code_lookup", true, &format!("{} 字符", text.chars().count()));
+                        tools::record_tool_result(&cfg, "code_lookup", true, &format!("{} 字符", text.chars().count()), Some(&text));
                         Ok(ToolOutput::text(text))
                     }
                     Err(e) => {
-                        tools::record_tool_result(&cfg, "code_lookup", false, &e);
+                        tools::record_tool_result(&cfg, "code_lookup", false, &e, Some(&e));
                         Err(ToolExecutionError::other(format!("代码检索失败: {}", e))
                             .with_model_output(ToolOutput::text(format!("代码检索失败: {}", e))))
                     }

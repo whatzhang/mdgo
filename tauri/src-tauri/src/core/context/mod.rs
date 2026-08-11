@@ -22,6 +22,38 @@ use tokio_util::sync::CancellationToken;
 pub struct ChatTurn {
     pub role: String,
     pub content: String,
+    /// 助手消息携带的工具调用（仅 `role == "assistant"` 时可能有值）
+    pub tool_calls: Option<Vec<crate::core::ToolCallDto>>,
+    /// 工具结果消息关联的调用 ID（仅 `role == "tool"` 时可能有值）
+    pub tool_call_id: Option<String>,
+}
+
+impl ChatTurn {
+    /// 是否为工具结果消息（须与其配对的 assistant 工具调用同侧切分）
+    pub fn is_tool_message(&self) -> bool {
+        self.role == "tool"
+    }
+}
+
+/// 将历史按「工具调用单元」分组：一条 assistant（带 `tool_calls`）与其
+/// 紧随其后的连续 tool 结果消息同组，其余消息各自成组。
+///
+/// 压缩切分必须以单元为单位，否则会把 assistant 的 tool_call 与 tool 结果
+/// 切到不同侧，产生「孤儿 tool 消息」导致 OpenAI 协议拒绝请求。
+fn group_turns(history: &[ChatTurn]) -> Vec<Vec<ChatTurn>> {
+    let mut units: Vec<Vec<ChatTurn>> = Vec::new();
+    for turn in history {
+        if turn.is_tool_message() {
+            // 并入当前组（防御：若没有当前组（孤儿 tool 消息）则自成一组）
+            match units.last_mut() {
+                Some(last) => last.push(turn.clone()),
+                None => units.push(vec![turn.clone()]),
+            }
+        } else {
+            units.push(vec![turn.clone()]);
+        }
+    }
+    units
 }
 
 /// 压缩结果
@@ -78,7 +110,11 @@ impl ContextCompressor for SlidingWindowCompressor {
         budget: usize,
         _cancel: CancellationToken,
     ) -> CompressedHistory {
-        let total: usize = history.iter().map(|t| t.content.len()).sum();
+        let units = group_turns(history);
+        let total: usize = units
+            .iter()
+            .map(|u| u.iter().map(|t| t.content.len()).sum::<usize>())
+            .sum();
         if total <= budget {
             return CompressedHistory {
                 turns: history.to_vec(),
@@ -86,21 +122,22 @@ impl ContextCompressor for SlidingWindowCompressor {
                 strategy: "none",
             };
         }
-        let mut kept: Vec<ChatTurn> = Vec::new();
+        let mut kept_units: Vec<Vec<ChatTurn>> = Vec::new();
         let mut used = 0usize;
-        // 从后往前保留(最新消息优先)
-        for turn in history.iter().rev() {
-            let len = turn.content.len();
-            if !kept.is_empty() && used + len > budget {
+        // 从后往前按「工具调用单元」保留（最新优先，保证 tool_call 与 tool 结果成对）
+        for unit in units.iter().rev() {
+            let len = unit.iter().map(|t| t.content.len()).sum::<usize>();
+            if !kept_units.is_empty() && used + len > budget {
                 break;
             }
             used += len;
-            kept.push(turn.clone());
+            kept_units.push(unit.clone());
         }
-        kept.reverse();
+        kept_units.reverse();
+        let turns: Vec<ChatTurn> = kept_units.into_iter().flatten().collect();
         CompressedHistory {
-            dropped_chars: total - used,
-            turns: kept,
+            dropped_chars: total.saturating_sub(used),
+            turns,
             strategy: "sliding-window",
         }
     }
@@ -144,20 +181,23 @@ impl ContextCompressor for SummarizeThenWindowCompressor {
             };
         }
 
-        // 1. 最旧的 2/3 用于摘要,最近的 1/3 原样保留
-        let split = history.len() * 2 / 3;
-        if split == 0 {
+        // 1. 最旧的 2/3 用于摘要,最近的 1/3 原样保留；
+        //    切分按「工具调用单元」边界进行，避免切断 tool_call 与 tool 结果配对
+        let units = group_turns(history);
+        let split_idx = units.len() * 2 / 3;
+        if split_idx == 0 {
             // 历史过短无摘要价值,直接滑窗(避免空摘要空转)
             return SlidingWindowCompressor
                 .compress(history, budget, CancellationToken::new())
                 .await;
         }
-        let (old, recent) = history.split_at(split);
+        let old: Vec<ChatTurn> = units[..split_idx].iter().flatten().cloned().collect();
+        let recent: Vec<ChatTurn> = units[split_idx..].iter().flatten().cloned().collect();
 
         // 2. 摘要(取消信号透传;失败时降级为纯滑窗)
         let Some(summary) = self
             .summarizer
-            .summarize(old, self.max_summary_chars, cancel)
+            .summarize(&old, self.max_summary_chars, cancel)
             .await
         else {
             // 摘要已失败,滑窗无异步中断点,无需再携带取消信号
@@ -176,7 +216,7 @@ impl ContextCompressor for SummarizeThenWindowCompressor {
         let recent_budget = budget.saturating_sub(summary.len());
         // recent 滑窗为纯内存操作(无异步中断点),无需携带取消信号
         let recent_result = SlidingWindowCompressor
-            .compress(recent, recent_budget, CancellationToken::new())
+            .compress(&recent, recent_budget, CancellationToken::new())
             .await;
 
         // 4. 摘要作为 system 消息置于最近消息之前
@@ -184,6 +224,8 @@ impl ContextCompressor for SummarizeThenWindowCompressor {
         merged.push(ChatTurn {
             role: "system".into(),
             content: summary,
+            tool_calls: None,
+            tool_call_id: None,
         });
         merged.extend(recent_result.turns);
         let kept_chars: usize = merged.iter().map(|t| t.content.len()).sum();
@@ -203,7 +245,31 @@ mod tests {
         ChatTurn {
             role: role.to_string(),
             content: content.to_string(),
+            tool_calls: None,
+            tool_call_id: None,
         }
+    }
+
+    /// 构造一条 assistant 工具调用消息 + 一条配对 tool 结果消息
+    fn tool_pair(call_id: &str, call_content: &str, result: &str) -> Vec<ChatTurn> {
+        vec![
+            ChatTurn {
+                role: "assistant".into(),
+                content: call_content.into(),
+                tool_calls: Some(vec![crate::core::ToolCallDto {
+                    id: call_id.into(),
+                    name: "read".into(),
+                    arguments: "{}".into(),
+                }]),
+                tool_call_id: None,
+            },
+            ChatTurn {
+                role: "tool".into(),
+                content: result.into(),
+                tool_calls: None,
+                tool_call_id: Some(call_id.into()),
+            },
+        ]
     }
 
     fn long_history(n: usize, len: usize) -> Vec<ChatTurn> {
@@ -288,5 +354,51 @@ mod tests {
         assert_eq!(r.strategy, "sliding-window");
         let used: usize = r.turns.iter().map(|t| t.content.len()).sum();
         assert!(used <= 300);
+    }
+
+    #[tokio::test]
+    async fn sliding_window_keeps_tool_pairs_together() {
+        // 构造：旧文本消息 + 工具调用对（assistant + tool 结果），预算只够保留最新单元
+        let mut h = long_history(5, 50); // 5 条旧消息（ASCII x，bytes≈字符数）
+        h.extend(tool_pair("call_1", "", &"result text ".repeat(20))); // 工具对 240 bytes
+        // 预算 300（content.len() 以字节计）：旧消息被部分丢弃，但工具对必须完整保留
+        let r = SlidingWindowCompressor
+            .compress(&h, 300, CancellationToken::new())
+            .await;
+        assert_eq!(r.strategy, "sliding-window");
+        // 最新消息（tool 结果）必须保留
+        assert_eq!(r.turns.last(), h.last());
+        // 工具对必须完整保留（assistant + tool 成对，不能出现孤儿 tool 消息）
+        assert!(r.turns.iter().any(|t| t.role == "tool"));
+        assert_eq!(
+            r.turns
+                .iter()
+                .filter(|t| t.role == "tool")
+                .count(),
+            r.turns
+                .iter()
+                .filter(|t| t.tool_calls.as_ref().is_some_and(|c| !c.is_empty()))
+                .count(),
+            "tool 结果消息数量必须等于 assistant 工具调用数量（成对）"
+        );
+        let used: usize = r.turns.iter().map(|t| t.content.len()).sum();
+        assert!(used <= 300);
+    }
+
+    #[tokio::test]
+    async fn group_turns_keeps_orphan_tool_safe() {
+        // 防御：孤儿 tool 消息（无配对 assistant）不应 panic；
+        // 并入前一组（可能被一起保留/丢弃，但不会单独留下造成协议孤儿）
+        let mut h = long_history(2, 10);
+        h.push(ChatTurn {
+            role: "tool".into(),
+            content: "孤儿结果".into(),
+            tool_calls: None,
+            tool_call_id: Some("call_x".into()),
+        });
+        let groups = group_turns(&h);
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[1].len(), 2);
+        assert_eq!(groups[1][1].role, "tool");
     }
 }

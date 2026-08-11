@@ -13,10 +13,19 @@ use tokio_util::sync::CancellationToken;
 // ─── 公共类型 ───
 
 /// 对话消息
+///
+/// `role` 支持 `system` / `user` / `assistant` / `tool`：
+/// - `assistant` 可携带 `tool_calls`（模型发起的工具调用，回放时还原为 rig ToolCall 内容）
+/// - `tool` 是工具结果消息，`tool_call_id` 与对应 assistant 消息中的调用配对
+/// 旧数据/旧前端不携带这些字段（`#[serde(default)]`），行为保持向后兼容。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<crate::core::ToolCallDto>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
 }
 
 /// OpenAI 格式的使用量

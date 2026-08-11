@@ -52946,14 +52946,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const args = escapeHtml(String(p.args_preview || '').slice(0, 80));
                 card.innerHTML = `<span class="tool-name">${safeTool}</span>${skillBadge}<span class="tool-args">${args}</span><span class="tool-status">执行中…</span>`;
                 trace.appendChild(card);
-                // 记录到持久化列表（待 result 事件补全 ok/summary）
+                // 记录到持久化列表（待 result 事件补全 ok/summary/result）
                 _streamingToolCalls.push({
                     tool: String(p.tool),
+                    call_id: String(p.call_id || ''),
                     args_preview: String(p.args_preview || ''),
+                    args: String(p.arguments || ''),
                     skill_id: p.skill_id || null,
                     seq: Number(p.seq),
                     ok: null,
                     summary: '',
+                    result: '',
                 });
             } else {
                 // result 事件：按 call_seq 配对卡片并更新状态
@@ -52967,14 +52970,46 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         st.title = String(p.summary || '');
                     }
                 }
-                // 配对持久化记录并补全结果状态
+                // 配对持久化记录并补全结果状态（含完整结果文本，供历史回放）
                 const rec = _streamingToolCalls.find(r => r.seq === Number(p.call_seq));
                 if (rec) {
                     rec.ok = !!p.ok;
                     rec.summary = String(p.summary || '');
+                    if (typeof p.result === 'string' && p.result) {
+                        rec.result = p.result;
+                    }
                 }
             }
             if (div._scroll) div._scroll();
+        }
+
+        // 将内存中的对话消息展开为发送给后端的协议消息数组（工具历史回流）：
+        // assistant 消息的工具调用轨迹（toolCalls 记录数组）还原为
+        //   {role:'assistant', tool_calls:[{id,name,arguments}]}
+        // 并紧随其后的 {role:'tool', tool_call_id, content:结果} 结果消息，
+        // 使模型在后续轮次能看到自己此前调用过哪些工具、拿到什么结果。
+        // 老数据（无 call_id 或 result 的记录）降级为普通文本消息，行为不变。
+        function expandToolHistory(chatMsgs) {
+            const out = [];
+            for (const m of chatMsgs) {
+                const tools = (Array.isArray(m.toolCalls) ? m.toolCalls : []).filter(tc => tc && tc.call_id && tc.tool);
+                if (m.role === 'assistant' && tools.length > 0) {
+                    const protocolTools = tools.map(tc => ({
+                        id: String(tc.call_id),
+                        name: String(tc.tool),
+                        arguments: (typeof tc.args === 'string' && tc.args) ? tc.args : '{}',
+                    }));
+                    out.push({ role: 'assistant', content: m.content, tool_calls: protocolTools });
+                    for (const tc of tools) {
+                        if (typeof tc.result === 'string' && tc.result) {
+                            out.push({ role: 'tool', content: tc.result, tool_call_id: String(tc.call_id) });
+                        }
+                    }
+                } else {
+                    out.push({ role: m.role, content: m.content });
+                }
+            }
+            return out;
         }
 
         function showChatTyping() {
@@ -53309,7 +53344,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             ]);
 
             try {
-                let messages = chatMessages.map(m => ({ role: m.role, content: m.content }));
+                let messages = expandToolHistory(chatMessages);
                 messages = trimChatHistory(messages);
                 // 发送前使用裁剪后的消息估算 token，展示实际发送给 LLM 的上下文占比
                 const estTokens = estimateMessagesTokens(messages);
@@ -54083,7 +54118,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             ]);
 
             try {
-                const histMessages = trimChatHistory(chatMessages.map(m => ({ role: m.role, content: m.content })), 0.4);
+                const histMessages = trimChatHistory(expandToolHistory(chatMessages), 0.4);
                 // 发送前使用裁剪后的消息估算 token，展示实际发送给 LLM 的上下文占比
                 const estTokens = estimateMessagesTokens(histMessages);
                 if (estTokens > 0) {

@@ -27,12 +27,19 @@ pub struct ToolCallEvent {
     pub seq: u64,
     pub kind: String,
     pub tool: String,
+    /// 工具调用 ID（`call_*`）：call 事件生成，result 事件继承，
+    /// 供会话历史回放时与 tool 结果消息的 `tool_call_id` 配对
+    pub call_id: String,
     /// 调用时的参数摘要（模型视角）
     pub args_preview: String,
+    /// 完整参数 JSON 字符串（模型原始产出，历史回放用）
+    pub arguments: String,
     /// 结果是否成功
     pub ok: bool,
     /// 结果摘要（成功为返回规模，失败为错误信息）
     pub summary: String,
+    /// 完整结果文本（截断到上限，历史回放用）
+    pub result: String,
     /// 关联的 call 事件 seq（result 事件用它找到对应卡片）
     pub call_seq: u64,
     /// 触发该工具调用的技能 ID（格式：scope:skill_id），用于前端显示技能来源
@@ -61,7 +68,15 @@ impl ToolCallBus {
         }
     }
 
-    fn record_call(&self, request_id: &str, tool: &str, args_preview: &str, skill_id: Option<&str>) {
+    fn record_call(
+        &self,
+        request_id: &str,
+        tool: &str,
+        call_id: &str,
+        args_preview: &str,
+        arguments: &str,
+        skill_id: Option<&str>,
+    ) {
         let seq = self.seq.fetch_add(1, Ordering::Relaxed);
         if let Ok(mut map) = self.map.lock() {
             // 容量治理：超过上限清空（对齐 bridge 的 MAX_PENDING 治理思想）
@@ -72,16 +87,26 @@ impl ToolCallBus {
                 seq,
                 kind: "call".into(),
                 tool: tool.into(),
+                call_id: call_id.into(),
                 args_preview: args_preview.into(),
+                arguments: arguments.into(),
                 ok: false,
                 summary: String::new(),
+                result: String::new(),
                 call_seq: 0,
                 skill_id: skill_id.map(|s| s.to_string()),
             });
         }
     }
 
-    fn record_result(&self, request_id: &str, tool: &str, ok: bool, summary: &str) {
+    fn record_result(
+        &self,
+        request_id: &str,
+        tool: &str,
+        ok: bool,
+        summary: &str,
+        result: &str,
+    ) {
         let seq = self.seq.fetch_add(1, Ordering::Relaxed);
         if let Ok(mut map) = self.map.lock() {
             // 容量治理：超过上限清空（轨迹是辅助展示，丢失无害）
@@ -100,18 +125,22 @@ impl ToolCallBus {
                 .find(|e| e.kind == "call" && e.tool == tool && referenced.insert(e.seq))
                 .map(|e| e.seq)
                 .unwrap_or(seq);
-            // 从配对的 call 事件中继承 skill_id
-            let skill_id = events
+            // 从配对的 call 事件继承 skill_id 与 call_id
+            let (skill_id, call_id) = events
                 .iter()
                 .find(|e| e.seq == call_seq && e.kind == "call")
-                .and_then(|e| e.skill_id.clone());
+                .map(|e| (e.skill_id.clone(), e.call_id.clone()))
+                .unwrap_or((None, String::new()));
             events.push(ToolCallEvent {
                 seq,
                 kind: "result".into(),
                 tool: tool.into(),
+                call_id,
                 args_preview: String::new(),
+                arguments: String::new(),
                 ok,
                 summary: summary.into(),
+                result: result.into(),
                 call_seq,
                 skill_id,
             });
@@ -167,7 +196,14 @@ pub fn tool_call_bus() -> &'static ToolCallBus {
 ///
 /// 技能来源 `skill_id` 动态解析：优先取「已激活技能中声明了该工具」的技能，
 /// 同时覆盖预激活与 LLM 激活两条路径；无声明时回退到预激活主技能（`cfg.skill_id`）。
-pub fn record_tool_call(cfg: &KbSearchConfig, tool: &str, args_preview: &str) {
+/// `args` 为模型原始参数（JSON），完整序列化用于会话历史回放；
+/// 调用 ID 在本处生成（`call_{uuid}`），结果事件按 call_seq 配对继承。
+pub fn record_tool_call(
+    cfg: &KbSearchConfig,
+    tool: &str,
+    args_preview: &str,
+    args: Option<&serde_json::Value>,
+) {
     let skill_id = cfg
         .skill_state
         .activated()
@@ -175,12 +211,28 @@ pub fn record_tool_call(cfg: &KbSearchConfig, tool: &str, args_preview: &str) {
         .find(|s| s.tools.iter().any(|t| t == tool))
         .map(|s| format!("{}:{}", s.scope.as_str(), s.id))
         .or_else(|| cfg.skill_id.clone());
-    tool_call_bus().record_call(&cfg.request_id, tool, args_preview, skill_id.as_deref());
+    let call_id = format!("call_{}", uuid::Uuid::new_v4());
+    let arguments = args
+        .map(|a| a.to_string())
+        .unwrap_or_default();
+    tool_call_bus().record_call(
+        &cfg.request_id,
+        tool,
+        &call_id,
+        args_preview,
+        &arguments,
+        skill_id.as_deref(),
+    );
 }
 
 /// 记录工具调用结果（供命令层转发 `agent:tool_result`）。
-pub fn record_tool_result(cfg: &KbSearchConfig, tool: &str, ok: bool, summary: &str) {
-    tool_call_bus().record_result(&cfg.request_id, tool, ok, summary);
+///
+/// `result` 为完整结果文本（成功为工具输出，失败为错误信息），
+/// 截断到上限后存入事件，供会话历史回放为 tool 结果消息。
+pub fn record_tool_result(cfg: &KbSearchConfig, tool: &str, ok: bool, summary: &str, result: Option<&str>) {
+    const MAX_RESULT_CHARS: usize = 12_000;
+    let result = result.map(|r| truncate(r, MAX_RESULT_CHARS)).unwrap_or_default();
+    tool_call_bus().record_result(&cfg.request_id, tool, ok, summary, &result);
 }
 
 // ─────────────────────────── 文件读取工具 ───────────────────────────
@@ -1122,7 +1174,7 @@ pub fn build_grep_tool(cfg: KbSearchConfig) -> DynamicTool {
                 if list_only {
                     preview.push_str(" list_only");
                 }
-                record_tool_call(&cfg, "grep", &preview);
+                record_tool_call(&cfg, "grep", &preview, Some(&args));
                 match grep_files(
                     &cfg,
                     &pattern,
@@ -1136,11 +1188,11 @@ pub fn build_grep_tool(cfg: KbSearchConfig) -> DynamicTool {
                 .await
                 {
                     Ok(text) => {
-                        record_tool_result(&cfg, "grep", true, &format!("{} 字符", text.chars().count()));
+                        record_tool_result(&cfg, "grep", true, &format!("{} 字符", text.chars().count()), Some(&text));
                         Ok(ToolOutput::text(text))
                     }
                     Err(e) => {
-                        record_tool_result(&cfg, "grep", false, &e);
+                        record_tool_result(&cfg, "grep", false, &e, Some(&e));
                         Err(tool_error("grep", &e))
                     }
                 }
@@ -1415,14 +1467,14 @@ pub fn build_read_tool(cfg: KbSearchConfig) -> DynamicTool {
                 } else {
                     format!("{rel} (offset={offset})")
                 };
-                record_tool_call(&cfg, "read", &args_preview);
+                record_tool_call(&cfg, "read", &args_preview, Some(&args));
                 match read(&cfg, &rel, offset).await {
                     Ok(text) => {
-                        record_tool_result(&cfg, "read", true, &format!("{} 字符", text.chars().count()));
+                        record_tool_result(&cfg, "read", true, &format!("{} 字符", text.chars().count()), Some(&text));
                         Ok(ToolOutput::text(text))
                     }
                     Err(e) => {
-                        record_tool_result(&cfg, "read", false, &e);
+                        record_tool_result(&cfg, "read", false, &e, Some(&e));
                         Err(tool_error("read", &e))
                     }
                 }
@@ -1482,14 +1534,14 @@ pub fn build_edit_tool(cfg: KbSearchConfig) -> DynamicTool {
                     truncate(&old_string, 40),
                     truncate(&new_string, 40)
                 );
-                record_tool_call(&cfg, "edit", &preview);
+                record_tool_call(&cfg, "edit", &preview, Some(&args));
                 match edit_file(&cfg, &rel, &old_string, &new_string).await {
                     Ok(text) => {
-                        record_tool_result(&cfg, "edit", true, &text);
+                        record_tool_result(&cfg, "edit", true, &text, Some(&text));
                         Ok(ToolOutput::text(text))
                     }
                     Err(e) => {
-                        record_tool_result(&cfg, "edit", false, &e);
+                        record_tool_result(&cfg, "edit", false, &e, Some(&e));
                         Err(tool_error("edit", &e))
                     }
                 }
@@ -1525,14 +1577,14 @@ pub fn build_delete_tool(cfg: KbSearchConfig) -> DynamicTool {
                 if rel.is_empty() {
                     return Err(tool_error("delete", "rel_path 为空"));
                 }
-                record_tool_call(&cfg, "delete", &rel);
+                record_tool_call(&cfg, "delete", &rel, Some(&args));
                 match delete_file(&cfg, &rel).await {
                     Ok(text) => {
-                        record_tool_result(&cfg, "delete", true, &text);
+                        record_tool_result(&cfg, "delete", true, &text, Some(&text));
                         Ok(ToolOutput::text(text))
                     }
                     Err(e) => {
-                        record_tool_result(&cfg, "delete", false, &e);
+                        record_tool_result(&cfg, "delete", false, &e, Some(&e));
                         Err(tool_error("delete", &e))
                     }
                 }
@@ -1575,14 +1627,14 @@ pub fn build_list_files_tool(cfg: KbSearchConfig) -> DynamicTool {
                     .map(|v| v as u32)
                     .unwrap_or(30);
                 let preview = if pattern.is_empty() { "全部".to_string() } else { pattern.clone() };
-                record_tool_call(&cfg, "list_files", &preview);
+                record_tool_call(&cfg, "list_files", &preview, Some(&args));
                 match list_files(&cfg, &pattern, max_items).await {
                     Ok(text) => {
-                        record_tool_result(&cfg, "list_files", true, &format!("{} 项", text.lines().count().saturating_sub(1)));
+                        record_tool_result(&cfg, "list_files", true, &format!("{} 项", text.lines().count().saturating_sub(1)), Some(&text));
                         Ok(ToolOutput::text(text))
                     }
                     Err(e) => {
-                        record_tool_result(&cfg, "list_files", false, &e);
+                        record_tool_result(&cfg, "list_files", false, &e, Some(&e));
                         Err(tool_error("list_files", &e))
                     }
                 }
@@ -1604,14 +1656,14 @@ pub fn build_git_status_tool(cfg: KbSearchConfig) -> DynamicTool {
         move |_ctx: &mut ToolContext, _args: serde_json::Value| {
             let cfg = cfg.clone();
             Box::pin(async move {
-                record_tool_call(&cfg, "git_status", "");
+                record_tool_call(&cfg, "git_status", "", None);
                 match git_status(&cfg).await {
                     Ok(text) => {
-                        record_tool_result(&cfg, "git_status", true, &format!("{} 行", text.lines().count()));
+                        record_tool_result(&cfg, "git_status", true, &format!("{} 行", text.lines().count()), Some(&text));
                         Ok(ToolOutput::text(text))
                     }
                     Err(e) => {
-                        record_tool_result(&cfg, "git_status", false, &e);
+                        record_tool_result(&cfg, "git_status", false, &e, Some(&e));
                         Err(tool_error("git_status", &e))
                     }
                 }
@@ -1658,15 +1710,15 @@ fn build_bridge_tool(
                     .map(|a| a.trim().to_string())
                     .unwrap_or(default_action);
                 let preview = truncate(&serde_json::to_string(&args).unwrap_or_default(), 120);
-                record_tool_call(&cfg, &tool, &preview);
+                record_tool_call(&cfg, &tool, &preview, Some(&args));
                 let app_handle = cfg.app_handle.clone();
                 match crate::core::bridge::request(&app_handle, &tool, &action, args).await {
                     Ok(text) => {
-                        record_tool_result(&cfg, &tool, true, &truncate(&text, 200));
+                        record_tool_result(&cfg, &tool, true, &truncate(&text, 200), Some(&text));
                         Ok(ToolOutput::text(text))
                     }
                     Err(e) => {
-                        record_tool_result(&cfg, &tool, false, &truncate(&e, 200));
+                        record_tool_result(&cfg, &tool, false, &truncate(&e, 200), Some(&e));
                         Err(tool_error(&tool, &e))
                     }
                 }
@@ -2001,12 +2053,12 @@ pub fn build_read_subagent_result_tool(cfg: KbSearchConfig) -> DynamicTool {
                         .map(|v| v as usize)
                         .unwrap_or(8192)
                         .clamp(1, 60_000);
-                    record_tool_call(&cfg, "read_subagent_result", &format!("{id} (offset={offset})"));
+                    record_tool_call(&cfg, "read_subagent_result", &format!("{id} (offset={offset})"), Some(&args));
                     let state = cfg.app_handle.state::<crate::AppState>();
                     let full = match state.subagent_results.get(&id) {
                         Some(text) => text,
                         None => {
-                            record_tool_result(&cfg, "read_subagent_result", false, "subagent_id 不存在或已过期");
+                            record_tool_result(&cfg, "read_subagent_result", false, "subagent_id 不存在或已过期", None);
                             return Err(tool_error(
                                 "read_subagent_result",
                                 &format!("subagent_id 不存在或已过期: {id}"),
@@ -2020,6 +2072,7 @@ pub fn build_read_subagent_result_tool(cfg: KbSearchConfig) -> DynamicTool {
                             "read_subagent_result",
                             true,
                             &format!("已达末尾 {total} 字符"),
+                            None,
                         );
                         return Ok(ToolOutput::text(format!(
                             "(已读取到末尾：该调研共 {total} 字符，offset={offset} 已超出)"
@@ -2032,6 +2085,7 @@ pub fn build_read_subagent_result_tool(cfg: KbSearchConfig) -> DynamicTool {
                         "read_subagent_result",
                         true,
                         &format!("{next_offset}/{total} 字符"),
+                        Some(&slice),
                     );
                     let mut out = slice;
                     if next_offset < total {
@@ -2074,6 +2128,7 @@ async fn run_deep_research(
         &cfg,
         "deep_research",
         &format!("task_len={} max_turns={}", task.len(), max_turns),
+        Some(args),
     );
 
     // 从 AppState 取 LLM 配置并构建客户端（复用命令层同款缓存工厂）
@@ -2089,7 +2144,7 @@ async fn run_deep_research(
     {
         Ok(client) => client,
         Err(e) => {
-            record_tool_result(&cfg, "deep_research", false, &format!("LLM 构建失败: {e}"));
+            record_tool_result(&cfg, "deep_research", false, &format!("LLM 构建失败: {e}"), Some(&e));
             return Err(tool_error("deep_research", &format!("LLM 未配置或构建失败: {e}")));
         }
     };
@@ -2131,6 +2186,7 @@ async fn run_deep_research(
         "deep_research",
         !outcome.failed,
         &format!("{} 字符摘要", outcome.summary.chars().count()),
+        Some(&out),
     );
     Ok(ToolOutput::text(out))
 }

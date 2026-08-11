@@ -5,8 +5,10 @@ use std::sync::Arc;
 use futures::StreamExt;
 use rig_agent::agent::MultiTurnStreamItem;
 use rig_agent::streaming::StreamingChat;
-use rig_core::completion::Message;
+use rig_core::completion::message::{ToolCall, ToolFunction};
+use rig_core::completion::{AssistantContent, Message};
 use rig_core::streaming::StreamedAssistantContent;
+use rig_core::OneOrMany;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Mutex;
@@ -144,6 +146,8 @@ async fn prepare_history(
         .map(|m| ChatTurn {
             role: m.role.clone(),
             content: m.content.clone(),
+            tool_calls: m.tool_calls.clone(),
+            tool_call_id: m.tool_call_id.clone(),
         })
         .collect();
     compressor.compress(&turns, MAX_MESSAGE_CHARS, cancel).await
@@ -155,7 +159,36 @@ fn chat_turns_to_history(turns: &[ChatTurn]) -> Vec<Message> {
         .iter()
         .map(|t| match t.role.as_str() {
             "system" => Message::system(&t.content),
-            "assistant" => Message::assistant(&t.content),
+            "assistant" => {
+                let has_tools = t.tool_calls.as_ref().is_some_and(|c| !c.is_empty());
+                if !has_tools {
+                    return Message::assistant(&t.content);
+                }
+                let mut contents: Vec<AssistantContent> = Vec::new();
+                if !t.content.is_empty() {
+                    contents.push(AssistantContent::text(&t.content));
+                }
+                for tc in t.tool_calls.iter().flatten() {
+                    // 参数为模型原始 JSON 字符串：解析失败时降级为空对象（防御，不阻断请求）
+                    let args = serde_json::from_str(&tc.arguments)
+                        .unwrap_or_else(|_| serde_json::Value::Object(Default::default()));
+                    contents.push(AssistantContent::ToolCall(ToolCall::new(
+                        tc.id.clone(),
+                        ToolFunction::new(tc.name.clone(), args),
+                    )));
+                }
+                Message::Assistant {
+                    id: None,
+                    // has_tools 已保证 contents 非空（至少一个 ToolCall），expect 安全
+                    content: OneOrMany::many(contents)
+                        .expect("assistant tool_calls 非空时 contents 至少含一个 ToolCall"),
+                }
+            }
+            "tool" => Message::tool_result_with_call_id(
+                t.tool_call_id.clone().unwrap_or_default(),
+                t.tool_call_id.clone(),
+                &t.content,
+            ),
             _ => Message::user(&t.content),
         })
         .collect()
