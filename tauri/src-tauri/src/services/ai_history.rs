@@ -100,6 +100,10 @@ impl AiHistoryStore {
         // 启用 WAL 模式，支持多连接并发读写（与 ChatStore 共享同一文件）
         conn.execute_batch("PRAGMA journal_mode=WAL;")
             .map_err(|e| format!("启用 WAL 模式失败: {}", e))?;
+        // O4：WAL 推荐 synchronous=NORMAL（提交不 fsync，仅 checkpoint 同步）——
+        // 消除 Windows 单事务 FULL 同步高延迟（实测 save_message avg 46ms）
+        conn.execute_batch("PRAGMA synchronous=NORMAL;")
+            .map_err(|e| format!("设置 synchronous=NORMAL 失败: {}", e))?;
         // WAL 下写写互斥；必须设置忙等待，否则并发写直接 SQLITE_BUSY
         conn.execute_batch("PRAGMA busy_timeout=5000;")
             .map_err(|e| format!("设置 busy_timeout 失败: {}", e))?;

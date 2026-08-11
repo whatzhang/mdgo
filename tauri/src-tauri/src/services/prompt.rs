@@ -59,6 +59,9 @@ impl PromptStore {
             .map_err(|e| format!("打开 prompt 数据库失败: {}", e))?;
         conn.execute_batch("PRAGMA journal_mode=WAL;")
             .map_err(|e| format!("启用 WAL 模式失败: {}", e))?;
+        // O4：WAL 推荐 synchronous=NORMAL（提交不 fsync，仅 checkpoint 同步）
+        conn.execute_batch("PRAGMA synchronous=NORMAL;")
+            .map_err(|e| format!("设置 synchronous=NORMAL 失败: {}", e))?;
         Self::init_tables(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
