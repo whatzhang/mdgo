@@ -34,6 +34,12 @@ pub struct LlmConfig {
     pub endpoint: String,
     pub model: String,
     pub api_key: String,
+    /// 规划用小模型（P0-6：可选；None = 主模型）
+    pub planner_model: Option<String>,
+    /// 摘要用小模型（P0-6：可选；None = 主模型）
+    pub summary_model: Option<String>,
+    /// 推理努力等级（P2-18：可选；low/medium/high，透传 additional_params）
+    pub reasoning_effort: Option<String>,
 }
 
 impl Default for LlmConfig {
@@ -42,6 +48,31 @@ impl Default for LlmConfig {
             endpoint: String::new(),
             model: String::new(),
             api_key: String::new(),
+            planner_model: None,
+            summary_model: None,
+            reasoning_effort: None,
+        }
+    }
+}
+
+/// 模型角色（P0-6 路由：规划/摘要用轻量模型、生成用主模型）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelRole {
+    /// 主生成模型（`cfg.model`）
+    Main,
+    /// 规划模型（`cfg.planner_model`；None 时回退 Main）
+    Planner,
+    /// 摘要模型（`cfg.summary_model`；None 时回退 Main）
+    Summary,
+}
+
+impl LlmConfig {
+    /// 按角色解析模型名（缺省回退主模型）
+    pub fn model_for_role(&self, role: ModelRole) -> &str {
+        match role {
+            ModelRole::Main => &self.model,
+            ModelRole::Planner => self.planner_model.as_deref().unwrap_or(&self.model),
+            ModelRole::Summary => self.summary_model.as_deref().unwrap_or(&self.model),
         }
     }
 }
@@ -57,8 +88,10 @@ pub struct AppState {
     pub ai_history_stores: Mutex<HashMap<String, Arc<services::ai_history::AiHistoryStore>>>,
     /// LLM 连接配置（中央化，由前端保存后通过 kb_update_llm_config 更新）
     pub llm_config: RwLock<LlmConfig>,
-    /// LLM 客户端缓存（按配置指纹复用 reqwest 连接池；配置变化后自动重建）
-    pub llm_client_cache: tokio::sync::Mutex<Option<(String, services::llm::LLMClient)>>,
+    /// LLM 客户端缓存（按「endpoint|model|api_key|reasoning_effort」指纹复用；
+    /// 配置变化后自动重建，多模型各占一项）
+    pub llm_client_cache:
+        tokio::sync::Mutex<std::collections::HashMap<String, services::llm::LLMClient>>,
     /// Skill 注册表（内存读写分离 + DB 缓存同步）
     pub skill_registry: Arc<SkillRegistry>,
     
@@ -88,19 +121,45 @@ impl AppState {
         model: &str,
         api_key: &str,
     ) -> Result<services::llm::LLMClient, String> {
-        let fingerprint = format!("{}|{}|{}", endpoint, model, api_key);
+        self.llm_client_for_cfg(endpoint, model, api_key, None).await
+    }
+
+    /// 按模型角色路由客户端（P0-6）：规划/摘要可用独立轻量模型，缺省回退主模型；
+    /// reasoning_effort（P2-18）作为客户端属性参与指纹缓存。
+    pub async fn llm_client_for_role(
+        &self,
+        cfg: &LlmConfig,
+        role: ModelRole,
+    ) -> Result<services::llm::LLMClient, String> {
+        let model = cfg.model_for_role(role).to_string();
+        self.llm_client_for_cfg(&cfg.endpoint, &model, &cfg.api_key, cfg.reasoning_effort.as_deref())
+            .await
+    }
+
+    async fn llm_client_for_cfg(
+        &self,
+        endpoint: &str,
+        model: &str,
+        api_key: &str,
+        reasoning_effort: Option<&str>,
+    ) -> Result<services::llm::LLMClient, String> {
+        let fingerprint = format!("{}|{}|{}|{}", endpoint, model, api_key, reasoning_effort.unwrap_or(""));
         let mut cache = self.llm_client_cache.lock().await;
-        if let Some((fp, client)) = cache.as_ref() {
-            if fp == &fingerprint {
-                return Ok(client.clone());
-            }
+        if let Some(client) = cache.get(&fingerprint) {
+            return Ok(client.clone());
         }
         let client = services::llm::LLMClient::new(
             endpoint.to_string(),
             model.to_string(),
             api_key.to_string(),
+            reasoning_effort.map(|s| s.to_string()),
         )?;
-        *cache = Some((fingerprint, client.clone()));
+        // 容量治理：多模型缓存最多保留 8 项（超出清空，客户端重建成本低）
+        const MAX_CACHED_CLIENTS: usize = 8;
+        if cache.len() >= MAX_CACHED_CLIENTS {
+            cache.clear();
+        }
+        cache.insert(fingerprint, client.clone());
         Ok(client)
     }
 
@@ -250,7 +309,7 @@ pub fn run() {
                 chat_stores: Mutex::new(HashMap::new()),
                 ai_history_stores: Mutex::new(HashMap::new()),
                 llm_config: RwLock::new(LlmConfig::default()),
-                llm_client_cache: tokio::sync::Mutex::new(None),
+                llm_client_cache: tokio::sync::Mutex::new(std::collections::HashMap::new()),
                 skill_registry,
                 skill_metrics,
                 approval_gate: Some(approval_gate),

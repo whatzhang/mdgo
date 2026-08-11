@@ -17189,6 +17189,9 @@
         let LOCAL_LLM_ENDPOINT = 'http://192.168.31.152:12345/v1/chat/completions';
         let LOCAL_LLM_TOKEN = 'c17f18e31adb10978d3a9cd0d6743d30a067af602a8789e7';
         let LOCAL_LLM_MODEL = 'gemma-4-e4b-it';
+        let LOCAL_LLM_PLANNER_MODEL = '';   // P0-6：规划用小模型（可选，空 = 主模型）
+        let LOCAL_LLM_SUMMARY_MODEL = '';   // P0-6：摘要用小模型（可选，空 = 主模型）
+        let LOCAL_LLM_REASONING_EFFORT = ''; // P2-18：推理努力等级（可选：low/medium/high）
         let LOCAL_LLM_CONTEXT_LENGTH = 10000;
         let LOCAL_LLM_MAX_TOKENS = 4096;
         /** 对话历史预算占 context 的比例（剩余留给 system prompt / RAG context） */
@@ -50359,6 +50362,18 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                     <input class="setting-text" id="${inputId('llmModel')}" value="${escapeHtml(LOCAL_LLM_MODEL)}">
                                 </div>
                                 <div class="setting-row">
+                                    <label>规划模型（可选）</label>
+                                    <input class="setting-text" id="${inputId('llmPlannerModel')}" value="${escapeHtml(LOCAL_LLM_PLANNER_MODEL)}" placeholder="留空使用主模型">
+                                </div>
+                                <div class="setting-row">
+                                    <label>摘要模型（可选）</label>
+                                    <input class="setting-text" id="${inputId('llmSummaryModel')}" value="${escapeHtml(LOCAL_LLM_SUMMARY_MODEL)}" placeholder="留空使用主模型">
+                                </div>
+                                <div class="setting-row">
+                                    <label>推理努力等级（可选）</label>
+                                    <input class="setting-text" id="${inputId('llmReasoningEffort')}" value="${escapeHtml(LOCAL_LLM_REASONING_EFFORT)}" placeholder="low / medium / high，留空不设置">
+                                </div>
+                                <div class="setting-row">
                                     <label>上下文长度</label>
                                     <input class="setting-number" id="${inputId('llmContext')}" type="number" min="1000" max="100000" step="1000" value="${LOCAL_LLM_CONTEXT_LENGTH}">
                                 </div>
@@ -50570,6 +50585,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     LOCAL_LLM_ENDPOINT = normalizeLlmEndpoint(llmEndpointVal);
                     LOCAL_LLM_TOKEN = document.getElementById(inputId('llmToken')).value.trim();
                     LOCAL_LLM_MODEL = document.getElementById(inputId('llmModel')).value.trim();
+                    LOCAL_LLM_PLANNER_MODEL = document.getElementById(inputId('llmPlannerModel'))?.value.trim() || '';
+                    LOCAL_LLM_SUMMARY_MODEL = document.getElementById(inputId('llmSummaryModel'))?.value.trim() || '';
+                    LOCAL_LLM_REASONING_EFFORT = document.getElementById(inputId('llmReasoningEffort'))?.value.trim() || '';
                     LOCAL_LLM_CONTEXT_LENGTH = contextLength;
                     const maxTokensVal = document.getElementById(inputId('llmMaxTokens')).value.trim();
                     LOCAL_LLM_MAX_TOKENS = parseInt(maxTokensVal, 10) || 4096;
@@ -50584,6 +50602,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         localLlmEndpoint: LOCAL_LLM_ENDPOINT,
                         localLlmToken: LOCAL_LLM_TOKEN,
                         localLlmModel: LOCAL_LLM_MODEL,
+                        localLlmPlannerModel: LOCAL_LLM_PLANNER_MODEL,
+                        localLlmSummaryModel: LOCAL_LLM_SUMMARY_MODEL,
+                        localLlmReasoningEffort: LOCAL_LLM_REASONING_EFFORT,
                         localLlmContextLength: LOCAL_LLM_CONTEXT_LENGTH,
                         localLlmMaxTokens: LOCAL_LLM_MAX_TOKENS,
                         dirBlacklist: DIR_BLACKLIST,
@@ -50600,6 +50621,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             endpoint: LOCAL_LLM_ENDPOINT,
                             model: LOCAL_LLM_MODEL,
                             apiKey: LOCAL_LLM_TOKEN,
+                            plannerModel: LOCAL_LLM_PLANNER_MODEL || null,
+                            summaryModel: LOCAL_LLM_SUMMARY_MODEL || null,
+                            reasoningEffort: LOCAL_LLM_REASONING_EFFORT || null,
                         }).catch(e => console.warn('同步 LLM 配置到后端失败:', e));
                     }
                     await closeModal(true);
@@ -50647,6 +50671,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 LOCAL_LLM_ENDPOINT = normalizeLlmEndpoint(setting.localLlmEndpoint);
                 LOCAL_LLM_TOKEN = setting.localLlmToken;
                 LOCAL_LLM_MODEL = setting.localLlmModel;
+                LOCAL_LLM_PLANNER_MODEL = setting.localLlmPlannerModel || '';
+                LOCAL_LLM_SUMMARY_MODEL = setting.localLlmSummaryModel || '';
+                LOCAL_LLM_REASONING_EFFORT = setting.localLlmReasoningEffort || '';
                 LOCAL_LLM_CONTEXT_LENGTH = setting.localLlmContextLength;
                 LOCAL_LLM_MAX_TOKENS = setting.localLlmMaxTokens || 4096;
                 DIR_BLACKLIST = setting.dirBlacklist;
@@ -50678,6 +50705,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 localLlmEndpoint: LOCAL_LLM_ENDPOINT,
                 localLlmToken: LOCAL_LLM_TOKEN,
                 localLlmModel: LOCAL_LLM_MODEL,
+                localLlmPlannerModel: LOCAL_LLM_PLANNER_MODEL,
+                localLlmSummaryModel: LOCAL_LLM_SUMMARY_MODEL,
+                localLlmReasoningEffort: LOCAL_LLM_REASONING_EFFORT,
                 localLlmContextLength: LOCAL_LLM_CONTEXT_LENGTH,
                 localLlmMaxTokens: LOCAL_LLM_MAX_TOKENS,
                 dirBlacklist: DIR_BLACKLIST,
@@ -50694,6 +50724,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     endpoint: LOCAL_LLM_ENDPOINT,
                     model: LOCAL_LLM_MODEL,
                     apiKey: LOCAL_LLM_TOKEN,
+                    plannerModel: LOCAL_LLM_PLANNER_MODEL || null,
+                    summaryModel: LOCAL_LLM_SUMMARY_MODEL || null,
+                    reasoningEffort: LOCAL_LLM_REASONING_EFFORT || null,
                 }).catch(e => console.warn('同步 LLM 配置到后端失败:', e));
             }
         }

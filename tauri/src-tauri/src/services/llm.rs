@@ -182,12 +182,19 @@ pub struct LLMClient {
     /// 归一化后的 base_url（不含 /chat/completions 后缀）
     endpoint: String,
     model: String,
+    /// 推理努力等级（P2-18：low/medium/high，透传 additional_params）
+    reasoning_effort: Option<String>,
     completion_model: openai::CompletionModel,
 }
 
 impl LLMClient {
     /// 构建客户端。配置非法（如 api_key 含非法 HTTP 头字符）时返回 Err。
-    pub fn new(endpoint: String, model: String, api_key: String) -> Result<Self, String> {
+    pub fn new(
+        endpoint: String,
+        model: String,
+        api_key: String,
+        reasoning_effort: Option<String>,
+    ) -> Result<Self, String> {
         let base_url = normalize_base_url(&endpoint);
 
         // 注入带超时的 http client：rig_core 对 reqwest::Client 直接实现了
@@ -212,8 +219,26 @@ impl LLMClient {
         Ok(Self {
             endpoint: base_url,
             model,
+            reasoning_effort,
             completion_model,
         })
+    }
+
+    /// 向补全请求注入通用参数（P2-18：reasoning_effort 透传 additional_params）。
+    ///
+    /// 非流式调用点（查询扩展/规划/摘要/评审）构造 `CompletionRequest` 后统一调用。
+    fn apply_common_params(&self, mut request: CompletionRequest) -> CompletionRequest {
+        if let Some(effort) = &self.reasoning_effort {
+            let effort = effort.trim().to_lowercase();
+            if !effort.is_empty() {
+                let mut params = request.additional_params.take().unwrap_or_else(|| serde_json::json!({}));
+                if let Some(obj) = params.as_object_mut() {
+                    obj.insert("reasoning_effort".into(), serde_json::Value::String(effort));
+                    request.additional_params = Some(params);
+                }
+            }
+        }
+        request
     }
 
     /// 快速判断配置是否有效
@@ -315,6 +340,7 @@ impl LLMClient {
             output_schema: None,
             record_telemetry_content: false,
         };
+        let request = self.apply_common_params(request);
 
         log::debug!("[llm] [输入语义扩展] input: query='{}' history_count={} ", text, history.len());
 
@@ -479,6 +505,7 @@ impl LLMClient {
             output_schema: None,
             record_telemetry_content: false,
         };
+        let request = self.apply_common_params(request);
 
         log::debug!("[llm] [任务规划] input: query_len={} history_count={}", query.len(), history.len());
 
@@ -596,6 +623,7 @@ impl crate::core::context::HistorySummarizer for LLMClient {
             output_schema: None,
             record_telemetry_content: false,
         };
+        let request = self.apply_common_params(request);
 
         let result = self.completion_with_retry(request, cancel.clone()).await;
 
@@ -658,6 +686,7 @@ impl LLMClient {
             output_schema: None,
             record_telemetry_content: false,
         };
+        let request = self.apply_common_params(request);
         let result = self.completion_with_retry(request, cancel).await.ok()?;
         let mut full = String::new();
         for item in result.choice.iter() {

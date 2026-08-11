@@ -70,13 +70,28 @@ pub async fn kb_update_llm_config(
     endpoint: String,
     model: String,
     api_key: String,
+    // 规划模型（P0-6，可选；空串 = 使用主模型）
+    planner_model: Option<String>,
+    // 摘要模型（P0-6，可选；空串 = 使用主模型）
+    summary_model: Option<String>,
+    // 推理努力等级（P2-18，可选；low/medium/high，空串 = 不设置）
+    reasoning_effort: Option<String>,
 ) -> Result<(), String> {
+    // 归一化：空串视为 None（前端可能传空字符串）
+    let normalize = |s: Option<String>| s.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+    let planner_model = normalize(planner_model);
+    let summary_model = normalize(summary_model);
+    let reasoning_effort = normalize(reasoning_effort);
+
     // 1. 更新内存配置
     {
         let mut cfg = state.llm_config.write().unwrap_or_else(|e| e.into_inner());
         cfg.endpoint = endpoint.clone();
         cfg.model = model.clone();
         cfg.api_key = api_key.clone();
+        cfg.planner_model = planner_model.clone();
+        cfg.summary_model = summary_model.clone();
+        cfg.reasoning_effort = reasoning_effort.clone();
     }
 
     // 2. 持久化到 .mdgo/setting.json
@@ -94,6 +109,18 @@ pub async fn kb_update_llm_config(
         obj.insert("localLlmEndpoint".into(), Value::String(endpoint.clone()));
         obj.insert("localLlmModel".into(), Value::String(model.clone()));
         obj.insert("localLlmToken".into(), Value::String(api_key.clone()));
+        match &planner_model {
+            Some(v) => obj.insert("localLlmPlannerModel".into(), Value::String(v.clone())),
+            None => obj.remove("localLlmPlannerModel"),
+        };
+        match &summary_model {
+            Some(v) => obj.insert("localLlmSummaryModel".into(), Value::String(v.clone())),
+            None => obj.remove("localLlmSummaryModel"),
+        };
+        match &reasoning_effort {
+            Some(v) => obj.insert("localLlmReasoningEffort".into(), Value::String(v.clone())),
+            None => obj.remove("localLlmReasoningEffort"),
+        };
     }
 
     let json_str = serde_json::to_string_pretty(&config)
