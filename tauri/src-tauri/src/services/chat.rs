@@ -129,6 +129,20 @@ impl ChatStore {
                 .map_err(|e| format!("添加 compaction_state 列失败: {}", e))?;
         }
 
+        // 兼容旧表：添加 parent_id/branch_point 列（P1-11 会话分支）
+        let has_parent: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('chat_sessions') WHERE name='parent_id'")
+            .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i32>(0)))
+            .map(|count| count > 0)
+            .unwrap_or(false);
+        if !has_parent {
+            conn.execute_batch(
+                "ALTER TABLE chat_sessions ADD COLUMN parent_id TEXT DEFAULT '';
+                 ALTER TABLE chat_sessions ADD COLUMN branch_point INTEGER DEFAULT 0",
+            )
+            .map_err(|e| format!("添加会话分支列失败: {}", e))?;
+        }
+
         // 迁移旧数据：将秒级时间戳转换为毫秒级（一次性）
         conn.execute_batch(
             "
@@ -572,6 +586,145 @@ impl ChatStore {
             token_count,
             created_at: now,
             tool_calls: tool_calls.map(|s| s.to_string()),
+        })
+    }
+
+    /// 从源会话的指定消息序号处派生分支会话（P1-11）。
+    ///
+    /// 复制源会话前 `message_seq` 条消息到新会话（含 tool_calls 与引用来源，
+    /// source 重映射到新 message id），新会话 `parent_id=源会话 id`、
+    /// `branch_point=message_seq`；分支点之后的消息不复制——用户从该点改写
+    /// 重发，对齐 Pi `/fork` 语义。
+    pub fn fork_session(
+        &self,
+        source_session_id: &str,
+        message_seq: usize,
+        title: &str,
+    ) -> Result<ChatSession, String> {
+        use std::collections::HashMap;
+
+        let now = unix_timestamp_now();
+        let new_id = Uuid::new_v4().to_string();
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        conn.execute_batch("BEGIN IMMEDIATE TRANSACTION")
+            .map_err(|e| format!("开启事务失败: {}", e))?;
+
+        // 源会话类型（分支继承类型）
+        let source_type: String = conn
+            .query_row(
+                "SELECT type FROM chat_sessions WHERE id = ?1",
+                rusqlite::params![source_session_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("读取源会话失败: {}", e))?;
+
+        // 新建分支会话（parent_id/branch_point 记录来源）
+        let insert_result = conn.execute(
+            "INSERT INTO chat_sessions (id, title, created_at, updated_at, favorite, message_count, token_usage, type, parent_id, branch_point)
+             VALUES (?1, ?2, ?3, ?4, 0, ?5, 0, ?6, ?7, ?8)",
+            rusqlite::params![
+                new_id, title, now, now, message_seq as i64, source_type, source_session_id,
+                message_seq as i64
+            ],
+        );
+        if let Err(e) = insert_result {
+            conn.execute_batch("ROLLBACK").ok();
+            return Err(format!("创建分支会话失败: {}", e));
+        }
+
+        // 复制源会话前 message_seq 条消息（id 重生成，保留其余字段）
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, role, content, token_count, created_at, tool_calls
+                 FROM chat_messages WHERE session_id = ?1 ORDER BY created_at ASC, rowid ASC LIMIT ?2",
+            )
+            .map_err(|e| format!("查询源消息失败: {}", e))?;
+        let rows = stmt
+            .query_map(rusqlite::params![source_session_id, message_seq as i64], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i32>(3)?,
+                    row.get::<_, u64>(4)?,
+                    row.get::<_, String>(5)?,
+                ))
+            })
+            .map_err(|e| format!("查询源消息失败: {}", e))?;
+
+        let mut id_map: HashMap<String, String> = HashMap::new();
+        let mut count: i64 = 0;
+        for row in rows {
+            let (old_id, role, content, token_count, created_at, tool_calls) =
+                row.map_err(|e| e.to_string())?;
+            let new_msg_id = Uuid::new_v4().to_string();
+            conn.execute(
+                "INSERT INTO chat_messages (id, session_id, role, content, token_count, created_at, tool_calls)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![new_msg_id, new_id, role, content, token_count, created_at, tool_calls],
+            )
+            .map_err(|e| format!("复制消息失败: {}", e))?;
+            id_map.insert(old_id, new_msg_id);
+            count += 1;
+        }
+
+        // 复制引用来源（chat_message_sources 按旧 message_id 重映射到新消息）
+        for (old_msg_id, new_msg_id) in &id_map {
+            let mut src_stmt = conn
+                .prepare(
+                    "SELECT doc_name, score, snippet, path_json
+                     FROM chat_message_sources WHERE message_id = ?1",
+                )
+                .map_err(|e| format!("查询引用来源失败: {}", e))?;
+            let sources = src_stmt
+                .query_map(rusqlite::params![old_msg_id], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, f32>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                    ))
+                })
+                .map_err(|e| format!("查询引用来源失败: {}", e))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?;
+            for (doc_name, score, snippet, path_json) in sources {
+                conn.execute(
+                    "INSERT INTO chat_message_sources (id, message_id, doc_name, score, snippet, path_json)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    rusqlite::params![
+                        Uuid::new_v4().to_string(),
+                        new_msg_id,
+                        doc_name,
+                        score,
+                        snippet,
+                        path_json.unwrap_or_default()
+                    ],
+                )
+                .map_err(|e| format!("复制引用来源失败: {}", e))?;
+            }
+        }
+
+        conn.execute(
+            "UPDATE chat_sessions SET message_count = ?1 WHERE id = ?2",
+            rusqlite::params![count, new_id],
+        )
+        .map_err(|e| format!("更新分支会话统计失败: {}", e))?;
+
+        conn.execute_batch("COMMIT")
+            .map_err(|e| format!("提交事务失败: {}", e))?;
+
+        Ok(ChatSession {
+            id: new_id,
+            title: title.to_string(),
+            created_at: now,
+            updated_at: now,
+            favorite: false,
+            message_count: count as u32,
+            token_usage: 0,
+            month_group: unix_timestamp_to_year_month(now),
+            r#type: source_type,
         })
     }
 

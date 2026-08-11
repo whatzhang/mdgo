@@ -52817,6 +52817,37 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 body.className = 'chat-message-body';
                 body.textContent = content;
                 div.appendChild(body);
+                // P1-11：从此消息处派生分支会话（hover 显示）
+                const forkBtn = document.createElement('button');
+                forkBtn.className = 'msg-fork-btn';
+                forkBtn.textContent = '分支';
+                forkBtn.title = '从此消息处派生新会话（分支点之后的消息不复制，可改写重发）';
+                forkBtn.style.cssText = 'position:absolute;right:0.4rem;top:0.3rem;font-size:0.7rem;padding:1px 6px;border:1px solid #ccc;border-radius:4px;background:transparent;color:#888;cursor:pointer;opacity:0;transition:opacity .15s;z-index:3;';
+                forkBtn.onmouseenter = () => { forkBtn.style.opacity = '1'; };
+                forkBtn.onmouseleave = () => { forkBtn.style.opacity = '0'; };
+                forkBtn.onclick = async (ev) => {
+                    ev.stopPropagation();
+                    const idx = chatMessages.findIndex(m => m.role === 'user' && m.content === content);
+                    if (idx < 0 || !currentRootPath || !currentSessionId) {
+                        showNotification('无法分支：缺少会话上下文', 'warning');
+                        return;
+                    }
+                    try {
+                        const srcTitle = (chatSessions.find(s => s.id === currentSessionId) || {}).title || '会话';
+                        const newSession = await window.__TAURI__.core.invoke('chat_fork', {
+                            dirPath: currentRootPath,
+                            sessionId: currentSessionId,
+                            messageSeq: idx + 1,
+                            title: '分支 ' + srcTitle,
+                        });
+                        await switchChatSession(newSession.id);
+                        showNotification('已创建分支会话（从此处改写重发）', 'success');
+                    } catch (e) {
+                        showNotification('分支失败: ' + (e.message || e), 'error');
+                    }
+                };
+                div.style.position = 'relative';
+                div.appendChild(forkBtn);
             } else {
                 div.textContent = content;
             }

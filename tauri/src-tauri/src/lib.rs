@@ -341,6 +341,7 @@ pub fn run() {
             commands::chat::kb_chat_stats,
             commands::chat::chat_session_set_last,
             commands::chat::chat_session_get_last,
+            commands::chat::chat_fork,
             // LLM 命令
             commands::llm::agent_query,
             commands::llm::kb_llm_query,

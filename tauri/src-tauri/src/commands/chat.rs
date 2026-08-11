@@ -231,6 +231,26 @@ pub async fn chat_session_create(
 }
 
 /// 删除会话：同时从 SQLite（CASCADE 消息）和对话索引中删除
+/// 从源会话的指定消息序号处派生分支会话（P1-11）。
+///
+/// 复制源会话前 `message_seq` 条消息到新会话（含引用来源），新会话挂
+/// `parent_id`/`branch_point`；分支点之后的消息不复制，用户从该点改写重发。
+#[tauri::command]
+pub async fn chat_fork(
+    state: tauri::State<'_, AppState>,
+    dir_path: String,
+    session_id: String,
+    message_seq: usize,
+    title: Option<String>,
+) -> Result<ChatSession, String> {
+    let store = state.get_chat_store(&dir_path)?;
+    tokio::task::spawn_blocking(move || {
+        store.fork_session(&session_id, message_seq, &title.unwrap_or_else(|| format!("{} 的分支", session_id)))
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
 #[tauri::command]
 pub async fn chat_session_delete(
     state: tauri::State<'_, AppState>,
