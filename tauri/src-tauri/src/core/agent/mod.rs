@@ -109,6 +109,7 @@ pub fn load_agent_rules(app: &AppHandle, name: &str) -> String {
 
 /// 内置工具集：文件只读、目录列举、Git 状态查询（含工具调用轨迹总线）
 pub mod tools;
+mod external_tools;
 /// 工具注册表：按技能组织工具定义，统一管理工具的注册与构建
 pub mod tool_registry;
 
@@ -201,16 +202,32 @@ impl AgentHook for LlmTraceHook {
 ///
 /// 拦截时将原因反馈给模型，由 Agent 自主调整策略（先 activate_skill 或改用其他工具），
 /// 而非硬报错。
+/// 技能门控 Hook：工具调用前的最后一道防线（兜底拦截 + 防重复熔断）。
+///
+/// 放行规则（任一命中即放行）：
+/// - 基础工具（[`BASE_TOOLS`]）或 `allow_all`（子代理等受限场景）
+/// - 已激活技能声明的工具
+/// - 外部动态工具（P2-15，配置驱动，`allow_extra`）
 #[derive(Clone, Debug)]
 pub struct SkillGateHook {
     state: Arc<ActiveSkillState>,
     /// 是否放行全部已注册工具（子代理等受限场景：只读白名单已过滤注册表，无需技能声明）
     allow_all: bool,
+    /// 外部动态工具名（P2-15 配置驱动工具；无需技能声明即可调用）
+    allow_extra: Option<Arc<HashSet<String>>>,
 }
 
 impl SkillGateHook {
-    pub fn new(state: Arc<ActiveSkillState>, allow_all: bool) -> Self {
-        Self { state, allow_all }
+    pub fn new(
+        state: Arc<ActiveSkillState>,
+        allow_all: bool,
+        allow_extra: Option<Arc<HashSet<String>>>,
+    ) -> Self {
+        Self {
+            state,
+            allow_all,
+            allow_extra,
+        }
     }
 }
 
@@ -227,7 +244,13 @@ impl AgentHook for SkillGateHook {
             log::warn!("[loop_guard] 熔断重复工具调用: {}", warning);
             return ToolCallAction::Skip(warning);
         }
-        if BASE_TOOLS.contains(&event.tool_name) || self.allow_all {
+        if BASE_TOOLS.contains(&event.tool_name)
+            || self.allow_all
+            || self
+                .allow_extra
+                .as_ref()
+                .is_some_and(|set| set.contains(event.tool_name))
+        {
             return ToolCallAction::Run;
         }
         let declared: Vec<String> = self.state.allowed_tools().unwrap_or_default();
@@ -747,6 +770,15 @@ pub fn build_rag_agent(
 
     log::info!("[agent_query] [4]: L1 技能目录注入: chars={}, preamble_len={}", catalog.len(), preamble.len());
 
+    // P2-15：外部动态工具放行名（配置驱动 HTTP 工具；加载失败降级空集）
+    let external_tool_names: std::sync::Arc<std::collections::HashSet<String>> =
+        std::sync::Arc::new(
+            external_tools::load_external_tools_or_default()
+                .iter()
+                .map(|d| d.name.clone())
+                .collect(),
+        );
+
     // 始终注册全部内置工具；每轮模型可见的工具列表由 SkillInstructionHook
     // 依据激活状态窄化（active_tools），SkillGateHook 作为兜底拦截越权调用。
     //
@@ -781,7 +813,7 @@ pub fn build_rag_agent(
         .default_max_turns(max_turns)
         .add_hook(LlmTraceHook::new(Some(search_config.request_id.clone())))
         .add_hook(SkillInstructionHook::new(preamble, skill_state.clone(), max_turns, narrow_tools))
-        .add_hook(SkillGateHook::new(skill_state, !narrow_tools));
+        .add_hook(SkillGateHook::new(skill_state, !narrow_tools, Some(external_tool_names)));
     // 审批门(可选)：先技能白名单、后审批，避免对「本就不该调用的工具」弹窗打扰用户。
     if let Some(gate) = approval_gate {
         builder = builder.add_hook(ApprovalGateHook::new(gate));
@@ -864,6 +896,21 @@ fn create_tool_registry(only: Option<&HashSet<String>>) -> ToolRegistry {
     }
     if want("search_memory") {
         reg.register("search_memory", Box::new(tools::build_search_memory_tool));
+    }
+
+    // ── 外部动态工具（P2-15：配置驱动 HTTP 工具，跳过白名单/技能声明过滤） ──
+    // 放行由 SkillGateHook 的 allow_extra 承担；与内置工具重名时跳过并告警。
+    let builtin: std::collections::HashSet<String> = reg.tool_names().iter().map(|s| s.to_string()).collect();
+    for def in external_tools::load_external_tools_or_default() {
+        if builtin.contains(&def.name) {
+            log::warn!("[external_tools] 外部工具「{}」与内置工具重名，跳过注册", def.name);
+            continue;
+        }
+        let name = def.name.clone();
+        reg.register(
+            &name,
+            Box::new(move |cfg| external_tools::build_external_tool(def.clone(), cfg)),
+        );
     }
 
     reg
