@@ -28,15 +28,8 @@ use crate::core::skill::SkillStore;
 use crate::core::{call_embedding_query, SearchHit};
 use crate::services::llm::{LLMClient, UsageInfo, usage_to_info};
 
-// ─── 后端消息长度预算 ───
-/// 消息总字符数上限（粗略估计 ~7500 tokens 的字符量，为 LLM 回复留出余量）
-const MAX_MESSAGE_CHARS: usize = 30_000;
-/// 历史上下文压缩预算（token 估算，P0-5）：经 `ApproxTokenEstimator` 换算为字符预算
-/// （`tokens_to_chars_budget`），语义从「字符上限」升级为「token 预算」；
-/// 精确 tokenizer 接入后仅需替换估算器，压缩器与命令层无需改动。
-const MAX_MESSAGE_TOKENS: usize = 15_000;
-/// 摘要压缩时，摘要消息的最大字符数（约 1.5K token，为后续轮次留出余量）
-const SUMMARY_MAX_CHARS: usize = 6_000;
+// ─── 后端消息长度预算（集中定义见 crate::core::agent::limits） ───
+use crate::core::agent::limits::{MAX_MESSAGE_CHARS, MAX_MESSAGE_TOKENS, SUMMARY_MAX_CHARS};
 
 // ─── 事件类型 ───
 

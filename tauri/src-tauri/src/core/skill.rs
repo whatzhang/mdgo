@@ -24,10 +24,55 @@ use crate::core::db::schema;
 
 /// 允许 Skill 声明的内置工具白名单（与 Rig Agent 注册的内置工具一致）。
 /// 白名单仅为声明约束：技能声明了系统外的工具名时直接忽略，不做强类型校验。
+/// 这是工具清单的「单一来源」：前端 Tauri 模式下经 `skill_allowed_tools` 下发，
+/// 本地打开 index.html（无 Tauri）时使用前端内置 fallback 副本。
 pub const ALLOWED_TOOLS: &[&str] = &[
-    "kb_search", "code_lookup", "read", "edit", "multi_edit", "delete", "ls", "glob", "grep", "write", "git_status",
+    "kb_search", "code_lookup", "read", "edit", "multi_edit", "delete", "ls", "glob", "grep", "write", "git_status", "git_diff", "git_commit", "git_checkout", "webfetch",
     "activate_skill", "deactivate_skill", "pomodoro",
 ];
+
+/// 工具展示名（与前端 fallback 一致；Tauri 模式下前端以此清单为准）
+fn tool_label(key: &str) -> String {
+    match key {
+        "kb_search" => "知识库搜索".into(),
+        "code_lookup" => "代码查找".into(),
+        "read" => "读取文件".into(),
+        "write" => "写入文件".into(),
+        "glob" => "文件匹配".into(),
+        "edit" => "编辑文件".into(),
+        "multi_edit" => "批量编辑".into(),
+        "delete" => "删除文件".into(),
+        "grep" => "全局搜索".into(),
+        "ls" => "列出文件".into(),
+        "git_status" => "获取 Git 状态".into(),
+        "git_diff" => "查看 Git 差异".into(),
+        "git_commit" => "Git 提交".into(),
+        "git_checkout" => "Git 恢复文件".into(),
+        "webfetch" => "网页抓取".into(),
+        "pomodoro" => "番茄钟".into(),
+        "activate_skill" => "激活技能".into(),
+        "deactivate_skill" => "停用技能".into(),
+        _ => key.to_string(),
+    }
+}
+
+/// 工具清单条目（key + 展示名），供前端技能表单/详情渲染。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct AllowedToolInfo {
+    pub key: String,
+    pub label: String,
+}
+
+/// 返回工具白名单及展示名（单一来源；前端 Tauri 模式下经 command 获取）。
+pub fn allowed_tools_info() -> Vec<AllowedToolInfo> {
+    ALLOWED_TOOLS
+        .iter()
+        .map(|k| AllowedToolInfo {
+            key: (*k).to_string(),
+            label: tool_label(k),
+        })
+        .collect()
+}
 
 /// Skill 作用域（三层体系）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

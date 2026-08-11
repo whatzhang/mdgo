@@ -17,10 +17,10 @@ use std::path::Path;
 use rig_agent::tool::{DynamicTool, ToolContext, ToolExecutionError, ToolOutput};
 use serde::Deserialize;
 
+use crate::core::agent::limits::{EXTERNAL_TIMEOUT_SECS, MAX_EXTERNAL_RESPONSE_CHARS};
 use crate::core::agent::KbSearchConfig;
 
-/// 外部工具响应体上限（字符）：超过后截断并提示，防止异常/恶意端点撑爆模型上下文
-const MAX_EXTERNAL_RESPONSE_CHARS: usize = 100_000;
+/// 外部工具响应体上限（字符）见 limits::MAX_EXTERNAL_RESPONSE_CHARS
 
 /// 外部工具定义（agent_tools.yaml 中的一条）。
 #[derive(Debug, Clone, Deserialize)]
@@ -47,7 +47,7 @@ fn default_method() -> String {
 }
 
 fn default_timeout() -> u64 {
-    30
+    EXTERNAL_TIMEOUT_SECS
 }
 
 fn default_schema() -> serde_json::Value {

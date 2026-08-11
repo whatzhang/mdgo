@@ -18,6 +18,7 @@ use tauri::Manager;
 
 use futures_util::StreamExt;
 
+use crate::core::agent::limits::*;
 use crate::core::agent::KbSearchConfig;
 use crate::core::db::utils::IgnoreMatcher;
 use crate::core::skill::activation::ActiveSkillState;
@@ -26,6 +27,7 @@ use crate::core::subagent::{
     SubagentMode, SubagentRunner, SubagentSpec, SUBAGENT_MAX_TURNS, SUBAGENT_SUMMARY_CHARS,
 };
 use crate::core::SearchHit;
+use scraper::{ElementRef, Html, Selector};
 
 mod cache;
 
@@ -53,6 +55,10 @@ pub struct ToolCallEvent {
     /// 触发该工具调用的技能 ID（格式：scope:skill_id），用于前端显示技能来源
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skill_id: Option<String>,
+    /// 结构化结果（可选）：按工具类型携带结构化数据（如 git_diff 的文件改动数组、
+    /// grep/ls 的命中列表），前端据此渲染增强卡片；不影响 result 文本与 LLM 上下文
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub structured: Option<serde_json::Value>,
 }
 
 /// 按 `request_id` 记录工具调用轨迹的全局总线。
@@ -109,17 +115,21 @@ impl ToolCallBus {
                 result: String::new(),
                 call_seq: 0,
                 skill_id: skill_id.map(|s| s.to_string()),
+                structured: None,
             });
         }
     }
 
-    fn record_result(
+    /// 记录带结构化数据的工具结果（OCP：文本字段与结构化字段并存，互不影响）。
+    /// `structured=None` 时等价于普通文本结果（record_tool_result 走此路径）。
+    fn record_result_structured(
         &self,
         request_id: &str,
         tool: &str,
         ok: bool,
         summary: &str,
         result: &str,
+        structured: Option<serde_json::Value>,
     ) {
         let seq = self.seq.fetch_add(1, Ordering::Relaxed);
         if let Ok(mut map) = self.map.lock() {
@@ -163,6 +173,7 @@ impl ToolCallBus {
                 result: result.into(),
                 call_seq,
                 skill_id,
+                structured,
             });
         }
     }
@@ -250,19 +261,31 @@ pub fn record_tool_call(
 /// `result` 为完整结果文本（成功为工具输出，失败为错误信息），
 /// 截断到上限后存入事件，供会话历史回放为 tool 结果消息。
 pub fn record_tool_result(cfg: &KbSearchConfig, tool: &str, ok: bool, summary: &str, result: Option<&str>) {
+    record_tool_result_structured(cfg, tool, ok, summary, result, None);
+}
+
+/// 带结构化结果的记录版本（OCP 扩展：现有调用不受影响）。
+///
+/// `structured` 为可选的结构化数据（如 git_diff 的文件改动数组、grep/ls 的命中列表），
+/// 前端据此渲染增强卡片；`result` 文本仍保留（LLM 上下文与历史回放不受影响）。
+pub fn record_tool_result_structured(
+    cfg: &KbSearchConfig,
+    tool: &str,
+    ok: bool,
+    summary: &str,
+    result: Option<&str>,
+    structured: Option<serde_json::Value>,
+) {
     const MAX_RESULT_CHARS: usize = 12_000;
     let result = result.map(|r| truncate(r, MAX_RESULT_CHARS)).unwrap_or_default();
-    tool_call_bus().record_result(&cfg.request_id, tool, ok, summary, &result);
+    tool_call_bus().record_result_structured(&cfg.request_id, tool, ok, summary, &result, structured);
 }
 
 // ─────────────────────────── 文件读取工具 ───────────────────────────
 
-/// 单次读取上限（避免大文件撑爆模型上下文）
-const MAX_FILE_READ_CHARS: usize = 8192;
-/// 目录列举上限
-const MAX_LIST_ITEMS: usize = 60;
-/// 引用来源片段截断上限（read / grep 读取的知识库内容作为引用 snippet 的字符数上限）
-const MAX_SOURCE_SNIPPET_CHARS: usize = 800;
+/// 单次读取上限（避免大文件撑爆模型上下文）——见 limits::MAX_FILE_READ_CHARS
+/// 目录列举上限——见 limits::MAX_LIST_ITEMS
+/// 引用来源片段截断上限——见 limits::MAX_SOURCE_SNIPPET_CHARS
 
 // ─────────────────────────── 重复调用熔断（Loop Guard） ───────────────────────────
 
@@ -701,16 +724,13 @@ pub async fn list_files(cfg: &KbSearchConfig, pattern: &str, max_items: u32) -> 
 
 // ─────────────────────────── 内容搜索工具（grep） ───────────────────────────
 
-/// 单次搜索最多返回的命中文件数
-const MAX_GREP_FILES: usize = 20;
-/// 单文件最多返回的匹配行数（context=0 时即最大输出行数）
+/// 单次搜索最多返回的命中文件数——见 limits::MAX_GREP_FILES
+/// 单文件最多返回的匹配行数（context=0 时即最大输出行数）——见 limits::MAX_GREP_OUTPUT_CHARS
 const MAX_GREP_LINES_PER_FILE: usize = 10;
 /// 匹配行最大显示长度（超长截断）
 const MAX_GREP_LINE_CHARS: usize = 200;
 /// context>0 时单文件最多输出的行数上限（含上下文行，防止输出爆炸）
 const MAX_GREP_CONTEXT_OUTPUT_LINES: usize = 40;
-/// 单次搜索最终文本总字符上限（超出即截断并提示缩小范围）
-const MAX_GREP_OUTPUT_CHARS: usize = 60_000;
 /// 参与搜索的文件大小上限（跳过超大文件，避免拖慢工具调用）
 const MAX_GREP_FILE_BYTES: u64 = 2 * 1024 * 1024;
 /// 单次搜索累计扫描字节上限（超出即停止，避免大知识库下串行读全库拖慢模型轮次）
@@ -834,7 +854,33 @@ fn glob_to_regex(pat: &str) -> Option<String> {
                 }
             }
             '?' => re.push_str("[^/]"),
-            '.' | '+' | '(' | ')' | '{' | '}' | '[' | ']' | '|' | '^' | '$' | '\\' => {
+            // 字符类：[abc]、[a-z]、[!abc]（取反）——保留类内容，转义类内特殊字符
+            '[' => {
+                let mut class = String::from("[");
+                if chars.peek() == Some(&'!') {
+                    chars.next();
+                    class.push('^');
+                }
+                let mut closed = false;
+                for c2 in chars.by_ref() {
+                    if c2 == ']' {
+                        class.push(']');
+                        closed = true;
+                        break;
+                    }
+                    if matches!(c2, '\\' | '^' | ']') {
+                        class.push('\\');
+                    }
+                    class.push(c2);
+                }
+                if !closed {
+                    // 未闭合的 `[` 按字面量处理
+                    re.push_str("\\[");
+                    continue;
+                }
+                re.push_str(&class);
+            }
+            '.' | '+' | '(' | ')' | '{' | '}' | '|' | '^' | '$' | '\\' => {
                 re.push('\\');
                 re.push(c);
             }
@@ -1027,7 +1073,7 @@ pub async fn grep_files(
         return Err("搜索关键词为空，请提供 pattern 参数".to_string());
     }
     let mode_and = match_mode != "or";
-    let context = context_lines.min(5);
+    let context = context_lines.min(GREP_CONTEXT_MAX);
     let limit = (max_files as usize).clamp(1, MAX_GREP_FILES);
 
     // 缓存读取（冷缓存时为全量目录遍历）、候选过滤与文件匹配均为 CPU/IO 密集
@@ -1228,7 +1274,7 @@ pub fn build_grep_tool(cfg: KbSearchConfig) -> DynamicTool {
                     "type": "integer",
                     "default": 10,
                     "minimum": 1,
-                    "maximum": 20,
+                    "maximum": MAX_GREP_FILES,
                     "description": "最多返回命中文件数，默认 10，最大 20"
                 },
                 "include": {
@@ -1245,7 +1291,7 @@ pub fn build_grep_tool(cfg: KbSearchConfig) -> DynamicTool {
                     "type": "integer",
                     "default": 0,
                     "minimum": 0,
-                    "maximum": 5,
+                    "maximum": GREP_CONTEXT_MAX,
                     "description": "匹配行前后展示的上下文行数（最大 5，防止超长输出）"
                 },
                 "match_mode": {
@@ -1344,39 +1390,127 @@ pub fn build_grep_tool(cfg: KbSearchConfig) -> DynamicTool {
 
 /// 查询知识库所在 Git 仓库的工作区状态（只读，不支持提交等写操作）。
 pub async fn git_status(cfg: &KbSearchConfig) -> Result<String, String> {
-    let dir = cfg.dir_path.clone();
-    // git 命令为阻塞 IO：移入 spawn_blocking 避免阻塞 tokio worker 线程，
-    // 并加 10 秒超时防止大仓库 `git status` 卡住整个 agent 循环。
-    let output = tokio::time::timeout(
-        std::time::Duration::from_secs(10),
-        tokio::task::spawn_blocking(move || {
-            std::process::Command::new("git")
-                .arg("-C")
-                .arg(&dir)
-                .arg("-c")
-                .arg("core.quotepath=false")
-                .arg("status")
-                .arg("--short")
-                .output()
-        }),
-    )
-    .await
-    .map_err(|_| "Git 状态查询超时（10 秒）".to_string())?
-    .map_err(|e| format!("git 执行任务失败: {}", e))?
-    .map_err(|e| format!("git 执行失败（可能未安装 git）: {}", e))?;
-
-    if !output.status.success() {
-        let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        // 失败返回 Err（而非 Ok），避免模型把失败原因当成正常工具结果
-        return Err(format!("Git 状态查询失败（可能不是 Git 仓库）: {}", err));
-    }
-    let text = String::from_utf8_lossy(&output.stdout).into_owned();
+    // 复用 run_git_tool（spawn_blocking + 超时 + 错误归一），避免重复实现
+    let text = run_git_tool(&cfg.dir_path, &["status", "--short"], 10).await?;
     let total = text.lines().count();
     if total == 0 {
         return Ok("Git 工作区干净，当前无任何改动。".into());
     }
     let head: Vec<&str> = text.lines().take(200).collect();
     Ok(format!("Git 状态（共 {total} 项改动）：\n{}", head.join("\n")))
+}
+
+/// 执行 git 命令（spawn_blocking + 超时 + 错误归一），供 git_diff/git_commit/git_checkout 复用（SRP）。
+async fn run_git_tool(dir: &str, args: &[&str], timeout_secs: u64) -> Result<String, String> {
+    let dir_owned = dir.to_string();
+    let args_owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(timeout_secs),
+        tokio::task::spawn_blocking(move || {
+            let mut cmd = std::process::Command::new("git");
+            // Windows 隐藏控制台窗口（与 commands/git.rs 的 git_cmd 一致）
+            #[cfg(target_os = "windows")]
+            {
+                use std::os::windows::process::CommandExt;
+                cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+            }
+            cmd.arg("-C").arg(&dir_owned).arg("-c").arg("core.quotepath=false");
+            cmd.args(&args_owned);
+            cmd.output()
+        }),
+    )
+    .await
+    .map_err(|_| format!("Git 命令超时（{} 秒）", timeout_secs))?
+    .map_err(|e| format!("git 执行任务失败: {}", e))?
+    .map_err(|e| format!("git 执行失败（可能未安装 git）: {}", e))?;
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(format!("Git 命令失败: {}", err));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// 查询 Git 工作区/暂存区差异（只读）。
+///
+/// `stat_only=true` 时以 `--numstat` 输出文件级统计，并返回结构化
+/// `[{path, additions, deletions}]` 供前端增强卡片渲染。
+pub async fn git_diff(
+    dir: &str,
+    staged: bool,
+    stat_only: bool,
+) -> Result<(String, Option<serde_json::Value>), String> {
+    let mut args: Vec<&str> = Vec::new();
+    if stat_only {
+        args.push("diff");
+        args.push("--numstat");
+    } else {
+        args.push("diff");
+        args.push("--no-color");
+    }
+    if staged {
+        args.push("--cached");
+    }
+    let text = run_git_tool(dir, &args, 10).await?;
+    let mut structured: Option<serde_json::Value> = None;
+    if stat_only {
+        // numstat 格式：`adds\tdeletes\tpath`（二进制为 `-`）
+        let files: Vec<serde_json::Value> = text
+            .lines()
+            .filter_map(|line| {
+                let mut parts = line.split('\t');
+                let adds = parts.next().unwrap_or("");
+                let dels = parts.next().unwrap_or("");
+                let path = parts.next().unwrap_or("").trim();
+                if path.is_empty() {
+                    return None;
+                }
+                Some(serde_json::json!({
+                    "path": path,
+                    "additions": adds.parse::<u64>().unwrap_or(0),
+                    "deletions": dels.parse::<u64>().unwrap_or(0),
+                }))
+            })
+            .collect();
+        if !files.is_empty() {
+            structured = Some(serde_json::json!({ "files": files, "staged": staged }));
+        }
+    }
+    let total_chars = text.chars().count();
+    let limit = GIT_DIFF_MAX_CHARS;
+    if total_chars > limit {
+        let cut: String = text.chars().take(limit).collect();
+        return Ok((format!("{}（差异过大已截断，共 {} 字符）", cut, total_chars), structured));
+    }
+    if text.trim().is_empty() {
+        return Ok(("工作区无差异。".into(), structured));
+    }
+    Ok((text, structured))
+}
+
+/// 提交暂存区改动（写操作，需用户确认）：`git commit -m <message>`（使用仓库/全局 user 配置）。
+pub async fn git_commit(dir: &str, message: &str) -> Result<String, String> {
+    let msg = message.trim();
+    if msg.is_empty() {
+        return Err("commit message 不能为空".into());
+    }
+    let text = run_git_tool(dir, &["commit", "-m", msg], 15).await?;
+    Ok(text.trim().to_string())
+}
+
+/// 恢复工作区文件到 HEAD（写操作，需用户确认）：`git checkout -- <paths>`。
+pub async fn git_checkout(dir: &str, paths: &[String]) -> Result<String, String> {
+    if paths.is_empty() {
+        return Err("paths 不能为空，请指定要恢复的文件".into());
+    }
+    if paths.len() > 20 {
+        return Err("paths 最多 20 个文件".into());
+    }
+    let mut args: Vec<&str> = vec!["checkout", "--"];
+    for p in paths {
+        args.push(p);
+    }
+    run_git_tool(dir, &args, 15).await?;
+    Ok(format!("已恢复 {} 个文件到 HEAD", paths.len()))
 }
 
 // ─────────────────────────── 文件编辑/删除工具（限打开目录） ───────────────────────────
@@ -1461,7 +1595,7 @@ pub async fn edit_file(
     if meta.is_dir() {
         return Err(format!("{} 是目录，仅支持编辑文本文件", rel_path));
     }
-    if meta.len() > 1024 * 1024 {
+    if meta.len() > MAX_EDIT_FILE_BYTES {
         return Err(format!("{} 超过 1MB，请改用其他方式编辑", rel_path));
     }
     let data = std::fs::read(&full).map_err(|e| format!("读取文件失败: {}", e))?;
@@ -1496,9 +1630,7 @@ pub async fn edit_file(
     }
 }
 
-/// 单次 multi_edit 最多提交的编辑数（避免一次请求撑爆上下文与执行时间）
-const MAX_MULTI_EDITS: usize = 10;
-
+/// 单次 multi_edit 最多提交的编辑数——见 limits::MAX_MULTI_EDITS
 /// 批量编辑多个文件：所有编辑先全量校验（路径安全/UTF-8/old_string 唯一匹配），
 /// 全部通过后再逐个原子写入（all-or-nothing 的校验阶段 + 顺序写入阶段）。
 ///
@@ -1532,7 +1664,7 @@ pub async fn multi_edit_files(
         if meta.is_dir() {
             return Err(format!("第 {} 个 edit：{} 是目录，仅支持编辑文本文件", idx, rel));
         }
-        if meta.len() > 1024 * 1024 {
+        if meta.len() > MAX_EDIT_FILE_BYTES {
             return Err(format!("第 {} 个 edit：{} 超过 1MB，请改用其他方式编辑", idx, rel));
         }
         let data = std::fs::read(&full).map_err(|e| format!("读取文件失败: {}", e))?;
@@ -1583,15 +1715,16 @@ pub async fn write_file(
     if is_mdgo_internal(rel_path) {
         return Err(".mdgo 为应用内部数据目录（配置/技能/索引），不允许写入".into());
     }
-    if content.chars().count() > 1024 * 1024 {
+    if content.chars().count() > MAX_EDIT_FILE_BYTES as usize {
         return Err(format!("{} 内容超过 1MB，write 单次写入上限为 1MB", rel_path));
     }
     let full = safe_resolve_new(&cfg.dir_path, rel_path)?;
     // canonical 后二次校验 `.mdgo`（防 `..` 穿越；父目录已 canonicalize）
     let base = std::fs::canonicalize(&cfg.dir_path).map_err(|e| format!("无法访问目录: {}", e))?;
     ensure_not_mdgo(&full, &base, "写入")?;
+    // 写入前判断目标是否存在（写入后判断恒为真，无法区分新建/覆盖）
+    let existed = full.exists();
     atomic_write_file(&full, content.as_bytes())?;
-    let existed = std::fs::metadata(&full).is_ok();
     Ok(format!(
         "已{} {}（{} 字符）",
         if existed { "覆盖写入" } else { "创建" },
@@ -1614,6 +1747,7 @@ pub fn build_write_tool(cfg: KbSearchConfig) -> DynamicTool {
                 },
                 "content": {
                     "type": "string",
+                    "maxLength": MAX_EDIT_FILE_BYTES as usize,
                     "description": "文件的完整新内容（UTF-8 文本，最大 1MB）"
                 }
             },
@@ -1813,7 +1947,7 @@ pub fn build_read_tool(cfg: KbSearchConfig) -> DynamicTool {
                 },
                 "paths": {
                     "type": "array",
-                    "maxItems": 10,
+                    "maxItems": READ_PATHS_MAX,
                     "items": { "type": "string" },
                     "description": "多个文件相对路径（并行读取，最多 10 个）。与 path 二选一"
                 },
@@ -1843,7 +1977,7 @@ pub fn build_read_tool(cfg: KbSearchConfig) -> DynamicTool {
                     })
                     .unwrap_or_default();
                 if !paths.is_empty() {
-                    if paths.len() > 10 {
+                    if paths.len() > READ_PATHS_MAX {
                         let e = "paths 最多 10 个文件".to_string();
                         record_tool_result(&cfg, "read", false, &e, Some(&e));
                         return Err(tool_error("read", &e));
@@ -1995,7 +2129,7 @@ pub fn build_multi_edit_tool(cfg: KbSearchConfig) -> DynamicTool {
             "properties": {
                 "edits": {
                     "type": "array",
-                    "maxItems": 10,
+                    "maxItems": MAX_MULTI_EDITS,
                     "items": {
                         "type": "object",
                         "properties": {
@@ -2111,7 +2245,7 @@ fn build_list_files_dyn(name: &str, cfg: KbSearchConfig) -> DynamicTool {
                 "max_items": {
                     "type": "integer",
                     "minimum": 1,
-                    "maximum": 60,
+                    "maximum": MAX_LIST_ITEMS,
                     "description": "最多返回条数，默认 30，上限 60"
                 }
             },
@@ -2202,7 +2336,7 @@ pub fn build_glob_tool(cfg: KbSearchConfig) -> DynamicTool {
                 "max_items": {
                     "type": "integer",
                     "minimum": 1,
-                    "maximum": 60,
+                    "maximum": MAX_LIST_ITEMS,
                     "description": "最多返回条数，默认 30，上限 60"
                 }
             },
@@ -2260,6 +2394,133 @@ pub fn build_git_status_tool(cfg: KbSearchConfig) -> DynamicTool {
                     Err(e) => {
                         record_tool_result(&cfg, "git_status", false, &e, Some(&e));
                         Err(tool_error("git_status", &e))
+                    }
+                }
+            })
+        },
+    )
+}
+
+/// 构建 git_diff 工具：查询 Git 工作区/暂存区差异（只读）。
+pub fn build_git_diff_tool(cfg: KbSearchConfig) -> DynamicTool {
+    DynamicTool::new(
+        "git_diff",
+        "查看知识库所在 Git 仓库的工作区/暂存区差异（默认工作区未暂存改动；staged=true 查看已暂存改动；stat_only=true 只显示文件级统计）。只读操作。当需要了解具体改了什么、对比文件内容时调用。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "staged": {
+                    "type": "boolean",
+                    "description": "是否查看暂存区（已 git add）差异，默认 false 查看工作区差异"
+                },
+                "stat_only": {
+                    "type": "boolean",
+                    "description": "是否只显示文件级统计（--stat），默认 false 显示完整差异"
+                }
+            },
+            "required": []
+        }),
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let cfg = cfg.clone();
+            Box::pin(async move {
+                let staged = args.get("staged").and_then(|v| v.as_bool()).unwrap_or(false);
+                let stat_only = args.get("stat_only").and_then(|v| v.as_bool()).unwrap_or(false);
+                record_tool_call(&cfg, "git_diff", &format!("staged={} stat={}", staged, stat_only), Some(&args));
+                match git_diff(&cfg.dir_path, staged, stat_only).await {
+                    Ok((text, structured)) => {
+                        record_tool_result_structured(&cfg, "git_diff", true, &format!("{} 字符", text.chars().count()), Some(&text), structured);
+                        Ok(ToolOutput::text(text))
+                    }
+                    Err(e) => {
+                        record_tool_result(&cfg, "git_diff", false, &e, Some(&e));
+                        Err(tool_error("git_diff", &e))
+                    }
+                }
+            })
+        },
+    )
+}
+
+/// 构建 git_commit 工具：提交暂存区改动（写操作，需用户确认）。
+pub fn build_git_commit_tool(cfg: KbSearchConfig) -> DynamicTool {
+    DynamicTool::new(
+        "git_commit",
+        "将已暂存（git add）的改动提交为一次 Git commit（写操作，会修改仓库历史，需用户确认）。message 为提交说明。提交前建议先用 git_status 查看待提交内容、用 git_diff(staged=true) 确认差异。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "提交说明（commit message）"
+                }
+            },
+            "required": ["message"]
+        }),
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let cfg = cfg.clone();
+            Box::pin(async move {
+                let message = args
+                    .get("message")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                let preview = format!("{} 字符", message.chars().count());
+                record_tool_call(&cfg, "git_commit", &preview, Some(&args));
+                match git_commit(&cfg.dir_path, &message).await {
+                    Ok(text) => {
+                        record_tool_result(&cfg, "git_commit", true, &text, Some(&text));
+                        Ok(ToolOutput::text(text))
+                    }
+                    Err(e) => {
+                        record_tool_result(&cfg, "git_commit", false, &e, Some(&e));
+                        Err(tool_error("git_commit", &e))
+                    }
+                }
+            })
+        },
+    )
+}
+
+/// 构建 git_checkout 工具：恢复工作区文件到 HEAD（写操作，需用户确认）。
+pub fn build_git_checkout_tool(cfg: KbSearchConfig) -> DynamicTool {
+    DynamicTool::new(
+        "git_checkout",
+        "将工作区文件恢复到 HEAD 版本（丢弃未提交的修改，写操作且不可恢复，需用户确认）。paths 为要恢复的文件相对路径列表（最多 20 个）。恢复前请与用户确认，未暂存且未提交的修改会丢失。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "paths": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 20,
+                    "items": { "type": "string" },
+                    "description": "要恢复到 HEAD 的文件相对路径列表"
+                }
+            },
+            "required": ["paths"]
+        }),
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let cfg = cfg.clone();
+            Box::pin(async move {
+                let paths: Vec<String> = args
+                    .get("paths")
+                    .and_then(|a| a.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                record_tool_call(&cfg, "git_checkout", &format!("{} 个文件", paths.len()), Some(&args));
+                match git_checkout(&cfg.dir_path, &paths).await {
+                    Ok(text) => {
+                        record_tool_result(&cfg, "git_checkout", true, &text, Some(&text));
+                        Ok(ToolOutput::text(text))
+                    }
+                    Err(e) => {
+                        record_tool_result(&cfg, "git_checkout", false, &e, Some(&e));
+                        Err(tool_error("git_checkout", &e))
                     }
                 }
             })
@@ -2354,7 +2615,7 @@ pub fn build_pomodoro_tool(cfg: KbSearchConfig) -> DynamicTool {
                 "minutes": {
                     "type": "integer",
                     "minimum": 1,
-                    "maximum": 180,
+                    "maximum": POMODORO_MINUTES_MAX,
                     "description": "自定义时长（分钟），仅 start 使用；focus 默认 25，break 默认 5"
                 },
                 "openEnable": {
@@ -2583,7 +2844,7 @@ pub fn build_deep_research_tool(cfg: KbSearchConfig) -> DynamicTool {
                     "type": "integer",
                     "description": "可选，子代理轮次上限（默认 12，最大 30）",
                     "minimum": 1,
-                    "maximum": 30
+                    "maximum": SUBAGENT_MAX_TURNS_LIMIT
                 }
             },
             "required": ["task"]
@@ -2619,7 +2880,7 @@ pub fn build_read_subagent_result_tool(cfg: KbSearchConfig) -> DynamicTool {
                     "type": "integer",
                     "description": "本次读取最大字符数（默认 8192，最大 60000）",
                     "minimum": 1,
-                    "maximum": 60000
+                    "maximum": SUBAGENT_RESULT_MAX_CHARS
                 }
             },
             "required": ["subagent_id"]
@@ -2858,6 +3119,260 @@ pub fn build_self_review_tool(cfg: KbSearchConfig) -> DynamicTool {
 }
 
 // ─────────────────────────── 长期记忆工具（P0-2） ───────────────────────────
+
+// ─────────────────────────── 网页抓取工具（webfetch，对齐主流 WebFetch） ───────────────────────────
+
+/// 拒绝访问内网/本机地址（SSRF 防护）：localhost、回环、链路本地、私有网段与未指定地址。
+fn is_private_host(host: &str) -> bool {
+    let host = host.trim_matches(['[', ']']);
+    if host.eq_ignore_ascii_case("localhost")
+        || host.eq_ignore_ascii_case("::1")
+        || host == "0.0.0.0"
+    {
+        return true;
+    }
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        match ip {
+            std::net::IpAddr::V4(v4) => {
+                v4.is_loopback() || v4.is_private() || v4.is_unspecified() || v4.is_link_local()
+            }
+            std::net::IpAddr::V6(v6) => {
+                // IPv4-mapped IPv6（如 ::ffff:127.0.0.1）按 IPv4 语义判断，防绕过
+                if let Some(v4) = v6.to_ipv4_mapped() {
+                    v4.is_loopback() || v4.is_private() || v4.is_unspecified() || v4.is_link_local()
+                } else {
+                    v6.is_loopback()
+                        || v6.is_unspecified()
+                        || v6.is_unicast_link_local()
+                        || v6.is_unique_local()
+                }
+            }
+        }
+    } else {
+        false // 域名不做 DNS 解析（避免 DNS 重绑定，域名默认放行）
+    }
+}
+
+/// 从 HTML 中提取可读正文文本（scraper 结构化提取，跳过 script/style/nav 等）。
+fn extract_readable_text(html: &str) -> String {
+    let doc = Html::parse_document(html);
+    // 优先 article/main，回退 body，再回退根元素
+    for sel in ["article", "main", "body"] {
+        if let Ok(selector) = Selector::parse(sel) {
+            if let Some(el) = doc.select(&selector).next() {
+                let mut out = String::new();
+                collect_readable(&el, &mut out, 0);
+                let t = out.trim();
+                if !t.is_empty() {
+                    return t.to_string();
+                }
+            }
+        }
+    }
+    doc.root_element()
+        .text()
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+/// 递归收集块级可读文本：p/h1-h6/li/pre/blockquote 直接输出文本，
+/// div/section/table 等容器递归进入；script/style/nav/form 等跳过。
+fn collect_readable(el: &ElementRef<'_>, out: &mut String, depth: usize) {
+    if depth > 12 {
+        return;
+    }
+    let name: String = el.value().name.local.as_ref().to_string();
+    if matches!(
+        name.as_str(),
+        "script" | "style" | "nav" | "iframe" | "noscript" | "svg" | "form" | "button" | "input"
+    ) {
+        return;
+    }
+    let is_leaf_block = matches!(
+        name.as_str(),
+        "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "li" | "pre" | "blockquote"
+    );
+    if is_leaf_block {
+        let t = el.text().collect::<String>();
+        let trimmed = t.trim();
+        if !trimmed.is_empty() {
+            out.push_str(trimmed);
+            out.push('\n');
+        }
+        return;
+    }
+    for child in el.children() {
+        if let Some(ce) = ElementRef::wrap(child) {
+            collect_readable(&ce, out, depth + 1);
+        }
+    }
+}
+
+/// 抓取网页并提取正文文本（对齐主流 Agent 的 WebFetch）。
+///
+/// 安全与护栏：仅 http/https、拒绝内网地址（SSRF）、响应 ≤200KB、10s 超时、
+/// 提取文本 ≤50K 字符截断、内容过提示注入防护；标题经 ammonia 消毒。
+pub async fn webfetch(url: &str, max_chars: usize) -> Result<String, String> {
+    let parsed = reqwest::Url::parse(url).map_err(|e| format!("URL 解析失败: {}", e))?;
+    if parsed.scheme() != "http" && parsed.scheme() != "https" {
+        return Err("仅支持 http/https 协议".into());
+    }
+    // 禁止自动重定向：手动逐跳校验目标地址（防公网 302 → 内网/云元数据的 SSRF 绕过）
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(WEBFETCH_TIMEOUT_SECS))
+        .user_agent("mdgo-agent/1.0")
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| format!("HTTP 客户端构建失败: {}", e))?;
+    let mut current = parsed.clone();
+    let mut redirects = 0u32;
+    let resp = loop {
+        // 每跳（含初始 URL）校验 host：IP 直接判断；域名先解析，解析出的任一地址
+        // 命中内网/回环即拒绝（防 DNS 重绑定与指向内网的域名绕过 SSRF 防护）
+        let host = current
+            .host_str()
+            .ok_or_else(|| "URL 缺少主机名".to_string())?
+            .to_string();
+        if is_private_host(&host) {
+            return Err("拒绝访问内网/本机地址（SSRF 防护）".into());
+        }
+        if current.host().is_some() && current.host_str().is_some_and(|h| h.parse::<std::net::IpAddr>().is_err()) {
+            // 域名：解析所有地址并校验
+            let addr = current
+                .socket_addrs(|| None)
+                .map_err(|e| format!("域名解析失败: {}", e))?;
+            if addr.iter().any(|sa| is_private_host(&sa.ip().to_string())) {
+                return Err("拒绝访问解析到内网/本机地址的域名（SSRF 防护）".into());
+            }
+        }
+        // 重定向后复查协议（防 https→http 降级与非 http(s) location）
+        if current.scheme() != "http" && current.scheme() != "https" {
+            return Err("仅支持 http/https 协议".into());
+        }
+        let resp = client
+            .get(current.clone())
+            .send()
+            .await
+            .map_err(|e| format!("请求失败: {}", e))?;
+        if resp.status().is_redirection() {
+            redirects += 1;
+            if redirects > WEBFETCH_MAX_REDIRECTS {
+                return Err("重定向次数过多".into());
+            }
+            let loc = resp
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|v| v.to_str().ok())
+                .ok_or_else(|| "重定向缺少 Location 头".to_string())?;
+            current = current
+                .join(loc)
+                .map_err(|e| format!("重定向地址解析失败: {}", e))?;
+            continue;
+        }
+        break resp;
+    };
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {} 错误", resp.status()));
+    }
+    // 流式读取并截断（防恶意服务器无限发送耗尽内存）
+    let mut body: Vec<u8> = Vec::new();
+    let mut stream = resp.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("读取响应失败: {}", e))?;
+        body.extend_from_slice(&chunk);
+        if body.len() > WEBFETCH_MAX_BODY_BYTES {
+            return Err("响应体超过 200KB，拒绝抓取".into());
+        }
+    }
+    let html = String::from_utf8_lossy(&body);
+    // 正文提取：readability（去除导航/页脚噪音）→ ammonia 消毒 → htmd 转 Markdown；
+    // 任一环节失败回退 scraper 文本提取，保证健壮。
+    let html_owned = html.to_string();
+    let mut cursor = std::io::Cursor::new(html_owned.as_bytes());
+    let (mut text, title) = match readability::extractor::extract(&mut cursor, &parsed) {
+        Ok(product) => {
+            let clean = ammonia::clean(&product.content);
+            let body_text = match htmd::convert(&clean) {
+                Ok(md) => md,
+                Err(_) => extract_readable_text(&clean),
+            };
+            let body_text = if body_text.trim().is_empty() {
+                extract_readable_text(&html)
+            } else {
+                body_text
+            };
+            (body_text, product.title.trim().to_string())
+        }
+        Err(_) => (extract_readable_text(&html), String::new()),
+    };
+    // 标题（不可信来源）经 ammonia 消毒后附加（纵深防御）
+    if !title.is_empty() {
+        let clean_title = ammonia::clean(&title).trim().to_string();
+        if !clean_title.is_empty() {
+            text = format!("标题：{}\n\n{}", clean_title, text);
+        }
+    }
+    let limit = max_chars.clamp(1000, WEBFETCH_MAX_CHARS);
+    let out = if text.chars().count() > limit {
+        let cut: String = text.chars().take(limit).collect();
+        format!("{}（内容过长已截断，共 {} 字符）", cut, text.chars().count())
+    } else {
+        text
+    };
+    Ok(crate::core::security::wrap_suspicious(&out))
+}
+
+/// 构建 webfetch 工具：抓取网页正文（只读）。
+pub fn build_webfetch_tool(cfg: KbSearchConfig) -> DynamicTool {
+    DynamicTool::new(
+        "webfetch",
+        "抓取指定网页并提取正文文本（只读，不执行页面脚本）。仅支持 http/https；拒绝访问内网/本机地址（SSRF 防护）；响应体上限 200KB、提取文本上限 50000 字符（超出截断并提示）。适合获取网页内容用于总结、引用或信息检索。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "要抓取的网页 URL，如 https://example.com/docs"
+                },
+                "max_chars": {
+                    "type": "integer",
+                    "minimum": 1000,
+                    "maximum": WEBFETCH_MAX_CHARS,
+                    "description": "提取文本上限（字符，默认 50000）"
+                }
+            },
+            "required": ["url"]
+        }),
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let cfg = cfg.clone();
+            Box::pin(async move {
+                let url = args
+                    .get("url")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                let max_chars = args
+                    .get("max_chars")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as usize)
+                    .unwrap_or(WEBFETCH_MAX_CHARS);
+                record_tool_call(&cfg, "webfetch", &url, Some(&args));
+                match webfetch(&url, max_chars).await {
+                    Ok(text) => {
+                        record_tool_result(&cfg, "webfetch", true, &format!("{} 字符", text.chars().count()), Some(&text));
+                        Ok(ToolOutput::text(text))
+                    }
+                    Err(e) => {
+                        record_tool_result(&cfg, "webfetch", false, &e, Some(&e));
+                        Err(tool_error("webfetch", &e))
+                    }
+                }
+            })
+        },
+    )
+}
 
 // ─────────────────────────── 任务清单工具（todo，对齐主流 TodoWrite） ───────────────────────────
 
@@ -3269,7 +3784,7 @@ pub fn build_spawn_subagent_tool(cfg: KbSearchConfig) -> DynamicTool {
             "properties": {
                 "task": { "type": "string", "description": "子代理任务描述（自包含，含目标与边界）" },
                 "mode": { "type": "string", "enum": ["readonly", "write"], "description": "readonly=只读调研（默认）；write=可编辑/删除文件（需用户确认）" },
-                "max_turns": { "type": "integer", "minimum": 1, "maximum": 30, "description": "轮次上限（默认 12）" }
+                "max_turns": { "type": "integer", "minimum": 1, "maximum": SUBAGENT_MAX_TURNS_LIMIT, "description": "轮次上限（默认 12）" }
             },
             "required": ["task"]
         }),
@@ -3349,12 +3864,12 @@ pub fn build_parallel_research_tool(cfg: KbSearchConfig) -> DynamicTool {
             "properties": {
                 "tasks": {
                     "type": "array",
-                    "minItems": 2,
-                    "maxItems": 5,
+                    "minItems": PARALLEL_TASKS_MIN,
+                    "maxItems": PARALLEL_TASKS_MAX,
                     "items": { "type": "string" },
                     "description": "2-5 个独立调研任务（各自自包含）"
                 },
-                "max_turns": { "type": "integer", "minimum": 1, "maximum": 30, "description": "每个子代理轮次上限（默认 12）" }
+                "max_turns": { "type": "integer", "minimum": 1, "maximum": SUBAGENT_MAX_TURNS_LIMIT, "description": "每个子代理轮次上限（默认 12）" }
             },
             "required": ["tasks"]
         }),

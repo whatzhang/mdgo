@@ -40,6 +40,13 @@ dashmap = "6"
 regex = "1"
 # Markdown AST 解析（结构识别，替代正则状态机）
 comrak = { version = "0.54", default-features = false }
+
+# HTML 解析与文本提取（P2：webfetch / HTML chunk）
+scraper = "0.20"
+ammonia = "4"
+# 正文提取（readability-rs 的 Mozilla Readability 移植）与 HTML→Markdown（htmd）
+readability = "0.3"
+htmd = "0.1"
 tokio-tungstenite = "0.24"
 futures-util = "0.3"
 

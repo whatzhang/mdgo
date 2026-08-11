@@ -43,7 +43,7 @@ pub enum SubagentMode {
 ///   防无限递归嵌套
 pub fn read_only_tool_set() -> HashSet<String> {
     [
-        "kb_search", "code_lookup", "read", "grep", "ls", "glob", "git_status",
+        "kb_search", "code_lookup", "read", "grep", "ls", "glob", "git_status", "git_diff", "webfetch",
         "search_memory",
     ]
     .iter()
@@ -61,14 +61,13 @@ pub fn write_tool_set() -> HashSet<String> {
     set.insert("delete".to_string());
     set.insert("write".to_string());
     set.insert("multi_edit".to_string());
+    set.insert("git_commit".to_string());
+    set.insert("git_checkout".to_string());
     set
 }
 
-/// 子代理默认轮次上限（深度调研需要比主对话 `DEFAULT_MAX_TURNS=6` 更大的预算）
-pub const SUBAGENT_MAX_TURNS: usize = 12;
-
-/// 子代理默认摘要字符预算（返回父链的有界结果）
-pub const SUBAGENT_SUMMARY_CHARS: usize = 4_000;
+// 子代理默认轮次上限 / 摘要字符预算见 crate::core::agent::limits（SUBAGENT_MAX_TURNS / SUBAGENT_SUMMARY_CHARS）
+pub use crate::core::agent::limits::{SUBAGENT_MAX_TURNS, SUBAGENT_SUMMARY_CHARS};
 
 /// 子代理执行规格
 pub struct SubagentSpec {
@@ -384,9 +383,13 @@ mod tests {
     #[test]
     fn write_tool_set_includes_edits_and_excludes_recursion() {
         let set = write_tool_set();
-        // 写型：只读集 + edit/delete
+        // 写型：只读集 + edit/delete/write/multi_edit/git_commit/git_checkout
         assert!(set.contains("edit"));
         assert!(set.contains("delete"));
+        assert!(set.contains("write"));
+        assert!(set.contains("multi_edit"));
+        assert!(set.contains("git_commit"));
+        assert!(set.contains("git_checkout"));
         assert!(set.contains("read"));
         assert!(set.contains("grep"));
         // 递归子代理与记忆写操作仍排除
@@ -396,11 +399,15 @@ mod tests {
         assert!(!set.contains("read_subagent_result"), "防无限递归");
         assert!(!set.contains("remember"), "记忆写仅主链负责");
         assert!(!set.contains("forget"), "记忆写仅主链负责");
-        // 写型 = 只读 ∪ {edit, delete}
+        // 写型 = 只读 ∪ {edit, delete, write, multi_edit, git_commit, git_checkout}
         let expected: HashSet<String> = {
             let mut s = read_only_tool_set();
             s.insert("edit".to_string());
             s.insert("delete".to_string());
+            s.insert("write".to_string());
+            s.insert("multi_edit".to_string());
+            s.insert("git_commit".to_string());
+            s.insert("git_checkout".to_string());
             s
         };
         assert_eq!(set, expected);

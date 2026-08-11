@@ -26,6 +26,12 @@ fn emit_changed(app: &AppHandle) {
     let _ = app.emit("skill:changed", ());
 }
 
+/// 技能可声明的工具白名单（key + 展示名）——单一来源，前端 Tauri 模式下经此获取。
+#[tauri::command]
+pub fn skill_allowed_tools() -> Vec<crate::core::skill::AllowedToolInfo> {
+    crate::core::skill::allowed_tools_info()
+}
+
 /// 技能列表（支持按作用域过滤）。
 ///
 /// 首次访问时重建注册表；此后由写操作 / watcher 负责热更新。

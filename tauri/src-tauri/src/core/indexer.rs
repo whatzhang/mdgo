@@ -694,7 +694,7 @@ impl Indexer {
             for entry in walkdir::WalkDir::new(target)
                 .follow_links(false)
                 .into_iter()
-                .filter_entry(|e| !(e.file_type().is_dir() && e.file_name() == ".mdgo"))
+                .filter_entry(|e| !(e.file_type().is_dir() && (e.file_name() == ".mdgo" || e.file_name() == utils::TRASH_DIR_NAME)))
             {
                 let entry = match entry {
                     Ok(e) => e,

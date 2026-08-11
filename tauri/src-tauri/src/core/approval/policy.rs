@@ -62,6 +62,50 @@ impl ApprovalPolicy for DestructiveWritePolicy {
                 summary: format!("删除文件 {rel_path}(不可恢复)"),
                 detail: "删除操作不可恢复,已删除内容无法通过本应用找回".to_string(),
             }),
+            "write" => Some(ApprovalRequest {
+                tool: tool.to_string(),
+                args: args.clone(),
+                summary: format!("写入/覆盖文件 {rel_path}"),
+                detail: "创建新文件或整体覆盖已有文件,覆盖内容不可撤销,请确认".to_string(),
+            }),
+            "multi_edit" => {
+                let edits_arr = args.get("edits").and_then(|v| v.as_array());
+                let count = edits_arr.map(|a| a.len()).unwrap_or(0);
+                // 摘要列出前几条目标路径，便于用户确认
+                let paths: Vec<String> = edits_arr
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|e| e.get("rel_path").and_then(|v| v.as_str()).map(|s| s.to_string()))
+                            .take(3)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let path_hint = if paths.is_empty() {
+                    String::new()
+                } else if count > 3 {
+                    format!("（如 {} 等，共 {count} 个文件）", paths.join("、"))
+                } else {
+                    format!("（{}）", paths.join("、"))
+                };
+                Some(ApprovalRequest {
+                    tool: tool.to_string(),
+                    args: args.clone(),
+                    summary: format!("批量编辑 {count} 个文件{path_hint}"),
+                    detail: "批量替换多个文件,全部通过校验后一次性写入,请确认".to_string(),
+                })
+            }
+            "git_commit" => Some(ApprovalRequest {
+                tool: tool.to_string(),
+                args: args.clone(),
+                summary: "Git 提交（commit）".to_string(),
+                detail: "将暂存区改动提交为一次 commit,会修改仓库历史,请确认".to_string(),
+            }),
+            "git_checkout" => Some(ApprovalRequest {
+                tool: tool.to_string(),
+                args: args.clone(),
+                summary: "Git 恢复文件（checkout）".to_string(),
+                detail: "将工作区文件恢复到 HEAD,未提交的修改会丢失且不可恢复,请确认".to_string(),
+            }),
             _ => None,
         }
     }

@@ -435,6 +435,7 @@ pub fn run() {
             // 前端通信桥命令（WebSocket）
             commands::bridge::get_bridge_port,
             // Skill 管理命令
+            commands::skill::skill_allowed_tools,
             commands::skill::skill_list,
             commands::skill::skill_get,
             commands::skill::skill_create,

@@ -654,9 +654,55 @@ impl ChunkSplitter for MarkdownChunkSplitter {
     }
 }
 
-// ─── 树形处理器常量 ───
+/// HTML 分块器：scraper 解析 → 语义 AST（DocumentNode）→ SemanticChunkEngine 语义分块。
+///
+/// 使 HTML 从 PlainText 无结构分块升级为与 Markdown 一致的语义边界分块
+/// （标题层级 + 段落/代码/表格/列表/引用边界，chunk_type 复用既有取值）。
+/// 解析失败降级为纯文本分块（不阻断索引）。
+#[derive(Debug, Clone)]
+pub struct HtmlChunkSplitter;
 
-/// 短叶子节点最大字符数
+impl HtmlChunkSplitter {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for HtmlChunkSplitter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ChunkSplitter for HtmlChunkSplitter {
+    fn split(&self, text: &str, max_chars: usize, overlap: usize) -> Vec<ChunkResult> {
+        if text.trim().is_empty() {
+            return Vec::new();
+        }
+        let parser = crate::core::document::html_ast::HtmlDocumentParser;
+        let document = match parser.parse(text) {
+            Ok(doc) => doc,
+            Err(_) => {
+                // 解析失败降级为纯文本分块
+                return PlainTextChunkSplitter.split(text, max_chars, overlap);
+            }
+        };
+        let config = MarkdownSplitConfig::default();
+        let engine = SemanticChunkEngine::new(
+            max_chars,
+            overlap,
+            config.oversize_factor,
+            config.min_body_reserve_chars,
+        );
+        engine
+            .build(&document)
+            .into_iter()
+            .map(ChunkResult::from)
+            .collect()
+    }
+}
+
+// ─── 树形处理器常量 ───/// 短叶子节点最大字符数
 const SHORT_LEAF_MAX_CHARS: usize = 8;
 /// 路径前缀最大保留级数
 const PATH_MAX_LEVELS: usize = 3;
@@ -1381,6 +1427,11 @@ impl ChunkSplitterFactory {
         factory.exact.insert("mdx", Box::new(md_splitter.clone()));
         factory.suffix.push(("md", Box::new(md_splitter)));
 
+        // HTML 类型（scraper → 语义 AST → 语义分块，P2）
+        let html_splitter = Box::new(HtmlChunkSplitter::new());
+        factory.exact.insert("html", html_splitter.clone());
+        factory.exact.insert("htm", html_splitter);
+
         // OPML 类型
         factory.exact.insert("opml", opml);
 
@@ -1388,9 +1439,11 @@ impl ChunkSplitterFactory {
         factory.exact.insert("mm", freemind);
 
         // 代码文件类型（有语言特定分隔符的扩展名使用 CodeAwareChunkSplitter）
-        // 其余非 Markdown/OPML/FreeMind 类型使用 PlainTextChunkSplitter
+        // 其余非 Markdown/OPML/FreeMind/HTML 类型使用 PlainTextChunkSplitter
         for ext in utils::KB_SUPPORTED_EXTS {
-            if ext == &"md" || ext == &"mdx" || ext == &"opml" || ext == &"mm" {
+            if ext == &"md" || ext == &"mdx" || ext == &"opml" || ext == &"mm"
+                || ext == &"html" || ext == &"htm"
+            {
                 continue;
             }
             if CODE_LANG_SEPARATORS.contains_key(ext) {

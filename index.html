@@ -5496,6 +5496,23 @@
             margin: 0 0.0625rem;
         }
 
+        /* 代码符号徽标（code_lookup 命中来源） */
+        .chat-message .msg-sources .source-item .source-symbol-badge {
+            display: inline-block;
+            margin-left: 0.375rem;
+            padding: 0 0.3125rem;
+            font-size: 0.625rem;
+            line-height: 1.25;
+            color: var(--color-primary, #2e7d32);
+            background: rgba(46, 125, 50, 0.1);
+            border-radius: 0.25rem;
+            vertical-align: middle;
+            white-space: nowrap;
+            max-width: 12rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
         .chat-message .msg-sources .source-item .source-path-ellipsis {
             color: var(--t4);
             font-size: 0.6875rem;
@@ -17225,13 +17242,59 @@
         let LOCAL_LLM_ENDPOINT = 'http://192.168.31.152:12345/v1/chat/completions';
         let LOCAL_LLM_TOKEN = 'c17f18e31adb10978d3a9cd0d6743d30a067af602a8789e7';
         let LOCAL_LLM_MODEL = 'gemma-4-e4b-it';
+        /**
+         * AI Agent 指标参数集中配置（与后端 core/agent/limits.rs 对齐的单一口径）。
+         * 本地打开 index.html 模式直接使用；Tauri 模式下运行时值由后端配置
+         * （kb_get_indexer_config 等）下发覆盖。新增指标参数一律在此定义，避免散落硬编码。
+         */
+        const AGENT_LIMITS = {
+            // 模型调用预算（对齐后端 limits）
+            defaultMaxTurns: 10,
+            maxMessageChars: 30000,
+            maxMessageTokens: 15000,
+            summaryMaxChars: 6000,
+            // 对话上下文
+            contextLength: 10000,
+            maxTokens: 4096,
+            historyBudgetRatio: 0.6,
+            aiHistoryMax: 10,
+            // 检索
+            kbTopKMax: 50,
+            // 文件工具
+            maxFileReadChars: 8192,
+            maxListItems: 60,
+            maxGrepFiles: 20,
+            maxGrepOutputChars: 60000,
+            maxMultiEdits: 10,
+            readPathsMax: 10,
+            grepContextMax: 5,
+            maxEditFileBytes: 1024 * 1024,
+            // 子代理
+            subagentMaxTurns: 12,
+            subagentSummaryChars: 4000,
+            subagentMaxTurnsLimit: 30,
+            parallelTasksMin: 2,
+            parallelTasksMax: 5,
+            // 外部工具
+            maxExternalResponseChars: 100000,
+            externalTimeoutSecs: 30,
+            // pomodoro
+            pomodoroMinutesMax: 180,
+            // RAG 默认配置（Tauri 下由 kb_get_indexer_config 下发覆盖，本地模式使用）
+            ragDefaults: {
+                topK: 10, minScore: 0.3, chunkSize: 448, chunkOverlap: 56,
+                fusionAlpha: 0.6, maxContextDocs: 4, maxChunksPerDoc: 3,
+                candidateK: 100, rrfK: 60, vecMinScore: 0.35,
+                rerankMinScore: 0.2, bm25MsmRatio: 0.6, rerankerEnabled: true
+            }
+        };
         let LOCAL_LLM_PLANNER_MODEL = '';   // P0-6：规划用小模型（可选，空 = 主模型）
         let LOCAL_LLM_SUMMARY_MODEL = '';   // P0-6：摘要用小模型（可选，空 = 主模型）
         let LOCAL_LLM_REASONING_EFFORT = ''; // P2-18：推理等级（可选：low/medium/high）
-        let LOCAL_LLM_CONTEXT_LENGTH = 10000;
-        let LOCAL_LLM_MAX_TOKENS = 4096;
+        let LOCAL_LLM_CONTEXT_LENGTH = AGENT_LIMITS.contextLength;
+        let LOCAL_LLM_MAX_TOKENS = AGENT_LIMITS.maxTokens;
         /** 对话历史预算占 context 的比例（剩余留给 system prompt / RAG context） */
-        const HISTORY_BUDGET_RATIO = 0.6;
+        const HISTORY_BUDGET_RATIO = AGENT_LIMITS.historyBudgetRatio;
         // nginx 配置地址
         let NGINX_CONF_PATH = '/usr/local/etc/openresty/sites/index.conf';
         // 忽略的目录
@@ -17797,7 +17860,7 @@
         // ====== 目录名常量 ======
         const DELETED_DIR_NAME = 'mdgo_trash';         // 垃圾箱文件名
         const DIARY_DIR_NAME = 'mdgo_diary';         // 日记文件名
-        const AI_HISTORY_MAX = 10; //AI调用历史最大条数
+        const AI_HISTORY_MAX = AGENT_LIMITS.aiHistoryMax; // AI 调用历史最大条数（集中配置）
         //数据文件
         const INDEX_HISTORY_FILE = 'index_ai_history.json';
         const INDEX_DELETED_FILE = 'index_deleted.json';
@@ -48360,13 +48423,21 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (type === 'unstaged') {
                     btnsHtml = `
                         <div class="git-status-item-btns">
-                            <button class="git-status-item-btn stage" title="暂存更改" data-action="stage" data-filepath="${gitEscapeHtml(item.filepath)}">+</button>
-                            <button class="git-status-item-btn discard" title="放弃更改" data-action="discard" data-filepath="${gitEscapeHtml(item.filepath)}" data-status="${item.status}">✕</button>
+                            <button class="git-status-item-btn stage" title="暂存更改" data-action="stage" data-filepath="${gitEscapeHtml(item.filepath)}">
+                                <svg fill="currentColor" width="14" height="14" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                                    <g><g><rect width="48" height="48" fill="none"/></g><g><path d="M39,22H26V9a2,2,0,0,0-4,0V22H9a2,2,0,0,0,0,4H22V39a2,2,0,0,0,4,0V26H39a2,2,0,0,0,0-4Z"/></g></g>
+                                </svg></button>
+                            <button class="git-status-item-btn discard" title="放弃更改" data-action="discard" data-filepath="${gitEscapeHtml(item.filepath)}" data-status="${item.status}">
+                                <svg fill="currentColor" width="14" height="14" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path fill-rule="evenodd" d="M13.41425,12.00025 L18.70725,6.70725 C19.09825,6.31625 19.09825,5.68425 18.70725,5.29325 C18.31625,4.90225 17.68425,4.90225 17.29325,5.29325 L12.00025,10.58625 L6.70725,5.29325 C6.31625,4.90225 5.68425,4.90225 5.29325,5.29325 C4.90225,5.68425 4.90225,6.31625 5.29325,6.70725 L10.58625,12.00025 L5.29325,17.29325 C4.90225,17.68425 4.90225,18.31625 5.29325,18.70725 C5.48825,18.90225 5.74425,19.00025 6.00025,19.00025 C6.25625,19.00025 6.51225,18.90225 6.70725,18.70725 L12.00025,13.41425 L17.29325,18.70725 C17.48825,18.90225 17.74425,19.00025 18.00025,19.00025 C18.25625,19.00025 18.51225,18.90225 18.70725,18.70725 C19.09825,18.31625 19.09825,17.68425 18.70725,17.29325 L13.41425,12.00025 Z"/>
+                                </svg></button>
                         </div>`;
                 } else {
                     btnsHtml = `
                         <div class="git-status-item-btns">
-                            <button class="git-status-item-btn unstage" title="取消暂存" data-action="unstage" data-filepath="${gitEscapeHtml(item.filepath)}">−</button>
+                            <button class="git-status-item-btn unstage" title="取消暂存" data-action="unstage" data-filepath="${gitEscapeHtml(item.filepath)}">
+                                <svg fill="currentColor" width="14" height="14" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19,13H5a1,1,0,0,1,0-2H19a1,1,0,0,1,0,2Z"></path></svg>
+                            </button>
                         </div>`;
                 }
                 html += `
@@ -52721,6 +52792,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     nameSpan.textContent = path;
                     infoDiv.appendChild(nameSpan);
 
+                    // 代码符号（code_lookup 命中）：显示符号名与类型徽标
+                    if (s.symbol_name) {
+                        const symSpan = document.createElement('span');
+                        symSpan.className = 'source-symbol-badge';
+                        symSpan.textContent = '⚙ ' + (s.symbol_kind ? (s.symbol_kind + ' ') : '') + s.symbol_name;
+                        symSpan.title = '代码符号: ' + s.symbol_name;
+                        infoDiv.appendChild(symSpan);
+                    }
+
                     // 解析 OPML 层级路径并显示为面包屑导航
                     const pathJson = s.path_json;
                     if (pathJson) {
@@ -53295,6 +53375,28 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     detail.style.cssText = 'display:none;margin-top:0.3rem;padding:0.3rem 0.5rem;background:rgba(0,0,0,0.04);border-radius:4px;font-size:0.72rem;color:#666;white-space:pre-wrap;word-break:break-all;max-height:12rem;overflow:auto;';
                     detail.textContent = String(p.summary || '');
                     card.appendChild(detail);
+                    // P2 输出结构化：按工具类型渲染增强卡片（git_diff 文件改动列表等）
+                    if (p.structured && typeof p.structured === 'object') {
+                        const sEl = document.createElement('div');
+                        sEl.className = 'tool-structured';
+                        sEl.style.cssText = 'margin-top:0.3rem;padding:0.3rem 0.5rem;background:rgba(0,0,0,0.03);border-radius:4px;font-size:0.72rem;color:#555;';
+                        if (p.tool === 'git_diff' && Array.isArray(p.structured.files)) {
+                            const title = document.createElement('div');
+                            title.textContent = `文件改动（${p.structured.files.length}）：`;
+                            title.style.cssText = 'color:#666;margin-bottom:0.2rem;';
+                            sEl.appendChild(title);
+                            for (const f of p.structured.files) {
+                                const row = document.createElement('div');
+                                const fpath = String(f.path || '');
+                                const adds = Number(f.additions || 0);
+                                const dels = Number(f.deletions || 0);
+                                row.innerHTML = `<span style="word-break:break-all;">${escapeHtml(fpath)}</span> <span style="color:#2e7d32;">+${adds}</span> <span style="color:#c62828;">-${dels}</span>`;
+                                sEl.appendChild(row);
+                            }
+                            card.appendChild(sEl);
+                        }
+                        // 其他工具的结构化渲染可在此扩展（grep/ls 列表等）
+                    }
                     card.style.cursor = 'pointer';
                     card.addEventListener('click', (ev) => {
                         ev.stopPropagation();
@@ -54145,20 +54247,21 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             try {
                 if (window.__TAURI__?.core?.invoke) {
                     const cfg = await window.__TAURI__.core.invoke('kb_get_indexer_config');
+                    const rd = AGENT_LIMITS.ragDefaults; // 本地模式/后端缺省时的统一默认值（集中配置）
                     ragSettings = ragSettings || {};
-                    document.getElementById('rag-setting-topk').value = cfg.top_k ?? 10;
-                    document.getElementById('rag-setting-min-score').value = cfg.min_score ?? 0.3;
-                    document.getElementById('rag-setting-chunk-size').value = cfg.chunk_size ?? 448;
-                    document.getElementById('rag-setting-chunk-overlap').value = cfg.chunk_overlap ?? 56;
-                    document.getElementById('rag-setting-fusion-alpha').value = cfg.fusion_alpha ?? 0.6;
-                    document.getElementById('rag-setting-max-docs').value = cfg.max_context_docs ?? 4;
-                    document.getElementById('rag-setting-max-chunks').value = cfg.max_chunks_per_doc ?? 3;
-                    document.getElementById('rag-setting-candidate-k').value = cfg.candidate_k ?? 100;
-                    document.getElementById('rag-setting-rrf-k').value = cfg.rrf_k ?? 60;
-                    document.getElementById('rag-setting-vec-min-score').value = cfg.vec_min_score ?? 0.35;
-                    document.getElementById('rag-setting-rerank-min-score').value = cfg.rerank_min_score ?? 0.2;
-                    document.getElementById('rag-setting-bm25-msm').value = cfg.bm25_msm_ratio ?? 0.6;
-                    document.getElementById('rag-setting-reranker-enabled').checked = cfg.reranker_enabled ?? true;
+                    document.getElementById('rag-setting-topk').value = cfg.top_k ?? rd.topK;
+                    document.getElementById('rag-setting-min-score').value = cfg.min_score ?? rd.minScore;
+                    document.getElementById('rag-setting-chunk-size').value = cfg.chunk_size ?? rd.chunkSize;
+                    document.getElementById('rag-setting-chunk-overlap').value = cfg.chunk_overlap ?? rd.chunkOverlap;
+                    document.getElementById('rag-setting-fusion-alpha').value = cfg.fusion_alpha ?? rd.fusionAlpha;
+                    document.getElementById('rag-setting-max-docs').value = cfg.max_context_docs ?? rd.maxContextDocs;
+                    document.getElementById('rag-setting-max-chunks').value = cfg.max_chunks_per_doc ?? rd.maxChunksPerDoc;
+                    document.getElementById('rag-setting-candidate-k').value = cfg.candidate_k ?? rd.candidateK;
+                    document.getElementById('rag-setting-rrf-k').value = cfg.rrf_k ?? rd.rrfK;
+                    document.getElementById('rag-setting-vec-min-score').value = cfg.vec_min_score ?? rd.vecMinScore;
+                    document.getElementById('rag-setting-rerank-min-score').value = cfg.rerank_min_score ?? rd.rerankMinScore;
+                    document.getElementById('rag-setting-bm25-msm').value = cfg.bm25_msm_ratio ?? rd.bm25MsmRatio;
+                    document.getElementById('rag-setting-reranker-enabled').checked = cfg.reranker_enabled ?? rd.rerankerEnabled;
                 }
             } catch (e) {
                 console.warn('[rag-settings] 加载配置失败:', e);
@@ -54507,7 +54610,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     query: text,
                     messages: histMessages,
                     requestId,
-                    topK: ragSettings?.topK ?? 10,
+                    topK: ragSettings?.topK ?? AGENT_LIMITS.ragDefaults.topK,
                     sessionId: currentSessionId,
                 });
             } catch (err) {
@@ -55084,14 +55187,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 try {
                     if (window.__TAURI__?.core?.invoke) {
                         const cfg = await window.__TAURI__.core.invoke('kb_get_indexer_config');
+                        const rd = AGENT_LIMITS.ragDefaults;
                         ragSettings = {
-                            topK: cfg.top_k ?? 10,
-                            minScore: cfg.min_score ?? 0.3,
-                            chunkSize: cfg.chunk_size ?? 448,
-                            chunkOverlap: cfg.chunk_overlap ?? 56,
-                            fusionAlpha: cfg.fusion_alpha ?? 0.6,
-                            maxContextDocs: cfg.max_context_docs ?? 4,
-                            maxChunksPerDoc: cfg.max_chunks_per_doc ?? 3,
+                            topK: cfg.top_k ?? rd.topK,
+                            minScore: cfg.min_score ?? rd.minScore,
+                            chunkSize: cfg.chunk_size ?? rd.chunkSize,
+                            chunkOverlap: cfg.chunk_overlap ?? rd.chunkOverlap,
+                            fusionAlpha: cfg.fusion_alpha ?? rd.fusionAlpha,
+                            maxContextDocs: cfg.max_context_docs ?? rd.maxContextDocs,
+                            maxChunksPerDoc: cfg.max_chunks_per_doc ?? rd.maxChunksPerDoc,
                         };
                     }
                 } catch (e) {
@@ -55305,23 +55409,20 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if(FrontendBridge) FrontendBridge.start();
         }
         // ====== 技能管理（Skill Manager，skill 前缀隔离） ======
-        // 依赖主页面全局：skillContainer / escapeHtml / showConfirmModal / showNotification
-        // getRootHandle / getDirPath / isTauriVisit / switchToView（加载顺序：本文件须在主页内联脚本之后）
-        // 技能可声明的工具白名单（后端 ALLOWED_TOOLS 的子集；
-        // activate_skill / deactivate_skill 为系统常驻管理工具，不可由技能声明）
-        const ALLOWED_SKILL_TOOLS = [
-            {key:'kb_search', label:'知识库搜索'},
-            {key:'code_lookup', label:'代码查找'}, 
-            {key:'read', label:'读取文件'}, 
-            {key:'write', label:'写入文件'}, 
-            {key:'glob', label:'文件匹配'}, 
-            {key:'edit', label:'编辑文件'}, 
-            {key:'multi_edit', label:'批量编辑'}, 
-            {key:'delete', label:'删除文件'}, 
-            {key:'grep', label:'全局搜索'}, 
-            {key:'ls', label:'列出文件'}, 
-            {key:'git_status', label:'获取 Git 状态'}, 
-            {key:'pomodoro', label:'番茄钟'}];
+        let ALLOWED_SKILL_TOOLS = [];
+        
+        /** 从后端加载技能工具白名单（单一来源）；本地模式使用 fallback 副本 */
+        async function loadAllowedSkillTools() {
+            if (!isTauriVisit() || !window.__TAURI__?.core?.invoke) return;
+            try {
+                const list = await window.__TAURI__.core.invoke('skill_allowed_tools');
+                if (Array.isArray(list) && list.length > 0) {
+                    ALLOWED_SKILL_TOOLS = list.map(x => ({ key: String(x.key), label: String(x.label || x.key) }));
+                }
+            } catch (e) {
+                console.warn('[skill] 加载工具白名单失败，使用本地 fallback:', e);
+            }
+        }
         
         const SKILL_SCOPE_NAMES = { system: '系统', global: '全局', project: '当前目录' };
 
@@ -55368,6 +55469,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             await switchToView(skillContainer, 'flex');
             skillDirPath = dirPath;
+            // 优先从后端加载工具白名单（单一来源）；本地模式用 fallback
+            await loadAllowedSkillTools();
             skillSubscribeChanged();
             await skillLoadList();
         }

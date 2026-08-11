@@ -27,7 +27,10 @@ use crate::core::skill::activation::ActiveSkillState;
 use crate::core::skill::SkillRegistry;
 
 pub mod planner;
+/// AI Agent 指标参数集中配置（单一来源）
+pub mod limits;
 
+pub use limits::{DEFAULT_MAX_TURNS, KB_TOP_K_SCHEMA_MAX, MAX_CONTEXT_CHARS, MAX_TOP_K};
 use self::tool_registry::ToolRegistry;
 use crate::core::{Indexer, SearchHit, call_embedding_query};
 
@@ -119,18 +122,17 @@ pub mod tool_registry;
 /// 才可见可调——决策权在 LLM（先 activate_skill 再检索）。
 pub const BASE_TOOLS: &[&str] = &[
     "activate_skill", "deactivate_skill", "read", "ls", "glob", "grep", "write", "edit", "multi_edit", "delete",
-    "git_status", "deep_research", "read_subagent_result",
+    "git_status", "git_diff", "git_commit", "git_checkout", "webfetch", "deep_research", "read_subagent_result",
     "remember", "forget", "search_memory",
     "todo_write",
     "spawn_subagent", "parallel_research", "self_review",
 ];
 
-/// Agent 单次请求的模型调用总预算（激活技能 + 文件读取 + 检索 + 批量编辑等流程通常需要多轮）。
+/// Agent 单次请求的模型调用总预算定义见 [`limits::DEFAULT_MAX_TURNS`]（集中配置）
 ///
 /// 语义 = 模型调用次数上限（1-based）：第 1 次调用 turn=1，turn=10 是最后一次，
 /// 第 11 次请求触发 MaxTurnsError。超出预算的流程由轮次预算预警 Hook 引导模型提前收尾。
-/// P1 提高：新增 write/multi_edit/todo 等工具后，完整工作流（检索→读→改→校验）需要更多轮次。
-pub const DEFAULT_MAX_TURNS: usize = 10;
+// （常量定义已迁移至 limits.rs，经 pub use 再导出）
 
 /// 调试用 Hook：在每次 LLM API 调用边界打印完整请求体与响应体。
 ///
@@ -360,11 +362,11 @@ impl AgentHook for SkillInstructionHook {
 }
 
 /// kb_search 工具允许的最大片段数（防止模型传入超大 top_k 触发全量检索/重排）
-const MAX_TOP_K: u32 = 20;
+// MAX_TOP_K 定义已迁移至 limits.rs（pub use 再导出）
 
 /// 聚合后送入模型上下文的总字符上限（约 3K token，避免超出模型窗口）。
 /// kb_search 工具与 Agent 主链路共用此上限（单一来源）。
-pub(crate) const MAX_CONTEXT_CHARS: usize = 12_000;
+// MAX_CONTEXT_CHARS 定义已迁移至 limits.rs（pub use 再导出）
 
 /// kb_search 工具的运行参数
 #[derive(Clone)]
@@ -463,6 +465,8 @@ pub fn build_kb_search_tool(cfg: KbSearchConfig) -> DynamicTool {
                 },
                 "top_k": {
                     "type": "integer",
+                    "minimum": 1,
+                    "maximum": KB_TOP_K_SCHEMA_MAX,
                     "description": "期望返回的文档片段数量，默认 5"
                 }
             },
@@ -558,6 +562,8 @@ pub fn build_code_lookup_tool(cfg: KbSearchConfig) -> DynamicTool {
                 },
                 "top_k": {
                     "type": "integer",
+                    "minimum": 1,
+                    "maximum": KB_TOP_K_SCHEMA_MAX,
                     "description": "期望返回的代码片段数量，默认 5"
                 }
             },
@@ -876,6 +882,18 @@ fn create_tool_registry(only: Option<&HashSet<String>>) -> ToolRegistry {
     // ── Git 工具（repo-status 技能声明） ──
     if want("git_status") {
         reg.register("git_status", Box::new(tools::build_git_status_tool));
+    }
+    if want("git_diff") {
+        reg.register("git_diff", Box::new(tools::build_git_diff_tool));
+    }
+    if want("git_commit") {
+        reg.register("git_commit", Box::new(tools::build_git_commit_tool));
+    }
+    if want("git_checkout") {
+        reg.register("git_checkout", Box::new(tools::build_git_checkout_tool));
+    }
+    if want("webfetch") {
+        reg.register("webfetch", Box::new(tools::build_webfetch_tool));
     }
 
     // ── 番茄钟工具（pomodoro 技能声明，非 BASE_TOOLS） ──
