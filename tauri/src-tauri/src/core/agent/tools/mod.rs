@@ -2355,7 +2355,7 @@ pub fn build_self_review_tool(cfg: KbSearchConfig) -> DynamicTool {
 pub fn build_remember_tool(cfg: KbSearchConfig) -> DynamicTool {
     DynamicTool::new(
         "remember",
-        "把一条长期记忆写入跨会话存储（用户偏好、项目约定、已验证结论等），后续对话可检索引用。title 一句话概括，body 写完整事实；keywords 用空格分隔便于检索。",
+        "把一条长期记忆写入跨会话存储（用户偏好、项目约定、已验证结论等），后续对话可检索引用。title 一句话概括，body 写完整事实；keywords 用空格分隔便于检索；expires_in_days 可设置过期天数（过期后不再召回）。",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -2363,7 +2363,8 @@ pub fn build_remember_tool(cfg: KbSearchConfig) -> DynamicTool {
                 "body": { "type": "string", "description": "记忆正文（完整事实/偏好/约定）" },
                 "keywords": { "type": "string", "description": "检索关键词，空格分隔（可选）" },
                 "scope": { "type": "string", "enum": ["project", "global"], "description": "作用域：project=当前知识库，global=全部（默认 project）" },
-                "kind": { "type": "string", "enum": ["fact", "preference", "reference"], "description": "记忆类型（默认 fact）" }
+                "kind": { "type": "string", "enum": ["fact", "preference", "reference"], "description": "记忆类型（默认 fact）" },
+                "expires_in_days": { "type": "integer", "minimum": 1, "description": "过期天数（可选；过期后不再召回与注入）" }
             },
             "required": ["title", "body"]
         }),
@@ -2378,8 +2379,19 @@ pub fn build_remember_tool(cfg: KbSearchConfig) -> DynamicTool {
                     .take(40)
                     .collect();
                 record_tool_call(&cfg, "remember", &preview, Some(&args));
-                let input: crate::core::memory::MemoryInput =
+                // O2：expires_in_days → 过期时间戳（毫秒）
+                let expires_in_days = args.get("expires_in_days").and_then(|v| v.as_u64());
+                let mut input: crate::core::memory::MemoryInput =
                     serde_json::from_value(args).map_err(|e| tool_error("remember", &e.to_string()))?;
+                if let Some(days) = expires_in_days {
+                    if days > 0 {
+                        let now_ms = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_millis() as u64)
+                            .unwrap_or(0);
+                        input.expires_at = Some(now_ms + days * 24 * 60 * 60 * 1000);
+                    }
+                }
                 let state = cfg.app_handle.state::<crate::AppState>();
                 match state.memory_store.create(&input) {
                     Ok(item) => {

@@ -40,6 +40,9 @@ pub struct MemoryInput {
     /// 来源引用（如文档路径/会话 id，可选）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_ref: Option<String>,
+    /// 过期时间（unix 毫秒；O2：有值且已过期则不再召回与注入）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<u64>,
 }
 
 /// 记忆条目（存储视图）
@@ -53,10 +56,20 @@ pub struct MemoryItem {
     pub keywords: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_ref: Option<String>,
+    /// 过期时间（unix 毫秒；None = 永不过期）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<u64>,
     pub created_at: u64,
     pub updated_at: u64,
     /// 单调递增版本号：每次更新 +1（审计链）
     pub revision: u32,
+}
+
+impl MemoryItem {
+    /// 是否已过期（有 expires_at 且早于当前时间）
+    pub fn is_expired(&self, now_ms: u64) -> bool {
+        self.expires_at.is_some_and(|e| e <= now_ms)
+    }
 }
 
 /// 跨会话长期记忆存储（SQLite，全局用户数据目录）。
@@ -123,7 +136,39 @@ impl MemoryStore {
             ",
         )
         .map_err(|e| format!("创建 memory_items 表失败: {}", e))?;
+
+        // O3：FTS5 关键词倒排（title/body/keywords）；写后全量重建（记忆规模小，
+        // 规避 FTS5 delete/触发器内容匹配坑）；建表失败降级为 LIKE 检索。
+        // 先清理旧版残留触发器与 FTS 表（IF NOT EXISTS 不会删除历史遗留，防止
+        // update/delete 触发残留触发器导致 SQLITE_ERROR）。
+        let fts_ok = conn
+            .execute_batch(
+                "DROP TRIGGER IF EXISTS memory_fts_ai;
+                 DROP TRIGGER IF EXISTS memory_fts_ad;
+                 DROP TRIGGER IF EXISTS memory_fts_au;
+                 DROP TABLE IF EXISTS memory_fts;
+                 CREATE VIRTUAL TABLE memory_fts USING fts5(
+                     id UNINDEXED, title, body, keywords, tokenize='unicode61'
+                 );",
+            )
+            .is_ok();
+        if fts_ok {
+            // 迁移存量数据 + 幂等重建
+            let _ = Self::rebuild_fts(&conn);
+        } else {
+            log::warn!("[memory] FTS5 不可用，记忆检索降级为关键词扫描");
+        }
         Ok(())
+    }
+
+    /// 全量重建 FTS 索引（create/update/delete 写后调用；记忆规模小，O(n) 可接受）。
+    fn rebuild_fts(conn: &Connection) -> Result<(), String> {
+        conn.execute_batch(
+            "DELETE FROM memory_fts;
+             INSERT INTO memory_fts(rowid, id, title, body, keywords)
+             SELECT rowid, id, title, body, keywords FROM memory_items;",
+        )
+        .map_err(|e| format!("重建记忆全文索引失败: {}", e))
     }
 
     fn now_ms() -> u64 {
@@ -145,6 +190,7 @@ impl MemoryStore {
             body: input.body.trim().to_string(),
             keywords: input.keywords.trim().to_string(),
             source_ref: input.source_ref.clone(),
+            expires_at: input.expires_at,
             created_at: now,
             updated_at: now,
             revision: 1,
@@ -153,14 +199,16 @@ impl MemoryStore {
             return Err("记忆标题不能为空".into());
         }
         conn.execute(
-            "INSERT INTO memory_items (id, scope, kind, title, body, keywords, source_ref, created_at, updated_at, revision)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO memory_items (id, scope, kind, title, body, keywords, source_ref, expires_at, created_at, updated_at, revision)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             rusqlite::params![
                 item.id, item.scope, item.kind, item.title, item.body, item.keywords,
-                item.source_ref.as_deref().unwrap_or(""), item.created_at, item.updated_at, item.revision
+                item.source_ref.as_deref().unwrap_or(""), item.expires_at.map(|v| v as i64),
+                item.created_at, item.updated_at, item.revision
             ],
         )
         .map_err(|e| format!("写入记忆失败: {}", e))?;
+        Self::rebuild_fts(&conn)?;
         Ok(item)
     }
 
@@ -172,19 +220,21 @@ impl MemoryStore {
             .execute(
                 "UPDATE memory_items
                  SET title = ?1, body = ?2, keywords = ?3, scope = ?4, kind = ?5,
-                     source_ref = ?6, updated_at = ?7, revision = revision + 1
-                 WHERE id = ?8",
+                     source_ref = ?6, expires_at = ?7, updated_at = ?8, revision = revision + 1
+                 WHERE id = ?9",
                 rusqlite::params![
                     input.title.trim(), input.body.trim(), input.keywords.trim(),
                     if input.scope.is_empty() { "project" } else { &input.scope },
                     if input.kind.is_empty() { "fact" } else { &input.kind },
-                    input.source_ref.as_deref().unwrap_or(""), now, id
+                    input.source_ref.as_deref().unwrap_or(""),
+                    input.expires_at.map(|v| v as i64), now, id
                 ],
             )
             .map_err(|e| format!("更新记忆失败: {}", e))?;
         if affected == 0 {
             return Ok(None);
         }
+        Self::rebuild_fts(&conn)?;
         Self::get_with_conn(&conn, id)
     }
 
@@ -194,6 +244,7 @@ impl MemoryStore {
         let affected = conn
             .execute("DELETE FROM memory_items WHERE id = ?1", rusqlite::params![id])
             .map_err(|e| format!("删除记忆失败: {}", e))?;
+        Self::rebuild_fts(&conn)?;
         Ok(affected > 0)
     }
 
@@ -206,7 +257,7 @@ impl MemoryStore {
     fn get_with_conn(conn: &Connection, id: &str) -> Result<Option<MemoryItem>, String> {
         let mut stmt = conn
             .prepare(
-                "SELECT id, scope, kind, title, body, keywords, source_ref, created_at, updated_at, revision
+                "SELECT id, scope, kind, title, body, keywords, source_ref, expires_at, created_at, updated_at, revision
                  FROM memory_items WHERE id = ?1",
             )
             .map_err(|e| e.to_string())?;
@@ -216,27 +267,30 @@ impl MemoryStore {
         Ok(rows.into_iter().next().transpose().map_err(|e| e.to_string())?)
     }
 
-    /// 列出记忆（可选按 scope 过滤），按更新时间倒序。
+    /// 列出记忆（可选按 scope 过滤），按更新时间倒序；过滤已过期条目（O2）。
     pub fn list(&self, scope: Option<&str>, limit: usize) -> Result<Vec<MemoryItem>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let limit = limit.clamp(1, 100) as i64;
+        let now = Self::now_ms() as i64;
         let mut stmt = match scope {
             Some(_) => conn
                 .prepare(
-                    "SELECT id, scope, kind, title, body, keywords, source_ref, created_at, updated_at, revision
-                     FROM memory_items WHERE scope = ?1 ORDER BY updated_at DESC LIMIT ?2",
+                    "SELECT id, scope, kind, title, body, keywords, source_ref, expires_at, created_at, updated_at, revision
+                     FROM memory_items WHERE scope = ?1 AND (expires_at IS NULL OR expires_at > ?2)
+                     ORDER BY updated_at DESC LIMIT ?3",
                 )
                 .map_err(|e| e.to_string())?,
             None => conn
                 .prepare(
-                    "SELECT id, scope, kind, title, body, keywords, source_ref, created_at, updated_at, revision
-                     FROM memory_items ORDER BY updated_at DESC LIMIT ?1",
+                    "SELECT id, scope, kind, title, body, keywords, source_ref, expires_at, created_at, updated_at, revision
+                     FROM memory_items WHERE expires_at IS NULL OR expires_at > ?1
+                     ORDER BY updated_at DESC LIMIT ?2",
                 )
                 .map_err(|e| e.to_string())?,
         };
         let params: Vec<rusqlite::types::Value> = match scope {
-            Some(s) => vec![s.to_string().into(), limit.into()],
-            None => vec![limit.into()],
+            Some(s) => vec![s.to_string().into(), now.into(), limit.into()],
+            None => vec![now.into(), limit.into()],
         };
         let rows = stmt
             .query_map(rusqlite::params_from_iter(params), row_to_item)
@@ -248,8 +302,7 @@ impl MemoryStore {
         Ok(out)
     }
 
-    /// 轻量关键词检索：query 按空白拆词，title 命中权重 ×3，body/keywords 子串 ×1；
-    /// 返回得分前 `limit` 条（未命中任何词返回空）。
+    /// 检索记忆：FTS5 倒排优先（O3），失败降级关键词打分；均过滤过期（O2）。
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<MemoryItem>, String> {
         let terms: Vec<String> = query
             .split_whitespace()
@@ -259,32 +312,81 @@ impl MemoryStore {
         if terms.is_empty() {
             return Ok(Vec::new());
         }
-        let all = self.list(None, 100)?;
-        let mut scored: Vec<(i64, MemoryItem)> = Vec::new();
-        for item in all {
-            let title_l = item.title.to_lowercase();
-            let body_l = item.body.to_lowercase();
-            let kw_l = item.keywords.to_lowercase();
-            let mut score = 0i64;
-            for term in &terms {
-                if title_l.contains(term) {
-                    score += 3;
-                }
-                if body_l.contains(term) || kw_l.contains(term) {
-                    score += 1;
-                }
+        let limit = limit.clamp(1, 20) as i64;
+        let now = Self::now_ms() as i64;
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        // O3：FTS5 优先（bm25 排序；MATCH 词转义引号防注入）
+        let fts_query = terms
+            .iter()
+            .map(|t| format!("\"{}\"", t.replace('"', "\"\"")))
+            .collect::<Vec<_>>()
+            .join(" OR ");
+        let fts_ids: Result<Vec<String>, String> = (|| {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT id FROM memory_fts
+                     WHERE memory_fts MATCH ?1 AND id IN
+                           (SELECT id FROM memory_items WHERE expires_at IS NULL OR expires_at > ?2)
+                     ORDER BY bm25(memory_fts) LIMIT ?3",
+                )
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map(rusqlite::params![fts_query, now, limit], |r| {
+                    r.get::<_, String>(0)
+                })
+                .map_err(|e| e.to_string())?;
+            let mut ids = Vec::new();
+            for r in rows {
+                ids.push(r.map_err(|e| e.to_string())?);
             }
-            if score > 0 {
-                scored.push((score, item));
+            Ok(ids)
+        })();
+        match fts_ids {
+            Ok(ids) => {
+                let mut out = Vec::new();
+                for id in ids {
+                    if let Some(item) = Self::get_with_conn(&conn, &id)? {
+                        out.push(item);
+                    }
+                }
+                Ok(out)
+            }
+            Err(_) => {
+                // 降级：关键词打分（title ×3、body/keywords ×1），过滤过期
+                let all = self.list(None, 100)?;
+                let mut scored: Vec<(i64, MemoryItem)> = Vec::new();
+                for item in all {
+                    let title_l = item.title.to_lowercase();
+                    let body_l = item.body.to_lowercase();
+                    let kw_l = item.keywords.to_lowercase();
+                    let mut score = 0i64;
+                    for term in &terms {
+                        if title_l.contains(term) {
+                            score += 3;
+                        }
+                        if body_l.contains(term) || kw_l.contains(term) {
+                            score += 1;
+                        }
+                    }
+                    if score > 0 {
+                        scored.push((score, item));
+                    }
+                }
+                scored.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.updated_at.cmp(&a.1.updated_at)));
+                Ok(scored
+                    .into_iter()
+                    .take(limit as usize)
+                    .map(|(_, i)| i)
+                    .collect())
             }
         }
-        scored.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.updated_at.cmp(&a.1.updated_at)));
-        Ok(scored.into_iter().take(limit.clamp(1, 20)).map(|(_, i)| i).collect())
     }
 }
 
 fn row_to_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryItem> {
     let source_ref: String = row.get(6)?;
+    let expires_at: Option<i64> = row.get(7)?;
     Ok(MemoryItem {
         id: row.get(0)?,
         scope: row.get(1)?,
@@ -293,9 +395,10 @@ fn row_to_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryItem> {
         body: row.get(4)?,
         keywords: row.get(5)?,
         source_ref: if source_ref.is_empty() { None } else { Some(source_ref) },
-        created_at: row.get(7)?,
-        updated_at: row.get(8)?,
-        revision: row.get(9)?,
+        expires_at: expires_at.map(|v| v as u64),
+        created_at: row.get(8)?,
+        updated_at: row.get(9)?,
+        revision: row.get(10)?,
     })
 }
 
@@ -311,6 +414,7 @@ mod tests {
             scope: "project".into(),
             kind: "fact".into(),
             source_ref: None,
+            expires_at: None,
         }
     }
 
@@ -346,9 +450,51 @@ mod tests {
         let a = store.create(&input("Rust 所有权", "Rust 的所有权系统规则", "rust ownership")).unwrap();
         let b = store.create(&input("并发编程", "讨论 Rust 的并发模型", "concurrency")).unwrap();
         let hits = store.search("Rust", 10).unwrap();
-        // 标题命中的 a 应排在 body 命中的 b 之前
-        assert!(hits.iter().position(|h| h.id == a.id) < hits.iter().position(|h| h.id == b.id));
+        // 召回断言：标题/正文命中均被召回（排序语义由 FTS bm25 或降级打分决定）
+        assert!(hits.iter().any(|h| h.id == a.id));
+        assert!(hits.iter().any(|h| h.id == b.id));
         let _ = store.delete(&a.id);
         let _ = store.delete(&b.id);
+    }
+
+    #[test]
+    fn expired_memories_are_filtered_from_list_and_search() {
+        let store = MemoryStore::new().expect("初始化记忆库失败");
+        // 清理残留
+        for item in store.list(None, 100).unwrap_or_default() {
+            let _ = store.delete(&item.id);
+        }
+        let mut expired = input("过期记忆", "这是一条已过期的事实", "过期");
+        expired.expires_at = Some(1); // 1970 年，必然已过期
+        let mut fresh = input("有效记忆", "这是一条有效的约定", "有效");
+        // 未来 30 天（不能 u64::MAX——转 i64 会溢出为负数被误过滤）
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        fresh.expires_at = Some(now_ms + 30 * 24 * 60 * 60 * 1000);
+        let expired_id = store.create(&expired).unwrap().id;
+        let fresh_id = store.create(&fresh).unwrap().id;
+        // list 不召回过期
+        let listed = store.list(None, 100).unwrap();
+        assert!(listed.iter().all(|m| m.id != expired_id));
+        assert!(listed.iter().any(|m| m.id == fresh_id));
+        // search 不召回过期（FTS 或降级关键词路径均过滤）
+        let hits = store.search("过期", 10).unwrap();
+        assert!(hits.iter().all(|m| m.id != expired_id), "过期记忆不应被检索召回");
+        let _ = store.delete(&expired_id);
+        let _ = store.delete(&fresh_id);
+    }
+
+    #[test]
+    fn fts_or_fallback_search_finds_keyword_matches() {
+        let store = MemoryStore::new().expect("初始化记忆库失败");
+        let created = store
+            .create(&input("部署指南", "生产环境部署使用 Docker Compose", "docker 部署"))
+            .unwrap();
+        // 命中正文与 keywords（FTS5 可用时走 bm25；不可用时降级关键词打分，行为一致）
+        let hits = store.search("docker", 10).unwrap();
+        assert!(hits.iter().any(|h| h.id == created.id));
+        let _ = store.delete(&created.id);
     }
 }
