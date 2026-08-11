@@ -52999,14 +52999,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         name: String(tc.tool),
                         arguments: (typeof tc.args === 'string' && tc.args) ? tc.args : '{}',
                     }));
-                    out.push({ role: 'assistant', content: m.content, tool_calls: protocolTools });
+                    out.push({ id: m.id || null, role: 'assistant', content: m.content, tool_calls: protocolTools });
                     for (const tc of tools) {
                         if (typeof tc.result === 'string' && tc.result) {
-                            out.push({ role: 'tool', content: tc.result, tool_call_id: String(tc.call_id) });
+                            out.push({ id: m.id || null, role: 'tool', content: tc.result, tool_call_id: String(tc.call_id) });
                         }
                     }
                 } else {
-                    out.push({ role: m.role, content: m.content });
+                    out.push({ id: m.id || null, role: m.role, content: m.content });
                 }
             }
             return out;
@@ -53575,6 +53575,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         }
                     }
                     return {
+                        id: m.id || null,
                         role: m.role,
                         content: m.content,
                         sources: sourcesMap[m.id] || [],

@@ -23,6 +23,9 @@ use tokio_util::sync::CancellationToken;
 /// 旧数据/旧前端不携带这些字段（`#[serde(default)]`），行为保持向后兼容。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
+    /// 消息 id（数据库主键，前端透传；用于压缩检查点定位，可选）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     pub role: String,
     pub content: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

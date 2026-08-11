@@ -136,6 +136,37 @@ impl TaskRegistry {
 ///
 /// 超预算时按策略压缩（摘要+滑窗，或纯滑窗兜底），压缩永不失败；
 /// 返回压缩结果供调用方决定是否提示前端。
+/// 应用会话压缩检查点（P0-5）：若检查点存在且历史中包含 cutoff 消息，
+/// 则用摘要 system 消息替换 cutoff 之前的消息，避免每次请求对全部历史重算。
+///
+/// - 检查点不存在 / cutoff 消息已被前端裁剪 → 原样返回（安全降级为全量压缩）
+/// - `cutoff_msg_id` 为 `None`（旧数据）→ 原样返回
+fn apply_compaction_checkpoint(
+    messages: &[crate::services::llm::ChatMessage],
+    checkpoint: Option<&crate::core::context::CompactionState>,
+) -> Vec<crate::services::llm::ChatMessage> {
+    let Some(cp) = checkpoint else {
+        return messages.to_vec();
+    };
+    let Some(cutoff_id) = &cp.cutoff_msg_id else {
+        return messages.to_vec();
+    };
+    let Some(idx) = messages.iter().position(|m| m.id.as_deref() == Some(cutoff_id.as_str()))
+    else {
+        return messages.to_vec();
+    };
+    let mut out = Vec::with_capacity(messages.len() - idx + 1);
+    out.push(crate::services::llm::ChatMessage {
+        id: None,
+        role: "system".into(),
+        content: cp.summary.clone(),
+        tool_calls: None,
+        tool_call_id: None,
+    });
+    out.extend(messages[idx..].iter().cloned());
+    out
+}
+
 async fn prepare_history(
     messages: &[crate::services::llm::ChatMessage],
     compressor: &dyn ContextCompressor,
@@ -556,6 +587,8 @@ pub async fn agent_query(
     // 仅处理两类显式预激活并写入共享激活状态 active_skills，供 Agent 钩子
     // （L2 指令注入）与技能工具（activate_skill / deactivate_skill）后续使用。
     let active_skills = Arc::new(ActiveSkillState::new());
+    // 闭包用 session_id 副本，避免 move 后原值不可用（检查点读写仍需 session_id）
+    let session_id_for_closure = session_id.clone();
     let skill_resolved = {
         let registry = state.skill_registry.clone();
         // 会话挂载查询（rusqlite I/O）与技能解析同为阻塞操作，
@@ -571,7 +604,7 @@ pub async fn agent_query(
         match tokio::task::spawn_blocking(move || {
             // 注册表未加载过时先重建（幂等；对话前前端已调用 skill_list，此处兜底）
             let _ = registry.ensure_loaded(&dir_for_registry);
-            let attached_skills: Vec<(String, String)> = match (&chat_store, &session_id) {
+            let attached_skills: Vec<(String, String)> = match (&chat_store, &session_id_for_closure) {
                 (Some(store), Some(sid)) => store
                     .get_attached_skills(sid)
                     .map(|list| list.into_iter().map(|(s, id, _v)| (s, id)).collect())
@@ -1132,7 +1165,60 @@ pub async fn agent_query(
     let skill_exec_start = std::time::Instant::now();
 
     // 当前问题作为 prompt，历史消息（去掉最后一条当前问题）压缩后作为 history
-    let compressed = prepare_history(&messages, compressor.as_ref(), cancel.clone()).await;
+    // P0-5：先应用会话压缩检查点（摘要 + cutoff 之后的增量消息），压缩后写回新检查点
+    let checkpoint: Option<crate::core::context::CompactionState> = match (&session_id, &dir_path) {
+        (Some(sid), _) => {
+            let sid = sid.clone();
+            let store = state.get_chat_store(&dir_path).ok();
+            match store {
+                Some(store) => tokio::task::spawn_blocking(move || {
+                    store
+                        .get_compaction_state(&sid)
+                        .ok()
+                        .flatten()
+                        .and_then(|raw| crate::core::context::CompactionState::from_json(&raw))
+                })
+                .await
+                .ok()
+                .flatten(),
+                None => None,
+            }
+        }
+        _ => None,
+    };
+    let hist_messages = apply_compaction_checkpoint(&messages, checkpoint.as_ref());
+    let compressed = prepare_history(&hist_messages, compressor.as_ref(), cancel.clone()).await;
+    // 写回新检查点：仅摘要策略成功且消息带 id 时（可定位 cutoff），
+    // 失败静默（检查点缺失只是失去增量优化，不影响正确性）
+    if let (Some(sid), Some(store)) = (&session_id, state.get_chat_store(&dir_path).ok()) {
+        if compressed.strategy == "summarize+window" {
+            let summary = compressed
+                .turns
+                .iter()
+                .find(|t| t.role == "system")
+                .map(|t| t.content.clone())
+                .unwrap_or_default();
+            if !summary.is_empty() {
+                if let Some(first_kept_id) = hist_messages
+                    .get(compressed.kept_from)
+                    .and_then(|m| m.id.clone())
+                {
+                    let new_state = crate::core::context::CompactionState {
+                        summary,
+                        cutoff_msg_id: Some(first_kept_id),
+                        tokens_before: 0,
+                    };
+                    let sid = sid.clone();
+                    let store = store.clone();
+                    let json = new_state.to_json();
+                    let _ = tokio::task::spawn_blocking(move || {
+                        store.set_compaction_state(&sid, &json)
+                    })
+                    .await;
+                }
+            }
+        }
+    }
     if compressed.dropped_chars > 0 {
         log::info!(
             "[agent_query] [4]: 对话历史已压缩 request_id={} dropped={} strategy={}",

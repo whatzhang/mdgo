@@ -118,6 +118,17 @@ impl ChatStore {
                 .map_err(|e| format!("添加 tool_calls 列失败: {}", e))?;
         }
 
+        // 兼容旧表：添加 compaction_state 列（如果不存在，P0-5 压缩检查点落库）
+        let has_compaction: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('chat_sessions') WHERE name='compaction_state'")
+            .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i32>(0)))
+            .map(|count| count > 0)
+            .unwrap_or(false);
+        if !has_compaction {
+            conn.execute_batch("ALTER TABLE chat_sessions ADD COLUMN compaction_state TEXT DEFAULT ''")
+                .map_err(|e| format!("添加 compaction_state 列失败: {}", e))?;
+        }
+
         // 迁移旧数据：将秒级时间戳转换为毫秒级（一次性）
         conn.execute_batch(
             "
@@ -562,6 +573,36 @@ impl ChatStore {
             created_at: now,
             tool_calls: tool_calls.map(|s| s.to_string()),
         })
+    }
+
+    /// 读取会话的上下文压缩检查点 JSON（P0-5）。
+    ///
+    /// 返回 `Ok(None)` 表示尚无检查点（首次压缩或旧数据）。
+    pub fn get_compaction_state(&self, session_id: &str) -> Result<Option<String>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let raw: String = conn
+            .query_row(
+                "SELECT compaction_state FROM chat_sessions WHERE id = ?1",
+                rusqlite::params![session_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("读取压缩检查点失败: {}", e))?;
+        if raw.trim().is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(raw))
+        }
+    }
+
+    /// 写入会话的上下文压缩检查点 JSON（P0-5）。
+    pub fn set_compaction_state(&self, session_id: &str, state_json: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE chat_sessions SET compaction_state = ?1 WHERE id = ?2",
+            rusqlite::params![state_json, session_id],
+        )
+        .map_err(|e| format!("写入压缩检查点失败: {}", e))?;
+        Ok(())
     }
 
     /// 清空会话的所有消息，重置 message_count 和 token_usage

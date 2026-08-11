@@ -12,7 +12,70 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
+
+/// 对话历史 token 估算抽象（P0-5，依赖倒置）。
+///
+/// 压缩预算按 token 配置，但压缩器内部按字符累积成本；
+/// 命令层用本估算器在 token ↔ 字符之间换算，压缩器自身无需改动（开闭原则）。
+/// 精确 tokenizer（BERT 类 tokenizer.json）依赖 embedding 模型下载可用性，
+/// 默认用 [`ApproxTokenEstimator`] 近似估算（中英混合按字符数/2），
+/// 后续可注入基于 tokenizers 的精确实现（见 `docs/agent_gap_plan.md` P0-5）。
+pub trait TokenEstimator: Send + Sync {
+    /// 估算文本的 token 数
+    fn estimate(&self, text: &str) -> usize;
+}
+
+/// 近似 token 估算器：`chars / 2 + 1`。
+///
+/// 中文约 1 token/1.5 字符、英文约 1 token/4 字符，中英混合场景取 2 为
+/// 折中系数，误差方向偏保守（略高估，避免超预算）。
+pub struct ApproxTokenEstimator;
+
+impl TokenEstimator for ApproxTokenEstimator {
+    fn estimate(&self, text: &str) -> usize {
+        text.chars().count() / 2 + 1
+    }
+}
+
+/// 把 token 预算换算为字符预算（`budget_tokens * 2`，`ApproxTokenEstimator` 的逆运算）。
+///
+/// 额外 `+1` 余量由估算器的 `+1` 抵消，保证换算回环一致。
+pub fn tokens_to_chars_budget(budget_tokens: usize) -> usize {
+    budget_tokens * 2
+}
+
+/// 会话级上下文压缩检查点（P0-5：压缩结果落库，避免每次请求全量重算）。
+///
+/// 语义（对齐 Pi compaction 的 `firstKeptEntryId` 检查点）：
+/// - `summary`：上一次压缩时对最旧部分生成的摘要文本
+/// - `cutoff_msg_id`：压缩后保留的第一条原始消息 id；`None` 表示全部历史
+///   已被摘要覆盖（下次请求直接用摘要）
+/// - `tokens_before`：检查点之前已被压缩掉的 token 估算（观测/日志用）
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CompactionState {
+    pub summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cutoff_msg_id: Option<String>,
+    #[serde(default)]
+    pub tokens_before: usize,
+}
+
+impl CompactionState {
+    /// 序列化为 JSON 字符串（存 `chat_sessions.compaction_state` 列）
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_default()
+    }
+
+    /// 从 JSON 字符串反序列化（空串/非法返回 `None`，安全降级为无检查点）
+    pub fn from_json(raw: &str) -> Option<Self> {
+        if raw.trim().is_empty() {
+            return None;
+        }
+        serde_json::from_str(raw).ok()
+    }
+}
 
 /// 一条对话轮次(轻量视图)。
 ///
@@ -40,17 +103,18 @@ impl ChatTurn {
 ///
 /// 压缩切分必须以单元为单位，否则会把 assistant 的 tool_call 与 tool 结果
 /// 切到不同侧，产生「孤儿 tool 消息」导致 OpenAI 协议拒绝请求。
-fn group_turns(history: &[ChatTurn]) -> Vec<Vec<ChatTurn>> {
-    let mut units: Vec<Vec<ChatTurn>> = Vec::new();
-    for turn in history {
+/// 返回 `(单元起始下标, 单元)`，供压缩器计算保留起点（`kept_from`）。
+fn group_turns(history: &[ChatTurn]) -> Vec<(usize, Vec<ChatTurn>)> {
+    let mut units: Vec<(usize, Vec<ChatTurn>)> = Vec::new();
+    for (idx, turn) in history.iter().enumerate() {
         if turn.is_tool_message() {
             // 并入当前组（防御：若没有当前组（孤儿 tool 消息）则自成一组）
             match units.last_mut() {
-                Some(last) => last.push(turn.clone()),
-                None => units.push(vec![turn.clone()]),
+                Some((_, last)) => last.push(turn.clone()),
+                None => units.push((idx, vec![turn.clone()])),
             }
         } else {
-            units.push(vec![turn.clone()]);
+            units.push((idx, vec![turn.clone()]));
         }
     }
     units
@@ -65,6 +129,10 @@ pub struct CompressedHistory {
     pub dropped_chars: usize,
     /// 实际使用的策略名(观测用)
     pub strategy: &'static str,
+    /// 压缩后保留的第一条原始消息在输入 history 中的下标
+    /// （摘要场景下指 recent 起点；无压缩时为 0）。
+    /// 命令层据此计算压缩检查点 cutoff（P0-5）。
+    pub kept_from: usize,
 }
 
 /// 压缩策略抽象:将历史压缩到不超过 `budget` 字符。
@@ -113,32 +181,35 @@ impl ContextCompressor for SlidingWindowCompressor {
         let units = group_turns(history);
         let total: usize = units
             .iter()
-            .map(|u| u.iter().map(|t| t.content.len()).sum::<usize>())
+            .map(|(_, u)| u.iter().map(|t| t.content.len()).sum::<usize>())
             .sum();
         if total <= budget {
             return CompressedHistory {
                 turns: history.to_vec(),
                 dropped_chars: 0,
                 strategy: "none",
+                kept_from: 0,
             };
         }
-        let mut kept_units: Vec<Vec<ChatTurn>> = Vec::new();
+        let mut kept_units: Vec<(usize, Vec<ChatTurn>)> = Vec::new();
         let mut used = 0usize;
         // 从后往前按「工具调用单元」保留（最新优先，保证 tool_call 与 tool 结果成对）
-        for unit in units.iter().rev() {
+        for (start, unit) in units.iter().rev() {
             let len = unit.iter().map(|t| t.content.len()).sum::<usize>();
             if !kept_units.is_empty() && used + len > budget {
                 break;
             }
             used += len;
-            kept_units.push(unit.clone());
+            kept_units.push((*start, unit.clone()));
         }
         kept_units.reverse();
-        let turns: Vec<ChatTurn> = kept_units.into_iter().flatten().collect();
+        let kept_from = kept_units.first().map(|(s, _)| *s).unwrap_or(0);
+        let turns: Vec<ChatTurn> = kept_units.into_iter().flat_map(|(_, u)| u).collect();
         CompressedHistory {
             dropped_chars: total.saturating_sub(used),
             turns,
             strategy: "sliding-window",
+            kept_from,
         }
     }
 }
@@ -178,6 +249,7 @@ impl ContextCompressor for SummarizeThenWindowCompressor {
                 turns: history.to_vec(),
                 dropped_chars: 0,
                 strategy: "none",
+                kept_from: 0,
             };
         }
 
@@ -185,14 +257,21 @@ impl ContextCompressor for SummarizeThenWindowCompressor {
         //    切分按「工具调用单元」边界进行，避免切断 tool_call 与 tool 结果配对
         let units = group_turns(history);
         let split_idx = units.len() * 2 / 3;
+        let old_count: usize = units[..split_idx].iter().map(|(_, u)| u.len()).sum();
         if split_idx == 0 {
             // 历史过短无摘要价值,直接滑窗(避免空摘要空转)
             return SlidingWindowCompressor
                 .compress(history, budget, CancellationToken::new())
                 .await;
         }
-        let old: Vec<ChatTurn> = units[..split_idx].iter().flatten().cloned().collect();
-        let recent: Vec<ChatTurn> = units[split_idx..].iter().flatten().cloned().collect();
+        let old: Vec<ChatTurn> = units[..split_idx]
+            .iter()
+            .flat_map(|(_, u)| u.iter().cloned())
+            .collect();
+        let recent: Vec<ChatTurn> = units[split_idx..]
+            .iter()
+            .flat_map(|(_, u)| u.iter().cloned())
+            .collect();
 
         // 2. 摘要(取消信号透传;失败时降级为纯滑窗)
         let Some(summary) = self
@@ -219,7 +298,8 @@ impl ContextCompressor for SummarizeThenWindowCompressor {
             .compress(&recent, recent_budget, CancellationToken::new())
             .await;
 
-        // 4. 摘要作为 system 消息置于最近消息之前
+        // 4. 摘要作为 system 消息置于最近消息之前；
+        //    kept_from = 旧段消息数 + recent 滑窗内保留起点（命令层据此算检查点 cutoff）
         let mut merged = Vec::with_capacity(recent_result.turns.len() + 1);
         merged.push(ChatTurn {
             role: "system".into(),
@@ -233,6 +313,7 @@ impl ContextCompressor for SummarizeThenWindowCompressor {
             dropped_chars: total.saturating_sub(kept_chars),
             turns: merged,
             strategy: "summarize+window",
+            kept_from: old_count + recent_result.kept_from,
         }
     }
 }
@@ -385,6 +466,45 @@ mod tests {
         assert!(used <= 300);
     }
 
+    #[test]
+    fn compaction_state_roundtrip_json() {
+        let s = CompactionState {
+            summary: "摘要".into(),
+            cutoff_msg_id: Some("msg_1".into()),
+            tokens_before: 123,
+        };
+        let back = CompactionState::from_json(&s.to_json()).expect("应可反序列化");
+        assert_eq!(back, s);
+        assert!(CompactionState::from_json("").is_none());
+        assert!(CompactionState::from_json("not json").is_none());
+    }
+
+    #[tokio::test]
+    async fn sliding_window_reports_kept_from() {
+        let h = long_history(10, 100); // 1000 chars
+        let r = SlidingWindowCompressor
+            .compress(&h, 250, CancellationToken::new())
+            .await;
+        assert_eq!(r.strategy, "sliding-window");
+        // kept_from 指向保留的第一条原始消息
+        assert!(r.kept_from > 0);
+        assert_eq!(r.turns.first(), h.get(r.kept_from));
+        // 不超预算时 kept_from = 0
+        let r2 = SlidingWindowCompressor
+            .compress(&h, 10_000, CancellationToken::new())
+            .await;
+        assert_eq!(r2.kept_from, 0);
+    }
+
+    #[test]
+    fn approx_token_estimator_and_budget_conversion() {
+        let e = ApproxTokenEstimator;
+        assert!(e.estimate("中文内容测试") > 0);
+        assert!(e.estimate("") == 1);
+        // 换算回环：token 预算 → 字符预算（估算器逆运算）
+        assert_eq!(tokens_to_chars_budget(15_000), 30_000);
+    }
+
     #[tokio::test]
     async fn group_turns_keeps_orphan_tool_safe() {
         // 防御：孤儿 tool 消息（无配对 assistant）不应 panic；
@@ -398,7 +518,7 @@ mod tests {
         });
         let groups = group_turns(&h);
         assert_eq!(groups.len(), 2);
-        assert_eq!(groups[1].len(), 2);
-        assert_eq!(groups[1][1].role, "tool");
+        assert_eq!(groups[1].1.len(), 2);
+        assert_eq!(groups[1].1[1].role, "tool");
     }
 }
