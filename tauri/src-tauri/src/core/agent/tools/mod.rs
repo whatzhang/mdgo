@@ -16,6 +16,8 @@ use rig_agent::tool::{DynamicTool, ToolContext, ToolExecutionError, ToolOutput};
 use serde::Serialize;
 use tauri::Manager;
 
+use futures_util::StreamExt;
+
 use crate::core::agent::KbSearchConfig;
 use crate::core::db::utils::IgnoreMatcher;
 use crate::core::skill::activation::ActiveSkillState;
@@ -1434,24 +1436,87 @@ pub fn build_deactivate_skill_tool(state: Arc<ActiveSkillState>) -> DynamicTool 
 pub fn build_read_tool(cfg: KbSearchConfig) -> DynamicTool {
     DynamicTool::new(
         "read",
-        "读取文件内容，单次最多返回 8192 字符，支持分页续读。支持两类路径：1) 知识库目录内的相对路径（如 docs/note.md，可读取打开目录中的所有文件，含子目录）；2) 当前激活技能的参考文档路径（如 references/flowchart.md，通常由技能 SKILL.md 中以相对链接给出；未激活技能时无法读取，需先 activate_skill）。当返回内容末尾提示\"内容过长\"时，内容只显示了第 1~8192 字符，若需要文件后续部分，请再次调用本工具并指定 offset 参数（如 offset=8192）继续读取，不要从头重读全文。",
+        "读取文件内容，单次最多返回 8192 字符，支持分页续读。支持两类路径：1) 知识库目录内的相对路径（如 docs/note.md，可读取打开目录中的所有文件，含子目录）；2) 当前激活技能的参考文档路径（如 references/flowchart.md，通常由技能 SKILL.md 中以相对链接给出；未激活技能时无法读取，需先 activate_skill）。当返回内容末尾提示\"内容过长\"时，内容只显示了第 1~8192 字符，若需要文件后续部分，请再次调用本工具并指定 offset 参数（如 offset=8192）继续读取，不要从头重读全文。如需一次读取多个文件，可用 paths 数组并行读取（最多 10 个）。",
         serde_json::json!({
             "type": "object",
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "文件相对路径：知识库内路径，或技能参考文档路径（如 references/flowchart.md）"
+                    "description": "文件相对路径：知识库内路径，或技能参考文档路径（如 references/flowchart.md）。与 paths 二选一"
+                },
+                "paths": {
+                    "type": "array",
+                    "maxItems": 10,
+                    "items": { "type": "string" },
+                    "description": "多个文件相对路径（并行读取，最多 10 个）。与 path 二选一"
                 },
                 "offset": {
                     "type": "integer",
                     "description": "字符偏移量（从 0 开始），用于分页续读长文件。首次读取省略；截断提示中会给出下次应使用的 offset"
                 }
             },
-            "required": ["path"]
+            "anyOf": [
+                { "required": ["path"] },
+                { "required": ["paths"] }
+            ]
         }),
         move |_ctx: &mut ToolContext, args: serde_json::Value| {
             let cfg = cfg.clone();
             Box::pin(async move {
+                // P1-7：paths 多文件并行读取（独立读后按原顺序拼接）
+                let paths: Vec<String> = args
+                    .get("paths")
+                    .and_then(|p| p.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str())
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if !paths.is_empty() {
+                    if paths.len() > 10 {
+                        let e = "paths 最多 10 个文件".to_string();
+                        record_tool_result(&cfg, "read", false, &e, Some(&e));
+                        return Err(tool_error("read", &e));
+                    }
+                    let args_preview = format!("{} 个文件", paths.len());
+                    record_tool_call(&cfg, "read", &args_preview, Some(&args));
+                    // 并行读取（缓冲 4 并发），收集后按输入顺序拼接
+                    let mut entries: Vec<(String, Result<String, String>)> = Vec::new();
+                    let mut stream = futures_util::stream::iter(paths.iter().cloned())
+                        .map(|p| {
+                            let cfg = cfg.clone();
+                            async move {
+                                let out = read(&cfg, &p, 0).await;
+                                (p, out.map_err(|e| e))
+                            }
+                        })
+                        .buffer_unordered(4);
+                    while let Some(entry) = stream.next().await {
+                        entries.push(entry);
+                    }
+                    let mut out = String::new();
+                    let mut failed = false;
+                    for p in &paths {
+                        if let Some((_, Ok(text))) = entries.iter().find(|(pp, _)| pp == p) {
+                            out.push_str(&format!("===== {p} =====\n{text}\n"));
+                        } else if let Some((_, Err(e))) = entries.iter().find(|(pp, _)| pp == p) {
+                            failed = true;
+                            out.push_str(&format!("===== {p}（读取失败）=====\n{e}\n"));
+                        }
+                    }
+                    record_tool_result(
+                        &cfg,
+                        "read",
+                        !failed,
+                        &format!("{} 个文件", paths.len()),
+                        Some(&out),
+                    );
+                    return Ok(ToolOutput::text(out));
+                }
+
                 let rel = args
                     .get("path")
                     .and_then(|s| s.as_str())
@@ -1459,7 +1524,7 @@ pub fn build_read_tool(cfg: KbSearchConfig) -> DynamicTool {
                     .trim()
                     .to_string();
                 if rel.is_empty() {
-                    return Err(tool_error("read", "文件路径为空，请提供 path 参数"));
+                    return Err(tool_error("read", "文件路径为空，请提供 path 或 paths 参数"));
                 }
                 let offset = args
                     .get("offset")
