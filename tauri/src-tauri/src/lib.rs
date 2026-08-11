@@ -489,24 +489,29 @@ pub static LOG_LEVEL_HANDLE: OnceLock<
 > = OnceLock::new();
 
 /// 构造日志过滤 Targets（init_logging 与 set_log_level 共用，单一来源）。
+///
+/// 级别规范化：
+/// - 自己代码（`mdgo_lib` 前缀）按 `level`（默认 INFO；`set_log_level` 热切换可开 DEBUG/TRACE）
+/// - 框架/第三方库统一 WARN（其 DEBUG/INFO 帧、连接日志为噪音，WARN/ERROR 保留）
+/// - 高频噪音 target（lance/tantivy/datafusion/sqlparser/tao/ort）直接 OFF
 pub fn log_filter_targets(
     level: tracing::level_filters::LevelFilter,
 ) -> tracing_subscriber::filter::Targets {
+    // 级别策略（规范化）：自己代码（mdgo_lib）按 `level`（默认 INFO），
+    // 框架/第三方库统一 WARN；高频噪音 target 直接 OFF。
+    // `level` 为调用方传入的全局级别（init 默认 INFO；set_log_level 热切换控制 mdgo_lib）。
     Targets::new()
         .with_target("lance", tracing::level_filters::LevelFilter::OFF)
         .with_target("tantivy", tracing::level_filters::LevelFilter::OFF)
         .with_target("datafusion", tracing::level_filters::LevelFilter::OFF)
         .with_target("sqlparser", tracing::level_filters::LevelFilter::OFF)
         .with_target("tao::platform_imp", tracing::level_filters::LevelFilter::OFF)
-        // 网络库 DEBUG 帧/连接日志（h2::codec::framed_read 等）纯噪音：
-        // 仅保留 INFO 及以上（warn/error 仍可见）
-        .with_target("h2", tracing::level_filters::LevelFilter::INFO)
-        .with_target("hyper", tracing::level_filters::LevelFilter::INFO)
-        .with_target("reqwest", tracing::level_filters::LevelFilter::INFO)
-        .with_target("tower", tracing::level_filters::LevelFilter::INFO)
-        .with_target("want", tracing::level_filters::LevelFilter::INFO)
-        .with_target("mio", tracing::level_filters::LevelFilter::INFO)
-        .with_default(level)
+        .with_target("ort", tracing::level_filters::LevelFilter::OFF)
+        // 自己代码：按 level（默认 INFO，热切换可开 DEBUG/TRACE）
+        .with_target("mdgo_lib", level)
+        // 框架/第三方（h2/hyper/reqwest/tower/rusqlite/rig 等）：仅 WARN 及以上
+        // （其 DEBUG/INFO 帧、连接日志为噪音；WARN/ERROR 仍可见）
+        .with_default(tracing::level_filters::LevelFilter::WARN)
 }
 
 /// 初始化日志系统：基于 tracing 的统一输出（文件 + 终端双输出）。
@@ -532,19 +537,18 @@ fn init_logging() {
     // log:: → tracing 桥接：现有 log:: 宏进入统一 subscriber（target 保留）
     let _ = tracing_log::LogTracer::init();
 
-    // 级别上限 + 高频第三方 target 屏蔽（行为与原 ignore 列表对齐）
-    let level = if cfg!(debug_assertions) {
-        tracing::level_filters::LevelFilter::INFO
-    } else {
-        tracing::level_filters::LevelFilter::WARN
-    };
+    // 级别上限 + target 过滤（规范化：自己代码默认 INFO，框架 WARN）
+    // 默认统一 INFO（开发与打包一致；需要 DEBUG/TRACE 时用 Ctrl+Shift+= 热切换）
+    let level = tracing::level_filters::LevelFilter::INFO;
     let filter = crate::log_filter_targets(level);
     let (filter_layer, filter_handle) = tracing_subscriber::reload::Layer::new(filter);
     let _ = LOG_LEVEL_HANDLE.set(filter_handle);
 
-    // 终端输出（彩色）
+    // 终端输出（彩色；含线程名/ID 便于多线程链路排查）
     let term_layer = tracing_subscriber::fmt::layer()
         .with_ansi(true)
+        .with_thread_names(true)
+        .with_thread_ids(true)
         .with_writer(std::io::stdout);
 
     // 文件输出（Mutex<Box<dyn Write>> 实现 MakeWriter；创建失败降级为 sink，仅终端输出）
@@ -560,6 +564,8 @@ fn init_logging() {
     };
     let file_layer = tracing_subscriber::fmt::layer()
         .with_ansi(false)
+        .with_thread_names(true)
+        .with_thread_ids(true)
         .with_writer(file_writer);
 
     let subscriber = tracing_subscriber::registry()
@@ -569,11 +575,8 @@ fn init_logging() {
     let _ = tracing::subscriber::set_global_default(subscriber);
 
     // 仅约束 log:: 宏侧（与旧实现一致）；tracing 侧由 Targets 过滤
-    if cfg!(debug_assertions) {
-        log::set_max_level(LevelFilter::Debug);
-    } else {
-        log::set_max_level(LevelFilter::Warn);
-    }
+    // 规范化：统一 INFO（与 tracing 侧默认一致；框架侧由 Targets 的 WARN 兜底）
+    log::set_max_level(LevelFilter::Info);
 
     if has_file_logger {
         log::info!("日志文件: {}", log_path.display());
