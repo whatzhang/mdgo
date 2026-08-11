@@ -26,6 +26,8 @@ use crate::core::subagent::{
     SubagentMode, SubagentRunner, SubagentSpec, SUBAGENT_MAX_TURNS, SUBAGENT_SUMMARY_CHARS,
 };
 
+mod cache;
+
 /// 单条工具调用事件（`kind = "call"` 或 `kind = "result"`）
 #[derive(Debug, Clone, Serialize)]
 pub struct ToolCallEvent {
@@ -495,23 +497,37 @@ fn read_text(full: &Path, display: &str, offset: usize) -> Result<String, String
     if meta.is_dir() {
         return Err(format!("{} 是目录，请改用 list_files 查看目录内容", display));
     }
+    // P1-12：工具结果缓存（mtime 一致命中，文件编辑后自动失效）
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    let cache_key = format!("{display}|{offset}");
+    if let Some(hit) = cache::tool_result_cache().get(&cache_key, mtime) {
+        return Ok(hit);
+    }
     let data = std::fs::read(full).map_err(|e| format!("读取文件失败: {}", e))?;
     let text = String::from_utf8_lossy(&data).into_owned();
     let total = text.chars().count();
-    if offset >= total {
-        return Ok(format!("[已达文件末尾（共 {total} 字符），offset={offset} 超出范围]"));
-    }
-    let chunk: String = text.chars().skip(offset).take(MAX_FILE_READ_CHARS).collect();
-    if offset + MAX_FILE_READ_CHARS >= total {
-        Ok(chunk)
+    let result = if offset >= total {
+        format!("[已达文件末尾（共 {total} 字符），offset={offset} 超出范围]")
     } else {
-        Ok(format!(
-            "{chunk}\n\n[内容过长：已显示第 {}~{} 字符（共 {total} 字符）。可再次调用 read 并指定 offset={} 读取后续内容]",
-            offset + 1,
-            offset + chunk.chars().count(),
-            offset + MAX_FILE_READ_CHARS
-        ))
-    }
+        let chunk: String = text.chars().skip(offset).take(MAX_FILE_READ_CHARS).collect();
+        if offset + MAX_FILE_READ_CHARS >= total {
+            chunk
+        } else {
+            format!(
+                "{chunk}\n\n[内容过长：已显示第 {}~{} 字符（共 {total} 字符）。可再次调用 read 并指定 offset={} 读取后续内容]",
+                offset + 1,
+                offset + chunk.chars().count(),
+                offset + MAX_FILE_READ_CHARS
+            )
+        }
+    };
+    cache::tool_result_cache().put(&cache_key, mtime, &result);
+    Ok(result)
 }
 
 /// 读取知识库（当前打开目录）内文件或当前激活技能的参考文档（渐进式披露 L3）。
