@@ -43,7 +43,7 @@ pub enum SubagentMode {
 ///   防无限递归嵌套
 pub fn read_only_tool_set() -> HashSet<String> {
     [
-        "kb_search", "code_lookup", "read", "grep", "list_files", "git_status",
+        "kb_search", "code_lookup", "read", "grep", "ls", "glob", "git_status",
         "search_memory",
     ]
     .iter()
@@ -51,7 +51,7 @@ pub fn read_only_tool_set() -> HashSet<String> {
     .collect()
 }
 
-/// 写型子代理工具白名单：只读集 + edit/delete。
+/// 写型子代理工具白名单：只读集 + edit/delete/write。
 ///
 /// 写操作经审批门确认；`remember`/`forget` 仍排除（记忆写入仅主链负责，
 /// 避免子代理未经用户感知地污染全局记忆）。
@@ -59,6 +59,8 @@ pub fn write_tool_set() -> HashSet<String> {
     let mut set = read_only_tool_set();
     set.insert("edit".to_string());
     set.insert("delete".to_string());
+    set.insert("write".to_string());
+    set.insert("multi_edit".to_string());
     set
 }
 
@@ -368,7 +370,7 @@ mod tests {
         assert!(set.contains("code_lookup"));
         assert!(set.contains("read"));
         assert!(set.contains("grep"));
-        assert!(set.contains("list_files"));
+        assert!(set.contains("ls"));
         assert!(set.contains("git_status"));
         assert!(!set.contains("edit"), "只读子代理不得包含 edit");
         assert!(!set.contains("delete"), "只读子代理不得包含 delete");

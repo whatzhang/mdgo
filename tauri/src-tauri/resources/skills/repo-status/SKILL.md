@@ -5,7 +5,7 @@ name: 仓库状态汇报
 description: 当用户询问工作区状态、改动、变更、未提交、diff、最近的提交记录时触发。
 priority: 55
 roles: ["owner"]
-tools: [git_status, list_files]
+tools: [git_status, ls]
 enabled: true
 version: 1
 created_at: 1754200000000
@@ -19,7 +19,7 @@ updated_at: 1754200000000
 
 ## 执行步骤
 1. 调用 git_status 获取工作区状态矩阵
-2. 必要时调用 list_files 列出相关目录结构辅助说明
+2. 必要时调用 ls 列出相关目录结构辅助说明
 
 ## 输出规范
 - 按"未提交改动 / 新增文件 / 已暂存"分组列出；对每个文件说明改动类型（新增/修改/删除）

@@ -118,17 +118,19 @@ pub mod tool_registry;
 /// 检索类工具（kb_search / code_lookup）不在此列：它们仅当已激活技能声明时
 /// 才可见可调——决策权在 LLM（先 activate_skill 再检索）。
 pub const BASE_TOOLS: &[&str] = &[
-    "activate_skill", "deactivate_skill", "read", "list_files", "grep", "edit", "delete",
+    "activate_skill", "deactivate_skill", "read", "ls", "glob", "grep", "write", "edit", "multi_edit", "delete",
     "git_status", "deep_research", "read_subagent_result",
     "remember", "forget", "search_memory",
+    "todo_write",
     "spawn_subagent", "parallel_research", "self_review",
 ];
 
-/// Agent 单次请求的模型调用总预算（激活技能 + 文件读取 + 检索等流程通常需要多轮）。
+/// Agent 单次请求的模型调用总预算（激活技能 + 文件读取 + 检索 + 批量编辑等流程通常需要多轮）。
 ///
-/// 语义 = 模型调用次数上限（1-based）：第 1 次调用 turn=1，turn=6 是最后一次，
-/// 第 7 次请求触发 MaxTurnsError。超出预算的流程由轮次预算预警 Hook 引导模型提前收尾。
-pub const DEFAULT_MAX_TURNS: usize = 6;
+/// 语义 = 模型调用次数上限（1-based）：第 1 次调用 turn=1，turn=10 是最后一次，
+/// 第 11 次请求触发 MaxTurnsError。超出预算的流程由轮次预算预警 Hook 引导模型提前收尾。
+/// P1 提高：新增 write/multi_edit/todo 等工具后，完整工作流（检索→读→改→校验）需要更多轮次。
+pub const DEFAULT_MAX_TURNS: usize = 10;
 
 /// 调试用 Hook：在每次 LLM API 调用边界打印完整请求体与响应体。
 ///
@@ -336,6 +338,14 @@ impl AgentHook for SkillInstructionHook {
         // 模型可见全部已注册工具（注册表层已用白名单过滤）。
         if self.narrow_tools {
             let mut visible: Vec<String> = BASE_TOOLS.iter().map(|t| t.to_string()).collect();
+            // 外部动态工具（配置驱动 HTTP 工具）常驻可见：SkillGateHook 已用
+            // allow_extra 放行，此处补齐可见性——否则 active_tools 窄化后
+            // 模型看不到外部工具，配置的 HTTP 工具永远不生效。
+            for def in external_tools::load_external_tools_or_default() {
+                if !visible.iter().any(|v| v == &def.name) {
+                    visible.push(def.name.clone());
+                }
+            }
             if let Some(declared) = self.state.allowed_tools() {
                 for t in declared {
                     if !visible.iter().any(|v| v == &t) {
@@ -367,10 +377,6 @@ pub struct KbSearchConfig {
     pub default_top_k: u32,
     /// 当前请求 ID（用于工具调用轨迹的事件关联）
     pub request_id: String,
-    /// 目录黑名单（gitignore 语法，供 list_files/walk_dir 过滤，与索引/监视逻辑一致）
-    pub dir_blacklist: Vec<String>,
-    /// 文件黑名单（gitignore 语法，供 list_files/walk_dir 过滤，与索引/监视逻辑一致）
-    pub file_blacklist: Vec<String>,
     /// 聚合绝对阈值（融合分数低于此值的命中不进入上下文；RRF 域）
     pub min_score: f32,
     /// 精排 sigmoid 阈值（`score_rerank` 非空的命中按此阈值裁决；与 pipeline 内精排阈值同语义）
@@ -851,11 +857,20 @@ fn create_tool_registry(only: Option<&HashSet<String>>) -> ToolRegistry {
     if want("edit") {
         reg.register("edit", Box::new(tools::build_edit_tool));
     }
+    if want("multi_edit") {
+        reg.register("multi_edit", Box::new(tools::build_multi_edit_tool));
+    }
+    if want("write") {
+        reg.register("write", Box::new(tools::build_write_tool));
+    }
     if want("delete") {
         reg.register("delete", Box::new(tools::build_delete_tool));
     }
-    if want("list_files") {
-        reg.register("list_files", Box::new(tools::build_list_files_tool));
+    if want("ls") {
+        reg.register("ls", Box::new(tools::build_ls_tool));
+    }
+    if want("glob") {
+        reg.register("glob", Box::new(tools::build_glob_tool));
     }
 
     // ── Git 工具（repo-status 技能声明） ──
@@ -896,6 +911,9 @@ fn create_tool_registry(only: Option<&HashSet<String>>) -> ToolRegistry {
     }
     if want("search_memory") {
         reg.register("search_memory", Box::new(tools::build_search_memory_tool));
+    }
+    if want("todo_write") {
+        reg.register("todo_write", Box::new(tools::build_todo_write_tool));
     }
 
     // ── 外部动态工具（P2-15：配置驱动 HTTP 工具，跳过技能声明过滤但尊重白名单） ──

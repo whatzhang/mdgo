@@ -572,6 +572,9 @@ pub async fn agent_query(
     // 后端防御：限制 top_k 范围（前端 UI 为 1-50），防止异常参数触发全量检索/重排
     let top_k = top_k.clamp(1, 50);
 
+    // 请求级任务清单（todo_write 工具）隔离：新请求开始时清空上次残留
+    crate::core::agent::tools::reset_todo(&request_id);
+
     log::info!("[agent_query] [0]: 开始 agent: request_id={} dir_path={} query_len={} msg_count={} top_k={}",
         request_id, dir_path, query.len(), messages.len(), top_k);
 
@@ -1231,8 +1234,6 @@ pub async fn agent_query(
         indexer: state.indexer.clone(),
         default_top_k: effective_top_k,
         request_id: request_id.clone(),
-        dir_blacklist: kb_cfg.dir_blacklist,
-        file_blacklist: kb_cfg.file_blacklist,
         min_score: effective_min_score,
         rerank_min_score: effective_rerank_min_score,
         max_context_docs: effective_max_docs,

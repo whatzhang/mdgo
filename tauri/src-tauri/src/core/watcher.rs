@@ -286,7 +286,7 @@ impl WatcherService {
         *self.watch_dir.lock().unwrap_or_else(|e| e.into_inner()) = Some(dir_path.to_string());
         self.running.store(true, Ordering::Release);
 
-        // 启动后失效文件列表缓存，确保下次 list_files 拿到最新数据
+        // 启动后失效文件列表缓存，确保下次 ls 拿到最新数据
         invalidate_file_list_cache(dir_path);
 
         // ── 同步启动 Skill 监控 ──
@@ -369,7 +369,7 @@ impl WatcherService {
 
     /// 设置索引开关（true = 对文件变更执行增量索引；false = 仅监听并失效缓存）
     ///
-    /// 即使索引关闭，watcher 仍持续运行并失效文件列表缓存，保证 list_files 数据新鲜。
+    /// 即使索引关闭，watcher 仍持续运行并失效文件列表缓存，保证 ls 数据新鲜。
     pub fn set_indexing_enabled(&self, enabled: bool) {
         self.indexing_enabled.store(enabled, Ordering::Release);
         log::info!("[watcher] 索引开关: {}", if enabled { "ON" } else { "OFF" });
@@ -581,7 +581,7 @@ async fn run_debounce_loop(
                         let cleared = pending.len();
                         pending.clear();
                         log::info!("[watcher] 清空 {} 条过期事件（index_all 已全量重建）", cleared);
-                        // index_all 期间文件可能已变更，失效缓存确保下次 list_files 拿到最新数据
+                        // index_all 期间文件可能已变更，失效缓存确保下次 ls 拿到最新数据
                         invalidate_file_list_cache(&dir_path);
                     }
                 }

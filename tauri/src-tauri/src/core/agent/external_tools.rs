@@ -19,6 +19,9 @@ use serde::Deserialize;
 
 use crate::core::agent::KbSearchConfig;
 
+/// 外部工具响应体上限（字符）：超过后截断并提示，防止异常/恶意端点撑爆模型上下文
+const MAX_EXTERNAL_RESPONSE_CHARS: usize = 100_000;
+
 /// 外部工具定义（agent_tools.yaml 中的一条）。
 #[derive(Debug, Clone, Deserialize)]
 pub struct ExternalToolDef {
@@ -129,14 +132,30 @@ pub fn build_external_tool(def: ExternalToolDef, cfg: KbSearchConfig) -> Dynamic
                         let status = resp.status();
                         match resp.text().await {
                             Ok(body) if status.is_success() => {
+                                // 响应体截断护栏：超过上限截断并提示，防撑爆模型上下文
+                                let truncated = body.chars().count() > MAX_EXTERNAL_RESPONSE_CHARS;
+                                let final_body = if truncated {
+                                    let cut: String = body
+                                        .chars()
+                                        .take(MAX_EXTERNAL_RESPONSE_CHARS)
+                                        .collect();
+                                    format!("{}（响应体过长已截断，共 {} 字符）", cut, body.chars().count())
+                                } else {
+                                    body
+                                };
                                 crate::core::agent::tools::record_tool_result(
                                     &cfg,
                                     &def.name,
                                     true,
-                                    &format!("HTTP {}，{} 字符", status, body.chars().count()),
-                                    Some(&body),
+                                    &format!(
+                                        "HTTP {}，{} 字符{}",
+                                        status,
+                                        final_body.chars().count(),
+                                        if truncated { "（已截断）" } else { "" }
+                                    ),
+                                    Some(&final_body),
                                 );
-                                Ok(ToolOutput::text(body))
+                                Ok(ToolOutput::text(final_body))
                             }
                             Ok(body) => {
                                 let msg = format!("HTTP {} 错误: {}", status, body);
@@ -177,10 +196,41 @@ pub fn build_external_tool(def: ExternalToolDef, cfg: KbSearchConfig) -> Dynamic
     )
 }
 
-/// 便捷：加载外部工具定义（默认配置路径；失败降级为空集 + 日志）。
+/// 外部工具配置缓存（mtime 感知：配置文件未变化时复用已解析结果）。
+///
+/// `load_external_tools_or_default` 在每次 Agent 请求构建工具与窄化可见工具时
+/// 都会被调用，直接读盘 + YAML 解析属于重复 IO；缓存后仅在文件变更时重新解析
+/// （P0-3 修复后该函数调用更频繁，缓存收益显著）。
+static EXTERNAL_TOOLS_CACHE: std::sync::OnceLock<
+    std::sync::Mutex<Option<(std::time::SystemTime, Vec<ExternalToolDef>)>>,
+> = std::sync::OnceLock::new();
+
+/// 便捷：加载外部工具定义（默认配置路径；失败降级为空集 + 日志；带 mtime 缓存）。
 pub fn load_external_tools_or_default() -> Vec<ExternalToolDef> {
-    match load_external_tools(&default_config_path()) {
-        Ok(defs) => defs,
+    let path = default_config_path();
+    let mtime = std::fs::metadata(&path)
+        .and_then(|m| m.modified())
+        .ok();
+    let cache = EXTERNAL_TOOLS_CACHE.get_or_init(|| std::sync::Mutex::new(None));
+    if let Ok(guard) = cache.lock() {
+        if let Some((cached_mtime, defs)) = guard.as_ref() {
+            // 文件 mtime 未变（含从未存在时缓存 epoch）→ 复用
+            let fresh = match mtime {
+                Some(mt) => mt == *cached_mtime,
+                None => *cached_mtime == std::time::UNIX_EPOCH,
+            };
+            if fresh {
+                return defs.clone();
+            }
+        }
+    }
+    match load_external_tools(&path) {
+        Ok(defs) => {
+            if let Ok(mut guard) = cache.lock() {
+                *guard = Some((mtime.unwrap_or(std::time::UNIX_EPOCH), defs.clone()));
+            }
+            defs
+        }
         Err(e) => {
             log::warn!("[external_tools] 加载外部工具失败，降级为空集: {}", e);
             Vec::new()

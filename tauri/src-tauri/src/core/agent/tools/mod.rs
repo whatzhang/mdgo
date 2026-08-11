@@ -59,9 +59,8 @@ pub struct ToolCallEvent {
 ///
 /// 工具闭包在 Rig 流式内部执行，无法直接访问 Tauri 事件发射器，
 /// 因此先写入本总线，由 `commands/llm.rs` 的流式循环按请求 drain 并转发。
-/// 全局总线跟踪的并发请求桶上限：超过后清空最旧（工具轨迹是辅助展示，丢失无害），
+/// 全局总线跟踪的并发请求桶上限：超过后逐桶淘汰最旧（见 MAX_TRACKED_REQUESTS），
 /// 防止异常路径（如子代理被取消）遗留的桶永久占用内存。
-const MAX_TRACKED_REQUESTS: usize = 64;
 
 pub struct ToolCallBus {
     seq: AtomicU64,
@@ -87,9 +86,16 @@ impl ToolCallBus {
     ) {
         let seq = self.seq.fetch_add(1, Ordering::Relaxed);
         if let Ok(mut map) = self.map.lock() {
-            // 容量治理：超过上限清空（对齐 bridge 的 MAX_PENDING 治理思想）
-            if map.len() >= MAX_TRACKED_REQUESTS {
-                map.clear();
+            // 容量治理：超限时逐桶淘汰（优先淘汰非当前请求的桶，保留本请求轨迹）。
+            // 与旧版「清空整个 map」相比，并发子代理/多请求场景不会冲掉主链轨迹卡片。
+            while map.len() >= MAX_TRACKED_REQUESTS {
+                let victim = map.keys().find(|k| *k != request_id).cloned();
+                match victim {
+                    Some(k) => {
+                        map.remove(&k);
+                    }
+                    None => break,
+                }
             }
             map.entry(request_id.to_string()).or_default().push(ToolCallEvent {
                 seq,
@@ -97,7 +103,7 @@ impl ToolCallBus {
                 tool: tool.into(),
                 call_id: call_id.into(),
                 args_preview: args_preview.into(),
-                arguments: arguments.into(),
+                arguments: truncate(arguments, MAX_TRACKED_ARGS_CHARS).into(),
                 ok: false,
                 summary: String::new(),
                 result: String::new(),
@@ -117,9 +123,15 @@ impl ToolCallBus {
     ) {
         let seq = self.seq.fetch_add(1, Ordering::Relaxed);
         if let Ok(mut map) = self.map.lock() {
-            // 容量治理：超过上限清空（轨迹是辅助展示，丢失无害）
-            if map.len() >= MAX_TRACKED_REQUESTS {
-                map.clear();
+            // 容量治理：逐桶淘汰（与 record_call 一致，不清空整个 map）
+            while map.len() >= MAX_TRACKED_REQUESTS {
+                let victim = map.keys().find(|k| *k != request_id).cloned();
+                match victim {
+                    Some(k) => {
+                        map.remove(&k);
+                    }
+                    None => break,
+                }
             }
             let events = map.entry(request_id.to_string()).or_default();
             // 配对到该工具第一个"尚无对应 result"的 call（并行同名调用时也能正确配对）
@@ -254,6 +266,11 @@ const MAX_SOURCE_SNIPPET_CHARS: usize = 800;
 
 // ─────────────────────────── 重复调用熔断（Loop Guard） ───────────────────────────
 
+/// 并发请求轨迹缓存上限（超限逐桶淘汰最旧，保留当前请求轨迹）
+const MAX_TRACKED_REQUESTS: usize = 64;
+/// 工具调用参数轨迹的截断上限（防 edit 大 new_string / remember 大 body 撑爆事件负载）
+const MAX_TRACKED_ARGS_CHARS: usize = 12_000;
+
 /// 单个 run 的 (工具名, 规范化参数) 连续调用记录，按 run_id 隔离。
 struct LoopGuardEntry {
     calls: Vec<(String, String)>,
@@ -368,7 +385,7 @@ pub fn invalidate_file_list_cache(dir_path: &str) {
 }
 
 /// 由黑白名单生成指纹：任何黑名单条目的增删改都会改变指纹，
-/// 使缓存快照失效并触发重建，保证 grep/list_files 始终按最新黑名单过滤。
+/// 使缓存快照失效并触发重建，保证 grep/ls 始终按最新黑名单过滤。
 fn blacklist_fingerprint(dir_blacklist: &[String], file_blacklist: &[String]) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
@@ -490,6 +507,33 @@ fn safe_resolve(dir_path: &str, rel: &str) -> Result<PathBuf, String> {
     safe_resolve_in(Path::new(dir_path), rel)
 }
 
+/// 解析「可能不存在」的目标文件路径（write 工具用）：父目录必须存在且 canonicalize
+/// 校验在根目录内，文件名在父目录下拼接（允许新建），防路径穿越与目录外写入。
+fn safe_resolve_new(dir_path: &str, rel: &str) -> Result<PathBuf, String> {
+    let base = std::fs::canonicalize(dir_path)
+        .map_err(|e| format!("无法访问目录: {}", e))?;
+    let rel_path = Path::new(rel);
+    // 拒绝绝对路径与含 `..` 的路径（防穿越）
+    if rel_path.is_absolute()
+        || rel_path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err("路径越界：仅允许访问限定目录内的文件".into());
+    }
+    let parent = rel_path.parent().unwrap_or_else(|| Path::new(""));
+    let file_name = rel_path
+        .file_name()
+        .ok_or_else(|| "非法文件路径".to_string())?;
+    // 父目录必须已存在且位于根目录内（canonicalize 解析符号链接防逃逸）
+    let full_parent = std::fs::canonicalize(base.join(parent))
+        .map_err(|e| format!("目标目录不存在: {}", e))?;
+    if !full_parent.starts_with(&base) {
+        return Err("路径越界：仅允许访问限定目录内的文件".into());
+    }
+    Ok(full_parent.join(file_name))
+}
+
 /// 读取已解析路径的文本内容（目录拒绝、超长分页）。
 ///
 /// `offset` 为字符偏移（从 0 开始）：返回 `[offset, offset + MAX_FILE_READ_CHARS)` 区间的内容。
@@ -498,7 +542,7 @@ fn safe_resolve(dir_path: &str, rel: &str) -> Result<PathBuf, String> {
 fn read_text(full: &Path, display: &str, offset: usize) -> Result<String, String> {
     let meta = std::fs::metadata(full).map_err(|e| format!("读取文件信息失败: {}", e))?;
     if meta.is_dir() {
-        return Err(format!("{} 是目录，请改用 list_files 查看目录内容", display));
+        return Err(format!("{} 是目录，请改用 ls 查看目录内容", display));
     }
     // P1-12：工具结果缓存（mtime 一致命中，文件编辑后自动失效）
     let mtime = meta
@@ -577,7 +621,9 @@ pub async fn read(cfg: &KbSearchConfig, rel_path: &str, offset: usize) -> Result
             // 读取的是知识库（当前打开目录）内文件 → 记录为引用来源，
             // 使「直接读文件」的回答同样展示引用（与预检索/检索工具来源一致）
             push_kb_source(cfg, rel_path, &result).await;
-            return Ok(result);
+            // 提示注入防护：不可信知识库文件内容原样进模型前包裹可疑指令
+            // （与子代理摘要/预检索上下文处理保持一致；无命中时原样返回）
+            return Ok(crate::core::security::wrap_suspicious(&result));
         }
         Err(e) if cfg.skill_state.activated().is_empty() => {
             // 无任何激活技能：若目标是技能参考路径，明确指出需先激活技能，
@@ -594,7 +640,10 @@ pub async fn read(cfg: &KbSearchConfig, rel_path: &str, offset: usize) -> Result
             }
             let dir = Path::new(base).join(&skill.id);
             match safe_resolve_in(&dir, rel_path) {
-                Ok(full) => return read_text(&full, rel_path, offset),
+                Ok(full) => {
+                    let result = read_text(&full, rel_path, offset)?;
+                    return Ok(crate::core::security::wrap_suspicious(&result));
+                }
                 Err(e) => last_err = e,
             }
         }
@@ -616,31 +665,38 @@ fn skill_ref_hint(rel_path: &str, base_err: String) -> String {
 }
 
 pub async fn list_files(cfg: &KbSearchConfig, pattern: &str, max_items: u32) -> Result<String, String> {
-    let entries = get_or_refresh_cache(&cfg.dir_path, &cfg.dir_blacklist, &cfg.file_blacklist)?;
+    // 忽略可配置黑名单（用户可随时取消）：ls/glob/grep 等文件工具遍历全量文件，
+    // 与 read/edit/delete/write 的直接路径访问保持一致；`.mdgo` 等系统内置隐藏目录
+    // 仍由 IgnoreMatcher 的隐藏/临时文件内置规则排除。
+    let entries = get_or_refresh_cache(&cfg.dir_path, &[], &[])?;
     let pattern = pattern.trim().to_lowercase();
     let max = (max_items as usize).clamp(1, MAX_LIST_ITEMS);
 
-    let matched: Vec<&(String, u64)> = if pattern.is_empty() {
-        entries.iter().take(max).collect()
+    // 先统计全部匹配数再取展示上限，超限时明确告知剩余数量（避免模型误判目录规模）
+    let all_matched: Vec<&(String, u64)> = if pattern.is_empty() {
+        entries.iter().collect()
     } else {
         entries
             .iter()
             .filter(|(rel, _)| rel.to_lowercase().contains(&pattern))
-            .take(max)
             .collect()
     };
-
-    if matched.is_empty() {
+    let total = all_matched.len();
+    if total == 0 {
         return Ok(format!(
             "目录中未找到匹配的文件（模式：{}）",
             if pattern.is_empty() { "全部" } else { &pattern }
         ));
     }
-    let lines: Vec<String> = matched
-        .iter()
+    let shown = all_matched.iter().take(max);
+    let lines: Vec<String> = shown
         .map(|(rel, size)| format!("{rel}  ({} 字节)", size))
         .collect();
-    Ok(format!("共 {} 项：\n{}", lines.len(), lines.join("\n")))
+    let mut out = format!("共 {} 项：\n{}", total, lines.join("\n"));
+    if total > max {
+        out.push_str(&format!("\n（另有 {} 项未展示，可加过滤条件或提高 max_items）", total - max));
+    }
+    Ok(out)
 }
 
 // ─────────────────────────── 内容搜索工具（grep） ───────────────────────────
@@ -961,7 +1017,9 @@ pub async fn grep_files(
     if pattern.is_empty() {
         return Err("搜索关键词为空，请提供 pattern 参数".to_string());
     }
-    if pattern.chars().count() < 2 {
+    // 过短限制仅针对单个 ASCII 字符（如 "a"、"1" 噪声大）；
+    // 单个中文字符（如 "图"、"表"）是常见检索词，放行
+    if pattern.chars().count() < 2 && pattern.chars().all(|c| c.is_ascii()) {
         return Err("搜索关键词过短（至少 2 个字符），请提供更具体的关键词".to_string());
     }
     let parsed = parse_pattern(pattern);
@@ -976,13 +1034,13 @@ pub async fn grep_files(
     // 操作，整体移到阻塞线程执行，避免阻塞 tokio 执行线程与 agent 异步循环，
     // 也避免大知识库冷缓存时首次 grep 卡死（遍历无取消机制，绝不能跑在 async 线程上）。
     let dir_path = cfg.dir_path.clone();
-    let dir_blacklist = cfg.dir_blacklist.clone();
-    let file_blacklist = cfg.file_blacklist.clone();
+    // 忽略可配置黑名单（与 ls/glob/read 等文件工具一致）：grep 搜索全量文件；
+    // `.mdgo` 等系统内置隐藏目录仍由 IgnoreMatcher 内置规则排除
     let include_owned = include.to_vec();
     let exclude_owned = exclude.to_vec();
     let parsed_for_search = parsed.clone();
-    let (hits, truncated, skipped) = tokio::task::spawn_blocking(move || {
-        let entries = get_or_refresh_cache(&dir_path, &dir_blacklist, &file_blacklist)?;
+    let (hits, truncated, skipped, hit_total) = tokio::task::spawn_blocking(move || {
+        let entries = get_or_refresh_cache(&dir_path, &[], &[])?;
         let include_matcher = GlobMatcher::new(&include_owned);
         let exclude_matcher = GlobMatcher::new(&exclude_owned);
 
@@ -996,13 +1054,11 @@ pub async fn grep_files(
             .collect();
 
         let mut hits: Vec<(String, Vec<String>)> = Vec::new();
+        let mut hit_total = 0u32;
         let mut scanned: u64 = 0;
         let mut truncated = false;
         let mut skipped = 0u32;
         for (rel, _) in candidates {
-            if hits.len() >= limit {
-                break;
-            }
             if scanned >= MAX_GREP_SCAN_BYTES {
                 truncated = true;
                 break;
@@ -1033,13 +1089,18 @@ pub async fn grep_files(
             if !matched {
                 continue;
             }
+            hit_total += 1;
+            // 已达展示上限：仅计数不再存储（扫描预算仍限制总耗时），输出时提示剩余数量
+            if hits.len() >= limit {
+                continue;
+            }
             if list_only {
                 hits.push((rel, Vec::new()));
             } else if !lines.is_empty() {
                 hits.push((rel, lines));
             }
         }
-        Ok::<_, String>((hits, truncated, skipped))
+        Ok::<_, String>((hits, truncated, skipped, hit_total))
     })
     .await
     .map_err(|e| format!("搜索文件内容失败: {}", e))??;
@@ -1078,7 +1139,15 @@ pub async fn grep_files(
         return Ok(msg);
     }
 
-    let mut out = format!("搜索“{}”命中 {} 个文件：\n", pattern, hits.len());
+    // 命中文件数超限时明确告知总数，避免模型误判为只有展示的这些文件
+    let mut out = if hit_total > hits.len() as u32 {
+        format!(
+            "搜索“{}”命中 {} 个文件（仅展示前 {} 个，可加 include/exclude 缩小范围）：\n",
+            pattern, hit_total, hits.len()
+        )
+    } else {
+        format!("搜索“{}”命中 {} 个文件：\n", pattern, hits.len())
+    };
     // 上限按"字符"统计（与 MAX_GREP_OUTPUT_CHARS 语义一致），避免中文内容提前截断
     let mut chars = out.chars().count();
     let mut output_truncated = false;
@@ -1114,7 +1183,8 @@ pub async fn grep_files(
         out.push_str(&truncate_hint());
     }
     out.push_str(&skip_note);
-    Ok(out)
+    // 提示注入防护：grep 命中的知识库文件内容进模型前包裹可疑指令（与 read 一致）
+    Ok(crate::core::security::wrap_suspicious(&out))
 }
 
 /// 扫描字节/输出字符截断时的可执行优化建议（引导模型下一步动作）。
@@ -1274,19 +1344,31 @@ pub fn build_grep_tool(cfg: KbSearchConfig) -> DynamicTool {
 
 /// 查询知识库所在 Git 仓库的工作区状态（只读，不支持提交等写操作）。
 pub async fn git_status(cfg: &KbSearchConfig) -> Result<String, String> {
-    let output = std::process::Command::new("git")
-        .arg("-C")
-        .arg(&cfg.dir_path)
-        .arg("-c")
-        .arg("core.quotepath=false")
-        .arg("status")
-        .arg("--short")
-        .output()
-        .map_err(|e| format!("git 执行失败（可能未安装 git）: {}", e))?;
+    let dir = cfg.dir_path.clone();
+    // git 命令为阻塞 IO：移入 spawn_blocking 避免阻塞 tokio worker 线程，
+    // 并加 10 秒超时防止大仓库 `git status` 卡住整个 agent 循环。
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        tokio::task::spawn_blocking(move || {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&dir)
+                .arg("-c")
+                .arg("core.quotepath=false")
+                .arg("status")
+                .arg("--short")
+                .output()
+        }),
+    )
+    .await
+    .map_err(|_| "Git 状态查询超时（10 秒）".to_string())?
+    .map_err(|e| format!("git 执行任务失败: {}", e))?
+    .map_err(|e| format!("git 执行失败（可能未安装 git）: {}", e))?;
 
     if !output.status.success() {
         let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Ok(format!("Git 状态查询失败（可能不是 Git 仓库）: {}", err));
+        // 失败返回 Err（而非 Ok），避免模型把失败原因当成正常工具结果
+        return Err(format!("Git 状态查询失败（可能不是 Git 仓库）: {}", err));
     }
     let text = String::from_utf8_lossy(&output.stdout).into_owned();
     let total = text.lines().count();
@@ -1307,6 +1389,55 @@ fn is_mdgo_internal(rel: &str) -> bool {
         || norm.starts_with(".mdgo\\")
 }
 
+/// 校验已解析（canonical）路径不在 `.mdgo` 内部数据目录内。
+///
+/// 在 `safe_resolve` 之后按 canonical 结果的相对组件逐段判断（忽略大小写），
+/// 可防 `..` 穿越（如 `a/../.mdgo/config.yaml`）绕过 `is_mdgo_internal` 的字符串前缀检查。
+fn ensure_not_mdgo(full: &Path, base: &Path, op: &str) -> Result<(), String> {
+    let rel = full
+        .strip_prefix(base)
+        .map_err(|_| "路径越界：仅允许访问限定目录内的文件".to_string())?;
+    if rel
+        .components()
+        .any(|c| c.as_os_str().eq_ignore_ascii_case(".mdgo"))
+    {
+        return Err(format!(
+            ".mdgo 为应用内部数据目录（配置/技能/索引），不允许{}",
+            op
+        ));
+    }
+    Ok(())
+}
+
+/// 原子写文件：先写同目录临时文件再 rename 替换，避免写中途崩溃留下半写文件。
+///
+/// Unix 上 rename 为原子替换；Windows 上目标存在时 rename 失败，退化为
+/// 「删除目标 + 重命名」（窗口期极短）。任何失败路径都会清理临时文件。
+fn atomic_write_file(full: &Path, content: &[u8]) -> Result<(), String> {
+    let mut tmp_name = full
+        .file_name()
+        .unwrap_or_default()
+        .to_os_string();
+    tmp_name.push(".mdgo-tmp");
+    let tmp = full.with_file_name(tmp_name);
+    std::fs::write(&tmp, content).map_err(|e| format!("写入临时文件失败: {}", e))?;
+    match std::fs::rename(&tmp, full) {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            // Windows：目标已存在导致 rename 失败，退化为删除+重命名
+            if std::fs::remove_file(full).is_ok() {
+                std::fs::rename(&tmp, full).map_err(|e| {
+                    let _ = std::fs::remove_file(&tmp);
+                    format!("写入文件失败: {}", e)
+                })
+            } else {
+                let _ = std::fs::remove_file(&tmp);
+                Err("写入文件失败：无法替换目标文件".into())
+            }
+        }
+    }
+}
+
 /// 编辑知识库（当前打开目录）内文本文件：将唯一匹配的 old_string 精确替换为 new_string。
 ///
 /// 安全边界：路径经 `safe_resolve` 限制在打开目录内，且拒绝 `.mdgo` 内部数据。
@@ -1323,6 +1454,9 @@ pub async fn edit_file(
         return Err(".mdgo 为应用内部数据目录（配置/技能/索引），不允许编辑".into());
     }
     let full = safe_resolve(&cfg.dir_path, rel_path)?;
+    // canonical 后二次校验 `.mdgo`（防 `..` 穿越绕过字符串前缀检查）
+    let base = std::fs::canonicalize(&cfg.dir_path).map_err(|e| format!("无法访问目录: {}", e))?;
+    ensure_not_mdgo(&full, &base, "编辑")?;
     let meta = std::fs::metadata(&full).map_err(|e| format!("读取文件信息失败: {}", e))?;
     if meta.is_dir() {
         return Err(format!("{} 是目录，仅支持编辑文本文件", rel_path));
@@ -1331,7 +1465,13 @@ pub async fn edit_file(
         return Err(format!("{} 超过 1MB，请改用其他方式编辑", rel_path));
     }
     let data = std::fs::read(&full).map_err(|e| format!("读取文件失败: {}", e))?;
-    let content = String::from_utf8_lossy(&data).into_owned();
+    // 二进制检测：含 NUL 字节的文件拒绝编辑，避免乱码污染上下文
+    if data.contains(&0) {
+        return Err(format!("{} 是二进制文件，仅支持编辑文本文件", rel_path));
+    }
+    // 严格 UTF-8 校验：拒绝无效 UTF-8（如 latin-1），避免 lossy 写回永久损坏文件
+    let content = String::from_utf8(data)
+        .map_err(|_| format!("{} 不是有效的 UTF-8 文本文件，拒绝编辑以避免损坏", rel_path))?;
     let occurrences: Vec<usize> = content.match_indices(old_string).map(|(i, _)| i).collect();
     match occurrences.len() {
         0 => Err("未在文件中找到与 old_string 完全匹配的内容，请先使用 read 读取文件确认原文（注意换行符、空格、大小写需完全一致）".into()),
@@ -1341,8 +1481,7 @@ pub async fn edit_file(
             new_content.push_str(&content[..start]);
             new_content.push_str(new_string);
             new_content.push_str(&content[start + old_string.len()..]);
-            std::fs::write(&full, new_content.as_bytes())
-                .map_err(|e| format!("写入文件失败: {}", e))?;
+            atomic_write_file(&full, new_content.as_bytes())?;
             Ok(format!(
                 "已更新 {}：替换 1 处（{} 字符 → {} 字符）",
                 rel_path,
@@ -1357,6 +1496,167 @@ pub async fn edit_file(
     }
 }
 
+/// 单次 multi_edit 最多提交的编辑数（避免一次请求撑爆上下文与执行时间）
+const MAX_MULTI_EDITS: usize = 10;
+
+/// 批量编辑多个文件：所有编辑先全量校验（路径安全/UTF-8/old_string 唯一匹配），
+/// 全部通过后再逐个原子写入（all-or-nothing 的校验阶段 + 顺序写入阶段）。
+///
+/// 相比逐次调用 edit，一次调用完成多文件修改，节省模型轮次预算（高可用）；
+/// 校验失败时不写任何文件，避免部分成功造成的不一致。
+pub async fn multi_edit_files(
+    cfg: &KbSearchConfig,
+    edits: &[(String, String, String)],
+) -> Result<String, String> {
+    if edits.is_empty() {
+        return Err("edits 不能为空".into());
+    }
+    if edits.len() > MAX_MULTI_EDITS {
+        return Err(format!("edits 最多 {} 个", MAX_MULTI_EDITS));
+    }
+    let base = std::fs::canonicalize(&cfg.dir_path).map_err(|e| format!("无法访问目录: {}", e))?;
+
+    // ── 阶段 1：全量校验（任一失败即整体拒绝，不写任何文件）──
+    let mut pending: Vec<(std::path::PathBuf, Vec<u8>)> = Vec::with_capacity(edits.len());
+    for (i, (rel, old, new)) in edits.iter().enumerate() {
+        let idx = i + 1;
+        if old.is_empty() {
+            return Err(format!("第 {} 个 edit 的 old_string 不能为空", idx));
+        }
+        if is_mdgo_internal(rel) {
+            return Err(format!("第 {} 个 edit：{} 为 .mdgo 内部数据，不允许编辑", idx, rel));
+        }
+        let full = safe_resolve(&cfg.dir_path, rel)?;
+        ensure_not_mdgo(&full, &base, "编辑")?;
+        let meta = std::fs::metadata(&full).map_err(|e| format!("读取文件信息失败: {}", e))?;
+        if meta.is_dir() {
+            return Err(format!("第 {} 个 edit：{} 是目录，仅支持编辑文本文件", idx, rel));
+        }
+        if meta.len() > 1024 * 1024 {
+            return Err(format!("第 {} 个 edit：{} 超过 1MB，请改用其他方式编辑", idx, rel));
+        }
+        let data = std::fs::read(&full).map_err(|e| format!("读取文件失败: {}", e))?;
+        if data.contains(&0) {
+            return Err(format!("第 {} 个 edit：{} 是二进制文件，仅支持编辑文本文件", idx, rel));
+        }
+        let content = String::from_utf8(data)
+            .map_err(|_| format!("第 {} 个 edit：{} 不是有效的 UTF-8 文本文件，拒绝编辑以避免损坏", idx, rel))?;
+        let occurrences: Vec<usize> = content.match_indices(old).map(|(i, _)| i).collect();
+        match occurrences.len() {
+            0 => return Err(format!(
+                "第 {} 个 edit 未在 {} 中找到与 old_string 完全匹配的内容，请先使用 read 读取文件确认原文",
+                idx, rel
+            )),
+            1 => {
+                let start = occurrences[0];
+                let mut new_content = String::with_capacity(content.len() + new.len());
+                new_content.push_str(&content[..start]);
+                new_content.push_str(new);
+                new_content.push_str(&content[start + old.len()..]);
+                pending.push((full, new_content.into_bytes()));
+            }
+            n => return Err(format!(
+                "第 {} 个 edit：old_string 在 {} 中出现 {} 次，请提供更长的上下文使其唯一匹配",
+                idx, rel, n
+            )),
+        }
+    }
+
+    // ── 阶段 2：逐文件原子写（校验已全部通过）──
+    let mut ok_count = 0usize;
+    for (full, bytes) in &pending {
+        atomic_write_file(full, bytes)?;
+        ok_count += 1;
+    }
+    Ok(format!("已批量更新 {} 个文件", ok_count))
+}
+
+/// 创建新文件或整体覆盖知识库（当前打开目录）内文本文件（对齐主流 Agent 的 write 能力）。
+///
+/// 安全边界：路径经 [`safe_resolve_new`] 限制在打开目录内（允许新建，父目录须已存在），
+/// 且拒绝 `.mdgo` 内部数据；写入为原子写（临时文件 + rename）。
+pub async fn write_file(
+    cfg: &KbSearchConfig,
+    rel_path: &str,
+    content: &str,
+) -> Result<String, String> {
+    if is_mdgo_internal(rel_path) {
+        return Err(".mdgo 为应用内部数据目录（配置/技能/索引），不允许写入".into());
+    }
+    if content.chars().count() > 1024 * 1024 {
+        return Err(format!("{} 内容超过 1MB，write 单次写入上限为 1MB", rel_path));
+    }
+    let full = safe_resolve_new(&cfg.dir_path, rel_path)?;
+    // canonical 后二次校验 `.mdgo`（防 `..` 穿越；父目录已 canonicalize）
+    let base = std::fs::canonicalize(&cfg.dir_path).map_err(|e| format!("无法访问目录: {}", e))?;
+    ensure_not_mdgo(&full, &base, "写入")?;
+    atomic_write_file(&full, content.as_bytes())?;
+    let existed = std::fs::metadata(&full).is_ok();
+    Ok(format!(
+        "已{} {}（{} 字符）",
+        if existed { "覆盖写入" } else { "创建" },
+        rel_path,
+        content.chars().count()
+    ))
+}
+
+/// 构建 write 工具：创建新文件或整体覆盖知识库内文本文件。
+pub fn build_write_tool(cfg: KbSearchConfig) -> DynamicTool {
+    DynamicTool::new(
+        "write",
+        "创建新文件或整体覆盖当前打开知识库目录内的文本文件。content 为文件的完整新内容（覆盖写，非追加）。适合新建文档/笔记/代码文件，或整体重写小文件（≤1MB）。只允许在打开目录内写入，父目录须已存在（新建目录请先通过其他方式创建），不允许写入 .mdgo 内部数据。写入为不可撤销操作，覆盖已有文件前请确认用户意图。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "rel_path": {
+                    "type": "string",
+                    "description": "文件在知识库根目录下的相对路径，如 docs/new-note.md"
+                },
+                "content": {
+                    "type": "string",
+                    "description": "文件的完整新内容（UTF-8 文本，最大 1MB）"
+                }
+            },
+            "required": ["rel_path", "content"]
+        }),
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let cfg = cfg.clone();
+            Box::pin(async move {
+                let rel = args
+                    .get("rel_path")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                let content = args
+                    .get("content")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                if rel.is_empty() {
+                    return Err(tool_error("write", "rel_path 为空"));
+                }
+                let preview = format!(
+                    "{}: {} 字符",
+                    rel,
+                    content.chars().count()
+                );
+                record_tool_call(&cfg, "write", &preview, Some(&args));
+                match write_file(&cfg, &rel, &content).await {
+                    Ok(text) => {
+                        record_tool_result(&cfg, "write", true, &text, Some(&text));
+                        Ok(ToolOutput::text(text))
+                    }
+                    Err(e) => {
+                        record_tool_result(&cfg, "write", false, &e, Some(&e));
+                        Err(tool_error("write", &e))
+                    }
+                }
+            })
+        },
+    )
+}
+
 /// 删除知识库（当前打开目录）内的一个文件（不可恢复）。
 ///
 /// 安全边界：路径经 `safe_resolve` 限制在打开目录内，且拒绝 `.mdgo` 内部数据。
@@ -1365,6 +1665,9 @@ pub async fn delete_file(cfg: &KbSearchConfig, rel_path: &str) -> Result<String,
         return Err(".mdgo 为应用内部数据目录（配置/技能/索引），不允许删除".into());
     }
     let full = safe_resolve(&cfg.dir_path, rel_path)?;
+    // canonical 后二次校验 `.mdgo`（防 `..` 穿越绕过字符串前缀检查）
+    let base = std::fs::canonicalize(&cfg.dir_path).map_err(|e| format!("无法访问目录: {}", e))?;
+    ensure_not_mdgo(&full, &base, "删除")?;
     let meta = std::fs::metadata(&full).map_err(|e| format!("读取文件信息失败: {}", e))?;
     if meta.is_dir() {
         return Err(format!("{} 是目录，delete 仅支持删除文件，不支持目录", rel_path));
@@ -1682,6 +1985,73 @@ pub fn build_edit_tool(cfg: KbSearchConfig) -> DynamicTool {
     )
 }
 
+/// 构建 multi_edit 工具：批量编辑多个文件（一次调用完成多文件精确替换，节省轮次预算）。
+pub fn build_multi_edit_tool(cfg: KbSearchConfig) -> DynamicTool {
+    DynamicTool::new(
+        "multi_edit",
+        "批量编辑多个文件：一次调用对多个文件（或同一文件多处）执行精确替换。edits 为数组，每项含 rel_path/old_string/new_string，old_string 必须在对应文件中唯一匹配（先 read 确认原文）。所有编辑会先全量校验（路径安全/UTF-8/唯一性），任一失败则整体不执行任何修改；全部通过后一次性写入。最多 10 个 edit。适合一次修改多个文件的相似片段（如批量重命名、批量加注释），相比逐次调用 edit 更省轮次。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "edits": {
+                    "type": "array",
+                    "maxItems": 10,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "rel_path": {
+                                "type": "string",
+                                "description": "文件在知识库根目录下的相对路径，如 docs/note.md"
+                            },
+                            "old_string": {
+                                "type": "string",
+                                "description": "待替换的原文片段，必须与文件内容完全一致且在文件中唯一出现"
+                            },
+                            "new_string": {
+                                "type": "string",
+                                "description": "替换后的新内容"
+                            }
+                        },
+                        "required": ["rel_path", "old_string", "new_string"]
+                    }
+                }
+            },
+            "required": ["edits"]
+        }),
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let cfg = cfg.clone();
+            Box::pin(async move {
+                let edits: Vec<(String, String, String)> = args
+                    .get("edits")
+                    .and_then(|e| e.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|item| {
+                                let rel = item.get("rel_path").and_then(|s| s.as_str())?.trim().to_string();
+                                let old = item.get("old_string").and_then(|s| s.as_str())?.to_string();
+                                let new = item.get("new_string").and_then(|s| s.as_str())?.to_string();
+                                Some((rel, old, new))
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let preview = format!("{} 个文件编辑", edits.len());
+                record_tool_call(&cfg, "multi_edit", &preview, Some(&args));
+                match multi_edit_files(&cfg, &edits).await {
+                    Ok(text) => {
+                        record_tool_result(&cfg, "multi_edit", true, &text, Some(&text));
+                        Ok(ToolOutput::text(text))
+                    }
+                    Err(e) => {
+                        record_tool_result(&cfg, "multi_edit", false, &e, Some(&e));
+                        Err(tool_error("multi_edit", &e))
+                    }
+                }
+            })
+        },
+    )
+}
+
 /// 构建 delete 工具：删除打开目录内的一个文件。
 pub fn build_delete_tool(cfg: KbSearchConfig) -> DynamicTool {
     DynamicTool::new(
@@ -1725,11 +2095,12 @@ pub fn build_delete_tool(cfg: KbSearchConfig) -> DynamicTool {
     )
 }
 
-/// 构建 list_files 工具：列举知识库目录下的文件（支持子串匹配，最多 60 项）。
-pub fn build_list_files_tool(cfg: KbSearchConfig) -> DynamicTool {
+/// 构建 ls 工具（对齐主流 Agent 的 ls 命名）。
+fn build_list_files_dyn(name: &str, cfg: KbSearchConfig) -> DynamicTool {
+    let name_owned = name.to_string();
     DynamicTool::new(
-        "list_files",
-        "列举知识库目录下的文件与子目录（返回相对路径与大小），支持按名称子串过滤，最多返回 60 项。当需要了解知识库目录结构、或不确定文件路径时调用。",
+        name_owned.clone(),
+        "列举知识库目录下的文件与子目录（返回相对路径与大小），支持按名称子串过滤，最多返回 60 项。忽略用户配置的目录/文件黑名单（如 node_modules 等也会列出，除非是系统内置的 .mdgo 内部数据）。当需要了解知识库目录结构、或不确定文件路径时调用。",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -1739,10 +2110,103 @@ pub fn build_list_files_tool(cfg: KbSearchConfig) -> DynamicTool {
                 },
                 "max_items": {
                     "type": "integer",
+                    "minimum": 1,
+                    "maximum": 60,
                     "description": "最多返回条数，默认 30，上限 60"
                 }
             },
             "required": []
+        }),
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let cfg = cfg.clone();
+            let name = name_owned.clone();
+            Box::pin(async move {
+                let pattern = args
+                    .get("pattern")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                let max_items = args
+                    .get("max_items")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32)
+                    .unwrap_or(30);
+                let preview = if pattern.is_empty() { "全部".to_string() } else { pattern.clone() };
+                record_tool_call(&cfg, &name, &preview, Some(&args));
+                match list_files(&cfg, &pattern, max_items).await {
+                    Ok(text) => {
+                        record_tool_result(&cfg, &name, true, &format!("{} 项", text.lines().count().saturating_sub(1)), Some(&text));
+                        Ok(ToolOutput::text(text))
+                    }
+                    Err(e) => {
+                        record_tool_result(&cfg, &name, false, &e, Some(&e));
+                        Err(tool_error(&name, &e))
+                    }
+                }
+            })
+        },
+    )
+}
+
+/// 构建 ls 工具
+pub fn build_ls_tool(cfg: KbSearchConfig) -> DynamicTool {
+    build_list_files_dyn("ls", cfg)
+}
+
+/// 按 glob 模式列举知识库内匹配的文件（对齐主流 Agent 的 glob 能力）。
+pub async fn glob_files(
+    cfg: &KbSearchConfig,
+    pattern: &str,
+    max_items: u32,
+) -> Result<String, String> {
+    let pattern = pattern.trim();
+    if pattern.is_empty() {
+        return Err("glob 模式不能为空，如 **/*.rs、docs/*.md".to_string());
+    }
+    // 忽略可配置黑名单（与 ls/grep/read 等文件工具一致；`.mdgo` 等隐藏目录仍由内置规则排除）
+    let entries = get_or_refresh_cache(&cfg.dir_path, &[], &[])?;
+    let matcher = GlobMatcher::new(&[pattern.to_string()]);
+    let max = (max_items as usize).clamp(1, MAX_LIST_ITEMS);
+    let matched: Vec<&(String, u64)> = entries
+        .iter()
+        .filter(|(rel, _)| matcher.is_match(rel))
+        .collect();
+    let total = matched.len();
+    if total == 0 {
+        return Ok(format!("未找到匹配 {} 的文件", pattern));
+    }
+    let shown = matched.iter().take(max);
+    let lines: Vec<String> = shown
+        .map(|(rel, size)| format!("{rel}  ({} 字节)", size))
+        .collect();
+    let mut out = format!("共 {} 个文件匹配 {}：\n{}", total, pattern, lines.join("\n"));
+    if total > max {
+        out.push_str(&format!("\n（另有 {} 个文件未展示，可缩小模式范围）", total - max));
+    }
+    Ok(out)
+}
+
+/// 构建 glob 工具：按 glob 模式列举知识库内匹配的文件。
+pub fn build_glob_tool(cfg: KbSearchConfig) -> DynamicTool {
+    DynamicTool::new(
+        "glob",
+        "按 glob 模式列举当前打开知识库目录内匹配的文件（相对路径 + 字节大小）。模式支持 *（单层任意）、**（任意层级）、?（单字符）、[abc]（字符集）；含 / 的模式锚定根目录，裸文件名（如 *.rs）匹配任意层级的 basename；目录名（如 src）自动展开为其下全部文件。最多返回 60 个匹配文件，超出会提示剩余数量。用于快速定位文件与批量确认路径，比 grep 更轻量。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "pattern": {
+                    "type": "string",
+                    "description": "glob 模式，如 **/*.rs、docs/*.md、*.json"
+                },
+                "max_items": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 60,
+                    "description": "最多返回条数，默认 30，上限 60"
+                }
+            },
+            "required": ["pattern"]
         }),
         move |_ctx: &mut ToolContext, args: serde_json::Value| {
             let cfg = cfg.clone();
@@ -1758,16 +2222,15 @@ pub fn build_list_files_tool(cfg: KbSearchConfig) -> DynamicTool {
                     .and_then(|v| v.as_u64())
                     .map(|v| v as u32)
                     .unwrap_or(30);
-                let preview = if pattern.is_empty() { "全部".to_string() } else { pattern.clone() };
-                record_tool_call(&cfg, "list_files", &preview, Some(&args));
-                match list_files(&cfg, &pattern, max_items).await {
+                record_tool_call(&cfg, "glob", &pattern, Some(&args));
+                match glob_files(&cfg, &pattern, max_items).await {
                     Ok(text) => {
-                        record_tool_result(&cfg, "list_files", true, &format!("{} 项", text.lines().count().saturating_sub(1)), Some(&text));
+                        record_tool_result(&cfg, "glob", true, &format!("{} 项", text.lines().count().saturating_sub(1)), Some(&text));
                         Ok(ToolOutput::text(text))
                     }
                     Err(e) => {
-                        record_tool_result(&cfg, "list_files", false, &e, Some(&e));
-                        Err(tool_error("list_files", &e))
+                        record_tool_result(&cfg, "glob", false, &e, Some(&e));
+                        Err(tool_error("glob", &e))
                     }
                 }
             })
@@ -2102,13 +2565,13 @@ mod grep_tests {
 /// 构建 deep_research 工具：派生隔离上下文的只读子代理执行深度调研。
 ///
 /// 子代理使用独立 request_id 与只读工具子集（kb_search/code_lookup/read/grep/
-/// list_files/git_status，不含 edit/delete/技能激活），不修改任何文件；
+/// ls/git_status，不含 edit/delete/技能激活），不修改任何文件；
 /// 返回有界摘要，完整输出经 read_subagent_result 分页读取（对齐 Reasonix
 /// read_subagent_result 的"结果隔离 + 按需分页"思想）。
 pub fn build_deep_research_tool(cfg: KbSearchConfig) -> DynamicTool {
     DynamicTool::new(
         "deep_research",
-        "派生一个隔离上下文的只读子代理进行深度调研：它可以检索知识库（kb_search）、读取与搜索文件（read/grep/list_files），适合需要阅读大量文件、跨文档总结、独立调查的任务。子代理不修改任何文件，也不共享当前对话的技能激活状态。返回有界摘要（含 subagent_id）；若需完整结果，用 read_subagent_result 指定 subagent_id 分页读取。",
+        "派生一个隔离上下文的只读子代理进行深度调研：它可以检索知识库（kb_search）、读取与搜索文件（read/grep/ls），适合需要阅读大量文件、跨文档总结、独立调查的任务。子代理不修改任何文件，也不共享当前对话的技能激活状态。返回有界摘要（含 subagent_id）；若需完整结果，用 read_subagent_result 指定 subagent_id 分页读取。",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -2395,6 +2858,165 @@ pub fn build_self_review_tool(cfg: KbSearchConfig) -> DynamicTool {
 }
 
 // ─────────────────────────── 长期记忆工具（P0-2） ───────────────────────────
+
+// ─────────────────────────── 任务清单工具（todo，对齐主流 TodoWrite） ───────────────────────────
+
+/// 任务清单条目（完成状态 + 文本）
+#[derive(Clone)]
+struct TodoItem {
+    done: bool,
+    text: String,
+}
+
+/// 任务清单存储：按 request_id 隔离（一次 Agent 请求内多轮工具调用共享）。
+///
+/// 请求级生命周期：`agent_query` 开始时 `reset_todo` 清空；容量上限兜底防泄漏
+/// （超限清最旧，与 ToolCallBus 同策略），保证高并发下不膨胀。
+static TODO_STORE: std::sync::OnceLock<
+    std::sync::Mutex<std::collections::HashMap<String, Vec<TodoItem>>>,
+> = std::sync::OnceLock::new();
+
+/// 单个请求最多缓存的 todo 条目（防止超长清单撑爆上下文）
+const MAX_TODO_ITEMS: usize = 50;
+/// 并发请求 todo 缓存上限（超限清最旧）
+const MAX_TODO_REQUESTS: usize = 128;
+
+fn todo_store() -> &'static std::sync::Mutex<std::collections::HashMap<String, Vec<TodoItem>>> {
+    TODO_STORE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+/// 清空指定请求的任务清单（agent_query 开始时调用，保证请求级隔离）。
+pub fn reset_todo(request_id: &str) {
+    if let Ok(mut store) = todo_store().lock() {
+        store.remove(request_id);
+    }
+}
+
+/// 执行一次任务清单操作，返回更新后的清单文本（模型据此跟踪任务进度）。
+pub async fn todo_write(
+    cfg: &KbSearchConfig,
+    action: &str,
+    items: &[String],
+) -> Result<String, String> {
+    let mut store = todo_store().lock().unwrap_or_else(|e| e.into_inner());
+    // 容量上限：新请求进入且已满时淘汰最旧请求的清单（防泄漏）
+    if store.len() >= MAX_TODO_REQUESTS && !store.contains_key(&cfg.request_id) {
+        if let Some(oldest) = store.keys().next().cloned() {
+            store.remove(&oldest);
+        }
+    }
+    let list = store.entry(cfg.request_id.clone()).or_default();
+    match action {
+        "add" => {
+            for it in items {
+                let text = it.trim();
+                if !text.is_empty() && list.len() < MAX_TODO_ITEMS {
+                    list.push(TodoItem { done: false, text: text.to_string() });
+                }
+            }
+        }
+        "complete" => {
+            if items.is_empty() {
+                for it in list.iter_mut() {
+                    it.done = true;
+                }
+            } else {
+                for it in list.iter_mut() {
+                    if items.iter().any(|t| t.trim() == it.text) {
+                        it.done = true;
+                    }
+                }
+            }
+        }
+        "remove" => {
+            if items.is_empty() {
+                list.clear();
+            } else {
+                list.retain(|it| !items.iter().any(|t| t.trim() == it.text));
+            }
+        }
+        "clear" => list.clear(),
+        "replace" => {
+            list.clear();
+            for it in items {
+                let text = it.trim();
+                if !text.is_empty() && list.len() < MAX_TODO_ITEMS {
+                    list.push(TodoItem { done: false, text: text.to_string() });
+                }
+            }
+        }
+        _ => {
+            return Err(format!(
+                "未知 action：{}（支持 add/complete/remove/clear/replace）",
+                action
+            ));
+        }
+    }
+    if list.is_empty() {
+        return Ok("任务清单为空".into());
+    }
+    let lines: Vec<String> = list
+        .iter()
+        .enumerate()
+        .map(|(i, it)| format!("{}. [{}] {}", i + 1, if it.done { "x" } else { " " }, it.text))
+        .collect();
+    Ok(format!("任务清单（{} 项）：\n{}", list.len(), lines.join("\n")))
+}
+
+/// 构建 todo_write 工具：模型在长任务执行中维护任务清单（对齐主流 Agent 的 TodoWrite）。
+pub fn build_todo_write_tool(cfg: KbSearchConfig) -> DynamicTool {
+    DynamicTool::new(
+        "todo_write",
+        "维护当前任务的任务清单（用于长任务执行中跟踪进度、防止遗漏步骤）。action 支持：add（追加待办）、complete（标记完成，items 为空则全部完成）、remove（移除条目，items 为空则清空）、clear（清空清单）、replace（整体替换清单）。调用后返回最新清单（[x]=已完成，[ ]=待办）。任务结束时用 clear 清空。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["add", "complete", "remove", "clear", "replace"],
+                    "description": "操作类型"
+                },
+                "items": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "涉及的清单条目文本（add/complete/remove/replace 使用；complete/remove 为空时作用于全部）"
+                }
+            },
+            "required": ["action"]
+        }),
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let cfg = cfg.clone();
+            Box::pin(async move {
+                let action = args
+                    .get("action")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                let items: Vec<String> = args
+                    .get("items")
+                    .and_then(|a| a.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                record_tool_call(&cfg, "todo_write", &format!("{}: {} 项", action, items.len()), Some(&args));
+                match todo_write(&cfg, &action, &items).await {
+                    Ok(text) => {
+                        record_tool_result(&cfg, "todo_write", true, &text, Some(&text));
+                        Ok(ToolOutput::text(text))
+                    }
+                    Err(e) => {
+                        record_tool_result(&cfg, "todo_write", false, &e, Some(&e));
+                        Err(tool_error("todo_write", &e))
+                    }
+                }
+            })
+        },
+    )
+}
 
 /// 构建 remember 工具：写入一条跨会话长期记忆。
 ///
