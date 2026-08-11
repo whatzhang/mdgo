@@ -12,6 +12,10 @@
 //!
 //! 对齐商用 Agent 的 eval 实践：场景集回归（工具行为 + 输出质量），
 //! 报告落库可由上层（skill_metrics 同款机制）扩展。
+//!
+//! 说明：评测框架当前仅由测试覆盖（lib 构建不调用，真实执行器待 CLI 接入），
+//! 模块级标记避免 dead_code 告警。
+#![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
 

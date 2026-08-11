@@ -13,7 +13,6 @@
 //! 后续可按同一注册面接入 stdio/MCP 传输（规划文档 P2-15）。
 
 use std::path::Path;
-use std::sync::Arc;
 
 use rig_agent::tool::{DynamicTool, ToolContext, ToolExecutionError, ToolOutput};
 use serde::Deserialize;
@@ -193,6 +192,7 @@ pub fn load_external_tools_or_default() -> Vec<ExternalToolDef> {
 mod tests {
     use super::*;
     use std::io::Write;
+    use std::sync::Arc;
 
     #[test]
     fn load_external_tools_parses_yaml_and_skips_invalid() {

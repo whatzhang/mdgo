@@ -22,6 +22,9 @@ use tokio_util::sync::CancellationToken;
 /// 精确 tokenizer（BERT 类 tokenizer.json）依赖 embedding 模型下载可用性，
 /// 默认用 [`ApproxTokenEstimator`] 近似估算（中英混合按字符数/2），
 /// 后续可注入基于 tokenizers 的精确实现（见 `docs/agent_gap_plan.md` P0-5）。
+/// 当前命令层直接使用 [`tokens_to_chars_budget`] 换算，trait/实现为预留接口，
+/// 标记避免 dead_code 告警。
+#[allow(dead_code)]
 pub trait TokenEstimator: Send + Sync {
     /// 估算文本的 token 数
     fn estimate(&self, text: &str) -> usize;
@@ -31,6 +34,7 @@ pub trait TokenEstimator: Send + Sync {
 ///
 /// 中文约 1 token/1.5 字符、英文约 1 token/4 字符，中英混合场景取 2 为
 /// 折中系数，误差方向偏保守（略高估，避免超预算）。
+#[allow(dead_code)]
 pub struct ApproxTokenEstimator;
 
 impl TokenEstimator for ApproxTokenEstimator {

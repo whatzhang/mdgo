@@ -71,7 +71,8 @@ impl ToolResultCache {
         }
     }
 
-    /// 当前条目数（测试/观测用）。
+    /// 当前条目数（观测/测试用；lib 构建不调用，标记避免 dead_code 告警）
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.map.lock().map(|m| m.len()).unwrap_or(0)
     }
