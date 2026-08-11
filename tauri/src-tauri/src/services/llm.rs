@@ -414,6 +414,7 @@ impl LLMClient {
         query: &str,
         history: &[ChatMessage],
         cancel: CancellationToken,
+        correction: Option<&str>,
     ) -> Option<String> {
         // 构建规划 prompt（附最近对话上下文）
         let mut system_msg = String::new();
@@ -447,6 +448,16 @@ impl LLMClient {
             "\n用户任务：",
         ));
         system_msg.push_str(query);
+
+        // P0-3 结构化输出：上一次输出校验失败时，追加修正指令引导模型重发
+        if let Some(c) = correction {
+            let c = c.trim();
+            if !c.is_empty() {
+                system_msg.push_str("\n\n你上一次的输出不符合要求，请修正后重新输出：");
+                system_msg.push_str(c);
+                system_msg.push_str("\n只输出合法 JSON，不要输出任何其他内容、注释或代码围栏。");
+            }
+        }
 
         // 构造 Rig 请求（非流式，与 expand_queries 同构；不用 output_schema 保证网关兼容）
         let request = CompletionRequest {

@@ -11,6 +11,41 @@
 //!   本模块不依赖任何 LLM 客户端类型（依赖倒置）
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+use crate::core::validation::JsonSchemaValidator;
+
+/// 计划 JSON 的 JSON Schema（P0-3：结构化输出校验）。
+///
+/// 与 [`Plan`] 字段对齐；`risks` 可选（缺省容忍），其余字段必填且类型受约束。
+pub fn plan_json_schema() -> Value {
+    serde_json::json!({
+        "type": "object",
+        "required": ["goal", "steps", "acceptance"],
+        "properties": {
+            "goal": { "type": "string", "minLength": 1 },
+            "steps": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+            "acceptance": { "type": "array", "items": { "type": "string" } },
+            "risks": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": true
+    })
+}
+
+/// 校验 LLM 返回的计划 JSON 文本（容忍 ```json 围栏与前后杂质）。
+///
+/// 返回解析后的 JSON 值，或可读错误列表（用于构造修正提示引导模型重发）。
+/// 校验不通过时调用方可用 [`build_fix_prompt`] 生成修正指令再问一次。
+pub fn validate_plan_json(text: &str) -> Result<Value, Vec<String>> {
+    let trimmed = text.trim();
+    let body = strip_code_fence(trimmed);
+    let (start, end) = match (body.find('{'), body.rfind('}')) {
+        (Some(s), Some(e)) if e > s => (s, e),
+        _ => return Err(vec!["未找到 JSON 对象".into()]),
+    };
+    let validator = JsonSchemaValidator::new(plan_json_schema()).map_err(|e| vec![e])?;
+    validator.validate_json_text(&body[start..=end])
+}
 
 /// 任务性动词/意图：命中即视为复杂任务候选（规则路由信号之一）。
 const PLAN_VERBS: &[&str] = &[
@@ -188,5 +223,27 @@ mod tests {
         assert!(text.contains("【已确认的任务计划"));
         assert!(text.contains("1. 步骤1"));
         assert!(text.contains("验收标准"));
+    }
+
+    #[test]
+    fn validate_plan_json_accepts_valid_and_rejects_invalid() {
+        // 合法计划（含围栏容忍）
+        assert!(
+            validate_plan_json(
+                r#"{"goal": "重构", "steps": ["梳理现状", "拆分接口"], "acceptance": ["编译通过"]}"#
+            )
+            .is_ok()
+        );
+        let fenced = "```json\n{\"goal\": \"x\", \"steps\": [\"a\"], \"acceptance\": []}\n```";
+        assert!(validate_plan_json(fenced).is_ok());
+        // 缺必填 / 空 goal / 空 steps / 非法 JSON：均拒绝且错误可读
+        assert!(validate_plan_json(r#"{"goal": "x"}"#).is_err());
+        assert!(validate_plan_json(r#"{"goal": "", "steps": ["a"], "acceptance": []}"#).is_err());
+        assert!(validate_plan_json(r#"{"goal": "x", "steps": [], "acceptance": []}"#).is_err());
+        assert!(validate_plan_json("不是 JSON").is_err());
+        // 类型错误：goal 非字符串
+        let errs = validate_plan_json(r#"{"goal": 42, "steps": ["a"], "acceptance": []}"#)
+            .expect_err("goal 类型错误应拒绝");
+        assert!(!errs.is_empty());
     }
 }

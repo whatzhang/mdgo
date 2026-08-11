@@ -677,128 +677,156 @@ pub async fn agent_query(
         );
         crate::core::trace::stage_start(&request_id, "planning", &format!("query_len={}", query.len()));
         emit_pending_trace_events(&app, &request_id);
-        if let Some(plan_json) = llm.generate_plan_json(&query, &messages, cancel.clone()).await {
-            if let Some(plan) = crate::core::agent::planner::parse_plan(&plan_json) {
-                log::info!(
-                    "[agent_query] [0.5]: 任务已规划，等待用户确认 request_id={} goal_len={} steps={}",
-                    request_id, plan.goal.len(), plan.steps.len()
-                );
-                // 请求用户确认：plan:request → 前端计划卡片 → plan_respond 回传；
-                // 超时 60s fail-closed 按拒绝处理（与审批通道同构）。
-                let plan_id = uuid::Uuid::new_v4().to_string();
-                let (tx, rx) =
-                    tokio::sync::oneshot::channel::<crate::core::agent::planner::PlanDecision>();
-                {
-                    let mut pending = state.plan_pending.lock().unwrap_or_else(|e| e.into_inner());
-                    pending.insert(plan_id.clone(), tx);
-                }
-                let _ = app.emit(
-                    "plan:request",
-                    serde_json::json!({
-                        "plan_id": plan_id,
-                        "request_id": request_id,
-                        "plan": {
-                            "goal": plan.goal,
-                            "steps": plan.steps,
-                            "acceptance": plan.acceptance,
-                            "risks": plan.risks,
-                        }
-                    }),
-                );
-                // 等待用户确认:同时监听取消信号(点"停止"立即中止,不必等满 60s)
-                let decision = tokio::select! {
-                    _ = cancel.cancelled() => {
-                        let _ = state
-                            .plan_pending
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .remove(&plan_id);
-                        crate::core::trace::stage_end(
-                            &request_id,
-                            "planning",
-                            "cancelled",
-                            planning_start.elapsed().as_millis() as u64,
-                            "等待确认时取消",
-                        );
-                        emit_pending_trace_events(&app, &request_id);
-                        crate::core::trace::trace_bus().clear(&request_id);
-                        log::debug!("[agent_query] [0.5]: 等待计划确认时被取消 request_id={}", request_id);
-                        let _ = app.emit(
-                            "rag:done",
-                            RagDone {
-                                request_id: request_id.clone(),
-                                content: String::new(),
-                                sources: Vec::new(),
-                                prompt_tokens: 0,
-                                completion_tokens: 0,
-                            },
-                        );
-                        task_registry.unregister(&request_id).await;
-                        return Ok(());
-                    }
-                    res = tokio::time::timeout(std::time::Duration::from_secs(60), rx) => res,
-                };
-                match decision {
-                    Ok(Ok(crate::core::agent::planner::PlanDecision::Approved)) => {
-                        task_plan = Some(plan);
-                        crate::core::trace::stage_end(
-                            &request_id,
-                            "planning",
-                            "ok",
-                            planning_start.elapsed().as_millis() as u64,
-                            "用户已批准计划",
-                        );
-                        emit_pending_trace_events(&app, &request_id);
-                        log::info!("[agent_query] [0.5]: 用户已批准计划 request_id={}", request_id);
-                    }
-                    outcome => {
-                        // 拒绝/通道异常/超时：清理挂起表并按拒绝中止
-                        let _ = state
-                            .plan_pending
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .remove(&plan_id);
-                        let reason = match &outcome {
-                            Ok(Ok(crate::core::agent::planner::PlanDecision::Denied(r))) => {
-                                format!("原因：{}", r)
-                            }
-                            Ok(Ok(crate::core::agent::planner::PlanDecision::Approved)) => {
-                                "计划状态异常".to_string()
-                            }
-                            Ok(Err(_)) => "确认通道异常".to_string(),
-                            Err(_) => "未在 60 秒内确认，已按拒绝处理".to_string(),
-                        };
-                        crate::core::trace::stage_end(
-                            &request_id,
-                            "planning",
-                            "denied",
-                            planning_start.elapsed().as_millis() as u64,
-                            &reason,
-                        );
-                        emit_pending_trace_events(&app, &request_id);
-                        log::info!(
-                            "[agent_query] [0.5]: 计划未获批准，中止执行 request_id={} reason={}",
-                            request_id, reason
-                        );
-                        // content 置空：拒绝原因经日志/前端计划卡片传达，空内容使前端
-                        // `if (fullContent)` 跳过 push 与落库，避免污染对话历史
-                        let _ = app.emit(
-                            "rag:done",
-                            RagDone {
-                                request_id: request_id.clone(),
-                                content: String::new(),
-                                sources: Vec::new(),
-                                prompt_tokens: 0,
-                                completion_tokens: 0,
-                            },
-                        );
-                        task_registry.unregister(&request_id).await;
-                        return Ok(());
-                    }
-                }
-            } else {
-                log::warn!("[agent_query] [0.5]: 规划解析失败，降级为不规划 request_id={}", request_id);
+        // P0-3：结构化输出校验 + 修正重试（最多 3 次尝试：1 次原始 + 2 次修正）。
+        // 校验失败用可读错误构造修正提示引导模型重发；全部失败 fail-open 不规划。
+        const PLAN_JSON_MAX_ATTEMPTS: usize = 3;
+        let mut plan: Option<crate::core::agent::planner::Plan> = None;
+        let mut correction: Option<String> = None;
+        for attempt in 0..PLAN_JSON_MAX_ATTEMPTS {
+            let Some(plan_json) = llm
+                .generate_plan_json(&query, &messages, cancel.clone(), correction.as_deref())
+                .await
+            else {
+                break; // 生成失败/取消：fail-open 不规划
+            };
+            if let Some(p) = crate::core::agent::planner::parse_plan(&plan_json) {
+                plan = Some(p);
+                break;
             }
+            if attempt + 1 < PLAN_JSON_MAX_ATTEMPTS {
+                let errors = crate::core::agent::planner::validate_plan_json(&plan_json)
+                    .map(|_| Vec::new())
+                    .unwrap_or_else(|e| e);
+                correction = Some(crate::core::validation::build_fix_prompt(
+                    &errors,
+                    "请重新输出符合要求的计划 JSON（goal 目标、steps 步骤、acceptance 验收均必填且类型正确）。",
+                ));
+                log::warn!(
+                    "[agent_query] [0.5]: 计划 JSON 校验失败，第 {} 次修正重试 request_id={}",
+                    attempt + 1, request_id
+                );
+            }
+        }
+        if let Some(plan) = plan {
+            log::info!(
+                "[agent_query] [0.5]: 任务已规划，等待用户确认 request_id={} goal_len={} steps={}",
+                request_id, plan.goal.len(), plan.steps.len()
+            );
+            // 请求用户确认：plan:request → 前端计划卡片 → plan_respond 回传；
+            // 超时 60s fail-closed 按拒绝处理（与审批通道同构）。
+            let plan_id = uuid::Uuid::new_v4().to_string();
+            let (tx, rx) =
+                tokio::sync::oneshot::channel::<crate::core::agent::planner::PlanDecision>();
+            {
+                let mut pending = state.plan_pending.lock().unwrap_or_else(|e| e.into_inner());
+                pending.insert(plan_id.clone(), tx);
+            }
+            let _ = app.emit(
+                "plan:request",
+                serde_json::json!({
+                    "plan_id": plan_id,
+                    "request_id": request_id,
+                    "plan": {
+                        "goal": plan.goal,
+                        "steps": plan.steps,
+                        "acceptance": plan.acceptance,
+                        "risks": plan.risks,
+                    }
+                }),
+            );
+            // 等待用户确认:同时监听取消信号(点"停止"立即中止,不必等满 60s)
+            let decision = tokio::select! {
+                _ = cancel.cancelled() => {
+                    let _ = state
+                        .plan_pending
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .remove(&plan_id);
+                    crate::core::trace::stage_end(
+                        &request_id,
+                        "planning",
+                        "cancelled",
+                        planning_start.elapsed().as_millis() as u64,
+                        "等待确认时取消",
+                    );
+                    emit_pending_trace_events(&app, &request_id);
+                    crate::core::trace::trace_bus().clear(&request_id);
+                    log::debug!("[agent_query] [0.5]: 等待计划确认时被取消 request_id={}", request_id);
+                    let _ = app.emit(
+                        "rag:done",
+                        RagDone {
+                            request_id: request_id.clone(),
+                            content: String::new(),
+                            sources: Vec::new(),
+                            prompt_tokens: 0,
+                            completion_tokens: 0,
+                        },
+                    );
+                    task_registry.unregister(&request_id).await;
+                    return Ok(());
+                }
+                res = tokio::time::timeout(std::time::Duration::from_secs(60), rx) => res,
+            };
+            match decision {
+                Ok(Ok(crate::core::agent::planner::PlanDecision::Approved)) => {
+                    task_plan = Some(plan);
+                    crate::core::trace::stage_end(
+                        &request_id,
+                        "planning",
+                        "ok",
+                        planning_start.elapsed().as_millis() as u64,
+                        "用户已批准计划",
+                    );
+                    emit_pending_trace_events(&app, &request_id);
+                    log::info!("[agent_query] [0.5]: 用户已批准计划 request_id={}", request_id);
+                }
+                outcome => {
+                    // 拒绝/通道异常/超时：清理挂起表并按拒绝中止
+                    let _ = state
+                        .plan_pending
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .remove(&plan_id);
+                    let reason = match &outcome {
+                        Ok(Ok(crate::core::agent::planner::PlanDecision::Denied(r))) => {
+                            format!("原因：{}", r)
+                        }
+                        Ok(Ok(crate::core::agent::planner::PlanDecision::Approved)) => {
+                            "计划状态异常".to_string()
+                        }
+                        Ok(Err(_)) => "确认通道异常".to_string(),
+                        Err(_) => "未在 60 秒内确认，已按拒绝处理".to_string(),
+                    };
+                    crate::core::trace::stage_end(
+                        &request_id,
+                        "planning",
+                        "denied",
+                        planning_start.elapsed().as_millis() as u64,
+                        &reason,
+                    );
+                    emit_pending_trace_events(&app, &request_id);
+                    log::info!(
+                        "[agent_query] [0.5]: 计划未获批准，中止执行 request_id={} reason={}",
+                        request_id, reason
+                    );
+                    // content 置空：拒绝原因经日志/前端计划卡片传达，空内容使前端
+                    // `if (fullContent)` 跳过 push 与落库，避免污染对话历史
+                    let _ = app.emit(
+                        "rag:done",
+                        RagDone {
+                            request_id: request_id.clone(),
+                            content: String::new(),
+                            sources: Vec::new(),
+                            prompt_tokens: 0,
+                            completion_tokens: 0,
+                        },
+                    );
+                    task_registry.unregister(&request_id).await;
+                    return Ok(());
+                }
+            }
+        } else {
+            log::warn!("[agent_query] [0.5]: 规划解析失败，降级为不规划 request_id={}", request_id);
         }
         // 检查取消（规划阶段同样可取消；补 rag:done 避免前端滞留 planning 状态）
         if cancel.is_cancelled() {

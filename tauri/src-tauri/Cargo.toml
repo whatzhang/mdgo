@@ -56,6 +56,8 @@ futures = "0.3"
 bytes = "1"
 # HTTP 状态码类型（rig-core 传递依赖，测试重试判定时直接使用）
 http = "1"
+# JSON Schema 校验（P0-3 结构化输出；本地校验，禁用网络引用解析相关 features）
+jsonschema = { version = "0.49", default-features = false }
 
 # 日志
 log = "0.4"

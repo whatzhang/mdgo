@@ -10,6 +10,7 @@ pub mod approval;
 pub mod context;
 pub mod subagent;
 pub mod trace;
+pub mod validation;
 
 mod chat_types;
 mod embedding;
