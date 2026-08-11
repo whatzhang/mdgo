@@ -206,7 +206,7 @@ impl LanceStore {
             .await
             .map_err(|e| format!("读取向量表行数失败: {}", e))?;
         if row_count == 0 {
-            log::debug!("[lance] 向量表为空，跳过索引创建");
+            log::info!("[lance] 向量表为空，跳过索引创建");
             return Ok(());
         }
 
@@ -412,7 +412,7 @@ impl LanceStore {
                 let has_vector = indices
                     .iter()
                     .any(|idx| idx.columns.iter().any(|c| c == "vector"));
-                log::debug!(
+                log::info!(
                     "[lance] search_vectors 索引状态: has_vector_index={} indices={}",
                     has_vector,
                     indices
@@ -422,7 +422,7 @@ impl LanceStore {
                         .join("; ")
                 );
             }
-            Err(e) => log::debug!("[lance] search_vectors 读取索引状态失败: {}", e),
+            Err(e) => log::info!("[lance] search_vectors 读取索引状态失败: {}", e),
         }
 
         let mut query_builder = table
@@ -513,7 +513,7 @@ impl LanceStore {
             }
         }
 
-        log::debug!(
+        log::info!(
             "[lance] [向量查库结果] open_table={:.3}s query={:.3}s total={:.3}s hits={}",
             open_elapsed.as_secs_f64(),
             query_elapsed.as_secs_f64(),
@@ -681,7 +681,7 @@ impl LanceStore {
                 });
             }
         }
-        log::debug!("[lance] 符号缓存加载完成: entries={}", entries.len());
+        log::info!("[lance] 符号缓存加载完成: entries={}", entries.len());
         Ok(entries)
     }
 

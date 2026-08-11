@@ -77,7 +77,7 @@ impl SemanticChunkEngine {
                 // 进入新标题前，先冲刷上一个节（属于父级标题或根）
                 self.flush_section(path, blocks, out);
                 path.push(node.content.clone());
-                log::debug!(
+                log::info!(
                     "[chunk_engine] 进入标题(level={}, path={:?})",
                     path.len(),
                     path
@@ -85,7 +85,7 @@ impl SemanticChunkEngine {
                 self.walk(&node.children, path, blocks, out);
                 // 该标题下无嵌套标题的尾部平级块（path 仍含本标题）
                 self.flush_section(path, blocks, out);
-                log::debug!(
+                log::info!(
                     "[chunk_engine] 离开标题(level={}, path={:?})",
                     path.len(),
                     path
@@ -124,7 +124,7 @@ impl SemanticChunkEngine {
             .join(", ");
         let body_len = char_len(&body);
         let context_len = char_len(&context_prefix);
-        log::debug!(
+        log::info!(
             "[chunk_engine] 冲刷节 path={:?} 块数={} 正文={}字 前缀={}字 上限={}字 主导类型={} 块明细=[{}]",
             path,
             blocks.len(),
@@ -136,7 +136,7 @@ impl SemanticChunkEngine {
         );
 
         if context_len + body_len <= max_single {
-            log::debug!(
+            log::info!(
                 "[chunk_engine]   整节未超长({}+{}<={}字) → 整体单 chunk",
                 context_len,
                 body_len,
@@ -151,7 +151,7 @@ impl SemanticChunkEngine {
             .max_size
             .saturating_sub(context_len)
             .max(self.min_body_reserve_chars);
-        log::debug!(
+        log::info!(
             "[chunk_engine]   节超长({}+{}>{}字) → 贪心分组, 单块可用={}字",
             context_len,
             body_len,
@@ -166,7 +166,7 @@ impl SemanticChunkEngine {
                 // 先冲刷当前组，再拆分超长块（代码按行 / 表格按行分组 / 正文按句子）
                 self.flush_group(path, &mut group, out);
                 group_len = 0;
-                log::debug!(
+                log::info!(
                     "[chunk_engine]   单块超长: type={} len={}字(可用{}字) → 二次切分",
                     block.0,
                     block_len,
@@ -207,7 +207,7 @@ impl SemanticChunkEngine {
             .map(|(t, c)| format!("{}:{}字", t, char_len(c)))
             .collect::<Vec<_>>()
             .join(", ");
-        log::debug!(
+        log::info!(
             "[chunk_engine]   组内合并 {} 块(共{}字, 类型={}) 块明细=[{}]",
             group.len(),
             char_len(&body),
@@ -238,7 +238,7 @@ impl SemanticChunkEngine {
                 &["\n\n", "\n", ". ", "。", "！", "？", "；", " ", ""],
             ),
         };
-        log::debug!(
+        log::info!(
             "[chunk_engine]   切分策略: type={} len={}字 可用={}字 → {} 片",
             typ,
             char_len(text),
@@ -261,7 +261,7 @@ impl SemanticChunkEngine {
         } else {
             format!("{}\n{}", embed_prefix, body)
         };
-        log::debug!(
+        log::info!(
             "[chunk_engine]   产出 chunk: type={} path={:?} text={}字 embedding={}字",
             chunk_type,
             path,
@@ -294,7 +294,7 @@ impl SemanticChunkEngine {
 
 impl ChunkEngine for SemanticChunkEngine {
     fn build(&self, document: &DocumentNode) -> Vec<Chunk> {
-        log::debug!(
+        log::info!(
             "[chunk_engine] 开始分块: max_size={} overlap={} oversize_factor={} min_body_reserve={} 根子块数={}",
             self.max_size,
             self.overlap,
@@ -308,7 +308,7 @@ impl ChunkEngine for SemanticChunkEngine {
         self.walk(&document.children, &mut path, &mut blocks, &mut out);
         // 冲刷根级剩余块
         self.flush_section(&path, &mut blocks, &mut out);
-        log::debug!("[chunk_engine] 分块完成: 共 {} chunk", out.len());
+        log::info!("[chunk_engine] 分块完成: 共 {} chunk", out.len());
         out
     }
 }
@@ -337,7 +337,7 @@ fn dominant_type(blocks: &[(String, String)]) -> String {
 fn split_oversize_table(text: &str, max_chars: usize) -> Vec<String> {
     let lines: Vec<&str> = text.lines().collect();
     if lines.len() <= 2 {
-        log::debug!(
+        log::info!(
             "[chunk_engine]   表格行数={} (仅表头+分隔行) → 整体保留不拆分",
             lines.len()
         );
@@ -367,7 +367,7 @@ fn split_oversize_table(text: &str, max_chars: usize) -> Vec<String> {
     if chunks.is_empty() {
         chunks.push(text.to_string());
     }
-    log::debug!(
+    log::info!(
         "[chunk_engine]   表格切分: 总行数={} 数据行={} 表头={}字 上限={}字 → {} 片(每片重复表头)",
         lines.len(),
         lines.len().saturating_sub(2),

@@ -688,14 +688,14 @@ pub async fn agent_query(
         });
     }
     if let Some(ctx) = skill_ctx {
-        log::debug!(
+        log::info!(
             "[agent_query] [0]: skills 手动触发 request_id={} skills={:?} manual={}",
             request_id,
             ctx.skill_ids,
             skill_resolved.as_ref().map(|r| r.is_manual).unwrap_or(false)
         );
     } else {
-        log::debug!(
+        log::info!(
             "[agent_query] [0]: 自动触发技能（技能激活交由 LLM 决策）request_id={}",
             request_id
         );
@@ -836,7 +836,7 @@ pub async fn agent_query(
                     );
                     emit_pending_trace_events(&app, &request_id);
                     crate::core::trace::trace_bus().clear(&request_id);
-                    log::debug!("[agent_query] [0.5]: 等待计划确认时被取消 request_id={}", request_id);
+                    log::info!("[agent_query] [0.5]: 等待计划确认时被取消 request_id={}", request_id);
                     let _ = app.emit(
                         "rag:done",
                         RagDone {
@@ -924,7 +924,7 @@ pub async fn agent_query(
         }
         // 检查取消（规划阶段同样可取消；补 rag:done 避免前端滞留 planning 状态）
         if cancel.is_cancelled() {
-            log::debug!("[agent_query] [0.5]: 规划阶段取消 request_id={}", request_id);
+            log::info!("[agent_query] [0.5]: 规划阶段取消 request_id={}", request_id);
             crate::core::trace::stage_end(
                 &request_id,
                 "planning",
@@ -967,7 +967,7 @@ pub async fn agent_query(
         let expanded = llm.expand_queries(&query, &messages, cancel.clone()).await;
         let mut queries = vec![query.clone()];
         queries.extend(expanded);
-        log::debug!("[agent_query] [1]: 查询扩展完成 request_id={} total_queries={} queries={:?}", request_id, queries.len(), queries);
+        log::info!("[agent_query] [1]: 查询扩展完成 request_id={} total_queries={} queries={:?}", request_id, queries.len(), queries);
         crate::core::trace::stage_end(
             &request_id,
             "expanding",
@@ -979,13 +979,13 @@ pub async fn agent_query(
 
         // 检查取消
         if cancel.is_cancelled() {
-            log::debug!("[agent_query] [1]: 对话取消，直接结束 request_id={}", request_id);
+            log::info!("[agent_query] [1]: 对话取消，直接结束 request_id={}", request_id);
             task_registry.unregister(&request_id).await;
             return Ok(());
         }
 
         // ── Stage 2: 多查询混合检索（并行）──
-        log::debug!("[agent_query] [2]: 混合检索开始 request_id={} 语义扩展数量={}",  request_id, queries.len());
+        log::info!("[agent_query] [2]: 混合检索开始 request_id={} 语义扩展数量={}",  request_id, queries.len());
         let _ = app.emit(
             "rag:status",
             RagStatus {
@@ -1017,7 +1017,7 @@ pub async fn agent_query(
                     .and_then(|e| e.ok())
                     .and_then(|v| v.into_iter().next());
 
-                    log::debug!("[agent_query] [2]: 语义扩展query向量化 query={} 耗时={:?} success={}",
+                    log::info!("[agent_query] [2]: 语义扩展query向量化 query={} 耗时={:?} success={}",
                         &q, embed_start.elapsed(), embedding.is_some());
 
                     if let Some(vec) = embedding {
@@ -1028,7 +1028,7 @@ pub async fn agent_query(
                             .await
                             .unwrap_or_default();
 
-                        log::debug!("[agent_query] [2]: 语义扩展query混合检索， query={} 命中 {} 条文档耗时={:?}",
+                        log::info!("[agent_query] [2]: 语义扩展query混合检索， query={} 命中 {} 条文档耗时={:?}",
                             &q, hits.len(), start.elapsed());
 
                         hits
@@ -1058,7 +1058,7 @@ pub async fn agent_query(
 
         // 展平所有结果
         let all_hits: Vec<SearchHit> = all_results.into_iter().flatten().collect();
-        log::debug!("[agent_query] [2]: 语义扩展query混合检索最终结果， request_id={} 命中 {} 条文档, 耗时={:?}", request_id, all_hits.len(), search_start.elapsed());
+        log::info!("[agent_query] [2]: 语义扩展query混合检索最终结果， request_id={} 命中 {} 条文档, 耗时={:?}", request_id, all_hits.len(), search_start.elapsed());
         crate::core::trace::stage_end(
             &request_id,
             "searching",
@@ -1069,7 +1069,7 @@ pub async fn agent_query(
         emit_pending_trace_events(&app, &request_id);
 
         if cancel.is_cancelled() {
-            log::debug!("[agent_query] [2]: 对话取消，直接结束 request_id={}", request_id);
+            log::info!("[agent_query] [2]: 对话取消，直接结束 request_id={}", request_id);
             task_registry.unregister(&request_id).await;
             return Ok(());
         }
@@ -1095,7 +1095,7 @@ pub async fn agent_query(
             if log::log_enabled!(log::Level::Debug) {
                 // 打印每个进入引用的命中的完整分数域（doc_name / score / score_rerank / symbol / vec / bm25），
                 // 用于核对"代码文件混入引用"的根因：意图路由结果 + 精排 sigmoid 分数是否恰好通过阈值。
-                log::debug!("[agent_query] [3]: 文档聚合结果， request_id={} 命中 {} 条文档, effective_min_score={}， effective_max_docs={}, effective_max_chunks={}， doc=\n{:?}",
+                log::info!("[agent_query] [3]: 文档聚合结果， request_id={} 命中 {} 条文档, effective_min_score={}， effective_max_docs={}, effective_max_chunks={}， doc=\n{:?}",
                  request_id, selected.len(), effective_min_score, effective_max_docs, effective_max_chunks,
                   selected.iter()
                     .map(|(hit, score)| {
@@ -1125,14 +1125,14 @@ pub async fn agent_query(
             // P1-13：检索上下文提示注入防护——命中可疑指令时包裹并追加显式
             // 安全提示（不裁剪原文，可审计），引导模型忽略指令性内容
             let context = crate::core::security::wrap_suspicious(&context);
-            log::debug!( "[agent_query] [3]: 上下文构建结果， request_id={} 命中 {} 条文档, char_len={} preview={:?}",
+            log::info!( "[agent_query] [3]: 上下文构建结果， request_id={} 命中 {} 条文档, char_len={} preview={:?}",
                 request_id, selected.len(), context.len(), context
             );
 
             // 构建引用来源（按 doc_name 去重，合并文本/path_json，取最高分；
             // 对 OPML/FreeMind 合并 path_json 层级路径展示）
             let sources = build_sources(&selected);
-            log::debug!("[agent_query] [3]: 引用来源去重结果， request_id={} 命中 {} 条文档, count={}", request_id, selected.len(), sources.len());
+            log::info!("[agent_query] [3]: 引用来源去重结果， request_id={} 命中 {} 条文档, count={}", request_id, selected.len(), sources.len());
             crate::core::trace::stage_end(
                 &request_id,
                 "aggregating",
@@ -1151,7 +1151,7 @@ pub async fn agent_query(
     let sources_clone = sources.clone();
 
     // ── Stage 4: 构建 context → RAG Agent 生成（技能解析与参数覆盖已在 Stage 0 完成）──
-    log::debug!("[agent_query] [4]: 构建 context → Agent 生成 request_id={}", request_id);
+    log::info!("[agent_query] [4]: 构建 context → Agent 生成 request_id={}", request_id);
     let status_msg = match selected_count {
         0 => "正在生成回答...".to_string(),
         n => format!("正在生成回答（基于 {} 个相关片段）...", n),
@@ -1169,7 +1169,7 @@ pub async fn agent_query(
     emit_pending_trace_events(&app, &request_id);
 
     if cancel.is_cancelled() {
-        log::debug!("[agent_query] [4]: 对话取消，直接结束 request_id={}", request_id);
+        log::info!("[agent_query] [4]: 对话取消，直接结束 request_id={}", request_id);
         task_registry.unregister(&request_id).await;
         return Ok(());
     }
@@ -1244,7 +1244,7 @@ pub async fn agent_query(
         None, // 主对话全量工具
         true, // 主对话启用技能体系的工具窄化与门禁
     );
-    log::debug!("[agent_query] [4]: 构建 Agent 完成 request_id={}", request_id);
+    log::info!("[agent_query] [4]: 构建 Agent 完成 request_id={}", request_id);
 
     // 技能执行计时起点（进入生成阶段即视为执行开始）
     let skill_exec_start = std::time::Instant::now();
@@ -1323,7 +1323,7 @@ pub async fn agent_query(
     }
     // 压缩阶段取消只中断压缩，此处快速检查避免取消后再发起一次 HTTP 请求
     if cancel.is_cancelled() {
-        log::debug!("[agent_query] [4]: 对话在压缩后取消，不发起请求 request_id={}", request_id);
+        log::info!("[agent_query] [4]: 对话在压缩后取消，不发起请求 request_id={}", request_id);
         task_registry.unregister(&request_id).await;
         return Ok(());
     }
@@ -1343,7 +1343,7 @@ pub async fn agent_query(
     loop {
         let item = match next_or_cancel(&mut stream, &cancel).await {
             Err(()) => {
-                log::debug!("[agent_query] [4]: 对话取消，立即断开请求 request_id={} accumulated={}",
+                log::info!("[agent_query] [4]: 对话取消，立即断开请求 request_id={} accumulated={}",
                     request_id, full_content.len());
                 // 取消时保留已生成的部分内容：通过 rag:done 交给前端落库
                 if !full_content.is_empty() {
@@ -1395,7 +1395,7 @@ pub async fn agent_query(
         };
         match item {
             Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::ToolCall { tool_call, .. })) => {
-                log::debug!("[agent_query] [4]: 工具调用: name={} arguments={}",
+                log::info!("[agent_query] [4]: 工具调用: name={} arguments={}",
                     tool_call.function.name, tool_call.function.arguments);
             }
             Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(text))) => {
@@ -1415,7 +1415,7 @@ pub async fn agent_query(
             Ok(MultiTurnStreamItem::FinalResponse(res)) => {
                 let usage = res.usage();
                 if usage.has_values() {
-                    log::debug!("[agent_query] [4]: Agent 最终 token 使用: request_id={} input_tokens={} output_tokens={}",
+                    log::info!("[agent_query] [4]: Agent 最终 token 使用: request_id={} input_tokens={} output_tokens={}",
                         request_id, usage.input_tokens, usage.output_tokens);
                     final_usage = Some(usage_to_info(&usage));
                 }
@@ -1440,7 +1440,7 @@ pub async fn agent_query(
         emit_pending_tool_events(&app, &request_id);
     }
     
-     log::debug!("[agent_query] [4]: Agent 流式响应完成: request_id={} took={:?} delta_count={} content_len={}",
+     log::info!("[agent_query] [4]: Agent 流式响应完成: request_id={} took={:?} delta_count={} content_len={}",
         request_id, llm_start.elapsed(), delta_count, full_content.len());
     crate::core::trace::stage_end(
         &request_id,
@@ -1518,7 +1518,7 @@ pub async fn agent_query(
         .map(|u| (u.prompt_tokens, u.completion_tokens))
         .unwrap_or((0, 0));
 
-    log::debug!("[agent_query] [4]: 响应完成: request_id={} content_len={} sources={} tokens_in={} tokens_out={}",
+    log::info!("[agent_query] [4]: 响应完成: request_id={} content_len={} sources={} tokens_in={} tokens_out={}",
         request_id, full_content.len(), sources_clone.len(), prompt_tokens, completion_tokens);
 
     let _ = app.emit(
@@ -1621,7 +1621,7 @@ pub async fn kb_llm_query(
     }
     // 压缩阶段取消只中断压缩，此处快速检查避免取消后再发起一次 HTTP 请求
     if cancel.is_cancelled() {
-        log::debug!("[kb_llm_query] [1]: 对话在压缩后取消，不发起请求 request_id={}", request_id);
+        log::info!("[kb_llm_query] [1]: 对话在压缩后取消，不发起请求 request_id={}", request_id);
         task_registry.unregister(&request_id).await;
         return Ok(());
     }
@@ -1644,7 +1644,7 @@ pub async fn kb_llm_query(
     loop {
         let item = match next_or_cancel(&mut stream, &cancel).await {
             Err(()) => {
-                log::debug!("[kb_llm_query] [1]: 对话取消，立即断开请求 request_id={} accumulated={}",
+                log::info!("[kb_llm_query] [1]: 对话取消，立即断开请求 request_id={} accumulated={}",
                     request_id, full_content.len());
                 crate::core::trace::stage_end(
                     &request_id,
@@ -1673,7 +1673,7 @@ pub async fn kb_llm_query(
         };
         match item {
             Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::ToolCall { tool_call, .. })) => {
-                log::debug!("[kb_llm_query] [1]: agent 工具调用: name={} arguments={}",
+                log::info!("[kb_llm_query] [1]: agent 工具调用: name={} arguments={}",
                     tool_call.function.name, tool_call.function.arguments);
             }
             Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(text))) => {

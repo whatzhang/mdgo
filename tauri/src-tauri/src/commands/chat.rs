@@ -127,7 +127,7 @@ async fn index_session_catchup(
         .await
         .map_err(|e| format!("任务执行失败: {}", e))??;
         if !snapshot_ok {
-            log::debug!("[chat] 会话 {} 索引期间消息已变更，回滚本次写入", session_id);
+            log::info!("[chat] 会话 {} 索引期间消息已变更，回滚本次写入", session_id);
             let _ = indexer.remove_chat_session(dir_path, session_id).await;
             return Ok(());
         }
@@ -197,7 +197,7 @@ pub async fn chat_session_create(
         // 后台异步增量索引上一个会话，不阻塞新建会话
         tokio::spawn(async move {
             let Some(_guard) = SessionIndexGuard::try_enter(&prev.id) else {
-                log::debug!("[chat] 会话 {} 已有索引任务在飞，跳过", prev.id);
+                log::info!("[chat] 会话 {} 已有索引任务在飞，跳过", prev.id);
                 return;
             };
             if let Err(e) = index_session_catchup(&store, &indexer, &dir_path, &prev.id, MAX_INDEX_ROUNDS).await {

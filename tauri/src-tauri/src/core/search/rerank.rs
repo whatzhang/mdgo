@@ -401,7 +401,7 @@ impl Reranker for LocalBgeReranker {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        log::debug!(
+        log::info!(
             "[reranker] query='{}' candidates={} 通过阈值({})={}",
             query,
             candidates.len(),

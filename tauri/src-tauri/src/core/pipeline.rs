@@ -109,7 +109,7 @@ pub async fn embed_chunks(
 ) -> Result<Vec<Vec<f32>>, String> {
     use tokio::sync::mpsc;
 
-    log::debug!(
+    log::info!(
         "[pipeline] 【Embedding 批量处理】 开始，共 {} 个文本块",
         chunks.len()
     );
@@ -153,7 +153,7 @@ pub async fn embed_chunks(
     }
 
     let all_vectors = result.unwrap()?;
-    log::debug!(
+    log::info!(
         "[pipeline] 【Embedding 批量处理】 完成，共 {} 个向量",
         all_vectors.len()
     );

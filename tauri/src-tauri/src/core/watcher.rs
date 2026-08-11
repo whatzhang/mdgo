@@ -189,7 +189,7 @@ impl WatcherService {
                 Ok(e) => e,
                 Err(e) => {
                     if is_benign_notify_error(&e) {
-                        log::debug!("[watcher] 文件监听路径已删除/移动（良性，忽略）: {}", e);
+                        log::info!("[watcher] 文件监听路径已删除/移动（良性，忽略）: {}", e);
                     } else {
                         log::error!("[watcher] 文件监听错误: {}", e);
                     }
@@ -401,7 +401,7 @@ impl WatcherService {
         let registry = match self.skill_registry.lock().unwrap_or_else(|e| e.into_inner()).clone() {
             Some(r) => r,
             None => {
-                log::debug!("[watcher] Skill 注册表未注入，跳过 Skill 监控");
+                log::info!("[watcher] Skill 注册表未注入，跳过 Skill 监控");
                 return;
             }
         };
@@ -421,7 +421,7 @@ impl WatcherService {
         }
 
         if watch_paths.is_empty() {
-            log::debug!("[watcher] 无 Skill 目录可监听，跳过启动");
+            log::info!("[watcher] 无 Skill 目录可监听，跳过启动");
             return;
         }
 
@@ -435,7 +435,7 @@ impl WatcherService {
                 Ok(e) => e,
                 Err(e) => {
                     if is_benign_notify_error(&e) {
-                        log::debug!("[watcher] Skill 监听路径已删除/移动（良性，忽略）: {}", e);
+                        log::info!("[watcher] Skill 监听路径已删除/移动（良性，忽略）: {}", e);
                     } else {
                         log::error!("[watcher] Skill 监听错误: {}", e);
                     }
@@ -637,7 +637,7 @@ async fn run_debounce_loop(
 
                 // 全量索引进行中：跳过整批增量处理（避免元数据竞态）
                 if indexer.is_reindex_in_progress() {
-                    log::debug!(
+                    log::info!(
                         "[watcher] 全量索引进行中，跳过 {} 条增量事件",
                         to_process.len()
                     );
@@ -647,7 +647,7 @@ async fn run_debounce_loop(
                     if indexing_enabled.load(Ordering::Acquire) {
                         // 删除事件逐个处理（无 Embedding 开销）
                         for path in &removes {
-                            log::debug!("[watcher] 处理删除: {}", path);
+                            log::info!("[watcher] 处理删除: {}", path);
                             if let Err(e) = indexer.remove_file(&dir_path, path).await {
                                 log::error!("[watcher] 删除处理失败 ({}): {}", path, e);
                                 on_error(&format!("增量删除失败 ({}): {}", path, e));
@@ -657,7 +657,7 @@ async fn run_debounce_loop(
                         }
                         // 修改事件批量索引（单批 Embedding）
                         if !modifies.is_empty() {
-                            log::debug!("[watcher] 批量索引 {} 个文件", modifies.len());
+                            log::info!("[watcher] 批量索引 {} 个文件", modifies.len());
                             if let Err(e) = indexer.index_files_batch(&dir_path, &modifies).await {
                                 log::error!(
                                     "[watcher] 批量索引失败 ({} 个文件): {}",
@@ -746,7 +746,7 @@ async fn run_skill_debounce_loop(
         }
 
         pending = None;
-        log::debug!("[watcher] 检测到 Skill 目录变更，重建注册表");
+        log::info!("[watcher] 检测到 Skill 目录变更，重建注册表");
         match registry.reload(&dir_path) {
             Ok(_) => on_changed(),
             Err(e) => log::error!("[watcher] Skill 注册表重建失败: {}", e),

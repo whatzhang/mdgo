@@ -214,7 +214,7 @@ impl LLMClient {
             .map_err(|e| format!("创建 LLM 客户端失败: {}", e))?;
         let completion_model = client.completion_model(&model);
 
-        log::debug!("[llm] LLMClient init base_url={}，api_key={}， model={}", base_url, api_key, model);
+        log::info!("[llm] LLMClient init base_url={}，api_key={}， model={}", base_url, api_key, model);
 
         Ok(Self {
             endpoint: base_url,
@@ -342,7 +342,7 @@ impl LLMClient {
         };
         let request = self.apply_common_params(request);
 
-        log::debug!("[llm] [输入语义扩展] input: query='{}' history_count={} ", text, history.len());
+        log::info!("[llm] [输入语义扩展] input: query='{}' history_count={} ", text, history.len());
 
         // 直接非流式调用：expand_queries 只需要完整结果，无需流式体验。
         // 非流式请求（stream: false）返回 application/json，兼容性最好，
@@ -354,7 +354,7 @@ impl LLMClient {
         
         match result {
             Ok(response) => {
-                log::debug!(
+                log::info!(
                     "[llm] [输入语义扩展] response choice={:?} usage={:?}",
                     response.choice, response.usage
                 );
@@ -371,7 +371,7 @@ impl LLMClient {
         }
 
         if full.trim().is_empty() {
-            log::debug!("[llm] [输入语义扩展] empty response");
+            log::info!("[llm] [输入语义扩展] empty response");
             return Vec::new();
         }
 
@@ -430,7 +430,7 @@ impl LLMClient {
 
         // 3) 上限 3 个
         deduped.truncate(3);
-        log::debug!("[llm] [输入语义扩展] output: {:?}", deduped);
+        log::info!("[llm] [输入语义扩展] output: {:?}", deduped);
         deduped
     }
 
@@ -509,7 +509,7 @@ impl LLMClient {
         };
         let request = self.apply_common_params(request);
 
-        log::debug!("[llm] [任务规划] input: query_len={} history_count={}", query.len(), history.len());
+        log::info!("[llm] [任务规划] input: query_len={} history_count={}", query.len(), history.len());
 
         let result = self.completion_with_retry(request, cancel.clone()).await;
 
@@ -526,7 +526,7 @@ impl LLMClient {
                     log::warn!("[llm] [任务规划] 空响应");
                     return None;
                 }
-                log::debug!("[llm] [任务规划] response_len={}", trimmed.len());
+                log::info!("[llm] [任务规划] response_len={}", trimmed.len());
                 Some(trimmed.to_string())
             }
             Err(e) => {

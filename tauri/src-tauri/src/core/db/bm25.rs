@@ -631,7 +631,7 @@ impl Bm25Index {
             clauses.push((Occur::Should, Box::new(BooleanQuery::new(sub))));
         }
 
-        log::debug!(
+        log::info!(
             "[bm25] msm 查询构建: terms={:?} min_should={}",
             terms,
             min_should
@@ -765,7 +765,7 @@ impl Bm25Index {
         // Tantivy 使用 term 删除，返回删除的文档数
         let term = tantivy::Term::from_field_text(doc_name_field, doc_name);
         let deleted_count = writer.delete_term(term);
-        log::debug!("[bm25] 删除文档 '{}': 删除了 {} 条", doc_name, deleted_count);
+        log::info!("[bm25] 删除文档 '{}': 删除了 {} 条", doc_name, deleted_count);
 
         writer
             .commit()

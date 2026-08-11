@@ -21,7 +21,8 @@ use crate::core::skill::{SkillRegistry, SkillStore};
 use crate::core::skill::metrics::SkillMetrics;
 use crate::core::approval::policy::DestructiveWritePolicy;
 use crate::core::approval::transport::IpcApprovalTransport;
-use crate::core::agent::planner::PlanDecision;
+use crate::core::agent::planner::PlanDecision;
+
 use crate::core::approval::{ApprovalGate, ApprovalOutcome};
 use crate::services::prompt::PromptStore;
 
@@ -428,7 +429,8 @@ pub fn run() {
             commands::llm::agent_query,
             commands::llm::kb_llm_query,
             commands::llm::kb_cancel_task,
-            commands::approval::approval_respond,
+            commands::approval::approval_respond,
+
             commands::plan::plan_respond,
             // 前端通信桥命令（WebSocket）
             commands::bridge::get_bridge_port,
@@ -519,7 +521,7 @@ pub fn log_filter_targets(
 /// - 文件 + 终端双输出，文件创建失败降级为仅终端（sink）
 /// - 按 target 前缀屏蔽高频第三方日志（lance/tantivy/datafusion/sqlparser/tao），
 ///   网络库（h2/hyper/reqwest/tower/want/mio）仅保留 INFO 及以上（DEBUG 帧/连接日志为噪音）
-/// - 级别上限：dev=DEBUG，release=WARN
+/// - 级别上限：dev=INFO，release=WARN
 ///
 /// 新增收益：rig 内部的 tracing span/event 进入同一输出（此前 100% 丢失）；
 /// 现有 `log::` 宏经 `tracing_log::LogTracer` 桥接继续工作。
@@ -532,7 +534,7 @@ fn init_logging() {
 
     // 级别上限 + 高频第三方 target 屏蔽（行为与原 ignore 列表对齐）
     let level = if cfg!(debug_assertions) {
-        tracing::level_filters::LevelFilter::DEBUG
+        tracing::level_filters::LevelFilter::INFO
     } else {
         tracing::level_filters::LevelFilter::WARN
     };

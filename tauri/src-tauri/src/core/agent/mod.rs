@@ -103,7 +103,7 @@ pub fn load_agent_rules(app: &AppHandle, name: &str) -> String {
     if let Some(actual) = mtime {
         cache.insert(name.to_string(), (actual, content.clone()));
     }
-    log::debug!("[agent_rules] 加载 Agent 规约: path={}", path.display());
+    log::info!("[agent_rules] 加载 Agent 规约: path={}", path.display());
     content
 }
 
@@ -164,7 +164,7 @@ impl AgentHook for LlmTraceHook {
                 "is_streaming": ctx.is_streaming(),
                 "messages": messages,
             });
-            log::debug!(
+            log::info!(
                 "[llm_trace] >>> LLM 请求\n{}",
                 serde_json::to_string_pretty(&request_body)
                     .unwrap_or_else(|e| format!("<serialize failed: {}>", e))
@@ -184,7 +184,7 @@ impl AgentHook for LlmTraceHook {
                 "usage": event.usage,
                 "content": event.content,
             });
-            log::debug!(
+            log::info!(
                 "[llm_trace] <<< LLM 响应\n{}",
                 serde_json::to_string_pretty(&response_body)
                     .unwrap_or_else(|e| format!("<serialize failed: {}>", e))
@@ -399,7 +399,7 @@ pub struct KbSearchConfig {
 ///
 /// 返回的文本按文档分组，同文档的多个片段合并，供模型直接作为上下文。
 pub async fn kb_search(cfg: &KbSearchConfig, query: &str, top_k: u32) -> Result<String, String> {
-    log::debug!("[skill] kb_search: query={}, top_k={}", query, top_k);
+    log::info!("[skill] kb_search: query={}, top_k={}", query, top_k);
     let embedding = tokio::task::spawn_blocking({
         let query = query.to_string();
         move || call_embedding_query(&query)
@@ -436,7 +436,7 @@ pub async fn kb_search(cfg: &KbSearchConfig, query: &str, top_k: u32) -> Result<
         .lock()
         .await
         .extend(selected.iter().cloned());
-    log::debug!("[skill] kb_search 结果: 选中={}， 命中={} ，min_score={}， max_context_docs={}， max_chunks_per_doc={}", selected.len(), hits_len, cfg.min_score, cfg.max_context_docs, cfg.max_chunks_per_doc);
+    log::info!("[skill] kb_search 结果: 选中={}， 命中={} ，min_score={}， max_context_docs={}， max_chunks_per_doc={}", selected.len(), hits_len, cfg.min_score, cfg.max_context_docs, cfg.max_chunks_per_doc);
     Ok(build_context_text(&selected, MAX_CONTEXT_CHARS))
 }
 

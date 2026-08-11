@@ -740,7 +740,7 @@ impl Indexer {
 
         self.invalidate_cache().await;
 
-        log::debug!("[indexer] 清除全部索引完成: {}", dir_path);
+        log::info!("[indexer] 清除全部索引完成: {}", dir_path);
         Ok(())
     }
 
@@ -891,7 +891,7 @@ impl Indexer {
                 symbol_hits = filter_hits_by_ext(symbol_hits, exts);
             }
         }
-        log::debug!(
+        log::info!(
             "[indexer] [混合检索] query='{}' intent={:?} vec_hits={} bm25_hits={} symbol_hits={}",
             query,
             plan.intent,
@@ -909,7 +909,7 @@ impl Indexer {
             weight_symbol: 1.0,
         };
         let fused = rrf_fuse(vec_hits, bm25_hits, symbol_hits, &rrf_cfg);
-        log::debug!("[indexer] [混合检索] RRF 融合完成: alpha={:.2} candidates={}", alpha, fused.len());
+        log::info!("[indexer] [混合检索] RRF 融合完成: alpha={:.2} candidates={}", alpha, fused.len());
 
         // ── 4. 双阈值（一）：纯向量噪声过滤 ──
         // 无 BM25/符号佐证（仅向量召回）且原始余弦低于绝对阈值 → 语义噪声，丢弃。
@@ -930,7 +930,7 @@ impl Indexer {
                     || h.score_vec >= config.vec_min_score
             })
             .collect();
-        log::debug!(
+        log::info!(
             "[indexer] [混合检索] 向量阈值过滤(vec_min_score={}, rerank_active={}): {} → {}",
             config.vec_min_score,
             rerank_active,
@@ -954,7 +954,7 @@ impl Indexer {
                             .iter()
                             .map(|h| format!("{}: {:.3}", h.doc_name, h.score))
                             .collect();
-                        log::debug!(
+                        log::info!(
                             "[indexer] [混合检索] 精排完成: {} → {} 通过阈值({}), sigmoid分数:\n{:?}",
                             candidates.len(),
                             hits.len(),
@@ -977,14 +977,14 @@ impl Indexer {
             if rerank_enabled {
                 // 模型未缓存：后台触发一次下载（失败自动重试），本次回退 RRF（检索永不阻断）
                 trigger_reranker_download_background();
-                log::debug!("[indexer] [混合检索] reranker 模型未就绪，本次回退 RRF 排序");
+                log::info!("[indexer] [混合检索] reranker 模型未就绪，本次回退 RRF 排序");
             }
             candidates
         };
 
         // ── 6. Diversity：OPML 层级去重 + 文件聚簇（每文档 chunk 上限）──
         let deduped = Self::dedup_opml_hierarchy(results);
-        log::debug!("[indexer] [混合检索] OPML 层级去重: candidates={}", deduped.len());
+        log::info!("[indexer] [混合检索] OPML 层级去重: candidates={}", deduped.len());
 
         let max_per_doc = config.max_chunks_per_doc.max(1) as usize;
         let mut per_doc: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
@@ -1000,7 +1000,7 @@ impl Indexer {
                 }
             })
             .collect();
-        log::debug!("[indexer] [混合检索] 文件聚簇(max_chunks_per_doc={}) → {}", max_per_doc, clustered.len());
+        log::info!("[indexer] [混合检索] 文件聚簇(max_chunks_per_doc={}) → {}", max_per_doc, clustered.len());
 
         let mut result: Vec<SearchHit> = clustered.into_iter().take(top_k as usize).collect();
 
@@ -1092,7 +1092,7 @@ impl Indexer {
                     }
                 }
             }
-            log::debug!("[indexer] [混合检索] 注入上下文扩展: candidates={}， ctx_window={}", result.len(), ctx_window);
+            log::info!("[indexer] [混合检索] 注入上下文扩展: candidates={}， ctx_window={}", result.len(), ctx_window);
         }
 
         Ok(result)
@@ -1413,7 +1413,7 @@ impl Indexer {
         let store = self.get_chat_lance_store(dir_path).await;
         let vec_k = (top_k * 2).max(10);
         let vec_hits = store.search_vectors(query_vec, vec_k).await.unwrap_or_default();
-        log::debug!("[indexer] [对话向量检索] 完成，共 {} 个命中项，top_k={}", vec_hits.len(), top_k);
+        log::info!("[indexer] [对话向量检索] 完成，共 {} 个命中项，top_k={}", vec_hits.len(), top_k);
 
         // 3. 转换为 (session_id, score, matched_text)
         let results = vec_hits
@@ -1481,7 +1481,7 @@ impl Indexer {
                 continue;
             }
             synced_count += 1;
-            log::debug!("[indexer] [启动同步] 索引修改文件成功 rel_path={}，synced_count={}", rel_path, synced_count);
+            log::info!("[indexer] [启动同步] 索引修改文件成功 rel_path={}，synced_count={}", rel_path, synced_count);
         }
 
         log::info!("[indexer] [启动同步] 共同步 {} 个文件", synced_count);
@@ -1550,7 +1550,7 @@ impl Indexer {
                 indexed_at: 0,
             });
         }
-        log::debug!("[indexer] [增量索引] 共发现 {} 个未索引文件, 共 {} 个文件", unindexed_count, total);
+        log::info!("[indexer] [增量索引] 共发现 {} 个未索引文件, 共 {} 个文件", unindexed_count, total);
 
         // 先读取 + 分块所有未索引文件，合并 DocumentChunk
         progress(15, &format!("正在读取 {} 个未索引文件...", unindexed_count));
@@ -1676,7 +1676,7 @@ pub(crate) fn scan_directory(base_dir: &Path, ignore: &IgnoreMatcher) -> Result<
             }
         }
     }
-    log::debug!("[scan_directory] 共发现 {} 个文件", files.len());
+    log::info!("[scan_directory] 共发现 {} 个文件", files.len());
     Ok(files)
 }
 

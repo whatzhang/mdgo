@@ -169,7 +169,7 @@ pub fn rrf_fuse(
         .unwrap_or(0.0);
     let norm = if max_score > 0.0 { 1.0 / max_score } else { 0.0 };
 
-    log::debug!(
+    log::info!(
         "[rrf] 融合完成: candidates={} 符号路命中={} max_rrf={:.4}",
         entries.len(),
         sym_count,
