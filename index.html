@@ -13687,7 +13687,7 @@
         }
 
         .setting-number {
-            width: 5rem;
+            width: 6rem;
             height: 1.75rem;
             padding: 0 0.5rem;
             border: 0.063rem solid var(--color-border);
@@ -17227,7 +17227,7 @@
         let LOCAL_LLM_MODEL = 'gemma-4-e4b-it';
         let LOCAL_LLM_PLANNER_MODEL = '';   // P0-6：规划用小模型（可选，空 = 主模型）
         let LOCAL_LLM_SUMMARY_MODEL = '';   // P0-6：摘要用小模型（可选，空 = 主模型）
-        let LOCAL_LLM_REASONING_EFFORT = ''; // P2-18：推理努力等级（可选：low/medium/high）
+        let LOCAL_LLM_REASONING_EFFORT = ''; // P2-18：推理等级（可选：low/medium/high）
         let LOCAL_LLM_CONTEXT_LENGTH = 10000;
         let LOCAL_LLM_MAX_TOKENS = 4096;
         /** 对话历史预算占 context 的比例（剩余留给 system prompt / RAG context） */
@@ -19312,8 +19312,8 @@
                             </div>`;
         }
 
-        async function initTreeBrowser() {
-            if (await initFromStorage()) return true;
+        async function initTreeBrowser(refresh = false) {
+            if (await initFromStorage(refresh)) return true;
             // 无保存路径，隐藏启动遮罩、展示"打开目录"引导
             const el = document.getElementById('startup-loading');
             if (el) el.classList.add('is-hidden');
@@ -20565,7 +20565,7 @@
             await updateTimeAll();
             try {
                 refreshTreeBtn.disabled = true;
-                await initTreeBrowser();
+                await initTreeBrowser(true);
                 const handle = await getRootHandle();
                 const data = await scanDashboardData(true);
                 await renderDirectory(handle, data, true);
@@ -21992,6 +21992,13 @@
             }
             jsMindHandle = new JsMindHandle(jm, data, ismmFile);
             jsMindHandle.add_event_listener();
+            // 拖动思维导图时，鼠标移出容器（如进入左侧文件树区域）应退出拖动。
+            if (!container.__jsmindDragLeaveBound) {
+                container.__jsmindDragLeaveBound = true;
+                container.addEventListener('mouseleave', () => {
+                    container.dispatchEvent(new MouseEvent('mouseup', { bubbles: false }));
+                });
+            }
             // 只读模式：不注册键盘监听，禁用节点编辑事件
             if (!readonly) {
                 document.addEventListener('keydown', jsMindHandle.handleGlobalKeydown, true);
@@ -36198,7 +36205,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             idbDeleteDatabase(DIRECTORY_STORE_NAME);
         }
 
-        async function initFromStorage() {
+        async function initFromStorage(refresh = false) {
             if (window.__tauriInitPromise) {
                 await window.__tauriInitPromise;
             }
@@ -36238,19 +36245,21 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 currentRootPath = savedPath;
                 const setting = await loadSetting();
             }
-            try {
-                // 先尝试从缓存加载（index_file_scan_data.json），避免每次启动全量扫描
-                showGlobalLoading('正在加载文件目录...');
-                let data = await scanDashboardData(false);
-                // 缓存无效（首次使用/目录变更）时回退到全量扫描
-                if (!data || !data.files || typeof data.files !== 'object' || Object.keys(data.files).length === 0 || !data.stats) {
-                    showGlobalLoading('正在扫描目录中...');
-                    data = await scanDashboardData(true);
+                try {
+                    if(!refresh){
+                        // 先尝试从缓存加载（index_file_scan_data.json），避免每次启动全量扫描
+                        showGlobalLoading('正在加载文件目录...');
+                        let data = await scanDashboardData(false);
+                        // 缓存无效（首次使用/目录变更）时回退到全量扫描
+                        if (!data || !data.files || typeof data.files !== 'object' || Object.keys(data.files).length === 0 || !data.stats) {
+                            showGlobalLoading('正在扫描目录中...');
+                            data = await scanDashboardData(true);
+                        }
+                        await Promise.all([renderDirectory(handle, data), toggleDashboardView(true, data)]);
+                    }
+                } finally {
+                    hideGlobalLoading(true);
                 }
-                await Promise.all([renderDirectory(handle, data), toggleDashboardView(true, data)]);
-            } finally {
-                hideGlobalLoading(true);
-            }
             return true;
         }
 
@@ -50504,7 +50513,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                     <input class="setting-text" id="${inputId('llmSummaryModel')}" value="${escapeHtml(LOCAL_LLM_SUMMARY_MODEL)}" placeholder="留空使用主模型">
                                 </div>
                                 <div class="setting-row">
-                                    <label>推理努力等级（可选）</label>
+                                    <label>推理等级（可选）</label>
                                     <input class="setting-text" id="${inputId('llmReasoningEffort')}" value="${escapeHtml(LOCAL_LLM_REASONING_EFFORT)}" placeholder="low / medium / high，留空不设置">
                                 </div>
                                 <div class="setting-row">
@@ -51826,6 +51835,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             });
         }
 
+        function syncModeButtonUI(mode) {
+            document.querySelectorAll('.btn-mode').forEach(b => b.classList.remove('active'));
+            const btn = document.getElementById('chat-mode-' + mode);
+            if (btn) btn.classList.add('active');
+            const settingsBtn = document.getElementById('rag-settings-btn');
+            if (settingsBtn) settingsBtn.classList.toggle('active', mode === 'rag');
+        }
+
         /**
          * 渲染技能选择器（触发按钮 + 向上弹出面板，面板中每个技能一行）
          * 从后端获取可用技能列表并回显当前会话已挂载状态
@@ -52246,10 +52263,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        /**
-         * 清理聊天状态（仅由 destroyEverything 在 finalizeCurrentSession 之后调用）。
-         * 清空内存中的 UI 状态，保存最后会话记录并触发异步索引。
-         */
         async function cleanupChatState() {
             try {
                 // 1. 将当前会话异步索引，确保可被搜索召回
@@ -52263,7 +52276,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 chatMessages = [];
                 chatSessions = [];
                 currentSessionId = null;
-                chatMode = 'normal';
                 chatAbortController = null;
                 _chatStreamingDiv = null;
                 _chatStreamingSources = null;
@@ -52302,9 +52314,28 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 };
                 chatMsgContainer.addEventListener('scroll', window._chatScrollHandler, { passive: true });
             }
-            // 恢复上次打开的会话
+            // 恢复上次打开的会话：以保留的 chatMode（cleanupChatState 不重置）为准——
             const last = await getLastChatSession();
-            if (last && last.sessionId && chatSessions.some(s => s.id === last.sessionId)) {
+            const lastMode = chatMode;
+            if (lastMode === 'rag') {
+                const lastRagId = (last && last.sessionId && chatSessions.some(s => s.id === last.sessionId && s.type === 'rag'))
+                    ? last.sessionId
+                    : null;
+                const ragSessionId = lastRagId || ((chatSessions.find(s => s.type === 'rag') || {}).id || null);
+                if (ragSessionId) {
+                    await switchChatSession(ragSessionId, true);
+                } else {
+                    // 无 rag 历史会话：停留在 Agent 模式（等待用户输入第一条消息自动创建）
+                    chatMode = 'rag';
+                    syncModeButtonUI('rag');
+                    chatMessages = [];
+                    const emptyMsgContainer = document.getElementById('chat-messages');
+                    if (emptyMsgContainer) emptyMsgContainer.innerHTML = '';
+                    chatAttachedSkills = [];
+                    await renderSkillChips();
+                    updateTurnCounter();
+                }
+            } else if (last && last.sessionId && chatSessions.some(s => s.id === last.sessionId)) {
                 await switchChatSession(last.sessionId, true);
             } else if (chatSessions.length > 0) {
                 // 没有记录的话，默认打开最近的会话
@@ -52363,12 +52394,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             await finalizeCurrentSession();
             // 2. 切换模式
             chatMode = mode;
-            document.querySelectorAll('.btn-mode').forEach(b => b.classList.remove('active'));
-            const btn = document.getElementById('chat-mode-' + mode);
-            if (btn) btn.classList.add('active');
-            // 显示/隐藏 RAG 设置齿轮按钮
-            const settingsBtn = document.getElementById('rag-settings-btn');
-            if (settingsBtn) settingsBtn.classList.toggle('active', mode === 'rag');
+            syncModeButtonUI(mode);
             // 刷新技能 chips（仅 RAG 模式显示）
             chatAttachedSkills = [];
             await renderSkillChips();
@@ -53905,19 +53931,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         console.warn('加载引用来源失败:', e);
                     }
                 }
-                // 4. 根据会话类型同步 chatMode
                 const session = chatSessions.find(s => s.id === sessionId);
                 if (session) {
                     const newMode = session.type === 'rag' ? 'rag' : 'normal';
                     if (chatMode !== newMode) {
                         chatMode = newMode;
-                        document.querySelectorAll('.btn-mode').forEach(b => b.classList.remove('active'));
-                        const btn = document.getElementById('chat-mode-' + newMode);
-                        if (btn) btn.classList.add('active');
-                        // 同步齿轮按钮状态
-                        const settingsBtn = document.getElementById('rag-settings-btn');
-                        if (settingsBtn) settingsBtn.classList.toggle('active', newMode === 'rag');
                     }
+                    syncModeButtonUI(newMode);
                 }
                 // 5. 构建消息条目（含 sources 与工具调用轨迹）
                 chatMessages = messages.map(m => {
