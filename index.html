@@ -54798,7 +54798,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         const goal = p.goal ? '目标：' + p.goal : '';
                         const steps = Array.isArray(p.steps) ? p.steps.map((s, i) => (i + 1) + '. ' + s).join('\n') : '(无步骤)';
                         const acceptance = Array.isArray(p.acceptance) && p.acceptance.length ? '\n\n验收标准：\n' + p.acceptance.map(a => '· ' + a).join('\n') : '';
-                        const message = goal + '\n\n步骤：\n' + steps + acceptance;
+                        const touchpoints = Array.isArray(p.touchpoints) && p.touchpoints.length ? '\n\n涉及范围：\n' + p.touchpoints.map(t => '· ' + t).join('\n') : '';
+                        const risks = Array.isArray(p.risks) && p.risks.length ? '\n\n风险注意：\n' + p.risks.map(r => '· ' + r).join('\n') : '';
+                        const nonGoals = Array.isArray(p.non_goals) && p.non_goals.length ? '\n\n非目标（明确不做）：\n' + p.non_goals.map(n => '· ' + n).join('\n') : '';
+                        const rollback = Array.isArray(p.rollback) && p.rollback.length ? '\n\n失败回滚：\n' + p.rollback.map(r => '· ' + r).join('\n') : '';
+                        const message = goal + '\n\n步骤：\n' + steps + acceptance + touchpoints + risks + nonGoals + rollback;
                         let approved = false;
                         try {
                             approved = await showConfirmModalAsync('AI 任务计划，请确认是否执行', message);

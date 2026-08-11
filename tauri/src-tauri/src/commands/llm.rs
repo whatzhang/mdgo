@@ -770,6 +770,9 @@ pub async fn agent_query(
                         "steps": plan.steps,
                         "acceptance": plan.acceptance,
                         "risks": plan.risks,
+                        "touchpoints": plan.touchpoints,
+                        "non_goals": plan.non_goals,
+                        "rollback": plan.rollback,
                     }
                 }),
             );

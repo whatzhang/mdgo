@@ -17,7 +17,8 @@ use crate::core::validation::JsonSchemaValidator;
 
 /// 计划 JSON 的 JSON Schema（P0-3：结构化输出校验）。
 ///
-/// 与 [`Plan`] 字段对齐；`risks` 可选（缺省容忍），其余字段必填且类型受约束。
+/// 与 [`Plan`] 字段对齐；`risks`/`touchpoints`/`non_goals`/`rollback` 可选
+/// （缺省容忍），其余字段必填且类型受约束。
 pub fn plan_json_schema() -> Value {
     serde_json::json!({
         "type": "object",
@@ -26,7 +27,10 @@ pub fn plan_json_schema() -> Value {
             "goal": { "type": "string", "minLength": 1 },
             "steps": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
             "acceptance": { "type": "array", "items": { "type": "string" } },
-            "risks": { "type": "array", "items": { "type": "string" } }
+            "risks": { "type": "array", "items": { "type": "string" } },
+            "touchpoints": { "type": "array", "items": { "type": "string" } },
+            "non_goals": { "type": "array", "items": { "type": "string" } },
+            "rollback": { "type": "array", "items": { "type": "string" } }
         },
         "additionalProperties": true
     })
@@ -94,7 +98,7 @@ pub enum PlanDecision {
     Denied(String),
 }
 
-/// 结构化任务计划。
+/// 结构化任务计划（P1-10：full plan 结构，对齐 Reasonix light/full plan）。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Plan {
     /// 一句话目标
@@ -106,6 +110,15 @@ pub struct Plan {
     /// 风险与注意点
     #[serde(default)]
     pub risks: Vec<String>,
+    /// 涉及的文件/模块/知识域（touchpoints）
+    #[serde(default)]
+    pub touchpoints: Vec<String>,
+    /// 明确不做的事（非目标）
+    #[serde(default)]
+    pub non_goals: Vec<String>,
+    /// 失败时的回滚步骤
+    #[serde(default)]
+    pub rollback: Vec<String>,
 }
 
 impl Plan {
@@ -123,10 +136,28 @@ impl Plan {
                 out.push_str(&format!("  - {}\n", acc));
             }
         }
+        if !self.touchpoints.is_empty() {
+            out.push_str("涉及范围：\n");
+            for t in &self.touchpoints {
+                out.push_str(&format!("  - {}\n", t));
+            }
+        }
         if !self.risks.is_empty() {
             out.push_str("风险注意：\n");
             for risk in &self.risks {
                 out.push_str(&format!("  - {}\n", risk));
+            }
+        }
+        if !self.non_goals.is_empty() {
+            out.push_str("非目标（明确不做）：\n");
+            for ng in &self.non_goals {
+                out.push_str(&format!("  - {}\n", ng));
+            }
+        }
+        if !self.rollback.is_empty() {
+            out.push_str("失败回滚：\n");
+            for rb in &self.rollback {
+                out.push_str(&format!("  - {}\n", rb));
             }
         }
         out
@@ -155,6 +186,9 @@ pub fn parse_plan(raw: &str) -> Option<Plan> {
     plan.steps.retain(|s| !s.trim().is_empty());
     plan.acceptance.retain(|s| !s.trim().is_empty());
     plan.risks.retain(|s| !s.trim().is_empty());
+    plan.touchpoints.retain(|s| !s.trim().is_empty());
+    plan.non_goals.retain(|s| !s.trim().is_empty());
+    plan.rollback.retain(|s| !s.trim().is_empty());
     if plan.steps.is_empty() {
         return None;
     }
@@ -218,11 +252,30 @@ mod tests {
             steps: vec!["步骤1".into(), "步骤2".into()],
             acceptance: vec!["通过".into()],
             risks: vec![],
+            touchpoints: vec!["core/mod.rs".into()],
+            non_goals: vec!["不引入新依赖".into()],
+            rollback: vec!["git revert".into()],
         };
         let text = plan.to_preamble_text();
         assert!(text.contains("【已确认的任务计划"));
         assert!(text.contains("1. 步骤1"));
         assert!(text.contains("验收标准"));
+        assert!(text.contains("涉及范围"));
+        assert!(text.contains("非目标"));
+        assert!(text.contains("失败回滚"));
+    }
+
+    #[test]
+    fn plan_full_structure_parses_and_cleans() {
+        let raw = r#"{"goal": "重构", "steps": ["a"], "acceptance": ["ok"], "risks": ["r"], "touchpoints": ["t1", ""], "non_goals": ["ng"], "rollback": ["rb"]}"#;
+        let plan = parse_plan(raw).expect("full plan 应解析成功");
+        assert_eq!(plan.touchpoints, vec!["t1".to_string()], "空 touchpoints 应被清洗");
+        assert_eq!(plan.non_goals, vec!["ng".to_string()]);
+        assert_eq!(plan.rollback, vec!["rb".to_string()]);
+        // 旧格式（无新字段）仍可解析（serde default）
+        let old = parse_plan(r#"{"goal": "x", "steps": ["s"], "acceptance": []}"#).expect("旧格式应兼容");
+        assert!(old.touchpoints.is_empty());
+        assert!(old.rollback.is_empty());
     }
 
     #[test]
