@@ -1,11 +1,61 @@
+use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Mutex;
-use std::time::SystemTime;
+use std::sync::{LazyLock, Mutex};
+use std::time::{Duration, Instant, SystemTime};
 
 use rusqlite::Connection;
 use uuid::Uuid;
 
 use crate::core::{ChatMessage, ChatMessageSource, ChatSession, ChatSessionSearchResult};
+
+/// ── O4 测量：SQLite 写路径统计 ──
+/// 原子计数 + 按操作类型的累计耗时，每 50 次写 dump 一次日志，
+/// 用于评估「会话写入批量化」是否值得实施（writes_per_agent_request / p95 延迟）。
+#[derive(Default, Clone, Copy)]
+struct OpStat {
+    count: u64,
+    total_ms: u64,
+}
+
+struct WriteStats {
+    map: Mutex<HashMap<&'static str, OpStat>>,
+}
+
+static WRITE_STATS: LazyLock<WriteStats> = LazyLock::new(|| WriteStats {
+    map: Mutex::new(HashMap::new()),
+});
+
+/// 记录一次写操作耗时；每 50 次写 dump 全量统计。
+fn record_write(op: &'static str, dur: Duration) {
+    let ms = dur.as_millis() as u64;
+    if let Ok(mut map) = WRITE_STATS.map.lock() {
+        let s = map.entry(op).or_default();
+        s.count += 1;
+        s.total_ms += ms;
+        let total: u64 = map.values().map(|s| s.count).sum();
+        if total % 50 == 0 {
+            log::info!("[storage] chat SQLite 写统计（累计 {} 次写）:", total);
+            for (op, s) in map.iter() {
+                log::info!(
+                    "  {}: count={} total_ms={} avg={:.2}ms",
+                    op,
+                    s.count,
+                    s.total_ms,
+                    s.total_ms as f64 / s.count.max(1) as f64
+                );
+            }
+        }
+    }
+}
+
+/// RAII 写计时器：函数退出（含错误 return）时自动记录。
+struct WriteTimer(&'static str, Instant);
+
+impl Drop for WriteTimer {
+    fn drop(&mut self) {
+        record_write(self.0, self.1.elapsed());
+    }
+}
 
 /// 每类对话（regular / rag）最多保留的非收藏会话数量
 const MAX_SESSIONS_PER_TYPE: i64 = 100;
@@ -498,6 +548,7 @@ impl ChatStore {
         token_count: i32,
         tool_calls: Option<&str>,
     ) -> Result<ChatMessage, String> {
+        let _w = WriteTimer("save_message", Instant::now());
         let now = unix_timestamp_now();
         let id = Uuid::new_v4().to_string();
 
@@ -602,6 +653,7 @@ impl ChatStore {
         title: &str,
     ) -> Result<ChatSession, String> {
         use std::collections::HashMap;
+        let _w = WriteTimer("fork_session", Instant::now());
 
         let now = unix_timestamp_now();
         let new_id = Uuid::new_v4().to_string();
@@ -749,6 +801,7 @@ impl ChatStore {
 
     /// 写入会话的上下文压缩检查点 JSON（P0-5）。
     pub fn set_compaction_state(&self, session_id: &str, state_json: &str) -> Result<(), String> {
+        let _w = WriteTimer("set_compaction_state", Instant::now());
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute(
             "UPDATE chat_sessions SET compaction_state = ?1 WHERE id = ?2",
@@ -760,6 +813,7 @@ impl ChatStore {
 
     /// 清空会话的所有消息，重置 message_count 和 token_usage
     pub fn clear_session_messages(&self, session_id: &str) -> Result<(), String> {
+        let _w = WriteTimer("clear_session_messages", Instant::now());
         let now = unix_timestamp_now();
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
 
@@ -808,6 +862,7 @@ impl ChatStore {
         message_id: &str,
         sources: &[ChatMessageSource],
     ) -> Result<(), String> {
+        let _w = WriteTimer("save_message_sources", Instant::now());
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
 
         // 写事务统一 IMMEDIATE（WAL 下避免 DEFERRED 读快照升级失败的 SQLITE_BUSY_SNAPSHOT）
