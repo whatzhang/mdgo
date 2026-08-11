@@ -258,6 +258,9 @@ impl SubagentRunner {
         } else {
             truncate_chars(&full, spec.summary_chars)
         };
+        // P1-13：子代理输出（可能源自不可信文档）回传父链前做提示注入防护，
+        // 命中可疑指令时包裹并提示忽略（不裁剪，可审计）
+        let summary = crate::core::security::wrap_suspicious(&summary);
         crate::core::trace::stage_end(
             &spec.request_id,
             "subagent",

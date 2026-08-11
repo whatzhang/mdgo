@@ -1070,6 +1070,9 @@ pub async fn agent_query(
             // 优先使用 sentence_window（包含检索句子前后的上下文），fallback 到 chunk text，
             // 总字符数受 agent 模块的 MAX_CONTEXT_CHARS 限制避免超出模型窗口。
             let context = build_context_text(&selected, crate::core::agent::MAX_CONTEXT_CHARS);
+            // P1-13：检索上下文提示注入防护——命中可疑指令时包裹并追加显式
+            // 安全提示（不裁剪原文，可审计），引导模型忽略指令性内容
+            let context = crate::core::security::wrap_suspicious(&context);
             log::debug!( "[agent_query] [3]: 上下文构建结果， request_id={} 命中 {} 条文档, char_len={} preview={:?}",
                 request_id, selected.len(), context.len(), context
             );
