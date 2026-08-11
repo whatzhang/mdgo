@@ -5148,6 +5148,11 @@
             visibility: visible;
         }
 
+        /* P1-11：user 消息的「分支」hover 按钮可见性（inline opacity:0 由 !important 覆盖） */
+        .chat-message:hover .msg-fork-btn {
+            opacity: 1 !important;
+        }
+
         /* 纯 SVG 图标按钮（不随消息重建，事件走容器级委托） */
         .chat-message-action-btn {
             width: 1.75rem;
@@ -50375,7 +50380,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                 </div>
                                 <div class="setting-row">
                                     <label>上下文长度</label>
-                                    <input class="setting-number" id="${inputId('llmContext')}" type="number" min="1000" max="100000" step="1000" value="${LOCAL_LLM_CONTEXT_LENGTH}">
+                                    <input class="setting-number" id="${inputId('llmContext')}" type="number" min="1000" max="10000000" step="10000" value="${LOCAL_LLM_CONTEXT_LENGTH}">
                                 </div>
                                 <div class="setting-row">
                                     <label>最大输出 Token</label>
@@ -52341,6 +52346,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         const MSG_ACTION_ICONS = {
             copy: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
             save: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+            fork: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>',
         };
 
         // ── ISP: 共享数据读取（复制/保存共用，最小依赖接口） ──
@@ -52390,10 +52396,44 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             await saveMessageToFile(text);
         }
 
+        // ── SRP: 分支动作（P1-11 会话分支；从此消息之后派生新会话） ──
+        async function forkMessageContent(messageEl) {
+            if (!currentRootPath || !currentSessionId) {
+                showNotification('无法分支：缺少会话上下文', 'warning');
+                return;
+            }
+            // 用 DOM 顺序定位分支点（chatMessages 与 .chat-message 一一对应；
+            // 过滤非消息元素，避免 typing 等临时节点错位）
+            const container = document.getElementById('chat-messages');
+            const idx = container
+                ? Array.from(container.querySelectorAll('.chat-message')).indexOf(messageEl)
+                : -1;
+            if (idx < 0) {
+                showNotification('无法分支：未找到消息位置', 'warning');
+                return;
+            }
+            try {
+                const srcTitle = (chatSessions.find(s => s.id === currentSessionId) || {}).title || '会话';
+                const newSession = await window.__TAURI__.core.invoke('chat_fork', {
+                    dirPath: currentRootPath,
+                    sessionId: currentSessionId,
+                    messageSeq: idx + 1, // 分支点 = 该消息之后（含其之前全部）
+                    title: '分支 ' + srcTitle,
+                });
+                chatSessions.unshift(newSession);
+                renderChatSessionList();
+                await switchChatSession(newSession.id);
+                showNotification('已创建分支会话（从此处改写重发）', 'success');
+            } catch (e) {
+                showNotification('分支失败: ' + (e.message || e), 'error');
+            }
+        }
+
         // ── OCP: 动作策略表（新增动作只需追加一个表项 + 一个处理器函数） ──
         const MSG_ACTION_HANDLERS = {
             copy: copyMessageContent,
             save: saveMessageContent,
+            fork: forkMessageContent,
         };
 
         // ── SRP: 事件路由（容器级唯一委托监听器，零元素级监听器，无泄漏） ──
@@ -52415,7 +52455,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             footer.className = 'chat-message-footer';
             footer.innerHTML =
                 '<button class="chat-message-action-btn" data-action="copy" title="复制">' + MSG_ACTION_ICONS.copy + '</button>' +
-                '<button class="chat-message-action-btn" data-action="save" title="保存">' + MSG_ACTION_ICONS.save + '</button>';
+                '<button class="chat-message-action-btn" data-action="save" title="保存">' + MSG_ACTION_ICONS.save + '</button>' +
+                '<button class="chat-message-action-btn" data-action="fork" title="从此处派生分支会话">' + MSG_ACTION_ICONS.fork + '</button>';
             return footer;
         }
 

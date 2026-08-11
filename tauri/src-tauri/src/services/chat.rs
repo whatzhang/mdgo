@@ -33,7 +33,7 @@ fn record_write(op: &'static str, dur: Duration) {
         s.count += 1;
         s.total_ms += ms;
         let total: u64 = map.values().map(|s| s.count).sum();
-        if total % 50 == 0 {
+        if total % 10 == 0 {
             log::info!("[storage] chat SQLite 写统计（累计 {} 次写）:", total);
             for (op, s) in map.iter() {
                 log::info!(

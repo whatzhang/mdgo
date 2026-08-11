@@ -911,7 +911,16 @@ pub async fn agent_query(
                 }
             }
         } else {
+            // review 修复 A3：规划失败不再静默——发 rag:status 提示降级，避免前端无反馈
             log::warn!("[agent_query] [0.5]: 规划解析失败，降级为不规划 request_id={}", request_id);
+            let _ = app.emit(
+                "rag:status",
+                RagStatus {
+                    request_id: request_id.clone(),
+                    stage: "planning".into(),
+                    message: "规划生成失败，已降级为直接执行".into(),
+                },
+            );
         }
         // 检查取消（规划阶段同样可取消；补 rag:done 避免前端滞留 planning 状态）
         if cancel.is_cancelled() {

@@ -445,11 +445,24 @@ impl LLMClient {
         cancel: CancellationToken,
         correction: Option<&str>,
     ) -> Option<String> {
-        // 构建规划 prompt（附最近对话上下文）
-        let mut system_msg = String::new();
+        // 指令部分放 preamble（system role，提高弱模型遵守度——review 修复 A1）
+        let preamble = String::from(concat!(
+            "你是任务规划助手。用户将提出一个需要多步骤执行的复杂任务。请输出一个 JSON 计划，严格遵循以下格式（除 JSON 外不要输出任何其他内容、注释或代码围栏）：\n",
+            "{\"goal\": \"一句话任务目标\", \"steps\": [\"步骤1\", ...], \"acceptance\": [\"可验证的验收标准1\", ...], \"risks\": [...], \"touchpoints\": [...], \"non_goals\": [...], \"rollback\": [...]}\n",
+            "要求：\n",
+            "1. 键名必须严格为 goal / steps / acceptance / risks / touchpoints / non_goals / rollback，禁止添加 plan_id、name 等其他任何键\n",
+            "2. goal 一句话概括目标，不含冗长描述\n",
+            "3. steps 3-8 步，每步不超过 60 字，具体、可执行、按顺序\n",
+            "4. acceptance 2-5 条，每条可客观验证\n",
+            "5. risks / touchpoints / non_goals / rollback 无相关内容时给空数组\n",
+            "6. 只输出一个合法 JSON 对象，不要输出任何其他内容、注释或代码围栏\n",
+        ));
+
+        // 用户消息：对话上下文（最近 4 条）+ 用户任务 + 修正指令
+        let mut user_msg = String::new();
         let recent_count = history.len().min(4);
         if recent_count > 0 {
-            system_msg.push_str("对话历史（最近几条）：\n");
+            user_msg.push_str("对话历史（最近几条）：\n");
             for msg in history.iter().rev().take(recent_count).rev() {
                 let role_label = match msg.role.as_str() {
                     "user" => "用户",
@@ -461,45 +474,34 @@ impl LLMClient {
                 } else {
                     msg.content.clone()
                 };
-                system_msg.push_str(&format!("{}: {}\n", role_label, content));
+                user_msg.push_str(&format!("{}: {}\n", role_label, content));
             }
-            system_msg.push('\n');
+            user_msg.push('\n');
         }
 
-        system_msg.push_str(concat!(
-            "你是任务规划助手。用户将提出一个需要多步骤执行的复杂任务。请输出一个 JSON 计划，严格遵循以下格式（除 JSON 外不要输出任何其他内容、注释或代码围栏）：\n",
-            "{\"goal\": \"一句话任务目标\", \"steps\": [\"步骤1\", \"步骤2\", ...], \"acceptance\": [\"可验证的验收标准1\", ...], \"risks\": [\"风险或注意点1\", ...], \"touchpoints\": [\"涉及的文件/模块/知识域1\", ...], \"non_goals\": [\"明确不做的事1\", ...], \"rollback\": [\"失败时的回滚步骤1\", ...]}\n",
-            "要求：\n",
-            "1. goal 一句话概括目标，不含冗长描述\n",
-            "2. steps 3-8 步，具体、可执行、按顺序\n",
-            "3. acceptance 2-5 条，每条可客观验证\n",
-            "4. risks 列出主要风险或前置条件，无则给空数组\n",
-            "5. touchpoints 列出涉及的文件/模块/知识域，无则给空数组\n",
-            "6. non_goals 列出明确不做的事（防止执行越界），无则给空数组\n",
-            "7. rollback 给出失败时的回滚步骤，无则给空数组\n",
-            "\n用户任务：",
-        ));
-        system_msg.push_str(query);
+        user_msg.push_str("用户任务：");
+        user_msg.push_str(query);
 
         // P0-3 结构化输出：上一次输出校验失败时，追加修正指令引导模型重发
         if let Some(c) = correction {
             let c = c.trim();
             if !c.is_empty() {
-                system_msg.push_str("\n\n你上一次的输出不符合要求，请修正后重新输出：");
-                system_msg.push_str(c);
-                system_msg.push_str("\n只输出合法 JSON，不要输出任何其他内容、注释或代码围栏。");
+                user_msg.push_str("\n\n你上一次的输出不符合要求，请修正后重新输出：");
+                user_msg.push_str(c);
+                user_msg.push_str("\n只输出合法 JSON，不要输出任何其他内容、注释或代码围栏。");
             }
         }
 
         // 构造 Rig 请求（非流式，与 expand_queries 同构；不用 output_schema 保证网关兼容）
         let request = CompletionRequest {
             model: None,
-            preamble: None,
-            chat_history: OneOrMany::one(Message::user(system_msg)),
+            preamble: Some(preamble),
+            chat_history: OneOrMany::one(Message::user(user_msg)),
             documents: Vec::new(),
             tools: Vec::new(),
             temperature: Some(0.3),
-            max_tokens: Some(1024),
+            // review 修复 A2：1024 易截断中文计划，提到 2048
+            max_tokens: Some(2048),
             tool_choice: None,
             additional_params: None,
             output_schema: None,
