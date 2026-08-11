@@ -95,3 +95,25 @@
 | `core/context/mod.rs` | 滑窗预算、摘要+滑窗(摘要恒保留)、摘要失败降级 |
 | `core/approval/mod.rs` | 门控放行/拒绝/缓存/无策略 |
 | `core/agent/tools/mod.rs` | grep glob 匹配 |
+
+---
+
+## 8. P0 补齐批次（工具历史回流/重试/结构化输出/压缩落库/记忆）验收
+
+> 归档日期:2026-08 · 配套规划:`docs/agent_gap_plan.md`（P0-1/P0-2/P0-3/P0-4/P0-5，P0-6 多模型暂缓）
+> 单元测试:`cargo test --lib` **51/51 通过**；以下为启动应用后的手动验收。
+
+| # | 能力 | 操作 | 预期 |
+|---|---|---|---|
+| 17 | 工具历史回流 | 会话 A 中让 Agent 先 grep 再 read 再 edit 完成任务；刷新页面后继续提问同一会话"我之前调过哪些工具" | 模型能回忆工具调用与结果（历史含 assistant tool_calls + tool 结果消息）；日志 `chat_turns_to_history` 输出含 ToolCall；DB `chat_messages.tool_calls` 含 `call_id/args/result` 字段 |
+| 18 | 工具历史回流(协议成对) | 长会话触发压缩（日志 `summarize+window`）后继续多轮工具任务 | 无 400 协议错误；无孤儿 tool 消息（`agent:tool_result` 均有对应 `agent:tool_call` 卡片） |
+| 19 | 规划 JSON 校验重试 | 提问触发规划（用例 7），观察日志 | 正常路径一次通过；人为让模型输出畸形 JSON 时日志出现 `计划 JSON 校验失败，第 N 次修正重试`（最多 3 次），最终仍产出计划卡片或降级不规划 |
+| 20 | LLM 调用重试 | 将 LLM endpoint 指向启动慢的代理（模拟 5xx/超时）提问 | 日志出现 `调用失败，Xms 后第 N 次重试`（指数退避 2s/4s/8s，最多 3 次）；恢复后请求成功；非瞬时错误（如 401）不重试 |
+| 21 | 压缩检查点落库 | 长会话（>30k 字符预算）两次连续提问 | 第一次日志 `对话历史已压缩`；`%APPDATA%/com.mdgo` 对应 `.mdgo/mdgo.db` 的 `chat_sessions.compaction_state` 非空（含 summary + cutoff_msg_id）；第二次请求日志显示直接复用检查点（摘要 + 增量消息） |
+| 22 | 跨会话长期记忆 | 会话 A:让 Agent"记住：用户偏好中文简洁回答"（或手动触发 remember 工具）；新建会话 B 提问"我有什么偏好？" | 会话 B 的回答体现该偏好；日志 preamble 含 `【长期记忆（与本问题相关）】`；`%APPDATA%/com.mdgo/memory.db` 的 `memory_items` 有对应记录（revision=1） |
+| 23 | 记忆更新与删除 | 再次"记住"同主题但内容不同（触发 update）；随后 search_memory 查询 → forget 删除 | revision 递增（2）；search 召回新内容；forget 后 search 不再召回 |
+| 24 | 子代理只读记忆 | 让 deep_research 调研时"顺便记住 XXX" | 子代理无 remember 工具（只读白名单仅含 search_memory），仅提示无法操作或忽略 |
+
+**回归判定**:用例 1-16（上轮批次）+ 17-24 全绿；`cargo test --lib` 51/51。
+
+**暂缓项**:P0-6 多模型配置与路由（用户明确暂缓，方案见 `docs/agent_gap_plan.md` P0-6）。
