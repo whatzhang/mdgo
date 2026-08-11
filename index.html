@@ -52840,6 +52840,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             messageSeq: idx + 1,
                             title: '分支 ' + srcTitle,
                         });
+                        // 分支会话必须入内存列表并刷新，否则切走后不可达（review 修复）
+                        chatSessions.unshift(newSession);
+                        renderChatSessionList();
                         await switchChatSession(newSession.id);
                         showNotification('已创建分支会话（从此处改写重发）', 'success');
                     } catch (e) {
@@ -53111,16 +53114,43 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         function estimateMessagesTokens(messages) {
             let total = 0;
             for (const m of messages) {
-                // 每条消息的角色标记 + 内容
                 total += 4 + estimateTokenCount(m.content);
+                // 工具调用参数也计入（review 修复：此前系统性低估预算）
+                if (Array.isArray(m.tool_calls)) {
+                    for (const tc of m.tool_calls) {
+                        const argsText = typeof tc.arguments === 'string'
+                            ? tc.arguments
+                            : (tc.arguments ? JSON.stringify(tc.arguments) : '{}');
+                        total += estimateTokenCount(argsText);
+                    }
+                }
             }
             return total;
+        }
+
+        // 工具消息单元的 token 估算：assistant(tool_calls) + 其后续连续 tool 结果
+        function unitTokens(unit) {
+            let t = 0;
+            for (const m of unit.group) {
+                t += 4 + estimateTokenCount(m.content);
+                if (Array.isArray(m.tool_calls)) {
+                    for (const tc of m.tool_calls) {
+                        const argsText = typeof tc.arguments === 'string'
+                            ? tc.arguments
+                            : (tc.arguments ? JSON.stringify(tc.arguments) : '{}');
+                        t += estimateTokenCount(argsText);
+                    }
+                }
+            }
+            return t;
         }
 
         /**
          * 裁剪对话历史，同时满足：
          *   历史消息总 token 不超过 context 预算（留给 system/RAG context）
          *   - 始终保留最后一条 user 消息（当前输入）
+         *   - 工具消息成对裁剪：assistant（带 tool_calls）与其后续连续 tool 结果同组，
+         *     避免产生孤儿 tool 消息（后端 OpenAI 协议要求 tool_call 与结果同侧）
          *
          * @param {Array} messages  - 对话消息数组
          * @param {number} [budgetRatio] - 可选的历史预算比例，覆盖 HISTORY_BUDGET_RATIO
@@ -53131,26 +53161,47 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (messages.length <= 2) return messages; // 只有 1 轮或刚输入，无需裁剪
             const ratio = (budgetRatio !== undefined) ? budgetRatio : HISTORY_BUDGET_RATIO;
             const budget = Math.floor(LOCAL_LLM_CONTEXT_LENGTH * ratio);
-            let totalTokens = estimateMessagesTokens(messages);
+            // 按「工具调用单元」分组（review 修复：避免单条裁剪切散 tool_call 与 tool 结果）
+            const units = [];
+            for (const m of messages) {
+                if (m.role === 'tool') {
+                    const last = units[units.length - 1];
+                    if (last && last.role === 'assistant') {
+                        last.group.push(m);
+                    } else {
+                        units.push({ role: 'orphan-tool', group: [m] }); // 防御：孤儿 tool 自成组
+                    }
+                } else if (m.role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
+                    units.push({ role: 'assistant', group: [m] });
+                } else {
+                    units.push({ role: 'other', group: [m] });
+                }
+            }
+            let totalTokens = 0;
+            for (const u of units) totalTokens += unitTokens(u);
             if (totalTokens <= budget) return messages;
-            // 从旧到新逐条保留，直到预算用尽
-            const keptLast = messages[messages.length - 1];
-            let trimmed = [keptLast];
-            let keptTokens = estimateTokenCount(keptLast.content) + 4;
+            // 从旧到新按组保留（最新优先），组内 token 含 tool_calls arguments
+            const keptLast = units[units.length - 1];
+            const trimmedUnits = [keptLast];
+            let keptTokens = unitTokens(keptLast);
             let droppedCount = 0;
-            for (let i = messages.length - 2; i >= 0; i--) {
-                const msgTokens = estimateTokenCount(messages[i].content) + 4;
-                if (keptTokens + msgTokens > budget) {
+            for (let i = units.length - 2; i >= 0; i--) {
+                const uTokens = unitTokens(units[i]);
+                if (keptTokens + uTokens > budget) {
                     droppedCount++;
                     continue;
                 }
-                trimmed.unshift(messages[i]);
-                keptTokens += msgTokens;
+                trimmedUnits.unshift(units[i]);
+                keptTokens += uTokens;
             }
             if (droppedCount > 0) {
                 console.warn('[chat] 对话 token 超预算(' + totalTokens + '>' + budget + ')，丢弃了' + droppedCount + '条旧消息');
             }
-            return trimmed;
+            const out = [];
+            for (const u of trimmedUnits) {
+                for (const m of u.group) out.push(m);
+            }
+            return out;
         }
 
         async function sendChatMessage() {

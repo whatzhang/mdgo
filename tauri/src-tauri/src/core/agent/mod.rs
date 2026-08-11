@@ -898,10 +898,15 @@ fn create_tool_registry(only: Option<&HashSet<String>>) -> ToolRegistry {
         reg.register("search_memory", Box::new(tools::build_search_memory_tool));
     }
 
-    // ── 外部动态工具（P2-15：配置驱动 HTTP 工具，跳过白名单/技能声明过滤） ──
-    // 放行由 SkillGateHook 的 allow_extra 承担；与内置工具重名时跳过并告警。
+    // ── 外部动态工具（P2-15：配置驱动 HTTP 工具，跳过技能声明过滤但尊重白名单） ──
+    // 放行由 SkillGateHook 的 allow_extra 承担；与内置工具重名时跳过并告警；
+    // 子代理白名单（只读/写型集合）不含外部工具名 → want 为 false → 不注册，
+    // 防止只读子代理意外暴露可任意发 HTTP 的外部写面（review 修复）。
     let builtin: std::collections::HashSet<String> = reg.tool_names().iter().map(|s| s.to_string()).collect();
     for def in external_tools::load_external_tools_or_default() {
+        if !want(&def.name) {
+            continue;
+        }
         if builtin.contains(&def.name) {
             log::warn!("[external_tools] 外部工具「{}」与内置工具重名，跳过注册", def.name);
             continue;

@@ -192,6 +192,14 @@ async fn prepare_history(
 
 /// 将压缩后的历史轮次转为 Rig history
 fn chat_turns_to_history(turns: &[ChatTurn]) -> Vec<Message> {
+    // 统计历史中实际存在的 tool 结果 id：过滤「孤儿 tool_call」
+    // （成功但空输出的工具其 result 为空串，前端不生成 tool 消息），
+    // 否则 OpenAI 协议会因 tool_call 无配对结果而拒绝请求（review 修复）。
+    let tool_result_ids: std::collections::HashSet<&str> = turns
+        .iter()
+        .filter(|t| t.role == "tool")
+        .filter_map(|t| t.tool_call_id.as_deref())
+        .collect();
     turns
         .iter()
         .map(|t| match t.role.as_str() {
@@ -206,6 +214,10 @@ fn chat_turns_to_history(turns: &[ChatTurn]) -> Vec<Message> {
                     contents.push(AssistantContent::text(&t.content));
                 }
                 for tc in t.tool_calls.iter().flatten() {
+                    // 仅保留历史中有对应 tool 结果消息的调用（孤儿调用剔除）
+                    if !tool_result_ids.contains(tc.id.as_str()) {
+                        continue;
+                    }
                     // 参数为模型原始 JSON 字符串：解析失败时降级为空对象（防御，不阻断请求）
                     let args = serde_json::from_str(&tc.arguments)
                         .unwrap_or_else(|_| serde_json::Value::Object(Default::default()));
@@ -214,11 +226,14 @@ fn chat_turns_to_history(turns: &[ChatTurn]) -> Vec<Message> {
                         ToolFunction::new(tc.name.clone(), args),
                     )));
                 }
+                // 全部被过滤且无文本：补占位文本，避免空 assistant 消息（协议同样会拒绝）
+                if contents.is_empty() {
+                    contents.push(AssistantContent::text("（此前发起的部分工具调用结果为空，已省略）"));
+                }
                 Message::Assistant {
                     id: None,
-                    // has_tools 已保证 contents 非空（至少一个 ToolCall），expect 安全
                     content: OneOrMany::many(contents)
-                        .expect("assistant tool_calls 非空时 contents 至少含一个 ToolCall"),
+                        .expect("contents 至少含一个占位文本，expect 安全"),
                 }
             }
             "tool" => Message::tool_result_with_call_id(
