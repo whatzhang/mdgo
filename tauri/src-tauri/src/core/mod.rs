@@ -8,6 +8,7 @@ pub mod bridge;
 pub mod search;
 pub mod approval;
 pub mod context;
+pub mod eval;
 pub mod memory;
 pub mod security;
 pub mod subagent;
