@@ -120,7 +120,7 @@ pub const BASE_TOOLS: &[&str] = &[
     "activate_skill", "deactivate_skill", "read", "list_files", "grep", "edit", "delete",
     "git_status", "deep_research", "read_subagent_result",
     "remember", "forget", "search_memory",
-    "spawn_subagent", "parallel_research",
+    "spawn_subagent", "parallel_research", "self_review",
 ];
 
 /// Agent 单次请求的模型调用总预算（激活技能 + 文件读取 + 检索等流程通常需要多轮）。
@@ -848,6 +848,11 @@ fn create_tool_registry(only: Option<&HashSet<String>>) -> ToolRegistry {
     }
     if want("parallel_research") {
         reg.register("parallel_research", Box::new(tools::build_parallel_research_tool));
+    }
+
+    // ── 反思质量门工具（BASE_TOOLS） ──
+    if want("self_review") {
+        reg.register("self_review", Box::new(tools::build_self_review_tool));
     }
 
     // ── 长期记忆工具（BASE_TOOLS；remember/forget 为写操作，子代理白名单排除） ──

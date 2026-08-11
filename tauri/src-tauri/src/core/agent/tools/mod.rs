@@ -2231,6 +2231,105 @@ async fn run_deep_research(
     Ok(ToolOutput::text(out))
 }
 
+// ─────────────────────────── 反思质量门工具（P1-8） ───────────────────────────
+
+/// 构建 self_review 工具：反思/自我批评质量门。
+///
+/// 模型在产出初稿后自主调用：把「用户目标 + 初稿」交给独立审查 LLM 调用，
+/// 返回结构化问题清单（P0-3 schema 校验）；无问题则答案达标，有问题则
+/// 模型逐条修正后再输出最终答案。评审是独立非流式调用，不占执行轮次预算。
+pub fn build_self_review_tool(cfg: KbSearchConfig) -> DynamicTool {
+    DynamicTool::new(
+        "self_review",
+        "在给出最终答案前自检：把用户目标与你的初稿交给独立审查，返回待修正问题清单。审查返回\"无问题\"时答案已达标，直接输出最终答案；返回问题列表时请逐条修正后再输出。适合长答案或多轮工具任务后使用。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "goal": { "type": "string", "description": "用户原始目标/问题（原样引用）" },
+                "draft": { "type": "string", "description": "你的初稿答案（完整内容）" }
+            },
+            "required": ["goal", "draft"]
+        }),
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let cfg = cfg.clone();
+            Box::pin(async move {
+                let goal = args
+                    .get("goal")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                let draft = args
+                    .get("draft")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                record_tool_call(
+                    &cfg,
+                    "self_review",
+                    &format!("goal_len={} draft_len={}", goal.len(), draft.len()),
+                    Some(&args),
+                );
+                if goal.is_empty() || draft.is_empty() {
+                    let e = "goal 与 draft 均不能为空".to_string();
+                    record_tool_result(&cfg, "self_review", false, &e, Some(&e));
+                    return Err(tool_error("self_review", &e));
+                }
+                // 从 AppState 取 LLM 客户端（复用命令层缓存工厂）
+                let state = cfg.app_handle.state::<crate::AppState>();
+                let llm_cfg = state
+                    .llm_config
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clone();
+                let llm = match state
+                    .llm_client_for(&llm_cfg.endpoint, &llm_cfg.model, &llm_cfg.api_key)
+                    .await
+                {
+                    Ok(client) => client,
+                    Err(e) => {
+                        record_tool_result(&cfg, "self_review", false, &format!("LLM 构建失败: {e}"), Some(&e));
+                        return Err(tool_error("self_review", &format!("LLM 未配置或构建失败: {e}")));
+                    }
+                };
+                let cancel = cfg
+                    .cancel
+                    .clone()
+                    .unwrap_or_else(|| tokio_util::sync::CancellationToken::new());
+                match llm.review_text(&goal, &draft, cancel).await {
+                    Some(result) if result.needs_fix() => {
+                        let mut out = format!(
+                            "审查发现 {} 个问题，请逐条修正后输出最终答案：\n",
+                            result.issues.len()
+                        );
+                        for (i, issue) in result.issues.iter().enumerate() {
+                            out.push_str(&format!(
+                                "{}. 问题：{}\n   修正建议：{}\n",
+                                i + 1,
+                                issue.issue,
+                                issue.fix
+                            ));
+                        }
+                        record_tool_result(&cfg, "self_review", true, &format!("{} 个问题", result.issues.len()), Some(&out));
+                        Ok(ToolOutput::text(out))
+                    }
+                    Some(result) => {
+                        let msg = format!("审查通过（verdict={}），初稿已达标，请直接输出最终答案。", result.verdict);
+                        record_tool_result(&cfg, "self_review", true, "通过", Some(&msg));
+                        Ok(ToolOutput::text(msg))
+                    }
+                    None => {
+                        let msg = "审查不可用（LLM 未配置或评审失败），请自行检查初稿后输出最终答案。".to_string();
+                        record_tool_result(&cfg, "self_review", false, "评审不可用", Some(&msg));
+                        Ok(ToolOutput::text(msg))
+                    }
+                }
+            })
+        },
+    )
+}
+
 // ─────────────────────────── 长期记忆工具（P0-2） ───────────────────────────
 
 /// 构建 remember 工具：写入一条跨会话长期记忆。

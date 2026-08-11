@@ -511,6 +511,52 @@ impl LLMClient {
 
 // ─── 历史摘要(上下文压缩用):将一段对话历史压缩为要点摘要 ───
 
+/// 一条评审发现的问题与修正建议（P1-8 反思质量门）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReviewIssue {
+    pub issue: String,
+    pub fix: String,
+}
+
+/// 反思评审结果（P1-8）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReviewResult {
+    /// 评审结论：`通过` 或 `需修正`
+    pub verdict: String,
+    /// 待修正问题列表（无问题时为空）
+    pub issues: Vec<ReviewIssue>,
+}
+
+impl ReviewResult {
+    /// 是否有待修正问题
+    pub fn needs_fix(&self) -> bool {
+        !self.issues.is_empty()
+    }
+}
+
+/// 评审输出 JSON Schema（P0-3 结构化校验）
+fn review_json_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "required": ["verdict", "issues"],
+        "properties": {
+            "verdict": { "type": "string" },
+            "issues": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["issue", "fix"],
+                    "properties": {
+                        "issue": { "type": "string", "minLength": 1 },
+                        "fix": { "type": "string" }
+                    }
+                }
+            }
+        },
+        "additionalProperties": true
+    })
+}
+
 #[async_trait]
 impl crate::core::context::HistorySummarizer for LLMClient {
     async fn summarize(
@@ -574,6 +620,56 @@ impl crate::core::context::HistorySummarizer for LLMClient {
                 None
             }
         }
+    }
+}
+
+impl LLMClient {
+    /// 反思评审（P1-8 质量门）：对初稿做质量自检，返回结构化问题列表。
+    ///
+    /// 校验失败/取消/LLM 不可用返回 `None`（调用方降级为"不评审"，不影响主流程）；
+    /// 空初稿直接视为通过。
+    pub async fn review_text(
+        &self,
+        goal: &str,
+        draft: &str,
+        cancel: CancellationToken,
+    ) -> Option<ReviewResult> {
+        if draft.trim().is_empty() {
+            return Some(ReviewResult {
+                verdict: "通过".into(),
+                issues: Vec::new(),
+            });
+        }
+        let system_msg = format!(
+            "你是答案质量审查助手。检查初稿是否：1) 完整覆盖用户目标；2) 事实/引用一致；3) 无遗漏步骤或明显错误；4) 结构清晰。\n\
+             只输出 JSON：{{\"verdict\": \"通过\" 或 \"需修正\", \"issues\": [{{\"issue\": \"问题描述\", \"fix\": \"具体修正建议\"}}]}}，无问题时 issues 为空数组。\n\n\
+             用户目标：{goal}\n\n初稿：\n{draft}"
+        );
+        let request = CompletionRequest {
+            model: None,
+            preamble: None,
+            chat_history: OneOrMany::one(Message::user(system_msg)),
+            documents: Vec::new(),
+            tools: Vec::new(),
+            temperature: Some(0.2),
+            max_tokens: Some(1024),
+            tool_choice: None,
+            additional_params: None,
+            output_schema: None,
+            record_telemetry_content: false,
+        };
+        let result = self.completion_with_retry(request, cancel).await.ok()?;
+        let mut full = String::new();
+        for item in result.choice.iter() {
+            if let AssistantContent::Text(text) = item {
+                full.push_str(&text.text);
+            }
+        }
+        // P0-3 结构化校验：非法输出视为评审失败（降级不评审）
+        let validator =
+            crate::core::validation::JsonSchemaValidator::new(review_json_schema()).ok()?;
+        let value = validator.validate_json_text(full.trim()).ok()?;
+        serde_json::from_value(value).ok()
     }
 }
 
