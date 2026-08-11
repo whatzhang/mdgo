@@ -16,19 +16,31 @@ use rig_agent::streaming::StreamingChat;
 use rig_core::completion::Message;
 use rig_core::providers::openai;
 use rig_core::streaming::StreamedAssistantContent;
+use tauri::Manager;
 
 use crate::core::agent::{build_rag_agent, KbSearchConfig};
 use crate::core::skill::activation::ActiveSkillState;
 use crate::core::skill::SkillRegistry;
 
+/// 子代理执行模式（P1-9：写型子代理 + 并行派发）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubagentMode {
+    /// 只读调研：白名单 = 检索 + 读类工具，无写操作、无审批
+    ReadOnly,
+    /// 写型执行：白名单 = 只读集 + edit/delete，**强制挂载审批门**
+    /// （每次写操作仍需用户确认，fail-closed；审批门未启用时回退只读，防无确认写）
+    Write,
+}
+
 /// 子代理只读工具白名单：检索 + 读类工具。
 ///
 /// 明确不含：
-/// - `edit` / `delete`：写操作（子代理只做调研，天然绕过审批弹窗）
+/// - `edit` / `delete`：写操作（只读子代理做调研，天然绕过审批弹窗）
 /// - `remember` / `forget`：记忆写操作（子代理不得污染全局记忆）
 /// - `activate_skill` / `deactivate_skill`：技能激活（子代理不共享父链技能态）
 /// - `pomodoro`：前端交互工具（子代理无人机交互界面）
-/// - `deep_research` / `read_subagent_result`：防无限递归嵌套
+/// - `deep_research` / `read_subagent_result` / `spawn_subagent` / `parallel_research`：
+///   防无限递归嵌套
 pub fn read_only_tool_set() -> HashSet<String> {
     [
         "kb_search", "code_lookup", "read", "grep", "list_files", "git_status",
@@ -37,6 +49,17 @@ pub fn read_only_tool_set() -> HashSet<String> {
     .iter()
     .map(|s| s.to_string())
     .collect()
+}
+
+/// 写型子代理工具白名单：只读集 + edit/delete。
+///
+/// 写操作经审批门确认；`remember`/`forget` 仍排除（记忆写入仅主链负责，
+/// 避免子代理未经用户感知地污染全局记忆）。
+pub fn write_tool_set() -> HashSet<String> {
+    let mut set = read_only_tool_set();
+    set.insert("edit".to_string());
+    set.insert("delete".to_string());
+    set
 }
 
 /// 子代理默认轮次上限（深度调研需要比主对话 `DEFAULT_MAX_TURNS=6` 更大的预算）
@@ -49,12 +72,14 @@ pub const SUBAGENT_SUMMARY_CHARS: usize = 4_000;
 pub struct SubagentSpec {
     /// 独立 request_id（工具调用轨迹/事件隔离的关键）
     pub request_id: String,
-    /// 调研任务描述（作为子代理的唯一 user 消息）
+    /// 任务描述（作为子代理的唯一 user 消息）
     pub task: String,
     /// 轮次上限
     pub max_turns: usize,
     /// 返回父链的摘要字符预算
     pub summary_chars: usize,
+    /// 执行模式：只读调研 / 写型执行（写型强制审批门）
+    pub mode: SubagentMode,
 }
 
 /// 子代理执行结果
@@ -115,6 +140,41 @@ impl SubagentRunner {
         sub_cfg.search_sink = Arc::new(tokio::sync::Mutex::new(Vec::new()));
         sub_cfg.skill_id = None;
 
+        // 按模式选择工具白名单：只读（调研）或写型（编辑/删除，挂审批门）
+        let whitelist = match spec.mode {
+            SubagentMode::ReadOnly => read_only_tool_set(),
+            SubagentMode::Write => write_tool_set(),
+        };
+        // 写型子代理强制审批门（来自 AppState）；审批门未启用时回退只读白名单，
+        // 防止无用户确认的写操作（fail-safe：宁可少做，不可无确认地改文件）。
+        let approval_gate: Option<Arc<crate::core::approval::ApprovalGate>> = match spec.mode {
+            SubagentMode::Write => {
+                let gate = sub_cfg
+                    .app_handle
+                    .state::<crate::AppState>()
+                    .approval_gate
+                    .clone();
+                if gate.is_none() {
+                    log::warn!(
+                        "[subagent] 写型子代理但审批门未启用，回退只读白名单 request_id={}",
+                        spec.request_id
+                    );
+                }
+                gate
+            }
+            SubagentMode::ReadOnly => None,
+        };
+        let effective_whitelist = match spec.mode {
+            SubagentMode::ReadOnly => whitelist,
+            SubagentMode::Write => {
+                if approval_gate.is_some() {
+                    whitelist
+                } else {
+                    read_only_tool_set()
+                }
+            }
+        };
+
         // 只读工具子集 + 无预检索上下文 + 无技能目录 + 无审批门 + 更大轮次预算
         let agent = build_rag_agent(
             model,
@@ -123,10 +183,10 @@ impl SubagentRunner {
             skill_registry,
             String::new(),
             base_rules,
-            None,
+            approval_gate,
             spec.max_turns,
-            Some(&read_only_tool_set()),
-            false, // 子代理不窄化：注册表已白名单过滤，模型可见全部只读工具
+            Some(&effective_whitelist),
+            false, // 子代理不窄化：注册表已白名单过滤，模型可见全部白名单工具
         );
 
         log::info!(
@@ -314,6 +374,31 @@ mod tests {
         assert!(!set.contains("pomodoro"), "不得包含前端交互工具");
         assert!(!set.contains("deep_research"), "防无限递归");
         assert!(!set.contains("read_subagent_result"), "防无限递归");
+    }
+
+    #[test]
+    fn write_tool_set_includes_edits_and_excludes_recursion() {
+        let set = write_tool_set();
+        // 写型：只读集 + edit/delete
+        assert!(set.contains("edit"));
+        assert!(set.contains("delete"));
+        assert!(set.contains("read"));
+        assert!(set.contains("grep"));
+        // 递归子代理与记忆写操作仍排除
+        assert!(!set.contains("spawn_subagent"), "防无限递归");
+        assert!(!set.contains("parallel_research"), "防无限递归");
+        assert!(!set.contains("deep_research"), "防无限递归");
+        assert!(!set.contains("read_subagent_result"), "防无限递归");
+        assert!(!set.contains("remember"), "记忆写仅主链负责");
+        assert!(!set.contains("forget"), "记忆写仅主链负责");
+        // 写型 = 只读 ∪ {edit, delete}
+        let expected: HashSet<String> = {
+            let mut s = read_only_tool_set();
+            s.insert("edit".to_string());
+            s.insert("delete".to_string());
+            s
+        };
+        assert_eq!(set, expected);
     }
 
     #[test]

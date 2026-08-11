@@ -20,6 +20,9 @@ use crate::core::agent::KbSearchConfig;
 use crate::core::db::utils::IgnoreMatcher;
 use crate::core::skill::activation::ActiveSkillState;
 use crate::core::skill::SkillRegistry;
+use crate::core::subagent::{
+    SubagentMode, SubagentRunner, SubagentSpec, SUBAGENT_MAX_TURNS, SUBAGENT_SUMMARY_CHARS,
+};
 
 /// 单条工具调用事件（`kind = "call"` 或 `kind = "result"`）
 #[derive(Debug, Clone, Serialize)]
@@ -2105,9 +2108,6 @@ async fn run_deep_research(
     cfg: KbSearchConfig,
     args: &serde_json::Value,
 ) -> Result<ToolOutput, ToolExecutionError> {
-    use crate::core::subagent::{
-        SubagentRunner, SubagentSpec, SUBAGENT_MAX_TURNS, SUBAGENT_SUMMARY_CHARS,
-    };
     let task = args
         .get("task")
         .and_then(|s| s.as_str())
@@ -2131,46 +2131,21 @@ async fn run_deep_research(
         Some(args),
     );
 
-    // 从 AppState 取 LLM 配置并构建客户端（复用命令层同款缓存工厂）
-    let state = cfg.app_handle.state::<crate::AppState>();
-    let llm_cfg = state
-        .llm_config
-        .read()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
-    let llm = match state
-        .llm_client_for(&llm_cfg.endpoint, &llm_cfg.model, &llm_cfg.api_key)
-        .await
+    // 执行子代理（只读模式；独立 request_id + 全量入存储，复用公共执行器）
+    let (sub_request_id, outcome) = match run_subagent_impl(
+        &cfg,
+        task,
+        crate::core::subagent::SubagentMode::ReadOnly,
+        max_turns,
+    )
+    .await
     {
-        Ok(client) => client,
+        Ok(v) => v,
         Err(e) => {
-            record_tool_result(&cfg, "deep_research", false, &format!("LLM 构建失败: {e}"), Some(&e));
-            return Err(tool_error("deep_research", &format!("LLM 未配置或构建失败: {e}")));
+            record_tool_result(&cfg, "deep_research", false, &e, Some(&e));
+            return Err(tool_error("deep_research", &e));
         }
     };
-    let base_rules = crate::core::agent::load_agent_rules(&cfg.app_handle, "rag_agent.md");
-
-    // 独立 request_id：子代理工具轨迹/事件与父链完全隔离
-    let sub_request_id = format!("sub-{}", uuid::Uuid::new_v4());
-    let spec = SubagentSpec {
-        request_id: sub_request_id.clone(),
-        task,
-        max_turns,
-        summary_chars: SUBAGENT_SUMMARY_CHARS,
-    };
-    let outcome = SubagentRunner::run(
-        llm.completion_model().clone(),
-        cfg.clone(),
-        state.skill_registry.clone(),
-        base_rules,
-        &spec,
-    )
-    .await;
-
-    // 完整输出入存储（LRU 有界：最多保留 16 条，按最近访问淘汰）
-    state
-        .subagent_results
-        .insert(sub_request_id.clone(), outcome.full_output.clone());
 
     let mut out = format!(
         "子代理调研完成(subagent_id={sub_request_id}, max_turns={max_turns}, failed={})\n\n{}",
@@ -2355,6 +2330,236 @@ pub fn build_search_memory_tool(cfg: KbSearchConfig) -> DynamicTool {
                         Err(tool_error("search_memory", &e))
                     }
                 }
+            })
+        },
+    )
+}
+
+// ─────────────────────────── 泛化子代理执行（P1-9） ───────────────────────────
+
+/// 公共子代理执行器：从 AppState 组装 LLM 客户端与规约，构造
+/// [`SubagentSpec`] 并运行 [`SubagentRunner`]，全量输出入 LRU 存储。
+///
+/// 返回 `(sub_request_id, outcome)`；deep_research / spawn_subagent /
+/// parallel_research 共用（单一职责，避免三处重复组装逻辑）。
+async fn run_subagent_impl(
+    cfg: &KbSearchConfig,
+    task: String,
+    mode: SubagentMode,
+    max_turns: usize,
+) -> Result<(String, crate::core::subagent::SubagentOutcome), String> {
+    let state = cfg.app_handle.state::<crate::AppState>();
+    let llm_cfg = state
+        .llm_config
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    let llm = state
+        .llm_client_for(&llm_cfg.endpoint, &llm_cfg.model, &llm_cfg.api_key)
+        .await
+        .map_err(|e| format!("LLM 未配置或构建失败: {e}"))?;
+    let base_rules = crate::core::agent::load_agent_rules(&cfg.app_handle, "rag_agent.md");
+
+    // 独立 request_id：子代理工具轨迹/事件与父链完全隔离
+    let sub_request_id = format!("sub-{}", uuid::Uuid::new_v4());
+    let spec = SubagentSpec {
+        request_id: sub_request_id.clone(),
+        task,
+        max_turns: max_turns.clamp(1, 30),
+        summary_chars: SUBAGENT_SUMMARY_CHARS,
+        mode,
+    };
+    let outcome = SubagentRunner::run(
+        llm.completion_model().clone(),
+        cfg.clone(),
+        state.skill_registry.clone(),
+        base_rules,
+        &spec,
+    )
+    .await;
+
+    // 完整输出入存储（LRU 有界：最多保留 16 条，按最近访问淘汰）
+    state
+        .subagent_results
+        .insert(sub_request_id.clone(), outcome.full_output.clone());
+    Ok((sub_request_id, outcome))
+}
+
+/// 构建 spawn_subagent 工具：泛化子代理（只读调研 / 写型执行）。
+///
+/// 与 `deep_research` 的区别：`mode` 可指定 `write`（白名单含 edit/delete，
+/// 每次写操作仍经审批门确认）；适合把独立子任务（实现/编辑）委托给子代理，
+/// 或与 `parallel_research` 组合拆分任务。
+pub fn build_spawn_subagent_tool(cfg: KbSearchConfig) -> DynamicTool {
+    DynamicTool::new(
+        "spawn_subagent",
+        "派生一个隔离子代理执行子任务：mode=readonly 做深度调研（白名单：检索/读/记忆检索，独立上下文，只返回有界摘要，完整输出可用 read_subagent_result 分页读取）；mode=write 可编辑/删除文件（每次写操作仍需用户确认）。适合委托独立子任务或并行拆分。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "task": { "type": "string", "description": "子代理任务描述（自包含，含目标与边界）" },
+                "mode": { "type": "string", "enum": ["readonly", "write"], "description": "readonly=只读调研（默认）；write=可编辑/删除文件（需用户确认）" },
+                "max_turns": { "type": "integer", "minimum": 1, "maximum": 30, "description": "轮次上限（默认 12）" }
+            },
+            "required": ["task"]
+        }),
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let cfg = cfg.clone();
+            Box::pin(async move {
+                let task = args
+                    .get("task")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                let mode = match args.get("mode").and_then(|m| m.as_str()) {
+                    Some("write") => SubagentMode::Write,
+                    _ => SubagentMode::ReadOnly,
+                };
+                let max_turns = args
+                    .get("max_turns")
+                    .and_then(|m| m.as_u64())
+                    .map(|v| v as usize)
+                    .unwrap_or(SUBAGENT_MAX_TURNS)
+                    .clamp(1, 30);
+                let mode_label = if mode == SubagentMode::Write { "write" } else { "readonly" };
+                record_tool_call(
+                    &cfg,
+                    "spawn_subagent",
+                    &format!("mode={mode_label} task_len={} max_turns={}", task.len(), max_turns),
+                    Some(&args),
+                );
+                if task.is_empty() {
+                    let e = "task 不能为空".to_string();
+                    record_tool_result(&cfg, "spawn_subagent", false, &e, Some(&e));
+                    return Err(tool_error("spawn_subagent", &e));
+                }
+                match run_subagent_impl(&cfg, task, mode, max_turns).await {
+                    Ok((sub_request_id, outcome)) => {
+                        let mut out = format!(
+                            "子代理执行完成(subagent_id={sub_request_id}, mode={mode_label}, max_turns={max_turns}, failed={})\n\n{}",
+                            outcome.failed, outcome.summary
+                        );
+                        if outcome.failed {
+                            out.push_str("\n\n提示：子代理未完成，可重试或检查 LLM 配置。");
+                        } else {
+                            out.push_str(&format!(
+                                "\n\n如需完整输出，调用 read_subagent_result，参数 subagent_id=\"{sub_request_id}\"。"
+                            ));
+                        }
+                        record_tool_result(
+                            &cfg,
+                            "spawn_subagent",
+                            !outcome.failed,
+                            &format!("{} 字符摘要", outcome.summary.chars().count()),
+                            Some(&out),
+                        );
+                        Ok(ToolOutput::text(out))
+                    }
+                    Err(e) => {
+                        record_tool_result(&cfg, "spawn_subagent", false, &e, Some(&e));
+                        Err(tool_error("spawn_subagent", &e))
+                    }
+                }
+            })
+        },
+    )
+}
+
+/// 构建 parallel_research 工具：并行派发多个只读调研子代理（P1-9）。
+///
+/// 各任务独立 request_id、独立上下文，`JoinSet` 并发执行；任一失败不影响
+/// 其余（独立收集）；汇总各摘要返回，完整输出分别入 LRU 存储。
+pub fn build_parallel_research_tool(cfg: KbSearchConfig) -> DynamicTool {
+    DynamicTool::new(
+        "parallel_research",
+        "并行派发 2-5 个只读调研子代理，各自独立上下文同时执行，汇总各摘要一次返回。适合从多个独立角度/主题同时调研（如分别调研 A、B、C 三个主题），显著节省串行时间。各子代理完整输出可用 read_subagent_result 分页读取。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "tasks": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 5,
+                    "items": { "type": "string" },
+                    "description": "2-5 个独立调研任务（各自自包含）"
+                },
+                "max_turns": { "type": "integer", "minimum": 1, "maximum": 30, "description": "每个子代理轮次上限（默认 12）" }
+            },
+            "required": ["tasks"]
+        }),
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let cfg = cfg.clone();
+            Box::pin(async move {
+                let tasks: Vec<String> = args
+                    .get("tasks")
+                    .and_then(|t| t.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str())
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let max_turns = args
+                    .get("max_turns")
+                    .and_then(|m| m.as_u64())
+                    .map(|v| v as usize)
+                    .unwrap_or(SUBAGENT_MAX_TURNS)
+                    .clamp(1, 30);
+                record_tool_call(
+                    &cfg,
+                    "parallel_research",
+                    &format!("tasks={} max_turns={}", tasks.len(), max_turns),
+                    Some(&args),
+                );
+                if tasks.len() < 2 {
+                    let e = "至少需要 2 个调研任务".to_string();
+                    record_tool_result(&cfg, "parallel_research", false, &e, Some(&e));
+                    return Err(tool_error("parallel_research", &e));
+                }
+                if tasks.len() > 5 {
+                    let e = "最多 5 个并行任务".to_string();
+                    record_tool_result(&cfg, "parallel_research", false, &e, Some(&e));
+                    return Err(tool_error("parallel_research", &e));
+                }
+
+                // 并行派发：JoinSet 并发执行，独立收集结果（任一失败不影响其余）
+                let mut set = tokio::task::JoinSet::new();
+                for task in tasks {
+                    let cfg = cfg.clone();
+                    set.spawn(async move { run_subagent_impl(&cfg, task, SubagentMode::ReadOnly, max_turns).await });
+                }
+                let mut entries: Vec<(String, String, bool)> = Vec::new();
+                while let Some(joined) = set.join_next().await {
+                    match joined {
+                        Ok(Ok((id, outcome))) => entries.push((id, outcome.summary, outcome.failed)),
+                        Ok(Err(e)) => entries.push((String::new(), format!("子代理启动失败: {e}"), true)),
+                        Err(e) => entries.push((String::new(), format!("子代理任务异常: {e}"), true)),
+                    }
+                }
+                let failed_count = entries.iter().filter(|(_, _, f)| *f).count();
+                let mut out = format!(
+                    "并行调研完成（{} 个任务，{} 个失败）：\n",
+                    entries.len(),
+                    failed_count
+                );
+                for (i, (id, summary, failed)) in entries.iter().enumerate() {
+                    out.push_str(&format!("\n── 任务 {} {} ──\n", i + 1, if *failed { "(失败)" } else { "" }));
+                    out.push_str(summary);
+                    if !id.is_empty() {
+                        out.push_str(&format!("\n完整输出：read_subagent_result subagent_id=\"{id}\""));
+                    }
+                }
+                record_tool_result(
+                    &cfg,
+                    "parallel_research",
+                    failed_count == 0,
+                    &format!("{} 任务 {} 失败", entries.len(), failed_count),
+                    Some(&out),
+                );
+                Ok(ToolOutput::text(out))
             })
         },
     )
