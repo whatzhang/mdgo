@@ -355,6 +355,7 @@ impl Indexer {
         let mut type_counts: std::collections::HashMap<&'static str, u32> = std::collections::HashMap::new();
 
         let cfg = self.config_store.read();
+        let html_matcher = html_render_matcher(dir_path);
         for (i, file_path) in files.iter().enumerate() {
             let content = match pipeline::read_document(file_path) {
                 Some(c) if c.len() >= 10 => c,
@@ -371,7 +372,7 @@ impl Indexer {
             let ext = rel_path.rsplit('.').next().unwrap_or("txt");
             let ft = classify_ext(ext);
             *type_counts.entry(ft).or_insert(0) += 1;
-            let doc_chunks = pipeline::chunk_document(&rel_path, &content, cfg.chunk_size, cfg.chunk_overlap);
+            let doc_chunks = pipeline::chunk_document(&rel_path, &content, cfg.chunk_size, cfg.chunk_overlap, html_matcher.as_ref());
             if doc_chunks.is_empty() {
                 continue;
             }
@@ -476,8 +477,9 @@ impl Indexer {
             Some(c) if c.len() >= 10 => c,
             _ => return Ok(()),
         };
+        let html_matcher = html_render_matcher(dir_path);
         let cfg = self.config_store.read();
-        let doc_chunks = pipeline::chunk_document(rel_path, &content, cfg.chunk_size, cfg.chunk_overlap);
+        let doc_chunks = pipeline::chunk_document(rel_path, &content, cfg.chunk_size, cfg.chunk_overlap, html_matcher.as_ref());
         drop(cfg);
         if doc_chunks.is_empty() {
             return Ok(());
@@ -529,6 +531,7 @@ impl Indexer {
         let chunk_size = cfg.chunk_size;
         let chunk_overlap = cfg.chunk_overlap;
         drop(cfg);
+        let html_matcher = html_render_matcher(dir_path);
 
         let store = self.get_lance_store(dir_path).await;
         store.create_table().await?;
@@ -548,7 +551,7 @@ impl Indexer {
                     _ => continue,
                 };
                 let doc_chunks =
-                    pipeline::chunk_document(rel, &content, chunk_size, chunk_overlap);
+                    pipeline::chunk_document(rel, &content, chunk_size, chunk_overlap, html_matcher.as_ref());
                 if doc_chunks.is_empty() {
                     continue;
                 }
@@ -1555,6 +1558,7 @@ impl Indexer {
         // 先读取 + 分块所有未索引文件，合并 DocumentChunk
         progress(15, &format!("正在读取 {} 个未索引文件...", unindexed_count));
         let cfg = self.config_store.read();
+        let html_matcher = html_render_matcher(dir_path);
         let mut all_file_data: Vec<(String, Vec<DocumentChunk>)> = Vec::new(); // (rel_path, chunks)
         let mut total_new_chunks: u32 = 0;
         let mut file_count: u32 = 0;
@@ -1564,7 +1568,7 @@ impl Indexer {
                 Some(c) if c.len() >= 10 => c,
                 _ => continue,
             };
-            let doc_chunks = pipeline::chunk_document(rel, &content, cfg.chunk_size, cfg.chunk_overlap);
+            let doc_chunks = pipeline::chunk_document(rel, &content, cfg.chunk_size, cfg.chunk_overlap, html_matcher.as_ref());
             if doc_chunks.is_empty() {
                 continue;
             }
@@ -1632,6 +1636,31 @@ impl Indexer {
 // ─── 辅助函数 ───
 
 /// 扫描目录，返回符合扩展名和过滤规则的绝对路径列表
+/// 从 `{dir}/.mdgo/setting.json` 读取「HTML 渲染目录」（`htmlCodeShowBlacklist`，
+/// gitignore 格式，与目录/文件黑名单一致）并构建目录匹配器。
+///
+/// 语义（对齐前端设置说明）：该配置路径内的 HTML 作为文档渲染/分块，
+/// 其他目录的 HTML 默认按代码处理。未配置或解析失败返回 `None`
+/// （分块层保持现状：全部 HTML 按文档分块）。
+fn html_render_matcher(dir_path: &str) -> Option<IgnoreMatcher> {
+    let setting_path = Path::new(dir_path).join(".mdgo").join("setting.json");
+    let text = std::fs::read_to_string(setting_path).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let patterns: Vec<String> = json
+        .get("htmlCodeShowBlacklist")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| x.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    if patterns.is_empty() {
+        return None;
+    }
+    Some(IgnoreMatcher::new(&patterns, &[]))
+}
+
 pub(crate) fn scan_directory(base_dir: &Path, ignore: &IgnoreMatcher) -> Result<Vec<std::path::PathBuf>, String> {
     let mut files = Vec::new();
     let walker = walkdir::WalkDir::new(base_dir)

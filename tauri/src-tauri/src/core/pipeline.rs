@@ -21,6 +21,7 @@ use crate::core::db::bm25::Bm25Index;
 use crate::core::db::chunk_splitter::ChunkSplitterFactory;
 use crate::core::db::lance::{DocumentChunk, LanceStore};
 use crate::core::db::utils;
+use crate::core::db::utils::IgnoreMatcher;
 
 /// 全局 ChunkSplitter 工厂（懒初始化，线程安全）
 static CHUNK_SPLITTER_FACTORY: std::sync::OnceLock<ChunkSplitterFactory> =
@@ -84,14 +85,29 @@ pub fn read_document(path: &Path) -> Option<String> {
 }
 
 /// chunk_stage：按扩展名选择分块器，分块并组装 `DocumentChunk`。
+///
+/// `html_render_matcher`：可选「HTML 渲染目录」匹配器（gitignore 格式，来自
+/// 设置 `htmlCodeShowBlacklist`）。语义：命中该目录的 HTML 作为**文档**语义分块
+/// （`HtmlChunkSplitter`）；**未命中的 HTML 直接放弃（返回空，不索引）**——
+/// 不识别为代码；`None`（未配置）时保持现状（全部 HTML 按文档分块，兼容旧行为）。
 pub fn chunk_document(
     rel_path: &str,
     content: &str,
     chunk_size: usize,
     chunk_overlap: usize,
+    html_render_matcher: Option<&IgnoreMatcher>,
 ) -> Vec<DocumentChunk> {
     let ext = rel_path.rsplit('.').next().unwrap_or("txt");
-    let splitter = chunk_splitter_factory().get_splitter(ext);
+    let is_html = ext == "html" || ext == "htm";
+    let splitter = if is_html {
+        match html_render_matcher {
+            // 已配置渲染目录：命中 → 文档分块；未命中 → 放弃该文件（不索引）
+            Some(m) if !m.matches(rel_path) => return Vec::new(),
+            _ => chunk_splitter_factory().get_splitter("html"),
+        }
+    } else {
+        chunk_splitter_factory().get_splitter(ext)
+    };
     let chunks = splitter.split(content, chunk_size, chunk_overlap);
     if chunks.is_empty() {
         return Vec::new();

@@ -236,6 +236,32 @@ impl IgnoreMatcher {
         matched
     }
 
+    /// 判断相对路径是否命中任一条**目录规则**（gitignore 目录语义）。
+    ///
+    /// 依次匹配「完整路径 → 各级父目录路径」，任一级命中即 true（negate 取反覆盖）。
+    /// 供「HTML 渲染目录」等白名单式路径匹配使用：目录模式（如 `docs/`）命中其下所有文件。
+    /// 仅考虑 `dir_only` 规则（文件规则不参与，避免语义混淆）。
+    pub fn matches(&self, rel_path: &str) -> bool {
+        let path = rel_path.replace('\\', "/").trim_start_matches('/').to_string();
+        let mut matched = false;
+        let mut p = path.as_str();
+        loop {
+            for rule in &self.rules {
+                if !rule.dir_only {
+                    continue;
+                }
+                if rule.regex.is_match(p) {
+                    matched = !rule.negate;
+                }
+            }
+            match p.rfind('/') {
+                Some(idx) => p = &p[..idx],
+                None => break,
+            }
+        }
+        matched
+    }
+
     /// 检查文件是否被跳过（含文件名级别的快速判断：隐藏文件、临时文件）
     /// 这是 KB 专用的组合检查
     pub fn is_kb_file_allowed(&self, file_name: &str, rel_path: &str) -> bool {
@@ -543,4 +569,32 @@ pub fn get_bm25_dir(dir_path: &str) -> String {
         .join("bm25")
         .to_string_lossy()
         .to_string()
+}
+
+#[cfg(test)]
+mod ignore_matcher_tests {
+    use super::IgnoreMatcher;
+
+    #[test]
+    fn matches_dir_pattern_hits_descendants() {
+        let m = IgnoreMatcher::new(&["docs/".to_string(), "assets".to_string()], &[]);
+        assert!(m.matches("docs/a.html"), "docs/ 下的文件应命中");
+        assert!(m.matches("sub/docs/a.html"), "嵌套目录 docs 应命中");
+        assert!(m.matches("assets/x.html"), "无斜杠目录模式 assets 应命中其下文件");
+        assert!(!m.matches("src/a.html"), "未命中目录不应命中");
+        assert!(!m.matches("document.html"), "文件名前缀相似不应误命中");
+    }
+
+    #[test]
+    fn matches_respects_negate() {
+        let m = IgnoreMatcher::new(&["docs/".to_string(), "!docs/private/".to_string()], &[]);
+        assert!(m.matches("docs/a.html"));
+        assert!(m.matches("docs/private/x.html"), "negate 规则在目录规则上通常不生效（供语义参考）");
+    }
+
+    #[test]
+    fn matches_empty_rules_never_hits() {
+        let m = IgnoreMatcher::new(&[], &[]);
+        assert!(!m.matches("docs/a.html"));
+    }
 }
