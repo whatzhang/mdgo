@@ -10,7 +10,7 @@
 //! 会话挂载数据由调用方提取后以 `(scope, skill_id)` 列表注入，不直接依赖
 //! services 层（依赖倒置）。
 
-use crate::core::skill::activation::{ActivationSource, ActiveSkillState};
+use crate::core::skill::activation::{ActivationSource, ActiveSkillState, SkillLifetime};
 use crate::core::skill::{Skill, SkillRegistry, SkillScope};
 
 /// 单条技能激活明细（供指标埋点与日志追踪）
@@ -120,6 +120,13 @@ pub struct ResolvedSkillContext {
     pub cleaned_query: String,
     /// 是否为手动触发（/技能名）
     pub is_manual: bool,
+    /// 需注入正文的技能完整定义（当前仅手动触发 /技能名 + active 挂载技能；warm 挂载
+    /// 不注入，由 LLM 后续 activate_skill 加载）。供请求入口一次性注入 history（不随每轮注入）
+    pub skills: Vec<Skill>,
+    /// 会话挂载中 warm=自动准备 的技能 ID（仅预热检索，正文/工具由 LLM 按需激活）
+    pub mounted_warm: Vec<String>,
+    /// 会话挂载中 active=立即生效 的技能 ID（正文已注入、工具已解锁）
+    pub mounted_active: Vec<String>,
 }
 
 /// 解析预激活技能（唯一入口，同步函数）。
@@ -133,7 +140,7 @@ pub struct ResolvedSkillContext {
 pub fn resolve_preactivated(
     query: &str,
     registry: &SkillRegistry,
-    attached_skills: &[(String, String)],
+    attached_skills: &[(String, String, String)],
     state: &ActiveSkillState,
 ) -> Result<Option<ResolvedSkillContext>, String> {
     // 1. 手动触发（/技能名）：最高优先级，跳过挂载
@@ -144,27 +151,47 @@ pub fn resolve_preactivated(
             skill.id,
             cleaned
         );
-        state.activate(skill.clone());
+        state.activate(&skill, SkillLifetime::Turn, ActivationSource::Manual, true);
         let selected = vec![(skill, ActivationSource::Manual, 1.0)];
         return Ok(Some(ResolvedSkillContext {
             context: SkillExecutionContext::from_skills(&selected),
             cleaned_query: cleaned,
             is_manual: true,
+            skills: selected.into_iter().map(|(s, _, _)| s).collect(),
+            mounted_warm: Vec::new(),
+            mounted_active: Vec::new(),
         }));
     }
 
     // 2. 会话挂载（直接入选，不参与任何匹配）
+    //    mode: warm=自动准备（默认）/ active=立即生效
     let mut selected_skills: Vec<(Skill, ActivationSource, f32)> = Vec::new();
-    for (scope_str, skill_id) in attached_skills {
+    let mut mounted_warm: Vec<String> = Vec::new();
+    let mut mounted_active: Vec<Skill> = Vec::new();
+    for (scope_str, skill_id, mode) in attached_skills {
         if let Some(sc) = SkillScope::from_str(scope_str) {
             if let Some(skill) = registry.get(sc, skill_id) {
                 if skill.enabled {
                     log::info!(
-                        "[skill_context] 会话挂载预激活: {}:{}",
+                        "[skill_context] 会话挂载预激活: {}:{} mode={}",
                         skill.scope.as_str(),
-                        skill.id
+                        skill.id,
+                        mode
                     );
-                    state.activate(skill.clone());
+                    if mode == "active" {
+                        // active=立即生效：正文注入（history 首条）+ 工具解锁
+                        state.activate(
+                            &skill,
+                            SkillLifetime::Session,
+                            ActivationSource::Attached,
+                            true,
+                        );
+                        mounted_active.push(skill.clone());
+                    } else {
+                        // warm=自动准备（默认）：检索预热，正文/工具由 LLM 按需激活
+                        state.activate_warm(&skill);
+                        mounted_warm.push(skill.id.clone());
+                    }
                     selected_skills.push((skill, ActivationSource::Attached, 1.0));
                 }
             }
@@ -175,10 +202,15 @@ pub fn resolve_preactivated(
         return Ok(None);
     }
 
+    let mounted_active_ids: Vec<String> = mounted_active.iter().map(|s| s.id.clone()).collect();
     Ok(Some(ResolvedSkillContext {
         context: SkillExecutionContext::from_skills(&selected_skills),
         cleaned_query: query.to_string(),
         is_manual: false,
+        // active 挂载技能正文由请求入口注入（skills）；warm 挂载不注入
+        skills: mounted_active,
+        mounted_warm,
+        mounted_active: mounted_active_ids,
     }))
 }
 
@@ -276,7 +308,6 @@ pub fn build_skill_catalog(registry: &SkillRegistry) -> String {
         "可用技能目录（skill_id 作为 activate_skill 的入参；当任务与某技能相关时先激活再执行）：\n{}",
         lines.join("\n")
     );
-    log::info!("[skill_context] 构建skill目录: {}", catalog);
     catalog
 }
 
@@ -286,5 +317,109 @@ fn scope_rank(scope: SkillScope) -> u8 {
         SkillScope::System => 0,
         SkillScope::Global => 1,
         SkillScope::Project => 2,
+    }
+}
+
+/// 将技能正文拼接为一次注入文本（供请求入口一次性注入 history）。
+///
+/// 规则：
+/// - 按 priority 降序拼接（高优先级技能优先进入）
+/// - 超过 `max_chars` 时丢弃后续低优先级技能，并追加截断提示
+/// - 空正文技能跳过；空输入返回空串
+pub fn format_skill_instructions(skills: &[Skill], max_chars: usize) -> String {
+    let mut sorted = skills.to_vec();
+    sorted.sort_by(|a, b| b.priority.cmp(&a.priority));
+    let mut parts: Vec<String> = Vec::new();
+    let mut used = 0usize;
+    let mut truncated = false;
+    let mut truncated_skill: Option<String> = None;
+    for skill in &sorted {
+        let body = skill.body.trim();
+        if body.is_empty() {
+            continue;
+        }
+        let block = format!("## {}\n\n{}", skill.name, body);
+        let block_chars = block.chars().count();
+        if used + block_chars > max_chars {
+            truncated = true;
+            truncated_skill = Some(skill.id.clone());
+            break;
+        }
+        parts.push(block);
+        used += block_chars;
+    }
+    let mut out = parts.join("\n\n---\n\n");
+    if truncated {
+        match truncated_skill {
+            Some(id) => out.push_str(&format!(
+                "\n\n[技能指令已按预算截断（{} 等技能正文超出预算）；如需完整内容请用 read 读取对应技能的 SKILL.md]",
+                id
+            )),
+            None => out.push_str(
+                "\n\n[技能指令已按预算截断，如需完整内容请用 read 读取对应技能的 SKILL.md]",
+            ),
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod skill_instruction_tests {
+    use super::*;
+
+    fn skill(id: &str, priority: u32, body: &str) -> Skill {
+        Skill {
+            id: id.to_string(),
+            scope: SkillScope::System,
+            name: id.to_string(),
+            description: String::new(),
+            priority,
+            tools: Vec::new(),
+            top_k: None,
+            min_score: None,
+            max_docs: None,
+            max_chunks_per_doc: None,
+            enabled: true,
+            version: 1,
+            body: body.to_string(),
+            file_path: String::new(),
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
+
+    #[test]
+    fn joins_by_priority_desc() {
+        let out = format_skill_instructions(
+            &[
+                skill("low", 40, "低优先级正文"),
+                skill("high", 80, "高优先级正文"),
+            ],
+            100_000,
+        );
+        assert!(out.starts_with("## high"), "高优先级应在前: {}", out);
+        assert!(out.contains("低优先级正文"));
+    }
+
+    #[test]
+    fn truncates_drops_low_priority_and_hints() {
+        let out = format_skill_instructions(
+            &[
+                skill("low", 40, "低优先级正文"),
+                skill("high", 80, "高优先级正文"),
+            ],
+            15,
+        );
+        assert!(out.contains("高优先级正文"), "应保留高优先级");
+        assert!(!out.contains("低优先级正文"), "低优先级应被丢弃");
+        assert!(out.contains("已按预算截断"), "应含截断提示");
+        assert!(out.contains("low"), "截断提示应指明被截断的技能");
+    }
+
+    #[test]
+    fn empty_input_and_blank_body() {
+        assert!(format_skill_instructions(&[], 1000).is_empty());
+        let out = format_skill_instructions(&[skill("blank", 50, "   ")], 1000);
+        assert!(out.is_empty(), "空正文应跳过");
     }
 }

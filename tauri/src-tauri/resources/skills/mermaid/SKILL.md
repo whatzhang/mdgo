@@ -2,9 +2,8 @@
 id: mermaid
 scope: system
 name: Mermaid 图表
-description: 根据用户需求生成语法正确的 Mermaid 图表代码（如流程图，时序图，类图，状态图，实体关系图，甘特图，饼图，思维导图，时间线图，Git 提交图，象限图，需求图，C4 架构图，桑基图，XY 图表，框图，数据包图，看板图，架构图，雷达图，树形矩阵图，用户旅程图，ZenUML 时序图，沃德利图，维恩图，树形视图，泳道图，铁路图（语法图）, 鱼骨图，事件建模图，辛温框架图）。当用户需要在 Markdown 中嵌入图表、流程图或“代码即图表”（diagram-as-code）内容时触发此功能。
-priority: 60
-roles: ["owner"]
+description: 当用户需要生成 Mermaid 图表代码（流程图、时序图、类图、状态图、ER 图、甘特图、思维导图等 30 种类型）并在 Markdown 中嵌入图表时触发。能够自动选择合适的 Mermaid 图表类型，并生成可直接渲染的 Mermaid 代码。
+priority: 50
 tools: [read]
 enabled: true
 version: 2
@@ -12,28 +11,35 @@ created_at: 1754200000000
 updated_at: 1754200000000
 ---
 
-# Mermaid Diagram Generator
+# Mermaid 图表生成
 
-Generate **syntax-correct** Mermaid code. Diagrams are text-as-code with automatic layout; embed in Markdown via `mermaid` code blocks.
+生成**语法正确**的 Mermaid 图表代码。图表以文本形式描述并自动布局，通过 `mermaid` 代码块嵌入 Markdown。
 
-## Routing (do NOT use for)
-- Pixel-precise layout, custom positioning, branded icons → **drawio**
-- Hand-drawn / sketchy / freeform whiteboard → **excalidraw** / **tldraw**
-- Strict conventional UML → **plantuml**
+## 不适用场景（改用其他工具）
+- 像素级布局、自定义定位、品牌图标 → **drawio**
+- 手绘 / 草图 / 自由白板 → **excalidraw** / **tldraw**
+- 严格规范的 UML → **plantuml**
 
-## Mandatory rules
-1. **Read first**: before generating, `read` the reference file of the chosen type (`references/<file>`). Never generate uncommon types from memory.
-2. **Quote all labels**: wrap every label in double quotes, especially Chinese / non-ASCII / special characters. e.g. `A["提交订单"]`. Never put unquoted Chinese or punctuation in labels.
-3. **One type per block**: never mix diagram types inside one code block.
-4. **Never use lowercase `end`** as a node/label/state name — it breaks parsing. Use `End`, `END`, quotes, `(end)`, or `["end"]` instead.
-5. **No styling unless asked**: do NOT add themes, `init` directives, or style blocks unless the user explicitly requests them. Default theme only.
+## 强制规则
+1. **先读参考再生成**：生成前用 read 读取所选类型的参考文件 `references/<file>`；不要凭记忆生成不常见类型。
+2. **标签加引号**：当标签包含以下内容时必须加引号：
+    - 中文字符
+    - 非 ASCII 字符
+    - 空格
+    - 标点符号
+    - 括号、冒号、斜杠等特殊字符
+    - 编程语言关键字或 Mermaid 保留字符
+3. **一个代码块只含一种类型**：不要在一个代码块中混用多种图表类型。
+4. **不要用小写 `end` 作节点/标签/状态名**：会导致解析失败。改用 `End`、`END`、引号、`(end)` 或 `["end"]`。
+5. **未经要求不加样式**：除非用户明确要求，不要添加主题、`init` 指令或 style 块，仅用默认主题。
 
-## Workflow
-1. Pick the diagram type matching the request.
-2. `read` `references/<file>` for that type.
-3. Generate the diagram and output it in a single `mermaid` code block. Nothing else after the block.
+## 工作流程
+1. 根据请求选择匹配的图表类型
+2. 用 read 读取该类型的 `references/<file>`
+3. 生成图表并放在单个 `mermaid` 代码块中；代码块后如需补充，只可附简短说明，不要混入其他图表或冗长解释
+4. 若用户反馈渲染失败，回到 references 复核语法并修正后重新输出
 
-## Type → reference
+## 类型对照表
 | ---- | ---- |
 | Flowchart 流程图 | [flowchart.md](references/flowchart.md) |
 | Sequence 时序图 | [sequenceDiagram.md](references/sequenceDiagram.md) |

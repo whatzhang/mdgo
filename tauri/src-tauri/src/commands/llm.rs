@@ -635,11 +635,22 @@ pub async fn agent_query(
         match tokio::task::spawn_blocking(move || {
             // 注册表未加载过时先重建（幂等；对话前前端已调用 skill_list，此处兜底）
             let _ = registry.ensure_loaded(&dir_for_registry);
-            let attached_skills: Vec<(String, String)> = match (&chat_store, &session_id_for_closure) {
-                (Some(store), Some(sid)) => store
-                    .get_attached_skills(sid)
-                    .map(|list| list.into_iter().map(|(s, id, _v)| (s, id)).collect())
-                    .unwrap_or_default(),
+            let attached_skills: Vec<(String, String, String)> = match (&chat_store, &session_id_for_closure) {
+                (Some(store), Some(sid)) => match store.get_attached_skills(sid) {
+                    Ok(list) => list
+                        .into_iter()
+                        .map(|(s, id, _v, mode)| (s, id, mode))
+                        .collect(),
+                    Err(e) => {
+                        log::warn!(
+                            "[agent_query] [0]: 读取会话挂载技能失败（技能挂载将不生效）: {} sid={:?} request_id={}",
+                            e,
+                            sid,
+                            request_id_for_log
+                        );
+                        Vec::new()
+                    }
+                },
                 _ => Vec::new(),
             };
             resolve_preactivated(&query_for_skill, &registry, &attached_skills, &active)
@@ -648,11 +659,11 @@ pub async fn agent_query(
         {
             Ok(Ok(v)) => v,
             Ok(Err(e)) => {
-                log::warn!("[agent_query] [0]: 技能预激活失败 request_id={} err={}", request_id_for_log, e);
+                log::warn!("[agent_query] [0]: 技能预激活失败 request_id={} err={}", request_id, e);
                 None
             }
             Err(e) => {
-                log::warn!("[agent_query] [0]: 技能预激活任务失败 request_id={} err={}", request_id_for_log, e);
+                log::warn!("[agent_query] [0]: 技能预激活任务失败 request_id={} err={}", request_id, e);
                 None
             }
         }
@@ -701,24 +712,14 @@ pub async fn agent_query(
     // 未配置时回退全局配置兜底），应用于主预检索（Stage 2/3）与 kb_search 工具（Stage 4）。
     // 多技能同时命中时，context 内部仍按最保守值合并（见 SkillExecutionContext::from_skills）
     let kb_cfg = state.config_store.read();
-    let effective_top_k = skill_ctx
-        .and_then(|c| c.top_k)
-        .unwrap_or(top_k)
-        .clamp(1, 50);
-    let effective_min_score = skill_ctx
-        .and_then(|c| c.min_score)
-        .unwrap_or(kb_cfg.min_score)
-        .clamp(0.0, 1.0);
+    // P4：检索策略收拢到 policy.rs（技能声明优先 → 请求级/全局兜底 → Security clamp）
+    let policy = crate::core::skill::policy::resolve_retrieval_policy(skill_ctx, top_k, &kb_cfg);
+    let effective_top_k = policy.top_k;
+    let effective_min_score = policy.min_score;
     // 精排 sigmoid 阈值：与 pipeline 内精排阈值同语义，供下游聚合按分数域裁决
-    let effective_rerank_min_score = kb_cfg.rerank_min_score.clamp(0.0, 1.0);
-    let effective_max_docs = skill_ctx
-        .and_then(|c| c.max_docs)
-        .unwrap_or(kb_cfg.max_context_docs)
-        .max(1);
-    let effective_max_chunks = skill_ctx
-        .and_then(|c| c.max_chunks_per_doc)
-        .unwrap_or(kb_cfg.max_chunks_per_doc)
-        .max(1);
+    let effective_rerank_min_score = policy.rerank_min_score;
+    let effective_max_docs = policy.max_docs;
+    let effective_max_chunks = policy.max_chunks_per_doc;
 
     // 是否执行预检索（Stage1-3）：仅当预激活技能声明了检索工具（kb_search/code_lookup）时执行。
     // 无预激活技能或技能未声明检索时跳过预检索，由 Agent 按需调用检索工具（agentic 模式），
@@ -1217,7 +1218,30 @@ pub async fn agent_query(
     // 取第一个预激活技能的 ID 作为工具轨迹标注来源
     let primary_skill_id = skill_ctx.and_then(|c| c.skill_ids.first().cloned());
     // L1 技能目录（id + description，常驻 preamble，模型始终知道自己有哪些技能）
-    let catalog = build_skill_catalog(&state.skill_registry);
+    let mut catalog = build_skill_catalog(&state.skill_registry);
+    // P3/MountPreference：会话挂载技能标注——warm（自动准备）正文不注入、工具不解锁
+    // （检索已预热），提示模型任务相关时先 activate_skill；active（立即生效）已加载。
+    if let Some(resolved) = &skill_resolved {
+        let mut mount_parts: Vec<String> = Vec::new();
+        if !resolved.mounted_active.is_empty() {
+            mount_parts.push(format!(
+                "立即生效（指令与工具已加载）：{}",
+                resolved.mounted_active.join("、")
+            ));
+        }
+        if !resolved.mounted_warm.is_empty() {
+            mount_parts.push(format!(
+                "自动准备（检索已预热，需要时先 activate_skill 激活完整规则）：{}",
+                resolved.mounted_warm.join("、")
+            ));
+        }
+        if !mount_parts.is_empty() {
+            catalog.push_str(&format!(
+                "\n\n【会话挂载技能：{}】",
+                mount_parts.join("；")
+            ));
+        }
+    }
     // 各作用域技能基础目录（供 read 工具按需读取已激活技能的参考文档，L3）
     let skill_bases = resolve_skill_bases(&app, &dir_path);
     // 检索命中收集器：kb_search / code_lookup 工具的命中经此回传，合并进 rag:done 引用来源
@@ -1296,10 +1320,29 @@ pub async fn agent_query(
                     .get(compressed.kept_from)
                     .and_then(|m| m.id.clone())
                 {
+                    // P5：记录 Session 生命周期激活技能（跨请求恢复引用，含版本校验）。
+                    // 注意：仅当本请求触发 summarize+window 压缩时才更新检查点；
+                    // 未压缩时保留上一检查点的引用（技能更新由恢复时版本校验兜底）。
+                    let session_skills: Vec<crate::core::context::SessionSkillRef> = active_skills
+                        .activated()
+                        .iter()
+                        .filter(|a| {
+                            a.lifetime
+                                == crate::core::skill::activation::SkillLifetime::Session
+                                && a.status
+                                    == crate::core::skill::activation::ActivationStatus::Active
+                        })
+                        .map(|a| crate::core::context::SessionSkillRef {
+                            skill_id: a.skill_id.clone(),
+                            scope: a.scope.as_str().to_string(),
+                            version: a.version,
+                        })
+                        .collect();
                     let new_state = crate::core::context::CompactionState {
                         summary,
                         cutoff_msg_id: Some(first_kept_id),
                         tokens_before: 0,
+                        session_skills,
                     };
                     let sid = sid.clone();
                     let store = store.clone();
@@ -1335,7 +1378,37 @@ pub async fn agent_query(
         task_registry.unregister(&request_id).await;
         return Ok(());
     }
-    let history = chat_turns_to_history(&compressed.turns);
+    let mut history = chat_turns_to_history(&compressed.turns);
+    // Session 技能激活状态由挂载 mode 持久化驱动（P5 检查点 session_skills 保留写回，
+    // 供未来多代理/MCP 扩展；恢复注入已移除——active 挂载由 resolve_preactivated 每请求
+    // 激活并注入正文，warm/已移除技能不应被自动恢复推翻，符合用户当前挂载配置）。
+    // 预激活技能正文一次性注入：作为 history 首条 system 消息。
+    // 不随每轮 preamble 注入（避免常驻消耗 token），随历史受压缩机制管理。
+    // 回退模式（PERSISTENT_INJECTION=true）下跳过：正文由每轮 Hook 注入，避免双份。
+    if !crate::core::agent::PERSISTENT_INJECTION {
+        if let Some(resolved) = &skill_resolved {
+            if !resolved.skills.is_empty() {
+                let instructions = crate::core::skill::context::format_skill_instructions(
+                    &resolved.skills,
+                    crate::core::skill::activation::MAX_SKILL_INJECTION_CHARS,
+                );
+                if !instructions.is_empty() {
+                    let mut injected = vec![Message::system(format!(
+                        "【已激活技能指令（仅提供一次，请遵循）】\n{}",
+                        instructions
+                    ))];
+                    injected.extend(history);
+                    history = injected;
+                    log::info!(
+                        "[agent_query] [4]: 预激活技能正文一次性注入 history: chars={} skills={:?} request_id={}",
+                        instructions.chars().count(),
+                        resolved.skills.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(),
+                        request_id
+                    );
+                }
+            }
+        }
+    }
     let mut stream = agent
         .stream_chat(Message::user(query.clone()), history)
         .into_future()
@@ -1440,9 +1513,9 @@ pub async fn agent_query(
                 break;
             }
         }
-        // 捕获最后一个成功的工具调用结果（用于兜底：模型调用工具成功但未生成文本时）
-        if let Some(summary) = tool_call_bus().peek_last_success_summary(&request_id) {
-            last_tool_summary = Some(summary);
+        // 捕获最后一个成功的工具调用结果内容（用于兜底：模型调用工具成功但未生成文本时）
+        if let Some(result) = tool_call_bus().peek_last_success_result(&request_id) {
+            last_tool_summary = Some(result);
         }
         // 转发工具调用轨迹（工具在 Rig 流式内部执行，结果已写入总线）
         emit_pending_tool_events(&app, &request_id);

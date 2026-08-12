@@ -443,6 +443,7 @@ pub fn run() {
             commands::skill::skill_delete,
             commands::skill::skill_set_enabled,
             commands::skill::skill_attach,
+            commands::skill::skill_set_mount_mode,
             commands::skill::skill_detach,
             commands::skill::skill_get_attached,
             commands::skill::skill_metrics,

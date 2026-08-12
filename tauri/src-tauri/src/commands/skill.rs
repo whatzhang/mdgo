@@ -200,7 +200,18 @@ fn unix_timestamp_now() -> u64 {
         .unwrap_or(0)
 }
 
-/// 会话挂载技能（保存快照到 DB）
+/// 挂载模式白名单：warm=自动准备 / active=立即生效（缺省 warm）
+fn parse_mount_mode(mode: &Option<String>) -> Result<String, String> {
+    match mode.as_deref().unwrap_or("warm") {
+        "warm" | "active" => Ok(mode.clone().unwrap_or_else(|| "warm".to_string())),
+        other => Err(format!(
+            "挂载模式非法: {}（应为 warm=自动准备 或 active=立即生效）",
+            other
+        )),
+    }
+}
+
+/// 会话挂载技能（保存快照到 DB；mode 缺省 warm=自动准备）
 #[tauri::command]
 pub async fn skill_attach(
     app: AppHandle,
@@ -208,6 +219,7 @@ pub async fn skill_attach(
     session_id: String,
     scope: String,
     skill_id: String,
+    mode: Option<String>,
 ) -> Result<(), String> {
     let state = app.state::<AppState>();
     state.skill_registry.ensure_loaded(&dir_path)?;
@@ -222,10 +234,29 @@ pub async fn skill_attach(
         return Err("技能已停用，无法挂载".into());
     }
 
+    let mode = parse_mount_mode(&mode)?;
+
     // 打开会话数据库
     let chat_store = state.get_chat_store(&dir_path)?;
-    chat_store.attach_skill(&session_id, &scope, &skill_id, skill.version)?;
+    chat_store.attach_skill(&session_id, &scope, &skill_id, skill.version, &mode)?;
 
+    Ok(())
+}
+
+/// 切换会话挂载技能的模式（warm=自动准备 / active=立即生效）
+#[tauri::command]
+pub async fn skill_set_mount_mode(
+    app: AppHandle,
+    dir_path: String,
+    session_id: String,
+    scope: String,
+    skill_id: String,
+    mode: String,
+) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let mode = parse_mount_mode(&Some(mode))?;
+    let chat_store = state.get_chat_store(&dir_path)?;
+    chat_store.set_mount_mode(&session_id, &scope, &skill_id, &mode)?;
     Ok(())
 }
 
@@ -245,13 +276,24 @@ pub async fn skill_detach(
     Ok(())
 }
 
-/// 获取会话挂载的技能列表（含版本校验）
+/// 会话挂载技能视图（含挂载模式，供前端三态渲染）
+#[derive(serde::Serialize)]
+pub struct AttachedSkill {
+    pub scope: String,
+    pub id: String,
+    pub name: String,
+    pub version: u32,
+    /// warm=自动准备 / active=立即生效
+    pub mode: String,
+}
+
+/// 获取会话挂载的技能列表（含挂载模式与版本校验）
 #[tauri::command]
 pub async fn skill_get_attached(
     app: AppHandle,
     dir_path: String,
     session_id: String,
-) -> Result<Vec<Skill>, String> {
+) -> Result<Vec<AttachedSkill>, String> {
     let state = app.state::<AppState>();
     state.skill_registry.ensure_loaded(&dir_path)?;
 
@@ -260,7 +302,7 @@ pub async fn skill_get_attached(
 
     // 从注册表获取技能详情，并校验版本
     let mut skills = Vec::new();
-    for (scope_str, skill_id, attached_version) in attached {
+    for (scope_str, skill_id, attached_version, mode) in attached {
         if let Ok(sc) = parse_scope(&scope_str) {
             if let Some(skill) = state.skill_registry.get(sc, &skill_id) {
                 // 已停用的技能从挂载列表过滤（与 context.rs 挂载解析逻辑一致）
@@ -284,7 +326,13 @@ pub async fn skill_get_attached(
                         skill.version
                     );
                 }
-                skills.push(skill);
+                skills.push(AttachedSkill {
+                    scope: scope_str.clone(),
+                    id: skill_id.clone(),
+                    name: skill.name,
+                    version: skill.version,
+                    mode,
+                });
             } else {
                 log::warn!(
                     "[skill] 会话 {} 挂载的技能 {}:{} 已不存在",
@@ -323,4 +371,26 @@ pub async fn skill_metrics(
     })
     .await
     .map_err(|e| format!("技能指标聚合任务失败: {}", e))?
+}
+
+#[cfg(test)]
+mod mount_mode_tests {
+    use super::parse_mount_mode;
+
+    #[test]
+    fn defaults_to_warm() {
+        assert_eq!(parse_mount_mode(&None).unwrap(), "warm");
+    }
+
+    #[test]
+    fn accepts_warm_and_active() {
+        assert_eq!(parse_mount_mode(&Some("warm".into())).unwrap(), "warm");
+        assert_eq!(parse_mount_mode(&Some("active".into())).unwrap(), "active");
+    }
+
+    #[test]
+    fn rejects_unknown_modes() {
+        assert!(parse_mount_mode(&Some("disabled".into())).is_err());
+        assert!(parse_mount_mode(&Some("".into())).is_err());
+    }
 }

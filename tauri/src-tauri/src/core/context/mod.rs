@@ -50,6 +50,17 @@ pub fn tokens_to_chars_budget(budget_tokens: usize) -> usize {
     budget_tokens * 2
 }
 
+/// 会话级技能恢复引用（P5）：记录上次会话激活的 Session 生命周期技能标识。
+///
+/// 恢复时按 version 校验后从 SkillRegistry 现取正文注入（不存正文快照，
+/// 避免技能更新后用过期指令误导模型；版本不匹配则丢弃并提示重新激活）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SessionSkillRef {
+    pub skill_id: String,
+    pub scope: String,
+    pub version: u32,
+}
+
 /// 会话级上下文压缩检查点（P0-5：压缩结果落库，避免每次请求全量重算）。
 ///
 /// 语义（对齐 Pi compaction 的 `firstKeptEntryId` 检查点）：
@@ -57,6 +68,7 @@ pub fn tokens_to_chars_budget(budget_tokens: usize) -> usize {
 /// - `cutoff_msg_id`：压缩后保留的第一条原始消息 id；`None` 表示全部历史
 ///   已被摘要覆盖（下次请求直接用摘要）
 /// - `tokens_before`：检查点之前已被压缩掉的 token 估算（观测/日志用）
+/// - `session_skills`：Session 生命周期技能的激活引用（P5，跨请求恢复）
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CompactionState {
     pub summary: String,
@@ -64,6 +76,8 @@ pub struct CompactionState {
     pub cutoff_msg_id: Option<String>,
     #[serde(default)]
     pub tokens_before: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub session_skills: Vec<SessionSkillRef>,
 }
 
 impl CompactionState {
@@ -476,9 +490,18 @@ mod tests {
             summary: "摘要".into(),
             cutoff_msg_id: Some("msg_1".into()),
             tokens_before: 123,
+            session_skills: vec![SessionSkillRef {
+                skill_id: "kb-search".into(),
+                scope: "system".into(),
+                version: 2,
+            }],
         };
         let back = CompactionState::from_json(&s.to_json()).expect("应可反序列化");
         assert_eq!(back, s);
+        // 旧数据（无 session_skills 字段）应兼容反序列化
+        let legacy = r#"{"summary":"旧摘要","cutoff_msg_id":null,"tokens_before":0}"#;
+        let legacy_state = CompactionState::from_json(legacy).expect("旧检查点应兼容");
+        assert!(legacy_state.session_skills.is_empty());
         assert!(CompactionState::from_json("").is_none());
         assert!(CompactionState::from_json("not json").is_none());
     }

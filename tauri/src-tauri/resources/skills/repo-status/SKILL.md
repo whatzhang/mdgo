@@ -1,18 +1,17 @@
 ---
 id: repo-status
 scope: system
-name: 仓库状态汇报
+name: git状态汇报
 description: 当用户询问工作区状态、改动、变更、未提交、diff、最近的提交记录时触发。
-priority: 55
-roles: ["owner"]
-tools: [git_status, ls]
+priority: 45
+tools: []
 enabled: true
 version: 1
 created_at: 1754200000000
 updated_at: 1754200000000
 ---
 
-# 仓库状态汇报
+# git仓库状态汇报
 
 ## 适用场景
 - 用户需要了解当前工作区的改动、文件变更与 Git 状态

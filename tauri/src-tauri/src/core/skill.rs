@@ -12,6 +12,7 @@
 pub mod activation;
 pub mod context;
 pub mod metrics;
+pub mod policy;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

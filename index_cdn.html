@@ -2172,12 +2172,13 @@
             transition: opacity 0.3s ease, transform 0.2s ease, bottom 0.35s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease;
         }
 
-        /* 背景层：通过 --notif-layer 控制透明度，实现自下往上逐层变淡 */
         .editor-notification::before {
             content: '';
             position: absolute;
             inset: 0;
             border-radius: 0.625rem;
+            background: var(--notif-bg, rgb(90, 90, 110));
+            opacity: calc(0.92 - var(--notif-layer, 0) * 0.14);
             z-index: -1;
             transition: opacity 0.35s ease;
         }
@@ -2194,24 +2195,37 @@
             pointer-events: none;
         }
 
-        .editor-notification.success::before {
-            background: rgb(26, 127, 55);
-            opacity: calc(0.92 - var(--notif-layer, 0) * 0.14);
+        /* 可关闭通知（closable 类型，如 sticky）：右上角叉号手动关闭 */
+        .editor-notification.closable {
+            padding-right: 1.6rem; /* 为右上角关闭按钮留位 */
         }
 
-        .editor-notification.error::before {
-            background: rgb(207, 34, 46);
-            opacity: calc(0.92 - var(--notif-layer, 0) * 0.14);
+        .editor-notification.closable > span {
+            flex: 1;
+            text-align: center;
+            white-space: pre-line; /* 保留多行提示（如 plan 拒绝原因）的换行 */
         }
 
-        .editor-notification.warning::before {
-            background: rgb(207, 150, 0);
-            opacity: calc(0.92 - var(--notif-layer, 0) * 0.14);
+        /* 右上角关闭按钮（closable 类型） */
+        .editor-notification-close {
+            position: absolute;
+            top: 0.25rem;
+            right: 0.35rem;
+            border: none;
+            background: transparent;
+            color: inherit;
+            font-size: 1rem;
+            line-height: 1;
+            padding: 0.15rem 0.35rem;
+            border-radius: 0.3125rem;
+            cursor: pointer;
+            opacity: 0.65;
+            transition: opacity 0.2s ease, background-color 0.2s ease;
         }
 
-        .editor-notification.info::before {
-            background: rgb(58, 131, 240);
-            opacity: calc(0.92 - var(--notif-layer, 0) * 0.14);
+        .editor-notification-close:hover {
+            opacity: 1;
+            background: rgba(255, 255, 255, 0.18);
         }
 
         @keyframes notificationFadeIn {
@@ -3095,7 +3109,7 @@
             background: var(--color-bg);
             border-radius: 10px;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-            padding: 15px;
+           
             min-width: 240px;
             max-width: 315px;
         }
@@ -3103,21 +3117,26 @@
         .confirm-modal-title {
             font-size: 14px;
             color: var(--color-primary, var(--color-primary-light));
-            margin-bottom: 10px;
+            border-bottom: 1px solid var(--color-border, #bbc3ca);
+            padding: 0.5rem 1rem;
             font-weight: 600;
         }
 
         .confirm-modal-message {
             font-size: 13px;
             color: var(--t2);
-            margin-bottom: 15px;
+            padding: 1rem;
             line-height: 1.5;
+            white-space: pre-line;
+            word-break: break-word;
+            overflow-wrap: break-word;
         }
 
         .confirm-modal-buttons {
             display: flex;
             justify-content: flex-end;
             gap: 8px;
+            padding: 0.5rem 1rem;
         }
 
         .confirm-modal-btn {
@@ -5138,7 +5157,6 @@
             display: flex;
             gap: 0.25rem;
             justify-content: flex-end;
-            margin-top: 0.25rem;
             opacity: 0;
             visibility: hidden;
             transition: opacity 0.2s ease, visibility 0.2s ease;
@@ -5148,6 +5166,11 @@
         .chat-message:hover .chat-message-footer {
             opacity: 1;
             visibility: visible;
+        }
+
+        /* P1-11：user 消息的「分支」hover 按钮可见性（inline opacity:0 由 !important 覆盖） */
+        .chat-message:hover .msg-fork-btn {
+            opacity: 1 !important;
         }
 
         /* 纯 SVG 图标按钮（不随消息重建，事件走容器级委托） */
@@ -5168,6 +5191,19 @@
         .chat-message-action-btn:hover {
             background: rgba(0, 0, 0, 0.06);
             color: var(--t0, #333);
+        }
+
+        /* 消息时间（footer 内，时:分格式，随 footer hover 显示；
+           与操作按钮同高并垂直居中，保证水平线对齐） */
+        .chat-message-time {
+            display: inline-flex;
+            align-items: center;
+            height: 1.75rem; /* 与 .chat-message-action-btn 同高 */
+            font-size: 0.75rem;
+            color: var(--t3, #999);
+            line-height: 1;
+            user-select: none;
+            white-space: nowrap;
         }
 
         /* ── 助手消息头部 ── */
@@ -5462,6 +5498,23 @@
             margin: 0 0.0625rem;
         }
 
+        /* 代码符号徽标（code_lookup 命中来源） */
+        .chat-message .msg-sources .source-item .source-symbol-badge {
+            display: inline-block;
+            margin-left: 0.375rem;
+            padding: 0 0.3125rem;
+            font-size: 0.625rem;
+            line-height: 1.25;
+            color: var(--color-primary, #2e7d32);
+            background: rgba(46, 125, 50, 0.1);
+            border-radius: 0.25rem;
+            vertical-align: middle;
+            white-space: nowrap;
+            max-width: 12rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
         .chat-message .msg-sources .source-item .source-path-ellipsis {
             color: var(--t4);
             font-size: 0.6875rem;
@@ -5637,13 +5690,6 @@
             cursor: default;
         }
 
-        .chat-skill-picker-row .row-check {
-            flex-shrink: 0;
-            width: 0.875rem;
-            text-align: center;
-            color: var(--color-primary, #165bfa);
-        }
-
         .chat-skill-picker-row .row-name {
             flex: 1;
             min-width: 0;
@@ -5660,6 +5706,84 @@
             border-radius: 0.5rem;
             background: var(--color-bg-soft, rgba(128, 128, 128, 0.1));
             color: var(--color-text-secondary, #8b949e);
+        }
+
+        /* 挂载模式：行最左侧状态图标（三态 SVG）+ 右侧纯文字标签 + 状态菜单 */
+        .row-icon {
+            flex-shrink: 0;
+            width: 0.875rem;
+            height: 0.875rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--color-text-secondary, #8b949e);
+        }
+        .row-icon svg {
+            width: 100%;
+            height: 100%;
+        }
+        .row-icon.warm { color: #17af70; }
+        .row-icon.active { color: #ff8c00; }
+
+        .skill-mode-area {
+            flex-shrink: 0;
+            position: relative;
+        }
+        .skill-mode-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            font-size: 0.6875rem;
+            line-height: 1;
+            padding: 0.2rem 0.4rem;
+            border-radius: 0.75rem;
+            cursor: pointer;
+            white-space: nowrap;
+            color: var(--color-text-secondary, #8b949e);
+        }
+        .skill-mode-label.warm { color: #17af70; }
+        .skill-mode-label.active { color: #ff8c00; }
+        .skill-mode-label .caret { font-size: 0.6rem; }
+        .skill-mode-menu {
+            position: absolute;
+            right: 0;
+            top: calc(100% + 0.25rem);
+            min-width: 8.5rem;
+            background: var(--color-bg, #fff);
+            border-radius: 0.5rem;
+            box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.15);
+            padding: 0.25rem;
+            z-index: 30;
+        }
+        .skill-mode-menu.up {
+            top: auto;
+            bottom: calc(100% + 0.25rem);
+        }
+        .skill-mode-menu .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+            padding: 0.35rem 0.5rem;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            font-size: 0.75rem;
+            color: var(--color-text, #333);
+            white-space: nowrap;
+        }
+        .skill-mode-menu .menu-item:hover {
+            background: rgba(22, 91, 250, 0.08);
+        }
+        .skill-mode-menu .menu-item.selected {
+            color: var(--color-primary, #165bfa);
+            font-weight: 600;
+        }
+        .skill-mode-menu .menu-item.remove {
+            color: #e5484d;
+        }
+        .skill-mode-menu .menu-sep {
+            height: 1px;
+            margin: 0.25rem 0.25rem;
+            background: var(--color-border, rgba(0, 0, 0, 0.1));
         }
 
         .chat-textarea-wrap {
@@ -13653,7 +13777,7 @@
         }
 
         .setting-number {
-            width: 5rem;
+            width: 6rem;
             height: 1.75rem;
             padding: 0 0.5rem;
             border: 0.063rem solid var(--color-border);
@@ -17191,10 +17315,59 @@
         let LOCAL_LLM_ENDPOINT = 'http://192.168.31.152:12345/v1/chat/completions';
         let LOCAL_LLM_TOKEN = 'c17f18e31adb10978d3a9cd0d6743d30a067af602a8789e7';
         let LOCAL_LLM_MODEL = 'gemma-4-e4b-it';
-        let LOCAL_LLM_CONTEXT_LENGTH = 10000;
-        let LOCAL_LLM_MAX_TOKENS = 4096;
+        /**
+         * AI Agent 指标参数集中配置（与后端 core/agent/limits.rs 对齐的单一口径）。
+         * 本地打开 index.html 模式直接使用；Tauri 模式下运行时值由后端配置
+         * （kb_get_indexer_config 等）下发覆盖。新增指标参数一律在此定义，避免散落硬编码。
+         */
+        const AGENT_LIMITS = {
+            // 模型调用预算（对齐后端 limits）
+            defaultMaxTurns: 10,
+            maxMessageChars: 30000,
+            maxMessageTokens: 15000,
+            summaryMaxChars: 6000,
+            // 对话上下文
+            contextLength: 10000,
+            maxTokens: 4096,
+            historyBudgetRatio: 0.6,
+            aiHistoryMax: 10,
+            // 检索
+            kbTopKMax: 50,
+            // 文件工具
+            maxFileReadChars: 8192,
+            maxListItems: 60,
+            maxGrepFiles: 20,
+            maxGrepOutputChars: 60000,
+            maxMultiEdits: 10,
+            readPathsMax: 10,
+            grepContextMax: 5,
+            maxEditFileBytes: 1024 * 1024,
+            // 子代理
+            subagentMaxTurns: 12,
+            subagentSummaryChars: 4000,
+            subagentMaxTurnsLimit: 30,
+            parallelTasksMin: 2,
+            parallelTasksMax: 5,
+            // 外部工具
+            maxExternalResponseChars: 100000,
+            externalTimeoutSecs: 30,
+            // pomodoro
+            pomodoroMinutesMax: 180,
+            // RAG 默认配置（Tauri 下由 kb_get_indexer_config 下发覆盖，本地模式使用）
+            ragDefaults: {
+                topK: 10, minScore: 0.3, chunkSize: 448, chunkOverlap: 56,
+                fusionAlpha: 0.6, maxContextDocs: 4, maxChunksPerDoc: 3,
+                candidateK: 100, rrfK: 60, vecMinScore: 0.35,
+                rerankMinScore: 0.2, bm25MsmRatio: 0.6, rerankerEnabled: true
+            }
+        };
+        let LOCAL_LLM_PLANNER_MODEL = '';   // P0-6：规划用小模型（可选，空 = 主模型）
+        let LOCAL_LLM_SUMMARY_MODEL = '';   // P0-6：摘要用小模型（可选，空 = 主模型）
+        let LOCAL_LLM_REASONING_EFFORT = ''; // P2-18：推理等级（可选：low/medium/high）
+        let LOCAL_LLM_CONTEXT_LENGTH = AGENT_LIMITS.contextLength;
+        let LOCAL_LLM_MAX_TOKENS = AGENT_LIMITS.maxTokens;
         /** 对话历史预算占 context 的比例（剩余留给 system prompt / RAG context） */
-        const HISTORY_BUDGET_RATIO = 0.6;
+        const HISTORY_BUDGET_RATIO = AGENT_LIMITS.historyBudgetRatio;
         // nginx 配置地址
         let NGINX_CONF_PATH = '/usr/local/etc/openresty/sites/index.conf';
         // 忽略的目录
@@ -17760,7 +17933,7 @@
         // ====== 目录名常量 ======
         const DELETED_DIR_NAME = 'mdgo_trash';         // 垃圾箱文件名
         const DIARY_DIR_NAME = 'mdgo_diary';         // 日记文件名
-        const AI_HISTORY_MAX = 10; //AI调用历史最大条数
+        const AI_HISTORY_MAX = AGENT_LIMITS.aiHistoryMax; // AI 调用历史最大条数（集中配置）
         //数据文件
         const INDEX_HISTORY_FILE = 'index_ai_history.json';
         const INDEX_DELETED_FILE = 'index_deleted.json';
@@ -18220,6 +18393,7 @@
             else { FILE_TEXT_CACHE.clear(); }
         }
         async function toggleFile(type, data = {}) {
+            if (!(await confirmInterruptStreaming('切换视图'))) return;
             if (!isRootHandleAvailable()) {
                 showNotification('✗ 请先打开根目录', 'error');
                 return;
@@ -19274,8 +19448,8 @@
                             </div>`;
         }
 
-        async function initTreeBrowser() {
-            if (await initFromStorage()) return true;
+        async function initTreeBrowser(refresh = false) {
+            if (await initFromStorage(refresh)) return true;
             // 无保存路径，隐藏启动遮罩、展示"打开目录"引导
             const el = document.getElementById('startup-loading');
             if (el) el.classList.add('is-hidden');
@@ -20212,13 +20386,15 @@
             }
         }
 
-        function showConfirmModal(title, message, callback) {
+        function showConfirmModal(title, message, callback, options) {
+            const opts = options || {};
             const overlay = document.createElement('div');
             overlay.id = 'confirm-modal-overlay';
             overlay.className = 'modal-overlay';
-            overlay.innerHTML = `<div class="confirm-modal">
+            const modalStyle = opts.modalStyle || '';
+            overlay.innerHTML = `<div class="confirm-modal" ${modalStyle ? `style="${modalStyle}"` : ''}>
                      <div class="confirm-modal-title">${escapeHtml(title)}</div>
-                     <div class="confirm-modal-message">${escapeHtml(message)}</div>
+                     <div class="confirm-modal-message" ${opts.modelBodyStyle ? `style="${opts.modelBodyStyle}"` : ''}>${escapeHtml(message)}</div>
                      <div class="confirm-modal-buttons">
                          <button class="confirm-modal-btn confirm-modal-btn-cancel">取消</button>
                          <button class="confirm-modal-btn confirm-modal-btn-confirm">确认</button>
@@ -20240,6 +20416,8 @@
                 if (e.key === 'Escape') {
                     // 仅当确认框为最上层弹窗时响应 Escape，避免连带关闭下层弹窗（如 Prompt 自定义列表）
                     if (typeof _isTopModalOverlay === 'function' && !_isTopModalOverlay(overlay)) return;
+                    // 强制确认类弹窗（AI 权限/计划审批）：不允许 Esc 关闭，用户只能点确认或取消
+                    if (opts.blockEsc) return;
                     close();
                     callback(false);
                 }
@@ -20255,6 +20433,8 @@
             });
             overlay.addEventListener('click', (e) => {
                 if (e.target === overlay) {
+                    // 强制确认类弹窗（AI 权限/计划审批）：点击空白区域不关闭，用户只能点确认或取消
+                    if (opts.blockOutsideClick) return;
                     close();
                     callback(false);
                 }
@@ -20521,7 +20701,7 @@
             await updateTimeAll();
             try {
                 refreshTreeBtn.disabled = true;
-                await initTreeBrowser();
+                await initTreeBrowser(true);
                 const handle = await getRootHandle();
                 const data = await scanDashboardData(true);
                 await renderDirectory(handle, data, true);
@@ -21948,6 +22128,13 @@
             }
             jsMindHandle = new JsMindHandle(jm, data, ismmFile);
             jsMindHandle.add_event_listener();
+            // 拖动思维导图时，鼠标移出容器（如进入左侧文件树区域）应退出拖动。
+            if (!container.__jsmindDragLeaveBound) {
+                container.__jsmindDragLeaveBound = true;
+                container.addEventListener('mouseleave', () => {
+                    container.dispatchEvent(new MouseEvent('mouseup', { bubbles: false }));
+                });
+            }
             // 只读模式：不注册键盘监听，禁用节点编辑事件
             if (!readonly) {
                 document.addEventListener('keydown', jsMindHandle.handleGlobalKeydown, true);
@@ -25168,81 +25355,172 @@
             }
         }
 
-        // 通知管理器：支持多条堆叠显示，最早展示的自动消失，返回通知对象供主动删除
-        const NOTIFICATION_MAX_COUNT = 5;
-        const NOTIFICATION_GAP = 8;
-        const NOTIFICATION_BOTTOM = 24;
-        const _activeNotifications = [];
-
-        function _repositionNotifications() {
-            // 读阶段：一次性收集所有高度，避免读写交替导致多次重排
-            const heights = new Array(_activeNotifications.length);
-            for (let i = 0; i < _activeNotifications.length; i++) {
-                heights[i] = _activeNotifications[i].el.getBoundingClientRect().height;
+        /**
+         * 类型配置项：
+         *   duration   默认自动关闭时长(ms)，0 = 不自动关闭（常驻）
+         *   closable   是否显示右上角叉号（仅手动关闭）
+         *   background 背景色（经 --notif-bg 注入，无需改 CSS）
+         *   label      类型说明（可选）
+         *
+         * 用法示例：
+         *   Notify.success('保存成功') / Notify.error('操作失败') / Notify.warning('警告')
+         *   Notify.sticky('AI 任务计划未获批准，任务已中止。\n原因：…')   // 常驻 + 叉号
+         *   const h = Notify.show('正在处理', 'info', 0); h.dismiss();
+         *   Notify.registerType('urgent', { duration: 0, closable: true, background: 'rgb(...)' });
+         */
+        const Notify = (function () {
+            // ── 内部常量（SRP：仅通知模块持有，外部不可见）──
+            const MAX_COUNT = 5;
+            const GAP = 8;
+            const BOTTOM = 24;
+            const DEFAULT_BG = 'rgb(90, 90, 110)';
+            // ── 内部状态 ──
+            const _active = [];
+            // ── 类型注册表（OCP 扩展点）──
+            const _types = new Map();
+            /** 注册通知类型：新类型仅需注册配置，核心流程无需改动 */
+            function registerType(name, config) {
+                if (!name || typeof name !== 'string' || !config) return false;
+                _types.set(name, {
+                    duration: 3000,
+                    closable: false,
+                    background: DEFAULT_BG,
+                    ...config,
+                });
+                return true;
             }
-            // 写阶段：统一设置位置与层级透明度
-            let bottom = NOTIFICATION_BOTTOM;
-            for (let i = 0; i < _activeNotifications.length; i++) {
-                const el = _activeNotifications[i].el;
-                el.style.bottom = bottom + 'px';
-                el.style.setProperty('--notif-layer', i);
-                bottom += heights[i] + NOTIFICATION_GAP;
+            // 内置类型预注册（颜色与原 CSS 各类型保持一致）
+            registerType('success', { duration: 3000, background: 'rgb(26, 127, 55)', label: '成功' });
+            registerType('error',   { duration: 3000, background: 'rgb(207, 34, 46)', label: '错误' });
+            registerType('warning', { duration: 3000, background: 'rgb(207, 150, 0)', label: '警告' });
+            registerType('info',    { duration: 3000, background: 'rgb(58, 131, 240)', label: '信息' });
+            // sticky：右下角常驻 + 右上角叉号，只有点击叉号才消失
+            registerType('sticky',  { duration: 0, closable: true, background: 'rgb(86, 90, 110)', label: '持续通知' });
+            // ── 定位：读/写分离避免多次重排 ──
+            function _reposition() {
+                const heights = new Array(_active.length);
+                for (let i = 0; i < _active.length; i++) {
+                    heights[i] = _active[i].el.getBoundingClientRect().height;
+                }
+                let bottom = BOTTOM;
+                for (let i = 0; i < _active.length; i++) {
+                    const el = _active[i].el;
+                    el.style.bottom = bottom + 'px';
+                    el.style.setProperty('--notif-layer', i);
+                    bottom += heights[i] + GAP;
+                }
             }
-        }
-
-        function _dismissNotification(item, skipTransition = false) {
-            const idx = _activeNotifications.indexOf(item);
-            if (idx === -1) return;
-            _activeNotifications.splice(idx, 1);
-            // 清除可能残留的自动消失定时器
-            if (item._timer) {
-                clearTimeout(item._timer);
-                item._timer = null;
-            }
-            const el = item.el;
-            if (skipTransition) {
-                el.remove();
-            } else {
-                el.classList.add('dismissing');
-                setTimeout(() => {
-                    if (el.parentNode) el.remove();
-                }, 300);
-            }
-            _repositionNotifications();
-        }
-
-        // 显示通知，返回通知对象供主动删除。
-        // duration 为可见时长(ms)，设为 0 表示不自动消失，需手动调用 item.dismiss()。
-        function showNotification(text, type = 'success', duration = 3000) {
-            // 超过最大数量时，移除最早的一条（跳过动画，同时清理其定时器）
-            while (_activeNotifications.length >= NOTIFICATION_MAX_COUNT) {
-                _dismissNotification(_activeNotifications[0], true);
-            }
-
-            const notification = document.createElement('div');
-            notification.className = 'editor-notification ' + type;
-            notification.setAttribute('role', 'alert');
-            notification.textContent = text;
-            document.body.appendChild(notification);
-
-            const item = { el: notification, _timer: null };
-            _activeNotifications.push(item);
-            _repositionNotifications();
-
-            // duration > 0 时设置自动消失定时器（duration=0 永不自动消失）
-            if (duration > 0) {
-                item._timer = setTimeout(() => {
+            // ── 销毁：从队列移除 + 清理定时器 + 退场动画 ──
+            function _dismiss(item, skipTransition = false) {
+                const idx = _active.indexOf(item);
+                if (idx === -1) return;
+                _active.splice(idx, 1);
+                item.isActive = false;
+                if (item._timer) {
+                    clearTimeout(item._timer);
                     item._timer = null;
-                    _dismissNotification(item);
-                }, duration + 300);
+                }
+                const el = item.el;
+                if (skipTransition) {
+                    el.remove();
+                } else {
+                    el.classList.add('dismissing');
+                    setTimeout(() => {
+                        if (el.parentNode) el.remove();
+                    }, 300);
+                }
+                _reposition();
             }
-
-            // 返回通知对象，调用方可主动删除（例如调用 item.dismiss()）
-            item.dismiss = function () {
-                _dismissNotification(item);
+            // ── 渲染：按类型配置构建 DOM（closable 渲染文本 + 叉号）──
+            function _render(text, config) {
+                const el = document.createElement('div');
+                el.className = 'editor-notification';
+                el.setAttribute('role', 'alert');
+                el.style.setProperty('--notif-bg', config.background || DEFAULT_BG);
+                if (config.closable) {
+                    el.classList.add('closable');
+                    const textSpan = document.createElement('span');
+                    textSpan.textContent = text;
+                    const closeBtn = document.createElement('button');
+                    closeBtn.type = 'button';
+                    closeBtn.className = 'editor-notification-close';
+                    closeBtn.setAttribute('aria-label', '关闭通知');
+                    closeBtn.innerHTML = '&times;';
+                    el.appendChild(textSpan);
+                    el.appendChild(closeBtn);
+                } else {
+                    el.textContent = text;
+                }
+                return el;
+            }
+            // ── 统一入口（DIP）：所有通知都经此通道 ──
+            function show(text, type = 'success', duration) {
+                const config = _types.get(type) || _types.get('info') || {};
+                // 显式 duration 优先，否则用类型默认；0 = 常驻（不自动关闭）
+                const effectiveDuration = duration !== undefined ? duration : (config.duration || 0);
+                // 数量上限淘汰：不可自动关闭（常驻）通知仅能手动关闭，不参与淘汰（保持"一直存在"）
+                while (_active.length >= MAX_COUNT) {
+                    const victim = _active.find(it => it._autoDismissible);
+                    if (!victim) break; // 全部为常驻通知时允许超出上限，不再自动淘汰
+                    _dismiss(victim, true);
+                }
+                const el = _render(text, config);
+                document.body.appendChild(el);
+                // LSP：统一通知句柄契约
+                const item = {
+                    el,
+                    type,
+                    isActive: true,
+                    sticky: type === 'sticky',
+                    _timer: null,
+                    _autoDismissible: effectiveDuration > 0,
+                };
+                item.dismiss = () => _dismiss(item);
+                _active.push(item);
+                _reposition();
+                // closable：右上角叉号，唯一手动关闭途径
+                if (config.closable) {
+                    const closeBtn = el.querySelector('.editor-notification-close');
+                    if (closeBtn) {
+                        closeBtn.addEventListener('click', () => _dismiss(item));
+                    }
+                }
+                // 自动关闭（effectiveDuration > 0 时）
+                if (effectiveDuration > 0) {
+                    item._timer = setTimeout(() => {
+                        item._timer = null;
+                        _dismiss(item);
+                    }, effectiveDuration + 300);
+                }
+                return item;
+            }
+            // ── 清空全部（跳过动画，供页面销毁/重置使用）──
+            function clear() {
+                while (_active.length) _dismiss(_active[0], true);
+            }
+            // ── 查询当前活跃通知（只读快照）──
+            function getActive() {
+                return _active.slice();
+            }
+            // ISP：仅暴露最小接口集
+            return {
+                show,
+                notify: show,                    // 语义化别名
+                success: (text) => show(text, 'success'),
+                error:   (text) => show(text, 'error'),
+                warning: (text) => show(text, 'warning'),
+                info:    (text) => show(text, 'info'),
+                sticky:  (text) => show(text, 'sticky'),
+                dismiss: _dismiss,
+                clear,
+                getActive,
+                registerType,
             };
-
-            return item;
+        })();
+        // 全局通道挂载；历史 showNotification 兼容适配（转发同一通道，后续新代码统一用 Notify）
+        window.Notify = Notify;
+        function showNotification(text, type, duration) {
+            return Notify.show(text, type, duration);
         }
 
         let mdIsKanban = false; // 是否为看板格式
@@ -34774,11 +35052,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return false;
         }
 
-        function showConfirmModalAsync(title, message) {
+        function showConfirmModalAsync(title, message, options) {
             return new Promise((resolve) => {
                 showConfirmModal(title, message, (confirmed) => {
                     resolve(confirmed);
-                });
+                }, options);
             });
         }
 
@@ -36063,7 +36341,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             idbDeleteDatabase(DIRECTORY_STORE_NAME);
         }
 
-        async function initFromStorage() {
+        async function initFromStorage(refresh = false) {
             if (window.__tauriInitPromise) {
                 await window.__tauriInitPromise;
             }
@@ -36103,19 +36381,21 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 currentRootPath = savedPath;
                 const setting = await loadSetting();
             }
-            try {
-                // 先尝试从缓存加载（index_file_scan_data.json），避免每次启动全量扫描
-                showGlobalLoading('正在加载文件目录...');
-                let data = await scanDashboardData(false);
-                // 缓存无效（首次使用/目录变更）时回退到全量扫描
-                if (!data || !data.files || typeof data.files !== 'object' || Object.keys(data.files).length === 0 || !data.stats) {
-                    showGlobalLoading('正在扫描目录中...');
-                    data = await scanDashboardData(true);
+                try {
+                    if(!refresh){
+                        // 先尝试从缓存加载（index_file_scan_data.json），避免每次启动全量扫描
+                        showGlobalLoading('正在加载文件目录...');
+                        let data = await scanDashboardData(false);
+                        // 缓存无效（首次使用/目录变更）时回退到全量扫描
+                        if (!data || !data.files || typeof data.files !== 'object' || Object.keys(data.files).length === 0 || !data.stats) {
+                            showGlobalLoading('正在扫描目录中...');
+                            data = await scanDashboardData(true);
+                        }
+                        await Promise.all([renderDirectory(handle, data), toggleDashboardView(true, data)]);
+                    }
+                } finally {
+                    hideGlobalLoading(true);
                 }
-                await Promise.all([renderDirectory(handle, data), toggleDashboardView(true, data)]);
-            } finally {
-                hideGlobalLoading(true);
-            }
             return true;
         }
 
@@ -48216,13 +48496,21 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 if (type === 'unstaged') {
                     btnsHtml = `
                         <div class="git-status-item-btns">
-                            <button class="git-status-item-btn stage" title="暂存更改" data-action="stage" data-filepath="${gitEscapeHtml(item.filepath)}">+</button>
-                            <button class="git-status-item-btn discard" title="放弃更改" data-action="discard" data-filepath="${gitEscapeHtml(item.filepath)}" data-status="${item.status}">✕</button>
+                            <button class="git-status-item-btn stage" title="暂存更改" data-action="stage" data-filepath="${gitEscapeHtml(item.filepath)}">
+                                <svg fill="currentColor" width="14" height="14" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                                    <g><g><rect width="48" height="48" fill="none"/></g><g><path d="M39,22H26V9a2,2,0,0,0-4,0V22H9a2,2,0,0,0,0,4H22V39a2,2,0,0,0,4,0V26H39a2,2,0,0,0,0-4Z"/></g></g>
+                                </svg></button>
+                            <button class="git-status-item-btn discard" title="放弃更改" data-action="discard" data-filepath="${gitEscapeHtml(item.filepath)}" data-status="${item.status}">
+                                <svg fill="currentColor" width="14" height="14" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path fill-rule="evenodd" d="M13.41425,12.00025 L18.70725,6.70725 C19.09825,6.31625 19.09825,5.68425 18.70725,5.29325 C18.31625,4.90225 17.68425,4.90225 17.29325,5.29325 L12.00025,10.58625 L6.70725,5.29325 C6.31625,4.90225 5.68425,4.90225 5.29325,5.29325 C4.90225,5.68425 4.90225,6.31625 5.29325,6.70725 L10.58625,12.00025 L5.29325,17.29325 C4.90225,17.68425 4.90225,18.31625 5.29325,18.70725 C5.48825,18.90225 5.74425,19.00025 6.00025,19.00025 C6.25625,19.00025 6.51225,18.90225 6.70725,18.70725 L12.00025,13.41425 L17.29325,18.70725 C17.48825,18.90225 17.74425,19.00025 18.00025,19.00025 C18.25625,19.00025 18.51225,18.90225 18.70725,18.70725 C19.09825,18.31625 19.09825,17.68425 18.70725,17.29325 L13.41425,12.00025 Z"/>
+                                </svg></button>
                         </div>`;
                 } else {
                     btnsHtml = `
                         <div class="git-status-item-btns">
-                            <button class="git-status-item-btn unstage" title="取消暂存" data-action="unstage" data-filepath="${gitEscapeHtml(item.filepath)}">−</button>
+                            <button class="git-status-item-btn unstage" title="取消暂存" data-action="unstage" data-filepath="${gitEscapeHtml(item.filepath)}">
+                                <svg fill="currentColor" width="14" height="14" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19,13H5a1,1,0,0,1,0-2H19a1,1,0,0,1,0,2Z"></path></svg>
+                            </button>
                         </div>`;
                 }
                 html += `
@@ -50361,8 +50649,20 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                     <input class="setting-text" id="${inputId('llmModel')}" value="${escapeHtml(LOCAL_LLM_MODEL)}">
                                 </div>
                                 <div class="setting-row">
+                                    <label>规划模型（可选）</label>
+                                    <input class="setting-text" id="${inputId('llmPlannerModel')}" value="${escapeHtml(LOCAL_LLM_PLANNER_MODEL)}" placeholder="留空使用主模型">
+                                </div>
+                                <div class="setting-row">
+                                    <label>摘要模型（可选）</label>
+                                    <input class="setting-text" id="${inputId('llmSummaryModel')}" value="${escapeHtml(LOCAL_LLM_SUMMARY_MODEL)}" placeholder="留空使用主模型">
+                                </div>
+                                <div class="setting-row">
+                                    <label>推理等级（可选）</label>
+                                    <input class="setting-text" id="${inputId('llmReasoningEffort')}" value="${escapeHtml(LOCAL_LLM_REASONING_EFFORT)}" placeholder="low / medium / high，留空不设置">
+                                </div>
+                                <div class="setting-row">
                                     <label>上下文长度</label>
-                                    <input class="setting-number" id="${inputId('llmContext')}" type="number" min="1000" max="100000" step="1000" value="${LOCAL_LLM_CONTEXT_LENGTH}">
+                                    <input class="setting-number" id="${inputId('llmContext')}" type="number" min="1000" max="10000000" step="10000" value="${LOCAL_LLM_CONTEXT_LENGTH}">
                                 </div>
                                 <div class="setting-row">
                                     <label>最大输出 Token</label>
@@ -50572,6 +50872,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     LOCAL_LLM_ENDPOINT = normalizeLlmEndpoint(llmEndpointVal);
                     LOCAL_LLM_TOKEN = document.getElementById(inputId('llmToken')).value.trim();
                     LOCAL_LLM_MODEL = document.getElementById(inputId('llmModel')).value.trim();
+                    LOCAL_LLM_PLANNER_MODEL = document.getElementById(inputId('llmPlannerModel'))?.value.trim() || '';
+                    LOCAL_LLM_SUMMARY_MODEL = document.getElementById(inputId('llmSummaryModel'))?.value.trim() || '';
+                    LOCAL_LLM_REASONING_EFFORT = document.getElementById(inputId('llmReasoningEffort'))?.value.trim() || '';
                     LOCAL_LLM_CONTEXT_LENGTH = contextLength;
                     const maxTokensVal = document.getElementById(inputId('llmMaxTokens')).value.trim();
                     LOCAL_LLM_MAX_TOKENS = parseInt(maxTokensVal, 10) || 4096;
@@ -50586,6 +50889,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         localLlmEndpoint: LOCAL_LLM_ENDPOINT,
                         localLlmToken: LOCAL_LLM_TOKEN,
                         localLlmModel: LOCAL_LLM_MODEL,
+                        localLlmPlannerModel: LOCAL_LLM_PLANNER_MODEL,
+                        localLlmSummaryModel: LOCAL_LLM_SUMMARY_MODEL,
+                        localLlmReasoningEffort: LOCAL_LLM_REASONING_EFFORT,
                         localLlmContextLength: LOCAL_LLM_CONTEXT_LENGTH,
                         localLlmMaxTokens: LOCAL_LLM_MAX_TOKENS,
                         dirBlacklist: DIR_BLACKLIST,
@@ -50593,17 +50899,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         randomDirBlacklist: RANDOM_DIR_BLACKLIST,
                         htmlCodeShowBlacklist: HTML_CODE_SHOW_BLACKLIST
                     }, null, 4);
-                    await writeFileByDirHandle(await getDataDir(), SETTING_FILE, settingsJson);
+                    await saveAppSettings(settingsJson);
                     compileAllRules();
-                    // 同步 LLM 配置到后端（中央化配置入口）
-                    if (window.__TAURI__ && currentRootPath) {
-                        window.__TAURI__.core.invoke('kb_update_llm_config', {
-                            dirPath: currentRootPath,
-                            endpoint: LOCAL_LLM_ENDPOINT,
-                            model: LOCAL_LLM_MODEL,
-                            apiKey: LOCAL_LLM_TOKEN,
-                        }).catch(e => console.warn('同步 LLM 配置到后端失败:', e));
-                    }
                     await closeModal(true);
                     const data = await scanDashboardData(true);
                     await Promise.all([renderDirectory(getRootHandle(), data), toggleDashboardView(true, data)]);
@@ -50638,17 +50935,63 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return true;
         }
 
-        async function loadSetting() {
+        /**
+         * 保存全量设置（O5 双模式适配）：
+         * - Tauri 模式：统一走后端 kb_save_setting（写 setting.json + 同步内存 LLM 配置）
+         * - 本地模式（直接浏览器打开 index.html）：保持现状，File System Access 直写 JSON
+         * 后端失败时回退本地写入（不阻断）。
+         */
+        async function saveAppSettings(settingsJson) {
+            if (window.__TAURI__ && currentRootPath) {
+                try {
+                    await window.__TAURI__.core.invoke('kb_save_setting', {
+                        dirPath: currentRootPath,
+                        settings: JSON.parse(settingsJson),
+                    });
+                    return;
+                } catch (e) {
+                    console.warn('Tauri 保存设置到后端失败，回退本地文件:', e);
+                }
+            }
+            await writeFileByDirHandle(await getDataDir(), SETTING_FILE, settingsJson);
+        }
+
+        /**
+         * 加载全量设置（O5 双模式适配）：
+         * - Tauri 模式：走后端 kb_load_setting（文件 + 内存 LLM 配置合并）
+         * - 本地模式：保持现状，File System Access 读 JSON
+         * 返回设置对象（无配置时返回 {}）。
+         */
+        async function loadAppSettings() {
+            if (window.__TAURI__ && currentRootPath) {
+                try {
+                    const setting = await window.__TAURI__.core.invoke('kb_load_setting', { dirPath: currentRootPath });
+                    if (setting && typeof setting === 'object') return setting;
+                } catch (e) {
+                    console.warn('Tauri 加载设置失败，回退本地文件:', e);
+                }
+            }
             try {
                 const fh = await getFileHandleByDirHandle(await getDataDir(), SETTING_FILE);
                 const text = await getFileContent(fh);
-                const setting = JSON.parse(text);
+                return JSON.parse(text);
+            } catch (e) {
+                return {};
+            }
+        }
+
+        async function loadSetting() {
+            try {
+                const setting = await loadAppSettings();
                 //赋值设置
                 GRAPHQL_ENDPOINT = setting.graphqlEndpoint;
                 NGINX_CONF_PATH = setting.nginxConfPath;
                 LOCAL_LLM_ENDPOINT = normalizeLlmEndpoint(setting.localLlmEndpoint);
                 LOCAL_LLM_TOKEN = setting.localLlmToken;
                 LOCAL_LLM_MODEL = setting.localLlmModel;
+                LOCAL_LLM_PLANNER_MODEL = setting.localLlmPlannerModel || '';
+                LOCAL_LLM_SUMMARY_MODEL = setting.localLlmSummaryModel || '';
+                LOCAL_LLM_REASONING_EFFORT = setting.localLlmReasoningEffort || '';
                 LOCAL_LLM_CONTEXT_LENGTH = setting.localLlmContextLength;
                 LOCAL_LLM_MAX_TOKENS = setting.localLlmMaxTokens || 4096;
                 DIR_BLACKLIST = setting.dirBlacklist;
@@ -50680,6 +51023,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 localLlmEndpoint: LOCAL_LLM_ENDPOINT,
                 localLlmToken: LOCAL_LLM_TOKEN,
                 localLlmModel: LOCAL_LLM_MODEL,
+                localLlmPlannerModel: LOCAL_LLM_PLANNER_MODEL,
+                localLlmSummaryModel: LOCAL_LLM_SUMMARY_MODEL,
+                localLlmReasoningEffort: LOCAL_LLM_REASONING_EFFORT,
                 localLlmContextLength: LOCAL_LLM_CONTEXT_LENGTH,
                 localLlmMaxTokens: LOCAL_LLM_MAX_TOKENS,
                 dirBlacklist: DIR_BLACKLIST,
@@ -50696,6 +51042,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     endpoint: LOCAL_LLM_ENDPOINT,
                     model: LOCAL_LLM_MODEL,
                     apiKey: LOCAL_LLM_TOKEN,
+                    plannerModel: LOCAL_LLM_PLANNER_MODEL || null,
+                    summaryModel: LOCAL_LLM_SUMMARY_MODEL || null,
+                    reasoningEffort: LOCAL_LLM_REASONING_EFFORT || null,
                 }).catch(e => console.warn('同步 LLM 配置到后端失败:', e));
             }
         }
@@ -51630,6 +51979,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             });
         }
 
+        function syncModeButtonUI(mode) {
+            document.querySelectorAll('.btn-mode').forEach(b => b.classList.remove('active'));
+            const btn = document.getElementById('chat-mode-' + mode);
+            if (btn) btn.classList.add('active');
+            const settingsBtn = document.getElementById('rag-settings-btn');
+            if (settingsBtn) settingsBtn.classList.toggle('active', mode === 'rag');
+        }
+
         /**
          * 渲染技能选择器（触发按钮 + 向上弹出面板，面板中每个技能一行）
          * 从后端获取可用技能列表并回显当前会话已挂载状态
@@ -51678,24 +52035,60 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 picker.style.display = 'flex';
 
                 // 面板行列表（name/description 为用户可控字段，必须转义防注入）
-                const noSession = !currentSessionId;
+                // 挂载三态产品化：最左侧状态图标（SVG）+ 右侧纯文字标签；整行可点
                 const scopeLabels = { system: '系统', global: '全局', project: '当前目录' };
+                const SKILL_ICONS = {
+                    // 关闭：圆圈 + 对角斜线（禁用）
+                    off:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><line x1="5.5" y1="5.5" x2="18.5" y2="18.5"/></svg>',
+                    // 自动准备：右半圆（部分生效）
+                    warm:   '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 0 1 0 18z"/></svg>',
+                    // 立即生效：闪电
+                    active: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z"/></svg>',
+                };
+                const MODE_META = {
+                    warm:   { label: '自动准备', title: '自动准备：会提前准备知识库检索，但不占用对话上下文；AI 需要时可自动启用完整规则，节省token成本' },
+                    active: { label: '立即生效', title: '立即生效：挂载即加载指令与工具，立即生效并占用对话上下文' },
+                };
+                const MODE_OFF = { label: '关闭', title: '关闭：此技能不会自动使用。点击整行挂载为"自动准备"' };
                 popup.innerHTML = enabledSkills.map(skill => {
-                    const isAttached = attached.some(a => a.scope === skill.scope && a.id === skill.id);
+                    const attachedItem = attached.find(a => a.scope === skill.scope && a.id === skill.id);
+                    const mode = attachedItem ? attachedItem.mode : null; // 'warm' | 'active' | null
+                    const meta = mode ? (MODE_META[mode] || MODE_OFF) : MODE_OFF;
                     const name = escapeHtml(skill.name);
                     const description = escapeHtml(skill.description || skill.name);
                     const scope = escapeHtml(skill.scope);
                     const id = escapeHtml(skill.id);
                     const scopeLabel = escapeHtml(scopeLabels[skill.scope] || skill.scope);
+                    // 已挂载行：右侧纯文字标签（点击展开状态菜单：自动准备/立即生效/移除）
+                    // 未挂载行：右侧纯文字"关闭"（整行点击挂载为自动准备）
+                    const modeArea = mode ? `
+                        <span class="skill-mode-area">
+                            <span class="skill-mode-label ${mode}"
+                                onclick="toggleSkillModeMenu(this, event)"
+                                title="${meta.title}">${meta.label} <span class="caret">▾</span></span>
+                            <div class="skill-mode-menu" style="display:none;">
+                                <div class="menu-item ${mode === 'warm' ? 'selected' : ''}"
+                                    onclick="skillModeAction('warm', this, event)" title="${MODE_META.warm.title}">自动准备</div>
+                                <div class="menu-item ${mode === 'active' ? 'selected' : ''}"
+                                    onclick="skillModeAction('active', this, event)" title="${MODE_META.active.title}">立即生效</div>
+                                <div class="menu-sep"></div>
+                                <div class="menu-item remove"
+                                    onclick="skillModeAction('remove', this, event)" title="从本会话卸载该技能">移除</div>
+                            </div>
+                        </span>` : `
+                        <span class="skill-mode-area">
+                            <span class="skill-mode-label off" title="${MODE_OFF.title}">${MODE_OFF.label}</span>
+                        </span>`;
                     return `
-                        <div class="chat-skill-picker-row ${isAttached ? 'active' : ''} ${noSession ? 'disabled-row' : ''}"
+                        <div class="chat-skill-picker-row ${mode ? 'active' : ''}"
                              data-scope="${scope}"
                              data-id="${id}"
                              data-name="${name}"
-                             onclick="toggleSkillFromPicker(this)"
+                             onclick="handleSkillRowClick(this, event)"
                              title="${id}, ${description}">
-                            <span class="row-check">${isAttached ? '✓' : '☐'}</span>
+                            <span class="row-icon ${mode || 'off'}">${SKILL_ICONS[mode || 'off']}</span>
                             <span class="row-name">${name}</span>
+                            ${modeArea}
                             <span class="row-scope ${scope}">${scopeLabel}</span>
                         </div>
                     `;
@@ -51739,12 +52132,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             popup.style.display = isOpening ? 'block' : 'none';
         }
 
-        // 点击面板外区域时关闭技能选择面板和 prompt 面板
+        // 点击面板外区域时关闭技能选择面板、挂载状态菜单和 prompt 面板。
+        // 注意：技能面板内部任意点击（含空白/行/菜单）均不关闭——保持列表打开。
         document.addEventListener('click', (ev) => {
             const picker = document.getElementById('chat-skill-picker');
             const popup = document.getElementById('chat-skill-popup');
-            if (picker && popup && !picker.contains(ev.target)) {
-                popup.style.display = 'none';
+            // 仅当点击点在技能面板外部时，才关闭状态菜单与面板
+            if (!(picker && picker.contains(ev.target))) {
+                document.querySelectorAll('#chat-skill-popup .skill-mode-menu').forEach(m => { m.style.display = 'none'; });
+                if (popup) popup.style.display = 'none';
             }
             const promptPicker = document.getElementById('chat-prompt-picker');
             const promptPopup = document.getElementById('chat-prompt-popup');
@@ -51754,58 +52150,156 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         });
 
         /**
-         * 面板行：切换技能挂载状态
+         * 确保存在当前会话：挂载技能需要绑定会话（chat_session_skills 外键）。
+         * 无会话时自动创建一个（RAG 模式建 rag 类型），用户无需先发消息。
+         * @returns {Promise<boolean>} 是否就绪
          */
-        async function toggleSkillFromPicker(rowEl) {
-            if (!currentRootPath) return;
-            // 会话尚未创建（RAG 模式首条消息才建会话）时给出明确提示，避免静默无效
-            if (rowEl.classList.contains('disabled-row')) {
-                showNotification('请先发送一条消息创建会话，再挂载技能', 'warning');
-                return;
+        async function ensureChatSession() {
+            if (currentSessionId) return true;
+            if (!currentRootPath) return false;
+            try {
+                const sessionType = chatMode === 'rag' ? 'rag' : 'regular';
+                const session = await window.__TAURI__.core.invoke('chat_session_create', {
+                    dirPath: currentRootPath,
+                    title: '新对话',
+                    type: sessionType,
+                });
+                chatSessions.unshift(session);
+                currentSessionId = session.id;
+                renderChatSessionList();
+                await rememberLastChatSession();
+                return true;
+            } catch (e) {
+                console.error('自动创建会话失败:', e);
+                showNotification(`创建会话失败: ${e}`, 'error');
+                return false;
             }
+        }
 
+        /**
+         * 整行点击：未挂载 → 挂载为自动准备；已挂载 → 展开状态菜单（同一位置二次点击收起）
+         */
+        function handleSkillRowClick(rowEl, event) {
+            if (event) event.stopPropagation(); // 阻止冒泡到 document click（否则打开的菜单被立即关闭）
+            if (!currentRootPath || !rowEl) return;
+            const isAttached = rowEl.classList.contains('active');
+            if (isAttached) {
+                const label = rowEl.querySelector('.skill-mode-label');
+                if (label) toggleSkillModeMenu(label, null);
+            } else {
+                mountSkillFromRow(rowEl);
+            }
+        }
+
+        /**
+         * 挂载技能（未挂载行整行点击）：挂载为自动准备（warm）
+         */
+        async function mountSkillFromRow(rowEl) {
+            if (!currentRootPath || !rowEl) return;
+            // 无会话时自动创建，无需用户先发消息
+            if (!(await ensureChatSession())) return;
             const scope = rowEl.dataset.scope;
             const id = rowEl.dataset.id;
             const name = rowEl.dataset.name;
-            const isAttached = rowEl.classList.contains('active');
-
             try {
-                if (isAttached) {
-                    // 卸载
+                await window.__TAURI__.core.invoke('skill_attach', {
+                    dirPath: currentRootPath,
+                    sessionId: currentSessionId,
+                    scope,
+                    skillId: id,
+                    mode: 'warm',
+                });
+                chatAttachedSkills.push({ scope, id, name, mode: 'warm' });
+                syncSkillPickerCount();
+                renderSkillChips();
+            } catch (e) {
+                console.error('挂载技能失败:', e);
+                showNotification(`挂载失败: ${e}`, 'error');
+            }
+        }
+
+        /**
+         * 展开/收起挂载状态菜单（已挂载行标签；同一时间只开一个菜单）。
+         * 菜单默认向下弹出，底部空间不足时自动改向上（避免被面板裁切）。
+         */
+        function toggleSkillModeMenu(labelEl, event) {
+            if (event) event.stopPropagation();
+            if (!labelEl) return;
+            const area = labelEl.parentElement;
+            const menu = area ? area.querySelector('.skill-mode-menu') : null;
+            if (!menu) return;
+            const isOpen = menu.style.display === 'block';
+            // 关闭所有菜单（chat-skill-popup 是 id，需用 # 选择器）
+            document.querySelectorAll('#chat-skill-popup .skill-mode-menu').forEach(m => {
+                m.style.display = 'none';
+                m.classList.remove('up');
+            });
+            if (!isOpen) {
+                menu.style.display = 'block';
+                // 动态方向：先按向下定位，若超出面板底部则切换为向上
+                const popup = document.getElementById('chat-skill-popup');
+                if (popup) {
+                    const mr = menu.getBoundingClientRect();
+                    const pr = popup.getBoundingClientRect();
+                    if (mr.bottom > pr.bottom - 4) {
+                        menu.classList.add('up');
+                    }
+                }
+            }
+        }
+
+        /**
+         * 状态菜单动作：切换模式（自动准备/立即生效）或移除
+         */
+        async function skillModeAction(mode, item, event) {
+            if (event) event.stopPropagation();
+            const menu = item.closest('.skill-mode-menu');
+            const rowEl = item.closest('.chat-skill-picker-row');
+            if (!menu || !rowEl) return;
+            menu.style.display = 'none';
+            if (!currentRootPath) return;
+            // 无会话时自动创建，无需用户先发消息
+            if (!(await ensureChatSession())) return;
+            const scope = rowEl.dataset.scope;
+            const id = rowEl.dataset.id;
+            const name = rowEl.dataset.name;
+            try {
+                if (mode === 'remove') {
                     await window.__TAURI__.core.invoke('skill_detach', {
                         dirPath: currentRootPath,
                         sessionId: currentSessionId,
                         scope,
                         skillId: id,
                     });
-                    rowEl.classList.remove('active');
-                    const check = rowEl.querySelector('.row-check');
-                    if (check) check.textContent = '☐';
                     chatAttachedSkills = chatAttachedSkills.filter(s => !(s.scope === scope && s.id === id));
                 } else {
-                    // 挂载
-                    await window.__TAURI__.core.invoke('skill_attach', {
+                    // 'warm' | 'active'
+                    await window.__TAURI__.core.invoke('skill_set_mount_mode', {
                         dirPath: currentRootPath,
                         sessionId: currentSessionId,
                         scope,
                         skillId: id,
+                        mode,
                     });
-                    rowEl.classList.add('active');
-                    const check = rowEl.querySelector('.row-check');
-                    if (check) check.textContent = '✓';
-                    chatAttachedSkills.push({ scope, id, name });
+                    const found = chatAttachedSkills.find(s => s.scope === scope && s.id === id);
+                    if (found) found.mode = mode; else chatAttachedSkills.push({ scope, id, name, mode });
                 }
-                // 同步触发按钮上的已挂载数量
-                const trigger = document.getElementById('chat-skill-trigger');
-                const skillCount = document.getElementById('skill-count');
-                if (trigger && skillCount) {
-                    const count = chatAttachedSkills.length;
-                    skillCount.innerHTML =  count > 0 ? `${count}` : '';
-                    trigger.classList.toggle('active', count > 0);
-                }
+                syncSkillPickerCount();
+                renderSkillChips();
             } catch (e) {
-                console.error('切换技能挂载失败:', e);
+                console.error('切换技能模式失败:', e);
                 showNotification(`技能操作失败: ${e}`, 'error');
+            }
+        }
+
+        /** 同步触发按钮上的已挂载数量与高亮 */
+        function syncSkillPickerCount() {
+            const trigger = document.getElementById('chat-skill-trigger');
+            const skillCount = document.getElementById('skill-count');
+            if (trigger && skillCount) {
+                const count = chatAttachedSkills.length;
+                skillCount.innerHTML = count > 0 ? `${count}` : '';
+                trigger.classList.toggle('active', count > 0);
             }
         }
 
@@ -51823,6 +52317,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     scope: s.scope,
                     id: s.id,
                     name: s.name,
+                    mode: s.mode, // 'warm' | 'active'
                 }));
                 return chatAttachedSkills;
             } catch (e) {
@@ -51928,6 +52423,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     content: partialContent,
                     sources: _chatStreamingSources || [],
                     toolCalls: _streamingToolCalls.slice(),
+                    created_at: Date.now(),
                 });
                 // 保存成功才置位（失败不置位，允许 query 兜底路径重试）
                 _partialAutoSaved = true;
@@ -51942,6 +52438,21 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             } catch (e) {
                 console.warn('保存部分助手消息失败:', e);
             }
+        }
+
+        /**
+         * 会话生成中时，弹出确认框提示"中断生成"。
+         * 用户切换页面/新建会话/切换会话/切换模式/清空或删除会话等操作前调用，
+         * 避免流式生成被无感知打断。无进行中会话时直接放行（返回 true）。
+         * 用户取消时返回 false，调用方应中止后续切换逻辑。
+         */
+        async function confirmInterruptStreaming(actionLabel) {
+            if (!chatStreaming) return true;
+            const confirmed = await showConfirmModalAsync(
+                '中断生成',
+                `当前会话正在生成回复，${actionLabel || '该操作'}将中断生成。\n\n已生成的部分内容会自动保存到对话历史，不会丢失。是否继续？`
+            );
+            return confirmed;
         }
 
         /**
@@ -52034,10 +52545,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
-        /**
-         * 清理聊天状态（仅由 destroyEverything 在 finalizeCurrentSession 之后调用）。
-         * 清空内存中的 UI 状态，保存最后会话记录并触发异步索引。
-         */
         async function cleanupChatState() {
             try {
                 // 1. 将当前会话异步索引，确保可被搜索召回
@@ -52051,7 +52558,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 chatMessages = [];
                 chatSessions = [];
                 currentSessionId = null;
-                chatMode = 'normal';
                 chatAbortController = null;
                 _chatStreamingDiv = null;
                 _chatStreamingSources = null;
@@ -52090,9 +52596,28 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 };
                 chatMsgContainer.addEventListener('scroll', window._chatScrollHandler, { passive: true });
             }
-            // 恢复上次打开的会话
+            // 恢复上次打开的会话：以保留的 chatMode（cleanupChatState 不重置）为准——
             const last = await getLastChatSession();
-            if (last && last.sessionId && chatSessions.some(s => s.id === last.sessionId)) {
+            const lastMode = chatMode;
+            if (lastMode === 'rag') {
+                const lastRagId = (last && last.sessionId && chatSessions.some(s => s.id === last.sessionId && s.type === 'rag'))
+                    ? last.sessionId
+                    : null;
+                const ragSessionId = lastRagId || ((chatSessions.find(s => s.type === 'rag') || {}).id || null);
+                if (ragSessionId) {
+                    await switchChatSession(ragSessionId, true);
+                } else {
+                    // 无 rag 历史会话：停留在 Agent 模式（等待用户输入第一条消息自动创建）
+                    chatMode = 'rag';
+                    syncModeButtonUI('rag');
+                    chatMessages = [];
+                    const emptyMsgContainer = document.getElementById('chat-messages');
+                    if (emptyMsgContainer) emptyMsgContainer.innerHTML = '';
+                    chatAttachedSkills = [];
+                    await renderSkillChips();
+                    updateTurnCounter();
+                }
+            } else if (last && last.sessionId && chatSessions.some(s => s.id === last.sessionId)) {
                 await switchChatSession(last.sessionId, true);
             } else if (chatSessions.length > 0) {
                 // 没有记录的话，默认打开最近的会话
@@ -52146,16 +52671,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             // 相同模式不处理
             if (chatMode === mode) return;
+            if (!(await confirmInterruptStreaming('切换模式'))) return;
             // 1. 收尾当前会话（保存正在生成的消息）
             await finalizeCurrentSession();
             // 2. 切换模式
             chatMode = mode;
-            document.querySelectorAll('.btn-mode').forEach(b => b.classList.remove('active'));
-            const btn = document.getElementById('chat-mode-' + mode);
-            if (btn) btn.classList.add('active');
-            // 显示/隐藏 RAG 设置齿轮按钮
-            const settingsBtn = document.getElementById('rag-settings-btn');
-            if (settingsBtn) settingsBtn.classList.toggle('active', mode === 'rag');
+            syncModeButtonUI(mode);
             // 刷新技能 chips（仅 RAG 模式显示）
             chatAttachedSkills = [];
             await renderSkillChips();
@@ -52239,6 +52760,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         async function clearChatMessages(silent = false) {
+            if (!silent && !(await confirmInterruptStreaming('清空对话'))) return;
             // 先收尾当前会话（中断流 + 保存部分消息）
             await finalizeCurrentSession();
             chatMessages = [];
@@ -52279,6 +52801,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         const MSG_ACTION_ICONS = {
             copy: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
             save: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+            fork: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>',
         };
 
         // ── ISP: 共享数据读取（复制/保存共用，最小依赖接口） ──
@@ -52328,10 +52851,44 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             await saveMessageToFile(text);
         }
 
+        // ── SRP: 分支动作（P1-11 会话分支；从此消息之后派生新会话） ──
+        async function forkMessageContent(messageEl) {
+            if (!currentRootPath || !currentSessionId) {
+                showNotification('无法分支：缺少会话上下文', 'warning');
+                return;
+            }
+            // 用 DOM 顺序定位分支点（chatMessages 与 .chat-message 一一对应；
+            // 过滤非消息元素，避免 typing 等临时节点错位）
+            const container = document.getElementById('chat-messages');
+            const idx = container
+                ? Array.from(container.querySelectorAll('.chat-message')).indexOf(messageEl)
+                : -1;
+            if (idx < 0) {
+                showNotification('无法分支：未找到消息位置', 'warning');
+                return;
+            }
+            try {
+                const srcTitle = (chatSessions.find(s => s.id === currentSessionId) || {}).title || '会话';
+                const newSession = await window.__TAURI__.core.invoke('chat_fork', {
+                    dirPath: currentRootPath,
+                    sessionId: currentSessionId,
+                    messageSeq: idx + 1, // 分支点 = 该消息之后（含其之前全部）
+                    title: '分支 ' + srcTitle,
+                });
+                chatSessions.unshift(newSession);
+                renderChatSessionList();
+                await switchChatSession(newSession.id);
+                showNotification('已创建分支会话（从此处改写重发）', 'success');
+            } catch (e) {
+                showNotification('分支失败: ' + (e.message || e), 'error');
+            }
+        }
+
         // ── OCP: 动作策略表（新增动作只需追加一个表项 + 一个处理器函数） ──
         const MSG_ACTION_HANDLERS = {
             copy: copyMessageContent,
             save: saveMessageContent,
+            fork: forkMessageContent,
         };
 
         // ── SRP: 事件路由（容器级唯一委托监听器，零元素级监听器，无泄漏） ──
@@ -52348,12 +52905,41 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         })();
 
         // ── SRP: footer 构建（纯展示，动作由 data-action 声明、策略表路由） ──
-        function createMessageFooter() {
+        /** 将时间戳格式化为「时:分」（如 13:22，24 小时制）；无效输入返回空字符串 */
+        function formatHourMinute(ts) {
+            const t = Number(ts);
+            if (!Number.isFinite(t) || t <= 0) return '';
+            // 兼容秒级/毫秒级时间戳
+            const d = new Date(t < 100000000000 ? t * 1000 : t);
+            if (isNaN(d.getTime())) return '';
+            const hh = String(d.getHours()).padStart(2, '0');
+            const mm = String(d.getMinutes()).padStart(2, '0');
+            return hh + ':' + mm;
+        }
+
+        function createMessageFooter(type = 'assistant', timestamp) {
             const footer = document.createElement('div');
             footer.className = 'chat-message-footer';
-            footer.innerHTML =
-                '<button class="chat-message-action-btn" data-action="copy" title="复制">' + MSG_ACTION_ICONS.copy + '</button>' +
-                '<button class="chat-message-action-btn" data-action="save" title="保存">' + MSG_ACTION_ICONS.save + '</button>';
+            if (type === 'assistant') {
+                footer.innerHTML =
+                    '<button class="chat-message-action-btn" data-type="assistant" data-action="copy" title="复制">' + MSG_ACTION_ICONS.copy + '</button>' +
+                    '<button class="chat-message-action-btn" data-type="assistant" data-action="save" title="保存">' + MSG_ACTION_ICONS.save + '</button>' +
+                    '<button class="chat-message-action-btn" data-type="assistant" data-action="fork" title="从此处派生分支会话">' + MSG_ACTION_ICONS.fork + '</button>';
+            }else if (type === 'user') {
+                footer.style.paddingRight = '0.5rem';
+                footer.innerHTML =
+                    '<button class="chat-message-action-btn" data-type="user" data-action="copy" title="复制">' + MSG_ACTION_ICONS.copy + '</button>';
+            }
+            // 消息时间（时:分格式）：无效时间戳不显示
+            if (timestamp) {
+                const timeStr = formatHourMinute(timestamp);
+                if (timeStr) {
+                    const timeEl = document.createElement('span');
+                    timeEl.className = 'chat-message-time';
+                    timeEl.textContent = timeStr;
+                    footer.appendChild(timeEl);
+                }
+            }
             return footer;
         }
 
@@ -52416,6 +53002,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     const nameSpan = document.createElement('span');
                     nameSpan.textContent = path;
                     infoDiv.appendChild(nameSpan);
+
+                    // 代码符号（code_lookup 命中）：显示符号名与类型徽标
+                    if (s.symbol_name) {
+                        const symSpan = document.createElement('span');
+                        symSpan.className = 'source-symbol-badge';
+                        symSpan.textContent = '⚙ ' + (s.symbol_kind ? (s.symbol_kind + ' ') : '') + s.symbol_name;
+                        symSpan.title = '代码符号: ' + s.symbol_name;
+                        infoDiv.appendChild(symSpan);
+                    }
 
                     // 解析 OPML 层级路径并显示为面包屑导航
                     const pathJson = s.path_json;
@@ -52796,19 +53391,19 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return false;
         }
 
-        async function addChatMessage(role, content, sources, mode, toolCalls) {
+        async function addChatMessage(role, content, sources, mode, toolCalls, timestamp) {
             const container = document.getElementById('chat-messages');
             const div = document.createElement('div');
             div.className = 'chat-message ' + role;
+            
+            div._rawContent = content;
             if (role === 'assistant') {
                 div.appendChild(createMessageHeader('小助手', content, sources));
                 const body = document.createElement('div');
                 body.className = 'chat-message-body';
                 body.innerHTML = `<div class="markdown-body" style="zoom: 1;background: transparent;">${renderChatMarkdown(content)}</div>`;
-                div.appendChild(body);
                 div._body = body;
-                // 历史回放：保存原始 Markdown 供复制/保存按钮使用（与流式路径行为一致）
-                div._rawContent = content;
+                div.appendChild(body);
                 // 历史消息回放：重渲染工具调用轨迹（若已持久化）
                 if (toolCalls && toolCalls.length > 0) {
                     renderToolTraceFromRecords(div, toolCalls);
@@ -52818,6 +53413,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const body = document.createElement('div');
                 body.className = 'chat-message-body';
                 body.textContent = content;
+                div._body = body;
                 div.appendChild(body);
             } else {
                 div.textContent = content;
@@ -52826,9 +53422,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 div._chatSources = sources;
                 renderChatSources(div, sources);
             }
-            // 助手消息底部追加操作按钮（复制/保存，hover 显示），必须为最后一个子元素
+            // 助手消息底部追加操作按钮（复制/保存，hover 显示）+ 消息时间，必须为最后一个子元素
             if (role === 'assistant') {
-                div.appendChild(createMessageFooter());
+                div.appendChild(createMessageFooter('assistant', timestamp));
+            }else{
+                 div.appendChild(createMessageFooter('user', timestamp));
             }
             container.appendChild(div);
             if (window._chatAutoScroll !== false) {
@@ -52945,17 +53543,22 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const card = document.createElement('div');
                 card.className = 'tool-card running';
                 card.dataset.seq = String(p.seq);
+                // P1-14：记录开始时间，供 result 事件计算耗时徽标
+                card.dataset.startTs = String(Date.now());
                 const args = escapeHtml(String(p.args_preview || '').slice(0, 80));
                 card.innerHTML = `<span class="tool-name">${safeTool}</span>${skillBadge}<span class="tool-args">${args}</span><span class="tool-status">执行中…</span>`;
                 trace.appendChild(card);
-                // 记录到持久化列表（待 result 事件补全 ok/summary）
+                // 记录到持久化列表（待 result 事件补全 ok/summary/result）
                 _streamingToolCalls.push({
                     tool: String(p.tool),
+                    call_id: String(p.call_id || ''),
                     args_preview: String(p.args_preview || ''),
+                    args: String(p.arguments || ''),
                     skill_id: p.skill_id || null,
                     seq: Number(p.seq),
                     ok: null,
                     summary: '',
+                    result: '',
                 });
             } else {
                 // result 事件：按 call_seq 配对卡片并更新状态
@@ -52968,15 +53571,90 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         st.textContent = p.ok ? '✓ 完成' : '✗ 失败';
                         st.title = String(p.summary || '');
                     }
+                    // P1-14：耗时徽标（call 事件记录的开始时间）
+                    const startTs = Number(card.dataset.startTs || 0);
+                    if (startTs > 0) {
+                        const cost = document.createElement('span');
+                        cost.className = 'tool-cost';
+                        cost.textContent = ((Date.now() - startTs) / 1000).toFixed(1) + 's';
+                        cost.style.cssText = 'margin-left:0.4rem;font-size:0.65rem;color:#999;';
+                        card.appendChild(cost);
+                    }
+                    // P1-14：点击卡片展开/收起完整结果摘要（可检视过程）
+                    const detail = document.createElement('div');
+                    detail.className = 'tool-detail';
+                    detail.style.cssText = 'display:none;margin-top:0.3rem;padding:0.3rem 0.5rem;background:rgba(0,0,0,0.04);border-radius:4px;font-size:0.72rem;color:#666;white-space:pre-wrap;word-break:break-all;max-height:12rem;overflow:auto;';
+                    detail.textContent = String(p.summary || '');
+                    card.appendChild(detail);
+                    // P2 输出结构化：按工具类型渲染增强卡片（git_diff 文件改动列表等）
+                    if (p.structured && typeof p.structured === 'object') {
+                        const sEl = document.createElement('div');
+                        sEl.className = 'tool-structured';
+                        sEl.style.cssText = 'margin-top:0.3rem;padding:0.3rem 0.5rem;background:rgba(0,0,0,0.03);border-radius:4px;font-size:0.72rem;color:#555;';
+                        if (p.tool === 'git_diff' && Array.isArray(p.structured.files)) {
+                            const title = document.createElement('div');
+                            title.textContent = `文件改动（${p.structured.files.length}）：`;
+                            title.style.cssText = 'color:#666;margin-bottom:0.2rem;';
+                            sEl.appendChild(title);
+                            for (const f of p.structured.files) {
+                                const row = document.createElement('div');
+                                const fpath = String(f.path || '');
+                                const adds = Number(f.additions || 0);
+                                const dels = Number(f.deletions || 0);
+                                row.innerHTML = `<span style="word-break:break-all;">${escapeHtml(fpath)}</span> <span style="color:#2e7d32;">+${adds}</span> <span style="color:#c62828;">-${dels}</span>`;
+                                sEl.appendChild(row);
+                            }
+                            card.appendChild(sEl);
+                        }
+                        // 其他工具的结构化渲染可在此扩展（grep/ls 列表等）
+                    }
+                    card.style.cursor = 'pointer';
+                    card.addEventListener('click', (ev) => {
+                        ev.stopPropagation();
+                        const d = card.querySelector('.tool-detail');
+                        if (d) d.style.display = d.style.display === 'none' ? 'block' : 'none';
+                    });
                 }
-                // 配对持久化记录并补全结果状态
+                // 配对持久化记录并补全结果状态（含完整结果文本，供历史回放）
                 const rec = _streamingToolCalls.find(r => r.seq === Number(p.call_seq));
                 if (rec) {
                     rec.ok = !!p.ok;
                     rec.summary = String(p.summary || '');
+                    if (typeof p.result === 'string' && p.result) {
+                        rec.result = p.result;
+                    }
                 }
             }
             if (div._scroll) div._scroll();
+        }
+
+        // 将内存中的对话消息展开为发送给后端的协议消息数组（工具历史回流）：
+        // assistant 消息的工具调用轨迹（toolCalls 记录数组）还原为
+        //   {role:'assistant', tool_calls:[{id,name,arguments}]}
+        // 并紧随其后的 {role:'tool', tool_call_id, content:结果} 结果消息，
+        // 使模型在后续轮次能看到自己此前调用过哪些工具、拿到什么结果。
+        // 老数据（无 call_id 或 result 的记录）降级为普通文本消息，行为不变。
+        function expandToolHistory(chatMsgs) {
+            const out = [];
+            for (const m of chatMsgs) {
+                const tools = (Array.isArray(m.toolCalls) ? m.toolCalls : []).filter(tc => tc && tc.call_id && tc.tool);
+                if (m.role === 'assistant' && tools.length > 0) {
+                    const protocolTools = tools.map(tc => ({
+                        id: String(tc.call_id),
+                        name: String(tc.tool),
+                        arguments: (typeof tc.args === 'string' && tc.args) ? tc.args : '{}',
+                    }));
+                    out.push({ id: m.id || null, role: 'assistant', content: m.content, tool_calls: protocolTools });
+                    for (const tc of tools) {
+                        if (typeof tc.result === 'string' && tc.result) {
+                            out.push({ id: m.id || null, role: 'tool', content: tc.result, tool_call_id: String(tc.call_id) });
+                        }
+                    }
+                } else {
+                    out.push({ id: m.id || null, role: m.role, content: m.content });
+                }
+            }
+            return out;
         }
 
         function showChatTyping() {
@@ -53024,16 +53702,43 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         function estimateMessagesTokens(messages) {
             let total = 0;
             for (const m of messages) {
-                // 每条消息的角色标记 + 内容
                 total += 4 + estimateTokenCount(m.content);
+                // 工具调用参数也计入（review 修复：此前系统性低估预算）
+                if (Array.isArray(m.tool_calls)) {
+                    for (const tc of m.tool_calls) {
+                        const argsText = typeof tc.arguments === 'string'
+                            ? tc.arguments
+                            : (tc.arguments ? JSON.stringify(tc.arguments) : '{}');
+                        total += estimateTokenCount(argsText);
+                    }
+                }
             }
             return total;
+        }
+
+        // 工具消息单元的 token 估算：assistant(tool_calls) + 其后续连续 tool 结果
+        function unitTokens(unit) {
+            let t = 0;
+            for (const m of unit.group) {
+                t += 4 + estimateTokenCount(m.content);
+                if (Array.isArray(m.tool_calls)) {
+                    for (const tc of m.tool_calls) {
+                        const argsText = typeof tc.arguments === 'string'
+                            ? tc.arguments
+                            : (tc.arguments ? JSON.stringify(tc.arguments) : '{}');
+                        t += estimateTokenCount(argsText);
+                    }
+                }
+            }
+            return t;
         }
 
         /**
          * 裁剪对话历史，同时满足：
          *   历史消息总 token 不超过 context 预算（留给 system/RAG context）
          *   - 始终保留最后一条 user 消息（当前输入）
+         *   - 工具消息成对裁剪：assistant（带 tool_calls）与其后续连续 tool 结果同组，
+         *     避免产生孤儿 tool 消息（后端 OpenAI 协议要求 tool_call 与结果同侧）
          *
          * @param {Array} messages  - 对话消息数组
          * @param {number} [budgetRatio] - 可选的历史预算比例，覆盖 HISTORY_BUDGET_RATIO
@@ -53044,26 +53749,47 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (messages.length <= 2) return messages; // 只有 1 轮或刚输入，无需裁剪
             const ratio = (budgetRatio !== undefined) ? budgetRatio : HISTORY_BUDGET_RATIO;
             const budget = Math.floor(LOCAL_LLM_CONTEXT_LENGTH * ratio);
-            let totalTokens = estimateMessagesTokens(messages);
+            // 按「工具调用单元」分组（review 修复：避免单条裁剪切散 tool_call 与 tool 结果）
+            const units = [];
+            for (const m of messages) {
+                if (m.role === 'tool') {
+                    const last = units[units.length - 1];
+                    if (last && last.role === 'assistant') {
+                        last.group.push(m);
+                    } else {
+                        units.push({ role: 'orphan-tool', group: [m] }); // 防御：孤儿 tool 自成组
+                    }
+                } else if (m.role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
+                    units.push({ role: 'assistant', group: [m] });
+                } else {
+                    units.push({ role: 'other', group: [m] });
+                }
+            }
+            let totalTokens = 0;
+            for (const u of units) totalTokens += unitTokens(u);
             if (totalTokens <= budget) return messages;
-            // 从旧到新逐条保留，直到预算用尽
-            const keptLast = messages[messages.length - 1];
-            let trimmed = [keptLast];
-            let keptTokens = estimateTokenCount(keptLast.content) + 4;
+            // 从旧到新按组保留（最新优先），组内 token 含 tool_calls arguments
+            const keptLast = units[units.length - 1];
+            const trimmedUnits = [keptLast];
+            let keptTokens = unitTokens(keptLast);
             let droppedCount = 0;
-            for (let i = messages.length - 2; i >= 0; i--) {
-                const msgTokens = estimateTokenCount(messages[i].content) + 4;
-                if (keptTokens + msgTokens > budget) {
+            for (let i = units.length - 2; i >= 0; i--) {
+                const uTokens = unitTokens(units[i]);
+                if (keptTokens + uTokens > budget) {
                     droppedCount++;
                     continue;
                 }
-                trimmed.unshift(messages[i]);
-                keptTokens += msgTokens;
+                trimmedUnits.unshift(units[i]);
+                keptTokens += uTokens;
             }
             if (droppedCount > 0) {
                 console.warn('[chat] 对话 token 超预算(' + totalTokens + '>' + budget + ')，丢弃了' + droppedCount + '条旧消息');
             }
-            return trimmed;
+            const out = [];
+            for (const u of trimmedUnits) {
+                for (const m of u.group) out.push(m);
+            }
+            return out;
         }
 
         async function sendChatMessage() {
@@ -53092,8 +53818,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             input.value = '';
             updateChatSendButton();
-            addChatMessage('user', text, null, chatMode);
-            chatMessages.push({ role: 'user', content: text });
+            addChatMessage('user', text, null, chatMode, undefined, Date.now());
+            chatMessages.push({ role: 'user', content: text, created_at: Date.now() });
             updateTurnCounter();
             // 保存用户消息（估算 token 数，用于 token_usage 统计）
             if (currentSessionId) {
@@ -53210,7 +53936,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     const tokenCount = usageData?.completion_tokens || 0;
                     // 内存态（当前会话立即可见，不依赖落库结果）
                     if (fullContent) {
-                        chatMessages.push({ role: 'assistant', content: fullContent, toolCalls: toolCallsSnapshot });
+                        chatMessages.push({ role: 'assistant', content: fullContent, toolCalls: toolCallsSnapshot, created_at: Date.now() });
                         updateTurnCounter();
                     }
                     // ===== 落库优先：先持久化再做 UI 后处理（UI 异常不得阻断保存） =====
@@ -53259,7 +53985,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         }
                         // 生成完成后追加底部操作按钮（复制/保存，hover 显示），必须为最后一个子元素
                         if (streamingDiv) {
-                            streamingDiv.appendChild(createMessageFooter());
+                            streamingDiv.appendChild(createMessageFooter('assistant', Date.now()));
                         }
                         removeChatTyping();
                         // 更新上下文使用率（模型上下文窗口占用率）
@@ -53311,7 +54037,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             ]);
 
             try {
-                let messages = chatMessages.map(m => ({ role: m.role, content: m.content }));
+                let messages = expandToolHistory(chatMessages);
                 messages = trimChatHistory(messages);
                 // 发送前使用裁剪后的消息估算 token，展示实际发送给 LLM 的上下文占比
                 const estTokens = estimateMessagesTokens(messages);
@@ -53454,6 +54180,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         });
 
         async function createNewChatSession() {
+            if (!(await confirmInterruptStreaming('新建会话'))) return;
             // 1. 收尾当前会话（保存正在生成的消息）
             await finalizeCurrentSession();
             // 将当前会话异步索引，确保可被搜索召回
@@ -53485,6 +54212,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         async function switchChatSession(sessionId, skipFinalize = false) {
             if (sessionId === currentSessionId) return;
+            if (!skipFinalize && !(await confirmInterruptStreaming('切换会话'))) return;
             // 1. 收尾当前会话（保存正在生成的消息）
             if (!skipFinalize) {
                 await finalizeCurrentSession();
@@ -53516,19 +54244,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         console.warn('加载引用来源失败:', e);
                     }
                 }
-                // 4. 根据会话类型同步 chatMode
                 const session = chatSessions.find(s => s.id === sessionId);
                 if (session) {
                     const newMode = session.type === 'rag' ? 'rag' : 'normal';
                     if (chatMode !== newMode) {
                         chatMode = newMode;
-                        document.querySelectorAll('.btn-mode').forEach(b => b.classList.remove('active'));
-                        const btn = document.getElementById('chat-mode-' + newMode);
-                        if (btn) btn.classList.add('active');
-                        // 同步齿轮按钮状态
-                        const settingsBtn = document.getElementById('rag-settings-btn');
-                        if (settingsBtn) settingsBtn.classList.toggle('active', newMode === 'rag');
                     }
+                    syncModeButtonUI(newMode);
                 }
                 // 5. 构建消息条目（含 sources 与工具调用轨迹）
                 chatMessages = messages.map(m => {
@@ -53542,14 +54264,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         }
                     }
                     return {
+                        id: m.id || null,
                         role: m.role,
                         content: m.content,
                         sources: sourcesMap[m.id] || [],
                         toolCalls,
+                        created_at: m.created_at || Date.now(),
                     };
                 });
                 container.innerHTML = '';
-                chatMessages.forEach(m => addChatMessage(m.role, m.content, m.sources, chatMode, m.toolCalls));
+                chatMessages.forEach(m => addChatMessage(m.role, m.content, m.sources, chatMode, m.toolCalls, m.created_at));
                 updateTurnCounter();
                 // 加载后立即显示上下文使用率（token_usage 已持久化在 chat_sessions 中）
                 const sessionTokenUsage = session ? session.token_usage || 0 : 0;
@@ -53574,6 +54298,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         async function deleteChatSession(sessionId) {
             if (!confirm('确定要删除这个对话吗？')) return;
+            if (currentSessionId === sessionId && !(await confirmInterruptStreaming('删除会话'))) return;
             // 如果删除的是当前会话，先收尾
             if (currentSessionId === sessionId) {
                 await finalizeCurrentSession();
@@ -53733,20 +54458,21 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             try {
                 if (window.__TAURI__?.core?.invoke) {
                     const cfg = await window.__TAURI__.core.invoke('kb_get_indexer_config');
+                    const rd = AGENT_LIMITS.ragDefaults; // 本地模式/后端缺省时的统一默认值（集中配置）
                     ragSettings = ragSettings || {};
-                    document.getElementById('rag-setting-topk').value = cfg.top_k ?? 10;
-                    document.getElementById('rag-setting-min-score').value = cfg.min_score ?? 0.3;
-                    document.getElementById('rag-setting-chunk-size').value = cfg.chunk_size ?? 448;
-                    document.getElementById('rag-setting-chunk-overlap').value = cfg.chunk_overlap ?? 56;
-                    document.getElementById('rag-setting-fusion-alpha').value = cfg.fusion_alpha ?? 0.6;
-                    document.getElementById('rag-setting-max-docs').value = cfg.max_context_docs ?? 4;
-                    document.getElementById('rag-setting-max-chunks').value = cfg.max_chunks_per_doc ?? 3;
-                    document.getElementById('rag-setting-candidate-k').value = cfg.candidate_k ?? 100;
-                    document.getElementById('rag-setting-rrf-k').value = cfg.rrf_k ?? 60;
-                    document.getElementById('rag-setting-vec-min-score').value = cfg.vec_min_score ?? 0.35;
-                    document.getElementById('rag-setting-rerank-min-score').value = cfg.rerank_min_score ?? 0.2;
-                    document.getElementById('rag-setting-bm25-msm').value = cfg.bm25_msm_ratio ?? 0.6;
-                    document.getElementById('rag-setting-reranker-enabled').checked = cfg.reranker_enabled ?? true;
+                    document.getElementById('rag-setting-topk').value = cfg.top_k ?? rd.topK;
+                    document.getElementById('rag-setting-min-score').value = cfg.min_score ?? rd.minScore;
+                    document.getElementById('rag-setting-chunk-size').value = cfg.chunk_size ?? rd.chunkSize;
+                    document.getElementById('rag-setting-chunk-overlap').value = cfg.chunk_overlap ?? rd.chunkOverlap;
+                    document.getElementById('rag-setting-fusion-alpha').value = cfg.fusion_alpha ?? rd.fusionAlpha;
+                    document.getElementById('rag-setting-max-docs').value = cfg.max_context_docs ?? rd.maxContextDocs;
+                    document.getElementById('rag-setting-max-chunks').value = cfg.max_chunks_per_doc ?? rd.maxChunksPerDoc;
+                    document.getElementById('rag-setting-candidate-k').value = cfg.candidate_k ?? rd.candidateK;
+                    document.getElementById('rag-setting-rrf-k').value = cfg.rrf_k ?? rd.rrfK;
+                    document.getElementById('rag-setting-vec-min-score').value = cfg.vec_min_score ?? rd.vecMinScore;
+                    document.getElementById('rag-setting-rerank-min-score').value = cfg.rerank_min_score ?? rd.rerankMinScore;
+                    document.getElementById('rag-setting-bm25-msm').value = cfg.bm25_msm_ratio ?? rd.bm25MsmRatio;
+                    document.getElementById('rag-setting-reranker-enabled').checked = cfg.reranker_enabled ?? rd.rerankerEnabled;
                 }
             } catch (e) {
                 console.warn('[rag-settings] 加载配置失败:', e);
@@ -53885,6 +54611,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                     if (_chatStreamingDiv) _chatStreamingDiv._scroll();
                 }),
+                window.__TAURI__.event.listen('trace:event', (e) => {
+                    const payload = e.payload ? e.payload : {};
+                    const tid = payload.request_id;
+                    const tev = payload.events;
+                    if (!tid) return;
+                    if (!Array.isArray(tev)) return;
+                    const existing = window.__chatTraceMap[tid] ? window.__chatTraceMap[tid] : [];
+                    window.__chatTraceMap[tid] = existing.concat(tev);
+                }),
                 window.__TAURI__.event.listen('rag:status', (e) => {
                     if (e.payload.request_id !== requestId) return;
                     _chatStreamingStatusMsg = e.payload.message;
@@ -53913,9 +54648,23 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         const st = streamingDiv.querySelector('.chat-message-header-status');
                         if (st) st.remove();
                     }
+                    // 渲染阶段耗时面板（trace:event 按 request_id 收集）
+                    const traceEvents = window.__chatTraceMap[requestId] ? window.__chatTraceMap[requestId] : [];
+                    if (streamingDiv) {
+                        if (traceEvents.length) {
+                            try {
+                                const panel = document.createElement('div');
+                                panel.innerHTML = renderTracePanel(traceEvents);
+                                streamingDiv.appendChild(panel.firstChild);
+                            } catch (err) {
+                                console.warn('[trace] 渲染阶段面板失败:', err);
+                            }
+                        }
+                    }
+                    delete window.__chatTraceMap[requestId];
                     // 内存态（当前会话立即可见，不依赖落库结果）
                     if (fullContent) {
-                        chatMessages.push({ role: 'assistant', content: fullContent, sources: sources, toolCalls: toolCallsSnapshot });
+                        chatMessages.push({ role: 'assistant', content: fullContent, sources: sources, toolCalls: toolCallsSnapshot, created_at: Date.now() });
                         updateTurnCounter();
                     }
                     // ===== 落库优先：先持久化再做 UI 后处理（UI 异常不得阻断保存） =====
@@ -53997,9 +54746,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             streamingDiv._chatSources = sources;
                             renderChatSources(streamingDiv, sources);
                         }
-                        // 生成完成后追加底部操作按钮（复制/保存，hover 显示），必须为最后一个子元素
+                        // 生成完成后追加底部操作按钮（复制/保存，hover 显示）+ 消息时间，必须为最后一个子元素
                         if (streamingDiv) {
-                            streamingDiv.appendChild(createMessageFooter());
+                            streamingDiv.appendChild(createMessageFooter('assistant', Date.now()));
                         }
                         // 流式结束后滚动到底部，确保最新消息和引用完整可见 
                         if (window._chatAutoScroll !== false) {
@@ -54056,13 +54805,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                     showNotification('✗ ' + e.payload.message, 'error');
                 }),
-                // 工具调用轨迹（kb_search / code_lookup / read / edit / delete / list_files / git_status）
                 window.__TAURI__.event.listen('agent:tool_call', (e) => handleAgentToolEvent(e, requestId)),
                 window.__TAURI__.event.listen('agent:tool_result', (e) => handleAgentToolEvent(e, requestId)),
             ]);
 
             try {
-                const histMessages = trimChatHistory(chatMessages.map(m => ({ role: m.role, content: m.content })), 0.4);
+                const histMessages = trimChatHistory(expandToolHistory(chatMessages), 0.4);
                 // 发送前使用裁剪后的消息估算 token，展示实际发送给 LLM 的上下文占比
                 const estTokens = estimateMessagesTokens(histMessages);
                 if (estTokens > 0) {
@@ -54073,7 +54821,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     query: text,
                     messages: histMessages,
                     requestId,
-                    topK: ragSettings?.topK ?? 10,
+                    topK: ragSettings?.topK ?? AGENT_LIMITS.ragDefaults.topK,
                     sessionId: currentSessionId,
                 });
             } catch (err) {
@@ -54650,14 +55398,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 try {
                     if (window.__TAURI__?.core?.invoke) {
                         const cfg = await window.__TAURI__.core.invoke('kb_get_indexer_config');
+                        const rd = AGENT_LIMITS.ragDefaults;
                         ragSettings = {
-                            topK: cfg.top_k ?? 10,
-                            minScore: cfg.min_score ?? 0.3,
-                            chunkSize: cfg.chunk_size ?? 448,
-                            chunkOverlap: cfg.chunk_overlap ?? 56,
-                            fusionAlpha: cfg.fusion_alpha ?? 0.6,
-                            maxContextDocs: cfg.max_context_docs ?? 4,
-                            maxChunksPerDoc: cfg.max_chunks_per_doc ?? 3,
+                            topK: cfg.top_k ?? rd.topK,
+                            minScore: cfg.min_score ?? rd.minScore,
+                            chunkSize: cfg.chunk_size ?? rd.chunkSize,
+                            chunkOverlap: cfg.chunk_overlap ?? rd.chunkOverlap,
+                            fusionAlpha: cfg.fusion_alpha ?? rd.fusionAlpha,
+                            maxContextDocs: cfg.max_context_docs ?? rd.maxContextDocs,
+                            maxChunksPerDoc: cfg.max_chunks_per_doc ?? rd.maxChunksPerDoc,
                         };
                     }
                 } catch (e) {
@@ -54704,6 +55453,79 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 } catch (e) {
                     console.warn('注册 chat-index 事件监听失败:', e);
                 }
+                // 监听 AI 工具审批请求（编辑/删除文件确认）：系统弹窗 → IPC 回传
+                try {
+                    const { listen } = window.__TAURI__.event;
+                    listen('approval:request', async (e) => {
+                        const { request_id, tool, summary, detail } = (e.payload || {});
+                        if (!request_id) return;
+                        const opName = tool === 'delete' ? '删除文件' : tool === 'edit' ? '修改文件' : '执行操作';
+                        const message = `${summary || ''}${detail ? '\n\n' + detail : ''}`;
+                        let approved = false;
+                        try {
+                            approved = await showConfirmModalAsync(`AI 请求${opName}`, message, { blockOutsideClick: true, blockEsc: true });
+                        } catch (err) {
+                            console.warn('[approval] 确认框异常:', err);
+                        }
+                        try {
+                            await window.__TAURI__.core.invoke('approval_respond', {
+                                requestId: request_id,
+                                approved,
+                                reason: approved ? null : '用户拒绝了此操作',
+                            });
+                        } catch (err) {
+                            console.warn('[approval] 回传审批结果失败:', err);
+                        }
+                    });
+                } catch (e) {
+                    console.warn('注册 approval 审批监听失败:', e);
+                }
+                // 监听 AI 任务计划确认请求（plan:request）：展示计划，用户批准/拒绝经 IPC 回传
+                try {
+                    const { listen } = window.__TAURI__.event;
+                    listen('plan:request', async (e) => {
+                        const { plan_id, plan } = (e.payload || {});
+                        if (!plan_id) return;
+                        const p = plan || {};
+                        const goal = p.goal ? '目标：' + p.goal : '';
+                        const steps = Array.isArray(p.steps) ? p.steps.map((s, i) => (i + 1) + '. ' + s).join('\n') : '(无步骤)';
+                        const acceptance = Array.isArray(p.acceptance) && p.acceptance.length ? '\n\n验收标准：\n' + p.acceptance.map(a => '· ' + a).join('\n') : '';
+                        const touchpoints = Array.isArray(p.touchpoints) && p.touchpoints.length ? '\n\n涉及范围：\n' + p.touchpoints.map(t => '· ' + t).join('\n') : '';
+                        const risks = Array.isArray(p.risks) && p.risks.length ? '\n\n风险注意：\n' + p.risks.map(r => '· ' + r).join('\n') : '';
+                        const nonGoals = Array.isArray(p.non_goals) && p.non_goals.length ? '\n\n非目标（明确不做）：\n' + p.non_goals.map(n => '· ' + n).join('\n') : '';
+                        const rollback = Array.isArray(p.rollback) && p.rollback.length ? '\n\n失败回滚：\n' + p.rollback.map(r => '· ' + r).join('\n') : '';
+                        const message = goal + '\n\n步骤：\n' + steps + acceptance + touchpoints + risks + nonGoals + rollback;
+                        let approved = false;
+                        try {
+                            approved = await showConfirmModalAsync('AI 任务计划，请确认是否执行', message, { blockOutsideClick: true, blockEsc: true, modalStyle: 'max-width: 40%;width: 40%;', modelBodyStyle: 'height: 32rem;overflow-y: auto;' });
+                        } catch (err) {
+                            console.warn('[plan] 计划确认框异常:', err);
+                        }
+                        try {
+                            await window.__TAURI__.core.invoke('plan_respond', {
+                                planId: plan_id,
+                                approved,
+                                reason: approved ? null : '用户未批准此计划',
+                            });
+                        } catch (err) {
+                            console.warn('[plan] 回传计划确认结果失败:', err);
+                        }
+                    });
+                } catch (e) {
+                    console.warn('注册 plan 计划确认监听失败:', e);
+                }
+                // 监听计划未获批准事件（超时/通道异常，非用户主动拒绝）：
+                // 右下角 sticky 常驻提醒，用户点击叉号自行关闭
+                try {
+                    const { listen } = window.__TAURI__.event;
+                    listen('plan:rejected', (e) => {
+                        const payload = (e && e.payload) || {};
+                        const reason = payload.reason ? '原因：' + payload.reason : '';
+                        Notify.sticky('AI 任务计划未获批准，任务已中止。\n' + reason);
+                    });
+                } catch (e) {
+                    console.warn('注册 plan:rejected 监听失败:', e);
+                }
                 // 应用启动时，root 目录就绪即自动启动 watcher（静默运行），并同步索引开关
                 if (getRootHandle()) {
                     setTimeout(startWatcherIfNeeded, 500);
@@ -54712,8 +55534,42 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
+        // ── Trace 阶段面板：按 request_id 渲染阶段耗时（trace:event）──
+        window.__chatTraceMap = {};
+        function traceEscapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, function (ch) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+            });
+        }
+        function renderTracePanel(events) {
+            if (!events) return '';
+            if (!events.length) return '';
+            const rows = events.map(function (ev) {
+                let icon = '▶';
+                if (ev.status === 'ok') icon = '✅';
+                else if (ev.status === 'error') icon = '❌';
+                else if (ev.status === 'cancelled') icon = '⛔';
+                else if (ev.status === 'denied') icon = '🚫';
+                const dur = ev.status === 'start' ? '' : (ev.duration_ms + 'ms');
+                const detail = ev.detail ? (' — ' + traceEscapeHtml(ev.detail)) : '';
+                return '<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 4px;font-size:12px;line-height:1.5;">'
+                    + '<span style="color:#888;">' + icon + ' ' + traceEscapeHtml(ev.stage) + detail + '</span>'
+                    + '<span style="color:#888;white-space:nowrap;">' + dur + '</span></div>';
+            }).join('');
+            return '<details style="margin-top:8px;border:1px solid #333;border-radius:6px;padding:6px 8px;">'
+                + '<summary style="cursor:pointer;font-size:12px;color:#888;user-select:none;">⚙ 阶段耗时（trace）</summary>'
+                + '<div style="margin-top:4px;">' + rows + '</div></details>';
+        }
+
         async function highlightChatCodeBlocks(dom) {
-            await postProcessCodeAndDiagrams(dom);
+            try {
+                await postProcessCodeAndDiagrams(dom);
+            } finally {
+                if (window._chatAutoScroll !== false) {
+                    const scroller = document.getElementById('chat-messages');
+                    if (scroller) scroller.scrollTop = scroller.scrollHeight;
+                }
+            }
         }
 
         async function setLogLevel(level) {
@@ -54764,11 +55620,21 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if(FrontendBridge) FrontendBridge.start();
         }
         // ====== 技能管理（Skill Manager，skill 前缀隔离） ======
-        // 依赖主页面全局：skillContainer / escapeHtml / showConfirmModal / showNotification
-        // getRootHandle / getDirPath / isTauriVisit / switchToView（加载顺序：本文件须在主页内联脚本之后）
-        // 技能可声明的工具白名单（后端 ALLOWED_TOOLS 的子集；
-        // activate_skill / deactivate_skill 为系统常驻管理工具，不可由技能声明）
-        const ALLOWED_SKILL_TOOLS = ['kb_search', 'code_lookup', 'read', 'edit', 'delete', 'grep', 'list_files', 'git_status', 'pomodoro'];
+        let ALLOWED_SKILL_TOOLS = [];
+        
+        /** 从后端加载技能工具白名单（单一来源）；本地模式使用 fallback 副本 */
+        async function loadAllowedSkillTools() {
+            if (!isTauriVisit() || !window.__TAURI__?.core?.invoke) return;
+            try {
+                const list = await window.__TAURI__.core.invoke('skill_allowed_tools');
+                if (Array.isArray(list) && list.length > 0) {
+                    ALLOWED_SKILL_TOOLS = list.map(x => ({ key: String(x.key), label: String(x.label || x.key) }));
+                }
+            } catch (e) {
+                console.warn('[skill] 加载工具白名单失败，使用本地 fallback:', e);
+            }
+        }
+        
         const SKILL_SCOPE_NAMES = { system: '系统', global: '全局', project: '当前目录' };
 
         let skillDirPath = '';          // 当前根目录路径（打开面板时刷新）
@@ -54814,6 +55680,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             await switchToView(skillContainer, 'flex');
             skillDirPath = dirPath;
+            // 优先从后端加载工具白名单（单一来源）；本地模式用 fallback
+            await loadAllowedSkillTools();
             skillSubscribeChanged();
             await skillLoadList();
         }
@@ -54923,6 +55791,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
             const writable = skill.scope !== 'system';
             const tools = skill.tools || [];
+            const toolsNames = tools.map(t => ALLOWED_SKILL_TOOLS.find(tt => tt.key === t)?.label || t);
             const actions = [
                 writable ? `<button class="btn btn-sm btn-primary" onclick="skillEditSkill('${skill.scope}','${skill.id}')">编辑</button>` : '',
                 writable ? `<button class="btn btn-sm btn-warning" onclick="skillToggleEnabled('${skill.scope}','${skill.id}',${!skill.enabled})">${skill.enabled ? '停用' : '启用'}</button>` : '',
@@ -54955,7 +55824,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         <div class="skill-detail-section-title">描述</div>
                         <div class="skill-detail-desc">${escapeHtml(skill.description) || '（无描述）'}</div>
                     </div>
-                    ${tools.length ? `<div class="skill-detail-section"><div class="skill-detail-section-title">可用工具</div><div class="skill-tag-row">${tools.map(t => `<span class="skill-tag-chip">${escapeHtml(t)}</span>`).join('')}</div></div>` : ''}
+                    ${toolsNames.length ? `<div class="skill-detail-section"><div class="skill-detail-section-title">可用工具</div><div class="skill-tag-row">${toolsNames.map(t => `<span class="skill-tag-chip">${escapeHtml(t)}</span>`).join('')}</div></div>` : ''}
                     <div class="skill-detail-section">
                         <div class="skill-detail-section-title">指令正文</div>
                         <div class="skill-detail-body"><div class="markdown-body" style="zoom: 0.8;">${markedMd(escapeHtml(skill.body) || '（空）')}</div></div>
@@ -55055,7 +55924,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         <div class="skill-form-field full">
                             <label>可用工具</label>
                             <div class="skill-form-tools" id="skill-f-tools">
-                                ${ALLOWED_SKILL_TOOLS.map(t => `<label class="skill-form-tool"><input type="checkbox" value="${t}" ${tools.includes(t) ? 'checked' : ''}> ${t}</label>`).join('')}
+                                ${ALLOWED_SKILL_TOOLS.map(t => `<label class="skill-form-tool" title="${t.label}"><input type="checkbox" value="${t.key}" ${tools.includes(t.key) ? 'checked' : ''}> ${t.label}</label>`).join('')}
                             </div>
                         </div>
                         <div class="skill-form-field full">
@@ -55314,7 +56183,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             closeBtn.addEventListener('click', close);
 
             nameInput.focus();
-            nameInput.select();
 
             let closed = false;
             let submitting = false;
@@ -55677,6 +56545,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     return `未知动作: ${action}`;
             }
         });
+
+        // 工具审批已迁移到 Tauri IPC：listen('approval:request') + invoke('approval_respond')
+        // （见 initTauriEventListeners 区域），不再走 WebSocket 桥。
+
         async function openFileOrDirFromSystem(filePath, isFile){
             if(!isTauriVisit()) return;
             // 传入相对路径，后端按配置的根目录自动拼接

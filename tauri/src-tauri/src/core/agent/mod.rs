@@ -23,14 +23,16 @@ use tokio_util::sync::CancellationToken;
 
 use crate::core::approval::ApprovalGate;
 use crate::core::approval::hook::ApprovalGateHook;
-use crate::core::skill::activation::ActiveSkillState;
+use crate::core::skill::activation::{ActiveSkillState, MAX_SKILL_INJECTION_CHARS};
 use crate::core::skill::SkillRegistry;
 
 pub mod planner;
 /// AI Agent 指标参数集中配置（单一来源）
 pub mod limits;
 
-pub use limits::{DEFAULT_MAX_TURNS, KB_TOP_K_SCHEMA_MAX, MAX_CONTEXT_CHARS, MAX_TOP_K};
+pub use limits::{
+    DEFAULT_MAX_TURNS, KB_TOP_K_SCHEMA_MAX, MAX_CONTEXT_CHARS, MAX_TOP_K, PERSISTENT_INJECTION,
+};
 use self::tool_registry::ToolRegistry;
 use crate::core::{Indexer, SearchHit, call_embedding_query};
 
@@ -279,12 +281,14 @@ impl AgentHook for SkillGateHook {
 /// 使用 Rig 原生 [`RequestPatch`] 机制：
 /// - `preamble`：基础角色 + 预检索上下文 + L1 技能目录（静态）+ 已激活技能指令（动态）
 /// - `active_tools`：基础工具 ∪ 已激活技能声明工具（Rig 原生过滤，模型不会发起范围外的调用）
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct SkillInstructionHook {
     /// 静态基础 preamble（基础角色 + 预检索上下文 + L1 技能目录）
     base_preamble: String,
-    /// 激活状态（动态读取 L2 指令与工具白名单）
+    /// 激活状态（动态读取工具白名单；回退模式下读取激活记录定位正文）
     state: Arc<ActiveSkillState>,
+    /// 技能定义层（回退模式下据此重新查询已激活技能正文；一次性模式不使用）
+    registry: Arc<SkillRegistry>,
     /// 本次请求的模型调用总预算（对齐 AgentBuilder::default_max_turns，
     /// 用于轮次预算预警：剩余不足时引导模型提前收敛）
     max_turns: usize,
@@ -297,14 +301,45 @@ impl SkillInstructionHook {
     pub fn new(
         base_preamble: String,
         state: Arc<ActiveSkillState>,
+        registry: Arc<SkillRegistry>,
         max_turns: usize,
         narrow_tools: bool,
     ) -> Self {
         Self {
             base_preamble,
             state,
+            registry,
             max_turns,
             narrow_tools,
+        }
+    }
+
+    /// 回退模式：从 SkillRegistry 按激活记录重新查询已激活技能正文并拼接。
+    ///
+    /// 仅统计 `Active` 状态技能（warm/Candidate 未激活不注入）；
+    /// 按激活顺序拼接，总量受 [`MAX_SKILL_INJECTION_CHARS`] 预算截断。
+    fn persistent_instructions(&self) -> Option<String> {
+        let mut parts: Vec<String> = Vec::new();
+        let mut used = 0usize;
+        for a in self.state.active_only() {
+            if let Some(skill) = self.registry.get(a.scope, &a.skill_id) {
+                let body = skill.body.trim();
+                if body.is_empty() {
+                    continue;
+                }
+                let block = format!("## {}\n\n{}", skill.name, body);
+                let block_chars = block.chars().count();
+                if used + block_chars > MAX_SKILL_INJECTION_CHARS {
+                    break;
+                }
+                parts.push(block);
+                used += block_chars;
+            }
+        }
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join("\n\n---\n\n"))
         }
     }
 }
@@ -315,13 +350,15 @@ impl AgentHook for SkillInstructionHook {
         _ctx: &HookContext,
         event: CompletionCall<'_>,
     ) -> CompletionCallAction {
-        // L2：已激活技能的指令正文（多技能按激活顺序拼接）
+        // L2：技能正文注入——默认一次性（正文经 activate_skill 工具结果 / 请求入口
+        // history 进入一次，此处不重复）；回退模式（PERSISTENT_INJECTION=true）
+        // 每轮从定义层重新查询注入（三拆后激活状态不持有正文）。
         let mut preamble = self.base_preamble.clone();
-        let instructions = self.state.instructions();
-        if !instructions.is_empty() {
-            preamble.push_str("\n\n---\n\n");
-            preamble.push_str("请遵循以下已激活技能的指令：\n\n");
-            preamble.push_str(&instructions);
+        if PERSISTENT_INJECTION {
+            if let Some(instructions) = self.persistent_instructions() {
+                preamble.push_str("\n\n---\n\n请遵循以下已激活技能的指令：\n\n");
+                preamble.push_str(&instructions);
+            }
         }
         // 轮次预算预警：剩余模型调用轮次不足时（turn 从 1 开始计数），
         // 强制引导模型停止调用工具、基于已有信息直接给出最终答案，
@@ -813,7 +850,7 @@ pub fn build_rag_agent(
     // 避免子代理通过激活技能注入 SKILL.md 指令（提示注入面）。
     if tool_whitelist.is_none_or(|set| set.contains("activate_skill")) {
         builder = builder
-            .dynamic_tool(tools::build_activate_skill_tool(registry, skill_state.clone()));
+            .dynamic_tool(tools::build_activate_skill_tool(registry.clone(), skill_state.clone()));
     }
     if tool_whitelist.is_none_or(|set| set.contains("deactivate_skill")) {
         builder = builder.dynamic_tool(tools::build_deactivate_skill_tool(skill_state.clone()));
@@ -824,7 +861,7 @@ pub fn build_rag_agent(
         // 剩余不足时由 SkillInstructionHook 注入预算预警引导模型提前收敛
         .default_max_turns(max_turns)
         .add_hook(LlmTraceHook::new(Some(search_config.request_id.clone())))
-        .add_hook(SkillInstructionHook::new(preamble, skill_state.clone(), max_turns, narrow_tools))
+        .add_hook(SkillInstructionHook::new(preamble, skill_state.clone(), registry.clone(), max_turns, narrow_tools))
         .add_hook(SkillGateHook::new(skill_state, !narrow_tools, Some(external_tool_names)));
     // 审批门(可选)：先技能白名单、后审批，避免对「本就不该调用的工具」弹窗打扰用户。
     if let Some(gate) = approval_gate {

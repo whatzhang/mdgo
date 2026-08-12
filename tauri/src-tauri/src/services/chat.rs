@@ -1365,21 +1365,47 @@ impl ChatStore {
         Ok(actual_ids == expected_ids)
     }
 
-    /// 会话挂载技能（保存快照到 DB）
+    /// 会话挂载技能（保存快照到 DB；mode: warm=自动准备 / active=立即生效）
     pub fn attach_skill(
         &self,
         session_id: &str,
         scope: &str,
         skill_id: &str,
         version: u32,
+        mode: &str,
     ) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute(
-            "INSERT OR REPLACE INTO chat_session_skills (session_id, scope, skill_id, version)
-             VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![session_id, scope, skill_id, version],
+            "INSERT OR REPLACE INTO chat_session_skills (session_id, scope, skill_id, version, mount_mode)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![session_id, scope, skill_id, version, mode],
         )
         .map_err(|e| format!("挂载技能失败: {}", e))?;
+        Ok(())
+    }
+
+    /// 切换会话挂载技能的模式（warm=自动准备 / active=立即生效）
+    pub fn set_mount_mode(
+        &self,
+        session_id: &str,
+        scope: &str,
+        skill_id: &str,
+        mode: &str,
+    ) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let changed = conn
+            .execute(
+                "UPDATE chat_session_skills SET mount_mode = ?1
+                 WHERE session_id = ?2 AND scope = ?3 AND skill_id = ?4",
+                rusqlite::params![mode, session_id, scope, skill_id],
+            )
+            .map_err(|e| format!("切换挂载模式失败: {}", e))?;
+        if changed == 0 {
+            return Err(format!(
+                "技能未挂载: {}:{}（先挂载再切换模式）",
+                scope, skill_id
+            ));
+        }
         Ok(())
     }
 
@@ -1399,21 +1425,26 @@ impl ChatStore {
         Ok(())
     }
 
-    /// 获取会话挂载的技能列表（含版本）
+    /// 获取会话挂载的技能列表（scope, skill_id, version, mount_mode）
     pub fn get_attached_skills(
         &self,
         session_id: &str,
-    ) -> Result<Vec<(String, String, u32)>, String> {
+    ) -> Result<Vec<(String, String, u32, String)>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
             .prepare(
-                "SELECT scope, skill_id, version FROM chat_session_skills WHERE session_id = ?1",
+                "SELECT scope, skill_id, version, mount_mode FROM chat_session_skills WHERE session_id = ?1",
             )
             .map_err(|e| format!("查询挂载技能失败: {}", e))?;
 
-        let attached: Vec<(String, String, u32)> = stmt
+        let attached: Vec<(String, String, u32, String)> = stmt
             .query_map(rusqlite::params![session_id], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get::<_, i64>(2)? as u32))
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get::<_, i64>(2)? as u32,
+                    row.get(3)?,
+                ))
             })
             .map_err(|e| format!("查询挂载技能失败: {}", e))?
             .collect::<Result<Vec<_>, _>>()

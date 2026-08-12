@@ -69,12 +69,13 @@ pub fn init_all(conn: &Connection) -> Result<(), String> {
             PRIMARY KEY (scope, id)
         );
 
-        -- 会话挂载快照（含 version，恢复时校验版本漂移）
+        -- 会话挂载快照（含 version，恢复时校验版本漂移；mount_mode: warm=自动准备 / active=立即生效）
         CREATE TABLE IF NOT EXISTS chat_session_skills (
             session_id TEXT NOT NULL,
             scope      TEXT NOT NULL,
             skill_id   TEXT NOT NULL,
             version    INTEGER NOT NULL,
+            mount_mode TEXT NOT NULL DEFAULT 'warm',
             PRIMARY KEY (session_id, scope, skill_id),
             FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
         );
@@ -110,6 +111,34 @@ pub fn init_all(conn: &Connection) -> Result<(), String> {
 
     // 旧版本数据库迁移：删除已废弃的无消费列
     migrate_drop_legacy_columns(conn)?;
+    // 挂载模式列（旧库补列，幂等：已有列则跳过）
+    migrate_add_mount_mode(conn)?;
+    Ok(())
+}
+
+/// 迁移：为 `chat_session_skills` 补充 `mount_mode` 列（旧库兼容，幂等）。
+///
+/// 开发阶段已在新建表 DDL 中带该列；此处仅对历史库执行一次 ADD COLUMN，
+/// 避免挂载/查询在新列缺失时报错（INSERT no column / SELECT no column）。
+fn migrate_add_mount_mode(conn: &Connection) -> Result<(), String> {
+    let existing: Vec<String> = {
+        let mut stmt = conn
+            .prepare("PRAGMA table_info(chat_session_skills)")
+            .map_err(|e| format!("[schema] 读取 chat_session_skills 表结构失败: {}", e))?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(|e| format!("[schema] 读取 chat_session_skills 表结构失败: {}", e))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("[schema] 读取 chat_session_skills 表结构失败: {}", e))?
+    };
+    if existing.iter().any(|c| c == "mount_mode") {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "ALTER TABLE chat_session_skills ADD COLUMN mount_mode TEXT NOT NULL DEFAULT 'warm'",
+    )
+    .map_err(|e| format!("[schema] 迁移失败（ADD COLUMN mount_mode）: {}", e))?;
+    log::info!("[schema] 已为旧库 chat_session_skills 补充 mount_mode 列");
     Ok(())
 }
 

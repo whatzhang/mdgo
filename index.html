@@ -1004,6 +1004,11 @@
             align-content: center;
             justify-content: center;
         }
+        .mermaid-view-btn.copy {
+            position: absolute;
+            top: 0.5rem;
+            right: 2rem;
+        }
 
         .mermaid-output:hover .mermaid-view-btn,
         .mermaid-output:focus-within .mermaid-view-btn {
@@ -5688,13 +5693,6 @@
             cursor: default;
         }
 
-        .chat-skill-picker-row .row-check {
-            flex-shrink: 0;
-            width: 0.875rem;
-            text-align: center;
-            color: var(--color-primary, #165bfa);
-        }
-
         .chat-skill-picker-row .row-name {
             flex: 1;
             min-width: 0;
@@ -5711,6 +5709,84 @@
             border-radius: 0.5rem;
             background: var(--color-bg-soft, rgba(128, 128, 128, 0.1));
             color: var(--color-text-secondary, #8b949e);
+        }
+
+        /* 挂载模式：行最左侧状态图标（三态 SVG）+ 右侧纯文字标签 + 状态菜单 */
+        .row-icon {
+            flex-shrink: 0;
+            width: 0.875rem;
+            height: 0.875rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--color-text-secondary, #8b949e);
+        }
+        .row-icon svg {
+            width: 100%;
+            height: 100%;
+        }
+        .row-icon.warm { color: #17af70; }
+        .row-icon.active { color: #ff8c00; }
+
+        .skill-mode-area {
+            flex-shrink: 0;
+            position: relative;
+        }
+        .skill-mode-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            font-size: 0.6875rem;
+            line-height: 1;
+            padding: 0.2rem 0.4rem;
+            border-radius: 0.75rem;
+            cursor: pointer;
+            white-space: nowrap;
+            color: var(--color-text-secondary, #8b949e);
+        }
+        .skill-mode-label.warm { color: #17af70; }
+        .skill-mode-label.active { color: #ff8c00; }
+        .skill-mode-label .caret { font-size: 0.6rem; }
+        .skill-mode-menu {
+            position: absolute;
+            right: 0;
+            top: calc(100% + 0.25rem);
+            min-width: 8.5rem;
+            background: var(--color-bg, #fff);
+            border-radius: 0.5rem;
+            box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.15);
+            padding: 0.25rem;
+            z-index: 30;
+        }
+        .skill-mode-menu.up {
+            top: auto;
+            bottom: calc(100% + 0.25rem);
+        }
+        .skill-mode-menu .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+            padding: 0.35rem 0.5rem;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            font-size: 0.75rem;
+            color: var(--color-text, #333);
+            white-space: nowrap;
+        }
+        .skill-mode-menu .menu-item:hover {
+            background: rgba(22, 91, 250, 0.08);
+        }
+        .skill-mode-menu .menu-item.selected {
+            color: var(--color-primary, #165bfa);
+            font-weight: 600;
+        }
+        .skill-mode-menu .menu-item.remove {
+            color: #e5484d;
+        }
+        .skill-mode-menu .menu-sep {
+            height: 1px;
+            margin: 0.25rem 0.25rem;
+            background: var(--color-border, rgba(0, 0, 0, 0.1));
         }
 
         .chat-textarea-wrap {
@@ -29375,6 +29451,7 @@ kanban-plugin: basic
                             const { svg } = await mermaid.render(uniqueId, code.textContent);
                             const svgContainer = document.createElement('div');
                             svgContainer.className = 'mermaid-output';
+                            svgContainer.dataset.raw = encodeURIComponent(code.textContent);
                             svgContainer.innerHTML = svg;
                             el.replaceWith(svgContainer);
                             // 右上角添加「查看」按钮，支持全屏拖拽缩放
@@ -35944,20 +36021,40 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
          * 重复渲染时自动去重，避免叠加多个按钮与监听器。
          */
         function attachMermaidViewButton(container) {
-            if (!container || container.querySelector('.mermaid-view-btn')) return;
-            const btn = document.createElement('button');
-            btn.className = 'mermaid-view-btn';
-            btn.innerHTML = `<svg width="12" height="12" fill="currentColor" x="0px" y="0px" viewBox="0 0 256 256"   xml:space="preserve">
-<path d="M256,229.484l-81.427-81.427c9.903-14.981,15.679-32.917,15.679-52.181C190.253,43.562,147.691,1,95.376,1
-	S0.5,43.562,0.5,95.876s42.562,94.876,94.876,94.876c19.521,0,37.683-5.929,52.783-16.077L229.484,256L256,229.484z M20.5,95.876
-	C20.5,54.589,54.089,21,95.376,21c41.287,0,74.876,33.589,74.876,74.876c0,41.287-33.59,74.876-74.876,74.876
-	C54.089,170.753,20.5,137.163,20.5,95.876z"/>
-</svg>`;
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                openMermaidFullscreen(container.querySelector('svg'));
-            });
-            container.appendChild(btn);
+            if (!container) return;
+            if (!container.querySelector('.mermaid-view-btn')){
+                const btn = document.createElement('button');
+                btn.className = 'mermaid-view-btn';
+                btn.innerHTML = `<svg width="12" height="12" fill="currentColor" x="0px" y="0px" viewBox="0 0 256 256" xml:space="preserve">
+    <path d="M256,229.484l-81.427-81.427c9.903-14.981,15.679-32.917,15.679-52.181C190.253,43.562,147.691,1,95.376,1
+        S0.5,43.562,0.5,95.876s42.562,94.876,94.876,94.876c19.521,0,37.683-5.929,52.783-16.077L229.484,256L256,229.484z M20.5,95.876
+        C20.5,54.589,54.089,21,95.376,21c41.287,0,74.876,33.589,74.876,74.876c0,41.287-33.59,74.876-74.876,74.876
+        C54.089,170.753,20.5,137.163,20.5,95.876z"/>
+    </svg>`;
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openMermaidFullscreen(container.querySelector('svg'));
+                });
+                container.appendChild(btn);
+            }
+            if (!container.querySelector('.mermaid-view-btn copy')){
+                const btn = document.createElement('button');
+                btn.className = 'mermaid-view-btn copy';
+                btn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    try{
+                        const raw =  container.dataset.raw;
+                        const code = decodeURIComponent(raw);
+                        await copyTextToClipboard(code) 
+                        showNotification('复制成功!', 'success');
+                    }catch(err){
+                        console.error('复制代码失败:', err);
+                        showNotification('复制失败!', 'error');
+                    }
+                });
+                container.appendChild(btn);
+            }
         }
 
         function fsSetZoom(level) {
@@ -35990,14 +36087,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 fsCloseOverlay();
                 return;
             }
-
             // 获取当前渲染的 SVG
             const svgEle = previewAreaMermaid.querySelector('svg');
             if (!svgEle) {
                 showNotification('请先渲染图表', 'warning');
                 return;
             }
-
             await openMermaidFullscreen(svgEle);
         }
 
@@ -51962,24 +52057,60 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 picker.style.display = 'flex';
 
                 // 面板行列表（name/description 为用户可控字段，必须转义防注入）
-                const noSession = !currentSessionId;
+                // 挂载三态产品化：最左侧状态图标（SVG）+ 右侧纯文字标签；整行可点
                 const scopeLabels = { system: '系统', global: '全局', project: '当前目录' };
+                const SKILL_ICONS = {
+                    // 关闭：圆圈 + 对角斜线（禁用）
+                    off:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><line x1="5.5" y1="5.5" x2="18.5" y2="18.5"/></svg>',
+                    // 自动准备：右半圆（部分生效）
+                    warm:   '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 0 1 0 18z"/></svg>',
+                    // 立即生效：闪电
+                    active: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z"/></svg>',
+                };
+                const MODE_META = {
+                    warm:   { label: '自动准备', title: '自动准备：会提前准备知识库检索，但不占用对话上下文；AI 需要时可自动启用完整规则，节省token成本' },
+                    active: { label: '立即生效', title: '立即生效：挂载即加载指令与工具，立即生效并占用对话上下文' },
+                };
+                const MODE_OFF = { label: '关闭', title: '关闭：此技能不会自动使用。点击整行挂载为"自动准备"' };
                 popup.innerHTML = enabledSkills.map(skill => {
-                    const isAttached = attached.some(a => a.scope === skill.scope && a.id === skill.id);
+                    const attachedItem = attached.find(a => a.scope === skill.scope && a.id === skill.id);
+                    const mode = attachedItem ? attachedItem.mode : null; // 'warm' | 'active' | null
+                    const meta = mode ? (MODE_META[mode] || MODE_OFF) : MODE_OFF;
                     const name = escapeHtml(skill.name);
                     const description = escapeHtml(skill.description || skill.name);
                     const scope = escapeHtml(skill.scope);
                     const id = escapeHtml(skill.id);
                     const scopeLabel = escapeHtml(scopeLabels[skill.scope] || skill.scope);
+                    // 已挂载行：右侧纯文字标签（点击展开状态菜单：自动准备/立即生效/移除）
+                    // 未挂载行：右侧纯文字"关闭"（整行点击挂载为自动准备）
+                    const modeArea = mode ? `
+                        <span class="skill-mode-area">
+                            <span class="skill-mode-label ${mode}"
+                                onclick="toggleSkillModeMenu(this, event)"
+                                title="${meta.title}">${meta.label} <span class="caret">▾</span></span>
+                            <div class="skill-mode-menu" style="display:none;">
+                                <div class="menu-item ${mode === 'warm' ? 'selected' : ''}"
+                                    onclick="skillModeAction('warm', this, event)" title="${MODE_META.warm.title}">自动准备</div>
+                                <div class="menu-item ${mode === 'active' ? 'selected' : ''}"
+                                    onclick="skillModeAction('active', this, event)" title="${MODE_META.active.title}">立即生效</div>
+                                <div class="menu-sep"></div>
+                                <div class="menu-item remove"
+                                    onclick="skillModeAction('remove', this, event)" title="从本会话卸载该技能">移除</div>
+                            </div>
+                        </span>` : `
+                        <span class="skill-mode-area">
+                            <span class="skill-mode-label off" title="${MODE_OFF.title}">${MODE_OFF.label}</span>
+                        </span>`;
                     return `
-                        <div class="chat-skill-picker-row ${isAttached ? 'active' : ''} ${noSession ? 'disabled-row' : ''}"
+                        <div class="chat-skill-picker-row ${mode ? 'active' : ''}"
                              data-scope="${scope}"
                              data-id="${id}"
                              data-name="${name}"
-                             onclick="toggleSkillFromPicker(this)"
+                             onclick="handleSkillRowClick(this, event)"
                              title="${id}, ${description}">
-                            <span class="row-check">${isAttached ? '✓' : '☐'}</span>
+                            <span class="row-icon ${mode || 'off'}">${SKILL_ICONS[mode || 'off']}</span>
                             <span class="row-name">${name}</span>
+                            ${modeArea}
                             <span class="row-scope ${scope}">${scopeLabel}</span>
                         </div>
                     `;
@@ -52023,12 +52154,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             popup.style.display = isOpening ? 'block' : 'none';
         }
 
-        // 点击面板外区域时关闭技能选择面板和 prompt 面板
+        // 点击面板外区域时关闭技能选择面板、挂载状态菜单和 prompt 面板。
+        // 注意：技能面板内部任意点击（含空白/行/菜单）均不关闭——保持列表打开。
         document.addEventListener('click', (ev) => {
             const picker = document.getElementById('chat-skill-picker');
             const popup = document.getElementById('chat-skill-popup');
-            if (picker && popup && !picker.contains(ev.target)) {
-                popup.style.display = 'none';
+            // 仅当点击点在技能面板外部时，才关闭状态菜单与面板
+            if (!(picker && picker.contains(ev.target))) {
+                document.querySelectorAll('#chat-skill-popup .skill-mode-menu').forEach(m => { m.style.display = 'none'; });
+                if (popup) popup.style.display = 'none';
             }
             const promptPicker = document.getElementById('chat-prompt-picker');
             const promptPopup = document.getElementById('chat-prompt-popup');
@@ -52038,58 +52172,156 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         });
 
         /**
-         * 面板行：切换技能挂载状态
+         * 确保存在当前会话：挂载技能需要绑定会话（chat_session_skills 外键）。
+         * 无会话时自动创建一个（RAG 模式建 rag 类型），用户无需先发消息。
+         * @returns {Promise<boolean>} 是否就绪
          */
-        async function toggleSkillFromPicker(rowEl) {
-            if (!currentRootPath) return;
-            // 会话尚未创建（RAG 模式首条消息才建会话）时给出明确提示，避免静默无效
-            if (rowEl.classList.contains('disabled-row')) {
-                showNotification('请先发送一条消息创建会话，再挂载技能', 'warning');
-                return;
+        async function ensureChatSession() {
+            if (currentSessionId) return true;
+            if (!currentRootPath) return false;
+            try {
+                const sessionType = chatMode === 'rag' ? 'rag' : 'regular';
+                const session = await window.__TAURI__.core.invoke('chat_session_create', {
+                    dirPath: currentRootPath,
+                    title: '新对话',
+                    type: sessionType,
+                });
+                chatSessions.unshift(session);
+                currentSessionId = session.id;
+                renderChatSessionList();
+                await rememberLastChatSession();
+                return true;
+            } catch (e) {
+                console.error('自动创建会话失败:', e);
+                showNotification(`创建会话失败: ${e}`, 'error');
+                return false;
             }
+        }
 
+        /**
+         * 整行点击：未挂载 → 挂载为自动准备；已挂载 → 展开状态菜单（同一位置二次点击收起）
+         */
+        function handleSkillRowClick(rowEl, event) {
+            if (event) event.stopPropagation(); // 阻止冒泡到 document click（否则打开的菜单被立即关闭）
+            if (!currentRootPath || !rowEl) return;
+            const isAttached = rowEl.classList.contains('active');
+            if (isAttached) {
+                const label = rowEl.querySelector('.skill-mode-label');
+                if (label) toggleSkillModeMenu(label, null);
+            } else {
+                mountSkillFromRow(rowEl);
+            }
+        }
+
+        /**
+         * 挂载技能（未挂载行整行点击）：挂载为自动准备（warm）
+         */
+        async function mountSkillFromRow(rowEl) {
+            if (!currentRootPath || !rowEl) return;
+            // 无会话时自动创建，无需用户先发消息
+            if (!(await ensureChatSession())) return;
             const scope = rowEl.dataset.scope;
             const id = rowEl.dataset.id;
             const name = rowEl.dataset.name;
-            const isAttached = rowEl.classList.contains('active');
-
             try {
-                if (isAttached) {
-                    // 卸载
+                await window.__TAURI__.core.invoke('skill_attach', {
+                    dirPath: currentRootPath,
+                    sessionId: currentSessionId,
+                    scope,
+                    skillId: id,
+                    mode: 'warm',
+                });
+                chatAttachedSkills.push({ scope, id, name, mode: 'warm' });
+                syncSkillPickerCount();
+                renderSkillChips();
+            } catch (e) {
+                console.error('挂载技能失败:', e);
+                showNotification(`挂载失败: ${e}`, 'error');
+            }
+        }
+
+        /**
+         * 展开/收起挂载状态菜单（已挂载行标签；同一时间只开一个菜单）。
+         * 菜单默认向下弹出，底部空间不足时自动改向上（避免被面板裁切）。
+         */
+        function toggleSkillModeMenu(labelEl, event) {
+            if (event) event.stopPropagation();
+            if (!labelEl) return;
+            const area = labelEl.parentElement;
+            const menu = area ? area.querySelector('.skill-mode-menu') : null;
+            if (!menu) return;
+            const isOpen = menu.style.display === 'block';
+            // 关闭所有菜单（chat-skill-popup 是 id，需用 # 选择器）
+            document.querySelectorAll('#chat-skill-popup .skill-mode-menu').forEach(m => {
+                m.style.display = 'none';
+                m.classList.remove('up');
+            });
+            if (!isOpen) {
+                menu.style.display = 'block';
+                // 动态方向：先按向下定位，若超出面板底部则切换为向上
+                const popup = document.getElementById('chat-skill-popup');
+                if (popup) {
+                    const mr = menu.getBoundingClientRect();
+                    const pr = popup.getBoundingClientRect();
+                    if (mr.bottom > pr.bottom - 4) {
+                        menu.classList.add('up');
+                    }
+                }
+            }
+        }
+
+        /**
+         * 状态菜单动作：切换模式（自动准备/立即生效）或移除
+         */
+        async function skillModeAction(mode, item, event) {
+            if (event) event.stopPropagation();
+            const menu = item.closest('.skill-mode-menu');
+            const rowEl = item.closest('.chat-skill-picker-row');
+            if (!menu || !rowEl) return;
+            menu.style.display = 'none';
+            if (!currentRootPath) return;
+            // 无会话时自动创建，无需用户先发消息
+            if (!(await ensureChatSession())) return;
+            const scope = rowEl.dataset.scope;
+            const id = rowEl.dataset.id;
+            const name = rowEl.dataset.name;
+            try {
+                if (mode === 'remove') {
                     await window.__TAURI__.core.invoke('skill_detach', {
                         dirPath: currentRootPath,
                         sessionId: currentSessionId,
                         scope,
                         skillId: id,
                     });
-                    rowEl.classList.remove('active');
-                    const check = rowEl.querySelector('.row-check');
-                    if (check) check.textContent = '☐';
                     chatAttachedSkills = chatAttachedSkills.filter(s => !(s.scope === scope && s.id === id));
                 } else {
-                    // 挂载
-                    await window.__TAURI__.core.invoke('skill_attach', {
+                    // 'warm' | 'active'
+                    await window.__TAURI__.core.invoke('skill_set_mount_mode', {
                         dirPath: currentRootPath,
                         sessionId: currentSessionId,
                         scope,
                         skillId: id,
+                        mode,
                     });
-                    rowEl.classList.add('active');
-                    const check = rowEl.querySelector('.row-check');
-                    if (check) check.textContent = '✓';
-                    chatAttachedSkills.push({ scope, id, name });
+                    const found = chatAttachedSkills.find(s => s.scope === scope && s.id === id);
+                    if (found) found.mode = mode; else chatAttachedSkills.push({ scope, id, name, mode });
                 }
-                // 同步触发按钮上的已挂载数量
-                const trigger = document.getElementById('chat-skill-trigger');
-                const skillCount = document.getElementById('skill-count');
-                if (trigger && skillCount) {
-                    const count = chatAttachedSkills.length;
-                    skillCount.innerHTML =  count > 0 ? `${count}` : '';
-                    trigger.classList.toggle('active', count > 0);
-                }
+                syncSkillPickerCount();
+                renderSkillChips();
             } catch (e) {
-                console.error('切换技能挂载失败:', e);
+                console.error('切换技能模式失败:', e);
                 showNotification(`技能操作失败: ${e}`, 'error');
+            }
+        }
+
+        /** 同步触发按钮上的已挂载数量与高亮 */
+        function syncSkillPickerCount() {
+            const trigger = document.getElementById('chat-skill-trigger');
+            const skillCount = document.getElementById('skill-count');
+            if (trigger && skillCount) {
+                const count = chatAttachedSkills.length;
+                skillCount.innerHTML = count > 0 ? `${count}` : '';
+                trigger.classList.toggle('active', count > 0);
             }
         }
 
@@ -52107,6 +52339,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     scope: s.scope,
                     id: s.id,
                     name: s.name,
+                    mode: s.mode, // 'warm' | 'active'
                 }));
                 return chatAttachedSkills;
             } catch (e) {
@@ -55972,7 +56205,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             closeBtn.addEventListener('click', close);
 
             nameInput.focus();
-            nameInput.select();
 
             let closed = false;
             let submitting = false;

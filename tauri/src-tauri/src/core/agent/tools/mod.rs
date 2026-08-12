@@ -21,7 +21,9 @@ use futures_util::StreamExt;
 use crate::core::agent::limits::*;
 use crate::core::agent::KbSearchConfig;
 use crate::core::db::utils::IgnoreMatcher;
-use crate::core::skill::activation::ActiveSkillState;
+use crate::core::skill::activation::{
+    ActiveSkillState, ActivationSource, SkillLifetime, MAX_SKILL_BODY_CHARS,
+};
 use crate::core::skill::SkillRegistry;
 use crate::core::subagent::{
     SubagentMode, SubagentRunner, SubagentSpec, SUBAGENT_MAX_TURNS, SUBAGENT_SUMMARY_CHARS,
@@ -199,18 +201,25 @@ impl ToolCallBus {
         }
     }
 
-    /// 查看最后一个成功工具调用的结果摘要（不消费，不 drain）。
+    /// 查看最后一个成功工具调用的结果文本（不消费，不 drain）。
     ///
     /// 用于兜底：模型调用了工具并成功返回结果，但未生成文本回复时，
-    /// 将工具结果作为最终回复内容，避免空内容报错。
-    pub fn peek_last_success_summary(&self, request_id: &str) -> Option<String> {
+    /// 将工具**结果内容**（result，截断到轨迹上限）作为最终回复，
+    /// 避免把 summary 元数据（如"7496 字符"）误当内容发给用户。
+    pub fn peek_last_success_result(&self, request_id: &str) -> Option<String> {
         if let Ok(map) = self.map.lock() {
             if let Some(events) = map.get(request_id) {
                 return events
                     .iter()
                     .rev()
                     .find(|e| e.kind == "result" && e.ok)
-                    .map(|e| e.summary.clone());
+                    .map(|e| {
+                        if e.result.trim().is_empty() {
+                            e.summary.clone()
+                        } else {
+                            e.result.clone()
+                        }
+                    });
             }
         }
         None
@@ -237,10 +246,10 @@ pub fn record_tool_call(
 ) {
     let skill_id = cfg
         .skill_state
-        .activated()
+        .active_only()
         .iter()
         .find(|s| s.tools.iter().any(|t| t == tool))
-        .map(|s| format!("{}:{}", s.scope.as_str(), s.id))
+        .map(|s| format!("{}:{}", s.scope.as_str(), s.skill_id))
         .or_else(|| cfg.skill_id.clone());
     let call_id = format!("call_{}", uuid::Uuid::new_v4());
     let arguments = args
@@ -648,20 +657,20 @@ pub async fn read(cfg: &KbSearchConfig, rel_path: &str, offset: usize) -> Result
             // （与子代理摘要/预检索上下文处理保持一致；无命中时原样返回）
             return Ok(crate::core::security::wrap_suspicious(&result));
         }
-        Err(e) if cfg.skill_state.activated().is_empty() => {
-            // 无任何激活技能：若目标是技能参考路径，明确指出需先激活技能，
+        Err(e) if cfg.skill_state.active_only().is_empty() => {
+            // 无任何已激活（Active）技能：若目标是技能参考路径，明确指出需先激活技能，
             // 避免模型误以为文件不存在而反复尝试（浪费多轮工具调用）
             return Err(skill_ref_hint(rel_path, e));
         }
         Err(_) => {}
     }
     let mut last_err = "文件不存在（知识库内与已激活技能的参考目录均未找到）".to_string();
-    for skill in cfg.skill_state.activated() {
+    for skill in cfg.skill_state.active_only() {
         for (scope, base) in &cfg.skill_bases {
             if scope != skill.scope.as_str() {
                 continue;
             }
-            let dir = Path::new(base).join(&skill.id);
+            let dir = Path::new(base).join(&skill.skill_id);
             match safe_resolve_in(&dir, rel_path) {
                 Ok(full) => {
                     let result = read_text(&full, rel_path, offset)?;
@@ -1838,7 +1847,7 @@ pub fn build_activate_skill_tool(
 ) -> DynamicTool {
     DynamicTool::new(
         "activate_skill",
-        "激活一个技能以加载其详细指令（SKILL.md 正文）并解锁其声明的专用工具。技能 ID 见常驻技能目录；仅当目录中的技能与当前任务明确相关时才调用。激活后：1) 该技能指令将注入后续对话；2) 其声明的检索工具（如 kb_search）将可用；3) 可用 read 工具读取其 references/ 下的参考资料。",
+        "激活一个技能以加载其详细指令（SKILL.md 正文核心段，一次性提供、不重复注入）并解锁其声明的专用工具。技能 ID 见常驻技能目录；仅当目录中的技能与当前任务明确相关时才调用。激活后：1) 正文随本工具结果一次性进入上下文，后续轮次不再重复注入，请遵循其中的流程与输出规范；2) 其声明的检索工具（如 kb_search）将可用；3) 可用 read 工具读取其 references/ 下的参考资料；正文被截断时可用 read 读取 {skill_id}/SKILL.md 获取完整内容。重复激活同一技能只会返回已激活提示，不会重复返回正文。",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -1862,24 +1871,65 @@ pub fn build_activate_skill_tool(
                 if id.is_empty() {
                     return Err(tool_error("activate_skill", "skill_id 为空"));
                 }
+                // 幂等：技能已激活且正文已注入 → 返回已激活提示，不重复返回正文
+                if state.is_loaded(&id) {
+                    let desc = registry
+                        .find_enabled(&id)
+                        .map(|s| s.description.trim().to_string())
+                        .unwrap_or_default();
+                    let mut msg = format!(
+                        "技能 '{}' 已激活且指令已注入，本请求内不会重复注入正文。",
+                        id
+                    );
+                    if !desc.is_empty() {
+                        msg.push_str(&format!(" 说明：{}", desc));
+                    }
+                    return Ok(ToolOutput::text(msg));
+                }
                 let skill = registry.find_enabled(&id).ok_or_else(|| {
                     tool_error(
                         "activate_skill",
                         &format!("技能 '{}' 不存在或未启用，请从技能目录中选择", id),
                     )
                 })?;
-                let body_len = skill.body.trim().chars().count();
-                state.activate(skill.clone());
+                // 正文核心段：截断到单次注入预算（完整内容由 read {id}/SKILL.md 兜底）
+                let body = skill.body.trim();
+                let body_chars = body.chars().count();
+                let body_short: String = if body_chars > MAX_SKILL_BODY_CHARS {
+                    body.chars().take(MAX_SKILL_BODY_CHARS).collect()
+                } else {
+                    body.to_string()
+                };
+                let truncated = body_short.chars().count() < body_chars;
+                // 激活会话挂载（warm）中的技能时保留 Session 生命周期（P5 跨请求恢复）；
+                // 其余动态激活为 Turn（请求结束失效）
+                let lifetime = if state
+                    .activated()
+                    .iter()
+                    .any(|a| a.skill_id == id && a.lifetime == SkillLifetime::Session)
+                {
+                    SkillLifetime::Session
+                } else {
+                    SkillLifetime::Turn
+                };
+                state.activate(&skill, lifetime, ActivationSource::Llm, true);
+                // XML 标识包装：多技能并存时明确规则边界，避免模型混淆
                 let mut msg = format!(
-                    "技能已激活：{}（{}），其指令已注入（{} 字符）。",
-                    skill.name, id, body_len
+                    "<active_skill id=\"{}\" version=\"{}\" source=\"llm\">\n{}\n</active_skill>",
+                    id, skill.version, body_short
                 );
+                if truncated {
+                    msg.push_str(&format!(
+                        "\n\n[技能正文超过单次注入预算（{} 字符），已显示前 {} 字符；如需完整内容，可用 read 读取 '{}/SKILL.md'（已激活技能目录内）]",
+                        body_chars, MAX_SKILL_BODY_CHARS, id
+                    ));
+                }
                 if !skill.description.trim().is_empty() {
-                    msg.push_str(&format!(" 说明：{}", skill.description.trim()));
+                    msg.push_str(&format!("\n\n说明：{}", skill.description.trim()));
                 }
                 if !skill.tools.is_empty() {
                     msg.push_str(&format!(
-                        " 专用工具：{}",
+                        "\n专用工具：{}",
                         skill.tools
                             .iter()
                             .map(|t| format!("`{t}`"))

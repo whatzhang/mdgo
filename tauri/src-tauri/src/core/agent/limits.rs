@@ -8,6 +8,11 @@
 
 /// Agent 单次请求的模型调用总预算（1-based：turn=10 为最后一次，第 11 次触发 MaxTurnsError）
 pub const DEFAULT_MAX_TURNS: usize = 10;
+/// 技能正文注入模式回退开关：false=一次性注入（默认，对齐 Reasonix/Pi）；
+/// true=恢复每轮注入（三拆后激活状态不持有正文，回退模式由
+/// SkillInstructionHook 从 SkillRegistry 按激活记录重新查询正文，总量受预算截断）。
+/// 回退模式下 llm.rs 跳过 history 一次性注入（正文统一由每轮 Hook 注入，避免双份）。
+pub const PERSISTENT_INJECTION: bool = false;
 /// 单条消息最大字符数（超长问题截断上限）
 pub const MAX_MESSAGE_CHARS: usize = 30_000;
 /// 对话历史压缩的 token 预算
