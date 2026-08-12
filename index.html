@@ -19911,6 +19911,8 @@
             _selectAiCustomPrompt = false;
             // 视图切换时若自定义 Prompt 弹窗仍打开，一并关闭，避免遗留遮罩与监听
             if (_closeCustomPromptPopup) _closeCustomPromptPopup();
+            // 离开 MCP 管理页时停止详情轮询
+            if (typeof mcpStopPolling === 'function') mcpStopPolling();
         }
 
         async function destroyEverything() {
@@ -57704,6 +57706,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         let mcpEditMode = 'form';   // 'form' | 'json'（编辑页双模式）
         let mcpEditServer = null;   // 当前编辑的服务器（null = 新增）
         let mcpJsonEditor = null;   // JSON 模式 Monaco 编辑器实例（退出编辑页时 dispose）
+        let mcpToolSearchTerm = ''; // 详情视图工具清单搜索词
+        let mcpPollTimer = null;    // 详情页定时轮询（状态/日志/工具数异步变化）
 
         // ── MCP 配置 JSON Schema（draft-07，.mcp.json 官方格式） ──
         const MCP_CONFIG_JSON_SCHEMA = {
@@ -57863,24 +57867,69 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             await switchToView(container, 'flex');
             mcpDirPath = getDirPath(getRootHandle()) || currentRootPath;
             await mcpLoadList();
+            mcpStartPolling();
         }
 
-        /** 拉取服务器列表并渲染 */
-        async function mcpLoadList() {
+        /** 拉取服务器列表并渲染（silent=true 供轮询，失败不弹通知） */
+        async function mcpLoadList({ silent } = {}) {
             try {
                 mcpAllList = await window.__mdgoMcp.mcpList(mcpDirPath);
             } catch (e) {
-                showNotification('加载 MCP 服务器失败: ' + e, 'error');
+                if (!silent) showNotification('加载 MCP 服务器失败: ' + e, 'error');
                 return;
             }
-            // 保留选中态
-            if (mcpCurrent) {
-                const cur = mcpAllList.find(s => s.name === mcpCurrent.name);
-                if (cur) { mcpCurrent = cur; mcpRenderList(); mcpRenderDetail(cur); return; }
-            }
             mcpRenderList();
-            mcpCurrent = null;
-            mcpShowEmpty();
+            if (mcpCurrent) {
+                // 保持选中态：列表项（McpServerInfo）不含 config/tools/logs，
+                // 必须重新拉详情再渲染，否则详情被降级为残缺数据
+                const stillExists = mcpAllList.some(s => s.name === mcpCurrent.name);
+                if (stillExists) {
+                    await mcpRefreshCurrentDetail({ silent });
+                } else {
+                    // 服务器已被删除：清空选中态并隐藏详情
+                    mcpCurrent = null;
+                    const detail = document.getElementById('mcp-detail-view');
+                    if (detail) detail.style.display = 'none';
+                    mcpShowEmpty();
+                }
+            } else {
+                mcpShowEmpty();
+            }
+        }
+
+        /** 刷新当前选中服务器的详情（保留选中态；编辑视图打开时不打断） */
+        async function mcpRefreshCurrentDetail({ silent } = {}) {
+            if (!mcpCurrent || mcpEditServer) return;
+            const name = mcpCurrent.name;
+            try {
+                const server = await window.__mdgoMcp.mcpGet(mcpDirPath, name);
+                mcpCurrent = server;
+                mcpRenderList();
+                // 工具搜索框正在输入时跳过整页重建（避免打断焦点/光标），仅更新数据源
+                const focused = document.activeElement;
+                const typingInSearch = focused && focused.id === 'mcp-tool-search';
+                if (!typingInSearch) mcpRenderDetail(server);
+            } catch (e) {
+                if (!silent) showNotification('加载详情失败: ' + e, 'error');
+            }
+        }
+
+        /** 定时轮询：服务端状态/工具数/日志异步变化，页面常驻时自动同步 */
+        function mcpStartPolling() {
+            mcpStopPolling();
+            mcpPollTimer = setInterval(async () => {
+                // 编辑视图中不刷新（避免覆盖表单输入 / Monaco 内容）
+                if (mcpEditServer) return;
+                await mcpLoadList({ silent: true });
+            }, 3000);
+        }
+
+        /** 停止定时轮询（离开 MCP 页时调用） */
+        function mcpStopPolling() {
+            if (mcpPollTimer) {
+                clearInterval(mcpPollTimer);
+                mcpPollTimer = null;
+            }
         }
 
         /** 空态/默认选中第一项 */
@@ -57951,11 +58000,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const tools = server.tools || [];
             const envEntries = Object.entries(cfg.env || {}).map(([k, v]) =>
                 `<div class="skill-tool-row"><code>${escapeHtml(k)}</code> = ${escapeHtml(String(v))}</div>`).join('') || '<div style="color:var(--t3,#888);font-size:12px;">无环境变量</div>';
-            const toolItems = tools.length ? tools.map(t =>
-                `<div class="skill-tool-row">
-                    <code>${escapeHtml(t.name)}</code>
-                    <div style="color:var(--t3,#888);font-size:11px;margin-top:2px;word-break:break-all;">${escapeHtml(t.description || '—')}</div>
-                </div>`).join('') : '<div style="color:var(--t3,#888);font-size:12px;">未连接或服务器未提供工具</div>';
+            // 运行日志（最新在前；连接事件 / message 通知 / stderr）
+            const logs = server.logs || [];
+            const logItems = logs.slice().reverse().map(l =>
+                `<div style="display:flex;gap:6px;font-size:11px;line-height:1.6;font-family:ui-monospace,Consolas,monospace;">
+                    <span style="color:${mcpLogLevelColor(l.level)};flex-shrink:0;">[${escapeHtml(l.level || 'info')}]</span>
+                    <span style="color:var(--t3,#888);flex-shrink:0;">${mcpFormatLogTime(l.ts)}</span>
+                    <span style="word-break:break-all;">${escapeHtml(l.message || '')}</span>
+                </div>`).join('') || '<div style="color:var(--t3,#888);font-size:12px;">暂无日志</div>';
             view.innerHTML = `
                 <div class="skill-detail-header">
                     <div style="flex:1;min-width:0;">
@@ -57979,11 +58031,70 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     <button class="btn btn-sm btn-danger" onclick="mcpDeleteConfirm('${escapeHtml(server.name)}')">删除</button>
                 </div>
                 <div style="padding:0.75rem 0;">
-                    <div class="skill-detail-title" style="font-weight:600;margin-bottom:6px;">工具清单（${tools.length}）</div>
-                    ${toolItems}
+                    <div id="mcp-tools-pane">${mcpBuildToolsPane(tools)}</div>
                     <div class="skill-detail-title" style="font-weight:600;margin:1rem 0 6px;">环境变量</div>
                     ${envEntries}
+                    <div class="skill-detail-title" style="font-weight:600;margin:1rem 0 6px;">运行日志（${logs.length}）</div>
+                    <div style="display:flex;flex-direction:column;gap:2px;max-height:16rem;overflow:auto;">${logItems}</div>
                 </div>`;
+        }
+
+        /** 构建「工具清单」面板（搜索框 + 工具行 + schema 折叠），搜索输入时仅重建本区域 */
+        function mcpBuildToolsPane(tools) {
+            const toolKw = mcpToolSearchTerm.trim().toLowerCase();
+            const filteredTools = tools.filter(t => {
+                if (!toolKw) return true;
+                return (t.name || '').toLowerCase().includes(toolKw)
+                    || (t.description || '').toLowerCase().includes(toolKw);
+            });
+            const toolItems = filteredTools.length ? filteredTools.map(t => {
+                const schema = t.input_schema && typeof t.input_schema === 'object' ? t.input_schema : null;
+                const paramCount = schema && schema.properties ? Object.keys(schema.properties).length : 0;
+                const hasSchema = schema && (paramCount > 0 || schema.type === 'object');
+                return `<div class="skill-tool-row">
+                    <code>${escapeHtml(t.name)}</code>
+                    <div style="color:var(--t3,#888);font-size:11px;margin-top:2px;word-break:break-all;">${escapeHtml(t.description || '—')}</div>
+                    ${hasSchema ? `<details style="margin-top:3px;">
+                        <summary style="cursor:pointer;font-size:11px;color:var(--color-text-secondary,#888);">参数 schema${paramCount ? `（${paramCount} 个参数）` : ''}</summary>
+                        <pre style="margin:4px 0 0;padding:6px 8px;background:var(--bg-code,rgba(0,0,0,0.03));border-radius:4px;font-size:11px;line-height:1.5;overflow:auto;max-height:14rem;">${escapeHtml(JSON.stringify(schema, null, 2))}</pre>
+                    </details>` : ''}
+                </div>`;
+            }).join('') : `<div style="color:var(--t3,#888);font-size:12px;">${tools.length ? '没有匹配的工具' : '未连接或服务器未提供工具'}</div>`;
+            return `<div class="skill-detail-title" style="font-weight:600;margin-bottom:6px;">工具清单（${tools.length}）</div>
+                ${tools.length ? `<div style="margin-bottom:6px;">
+                    <input type="text" id="mcp-tool-search" placeholder="搜索工具…" value="${escapeHtml(mcpToolSearchTerm)}"
+                        oninput="mcpToolSearchInput(this.value)"
+                        style="width:100%;box-sizing:border-box;padding:0.35rem 0.5rem;font-size:0.78rem;border:1px solid var(--color-border,#333);border-radius:0.375rem;background:transparent;color:var(--text-color,#eee);outline:none;">
+                </div>` : ''}
+                ${toolItems}`;
+        }
+
+        /** 工具清单搜索输入（仅重建工具面板，保留详情视图其它区域与输入焦点） */
+        function mcpToolSearchInput(value) {
+            mcpToolSearchTerm = value || '';
+            const pane = document.getElementById('mcp-tools-pane');
+            if (pane && mcpCurrent) {
+                pane.innerHTML = mcpBuildToolsPane(mcpCurrent.tools || []);
+                const input = document.getElementById('mcp-tool-search');
+                if (input) {
+                    input.focus();
+                    input.setSelectionRange(input.value.length, input.value.length);
+                }
+            }
+        }
+
+        /** 日志等级颜色 */
+        function mcpLogLevelColor(level) {
+            const colors = { error: '#cf222e', warn: '#bf8700', info: '#1a7f37', debug: '#888' };
+            return colors[level] || '#888';
+        }
+
+        /** 日志时间格式化（秒级时间戳 → HH:MM:SS） */
+        function mcpFormatLogTime(ts) {
+            if (!ts) return '';
+            const d = new Date(ts * 1000);
+            const p = (n) => String(n).padStart(2, '0');
+            return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
         }
 
         /** 新增/编辑服务器模态 */
@@ -58277,6 +58388,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         function mcpBackToDetail() {
             // 退出编辑页：释放 Monaco 编辑器实例
             mcpDisposeJsonEditor();
+            mcpEditServer = null;
             const view = document.getElementById('mcp-edit-view');
             if (view) view.style.display = 'none';
             if (mcpCurrent) {
@@ -58293,9 +58405,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (!parsed) return;
             try {
                 await window.__mdgoMcp.mcpUpsert(mcpDirPath, parsed.name, parsed.config);
-                // 保存成功退出编辑页：释放 Monaco 编辑器实例
+                // 保存成功退出编辑页：释放 Monaco 编辑器实例 + 隐藏编辑视图
                 mcpDisposeJsonEditor();
+                mcpEditServer = null;
                 showNotification('✓ 服务器配置已保存', 'success');
+                const editView = document.getElementById('mcp-edit-view');
+                if (editView) editView.style.display = 'none';
                 await mcpLoadList();
                 mcpSelectServer(parsed.name);
             } catch (err) {

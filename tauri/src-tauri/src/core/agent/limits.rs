@@ -86,3 +86,8 @@ pub const WEBFETCH_MAX_REDIRECTS: u32 = 5;
 
 /// pomodoro 时长上限（分钟）
 pub const POMODORO_MINUTES_MAX: u32 = 180;
+
+// ── MCP ──
+
+/// MCP 工具单次输出字符上限（content/structuredContent 拼接后截断，防撑爆模型上下文）
+pub const MCP_MAX_OUTPUT_CHARS: usize = 60_000;

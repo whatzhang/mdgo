@@ -1,14 +1,17 @@
-﻿//! MCP streamable HTTP 传输（规范 2025-03-26 最小实现）。
+//! MCP streamable HTTP 传输（规范 2025-03-26）。
 //!
 //! - `POST {url}` 发送 JSON-RPC 请求（`application/json`），响应为单个 JSON 或 SSE 流；
-//! - `GET {url}` 建立 SSE 接收流（后台任务消费服务端消息/notifications），失败自动降级
-//!   为纯请求-响应模式（不阻断连接）；
+//! - `GET {url}` 建立 SSE 接收流（**initialize 握手完成后**由注册表触发，
+//!   此时已捕获 `mcp-session-id`，保证服务端把该会话的通知/请求推送到本流）：
+//!   - 服务端主动请求（`ping` / `roots/list`）→ POST 回传应答；
+//!   - 通知（`tools/list_changed` / `notifications/message`）→ 事件回调；
+//!   - 流结束/错误 → 上报 `Closed` 事件（注册表据此标记 failed 并自动重连）；
 //! - `mcp-session-id` 从响应头捕获并随后续请求回传；
 //! - 与 stdio 共用 `McpTransport` trait（注册表/Agent 无感知）。
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -16,7 +19,10 @@ use futures::StreamExt;
 use serde_json::Value;
 use tokio::sync::Mutex;
 
-use super::client::{McpServerConfig, McpTransport, MCP_CALL_TIMEOUT_SECS};
+use super::client::{
+    handle_notification, server_request_response, McpEventHandler, McpServerConfig,
+    McpServerEvent, McpTransport, RootInfo, MCP_CALL_TIMEOUT_SECS,
+};
 
 /// streamable HTTP 客户端。
 pub struct HttpStreamableClient {
@@ -27,10 +33,12 @@ pub struct HttpStreamableClient {
     http: reqwest::Client,
     sse_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
     closed: Arc<AtomicBool>,
+    handler: Arc<StdMutex<Option<Arc<McpEventHandler>>>>,
+    roots: Vec<RootInfo>,
 }
 
 impl HttpStreamableClient {
-    pub fn new(cfg: &McpServerConfig) -> Self {
+    pub fn new(cfg: &McpServerConfig, roots: Vec<RootInfo>) -> Self {
         Self {
             url: cfg.url.clone().unwrap_or_default(),
             headers: cfg.headers.clone(),
@@ -44,50 +52,78 @@ impl HttpStreamableClient {
                 .unwrap_or_else(|_| reqwest::Client::new()),
             sse_task: Mutex::new(None),
             closed: Arc::new(AtomicBool::new(false)),
+            handler: Arc::new(StdMutex::new(None)),
+            roots,
         }
     }
 
-    /// 建立连接：校验 url 并启动 SSE 接收流（失败不阻断，降级请求-响应模式）。
+    /// 校验 url（不建立 SSE；接收流在 initialize 完成后由 [`Self::start_sse`] 建立）。
     pub async fn connect(&self) -> Result<(), String> {
         if !self.url.starts_with("http://") && !self.url.starts_with("https://") {
             return Err("HTTP 传输 url 需以 http:// 或 https:// 开头".into());
         }
-        self.start_sse().await;
         Ok(())
     }
 
-    /// 后台 GET 建立 SSE 接收流（消费服务端消息；失败静默降级）。
-    async fn start_sse(&self) {
+    /// 建立 GET SSE 接收流（后台任务）。
+    ///
+    /// 须在 initialize 握手之后调用（此时已捕获 `mcp-session-id`），确保服务端
+    /// 把该会话的通知与主动请求推送到本流；连接失败静默降级为纯请求-响应模式。
+    pub async fn start_sse(&self) {
         let url = self.url.clone();
         let headers = self.headers.clone();
         let session_id = self.session_id.clone();
         let closed = self.closed.clone();
+        let handler = self.handler.clone();
+        let roots = self.roots.clone();
+        let http = self.http.clone();
         let task = tokio::spawn(async move {
-            let mut req = reqwest::Client::new()
-                .get(&url)
-                .header("accept", "text/event-stream");
+            let mut req = http.get(&url).header("accept", "text/event-stream");
             for (k, v) in &headers {
                 req = req.header(k, v);
             }
+            let sid = session_id.lock().await;
+            if let Some(s) = sid.as_deref() {
+                req = req.header("mcp-session-id", s);
+            }
+            drop(sid);
             let resp = match req.send().await {
                 Ok(r) => r,
-                Err(_) => return, // GET 不可用：降级为纯请求-响应
+                Err(e) => {
+                    log::warn!("[mcp] HTTP SSE 接收流建立失败（降级为纯请求-响应）: {}", e);
+                    return;
+                }
             };
             if let Some(sid) = resp.headers().get("mcp-session-id").and_then(|v| v.to_str().ok()) {
                 *session_id.lock().await = Some(sid.to_string());
             }
             let mut stream = resp.bytes_stream();
             let mut buf: Vec<u8> = Vec::new();
-            while !closed.load(Ordering::Relaxed) {
+            loop {
+                if closed.load(Ordering::Relaxed) {
+                    return;
+                }
                 match stream.next().await {
                     Some(Ok(chunk)) => {
                         buf.extend_from_slice(&chunk);
                         while let Some(pos) = find_frame_end(&buf) {
-                            buf.drain(..pos);
+                            let frame: Vec<u8> = buf.drain(..pos).collect();
+                            if let Some(data) = parse_data_line(&frame) {
+                                if let Ok(v) = serde_json::from_str::<Value>(&data) {
+                                    dispatch_server_frame(
+                                        &v, &handler, &http, &url, &headers, &session_id, &roots,
+                                    );
+                                }
+                            }
                         }
                     }
                     _ => break,
                 }
+            }
+            // 流结束/读取失败：上报 Closed（disconnect 已置 closed 时不重复上报）
+            if !closed.swap(true, Ordering::Relaxed) {
+                log::warn!("[mcp] HTTP SSE 接收流已结束，连接标记为关闭");
+                fire_event(&handler, McpServerEvent::Closed);
             }
         });
         *self.sse_task.lock().await = Some(task);
@@ -206,29 +242,25 @@ impl HttpStreamableClient {
 
     /// 发送 notification（fire-and-forget，带 mcp-session-id）。
     fn send_notification(&self, method: &str, params: Value) {
-        let url = self.url.clone();
-        let headers = self.headers.clone();
-        let session_id = self.session_id.clone();
-        let body = serde_json::json!({
+        let msg = serde_json::json!({
             "jsonrpc": "2.0",
             "method": method,
             "params": params,
         });
+        let url = self.url.clone();
+        let headers = self.headers.clone();
+        let session_id = self.session_id.clone();
+        let http = self.http.clone();
         tokio::spawn(async move {
-            let mut req = reqwest::Client::new()
-                .post(&url)
-                .header("content-type", "application/json")
-                .json(&body);
-            for (k, v) in &headers {
-                req = req.header(k, v);
-            }
-            let sid = session_id.lock().await;
-            if let Some(s) = sid.as_deref() {
-                req = req.header("mcp-session-id", s);
-            }
-            drop(sid);
-            let _ = req.send().await;
+            post_jsonrpc(&http, &url, &headers, &session_id, msg).await;
         });
+    }
+
+    /// 设置事件回调（SSE 接收流 / 应答路径读取）。
+    pub fn set_event_handler(&self, handler: Arc<McpEventHandler>) {
+        if let Ok(mut h) = self.handler.lock() {
+            *h = Some(handler);
+        }
     }
 
     /// 断开：取消 SSE 接收流。
@@ -259,6 +291,84 @@ impl McpTransport for HttpStreamableClient {
     }
     fn disconnect(&self) {
         HttpStreamableClient::disconnect(self);
+    }
+    fn set_event_handler(&self, handler: Arc<McpEventHandler>) {
+        HttpStreamableClient::set_event_handler(self, handler);
+    }
+    fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::Relaxed)
+    }
+    /// initialize 握手完成后建立 SSE 接收流（携带会话 ID）。
+    async fn start_receiver(&self) {
+        self.start_sse().await;
+    }
+}
+
+/// 分发 GET 流中的一帧：服务端请求 → POST 应答；通知 → 事件回调；响应帧 → 丢弃。
+///
+/// 带 id 的响应帧：请求应答已由 POST 内联路径返回，GET 流可能重复携带同一响应
+/// （规范允许），直接丢弃即可。
+fn dispatch_server_frame(
+    frame: &Value,
+    handler: &Arc<StdMutex<Option<Arc<McpEventHandler>>>>,
+    http: &reqwest::Client,
+    url: &str,
+    headers: &HashMap<String, String>,
+    session_id: &Arc<Mutex<Option<String>>>,
+    roots: &[RootInfo],
+) {
+    let has_id = frame.get("id").is_some();
+    let has_method = frame.get("method").is_some();
+    if has_id && has_method {
+        // 服务端主动请求（ping / roots/list）：即时应答
+        if let Some(resp) = server_request_response(frame, roots) {
+            let http = http.clone();
+            let url = url.to_string();
+            let headers = headers.clone();
+            let session_id = session_id.clone();
+            tokio::spawn(async move {
+                post_jsonrpc(&http, &url, &headers, &session_id, resp).await;
+            });
+        }
+    } else if has_method {
+        // 服务端通知（tools/list_changed / notifications/message）
+        handle_notification(frame, handler);
+    }
+    // 带 id 的响应帧：POST 内联已处理，忽略重复
+}
+
+/// POST 一条 JSON-RPC 消息（应答服务端请求 / notification），带 mcp-session-id。
+async fn post_jsonrpc(
+    http: &reqwest::Client,
+    url: &str,
+    headers: &HashMap<String, String>,
+    session_id: &Arc<Mutex<Option<String>>>,
+    msg: Value,
+) {
+    let mut req = http
+        .post(url)
+        .header("content-type", "application/json")
+        .header("accept", "application/json, text/event-stream")
+        .json(&msg);
+    for (k, v) in headers {
+        req = req.header(k, v);
+    }
+    let sid = session_id.lock().await;
+    if let Some(s) = sid.as_deref() {
+        req = req.header("mcp-session-id", s);
+    }
+    drop(sid);
+    if let Err(e) = req.send().await {
+        log::warn!("[mcp] HTTP 应答/通知发送失败: {}", e);
+    }
+}
+
+/// 触发事件回调（回调缺失时静默）。
+fn fire_event(handler: &Arc<StdMutex<Option<Arc<McpEventHandler>>>>, event: McpServerEvent) {
+    if let Ok(guard) = handler.lock() {
+        if let Some(h) = guard.as_ref() {
+            h(event);
+        }
     }
 }
 
@@ -419,10 +529,9 @@ mod tests {
             url: Some("ftp://x".into()),
             ..Default::default()
         };
-        let c = HttpStreamableClient::new(&cfg);
+        let c = HttpStreamableClient::new(&cfg, Vec::new());
         let rt = tokio::runtime::Runtime::new().unwrap();
         let err = rt.block_on(c.connect()).unwrap_err();
         assert!(err.contains("http:// 或 https://"));
     }
 }
-

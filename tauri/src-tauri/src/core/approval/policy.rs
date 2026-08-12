@@ -106,6 +106,15 @@ impl ApprovalPolicy for DestructiveWritePolicy {
                 summary: "Git 恢复文件（checkout）".to_string(),
                 detail: "将工作区文件恢复到 HEAD,未提交的修改会丢失且不可恢复,请确认".to_string(),
             }),
+            // MCP 工具通配：外部服务器实现，可执行任意逻辑（读写文件/执行命令/网络访问），
+            // 默认需确认（对齐 Claude Code 对 MCP 工具的默认 prompt 权限）；如需免确认，
+            // 可在审批策略配置（approval.yaml）中为该工具添加 allow 规则。
+            t if t.starts_with("mcp_") => Some(ApprovalRequest {
+                tool: tool.to_string(),
+                args: args.clone(),
+                summary: format!("调用 MCP 工具 {t}"),
+                detail: "MCP 工具由外部服务器实现，可执行服务器侧任意逻辑（读写文件、执行命令、网络访问等）。请确认这是预期调用；如需免确认，可在审批策略配置（approval.yaml）中为该工具添加 allow 规则。".to_string(),
+            }),
             _ => None,
         }
     }

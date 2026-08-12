@@ -56,10 +56,15 @@ impl AgentHook for ApprovalGateHook {
 
 /// 按拒绝类别生成返回给模型的指令消息
 fn skip_message(tool: &str, denial: &super::ApprovalDenial) -> String {
-    let op = match tool {
-        "delete" => "删除文件",
-        "edit" => "编辑文件",
-        _ => tool,
+    let op = if tool.starts_with("mcp_") {
+        // MCP 工具：以工具名整体作主语（如「工具『mcp_fs_write_file』」）
+        format!("工具「{}」", tool)
+    } else {
+        match tool {
+            "delete" => "删除文件".to_string(),
+            "edit" => "编辑文件".to_string(),
+            _ => tool.to_string(),
+        }
     };
     match denial.category {
         DenialCategory::UserRejected => format!(

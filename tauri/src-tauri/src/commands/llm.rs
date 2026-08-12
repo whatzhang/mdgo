@@ -548,9 +548,10 @@ pub async fn kb_cancel_task(
     Ok(())
 }
 
-/// 收集已连接 MCP 服务器的工具为 DynamicTool 列表（v2）。
+/// 收集已连接 MCP 服务器的工具为 DynamicTool 列表（v3：携带请求级配置以接轨迹记录）。
 async fn build_mcp_agent_tools(
     state: &tauri::State<'_, crate::AppState>,
+    search_config: &KbSearchConfig,
 ) -> Vec<rig_agent::tool::DynamicTool> {
     let mut tools = Vec::new();
     let infos = state.mcp.list().await;
@@ -564,6 +565,7 @@ async fn build_mcp_agent_tools(
                     info.name.clone(),
                     def,
                     state.mcp.clone(),
+                    search_config.clone(),
                 ));
             }
         }
@@ -1304,7 +1306,7 @@ pub async fn agent_query(
     };
     // Agent 规约（角色/语言/安全边界）从资源目录加载，打包后跟随安装包
     let agent_rules = load_agent_rules(&app, "rag_agent.md");
-    let mcp_tools = build_mcp_agent_tools(&state).await;
+    let mcp_tools = build_mcp_agent_tools(&state, &search_config).await;
     let agent = build_rag_agent(
         model,
         &context,
