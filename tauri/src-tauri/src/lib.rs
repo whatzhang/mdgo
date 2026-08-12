@@ -35,6 +35,8 @@ pub struct LlmConfig {
     pub endpoint: String,
     pub model: String,
     pub api_key: String,
+    /// 协议：openai（Chat Completions，默认）/ anthropic（Messages API）
+    pub protocol: String,
     /// 规划用小模型（P0-6：可选；None = 主模型）
     pub planner_model: Option<String>,
     /// 摘要用小模型（P0-6：可选；None = 主模型）
@@ -49,6 +51,7 @@ impl Default for LlmConfig {
             endpoint: String::new(),
             model: String::new(),
             api_key: String::new(),
+            protocol: "openai".to_string(),
             planner_model: None,
             summary_model: None,
             reasoning_effort: None,
@@ -112,6 +115,8 @@ pub struct AppState {
     pub memory_store: Arc<crate::core::memory::MemoryStore>,
     /// 记忆向量索引（O1：内存惰性增量，embedding 本地 BGE 模型）
     pub memory_vectors: Arc<crate::core::memory::vector::MemoryVectorIndex>,
+    /// MCP 服务器注册表（v2：配置 + 生命周期 + 工具清单）
+    pub mcp: Arc<crate::core::mcp::McpRegistry>,
 }
 
 impl AppState {
@@ -326,6 +331,7 @@ pub fn run() {
                 memory_vectors: Arc::new(crate::core::memory::vector::MemoryVectorIndex::new(
                     Arc::new(crate::core::memory::vector::LocalEmbedder),
                 )),
+                mcp: Arc::new(crate::core::mcp::McpRegistry::new()),
             });
 
             // 注入 skill:changed 事件：AppHandle 就绪后替换 watcher 回调
@@ -452,6 +458,15 @@ pub fn run() {
             commands::prompt::prompt_create,
             commands::prompt::prompt_update,
             commands::prompt::prompt_delete,
+            // MCP 管理命令（v2：独立管理页）
+            commands::mcp::mcp_list,
+            commands::mcp::mcp_get,
+            commands::mcp::mcp_upsert,
+            commands::mcp::mcp_delete,
+            commands::mcp::mcp_connect,
+            commands::mcp::mcp_disconnect,
+            commands::mcp::mcp_restart,
+            commands::mcp::mcp_test,
         ]);
 
     // Windows/Linux：拦截主窗口关闭请求，点击右上角关闭按钮 → 隐藏到系统托盘。

@@ -10,6 +10,7 @@ pub mod git;
 pub mod git_types;
 pub mod knowledge;
 pub mod llm;
+pub mod mcp;
 pub mod open_url;
 pub mod plan;
 pub mod prompt;

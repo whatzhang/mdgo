@@ -70,6 +70,8 @@ pub async fn kb_update_llm_config(
     endpoint: String,
     model: String,
     api_key: String,
+    // 协议（v2：openai / anthropic；默认 openai）
+    protocol: Option<String>,
     // 规划模型（P0-6，可选；空串 = 使用主模型）
     planner_model: Option<String>,
     // 摘要模型（P0-6，可选；空串 = 使用主模型）
@@ -82,6 +84,8 @@ pub async fn kb_update_llm_config(
     let planner_model = normalize(planner_model);
     let summary_model = normalize(summary_model);
     let reasoning_effort = normalize(reasoning_effort);
+    let protocol = normalize(protocol).unwrap_or_else(|| "openai".to_string());
+    let protocol = if protocol == "anthropic" { "anthropic" } else { "openai" }.to_string();
 
     // 1. 更新内存配置
     {
@@ -89,6 +93,7 @@ pub async fn kb_update_llm_config(
         cfg.endpoint = endpoint.clone();
         cfg.model = model.clone();
         cfg.api_key = api_key.clone();
+        cfg.protocol = protocol.clone();
         cfg.planner_model = planner_model.clone();
         cfg.summary_model = summary_model.clone();
         cfg.reasoning_effort = reasoning_effort.clone();
@@ -109,6 +114,7 @@ pub async fn kb_update_llm_config(
         obj.insert("localLlmEndpoint".into(), Value::String(endpoint.clone()));
         obj.insert("localLlmModel".into(), Value::String(model.clone()));
         obj.insert("localLlmToken".into(), Value::String(api_key.clone()));
+        obj.insert("localLlmProtocol".into(), Value::String(protocol.clone()));
         match &planner_model {
             Some(v) => obj.insert("localLlmPlannerModel".into(), Value::String(v.clone())),
             None => obj.remove("localLlmPlannerModel"),
@@ -142,7 +148,8 @@ pub async fn kb_update_llm_config(
 // ─────────────────────────── 统一配置入口（O5） ───────────────────────────
 
 /// 从全量设置对象中提取 LLM 段（camelCase 键，空串归一为 None）。
-fn extract_llm_fields(settings: &serde_json::Value) -> (String, String, String, Option<String>, Option<String>, Option<String>) {
+#[allow(clippy::type_complexity)]
+fn extract_llm_fields(settings: &serde_json::Value) -> (String, String, String, String, Option<String>, Option<String>, Option<String>) {
     let get = |k: &str| {
         settings
             .get(k)
@@ -152,10 +159,13 @@ fn extract_llm_fields(settings: &serde_json::Value) -> (String, String, String, 
             .to_string()
     };
     let norm = |s: String| if s.is_empty() { None } else { Some(s) };
+    let protocol = get("localLlmProtocol");
+    let protocol = if protocol == "anthropic" { "anthropic" } else { "openai" }.to_string();
     (
         get("localLlmEndpoint"),
         get("localLlmModel"),
         get("localLlmToken"),
+        protocol,
         norm(get("localLlmPlannerModel")),
         norm(get("localLlmSummaryModel")),
         norm(get("localLlmReasoningEffort")),
@@ -187,12 +197,13 @@ pub async fn kb_save_setting(
         .map_err(|e| format!("写入配置文件失败: {}", e))?;
 
     // 2. 提取 LLM 段同步内存（前端可能只保存非 LLM 段时 settings 缺 LLM 键 → 空，不覆盖）
-    let (endpoint, model, api_key, planner, summary, effort) = extract_llm_fields(&settings);
+    let (endpoint, model, api_key, protocol, planner, summary, effort) = extract_llm_fields(&settings);
     if !endpoint.is_empty() || !model.is_empty() {
         let mut cfg = state.llm_config.write().unwrap_or_else(|e| e.into_inner());
         cfg.endpoint = endpoint;
         cfg.model = model;
         cfg.api_key = api_key;
+        cfg.protocol = protocol;
         cfg.planner_model = planner;
         cfg.summary_model = summary;
         cfg.reasoning_effort = effort;
@@ -226,6 +237,7 @@ pub async fn kb_load_setting(
             obj.insert("localLlmEndpoint".into(), Value::String(cfg.endpoint));
             obj.insert("localLlmModel".into(), Value::String(cfg.model));
             obj.insert("localLlmToken".into(), Value::String(cfg.api_key));
+            obj.insert("localLlmProtocol".into(), Value::String(cfg.protocol));
             match &cfg.planner_model {
                 Some(v) => obj.insert("localLlmPlannerModel".into(), Value::String(v.clone())),
                 None => obj.remove("localLlmPlannerModel"),

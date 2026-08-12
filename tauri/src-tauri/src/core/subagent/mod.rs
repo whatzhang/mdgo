@@ -188,6 +188,7 @@ impl SubagentRunner {
             spec.max_turns,
             Some(&effective_whitelist),
             false, // 子代理不窄化：注册表已白名单过滤，模型可见全部白名单工具
+            Vec::new(), // v2：子代理受限场景不挂载 MCP 工具
         );
 
         log::info!(

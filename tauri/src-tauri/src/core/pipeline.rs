@@ -99,6 +99,14 @@ pub fn chunk_document(
 ) -> Vec<DocumentChunk> {
     let ext = rel_path.rsplit('.').next().unwrap_or("txt");
     let is_html = ext == "html" || ext == "htm";
+    // v2：Mark 标注/备注 HTML 入库前清洗（仅 Markdown 类文件，解析前正则剥离标签保留文本）
+    let cleaned_owned;
+    let cleaned: &str = if crate::core::document::html_clean::is_markdown_ext(ext) {
+        cleaned_owned = crate::core::document::html_clean::strip_custom_html_tags(content);
+        cleaned_owned.as_str()
+    } else {
+        content
+    };
     let splitter = if is_html {
         match html_render_matcher {
             // 已配置渲染目录：命中 → 文档分块；未命中 → 放弃该文件（不索引）
@@ -108,7 +116,7 @@ pub fn chunk_document(
     } else {
         chunk_splitter_factory().get_splitter(ext)
     };
-    let chunks = splitter.split(content, chunk_size, chunk_overlap);
+    let chunks = splitter.split(cleaned, chunk_size, chunk_overlap);
     if chunks.is_empty() {
         return Vec::new();
     }

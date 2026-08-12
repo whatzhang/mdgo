@@ -295,6 +295,8 @@ pub struct SkillInstructionHook {
     /// 是否按技能体系窄化模型可见工具（主对话 true；子代理等受限场景 false，
     /// 此时模型可见全部已注册工具——注册表层已用白名单过滤，天然安全）
     narrow_tools: bool,
+    /// v2：MCP 工具名（窄化可见性时补齐，放行由 SkillGateHook.allow_extra 承担）
+    mcp_tool_names: Vec<String>,
 }
 
 impl SkillInstructionHook {
@@ -304,6 +306,7 @@ impl SkillInstructionHook {
         registry: Arc<SkillRegistry>,
         max_turns: usize,
         narrow_tools: bool,
+        mcp_tool_names: Vec<String>,
     ) -> Self {
         Self {
             base_preamble,
@@ -311,6 +314,7 @@ impl SkillInstructionHook {
             registry,
             max_turns,
             narrow_tools,
+            mcp_tool_names,
         }
     }
 
@@ -383,6 +387,12 @@ impl AgentHook for SkillInstructionHook {
             for def in external_tools::load_external_tools_or_default() {
                 if !visible.iter().any(|v| v == &def.name) {
                     visible.push(def.name.clone());
+                }
+            }
+            // v2：MCP 工具补齐可见性（放行由 allow_extra 承担）
+            for n in &self.mcp_tool_names {
+                if !visible.iter().any(|v| v == n) {
+                    visible.push(n.clone());
                 }
             }
             if let Some(declared) = self.state.allowed_tools() {
@@ -802,6 +812,8 @@ pub fn build_rag_agent(
     // 是否启用技能体系的 active_tools 窄化与工具门禁:
     // 主对话 true(工具可见性/放行由技能声明决定);子代理 false(白名单已过滤,全放行)
     narrow_tools: bool,
+    // v2：MCP 工具（已连接服务器注册的 DynamicTool，命名 mcp:<server>:<tool>）
+    mcp_tools: Vec<DynamicTool>,
 ) -> Agent<openai::CompletionModel> {
     let skill_state = search_config.skill_state.clone();
 
@@ -827,6 +839,17 @@ pub fn build_rag_agent(
                 .map(|d| d.name.clone())
                 .collect(),
         );
+
+    // v2：MCP 工具名并入放行集合（无需技能声明即可调用）
+    let mcp_tool_names: Vec<String> = mcp_tools
+        .iter()
+        .map(|t| t.name().to_string())
+        .collect();
+    let mut allow_extra: std::collections::HashSet<String> = external_tool_names.as_ref().clone();
+    for n in &mcp_tool_names {
+        allow_extra.insert(n.clone());
+    }
+    let allow_extra = std::sync::Arc::new(allow_extra);
 
     // 始终注册全部内置工具；每轮模型可见的工具列表由 SkillInstructionHook
     // 依据激活状态窄化（active_tools），SkillGateHook 作为兜底拦截越权调用。
@@ -856,13 +879,18 @@ pub fn build_rag_agent(
         builder = builder.dynamic_tool(tools::build_deactivate_skill_tool(skill_state.clone()));
     }
 
+    // v2：MCP 工具注册（命名 mcp:<server>:<tool>）
+    for tool in mcp_tools {
+        builder = builder.dynamic_tool(tool);
+    }
+
     let mut builder = builder
         // 模型调用总预算：技能激活 + 文件读取 + 检索等流程通常需要多轮；
         // 剩余不足时由 SkillInstructionHook 注入预算预警引导模型提前收敛
         .default_max_turns(max_turns)
         .add_hook(LlmTraceHook::new(Some(search_config.request_id.clone())))
-        .add_hook(SkillInstructionHook::new(preamble, skill_state.clone(), registry.clone(), max_turns, narrow_tools))
-        .add_hook(SkillGateHook::new(skill_state, !narrow_tools, Some(external_tool_names)));
+        .add_hook(SkillInstructionHook::new(preamble, skill_state.clone(), registry.clone(), max_turns, narrow_tools, mcp_tool_names))
+        .add_hook(SkillGateHook::new(skill_state, !narrow_tools, Some(allow_extra)));
     // 审批门(可选)：先技能白名单、后审批，避免对「本就不该调用的工具」弹窗打扰用户。
     if let Some(gate) = approval_gate {
         builder = builder.add_hook(ApprovalGateHook::new(gate));

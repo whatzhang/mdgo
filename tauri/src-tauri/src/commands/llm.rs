@@ -548,6 +548,32 @@ pub async fn kb_cancel_task(
     Ok(())
 }
 
+/// 收集已连接 MCP 服务器的工具为 DynamicTool 列表（v2）。
+async fn build_mcp_agent_tools(
+    state: &tauri::State<'_, crate::AppState>,
+) -> Vec<rig_agent::tool::DynamicTool> {
+    let mut tools = Vec::new();
+    let infos = state.mcp.list().await;
+    for info in infos {
+        if info.status != crate::core::mcp::STATUS_CONNECTED {
+            continue;
+        }
+        if let Some(detail) = state.mcp.get(&info.name).await {
+            for def in detail.tools {
+                tools.push(crate::core::mcp::build_mcp_tool(
+                    info.name.clone(),
+                    def,
+                    state.mcp.clone(),
+                ));
+            }
+        }
+    }
+    if !tools.is_empty() {
+        log::info!("[mcp] Agent 已挂载 {} 个 MCP 工具", tools.len());
+    }
+    tools
+}
+
 /// RAG 查询：技能解析 → 查询扩展 → 混合检索 → 文档聚合 → RAG Agent 生成（全流式）
 #[tauri::command]
 pub async fn agent_query(
@@ -573,6 +599,20 @@ pub async fn agent_query(
 
     // 从中央化内存配置读取 LLM 配置
     let llm_cfg = state.llm_config.read().unwrap_or_else(|e| e.into_inner()).clone();
+
+    // v2：Agent/RAG 模式的工具编排基于 rig OpenAI 通道，暂不支持 Anthropic 协议。
+    // 明确报错而非发错格式请求（避免 OpenAI 语义的误导性错误）。
+    if llm_cfg.protocol == "anthropic" {
+        log::warn!("[agent_query] [0]: Anthropic 协议暂不支持 Agent 模式: request_id={}", request_id);
+        emit_command_error(
+            &app,
+            "rag:error",
+            &request_id,
+            "Agent/RAG 模式暂不支持 Anthropic 模型，请在设置中切换到 OpenAI 兼容模型".into(),
+        );
+        task_registry.unregister(&request_id).await;
+        return Ok(());
+    }
 
     // 构建 LLM 客户端（失败转为错误事件，避免 panic 与注册表泄漏）
     let llm = match get_or_create_llm_client(&state, &llm_cfg.endpoint, &llm_cfg.model, &llm_cfg.api_key).await {
@@ -1264,6 +1304,7 @@ pub async fn agent_query(
     };
     // Agent 规约（角色/语言/安全边界）从资源目录加载，打包后跟随安装包
     let agent_rules = load_agent_rules(&app, "rag_agent.md");
+    let mcp_tools = build_mcp_agent_tools(&state).await;
     let agent = build_rag_agent(
         model,
         &context,
@@ -1275,6 +1316,7 @@ pub async fn agent_query(
         crate::core::agent::DEFAULT_MAX_TURNS,
         None, // 主对话全量工具
         true, // 主对话启用技能体系的工具窄化与门禁
+        mcp_tools, // v2：MCP 工具
     );
     log::info!("[agent_query] [4]: 构建 Agent 完成 request_id={}", request_id);
 
@@ -1648,6 +1690,11 @@ pub async fn kb_llm_query(
     // 从中央化内存配置读取 LLM 配置
     let llm_cfg = state.llm_config.read().unwrap_or_else(|e| e.into_inner()).clone();
 
+    // v2：Anthropic Messages 协议走独立流式通道（普通对话，不含 Agent 工具编排）
+    if llm_cfg.protocol == "anthropic" {
+        return kb_llm_query_anthropic(&app, task_registry, messages, request_id, llm_cfg).await;
+    }
+
     // 构建 LLM 客户端（失败转为错误事件，避免 panic 与注册表泄漏）
     let llm = match get_or_create_llm_client(&state, &llm_cfg.endpoint, &llm_cfg.model, &llm_cfg.api_key).await {
         Ok(llm) => llm,
@@ -1838,6 +1885,126 @@ pub async fn kb_llm_query(
         },
     );
 
+    task_registry.unregister(&request_id).await;
+    Ok(())
+}
+
+// ─── Anthropic Messages 通道（v2） ───
+
+/// Anthropic Messages 协议流式对话（普通 Chat 模式）。
+///
+/// 与 OpenAI 兼容通道完全隔离（开闭原则）：不经过 rig agent 工具编排，
+/// 独立实现 /v1/messages + SSE 解析；历史按窗口截断（不做摘要压缩）。
+/// 取消时保留已生成的部分内容（通过 llm:done 交给前端落库），与 openai 通道一致。
+async fn kb_llm_query_anthropic(
+    app: &AppHandle,
+    task_registry: tauri::State<'_, TaskRegistry>,
+    messages: Vec<crate::services::llm::ChatMessage>,
+    request_id: String,
+    cfg: crate::LlmConfig,
+) -> Result<(), String> {
+    use crate::services::anthropic::{
+        AnthropicEvent, AnthropicMessage, AnthropicStreamClient, THINK_BUDGET_DEEP,
+        THINK_BUDGET_STANDARD,
+    };
+
+    let cancel = task_registry.register(&request_id).await;
+
+    // thinking 档位映射：reasoning_effort → Anthropic extended thinking（标准 2048 / 深度 4096）
+    let thinking_budget = match cfg.reasoning_effort.as_deref() {
+        Some("high") => Some(THINK_BUDGET_DEEP),
+        Some("medium") | Some("low") => Some(THINK_BUDGET_STANDARD),
+        _ => None,
+    };
+
+    let client = AnthropicStreamClient::new(
+        cfg.endpoint.clone(),
+        cfg.api_key.clone(),
+        cfg.model.clone(),
+        4096,
+        thinking_budget,
+    );
+    if !client.is_configured() {
+        emit_command_error(app, "llm:error", &request_id, "Anthropic 未配置（缺少地址或模型）".into());
+        task_registry.unregister(&request_id).await;
+        return Ok(());
+    }
+
+    // system 提取到顶层；仅保留 user / assistant 进 body
+    let mut system_parts: Vec<String> = Vec::new();
+    let mut body: Vec<AnthropicMessage> = Vec::new();
+    for m in messages {
+        if m.role == "system" {
+            if !m.content.trim().is_empty() {
+                system_parts.push(m.content);
+            }
+        } else if m.role == "user" || m.role == "assistant" {
+            body.push(AnthropicMessage { role: m.role, content: m.content });
+        }
+    }
+    if body.is_empty() {
+        emit_command_error(app, "llm:error", &request_id, "消息不能为空".into());
+        task_registry.unregister(&request_id).await;
+        return Ok(());
+    }
+
+    // 历史窗口截断（Anthropic 通道独立，不做摘要压缩）：
+    // 保留最近 40 条，且累计字符超预算时从头部丢弃旧消息
+    const MAX_BODY_MESSAGES: usize = 40;
+    const MAX_BODY_CHARS: usize = 180_000;
+    if body.len() > MAX_BODY_MESSAGES {
+        body = body.split_off(body.len() - MAX_BODY_MESSAGES);
+    }
+    let mut total_chars: usize = body.iter().map(|m| m.content.chars().count()).sum();
+    while body.len() > 1 && total_chars > MAX_BODY_CHARS {
+        if let Some(removed) = body.first() {
+            total_chars = total_chars.saturating_sub(removed.content.chars().count());
+        }
+        body.remove(0);
+    }
+
+    let system = if system_parts.is_empty() { None } else { Some(system_parts.join("\n\n")) };
+
+    match client
+        .stream_chat(system.as_deref(), &body, cancel.clone(), |ev| match ev {
+            AnthropicEvent::Delta(t) => {
+                let _ = app.emit(
+                    "llm:delta",
+                    LlmDelta {
+                        request_id: request_id.clone(),
+                        content: t,
+                    },
+                );
+            }
+            AnthropicEvent::Usage { input_tokens, output_tokens } => {
+                let _ = app.emit(
+                    "llm:usage",
+                    serde_json::json!({
+                        "request_id": request_id,
+                        "prompt_tokens": input_tokens,
+                        "completion_tokens": output_tokens,
+                    }),
+                );
+            }
+        })
+        .await
+    {
+        Ok(full_content) => {
+            let _ = app.emit(
+                "llm:done",
+                LlmDone {
+                    request_id: request_id.clone(),
+                    content: full_content,
+                },
+            );
+        }
+        Err(e) => {
+            log::warn!("[kb_llm_query_anthropic] 请求失败: request_id={} err={}", request_id, e);
+            if !cancel.is_cancelled() {
+                emit_command_error(app, "llm:error", &request_id, e);
+            }
+        }
+    }
     task_registry.unregister(&request_id).await;
     Ok(())
 }

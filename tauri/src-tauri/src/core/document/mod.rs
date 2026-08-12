@@ -14,6 +14,7 @@
 
 pub mod chunk_engine;
 pub mod html_ast;
+pub mod html_clean;
 pub mod markdown;
 pub mod node;
 pub mod parser;

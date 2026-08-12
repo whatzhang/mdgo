@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 
 <head>
@@ -2976,9 +2976,11 @@
         }
 
         .new-file-modal {
+            border-radius: 10px;
             padding: 0.5rem;
             width: auto;
             height: auto;
+            background: var(--color-bg-secondary);
         }
 
         .new-file-modal-grid {
@@ -2989,14 +2991,13 @@
 
         .new-file-modal-item {
             padding: 0.125rem 0.125rem;
-            border: 1px solid var(--color-border, #bbc3ca);
-
+            box-shadow: var(--shadow-sm);
             border-radius: 0.25rem;
-            background: transparent;
+            background: var(--color-bg);
             font-size: 0.8125rem;
             font-weight: normal;
             color: var(--t0);
-            font-weight: normal;
+            font-weight: 500;
             cursor: pointer;
             text-align: center;
             transition: background 0.2s ease;
@@ -5278,18 +5279,138 @@
             color: var(--t2);
         }
 
+        /* ── 输入框底部工具栏（v2：模型下拉 + think 分段 + skill/prompt + 用量） ── */
+        .chat-bottom-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+            padding: 0.125rem 0.25rem 0;
+            font-size: 0.75rem;
+            font-family: var(--font-family);
+            color: var(--t2);
+            min-height: 1.375rem;
+            position: relative;
+        }
+        .chat-bottom-toolbar .chat-toolbar-icons {
+            flex: 1;
+        }
+        .chat-model-select-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            max-width: 12rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .chat-model-select-btn .chat-model-vendor {
+            font-size: 0.625rem;
+            opacity: 0.75;
+            margin-left: 0.125rem;
+        }
+        .chat-think-option {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            width: 100%;
+            border: none;
+            background: transparent;
+            color: var(--t2, #8b949e);
+            font-size: 0.75rem;
+            font-weight: 500;
+            padding: 0.375rem 0.5rem;
+            border-radius: 0.25rem;
+            cursor: pointer;
+            line-height: 1.2;
+            text-align: left;
+            transition: background 0.15s ease;
+        }
+        .chat-think-option:hover {
+            background: rgba(22, 91, 250, 0.08);
+            color: var(--t1);
+        }
+        .chat-think-option.active {
+            background: rgba(22, 91, 250, 0.12);
+            color: var(--color-primary, #165bfa);
+        }
+        .chat-think-option .chat-think-option-tip {
+            font-size: 0.625rem;
+            color: var(--t3, #888);
+            font-weight: 400;
+            margin-top: 0.125rem;
+        }
+        .chat-model-manage-row {
+            padding: 0.375rem 0.5rem;
+            margin-top: 0.25rem;
+            font-size: 0.75rem;
+            text-align: center;
+            cursor: pointer;
+            font-weight: 400;
+            color: var(--color-primary-light, #4a90d9);
+        }
+        .chat-model-manage-row:hover {
+            color: var(--color-primary);
+        }
+
+        /* ── @ 文件选择器（v2） ── */
+        #chat-file-picker-overlay {
+            background: transparent;
+            backdrop-filter: none;
+        }
+        .chat-file-picker-item {
+            padding: 0.375rem 0.5rem;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            margin-bottom: 2px;
+        }
+        .chat-file-picker-item:hover {
+            background: rgba(22, 91, 250, 0.08);
+        }
+        .chat-file-picker-item.active {
+            background: rgba(22, 91, 250, 0.16);
+        }
+        .chat-file-picker-item .cfp-name {
+            font-size: 0.8125rem;
+            font-weight: 500;
+            color: var(--t1);
+        }
+        .chat-file-picker-item .cfp-path {
+            font-size: 0.6875rem;
+            color: var(--t3, #888);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* ── 对话选区动作按钮（v2） ── */
+        .chat-selection-action-btn {
+            border: none;
+            background: transparent;
+            color: var(--color-text, #333);
+            font-size: 0.75rem;
+            font-weight: 500;
+            font-family: var(--font-family);
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .chat-selection-action-btn:hover {
+            background: rgba(22, 91, 250, 0.12);
+            color: var(--color-primary, #165bfa);
+        }
+
         .chat-context-usage {
             display: flex;
             align-items: center;
-            gap: 0.25rem;
+            gap: 6px;
             cursor: default;
             position: relative;
         }
 
         .context-ring-container {
             position: relative;
-            width: 1rem;
-            height: 1rem;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -5325,26 +5446,7 @@
 
         .context-percent {
             font-weight: 500;
-        }
-
-        .context-usage-tooltip {
-            display: none;
-            position: absolute;
-            bottom: 100%;
-            right: 0;
-            margin-bottom: 0.25rem;
-            background: var(--tooltip-bg, #333);
-            color: #fff;
-            padding: 0.25rem 0.5rem;
-            border-radius: 0.25rem;
-            font-size: 0.6875rem;
-            white-space: nowrap;
-            z-index: 100;
-            pointer-events: none;
-        }
-
-        .chat-context-usage:hover .context-usage-tooltip {
-            display: block;
+            margin-left: 0.125rem;
         }
 
         .chat-turn-counter {
@@ -5593,7 +5695,7 @@
             flex-direction: column;
             gap: 0.25rem;
             border-radius: 1rem;
-            padding: 0.25rem;
+            padding: 0.3rem;
             margin-top: 0.5rem;
             margin-bottom: 0.75rem;
             width: 80%;
@@ -5622,7 +5724,8 @@
         .chat-toolbar-btn {
             display: inline-flex;
             align-items: center;
-            font-size: 0.72rem;
+            gap: 0.25rem;
+            font-size: 0.75rem;
             font-weight: 500;
             cursor: pointer;
             color: var(--t2, #8b949e);
@@ -5631,6 +5734,16 @@
             padding: 0;
             border: none;
             line-height: 1;
+        }
+        /* 图标统一：强制 16x16、不随文字缩放、垂直居中 */
+        .chat-toolbar-btn svg {
+            flex-shrink: 0;
+            display: block;
+            width: 15px;
+            height: 15px;
+        }
+        .chat-toolbar-btn span{
+            padding-top: 1px;
         }
         .chat-toolbar-btn:hover {
             color: var(--color-warning);
@@ -5665,6 +5778,10 @@
         .chat-toolbar-popup.long {
             width: 90%;
             max-width: 90%;
+        }
+        .chat-toolbar-popup.short {
+            min-width: 2.5rem;
+            max-width: 4rem;
         }
         
         .chat-skill-picker-row {
@@ -5822,7 +5939,7 @@
         /* 发送按钮：位于输入框右下角 */
         .chat-send-btn {
             position: absolute;
-            bottom: 0.75rem;
+            bottom: 2.3rem;
             right: 0.75rem;
             width: 1.7rem;
             height: 1.7rem;
@@ -6617,13 +6734,17 @@
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             transition: all 0.2s ease;
             display: none;
-            min-width: 9.375rem;
+            min-width: 15rem;
+            max-width: 30rem;
             z-index: 200;
-            padding: 0.25rem;
+            padding: 0.5rem;
         }
 
         .mermaid-dropdown-menu.mermaid-open {
             display: block;
+            min-width: 15rem;
+            max-width: 30rem;
+            padding: 0.5rem;
         }
 
         .mermaid-dropdown-item {
@@ -14070,6 +14191,12 @@
             height: 100%;
             width: 100%;
         }
+        /* ===== MCP 管理容器（v2：与 skill-container 同构，保证 flex 布局高度链） ===== */
+        #mcp-container {
+            display: none;
+            height: 100%;
+            width: 100%;
+        }
         .skill-layout {
             display: flex;
             height: 100%;
@@ -14109,7 +14236,7 @@
             pointer-events: none;
             line-height: 1;
         }
-        #skill-search-input {
+        .skill-search-input {
             width: 100%;
             height: 100%;
             padding: 0 1.625rem 0 1.875rem;
@@ -14121,7 +14248,7 @@
             color: var(--color-text);
             outline: none;
         }
-        #skill-search-input::placeholder {
+        .skill-search-input::placeholder {
             color: var(--color-text-tertiary);
         }
         .skill-search-box:focus-within {
@@ -14129,7 +14256,7 @@
             box-shadow: 0 0 0 3px rgba(22, 91, 250, 0.12);
             background: var(--color-bg);
         }
-        #skill-search-clear {
+        .skill-search-clear {
             width: 1rem;
             height: 1rem;
             border: none;
@@ -14147,7 +14274,7 @@
             line-height: 1;
             padding: 0;
         }
-        #skill-search-clear:hover {
+        .skill-search-clear:hover {
             background: var(--color-text-tertiary);
             color: var(--color-text-white);
         }
@@ -14337,6 +14464,19 @@
             gap: 0.5rem;
             flex-wrap: wrap;
             letter-spacing: -0.01em;
+        }
+        .skill-tool-row {
+            padding: 0.375rem 0.5rem;
+            border: 1px solid var(--border-color, #333);
+            border-radius: 0.375rem;
+            margin-bottom: 0.375rem;
+            font-size: 0.8125rem;
+            background: rgba(127, 127, 127, 0.05);
+        }
+        .skill-tool-row code {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--color-primary-light, #4a90d9);
         }
         .skill-detail-subtitle {
             font-size: 0.75rem;
@@ -16036,6 +16176,8 @@
                     <div id="selection-comment" class="color-options-text"></div>
                 </div>
             </div>
+            <!-- 对话消息选区浮动工具栏（v2：追问/复制，可配置） -->
+            <div id="chat-selection-toolbar" class="markdown-selection-toolbar" role="toolbar" aria-label="对话文本选择操作"></div>
             <!-- 正则表达式测试工作台 -->
             <div id="regex-test-container" style="display: none;">
                 <div class="regex-card regex-card-input">
@@ -16934,7 +17076,13 @@
                         </div>
                         <div class="chat-messages" id="chat-messages"></div>
                         <div class="chat-input-area">
-                            <div class="chat-context-bar" id="chat-context-bar">
+                            <div class="chat-textarea-wrap">
+                                <textarea id="chat-input" rows="4" placeholder="按下回车发送消息..."
+                                onkeydown="handleChatKeydown(event)" onkeyup="handleChatKeyup(event)"
+                                oninput="updateChatSendButton()"
+                                onfocus="updateChatSendButton()" onblur="updateChatSendButton()"></textarea>
+                            </div>
+                            <div class="chat-bottom-toolbar" id="chat-bottom-toolbar">
                                 <div class="chat-toolbar-icons">
                                     <div class="chat-toolbar-icon" id="chat-skill-picker" style="display:none;">
                                         <button class="chat-toolbar-btn" id="chat-skill-trigger" title="skill"
@@ -16957,22 +17105,35 @@
                                     <div class="chat-toolbar-popup long" id="chat-prompt-popup" style="display:none;"></div>
                                 </div>
                                 <div class="chat-context-usage" id="chat-context-usage" style="display:none;">
-                                    <div class="context-ring-container">
+                                    <div class="chat-toolbar-icon" id="chat-model-select-wrap">
+                                        <button class="chat-toolbar-btn chat-model-select-btn" id="chat-model-select-btn"
+                                            title="选择模型" onclick="toggleChatModelSelector(event)">
+                                            <span id="chat-model-select-label">选择模型</span>
+                                        </button>
+                                        <div class="chat-toolbar-popup" id="chat-model-select-popup" style="display:none;"></div>
+                                    </div>
+                                    <span class="monitor-uptime"></span>
+                                    <div class="chat-toolbar-icon" id="chat-think-toggle-wrap">
+                                        <button class="chat-toolbar-btn" id="chat-think-toggle-btn" title="思考程度"
+                                            onclick="toggleChatThinkPopup(event)">
+                                            <span id="chat-think-level-badge"></span>
+                                        </button>
+                                        <div class="chat-toolbar-popup short" id="chat-think-popup" style="display:none;"></div>
+                                    </div>
+                                    <span class="monitor-uptime"></span>
+                                    <div class="context-ring-container" id="context-ring-container">
                                         <svg class="context-ring-svg" viewBox="0 0 16 16">
                                             <circle class="context-ring-bg" cx="8" cy="8" r="6.5" />
                                             <circle class="context-ring-fg" id="context-ring-fg" cx="8" cy="8" r="6.5"
                                                 stroke-dasharray="40.84" stroke-dashoffset="0" />
                                         </svg>
+                                        <span class="context-percent" id="context-percent">0%</span>
                                     </div>
-                                    <span class="context-percent" id="context-percent">0%</span>
-                                    <div class="context-usage-tooltip" id="context-usage-tooltip">已使用 0 / 0 tokens</div>
+                                    <span class="monitor-uptime"></span>
+                                    <div> 
+                                        <span class="chat-turn-counter" id="chat-turn-counter" style="display:none;"></span>
+                                    </div>
                                 </div>
-                                <span class="chat-turn-counter" id="chat-turn-counter" style="display:none;"></span>
-                            </div>
-                            <div class="chat-textarea-wrap">
-                                <textarea id="chat-input" rows="4" placeholder="按下回车发送消息..."
-                                onkeydown="handleChatKeydown(event)" oninput="updateChatSendButton()"
-                                onfocus="updateChatSendButton()" onblur="updateChatSendButton()"></textarea>
                             </div>
                             <button id="chat-send-btn" class="chat-send-btn" disabled onclick="handleChatSendClick()"
                                 title="发送消息">
@@ -16992,6 +17153,22 @@
                         <div class="chat-history-body" id="chat-history-body">
                             <div class="chat-history-empty">暂无对话历史</div>
                         </div>
+                    </div>
+                </div>
+            </div>
+            <!-- @ 文件选择模态框（v2：复用 todo-modal 样式，最近修改倒序） -->
+            <div id="chat-file-picker-overlay" class="todo-modal-overlay" style="display:none;"
+                onclick="closeChatFilePicker()">
+                <div class="todo-modal" onclick="event.stopPropagation()" style="width:26rem;max-width:92vw;">
+                    <div class="todo-modal-header">
+                        <div class="todo-modal-title">选择文件 <span id="chat-file-picker-hint" style="font-size:11px;color:var(--t3,#888);font-weight:400;margin-left:6px;"></span></div>
+                        <button class="todo-modal-close" onclick="closeChatFilePicker()">×</button>
+                    </div>
+                    <div class="todo-modal-body" style="max-height:18rem;overflow-y:auto;padding:0.375rem;">
+                        <div id="chat-file-picker-list"></div>
+                    </div>
+                    <div class="todo-modal-footer" style="justify-content:flex-start;font-size:11px;color:var(--t3,#888);">
+                        ↑↓ 选择 · Enter 确认 · Esc 关闭
                     </div>
                 </div>
             </div>
@@ -17258,9 +17435,9 @@
                     <div class="skill-sidebar" id="skill-sidebar">
                         <div class="skill-search-box" id="skill-search-box">
                             <span class="skill-search-icon">🔍</span>
-                            <input type="text" id="skill-search-input" placeholder="搜索技能名称..."
+                            <input type="text" id="skill-search-input" class="skill-search-input" placeholder="搜索技能名称..."
                                 onkeydown="skillHandleSearchKeydown(event)" oninput="skillHandleSearchInput()">
-                            <button id="skill-search-clear" onclick="skillClearSearch()" style="display:none;">✕</button>
+                            <button id="skill-search-clear" class="skill-search-clear" onclick="skillClearSearch()" style="display:none;">✕</button>
                         </div>
                         <div class="skill-scope-chips" id="skill-scope-chips">
                             <button class="skill-chip active" data-scope="" onclick="skillScopeChange('')">全部</button>
@@ -17277,6 +17454,34 @@
                     <div class="skill-main" id="skill-main">
                         <div class="skill-detail-view" id="skill-detail-view" style="display:none;"></div>
                         <div class="skill-edit-view" id="skill-edit-view" style="display:none;"></div>
+                    </div>
+                </div>
+            </div>
+            <!-- ====== MCP 管理容器 ====== -->
+            <div id="mcp-container" style="display: none;">
+                <div class="skill-layout" id="mcp-layout">
+                    <div class="skill-sidebar" id="mcp-sidebar">
+                        <div class="skill-search-box" id="mcp-search-box">
+                            <span class="skill-search-icon">🔍</span>
+                            <input type="text" id="mcp-search-input" class="skill-search-input" placeholder="搜索服务器名称..."
+                                onkeydown="mcpHandleSearchKeydown(event)" oninput="mcpHandleSearchInput()">
+                            <button id="mcp-search-clear" class="skill-search-clear" onclick="mcpClearSearch()" style="display:none;">✕</button>
+                        </div>
+                        <div class="skill-scope-chips" id="mcp-status-chips" style=" gap: 0.25rem;">
+                            <button class="skill-chip active" data-scope="" onclick="mcpStatusChange('')">全部</button>
+                            <button class="skill-chip system" data-scope="connected" onclick="mcpStatusChange('connected')">已连接</button>
+                            <button class="skill-chip global" data-scope="stopped" onclick="mcpStatusChange('stopped')">已断开</button>
+                            <button class="skill-chip project" data-scope="failed" onclick="mcpStatusChange('failed')">失败</button>
+                        </div>
+                        <div class="skill-list" id="mcp-list"></div>
+                        <div class="skill-footer" id="mcp-footer">
+                            <button class="skill-create-btn" id="mcp-create-btn" onclick="mcpOpenEdit(null)"><span>＋</span> 新增服务器</button>
+                        </div>
+                    </div>
+                    <!-- 右侧 60%：空态 / 详情 / 编辑 -->
+                    <div class="skill-main" id="mcp-main">
+                        <div class="skill-detail-view" id="mcp-detail-view" style="display:none;"></div>
+                        <div class="skill-edit-view" id="mcp-edit-view" style="display:none;"></div>
                     </div>
                 </div>
             </div>
@@ -17318,6 +17523,142 @@
         let LOCAL_LLM_ENDPOINT = 'http://192.168.31.152:12345/v1/chat/completions';
         let LOCAL_LLM_TOKEN = 'c17f18e31adb10978d3a9cd0d6743d30a067af602a8789e7';
         let LOCAL_LLM_MODEL = 'gemma-4-e4b-it';
+        // 协议：'openai' = OpenAI 兼容 Chat Completions；'anthropic' = Anthropic Messages API
+        const LLM_VENDOR_PRESETS = [
+            { id: 'openai', name: 'OpenAI', protocol: 'openai', baseURL: 'https://api.openai.com/v1', models: ['gpt-4o', 'gpt-4o-mini', 'o3-mini'], docs: 'https://platform.openai.com/docs' },
+            { id: 'anthropic', name: 'Anthropic', protocol: 'anthropic', baseURL: 'https://api.anthropic.com', models: ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-haiku-4-5'], docs: 'https://docs.anthropic.com' },
+            { id: 'deepseek', name: 'DeepSeek', protocol: 'openai', baseURL: 'https://api.deepseek.com/v1', models: ['deepseek-chat', 'deepseek-reasoner'], docs: 'https://api-docs.deepseek.com' },
+            { id: 'qwen', name: '通义千问', protocol: 'openai', baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-max', 'qwen-plus', 'qwen-turbo'], docs: 'https://help.aliyun.com/zh/model-studio' },
+            { id: 'kimi', name: 'Kimi', protocol: 'openai', baseURL: 'https://api.moonshot.cn/v1', models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'], docs: 'https://platform.moonshot.cn' },
+            { id: 'zhipu', name: '智谱 GLM', protocol: 'openai', baseURL: 'https://open.bigmodel.cn/api/paas/v4', models: ['glm-4-plus', 'glm-4-air', 'glm-4-flash'], docs: 'https://open.bigmodel.cn' },
+            { id: 'doubao', name: '豆包', protocol: 'openai', baseURL: 'https://ark.cn-beijing.volces.com/api/v3', models: ['doubao-1.5-pro-32k', 'doubao-1.5-lite-32k'], docs: 'https://www.volcengine.com/docs/82379' },
+            { id: 'minimax', name: 'MiniMax', protocol: 'openai', baseURL: 'https://api.minimax.chat/v1', models: ['MiniMax-Text-01', 'abab6.5s'], docs: 'https://platform.minimaxi.com' },
+            { id: 'siliconflow', name: '硅基流动', protocol: 'openai', baseURL: 'https://api.siliconflow.cn/v1', models: ['Qwen/Qwen2.5-72B-Instruct', 'deepseek-ai/DeepSeek-V3'], docs: 'https://cloud.siliconflow.cn' },
+            { id: 'ollama', name: 'Ollama', protocol: 'openai', baseURL: 'http://localhost:11434/v1', models: [], docs: 'https://ollama.com' },
+            { id: 'custom', name: '自定义', protocol: 'openai', baseURL: '', models: [], docs: '' },
+        ];
+        const MODEL_PROFILES_STORAGE_KEY = 'mdgo_model_profiles';
+        const ACTIVE_PROFILE_STORAGE_KEY = 'mdgo_active_model_profile';
+        let LOCAL_LLM_PROTOCOL = 'openai';   // 当前活跃模型协议（openai | anthropic）
+        let MODEL_PROFILES = [];             // 模型配置列表
+        let ACTIVE_PROFILE_ID = '';          // 当前活跃模型 id
+
+        /** 按厂商 id 查询预设（找不到返回 null） */
+        function llmGetVendorById(vendorId) {
+            return LLM_VENDOR_PRESETS.find(v => v.id === vendorId) || null;
+        }
+        /** 按 profile id 查询模型配置 */
+        function llmGetProfileById(id) {
+            return MODEL_PROFILES.find(p => p.id === id) || null;
+        }
+        /** 获取当前活跃模型配置（含兜底：第一个启用配置） */
+        function llmGetActiveProfile() {
+            const p = llmGetProfileById(ACTIVE_PROFILE_ID);
+            if (p) return p;
+            return MODEL_PROFILES.find(p => p.display !== false) || MODEL_PROFILES[0] || null;
+        }
+        /** 将当前活跃模型同步到 LOCAL_LLM_* 全局镜像（保持旧读取点兼容，单一数据源） */
+        function applyActiveProfileToGlobals() {
+            const p = llmGetActiveProfile();
+            if (!p) {
+                LOCAL_LLM_ENDPOINT = ''; LOCAL_LLM_TOKEN = ''; LOCAL_LLM_MODEL = '';
+                LOCAL_LLM_PROTOCOL = 'openai';
+                return;
+            }
+            LOCAL_LLM_ENDPOINT = p.baseURL ? normalizeLlmEndpoint(p.baseURL) : '';
+            LOCAL_LLM_TOKEN = p.apiKey || '';
+            LOCAL_LLM_MODEL = p.model || '';
+            LOCAL_LLM_PROTOCOL = p.protocol || 'openai';
+            // think 档位由聊天区独立管理，切换模型不覆盖
+            LOCAL_LLM_CONTEXT_LENGTH = p.contextLength || AGENT_LIMITS.contextLength;
+            LOCAL_LLM_MAX_TOKENS = p.maxTokens || AGENT_LIMITS.maxTokens;
+        }
+        function persistModelProfiles() {
+            safeLocalStorageSet(MODEL_PROFILES_STORAGE_KEY, JSON.stringify(MODEL_PROFILES));
+            safeLocalStorageSet(ACTIVE_PROFILE_STORAGE_KEY, ACTIVE_PROFILE_ID);
+        }
+        /** 初始化模型列表：首次使用从旧单配置迁移（幂等） */
+        function initModelProfiles() {
+            let profiles = [];
+            try {
+                const raw = safeLocalStorageGet(MODEL_PROFILES_STORAGE_KEY);
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    if (Array.isArray(parsed)) profiles = parsed.filter(p => p && p.baseURL && p.model);
+                }
+            } catch (e) { profiles = []; }
+            if (profiles.length === 0 && LOCAL_LLM_ENDPOINT && LOCAL_LLM_MODEL) {
+                profiles = [{
+                    id: 'profile-' + Date.now(),
+                    vendorId: 'custom',
+                    protocol: 'openai',
+                    baseURL: LOCAL_LLM_ENDPOINT,
+                    apiKey: LOCAL_LLM_TOKEN || '',
+                    model: LOCAL_LLM_MODEL,
+                    contextLength: LOCAL_LLM_CONTEXT_LENGTH || AGENT_LIMITS.contextLength,
+                    maxTokens: LOCAL_LLM_MAX_TOKENS || AGENT_LIMITS.maxTokens,
+                    display: true,
+                }];
+            }
+            MODEL_PROFILES = profiles;
+            ACTIVE_PROFILE_ID = safeLocalStorageGet(ACTIVE_PROFILE_STORAGE_KEY) || '';
+            if (!llmGetActiveProfile() && MODEL_PROFILES.length > 0) {
+                ACTIVE_PROFILE_ID = MODEL_PROFILES[0].id;
+            }
+            applyActiveProfileToGlobals();
+        }
+        /** 保存模型列表：持久化 + 全局生效 + 同步后端（单一保存入口） */
+        function saveModelProfiles() {
+            persistModelProfiles();
+            applyActiveProfileToGlobals();
+            syncLlmConfigToBackend();
+            // 同步聊天区模型下拉（若已初始化）
+            if (typeof renderChatModelSelector === 'function') renderChatModelSelector();
+        }
+        /** 切换当前活跃模型 */
+        function llmSetActiveProfile(id) {
+            if (!llmGetProfileById(id)) return false;
+            ACTIVE_PROFILE_ID = id;
+            saveModelProfiles();
+            return true;
+        }
+        /** 从触发元素读取 data-id 设为活跃（内联 onclick 安全入口，避免字符串注入面） */
+        function llmSetActiveFromEl(trigger) {
+            const id = trigger && trigger.dataset ? trigger.dataset.id : '';
+            if (id && llmSetActiveProfile(id)) renderSettingModelList();
+        }
+        /** 新增/更新模型配置（同 id 更新，否则新增；首条自动设为活跃） */
+        function llmUpsertProfile(profile) {
+            const existing = llmGetProfileById(profile.id);
+            if (existing) {
+                Object.assign(existing, profile);
+            } else {
+                profile.id = profile.id || ('profile-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8));
+                MODEL_PROFILES.push(profile);
+            }
+            if (MODEL_PROFILES.length === 1 || profile.id === ACTIVE_PROFILE_ID) {
+                ACTIVE_PROFILE_ID = profile.id;
+            }
+            saveModelProfiles();
+            return profile.id;
+        }
+        /** 删除模型配置（删除活跃项时自动切换到第一条） */
+        function llmDeleteProfile(id) {
+            const idx = MODEL_PROFILES.findIndex(p => p.id === id);
+            if (idx === -1) return false;
+            MODEL_PROFILES.splice(idx, 1);
+            if (ACTIVE_PROFILE_ID === id) {
+                ACTIVE_PROFILE_ID = MODEL_PROFILES.length ? MODEL_PROFILES[0].id : '';
+            }
+            saveModelProfiles();
+            return true;
+        }
+        /** Anthropic Messages API 请求地址（兼容用户填 base 或 base/v1） */
+        function anthropicMessagesUrl(baseURL) {
+            let u = String(baseURL || '').trim().replace(/\/+$/, '');
+            if (!u) return '';
+            return /\/v1$/i.test(u) ? u + '/messages' : u + '/v1/messages';
+        }
         /**
          * AI Agent 指标参数集中配置（与后端 core/agent/limits.rs 对齐的单一口径）。
          * 本地打开 index.html 模式直接使用；Tauri 模式下运行时值由后端配置
@@ -17527,6 +17868,7 @@
             { key: '知识库面板', value: 'toggleFile("knowledge")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
             { key: 'Agent', value: 'toggleFile("aiChat")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
             { key: 'Skill', value: 'toggleFile("skill")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
+            { key: 'MCP', value: 'toggleFile("mcp")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
         ]
         // 高亮字体颜色（深色系，确保可读性）
         const HIGHLIGHT_FONT_COLORS = [
@@ -18240,6 +18582,7 @@
         const chatContainer = document.getElementById('chat-container');
         const knowledgeContainer = document.getElementById('knowledge-container');
         const skillContainer = document.getElementById('skill-container');
+        const mcpContainer = document.getElementById('mcp-container');
         const jmSaveOpmlBtn = document.getElementById('jsmind-save-opml-btn');
         const opmlSaveMmBtn = document.getElementById('opml-save-mm-btn');
         const jmImgBtn = document.getElementById('jsmind-image-btn');
@@ -18256,6 +18599,7 @@
             graphqlPlaygroundContainer, regexTestContainer, calendarContainer,
             cronViewContainer, videoViewContainer, gitRecordsContainer,
             swaggerEditorContainer, dirSpaceContainer, chatContainer, knowledgeContainer,
+            mcpContainer,
         ];
 
         const AUX_CONTROLS = [
@@ -18330,6 +18674,7 @@
                 Promise.resolve(initNewFileDropdown()), // 初始化新文件下拉菜单
                 Promise.resolve(initAiResultModal()), // 初始化AI结果弹窗
                 Promise.resolve(initMarkdownSelectionToolbar()),// 初始化Markdown选择工具栏
+                Promise.resolve(initChatSelectionToolbar()),// 初始化对话文本选择工具栏（v2）
                 Promise.resolve(initSidebarToggle()),// 初始化侧边栏切换按钮
                 Promise.resolve(todoEarlyInit()),// 初始化日历日程
                 Promise.resolve(initMonacoEditor()),// 初始化编辑器
@@ -18484,6 +18829,8 @@
                 await openKnowledgeBase();
             } else if (type === 'skill') {
                 await openSkillManager();
+            } else if (type === 'mcp') {
+                await openMcpManager();
             } else if (type === 'fileType') {
                 await openFileType();
             } else if (type === 'picLayoutDisplay') {  //目录右键
@@ -19077,6 +19424,13 @@
 
             });
             editor.focus();
+            // v2：Ctrl/Cmd+S 保存当前文件（Monaco 内注册，避免与浏览器默认"另存为"冲突）
+            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+                saveFileOnly().catch(err => {
+                    console.error('保存失败:', err);
+                    showNotification('✗ 保存失败: ' + (err && err.message ? err.message : err), 'error');
+                });
+            });
             return editor;
         }
 
@@ -20111,8 +20465,8 @@
         }
 
         async function toggleSaveFolderPanel(event) {
-            event.stopPropagation();
-            event.preventDefault();
+            if(event) event.stopPropagation();
+            if(event) event.preventDefault();
             const newFileSaveMenu = document.getElementById('new-file-save-menu');
             const newFileSaveDirectoryTree = document.getElementById('new-file-save-directory-tree');
             if (!newFileSaveMenu || !newFileSaveDirectoryTree) return;
@@ -20126,6 +20480,7 @@
                 const content = currentEditor.getValue();
                 const diaryDirHandle = await getOrCreateDirectory(getRootHandle(), DIARY_DIR_NAME);
                 await doSaveToFolder(diaryDirHandle, DIARY_DIR_NAME, fileName, content, true);
+                //打开
                 return;
             }
             const isOpen = newFileSaveMenu.classList.contains('mermaid-open');
@@ -20168,6 +20523,13 @@
             });
         }
 
+        function mapDirNameCustom(str, rev = true) {
+            if (rev) {
+                return str === '日记' ? DIARY_DIR_NAME : (str === '垃圾箱' ? DELETED_DIR_NAME : str);
+            }
+            return str === DIARY_DIR_NAME ? '日记' : (str === DELETED_DIR_NAME ? '垃圾箱' : str);
+        }
+
         async function renderDirectoryTree(config) {
             const { container, onSave, getDefaultFileName, getContent, closeMenu } = config;
             let allDirectoryTree = [];
@@ -20199,7 +20561,7 @@
 
                 const nameSpan = document.createElement('span');
                 nameSpan.className = 'mermaid-directory-name';
-                nameSpan.textContent = depth === 1 ? '根目录' : node.name;
+                nameSpan.textContent = depth === 1 ? '根目录' : mapDirNameCustom(node.name, false);
 
                 const saveBtn = document.createElement('span');
                 saveBtn.className = 'mermaid-dir-save-btn';
@@ -20252,7 +20614,7 @@
             }
 
             function renderFilteredTree(filterText = '', preserveFocus = false) {
-                const focusValue = preserveFocus ? container.querySelector('.mermaid-directory-search-input')?.value : filterText;
+                let focusValue = preserveFocus ? container.querySelector('.mermaid-directory-search-input')?.value : filterText;
                 container.innerHTML = '';
                 const searchWrapper = document.createElement('div');
                 searchWrapper.className = 'mermaid-directory-search-wrapper';
@@ -25275,8 +25637,16 @@
                 return;
             }
             // 默认：Monaco 编辑器
-            if (!currentEditor || !currentFileHandle) return;
+            if (!currentEditor) return;
+            if (!currentFileHandle) {
+                await toggleSaveFolderPanel();
+                return;
+            }
             const currentContent = currentEditor.getValue();
+            if (!currentContent || !currentContent.trim()) {
+                showNotification('内容为空!', 'warning');
+                return;
+            }
             if (currentContent !== originalContent) {
                 const fileHandle = currentFileHandle;
                 const fileName = currentFileName;
@@ -34264,21 +34634,31 @@ kanban-plugin: basic
          * @returns {Promise<string>} AI 返回的完整文本
          */
         async function callAIAPI(promptStr, systemPrompt, { signal } = {}) {
+            const profile = llmGetActiveProfile();
+            if (!profile || !profile.baseURL || !profile.model) {
+                throw new Error('请先在设置中配置模型');
+            }
+            // Anthropic Messages API：独立请求路径与响应解析
+            if (profile.protocol === 'anthropic') {
+                return await callAnthropicAPI(promptStr, systemPrompt, profile, { signal });
+            }
+            // OpenAI 兼容 Chat Completions
+            const endpoint = normalizeLlmEndpoint(profile.baseURL);
             const messages = [
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: promptStr }
             ];
-            const response = await fetch(LOCAL_LLM_ENDPOINT, {
+            const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': 'Bearer ' + LOCAL_LLM_TOKEN
+                    'Authorization': 'Bearer ' + (profile.apiKey || '')
                 },
                 body: JSON.stringify({
-                    model: LOCAL_LLM_MODEL,
+                    model: profile.model,
                     messages: messages,
                     stream: false,
-                    max_tokens: LOCAL_LLM_MAX_TOKENS,
+                    max_tokens: profile.maxTokens || 4096,
                 }),
                 signal,
             });
@@ -34302,6 +34682,47 @@ kanban-plugin: basic
                 || data.choices?.[0]?.message?.reasoning_content;
             if (content) return content;
             console.error('未识别的 API 响应格式:', JSON.stringify(data));
+            return '无法解析 API 响应，请检查 API 配置';
+        }
+        /**
+         * 调用 Anthropic Messages API（非流式，浏览器模式 AI 面板使用）。
+         * 仅提取 text 内容块（thinking 块忽略），错误时抛出可读信息。
+         */
+        async function callAnthropicAPI(promptStr, systemPrompt, profile, { signal } = {}) {
+            const url = anthropicMessagesUrl(profile.baseURL);
+            if (!url) throw new Error('Anthropic 地址无效');
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': profile.apiKey || '',
+                    'anthropic-version': '2023-06-01',
+                },
+                body: JSON.stringify({
+                    model: profile.model,
+                    max_tokens: profile.maxTokens || 4096,
+                    system: systemPrompt || undefined,
+                    messages: [{ role: 'user', content: promptStr }],
+                }),
+                signal,
+            });
+            if (!response.ok) {
+                let errorMsg = 'API请求失败: ' + response.status;
+                try {
+                    const data = await response.json();
+                    console.error('Anthropic API请求失败', data);
+                    errorMsg = 'API请求失败: ' + (data?.error?.message || JSON.stringify(data));
+                } catch (e) {
+                    errorMsg = 'API请求失败: ' + e.message;
+                }
+                throw new Error(errorMsg);
+            }
+            const data = await response.json();
+            const parts = Array.isArray(data?.content) ? data.content : [];
+            const text = parts.filter(b => b && b.type === 'text' && typeof b.text === 'string')
+                .map(b => b.text).join('');
+            if (text) return text;
+            console.error('未识别的 Anthropic 响应格式:', JSON.stringify(data));
             return '无法解析 API 响应，请检查 API 配置';
         }
         function aiPanelToggleCilck() {
@@ -34344,6 +34765,9 @@ kanban-plugin: basic
             } else {
                 aiSelectionMode = false;
                 aiSelectionText = '';
+                // 无选中文本：恢复"关联当前文件"（dashboard 由 aiPanelToggleCilck 单独处理）
+                const dashboardActive = dashboardContainer && dashboardContainer.style.display !== 'none';
+                if (!dashboardActive) aiResultLinkCurrentFile = true;
                 if (countEl) countEl.style.display = 'none';
             }
             showAITooltip();
@@ -34630,10 +35054,25 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     throw new Error('未指定有效的操作或自定义提示词');
                 }
             } else {
+                // 兜底：无选中文本且未显式链接文件时，若已打开文件则默认按当前文件处理
+                // （保证"打开 Markdown 文件 → 点总结/分析/排版"始终可用，主流 Agent 行为）
                 if (action === 'analyze' || action === 'summarize' || action === 'reformat') {
-                    throw new Error('未指定有效的操作或自定义提示词');
+                    if (currentFileHandle && currentFileName) {
+                        fileName = currentFileName;
+                        filePath = currentActiveItem ? currentActiveItem.dataset.filePath : '';
+                        originalText = await getFileContent(currentFileHandle);
+                        let content = originalText;
+                        if (getExt(fileName) === 'html') {
+                            content = htmlToText(originalText);
+                        }
+                        content = content.length > LOCAL_LLM_CONTEXT_LENGTH ? content.substring(0, LOCAL_LLM_CONTEXT_LENGTH) : content;
+                        promptStr = `请根据文件内容完成以下要求：${customPrompt}\n\n文件内容：${content}\n\n`;
+                    } else {
+                        throw new Error('未指定有效的操作或自定义提示词');
+                    }
+                } else {
+                    promptStr = `${customPrompt}`;
                 }
-                promptStr = `${customPrompt}`;
             }
             const aiButton = document.getElementById('ai-fab-button');
             aiButton.classList.remove('error', 'success');
@@ -34659,7 +35098,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     date: dateStr,
                     lastAccess: time
                 });
-                if (aiResultLinkCurrentFile || aiSelectionMode) {
+                if (aiResultLinkCurrentFile || aiSelectionMode || fileName) {
                     recordOperation(fileName, filePath, OPERATION_TYPES.AI, time, actionStr);
                 } else {
                     const context = customPrompt.length > 30 ? customPrompt.substring(0, 30) : customPrompt;
@@ -50656,44 +51095,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         </div> 
                     ` : ''}
                         <div class="setting-section">
-                            <div class="setting-section-title">本地 LLM</div>
+                            <div class="setting-section-title">模型接入 <span class="setting-help" data-tippy-content="支持多模型配置（OpenAI 兼容 / Anthropic），内置主流厂商预设模板，选择厂商自动带出接口地址">ⓘ</span></div>
                             <div class="setting-section-body">
-                                <div class="setting-row">
-                                    <label>API 端点</label>
-                                    <input class="setting-text" id="${inputId('llmEndpoint')}" value="${escapeHtml(LOCAL_LLM_ENDPOINT)}">
-                                </div>
-                                <div class="setting-row">
-                                    <label>Token</label>
-                                    <input class="setting-text" id="${inputId('llmToken')}" value="${escapeHtml(LOCAL_LLM_TOKEN)}">
-                                </div>
-                                <div class="setting-row">
-                                    <label>模型名称</label>
-                                    <input class="setting-text" id="${inputId('llmModel')}" value="${escapeHtml(LOCAL_LLM_MODEL)}">
-                                </div>
-                                <div class="setting-row">
-                                    <label>规划模型（可选）</label>
-                                    <input class="setting-text" id="${inputId('llmPlannerModel')}" value="${escapeHtml(LOCAL_LLM_PLANNER_MODEL)}" placeholder="留空使用主模型">
-                                </div>
-                                <div class="setting-row">
-                                    <label>摘要模型（可选）</label>
-                                    <input class="setting-text" id="${inputId('llmSummaryModel')}" value="${escapeHtml(LOCAL_LLM_SUMMARY_MODEL)}" placeholder="留空使用主模型">
-                                </div>
-                                <div class="setting-row">
-                                    <label>推理等级（可选）</label>
-                                    <input class="setting-text" id="${inputId('llmReasoningEffort')}" value="${escapeHtml(LOCAL_LLM_REASONING_EFFORT)}" placeholder="low / medium / high，留空不设置">
-                                </div>
-                                <div class="setting-row">
-                                    <label>上下文长度</label>
-                                    <input class="setting-number" id="${inputId('llmContext')}" type="number" min="1000" max="10000000" step="10000" value="${LOCAL_LLM_CONTEXT_LENGTH}">
-                                </div>
-                                <div class="setting-row">
-                                    <label>最大输出 Token</label>
-                                    <input class="setting-number" id="${inputId('llmMaxTokens')}" type="number" min="256" max="32000" step="256" value="${LOCAL_LLM_MAX_TOKENS}">
-                                </div>
-                                <div class="setting-row">
-                                    <label></label>
-                                    <button class="setting-tag-add-btn"" onclick="testLlmConnection(this)" style="margin-top:4px;">测试连接</button>
-                                    <div id="testLlmRtn" class="center-div" style="display:none;width:70%;color: var(--orange);"></div>
+                                <div id="setting-model-mgr">
+                                    <div class="setting-model-list" id="settingModelList"></div>
+                                    <div class="setting-row">
+                                        <label></label>
+                                        <button class="setting-tag-add-btn" onclick="openModelProfileModal(null)">＋ 新增模型</button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -50769,6 +51178,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 </div>
             `;
             document.body.appendChild(overlay);
+            // 渲染模型接入列表（v2：多模型配置）
+            renderSettingModelList();
             const tippyInstances = tippy(overlay.querySelectorAll('.setting-help'), {
                 theme: 'custom',
                 content: (ref) => ref.getAttribute('data-tippy-content'),
@@ -50839,22 +51250,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             document.getElementById(inputId('save')).addEventListener('click', async () => {
                 try {
                     const graphqlVal = document.getElementById(inputId('graphql')).value.trim();
-                    const llmEndpointVal = document.getElementById(inputId('llmEndpoint')).value.trim();
-                    const llmContextVal = document.getElementById(inputId('llmContext')).value.trim();
                     // URL 格式校验
                     const urlPattern = /^https?:\/\/.+/i;
                     if (graphqlVal && !urlPattern.test(graphqlVal)) {
                         showNotification('✗ GraphQL 地址格式不正确，需以 http:// 或 https:// 开头', 'warning');
-                        return;
-                    }
-                    if (llmEndpointVal && !urlPattern.test(llmEndpointVal)) {
-                        showNotification('✗ LLM API 端点格式不正确，需以 http:// 或 https:// 开头', 'warning');
-                        return;
-                    }
-                    // 上下文长度校验
-                    const contextLength = parseInt(llmContextVal, 10);
-                    if (isNaN(contextLength) || contextLength < 1000) {
-                        showNotification('✗ 上下文长度不能小于 1000', 'warning');
                         return;
                     }
                     if (isInit) {
@@ -50891,15 +51290,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                     GRAPHQL_ENDPOINT = graphqlVal;
                     NGINX_CONF_PATH = document.getElementById(inputId('nginx')).value.trim();
-                    LOCAL_LLM_ENDPOINT = normalizeLlmEndpoint(llmEndpointVal);
-                    LOCAL_LLM_TOKEN = document.getElementById(inputId('llmToken')).value.trim();
-                    LOCAL_LLM_MODEL = document.getElementById(inputId('llmModel')).value.trim();
-                    LOCAL_LLM_PLANNER_MODEL = document.getElementById(inputId('llmPlannerModel'))?.value.trim() || '';
-                    LOCAL_LLM_SUMMARY_MODEL = document.getElementById(inputId('llmSummaryModel'))?.value.trim() || '';
-                    LOCAL_LLM_REASONING_EFFORT = document.getElementById(inputId('llmReasoningEffort'))?.value.trim() || '';
-                    LOCAL_LLM_CONTEXT_LENGTH = contextLength;
-                    const maxTokensVal = document.getElementById(inputId('llmMaxTokens')).value.trim();
-                    LOCAL_LLM_MAX_TOKENS = parseInt(maxTokensVal, 10) || 4096;
+                    // 模型接入：由模型管理区（+新增模型模态）实时保存，此处将活跃模型同步到全局镜像与后端
+                    applyActiveProfileToGlobals();
+                    syncLlmConfigToBackend();
                     DIR_BLACKLIST = dirBlacklistItems;
                     FILE_BLACKLIST = fileBlacklistItems;
                     RANDOM_DIR_BLACKLIST = randomDirItems;
@@ -51021,6 +51414,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 RANDOM_DIR_BLACKLIST = setting.randomDirBlacklist;
                 HTML_CODE_SHOW_BLACKLIST = setting.htmlCodeShowBlacklist;
                 compileAllRules();
+                // 初始化模型配置（含旧单配置迁移），再同步后端
+                initModelProfiles();
                 // 加载配置后同步 LLM 配置到后端
                 syncLlmConfigToBackend();
                 return setting;
@@ -51056,7 +51451,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 htmlCodeShowBlacklist: HTML_CODE_SHOW_BLACKLIST
             };
         }
-        /** 同步 LLM 配置到后端内存（中央化配置入口） */
+        /** 同步 LLM 配置到后端内存（中央化配置入口，v2 增加协议） */
         function syncLlmConfigToBackend() {
             if (window.__TAURI__ && currentRootPath) {
                 window.__TAURI__.core.invoke('kb_update_llm_config', {
@@ -51064,6 +51459,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     endpoint: LOCAL_LLM_ENDPOINT,
                     model: LOCAL_LLM_MODEL,
                     apiKey: LOCAL_LLM_TOKEN,
+                    protocol: LOCAL_LLM_PROTOCOL || 'openai',
                     plannerModel: LOCAL_LLM_PLANNER_MODEL || null,
                     summaryModel: LOCAL_LLM_SUMMARY_MODEL || null,
                     reasoningEffort: LOCAL_LLM_REASONING_EFFORT || null,
@@ -52169,7 +52565,192 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (promptPicker && promptPopup && !promptPicker.contains(ev.target)) {
                 promptPopup.style.display = 'none';
             }
+            // 模型选择 / think 弹层：点击外部关闭
+            const modelWrap = document.getElementById('chat-model-select-wrap');
+            const modelPopup = document.getElementById('chat-model-select-popup');
+            if (modelWrap && modelPopup && !modelWrap.contains(ev.target)) {
+                modelPopup.style.display = 'none';
+            }
+            const thinkWrap = document.getElementById('chat-think-toggle-wrap');
+            const thinkPopup = document.getElementById('chat-think-popup');
+            if (thinkWrap && thinkPopup && !thinkWrap.contains(ev.target)) {
+                thinkPopup.style.display = 'none';
+            }
         });
+
+        // ── 模型下拉 + think 分段选择（v2，贴合主流 Agent 交互） ──
+        const CHAT_THINK_LEVELS = [
+            { id: 'off', label: '关闭', effort: '', tip: '不设置思考参数，由模型默认行为决定' },
+            { id: 'standard', label: '标准', effort: 'medium', tip: '中等思考深度（OpenAI: medium / Anthropic: thinking 2048）' },
+            { id: 'deep', label: '深度', effort: 'high', tip: '深度思考（OpenAI: high / Anthropic: thinking 4096）' },
+        ];
+        const CHAT_THINK_STORAGE_KEY = 'mdgo_chat_think_level';
+        let chatThinkLevel = 'off';
+
+        /** 渲染模型下拉（label + 弹层列表） */
+        function renderChatModelSelector() {
+            const label = document.getElementById('chat-model-select-label');
+            const popup = document.getElementById('chat-model-select-popup');
+            const profile = llmGetActiveProfile();
+            if (label) {
+                if (profile) {
+                    // 显示模型名（不再使用显示名称 name）
+                    label.textContent = profile.model || '未命名';
+                    label.title = (profile.model || '') + (profile.baseURL ? ' · ' + profile.baseURL : '');
+                } else {
+                    label.textContent = '选择模型';
+                }
+            }
+            if (!popup) return;
+            if (!MODEL_PROFILES.length) {
+                popup.innerHTML = '<div style="padding:0.5rem;font-size:0.75rem;color:var(--t3,#888);">尚未配置模型</div>' +
+                    `<div class="prompt-popup-footer">
+                        <button class="prompt-settings-btn" onclick="openModelProfileModal(null)">
+                            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                            </svg>
+                        </button>
+                    </div>`;
+                return;
+            }
+            const activeId = llmGetActiveProfile()?.id;
+            popup.innerHTML = MODEL_PROFILES.map(p => {
+                const vendor = llmGetVendorById(p.vendorId);
+                const isActive = p.id === activeId;
+                return `<div style="display:flex;align-items:center;gap:0.375rem;padding:0.375rem 0.5rem;border-radius:0.25rem;${isActive ? 'cursor:default;background:rgba(22,91,250,.12);' : 'cursor:pointer;'}" onclick="chatSelectModel(this);" data-id="${escapeHtml(p.id)}" title="${escapeHtml(p.baseURL || '')}">
+                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(p.model)}<span class="chat-model-vendor" style="opacity:.7;font-size:.65rem;margin-left:0.25rem;">${vendor ? escapeHtml(vendor.name) : ''}</span></span>
+                    ${p.protocol === 'anthropic' ? '<span style="font-size:.6rem;padding:0 4px;border-radius:6px;background:rgba(217,119,6,.18);color:#d97706;">A</span>' : ''}
+                    ${isActive ? '✓' : ''}
+                </div>`;
+            }).join('') +
+            `<div class="prompt-popup-footer">
+                <button class="prompt-settings-btn" onclick="openModelProfileModal(null)">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                    </svg>
+                </button>
+            </div>`;
+        }
+
+        /** 开关模型选择弹层 */
+        function toggleChatModelSelector(event) {
+            if (event) event.stopPropagation();
+            const popup = document.getElementById('chat-model-select-popup');
+            if (!popup) return;
+            const isOpening = popup.style.display === 'none';
+            if (isOpening) {
+                renderChatModelSelector();
+                // 关闭其它弹层
+                ['chat-think-popup', 'chat-skill-popup', 'chat-prompt-popup'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.style.display = 'none';
+                });
+            }
+            popup.style.display = isOpening ? 'block' : 'none';
+        }
+
+        /** 切换当前模型（含流式中保护）。trigger 为内联点击元素，从 data-id 读取 */
+        function chatSelectModel(trigger) {
+            if (chatStreaming) { showNotification('生成中，请稍后再切换模型', 'warning'); return; }
+            const id = trigger && trigger.dataset ? trigger.dataset.id : '';
+            if (!id) return;
+            // 当前已选中的模型：不可重复选择，点击仅关闭弹层（主流 Agent 行为）
+            const active = llmGetActiveProfile();
+            if (active && id === active.id) {
+                const popup = document.getElementById('chat-model-select-popup');
+                if (popup) popup.style.display = 'none';
+                return;
+            }
+            if (!llmSetActiveProfile(id)) return;
+            // 切换后应用 think 档位（独立于模型）
+            applyChatThinkLevel();
+            renderChatModelSelector();
+            const popup = document.getElementById('chat-model-select-popup');
+            if (popup) popup.style.display = 'none';
+            showNotification('✓ 已切换模型', 'success', 1000);
+        }
+
+        /** 渲染 think 分段选择器 */
+        function renderChatThinkToggle() {
+            const popup = document.getElementById('chat-think-popup');
+            const badge = document.getElementById('chat-think-level-badge');
+            const level = CHAT_THINK_LEVELS.find(l => l.id === chatThinkLevel) || CHAT_THINK_LEVELS[0];
+            if (badge) {
+                badge.textContent = level.id === 'off' ? '' : level.label;
+            }
+            if (!popup) return;
+            popup.innerHTML = `<div style="display:flex;flex-direction:column;gap:2px;">${CHAT_THINK_LEVELS.map(l => {
+                const isActive = l.id === chatThinkLevel;
+                return `<button class="chat-think-option ${isActive ? 'active' : ''}" data-id="${l.id}" title="${escapeHtml(l.tip)}"
+                    onclick="setChatThinkLevel('${l.id}')">
+                    <span style="display:flex;align-items:center;justify-content:space-between;width:100%;">${l.label}${isActive ? ' ✓' : ''}</span>
+                </button>`;
+            }).join('')}</div>`;
+        }
+
+        /** 开关 think 弹层 */
+        function toggleChatThinkPopup(event) {
+            if (event) event.stopPropagation();
+            const popup = document.getElementById('chat-think-popup');
+            if (!popup) return;
+            const isOpening = popup.style.display === 'none';
+            if (isOpening) {
+                renderChatThinkToggle();
+                ['chat-model-select-popup', 'chat-skill-popup', 'chat-prompt-popup'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.style.display = 'none';
+                });
+            }
+            popup.style.display = isOpening ? 'block' : 'none';
+        }
+
+        /** 设置 think 档位：更新全局 effort + 后端同步 + 持久化 */
+        function setChatThinkLevel(id) {
+            if (chatStreaming) { showNotification('生成中，请稍后再调整思考程度', 'warning'); return; }
+            const level = CHAT_THINK_LEVELS.find(l => l.id === id);
+            if (!level) return;
+            chatThinkLevel = id;
+            safeLocalStorageSet(CHAT_THINK_STORAGE_KEY, id);
+            applyChatThinkLevel();
+            renderChatThinkToggle();
+            const popup = document.getElementById('chat-think-popup');
+            if (popup) popup.style.display = 'none';
+        }
+
+        /** 将 think 档位映射为 LOCAL_LLM_REASONING_EFFORT 并同步后端 */
+        function applyChatThinkLevel() {
+            const level = CHAT_THINK_LEVELS.find(l => l.id === chatThinkLevel) || CHAT_THINK_LEVELS[0];
+            LOCAL_LLM_REASONING_EFFORT = level.effort;
+            syncLlmConfigToBackend();
+        }
+
+        /** 初始化 think 档位（从 localStorage 恢复） */
+        function initChatThinkLevel() {
+            const saved = safeLocalStorageGet(CHAT_THINK_STORAGE_KEY);
+            chatThinkLevel = CHAT_THINK_LEVELS.some(l => l.id === saved) ? saved : 'off';
+            applyChatThinkLevel();
+            renderChatThinkToggle();
+            renderChatModelSelector();
+            // context usage tooltip：点击百分比切换显示（不再 hover 触发），点击外部关闭
+            const usageEl = document.getElementById('chat-context-usage');
+            if (usageEl && !usageEl.dataset.tooltipBound) {
+                usageEl.dataset.tooltipBound = '1';
+                usageEl.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const open = usageEl.classList.contains('tooltip-open');
+                    document.querySelectorAll('.chat-context-usage.tooltip-open').forEach(el => el.classList.remove('tooltip-open'));
+                    if (!open) usageEl.classList.add('tooltip-open');
+                });
+            }
+            document.removeEventListener('click', window._chatUsageTooltipOutsideHandler);
+            window._chatUsageTooltipOutsideHandler = (e) => {
+                const usageEl2 = document.getElementById('chat-context-usage');
+                if (usageEl2 && !usageEl2.contains(e.target)) {
+                    usageEl2.classList.remove('tooltip-open');
+                }
+            };
+            document.addEventListener('click', window._chatUsageTooltipOutsideHandler);
+        }
 
         /**
          * 确保存在当前会话：挂载技能需要绑定会话（chat_session_skills 外键）。
@@ -52603,6 +53184,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         async function openAiChat() {
             await switchToView(chatContainer, 'flex');
             await loadChatSessions();
+            // 初始化模型下拉与 think 档位（v2）
+            initChatThinkLevel();
             // 初始化自动滚动：用户手动滚动时暂停，滚回底部时恢复
             window._chatAutoScroll = true;
             const chatMsgContainer = document.getElementById('chat-messages');
@@ -52732,10 +53315,269 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             await rememberLastChatSession();
         }
 
+        // ── @ 文件选择（v2：输入 @ 弹出文件列表，最近修改倒序） ──
+        let _chatAtPicker = { active: false, start: 0, end: 0, filter: '', selected: 0, items: [], suppressToken: null };
+
+        /** 检测光标前是否存在 @token（@ 前须为空白或行首，@ 后不含空格） */
+        function detectChatAtToken(input) {
+            const pos = input.selectionStart;
+            const value = input.value;
+            if (pos === 0) return null;
+            let start = pos;
+            while (start > 0 && !/\s/.test(value[start - 1])) start--;
+            if (value[start] !== '@') return null;
+            if (start > 0 && !/\s/.test(value[start - 1])) return null;
+            return { start, end: pos, token: value.slice(start + 1, pos) };
+        }
+
+        /** 收集候选文件：scan 数据按 mtime 倒序，支持名称/路径模糊过滤 */
+        function collectChatFileCandidates(filter) {
+            let list = getScanFileList();
+            if (!list || !list.length) return [];
+            const kw = (filter || '').trim().toLowerCase();
+            const items = list
+                .filter(f => f && !f.is_dir && typeof f.mtime === 'number')
+                .map(f => ({
+                    name: f.name || '',
+                    path: f.path || '',
+                    mtime: f.mtime || 0,
+                    mtimeStr: f.mtime_str || '',
+                }))
+                .sort((a, b) => b.mtime - a.mtime);
+            if (!kw) return items.slice(0, 100);
+            return items.filter(f =>
+                f.name.toLowerCase().includes(kw) || f.path.toLowerCase().includes(kw)
+            ).slice(0, 100);
+        }
+
+        /** 相对路径（相对知识库根目录）；无法计算时返回原始 path */
+        function chatFileRelPath(p) {
+            if (!p) return '';
+            if (currentRootPath && p.startsWith(currentRootPath)) {
+                let rel = p.slice(currentRootPath.length).replace(/^[\\/]+/, '');
+                return rel;
+            }
+            return p;
+        }
+
+        function openChatFilePicker(tokenStart, token) {
+            _chatAtPicker = { active: true, start: tokenStart, end: tokenStart + 1 + token.length, filter: token, selected: 0, items: [], suppressToken: null };
+            const overlay = document.getElementById('chat-file-picker-overlay');
+            if (overlay) overlay.style.display = 'flex';
+            renderChatFilePicker();
+        }
+
+        function closeChatFilePicker() {
+            _chatAtPicker.active = false;
+            const overlay = document.getElementById('chat-file-picker-overlay');
+            if (overlay) overlay.style.display = 'none';
+            document.getElementById('chat-input')?.focus();
+        }
+
+        function renderChatFilePicker() {
+            const listEl = document.getElementById('chat-file-picker-list');
+            const hintEl = document.getElementById('chat-file-picker-hint');
+            if (!listEl) return;
+            const items = collectChatFileCandidates(_chatAtPicker.filter);
+            _chatAtPicker.items = items;
+            if (_chatAtPicker.selected >= items.length) _chatAtPicker.selected = 0;
+            if (hintEl) hintEl.textContent = _chatAtPicker.filter ? `筛选「${_chatAtPicker.filter}」` : '';
+            if (!items.length) {
+                listEl.innerHTML = '<div style="padding:0.75rem;text-align:center;color:var(--t3,#888);font-size:12px;">没有匹配的文件</div>';
+                return;
+            }
+            listEl.innerHTML = items.map((f, i) => {
+                const rel = chatFileRelPath(f.path);
+                return `<div class="chat-file-picker-item ${i === _chatAtPicker.selected ? 'active' : ''}" data-index="${i}"
+                    onmouseenter="chatFilePickerHover(${i})" onclick="chatFilePickerSelect(${i})">
+                    <div class="cfp-name">${escapeHtml(f.name)}</div>
+                    <div class="cfp-path">${escapeHtml(rel)} · ${escapeHtml(f.mtimeStr || '')}</div>
+                </div>`;
+            }).join('');
+        }
+
+        function chatFilePickerHover(index) {
+            _chatAtPicker.selected = index;
+            renderChatFilePicker();
+        }
+
+        /** 确认选择：以 @相对路径 替换当前 @token，聚焦输入框（不自动发送） */
+        function chatFilePickerSelect(index) {
+            const item = _chatAtPicker.items[index];
+            if (!item) return;
+            const input = document.getElementById('chat-input');
+            if (!input) return;
+            const rel = chatFileRelPath(item.path);
+            const value = input.value;
+            const start = Math.min(_chatAtPicker.start, value.length);
+            const end = Math.min(_chatAtPicker.end, value.length);
+            const inserted = '@' + (rel || item.name);
+            input.value = value.slice(0, start) + inserted + value.slice(end);
+            const caret = start + inserted.length;
+            input.setSelectionRange(caret, caret);
+            // 记录已插入的引用 token：keyup 检测到完全相同的 token 时不再重复弹框，
+            // 只有用户编辑该 token（增删字符）或重新输入 @ 时才恢复触发
+            _chatAtPicker.suppressToken = { start, tokenText: rel || item.name };
+            closeChatFilePicker();
+            updateChatSendButton();
+        }
+
+        /** keyup：检测/更新 @token 状态机 */
+        function handleChatKeyup(e) {
+            const input = document.getElementById('chat-input');
+            if (!input) return;
+            const token = detectChatAtToken(input);
+            if (token) {
+                // 已插入的 @引用（选择后光标停留/移动但未编辑 token）：不重复弹框
+                const st = _chatAtPicker.suppressToken;
+                if (st && token.start === st.start && token.token === st.tokenText) {
+                    return;
+                }
+                if (!_chatAtPicker.active) {
+                    openChatFilePicker(token.start, token.token);
+                } else if (_chatAtPicker.filter !== token.token) {
+                    _chatAtPicker.filter = token.token;
+                    _chatAtPicker.start = token.start;
+                    _chatAtPicker.end = token.end;
+                    _chatAtPicker.selected = 0;
+                    renderChatFilePicker();
+                }
+            } else if (_chatAtPicker.active) {
+                closeChatFilePicker();
+            }
+        }
+
         function handleChatKeydown(e) {
+            // @ 文件选择器键盘操作优先
+            if (_chatAtPicker.active) {
+                if (e.key === 'ArrowDown') { e.preventDefault(); _chatAtPicker.selected = Math.min(_chatAtPicker.selected + 1, _chatAtPicker.items.length - 1); renderChatFilePicker(); return; }
+                if (e.key === 'ArrowUp') { e.preventDefault(); _chatAtPicker.selected = Math.max(_chatAtPicker.selected - 1, 0); renderChatFilePicker(); return; }
+                if (e.key === 'Enter') { e.preventDefault(); chatFilePickerSelect(_chatAtPicker.selected); return; }
+                if (e.key === 'Escape') { e.preventDefault(); closeChatFilePicker(); return; }
+            }
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 sendChatMessage();
+            }
+        }
+
+        // ── 对话文本选择（v2：追问/复制，可配置化，与 Markdown 选区配置同范式） ──
+        const CHAT_SELECTION_ACTIONS = [
+            {
+                id: 'follow_up', name: '追问', type: 'chat', display: true,
+                action: 'followUp',
+                tip: '将选中文本作为新的提问填入输入框',
+            },
+            {
+                id: 'copy', name: '复制', type: 'chat', display: true,
+                action: 'copy',
+                tip: '复制选中文本到剪贴板',
+            },
+        ];
+        let _chatSelection = { range: null, text: '' };
+
+        /** 判断选区是否位于聊天消息区（#chat-messages 内） */
+        function chatSelectionInMessages(sel) {
+            if (!sel || sel.isCollapsed || !sel.rangeCount) return false;
+            const range = sel.getRangeAt(0);
+            const container = range.commonAncestorContainer;
+            const node = container.nodeType === 3 ? container.parentElement : container;
+            return !!node && !!node.closest && !!node.closest('#chat-messages');
+        }
+
+        /** 显示对话选区浮层（复用 markdown-selection-toolbar 的定位逻辑） */
+        function showChatSelectionToolbar(range) {
+            const bar = document.getElementById('chat-selection-toolbar');
+            if (!bar) return;
+            const rect = range.getBoundingClientRect();
+            if (!rect || (rect.width === 0 && rect.height === 0)) {
+                hideChatSelectionToolbar();
+                return;
+            }
+            const text = (window.getSelection()?.toString() || '').trim();
+            if (!text) { hideChatSelectionToolbar(); return; }
+            _chatSelection = { range, text };
+            // 渲染可配置动作按钮
+            bar.innerHTML = CHAT_SELECTION_ACTIONS
+                .filter(a => a.display !== false)
+                .map(a => `<button class="chat-selection-action-btn" data-action="${a.action}" title="${escapeHtml(a.tip || a.name)}" onmousedown="event.preventDefault()" onclick="chatSelectionAction('${a.action}')">${escapeHtml(a.name)}</button>`)
+                .join('');
+            bar.classList.add('visible');
+            const barRect = bar.getBoundingClientRect();
+            const padding = 8;
+            const useBelow = rect.bottom + barRect.height + padding <= window.innerHeight;
+            let top = useBelow ? (rect.bottom + 6) : (rect.top - barRect.height - 6);
+            if (top < padding) top = padding;
+            if (top + barRect.height > window.innerHeight - padding) {
+                top = Math.max(padding, window.innerHeight - barRect.height - padding);
+            }
+            const centerX = rect.left + rect.width / 2;
+            let left = centerX - barRect.width / 2;
+            const maxLeft = window.innerWidth - barRect.width - padding;
+            if (left < padding) left = padding;
+            if (left > maxLeft) left = maxLeft;
+            bar.style.top = `${top}px`;
+            bar.style.left = `${left}px`;
+        }
+
+        function hideChatSelectionToolbar() {
+            const bar = document.getElementById('chat-selection-toolbar');
+            if (bar) bar.classList.remove('visible');
+            _chatSelection = { range: null, text: '' };
+        }
+
+        /** 对话选区变化：命中聊天消息区且非流式时显示浮层 */
+        function handleChatSelectionChange() {
+            const sel = document.getElementById('chat-messages') ? window.getSelection() : null;
+            if (!sel || chatStreaming) { hideChatSelectionToolbar(); return; }
+            if (!chatSelectionInMessages(sel)) { hideChatSelectionToolbar(); return; }
+            const bar = document.getElementById('chat-selection-toolbar');
+            if (bar && bar.contains && bar.contains(sel.anchorNode)) return;
+            showChatSelectionToolbar(sel.getRangeAt(0));
+        }
+
+        /** 执行对话选区动作 */
+        async function chatSelectionAction(action) {
+            const text = _chatSelection.text || (window.getSelection()?.toString() || '').trim();
+            hideChatSelectionToolbar();
+            if (!text) return;
+            if (action === 'followUp') {
+                const input = document.getElementById('chat-input');
+                if (!input) return;
+                input.value = text;
+                input.focus();
+                input.setSelectionRange(text.length, text.length);
+                updateChatSendButton();
+                showNotification('已填入输入框，可编辑后发送', 'info', 1200);
+            } else if (action === 'copy') {
+                try {
+                    await navigator.clipboard.writeText(text);
+                    showNotification('已复制到剪贴板', 'success', 1000);
+                } catch (e) {
+                    showNotification('复制失败: ' + e.message, 'error');
+                }
+            }
+        }
+
+        /** 初始化对话选区监听（一次性注册） */
+        function initChatSelectionToolbar() {
+            document.addEventListener('selectionchange', () => {
+                // 仅聊天视图激活时响应
+                const chatContainer = document.getElementById('chat-container');
+                if (!chatContainer || chatContainer.style.display === 'none') {
+                    hideChatSelectionToolbar();
+                    return;
+                }
+                handleChatSelectionChange();
+            });
+            document.addEventListener('mousedown', (e) => {
+                const bar = document.getElementById('chat-selection-toolbar');
+                if (bar && bar.contains(e.target)) return;
+                hideChatSelectionToolbar();
+            });
+            const messagesEl = document.getElementById('chat-messages');
+            if (messagesEl) {
+                messagesEl.addEventListener('scroll', hideChatSelectionToolbar, { passive: true, capture: true });
             }
         }
 
@@ -52745,6 +53587,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const icon = document.getElementById('chat-send-icon');
             const input = document.getElementById('chat-input');
             if (!btn || !icon || !input) return;
+            // v2：流式生成中禁用模型/think 切换（防配置与请求不一致）
+            const modelBtn = document.getElementById('chat-model-select-btn');
+            const thinkBtn = document.getElementById('chat-think-toggle-btn');
+            if (modelBtn) { modelBtn.style.opacity = chatStreaming ? '0.4' : ''; modelBtn.style.cursor = chatStreaming ? 'not-allowed' : ''; }
+            if (thinkBtn) { thinkBtn.style.opacity = chatStreaming ? '0.4' : ''; thinkBtn.style.cursor = chatStreaming ? 'not-allowed' : ''; }
             if (chatStreaming) {
                 // 流式响应中 → 显示方块停止图标，始终可用
                 btn.disabled = false;
@@ -54438,7 +55285,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const el = document.getElementById('chat-context-usage');
             const percentEl = document.getElementById('context-percent');
             const ringEl = document.getElementById('context-ring-fg');
-            const tooltipEl = document.getElementById('context-usage-tooltip');
+            const tooltipEl = document.getElementById('context-ring-container');
             if (!el || !percentEl || !ringEl) return;
             if (total <= 0) {
                 el.style.display = 'none';
@@ -54447,7 +55294,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             el.style.display = 'flex';
             const pct = Math.min(100, Math.round((used / total) * 100));
             percentEl.textContent = pct + '%';
-            tooltipEl.textContent = '已使用 ' + used + ' / ' + total + ' tokens';
+            tooltipEl.title = '已使用 ' + used + ' / ' + total + ' tokens';
 
             const circumference = 40.84;
             const offset = circumference - (pct / 100) * circumference;
@@ -55380,33 +56227,251 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             showNotification('✗ 非 Tauri 环境不支持知识库索引', 'error');
         }
 
-        // ====== 连接测试 ======
-        async function testLlmConnection(btn) {
-            const endpoint = document.getElementById('setting-llmEndpoint')?.value || LOCAL_LLM_ENDPOINT;
-            const token = document.getElementById('setting-llmToken')?.value || LOCAL_LLM_TOKEN;
-            btn = btn || event?.target;
+        // ====== 模型管理 UI（v2：厂商向导 + 双协议测试） ======
+        /** 渲染设置面板中的模型列表 */
+        function renderSettingModelList() {
+            const listEl = document.getElementById('settingModelList');
+            if (!listEl) return;
+            if (!MODEL_PROFILES.length) {
+                listEl.innerHTML = '<div class="setting-empty-hint" style="color:var(--t3);font-size:12px;padding:4px 0 8px;">尚未配置模型，点击下方「＋ 新增模型」添加</div>';
+                return;
+            }
+            const activeId = llmGetActiveProfile()?.id;
+            listEl.innerHTML = MODEL_PROFILES.map(p => {
+                const vendor = llmGetVendorById(p.vendorId);
+                const isActive = p.id === activeId;
+                const protocolLabel = p.protocol === 'anthropic' ? 'Anthropic' : 'OpenAI 兼容';
+                return `<div class="setting-model-item ${isActive ? 'active' : ''}" style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border:1px solid var(--border,#333);border-radius:6px;margin-bottom:6px;${isActive ? 'border-color:var(--color-primary);' : ''}">
+                    <div style="flex:1;min-width:0;">
+                        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                            <span style="font-weight:600;font-size:13px;">${escapeHtml(p.model)}</span>
+                            <span style="font-size:11px;color:var(--t2,#aaa);">${escapeHtml(vendor ? vendor.name : '自定义')}</span>
+                            <span style="font-size:10px;padding:0 6px;border-radius:8px;background:${p.protocol === 'anthropic' ? 'rgba(217,119,6,.18)' : 'rgba(22,91,250,.15)'};color:${p.protocol === 'anthropic' ? '#d97706' : '#7ba4ff'};">${protocolLabel}</span>
+                            ${isActive ? '<span style="font-size:10px;padding:0 6px;border-radius:8px;background:rgba(26,127,55,.18);color:#3fb950;">当前</span>' : ''}
+                        </div>
+                        <div style="font-size:11px;color:var(--t3,#888);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(p.model)} · ${escapeHtml(p.baseURL || '')}</div>
+                    </div>
+                    <div style="flex:none;display:flex;gap:4px;flex-shrink:0;">
+                        ${isActive ? '' : `<button class="setting-tag-add-btn" onclick="llmSetActiveFromEl(this);" data-id="${escapeHtml(p.id)}" title="设为当前">设为当前</button>`}
+                        <button class="setting-tag-add-btn" onclick="openModelProfileModal(this);" data-id="${escapeHtml(p.id)}">编辑</button>
+                        <button class="setting-tag-add-btn" style="background-color:var(--color-danger,#cf222e);border:none;" onclick="llmDeleteProfileConfirm(this);" data-id="${escapeHtml(p.id)}">删除</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        /** 删除模型（带确认；删除活跃项自动切换）。trigger 为内联点击元素，从 data-id 读取 */
+        function llmDeleteProfileConfirm(trigger) {
+            const id = trigger && trigger.dataset ? trigger.dataset.id : '';
+            const p = llmGetProfileById(id);
+            if (!p) return;
+            if (!window.confirm(`确定删除模型「${p.model}」？`)) return;
+            llmDeleteProfile(id);
+            renderSettingModelList();
+            showNotification('✓ 模型已删除', 'success');
+        }
+
+        /** 打开新增/编辑模型模态（厂商向导）。trigger 为内联点击元素（null=新增），从 data-id 读取 */
+        function openModelProfileModal(trigger) {
+            const profileId = trigger && trigger.dataset ? trigger.dataset.id : '';
+            const existing = profileId ? llmGetProfileById(profileId) : null;
+            if (profileId && !existing) return;
+            const vendorOptions = LLM_VENDOR_PRESETS.map(v =>
+                `<option value="${v.id}">${v.name}（${v.protocol === 'anthropic' ? 'Anthropic' : 'OpenAI 兼容'}）</option>`).join('');
+            const overlay = document.createElement('div');
+            overlay.className = 'setting-modal-overlay';
+            overlay.innerHTML = `
+                <div class="setting-modal" style="width:35rem;max-width:70%;">
+                    <div class="setting-modal-header">
+                        <span>${existing ? '编辑模型' : '新增模型'}</span>
+                        <button class="setting-modal-close">✕</button>
+                    </div>
+                    <div class="setting-modal-body">
+                        <div style="padding:0;">
+                            <div class="setting-section-body">
+                                <div class="setting-row">
+                                    <label>厂商</label>
+                                    <select class="setting-text" id="mpp-vendor" style="width:100%;">
+                                        ${vendorOptions}
+                                    </select>
+                                </div>
+                                <div class="setting-row">
+                                    <label>接口地址</label>
+                                    <input class="setting-text" id="mpp-baseurl" value="${existing ? escapeHtml(existing.baseURL || '') : ''}" placeholder="选择厂商后自动带出，可修改" autocomplete="off">
+                                </div>
+                                <div class="setting-row">
+                                    <label>协议</label>
+                                    <div id="mpp-protocol" style="font-size:12px;color:var(--t2,#aaa);line-height:30px;">OpenAI 兼容（随厂商）</div>
+                                </div>
+                                <div class="setting-row">
+                                    <label>API Key</label>
+                                    <input class="setting-text" id="mpp-apikey" type="password" value="${existing ? escapeHtml(existing.apiKey || '') : ''}" placeholder="留空表示无需鉴权（本地服务）" autocomplete="off">
+                                </div>
+                                <div class="setting-row">
+                                    <label>模型名称</label>
+                                    <input class="setting-text" id="mpp-model" value="${existing ? escapeHtml(existing.model || '') : ''}" list="mpp-model-list" placeholder="选择预设或手动输入" autocomplete="off">
+                                    <datalist id="mpp-model-list"></datalist>
+                                </div>
+                                <div class="setting-row">
+                                    <label>上下文长度</label>
+                                    <input class="setting-number" id="mpp-context" type="number" min="1000" max="10000000" step="10000" value="${existing?.contextLength || AGENT_LIMITS.contextLength}" autocomplete="off">
+                                </div>
+                                <div class="setting-row">
+                                    <label>最大输出 Token</label>
+                                    <input class="setting-number" id="mpp-maxtokens" type="number" min="256" max="32000" step="256" value="${existing?.maxTokens || AGENT_LIMITS.maxTokens}" autocomplete="off">
+                                </div>
+                                <div class="setting-row">
+                                    <label></label>
+                                    <div style="flex:1;">
+                                        <button class="setting-tag-add-btn" id="mpp-test-btn">测试连接</button>
+                                        <div id="mpp-test-rtn" style="font-size:12px;color:var(--color-orange);margin-top:4px;display:none;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="setting-modal-footer">
+                        <button class="confirm-modal-btn confirm-modal-btn-cancel" id="mpp-cancel">取消</button>
+                        <button class="confirm-modal-btn confirm-modal-btn-confirm" id="mpp-save">保存</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(overlay);
+            const vendorSel = overlay.querySelector('#mpp-vendor');
+            const baseUrlInput = overlay.querySelector('#mpp-baseurl');
+            const protocolDiv = overlay.querySelector('#mpp-protocol');
+            const modelInput = overlay.querySelector('#mpp-model');
+            const modelList = overlay.querySelector('#mpp-model-list');
+            const closeModal = () => overlay.remove();
+            overlay.querySelector('.setting-modal-close').addEventListener('click', closeModal);
+            overlay.querySelector('#mpp-cancel').addEventListener('click', closeModal);
+            overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+            /** 厂商切换：自动带出 baseURL / 协议 / 模型示例 */
+            function applyVendor() {
+                const v = llmGetVendorById(vendorSel.value);
+                if (!v) return;
+                protocolDiv.textContent = v.protocol === 'anthropic' ? 'Anthropic Messages API' : 'OpenAI 兼容 Chat Completions';
+                if (!existing || !baseUrlInput.value) baseUrlInput.value = v.baseURL || '';
+                modelList.innerHTML = (v.models || []).map(m => `<option value="${escapeHtml(m)}"></option>`).join('');
+            }
+            vendorSel.value = existing?.vendorId || 'openai';
+            applyVendor();
+            vendorSel.addEventListener('change', applyVendor);
+            // 测试连接（双协议；成功后回调模型 id 列表，自动填入模型名称与下拉选项）
+            overlay.querySelector('#mpp-test-btn').addEventListener('click', async (e) => {
+                const btn = e.target;
+                const rtn = overlay.querySelector('#mpp-test-rtn');
+                await testLlmConnectionWith({
+                    baseURL: baseUrlInput.value.trim(),
+                    protocol: llmGetVendorById(vendorSel.value)?.protocol || 'openai',
+                    apiKey: overlay.querySelector('#mpp-apikey').value.trim(),
+                    model: modelInput.value.trim(),
+                    maxTokens: parseInt(overlay.querySelector('#mpp-maxtokens').value, 10) || 4096,
+                }, btn, rtn, (models) => {
+                    if (!models || !models.length) return;
+                    // 1) 将获取的模型列表合并进下拉选项（预设 + 实际，去重），供用户重新选择
+                    const preset = llmGetVendorById(vendorSel.value)?.models || [];
+                    const merged = [...new Set([...preset, ...models])];
+                    modelList.innerHTML = merged.map(m => `<option value="${escapeHtml(m)}"></option>`).join('');
+                    // 2) 已输入时：列表包含则默认选中（规范化为列表中的确切 id）；不包含保持用户输入
+                    const current = modelInput.value.trim();
+                    if (current) {
+                        const matched = models.find(m => m === current)
+                            || models.find(m => m.toLowerCase() === current.toLowerCase());
+                        if (matched) modelInput.value = matched;
+                    } else {
+                        modelInput.value = models[0];
+                    }
+                });
+            });
+            // 保存
+            overlay.querySelector('#mpp-save').addEventListener('click', () => {
+                const vendorId = vendorSel.value;
+                const vendor = llmGetVendorById(vendorId);
+                const baseURL = baseUrlInput.value.trim().replace(/\/+$/, '');
+                const model = modelInput.value.trim();
+                const apiKey = overlay.querySelector('#mpp-apikey').value.trim();
+                if (!baseURL) { showNotification('✗ 请填写接口地址', 'warning'); return; }
+                if (!/^https?:\/\//i.test(baseURL)) { showNotification('✗ 接口地址需以 http:// 或 https:// 开头', 'warning'); return; }
+                if (!model) { showNotification('✗ 请填写模型名称', 'warning'); return; }
+                const profile = {
+                    id: existing?.id || '',
+                    vendorId,
+                    protocol: vendor.protocol,
+                    baseURL,
+                    apiKey,
+                    model,
+                    contextLength: parseInt(overlay.querySelector('#mpp-context').value, 10) || AGENT_LIMITS.contextLength,
+                    maxTokens: parseInt(overlay.querySelector('#mpp-maxtokens').value, 10) || AGENT_LIMITS.maxTokens,
+                    display: true,
+                };
+                llmUpsertProfile(profile);
+                overlay.remove();
+                renderSettingModelList();
+                showNotification('✓ 模型配置已保存', 'success');
+            });
+        }
+
+        /** 双协议连接测试（openai 走 /models 列表；anthropic 走最小 messages 请求）。
+         *  成功后通过 onModels 回调返回模型 id 列表（anthropic 无列表时传空数组）。 */
+        async function testLlmConnectionWith(cfg, btn, rtnEl, onModels) {
             if (btn) { btn.disabled = true; btn.textContent = '测试中...'; }
-            const testLlmRtn = document.getElementById('testLlmRtn');
+            if (rtnEl) { rtnEl.style.display = 'none'; rtnEl.textContent = ''; }
             try {
                 const start = Date.now();
-                const res = await fetch(endpoint.replace(/\/chat\/completions.*/, '/models'), {
-                    headers: { 'Authorization': token ? 'Bearer ' + token : '' },
-                });
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                const data = await res.json();
-                const latency = Date.now() - start;
-                const models = data.data?.map?.(m => m.id)?.join(', ') || '\u2014';
-                testLlmRtn.textContent = '模型列表:' + models;
-                testLlmRtn.style.display = 'flex';
-                showNotification('\u2713 连接成功 延迟:' + latency + 'ms', 'success');
+                if (cfg.protocol === 'anthropic') {
+                    const url = anthropicMessagesUrl(cfg.baseURL);
+                    if (!url) throw new Error('接口地址无效');
+                    const res = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'x-api-key': cfg.apiKey || '',
+                            'anthropic-version': '2023-06-01',
+                        },
+                        body: JSON.stringify({
+                            model: cfg.model || 'claude-sonnet-4-5',
+                            max_tokens: Math.min(cfg.maxTokens || 4096, 1024),
+                            messages: [{ role: 'user', content: 'ping' }],
+                        }),
+                    });
+                    if (!res.ok) {
+                        let msg = 'HTTP ' + res.status;
+                        try { const d = await res.json(); msg = d?.error?.message || msg; } catch (e) { /* ignore */ }
+                        throw new Error(msg);
+                    }
+                    const latency = Date.now() - start;
+                    if (rtnEl) { rtnEl.textContent = `✓ 连接成功 延迟 ${latency}ms`; rtnEl.style.display = 'block'; }
+                    showNotification(`✓ 连接成功 延迟 ${latency}ms`, 'success');
+                    if (typeof onModels === 'function') onModels([]);
+                } else {
+                    const endpoint = normalizeLlmEndpoint(cfg.baseURL);
+                    const res = await fetch(endpoint.replace(/\/chat\/completions.*/, '/models'), {
+                        headers: { 'Authorization': cfg.apiKey ? 'Bearer ' + cfg.apiKey : '' },
+                    });
+                    if (res.status === 404) {
+                        throw new Error('该服务不支持模型列表接口（GET /models），请手动填写模型名称');
+                    }
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    const data = await res.json();
+                    const latency = Date.now() - start;
+                    const modelIds = (data && Array.isArray(data.data))
+                        ? data.data.map(m => (m && m.id) ? String(m.id) : '').filter(Boolean)
+                        : [];
+                    if (rtnEl) {
+                        const listHtml = modelIds.length
+                            ? '<div style="margin-top:4px;max-height:10rem;overflow-y:auto;line-height:1.6;white-space:pre-wrap;">' + modelIds.slice(0, 100).map(id => escapeHtml(id)).join('\n') + (modelIds.length > 100 ? `\n…（共 ${modelIds.length} 个）` : '') + '</div>'
+                            : '';
+                        rtnEl.innerHTML = `✓ 连接成功 延迟 ${latency}ms${listHtml}`;
+                        rtnEl.style.display = 'block';
+                    }
+                    showNotification(`✓ 连接成功 延迟 ${latency}ms，发现 ${modelIds.length} 个模型`, 'success');
+                    if (typeof onModels === 'function') onModels(modelIds);
+                }
             } catch (e) {
-                showNotification('\u2717 连接失败: ' + e.message, 'error');
+                if (rtnEl) { rtnEl.textContent = '✗ ' + e.message; rtnEl.style.display = 'block'; }
+                showNotification('✗ 连接失败: ' + e.message, 'error');
             } finally {
                 if (btn) { btn.disabled = false; btn.textContent = '测试连接'; }
-                setTimeout(() => {
-                    testLlmRtn.textContent = '';
-                    testLlmRtn.style.display = 'none';
-                }, 5000);
             }
         }
 
@@ -55849,7 +56914,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     ${toolsNames.length ? `<div class="skill-detail-section"><div class="skill-detail-section-title">可用工具</div><div class="skill-tag-row">${toolsNames.map(t => `<span class="skill-tag-chip">${escapeHtml(t)}</span>`).join('')}</div></div>` : ''}
                     <div class="skill-detail-section">
                         <div class="skill-detail-section-title">指令正文</div>
-                        <div class="skill-detail-body"><div class="markdown-body" style="zoom: 0.8;">${markedMd(escapeHtml(skill.body) || '（空）')}</div></div>
+                        <div class="skill-detail-body"><div class="markdown-body" style="font-size: 0.8125rem;">${markedMd(escapeHtml(skill.body) || '（空）')}</div></div>
                     </div>
                 </div>`;
         }
@@ -56628,6 +57693,719 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             // if(result){
               
             // }
+        }
+
+        // ====== MCP 管理（v2：独立页面，UI/交互参考 Skill） ======
+        let mcpAllList = [];
+        let mcpCurrent = null;
+        let mcpSearchTerm = '';
+        let mcpStatusFilter = '';
+        let mcpDirPath = '';
+        let mcpEditMode = 'form';   // 'form' | 'json'（编辑页双模式）
+        let mcpEditServer = null;   // 当前编辑的服务器（null = 新增）
+        let mcpJsonEditor = null;   // JSON 模式 Monaco 编辑器实例（退出编辑页时 dispose）
+
+        // ── MCP 配置 JSON Schema（draft-07，.mcp.json 官方格式） ──
+        const MCP_CONFIG_JSON_SCHEMA = {
+            $schema: 'http://json-schema.org/draft-07/schema#',
+            title: 'MCP 服务器配置（.mcp.json）',
+            description: '官方格式：{ mcpServers: { 名称: { command/args/env | url/headers, enabled } } }',
+            type: 'object',
+            required: ['mcpServers'],
+            properties: {
+                mcpServers: {
+                    type: 'object',
+                    minProperties: 1,
+                    maxProperties: 1,
+                    additionalProperties: { $ref: '#/definitions/server' },
+                },
+            },
+            additionalProperties: false,
+            definitions: {
+                server: {
+                    type: 'object',
+                    properties: {
+                        command: { type: 'string', minLength: 1, description: 'stdio 传输：可执行命令（如 npx / cmd）' },
+                        args: { type: 'array', items: { type: 'string' }, description: '命令参数列表' },
+                        env: { type: 'object', additionalProperties: { type: 'string' }, description: '环境变量（KEY=VALUE）' },
+                        url: { type: 'string', minLength: 1, description: 'HTTP/SSE 传输地址' },
+                        headers: { type: 'object', additionalProperties: { type: 'string' }, description: 'HTTP 请求头' },
+                        enabled: { type: 'boolean', description: '启用开关（保存后自动连接）' },
+                    },
+                    oneOf: [
+                        { required: ['command'], description: 'stdio 传输需提供 command' },
+                        { required: ['url'], description: 'HTTP/SSE 传输需提供 url' },
+                    ],
+                    additionalProperties: false,
+                },
+            },
+        };
+
+        /**
+         * 轻量 JSON Schema（draft-07 子集）校验器：仅覆盖本配置所需关键字。
+         * 支持：type / properties / required / additionalProperties / minProperties /
+         * maxProperties / items / minItems / maxItems / minLength / maxLength /
+         * pattern / enum / minimum / maximum / oneOf / anyOf / allOf / $ref(#/definitions)。
+         * 错误按 JSON Pointer 路径收集：{ pointer, message }。
+         */
+        function validateJsonSchema(instance, schema, errors, pointer, rootSchema) {
+            const root = rootSchema || schema;
+            const ptr = pointer || '';
+            const push = (msg) => errors.push({ pointer: ptr, message: msg });
+            // $ref 解析（#/definitions/xxx）
+            if (typeof schema.$ref === 'string' && schema.$ref.startsWith('#/definitions/')) {
+                const key = schema.$ref.slice('#/definitions/'.length);
+                const def = (root.definitions || {})[key];
+                if (def) validateJsonSchema(instance, def, errors, ptr, root);
+                return;
+            }
+            if (schema.oneOf) {
+                const subErrors = [];
+                let ok = false;
+                for (const sub of schema.oneOf) {
+                    const errs = [];
+                    validateJsonSchema(instance, sub, errs, ptr, root);
+                    if (errs.length === 0) { ok = true; break; }
+                    subErrors.push(errs);
+                }
+                if (!ok) {
+                    // 汇总最贴近的错误（取错误数最少的子 schema）
+                    const best = subErrors.reduce((a, b) => (b.length < a.length ? b : a), subErrors[0] || []);
+                    for (const e of best.slice(0, 2)) errors.push(e);
+                }
+                return;
+            }
+            if (schema.anyOf) {
+                for (const sub of schema.anyOf) validateJsonSchema(instance, sub, errors, ptr, root);
+                return;
+            }
+            if (schema.allOf) {
+                for (const sub of schema.allOf) validateJsonSchema(instance, sub, errors, ptr, root);
+                return;
+            }
+            if (schema.enum !== undefined && !schema.enum.some(v => JSON.stringify(v) === JSON.stringify(instance))) {
+                push('取值不在允许范围内');
+            }
+            if (instance === null) {
+                if (schema.type && schema.type !== 'null') push('期望类型 ' + schema.type + '，实际为 null');
+                return;
+            }
+            const actualType = Array.isArray(instance) ? 'array' : typeof instance;
+            if (schema.type && schema.type !== actualType) {
+                push(`期望类型 ${schema.type}，实际为 ${actualType}`);
+                return;
+            }
+            if (actualType === 'object') {
+                if (schema.minProperties !== undefined && Object.keys(instance).length < schema.minProperties) {
+                    push(`属性数量不能少于 ${schema.minProperties}`);
+                }
+                if (schema.maxProperties !== undefined && Object.keys(instance).length > schema.maxProperties) {
+                    push(`属性数量不能多于 ${schema.maxProperties}`);
+                }
+                const props = schema.properties || {};
+                for (const key of Object.keys(instance)) {
+                    if (props[key]) {
+                        validateJsonSchema(instance[key], props[key], errors, ptr + '/' + key, root);
+                    } else if (schema.additionalProperties === false) {
+                        push(`不允许的属性：${key}`);
+                    } else if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
+                        validateJsonSchema(instance[key], schema.additionalProperties, errors, ptr + '/' + key, root);
+                    }
+                }
+                for (const req of (schema.required || [])) {
+                    if (!Object.prototype.hasOwnProperty.call(instance, req)) {
+                        push(`缺少必填属性：${req}`);
+                    }
+                }
+            } else if (actualType === 'array') {
+                if (schema.minItems !== undefined && instance.length < schema.minItems) push(`数组长度不能少于 ${schema.minItems}`);
+                if (schema.maxItems !== undefined && instance.length > schema.maxItems) push(`数组长度不能多于 ${schema.maxItems}`);
+                if (schema.items) {
+                    instance.forEach((item, idx) => {
+                        validateJsonSchema(item, schema.items, errors, `${ptr}/${idx}`, root);
+                    });
+                }
+            } else if (actualType === 'string') {
+                if (schema.minLength !== undefined && instance.length < schema.minLength) push(`字符串长度不能少于 ${schema.minLength}`);
+                if (schema.maxLength !== undefined && instance.length > schema.maxLength) push(`字符串长度不能多于 ${schema.maxLength}`);
+                if (schema.pattern && !new RegExp(schema.pattern).test(instance)) push(`不匹配模式 ${schema.pattern}`);
+            } else if (actualType === 'number') {
+                if (schema.minimum !== undefined && instance < schema.minimum) push(`不能小于 ${schema.minimum}`);
+                if (schema.maximum !== undefined && instance > schema.maximum) push(`不能大于 ${schema.maximum}`);
+            }
+        }
+
+        /** 对配置 JSON 执行 schema 校验，返回错误数组（无错误返回空数组） */
+        function mcpValidateConfigJson(value) {
+            const errors = [];
+            try {
+                validateJsonSchema(value, MCP_CONFIG_JSON_SCHEMA, errors, '', MCP_CONFIG_JSON_SCHEMA);
+            } catch (e) {
+                errors.push({ pointer: '', message: '校验器异常: ' + e.message });
+            }
+            return errors;
+        }
+
+        /** 打开 MCP 管理页（仅 Tauri 可用） */
+        async function openMcpManager() {
+            if (!isTauriVisit() || !window.__mdgoMcp) {
+                showNotification('MCP 管理仅在桌面版（Tauri）可用', 'error');
+                return;
+            }
+            if (!getRootHandle()) {
+                showNotification('请先打开根目录', 'error');
+                return;
+            }
+            const container = document.getElementById('mcp-container');
+            if (!container) return;
+            // 兜底清理：进入 MCP 页时释放上次残留的 Monaco 编辑器实例
+            mcpDisposeJsonEditor();
+            await switchToView(container, 'flex');
+            mcpDirPath = getDirPath(getRootHandle()) || currentRootPath;
+            await mcpLoadList();
+        }
+
+        /** 拉取服务器列表并渲染 */
+        async function mcpLoadList() {
+            try {
+                mcpAllList = await window.__mdgoMcp.mcpList(mcpDirPath);
+            } catch (e) {
+                showNotification('加载 MCP 服务器失败: ' + e, 'error');
+                return;
+            }
+            // 保留选中态
+            if (mcpCurrent) {
+                const cur = mcpAllList.find(s => s.name === mcpCurrent.name);
+                if (cur) { mcpCurrent = cur; mcpRenderList(); mcpRenderDetail(cur); return; }
+            }
+            mcpRenderList();
+            mcpCurrent = null;
+            mcpShowEmpty();
+        }
+
+        /** 空态/默认选中第一项 */
+        function mcpShowEmpty() {
+            const first = mcpAllList[0];
+            if (first) mcpSelectServer(first.name);
+        }
+
+        /** 渲染左侧列表（状态 + 关键词双重过滤） */
+        function mcpRenderList() {
+            const kw = mcpSearchTerm.trim().toLowerCase();
+            const filtered = mcpAllList.filter(s => {
+                if (mcpStatusFilter && s.status !== mcpStatusFilter) return false;
+                if (!kw) return true;
+                return (s.name + ' ' + (s.error || '')).toLowerCase().includes(kw);
+            });
+            const listEl = document.getElementById('mcp-list');
+            if (!listEl) return;
+            if (!filtered.length) {
+                listEl.innerHTML = `<div class="skill-empty-list">${mcpAllList.length ? '没有匹配的服务器' : '暂无服务器，点击下方按钮新增'}</div>`;
+                return;
+            }
+            listEl.innerHTML = filtered.map(s => `
+                <div class="skill-list-item ${mcpCurrent && mcpCurrent.name === s.name ? 'active' : ''}"
+                    onclick="mcpSelectServer('${escapeHtml(s.name)}')">
+                    <div class="skill-item-avatar">
+                        <div class="skill-icon-box">
+                            <svg class="skill-icon-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="skill-item-info">
+                        <div class="skill-item-name">${escapeHtml(s.name)}</div>
+                        <div class="skill-item-meta">
+                            <span class="skill-item-tag ${mcpStatusClass(s.status)}">${mcpStatusLabel(s.status)}</span>
+                            <span>${s.tool_count || 0} 个工具</span>
+                        </div>
+                    </div>
+                </div>`).join('');
+        }
+
+        function mcpStatusLabel(status) {
+            return { connected: '已连接', connecting: '连接中', stopped: '已断开', failed: '失败' }[status] || status;
+        }
+        function mcpStatusClass(status) {
+            if (status === 'connected') return 'enabled';
+            if (status === 'failed') return 'disabled';
+            return '';
+        }
+
+        function mcpSelectServer(name) {
+            if (!window.__mdgoMcp) return;
+            window.__mdgoMcp.mcpGet(mcpDirPath, name).then(server => {
+                mcpCurrent = server;
+                mcpRenderList();
+                mcpRenderDetail(server);
+            }).catch(e => showNotification('加载详情失败: ' + e, 'error'));
+        }
+
+        /** 渲染右侧详情 */
+        function mcpRenderDetail(server) {
+            const view = document.getElementById('mcp-detail-view');
+            if (!view) return;
+            view.style.display = 'block';
+            const cfg = server.config || {};
+            const isConnected = server.status === 'connected';
+            const tools = server.tools || [];
+            const envEntries = Object.entries(cfg.env || {}).map(([k, v]) =>
+                `<div class="skill-tool-row"><code>${escapeHtml(k)}</code> = ${escapeHtml(String(v))}</div>`).join('') || '<div style="color:var(--t3,#888);font-size:12px;">无环境变量</div>';
+            const toolItems = tools.length ? tools.map(t =>
+                `<div class="skill-tool-row">
+                    <code>${escapeHtml(t.name)}</code>
+                    <div style="color:var(--t3,#888);font-size:11px;margin-top:2px;word-break:break-all;">${escapeHtml(t.description || '—')}</div>
+                </div>`).join('') : '<div style="color:var(--t3,#888);font-size:12px;">未连接或服务器未提供工具</div>';
+            view.innerHTML = `
+                <div class="skill-detail-header">
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-size:1rem;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                            ${escapeHtml(server.name)}
+                            <span class="skill-item-tag ${mcpStatusClass(server.status)}">${mcpStatusLabel(server.status)}</span>
+                            ${cfg.enabled ? '' : '<span class="skill-item-tag disabled">已停用</span>'}
+                        </div>
+                        <div style="color:var(--t3,#888);font-size:12px;margin-top:2px;">
+                            ${escapeHtml(cfg.command || '')} ${escapeHtml((cfg.args || []).join(' '))}
+                        </div>
+                        ${server.error ? `<div style="color:var(--color-danger,#cf222e);font-size:12px;margin-top:4px;">✗ ${escapeHtml(server.error)}</div>` : ''}
+                    </div>
+                </div>
+                <div style="display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;padding:0.75rem 0;border-bottom:1px solid var(--border-color-light);">
+                    ${isConnected
+                        ? `<button class="btn btn-sm btn-primary" onclick="mcpDisconnect('${escapeHtml(server.name)}')">断开</button>
+                           <button class="btn btn-sm btn-primary" onclick="mcpRestart('${escapeHtml(server.name)}')">重启</button>`
+                        : `<button class="btn btn-sm btn-primary" onclick="mcpConnect('${escapeHtml(server.name)}')">连接</button>`}
+                    <button class="btn btn-sm btn-primary" onclick="mcpOpenEdit('${escapeHtml(server.name)}')">编辑</button>
+                    <button class="btn btn-sm btn-danger" onclick="mcpDeleteConfirm('${escapeHtml(server.name)}')">删除</button>
+                </div>
+                <div style="padding:0.75rem 0;">
+                    <div class="skill-detail-title" style="font-weight:600;margin-bottom:6px;">工具清单（${tools.length}）</div>
+                    ${toolItems}
+                    <div class="skill-detail-title" style="font-weight:600;margin:1rem 0 6px;">环境变量</div>
+                    ${envEntries}
+                </div>`;
+        }
+
+        /** 新增/编辑服务器模态 */
+        /** 打开新增/编辑服务器（右侧表单，仿 skill 编辑视图） */
+        function mcpOpenEdit(name) {
+            const existing = name ? (mcpAllList.find(s => s.name === name) || null) : null;
+            if (existing) {
+                window.__mdgoMcp.mcpGet(mcpDirPath, existing.name)
+                    .then(server => mcpRenderEdit(server))
+                    .catch(() => mcpRenderEdit(null));
+            } else {
+                mcpRenderEdit(null);
+            }
+        }
+
+        /** 渲染右侧编辑视图：JSON 配置编辑器（主体）+ 启用/测试（第二部分） */
+        function mcpRenderEdit(server) {
+            document.getElementById('mcp-detail-view').style.display = 'none';
+            const view = document.getElementById('mcp-edit-view');
+            if (!view) return;
+            view.style.display = 'block';
+            // 重新渲染前释放上一个 Monaco 实例（容器将被 innerHTML 重写，防泄漏）
+            mcpDisposeJsonEditor();
+            mcpEditMode = 'form';
+            mcpEditServer = server || null;
+            const cfg = (server && server.config) || {};
+            const name = server ? server.name : 'everything';
+            const enabled = cfg.enabled !== false;
+            const transport = (cfg.url && cfg.url.trim()) ? 'http' : 'stdio';
+            view.innerHTML = `
+                <div class="skill-edit-wrap">
+                    <div class="skill-edit-header">
+                        <div class="skill-edit-title">${server ? '编辑服务器' : '新增服务器'}</div>
+                        <button class="btn" onclick="mcpBackToDetail()">取消</button>
+                        <button class="btn btn-primary" onclick="mcpSaveEdit()">保存</button>
+                    </div>
+                    <div style="display:flex;gap:0.375rem;margin-bottom:0.75rem;">
+                        <button class="btn btn-sm ${mcpEditMode === 'form' ? 'btn-primary' : ''}" id="mcp-mode-form-btn" onclick="mcpSetEditMode('form')">表单</button>
+                        <button class="btn btn-sm ${mcpEditMode === 'json' ? 'btn-primary' : ''}" id="mcp-mode-json-btn" onclick="mcpSetEditMode('json')">JSON</button>
+                    </div>
+                    <div id="mcp-form-pane" style="display:flex;flex-direction:column;gap:0.75rem;">
+                        <div class="skill-form-grid">
+                            <div class="skill-form-field">
+                                <label>名称</label>
+                                <input type="text" id="mcp-f-name" value="${escapeHtml(name)}" placeholder="例如 everything" autocomplete="off">
+                            </div>
+                            <div class="skill-form-field">
+                                <label>传输类型</label>
+                                <select id="mcp-f-transport" onchange="mcpSyncTransportFields()">
+                                    <option value="stdio" ${transport === 'stdio' ? 'selected' : ''}>stdio（本地命令）</option>
+                                    <option value="http" ${transport === 'http' ? 'selected' : ''}>http / sse（URL）</option>
+                                </select>
+                            </div>
+                            <div class="skill-form-field" id="mcp-f-row-command">
+                                <label>命令</label>
+                                <input type="text" id="mcp-f-command" value="${escapeHtml(cfg.command || '')}" placeholder="例如 npx" autocomplete="off">
+                            </div>
+                            <div class="skill-form-field" id="mcp-f-row-args">
+                                <label>参数（每行一个）</label>
+                                <textarea id="mcp-f-args" placeholder="-y&#10;@modelcontextprotocol/server-everything">${escapeHtml((cfg.args || []).join('\n'))}</textarea>
+                            </div>
+                            <div class="skill-form-field" id="mcp-f-row-url" style="display:none;">
+                                <label>URL</label>
+                                <input type="text" id="mcp-f-url" value="${escapeHtml(cfg.url || '')}" placeholder="https://example.com/mcp" autocomplete="off">
+                            </div>
+                            <div class="skill-form-field" id="mcp-f-row-headers" style="display:none;">
+                                <label>请求头（每行 KEY=VALUE）</label>
+                                <textarea id="mcp-f-headers" placeholder="Authorization=Bearer xxx">${escapeHtml(Object.entries(cfg.headers || {}).map(([k, v]) => `${k}=${v}`).join('\n'))}</textarea>
+                            </div>
+                            <div class="skill-form-field full">
+                                <label>环境变量（每行 KEY=VALUE）</label>
+                                <textarea id="mcp-f-env" placeholder="例如 API_KEY=xxx">${escapeHtml(Object.entries(cfg.env || {}).map(([k, v]) => `${k}=${v}`).join('\n'))}</textarea>
+                            </div>
+                            <div class="skill-form-field" style="flex-direction: row;">
+                                <input type="checkbox" id="mcp-f-enabled" ${enabled ? 'checked' : ''} style="width:1rem;">
+                                <label class="center-div" style="justify-content:flex-start;">启用（保存后自动连接）</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="mcp-json-pane" style="display:none;">
+                        <label style="font-size:0.75rem;color:var(--color-text-secondary);font-weight:600;display:block;margin-bottom:0.375rem;">配置（.mcp.json 官方格式，JSON Schema 校验）</label>
+                        <div id="mcp-json-editor" style="width:100%;height:22rem;border:1px solid var(--color-border,#333);border-radius:var(--radius-md);overflow:hidden;"></div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;margin-top:0.75rem;">
+                        <button class="btn" id="mcp-f-test-btn" type="button">测试连接</button>
+                        <span id="mcp-f-test-rtn" style="font-size:12px;color:var(--color-orange);display:none;"></span>
+                    </div>
+                    <div style="font-size:11px;color:var(--t3,#888);margin-top:0.5rem;">⚠ 配置将运行本地命令，请确认命令来源可信；配置写入 .mdgo/mcp.json</div>
+                </div>`;
+            mcpSyncTransportFields();
+            const testBtn = document.getElementById('mcp-f-test-btn');
+            if (testBtn) {
+                testBtn.addEventListener('click', async (e) => {
+                    const btn = e.target;
+                    const rtn = document.getElementById('mcp-f-test-rtn');
+                    const parsed = mcpGetEditConfig(false);
+                    if (!parsed) return;
+                    btn.disabled = true; btn.textContent = '测试中...';
+                    if (rtn) rtn.style.display = 'none';
+                    try {
+                        const count = await window.__mdgoMcp.mcpTest(parsed.config);
+                        if (rtn) { rtn.textContent = `✓ 连接成功，发现 ${count} 个工具`; rtn.style.display = 'inline'; }
+                        showNotification('✓ MCP 连接成功', 'success');
+                    } catch (err) {
+                        if (rtn) { rtn.textContent = '✗ ' + (err && err.message ? err.message : err); rtn.style.display = 'inline'; }
+                        showNotification('✗ MCP 连接失败: ' + (err && err.message ? err.message : err), 'error');
+                    } finally {
+                        btn.disabled = false; btn.textContent = '测试连接';
+                    }
+                });
+            }
+        }
+
+        /** 传输类型联动：stdio 显示命令/参数，http/sse 显示 URL/请求头 */
+        function mcpSyncTransportFields() {
+            const sel = document.getElementById('mcp-f-transport');
+            if (!sel) return;
+            const isStdio = sel.value === 'stdio';
+            const rows = {
+                command: document.getElementById('mcp-f-row-command'),
+                args: document.getElementById('mcp-f-row-args'),
+                url: document.getElementById('mcp-f-row-url'),
+                headers: document.getElementById('mcp-f-row-headers'),
+            };
+            if (rows.command) rows.command.style.display = isStdio ? '' : 'none';
+            if (rows.args) rows.args.style.display = isStdio ? '' : 'none';
+            if (rows.url) rows.url.style.display = isStdio ? 'none' : '';
+            if (rows.headers) rows.headers.style.display = isStdio ? 'none' : '';
+        }
+
+        /** 表单 → 配置对象（strict=true 时校验必填） */
+        function mcpCollectFormConfig(strict) {
+            const name = (document.getElementById('mcp-f-name').value || '').trim();
+            const transport = document.getElementById('mcp-f-transport').value;
+            const enabled = document.getElementById('mcp-f-enabled').checked;
+            const config = {
+                command: '',
+                args: [],
+                env: mcpParseKeyValueLines(document.getElementById('mcp-f-env').value),
+                headers: mcpParseKeyValueLines(document.getElementById('mcp-f-headers').value),
+                url: null,
+                enabled,
+            };
+            if (transport === 'stdio') {
+                config.command = (document.getElementById('mcp-f-command').value || '').trim();
+                config.args = document.getElementById('mcp-f-args').value.split('\n').map(s => s.trim()).filter(Boolean);
+            } else {
+                config.url = (document.getElementById('mcp-f-url').value || '').trim() || null;
+            }
+            if (strict) {
+                if (!name) { showNotification('✗ 请填写服务器名称', 'warning'); return null; }
+                if (transport === 'stdio' && !config.command) { showNotification('✗ 请填写命令（stdio 传输）', 'warning'); return null; }
+                if (transport !== 'stdio' && !config.url) { showNotification('✗ 请填写 URL（http/sse 传输）', 'warning'); return null; }
+            }
+            return { name: name || 'everything', config };
+        }
+
+        /** 按行解析 KEY=VALUE 文本 */
+        function mcpParseKeyValueLines(text) {
+            const out = {};
+            (text || '').split('\n').map(s => s.trim()).filter(Boolean).forEach(line => {
+                const idx = line.indexOf('=');
+                if (idx > 0) out[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+            });
+            return out;
+        }
+
+        /** 配置对象 → .mcp.json 格式（表单切 JSON 用） */
+        function mcpConfigToJson(config) {
+            const s = {
+                command: config.command || '',
+                args: Array.isArray(config.args) ? config.args : [],
+                env: config.env || {},
+                enabled: config.enabled !== false,
+            };
+            if (config.url && config.url.trim()) {
+                s.url = config.url;
+                if (config.headers && Object.keys(config.headers).length) s.headers = config.headers;
+                delete s.command;
+                delete s.args;
+            }
+            return s;
+        }
+
+        /** 切换编辑模式（表单 ↔ JSON），双向同步 */
+        function mcpSetEditMode(mode) {
+            if (mode === mcpEditMode) return;
+            if (mode === 'form') {
+                // JSON → 表单：解析成功才切换（失败留在 JSON 并已提示）
+                const parsed = mcpParseEditJson();
+                if (!parsed) return;
+                mcpEditMode = 'form';
+                mcpFillForm(parsed);
+                mcpRefreshEditViews();
+            } else {
+                // 表单 → JSON：宽松收集（不做必填校验）
+                const collected = mcpCollectFormConfig(false);
+                if (!collected) return;
+                mcpEditMode = 'json';
+                mcpRefreshEditViews(); // 先显示 JSON 面板（Monaco 需可见容器才有尺寸）
+                const text = JSON.stringify({ mcpServers: { [collected.name || 'everything']: mcpConfigToJson(collected.config) } }, null, 2);
+                mcpEnsureJsonEditor(text);
+            }
+        }
+
+        /** 刷新双模式视图（tab 高亮 + 面板显隐） */
+        function mcpRefreshEditViews() {
+            const formBtn = document.getElementById('mcp-mode-form-btn');
+            const jsonBtn = document.getElementById('mcp-mode-json-btn');
+            const formPane = document.getElementById('mcp-form-pane');
+            const jsonPane = document.getElementById('mcp-json-pane');
+            if (formBtn) formBtn.classList.toggle('btn-primary', mcpEditMode === 'form');
+            if (jsonBtn) jsonBtn.classList.toggle('btn-primary', mcpEditMode === 'json');
+            if (formPane) formPane.style.display = mcpEditMode === 'form' ? '' : 'none';
+            if (jsonPane) jsonPane.style.display = mcpEditMode === 'json' ? '' : 'none';
+        }
+
+        // ── JSON 模式 Monaco 编辑器生命周期 ──
+
+        /** 释放 Monaco 编辑器实例（防泄漏；退出编辑页 / 重新渲染前调用） */
+        function mcpDisposeJsonEditor() {
+            if (mcpJsonEditor) {
+                try {
+                    mcpJsonEditor.dispose();
+                } catch (e) {
+                    console.warn('[MCP] dispose Monaco 编辑器失败:', e);
+                }
+                mcpJsonEditor = null;
+            }
+        }
+
+        /** 读取 JSON 编辑器内容（Monaco；无实例返回空串） */
+        function mcpJsonGetValue() {
+            return mcpJsonEditor ? mcpJsonEditor.getValue() : '';
+        }
+
+        /** 确保 JSON Monaco 编辑器存在并写入内容（首次创建，异步等 Monaco 就绪） */
+        function mcpEnsureJsonEditor(value) {
+            if (mcpJsonEditor) {
+                mcpJsonEditor.setValue(value);
+                mcpJsonEditor.layout();
+                return;
+            }
+            const container = document.getElementById('mcp-json-editor');
+            if (!container) return;
+            initMonacoEditor().then(() => {
+                if (mcpJsonEditor || !document.getElementById('mcp-json-editor')) return;
+                mcpJsonEditor = monaco.editor.create(container, {
+                    value: value,
+                    language: 'json',
+                    theme: 'vs-dark',
+                    automaticLayout: true,
+                    minimap: { enabled: false },
+                    fontSize: 13,
+                    wordWrap: 'on',
+                    scrollBeyondLastLine: false,
+                    lineNumbersMinChars: 3,
+                    fixedOverflowWidgets: true,
+                });
+            });
+        }
+
+        /** JSON → 表单回填 */
+        function mcpFillForm(parsed) {
+            const nameInput = document.getElementById('mcp-f-name');
+            if (nameInput) nameInput.value = parsed.name;
+            const transportSel = document.getElementById('mcp-f-transport');
+            if (transportSel) {
+                transportSel.value = (parsed.config.url && parsed.config.url.trim()) ? 'http' : 'stdio';
+                mcpSyncTransportFields();
+            }
+            const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+            set('mcp-f-command', parsed.config.command || '');
+            set('mcp-f-args', (parsed.config.args || []).join('\n'));
+            set('mcp-f-url', parsed.config.url || '');
+            set('mcp-f-env', Object.entries(parsed.config.env || {}).map(([k, v]) => `${k}=${v}`).join('\n'));
+            set('mcp-f-headers', Object.entries(parsed.config.headers || {}).map(([k, v]) => `${k}=${v}`).join('\n'));
+            const enabledEl = document.getElementById('mcp-f-enabled');
+            if (enabledEl) enabledEl.checked = parsed.config.enabled !== false;
+        }
+
+        /** 按当前模式获取编辑配置（strict=true 时校验必填） */
+        function mcpGetEditConfig(strict) {
+            if (mcpEditMode === 'json') {
+                return mcpParseEditJson();
+            }
+            return mcpCollectFormConfig(strict);
+        }
+
+        /** 取消编辑：返回详情或空态 */
+        function mcpBackToDetail() {
+            // 退出编辑页：释放 Monaco 编辑器实例
+            mcpDisposeJsonEditor();
+            const view = document.getElementById('mcp-edit-view');
+            if (view) view.style.display = 'none';
+            if (mcpCurrent) {
+                mcpRenderDetail(mcpCurrent);
+            } else {
+                const detail = document.getElementById('mcp-detail-view');
+                if (detail) detail.style.display = 'none';
+            }
+        }
+
+        /** 保存服务器配置（按当前模式取配置 → 写 .mdgo/mcp.json + 刷新列表） */
+        async function mcpSaveEdit() {
+            const parsed = mcpGetEditConfig(true);
+            if (!parsed) return;
+            try {
+                await window.__mdgoMcp.mcpUpsert(mcpDirPath, parsed.name, parsed.config);
+                // 保存成功退出编辑页：释放 Monaco 编辑器实例
+                mcpDisposeJsonEditor();
+                showNotification('✓ 服务器配置已保存', 'success');
+                await mcpLoadList();
+                mcpSelectServer(parsed.name);
+            } catch (err) {
+                showNotification('✗ 保存失败: ' + (err && err.message ? err.message : err), 'error');
+            }
+        }
+
+        /**
+         * 解析 JSON 编辑器内容（.mcp.json 官方格式）并执行 JSON Schema（draft-07）标准校验。
+         * 校验通过返回 { name, config }；失败显示错误（JSON Pointer 定位）并返回 null。
+         */
+        function mcpParseEditJson() {
+            const jsonText = mcpJsonGetValue();
+            let parsed;
+            try {
+                parsed = JSON.parse(jsonText);
+            } catch (e) {
+                showNotification('✗ JSON 格式错误: ' + e.message, 'warning');
+                return null;
+            }
+            // JSON Schema 标准校验（MCP_CONFIG_JSON_SCHEMA，.mcp.json 格式）
+            const errors = mcpValidateConfigJson(parsed);
+            if (errors.length > 0) {
+                const lines = errors.slice(0, 5).map(e => `[${e.pointer || '/'}] ${e.message}`);
+                showNotification('✗ 配置不符合 JSON Schema：\n' + lines.join('\n'), 'warning');
+                return null;
+            }
+            const servers = parsed.mcpServers;
+            const name = String(Object.keys(servers)[0]).trim();
+            const raw = servers[Object.keys(servers)[0]];
+            const enabledEl = document.getElementById('mcp-f-enabled');
+            const config = {
+                command: raw.command || '',
+                args: Array.isArray(raw.args) ? raw.args.map(String) : [],
+                env: (raw.env && typeof raw.env === 'object' && !Array.isArray(raw.env))
+                    ? Object.fromEntries(Object.entries(raw.env).map(([k, v]) => [k, String(v)]))
+                    : {},
+                headers: (raw.headers && typeof raw.headers === 'object' && !Array.isArray(raw.headers))
+                    ? Object.fromEntries(Object.entries(raw.headers).map(([k, v]) => [k, String(v)]))
+                    : {},
+                enabled: typeof raw.enabled === 'boolean' ? raw.enabled : (enabledEl ? enabledEl.checked : true),
+                url: (raw.url && typeof raw.url === 'string') ? raw.url : null,
+            };
+            return { name, config };
+        }
+
+        async function mcpConnect(name) {
+            try {
+                await window.__mdgoMcp.mcpConnect(mcpDirPath, name);
+                showNotification('✓ 已连接', 'success');
+            } catch (e) {
+                showNotification('✗ 连接失败: ' + (e && e.message ? e.message : e), 'error');
+            }
+            await mcpLoadList();
+        }
+        async function mcpDisconnect(name) {
+            try {
+                await window.__mdgoMcp.mcpDisconnect(mcpDirPath, name);
+                showNotification('已断开', 'info', 1000);
+            } catch (e) {
+                showNotification('✗ 断开失败: ' + (e && e.message ? e.message : e), 'error');
+            }
+            await mcpLoadList();
+        }
+        async function mcpRestart(name) {
+            try {
+                await window.__mdgoMcp.mcpRestart(mcpDirPath, name);
+                showNotification('✓ 已重启', 'success');
+            } catch (e) {
+                showNotification('✗ 重启失败: ' + (e && e.message ? e.message : e), 'error');
+            }
+            await mcpLoadList();
+        }
+        async function mcpDeleteConfirm(name) {
+            if (!window.confirm(`确定删除服务器「${name}」？`)) return;
+            try {
+                await window.__mdgoMcp.mcpDelete(mcpDirPath, name);
+                showNotification('✓ 已删除', 'success');
+                mcpCurrent = null;
+                const view = document.getElementById('mcp-detail-view');
+                if (view) view.style.display = 'none';
+            } catch (e) {
+                showNotification('✗ 删除失败: ' + (e && e.message ? e.message : e), 'error');
+            }
+            await mcpLoadList();
+        }
+        function mcpHandleSearchInput() {
+            const input = document.getElementById('mcp-search-input');
+            mcpSearchTerm = input ? input.value : '';
+            const clear = document.getElementById('mcp-search-clear');
+            if (clear) clear.style.display = mcpSearchTerm ? 'inline-block' : 'none';
+            mcpRenderList();
+        }
+        function mcpHandleSearchKeydown(e) {
+            if (e.key === 'Enter') mcpRenderList();
+        }
+        function mcpClearSearch() {
+            mcpSearchTerm = '';
+            const input = document.getElementById('mcp-search-input');
+            if (input) input.value = '';
+            const clear = document.getElementById('mcp-search-clear');
+            if (clear) clear.style.display = 'none';
+            mcpRenderList();
+        }
+        function mcpStatusChange(status) {
+            mcpStatusFilter = status;
+            document.querySelectorAll('#mcp-status-chips .skill-chip').forEach(chip => {
+                chip.classList.toggle('active', chip.dataset.scope === status);
+            });
+            mcpRenderList();
         }
     </script>
 </body>
