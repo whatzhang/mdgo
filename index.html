@@ -19108,7 +19108,7 @@
                     return;
                 }
                 // 第1步：收集选区内所有高亮/标注 span（先收集，后操作，避免 range 移位）
-                const allSpans = searchRoot.querySelectorAll('span[style], span[title]');
+                const allSpans = searchRoot.querySelectorAll('mark[style], mark[title]');
                 const spansToClear = [];
                 for (const span of allSpans) {
                     if (range.intersectsNode(span)) {
@@ -19149,7 +19149,7 @@
                     } else {
                         const escapedText = innerText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                         const fallbackPattern = new RegExp(
-                            `<span[^>]*style=["'][^"']*["'][^>]*(?:title=["'][^"']*["'][^>]*)?>\\s*${escapedText}\\s*</span>`,
+                            `<mark[^>]*style=["'][^"']*["'][^>]*(?:title=["'][^"']*["'][^>]*)?>\\s*${escapedText}\\s*</mark>`,
                             'g'
                         );
                         const beforeFallback = newContent;
@@ -38670,7 +38670,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     markEl.title = escapeHtml(comment);
                 }
                 const styleStr = `${color ? `color:${color};` : ''}${backgroundColor ? `background-color:${backgroundColor};` : ''}`;
-                let html = `<span${styleStr ? ` style="${styleStr}"` : ''}${comment ? ` title="${escapeHtml(comment)}"` : ''}>${escapeHtml(text).trim()}</span>`;
+                let html = `<mark${styleStr ? ` style="${styleStr}"` : ''}${comment ? ` title="${escapeHtml(comment)}"` : ''}>${escapeHtml(text).trim()}</mark>`;
                 const fragment = range.extractContents();
                 markEl.appendChild(fragment);
                 range.insertNode(markEl);
