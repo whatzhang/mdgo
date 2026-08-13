@@ -274,6 +274,12 @@ fn identifier_analyzer() -> TextAnalyzer {
 const SCHEMA_VERSION: &str = "4";
 const SCHEMA_MARKER: &str = ".schema_v4";
 
+/// Windows 下 tantivy commit/merge 偶发 `PermissionDenied`（Defender 实时扫描刚创建的
+/// segment 文件；或上一 commit 残留的后台 merge 与本次 commit 竞争 `.managed.json` 重命名）。
+/// 失败为瞬时且非破坏性，按退避重试即可恢复。COMMIT_MAX_ATTEMPTS 含首次尝试。
+const COMMIT_MAX_ATTEMPTS: usize = 3;
+const COMMIT_RETRY_BACKOFF_MS: u64 = 200;
+
 /// 依据 doc_name 提取文件名主干（title 字段）：`src/tools/parse_json.rs` → `parse_json`
 fn file_title(doc_name: &str) -> String {
     Path::new(doc_name)
@@ -318,6 +324,7 @@ fn body_text(chunk: &DocumentChunk) -> String {
 pub struct Bm25Index {
     index_path: String,
     reader: Mutex<Option<IndexReader>>,
+    write_lock: Mutex<()>,
 }
 
 impl Bm25Index {
@@ -419,6 +426,7 @@ impl Bm25Index {
         Ok(Self {
             index_path: path.to_string(),
             reader: Mutex::new(None),
+            write_lock: Mutex::new(()),
         })
     }
 
@@ -438,6 +446,7 @@ impl Bm25Index {
         Ok(Self {
             index_path: path.to_string(),
             reader: Mutex::new(None),
+            write_lock: Mutex::new(()),
         })
     }
 
@@ -476,19 +485,33 @@ impl Bm25Index {
         if chunks.is_empty() {
             return Ok(());
         }
-        // 写入前先释放旧 reader 的 mmap 句柄，避免 Windows 下 commit 阶段删除
-        // 旧 segment 文件时被占用；commit 偶发失败（文件锁瞬时冲突）时重试一次
+        let _guard = self.write_lock.lock().unwrap_or_else(|e| e.into_inner());
         self.invalidate_reader();
-        match self.try_add_documents(chunks) {
-            Ok(()) => Ok(()),
-            Err(e) => {
-                log::warn!("[bm25] 提交失败，释放句柄后重试: {}", e);
-                self.invalidate_reader();
-                std::thread::sleep(std::time::Duration::from_millis(200));
-                self.try_add_documents(chunks)
-                    .map_err(|e2| format!("BM25 提交失败(重试后仍失败): {}", e2))
+        let mut last_err = String::new();
+        for attempt in 0..COMMIT_MAX_ATTEMPTS {
+            match self.try_add_documents(chunks) {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    last_err = e;
+                    if attempt + 1 >= COMMIT_MAX_ATTEMPTS {
+                        break;
+                    }
+                    log::warn!(
+                        "[bm25] 提交失败（第 {} 次），释放句柄后重试: {}",
+                        attempt + 1,
+                        last_err
+                    );
+                    self.invalidate_reader();
+                    std::thread::sleep(std::time::Duration::from_millis(
+                        COMMIT_RETRY_BACKOFF_MS * (1 << attempt),
+                    ));
+                }
             }
         }
+        Err(format!(
+            "BM25 提交失败(重试 {} 次后仍失败): {}",
+            COMMIT_MAX_ATTEMPTS, last_err
+        ))
     }
 
     /// 单次写入+提交（失败由 add_documents 决定是否重试）
@@ -738,18 +761,34 @@ impl Bm25Index {
     /// 返回实际删除的文档（chunk）数，调用方可据此判断是否真的删除了数据，
     /// 避免对从未索引的文档误更新元数据。
     pub fn delete_document(&self, doc_name: &str) -> Result<usize, String> {
-        // 与 add_documents 相同：先释放 reader 句柄，commit 失败重试一次
+        // 与 add_documents 相同：串行化写入 + 先释放 reader 句柄，commit 失败按退避重试
+        let _guard = self.write_lock.lock().unwrap_or_else(|e| e.into_inner());
         self.invalidate_reader();
-        match self.try_delete_document(doc_name) {
-            Ok(n) => Ok(n),
-            Err(e) => {
-                log::warn!("[bm25] 删除提交失败，释放句柄后重试: {}", e);
-                self.invalidate_reader();
-                std::thread::sleep(std::time::Duration::from_millis(200));
-                self.try_delete_document(doc_name)
-                    .map_err(|e2| format!("BM25 提交删除失败(重试后仍失败): {}", e2))
+        let mut last_err = String::new();
+        for attempt in 0..COMMIT_MAX_ATTEMPTS {
+            match self.try_delete_document(doc_name) {
+                Ok(n) => return Ok(n),
+                Err(e) => {
+                    last_err = e;
+                    if attempt + 1 >= COMMIT_MAX_ATTEMPTS {
+                        break;
+                    }
+                    log::warn!(
+                        "[bm25] 删除提交失败（第 {} 次），释放句柄后重试: {}",
+                        attempt + 1,
+                        last_err
+                    );
+                    self.invalidate_reader();
+                    std::thread::sleep(std::time::Duration::from_millis(
+                        COMMIT_RETRY_BACKOFF_MS * (1 << attempt),
+                    ));
+                }
             }
         }
+        Err(format!(
+            "BM25 提交删除失败(重试 {} 次后仍失败): {}",
+            COMMIT_MAX_ATTEMPTS, last_err
+        ))
     }
 
     /// 单次删除+提交（失败由 delete_document 决定是否重试）
@@ -779,6 +818,8 @@ impl Bm25Index {
     ///
     /// 直接删除整个目录再重建，比逐文件删除快得多。
     pub fn clear(&self) -> Result<(), String> {
+        // 串行化写入：防止与 add_documents / delete_document 并发操作同一索引目录
+        let _guard = self.write_lock.lock().unwrap_or_else(|e| e.into_inner());
         // 先释放 reader 的 mmap 句柄，避免 Windows 下 remove_dir_all 删除被占用文件
         self.invalidate_reader();
         let path = Path::new(&self.index_path);
