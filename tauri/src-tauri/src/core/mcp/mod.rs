@@ -58,6 +58,9 @@ pub struct McpServerState {
     pub client: Option<Arc<dyn McpTransport>>,
     /// 运行期日志（环形有界，最新在前展示由前端负责排序）
     pub logs: Vec<McpLogEntry>,
+    /// 自动重连是否已耗尽（3 次重试全失败后置 true）：此后 Closed 事件不再自动
+    /// 重连，保持 failed，直到用户手动「连接」/「断开」重置（避免无限自动重试）。
+    pub auto_reconnect_exhausted: bool,
 }
 
 impl McpServerState {
@@ -71,15 +74,19 @@ impl McpServerState {
             updated_at: now_secs(),
             client: None,
             logs: Vec::new(),
+            auto_reconnect_exhausted: false,
         }
     }
 
     /// 追加一条日志（环形有界：超上限丢弃最旧）。
+    ///
+    /// 统一出口脱敏：stderr 行 / 服务端 message / 连接事件可能内嵌 URL userinfo，
+    /// 全部经 redact_all_urls 剥离凭据后再进运行日志（SOLID：脱敏收敛于唯一写入点）。
     fn push_log(&mut self, level: &str, message: String) {
         const MAX_LOGS: usize = 100;
         self.logs.push(McpLogEntry {
             level: level.to_string(),
-            message,
+            message: redact_all_urls(&message),
             ts: now_secs(),
         });
         if self.logs.len() > MAX_LOGS {
@@ -99,7 +106,7 @@ pub struct McpServerInfo {
     pub enabled: bool,
 }
 
-/// 前端详情。
+/// 前端详情（不含运行日志：日志体积大且变化频繁，改为按需经 mcp_logs 单独拉取）。
 #[derive(Clone, serde::Serialize)]
 pub struct McpServerDetail {
     pub name: String,
@@ -107,7 +114,6 @@ pub struct McpServerDetail {
     pub status: String,
     pub tools: Vec<McpToolDef>,
     pub error: Option<String>,
-    pub logs: Vec<McpLogEntry>,
 }
 
 /// MCP 注册表（挂入 AppState，进程内单例）。
@@ -294,8 +300,15 @@ impl McpRegistry {
             status: guard.status.clone(),
             tools: guard.tools.clone(),
             error: guard.error.clone(),
-            logs: guard.logs.clone(),
         })
+    }
+
+    /// 运行日志（按需拉取；前端点击「加载运行日志」后调用）。
+    pub async fn logs(&self, name: &str) -> Option<Vec<McpLogEntry>> {
+        let servers = self.servers.lock().await;
+        let state = servers.get(name)?;
+        let guard = state.lock().await;
+        Some(guard.logs.clone())
     }
 
     /// 新增/更新配置（写盘 + 重连）。
@@ -306,8 +319,19 @@ impl McpRegistry {
         let dir = self.dir_path.lock().await.clone();
         let dir = dir.ok_or_else(|| "尚未设置根目录".to_string())?;
         let servers = self.servers.lock().await;
-        let mut configs: HashMap<String, McpServerConfig> =
-            servers.iter().map(|(k, v)| (k.clone(), v.try_lock().map(|g| g.config.clone()).unwrap_or_default())).collect();
+        let mut configs: HashMap<String, McpServerConfig> = HashMap::new();
+        for (k, v) in servers.iter() {
+            match v.try_lock() {
+                Ok(guard) => {
+                    configs.insert(k.clone(), guard.config.clone());
+                }
+                Err(_) => {
+                    // try_lock 失败（锁被占用）：记录警告，跳过该服务器
+                    // 不使用 default() 避免配置丢失，仅记录日志
+                    log::warn!("[mcp] 服务器 {} 配置锁定失败（并发冲突），跳过配置保存", k);
+                }
+            }
+        }
         let previous = configs.get(name).cloned();
         configs.insert(name.to_string(), config.clone());
         drop(servers);
@@ -357,8 +381,19 @@ impl McpRegistry {
             }
         }
         let servers = self.servers.lock().await;
-        let configs: HashMap<String, McpServerConfig> =
-            servers.iter().map(|(k, v)| (k.clone(), v.try_lock().map(|g| g.config.clone()).unwrap_or_default())).collect();
+        let mut configs: HashMap<String, McpServerConfig> = HashMap::new();
+        for (k, v) in servers.iter() {
+            match v.try_lock() {
+                Ok(guard) => {
+                    configs.insert(k.clone(), guard.config.clone());
+                }
+                Err(_) => {
+                    // try_lock 失败（锁被占用）：记录警告，跳过该服务器
+                    // 不使用 default() 避免配置丢失，仅记录日志
+                    log::warn!("[mcp] 服务器 {} 配置锁定失败（并发冲突），跳过配置保存", k);
+                }
+            }
+        }
         drop(servers);
         Self::save_configs(&dir, &configs)
     }
@@ -382,6 +417,8 @@ impl McpRegistry {
             let mut g = state.lock().await;
             g.status = STATUS_CONNECTING.to_string();
             g.error = None;
+            // 用户手动发起连接：重置自动重连耗尽标记（重新获得自动重连机会）
+            g.auto_reconnect_exhausted = false;
         }
         let (cfg, old_client) = {
             let mut g = state.lock().await;
@@ -417,11 +454,14 @@ impl McpRegistry {
             // 按传输类型创建客户端：stdio（command）或 streamable HTTP（url）
             let client: Arc<dyn McpTransport> = if cfg.is_stdio() {
                 let cmd = cfg.command.clone().unwrap_or_default();
-                log::info!("[mcp] {} 启动 stdio 进程: {} {:?}", name, cmd, cfg.args);
+                log::info!(
+                    "[mcp] {} 启动 stdio 进程: {} {:?}",
+                    name, cmd, redact_args(&cfg.args)
+                );
                 Arc::new(StdioMcpClient::connect(&cfg, roots)?)
             } else {
                 let url = cfg.url.clone().unwrap_or_default();
-                log::info!("[mcp] {} 连接 streamable HTTP: {}", name, url);
+                log::info!("[mcp] {} 连接 streamable HTTP: {}", name, redact_url(&url));
                 let c = HttpStreamableClient::new(&cfg, roots);
                 c.connect().await?;
                 Arc::new(c)
@@ -437,7 +477,7 @@ impl McpRegistry {
                 Err(e) => {
                     log::info!(
                         "[mcp] {} 最新协议版本握手失败（{}），降级 {} 重试",
-                        name, e, MCP_PROTOCOL_VERSION_FALLBACK
+                        name, redact_all_urls(&e), MCP_PROTOCOL_VERSION_FALLBACK
                     );
                     client
                         .call_with_timeout(
@@ -485,6 +525,8 @@ impl McpRegistry {
                 Ok(())
             }
             Err(e) => {
+                // 兜底脱敏：传输层错误（reqwest 等）可能内嵌完整 URL（含 userinfo）
+                let e = redact_all_urls(&e);
                 let mut g = state.lock().await;
                 g.status = STATUS_FAILED.to_string();
                 g.error = Some(e.clone());
@@ -508,6 +550,8 @@ impl McpRegistry {
         g.status = STATUS_STOPPED.to_string();
         g.tools.clear();
         g.error = None;
+        // 用户手动断开：重置自动重连耗尽标记（断开后再手动连接可恢复自动重连）
+        g.auto_reconnect_exhausted = false;
         g.updated_at = now_secs();
         g.push_log("info", "已断开连接".to_string());
         Ok(())
@@ -520,31 +564,79 @@ impl McpRegistry {
     }
 
     /// 测试连接（不落盘、不影响现有状态）：返回工具数。
+    ///
+    /// 错误按阶段包装上下文，便于用户在管理页定位问题（SOLID：错误上下文构造
+    /// 内聚在本方法，传输/握手/列清单各阶段职责单一）：
+    /// 1. 传输建立（stdio 启动进程 / HTTP URL 校验）；
+    /// 2. initialize 握手（最新协议失败降级重试，两次错误一并展示）；
+    /// 3. 工具清单拉取。
     pub async fn test(&self, config: McpServerConfig) -> Result<usize, String> {
         let roots = Vec::new();
+        // 阶段 1：建立传输客户端
         let client: Arc<dyn McpTransport> = if config.is_stdio() {
-            Arc::new(StdioMcpClient::connect(&config, roots)?)
+            let cmd = config.command.clone().unwrap_or_default();
+            // 错误信息展示用脱敏参数（防 --api-key=xxx 等敏感值进日志/前端）
+            let args_redacted = redact_args(&config.args);
+            let c = StdioMcpClient::connect(&config, roots).map_err(|e| {
+                redact_all_urls(&format!(
+                    "启动 MCP 服务器进程失败（command={} args={:?}）: {}",
+                    cmd, args_redacted, e
+                ))
+            })?;
+            Arc::new(c)
         } else {
+            let url = config.url.clone().unwrap_or_default();
             let c = HttpStreamableClient::new(&config, roots);
-            c.connect().await?;
+            c.connect()
+                .await
+                .map_err(|e| {
+                    redact_all_urls(&format!(
+                        "HTTP 传输初始化失败（url={}）: {}",
+                        redact_url(&url),
+                        e
+                    ))
+                })?;
             Arc::new(c)
         };
-        // 协议版本协商（与 connect 同语义，但不建立 SSE 接收流——纯探测）
+        // 阶段 2：initialize 握手（协议版本协商，与 connect 同语义但不建立 SSE 流——纯探测）
         let init = match client
             .call_with_timeout("initialize", Self::init_params(MCP_PROTOCOL_VERSION), 180)
             .await
         {
             Ok(v) => v,
-            Err(_) => client
-                .call_with_timeout(
-                    "initialize",
-                    Self::init_params(MCP_PROTOCOL_VERSION_FALLBACK),
-                    180,
-                )
-                .await?,
+            Err(err_latest) => {
+                match client
+                    .call_with_timeout(
+                        "initialize",
+                        Self::init_params(MCP_PROTOCOL_VERSION_FALLBACK),
+                        180,
+                    )
+                    .await
+                {
+                    Ok(v) => v,
+                    Err(err_fallback) => {
+                        return Err(redact_all_urls(&format!(
+                            "MCP 初始化握手失败：最新协议（{}）错误「{}」；降级协议（{}）错误「{}」",
+                            MCP_PROTOCOL_VERSION,
+                            truncate_output(&err_latest, 500),
+                            MCP_PROTOCOL_VERSION_FALLBACK,
+                            truncate_output(&err_fallback, 500)
+                        )))
+                    }
+                }
+            }
         };
-        let _ = extract_result(init)?;
-        let tools = Self::list_all_tools(&client).await?;
+        let _ =
+            extract_result(init).map_err(|e| format!("initialize 响应异常: {}", e))?;
+        // 阶段 3：工具清单
+        let tools = Self::list_all_tools(&client)
+            .await
+            .map_err(|e| {
+                redact_all_urls(&format!(
+                    "获取工具清单失败（tools/list）: {}",
+                    truncate_output(&e, 500)
+                ))
+            })?;
         let count = tools.len();
         client.disconnect();
         Ok(count)
@@ -571,6 +663,8 @@ impl McpRegistry {
                         let count = g.tools.len();
                         g.push_log("info", format!("工具清单已刷新（{} 个工具）", count));
                         log::info!("[mcp] {} 工具清单刷新完成: {} 个工具", name, count);
+                        // 提示用户工具列表已更新，建议重新发起对话以使用新工具
+                        log::warn!("[mcp] ⚠️ 工具列表已动态更新。当前 Agent 会话仍在使用旧工具列表。新工具将在下一次对话中生效。");
                     }
                     Err(e) => log::warn!("[mcp] {} 重拉工具清单失败: {}", name, e),
                 }
@@ -606,7 +700,8 @@ impl McpRegistry {
                 let servers = me.servers.lock().await;
                 let Some(state) = servers.get(&name) else { return };
                 let mut g = state.lock().await;
-                if g.status == STATUS_STOPPED {
+                // 明确断开（stopped）或自动重连已耗尽（3 次失败）时不再自动重连
+                if g.status == STATUS_STOPPED || g.auto_reconnect_exhausted {
                     false
                 } else {
                     if let Some(c) = g.client.take() {
@@ -615,7 +710,7 @@ impl McpRegistry {
                     g.status = STATUS_FAILED.to_string();
                     g.error = Some("连接中断（服务器进程退出或传输关闭），正在尝试自动重连…".to_string());
                     g.updated_at = now_secs();
-                    g.push_log("error", "连接中断，开始自动重连（退避 3s/6s/12s）".to_string());
+                    g.push_log("error", "连接中断，开始自动重连（退避 3s/6s/12s，最多 3 次）".to_string());
                     true
                 }
             };
@@ -645,7 +740,22 @@ impl McpRegistry {
                     }
                 }
             }
-            log::warn!("[mcp] {} 自动重连失败，已放弃（请手动重连）", name);
+            // 3 次重试全部失败：标记自动重连已耗尽，此后 Closed 事件不再自动重试，
+            // 保持 failed 直到用户手动「连接」/「断开」重置（重启需用户主动操作）。
+            {
+                let servers = me.servers.lock().await;
+                if let Some(state) = servers.get(&name) {
+                    let mut g = state.lock().await;
+                    g.auto_reconnect_exhausted = true;
+                    g.error = Some("自动重连 3 次均失败，已停止自动重连；请手动点击「连接」重试".to_string());
+                    g.updated_at = now_secs();
+                    g.push_log(
+                        "error",
+                        "自动重连 3 次均失败，已停止自动重连；请手动点击「连接」重试".to_string(),
+                    );
+                }
+            }
+            log::warn!("[mcp] {} 自动重连 3 次均失败，已停止自动重连（请手动连接）", name);
         })
     }
 
@@ -681,7 +791,9 @@ impl McpRegistry {
             Ok(r) => r,
             Err(e) => {
                 // 传输层故障（超时 / 通道关闭 / 队列满 / 读取失败 / HTTP 错误）：
-                // 标记 failed 并释放客户端（终止进程），用户可一键重启恢复
+                // 标记 failed 并释放客户端（终止进程），用户可一键重启恢复。
+                // 错误可能内嵌完整 URL（含 userinfo），统一脱敏后再落库/返回（含 Agent 上下文）
+                let e = redact_all_urls(&e);
                 if is_transport_error(&e) {
                     log::warn!("[mcp] {} 调用 {} 传输故障，标记 failed: {}", server, tool, e);
                     let mut g = state.lock().await;
@@ -773,6 +885,87 @@ fn truncate_output(s: &str, max: usize) -> String {
     }
     let head: String = s.chars().take(max).collect();
     format!("{}…（输出已截断：{} 字符）", head, s.chars().count())
+}
+
+/// 命令行参数敏感值脱敏（错误信息/日志展示用）：
+/// - `--key=value` / `-key=value` 形态：key 命中敏感词时值替换为 `***`；
+/// - `--key value` 空格分隔形态：敏感参数名后的独立值参数替换为 `***`；
+/// - 其它参数原样保留（保证错误信息可读性，同时避免密钥进入日志/前端）。
+fn redact_args(args: &[String]) -> Vec<String> {
+    const SENSITIVE: &[&str] = &[
+        "key", "token", "secret", "password", "passwd", "pwd", "api_key", "apikey", "auth",
+        "credential", "bearer", "authorization", "pass",
+    ];
+    let is_sensitive = |k: &str| {
+        let kk = k.trim_start_matches('-').to_lowercase();
+        SENSITIVE.iter().any(|s| kk.contains(s))
+    };
+    let mut out: Vec<String> = Vec::with_capacity(args.len());
+    let mut i = 0usize;
+    while i < args.len() {
+        let a = &args[i];
+        if let Some((k, _v)) = a.split_once('=') {
+            if is_sensitive(k) {
+                out.push(format!("{}=***", k));
+            } else {
+                out.push(a.clone());
+            }
+        } else if is_sensitive(a) {
+            // `--api-key value`：参数名本身不含值，保留；紧随其后的独立值参数脱敏
+            out.push(a.clone());
+            if i + 1 < args.len() {
+                out.push("***".to_string());
+                i += 1;
+            }
+        } else {
+            out.push(a.clone());
+        }
+        i += 1;
+    }
+    out
+}
+
+/// URL 展示脱敏：剥离 userinfo 段（`http://user:pass@host` → `http://***@host`），
+/// 避免 URL 内嵌凭据进入错误信息/日志。
+fn redact_url(url: &str) -> String {
+    if let Some(scheme_end) = url.find("://") {
+        let after_scheme = &url[scheme_end + 3..];
+        if let Some(at) = after_scheme.find('@') {
+            return format!("{}***@{}", &url[..scheme_end + 3], &after_scheme[at + 1..]);
+        }
+    }
+    url.to_string()
+}
+
+/// 兜底脱敏：扫描文本（如 reqwest 错误串 `... for url (http://user:pass@host/...)`）
+/// 中所有 `scheme://userinfo@` 形态并剥离凭据；无匹配时原样返回。
+fn redact_all_urls(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    loop {
+        let Some(scheme_end) = rest.find("://") else {
+            out.push_str(rest);
+            return out;
+        };
+        let after = &rest[scheme_end + 3..];
+        if let Some(at) = after.find('@') {
+            let userinfo = &after[..at];
+            // @ 前若含空白/引号/括号等分隔符，则不是 URL userinfo，跳过
+            let is_userinfo = !userinfo.is_empty()
+                && !userinfo
+                    .chars()
+                    .any(|c| c.is_whitespace() || matches!(c, '"' | '\'' | '(' | ')' | '<' | '>' | '`'));
+            if is_userinfo {
+                out.push_str(&rest[..scheme_end + 3]);
+                out.push_str("***@");
+                rest = &after[at + 1..];
+                continue;
+            }
+        }
+        // 未找到有效 userinfo：越过本段继续向后扫描
+        out.push_str(&rest[..scheme_end + 3]);
+        rest = after;
+    }
 }
 
 /// 轻量参数校验：检查 schema.required 声明的字段是否齐全（不校验类型，容错）。
@@ -930,5 +1123,65 @@ mod tests {
         assert!(t.starts_with("abcde"));
         assert!(t.contains("截断"));
         assert_eq!(truncate_output(s, 100), s);
+    }
+
+    #[test]
+    fn redact_args_masks_sensitive_values_only() {
+        let args = vec![
+            "-y".to_string(),
+            "@modelcontextprotocol/server-everything".to_string(),
+            "--api-key=abc123".to_string(),
+            "--path=/tmp".to_string(),
+            "-token=xyz".to_string(),
+        ];
+        let r = redact_args(&args);
+        assert_eq!(r[0], "-y");
+        assert_eq!(r[1], "@modelcontextprotocol/server-everything");
+        assert_eq!(r[2], "--api-key=***");
+        assert_eq!(r[3], "--path=/tmp");
+        assert_eq!(r[4], "-token=***");
+    }
+
+    #[test]
+    fn redact_args_masks_space_separated_values() {
+        // `--api-key value` 空格分隔：参数名保留，独立值脱敏
+        let args = vec![
+            "--api-key".to_string(),
+            "abc123".to_string(),
+            "--auth".to_string(),
+            "xyz".to_string(),
+            "--verbose".to_string(),
+        ];
+        let r = redact_args(&args);
+        assert_eq!(r, vec!["--api-key", "***", "--auth", "***", "--verbose"]);
+        // 敏感参数名位于末尾且无值：仅保留参数名
+        let r2 = redact_args(&["--token".to_string()].to_vec());
+        assert_eq!(r2, vec!["--token"]);
+    }
+
+    #[test]
+    fn redact_url_strips_userinfo() {
+        assert_eq!(
+            redact_url("http://user:pass@example.com/mcp"),
+            "http://***@example.com/mcp"
+        );
+        assert_eq!(redact_url("https://example.com/mcp"), "https://example.com/mcp");
+        assert_eq!(redact_url(""), "");
+    }
+
+    #[test]
+    fn redact_all_urls_masks_userinfo_in_error_text() {
+        // reqwest 风格错误串：内嵌完整 URL（含 userinfo）
+        let s = "error sending request for url (http://user:pass@example.com/mcp)";
+        assert_eq!(
+            redact_all_urls(s),
+            "error sending request for url (http://***@example.com/mcp)"
+        );
+        // 多个 URL 均脱敏
+        let s2 = "a http://u1:p1@h1/x b https://u2:p2@h2/y c";
+        assert_eq!(redact_all_urls(s2), "a http://***@h1/x b https://***@h2/y c");
+        // 无 userinfo 的 URL 原样保留；普通文本不变
+        assert_eq!(redact_all_urls("see https://example.com/mcp"), "see https://example.com/mcp");
+        assert_eq!(redact_all_urls("无 URL 的普通文本"), "无 URL 的普通文本");
     }
 }

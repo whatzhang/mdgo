@@ -43,6 +43,9 @@ pub struct LlmConfig {
     pub summary_model: Option<String>,
     /// 推理努力等级（P2-18：可选；low/medium/high，透传 additional_params）
     pub reasoning_effort: Option<String>,
+    /// 最大输出 token（P3：可选；None/0 = 不发送，由服务器/模型默认；>0 时显式发送，
+    /// 避免本地模型（LM Studio 等）使用过小的默认输出上限导致回答截断）
+    pub max_tokens: Option<u32>,
 }
 
 impl Default for LlmConfig {
@@ -55,6 +58,7 @@ impl Default for LlmConfig {
             planner_model: None,
             summary_model: None,
             reasoning_effort: None,
+            max_tokens: None,
         }
     }
 }
@@ -144,7 +148,9 @@ impl AppState {
             .await
     }
 
-    async fn llm_client_for_cfg(
+    /// 带 reasoning_effort 的客户端工厂（供 commands 层主对话/聊天流式链路使用；
+    /// effort 参与指纹缓存，配置热更新后自动重建）。
+    pub(crate) async fn llm_client_for_cfg(
         &self,
         endpoint: &str,
         model: &str,
@@ -461,6 +467,7 @@ pub fn run() {
             // MCP 管理命令（v2：独立管理页）
             commands::mcp::mcp_list,
             commands::mcp::mcp_get,
+            commands::mcp::mcp_logs,
             commands::mcp::mcp_upsert,
             commands::mcp::mcp_delete,
             commands::mcp::mcp_connect,

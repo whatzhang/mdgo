@@ -2660,6 +2660,20 @@
             border-style: dashed;
         }
 
+        .kanban-drag-origin {
+            opacity: 0 !important;
+        }
+
+        .kanban-drag-fallback {
+            opacity: 1;
+            z-index: 99999;
+            box-shadow: 0 0.5rem 1.25rem rgba(0, 0, 0, 0.35);
+            transform: rotate(2deg) scale(1.02);
+            cursor: grabbing;
+            background: var(--color-bg, #fff) !important;
+            pointer-events: none;
+        }
+
         .kanban-card .card-title {
             font-size: 13px;
             font-weight: bold;
@@ -2870,22 +2884,25 @@
         .kanban-add-btn {
             width: 100%;
             height: 2.5rem;
-            padding: 0.5rem 0.75rem;
             margin-top: 0.75rem;
             border: 1px dashed var(--color-border, #d0d7de);
             border-radius: 0.5rem;
             background-color: #f2f4f6;
             color: var(--t2);
-            font-size: 13px;
-            font-weight: 600;
             cursor: pointer;
             transition: all 0.2s ease;
-            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .kanban-add-btn svg {
+            width: 1.25rem;
+            height: 1.25rem;
         }
 
         .kanban-add-btn:hover {
-            background-color: var(--color-hover-highlight, #ddf4ff);
-            border-color: var(--color-primary, var(--color-primary-light));
+            color: var(--color-primary);
+            border-color: var(--color-primary);
         }
 
         .kanban-card-more {
@@ -2903,7 +2920,7 @@
             transition: opacity 0.2s;
             font-size: 0.875rem;
             line-height: 1;
-            color: #999;
+            color: var(-t2);
             background: transparent;
             border: none;
             padding: 0;
@@ -4005,8 +4022,8 @@
 
         .ai-fab-container {
             position: absolute;
-            top: 3.6rem;
-            right: 0.625rem;
+            top: 26px;
+            right: 10px;
             transform: translateY(-50%);
             z-index: 2000;
             display: flex;
@@ -4104,7 +4121,7 @@
         .ai-fab-tooltip {
             position: absolute;
             top: 0;
-            right: 54px;
+            right: 3.375rem;
             bottom: auto;
             left: auto;
             transform: scale(0.85) translateX(15px);
@@ -4133,7 +4150,7 @@
         .ai-fab-tooltip::before {
             content: "";
             position: absolute;
-            top: 20px;
+            top: 15px;
             right: -9px;
             bottom: auto;
             left: auto;
@@ -5720,6 +5737,13 @@
             display: flex;
             align-items: center;
         }
+        /* 模型 / think 档位弹层定位基准：二者均在 .chat-context-usage(position:relative) 内，
+           若弹层直接相对该宽容器定位，会被 left:0/right:0 拉伸到容器全宽、偏离按钮；
+           各自提供定位基准，弹层贴合按钮弹出（垂直在按钮上方、宽度贴合按钮） */
+        #chat-model-select-wrap,
+        #chat-think-toggle-wrap {
+            position: relative;
+        }
 
         .chat-toolbar-btn {
             display: inline-flex;
@@ -5761,18 +5785,18 @@
         /* 向上弹出的工具栏面板 */
         .chat-toolbar-popup {
             position: absolute;
-            bottom: calc(100% + 0.375rem);
+            bottom: calc(100% + 0.4rem);
             left: 0;
             right: 0;
             z-index: 120;
             max-height: 20rem;
-            min-width: 10rem;
+            min-width: 12rem;
             max-width: 15rem;
             overflow-y: auto;
             background: var(--color-bg, #fff);
             border-radius: 0.5rem;
             box-shadow: 0 0.25rem 0.5rem rgba(0, 0, 0, 0.12);
-            padding: 0.25rem;
+            padding: 0.5rem;
             overflow-x: hidden;
         }
         .chat-toolbar-popup.long {
@@ -10056,6 +10080,8 @@
         .timeline-months-heatmap {
             display: flex;
             flex-direction: row;
+            justify-content: center;
+            justify-items: center;
             gap: 10px;
             overflow-x: auto;
             padding-bottom: 8px;
@@ -14467,7 +14493,7 @@
         }
         .skill-tool-row {
             padding: 0.375rem 0.5rem;
-            border: 1px solid var(--border-color, #333);
+            border: 1px solid var(--border-color-light);
             border-radius: 0.375rem;
             margin-bottom: 0.375rem;
             font-size: 0.8125rem;
@@ -14476,7 +14502,7 @@
         .skill-tool-row code {
             font-family: var(--font-mono);
             font-size: 0.75rem;
-            color: var(--color-primary-light, #4a90d9);
+            color: var(--color-primary-light);
         }
         .skill-detail-subtitle {
             font-size: 0.75rem;
@@ -15321,11 +15347,6 @@
                             <span id="dashboard-time" class="dashboard-time"></span>
                         </div>
                     </div>
-                    <div class="top-right-controls">
-                        <button class="btn btn-primary" id="dashboard-refresh-btn"
-                            onclick="toggleDashboardView(false)">刷新
-                        </button>
-                    </div>
                 </div>
                 <div class="stats-grid">
                     <div class="stat-card">
@@ -16100,8 +16121,8 @@
                     <div class="ai-panel-header-wrapper">
                         <div class="ai-panel-header">小助手</div>
                         <span id="ai-selection-count" style="font-size: 11px; color: #007af5; display: none;"></span>
-                        <div id="ai-link-file">
-                            <span style="font-size: 11px; color: #64748b;">使用当前文件</span>
+                        <div id="ai-link-file" style="display: flex; align-items: center; gap: 0.375rem;">
+                            <span style="font-size: 11px; color: var(--t2); line-height: 1; display: inline-flex; align-items: center;">使用当前文件</span>
                             <label class="ai-result-sw-lark">
                                 <input type="checkbox" checked>
                                 <span class="slider"></span>
@@ -17160,8 +17181,8 @@
             <div id="chat-file-picker-overlay" class="todo-modal-overlay" style="display:none;"
                 onclick="closeChatFilePicker()">
                 <div class="todo-modal" onclick="event.stopPropagation()" style="width:26rem;max-width:92vw;">
-                    <div class="todo-modal-header">
-                        <div class="todo-modal-title">选择文件 <span id="chat-file-picker-hint" style="font-size:11px;color:var(--t3,#888);font-weight:400;margin-left:6px;"></span></div>
+                    <div class="todo-modal-header" style="padding:0.25rem 0.5rem;">
+                        <span id="chat-file-picker-hint" style="font-size:0.75rem;color:var(--color-note);font-weight:600;"></span>
                         <button class="todo-modal-close" onclick="closeChatFilePicker()">×</button>
                     </div>
                     <div class="todo-modal-body" style="max-height:18rem;overflow-y:auto;padding:0.375rem;">
@@ -17525,16 +17546,18 @@
         let LOCAL_LLM_MODEL = 'gemma-4-e4b-it';
         // 协议：'openai' = OpenAI 兼容 Chat Completions；'anthropic' = Anthropic Messages API
         const LLM_VENDOR_PRESETS = [
-            { id: 'openai', name: 'OpenAI', protocol: 'openai', baseURL: 'https://api.openai.com/v1', models: ['gpt-4o', 'gpt-4o-mini', 'o3-mini'], docs: 'https://platform.openai.com/docs' },
-            { id: 'anthropic', name: 'Anthropic', protocol: 'anthropic', baseURL: 'https://api.anthropic.com', models: ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-haiku-4-5'], docs: 'https://docs.anthropic.com' },
-            { id: 'deepseek', name: 'DeepSeek', protocol: 'openai', baseURL: 'https://api.deepseek.com/v1', models: ['deepseek-chat', 'deepseek-reasoner'], docs: 'https://api-docs.deepseek.com' },
-            { id: 'qwen', name: '通义千问', protocol: 'openai', baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-max', 'qwen-plus', 'qwen-turbo'], docs: 'https://help.aliyun.com/zh/model-studio' },
-            { id: 'kimi', name: 'Kimi', protocol: 'openai', baseURL: 'https://api.moonshot.cn/v1', models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'], docs: 'https://platform.moonshot.cn' },
-            { id: 'zhipu', name: '智谱 GLM', protocol: 'openai', baseURL: 'https://open.bigmodel.cn/api/paas/v4', models: ['glm-4-plus', 'glm-4-air', 'glm-4-flash'], docs: 'https://open.bigmodel.cn' },
-            { id: 'doubao', name: '豆包', protocol: 'openai', baseURL: 'https://ark.cn-beijing.volces.com/api/v3', models: ['doubao-1.5-pro-32k', 'doubao-1.5-lite-32k'], docs: 'https://www.volcengine.com/docs/82379' },
-            { id: 'minimax', name: 'MiniMax', protocol: 'openai', baseURL: 'https://api.minimax.chat/v1', models: ['MiniMax-Text-01', 'abab6.5s'], docs: 'https://platform.minimaxi.com' },
-            { id: 'siliconflow', name: '硅基流动', protocol: 'openai', baseURL: 'https://api.siliconflow.cn/v1', models: ['Qwen/Qwen2.5-72B-Instruct', 'deepseek-ai/DeepSeek-V3'], docs: 'https://cloud.siliconflow.cn' },
+            { id: 'openai', name: 'OpenAI', protocol: 'openai', baseURL: 'https://api.openai.com/v1', models: [], docs: 'https://platform.openai.com/docs' },
+            { id: 'anthropic', name: 'Anthropic', protocol: 'anthropic', baseURL: 'https://api.anthropic.com', models: [], docs: 'https://docs.anthropic.com' },
+            { id: 'deepseek', name: 'DeepSeek', protocol: 'openai', baseURL: 'https://api.deepseek.com/v1', models: ['deepseek-v4-flash', 'deepseek-v4-plus'], docs: 'https://api-docs.deepseek.com' },
+            { id: 'qwen', name: '通义千问', protocol: 'openai', baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: [], docs: 'https://help.aliyun.com/zh/model-studio' },
+            { id: 'kimi', name: 'Kimi', protocol: 'openai', baseURL: 'https://api.moonshot.cn/v1', models: [], docs: 'https://platform.moonshot.cn' },
+            { id: 'zhipu', name: '智谱 GLM', protocol: 'openai', baseURL: 'https://open.bigmodel.cn/api/paas/v4', models: [], docs: 'https://open.bigmodel.cn' },
+            { id: 'doubao', name: '豆包', protocol: 'openai', baseURL: 'https://ark.cn-beijing.volces.com/api/v3', models: [], docs: 'https://www.volcengine.com/docs/82379' },
+            { id: 'minimax', name: 'MiniMax', protocol: 'openai', baseURL: 'https://api.minimax.chat/v1', models: [], docs: 'https://platform.minimaxi.com' },
+            { id: 'siliconflow', name: '硅基流动', protocol: 'openai', baseURL: 'https://api.siliconflow.cn/v1', models: [], docs: 'https://cloud.siliconflow.cn' },
             { id: 'ollama', name: 'Ollama', protocol: 'openai', baseURL: 'http://localhost:11434/v1', models: [], docs: 'https://ollama.com' },
+            { id: 'lm-studio', name: 'LM studio', protocol: 'openai', baseURL: 'https://localhost:1234/v1', models: [], docs: 'https://api-docs.deepseek.com' },
+
             { id: 'custom', name: '自定义', protocol: 'openai', baseURL: '', models: [], docs: '' },
         ];
         const MODEL_PROFILES_STORAGE_KEY = 'mdgo_model_profiles';
@@ -17672,7 +17695,8 @@
             summaryMaxChars: 6000,
             // 对话上下文
             contextLength: 10000,
-            maxTokens: 4096,
+            // 最大输出 token（P3：默认 8192，主流中档；UI 可调 256-32000）
+            maxTokens: 8192,
             historyBudgetRatio: 0.6,
             aiHistoryMax: 10,
             // 检索
@@ -21072,6 +21096,7 @@
                 const handle = await getRootHandle();
                 const data = await scanDashboardData(true);
                 await renderDirectory(handle, data, true);
+                if(dashboardContainer.style.display !== 'none') await toggleDashboardView(true, data)
                 if (showNoti) {
                     showNotification('✓ 刷新成功', 'success');
                 }
@@ -30501,7 +30526,9 @@ kanban-plugin: basic
                 }
                 const addBtn = document.createElement('button');
                 addBtn.className = 'kanban-add-btn';
-                addBtn.textContent = '新建卡片';
+                addBtn.innerHTML = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                                </svg>`;
                 addBtn.dataset.colIndex = colIndex;
                 colEl.appendChild(addBtn);
                 container.appendChild(colEl);
@@ -30621,10 +30648,7 @@ kanban-plugin: basic
             inputBox.style.marginTop = '8px';
             const boxBtn = document.createElement('div');
             boxBtn.className = 'kanban-action-btn-split';
-            boxBtn.innerHTML = `
-        <button class="kanban-action-btn-left" onclick="handleKanbanAddInput()">保存</button>
-        <button class="kanban-action-btn-right" onclick="clearKanbanEditConext(); initKanbanAddCard();">✕</button>
-    `;
+            boxBtn.innerHTML = `<button class="kanban-action-btn-left" onclick="handleKanbanAddInput()">保存</button> <button class="kanban-action-btn-right" onclick="clearKanbanEditConext(); initKanbanAddCard();">✕</button>`;
             const textarea = document.createElement('textarea');
             textarea.id = 'kanban-context-textarea';
             textarea.placeholder = '输入卡片内容...';
@@ -30759,10 +30783,7 @@ kanban-plugin: basic
             inputBox.className = 'kanban-search-box';
             const boxBtn = document.createElement('div');
             boxBtn.className = 'kanban-action-btn-split';
-            boxBtn.innerHTML = `
-        <button class="kanban-action-btn-left" onclick="handleKanbanEditInput()">保存</button>
-        <button class="kanban-action-btn-right" onclick="clearKanbanEditConext()">✕</button>
-    `;
+            boxBtn.innerHTML = `<button class="kanban-action-btn-left" onclick="handleKanbanEditInput()">保存</button> <button class="kanban-action-btn-right" onclick="clearKanbanEditConext()">✕</button>`;
             const textarea = document.createElement('textarea');
             textarea.id = 'kanban-context-textarea';
             textarea.autocomplete = 'off';
@@ -30868,7 +30889,15 @@ kanban-plugin: basic
             sortableInstances.forEach(instance => instance.destroy());
             sortableInstances = [];
             const containers = document.querySelectorAll('.kanban-cards');
-            const forceFallback = isTauriVisit();
+            const fallbackOpts = {
+                forceFallback: true,
+                dragClass: 'kanban-drag-origin',
+                fallbackTolerance: 8,   // 轻微移动不触发拖拽（防误触）
+                fallbackOnBody: true,   // 拖影挂 body，避免被容器 overflow 裁剪
+                fallbackClass: 'kanban-drag-fallback',
+                swapThreshold: 0.7,     // 换位灵敏度
+                scroll: true,           // 拖拽到边缘自动滚动
+            };
             containers.forEach(container => {
                 const sortable = new Sortable(container, {
                     group: 'kanban',
@@ -30876,7 +30905,7 @@ kanban-plugin: basic
                     ghostClass: 'dragging',
                     filter: 'input, textarea, [contenteditable]',
                     preventOnFilter: false,
-                    forceFallback: forceFallback,
+                    ...fallbackOpts,
                     onEnd: function (evt) {
                         updateKanbanOrder(evt);
                     },
@@ -30889,7 +30918,7 @@ kanban-plugin: basic
                     animation: 150,
                     ghostClass: 'dragging',
                     handle: '.kanban-column h2',
-                    forceFallback: forceFallback,
+                    ...fallbackOpts,
                     onEnd: function (evt) {
                         updateKanbanColumnOrder();
                     },
@@ -34660,7 +34689,7 @@ kanban-plugin: basic
                     model: profile.model,
                     messages: messages,
                     stream: false,
-                    max_tokens: profile.maxTokens || 4096,
+                    max_tokens: profile.maxTokens || AGENT_LIMITS.maxTokens,
                 }),
                 signal,
             });
@@ -34702,7 +34731,7 @@ kanban-plugin: basic
                 },
                 body: JSON.stringify({
                     model: profile.model,
-                    max_tokens: profile.maxTokens || 4096,
+                    max_tokens: profile.maxTokens || AGENT_LIMITS.maxTokens,
                     system: systemPrompt || undefined,
                     messages: [{ role: 'user', content: promptStr }],
                 }),
@@ -34741,7 +34770,7 @@ kanban-plugin: basic
                 if (larkCheckbox)  larkCheckbox.checked = false;
                 if (link) link.style.display = 'none';
             }else{
-                if (link) link.style.display = 'block';
+                if (link) link.style.display = 'flex';
             }
         }
 
@@ -51410,11 +51439,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 LOCAL_LLM_SUMMARY_MODEL = setting.localLlmSummaryModel || '';
                 LOCAL_LLM_REASONING_EFFORT = setting.localLlmReasoningEffort || '';
                 LOCAL_LLM_CONTEXT_LENGTH = setting.localLlmContextLength;
-                LOCAL_LLM_MAX_TOKENS = setting.localLlmMaxTokens || 4096;
-                DIR_BLACKLIST = setting.dirBlacklist;
-                FILE_BLACKLIST = setting.fileBlacklist;
-                RANDOM_DIR_BLACKLIST = setting.randomDirBlacklist;
-                HTML_CODE_SHOW_BLACKLIST = setting.htmlCodeShowBlacklist;
+                LOCAL_LLM_MAX_TOKENS = setting.localLlmMaxTokens || AGENT_LIMITS.maxTokens;
+                // 黑名单：缺失/非数组时保留内置默认（防 openSetting 展开 undefined 崩溃）
+                DIR_BLACKLIST = Array.isArray(setting.dirBlacklist) ? setting.dirBlacklist : DIR_BLACKLIST;
+                FILE_BLACKLIST = Array.isArray(setting.fileBlacklist) ? setting.fileBlacklist : FILE_BLACKLIST;
+                RANDOM_DIR_BLACKLIST = Array.isArray(setting.randomDirBlacklist) ? setting.randomDirBlacklist : RANDOM_DIR_BLACKLIST;
+                HTML_CODE_SHOW_BLACKLIST = Array.isArray(setting.htmlCodeShowBlacklist) ? setting.htmlCodeShowBlacklist : HTML_CODE_SHOW_BLACKLIST;
                 compileAllRules();
                 // 初始化模型配置（含旧单配置迁移），再同步后端
                 initModelProfiles();
@@ -51465,6 +51495,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     plannerModel: LOCAL_LLM_PLANNER_MODEL || null,
                     summaryModel: LOCAL_LLM_SUMMARY_MODEL || null,
                     reasoningEffort: LOCAL_LLM_REASONING_EFFORT || null,
+                    // P3：最大输出 token 下发后端（0/空 = 不设置，由服务器/模型默认）
+                    maxTokens: LOCAL_LLM_MAX_TOKENS || null,
                 }).catch(e => console.warn('同步 LLM 配置到后端失败:', e));
             }
         }
@@ -52580,14 +52612,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         });
 
-        // ── 模型下拉 + think 分段选择（v2，贴合主流 Agent 交互） ──
+        // ── 模型下拉 + think 分段选择（v3，对齐主流 Agent：auto/low/medium/high/max） ──
         const CHAT_THINK_LEVELS = [
-            { id: 'off', label: '关闭', effort: '', tip: '不设置思考参数，由模型默认行为决定' },
-            { id: 'standard', label: '标准', effort: 'medium', tip: '中等思考深度（OpenAI: medium / Anthropic: thinking 2048）' },
-            { id: 'deep', label: '深度', effort: 'high', tip: '深度思考（OpenAI: high / Anthropic: thinking 4096）' },
+            { id: 'auto', label: '自动', effort: '', tip: '不设置思考参数，由模型默认行为决定（不发送 reasoning_effort）' },
+            { id: 'low', label: '低', effort: 'low', tip: '快速、简洁的推理（OpenAI: low / Anthropic: thinking 2048）' },
+            { id: 'medium', label: '中', effort: 'medium', tip: '均衡思考（OpenAI: medium / Anthropic: thinking 4096）' },
+            { id: 'high', label: '高', effort: 'high', tip: '深度思考（OpenAI: high / Anthropic: thinking 8192）' },
+            { id: 'max', label: '最大', effort: 'xhigh', tip: '最强推理（xhigh；仅支持 xhigh 的模型生效，OpenAI 官方旧推理模型不支持时请用「高」）' },
         ];
         const CHAT_THINK_STORAGE_KEY = 'mdgo_chat_think_level';
-        let chatThinkLevel = 'off';
+        let chatThinkLevel = 'auto';
 
         /** 渲染模型下拉（label + 弹层列表） */
         function renderChatModelSelector() {
@@ -52678,7 +52712,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const badge = document.getElementById('chat-think-level-badge');
             const level = CHAT_THINK_LEVELS.find(l => l.id === chatThinkLevel) || CHAT_THINK_LEVELS[0];
             if (badge) {
-                badge.textContent = level.id === 'off' ? '' : level.label;
+                // 始终显示档位文字（含「关闭」）：纯文字按钮，避免 off 时按钮空白不可见
+                badge.textContent = level.label;
             }
             if (!popup) return;
             popup.innerHTML = `<div style="display:flex;flex-direction:column;gap:2px;">${CHAT_THINK_LEVELS.map(l => {
@@ -52726,10 +52761,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             syncLlmConfigToBackend();
         }
 
-        /** 初始化 think 档位（从 localStorage 恢复） */
+        /** 初始化 think 档位（从 localStorage 恢复；v2 旧档位迁移到 v3 体系） */
         function initChatThinkLevel() {
+            // v3 迁移：旧档位 off/standard/deep → auto/medium/high
+            const THINK_LEVEL_MIGRATION = { off: 'auto', standard: 'medium', deep: 'high' };
             const saved = safeLocalStorageGet(CHAT_THINK_STORAGE_KEY);
-            chatThinkLevel = CHAT_THINK_LEVELS.some(l => l.id === saved) ? saved : 'off';
+            const migrated = THINK_LEVEL_MIGRATION[saved] || saved;
+            chatThinkLevel = CHAT_THINK_LEVELS.some(l => l.id === migrated) ? migrated : 'auto';
             applyChatThinkLevel();
             renderChatThinkToggle();
             renderChatModelSelector();
@@ -53383,7 +53421,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const items = collectChatFileCandidates(_chatAtPicker.filter);
             _chatAtPicker.items = items;
             if (_chatAtPicker.selected >= items.length) _chatAtPicker.selected = 0;
-            if (hintEl) hintEl.textContent = _chatAtPicker.filter ? `筛选「${_chatAtPicker.filter}」` : '';
+            if (hintEl) hintEl.textContent = _chatAtPicker.filter ? `${_chatAtPicker.filter}` : '';
             if (!items.length) {
                 listEl.innerHTML = '<div style="padding:0.75rem;text-align:center;color:var(--t3,#888);font-size:12px;">没有匹配的文件</div>';
                 return;
@@ -53396,6 +53434,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     <div class="cfp-path">${escapeHtml(rel)} · ${escapeHtml(f.mtimeStr || '')}</div>
                 </div>`;
             }).join('');
+            // 键盘 ↑↓ 导航时选中项可能超出列表可视区（滚动容器 max-height 18rem）：
+            // 将 active 项滚动到可视区域（block:'nearest' 仅越界时滚动，鼠标悬停不受影响）
+            const activeEl = listEl.querySelector('.chat-file-picker-item.active');
+            if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
         }
 
         function chatFilePickerHover(index) {
@@ -53452,7 +53494,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         function handleChatKeydown(e) {
             // @ 文件选择器键盘操作优先
             if (_chatAtPicker.active) {
-                if (e.key === 'ArrowDown') { e.preventDefault(); _chatAtPicker.selected = Math.min(_chatAtPicker.selected + 1, _chatAtPicker.items.length - 1); renderChatFilePicker(); return; }
+                if (e.key === 'ArrowDown') { e.preventDefault(); _chatAtPicker.selected = Math.min(_chatAtPicker.selected + 1, Math.max(_chatAtPicker.items.length - 1, 0)); renderChatFilePicker(); return; }
                 if (e.key === 'ArrowUp') { e.preventDefault(); _chatAtPicker.selected = Math.max(_chatAtPicker.selected - 1, 0); renderChatFilePicker(); return; }
                 if (e.key === 'Enter') { e.preventDefault(); chatFilePickerSelect(_chatAtPicker.selected); return; }
                 if (e.key === 'Escape') { e.preventDefault(); closeChatFilePicker(); return; }
@@ -57708,6 +57750,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         let mcpJsonEditor = null;   // JSON 模式 Monaco 编辑器实例（退出编辑页时 dispose）
         let mcpToolSearchTerm = ''; // 详情视图工具清单搜索词
         let mcpPollTimer = null;    // 详情页定时轮询（状态/日志/工具数异步变化）
+        let mcpLogsExpanded = false; // 详情视图运行日志是否展开（默认关闭，点击后按需加载）
+        let mcpLogsData = [];        // 已加载的运行日志（展开期间随轮询刷新）
 
         // ── MCP 配置 JSON Schema（draft-07，.mcp.json 官方格式） ──
         const MCP_CONFIG_JSON_SCHEMA = {
@@ -57983,6 +58027,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         function mcpSelectServer(name) {
             if (!window.__mdgoMcp) return;
+            // 切换服务器：重置日志展开状态（新服务器默认关闭）
+            mcpLogsExpanded = false;
+            mcpLogsData = [];
             window.__mdgoMcp.mcpGet(mcpDirPath, name).then(server => {
                 mcpCurrent = server;
                 mcpRenderList();
@@ -58000,14 +58047,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const tools = server.tools || [];
             const envEntries = Object.entries(cfg.env || {}).map(([k, v]) =>
                 `<div class="skill-tool-row"><code>${escapeHtml(k)}</code> = ${escapeHtml(String(v))}</div>`).join('') || '<div style="color:var(--t3,#888);font-size:12px;">无环境变量</div>';
-            // 运行日志（最新在前；连接事件 / message 通知 / stderr）
-            const logs = server.logs || [];
-            const logItems = logs.slice().reverse().map(l =>
-                `<div style="display:flex;gap:6px;font-size:11px;line-height:1.6;font-family:ui-monospace,Consolas,monospace;">
-                    <span style="color:${mcpLogLevelColor(l.level)};flex-shrink:0;">[${escapeHtml(l.level || 'info')}]</span>
-                    <span style="color:var(--t3,#888);flex-shrink:0;">${mcpFormatLogTime(l.ts)}</span>
-                    <span style="word-break:break-all;">${escapeHtml(l.message || '')}</span>
-                </div>`).join('') || '<div style="color:var(--t3,#888);font-size:12px;">暂无日志</div>';
+            // 运行日志：默认关闭（不随详情返回），点击「加载运行日志」后经 mcp_logs 按需拉取
+            const logsExpanded = mcpLogsExpanded;
             view.innerHTML = `
                 <div class="skill-detail-header">
                     <div style="flex:1;min-width:0;">
@@ -58034,9 +58075,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     <div id="mcp-tools-pane">${mcpBuildToolsPane(tools)}</div>
                     <div class="skill-detail-title" style="font-weight:600;margin:1rem 0 6px;">环境变量</div>
                     ${envEntries}
-                    <div class="skill-detail-title" style="font-weight:600;margin:1rem 0 6px;">运行日志（${logs.length}）</div>
-                    <div style="display:flex;flex-direction:column;gap:2px;max-height:16rem;overflow:auto;">${logItems}</div>
+                    <div class="skill-detail-title" style="font-weight:600;margin:1rem 0 6px;">运行日志</div>
+                    <button class="btn btn-sm" id="mcp-logs-toggle" onclick="mcpToggleLogs()">${logsExpanded ? '收起日志' : '加载运行日志'}</button>
+                    <div id="mcp-logs-pane" style="${logsExpanded ? '' : 'display:none;'}">${logsExpanded ? mcpRenderLogsInner() : ''}</div>
                 </div>`;
+            // 日志已展开时保持数据新鲜（按需拉取，不阻塞详情渲染）
+            if (logsExpanded) mcpLoadLogs();
         }
 
         /** 构建「工具清单」面板（搜索框 + 工具行 + schema 折叠），搜索输入时仅重建本区域 */
@@ -58097,6 +58141,54 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
         }
 
+        // ── 运行日志按需加载（默认关闭：不随详情返回，点击后经 mcp_logs 拉取） ──
+
+        /** 切换日志展开状态：展开时拉取，收起时清空数据（轻交互，数据获取在后端） */
+        async function mcpToggleLogs() {
+            if (mcpLogsExpanded) {
+                mcpLogsExpanded = false;
+                mcpLogsData = [];
+                const pane = document.getElementById('mcp-logs-pane');
+                const btn = document.getElementById('mcp-logs-toggle');
+                if (pane) pane.style.display = 'none';
+                if (btn) btn.textContent = '加载运行日志';
+                return;
+            }
+            mcpLogsExpanded = true;
+            const pane = document.getElementById('mcp-logs-pane');
+            const btn = document.getElementById('mcp-logs-toggle');
+            if (pane) { pane.style.display = 'block'; pane.innerHTML = '<div style="color:var(--t3,#888);font-size:12px;">加载中…</div>'; }
+            if (btn) btn.textContent = '收起日志';
+            await mcpLoadLogs();
+        }
+
+        /** 拉取运行日志（展开期间由详情轮询/重建调用刷新；失败时展示错误行） */
+        async function mcpLoadLogs() {
+            if (!mcpCurrent || !window.__mdgoMcp) return;
+            try {
+                mcpLogsData = (await window.__mdgoMcp.mcpLogs(mcpDirPath, mcpCurrent.name)) || [];
+            } catch (e) {
+                mcpLogsData = [{
+                    level: 'error',
+                    message: '加载运行日志失败: ' + (e && e.message ? e.message : e),
+                    ts: Math.floor(Date.now() / 1000),
+                }];
+            }
+            const pane = document.getElementById('mcp-logs-pane');
+            if (pane) pane.innerHTML = mcpRenderLogsInner();
+        }
+
+        /** 渲染日志列表 HTML（最新在前；连接事件 / message 通知 / stderr） */
+        function mcpRenderLogsInner() {
+            const items = (mcpLogsData || []).slice().reverse().map(l =>
+                `<div style="display:flex;gap:6px;font-size:11px;line-height:1.6;font-family:ui-monospace,Consolas,monospace;">
+                    <span style="color:${mcpLogLevelColor(l.level)};flex-shrink:0;">[${escapeHtml(l.level || 'info')}]</span>
+                    <span style="color:var(--t3,#888);flex-shrink:0;">${mcpFormatLogTime(l.ts)}</span>
+                    <span style="word-break:break-all;">${escapeHtml(l.message || '')}</span>
+                </div>`).join('') || '<div class="center-div" style="color:var(--t3,#888);font-size:0.75rem;">暂无日志</div>';
+            return `<div style="display:flex;flex-direction:column;gap:2px;max-height:16rem;overflow:auto;">${items}</div>`;
+        }
+
         /** 新增/编辑服务器模态 */
         /** 打开新增/编辑服务器（右侧表单，仿 skill 编辑视图） */
         function mcpOpenEdit(name) {
@@ -58121,8 +58213,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             mcpEditMode = 'form';
             mcpEditServer = server || null;
             const cfg = (server && server.config) || {};
-            const name = server ? server.name : 'everything';
-            const enabled = cfg.enabled !== false;
+            const name = server ? server.name : '';
+            // 新增服务器默认不启用（保存后不自动连接，需用户手动连接）；编辑已有服务器保留原配置
+            const enabled = server ? cfg.enabled !== false : false;
             const transport = (cfg.url && cfg.url.trim()) ? 'http' : 'stdio';
             view.innerHTML = `
                 <div class="skill-edit-wrap">
@@ -58490,6 +58583,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 await window.__mdgoMcp.mcpDelete(mcpDirPath, name);
                 showNotification('✓ 已删除', 'success');
                 mcpCurrent = null;
+                mcpLogsExpanded = false;
+                mcpLogsData = [];
                 const view = document.getElementById('mcp-detail-view');
                 if (view) view.style.display = 'none';
             } catch (e) {

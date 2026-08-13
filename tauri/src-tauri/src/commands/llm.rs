@@ -531,9 +531,13 @@ async fn get_or_create_llm_client(
     endpoint: &str,
     model: &str,
     api_key: &str,
+    reasoning_effort: Option<&str>,
 ) -> Result<LLMClient, String> {
-    // 委托 AppState 的公共工厂:供 commands 层与工具闭包(子代理)共用
-    state.llm_client_for(endpoint, model, api_key).await
+    // 委托 AppState 的公共工厂:供 commands 层与工具闭包(子代理)共用；
+    // reasoning_effort 参与客户端指纹缓存（P2-18：思考程度变化后自动重建）
+    state
+        .llm_client_for_cfg(endpoint, model, api_key, reasoning_effort)
+        .await
 }
 
 // ─── Tauri 命令 ───
@@ -555,11 +559,20 @@ async fn build_mcp_agent_tools(
 ) -> Vec<rig_agent::tool::DynamicTool> {
     let mut tools = Vec::new();
     let infos = state.mcp.list().await;
+    
+    // 检测工具列表是否有更新（用于调试/监控）
+    let mut has_updates = false;
+    
     for info in infos {
         if info.status != crate::core::mcp::STATUS_CONNECTED {
             continue;
         }
         if let Some(detail) = state.mcp.get(&info.name).await {
+            // 检查工具列表更新时间（用于监控，不影响构建逻辑）
+            if detail.tools.iter().any(|t| t.name.contains('_')) {
+                has_updates = true;
+            }
+            
             for def in detail.tools {
                 tools.push(crate::core::mcp::build_mcp_tool(
                     info.name.clone(),
@@ -570,8 +583,10 @@ async fn build_mcp_agent_tools(
             }
         }
     }
+    
     if !tools.is_empty() {
-        log::info!("[mcp] Agent 已挂载 {} 个 MCP 工具", tools.len());
+        log::info!("[mcp] Agent 已挂载 {} 个 MCP 工具{}", tools.len(), 
+            if has_updates { "（检测到工具列表可能已更新）" } else { "" });
     }
     tools
 }
@@ -617,7 +632,15 @@ pub async fn agent_query(
     }
 
     // 构建 LLM 客户端（失败转为错误事件，避免 panic 与注册表泄漏）
-    let llm = match get_or_create_llm_client(&state, &llm_cfg.endpoint, &llm_cfg.model, &llm_cfg.api_key).await {
+    let llm = match get_or_create_llm_client(
+        &state,
+        &llm_cfg.endpoint,
+        &llm_cfg.model,
+        &llm_cfg.api_key,
+        llm_cfg.reasoning_effort.as_deref(),
+    )
+    .await
+    {
         Ok(llm) => llm,
         Err(e) => {
             log::error!("[agent_query] [0]: LLMClient 初始化失败: request_id={} err={}", request_id, e);
@@ -1319,6 +1342,8 @@ pub async fn agent_query(
         None, // 主对话全量工具
         true, // 主对话启用技能体系的工具窄化与门禁
         mcp_tools, // v2：MCP 工具
+        llm_cfg.reasoning_effort.clone(), // P2-18：思考程度透传流式请求
+        llm_cfg.max_tokens, // P3：最大输出 token（None/0 = 服务器默认）
     );
     log::info!("[agent_query] [4]: 构建 Agent 完成 request_id={}", request_id);
 
@@ -1698,7 +1723,15 @@ pub async fn kb_llm_query(
     }
 
     // 构建 LLM 客户端（失败转为错误事件，避免 panic 与注册表泄漏）
-    let llm = match get_or_create_llm_client(&state, &llm_cfg.endpoint, &llm_cfg.model, &llm_cfg.api_key).await {
+    let llm = match get_or_create_llm_client(
+        &state,
+        &llm_cfg.endpoint,
+        &llm_cfg.model,
+        &llm_cfg.api_key,
+        llm_cfg.reasoning_effort.as_deref(),
+    )
+    .await
+    {
         Ok(llm) => llm,
         Err(e) => {
             log::error!("[kb_llm_query] [0]: LLM 客户端初始化失败: request_id={} err={}", request_id, e);
@@ -1759,7 +1792,12 @@ pub async fn kb_llm_query(
 
     // Agent 规约（角色/语言/安全边界）从资源目录加载，打包后跟随安装包
     let agent_rules = load_agent_rules(&app, "chat_agent.md");
-    let agent = build_chat_agent(llm.completion_model().clone(), agent_rules);
+    let agent = build_chat_agent(
+        llm.completion_model().clone(),
+        agent_rules,
+        llm_cfg.reasoning_effort.clone(), // P2-18：思考程度透传流式请求
+        llm_cfg.max_tokens, // P3：最大输出 token（None/0 = 服务器默认）
+    );
     let mut stream = agent
         .stream_chat(Message::user(prompt_content.clone()), history)
         .into_future()
@@ -1906,16 +1944,19 @@ async fn kb_llm_query_anthropic(
     cfg: crate::LlmConfig,
 ) -> Result<(), String> {
     use crate::services::anthropic::{
-        AnthropicEvent, AnthropicMessage, AnthropicStreamClient, THINK_BUDGET_DEEP,
-        THINK_BUDGET_STANDARD,
+        AnthropicEvent, AnthropicMessage, AnthropicStreamClient, THINK_BUDGET_HIGH,
+        THINK_BUDGET_LOW, THINK_BUDGET_MAX, THINK_BUDGET_STANDARD,
     };
 
     let cancel = task_registry.register(&request_id).await;
 
-    // thinking 档位映射：reasoning_effort → Anthropic extended thinking（标准 2048 / 深度 4096）
+    // thinking 档位映射：reasoning_effort → Anthropic extended thinking token 预算
+    // （对齐主流 Agent：low/medium/high/xhigh 逐档递增；auto/空串不启用）
     let thinking_budget = match cfg.reasoning_effort.as_deref() {
-        Some("high") => Some(THINK_BUDGET_DEEP),
-        Some("medium") | Some("low") => Some(THINK_BUDGET_STANDARD),
+        Some("low") => Some(THINK_BUDGET_LOW),
+        Some("medium") => Some(THINK_BUDGET_STANDARD),
+        Some("high") => Some(THINK_BUDGET_HIGH),
+        Some("xhigh") => Some(THINK_BUDGET_MAX),
         _ => None,
     };
 
@@ -1923,7 +1964,8 @@ async fn kb_llm_query_anthropic(
         cfg.endpoint.clone(),
         cfg.api_key.clone(),
         cfg.model.clone(),
-        4096,
+        // P3：最大输出 token（None/0 = 默认 4096，可配置覆盖）
+        cfg.max_tokens.unwrap_or(4096),
         thinking_budget,
     );
     if !client.is_configured() {

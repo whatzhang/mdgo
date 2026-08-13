@@ -18,9 +18,12 @@ const ANTHROPIC_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 /// 默认最大输出 tokens（前端未配置时的兜底）。
 const ANTHROPIC_DEFAULT_MAX_TOKENS: u32 = 4096;
 
-/// Anthropic thinking 档位 → budget_tokens（think 三段式：标准 / 深度）。
-pub const THINK_BUDGET_STANDARD: u32 = 2048;
-pub const THINK_BUDGET_DEEP: u32 = 4096;
+/// Anthropic thinking 档位 → budget_tokens（逐档递增，对齐主流 Agent 的 token 预算映射；
+/// Anthropic 官方建议范围 1024~32000）。
+pub const THINK_BUDGET_LOW: u32 = 2048;
+pub const THINK_BUDGET_STANDARD: u32 = 4096;
+pub const THINK_BUDGET_HIGH: u32 = 8192;
+pub const THINK_BUDGET_MAX: u32 = 16384;
 
 /// 对话消息（与 services::llm::ChatMessage 同构，避免跨模块依赖）。
 #[derive(Debug, Clone, Serialize, Deserialize)]

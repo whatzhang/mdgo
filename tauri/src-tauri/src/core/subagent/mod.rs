@@ -189,6 +189,8 @@ impl SubagentRunner {
             Some(&effective_whitelist),
             false, // 子代理不窄化：注册表已白名单过滤，模型可见全部白名单工具
             Vec::new(), // v2：子代理受限场景不挂载 MCP 工具
+            None, // P2-18：子代理不注入思考程度（受限只读场景，保持默认行为）
+            None, // P3：子代理不显式设置最大输出 token（跟随服务器/模型默认）
         );
 
         log::info!(

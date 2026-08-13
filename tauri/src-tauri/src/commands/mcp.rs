@@ -38,6 +38,21 @@ pub async fn mcp_get(
         .ok_or_else(|| format!("服务器不存在: {}", name))
 }
 
+/// 运行日志（按需加载：详情页不随 mcp_get 返回，用户点击后单独拉取）。
+#[tauri::command]
+pub async fn mcp_logs(
+    state: State<'_, AppState>,
+    dir_path: String,
+    name: String,
+) -> Result<Vec<crate::core::mcp::McpLogEntry>, String> {
+    state.mcp.set_root(&dir_path).await;
+    state
+        .mcp
+        .logs(&name)
+        .await
+        .ok_or_else(|| format!("服务器不存在: {}", name))
+}
+
 /// 新增/更新服务器（写 .mdgo/mcp.json + 重连）。
 #[tauri::command]
 pub async fn mcp_upsert(

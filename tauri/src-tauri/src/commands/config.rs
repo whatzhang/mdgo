@@ -76,14 +76,20 @@ pub async fn kb_update_llm_config(
     planner_model: Option<String>,
     // 摘要模型（P0-6，可选；空串 = 使用主模型）
     summary_model: Option<String>,
-    // 推理努力等级（P2-18，可选；low/medium/high，空串 = 不设置）
+    // 推理努力等级（P2-18，可选；low/medium/high/xhigh，空串 = 不设置，由模型默认）
     reasoning_effort: Option<String>,
+    // 最大输出 token（P3，可选；0/空 = 不设置，由服务器/模型默认）
+    max_tokens: Option<u32>,
 ) -> Result<(), String> {
     // 归一化：空串视为 None（前端可能传空字符串）
     let normalize = |s: Option<String>| s.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
     let planner_model = normalize(planner_model);
     let summary_model = normalize(summary_model);
     let reasoning_effort = normalize(reasoning_effort);
+    // max_tokens：0/None 视为 None（不发送，由服务器/模型默认）；超上限 clamp 到合法区间
+    let max_tokens = max_tokens
+        .filter(|v| *v > 0)
+        .map(|v| v.clamp(1, crate::core::agent::limits::MAX_OUTPUT_TOKENS));
     let protocol = normalize(protocol).unwrap_or_else(|| "openai".to_string());
     let protocol = if protocol == "anthropic" { "anthropic" } else { "openai" }.to_string();
 
@@ -97,6 +103,7 @@ pub async fn kb_update_llm_config(
         cfg.planner_model = planner_model.clone();
         cfg.summary_model = summary_model.clone();
         cfg.reasoning_effort = reasoning_effort.clone();
+        cfg.max_tokens = max_tokens;
     }
 
     // 2. 持久化到 .mdgo/setting.json
@@ -127,6 +134,10 @@ pub async fn kb_update_llm_config(
             Some(v) => obj.insert("localLlmReasoningEffort".into(), Value::String(v.clone())),
             None => obj.remove("localLlmReasoningEffort"),
         };
+        match max_tokens {
+            Some(v) => obj.insert("localLlmMaxTokens".into(), Value::Number((v as u64).into())),
+            None => obj.remove("localLlmMaxTokens"),
+        };
     }
 
     let json_str = serde_json::to_string_pretty(&config)
@@ -149,7 +160,18 @@ pub async fn kb_update_llm_config(
 
 /// 从全量设置对象中提取 LLM 段（camelCase 键，空串归一为 None）。
 #[allow(clippy::type_complexity)]
-fn extract_llm_fields(settings: &serde_json::Value) -> (String, String, String, String, Option<String>, Option<String>, Option<String>) {
+fn extract_llm_fields(
+    settings: &serde_json::Value,
+) -> (
+    String,
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<u32>,
+) {
     let get = |k: &str| {
         settings
             .get(k)
@@ -161,6 +183,14 @@ fn extract_llm_fields(settings: &serde_json::Value) -> (String, String, String, 
     let norm = |s: String| if s.is_empty() { None } else { Some(s) };
     let protocol = get("localLlmProtocol");
     let protocol = if protocol == "anthropic" { "anthropic" } else { "openai" }.to_string();
+    // 最大输出 token：0/缺失视为 None（不发送，由服务器/模型默认）；
+    // 超过 u32 范围视为 None（不截断）；合法值 clamp 到上限防异常超大值
+    let max_tokens = settings
+        .get("localLlmMaxTokens")
+        .and_then(|v| v.as_u64())
+        .and_then(|v| u32::try_from(v).ok())
+        .filter(|v| *v > 0)
+        .map(|v| v.clamp(1, crate::core::agent::limits::MAX_OUTPUT_TOKENS));
     (
         get("localLlmEndpoint"),
         get("localLlmModel"),
@@ -169,6 +199,7 @@ fn extract_llm_fields(settings: &serde_json::Value) -> (String, String, String, 
         norm(get("localLlmPlannerModel")),
         norm(get("localLlmSummaryModel")),
         norm(get("localLlmReasoningEffort")),
+        max_tokens,
     )
 }
 
@@ -197,7 +228,8 @@ pub async fn kb_save_setting(
         .map_err(|e| format!("写入配置文件失败: {}", e))?;
 
     // 2. 提取 LLM 段同步内存（前端可能只保存非 LLM 段时 settings 缺 LLM 键 → 空，不覆盖）
-    let (endpoint, model, api_key, protocol, planner, summary, effort) = extract_llm_fields(&settings);
+    let (endpoint, model, api_key, protocol, planner, summary, effort, max_tokens) =
+        extract_llm_fields(&settings);
     if !endpoint.is_empty() || !model.is_empty() {
         let mut cfg = state.llm_config.write().unwrap_or_else(|e| e.into_inner());
         cfg.endpoint = endpoint;
@@ -207,6 +239,7 @@ pub async fn kb_save_setting(
         cfg.planner_model = planner;
         cfg.summary_model = summary;
         cfg.reasoning_effort = effort;
+        cfg.max_tokens = max_tokens;
     }
 
     log::info!("[config] 全量设置已保存: {}", setting_path.display());

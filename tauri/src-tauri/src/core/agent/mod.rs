@@ -408,6 +408,36 @@ impl AgentHook for SkillInstructionHook {
     }
 }
 
+/// 注入 `reasoning_effort` 到每次模型请求（P2-18 流式链路补齐）。
+///
+/// OpenAI 兼容端点把 `reasoning_effort` 作为 Chat Completions 顶层字段：
+/// 经 `RequestPatch::additional_params` 注入后，由 provider 的
+/// `#[serde(flatten)]` 展开到请求体顶层（rig 0.41 已验证）。
+#[derive(Clone)]
+pub struct ReasoningEffortHook {
+    effort: String,
+}
+
+impl ReasoningEffortHook {
+    pub fn new(effort: String) -> Self {
+        Self { effort }
+    }
+}
+
+impl AgentHook for ReasoningEffortHook {
+    async fn on_completion_call(
+        &self,
+        _ctx: &HookContext,
+        _event: CompletionCall<'_>,
+    ) -> CompletionCallAction {
+        CompletionCallAction::patch(
+            RequestPatch::new().additional_params(serde_json::json!({
+                "reasoning_effort": self.effort,
+            })),
+        )
+    }
+}
+
 /// kb_search 工具允许的最大片段数（防止模型传入超大 top_k 触发全量检索/重排）
 // MAX_TOP_K 定义已迁移至 limits.rs（pub use 再导出）
 
@@ -814,6 +844,11 @@ pub fn build_rag_agent(
     narrow_tools: bool,
     // v2：MCP 工具（已连接服务器注册的 DynamicTool，命名 mcp:<server>:<tool>）
     mcp_tools: Vec<DynamicTool>,
+    // P2-18：思考程度（OpenAI 兼容顶层 reasoning_effort 字段；None/空串不注入）
+    reasoning_effort: Option<String>,
+    // P3：最大输出 token（None/0 = 不设置，由服务器/模型默认；>0 显式发送，
+    // 避免本地模型默认输出上限过小导致回答截断）
+    max_tokens: Option<u32>,
 ) -> Agent<openai::CompletionModel> {
     let skill_state = search_config.skill_state.clone();
 
@@ -894,6 +929,18 @@ pub fn build_rag_agent(
     // 审批门(可选)：先技能白名单、后审批，避免对「本就不该调用的工具」弹窗打扰用户。
     if let Some(gate) = approval_gate {
         builder = builder.add_hook(ApprovalGateHook::new(gate));
+    }
+    // P2-18：思考程度透传（OpenAI 兼容顶层字段；effort 为空时不注入）
+    if let Some(effort) = reasoning_effort {
+        if !effort.trim().is_empty() {
+            builder = builder.add_hook(ReasoningEffortHook::new(effort));
+        }
+    }
+    // P3：最大输出 token（>0 时显式发送，覆盖服务器/模型默认输出上限）
+    if let Some(v) = max_tokens {
+        if v > 0 {
+            builder = builder.max_tokens(v as u64);
+        }
     }
     builder.build()
 }
@@ -1026,11 +1073,25 @@ fn create_tool_registry(only: Option<&HashSet<String>>) -> ToolRegistry {
 pub fn build_chat_agent(
     model: openai::CompletionModel,
     base: String,
+    reasoning_effort: Option<String>,
+    max_tokens: Option<u32>,
 ) -> Agent<openai::CompletionModel> {
     // Chat 模式无 L1 技能目录注入，角色与语言约束来自调用方传入的规约
     // （resources/agent/chat_agent.md，经 load_agent_rules 从资源目录加载）
-    AgentBuilder::new(model)
+    let mut builder = AgentBuilder::new(model)
         .preamble(&base)
-        .add_hook(LlmTraceHook::new(None))
-        .build()
+        .add_hook(LlmTraceHook::new(None));
+    // P2-18：思考程度透传（effort 为空时不注入）
+    if let Some(effort) = reasoning_effort {
+        if !effort.trim().is_empty() {
+            builder = builder.add_hook(ReasoningEffortHook::new(effort));
+        }
+    }
+    // P3：最大输出 token（>0 时显式发送，覆盖服务器/模型默认输出上限）
+    if let Some(v) = max_tokens {
+        if v > 0 {
+            builder = builder.max_tokens(v as u64);
+        }
+    }
+    builder.build()
 }

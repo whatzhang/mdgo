@@ -18,8 +18,10 @@
     const mcpApi = {
         /** 服务器列表（自动加载目录配置并连接启用的服务器） */
         mcpList: (dirPath) => invoke('mcp_list', { dirPath }),
-        /** 服务器详情（配置 + 工具清单） */
+        /** 服务器详情（配置 + 工具清单；不含运行日志） */
         mcpGet: (dirPath, name) => invoke('mcp_get', { dirPath, name }),
+        /** 运行日志（按需加载：详情页不随 mcp_get 返回，点击后单独拉取） */
+        mcpLogs: (dirPath, name) => invoke('mcp_logs', { dirPath, name }),
         /** 新增/更新服务器（写 .mdgo/mcp.json + 重连） */
         mcpUpsert: (dirPath, name, config) => invoke('mcp_upsert', { dirPath, name, config }),
         /** 删除服务器 */

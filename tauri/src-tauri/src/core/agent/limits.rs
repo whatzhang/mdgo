@@ -87,6 +87,12 @@ pub const WEBFETCH_MAX_REDIRECTS: u32 = 5;
 /// pomodoro 时长上限（分钟）
 pub const POMODORO_MINUTES_MAX: u32 = 180;
 
+// ── 输出 token ──
+
+/// 最大输出 token 合法上限（防御性 clamp：防异常配置/恶意超大值直传服务端；
+/// 主流推理模型输出上限一般不超过 128K，512K 已覆盖所有已知模型）
+pub const MAX_OUTPUT_TOKENS: u32 = 512_000;
+
 // ── MCP ──
 
 /// MCP 工具单次输出字符上限（content/structuredContent 拼接后截断，防撑爆模型上下文）
