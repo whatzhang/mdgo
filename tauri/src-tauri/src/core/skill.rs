@@ -29,7 +29,7 @@ use crate::core::db::schema;
 /// 本地打开 index.html（无 Tauri）时使用前端内置 fallback 副本。
 pub const ALLOWED_TOOLS: &[&str] = &[
     "kb_search", "code_lookup", "read", "edit", "multi_edit", "delete", "ls", "glob", "grep", "write", "git_status", "git_diff", "git_commit", "git_checkout", "webfetch",
-    "activate_skill", "deactivate_skill", "pomodoro",
+    "activate_skill", "deactivate_skill", "pomodoro", "raw-photography",
 ];
 
 /// 工具展示名（与前端 fallback 一致；Tauri 模式下前端以此清单为准）
@@ -51,6 +51,7 @@ fn tool_label(key: &str) -> String {
         "git_checkout" => "Git 恢复文件".into(),
         "webfetch" => "网页抓取".into(),
         "pomodoro" => "番茄钟".into(),
+        "raw-photography" => "RAW/ARW 照片解析".into(),
         "activate_skill" => "激活技能".into(),
         "deactivate_skill" => "停用技能".into(),
         _ => key.to_string(),
@@ -134,6 +135,8 @@ struct SkillFrontmatter {
     priority: u32,
     #[serde(default)]
     tools: Vec<String>,
+    #[serde(default)]
+    triggers: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     top_k: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -171,6 +174,10 @@ pub struct Skill {
     pub description: String,
     pub priority: u32,
     pub tools: Vec<String>,
+    /// 触发关键词（意图自动匹配激活用）：用户消息命中任一关键词即自动激活
+    /// 本技能（请求级 Turn 生命周期，正文注入 + 工具解锁），作为 LLM 自主
+    /// activate_skill 决策的可靠兜底。空列表 = 不参与自动匹配。
+    pub triggers: Vec<String>,
     pub top_k: Option<u32>,
     pub min_score: Option<f32>,
     pub max_docs: Option<usize>,
@@ -193,6 +200,7 @@ pub struct SkillInput {
     pub description: String,
     pub priority: Option<u32>,
     pub tools: Option<Vec<String>>,
+    pub triggers: Option<Vec<String>>,
     pub top_k: Option<u32>,
     pub min_score: Option<f32>,
     pub max_docs: Option<usize>,
@@ -213,6 +221,13 @@ impl SkillInput {
                 .iter()
                 .filter(|t| ALLOWED_TOOLS.contains(&t.as_str()))
                 .cloned()
+                .collect();
+        }
+        if let Some(v) = &self.triggers {
+            skill.triggers = v
+                .iter()
+                .map(|t| t.trim().to_string())
+                .filter(|t| !t.is_empty())
                 .collect();
         }
         if let Some(v) = self.top_k { skill.top_k = Some(v); }
@@ -240,6 +255,7 @@ impl SkillInput {
                 .into_iter()
                 .filter(|t| ALLOWED_TOOLS.contains(&t.as_str()))
                 .collect(),
+            triggers: self.triggers.clone().unwrap_or_default(),
             top_k: self.top_k,
             min_score: self.min_score,
             max_docs: self.max_docs,
@@ -312,6 +328,7 @@ pub fn parse_skill_md(
         description: fm.description,
         priority: fm.priority,
         tools: fm.tools,
+        triggers: fm.triggers,
         top_k: fm.top_k,
         min_score: fm.min_score,
         max_docs: fm.max_docs,
@@ -424,6 +441,7 @@ pub fn to_skill_md(skill: &Skill) -> Result<String, String> {
         description: skill.description.clone(),
         priority: skill.priority,
         tools: skill.tools.clone(),
+        triggers: skill.triggers.clone(),
         top_k: skill.top_k,
         min_score: skill.min_score,
         max_docs: skill.max_docs,

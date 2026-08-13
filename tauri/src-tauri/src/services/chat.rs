@@ -858,6 +858,99 @@ impl ChatStore {
         Ok(())
     }
 
+    /// 删除指定消息（本轮对话删除）：删除 chat_messages 与引用来源，
+    /// 回退会话统计（message_count / token_usage），并重置增量索引游标
+    /// （下次 chat_session_index_current 对该会话全量重建，保证索引一致）。
+    pub fn delete_messages(&self, session_id: &str, ids: &[String]) -> Result<(), String> {
+        let _w = WriteTimer("delete_messages", Instant::now());
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let now = unix_timestamp_now();
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        // 写事务统一 IMMEDIATE（WAL 下避免 DEFERRED 读快照升级失败的 SQLITE_BUSY_SNAPSHOT）
+        conn.execute_batch("BEGIN IMMEDIATE TRANSACTION")
+            .map_err(|e| format!("开启事务失败: {}", e))?;
+
+        let placeholders: Vec<&str> = ids.iter().map(|_| "?").collect();
+        let ph = placeholders.join(",");
+        // 参数构造 helper：prefix 为固定前置参数（如 session_id），再拼接 ids；
+        // 返回 owned Vec（Box<dyn ToSql> 实现 ToSql），由 params_from_iter 消费。
+        let build_params = |prefix: &[&str]| {
+            let mut params: Vec<Box<dyn rusqlite::ToSql>> = prefix.iter().map(|p| Box::new(p.to_string()) as Box<dyn rusqlite::ToSql>).collect();
+            for id in ids {
+                params.push(Box::new(id.clone()));
+            }
+            params
+        };
+
+        // 1. 被删消息的 token 总和（用于回退 token_usage；重复 id 由 IN 去重自然处理）
+        let removed_tokens: i64 = conn
+            .query_row(
+                &format!(
+                    "SELECT COALESCE(SUM(token_count), 0) FROM chat_messages WHERE session_id = ?1 AND id IN ({})",
+                    ph
+                ),
+                rusqlite::params_from_iter(build_params(&[session_id])),
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("查询被删消息 token 失败: {}", e))?;
+
+        // 2. 删除消息的引用来源（无需 session 过滤，message_id 全局唯一）
+        if let Err(e) = conn.execute(
+            &format!("DELETE FROM chat_message_sources WHERE message_id IN ({})", ph),
+            rusqlite::params_from_iter(ids.iter().map(|s| s.as_str())),
+        ) {
+            conn.execute_batch("ROLLBACK").ok();
+            return Err(format!("删除引用来源失败: {}", e));
+        }
+
+        // 3. 删除消息
+        let deleted: usize = conn
+            .execute(
+                &format!(
+                    "DELETE FROM chat_messages WHERE session_id = ?1 AND id IN ({})",
+                    ph
+                ),
+                rusqlite::params_from_iter(build_params(&[session_id])),
+            )
+            .map_err(|e| {
+                conn.execute_batch("ROLLBACK").ok();
+                format!("删除消息失败: {}", e)
+            })?;
+
+        if deleted == 0 {
+            conn.execute_batch("ROLLBACK").ok();
+            return Ok(());
+        }
+
+        // 4. 回退会话统计（删除数含重复 id 时按实际删除行数为准）
+        if let Err(e) = conn.execute(
+            "UPDATE chat_sessions SET message_count = MAX(0, message_count - ?1), token_usage = MAX(0, token_usage - ?2), updated_at = ?3 WHERE id = ?4",
+            rusqlite::params![deleted as i64, removed_tokens.max(0), now, session_id],
+        ) {
+            conn.execute_batch("ROLLBACK").ok();
+            return Err(format!("回退会话统计失败: {}", e));
+        }
+
+        // 5. 重置增量索引游标（删除后全量重建，避免索引计数与实际消息数失配）
+        let indexed_key = format!("indexed_msg_count_{}", session_id);
+        if let Err(e) = conn.execute(
+            "DELETE FROM chat_config WHERE key = ?1",
+            rusqlite::params![indexed_key],
+        ) {
+            conn.execute_batch("ROLLBACK").ok();
+            return Err(format!("重置已索引入数失败: {}", e));
+        }
+
+        conn.execute_batch("COMMIT")
+            .map_err(|e| format!("提交事务失败: {}", e))?;
+
+        log::info!("[chat_store] 删除会话 {} 的 {} 条消息", session_id, deleted);
+        Ok(())
+    }
+
     /// 保存消息的引用来源（Agent 模式）
     ///
     /// 先删除该 message_id 下已有的 sources，再插入新的，保证幂等。

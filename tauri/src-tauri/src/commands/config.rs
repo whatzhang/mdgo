@@ -152,7 +152,7 @@ pub async fn kb_update_llm_config(
     std::fs::write(&setting_path, &json_str)
         .map_err(|e| format!("写入配置文件失败: {}", e))?;
 
-    log::info!("[config] LLM 配置已更新: endpoint={}, model={}", setting_path.display(), &model);
+    log::info!("[config] LLM 配置已更新: path={}", setting_path.display());
     Ok(())
 }
 

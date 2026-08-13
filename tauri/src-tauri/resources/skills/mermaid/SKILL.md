@@ -5,6 +5,7 @@ name: Mermaid 图表
 description: 当用户需要生成 Mermaid 图表代码（流程图、时序图、类图、状态图、ER 图、甘特图、思维导图等 30 种类型）并在 Markdown 中嵌入图表时触发。能够自动选择合适的 Mermaid 图表类型，并生成可直接渲染的 Mermaid 代码。
 priority: 50
 tools: [read]
+triggers: [Mermaid, 图表, Mermaid图表生成]
 enabled: true
 version: 2
 created_at: 1754200000000

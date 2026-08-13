@@ -2679,6 +2679,37 @@ pub fn build_pomodoro_tool(cfg: KbSearchConfig) -> DynamicTool {
     )
 }
 
+/// 构建 raw 工具：解析 RAW 照片文件（.arw/.cr2/.nef/.dng 等）的元数据。
+///
+/// 动作与参数对齐 `resources/skills/raw/SKILL.md`：
+/// - `parse`：解析 RAW 文件元数据，返回三大类 Markdown（相机·镜头 / 拍摄参数 / 图像信息），
+///   `path` 为知识库内相对路径
+///
+/// （`mdgo.core.raw.parse`），经 FrontendBridge 回传 Markdown 文本。
+pub fn build_raw_tool(cfg: KbSearchConfig) -> DynamicTool {
+    build_bridge_tool(
+        cfg,
+        "raw-photography",
+        "解析 RAW 照片文件（.arw/.cr2/.nef/.dng/.orf 等）的元数据并输出为 Markdown。动作：parse（path 为知识库内 RAW 文件的相对路径，返回相机·镜头、拍摄参数、图像信息）。当用户要求查看 RAW 照片信息、解析相机拍摄参数时调用。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["parse"],
+                    "description": "要执行的动作：parse 解析元数据"
+                },
+                "path": {
+                    "type": "string",
+                    "description": "RAW 文件在知识库中的相对路径（如 note/photo/IMG_0001.arw）"
+                }
+            },
+            "required": ["action", "path"]
+        }),
+        "parse",
+    )
+}
+
 #[cfg(test)]
 mod grep_tests {
     use super::*;

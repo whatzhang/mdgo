@@ -349,6 +349,7 @@ mod tests {
             description: String::new(),
             priority: 50,
             tools: tools.iter().map(|t| t.to_string()).collect(),
+            triggers: Vec::new(),
             top_k: None,
             min_score: None,
             max_docs: None,

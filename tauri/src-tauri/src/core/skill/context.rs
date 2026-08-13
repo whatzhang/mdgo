@@ -199,6 +199,28 @@ pub fn resolve_preactivated(
     }
 
     if selected_skills.is_empty() {
+        // 3. 意图匹配：用户消息命中技能 triggers 关键词 → 自动激活（LLM 决策前的可靠兜底）。
+        //    恢复旧 matcher 的关键词匹配能力，但由 SKILL.md frontmatter 的 triggers 字段
+        //    显式声明，比废弃前的全量描述匹配更可控、可扩展（50+ 技能 = 每个技能配关键词）。
+        if let Some((skill, hits)) = resolve_intent_match(query, registry) {
+            log::info!(
+                "[skill_context] 意图匹配自动激活: {}:{} hits={} query={:?}",
+                skill.scope.as_str(),
+                skill.id,
+                hits,
+                query
+            );
+            state.activate(&skill, SkillLifetime::Turn, ActivationSource::Manual, true);
+            let selected = vec![(skill.clone(), ActivationSource::Manual, hits as f32)];
+            return Ok(Some(ResolvedSkillContext {
+                context: SkillExecutionContext::from_skills(&selected),
+                cleaned_query: query.to_string(),
+                is_manual: false,
+                skills: vec![skill],
+                mounted_warm: Vec::new(),
+                mounted_active: Vec::new(),
+            }));
+        }
         return Ok(None);
     }
 
@@ -212,6 +234,43 @@ pub fn resolve_preactivated(
         mounted_warm,
         mounted_active: mounted_active_ids,
     }))
+}
+
+/// 意图匹配：用户消息包含技能 `triggers` 关键词 → 返回命中数最多的技能。
+///
+/// 命中数并列时取 priority 高者；同名多作用域由注册表 list 去重（同名取高作用域）。
+/// 仅在手动触发与会话挂载均未命中时由 [`resolve_preactivated`] 调用，
+/// 作为 LLM 自主 activate_skill 决策前的可靠兜底。无命中返回 None。
+fn resolve_intent_match(query: &str, registry: &SkillRegistry) -> Option<(Skill, usize)> {
+    let q = query.trim().to_lowercase();
+    if q.is_empty() {
+        return None;
+    }
+    let mut best: Option<(Skill, usize)> = None;
+    for skill in registry.list(None) {
+        if !skill.enabled || skill.triggers.is_empty() {
+            continue;
+        }
+        let hits = skill
+            .triggers
+            .iter()
+            .filter(|t| {
+                let t = t.trim().to_lowercase();
+                !t.is_empty() && q.contains(&t)
+            })
+            .count();
+        if hits == 0 {
+            continue;
+        }
+        let replace = match &best {
+            None => true,
+            Some((_, b_hits)) => hits > *b_hits || (hits == *b_hits && skill.priority > best.as_ref().unwrap().0.priority),
+        };
+        if replace {
+            best = Some((skill, hits));
+        }
+    }
+    best
 }
 
 /// 手动触发解析：`/技能名 [其余内容]` → (技能, 清理后的查询)。
@@ -375,6 +434,7 @@ mod skill_instruction_tests {
             description: String::new(),
             priority,
             tools: Vec::new(),
+            triggers: Vec::new(),
             top_k: None,
             min_score: None,
             max_docs: None,

@@ -5,6 +5,7 @@ name: 番茄钟
 description: 当用户要求开始、停止或查询番茄钟（专注计时器）时触发。
 priority: 40
 tools: [pomodoro]
+triggers: [番茄钟, 番茄, 专注, 休息, pomodoro, 计时]
 enabled: true
 version: 1
 created_at: 1754200000000

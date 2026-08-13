@@ -1,0 +1,284 @@
+/* ===== Agent 管理模块样式（模块标杆：css_js/modules/agent.css） =====
+ * 职责：Agent（RAG 模式）专属样式：模式标识、工具调用轨迹卡片、
+ *       RAG 消息来源（引用溯源）、RAG 检索参数设置弹窗。
+ * 依赖：必须在 index.html 主 <style> 之后加载（使用其 CSS 变量）。
+ * 公共样式（聊天输入框、消息主体、弹窗容器等）保留在 index.html。
+ */
+
+.rag-indicator {
+    display: inline-flex;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: #fff;
+    font-size: 0.625rem;
+    font-weight: 600;
+    padding: 0.125rem 0.25rem;
+    border-radius: 0.25rem;
+    margin-right: 0.25rem;
+    vertical-align: middle;
+    line-height: 1.4;
+    width: 2rem;
+    align-items: center;
+    justify-content: center;
+}
+
+.rag-indicator.chat{
+    background: linear-gradient(135deg, #e6a260, #65a876);
+}
+
+/* Agent 工具调用轨迹卡片 */
+.tool-trace {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.5rem;
+    margin: 0.25rem;
+    margin-top: 0;
+    margin-left: 1.25rem;
+}
+.tool-card {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.2rem 0;
+    margin-top: 0.25rem;
+    border-radius: 0.375rem;
+    background: transparent;
+    font-size: 0.75rem;
+    color: var(--t2);
+    max-width: 100%;
+    box-sizing: border-box;
+}
+.tool-card .tool-name {
+    font-weight: 600;
+    color: var(--color-text);
+    white-space: nowrap;
+}
+.tool-card .tool-args {
+    width: auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+}
+.tool-card .tool-status {
+    flex-shrink: 0;
+    font-size: 0.7rem;
+}
+.tool-card .tool-skill-badge {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 0.25rem;
+    background: var(--todo-event-blue-bg);
+    color: var(--color-primary, #3498db);
+    font-size: 0.65rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+.tool-card.running .tool-status {
+    color: var(--color-warning);
+}
+.tool-card.ok .tool-status {
+    color: var(--color-success, #2ecc71);
+}
+.tool-card.fail .tool-status {
+    color: var(--color-danger, #e74c3c);
+}
+
+.msg-rag {
+    color: var(--color-warning) !important;
+}
+
+.chat-message .msg-sources {
+    padding: 0.25rem 0.25rem;
+    border-top: 0.0625rem solid var(--color-border);
+    font-size: 0.75rem;
+    color: var(--t2);
+    margin-left: 1.25rem;
+}
+
+.chat-message .msg-sources summary {
+    display: flex;
+    cursor: pointer;
+    color: var(--color-primary);
+    align-items: center;
+}
+
+.chat-message .msg-sources .source-item {
+    padding: 0.25rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.25rem;
+    cursor: pointer;
+}
+
+.chat-message .msg-sources .source-item .source-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+}
+
+.chat-message .msg-sources .source-item .source-path {
+    font-size: 0.6875rem;
+    color: var(--t3);
+    padding-left: 0.125rem;
+}
+
+.chat-message .msg-sources .source-item .source-path-seg {
+    opacity: 0.85;
+}
+
+.chat-message .msg-sources .source-item .source-path-sep {
+    color: var(--t4);
+    margin: 0 0.0625rem;
+}
+
+/* 代码符号徽标（code_lookup 命中来源） */
+.chat-message .msg-sources .source-item .source-symbol-badge {
+    display: inline-block;
+    margin-left: 0.375rem;
+    padding: 0 0.3125rem;
+    font-size: 0.625rem;
+    line-height: 1.25;
+    color: var(--color-primary, #2e7d32);
+    background: rgba(46, 125, 50, 0.1);
+    border-radius: 0.25rem;
+    vertical-align: middle;
+    white-space: nowrap;
+    max-width: 12rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.chat-message .msg-sources .source-item .source-path-ellipsis {
+    color: var(--t4);
+    font-size: 0.6875rem;
+}
+
+.chat-message .msg-sources .source-item::before {
+    content: '';
+    display: inline-block;
+    width: 0.75rem;
+    height: 0.75rem;
+    flex-shrink: 0;
+    align-self: flex-start;
+    margin-top: 0.125rem;
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2024%2024'%20width%3D'14'%20height%3D'14'%20fill%3D'none'%20stroke%3D'%230077ff'%20stroke-width%3D'1.8'%20stroke-linecap%3D'round'%20stroke-linejoin%3D'round'%3E%3Cpath%20d%3D'M14%202H6a2%202%200%200%200-2%202v16a2%202%200%200%200%202%202h12a2%202%200%200%200%202-2V8l-6-6z'%2F%3E%3Cpath%20d%3D'M9%2012h6'%2F%3E%3Cpath%20d%3D'M9%2016h4'%2F%3E%3C%2Fsvg%3E");
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center center;
+}
+
+.chat-message .msg-sources .source-item .source-score {
+    font-size: 0.6875rem;
+    color: var(--t3);
+    margin-left: auto;
+}
+
+.chat-message .msg-sources .source-item {
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.chat-message .msg-sources .source-item:hover {
+    background-color: var(--b3);
+}
+
+/* 引用溯源：片段高亮（markdown 正文） */
+mark.source-highlight,
+.source-highlight {
+    background: #ffe066 !important;
+    color: inherit !important;
+    border-radius: 2px;
+    padding: 0 1px;
+    box-shadow: 0 0 0 2px rgba(255, 224, 102, 0.4);
+    animation: source-highlight-fade 3s ease forwards;
+}
+
+@keyframes source-highlight-fade {
+    0% { background: #ffe066 !important; }
+    70% { background: #ffe066 !important; }
+    100% { background: transparent; box-shadow: none; }
+}
+
+/* 引用溯源：编辑器整行高亮（Monaco 行装饰） */
+.source-highlight-line {
+    background: rgba(255, 224, 102, 0.28) !important;
+    animation: source-highlight-fade 3s ease forwards;
+}
+
+/* 引用溯源：大纲节点高亮（OPML / FreeMind） */
+.source-highlight-node {
+    animation: source-node-highlight 3s ease forwards;
+}
+
+@keyframes source-node-highlight {
+    0%, 70% {
+        background: #ffe066 !important;
+        border-radius: 4px;
+    }
+    100% { background: transparent; }
+}
+
+/* RAG 设置齿轮按钮 */
+.rag-settings-btn {
+    display: none;
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 0.125rem;
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+    color: var(--t2);
+    transition: all 0.15s;
+    flex-shrink: 0;
+}
+
+.rag-settings-btn:hover {
+    background: var(--color-hover-bg, #f3f4f6);
+    color: var(--color-text, #1f2328);
+}
+
+.rag-settings-btn.active {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* RAG 设置面板表单行 */
+.rag-settings-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.rag-settings-row label {
+    font-size: 0.875rem;
+    color: var(--color-text, #1f2328);
+    flex-shrink: 0;
+    min-width: 4rem;
+}
+
+.rag-settings-row input[type="number"] {
+    margin-left: auto;
+    width: 5rem;
+    padding: 0.125rem 0.25rem;
+    font-size: 0.8125rem;
+    height: auto;
+    line-height: 1.5;
+    border: 1px solid var(--color-border, #d0d7de);
+    border-radius: 0.3125rem;
+    outline: none;
+    text-align: right;
+    box-sizing: border-box;
+}
+
+.rag-settings-row input:focus {
+    border-color: var(--color-primary, #0879e9);
+    box-shadow: 0 0 0 3px rgba(8, 121, 233, 0.1);
+}

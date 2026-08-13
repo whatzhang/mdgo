@@ -430,6 +430,7 @@ pub fn run() {
             commands::chat::chat_history_search,
             commands::chat::chat_message_save,
             commands::chat::chat_session_clear_messages,
+            commands::chat::chat_messages_delete,
             commands::chat::chat_message_sources_save,
             commands::chat::chat_messages_sources,
             commands::chat::chat_session_index_current,

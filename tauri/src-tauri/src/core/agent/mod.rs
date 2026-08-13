@@ -125,8 +125,7 @@ pub mod tool_registry;
 pub const BASE_TOOLS: &[&str] = &[
     "activate_skill", "deactivate_skill", "read", "ls", "glob", "grep", "write", "edit", "multi_edit", "delete",
     "git_status", "git_diff", "git_commit", "git_checkout", "webfetch", "deep_research", "read_subagent_result",
-    "remember", "forget", "search_memory",
-    "todo_write",
+    "remember", "forget", "search_memory", "todo_write", 
     "spawn_subagent", "parallel_research", "self_review",
 ];
 
@@ -1008,9 +1007,13 @@ fn create_tool_registry(only: Option<&HashSet<String>>) -> ToolRegistry {
         reg.register("webfetch", Box::new(tools::build_webfetch_tool));
     }
 
-    // ── 番茄钟工具（pomodoro 技能声明，非 BASE_TOOLS） ──
+    // ── 番茄钟工具（BASE_TOOLS 常驻可见；此处受 only 白名单约束，子代理天然隔离） ──
     if want("pomodoro") {
         reg.register("pomodoro", Box::new(tools::build_pomodoro_tool));
+    }
+    // ── RAW 照片工具（前端交互工具，子代理天然隔离；数据经 path → 前端读取） ──
+    if want("raw-photography") {
+        reg.register("raw-photography", Box::new(tools::build_raw_tool));
     }
 
     // ── 子代理工具（全量注册；只读子代理注册表经白名单排除，防无限递归） ──

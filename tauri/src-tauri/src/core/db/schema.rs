@@ -42,6 +42,10 @@ pub const SYSTEM_SKILL_MD: &[(&str, &str)] = &[
         "pomodoro",
         include_str!("../../../resources/skills/pomodoro/SKILL.md"),
     ),
+    (
+        "raw-photography",
+        include_str!("../../../resources/skills/raw-photography/SKILL.md"),
+    ),
 ];
 
 /// 执行全部建表 DDL + 列迁移（幂等，可重复调用）。

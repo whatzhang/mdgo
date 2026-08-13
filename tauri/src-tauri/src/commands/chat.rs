@@ -390,6 +390,25 @@ pub async fn chat_session_clear_messages(
     Ok(())
 }
 
+/// 删除会话中的指定消息（本轮对话删除）：按 message_id 删除消息与引用来源，
+/// 回退会话统计并重置增量索引游标（下次索引全量重建）。
+#[tauri::command]
+pub async fn chat_messages_delete(
+    state: tauri::State<'_, AppState>,
+    dir_path: String,
+    session_id: String,
+    message_ids: Vec<String>,
+) -> Result<(), String> {
+    let store = state.get_chat_store(&dir_path)?;
+    tokio::task::spawn_blocking(move || {
+        crate::core::db::with_busy_retry(3, || {
+            store.delete_messages(&session_id, &message_ids)
+        })
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
 #[tauri::command]
 pub async fn chat_message_sources_save(
     state: tauri::State<'_, AppState>,
