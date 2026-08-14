@@ -1422,7 +1422,28 @@
                     }
                     todoCheckScheduledEvents();
                 }).catch(e => console.error('监听日程提醒失败', e));
+                // AI 工具 / 其他入口直写 DB 后经此事件通知前端全量刷新（UI 与 Rust 存储保持同步）
+                window.__TAURI__.event.listen('schedule:changed', () => _reloadEventsFromRust())
+                    .catch(e => console.error('监听日程变更失败', e));
             }
+        }
+        // 数据变更后全量重拉（防抖：批量新增/删除时合并为一次刷新）
+        let _reloadEventsTimer = null;
+        function _reloadEventsFromRust() {
+            if (_reloadEventsTimer) clearTimeout(_reloadEventsTimer);
+            _reloadEventsTimer = setTimeout(async () => {
+                _reloadEventsTimer = null;
+                try {
+                    await todoLoadFromFile();
+                    _invalidateEventsCache();
+                    if (_todoEarlyInitialized) {
+                        todoRenderAll();
+                        todoUpdateLocalScheduler();
+                    }
+                } catch (e) {
+                    console.error('日程数据变更刷新失败:', e);
+                }
+            }, 150);
         }
         // 停止提醒（原 TimerManager 轮询已移除，改为通知 Rust 调度器停止）
         function todoStopLocalScheduler() {

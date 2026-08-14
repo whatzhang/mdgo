@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use chrono::{Local, NaiveDate, NaiveDateTime};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::core::schedule::lunar::{DayInfo, DayInfoProvider, HolidayService};
 use crate::core::schedule::planner;
@@ -112,7 +112,13 @@ pub async fn schedule_add(
     })
     .await
     .map_err(|e| format!("任务执行失败: {}", e))??;
+    notify_schedule_changed(&app);
     Ok(ScheduleAddResult { event, conflicts })
+}
+
+/// 数据变更后通知前端刷新（AI 工具直写 DB 时前端无感知，经本事件与 UI 同步）
+fn notify_schedule_changed(app: &AppHandle) {
+    let _ = app.emit("schedule:changed", ());
 }
 
 /// 更新日程（按 id 全量替换字段）
@@ -147,6 +153,7 @@ pub async fn schedule_update(
     })
     .await
     .map_err(|e| format!("任务执行失败: {}", e))??;
+    notify_schedule_changed(&app);
     Ok(updated)
 }
 
@@ -161,7 +168,9 @@ pub async fn schedule_remove(
     let store = store_for(&state, &dir_path)?;
     tokio::task::spawn_blocking(move || lock_store(&store).remove(&id))
         .await
-        .map_err(|e| format!("任务执行失败: {}", e))?
+        .map_err(|e| format!("任务执行失败: {}", e))??;
+    notify_schedule_changed(&app);
+    Ok(())
 }
 
 /// 某日事件列表（含 Cron 展开，按时间排序）——前端日历视图取数

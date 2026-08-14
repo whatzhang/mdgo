@@ -2757,6 +2757,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                 use crate::core::schedule::rules;
                 use crate::core::schedule::store::EventStore;
                 use crate::core::schedule::{ScheduleEvent, ScheduleEventInput};
+                use tauri::Emitter;
 
                 let action = args
                     .get("action")
@@ -2783,7 +2784,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                             .iter()
                             .map(|e| {
                                 let cron = if e.cron.trim().is_empty() { String::new() } else { format!("（重复 {}）", e.cron) };
-                                format!("- {}：{} ~ {}{}", e.title, e.start, e.end, cron)
+                                format!("- {}（id: {}）：{} ~ {}{}", e.title, e.id, e.start, e.end, cron)
                             })
                             .collect();
                         Ok(ToolOutput::text(format!("共 {} 个日程：\n{}", events.len(), lines.join("\n"))))
@@ -2832,6 +2833,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                                 }
                             }
                             store.upsert(event.clone()).map_err(|e| tool_error("schedule", &e))?;
+                            let _ = app.emit("schedule:changed", ()); // 通知前端刷新（AI 直写 DB 后 UI 同步）
                             Ok(ToolOutput::text(format!(
                                 "已创建日程：{}（{} ~ {}{}）",
                                 event.title, event.start, event.end, conflict_note
@@ -2853,6 +2855,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                             existing.validate().map_err(|e| tool_error("schedule", &e))?;
                             let updated = existing.clone();
                             store.replace_all(events).map_err(|e| tool_error("schedule", &e))?;
+                            let _ = app.emit("schedule:changed", ()); // 通知前端刷新
                             Ok(ToolOutput::text(format!(
                                 "已更新日程：{}（{} ~ {}）",
                                 updated.title, updated.start, updated.end
@@ -2863,6 +2866,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                         let id = get("id");
                         let mut store = store_guard();
                         store.remove(&id).map_err(|e| tool_error("schedule", &e))?;
+                        let _ = app.emit("schedule:changed", ()); // 通知前端刷新
                         Ok(ToolOutput::text(format!("已删除日程：{}", id)))
                     }
                     "conflicts" => {

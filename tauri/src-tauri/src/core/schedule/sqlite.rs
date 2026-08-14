@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS schedule_events (
     title      TEXT NOT NULL,
     start      TEXT NOT NULL,
     end        TEXT NOT NULL,
-    color      TEXT NOT NULL DEFAULT '',
+    color      TEXT NOT NULL DEFAULT 'blue',
     desc       TEXT NOT NULL DEFAULT '',
     cron       TEXT NOT NULL DEFAULT '',
     notify     INTEGER NOT NULL DEFAULT 1,
@@ -128,12 +128,17 @@ impl EventStore for SqliteStore {
     }
 
     fn remove(&mut self, id: &str) -> Result<(), String> {
-        self.conn
+        let affected = self
+            .conn
             .execute(
                 "DELETE FROM schedule_events WHERE dir_path = ?1 AND id = ?2",
                 params![self.dir_path, id],
             )
             .map_err(|e| format!("删除日程失败: {}", e))?;
+        // 校验影响行数：id 不匹配时删除 0 行，必须显式报错，避免上层（工具/IPC）误报"删除成功"
+        if affected == 0 {
+            return Err(format!("日程不存在（id 不匹配）: {}", id));
+        }
         Ok(())
     }
 
@@ -214,6 +219,17 @@ mod tests {
         let list = store.list().unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].id, "e2");
+    }
+
+    #[test]
+    fn remove_missing_id_errors() {
+        let (_d, mut store) = tmp_store("/kb/a", "remove_missing.db");
+        store.upsert(sample_event("e1", "a")).unwrap();
+        // id 不匹配：必须报错而非静默成功（否则上层会把"删除 0 行"误报为成功）
+        let err = store.remove("no-such-id").unwrap_err();
+        assert!(err.contains("no-such-id"), "错误应包含 id: {}", err);
+        // 数据未被误删
+        assert_eq!(store.list().unwrap().len(), 1);
     }
 
     #[test]

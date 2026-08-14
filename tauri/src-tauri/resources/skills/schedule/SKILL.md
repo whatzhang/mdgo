@@ -16,17 +16,18 @@ updated_at: 1754200000000
 
 ## 职责边界
 - 执行用户明确的日程意图：创建/查看/修改/删除日程、检测时间冲突、查询到点提醒、查询农历节假日、查找可安排时间段。
-- 所有日程逻辑由 Rust 引擎（core::schedule）计算，数据持久化于知识库 `.mdgo/index_schedule.json`。
+- **必须通过 `schedule` 工具读写日程**
 - 不擅自删除或修改未获用户确认的日程；创建日程遇到时间冲突时向用户提示并建议备选时间。
+- 调用 `schedule` 工具，如果发生失败则直接输出工具返回信息，不要进行编造。
 
 ## 动作 → 参数映射
 
 | 用户意图 | action | 参数 |
 |---|---|---|
-| 查看全部日程 | `list` | — |
+| 查看全部日程 | `list` | —（输出含每条的 `id`，供 update/remove 使用） |
 | 新建日程 | `add` | `title`、`start`、`end`（YYYY-MM-DDTHH:MM）必填；可选 `desc`/`color`/`cron`（5 字段重复表达式）/`notify` |
-| 修改日程 | `update` | `id` + 同上字段 |
-| 删除日程 | `remove` | `id` |
+| 修改日程 | `update` | `id`（取自 `list` 输出）+ 同上字段 |
+| 删除日程 | `remove` | `id`（取自 `list` 输出，不要用标题代替 id） |
 | 冲突检测 | `conflicts` | `start`、`end` 必填；可选 `ignore_id` |
 | 到点提醒 | `remind` | — |
 | 农历/节假日 | `lunar` | `date`（YYYY-MM-DD） |

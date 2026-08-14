@@ -118,6 +118,7 @@
             --color-orange-active: #B85C1B;
             --color-danger: #cf222e;
             --color-danger-hover: #992222;
+            --color-danger-active: #881111;
             --color-danger-light: #ffebe9;
             --color-bg: #ffffff;
             --color-bg-secondary: #fafafa;
@@ -774,7 +775,6 @@
             overflow-y: auto;
         }
 
-
         #toc-link .toc-tab-panel.active:has(.mermaid-toc) {
             overflow: hidden;
         }
@@ -1031,44 +1031,11 @@
             background-color: var(--color-danger-light) !important;
         }
 
-        .mermaid-error-msg {
-            color: var(--color-danger);
-            font-weight: bold;
-            margin-bottom: 0.75rem;
-            font-size: 0.875rem;
-            font-family: var(--font-family);
-            white-space: normal;
-            word-break: break-all;
-        }
-
         .katex-block {
             background: var(--color-bg-secondary) !important;
             color: var(--color-text) !important;
             padding: 1rem 1.5rem;
             overflow-x: auto;
-            text-align: center;
-        }
-
-        .flowchart-output,
-        .sequence-output {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            margin: 1rem 0;
-            background: var(--color-bg-secondary);
-            padding: 1rem;
-            border-radius: var(--radius-md);
-            overflow-x: auto;
-        }
-
-        .flowchart-error-block,
-        .sequence-error-block {
-            border: 1px solid var(--color-danger) !important;
-            border-radius: var(--radius-md) !important;
-            padding: 1rem !important;
-            background-color: var(--color-danger-light) !important;
-            color: var(--color-danger);
-            font-size: 0.875rem;
             text-align: center;
         }
 
@@ -1262,42 +1229,6 @@
         .canvas-edge-path.animated {
             stroke-dasharray: 10 6;
             animation: dashFlow 0.6s linear infinite;
-        }
-
-
-        .canvas-controls {
-            position: fixed;
-            bottom: 30px;
-            right: 30px;
-            display: flex;
-            gap: 8px;
-            z-index: 100;
-        }
-
-        .canvas-control-btn {
-            width: 2.25rem;
-            height: 2.25rem;
-            border: none;
-            border-radius: 0.5rem;
-            background: var(--color-primary);
-            color: var(--color-text-white);
-            font-size: 1rem;
-            font-weight: bold;
-            cursor: pointer;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-            transition: all 0.2s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .canvas-control-btn:hover {
-            background: var(--color-primary-hover);
-            transform: scale(1.05);
-        }
-
-        .canvas-control-btn:active {
-            transform: scale(0.95);
         }
 
         /* Canvas 保存下拉菜单样式 */
@@ -1694,21 +1625,6 @@
 
         #clear-search:hover {
             background: #6e7781;
-        }
-
-        .btn-disabled {
-            opacity: 0.5;
-            cursor: not-allowed !important;
-        }
-
-        .btn-disabled:hover {
-            background: var(--color-bg-secondary) !important;
-            transform: none;
-            box-shadow: var(--shadow-sm);
-        }
-
-        .btn.btn-disabled:disabled {
-            opacity: 0.5;
         }
 
         #drawio-container {
@@ -2316,11 +2232,6 @@
             transform: scale(0.96);
         }
 
-        .markdown-selection-btn-group {
-            position: relative;
-            display: inline-flex;
-        }
-
         .selection-color-picker {
             position: absolute;
             top: calc(100% + 6px);
@@ -2417,13 +2328,6 @@
 
         .color-option-search:hover {
             color: var(--color-primary);
-        }
-
-        .ob-highlight-focus {
-            color: #000000 !important;
-            padding: 0 4px;
-            font-weight: 600 !important;
-            background-color: transparent !important;
         }
 
         .ob-internal-link {
@@ -2547,13 +2451,6 @@
 
         .ob-footnote-ref {
             font-size: 0.8em;
-        }
-
-        .ob-mermaid {
-            background: #f8f9fa;
-            padding: 12px;
-            border-radius: 4px;
-            margin: 8px 0;
         }
 
         .ob-math-block {
@@ -2789,7 +2686,6 @@
             font-size: 13px;
             padding-left: 1rem;
         }
-
 
         .kanban-task::before {
             content: "";
@@ -3577,6 +3473,10 @@
             overflow-y: auto;
             padding: 4px 10px 10px 10px;
             background: var(--color-bg-secondary);
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
         }
 
         .dashboard-container::-webkit-scrollbar {
@@ -3921,28 +3821,6 @@
             display: none;
         }
 
-        .activity-column-title {
-            font-size: 0.875rem;
-            font-weight: 600;
-            margin-bottom: 0.625rem;
-            padding-bottom: 0.5rem;
-            border-bottom: 2px solid #e3f2fd;
-        }
-
-        .activity-column-title.edit {
-            border-color: #ffebee;
-            color: #d32f2f;
-        }
-
-        .activity-column-title.open {
-            border-color: #e3f2fd;
-            color: #1976d2;
-        }
-
-        .activity-list {
-            width: 100%;
-        }
-
         .activity-item {
             display: flex;
             align-items: center;
@@ -4019,14 +3897,6 @@
 
         .chart-container--treemap {
             height: 37.5rem;
-        }
-
-        .chart-container--sunburst {
-            height: 37.5rem;
-        }
-
-        .chart-container--heatmap {
-            height: 12.5rem;
         }
 
         .chart-container--bar {
@@ -4910,13 +4780,6 @@
         }
 
         /* ===== AI 聊天面板样式 ===== */
-        .chat-panel {
-            display: flex;
-            width: 100%;
-            flex-direction: column;
-            height: 100%;
-            background: var(--color-bg-secondary);
-        }
 
         .chat-with-history {
             display: flex;
@@ -5182,11 +5045,6 @@
             visibility: visible;
         }
 
-        /* P1-11：user 消息的「分支」hover 按钮可见性（inline opacity:0 由 !important 覆盖） */
-        .chat-message:hover .msg-fork-btn {
-            opacity: 1 !important;
-        }
-
         /* 纯 SVG 图标按钮（不随消息重建，事件走容器级委托） */
         .chat-message-action-btn {
             width: 1.75rem;
@@ -5278,17 +5136,6 @@
         }
 
         /* ── 上下文使用率 ── */
-        .chat-context-bar {
-            display: flex;
-            justify-content: flex-end;
-            align-items: center;
-            padding: 0 0.25rem;
-            height: 1.5rem;
-            font-size: 0.75rem;
-            font-family: var(--font-family);
-            gap: 0.5rem;
-            color: var(--t2);
-        }
 
         /* ── 输入框底部工具栏（v2：模型下拉 + think 分段 + skill/prompt + 用量） ── */
         .chat-bottom-toolbar {
@@ -5357,20 +5204,6 @@
             color: var(--t3, #888);
             font-weight: 400;
             margin-top: 0.125rem;
-        }
-
-        .chat-model-manage-row {
-            padding: 0.375rem 0.5rem;
-            margin-top: 0.25rem;
-            font-size: 0.75rem;
-            text-align: center;
-            cursor: pointer;
-            font-weight: 400;
-            color: var(--color-primary-light, #4a90d9);
-        }
-
-        .chat-model-manage-row:hover {
-            color: var(--color-primary);
         }
 
         /* ── @ 文件选择器（v2） ── */
@@ -5907,61 +5740,6 @@
             gap: 0.5rem;
         }
 
-        .knowledge-item {
-            background: var(--color-bg);
-            border: 1px solid var(--color-border);
-            border-radius: 0.625rem;
-            padding: 0.75rem 0.875rem;
-            cursor: pointer;
-            transition: box-shadow 0.2s;
-        }
-
-        .knowledge-item:hover {
-            box-shadow: 0 0.125rem 0.5rem rgba(0, 0, 0, 0.08);
-        }
-
-        .knowledge-item .kb-name {
-            font-weight: 500;
-            font-size: 0.875rem;
-            color: var(--color-text);
-            margin-bottom: 0.25rem;
-        }
-
-        .knowledge-item .kb-meta {
-            font-size: 0.75rem;
-            color: var(--t3);
-            display: flex;
-            gap: 0.75rem;
-            flex-wrap: wrap;
-        }
-
-        .knowledge-item .kb-meta span {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.1875rem;
-        }
-
-        .knowledge-item .kb-actions {
-            display: flex;
-            gap: 0.375rem;
-            margin-top: 0.5rem;
-        }
-
-        .knowledge-item .kb-actions button {
-            padding: 0.125rem 0.5rem;
-            border: 1px solid var(--color-border);
-            border-radius: 0.3125rem;
-            background: var(--color-bg-secondary);
-            color: var(--t2);
-            font-size: 0.75rem;
-            font-family: var(--font-family);
-            cursor: pointer;
-        }
-
-        .knowledge-item .kb-actions button:hover {
-            background: var(--color-hover-highlight);
-        }
-
         .kb-empty {
             display: flex;
             flex-direction: column;
@@ -6043,70 +5821,6 @@
             50% {
                 opacity: 0.4;
             }
-        }
-
-        .kb-doc-list {
-            margin-top: 0.5rem;
-            padding-top: 0.375rem;
-            border-top: 0.0625rem solid var(--color-border);
-        }
-
-        .kb-doc-item {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0.1875rem 0;
-            font-size: 0.75rem;
-            color: var(--t2);
-        }
-
-        .kb-doc-item .doc-status {
-            font-size: 0.6875rem;
-            padding: 0.0625rem 0.3125rem;
-            border-radius: 0.25rem;
-        }
-
-        .kb-doc-item .doc-status.ready {
-            color: #16a34a;
-        }
-
-        .kb-doc-item .doc-status.indexing {
-            color: #ea580c;
-        }
-
-        .kb-doc-item .doc-status.pending {
-            color: var(--t3);
-        }
-
-        .kb-doc-item .doc-status.error {
-            color: #dc2626;
-        }
-
-        .kb-upload-area {
-            display: flex;
-            gap: 0.375rem;
-            align-items: center;
-            padding: 0.25rem 0;
-        }
-
-        .kb-upload-area input[type="file"] {
-            font-size: 0.75rem;
-            color: var(--color-text);
-        }
-
-        .kb-upload-area button {
-            padding: 0.1875rem 0.625rem;
-            border: 1px solid var(--color-border);
-            border-radius: 0.3125rem;
-            background: var(--color-bg-secondary);
-            color: var(--t2);
-            font-size: 0.75rem;
-            font-family: var(--font-family);
-            cursor: pointer;
-        }
-
-        .kb-upload-area button:hover {
-            background: var(--color-hover-highlight);
         }
 
         .kb-progress {
@@ -6198,7 +5912,6 @@
         .jsBJIl {
             height: calc(-40px + 100vh) !important;
         }
-
 
         /* 颜色标记 - 文件更多菜单中的颜色选择器 */
         .marker-color-picker {
@@ -7123,8 +6836,6 @@
             background: #e8f0fe;
         }
 
-        .mermaid-directory-children {}
-
         .dashboard-tag {
             padding: 2px 10px;
             background: var(--color-bg-secondary);
@@ -7749,7 +7460,7 @@
 
         .regex-card-grid {
             display: grid;
-            grid-template-columns: 1fr 360px;
+            grid-template-columns: 1fr 320px;
             gap: 16px;
             padding: 0 16px 16px;
             align-items: start;
@@ -7848,7 +7559,7 @@
 
         .regex-ast-tree {
             font-family: var(--font-mono);
-            font-size: 0.72rem;
+            font-size: 0.8125rem;
             padding: 10px;
             border-radius: 6px;
             overflow-x: auto;
@@ -7873,28 +7584,6 @@
             color: #7c3aed;
         }
 
-        .regex-highlight-match {
-            background: #fef08a;
-            border-radius: 2px;
-        }
-
-        .regex-highlight-replace {
-            background: #c4b5fd;
-            border-radius: 2px;
-        }
-
-        .regex-match-result .regex-hl {
-            background: #fef08a;
-            border-radius: 2px;
-            padding: 0 2px;
-        }
-
-        .regex-match-result .regex-hl-group {
-            background: #bfdbfe;
-            border-radius: 2px;
-            padding: 0 2px;
-        }
-
         /* === 匹配导航 === */
         .regex-match-header {
             display: flex;
@@ -7909,7 +7598,6 @@
             font-weight: 600;
             flex-shrink: 0;
         }
-
 
         /* 确保 header 子元素没有额外 margin/padding 干扰高度 */
         .regex-match-header>* {
@@ -8052,11 +7740,6 @@
             border-radius: 8px;
             word-wrap: break-word;
             min-height: 20px;
-        }
-
-        .regex-text-title {
-            font-weight: 600;
-            color: var(--color-text);
         }
 
         .regex-text-body {
@@ -8314,29 +7997,6 @@
 
         .todo-view-btn:hover:not(.todo-active) {
             color: var(--color-text);
-        }
-
-        .todo-btn-primary {
-            height: 1.7rem;
-            padding: 0 0.8rem;
-            font-size: 0.813rem;
-            background: var(--color-primary);
-            color: var(--color-text-white);
-            border: none;
-            border-radius: var(--radius-md);
-            font-weight: 600;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            justify-items: center;
-            align-content: center;
-            justify-content: center;
-            gap: 5px;
-            transition: background 0.2s;
-        }
-
-        .todo-btn-primary:hover {
-            background: var(--color-primary-hover);
         }
 
         /* 主体布局 */
@@ -8710,6 +8370,10 @@
             background: var(--color-bg);
             overflow: auto;
             padding: 0.25rem;
+            padding-top: 0;
+        }
+        .todo-calendar-main::-webkit-scrollbar {
+            display: none;
         }
 
         /* 月视图 */
@@ -8717,11 +8381,12 @@
             flex: 1;
             display: flex;
             flex-direction: column;
+            min-height: 0;
         }
 
         .todo-weekday-header {
             display: grid;
-            grid-template-columns: repeat(7, 1fr);
+            grid-template-columns: repeat(7, minmax(0, 1fr));
             border-bottom: 1px solid var(--color-border-light);
             position: sticky;
             top: 0;
@@ -8739,12 +8404,17 @@
 
         .todo-month-grid {
             flex: 1;
+            min-height: 0;
             display: grid;
-            grid-template-columns: repeat(7, 1fr);
-            grid-template-rows: repeat(5, 1fr);
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            grid-template-rows: repeat(5, minmax(0, 1fr));
         }
 
         .todo-month-day {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
             border-right: 1px solid var(--color-border-light);
             border-bottom: 1px solid var(--color-border-light);
             padding: 0.3rem;
@@ -8754,6 +8424,9 @@
         }
 
         .todo-month-div {
+            flex: 1;
+            min-height: 0;
+            min-width: 0;
             overflow-y: auto !important;
         }
 
@@ -8851,9 +8524,6 @@
         }
 
         /* 法定节假日名称: 使用默认色 */
-        .todo-holiday-label {
-            font-weight: 500;
-        }
 
         .todo-month-event {
             font-size: 0.75rem;
@@ -9199,6 +8869,7 @@
 
         .todo-form-input {
             width: 100%;
+            height: 33px;
             padding: 0.5rem 0.5rem;
             border: 1px solid var(--color-border);
             border-radius: var(--radius-sm);
@@ -9284,48 +8955,6 @@
             gap: 10px;
         }
 
-        .todo-btn-secondary {
-            height: 1.65rem;
-            padding: 0.275rem 0.625rem;
-            font-size: 0.813rem;
-            border: 1px solid var(--color-border);
-            background: var(--color-bg);
-            color: var(--color-text);
-            border-radius: var(--radius-sm);
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            justify-items: center;
-            align-content: center;
-            justify-content: center;
-            transition: all 0.2s;
-        }
-
-        .todo-btn-secondary:hover {
-            background: var(--todo-bg-hover);
-        }
-
-        .todo-btn-danger {
-            height: 1.65rem;
-            padding: 0.275rem 0.625rem;
-            font-size: 0.813rem;
-            border: 1px solid transparent;
-            color: var(--color-danger);
-            border-radius: var(--radius-sm);
-            cursor: pointer;
-            margin-right: auto;
-            background: #FEF2F2;
-            display: inline-flex;
-            align-items: center;
-            justify-items: center;
-            align-content: center;
-            justify-content: center;
-        }
-
-        .todo-btn-danger:hover {
-            background: #fac3c3;
-        }
-
         /* Cron 表达式区域 */
         .todo-cron-row {
             display: flex;
@@ -9357,7 +8986,7 @@
 
         .todo-cron-btn {
             padding: 0.2rem 0.5rem;
-            font-size: 0.75rem;
+            font-size: 0.8125rem;
             border: 1px solid var(--color-border);
             background: var(--todo-bg);
             color: var(--color-text-secondary);
@@ -9375,8 +9004,8 @@
             color: var(--color-primary);
         }
 
-        .todo-cron-btn-clear {
-            color: var(--color-text-tertiary);
+        .todo-cron-btn.todo-cron-btn-clear {
+            color: var(--color-danger);
         }
 
         .todo-cron-btn-clear:hover {
@@ -9460,11 +9089,7 @@
             padding: 16px 20px 8px;
             display: flex;
             align-items: center;
-            gap: 8px;
-        }
-
-        .todo-reminder-icon {
-            font-size: 15px;
+            justify-content: space-between;
         }
 
         .todo-reminder-title {
@@ -9482,69 +9107,34 @@
             padding: 8px 20px 5px 20px;
         }
 
-        .todo-reminder-event-title {
-            font-size: 17px;
-            font-weight: 600;
-            color: var(--color-text);
-            margin-bottom: 6px;
-        }
-
         .todo-reminder-time {
-            margin-top: 10px;
             font-size: 12px;
             color: var(--color-text-secondary);
             margin-bottom: 4px;
+            display: flex;
+            justify-content: space-between;;
+            align-items: center;
         }
 
         .todo-reminder-desc {
             font-size: 13px;
             color: var(--color-text-tertiary);
             margin-top: 10px;
-            padding: 15px 10px;
+            padding: 10px;
             background: var(--todo-bg);
             border-radius: var(--radius-sm);
             line-height: 1.5;
-        }
-
-        .todo-reminder-cron-hint {
-            font-size: 13px;
-            color: var(--t3);
-            margin-top: 8px;
-        }
+            height: 8rem;
+            overflow-y: auto;
+            word-break: break-word;
+            white-space: pre-wrap;
+        } 
 
         .todo-reminder-footer {
             padding: 5px 15px 15px 15px;
             display: flex;
             gap: 8px;
             justify-content: flex-end;
-        }
-
-        .todo-reminder-btn {
-            padding: 6px 14px;
-            border-radius: var(--radius-sm);
-            font-size: 13px;
-            cursor: pointer;
-            transition: all 0.2s;
-            border: none;
-            font-weight: 600;
-        }
-
-        .todo-reminder-btn-close {
-            background: var(--todo-bg);
-            color: var(--color-text);
-        }
-
-        .todo-reminder-btn-close:hover {
-            background: var(--todo-bg-hover);
-        }
-
-        .todo-reminder-btn-snooze {
-            background: var(--color-primary);
-            color: var(--color-text-white);
-        }
-
-        .todo-reminder-btn-snooze:hover {
-            background: var(--color-primary-hover);
         }
 
         /* 响应式 */
@@ -11481,18 +11071,6 @@
             flex-wrap: wrap;
         }
 
-        .raw-toolbar-left {
-            display: flex;
-            align-items: center;
-            gap: 10px
-        }
-
-        .raw-toolbar-title {
-            font-size: 1.05rem;
-            font-weight: 600;
-            color: var(--color-text);
-        }
-
         .raw-toolbar-badge {
             font-size: .72rem;
             color: var(--color-text-tertiary);
@@ -11509,11 +11087,6 @@
         }
 
         /* 按钮额外样式 - 复用 .btn 样式 */
-        .raw-btn-wrapper {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-        }
 
         .raw-image-wrap {
             background: transparent;
@@ -11619,9 +11192,6 @@
         }
 
         @media(max-width: 640px) {
-            .raw-topbar {
-                padding: 0 16px
-            }
 
             .raw-meta-grid {
                 grid-template-columns: 1fr
@@ -12032,21 +11602,6 @@
         }
 
         /* 加载动画 */
-        .photo-skeleton {
-            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-            background-size: 200% 100%;
-            animation: photo-shimmer 1.5s infinite;
-        }
-
-        @keyframes photo-shimmer {
-            0% {
-                background-position: 200% 0;
-            }
-
-            100% {
-                background-position: -200% 0;
-            }
-        }
 
         .photo-pager {
             position: fixed;
@@ -12202,10 +11757,6 @@
             padding: 0 5px 5px 5px;
             display: flex;
             flex-direction: column;
-        }
-
-        .git-graph-rows-spacer {
-            pointer-events: none;
         }
 
         .git-graph-row {
@@ -12536,11 +12087,6 @@
 
         .git-file-tree .git-file-num.git-file-deletions {
             color: var(--color-danger);
-            text-align: right;
-        }
-
-        .git-file-tree .git-file-num-empty {
-            color: var(--t2);
             text-align: right;
         }
 
@@ -13577,10 +13123,6 @@
             background-color: var(--color-bg-secondary, #f6f8fa);
         }
 
-        .canvas-file-item:hover .file-img-thumb {
-            opacity: 0.85;
-        }
-
         #opml-level-select:focus {
             outline: none;
         }
@@ -13816,21 +13358,6 @@
         #startup-loading.is-hidden {
             opacity: 0;
             pointer-events: none;
-        }
-
-        .startup-spinner {
-            width: 2rem;
-            height: 2rem;
-            border: 3px solid rgba(255, 255, 255, 0.1);
-            border-top-color: #3b82f6;
-            border-radius: 50%;
-            animation: startup-spin 0.8s linear infinite;
-        }
-
-        @keyframes startup-spin {
-            to {
-                transform: rotate(360deg);
-            }
         }
 
         /* ═══ 演示模式 ═══ */
@@ -15067,7 +14594,6 @@
                         <div class="timeline-view-tab" data-view="month">每月</div>
                         <div class="timeline-view-tab" data-view="quarter">每季度</div>
                         <div class="timeline-view-tab" data-view="year">每年</div>
-                        <!-- <div class="timeline-view-tab" data-view="all">全部</div> -->
                     </div>
                     <div class="timeline-filters-group">
                         <div class="timeline-filter-chip timeline-active" data-filter="all">全部</div>
@@ -15806,7 +15332,7 @@
                             <button class="todo-view-btn" onclick="todoSwitchView('week', event)">周</button>
                             <button class="todo-view-btn" onclick="todoSwitchView('day', event)">日</button>
                         </div>
-                        <button class="todo-btn-primary" onclick="todoOpenModal()">
+                        <button class="btn btn-sm btn-primary" onclick="todoOpenModal()">
                             <span>+</span>
                             <span>新建日程</span>
                         </button>
@@ -15972,16 +15498,16 @@
                             </div>
                             <div class="todo-form-group">
                                 <label class="todo-form-label">备注</label>
-                                <textarea class="todo-form-input" id="todo-eventDesc" rows="6"
+                                <textarea class="todo-form-input" id="todo-eventDesc" style="resize: none;height: 5rem;"
                                     placeholder="添加备注..."></textarea>
                             </div>
                         </div>
                         <div class="todo-modal-footer">
-                            <button class="todo-btn-danger" id="todo-deleteBtn" style="display: none;"
+                            <button class="btn btn-sm btn-danger" id="todo-deleteBtn" style="display: none;"
                                 onclick="todoDeleteEvent()">删除
                             </button>
-                            <button class="todo-btn-secondary" onclick="todoCloseModal()">取消</button>
-                            <button class="todo-btn-primary" onclick="todoSaveEvent()">保存</button>
+                            <button class="btn btn-sm" onclick="todoCloseModal()">取消</button>
+                            <button class="btn btn-sm btn-primary" onclick="todoSaveEvent()">保存</button>
                         </div>
                     </div>
                 </div>
@@ -16275,8 +15801,8 @@
                                     </div>
                                 </div>
                                 <div class="todo-modal-footer">
-                                    <button class="todo-btn-secondary" onclick="closeRagSettings()">取消</button>
-                                    <button class="todo-btn-primary" onclick="saveRagSettings()">保存</button>
+                                    <button class="btn btn-sm" onclick="closeRagSettings()">取消</button>
+                                    <button class="btn btn-sm btn-primary" onclick="saveRagSettings()">保存</button>
                                 </div>
                             </div>
                         </div>
@@ -38298,7 +37824,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     </div>
                     <div class="todo-modal-body">${html}</div>
                     <div class="todo-modal-footer">
-                        <button class="todo-btn-primary" onclick="event.stopPropagation(); showPromptModal()">
+                        <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); showPromptModal()">
                             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
                             </svg>
@@ -40517,7 +40043,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (cronInput) cronInput.value = '';
             todoUpdateCronPreview();
             const now = new Date();
-            const start = date || new Date(now.getTime() + 5 * 60 * 1000);
+            const start = date ? new Date(date) : new Date();
+            start.setHours(now.getHours(), now.getMinutes(), 0, 0);
             const end = new Date(start);
             end.setHours(23, 59, 59, 999);
             eventStart.value = todoFormatDateTimeLocal(start);
@@ -40865,25 +40392,22 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const startTime = data.start ? todoFormatTime(new Date(data.start)) : '';
             const endTime = data.end ? todoFormatTime(new Date(data.end)) : '';
             const timeStr = startTime && endTime ? `${startTime} - ${endTime}` : '';
-            const cronHint = isCron && data.cron ? `<div class="todo-reminder-cron-hint">cron:&nbsp;${escapeHtml(data.cron)}&nbsp;&nbsp;&nbsp;${'📋 ' + todoParseCron(data.cron)}</div>` : '';
+            const cronHint = isCron && data.cron ? `${escapeHtml(data.cron)}&nbsp;&nbsp;&nbsp;${todoParseCron(data.cron)}` : '';
             overlay.innerHTML = `
                 <div class="todo-reminder-modal todo-${data.color || 'blue'}">
                     <div class="todo-reminder-header">
-                        <span class="todo-reminder-icon">🔔</span>
-                        <span class="todo-reminder-title">${isCron ? 'Cron 定时提醒' : '日程提醒'}</span>
+                        <span class="todo-reminder-title">🔔&nbsp;${escapeHtml(data.title)}</span>
                         <span class="todo-reminder-title-time">${todoFormatTime2(new Date())}</span>
                     </div>
                     <div class="todo-reminder-body">
-                        <div class="todo-reminder-event-title">${escapeHtml(data.title)}</div>
-                        ${timeStr ? `<div class="todo-reminder-time">🕐 ${escapeHtml(timeStr)}</div>` : ''}
+                        ${timeStr ? `<div class="todo-reminder-time"><span>${escapeHtml(timeStr)}</span><span>${cronHint}</span></div>` : ''}
                         ${data.desc ? `<div class="todo-reminder-desc">${escapeHtml(data.desc)}</div>` : ''}
-                        ${cronHint}
                     </div>
                     <div class="todo-reminder-footer">
-                        <button class="todo-reminder-btn todo-reminder-btn-close" onclick="this.closest('.todo-reminder-overlay').remove()">关闭</button>
+                        <button class="btn btn-danger" onclick="this.closest('.todo-reminder-overlay').remove()">关闭</button>
                         ${isCron ? '' : (data._snoozeCount >= 2
-                    ? `<button class="todo-reminder-btn todo-reminder-btn-snooze" onclick="todoConfirmReminder(this)">确认</button>`
-                    : `<button class="todo-reminder-btn todo-reminder-btn-snooze" onclick="todoSnoozeReminder(this, '${data.id}')">稍后提醒(5分钟)</button>`)}
+                    ? `<button class="btn btn-primary" onclick="todoConfirmReminder(this)">确认</button>`
+                    : `<button class="btn " onclick="todoSnoozeReminder(this, '${data.id}')">稍后提醒(5分钟)</button>`)}
                     </div>
                 </div>
             `;
