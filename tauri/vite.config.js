@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
+import { fileURLToPath, URL } from 'node:url';
 
 export default defineConfig({
     clearScreen: false,
@@ -41,5 +42,10 @@ export default defineConfig({
         target: ['es2021', 'chrome105', 'safari13'],
         minify: !process.env.TAURI_DEBUG ? 'esbuild' : false,
         sourcemap: !!process.env.TAURI_DEBUG,
+        rollupOptions: {
+            input: {
+                main: fileURLToPath(new URL('../main.html', import.meta.url)),
+            },
+        },
     },
 });

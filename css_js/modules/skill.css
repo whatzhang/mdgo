@@ -245,6 +245,10 @@
     background: var(--color-bg);
     position: relative;
     padding: 0.75rem;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
 }
 /* 详情/编辑视图容器 */
 .skill-detail-view,
