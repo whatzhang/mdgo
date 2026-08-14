@@ -8,10 +8,10 @@
 use std::sync::RwLock;
 
 use chrono::Local;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use super::rules;
-use super::store::{EventStore, JsonFileStore};
+use super::store::EventStore;
 
 /// 提醒调度器（AppState 持有；`spawn` 启动后台循环）
 pub struct ScheduleScheduler {
@@ -50,10 +50,11 @@ impl ScheduleScheduler {
         });
     }
 
-    /// 单次 tick：查当前激活目录的到点提醒并推送事件
+    /// 单次 tick：查当前激活目录的到点提醒并推送事件（走共享存储锁，与 IPC/工具并发安全）
     fn tick(app: &AppHandle, dir: &str) -> Result<(), String> {
-        let store = JsonFileStore::new(dir);
-        let events = store.list()?;
+        let state = app.state::<crate::AppState>();
+        let store = state.schedule_store(dir)?;
+        let events = store.lock().unwrap_or_else(|e| e.into_inner()).list()?;
         let due = rules::due_reminders(&events, Local::now().naive_local());
         if !due.is_empty() {
             let _ = app.emit(

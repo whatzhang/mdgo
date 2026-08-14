@@ -24,7 +24,6 @@ use crate::core::approval::transport::IpcApprovalTransport;
 use crate::core::agent::planner::PlanDecision;
 
 use crate::core::approval::{ApprovalGate, ApprovalOutcome};
-use crate::services::prompt::PromptStore;
 
 use std::sync::RwLock;
 use std::time::Duration;
@@ -115,15 +114,18 @@ pub struct AppState {
         Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<PlanDecision>>>>,
     /// 子代理完整输出存储（LRU 有界：最多保留 16 条，按最近访问淘汰）
     pub subagent_results: Arc<LruResultStore>,
-    /// 跨会话长期记忆存储（全局用户数据目录）
+    /// 跨会话长期记忆存储（系统级全局单例：`{系统数据目录}/com.mdgo/memory.db`）
     pub memory_store: Arc<crate::core::memory::MemoryStore>,
     /// 记忆向量索引（O1：内存惰性增量，embedding 本地 BGE 模型）
     pub memory_vectors: Arc<crate::core::memory::vector::MemoryVectorIndex>,
+    /// Prompt 模板存储（按知识库目录惰性创建，`{dir}/.mdgo/mdgo.db`）
+    pub prompt_stores:
+        std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<crate::services::prompt::PromptStore>>>,
     /// MCP 服务器注册表（v2：配置 + 生命周期 + 工具清单）
     pub mcp: Arc<crate::core::mcp::McpRegistry>,
     /// 日程存储（按知识库目录惰性创建）
     pub schedule_stores:
-        std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<std::sync::Mutex<crate::core::schedule::store::JsonFileStore>>>>,
+        std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<std::sync::Mutex<crate::core::schedule::sqlite::SqliteStore>>>>,
     /// 农历/节假日/调休服务（全局单例，调休缓存于 %APPDATA%/com.mdgo/schedule_cache）
     pub schedule_day_info: std::sync::Arc<dyn crate::core::schedule::lunar::DayInfoProvider>,
     /// 日程提醒调度器（tokio 后台循环，到点经 schedule:reminder 事件推前端）
@@ -131,6 +133,42 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// 获取或创建某知识库目录的日程存储（共享 Arc<Mutex>，所有读写路径共用同一把锁，
+    /// 避免工具闭包 / IPC 命令 / 提醒调度器并发写同一数据库导致丢失更新）。
+    /// dir_path 先规范化（防穿越 + 同目录多写法命中同一缓存实例）。
+    pub fn schedule_store(&self, dir_path: &str) -> Result<std::sync::Arc<std::sync::Mutex<crate::core::schedule::sqlite::SqliteStore>>, String> {
+        let key = crate::core::db::global::sanitize_kb_dir(dir_path)?;
+        let key_str = key.to_string_lossy().to_string();
+        let mut map = self
+            .schedule_stores
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()); // poison 恢复：锁被污染时不 panic，继续服务
+        if let Some(store) = map.get(&key_str) {
+            return Ok(store.clone());
+        }
+        let store = std::sync::Arc::new(std::sync::Mutex::new(
+            crate::core::schedule::sqlite::SqliteStore::new(&key_str)?,
+        ));
+        map.insert(key_str, store.clone());
+        Ok(store)
+    }
+
+    /// 获取（或惰性创建）某知识库目录的 Prompt 模板存储（`{dir}/.mdgo/mdgo.db`）
+    pub fn prompt_store_for(
+        &self,
+        dir_path: &str,
+    ) -> Result<std::sync::Arc<crate::services::prompt::PromptStore>, String> {
+        let key = crate::core::db::global::sanitize_kb_dir(dir_path)?;
+        let key_str = key.to_string_lossy().to_string();
+        let mut map = self.prompt_stores.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(store) = map.get(&key_str) {
+            return Ok(store.clone());
+        }
+        let store = std::sync::Arc::new(crate::services::prompt::PromptStore::new(&key_str)?);
+        map.insert(key_str, store.clone());
+        Ok(store)
+    }
+
     /// 获取或创建 LLM 客户端（按配置指纹缓存，复用 reqwest 连接池；配置热更新后自动重建）。
     ///
     /// 供 commands 层与工具闭包（子代理深度调研）共用，避免 core 层反向依赖 commands 层。
@@ -186,19 +224,23 @@ impl AppState {
 
     /// 获取或创建指定目录的 ChatStore
     pub fn get_chat_store(&self, dir_path: &str) -> Result<Arc<services::chat::ChatStore>, String> {
+        // 先 sanitize（防路径穿越/任意路径写），规范路径作缓存 key（同目录多写法命中同一实例，
+        // 避免同一 DB 文件产生多个写连接池并发写）
+        let key = crate::core::db::global::sanitize_kb_dir(dir_path)?;
+        let key_str = key.to_string_lossy().to_string();
         let mut stores = self.chat_stores.lock().map_err(|e| e.to_string())?;
-        if let Some(store) = stores.get(dir_path) {
+        if let Some(store) = stores.get(&key_str) {
             return Ok(Arc::clone(store));
         }
         // 聊天数据存储在 {dir_path}/.mdgo/mdgo.db
-        let db_dir = std::path::Path::new(dir_path)
+        let db_dir = std::path::Path::new(&key_str)
             .join(".mdgo");
         let store = Arc::new(
             services::chat::ChatStore::new(
                 &db_dir.to_string_lossy(),
             )?,
         );
-        stores.insert(dir_path.to_string(), Arc::clone(&store));
+        stores.insert(key_str, Arc::clone(&store));
         Ok(store)
     }
 
@@ -207,17 +249,20 @@ impl AppState {
         &self,
         dir_path: &str,
     ) -> Result<Arc<services::ai_history::AiHistoryStore>, String> {
+        // 先 sanitize（防路径穿越/任意路径写），规范路径作缓存 key
+        let key = crate::core::db::global::sanitize_kb_dir(dir_path)?;
+        let key_str = key.to_string_lossy().to_string();
         let mut stores = self.ai_history_stores.lock().map_err(|e| e.to_string())?;
-        if let Some(store) = stores.get(dir_path) {
+        if let Some(store) = stores.get(&key_str) {
             return Ok(Arc::clone(store));
         }
         // AI 历史数据存储在 {dir_path}/.mdgo/mdgo.db
-        let db_dir = std::path::Path::new(dir_path)
+        let db_dir = std::path::Path::new(&key_str)
             .join(".mdgo");
         let store = Arc::new(
             services::ai_history::AiHistoryStore::new(&db_dir.to_string_lossy())?,
         );
-        stores.insert(dir_path.to_string(), Arc::clone(&store));
+        stores.insert(key_str, Arc::clone(&store));
         Ok(store)
     }
 }
@@ -272,11 +317,7 @@ pub fn run() {
         log::warn!("[skill] 创建全局技能目录失败: {}", e);
     }
 
-    // ── Prompt 存储初始化 ──
-    let prompt_store = PromptStore::new()
-        .expect("初始化 PromptStore 失败");
-
-    // 托盘创建是否成功：决定 Windows/Linux 关闭按钮是否拦截为「隐藏到托盘」。
+    // ── 托盘创建是否成功：决定 Windows/Linux 关闭按钮是否拦截为「隐藏到托盘」。
     // 托盘不可用（如 Linux 无托盘宿主）时走系统原生关闭逻辑，避免窗口隐藏后无法恢复。
     let tray_ok = Arc::new(AtomicBool::new(false));
     #[cfg(not(target_os = "macos"))]
@@ -288,7 +329,6 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .manage(SystemMonitorState::new())
         .manage(TaskRegistry::new())
-        .manage(prompt_store)
         .setup(move |app| {
             // ── 组装工具审批门（破坏性操作确认，需 AppHandle 以走前端桥）──
             // 策略：edit / delete 需用户确认；通道：WebSocket 桥调前端弹窗；
@@ -344,6 +384,7 @@ pub fn run() {
                 memory_vectors: Arc::new(crate::core::memory::vector::MemoryVectorIndex::new(
                     Arc::new(crate::core::memory::vector::LocalEmbedder),
                 )),
+                prompt_stores: std::sync::Mutex::new(std::collections::HashMap::new()),
                 mcp: Arc::new(crate::core::mcp::McpRegistry::new()),
                 schedule_stores: crate::commands::schedule::empty_store_cache(),
                 schedule_day_info: crate::commands::schedule::build_day_info_provider(),

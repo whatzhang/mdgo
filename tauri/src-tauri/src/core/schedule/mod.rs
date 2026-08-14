@@ -2,10 +2,11 @@
 //!
 //! # 设计
 //!
-//! - [`ScheduleEvent`]：日程事件领域模型，字段与前端 `index_schedule.json` 逐一对齐
+//! - [`ScheduleEvent`]：日程事件领域模型，字段与前端数据逐一对齐
 //!   （id/title/start/end/color/desc/cron/notify/created_at/updated_at），时间格式 `YYYY-MM-DDTHH:MM`。
-//! - [`store::EventStore`]：存储抽象（trait），`store::JsonFileStore` 为 JSON 文件实现
-//!   （读写 `{dir}/.mdgo/index_schedule.json`，原子写），可被 SQLite 实现替换而不改上层。
+//! - [`store::EventStore`]：存储抽象（trait，接口隔离 + 依赖倒置），上层只依赖此接口；
+//! - [`sqlite::SqliteStore`]：SQLite 持久化实现（全局共用 DB `%APPDATA%/com.mdgo/mdgo.db`，
+//!   `dir_path` 列做知识库隔离，WAL，全参数化 SQL）。
 //! - [`rules`]：纯函数规则引擎（Cron 展开 / 冲突检测 / 提醒计算 / 时间校验）。
 //! - [`lunar`]：农历 / 节假日 / 调休信息提供（DayInfoProvider trait）。
 //!
@@ -16,6 +17,7 @@ pub mod lunar;
 pub mod planner;
 pub mod rules;
 pub mod scheduler;
+pub mod sqlite;
 pub mod store;
 
 use serde::{Deserialize, Serialize};

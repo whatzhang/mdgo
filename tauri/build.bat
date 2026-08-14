@@ -243,6 +243,19 @@ popd
 echo [OK]    Cleanup completed
 goto :eof
 
+:clean_incremental
+echo [INFO]  Cleaning incremental build cache (mdgo package only)...
+pushd "%TAURI_SRC%"
+cargo clean -p mdgo
+if errorlevel 1 (
+    echo [WARN]  Incremental cache cleanup failed
+) else (
+    echo [OK]    Incremental cache cleaned - %TAURI_SRC%\target
+)
+popd
+echo [HINT]  If strange compile/link errors persist (E0425, LNK2019 anon.*.llvm.*), run full: build.bat clean
+goto :eof
+
 REM -- Fix 8: Add version info display --
 :show_help
 echo MDGo - Local Document Knowledge Base Build and Test Script
@@ -258,6 +271,7 @@ echo   check      Check frontend build + Rust compilation, npx vite build ^&^& c
 echo   test       Run all tests, cargo test
 echo   build      Build production Tauri desktop app, npx tauri build
 echo   clean      Clean build artifacts, cargo clean
+echo   clean-inc  Clean mdgo incremental cache only, cargo clean -p mdgo
 echo   help       Show this help message
 goto :eof
 
@@ -288,6 +302,7 @@ if "%CMD%"=="check" (
 if "%CMD%"=="test"    ( call :run_tests & goto :end )
 if "%CMD%"=="build"   ( call :run_build & goto :end )
 if "%CMD%"=="clean"   ( call :clean_all & goto :end )
+if "%CMD%"=="clean-inc" ( call :clean_incremental & goto :end )
 if "%CMD%"=="help"    ( call :show_help & goto :end )
 
 echo [ERROR] Unknown command: %CMD%

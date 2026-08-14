@@ -14,4 +14,6 @@ rustflags = ["-C", "target-feature=-crt-static"]
 [env]
 CFLAGS = "-MD"
 CXXFLAGS = "-MD"
-# 注: [build] jobs 段已删除——cargo 默认即按 CPU 核心数并行；如需限制并发可设正整数（如 jobs = 4）
+
+[build]
+jobs = 1

@@ -15876,7 +15876,7 @@
                                 <textarea id="chat-input" rows="4" placeholder="按下回车发送消息..."
                                     onkeydown="handleChatKeydown(event)" onkeyup="handleChatKeyup(event)"
                                     oninput="updateChatSendButton()" onfocus="updateChatSendButton()"
-                                    onblur="updateChatSendButton()"></textarea>
+                                    onblur="updateChatSendButton()" onpaste="handleChatPaste(event)"></textarea>
                             </div>
                             <div class="chat-bottom-toolbar" id="chat-bottom-toolbar">
                                 <div class="chat-toolbar-icons">
@@ -37659,6 +37659,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (isEdit) {
                 // Tauri 模式下模板保存在后端数据库，_customPrompts 为空，需直接按 id 更新
                 await window.__TAURI__.core.invoke('prompt_update', {
+                    dirPath: currentRootPath,
                     id: promptId,
                     name: newName,
                     prompt: newPrompt,
@@ -37666,6 +37667,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 showNotification('Prompt 已更新');
             } else {
                 await window.__TAURI__.core.invoke('prompt_create', {
+                    dirPath: currentRootPath,
                     name: newName,
                     prompt: newPrompt,
                 });
@@ -37674,7 +37676,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             await refreshCustomPromptsDisplayList();
         }
         async function selectAiCustomPromptDelete(promptId) {
-            await window.__TAURI__.core.invoke('prompt_delete', { id: promptId });
+            await window.__TAURI__.core.invoke('prompt_delete', { dirPath: currentRootPath, id: promptId });
             showNotification('Prompt 已删除');
             await refreshCustomPromptsDisplayList();
         }
@@ -37729,7 +37731,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         /** 汇总自定义 Prompt 弹窗的完整列表（系统动作 + 自定义模板），并缓存到 _customPromptListCache */
         async function getCustomPromptListData() {
             const prompts = [...AI_SELECTION_ACTIONS.filter(i => i.type === 'system')];
-            const db = await window.__TAURI__.core.invoke('prompt_list');
+            const db = await window.__TAURI__.core.invoke('prompt_list', { dirPath: currentRootPath });
             for (let i = 0; i < db.length; i++) {
                 const item = db[i];
                 item.type = 'custom';
@@ -49298,7 +49300,20 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             updateChatSendButton();
         }
 
-        /** keyup：检测/更新 @token 状态机 */
+        function handleChatPaste(e) {
+            const input = document.getElementById('chat-input');
+            if (!input) return;
+            const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+            if (!text) return;
+            e.preventDefault();
+            const trimmed = text.trim(); // 当前仅去除首尾空格，后续扩展
+            const start = input.selectionStart, end = input.selectionEnd;
+            input.value = input.value.slice(0, start) + trimmed + input.value.slice(end);
+            const pos = start + trimmed.length;
+            input.setSelectionRange(pos, pos);
+            // 触发 oninput（更新发送按钮；trim 幂等无副作用）
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
         function handleChatKeyup(e) {
             const input = document.getElementById('chat-input');
             if (!input) return;
@@ -52004,6 +52019,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                     if (isEdit) {
                         await window.__TAURI__.core.invoke('prompt_update', {
+                            dirPath: currentRootPath,
                             id: promptItem.id,
                             name: newName,
                             prompt: newPrompt,
@@ -52011,6 +52027,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         showNotification('Prompt 已更新');
                     } else {
                         await window.__TAURI__.core.invoke('prompt_create', {
+                            dirPath: currentRootPath,
                             name: newName,
                             prompt: newPrompt,
                         });
@@ -52049,7 +52066,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         await selectAiCustomPromptDelete(id);
                         return;
                     }
-                    await window.__TAURI__.core.invoke('prompt_delete', { id });
+                    await window.__TAURI__.core.invoke('prompt_delete', { dirPath: currentRootPath, id });
                     showNotification('Prompt 已删除');
                     await renderPromptList();
                 } catch (e) {
@@ -52064,7 +52081,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (!popup) return;
 
             try {
-                const prompts = await window.__TAURI__.core.invoke('prompt_list');
+                const prompts = await window.__TAURI__.core.invoke('prompt_list', { dirPath: currentRootPath });
                 if (!prompts || prompts.length === 0) {
                     popup.innerHTML = `
                         <div class="prompt-popup-empty">暂无 Prompt 模板</div>

@@ -421,13 +421,20 @@
             }
         }
 
-        /** 清理日历 UI 定时器（不影响后台调度器运行） */
+        /** 清理日历 UI 定时器，并复位日程初始化状态（目录切换时调用）：
+         *  1. 清 UI 定时器；
+         *  2. 通知 Rust 调度器清除 active_dir（旧目录提醒停止触发）；
+         *  3. 复位 _todoEarlyInitialized，使切换后的 initAll → todoEarlyInit
+         *     重新加载新目录日程并 setActiveDir(新目录)。
+         */
         function todoDestroy() {
             if (TimerManager.has('todoTimeline')) {
                 TimerManager.clear('todoTimeline');
             }
             TimerManager.clear('todo-display-time');
             TimerManager.clear('todoModalTime');
+            todoStopLocalScheduler();
+            _todoEarlyInitialized = false;
         }
 
         function todoRenderAll() {

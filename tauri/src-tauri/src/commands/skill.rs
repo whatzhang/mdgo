@@ -235,10 +235,17 @@ pub async fn skill_attach(
     }
 
     let mode = parse_mount_mode(&mode)?;
+    let skill_version = skill.version;
 
-    // 打开会话数据库
+    // 打开会话数据库（SQLite 阻塞 IO 移入 blocking 线程）
     let chat_store = state.get_chat_store(&dir_path)?;
-    chat_store.attach_skill(&session_id, &scope, &skill_id, skill.version, &mode)?;
+    tokio::task::spawn_blocking(move || {
+        crate::core::db::with_busy_retry(3, || {
+            chat_store.attach_skill(&session_id, &scope, &skill_id, skill_version, &mode)
+        })
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))??;
 
     Ok(())
 }
@@ -256,7 +263,13 @@ pub async fn skill_set_mount_mode(
     let state = app.state::<AppState>();
     let mode = parse_mount_mode(&Some(mode))?;
     let chat_store = state.get_chat_store(&dir_path)?;
-    chat_store.set_mount_mode(&session_id, &scope, &skill_id, &mode)?;
+    tokio::task::spawn_blocking(move || {
+        crate::core::db::with_busy_retry(3, || {
+            chat_store.set_mount_mode(&session_id, &scope, &skill_id, &mode)
+        })
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))??;
     Ok(())
 }
 
@@ -271,7 +284,13 @@ pub async fn skill_detach(
 ) -> Result<(), String> {
     let state = app.state::<AppState>();
     let chat_store = state.get_chat_store(&dir_path)?;
-    chat_store.detach_skill(&session_id, &scope, &skill_id)?;
+    tokio::task::spawn_blocking(move || {
+        crate::core::db::with_busy_retry(3, || {
+            chat_store.detach_skill(&session_id, &scope, &skill_id)
+        })
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))??;
 
     Ok(())
 }
@@ -298,7 +317,12 @@ pub async fn skill_get_attached(
     state.skill_registry.ensure_loaded(&dir_path)?;
 
     let chat_store = state.get_chat_store(&dir_path)?;
-    let attached = chat_store.get_attached_skills(&session_id)?;
+    let attached = {
+        let sid = session_id.clone();
+        tokio::task::spawn_blocking(move || chat_store.get_attached_skills(&sid))
+            .await
+            .map_err(|e| format!("任务执行失败: {}", e))??
+    };
 
     // 从注册表获取技能详情，并校验版本
     let mut skills = Vec::new();

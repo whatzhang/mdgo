@@ -1259,11 +1259,13 @@ pub async fn agent_query(
 
     // P0-2/O1：注入相关长期记忆（关键词 ∪ 向量融合检索，RRF；embedding
     // 不可用时 search_hybrid 内部降级纯关键词；检索失败/无命中不注入）。
+    // 两级记忆（P0-3）：仅注入「当前知识库 ∪ 全局」的记忆，切换目录后自动隔离。
     let memory_block = match crate::core::memory::search_hybrid(
         state.memory_store.clone(),
         state.memory_vectors.clone(),
         &query,
         3,
+        &dir_path,
     )
     .await
     {

@@ -8,6 +8,7 @@
 #   ./build.sh test         运行所有测试
 #   ./build.sh build        构建生产版 Tauri 桌面应用
 #   ./build.sh clean        清理构建产物
+#   ./build.sh clean-inc    仅清理主包增量缓存（cargo clean -p mdgo）
 # ==============================================================================
 
 set -euo pipefail
@@ -119,6 +120,16 @@ clean_all() {
 }
 
 # ------------------------------------------------------------------------------
+# 清理主包增量缓存（保留依赖编译缓存，速度更快）
+# ------------------------------------------------------------------------------
+clean_incremental() {
+  info "清理增量编译缓存（仅 mdgo 主包）..."
+  cd "$TAURI_SRC"
+  cargo clean -p mdgo && ok "增量缓存已清理 → $TAURI_SRC/target" || warn "增量缓存清理失败"
+  warn "若异常编译/链接错误仍存在（E0425、LNK2019 anon.*.llvm.*），请执行: ./build.sh clean"
+}
+
+# ------------------------------------------------------------------------------
 # 主命令分发
 # ------------------------------------------------------------------------------
 case "${1:-help}" in
@@ -142,6 +153,9 @@ case "${1:-help}" in
   clean)
     clean_all
     ;;
+  clean-inc)
+    clean_incremental
+    ;;
   *)
     echo "MDGo - 本地文档知识库 构建与测试脚本"
     echo ""
@@ -154,6 +168,7 @@ case "${1:-help}" in
     echo "  test       运行所有测试，cargo test"
     echo "  build      构建生产版 Tauri 桌面应用，npx tauri build"
     echo "  clean      清理构建产物，cargo clean"
+    echo "  clean-inc  仅清理主包增量缓存，cargo clean -p mdgo"
     echo "  help       显示此帮助信息"
     ;;
 esac

@@ -1,6 +1,8 @@
 pub mod bm25;
 pub mod chunk_splitter;
+pub mod global;
 pub mod lance;
+pub mod pool;
 pub mod schema;
 pub mod utils;
 

@@ -153,12 +153,10 @@ impl SkillMetrics {
                         .map_err(|e| format!("创建数据库目录失败: {}", e))?;
                     let conn = Connection::open(db_dir.join("mdgo.db"))
                         .map_err(|e| format!("打开技能指标数据库失败: {}", e))?;
-                    conn.execute_batch("PRAGMA journal_mode=WAL;")
-                        .map_err(|e| format!("启用 WAL 失败: {}", e))?;
+                    // 统一连接参数（WAL / busy_timeout / cache_size / mmap 等）；
                     // ChatStore / AiHistoryStore / Indexer 均以独立连接打开同一 mdgo.db，
-                    // WAL 下写写互斥；必须设置忙等待，否则并发写直接 SQLITE_BUSY 丢指标
-                    conn.execute_batch("PRAGMA busy_timeout=5000;")
-                        .map_err(|e| format!("设置 busy_timeout 失败: {}", e))?;
+                    // WAL 下写写互斥，busy_timeout 兜底并发写
+                    crate::core::db::pool::apply_pragmas(&conn)?;
                     crate::core::db::schema::init_all(&conn)?;
                     let shared = Arc::new(Mutex::new(conn));
                     guard.insert(dir_path.to_string(), Arc::clone(&shared));
@@ -342,7 +340,7 @@ impl SkillMetrics {
         let records: Vec<ExecutionRecord> = self
             .with_conn(dir_path, |conn| {
                 let mut stmt = conn
-                    .prepare(
+                    .prepare_cached(
                         "SELECT scope, skill_id, match_level, score, state, duration_ms, error_code, created_at
                          FROM (
                              SELECT scope, skill_id, match_level, score, state, duration_ms, error_code, created_at,

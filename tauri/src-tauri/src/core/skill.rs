@@ -646,8 +646,8 @@ impl SkillDb {
             .map_err(|e| format!("创建数据库目录失败: {}", e))?;
         let db_path = db_dir.join("mdgo.db");
         let conn = Connection::open(&db_path).map_err(|e| format!("打开技能数据库失败: {}", e))?;
-        conn.execute_batch("PRAGMA journal_mode=WAL;")
-            .map_err(|e| format!("启用 WAL 失败: {}", e))?;
+        // 统一连接参数（WAL / busy_timeout / cache_size / mmap 等）
+        crate::core::db::pool::apply_pragmas(&conn)?;
         schema::init_all(&conn)?;
         Ok(conn)
     }

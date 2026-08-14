@@ -1,6 +1,7 @@
 //! 日程命令层（IPC 薄壳：参数编解码 → 委托 `core::schedule`，不含业务逻辑）。
 //!
-//! 存储按知识库目录惰性创建（`JsonFileStore` 读写 `{dir}/.mdgo/index_schedule.json`）；
+//! 存储按知识库目录惰性创建（`SqliteStore` 指向全局共用 DB `%APPDATA%/com.mdgo/mdgo.db`，
+//! `dir_path` 列隔离各知识库数据）；
 //! 农历/节假日服务为全局单例（调休缓存于 `%APPDATA%/com.mdgo/schedule_cache`）。
 
 use std::collections::HashMap;
@@ -12,18 +13,21 @@ use tauri::{AppHandle, Manager};
 use crate::core::schedule::lunar::{DayInfo, DayInfoProvider, HolidayService};
 use crate::core::schedule::planner;
 use crate::core::schedule::rules;
-use crate::core::schedule::store::{EventStore, JsonFileStore};
+use crate::core::schedule::sqlite::SqliteStore;
+use crate::core::schedule::store::EventStore;
 use crate::core::schedule::{ScheduleEvent, ScheduleEventInput};
 use crate::AppState;
 
-type StoreRef = Arc<Mutex<JsonFileStore>>;
+type StoreRef = Arc<Mutex<SqliteStore>>;
 
-/// 按目录获取（或惰性创建）日程存储
-fn store_for(state: &AppState, dir_path: &str) -> StoreRef {
-    let mut map = state.schedule_stores.lock().unwrap();
-    map.entry(dir_path.to_string())
-        .or_insert_with(|| Arc::new(Mutex::new(JsonFileStore::new(dir_path))))
-        .clone()
+/// 按目录获取（或惰性创建）日程存储——所有读写路径（IPC/工具/调度器）共用同一 Arc<Mutex>
+fn store_for(state: &AppState, dir_path: &str) -> Result<StoreRef, String> {
+    state.schedule_store(dir_path)
+}
+
+/// 加锁（poison 恢复：锁被污染时继续服务而非 panic，保证高可用）
+fn lock_store(store: &StoreRef) -> std::sync::MutexGuard<'_, SqliteStore> {
+    store.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 fn now_local() -> NaiveDateTime {
@@ -43,7 +47,11 @@ fn parse_date(s: &str) -> Result<NaiveDate, String> {
 #[tauri::command]
 pub async fn schedule_list(app: AppHandle, dir_path: String) -> Result<Vec<ScheduleEvent>, String> {
     let state = app.state::<AppState>();
-    store_for(&state, &dir_path).lock().unwrap().list()
+    let store = store_for(&state, &dir_path)?;
+    // SQLite 为阻塞 IO，移入 blocking 线程，避免占住 tokio worker
+    tokio::task::spawn_blocking(move || lock_store(&store).list())
+        .await
+        .map_err(|e| format!("任务执行失败: {}", e))?
 }
 
 /// 单事件详情
@@ -54,10 +62,11 @@ pub async fn schedule_get(
     id: String,
 ) -> Result<ScheduleEvent, String> {
     let state = app.state::<AppState>();
-    store_for(&state, &dir_path)
-        .lock()
-        .unwrap()
-        .list()?
+    let store = store_for(&state, &dir_path)?;
+    let events = tokio::task::spawn_blocking(move || lock_store(&store).list())
+        .await
+        .map_err(|e| format!("任务执行失败: {}", e))??;
+    events
         .into_iter()
         .find(|e| e.id == id)
         .ok_or_else(|| "日程不存在".to_string())
@@ -85,18 +94,24 @@ pub async fn schedule_add(
         updated_at: now,
     };
     event.validate()?;
-    // 冲突检测（非 Cron 事件）
-    let conflicts = if event.cron.trim().is_empty() {
-        let s = rules::parse_local_time(&event.start)
-            .ok_or_else(|| "开始时间格式无效".to_string())?;
-        let e = rules::parse_local_time(&event.end)
-            .ok_or_else(|| "结束时间格式无效".to_string())?;
-        let list = store_for(&state, &dir_path).lock().unwrap().list()?;
-        rules::find_conflicts(&list, s, e, None)
-    } else {
-        Vec::new()
-    };
-    store_for(&state, &dir_path).lock().unwrap().upsert(event.clone())?;
+    let store = store_for(&state, &dir_path)?;
+    // 冲突检测（非 Cron 事件）+ 写入：SQLite 阻塞 IO 移入 blocking 线程
+    let (conflicts, event) = tokio::task::spawn_blocking(move || -> Result<(Vec<ScheduleEvent>, ScheduleEvent), String> {
+        let conflicts = if event.cron.trim().is_empty() {
+            let s = rules::parse_local_time(&event.start)
+                .ok_or_else(|| "开始时间格式无效".to_string())?;
+            let e = rules::parse_local_time(&event.end)
+                .ok_or_else(|| "结束时间格式无效".to_string())?;
+            let list = lock_store(&store).list()?;
+            rules::find_conflicts(&list, s, e, None)
+        } else {
+            Vec::new()
+        };
+        lock_store(&store).upsert(event.clone())?;
+        Ok((conflicts, event))
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))??;
     Ok(ScheduleAddResult { event, conflicts })
 }
 
@@ -109,23 +124,29 @@ pub async fn schedule_update(
     input: ScheduleEventInput,
 ) -> Result<ScheduleEvent, String> {
     let state = app.state::<AppState>();
-    let store = store_for(&state, &dir_path);
-    let mut events = store.lock().unwrap().list()?;
-    let Some(existing) = events.iter_mut().find(|e| e.id == id) else {
-        return Err("日程不存在".to_string());
-    };
-    existing.title = input.title;
-    existing.start = input.start;
-    existing.end = input.end;
-    existing.color = input.color;
-    existing.desc = input.desc;
-    existing.cron = input.cron;
-    existing.notify = input.notify;
-    existing.updated_at = fmt_time(now_local());
-    existing.validate()?;
-    let updated = existing.clone();
-    drop(store);
-    store_for(&state, &dir_path).lock().unwrap().replace_all(events)?;
+    let store = store_for(&state, &dir_path)?;
+    // 单锁内完成 读→改→写：消除锁窗口（并发写者在此期间插入/删除不会被覆盖）
+    let updated = tokio::task::spawn_blocking(move || -> Result<ScheduleEvent, String> {
+        let mut guard = lock_store(&store);
+        let mut events = guard.list()?;
+        let Some(existing) = events.iter_mut().find(|e| e.id == id) else {
+            return Err("日程不存在".to_string());
+        };
+        existing.title = input.title;
+        existing.start = input.start;
+        existing.end = input.end;
+        existing.color = input.color;
+        existing.desc = input.desc;
+        existing.cron = input.cron;
+        existing.notify = input.notify;
+        existing.updated_at = fmt_time(now_local());
+        existing.validate()?;
+        let updated = existing.clone();
+        guard.replace_all(events)?;
+        Ok(updated)
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))??;
     Ok(updated)
 }
 
@@ -137,7 +158,10 @@ pub async fn schedule_remove(
     id: String,
 ) -> Result<(), String> {
     let state = app.state::<AppState>();
-    store_for(&state, &dir_path).lock().unwrap().remove(&id)
+    let store = store_for(&state, &dir_path)?;
+    tokio::task::spawn_blocking(move || lock_store(&store).remove(&id))
+        .await
+        .map_err(|e| format!("任务执行失败: {}", e))?
 }
 
 /// 某日事件列表（含 Cron 展开，按时间排序）——前端日历视图取数
@@ -149,7 +173,10 @@ pub async fn schedule_events_on_date(
 ) -> Result<Vec<ScheduleEvent>, String> {
     let state = app.state::<AppState>();
     let d = parse_date(&date)?;
-    let events = store_for(&state, &dir_path).lock().unwrap().list()?;
+    let store = store_for(&state, &dir_path)?;
+    let events = tokio::task::spawn_blocking(move || lock_store(&store).list())
+        .await
+        .map_err(|e| format!("任务执行失败: {}", e))??;
     Ok(rules::events_on_date(&events, d))
 }
 
@@ -168,7 +195,10 @@ pub async fn schedule_conflicts(
     if e <= s {
         return Err("结束时间必须晚于开始时间".to_string());
     }
-    let events = store_for(&state, &dir_path).lock().unwrap().list()?;
+    let store = store_for(&state, &dir_path)?;
+    let events = tokio::task::spawn_blocking(move || lock_store(&store).list())
+        .await
+        .map_err(|e| format!("任务执行失败: {}", e))??;
     Ok(rules::find_conflicts(&events, s, e, ignore_id.as_deref()))
 }
 
@@ -176,7 +206,10 @@ pub async fn schedule_conflicts(
 #[tauri::command]
 pub async fn schedule_remind(app: AppHandle, dir_path: String) -> Result<Vec<ScheduleEvent>, String> {
     let state = app.state::<AppState>();
-    let events = store_for(&state, &dir_path).lock().unwrap().list()?;
+    let store = store_for(&state, &dir_path)?;
+    let events = tokio::task::spawn_blocking(move || lock_store(&store).list())
+        .await
+        .map_err(|e| format!("任务执行失败: {}", e))??;
     Ok(rules::due_reminders(&events, now_local()))
 }
 
@@ -186,7 +219,12 @@ pub async fn schedule_lunar(app: AppHandle, dir_path: String, date: String) -> R
     let state = app.state::<AppState>();
     let _ = dir_path;
     let d = parse_date(&date)?;
-    Ok(state.schedule_day_info.day_info(d))
+    // day_info 内部可能触发 timor.tech 网络请求（blocking client），须在 blocking 线程执行，
+    // 避免在 async 上下文 drop 内部 runtime 导致 panic（Cannot drop a runtime ...）
+    let provider = state.schedule_day_info.clone();
+    tokio::task::spawn_blocking(move || provider.day_info(d))
+        .await
+        .map_err(|e| format!("农历/节假日计算失败: {}", e))
 }
 
 /// 查找下一个可安排时间段（可跳过休息日/节假日）——项目独有特性
@@ -203,14 +241,24 @@ pub async fn schedule_next_available(
         Some(s) => rules::parse_local_time(&s).ok_or_else(|| "开始时间格式无效".to_string())?,
         None => now_local(),
     };
-    let events = store_for(&state, &dir_path).lock().unwrap().list()?;
-    let next = planner::next_available(
-        &events,
-        state.schedule_day_info.as_ref(),
-        duration_minutes,
-        start,
-        skip_rest_days.unwrap_or(true),
-    );
+    let store = store_for(&state, &dir_path)?;
+    let events = tokio::task::spawn_blocking(move || lock_store(&store).list())
+        .await
+        .map_err(|e| format!("任务执行失败: {}", e))??;
+    // planner::next_available 内部会调 day_info（可能触发 timor.tech blocking 网络），
+    // 在 blocking 线程执行，避免 async 上下文 drop runtime panic
+    let provider = state.schedule_day_info.clone();
+    let next = tokio::task::spawn_blocking(move || {
+        planner::next_available(
+            &events,
+            provider.as_ref(),
+            duration_minutes,
+            start,
+            skip_rest_days.unwrap_or(true),
+        )
+    })
+    .await
+    .map_err(|e| format!("查找可安排时间失败: {}", e))?;
     Ok(next.map(|t| fmt_time(t)))
 }
 

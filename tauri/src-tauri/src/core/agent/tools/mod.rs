@@ -2755,7 +2755,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
             let app = tool_app.clone();
             Box::pin(async move {
                 use crate::core::schedule::rules;
-                use crate::core::schedule::store::{EventStore, JsonFileStore};
+                use crate::core::schedule::store::EventStore;
                 use crate::core::schedule::{ScheduleEvent, ScheduleEventInput};
 
                 let action = args
@@ -2764,13 +2764,17 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                     .filter(|a| !a.trim().is_empty())
                     .unwrap_or("list");
                 let get = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let mut store = JsonFileStore::new(&dir);
                 let state = app.state::<crate::AppState>();
+                // 共享存储：与 IPC 命令 / 提醒调度器共用同一 Arc<Mutex>，杜绝并发写丢失更新
+                let store_ref = state.schedule_store(&dir).map_err(|e| tool_error("schedule", &e))?;
                 let now = chrono::Local::now().naive_local();
                 let fmt = |dt: chrono::NaiveDateTime| dt.format("%Y-%m-%dT%H:%M").to_string();
+                // 短锁：每个动作获取一次 guard（add/update 在单锁内完成读+写）；poison 恢复保证高可用
+                let store_guard = || store_ref.lock().unwrap_or_else(|e| e.into_inner());
 
                 match action {
                     "list" => {
+                        let store = store_guard();
                         let events = store.list().map_err(|e| tool_error("schedule", &e))?;
                         if events.is_empty() {
                             return Ok(ToolOutput::text("当前没有日程"));
@@ -2797,7 +2801,9 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                         if input.title.trim().is_empty() {
                             return Err(tool_error("schedule", "日程标题不能为空"));
                         }
-                        let (_id, event) = if action == "add" {
+                        // 单锁内完成读+写（冲突检测与写入原子，杜绝并发窗口丢失更新）
+                        let mut store = store_guard();
+                        if action == "add" {
                             let now_s = fmt(now);
                             let event = ScheduleEvent {
                                 id: uuid::Uuid::new_v4().to_string(),
@@ -2812,28 +2818,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                                 updated_at: now_s,
                             };
                             event.validate().map_err(|e| tool_error("schedule", &e))?;
-                            (event.id.clone(), event)
-                        } else {
-                            let id = get("id");
-                            let mut events = store.list().map_err(|e| tool_error("schedule", &e))?;
-                            let Some(existing) = events.iter_mut().find(|e| e.id == id) else {
-                                return Err(tool_error("schedule", "日程不存在"));
-                            };
-                            existing.title = input.title;
-                            existing.start = input.start;
-                            existing.end = input.end;
-                            existing.color = input.color;
-                            existing.desc = input.desc;
-                            existing.cron = input.cron;
-                            existing.notify = input.notify;
-                            existing.updated_at = fmt(now);
-                            existing.validate().map_err(|e| tool_error("schedule", &e))?;
-                            let updated = existing.clone();
-                            store.replace_all(events).map_err(|e| tool_error("schedule", &e))?;
-                            (id, updated)
-                        };
-                        if action == "add" {
-                            // 冲突提示（非 Cron 事件）
+                            // 冲突提示（同一锁内，避免并发下读到过期快照）
                             let mut conflict_note = String::new();
                             if event.cron.trim().is_empty() {
                                 if let (Some(s), Some(e)) =
@@ -2852,14 +2837,31 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                                 event.title, event.start, event.end, conflict_note
                             )))
                         } else {
+                            let id = get("id");
+                            let mut events = store.list().map_err(|e| tool_error("schedule", &e))?;
+                            let Some(existing) = events.iter_mut().find(|e| e.id == id) else {
+                                return Err(tool_error("schedule", "日程不存在"));
+                            };
+                            existing.title = input.title;
+                            existing.start = input.start;
+                            existing.end = input.end;
+                            existing.color = input.color;
+                            existing.desc = input.desc;
+                            existing.cron = input.cron;
+                            existing.notify = input.notify;
+                            existing.updated_at = fmt(now);
+                            existing.validate().map_err(|e| tool_error("schedule", &e))?;
+                            let updated = existing.clone();
+                            store.replace_all(events).map_err(|e| tool_error("schedule", &e))?;
                             Ok(ToolOutput::text(format!(
                                 "已更新日程：{}（{} ~ {}）",
-                                event.title, event.start, event.end
+                                updated.title, updated.start, updated.end
                             )))
                         }
                     }
                     "remove" => {
                         let id = get("id");
+                        let mut store = store_guard();
                         store.remove(&id).map_err(|e| tool_error("schedule", &e))?;
                         Ok(ToolOutput::text(format!("已删除日程：{}", id)))
                     }
@@ -2867,6 +2869,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                         let s = rules::parse_local_time(&get("start")).ok_or_else(|| tool_error("schedule", "开始时间格式无效"))?;
                         let e = rules::parse_local_time(&get("end")).ok_or_else(|| tool_error("schedule", "结束时间格式无效"))?;
                         let ignore = if get("ignore_id").is_empty() { None } else { Some(get("ignore_id")) };
+                        let store = store_guard();
                         let events = store.list().map_err(|e| tool_error("schedule", &e))?;
                         let conflicts = rules::find_conflicts(&events, s, e, ignore.as_deref());
                         if conflicts.is_empty() {
@@ -2877,6 +2880,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                         }
                     }
                     "remind" => {
+                        let store = store_guard();
                         let events = store.list().map_err(|e| tool_error("schedule", &e))?;
                         let due = rules::due_reminders(&events, now);
                         if due.is_empty() {
@@ -2889,7 +2893,11 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                     "lunar" => {
                         let date = chrono::NaiveDate::parse_from_str(&get("date"), "%Y-%m-%d")
                             .map_err(|_| tool_error("schedule", "日期格式无效（应为 YYYY-MM-DD）"))?;
-                        let info = state.schedule_day_info.day_info(date);
+                        // day_info 内部可能触发 timor.tech blocking 网络，须在 blocking 线程执行
+                        let provider = state.schedule_day_info.clone();
+                        let info = tokio::task::spawn_blocking(move || provider.day_info(date))
+                            .await
+                            .map_err(|e| tool_error("schedule", &format!("农历/节假日计算失败: {}", e)))?;
                         let mut parts = vec![format!("农历 {}", if info.lunar_month.is_empty() { info.lunar_day.clone() } else { format!("{}{}", info.lunar_month, info.lunar_day) })];
                         if !info.festival.is_empty() {
                             parts.push(format!("节日 {}", info.festival));
@@ -2901,8 +2909,16 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                         let duration = args.get("duration_minutes").and_then(|v| v.as_i64()).ok_or_else(|| tool_error("schedule", "缺少 duration_minutes"))?;
                         let start_after = if get("start_after").is_empty() { now } else { rules::parse_local_time(&get("start_after")).ok_or_else(|| tool_error("schedule", "start_after 格式无效"))? };
                         let skip = args.get("skip_rest_days").and_then(|v| v.as_bool()).unwrap_or(true);
-                        let events = store.list().map_err(|e| tool_error("schedule", &e))?;
-                        match crate::core::schedule::planner::next_available(&events, state.schedule_day_info.as_ref(), duration, start_after, skip) {
+                        // 临时 guard：取数后立即释放（guard 非 Send，不能跨 await）
+                        let events = store_guard().list().map_err(|e| tool_error("schedule", &e))?;
+                        // planner 内部调 day_info（可能 blocking 网络），须在 blocking 线程执行
+                        let provider = state.schedule_day_info.clone();
+                        let next = tokio::task::spawn_blocking(move || {
+                            crate::core::schedule::planner::next_available(&events, provider.as_ref(), duration, start_after, skip)
+                        })
+                        .await
+                        .map_err(|e| tool_error("schedule", &format!("查找可安排时间失败: {}", e)))?;
+                        match next {
                             Some(t) => Ok(ToolOutput::text(format!("下一个可安排时间段：{}（持续 {} 分钟）", fmt(t), duration))),
                             None => Err(tool_error("schedule", "30 天内未找到可安排时间段")),
                         }
@@ -3853,6 +3869,11 @@ pub fn build_remember_tool(cfg: KbSearchConfig) -> DynamicTool {
                 let expires_in_days = args.get("expires_in_days").and_then(|v| v.as_u64());
                 let mut input: crate::core::memory::MemoryInput =
                     serde_json::from_value(args).map_err(|e| tool_error("remember", &e.to_string()))?;
+                // 两级记忆（P0-3）：scope='global' 由存储归一为 ''（跨库常驻）；
+                // scope='project'（默认）绑定当前知识库目录，切换目录后自然隔离。
+                if input.scope.trim() != "global" {
+                    input.dir_path = cfg.dir_path.clone();
+                }
                 if let Some(days) = expires_in_days {
                     if days > 0 {
                         let now_ms = std::time::SystemTime::now()
@@ -3863,8 +3884,10 @@ pub fn build_remember_tool(cfg: KbSearchConfig) -> DynamicTool {
                     }
                 }
                 let state = cfg.app_handle.state::<crate::AppState>();
-                match state.memory_store.create(&input) {
-                    Ok(item) => {
+                let store = state.memory_store.clone();
+                // SQLite 阻塞 IO 移入 blocking 线程，避免占住 agent 异步运行时
+                match tokio::task::spawn_blocking(move || store.create(&input)).await {
+                    Ok(Ok(item)) => {
                         let msg = format!(
                             "已保存记忆（id={}，revision={}）：{}\n{}",
                             item.id, item.revision, item.title, item.body
@@ -3872,9 +3895,13 @@ pub fn build_remember_tool(cfg: KbSearchConfig) -> DynamicTool {
                         record_tool_result(&cfg, "remember", true, &format!("id={} revision={}", item.id, item.revision), Some(&msg));
                         Ok(ToolOutput::text(msg))
                     }
-                    Err(e) => {
+                    Ok(Err(e)) => {
                         record_tool_result(&cfg, "remember", false, &e, Some(&e));
                         Err(tool_error("remember", &e))
+                    }
+                    Err(e) => {
+                        record_tool_result(&cfg, "remember", false, &e.to_string(), Some(&e.to_string()));
+                        Err(tool_error("remember", &e.to_string()))
                     }
                 }
             })
@@ -3910,20 +3937,27 @@ pub fn build_forget_tool(cfg: KbSearchConfig) -> DynamicTool {
                     return Err(tool_error("forget", &e));
                 }
                 let state = cfg.app_handle.state::<crate::AppState>();
-                match state.memory_store.delete(&id) {
-                    Ok(true) => {
+                let store = state.memory_store.clone();
+                // SQLite 阻塞 IO 移入 blocking 线程，避免占住 agent 异步运行时
+                let forget_id = id.clone();
+                match tokio::task::spawn_blocking(move || store.delete(&forget_id)).await {
+                    Ok(Ok(true)) => {
                         let msg = format!("已删除记忆 {id}");
                         record_tool_result(&cfg, "forget", true, &msg, Some(&msg));
                         Ok(ToolOutput::text(msg))
                     }
-                    Ok(false) => {
+                    Ok(Ok(false)) => {
                         let e = format!("记忆 {id} 不存在或已删除");
                         record_tool_result(&cfg, "forget", false, &e, Some(&e));
                         Err(tool_error("forget", &e))
                     }
-                    Err(e) => {
+                    Ok(Err(e)) => {
                         record_tool_result(&cfg, "forget", false, &e, Some(&e));
                         Err(tool_error("forget", &e))
+                    }
+                    Err(e) => {
+                        record_tool_result(&cfg, "forget", false, &e.to_string(), Some(&e.to_string()));
+                        Err(tool_error("forget", &e.to_string()))
                     }
                 }
             })
@@ -3967,11 +4001,13 @@ pub fn build_search_memory_tool(cfg: KbSearchConfig) -> DynamicTool {
                 }
                 let state = cfg.app_handle.state::<crate::AppState>();
                 // O1：融合检索（关键词 ∪ 向量，RRF；embedding 失败降级关键词）
+                // 两级记忆（P0-3）：仅检索「当前知识库 ∪ 全局」的记忆
                 match crate::core::memory::search_hybrid(
                     state.memory_store.clone(),
                     state.memory_vectors.clone(),
                     &query,
                     limit,
+                    &cfg.dir_path,
                 )
                 .await
                 {
