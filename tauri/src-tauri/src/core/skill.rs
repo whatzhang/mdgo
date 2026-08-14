@@ -29,7 +29,7 @@ use crate::core::db::schema;
 /// 本地打开 index.html（无 Tauri）时使用前端内置 fallback 副本。
 pub const ALLOWED_TOOLS: &[&str] = &[
     "kb_search", "code_lookup", "read", "edit", "multi_edit", "delete", "ls", "glob", "grep", "write", "git_status", "git_diff", "git_commit", "git_checkout", "webfetch",
-    "activate_skill", "deactivate_skill", "pomodoro", "raw-photography",
+    "activate_skill", "deactivate_skill", "pomodoro", "raw-parse",
 ];
 
 /// 工具展示名（与前端 fallback 一致；Tauri 模式下前端以此清单为准）
@@ -51,7 +51,7 @@ fn tool_label(key: &str) -> String {
         "git_checkout" => "Git 恢复文件".into(),
         "webfetch" => "网页抓取".into(),
         "pomodoro" => "番茄钟".into(),
-        "raw-photography" => "RAW/ARW 照片解析".into(),
+        "raw-parse" => "RAW/ARW 照片解析".into(),
         "activate_skill" => "激活技能".into(),
         "deactivate_skill" => "停用技能".into(),
         _ => key.to_string(),

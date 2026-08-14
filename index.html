@@ -2907,8 +2907,11 @@
 
         .kanban-card-more {
             position: absolute;
-            top: 3px;
-            right: 3px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            top: 0.25rem;
+            right: 0.25rem;
             width: 1.125rem;
             height: 1.125rem;
             display: flex;
@@ -2919,11 +2922,10 @@
             opacity: 0;
             transition: opacity 0.2s;
             font-size: 0.875rem;
-            line-height: 1;
-            color: var(-t2);
+            color: var(--t2);
             background: transparent;
             border: none;
-            padding: 0;
+            padding: 1px;
             z-index: 1000;
             margin: 0;
         }
@@ -31040,7 +31042,7 @@ kanban-plugin: basic
                 } else {
                     tab.style.background = MARKER_COLORS[idx] + '33';
                     tab.style.borderLeft = `4px solid ${MARKER_COLORS[idx]}`;
-                    tab.textContent = `${colorNamesCN[idx]} ${(groups[name] || []).length}`;
+                    tab.textContent = `${(groups[name] || []).length}`;
                 }
                 if (name === _activeMarkerTab) tab.classList.add('active');
                 tab.onclick = async () => {
@@ -52844,7 +52846,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const text = getMessagePlainText(messageEl);
             if (!text) return;
             try {
-                await navigator.clipboard.writeText(text);
+                await navigator.clipboard.writeText(text?.trim() || '');
                 showNotification('已复制到剪贴板', 'success', 1000);
             } catch (err) {
                 try {

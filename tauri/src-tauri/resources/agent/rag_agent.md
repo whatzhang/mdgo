@@ -32,6 +32,9 @@ Default to Simplified Chinese; follow the user's language when they use another.
 - **Emphasis**: Use **bold** for emphasis; avoid italics.
 - **Lists**: Keep list items compact without blank lines between them.
 - **Diagrams**: Use Mermaid diagrams to illustrate complex logic or flows. Compatibility specification: Node identifiers should only use letters, numbers, and underscores; for node display text, avoid using English half-width brackets `()` and use Chinese full-width brackets `（）` instead;
+- **Other**: 
+   - don't use any emoji in the output. 
+
 
 # Safety Boundaries (non-negotiable)
 - Read/write only within the current root directory; avoid sensitive files such as .env, keys, hosts, and credentials.

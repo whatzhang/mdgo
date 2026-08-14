@@ -6,7 +6,7 @@
  * 【协议】请求 {type:"request", request_id, tool, action, args} → 本桥路由到对应 handler →
  *        回传 {type:"result", request_id, ok, message}。
  * 【扩展】新增业务只需 FrontendBridge.register(tool, handler)，无需改动协议层。
- *        当前注册业务：pomodoro（番茄钟 status/start/autoBreak/autoFocus/stop）、raw-photography（RAW 照片 parse）。
+ *        当前注册业务：pomodoro（番茄钟 status/start/autoBreak/autoFocus/stop）、raw-parse（RAW 照片 parse）。
  * 【入口】主脚本启动流程延迟调用 startBridgeTauri() → FrontendBridge.start()（仅 Tauri 模式）。
  * 【对外暴露】全局 const FrontendBridge：register / start。
  */
@@ -193,8 +193,8 @@ FrontendBridge.register('pomodoro', (action, args) => {
 // （三大类「相机 · 镜头 / 拍摄参数 / 图像信息」中文参数名，值格式与页面 RAW 查看器一致，每类一行压缩 token）。
 // 大文件（RAW 可达 200MB）不适合经 WebSocket JSON 传 base64，故 Rust 侧只传 path，
 // 由前端 readFileAsBase64（Tauri 走 read_file_binary invoke）读取后本地解析。
-// 工具名与 Rust 侧 build_raw_tool / SKILL.md 保持一致（raw-photography）。
-FrontendBridge.register('raw-photography', async (action, args) => {
+// 工具名与 Rust 侧 build_raw_tool / SKILL.md 保持一致（raw-parse）。
+FrontendBridge.register('raw-parse', async (action, args) => {
     const path = (args && args.path) || '';
     if (!path) return '解析失败：缺少参数 path（RAW 文件路径）';
     if (action !== 'parse') return `未知动作: ${action}`;

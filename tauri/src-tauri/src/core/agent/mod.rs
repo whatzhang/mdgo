@@ -1012,8 +1012,8 @@ fn create_tool_registry(only: Option<&HashSet<String>>) -> ToolRegistry {
         reg.register("pomodoro", Box::new(tools::build_pomodoro_tool));
     }
     // ── RAW 照片工具（前端交互工具，子代理天然隔离；数据经 path → 前端读取） ──
-    if want("raw-photography") {
-        reg.register("raw-photography", Box::new(tools::build_raw_tool));
+    if want("raw-parse") {
+        reg.register("raw-parse", Box::new(tools::build_raw_tool));
     }
 
     // ── 子代理工具（全量注册；只读子代理注册表经白名单排除，防无限递归） ──

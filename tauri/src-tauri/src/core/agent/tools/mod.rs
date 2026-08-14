@@ -2689,7 +2689,7 @@ pub fn build_pomodoro_tool(cfg: KbSearchConfig) -> DynamicTool {
 pub fn build_raw_tool(cfg: KbSearchConfig) -> DynamicTool {
     build_bridge_tool(
         cfg,
-        "raw-photography",
+        "raw-parse",
         "解析 RAW 照片文件（.arw/.cr2/.nef/.dng/.orf 等）的元数据并输出为 Markdown。动作：parse（path 为知识库内 RAW 文件的相对路径，返回相机·镜头、拍摄参数、图像信息）。当用户要求查看 RAW 照片信息、解析相机拍摄参数时调用。",
         serde_json::json!({
             "type": "object",
