@@ -16,6 +16,9 @@ pdf-extract = ["dep:pdf-extract"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[dev-dependencies]
+tempfile = "3"
+
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset", "tray-icon", "image-png"] }
 tauri-plugin-dialog = "2"
@@ -75,6 +78,12 @@ tracing-subscriber = { version = "0.3", features = ["fmt"] }
 tracing-log = "0.2"
 # 日期时间格式化（垃圾箱目录命名）
 chrono = "0.4"
+# 日程引擎：Cron 表达式解析与迭代（现成框架，5 字段补秒适配）
+cron = "0.13"
+# 日程引擎：农历计算（现成框架，替代前端 lunar.min.js）
+chinese-lunisolar-calendar = "0.2"
+# 全局用户数据目录（日程节假日缓存）
+dirs = "6"
 
 # ─── 知识库核心引擎依赖 ───
 # 向量数据库

@@ -2710,6 +2710,210 @@ pub fn build_raw_tool(cfg: KbSearchConfig) -> DynamicTool {
     )
 }
 
+/// 构建日程工具：直接调用 Rust 引擎 `core::schedule`（不经 FrontendBridge——逻辑已在 Rust）。
+///
+/// 动作与参数对齐 `resources/skills/schedule/SKILL.md`：
+/// - `list`：全部日程（紧凑文本）
+/// - `add`：新建日程（title/start/end/desc?/color?/cron?/notify?，Rust 校验 + 冲突提示）
+/// - `update` / `remove`：按 id 更新/删除
+/// - `conflicts`：与 [start,end) 重叠的日程
+/// - `remind`：到点应提醒的日程
+/// - `lunar`：某日农历/节假日/调休
+/// - `next_available`：下一个可安排时间段（可跳过休息日，项目独有特性）
+pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
+    let tool_dir = cfg.dir_path.clone();
+    let tool_app = cfg.app_handle.clone();
+    DynamicTool::new(
+        "schedule",
+        "日程管理：查询、创建、更新、删除日程事件，检测冲突、查询到点提醒、农历/节假日信息，查找下一个可安排时间段（可避开休息日）。动作：list 列出全部日程；add 新建（title/start/end 必填，start/end 格式 YYYY-MM-DDTHH:MM，可选 desc/color/cron 重复表达式/notify 提醒）；update 按 id 更新；remove 按 id 删除；conflicts 检测与现有日程的重叠（start/end 必填，可选 ignore_id）；remind 查询到点应提醒的日程；lunar 查询某日农历与节假日（date=YYYY-MM-DD）；next_available 查找下一个可安排时间段（duration_minutes 必填，可选 start_after/skip_rest_days）。当用户要求安排会议、查看日程、设置提醒、查询节假日时调用。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["list", "add", "update", "remove", "conflicts", "remind", "lunar", "next_available"],
+                    "description": "要执行的动作"
+                },
+                "id": { "type": "string", "description": "事件 id（update/remove 用）" },
+                "title": { "type": "string", "description": "日程标题（add/update）" },
+                "start": { "type": "string", "description": "开始时间 YYYY-MM-DDTHH:MM（add/update/conflicts）" },
+                "end": { "type": "string", "description": "结束时间 YYYY-MM-DDTHH:MM（add/update/conflicts）" },
+                "desc": { "type": "string", "description": "描述（add/update 可选）" },
+                "color": { "type": "string", "description": "颜色标记（add/update 可选）" },
+                "cron": { "type": "string", "description": "Cron 重复表达式（5 字段，add/update 可选）" },
+                "notify": { "type": "boolean", "description": "是否提醒（add/update 可选，默认 true）" },
+                "ignore_id": { "type": "string", "description": "冲突检测时忽略的事件 id（conflicts 可选）" },
+                "date": { "type": "string", "description": "日期 YYYY-MM-DD（lunar 用）" },
+                "duration_minutes": { "type": "integer", "description": "所需时长（分钟，next_available 必填）" },
+                "start_after": { "type": "string", "description": "最早开始时间（next_available 可选）" },
+                "skip_rest_days": { "type": "boolean", "description": "是否跳过休息日/节假日（next_available 可选，默认 true）" }
+            },
+            "required": ["action"]
+        }),
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let dir = tool_dir.clone();
+            let app = tool_app.clone();
+            Box::pin(async move {
+                use crate::core::schedule::rules;
+                use crate::core::schedule::store::{EventStore, JsonFileStore};
+                use crate::core::schedule::{ScheduleEvent, ScheduleEventInput};
+
+                let action = args
+                    .get("action")
+                    .and_then(|a| a.as_str())
+                    .filter(|a| !a.trim().is_empty())
+                    .unwrap_or("list");
+                let get = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let mut store = JsonFileStore::new(&dir);
+                let state = app.state::<crate::AppState>();
+                let now = chrono::Local::now().naive_local();
+                let fmt = |dt: chrono::NaiveDateTime| dt.format("%Y-%m-%dT%H:%M").to_string();
+
+                match action {
+                    "list" => {
+                        let events = store.list().map_err(|e| tool_error("schedule", &e))?;
+                        if events.is_empty() {
+                            return Ok(ToolOutput::text("当前没有日程"));
+                        }
+                        let lines: Vec<String> = events
+                            .iter()
+                            .map(|e| {
+                                let cron = if e.cron.trim().is_empty() { String::new() } else { format!("（重复 {}）", e.cron) };
+                                format!("- {}：{} ~ {}{}", e.title, e.start, e.end, cron)
+                            })
+                            .collect();
+                        Ok(ToolOutput::text(format!("共 {} 个日程：\n{}", events.len(), lines.join("\n"))))
+                    }
+                    "add" | "update" => {
+                        let input = ScheduleEventInput {
+                            title: get("title"),
+                            start: get("start"),
+                            end: get("end"),
+                            color: get("color"),
+                            desc: get("desc"),
+                            cron: get("cron"),
+                            notify: args.get("notify").and_then(|v| v.as_bool()).unwrap_or(true),
+                        };
+                        if input.title.trim().is_empty() {
+                            return Err(tool_error("schedule", "日程标题不能为空"));
+                        }
+                        let (_id, event) = if action == "add" {
+                            let now_s = fmt(now);
+                            let event = ScheduleEvent {
+                                id: uuid::Uuid::new_v4().to_string(),
+                                title: input.title,
+                                start: input.start,
+                                end: input.end,
+                                color: input.color,
+                                desc: input.desc,
+                                cron: input.cron,
+                                notify: input.notify,
+                                created_at: now_s.clone(),
+                                updated_at: now_s,
+                            };
+                            event.validate().map_err(|e| tool_error("schedule", &e))?;
+                            (event.id.clone(), event)
+                        } else {
+                            let id = get("id");
+                            let mut events = store.list().map_err(|e| tool_error("schedule", &e))?;
+                            let Some(existing) = events.iter_mut().find(|e| e.id == id) else {
+                                return Err(tool_error("schedule", "日程不存在"));
+                            };
+                            existing.title = input.title;
+                            existing.start = input.start;
+                            existing.end = input.end;
+                            existing.color = input.color;
+                            existing.desc = input.desc;
+                            existing.cron = input.cron;
+                            existing.notify = input.notify;
+                            existing.updated_at = fmt(now);
+                            existing.validate().map_err(|e| tool_error("schedule", &e))?;
+                            let updated = existing.clone();
+                            store.replace_all(events).map_err(|e| tool_error("schedule", &e))?;
+                            (id, updated)
+                        };
+                        if action == "add" {
+                            // 冲突提示（非 Cron 事件）
+                            let mut conflict_note = String::new();
+                            if event.cron.trim().is_empty() {
+                                if let (Some(s), Some(e)) =
+                                    (rules::parse_local_time(&event.start), rules::parse_local_time(&event.end))
+                                {
+                                    let existing = store.list().map_err(|e| tool_error("schedule", &e))?;
+                                    let conflicts = rules::find_conflicts(&existing, s, e, None);
+                                    if !conflicts.is_empty() {
+                                        conflict_note = format!("\n⚠ 时间冲突：{}", conflicts.iter().map(|c| c.title.as_str()).collect::<Vec<_>>().join("、"));
+                                    }
+                                }
+                            }
+                            store.upsert(event.clone()).map_err(|e| tool_error("schedule", &e))?;
+                            Ok(ToolOutput::text(format!(
+                                "已创建日程：{}（{} ~ {}{}）",
+                                event.title, event.start, event.end, conflict_note
+                            )))
+                        } else {
+                            Ok(ToolOutput::text(format!(
+                                "已更新日程：{}（{} ~ {}）",
+                                event.title, event.start, event.end
+                            )))
+                        }
+                    }
+                    "remove" => {
+                        let id = get("id");
+                        store.remove(&id).map_err(|e| tool_error("schedule", &e))?;
+                        Ok(ToolOutput::text(format!("已删除日程：{}", id)))
+                    }
+                    "conflicts" => {
+                        let s = rules::parse_local_time(&get("start")).ok_or_else(|| tool_error("schedule", "开始时间格式无效"))?;
+                        let e = rules::parse_local_time(&get("end")).ok_or_else(|| tool_error("schedule", "结束时间格式无效"))?;
+                        let ignore = if get("ignore_id").is_empty() { None } else { Some(get("ignore_id")) };
+                        let events = store.list().map_err(|e| tool_error("schedule", &e))?;
+                        let conflicts = rules::find_conflicts(&events, s, e, ignore.as_deref());
+                        if conflicts.is_empty() {
+                            Ok(ToolOutput::text("该时间段无冲突"))
+                        } else {
+                            let lines: Vec<String> = conflicts.iter().map(|c| format!("- {}：{} ~ {}", c.title, c.start, c.end)).collect();
+                            Ok(ToolOutput::text(format!("时间冲突 {} 项：\n{}", conflicts.len(), lines.join("\n"))))
+                        }
+                    }
+                    "remind" => {
+                        let events = store.list().map_err(|e| tool_error("schedule", &e))?;
+                        let due = rules::due_reminders(&events, now);
+                        if due.is_empty() {
+                            Ok(ToolOutput::text("当前无到点提醒"))
+                        } else {
+                            let lines: Vec<String> = due.iter().map(|e| format!("- {}：{} ~ {}", e.title, e.start, e.end)).collect();
+                            Ok(ToolOutput::text(format!("到点提醒 {} 项：\n{}", due.len(), lines.join("\n"))))
+                        }
+                    }
+                    "lunar" => {
+                        let date = chrono::NaiveDate::parse_from_str(&get("date"), "%Y-%m-%d")
+                            .map_err(|_| tool_error("schedule", "日期格式无效（应为 YYYY-MM-DD）"))?;
+                        let info = state.schedule_day_info.day_info(date);
+                        let mut parts = vec![format!("农历 {}", if info.lunar_month.is_empty() { info.lunar_day.clone() } else { format!("{}{}", info.lunar_month, info.lunar_day) })];
+                        if !info.festival.is_empty() {
+                            parts.push(format!("节日 {}", info.festival));
+                        }
+                        parts.push(if info.is_workday { "调休班日" } else if info.is_rest_day { "休息日" } else { "工作日" }.to_string());
+                        Ok(ToolOutput::text(format!("{}：{}", get("date"), parts.join("｜"))))
+                    }
+                    "next_available" => {
+                        let duration = args.get("duration_minutes").and_then(|v| v.as_i64()).ok_or_else(|| tool_error("schedule", "缺少 duration_minutes"))?;
+                        let start_after = if get("start_after").is_empty() { now } else { rules::parse_local_time(&get("start_after")).ok_or_else(|| tool_error("schedule", "start_after 格式无效"))? };
+                        let skip = args.get("skip_rest_days").and_then(|v| v.as_bool()).unwrap_or(true);
+                        let events = store.list().map_err(|e| tool_error("schedule", &e))?;
+                        match crate::core::schedule::planner::next_available(&events, state.schedule_day_info.as_ref(), duration, start_after, skip) {
+                            Some(t) => Ok(ToolOutput::text(format!("下一个可安排时间段：{}（持续 {} 分钟）", fmt(t), duration))),
+                            None => Err(tool_error("schedule", "30 天内未找到可安排时间段")),
+                        }
+                    }
+                    _ => Err(tool_error("schedule", &format!("未知动作: {}", action))),
+                }
+            })
+        },
+    )
+}
+
 #[cfg(test)]
 mod grep_tests {
     use super::*;

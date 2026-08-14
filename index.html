@@ -8390,6 +8390,10 @@
             background: var(--color-bg);
             overflow: auto;
             padding: 0.25rem;
+            padding-top: 0;
+        }
+        .todo-calendar-main::-webkit-scrollbar {
+            display: none;
         }
 
         /* 月视图 */
@@ -8397,11 +8401,12 @@
             flex: 1;
             display: flex;
             flex-direction: column;
+            min-height: 0;
         }
 
         .todo-weekday-header {
             display: grid;
-            grid-template-columns: repeat(7, 1fr);
+            grid-template-columns: repeat(7, minmax(0, 1fr));
             border-bottom: 1px solid var(--color-border-light);
             position: sticky;
             top: 0;
@@ -8419,12 +8424,17 @@
 
         .todo-month-grid {
             flex: 1;
+            min-height: 0;
             display: grid;
-            grid-template-columns: repeat(7, 1fr);
-            grid-template-rows: repeat(5, 1fr);
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            grid-template-rows: repeat(5, minmax(0, 1fr));
         }
 
         .todo-month-day {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
             border-right: 1px solid var(--color-border-light);
             border-bottom: 1px solid var(--color-border-light);
             padding: 0.3rem;
@@ -8434,6 +8444,9 @@
         }
 
         .todo-month-div {
+            flex: 1;
+            min-height: 0;
+            min-width: 0;
             overflow-y: auto !important;
         }
 
@@ -8876,6 +8889,7 @@
 
         .todo-form-input {
             width: 100%;
+            height: 33px;
             padding: 0.5rem 0.5rem;
             border: 1px solid var(--color-border);
             border-radius: var(--radius-sm);
@@ -9034,7 +9048,7 @@
 
         .todo-cron-btn {
             padding: 0.2rem 0.5rem;
-            font-size: 0.75rem;
+            font-size: 0.8125rem;
             border: 1px solid var(--color-border);
             background: var(--todo-bg);
             color: var(--color-text-secondary);
@@ -9052,8 +9066,8 @@
             color: var(--color-primary);
         }
 
-        .todo-cron-btn-clear {
-            color: var(--color-text-tertiary);
+        .todo-cron-btn.todo-cron-btn-clear {
+            color: var(--color-danger);
         }
 
         .todo-cron-btn-clear:hover {
@@ -9137,11 +9151,7 @@
             padding: 16px 20px 8px;
             display: flex;
             align-items: center;
-            gap: 8px;
-        }
-
-        .todo-reminder-icon {
-            font-size: 15px;
+            justify-content: space-between;
         }
 
         .todo-reminder-title {
@@ -9159,69 +9169,34 @@
             padding: 8px 20px 5px 20px;
         }
 
-        .todo-reminder-event-title {
-            font-size: 17px;
-            font-weight: 600;
-            color: var(--color-text);
-            margin-bottom: 6px;
-        }
-
         .todo-reminder-time {
-            margin-top: 10px;
             font-size: 12px;
             color: var(--color-text-secondary);
             margin-bottom: 4px;
+            display: flex;
+            justify-content: space-between;;
+            align-items: center;
         }
 
         .todo-reminder-desc {
             font-size: 13px;
             color: var(--color-text-tertiary);
             margin-top: 10px;
-            padding: 15px 10px;
+            padding: 10px;
             background: var(--todo-bg);
             border-radius: var(--radius-sm);
             line-height: 1.5;
-        }
-
-        .todo-reminder-cron-hint {
-            font-size: 13px;
-            color: var(--t3);
-            margin-top: 8px;
-        }
+            height: 8rem;
+            overflow-y: auto;
+            word-break: break-word;
+            white-space: pre-wrap;
+        } 
 
         .todo-reminder-footer {
             padding: 5px 15px 15px 15px;
             display: flex;
             gap: 8px;
             justify-content: flex-end;
-        }
-
-        .todo-reminder-btn {
-            padding: 6px 14px;
-            border-radius: var(--radius-sm);
-            font-size: 13px;
-            cursor: pointer;
-            transition: all 0.2s;
-            border: none;
-            font-weight: 600;
-        }
-
-        .todo-reminder-btn-close {
-            background: var(--todo-bg);
-            color: var(--color-text);
-        }
-
-        .todo-reminder-btn-close:hover {
-            background: var(--todo-bg-hover);
-        }
-
-        .todo-reminder-btn-snooze {
-            background: var(--color-primary);
-            color: var(--color-text-white);
-        }
-
-        .todo-reminder-btn-snooze:hover {
-            background: var(--color-primary-hover);
         }
 
         /* 响应式 */
@@ -15585,7 +15560,7 @@
                             </div>
                             <div class="todo-form-group">
                                 <label class="todo-form-label">备注</label>
-                                <textarea class="todo-form-input" id="todo-eventDesc" rows="6"
+                                <textarea class="todo-form-input" id="todo-eventDesc" style="resize: none;height: 5rem;"
                                     placeholder="添加备注..."></textarea>
                             </div>
                         </div>
@@ -40130,7 +40105,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (cronInput) cronInput.value = '';
             todoUpdateCronPreview();
             const now = new Date();
-            const start = date || new Date(now.getTime() + 5 * 60 * 1000);
+            const start = date ? new Date(date) : new Date();
+            start.setHours(now.getHours(), now.getMinutes(), 0, 0);
             const end = new Date(start);
             end.setHours(23, 59, 59, 999);
             eventStart.value = todoFormatDateTimeLocal(start);
@@ -40478,25 +40454,22 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const startTime = data.start ? todoFormatTime(new Date(data.start)) : '';
             const endTime = data.end ? todoFormatTime(new Date(data.end)) : '';
             const timeStr = startTime && endTime ? `${startTime} - ${endTime}` : '';
-            const cronHint = isCron && data.cron ? `<div class="todo-reminder-cron-hint">cron:&nbsp;${escapeHtml(data.cron)}&nbsp;&nbsp;&nbsp;${'📋 ' + todoParseCron(data.cron)}</div>` : '';
+            const cronHint = isCron && data.cron ? `${escapeHtml(data.cron)}&nbsp;&nbsp;&nbsp;${todoParseCron(data.cron)}` : '';
             overlay.innerHTML = `
                 <div class="todo-reminder-modal todo-${data.color || 'blue'}">
                     <div class="todo-reminder-header">
-                        <span class="todo-reminder-icon">🔔</span>
-                        <span class="todo-reminder-title">${isCron ? 'Cron 定时提醒' : '日程提醒'}</span>
+                        <span class="todo-reminder-title">🔔&nbsp;${escapeHtml(data.title)}</span>
                         <span class="todo-reminder-title-time">${todoFormatTime2(new Date())}</span>
                     </div>
                     <div class="todo-reminder-body">
-                        <div class="todo-reminder-event-title">${escapeHtml(data.title)}</div>
-                        ${timeStr ? `<div class="todo-reminder-time">🕐 ${escapeHtml(timeStr)}</div>` : ''}
+                        ${timeStr ? `<div class="todo-reminder-time"><span>${escapeHtml(timeStr)}</span><span>${cronHint}</span></div>` : ''}
                         ${data.desc ? `<div class="todo-reminder-desc">${escapeHtml(data.desc)}</div>` : ''}
-                        ${cronHint}
                     </div>
                     <div class="todo-reminder-footer">
-                        <button class="todo-reminder-btn todo-reminder-btn-close" onclick="this.closest('.todo-reminder-overlay').remove()">关闭</button>
+                        <button class="btn btn-danger" onclick="this.closest('.todo-reminder-overlay').remove()">关闭</button>
                         ${isCron ? '' : (data._snoozeCount >= 2
-                    ? `<button class="todo-reminder-btn todo-reminder-btn-snooze" onclick="todoConfirmReminder(this)">确认</button>`
-                    : `<button class="todo-reminder-btn todo-reminder-btn-snooze" onclick="todoSnoozeReminder(this, '${data.id}')">稍后提醒(5分钟)</button>`)}
+                    ? `<button class="btn btn-primary" onclick="todoConfirmReminder(this)">确认</button>`
+                    : `<button class="btn " onclick="todoSnoozeReminder(this, '${data.id}')">稍后提醒(5分钟)</button>`)}
                     </div>
                 </div>
             `;

@@ -15,6 +15,7 @@ pub mod security;
 pub mod subagent;
 pub mod trace;
 pub mod validation;
+pub mod schedule;
 
 mod chat_types;
 mod embedding;

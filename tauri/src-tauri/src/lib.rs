@@ -121,6 +121,13 @@ pub struct AppState {
     pub memory_vectors: Arc<crate::core::memory::vector::MemoryVectorIndex>,
     /// MCP 服务器注册表（v2：配置 + 生命周期 + 工具清单）
     pub mcp: Arc<crate::core::mcp::McpRegistry>,
+    /// 日程存储（按知识库目录惰性创建）
+    pub schedule_stores:
+        std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<std::sync::Mutex<crate::core::schedule::store::JsonFileStore>>>>,
+    /// 农历/节假日/调休服务（全局单例，调休缓存于 %APPDATA%/com.mdgo/schedule_cache）
+    pub schedule_day_info: std::sync::Arc<dyn crate::core::schedule::lunar::DayInfoProvider>,
+    /// 日程提醒调度器（tokio 后台循环，到点经 schedule:reminder 事件推前端）
+    pub schedule_scheduler: std::sync::Arc<crate::core::schedule::scheduler::ScheduleScheduler>,
 }
 
 impl AppState {
@@ -338,7 +345,15 @@ pub fn run() {
                     Arc::new(crate::core::memory::vector::LocalEmbedder),
                 )),
                 mcp: Arc::new(crate::core::mcp::McpRegistry::new()),
+                schedule_stores: crate::commands::schedule::empty_store_cache(),
+                schedule_day_info: crate::commands::schedule::build_day_info_provider(),
+                schedule_scheduler: Arc::new(crate::core::schedule::scheduler::ScheduleScheduler::new()),
             });
+            // 启动日程提醒调度器（后台 tokio 循环）
+            {
+                let sched = app.state::<AppState>().schedule_scheduler.clone();
+                sched.spawn(app.handle().clone());
+            }
 
             // 注入 skill:changed 事件：AppHandle 就绪后替换 watcher 回调
             let handle = app.handle().clone();
@@ -475,6 +490,18 @@ pub fn run() {
             commands::mcp::mcp_disconnect,
             commands::mcp::mcp_restart,
             commands::mcp::mcp_test,
+            commands::schedule::schedule_list,
+            commands::schedule::schedule_get,
+            commands::schedule::schedule_add,
+            commands::schedule::schedule_update,
+            commands::schedule::schedule_remove,
+            commands::schedule::schedule_events_on_date,
+            commands::schedule::schedule_conflicts,
+            commands::schedule::schedule_remind,
+            commands::schedule::schedule_lunar,
+            commands::schedule::schedule_next_available,
+            commands::schedule::schedule_set_active_dir,
+            commands::schedule::schedule_clear_active_dir,
         ]);
 
     // Windows/Linux：拦截主窗口关闭请求，点击右上角关闭按钮 → 隐藏到系统托盘。

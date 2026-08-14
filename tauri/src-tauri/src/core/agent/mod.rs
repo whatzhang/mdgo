@@ -1007,13 +1007,17 @@ fn create_tool_registry(only: Option<&HashSet<String>>) -> ToolRegistry {
         reg.register("webfetch", Box::new(tools::build_webfetch_tool));
     }
 
-    // ── 番茄钟工具（BASE_TOOLS 常驻可见；此处受 only 白名单约束，子代理天然隔离） ──
+    // ── 番茄钟工具 ──
     if want("pomodoro") {
         reg.register("pomodoro", Box::new(tools::build_pomodoro_tool));
     }
     // ── RAW 照片工具（前端交互工具，子代理天然隔离；数据经 path → 前端读取） ──
     if want("raw-parse") {
         reg.register("raw-parse", Box::new(tools::build_raw_tool));
+    }
+    // ── 日程工具（逻辑全在 Rust core::schedule，直接调用不经前端桥） ──
+    if want("schedule") {
+        reg.register("schedule", Box::new(tools::build_schedule_tool));
     }
 
     // ── 子代理工具（全量注册；只读子代理注册表经白名单排除，防无限递归） ──
