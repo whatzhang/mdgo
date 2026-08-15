@@ -448,6 +448,42 @@ fn emit_pending_trace_events(app: &AppHandle, request_id: &str) {
     }
 }
 
+/// P0 防幻觉一致性校验：模型在最终回答中声称"已完成写操作"，但本请求
+/// **未调用对应工具**时，向回答追加一致性提醒——封死「声称已创建但实际
+/// 未写入」的失败模式（典型：日程技能未激活/未调用时 LLM 编造"已创建"）。
+///
+/// 判定刻意收窄以降低误报：
+/// - 声称词：完成式（已创建/创建了/已添加/已删除…），不含"尝试/计划/将"
+/// - 对象词：明确日程对象（日程/日历/会议/预约/专注时间块）
+/// 两者同时出现且请求内无 `schedule` 调用时才追加提醒。
+fn apply_anti_hallucination_guard(content: &mut String, tools_called: &[String]) {
+    const CLAIM_WORDS: &[&str] = &[
+        "已创建", "创建了", "已添加", "添加了", "已安排", "安排了", "已预约",
+        "预约了", "已更新", "更新了", "已删除", "删除了", "已保存", "保存了",
+        "已写入", "创建成功", "添加成功", "删除成功",
+    ];
+    const SCHEDULE_OBJECTS: &[&str] = &["日程", "日历", "会议", "预约", "专注时间块", "专注块"];
+
+    let claimed = CLAIM_WORDS.iter().any(|w| content.contains(w));
+    if !claimed {
+        return;
+    }
+    let schedule_object = SCHEDULE_OBJECTS.iter().any(|o| content.contains(o));
+    if !schedule_object {
+        return;
+    }
+    if tools_called.iter().any(|t| t == "schedule") {
+        return;
+    }
+    content.push_str(
+        "\n\n> ⚠️ 一致性提醒：本次回复声称已完成日程操作，但本次请求未实际调用 schedule 工具，**日程未写入**。请确认日程功能已激活（消息含「日程/提醒/安排/会议」等词会自动激活），或重新发起操作。",
+    );
+    log::warn!(
+        "[anti-hallucination] 声称日程写操作但未调用 schedule 工具（tools_called={:?}）",
+        tools_called
+    );
+}
+
 /// 收集本次请求的技能执行输入（预激活 ∪ LLM 动态激活 ∪ 中途停用，去重），供批量落库。
 ///
 /// 耗时按技能独立计时：优先取该技能「激活时刻 → 请求结束」的实际时长
@@ -1492,6 +1528,8 @@ pub async fn agent_query(
     let mut delta_count = 0u64;
     let mut stream_failed = false;
     let mut last_tool_summary: Option<String> = None;
+    // 本请求实际调用过的工具名（防幻觉校验用：声称写操作但未调用对应工具时追加提醒）
+    let mut tools_called: Vec<String> = Vec::new();
     loop {
         let item = match next_or_cancel(&mut stream, &cancel).await {
             Err(()) => {
@@ -1549,6 +1587,9 @@ pub async fn agent_query(
             Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::ToolCall { tool_call, .. })) => {
                 log::info!("[agent_query] [4]: 工具调用: name={} arguments={}",
                     tool_call.function.name, tool_call.function.arguments);
+                if !tools_called.iter().any(|t| t == &tool_call.function.name) {
+                    tools_called.push(tool_call.function.name.clone());
+                }
             }
             Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(text))) => {
                 if text.text.is_empty() {
@@ -1672,6 +1713,10 @@ pub async fn agent_query(
 
     log::info!("[agent_query] [4]: 响应完成: request_id={} content_len={} sources={} tokens_in={} tokens_out={}",
         request_id, full_content.len(), sources_clone.len(), prompt_tokens, completion_tokens);
+
+    // P0 防幻觉：声称完成写操作但本请求未调用对应工具 → 追加一致性提醒
+    // （在 rag:done 之前修改 full_content，前端最终渲染与落库均包含提醒）
+    apply_anti_hallucination_guard(&mut full_content, &tools_called);
 
     let _ = app.emit(
         "rag:done",
@@ -2053,5 +2098,56 @@ async fn kb_llm_query_anthropic(
     }
     task_registry.unregister(&request_id).await;
     Ok(())
+}
+
+#[cfg(test)]
+mod anti_hallucination_tests {
+    use super::apply_anti_hallucination_guard;
+
+    #[test]
+    fn appends_warning_when_claims_schedule_without_call() {
+        let mut content = "已创建：产品评审（2026-08-18 14:00~15:00）。当前日程汇总：...".to_string();
+        apply_anti_hallucination_guard(&mut content, &[]);
+        assert!(content.contains("一致性提醒"), "应追加提醒: {}", content);
+        assert!(content.contains("未实际调用 schedule"), "应指明原因");
+    }
+
+    #[test]
+    fn no_warning_when_schedule_called() {
+        let mut content = "已创建日程：产品评审（2026-08-18 14:00~15:00）。".to_string();
+        apply_anti_hallucination_guard(&mut content, &["schedule".to_string()]);
+        assert!(!content.contains("一致性提醒"), "调用过 schedule 不应追加提醒");
+    }
+
+    #[test]
+    fn no_warning_without_claim_word() {
+        // 无完成式声称词（"计划"不是完成式）→ 不拦截
+        let mut content = "我可以帮你创建日程，请告诉我时间。".to_string();
+        apply_anti_hallucination_guard(&mut content, &[]);
+        assert!(!content.contains("一致性提醒"));
+    }
+
+    #[test]
+    fn no_warning_for_unrelated_topic() {
+        // 声称词存在但对象不是日程（"已创建"+"代码文件"）→ 不拦截
+        let mut content = "已创建：示例代码文件 demo.rs，内容如下：...".to_string();
+        apply_anti_hallucination_guard(&mut content, &[]);
+        assert!(!content.contains("一致性提醒"), "非日程对象不应拦截");
+    }
+
+    #[test]
+    fn no_warning_for_meeting_notes_without_claim() {
+        // "会议"对象但无完成式声称词（"生成"不在声称词）→ 不拦截
+        let mut content = "以下是会议纪要的要点总结。".to_string();
+        apply_anti_hallucination_guard(&mut content, &[]);
+        assert!(!content.contains("一致性提醒"));
+    }
+
+    #[test]
+    fn multiple_warnings_not_duplicated() {
+        let mut content = "已创建日程A，已创建日程B。".to_string();
+        apply_anti_hallucination_guard(&mut content, &[]);
+        assert_eq!(content.matches("一致性提醒").count(), 1, "只追加一次提醒");
+    }
 }
 

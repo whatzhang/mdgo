@@ -23,24 +23,54 @@ pub struct SqliteStore {
 /// 建表 DDL（幂等）：`dir_path` 为知识库隔离列，复合主键
 const CREATE_TABLE: &str = r#"
 CREATE TABLE IF NOT EXISTS schedule_events (
-    dir_path   TEXT NOT NULL,
-    id         TEXT NOT NULL,
-    title      TEXT NOT NULL,
-    start      TEXT NOT NULL,
-    end        TEXT NOT NULL,
-    color      TEXT NOT NULL DEFAULT 'blue',
-    desc       TEXT NOT NULL DEFAULT '',
-    cron       TEXT NOT NULL DEFAULT '',
-    notify     INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT '',
-    updated_at TEXT NOT NULL DEFAULT '',
+    dir_path      TEXT NOT NULL,
+    id            TEXT NOT NULL,
+    title         TEXT NOT NULL,
+    start         TEXT NOT NULL,
+    end           TEXT NOT NULL,
+    color         TEXT NOT NULL DEFAULT 'blue',
+    desc          TEXT NOT NULL DEFAULT '',
+    cron          TEXT NOT NULL DEFAULT '',
+    notify        INTEGER NOT NULL DEFAULT 1,
+    notify_before INTEGER NOT NULL DEFAULT 0,
+    event_type    TEXT NOT NULL DEFAULT '',
+    priority      TEXT NOT NULL DEFAULT '',
+    related_json  TEXT NOT NULL DEFAULT '{}',
+    ai_json       TEXT NOT NULL DEFAULT '{}',
+    created_at    TEXT NOT NULL DEFAULT '',
+    updated_at    TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (dir_path, id)
 );
 CREATE INDEX IF NOT EXISTS idx_schedule_dir_time ON schedule_events(dir_path, created_at)
 "#;
 
 /// 列顺序（不含隔离列 dir_path），与 `ScheduleEvent` 字段一一对应
-const COLS: &str = "id, title, start, end, color, desc, cron, notify, created_at, updated_at";
+const COLS: &str = "id, title, start, end, color, desc, cron, notify, notify_before, event_type, priority, related_json, ai_json, created_at, updated_at";
+
+/// 幂等迁移：老库补加新列（CREATE TABLE IF NOT EXISTS 不会为已存在表加列）
+fn ensure_columns(conn: &Connection) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(schedule_events)")
+        .map_err(|e| format!("读取日程表结构失败: {}", e))?;
+    let existing: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| format!("读取日程表结构失败: {}", e))?
+        .collect::<Result<_, _>>()
+        .map_err(|e| format!("读取日程表结构失败: {}", e))?;
+    for (name, ddl) in [
+        ("notify_before", "INTEGER NOT NULL DEFAULT 0"),
+        ("event_type", "TEXT NOT NULL DEFAULT ''"),
+        ("priority", "TEXT NOT NULL DEFAULT ''"),
+        ("related_json", "TEXT NOT NULL DEFAULT '{}'"),
+        ("ai_json", "TEXT NOT NULL DEFAULT '{}'"),
+    ] {
+        if !existing.iter().any(|c| c == name) {
+            conn.execute_batch(&format!("ALTER TABLE schedule_events ADD COLUMN {} {}", name, ddl))
+                .map_err(|e| format!("日程表迁移失败（{name}）: {e}"))?;
+        }
+    }
+    Ok(())
+}
 
 impl SqliteStore {
     /// 打开知识库级统一数据库（`{dir_path}/.mdgo/mdgo.db`），实例绑定 `dir_path`（数据隔离列）。
@@ -64,6 +94,8 @@ impl SqliteStore {
         crate::core::db::pool::apply_pragmas(&conn)?;
         conn.execute_batch(CREATE_TABLE)
             .map_err(|e| format!("初始化日程数据表失败: {}", e))?;
+        // 幂等迁移：老库补齐新列（AI 增强字段）
+        ensure_columns(&conn)?;
         Ok(Self {
             conn,
             dir_path: dir_path.to_string(),
@@ -74,21 +106,29 @@ impl SqliteStore {
     fn upsert_sql(conn: &Connection, dir: &str, e: &ScheduleEvent) -> rusqlite::Result<()> {
         conn.execute(
             &format!(
-                "INSERT INTO schedule_events (dir_path, {COLS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)
+                "INSERT INTO schedule_events (dir_path, {COLS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)
                  ON CONFLICT(dir_path, id) DO UPDATE SET
                     title=excluded.title, start=excluded.start, end=excluded.end,
                     color=excluded.color, desc=excluded.desc, cron=excluded.cron,
-                    notify=excluded.notify, updated_at=excluded.updated_at"
+                    notify=excluded.notify, notify_before=excluded.notify_before,
+                    event_type=excluded.event_type, priority=excluded.priority,
+                    related_json=excluded.related_json, ai_json=excluded.ai_json,
+                    updated_at=excluded.updated_at"
             ),
             params![
                 dir, e.id, e.title, e.start, e.end, e.color, e.desc, e.cron,
-                i64::from(e.notify), e.created_at, e.updated_at
+                i64::from(e.notify), e.notify_before, e.event_type, e.priority,
+                serde_json::to_string(&e.related).unwrap_or_else(|_| "{}".into()),
+                serde_json::to_string(&e.ai).unwrap_or_else(|_| "{}".into()),
+                e.created_at, e.updated_at
             ],
         )?;
         Ok(())
     }
 
     fn row_to_event(row: &rusqlite::Row<'_>) -> rusqlite::Result<ScheduleEvent> {
+        let related_json: String = row.get(11)?;
+        let ai_json: String = row.get(12)?;
         Ok(ScheduleEvent {
             id: row.get(0)?,
             title: row.get(1)?,
@@ -98,8 +138,13 @@ impl SqliteStore {
             desc: row.get(5)?,
             cron: row.get(6)?,
             notify: row.get::<_, i64>(7)? != 0,
-            created_at: row.get(8)?,
-            updated_at: row.get(9)?,
+            notify_before: row.get(8)?,
+            event_type: row.get(9)?,
+            priority: row.get(10)?,
+            related: serde_json::from_str(&related_json).unwrap_or_default(),
+            ai: serde_json::from_str(&ai_json).unwrap_or_default(),
+            created_at: row.get(13)?,
+            updated_at: row.get(14)?,
         })
     }
 }
@@ -172,11 +217,10 @@ mod tests {
             start: "2026-08-13T10:00".into(),
             end: "2026-08-13T11:00".into(),
             color: "blue".into(),
-            desc: "".into(),
-            cron: "".into(),
             notify: true,
             created_at: "2026-08-13T09:00".into(),
             updated_at: "2026-08-13T09:00".into(),
+            ..Default::default()
         }
     }
 
@@ -271,6 +315,71 @@ mod tests {
         assert_eq!(got.desc, "备注内容");
         assert_eq!(got.cron, "0 9 * * 1");
         assert_eq!(got.notify, false);
+    }
+
+    #[test]
+    fn ai_enhanced_fields_roundtrip() {
+        let (_d, mut store) = tmp_store("/kb/a", "ai_fields.db");
+        let mut e = sample_event("e1", "MCP 开发");
+        e.notify_before = 10;
+        e.event_type = "focus".into();
+        e.priority = "high".into();
+        e.related.docs = vec!["project/rag.md".into()];
+        e.related.tasks = vec!["task001".into()];
+        e.related.git = vec!["abc123".into()];
+        e.ai.category = "development".into();
+        e.ai.energy = "deep_work".into();
+        e.ai.estimated_hours = 4.0;
+        store.upsert(e).unwrap();
+        let got = &store.list().unwrap()[0];
+        assert_eq!(got.notify_before, 10);
+        assert_eq!(got.event_type, "focus");
+        assert_eq!(got.priority, "high");
+        assert_eq!(got.related.docs, vec!["project/rag.md"]);
+        assert_eq!(got.related.tasks, vec!["task001"]);
+        assert_eq!(got.related.git, vec!["abc123"]);
+        assert_eq!(got.ai.category, "development");
+        assert_eq!(got.ai.energy, "deep_work");
+        assert_eq!(got.ai.estimated_hours, 4.0);
+    }
+
+    #[test]
+    fn legacy_db_migrates_new_columns() {
+        // 模拟老库（无 AI 增强列）：先建旧表并写入数据，再以新代码打开 → 迁移补齐列、数据不丢
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("legacy.db");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                r#"CREATE TABLE schedule_events (
+                    dir_path TEXT NOT NULL, id TEXT NOT NULL, title TEXT NOT NULL,
+                    start TEXT NOT NULL, end TEXT NOT NULL, color TEXT NOT NULL DEFAULT 'blue',
+                    desc TEXT NOT NULL DEFAULT '', cron TEXT NOT NULL DEFAULT '',
+                    notify INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL DEFAULT '', PRIMARY KEY (dir_path, id)
+                );
+                INSERT INTO schedule_events (dir_path, id, title, start, end, created_at, updated_at)
+                VALUES ('/kb/a', 'e1', '旧日程', '2026-08-13T10:00', '2026-08-13T11:00', '', '');"#,
+            )
+            .unwrap();
+        }
+        let mut store = SqliteStore::open_for_dir("/kb/a", &path).unwrap();
+        let got = &store.list().unwrap()[0];
+        assert_eq!(got.title, "旧日程");
+        // 新列有默认值
+        assert_eq!(got.notify_before, 0);
+        assert_eq!(got.event_type, "");
+        assert_eq!(got.priority, "");
+        // 迁移后可正常写入新字段
+        let mut updated = got.clone();
+        updated.notify_before = 30;
+        updated.event_type = "meeting".into();
+        updated.related.docs = vec!["a.md".into()];
+        store.upsert(updated).unwrap();
+        let got2 = &store.list().unwrap()[0];
+        assert_eq!(got2.notify_before, 30);
+        assert_eq!(got2.event_type, "meeting");
+        assert_eq!(got2.related.docs, vec!["a.md"]);
     }
 
     #[test]

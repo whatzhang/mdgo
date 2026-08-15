@@ -1,9 +1,11 @@
 //! Skill 预激活上下文解析（渐进式披露 L1/L2 的预激活入口）。
 //!
-//! 技能激活决策已完全交由 LLM：本模块不做任何本地匹配（关键词 / embedding /
-//! 语义 / 模糊），仅处理查询启动时的两类显式预激活：
+//! 技能激活决策已完全交由 LLM：本模块不做 embedding / 语义 / 模糊匹配，
+//! 仅处理三类查询启动时的预激活：
 //! 1. 手动触发（`/技能名`）：剥离前缀得到 `cleaned_query`，来源 [`ActivationSource::Manual`]
 //! 2. 会话挂载（chat_session_skills 快照）：来源 [`ActivationSource::Attached`]
+//! 3. 意图匹配（用户消息命中技能 triggers 关键词）：LLM 自主决策前的可靠兜底，
+//!    与挂载解耦——命中未激活技能时追加激活、命中 warm 挂载技能时升级为 Active
 //!
 //! 预激活技能写入共享的 [`ActiveSkillState`]，由 Agent 钩子（L2 指令动态注入）与
 //! 技能工具（activate_skill / deactivate_skill）统一读写；本模块只负责「解析 + 写入」。
@@ -131,11 +133,15 @@ pub struct ResolvedSkillContext {
 
 /// 解析预激活技能（唯一入口，同步函数）。
 ///
-/// 只处理两类显式预激活，命中后直接写入 `state`（LLM 决策前的显式用户意图）：
+/// 处理三类预激活，命中后直接写入 `state`（LLM 决策前的显式/意图兜底）：
 /// 1. 手动触发 `/技能名`（最高优先级）
 /// 2. 会话挂载（`attached_skills` 由调用方从 ChatStore 提取后注入）
+/// 3. 意图匹配（用户消息命中技能 triggers）：**与挂载解耦**——挂载技能可能与
+///    当前消息无关，命中未激活技能时追加激活；命中 warm 挂载技能时升级为
+///    Active（解锁工具），避免「挂载了技能 → 意图相关技能未激活 → 工具不可见
+///    → LLM 编造执行结果」的幻觉链路。
 ///
-/// 未命中返回 `None`：表示本请求无预激活技能，技能是否激活完全交由 LLM
+/// 全部未命中返回 `None`：表示本请求无预激活技能，技能是否激活完全交由 LLM
 /// 依据 L1 技能目录自主决策。
 pub fn resolve_preactivated(
     query: &str,
@@ -198,29 +204,36 @@ pub fn resolve_preactivated(
         }
     }
 
-    if selected_skills.is_empty() {
-        // 3. 意图匹配：用户消息命中技能 triggers 关键词 → 自动激活（LLM 决策前的可靠兜底）。
-        //    恢复旧 matcher 的关键词匹配能力，但由 SKILL.md frontmatter 的 triggers 字段
-        //    显式声明，比废弃前的全量描述匹配更可控、可扩展（50+ 技能 = 每个技能配关键词）。
-        if let Some((skill, hits)) = resolve_intent_match(query, registry) {
+    // 3. 意图匹配（LLM 自主 activate_skill 决策前的可靠兜底）。
+    //    与挂载解耦（见函数注释）：命中「未激活」技能时追加激活并注入正文；
+    //    命中「warm 挂载」技能时升级为 Active（解锁工具）。
+    if let Some((skill, hits)) = resolve_intent_match(query, registry) {
+        let already_active = mounted_active
+            .iter()
+            .any(|s| s.id == skill.id && s.scope == skill.scope);
+        if !already_active {
+            let in_selected = selected_skills
+                .iter()
+                .any(|(s, _, _)| s.id == skill.id && s.scope == skill.scope);
             log::info!(
-                "[skill_context] 意图匹配自动激活: {}:{} hits={} query={:?}",
+                "[skill_context] 意图匹配激活: {}:{} hits={} in_selected={} query={:?}",
                 skill.scope.as_str(),
                 skill.id,
                 hits,
+                in_selected,
                 query
             );
+            // 幂等：同 id+scope 覆盖（warm 挂载 → Active 解锁工具；重复命中不重复激活）
             state.activate(&skill, SkillLifetime::Turn, ActivationSource::Manual, true);
-            let selected = vec![(skill.clone(), ActivationSource::Manual, hits as f32)];
-            return Ok(Some(ResolvedSkillContext {
-                context: SkillExecutionContext::from_skills(&selected),
-                cleaned_query: query.to_string(),
-                is_manual: false,
-                skills: vec![skill],
-                mounted_warm: Vec::new(),
-                mounted_active: Vec::new(),
-            }));
+            if !in_selected {
+                selected_skills.push((skill.clone(), ActivationSource::Manual, hits as f32));
+            }
+            // 追加进正文注入列表（意图命中技能同样一次性注入指令）
+            mounted_active.push(skill);
         }
+    }
+
+    if selected_skills.is_empty() {
         return Ok(None);
     }
 
@@ -229,7 +242,8 @@ pub fn resolve_preactivated(
         context: SkillExecutionContext::from_skills(&selected_skills),
         cleaned_query: query.to_string(),
         is_manual: false,
-        // active 挂载技能正文由请求入口注入（skills）；warm 挂载不注入
+        // active 挂载技能正文由请求入口注入（skills）；warm 挂载不注入；
+        // 意图匹配命中的技能也随 skills 注入（工具已解锁，指令一次到位）
         skills: mounted_active,
         mounted_warm,
         mounted_active: mounted_active_ids,
@@ -481,5 +495,89 @@ mod skill_instruction_tests {
         assert!(format_skill_instructions(&[], 1000).is_empty());
         let out = format_skill_instructions(&[skill("blank", 50, "   ")], 1000);
         assert!(out.is_empty(), "空正文应跳过");
+    }
+}
+
+#[cfg(test)]
+mod preactivated_tests {
+    use super::*;
+
+    /// 加载系统内置技能（编译期嵌入真实 SKILL.md）的真实注册表，副作用隔离在临时目录
+    fn system_registry() -> SkillRegistry {
+        let reg = SkillRegistry::new();
+        let tmp = tempfile::tempdir().unwrap();
+        reg.reload(tmp.path().to_str().unwrap()).unwrap();
+        reg
+    }
+
+    const SCHEDULE_MSG: &str = "下周二 14:00 产品评审，高优先级，提前 10 分钟提醒";
+
+    #[test]
+    fn intent_match_activates_when_no_mount() {
+        let reg = system_registry();
+        let s = ActiveSkillState::new();
+        let resolved = resolve_preactivated(SCHEDULE_MSG, &reg, &[], &s).unwrap();
+        assert!(resolved.is_some());
+        let tools = s.allowed_tools().expect("有激活技能");
+        assert!(tools.contains(&"schedule".to_string()));
+    }
+
+    #[test]
+    fn intent_match_not_blocked_by_unrelated_mount() {
+        // 回归：会话挂载了与消息无关的技能（kanban warm），意图匹配仍应激活 schedule
+        let reg = system_registry();
+        let s = ActiveSkillState::new();
+        let attached = vec![("system".to_string(), "kanban".to_string(), "warm".to_string())];
+        let resolved = resolve_preactivated(SCHEDULE_MSG, &reg, &attached, &s).unwrap();
+        assert!(resolved.is_some(), "挂载无关技能不应阻断意图匹配");
+        let tools = s.allowed_tools().expect("有激活技能");
+        assert!(
+            tools.contains(&"schedule".to_string()),
+            "schedule 工具应可见（意图激活），实际: {:?}",
+            tools
+        );
+    }
+
+    #[test]
+    fn intent_match_upgrades_warm_mount_to_active() {
+        // 回归：schedule 以 warm 挂载（工具不解锁），意图命中后升级 Active 解锁工具
+        let reg = system_registry();
+        let s = ActiveSkillState::new();
+        let attached = vec![("system".to_string(), "schedule".to_string(), "warm".to_string())];
+        let resolved = resolve_preactivated(SCHEDULE_MSG, &reg, &attached, &s).unwrap();
+        assert!(resolved.is_some());
+        let tools = s.allowed_tools().expect("有激活技能");
+        assert!(
+            tools.contains(&"schedule".to_string()),
+            "warm 挂载技能应被意图匹配升级为 Active（解锁工具），实际: {:?}",
+            tools
+        );
+        // 正文注入列表包含 schedule（意图命中技能随 skills 注入）
+        assert!(resolved.unwrap().skills.iter().any(|sk| sk.id == "schedule"));
+    }
+
+    #[test]
+    fn manual_trigger_keeps_priority() {
+        let reg = system_registry();
+        let s = ActiveSkillState::new();
+        let ctx = resolve_preactivated("/schedule 帮我看看日程", &reg, &[], &s)
+            .unwrap()
+            .expect("手动触发应返回上下文");
+        assert!(ctx.is_manual);
+        assert_eq!(ctx.cleaned_query, "帮我看看日程");
+        let tools = s.allowed_tools().expect("有激活技能");
+        assert!(tools.contains(&"schedule".to_string()));
+    }
+
+    #[test]
+    fn no_match_returns_none_even_with_mount() {
+        let reg = system_registry();
+        let s = ActiveSkillState::new();
+        let attached = vec![("system".to_string(), "kanban".to_string(), "warm".to_string())];
+        let resolved = resolve_preactivated("写一首诗", &reg, &attached, &s).unwrap();
+        assert!(resolved.is_some(), "挂载技能本身应使上下文非空");
+        // 无意图命中时不追加额外技能（仅挂载的 kanban）
+        let tools = s.allowed_tools().expect("有激活技能");
+        assert!(tools.is_empty() || !tools.contains(&"schedule".to_string()));
     }
 }

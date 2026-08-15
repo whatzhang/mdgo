@@ -2714,39 +2714,59 @@ pub fn build_raw_tool(cfg: KbSearchConfig) -> DynamicTool {
 ///
 /// 动作与参数对齐 `resources/skills/schedule/SKILL.md`：
 /// - `list`：全部日程（紧凑文本）
-/// - `add`：新建日程（title/start/end/desc?/color?/cron?/notify?，Rust 校验 + 冲突提示）
+/// - `add`：新建日程（title/start/end/desc?/color?/cron?/notify?/notify_before?/type?/priority?/related?/ai?，Rust 校验 + 冲突提示与备选建议）
 /// - `update` / `remove`：按 id 更新/删除
 /// - `conflicts`：与 [start,end) 重叠的日程
-/// - `remind`：到点应提醒的日程
+/// - `remind`：到点应提醒的日程（支持 notify_before 提前提醒）
 /// - `lunar`：某日农历/节假日/调休
 /// - `next_available`：下一个可安排时间段（可跳过休息日，项目独有特性）
+/// - `plan`：把 AI 拆解的任务（title+hours）排布到 deadline 前（只出建议，不创建）
+/// - `optimize`：时间投入统计（供 AI 生成优化建议）
+/// - `review`：某日日程复盘统计（完成/进行中/未开始）
+/// - `focus`：专注时间块（可推荐或按指定开始时间创建 type=focus）
+/// - `today_plan`：某日日程 + 空闲时间段（供 AI 生成今日/明日计划）
 pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
     let tool_dir = cfg.dir_path.clone();
     let tool_app = cfg.app_handle.clone();
     DynamicTool::new(
         "schedule",
-        "日程管理：查询、创建、更新、删除日程事件，检测冲突、查询到点提醒、农历/节假日信息，查找下一个可安排时间段（可避开休息日）。动作：list 列出全部日程；add 新建（title/start/end 必填，start/end 格式 YYYY-MM-DDTHH:MM，可选 desc/color/cron 重复表达式/notify 提醒）；update 按 id 更新；remove 按 id 删除；conflicts 检测与现有日程的重叠（start/end 必填，可选 ignore_id）；remind 查询到点应提醒的日程；lunar 查询某日农历与节假日（date=YYYY-MM-DD）；next_available 查找下一个可安排时间段（duration_minutes 必填，可选 start_after/skip_rest_days）。当用户要求安排会议、查看日程、设置提醒、查询节假日时调用。",
+        "日程管理：查询、创建、更新、删除日程事件，检测冲突、查询到点提醒、农历/节假日信息，查找下一个可安排时间段（可避开休息日），并将 AI 拆解的任务排布到截止日期前（plan）、统计时间投入（optimize）、复盘某日日程（review）、创建专注时间块（focus）、查看某日计划与空闲段（today_plan）。动作：list 列出全部日程；add 新建（title/start/end 必填，start/end 格式 YYYY-MM-DDTHH:MM，可选 desc/color/cron 重复表达式/notify 提醒/notify_before 提前提醒分钟数/event_type 类型 work|meeting|focus|personal|task/priority 优先级 high|medium|low/related_docs|related_tasks|related_git 关联对象/ai_category|ai_energy|ai_estimated_hours AI 元数据）；update 按 id 更新；remove 按 id 删除；conflicts 检测与现有日程的重叠（start/end 必填，可选 ignore_id）；remind 查询到点应提醒的日程；lunar 查询某日农历与节假日（date=YYYY-MM-DD）；next_available 查找下一个可安排时间段（duration_minutes 必填，可选 start_after/skip_rest_days）；plan 任务排布建议（deadline=YYYY-MM-DD 必填，tasks=[{title,hours}] 必填，可选 work_start/work_end 默认 9/18、skip_rest_days，只建议不创建）；optimize 时间统计（可选 range=7d|30d|YYYY-MM-DD..YYYY-MM-DD）；review 日复盘（可选 date，默认今天）；focus 专注块（duration_minutes 必填，可选 task/start，指定 start 时创建 type=focus，否则推荐时间段）；today_plan 某日计划（可选 date，默认今天）。当用户要求安排会议、查看日程、规划任务、复盘时间、设置提醒、查询节假日时调用。",
         serde_json::json!({
             "type": "object",
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["list", "add", "update", "remove", "conflicts", "remind", "lunar", "next_available"],
+                    "enum": ["list", "add", "update", "remove", "conflicts", "remind", "lunar", "next_available", "plan", "optimize", "review", "focus", "today_plan"],
                     "description": "要执行的动作"
                 },
                 "id": { "type": "string", "description": "事件 id（update/remove 用）" },
-                "title": { "type": "string", "description": "日程标题（add/update）" },
-                "start": { "type": "string", "description": "开始时间 YYYY-MM-DDTHH:MM（add/update/conflicts）" },
-                "end": { "type": "string", "description": "结束时间 YYYY-MM-DDTHH:MM（add/update/conflicts）" },
+                "title": { "type": "string", "description": "日程标题（add/update/plan 任务标题）" },
+                "start": { "type": "string", "description": "开始时间 YYYY-MM-DDTHH:MM（add/update/conflicts/focus 用）" },
+                "end": { "type": "string", "description": "结束时间 YYYY-MM-DDTHH:MM（add/update/conflicts 用）" },
                 "desc": { "type": "string", "description": "描述（add/update 可选）" },
                 "color": { "type": "string", "description": "颜色标记（add/update 可选）" },
                 "cron": { "type": "string", "description": "Cron 重复表达式（5 字段，add/update 可选）" },
                 "notify": { "type": "boolean", "description": "是否提醒（add/update 可选，默认 true）" },
+                "notify_before": { "type": "integer", "description": "提前提醒分钟数，0=开始即提醒（add/update 可选）" },
+                "event_type": { "type": "string", "description": "事件类型 work/meeting/focus/personal/task（add/update 可选，focus 动作自动为 focus）" },
+                "priority": { "type": "string", "description": "优先级 high/medium/low（add/update 可选）" },
+                "related_docs": { "type": "array", "items": { "type": "string" }, "description": "关联文档路径列表（add/update 可选）" },
+                "related_tasks": { "type": "array", "items": { "type": "string" }, "description": "关联任务列表（add/update 可选）" },
+                "related_git": { "type": "array", "items": { "type": "string" }, "description": "关联 Git 提交列表（add/update 可选）" },
+                "ai_category": { "type": "string", "description": "AI 任务类别（add/update 可选）" },
+                "ai_energy": { "type": "string", "description": "AI 精力类型 deep_work/shallow/rest（add/update 可选）" },
+                "ai_estimated_hours": { "type": "number", "description": "AI 预估投入小时数（add/update 可选）" },
                 "ignore_id": { "type": "string", "description": "冲突检测时忽略的事件 id（conflicts 可选）" },
-                "date": { "type": "string", "description": "日期 YYYY-MM-DD（lunar 用）" },
-                "duration_minutes": { "type": "integer", "description": "所需时长（分钟，next_available 必填）" },
+                "date": { "type": "string", "description": "日期 YYYY-MM-DD（lunar/review/today_plan 用，review/today_plan 可省略默认今天）" },
+                "duration_minutes": { "type": "integer", "description": "所需时长（分钟，next_available/focus 必填）" },
                 "start_after": { "type": "string", "description": "最早开始时间（next_available 可选）" },
-                "skip_rest_days": { "type": "boolean", "description": "是否跳过休息日/节假日（next_available 可选，默认 true）" }
+                "skip_rest_days": { "type": "boolean", "description": "是否跳过休息日/节假日（next_available/plan 可选，默认 true）" },
+                "deadline": { "type": "string", "description": "截止日期 YYYY-MM-DD（plan 必填）" },
+                "tasks": { "type": "array", "items": { "type": "object", "properties": { "title": { "type": "string" }, "hours": { "type": "number" } }, "required": ["title", "hours"] }, "description": "AI 拆解后的任务列表 [{title,hours}]（plan 必填）" },
+                "work_start": { "type": "integer", "description": "每日工作开始小时（plan/today_plan 可选，默认 9）" },
+                "work_end": { "type": "integer", "description": "每日工作结束小时（plan/today_plan 可选，默认 18）" },
+                "range": { "type": "string", "description": "统计范围 7d/30d/YYYY-MM-DD..YYYY-MM-DD（optimize 可选，默认 7d）" },
+                "task": { "type": "string", "description": "专注内容标题（focus 可选）" }
             },
             "required": ["action"]
         }),
@@ -2756,7 +2776,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
             Box::pin(async move {
                 use crate::core::schedule::rules;
                 use crate::core::schedule::store::EventStore;
-                use crate::core::schedule::{ScheduleEvent, ScheduleEventInput};
+                use crate::core::schedule::{AiMeta, RelatedLinks, ScheduleEvent, ScheduleEventInput};
                 use tauri::Emitter;
 
                 let action = args
@@ -2765,6 +2785,18 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                     .filter(|a| !a.trim().is_empty())
                     .unwrap_or("list");
                 let get = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let get_i64 = |k: &str, default: i64| args.get(k).and_then(|v| v.as_i64()).unwrap_or(default);
+                let get_f64 = |k: &str, default: f64| args.get(k).and_then(|v| v.as_f64()).unwrap_or(default);
+                let get_strings = |k: &str| {
+                    args.get(k)
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default()
+                };
                 let state = app.state::<crate::AppState>();
                 // 共享存储：与 IPC 命令 / 提醒调度器共用同一 Arc<Mutex>，杜绝并发写丢失更新
                 let store_ref = state.schedule_store(&dir).map_err(|e| tool_error("schedule", &e))?;
@@ -2784,7 +2816,18 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                             .iter()
                             .map(|e| {
                                 let cron = if e.cron.trim().is_empty() { String::new() } else { format!("（重复 {}）", e.cron) };
-                                format!("- {}（id: {}）：{} ~ {}{}", e.title, e.id, e.start, e.end, cron)
+                                let mut extra: Vec<String> = Vec::new();
+                                if !e.event_type.is_empty() {
+                                    extra.push(e.event_type.clone());
+                                }
+                                if !e.priority.is_empty() {
+                                    extra.push(e.priority.clone());
+                                }
+                                if e.notify_before > 0 {
+                                    extra.push(format!("提前{}分钟提醒", e.notify_before));
+                                }
+                                let tags = if extra.is_empty() { String::new() } else { format!(" [{}]", extra.join("/")) };
+                                format!("- {}（id: {}）：{} ~ {}{}{}", e.title, e.id, e.start, e.end, cron, tags)
                             })
                             .collect();
                         Ok(ToolOutput::text(format!("共 {} 个日程：\n{}", events.len(), lines.join("\n"))))
@@ -2798,47 +2841,94 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                             desc: get("desc"),
                             cron: get("cron"),
                             notify: args.get("notify").and_then(|v| v.as_bool()).unwrap_or(true),
+                            notify_before: get_i64("notify_before", 0),
+                            event_type: get("event_type"),
+                            priority: get("priority"),
+                            related: RelatedLinks {
+                                docs: get_strings("related_docs"),
+                                tasks: get_strings("related_tasks"),
+                                git: get_strings("related_git"),
+                            },
+                            ai: AiMeta {
+                                category: get("ai_category"),
+                                energy: get("ai_energy"),
+                                estimated_hours: get_f64("ai_estimated_hours", 0.0),
+                            },
                         };
                         if input.title.trim().is_empty() {
                             return Err(tool_error("schedule", "日程标题不能为空"));
                         }
-                        // 单锁内完成读+写（冲突检测与写入原子，杜绝并发窗口丢失更新）
-                        let mut store = store_guard();
                         if action == "add" {
-                            let now_s = fmt(now);
-                            let event = ScheduleEvent {
-                                id: uuid::Uuid::new_v4().to_string(),
-                                title: input.title,
-                                start: input.start,
-                                end: input.end,
-                                color: input.color,
-                                desc: input.desc,
-                                cron: input.cron,
-                                notify: input.notify,
-                                created_at: now_s.clone(),
-                                updated_at: now_s,
+                            // 单锁内完成读+写（冲突检测与写入原子，杜绝并发窗口丢失更新）；块结束即释放锁
+                            let (event, conflict_events) = {
+                                let mut store = store_guard();
+                                let now_s = fmt(now);
+                                let event = ScheduleEvent {
+                                    id: uuid::Uuid::new_v4().to_string(),
+                                    title: input.title,
+                                    start: input.start,
+                                    end: input.end,
+                                    color: input.color,
+                                    desc: input.desc,
+                                    cron: input.cron,
+                                    notify: input.notify,
+                                    notify_before: input.notify_before,
+                                    event_type: input.event_type,
+                                    priority: input.priority,
+                                    related: input.related,
+                                    ai: input.ai,
+                                    created_at: now_s.clone(),
+                                    updated_at: now_s,
+                                };
+                                event.validate().map_err(|e| tool_error("schedule", &e))?;
+                                // 冲突提示（同一锁内，避免并发下读到过期快照）
+                                let mut conflict_events: Vec<ScheduleEvent> = Vec::new();
+                                if event.cron.trim().is_empty() {
+                                    if let (Some(s), Some(e)) =
+                                        (rules::parse_local_time(&event.start), rules::parse_local_time(&event.end))
+                                    {
+                                        let existing = store.list().map_err(|e| tool_error("schedule", &e))?;
+                                        conflict_events = rules::find_conflicts(&existing, s, e, None);
+                                    }
+                                }
+                                store.upsert(event.clone()).map_err(|e| tool_error("schedule", &e))?;
+                                (event, conflict_events)
                             };
-                            event.validate().map_err(|e| tool_error("schedule", &e))?;
-                            // 冲突提示（同一锁内，避免并发下读到过期快照）
-                            let mut conflict_note = String::new();
-                            if event.cron.trim().is_empty() {
-                                if let (Some(s), Some(e)) =
-                                    (rules::parse_local_time(&event.start), rules::parse_local_time(&event.end))
-                                {
-                                    let existing = store.list().map_err(|e| tool_error("schedule", &e))?;
-                                    let conflicts = rules::find_conflicts(&existing, s, e, None);
-                                    if !conflicts.is_empty() {
-                                        conflict_note = format!("\n⚠ 时间冲突：{}", conflicts.iter().map(|c| c.title.as_str()).collect::<Vec<_>>().join("、"));
+                            let _ = app.emit("schedule:changed", ()); // 通知前端刷新（AI 直写 DB 后 UI 同步）
+                            let mut msg = format!("已创建日程：{}（{} ~ {}", event.title, event.start, event.end);
+                            if !conflict_events.is_empty() {
+                                msg.push_str(&format!(
+                                    "\n⚠ 时间冲突：{}",
+                                    conflict_events.iter().map(|c| c.title.as_str()).collect::<Vec<_>>().join("、")
+                                ));
+                                // 冲突时给出备选建议（只建议不自动移动/覆盖；锁已释放，可安全 await）
+                                let duration = (rules::parse_local_time(&event.end)
+                                    .and_then(|e| rules::parse_local_time(&event.start).map(|s| (e - s).num_minutes()))
+                                    .unwrap_or(60))
+                                    .max(15);
+                                let events_snapshot = store_guard().list().map_err(|e| tool_error("schedule", &e))?;
+                                let provider = state.schedule_day_info.clone();
+                                let end_dt = rules::parse_local_time(&event.end).unwrap_or(now);
+                                let alts = tokio::task::spawn_blocking(move || {
+                                    crate::core::schedule::planner::suggest_alternatives(
+                                        &events_snapshot, provider.as_ref(), duration, end_dt, true,
+                                    )
+                                })
+                                .await
+                                .map_err(|e| tool_error("schedule", &format!("生成备选建议失败: {}", e)))?;
+                                if !alts.is_empty() {
+                                    msg.push_str("\n备选建议（需确认后另行 add）：");
+                                    for (i, t) in alts.iter().take(2).enumerate() {
+                                        let end_t = *t + chrono::Duration::minutes(duration);
+                                        msg.push_str(&format!("\n方案{}: {} ~ {}", i + 1, fmt(*t), fmt(end_t)));
                                     }
                                 }
                             }
-                            store.upsert(event.clone()).map_err(|e| tool_error("schedule", &e))?;
-                            let _ = app.emit("schedule:changed", ()); // 通知前端刷新（AI 直写 DB 后 UI 同步）
-                            Ok(ToolOutput::text(format!(
-                                "已创建日程：{}（{} ~ {}{}）",
-                                event.title, event.start, event.end, conflict_note
-                            )))
+                            msg.push(')');
+                            Ok(ToolOutput::text(msg))
                         } else {
+                            // 单锁内完成 读→改→写（消除锁窗口：并发写者在此期间插入/删除不会被覆盖）
+                            let mut store = store_guard();
                             let id = get("id");
                             let mut events = store.list().map_err(|e| tool_error("schedule", &e))?;
                             let Some(existing) = events.iter_mut().find(|e| e.id == id) else {
@@ -2851,6 +2941,11 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                             existing.desc = input.desc;
                             existing.cron = input.cron;
                             existing.notify = input.notify;
+                            existing.notify_before = input.notify_before;
+                            existing.event_type = input.event_type;
+                            existing.priority = input.priority;
+                            existing.related = input.related;
+                            existing.ai = input.ai;
                             existing.updated_at = fmt(now);
                             existing.validate().map_err(|e| tool_error("schedule", &e))?;
                             let updated = existing.clone();
@@ -2926,6 +3021,259 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                             Some(t) => Ok(ToolOutput::text(format!("下一个可安排时间段：{}（持续 {} 分钟）", fmt(t), duration))),
                             None => Err(tool_error("schedule", "30 天内未找到可安排时间段")),
                         }
+                    }
+                    "plan" => {
+                        // 任务排布建议：AI 拆解任务（title+hours）→ 引擎排到 deadline 前（只建议，不创建）
+                        let deadline = chrono::NaiveDate::parse_from_str(&get("deadline"), "%Y-%m-%d")
+                            .map_err(|_| tool_error("schedule", "deadline 格式无效（应为 YYYY-MM-DD）"))?;
+                        let tasks_raw = args
+                            .get("tasks")
+                            .and_then(|v| v.as_array())
+                            .ok_or_else(|| tool_error("schedule", "缺少 tasks（任务数组，每项含 title/hours）"))?;
+                        let tasks: Vec<crate::core::schedule::planner::PlannedTask> = tasks_raw
+                            .iter()
+                            .map(|t| crate::core::schedule::planner::PlannedTask {
+                                title: t.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                                hours: t.get("hours").and_then(|x| x.as_f64()).unwrap_or(0.0),
+                            })
+                            .filter(|t| !t.title.trim().is_empty() && t.hours > 0.0)
+                            .collect();
+                        if tasks.is_empty() {
+                            return Err(tool_error("schedule", "tasks 为空或格式无效（每项需含 title 与 hours）"));
+                        }
+                        let ws = get_i64("work_start", 9) as u32;
+                        let we = get_i64("work_end", 18) as u32;
+                        let skip = args.get("skip_rest_days").and_then(|v| v.as_bool()).unwrap_or(true);
+                        let events = store_guard().list().map_err(|e| tool_error("schedule", &e))?;
+                        let provider = state.schedule_day_info.clone();
+                        let tasks_for_plan = tasks.clone();
+                        let results = tokio::task::spawn_blocking(move || {
+                            crate::core::schedule::planner::plan_tasks(&events, provider.as_ref(), &tasks_for_plan, deadline, ws, we, skip, now)
+                        })
+                        .await
+                        .map_err(|e| tool_error("schedule", &format!("任务排布失败: {}", e)))?;
+                        let mut lines = vec![format!(
+                            "任务排布建议（截止 {}，工作日 {}:00-{}:00{}）：",
+                            deadline.format("%Y-%m-%d"),
+                            ws,
+                            we,
+                            if skip { "，跳过休息日" } else { "" }
+                        )];
+                        for (i, r) in results.iter().enumerate() {
+                            match r {
+                                Some(slot) => lines.push(format!("- {}：{} ~ {}", slot.title, fmt(slot.start), fmt(slot.end))),
+                                None => lines.push(format!("- {}：截止日期前排不下（请拆分任务或延后截止日期）", tasks[i].title)),
+                            }
+                        }
+                        lines.push("以上仅为排布建议，确认后请用 add 逐条创建日程。".to_string());
+                        Ok(ToolOutput::text(lines.join("\n")))
+                    }
+                    "optimize" => {
+                        // 时间投入统计（确定性数据），优化建议由 AI 基于输出生成
+                        let range = get("range");
+                        let (from, to) = if range.is_empty() || range == "7d" {
+                            ((now - chrono::Duration::days(6)).date().and_hms_opt(0, 0, 0).unwrap(), now)
+                        } else if range == "30d" {
+                            ((now - chrono::Duration::days(29)).date().and_hms_opt(0, 0, 0).unwrap(), now)
+                        } else if let Some((a, b)) = range.split_once("..") {
+                            let da = chrono::NaiveDate::parse_from_str(a.trim(), "%Y-%m-%d")
+                                .map_err(|_| tool_error("schedule", "range 起始日期格式无效（应为 YYYY-MM-DD..YYYY-MM-DD）"))?;
+                            let db = chrono::NaiveDate::parse_from_str(b.trim(), "%Y-%m-%d")
+                                .map_err(|_| tool_error("schedule", "range 结束日期格式无效（应为 YYYY-MM-DD..YYYY-MM-DD）"))?;
+                            if db < da {
+                                return Err(tool_error("schedule", "range 结束日期早于起始日期"));
+                            }
+                            (da.and_hms_opt(0, 0, 0).unwrap(), db.and_hms_opt(23, 59, 0).unwrap())
+                        } else {
+                            return Err(tool_error("schedule", "range 格式无效（支持 7d / 30d / YYYY-MM-DD..YYYY-MM-DD）"));
+                        };
+                        let events = store_guard().list().map_err(|e| tool_error("schedule", &e))?;
+                        let stats = tokio::task::spawn_blocking(move || {
+                            crate::core::schedule::analyze::analyze_range(&events, from, to)
+                        })
+                        .await
+                        .map_err(|e| tool_error("schedule", &format!("时间统计失败: {}", e)))?;
+                        use crate::core::schedule::analyze::fmt_minutes;
+                        let mut lines = vec![format!(
+                            "时间投入统计（{} ~ {}）：",
+                            from.format("%Y-%m-%d"),
+                            to.format("%Y-%m-%d")
+                        )];
+                        lines.push(format!(
+                            "共 {} 项日程，总投入 {}，平均每个有投入工作日 {}",
+                            stats.event_count,
+                            fmt_minutes(stats.total_minutes),
+                            format!("{:.1}小时", stats.avg_workday_hours)
+                        ));
+                        lines.push(format!("其中会议 {}，深度工作 {}（含 focus/work/energy=deep_work）", fmt_minutes(stats.meeting_minutes), fmt_minutes(stats.deep_work_minutes)));
+                        if stats.evening_meeting_minutes > 0 {
+                            lines.push(format!("下午（13:00 起）会议 {}，占比 {:.0}%", fmt_minutes(stats.evening_meeting_minutes), (stats.evening_meeting_minutes as f64 / stats.meeting_minutes.max(1) as f64 * 100.0)));
+                        }
+                        if !stats.by_type.is_empty() {
+                            let types = stats
+                                .by_type
+                                .iter()
+                                .map(|(t, m)| format!("{}:{}", t, fmt_minutes(*m)))
+                                .collect::<Vec<_>>()
+                                .join("，");
+                            lines.push(format!("按类型：{}", types));
+                        }
+                        if !stats.by_day.is_empty() {
+                            let days = stats
+                                .by_day
+                                .iter()
+                                .map(|(d, m, c)| format!("{}:{}分钟/{}项", d.format("%m-%d"), m, c))
+                                .collect::<Vec<_>>()
+                                .join("，");
+                            lines.push(format!("按天：{}", days));
+                        }
+                        lines.push("以上为确定性统计，优化建议（如保护深度工作时间）请由 AI 结合上下文生成。".to_string());
+                        Ok(ToolOutput::text(lines.join("\n")))
+                    }
+                    "review" => {
+                        // 日复盘统计：完成 / 进行中 / 未开始 + 投入时长（原因分析与建议由 AI 生成）
+                        let date = if get("date").is_empty() {
+                            now.date()
+                        } else {
+                            chrono::NaiveDate::parse_from_str(&get("date"), "%Y-%m-%d")
+                                .map_err(|_| tool_error("schedule", "日期格式无效（应为 YYYY-MM-DD）"))?
+                        };
+                        let events = store_guard().list().map_err(|e| tool_error("schedule", &e))?;
+                        let summary = tokio::task::spawn_blocking(move || {
+                            crate::core::schedule::analyze::day_summary(&events, date, now)
+                        })
+                        .await
+                        .map_err(|e| tool_error("schedule", &format!("复盘统计失败: {}", e)))?;
+                        use crate::core::schedule::analyze::fmt_minutes;
+                        let mut lines = vec![format!(
+                            "{} 日程复盘：共 {} 项，投入 {}",
+                            date.format("%Y-%m-%d"),
+                            summary.done.len() + summary.ongoing.len() + summary.upcoming.len(),
+                            fmt_minutes(summary.total_minutes)
+                        )];
+                        if !summary.done.is_empty() {
+                            lines.push("已完成：".to_string());
+                            for e in &summary.done {
+                                lines.push(format!("✅ {}（{} ~ {}）", e.title, e.start, e.end));
+                            }
+                        }
+                        if !summary.ongoing.is_empty() {
+                            lines.push("进行中：".to_string());
+                            for e in &summary.ongoing {
+                                lines.push(format!("⏳ {}（{} ~ {}）", e.title, e.start, e.end));
+                            }
+                        }
+                        if !summary.upcoming.is_empty() {
+                            lines.push("未开始：".to_string());
+                            for e in &summary.upcoming {
+                                lines.push(format!("🔜 {}（{} ~ {}）", e.title, e.start, e.end));
+                            }
+                        }
+                        lines.push("以上为确定性归类，延期原因与改进建议请由 AI 结合上下文生成。".to_string());
+                        Ok(ToolOutput::text(lines.join("\n")))
+                    }
+                    "focus" => {
+                        // 专注时间块：指定 start 时校验冲突并创建（type=focus）；未指定时只推荐时间段
+                        let duration = args.get("duration_minutes").and_then(|v| v.as_i64()).ok_or_else(|| tool_error("schedule", "缺少 duration_minutes"))?;
+                        if duration < 1 {
+                            return Err(tool_error("schedule", "duration_minutes 必须大于 0"));
+                        }
+                        let task = get("task");
+                        let title = if task.trim().is_empty() { "专注时间".to_string() } else { format!("专注：{}", task.trim()) };
+                        let start_str = get("start");
+                        if start_str.is_empty() {
+                            // 未指定开始时间：推荐下一个空档（不创建）
+                            let events = store_guard().list().map_err(|e| tool_error("schedule", &e))?;
+                            let provider = state.schedule_day_info.clone();
+                            let next = tokio::task::spawn_blocking(move || {
+                                crate::core::schedule::planner::next_available(&events, provider.as_ref(), duration, now, true)
+                            })
+                            .await
+                            .map_err(|e| tool_error("schedule", &format!("查找专注时间段失败: {}", e)))?;
+                            match next {
+                                Some(t) => Ok(ToolOutput::text(format!(
+                                    "建议专注时间段：{} ~ {}（{} 分钟）。如需创建请确认后调用 add（event_type=focus）。",
+                                    fmt(t),
+                                    fmt(t + chrono::Duration::minutes(duration)),
+                                    duration
+                                ))),
+                                None => Err(tool_error("schedule", "30 天内未找到可安排时间段")),
+                            }
+                        } else {
+                            let start = rules::parse_local_time(&start_str)
+                                .ok_or_else(|| tool_error("schedule", "start 格式无效（应为 YYYY-MM-DDTHH:MM）"))?;
+                            let end = start + chrono::Duration::minutes(duration);
+                            let mut store = store_guard();
+                            let conflicts = rules::find_conflicts(&store.list().map_err(|e| tool_error("schedule", &e))?, start, end, None);
+                            if !conflicts.is_empty() {
+                                return Ok(ToolOutput::text(format!(
+                                    "时间冲突，未创建专注块：{}",
+                                    conflicts.iter().map(|c| format!("{}（{} ~ {}）", c.title, c.start, c.end)).collect::<Vec<_>>().join("、")
+                                )));
+                            }
+                            let now_s = fmt(now);
+                            let event = ScheduleEvent {
+                                id: uuid::Uuid::new_v4().to_string(),
+                                title,
+                                start: start_str,
+                                end: fmt(end),
+                                color: "blue".into(),
+                                event_type: "focus".into(),
+                                notify: true,
+                                created_at: now_s.clone(),
+                                updated_at: now_s,
+                                ..Default::default()
+                            };
+                            event.validate().map_err(|e| tool_error("schedule", &e))?;
+                            store.upsert(event.clone()).map_err(|e| tool_error("schedule", &e))?;
+                            let _ = app.emit("schedule:changed", ());
+                            Ok(ToolOutput::text(format!(
+                                "已创建专注时间块：{}（{} ~ {}）",
+                                event.title, event.start, event.end
+                            )))
+                        }
+                    }
+                    "today_plan" => {
+                        // 某日日程 + 空闲时间段（供 AI 生成今日/明日计划）
+                        let date = if get("date").is_empty() {
+                            now.date()
+                        } else {
+                            chrono::NaiveDate::parse_from_str(&get("date"), "%Y-%m-%d")
+                                .map_err(|_| tool_error("schedule", "日期格式无效（应为 YYYY-MM-DD）"))?
+                        };
+                        let ws = get_i64("work_start", 9) as u32;
+                        let we = get_i64("work_end", 18) as u32;
+                        let events = store_guard().list().map_err(|e| tool_error("schedule", &e))?;
+                        let (day_events, blocks) = tokio::task::spawn_blocking(move || {
+                            let day_events = rules::events_on_date(&events, date);
+                            let blocks = crate::core::schedule::analyze::available_blocks(&events, date, ws, we);
+                            (day_events, blocks)
+                        })
+                        .await
+                        .map_err(|e| tool_error("schedule", &format!("生成当日计划失败: {}", e)))?;
+                        use crate::core::schedule::analyze::{fmt_blocks, fmt_minutes};
+                        let mut lines = vec![format!("{} 计划：", date.format("%Y-%m-%d"))];
+                        if day_events.is_empty() {
+                            lines.push("当天无日程。".to_string());
+                        } else {
+                            lines.push(format!("日程 {} 项：", day_events.len()));
+                            for e in &day_events {
+                                let mut tag = format!("- {}（{} ~ {}", e.title, e.start, e.end);
+                                if !e.event_type.is_empty() {
+                                    tag.push_str(&format!("，{}", e.event_type));
+                                }
+                                tag.push(')');
+                                lines.push(tag);
+                            }
+                        }
+                        lines.push(format!("工作窗口 {}:00-{}:00 空闲段：{}", ws, we, fmt_blocks(&blocks)));
+                        if let Some(total) = day_events.iter().filter_map(|e| {
+                            rules::parse_local_time(&e.start).and_then(|s| rules::parse_local_time(&e.end).map(|t| (t - s).num_minutes()))
+                        }).reduce(|a, b| a + b) {
+                            lines.push(format!("当天日程总时长：{}", fmt_minutes(total)));
+                        }
+                        lines.push("请基于以上日程与空闲段生成今日安排建议。".to_string());
+                        Ok(ToolOutput::text(lines.join("\n")))
                     }
                     _ => Err(tool_error("schedule", &format!("未知动作: {}", action))),
                 }

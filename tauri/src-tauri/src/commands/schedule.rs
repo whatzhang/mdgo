@@ -90,6 +90,11 @@ pub async fn schedule_add(
         desc: input.desc,
         cron: input.cron,
         notify: input.notify,
+        notify_before: input.notify_before,
+        event_type: input.event_type,
+        priority: input.priority,
+        related: input.related,
+        ai: input.ai,
         created_at: now.clone(),
         updated_at: now,
     };
@@ -145,6 +150,11 @@ pub async fn schedule_update(
         existing.desc = input.desc;
         existing.cron = input.cron;
         existing.notify = input.notify;
+        existing.notify_before = input.notify_before;
+        existing.event_type = input.event_type;
+        existing.priority = input.priority;
+        existing.related = input.related;
+        existing.ai = input.ai;
         existing.updated_at = fmt_time(now_local());
         existing.validate()?;
         let updated = existing.clone();

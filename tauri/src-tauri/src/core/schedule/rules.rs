@@ -137,8 +137,9 @@ pub fn find_conflicts(
 }
 
 /// 到点应触发提醒的事件。
-/// - 普通事件：当前时间在 [start, end) 内（对齐前端开始即提醒）
-/// - Cron 事件：当前分钟命中 cron（对齐前端 `_cronMatches`）
+/// - 普通事件：当前时间在提前提醒窗口内（`[start - notify_before, end)`；`notify_before=0` 时即
+///   开始时间起提醒，与旧行为一致）
+/// - Cron 事件：当前分钟命中 cron（对齐前端 `_cronMatches`；Cron 事件的提醒时机仍为命中时刻）
 pub fn due_reminders(events: &[ScheduleEvent], now: NaiveDateTime) -> Vec<ScheduleEvent> {
     events
         .iter()
@@ -164,7 +165,9 @@ pub fn due_reminders(events: &[ScheduleEvent], now: NaiveDateTime) -> Vec<Schedu
                     .map(|t| t.naive_local() <= now + Duration::minutes(1))
                     .unwrap_or(false);
             }
-            now >= es && now < ee
+            // 普通事件：提前提醒窗口 [start - notify_before, end)
+            let start_window = es - Duration::minutes(e.notify_before.max(0));
+            now >= start_window && now < ee
         })
         .cloned()
         .collect()
@@ -181,12 +184,9 @@ mod tests {
             title: id.into(),
             start: start.into(),
             end: end.into(),
-            color: String::new(),
-            desc: String::new(),
             cron: cron.into(),
             notify: true,
-            created_at: String::new(),
-            updated_at: String::new(),
+            ..Default::default()
         }
     }
 
@@ -288,5 +288,20 @@ mod tests {
         // 已结束不触发
         let after_end = NaiveDate::from_ymd_opt(2026, 8, 13).unwrap().and_hms_opt(11, 1, 0).unwrap();
         assert!(due_reminders(&[e.clone()], after_end).is_empty());
+    }
+
+    #[test]
+    fn due_reminders_supports_notify_before() {
+        // notify_before=10：开始前 10 分钟起进入提醒窗口
+        let mut e = event("e1", "2026-08-13T10:00", "2026-08-13T11:00", "");
+        e.notify_before = 10;
+        let in_window = NaiveDate::from_ymd_opt(2026, 8, 13).unwrap().and_hms_opt(9, 52, 0).unwrap();
+        assert_eq!(due_reminders(&[e.clone()], in_window).len(), 1);
+        // 窗口外（早于 start-10min）不触发
+        let too_early = NaiveDate::from_ymd_opt(2026, 8, 13).unwrap().and_hms_opt(9, 49, 0).unwrap();
+        assert!(due_reminders(&[e.clone()], too_early).is_empty());
+        // notify=false 时不触发（即使进了窗口）
+        e.notify = false;
+        assert!(due_reminders(&[e], in_window).is_empty());
     }
 }

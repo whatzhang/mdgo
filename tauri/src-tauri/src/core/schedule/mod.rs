@@ -13,6 +13,7 @@
 //! 依赖倒置：IPC 命令层与 Agent 工具只依赖 [`store::EventStore`] / [`lunar::DayInfoProvider`]
 //! 接口；存储路径、节假日数据源、当前时间均由调用方注入。
 
+pub mod analyze;
 pub mod lunar;
 pub mod planner;
 pub mod rules;
@@ -22,8 +23,36 @@ pub mod store;
 
 use serde::{Deserialize, Serialize};
 
+/// 日程关联的知识库对象（知识图谱联动：文档 / 任务 / Git 提交）
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct RelatedLinks {
+    /// 关联文档（知识库内相对路径，如 "project/rag.md"）
+    #[serde(default)]
+    pub docs: Vec<String>,
+    /// 关联任务（看板任务 id / 标题）
+    #[serde(default)]
+    pub tasks: Vec<String>,
+    /// 关联 Git 提交 / 分支
+    #[serde(default)]
+    pub git: Vec<String>,
+}
+
+/// AI 规划元数据（由 AI 排期时写入，供时间分析 / 复盘使用）
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct AiMeta {
+    /// 任务类别（如 development / meeting / study，用于 optimize 聚合）
+    #[serde(default)]
+    pub category: String,
+    /// 精力类型（deep_work / shallow / rest，用于安排最佳工作时间）
+    #[serde(default)]
+    pub energy: String,
+    /// 预估投入小时数（plan 拆解产出）
+    #[serde(default)]
+    pub estimated_hours: f64,
+}
+
 /// 日程事件（持久化视图，字段与前端 JSON 逐一对齐）
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct ScheduleEvent {
     /// 事件唯一 ID
     pub id: String,
@@ -34,7 +63,7 @@ pub struct ScheduleEvent {
     /// 结束时间（本地时间 `YYYY-MM-DDTHH:MM`）
     pub end: String,
     /// 颜色标记（前端日历展示用；如 "blue"）
-    #[serde(default)]
+    #[serde(default = "default_color")]
     pub color: String,
     /// 描述
     #[serde(default)]
@@ -45,6 +74,21 @@ pub struct ScheduleEvent {
     /// 是否提醒
     #[serde(default = "default_true")]
     pub notify: bool,
+    /// 提前提醒分钟数（0 = 开始即提醒；如 10 = 开始前 10 分钟提醒）
+    #[serde(default)]
+    pub notify_before: i64,
+    /// 事件类型（work/meeting/focus/personal/task 等，供时间分析聚合）
+    #[serde(default, rename = "type")]
+    pub event_type: String,
+    /// 优先级（high/medium/low）
+    #[serde(default)]
+    pub priority: String,
+    /// 关联的知识库对象（文档 / 任务 / Git）
+    #[serde(default)]
+    pub related: RelatedLinks,
+    /// AI 规划元数据（category / energy / estimated_hours）
+    #[serde(default)]
+    pub ai: AiMeta,
     /// 创建时间（`YYYY-MM-DDTHH:MM`）
     #[serde(default)]
     pub created_at: String,
@@ -55,6 +99,11 @@ pub struct ScheduleEvent {
 
 fn default_true() -> bool {
     true
+}
+
+/// 日程默认颜色（前端日历蓝；不传 color 时缺省 blue）
+fn default_color() -> String {
+    "blue".into()
 }
 
 impl ScheduleEvent {
@@ -80,7 +129,7 @@ pub struct ScheduleEventInput {
     pub title: String,
     pub start: String,
     pub end: String,
-    #[serde(default)]
+    #[serde(default = "default_color")]
     pub color: String,
     #[serde(default)]
     pub desc: String,
@@ -88,4 +137,48 @@ pub struct ScheduleEventInput {
     pub cron: String,
     #[serde(default = "default_true")]
     pub notify: bool,
+    /// 提前提醒分钟数（0 = 开始即提醒）
+    #[serde(default)]
+    pub notify_before: i64,
+    /// 事件类型（work/meeting/focus/personal/task 等）
+    #[serde(default, rename = "type")]
+    pub event_type: String,
+    /// 优先级（high/medium/low）
+    #[serde(default)]
+    pub priority: String,
+    /// 关联的知识库对象
+    #[serde(default)]
+    pub related: RelatedLinks,
+    /// AI 规划元数据
+    #[serde(default)]
+    pub ai: AiMeta,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn input_color_defaults_to_blue() {
+        // 不传 color（IPC / 工具层缺省）→ 默认 blue
+        let input: ScheduleEventInput =
+            serde_json::from_str(r#"{"title":"会议","start":"2026-08-18T14:00","end":"2026-08-18T15:00"}"#)
+                .unwrap();
+        assert_eq!(input.color, "blue");
+        // 显式传 color 时保留
+        let input: ScheduleEventInput = serde_json::from_str(
+            r#"{"title":"会议","start":"2026-08-18T14:00","end":"2026-08-18T15:00","color":"red"}"#,
+        )
+        .unwrap();
+        assert_eq!(input.color, "red");
+    }
+
+    #[test]
+    fn event_color_defaults_to_blue() {
+        // ScheduleEvent 反序列化缺 color → blue（与前端 todo-blue 类名对齐）
+        let e: ScheduleEvent =
+            serde_json::from_str(r#"{"id":"e1","title":"会议","start":"2026-08-18T14:00","end":"2026-08-18T15:00"}"#)
+                .unwrap();
+        assert_eq!(e.color, "blue");
+    }
 }
