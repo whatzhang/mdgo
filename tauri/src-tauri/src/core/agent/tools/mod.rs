@@ -288,6 +288,13 @@ pub fn record_tool_result_structured(
     const MAX_RESULT_CHARS: usize = 12_000;
     let result = result.map(|r| truncate(r, MAX_RESULT_CHARS)).unwrap_or_default();
     tool_call_bus().record_result_structured(&cfg.request_id, tool, ok, summary, &result, structured);
+    // P2-9：质量计数（工具执行成功/失败）
+    let q = super::agent_quality();
+    if ok {
+        q.tool_successes.fetch_add(1, Ordering::Relaxed);
+    } else {
+        q.tool_failures.fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 // ─────────────────────────── 文件读取工具 ───────────────────────────
@@ -697,10 +704,9 @@ fn skill_ref_hint(rel_path: &str, base_err: String) -> String {
 }
 
 pub async fn list_files(cfg: &KbSearchConfig, pattern: &str, max_items: u32) -> Result<String, String> {
-    // 忽略可配置黑名单（用户可随时取消）：ls/glob/grep 等文件工具遍历全量文件，
-    // 与 read/edit/delete/write 的直接路径访问保持一致；`.mdgo` 等系统内置隐藏目录
-    // 仍由 IgnoreMatcher 的隐藏/临时文件内置规则排除。
-    let entries = get_or_refresh_cache(&cfg.dir_path, &[], &[])?;
+    // 目录/文件黑名单（gitignore 风格，如 assets/、node_modules/、*.log）按用户配置过滤，
+    // 与索引/文件树一致；`.mdgo` 等系统内置隐藏目录仍由 IgnoreMatcher 的隐藏/临时文件内置规则排除。
+    let entries = get_or_refresh_cache(&cfg.dir_path, &cfg.dir_blacklist, &cfg.file_blacklist)?;
     let pattern = pattern.trim().to_lowercase();
     let max = (max_items as usize).clamp(1, MAX_LIST_ITEMS);
 
@@ -1089,13 +1095,15 @@ pub async fn grep_files(
     // 操作，整体移到阻塞线程执行，避免阻塞 tokio 执行线程与 agent 异步循环，
     // 也避免大知识库冷缓存时首次 grep 卡死（遍历无取消机制，绝不能跑在 async 线程上）。
     let dir_path = cfg.dir_path.clone();
-    // 忽略可配置黑名单（与 ls/glob/read 等文件工具一致）：grep 搜索全量文件；
+    // 目录/文件黑名单（gitignore 风格）按用户配置过滤（与 ls/glob 一致）；
     // `.mdgo` 等系统内置隐藏目录仍由 IgnoreMatcher 内置规则排除
+    let dir_blacklist = cfg.dir_blacklist.clone();
+    let file_blacklist = cfg.file_blacklist.clone();
     let include_owned = include.to_vec();
     let exclude_owned = exclude.to_vec();
     let parsed_for_search = parsed.clone();
     let (hits, truncated, skipped, hit_total) = tokio::task::spawn_blocking(move || {
-        let entries = get_or_refresh_cache(&dir_path, &[], &[])?;
+        let entries = get_or_refresh_cache(&dir_path, &dir_blacklist, &file_blacklist)?;
         let include_matcher = GlobMatcher::new(&include_owned);
         let exclude_matcher = GlobMatcher::new(&exclude_owned);
 
@@ -1271,7 +1279,7 @@ fn parse_str_list(v: &serde_json::Value) -> Vec<String> {
 pub fn build_grep_tool(cfg: KbSearchConfig) -> DynamicTool {
     DynamicTool::new(
         "grep",
-        "在知识库目录内的文本文件中搜索关键词（大小写不敏感子串匹配，跳过二进制与超大文件）。输出格式：每个命中文件先输出一行相对路径，随后每行\"  行号: 内容\"；context_lines>0 时匹配行以 \">\" 开头、上下文行以空格开头、非连续区间用 \"--\" 分隔；list_only=true 时仅输出文件名。pattern 支持多关键词（空格分隔）：默认 and 模式（文件需同时包含所有词，词可出现在不同行），可设 match_mode=\"or\"（含任一词即命中）；用双引号包裹 pattern 可精确搜索连续短语（如 pattern=\"\\\"fn main()\\\"\"）。include/exclude 支持 glob 与目录名：include:[\"*.rs\",\"*.md\"] 限定文件类型，exclude:[\"target/**\",\"dist/**\"] 排除目录，目录名（如 \"src\"）自动展开为其下全部文件。\n使用建议：\n- 快速定位哪些文件包含目标文本：list_only=true（只返回文件名，省 token）\n- 需要看懂代码片段周边逻辑：context_lines=3（返回命中行前后 3 行，最大 5）\n- 缩小搜索范围减少耗时：include:[\"*.rs\"] 或 include:[\"src\"]（目录名）\n- 搜索连续代码片段：用双引号包裹 pattern，如 pattern=\"\\\"fn handle_request(\\\"\"\n- 多个术语任选其一：match_mode=\"or\"\n定位后建议用 read 工具精读相关行（read 支持 offset 分页）。",
+        "在知识库目录内的文本文件中搜索关键词（大小写不敏感子串匹配，跳过二进制与超大文件）。已按用户配置的目录/文件黑名单过滤（如 assets/、node_modules/ 等配置的目录不会被搜索）。输出格式：每个命中文件先输出一行相对路径，随后每行\"  行号: 内容\"；context_lines>0 时匹配行以 \">\" 开头、上下文行以空格开头、非连续区间用 \"--\" 分隔；list_only=true 时仅输出文件名。pattern 支持多关键词（空格分隔）：默认 and 模式（文件需同时包含所有词，词可出现在不同行），可设 match_mode=\"or\"（含任一词即命中）；用双引号包裹 pattern 可精确搜索连续短语（如 pattern=\"\\\"fn main()\\\"\"）。include/exclude 支持 glob 与目录名：include:[\"*.rs\",\"*.md\"] 限定文件类型，exclude:[\"target/**\",\"dist/**\"] 排除目录，目录名（如 \"src\"）自动展开为其下全部文件。\n使用建议：\n- 快速定位哪些文件包含目标文本：list_only=true（只返回文件名，省 token）\n- 需要看懂代码片段周边逻辑：context_lines=3（返回命中行前后 3 行，最大 5）\n- 缩小搜索范围减少耗时：include:[\"*.rs\"] 或 include:[\"src\"]（目录名）\n- 搜索连续代码片段：用双引号包裹 pattern，如 pattern=\"\\\"fn handle_request(\\\"\"\n- 多个术语任选其一：match_mode=\"or\"\n定位后建议用 read 工具精读相关行（read 支持 offset 分页）。",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -1503,7 +1511,28 @@ pub async fn git_commit(dir: &str, message: &str) -> Result<String, String> {
         return Err("commit message 不能为空".into());
     }
     let text = run_git_tool(dir, &["commit", "-m", msg], 15).await?;
-    Ok(text.trim().to_string())
+    // Mutation Verification（P0-1）：提交后确认 HEAD 存在且最近提交 subject 与本次一致。
+    // 注意 `git log --format=%s` 只输出规范化后的 subject（首行）；msg 可能含多行/尾随
+    // 空格，故取 msg 首行 trim 后比对，避免多行 message 误报"验证失败"。
+    let head = run_git_tool(dir, &["log", "-1", "--format=%s"], 10)
+        .await?
+        .trim()
+        .to_string();
+    let msg_subject = msg.lines().next().unwrap_or("").trim();
+    if head.is_empty() {
+        return Err("提交验证失败：HEAD 无提交记录，commit 可能未生效，请勿声称已提交".into());
+    }
+    if head != msg_subject {
+        return Err(format!(
+            "提交验证失败：HEAD 最近提交 subject（{}）与本次提交（{}）不一致，commit 可能未生效，请勿声称已提交",
+            head, msg_subject
+        ));
+    }
+    Ok(format!(
+        "{}\n[verified] 已确认 HEAD 提交: {}",
+        text.trim(),
+        head
+    ))
 }
 
 /// 恢复工作区文件到 HEAD（写操作，需用户确认）：`git checkout -- <paths>`。
@@ -1581,6 +1610,29 @@ fn atomic_write_file(full: &Path, content: &[u8]) -> Result<(), String> {
     }
 }
 
+/// Mutation Verification（P0-1）：回读文件并与预期内容比对，确认写操作实际生效。
+///
+/// 返回 `Ok(验证摘要)` 表示回读一致；返回 `Err` 表示写入后的实际内容与预期不一致
+/// （操作可能未完全生效），调用方应视作失败返回——防止模型在工具静默失败时
+/// 声称"已写入/已完成"（写操作幻觉的核心防线）。
+fn verify_write_back(cfg: &KbSearchConfig, rel_path: &str, expected: &str) -> Result<String, String> {
+    let full = safe_resolve(&cfg.dir_path, rel_path)?;
+    let data = std::fs::read(&full)
+        .map_err(|e| format!("回读验证失败（读取 {}）: {}", rel_path, e))?;
+    let actual = String::from_utf8(data)
+        .map_err(|_| format!("回读验证失败：{} 内容不是有效 UTF-8", rel_path))?;
+    if actual == expected {
+        Ok(format!("[verified] 已回读确认 {} 内容一致", rel_path))
+    } else {
+        Err(format!(
+            "回读验证失败：{} 写入后的实际内容与预期不一致（实际 {} 字符 ≠ 预期 {} 字符），操作可能未完全生效，请勿声称成功；可用 read 查看实际内容后重试",
+            rel_path,
+            actual.chars().count(),
+            expected.chars().count()
+        ))
+    }
+}
+
 /// 编辑知识库（当前打开目录）内文本文件：将唯一匹配的 old_string 精确替换为 new_string。
 ///
 /// 安全边界：路径经 `safe_resolve` 限制在打开目录内，且拒绝 `.mdgo` 内部数据。
@@ -1625,11 +1677,14 @@ pub async fn edit_file(
             new_content.push_str(new_string);
             new_content.push_str(&content[start + old_string.len()..]);
             atomic_write_file(&full, new_content.as_bytes())?;
+            // Mutation Verification（P0-1）：回读确认替换实际生效
+            let verified = verify_write_back(cfg, rel_path, &new_content)?;
             Ok(format!(
-                "已更新 {}：替换 1 处（{} 字符 → {} 字符）",
+                "已更新 {}：替换 1 处（{} 字符 → {} 字符）；{}",
                 rel_path,
                 old_string.chars().count(),
-                new_string.chars().count()
+                new_string.chars().count(),
+                verified
             ))
         }
         n => Err(format!(
@@ -1704,12 +1759,18 @@ pub async fn multi_edit_files(
     }
 
     // ── 阶段 2：逐文件原子写（校验已全部通过）──
-    let mut ok_count = 0usize;
     for (full, bytes) in &pending {
         atomic_write_file(full, bytes)?;
-        ok_count += 1;
     }
-    Ok(format!("已批量更新 {} 个文件", ok_count))
+    // Mutation Verification（P0-1）：逐文件回读比对——与阶段 1 构建的**完整新内容**
+    // 全等比较（而非 new_string 片段，片段必然与整文件内容不一致会导致误报），
+    // 任一不一致即整体失败返回（文件已写入，明确提示勿声称成功）。
+    for ((rel, _, _), (_, bytes)) in edits.iter().zip(&pending) {
+        let expected = String::from_utf8(bytes.clone())
+            .map_err(|_| format!("回读验证失败：{} 预期内容非 UTF-8", rel))?;
+        verify_write_back(cfg, rel, &expected)?;
+    }
+    Ok(format!("已批量更新 {} 个文件；全部回读验证一致 [verified]", pending.len()))
 }
 
 /// 创建新文件或整体覆盖知识库（当前打开目录）内文本文件（对齐主流 Agent 的 write 能力）。
@@ -1734,11 +1795,14 @@ pub async fn write_file(
     // 写入前判断目标是否存在（写入后判断恒为真，无法区分新建/覆盖）
     let existed = full.exists();
     atomic_write_file(&full, content.as_bytes())?;
+    // Mutation Verification（P0-1）：回读确认写入实际生效
+    let verified = verify_write_back(cfg, rel_path, content)?;
     Ok(format!(
-        "已{} {}（{} 字符）",
+        "已{} {}（{} 字符）；{}",
         if existed { "覆盖写入" } else { "创建" },
         rel_path,
-        content.chars().count()
+        content.chars().count(),
+        verified
     ))
 }
 
@@ -1749,6 +1813,7 @@ pub fn build_write_tool(cfg: KbSearchConfig) -> DynamicTool {
         "创建新文件或整体覆盖当前打开知识库目录内的文本文件。content 为文件的完整新内容（覆盖写，非追加）。适合新建文档/笔记/代码文件，或整体重写小文件（≤1MB）。只允许在打开目录内写入，父目录须已存在（新建目录请先通过其他方式创建），不允许写入 .mdgo 内部数据。写入为不可撤销操作，覆盖已有文件前请确认用户意图。",
         serde_json::json!({
             "type": "object",
+            "additionalProperties": false,
             "properties": {
                 "rel_path": {
                     "type": "string",
@@ -1816,14 +1881,30 @@ pub async fn delete_file(cfg: &KbSearchConfig, rel_path: &str) -> Result<String,
         return Err(format!("{} 是目录，delete 仅支持删除文件，不支持目录", rel_path));
     }
     std::fs::remove_file(&full).map_err(|e| format!("删除文件失败: {}", e))?;
-    Ok(format!("已删除文件 {}", rel_path))
+    // Mutation Verification（P0-1）：回读确认目标已不存在
+    if full.exists() {
+        return Err(format!(
+            "删除验证失败：{} 仍然存在，操作可能未生效，请勿声称已删除",
+            rel_path
+        ));
+    }
+    Ok(format!("已删除文件 {} [verified] 回读确认不存在", rel_path))
 }
 
 // ─────────────────────────── 工具构建 ───────────────────────────
 
+/// 统一工具错误包装（P2-8 Error Recovery Protocol）。
+///
+/// 模型收到的错误消息包含「失败事实 + 恢复引导」：建议修正参数重试或改用其他工具，
+/// 并明确「不要声称操作已成功」（与 Mutation Verification 的 [verified] 语义闭环）。
+/// 对齐 Anthropic 工具最佳实践（is_error + informative message，让模型换路而非瞎试）。
 fn tool_error(tool: &str, msg: &str) -> ToolExecutionError {
-    ToolExecutionError::other(format!("{tool} 执行失败: {msg}"))
-        .with_model_output(ToolOutput::text(msg.to_string()))
+    ToolExecutionError::other(format!(
+        "{tool} 执行失败: {msg}。请根据错误信息修正参数后重试，或改用其他工具；如问题持续存在，请如实告知用户，不要声称操作已成功。"
+    ))
+    .with_model_output(ToolOutput::text(format!(
+        "{tool} 执行失败: {msg}。请修正参数后重试或改用其他工具。"
+    )))
 }
 
 /// 截断长字符串（用于工具轨迹参数摘要，避免撑爆事件负载）
@@ -1844,6 +1925,7 @@ fn truncate(s: &str, max_chars: usize) -> String {
 pub fn build_activate_skill_tool(
     registry: Arc<SkillRegistry>,
     state: Arc<ActiveSkillState>,
+    cfg: KbSearchConfig,
 ) -> DynamicTool {
     DynamicTool::new(
         "activate_skill",
@@ -1861,6 +1943,7 @@ pub fn build_activate_skill_tool(
         move |_ctx: &mut ToolContext, args: serde_json::Value| {
             let registry = registry.clone();
             let state = state.clone();
+            let cfg = cfg.clone();
             Box::pin(async move {
                 let id = args
                     .get("skill_id")
@@ -1868,6 +1951,11 @@ pub fn build_activate_skill_tool(
                     .unwrap_or_default()
                     .trim()
                     .to_string();
+                // Mutation Verification 轨迹：skill 激活需走 ToolCallBus，前端 tool-trace
+                // 依赖 agent:tool_call / agent:tool_result 事件（此前缺失导致不显示）
+                record_tool_call(&cfg, "activate_skill", &id, Some(&args));
+                // 内部 async 块：分支 `return` 提前结束本块并携带结果，外层统一 record
+                let result: Result<ToolOutput, ToolExecutionError> = async {
                 if id.is_empty() {
                     return Err(tool_error("activate_skill", "skill_id 为空"));
                 }
@@ -1938,13 +2026,26 @@ pub fn build_activate_skill_tool(
                     ));
                 }
                 Ok(ToolOutput::text(msg))
+                }.await;
+                // Mutation Verification 轨迹：统一记录激活结果（成功/失败）
+                match &result {
+                    Ok(out) => {
+                        let t = out.as_text().unwrap_or("").to_string();
+                        record_tool_result(&cfg, "activate_skill", true, &truncate(&t, 200), Some(&t));
+                    }
+                    Err(e) => {
+                        let m = e.to_string();
+                        record_tool_result(&cfg, "activate_skill", false, &truncate(&m, 200), Some(&m));
+                    }
+                }
+                result
             })
         },
     )
 }
 
 /// 构建 deactivate_skill 工具：释放已激活技能（停止指令注入与专用工具，渐进式披露回退）。
-pub fn build_deactivate_skill_tool(state: Arc<ActiveSkillState>) -> DynamicTool {
+pub fn build_deactivate_skill_tool(state: Arc<ActiveSkillState>, cfg: KbSearchConfig) -> DynamicTool {
     DynamicTool::new(
         "deactivate_skill",
         "停用一个此前已激活的技能：其指令不再注入，其声明的专用工具将不再可用。当某技能不再适用于当前任务、或需要避免多余指令干扰时调用。",
@@ -1960,6 +2061,7 @@ pub fn build_deactivate_skill_tool(state: Arc<ActiveSkillState>) -> DynamicTool 
         }),
         move |_ctx: &mut ToolContext, args: serde_json::Value| {
             let state = state.clone();
+            let cfg = cfg.clone();
             Box::pin(async move {
                 let id = args
                     .get("skill_id")
@@ -1967,6 +2069,9 @@ pub fn build_deactivate_skill_tool(state: Arc<ActiveSkillState>) -> DynamicTool 
                     .unwrap_or_default()
                     .trim()
                     .to_string();
+                // Mutation Verification 轨迹：skill 停用需走 ToolCallBus（前端 tool-trace 依赖）
+                record_tool_call(&cfg, "deactivate_skill", &id, Some(&args));
+                let result: Result<ToolOutput, ToolExecutionError> = async {
                 if id.is_empty() {
                     return Err(tool_error("deactivate_skill", "skill_id 为空"));
                 }
@@ -1978,6 +2083,19 @@ pub fn build_deactivate_skill_tool(state: Arc<ActiveSkillState>) -> DynamicTool 
                         &format!("技能 '{}' 当前未激活，无需停用", id),
                     ))
                 }
+                }.await;
+                // Mutation Verification 轨迹：统一记录停用结果（成功/失败）
+                match &result {
+                    Ok(out) => {
+                        let t = out.as_text().unwrap_or("").to_string();
+                        record_tool_result(&cfg, "deactivate_skill", true, &truncate(&t, 200), Some(&t));
+                    }
+                    Err(e) => {
+                        let m = e.to_string();
+                        record_tool_result(&cfg, "deactivate_skill", false, &truncate(&m, 200), Some(&m));
+                    }
+                }
+                result
             })
         },
     )
@@ -1990,6 +2108,7 @@ pub fn build_read_tool(cfg: KbSearchConfig) -> DynamicTool {
         "读取文件内容，单次最多返回 8192 字符，支持分页续读。支持两类路径：1) 知识库目录内的相对路径（如 docs/note.md，可读取打开目录中的所有文件，含子目录）；2) 当前激活技能的参考文档路径（如 references/flowchart.md，通常由技能 SKILL.md 中以相对链接给出；未激活技能时无法读取，需先 activate_skill）。当返回内容末尾提示\"内容过长\"时，内容只显示了第 1~8192 字符，若需要文件后续部分，请再次调用本工具并指定 offset 参数（如 offset=8192）继续读取，不要从头重读全文。如需一次读取多个文件，可用 paths 数组并行读取（最多 10 个）。",
         serde_json::json!({
             "type": "object",
+            "additionalProperties": false,
             "properties": {
                 "path": {
                     "type": "string",
@@ -2109,6 +2228,7 @@ pub fn build_edit_tool(cfg: KbSearchConfig) -> DynamicTool {
         "编辑当前打开知识库目录内的一个文本文件：将文件中与 old_string 完全匹配且唯一出现的片段替换为 new_string。只允许操作当前打开目录内的文件，不能操作目录外的文件，也不允许修改 .mdgo 内部数据。修改前建议先用 read 读取文件确认原文。",
         serde_json::json!({
             "type": "object",
+            "additionalProperties": false,
             "properties": {
                 "rel_path": {
                     "type": "string",
@@ -2243,6 +2363,7 @@ pub fn build_delete_tool(cfg: KbSearchConfig) -> DynamicTool {
         "删除当前打开知识库目录内的一个文件（不可恢复）。只允许删除当前打开目录内的文件，不能操作目录外的文件，不允许删除目录，也不允许删除 .mdgo 内部数据。删除前请确认用户意图。",
         serde_json::json!({
             "type": "object",
+            "additionalProperties": false,
             "properties": {
                 "rel_path": {
                     "type": "string",
@@ -2284,7 +2405,7 @@ fn build_list_files_dyn(name: &str, cfg: KbSearchConfig) -> DynamicTool {
     let name_owned = name.to_string();
     DynamicTool::new(
         name_owned.clone(),
-        "列举知识库目录下的文件与子目录（返回相对路径与大小），支持按名称子串过滤，最多返回 60 项。忽略用户配置的目录/文件黑名单（如 node_modules 等也会列出，除非是系统内置的 .mdgo 内部数据）。当需要了解知识库目录结构、或不确定文件路径时调用。",
+        "列举知识库目录下的文件与子目录（返回相对路径与大小），支持按名称子串过滤，最多返回 60 项。已按用户配置的目录/文件黑名单过滤（如 assets/、node_modules/、dist/ 等配置的目录不会列出；系统内置的 .mdgo 内部数据同样排除）。当需要了解知识库目录结构、或不确定文件路径时调用。",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -2348,8 +2469,8 @@ pub async fn glob_files(
     if pattern.is_empty() {
         return Err("glob 模式不能为空，如 **/*.rs、docs/*.md".to_string());
     }
-    // 忽略可配置黑名单（与 ls/grep/read 等文件工具一致；`.mdgo` 等隐藏目录仍由内置规则排除）
-    let entries = get_or_refresh_cache(&cfg.dir_path, &[], &[])?;
+    // 目录/文件黑名单（gitignore 风格）按用户配置过滤（与 ls/grep 一致；`.mdgo` 等隐藏目录仍由内置规则排除）
+    let entries = get_or_refresh_cache(&cfg.dir_path, &cfg.dir_blacklist, &cfg.file_blacklist)?;
     let matcher = GlobMatcher::new(&[pattern.to_string()]);
     let max = (max_items as usize).clamp(1, MAX_LIST_ITEMS);
     let matched: Vec<&(String, u64)> = entries
@@ -2375,7 +2496,7 @@ pub async fn glob_files(
 pub fn build_glob_tool(cfg: KbSearchConfig) -> DynamicTool {
     DynamicTool::new(
         "glob",
-        "按 glob 模式列举当前打开知识库目录内匹配的文件（相对路径 + 字节大小）。模式支持 *（单层任意）、**（任意层级）、?（单字符）、[abc]（字符集）；含 / 的模式锚定根目录，裸文件名（如 *.rs）匹配任意层级的 basename；目录名（如 src）自动展开为其下全部文件。最多返回 60 个匹配文件，超出会提示剩余数量。用于快速定位文件与批量确认路径，比 grep 更轻量。",
+        "按 glob 模式列举当前打开知识库目录内匹配的文件（相对路径 + 字节大小）。模式支持 *（单层任意）、**（任意层级）、?（单字符）、[abc]（字符集）；含 / 的模式锚定根目录，裸文件名（如 *.rs）匹配任意层级的 basename；目录名（如 src）自动展开为其下全部文件。已按用户配置的目录/文件黑名单过滤（如 assets/、node_modules/ 等配置的目录不会出现）。最多返回 60 个匹配文件，超出会提示剩余数量。用于快速定位文件与批量确认路径，比 grep 更轻量。",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -2608,6 +2729,22 @@ fn build_bridge_tool(
             let tool = closure_name.clone();
             let default_action = default_action.clone();
             Box::pin(async move {
+                // 软门禁（替代 rig active_tools 硬过滤）：pomodoro/raw-parse 始终可见
+                // 可调，但仅当声明它的技能已激活时才执行；未激活返回引导，避免
+                // UnknownToolCall 导致整个流式请求失败。allowed_tools()=None（无技能
+                // 激活，含子代理）→ 放行；Some 且未声明该工具 → 引导。
+                let declared = cfg.skill_state.allowed_tools();
+                let unlocked = declared
+                    .as_ref()
+                    .is_none_or(|list| list.iter().any(|t| t == &tool));
+                if !unlocked {
+                    let msg = format!(
+                        "{} 需要先激活声明它的技能（调用 activate_skill，从技能目录选择）后才能执行，本次未执行。请先激活对应技能，再重新发起操作。",
+                        tool
+                    );
+                    log::info!("[agent] {} 未激活技能被调用，返回引导 request_id={}", tool, cfg.request_id);
+                    return Ok(ToolOutput::text(msg));
+                }
                 // 动作：显式指定优先，缺失/为空时回退默认动作（如 status）
                 let action = args
                     .get("action")
@@ -2730,7 +2867,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
     let tool_app = cfg.app_handle.clone();
     DynamicTool::new(
         "schedule",
-        "日程管理：查询、创建、更新、删除日程事件，检测冲突、查询到点提醒、农历/节假日信息，查找下一个可安排时间段（可避开休息日），并将 AI 拆解的任务排布到截止日期前（plan）、统计时间投入（optimize）、复盘某日日程（review）、创建专注时间块（focus）、查看某日计划与空闲段（today_plan）。动作：list 列出全部日程；add 新建（title/start/end 必填，start/end 格式 YYYY-MM-DDTHH:MM，可选 desc/color/cron 重复表达式/notify 提醒/notify_before 提前提醒分钟数/event_type 类型 work|meeting|focus|personal|task/priority 优先级 high|medium|low/related_docs|related_tasks|related_git 关联对象/ai_category|ai_energy|ai_estimated_hours AI 元数据）；update 按 id 更新；remove 按 id 删除；conflicts 检测与现有日程的重叠（start/end 必填，可选 ignore_id）；remind 查询到点应提醒的日程；lunar 查询某日农历与节假日（date=YYYY-MM-DD）；next_available 查找下一个可安排时间段（duration_minutes 必填，可选 start_after/skip_rest_days）；plan 任务排布建议（deadline=YYYY-MM-DD 必填，tasks=[{title,hours}] 必填，可选 work_start/work_end 默认 9/18、skip_rest_days，只建议不创建）；optimize 时间统计（可选 range=7d|30d|YYYY-MM-DD..YYYY-MM-DD）；review 日复盘（可选 date，默认今天）；focus 专注块（duration_minutes 必填，可选 task/start，指定 start 时创建 type=focus，否则推荐时间段）；today_plan 某日计划（可选 date，默认今天）。当用户要求安排会议、查看日程、规划任务、复盘时间、设置提醒、查询节假日时调用。",
+        "日程管理：查询、创建、更新、删除日程事件，检测冲突、查询到点提醒、农历/节假日信息，查找下一个可安排时间段（可避开休息日），并将 AI 拆解的任务排布到截止日期前（plan）、统计时间投入（optimize）、复盘某日日程（review）、创建专注时间块（focus）、查看某日计划与空闲段（today_plan）。动作：list 列出全部日程；add 新建（title/start/end 必填，start/end 格式 YYYY-MM-DDTHH:MM，可选 desc/color/cron 重复表达式/notify 提醒/notify_before 提前提醒分钟数/event_type 类型 work|meeting|focus|personal|task/priority 优先级 high|medium|low/related_docs|related_tasks|related_git 关联对象/ai_category|ai_energy|ai_estimated_hours AI 元数据）；update 按 id 更新；remove 按 id 删除；conflicts 检测与现有日程的重叠（start/end 必填，可选 ignore_id）；remind 查询到点应提醒的日程；lunar 查询某日农历与节假日（date=YYYY-MM-DD）；next_available 查找下一个可安排时间段（duration_minutes 必填，可选 start_after/skip_rest_days）；plan 任务排布建议（deadline=YYYY-MM-DD 必填，tasks=[{title,hours}] 必填，可选 work_start/work_end 默认 9/18、skip_rest_days，只建议不创建）；optimize 时间统计（可选 range=7d|30d|YYYY-MM-DD..YYYY-MM-DD）；review 日复盘（可选 date，默认今天）；focus 专注块（duration_minutes 必填，可选 task/start，指定 start 时创建 type=focus，否则推荐时间段）；today_plan 某日计划（可选 date，默认今天）。当用户要求安排会议、查看日程、规划任务、复盘时间、设置提醒、查询节假日时调用。注意：list 结果不展示内部 id；删除（remove）可按 title 定位、更新（update）可按 target_title 定位，无需内部 id。",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -2739,12 +2876,13 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                     "enum": ["list", "add", "update", "remove", "conflicts", "remind", "lunar", "next_available", "plan", "optimize", "review", "focus", "today_plan"],
                     "description": "要执行的动作"
                 },
-                "id": { "type": "string", "description": "事件 id（update/remove 用）" },
-                "title": { "type": "string", "description": "日程标题（add/update/plan 任务标题）" },
+                "id": { "type": "string", "description": "事件 id（update/remove 用，与标题定位二选一）" },
+                "target_title": { "type": "string", "description": "按标题定位要更新的日程（update 用，与 id 二选一；标题唯一匹配时生效；更新字段仍用 title/start/end 等）" },
+                "title": { "type": "string", "description": "日程标题（add/update/plan 任务标题；remove 时作为按标题删除的定位依据）" },
                 "start": { "type": "string", "description": "开始时间 YYYY-MM-DDTHH:MM（add/update/conflicts/focus 用）" },
                 "end": { "type": "string", "description": "结束时间 YYYY-MM-DDTHH:MM（add/update/conflicts 用）" },
                 "desc": { "type": "string", "description": "描述（add/update 可选）" },
-                "color": { "type": "string", "description": "颜色标记（add/update 可选）" },
+                "color": { "type": "string", "description": "颜色标记（add/update 可选，默认 blue ）", "enum": ["blue", "green", "orange", "red", "purple"] },
                 "cron": { "type": "string", "description": "Cron 重复表达式（5 字段，add/update 可选）" },
                 "notify": { "type": "boolean", "description": "是否提醒（add/update 可选，默认 true）" },
                 "notify_before": { "type": "integer", "description": "提前提醒分钟数，0=开始即提醒（add/update 可选）" },
@@ -2773,6 +2911,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
         move |_ctx: &mut ToolContext, args: serde_json::Value| {
             let dir = tool_dir.clone();
             let app = tool_app.clone();
+            let cfg = cfg.clone();
             Box::pin(async move {
                 use crate::core::schedule::rules;
                 use crate::core::schedule::store::EventStore;
@@ -2784,6 +2923,24 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                     .and_then(|a| a.as_str())
                     .filter(|a| !a.trim().is_empty())
                     .unwrap_or("list");
+                // 软门禁（替代 rig active_tools 硬过滤）：schedule 始终可见可调，
+                // 但仅当声明它的 schedule 技能已激活时才执行；未激活返回引导，
+                // 避免 UnknownToolCall 导致整个流式请求失败（回答为空）。
+                // allowed_tools()=None（无技能激活，含子代理）→ 放行；Some 未声明 → 引导。
+                let declared = cfg.skill_state.allowed_tools();
+                let unlocked = declared
+                    .as_ref()
+                    .is_none_or(|list| list.iter().any(|t| t == "schedule"));
+                if !unlocked {
+                    let msg = "schedule 需要先激活 schedule 技能（调用 activate_skill，skill_id='schedule'）后才能执行，本次未执行。请先激活该技能，再重新发起操作。";
+                    log::info!("[agent] schedule 未激活技能被调用，返回引导 request_id={}", cfg.request_id);
+                    return Ok(ToolOutput::text(msg));
+                }
+                // Mutation Verification 轨迹：schedule 需走 ToolCallBus，前端 tool-trace
+                // 依赖 agent:tool_call / agent:tool_result 事件（此前缺失导致不显示）
+                record_tool_call(&cfg, "schedule", &format!("action={}", action), Some(&args));
+                // 用户可见时间显示：ISO 分隔符 T → 空格（2026-08-16T10:00 → 2026-08-16 10:00）
+                let disp = |ts: &str| ts.replace('T', " ");
                 let get = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
                 let get_i64 = |k: &str, default: i64| args.get(k).and_then(|v| v.as_i64()).unwrap_or(default);
                 let get_f64 = |k: &str, default: f64| args.get(k).and_then(|v| v.as_f64()).unwrap_or(default);
@@ -2805,6 +2962,9 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                 // 短锁：每个动作获取一次 guard（add/update 在单锁内完成读+写）；poison 恢复保证高可用
                 let store_guard = || store_ref.lock().unwrap_or_else(|e| e.into_inner());
 
+                // 内部 async 块：match 各分支的 `return Ok/Err` / `?` 提前结束本块并携带
+                // 结果，外层统一 record_tool_result（前端 tool-trace 依赖轨迹事件）。
+                let result: Result<ToolOutput, ToolExecutionError> = async {
                 match action {
                     "list" => {
                         let store = store_guard();
@@ -2827,7 +2987,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                                     extra.push(format!("提前{}分钟提醒", e.notify_before));
                                 }
                                 let tags = if extra.is_empty() { String::new() } else { format!(" [{}]", extra.join("/")) };
-                                format!("- {}（id: {}）：{} ~ {}{}{}", e.title, e.id, e.start, e.end, cron, tags)
+                                format!("- {}：{} ~ {}{}{}", e.title, disp(&e.start), disp(&e.end), cron, tags)
                             })
                             .collect();
                         Ok(ToolOutput::text(format!("共 {} 个日程：\n{}", events.len(), lines.join("\n"))))
@@ -2837,7 +2997,10 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                             title: get("title"),
                             start: get("start"),
                             end: get("end"),
-                            color: get("color"),
+                            color: {
+                                let c = get("color");
+                                if c.is_empty() { "blue".to_string() } else { c }
+                            },
                             desc: get("desc"),
                             cron: get("cron"),
                             notify: args.get("notify").and_then(|v| v.as_bool()).unwrap_or(true),
@@ -2895,7 +3058,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                                 (event, conflict_events)
                             };
                             let _ = app.emit("schedule:changed", ()); // 通知前端刷新（AI 直写 DB 后 UI 同步）
-                            let mut msg = format!("已创建日程：{}（{} ~ {}", event.title, event.start, event.end);
+                            let mut msg = format!("已创建日程：{}（{} ~ {}", event.title, disp(&event.start), disp(&event.end));
                             if !conflict_events.is_empty() {
                                 msg.push_str(&format!(
                                     "\n⚠ 时间冲突：{}",
@@ -2920,7 +3083,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                                     msg.push_str("\n备选建议（需确认后另行 add）：");
                                     for (i, t) in alts.iter().take(2).enumerate() {
                                         let end_t = *t + chrono::Duration::minutes(duration);
-                                        msg.push_str(&format!("\n方案{}: {} ~ {}", i + 1, fmt(*t), fmt(end_t)));
+                                        msg.push_str(&format!("\n方案{}: {} ~ {}", i + 1, disp(&fmt(*t)), disp(&fmt(end_t))));
                                     }
                                 }
                             }
@@ -2930,8 +3093,33 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                             // 单锁内完成 读→改→写（消除锁窗口：并发写者在此期间插入/删除不会被覆盖）
                             let mut store = store_guard();
                             let id = get("id");
+                            let target_title = get("target_title");
                             let mut events = store.list().map_err(|e| tool_error("schedule", &e))?;
-                            let Some(existing) = events.iter_mut().find(|e| e.id == id) else {
+                            // 定位：id 优先；未提供 id 时按 target_title 唯一匹配（list 不展示内部 id）
+                            let matched_idx: Option<usize> = if !id.is_empty() {
+                                events.iter().position(|e| e.id == id)
+                            } else if !target_title.is_empty() {
+                                let matches: Vec<usize> = events
+                                    .iter()
+                                    .enumerate()
+                                    .filter(|(_, e)| e.title == target_title)
+                                    .map(|(i, _)| i)
+                                    .collect();
+                                match matches.len() {
+                                    1 => Some(matches[0]),
+                                    0 => return Err(tool_error(
+                                        "schedule",
+                                        &format!("未找到标题为『{}』的日程，请先 list 确认标题", target_title),
+                                    )),
+                                    n => return Err(tool_error(
+                                        "schedule",
+                                        &format!("标题『{}』匹配 {} 个日程，请改用 id 或更精确的标题", target_title, n),
+                                    )),
+                                }
+                            } else {
+                                return Err(tool_error("schedule", "update 需要 id 或 target_title 定位"));
+                            };
+                            let Some(existing) = matched_idx.map(|i| &mut events[i]) else {
                                 return Err(tool_error("schedule", "日程不存在"));
                             };
                             existing.title = input.title;
@@ -2953,16 +3141,52 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                             let _ = app.emit("schedule:changed", ()); // 通知前端刷新
                             Ok(ToolOutput::text(format!(
                                 "已更新日程：{}（{} ~ {}）",
-                                updated.title, updated.start, updated.end
+                                updated.title, disp(&updated.start), disp(&updated.end)
                             )))
                         }
                     }
                     "remove" => {
                         let id = get("id");
+                        let title = get("title");
+                        if id.is_empty() && title.is_empty() {
+                            return Err(tool_error("schedule", "remove 需要 id 或 title 定位"));
+                        }
                         let mut store = store_guard();
-                        store.remove(&id).map_err(|e| tool_error("schedule", &e))?;
+                        let events = store.list().map_err(|e| tool_error("schedule", &e))?;
+                        // 定位：id 优先；未提供 id 时按 title 唯一匹配（list 不展示内部 id）
+                        let removed_title: String;
+                        let remove_id: String = if !id.is_empty() {
+                            removed_title = events
+                                .iter()
+                                .find(|e| e.id == id)
+                                .map(|e| e.title.clone())
+                                .unwrap_or_default();
+                            id
+                        } else {
+                            let matches: Vec<&ScheduleEvent> = events.iter().filter(|e| e.title == title).collect();
+                            match matches.len() {
+                                1 => {
+                                    removed_title = matches[0].title.clone();
+                                    matches[0].id.clone()
+                                }
+                                0 => return Err(tool_error(
+                                    "schedule",
+                                    &format!("未找到标题为『{}』的日程，请先 list 确认标题", title),
+                                )),
+                                n => return Err(tool_error(
+                                    "schedule",
+                                    &format!("标题『{}』匹配 {} 个日程，请改用 id 或更精确的标题", title, n),
+                                )),
+                            }
+                        };
+                        store.remove(&remove_id).map_err(|e| tool_error("schedule", &e))?;
                         let _ = app.emit("schedule:changed", ()); // 通知前端刷新
-                        Ok(ToolOutput::text(format!("已删除日程：{}", id)))
+                        let msg = if removed_title.is_empty() {
+                            "日程已删除".to_string()
+                        } else {
+                            format!("已删除日程：{}", removed_title)
+                        };
+                        Ok(ToolOutput::text(msg))
                     }
                     "conflicts" => {
                         let s = rules::parse_local_time(&get("start")).ok_or_else(|| tool_error("schedule", "开始时间格式无效"))?;
@@ -2974,7 +3198,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                         if conflicts.is_empty() {
                             Ok(ToolOutput::text("该时间段无冲突"))
                         } else {
-                            let lines: Vec<String> = conflicts.iter().map(|c| format!("- {}：{} ~ {}", c.title, c.start, c.end)).collect();
+                            let lines: Vec<String> = conflicts.iter().map(|c| format!("- {}：{} ~ {}", c.title, disp(&c.start), disp(&c.end))).collect();
                             Ok(ToolOutput::text(format!("时间冲突 {} 项：\n{}", conflicts.len(), lines.join("\n"))))
                         }
                     }
@@ -2985,7 +3209,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                         if due.is_empty() {
                             Ok(ToolOutput::text("当前无到点提醒"))
                         } else {
-                            let lines: Vec<String> = due.iter().map(|e| format!("- {}：{} ~ {}", e.title, e.start, e.end)).collect();
+                            let lines: Vec<String> = due.iter().map(|e| format!("- {}：{} ~ {}", e.title, disp(&e.start), disp(&e.end))).collect();
                             Ok(ToolOutput::text(format!("到点提醒 {} 项：\n{}", due.len(), lines.join("\n"))))
                         }
                     }
@@ -3018,7 +3242,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                         .await
                         .map_err(|e| tool_error("schedule", &format!("查找可安排时间失败: {}", e)))?;
                         match next {
-                            Some(t) => Ok(ToolOutput::text(format!("下一个可安排时间段：{}（持续 {} 分钟）", fmt(t), duration))),
+                            Some(t) => Ok(ToolOutput::text(format!("下一个可安排时间段：{}（持续 {} 分钟）", disp(&fmt(t)), duration))),
                             None => Err(tool_error("schedule", "30 天内未找到可安排时间段")),
                         }
                     }
@@ -3061,7 +3285,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                         )];
                         for (i, r) in results.iter().enumerate() {
                             match r {
-                                Some(slot) => lines.push(format!("- {}：{} ~ {}", slot.title, fmt(slot.start), fmt(slot.end))),
+                                Some(slot) => lines.push(format!("- {}：{} ~ {}", slot.title, disp(&fmt(slot.start)), disp(&fmt(slot.end)))),
                                 None => lines.push(format!("- {}：截止日期前排不下（请拆分任务或延后截止日期）", tasks[i].title)),
                             }
                         }
@@ -3154,19 +3378,19 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                         if !summary.done.is_empty() {
                             lines.push("已完成：".to_string());
                             for e in &summary.done {
-                                lines.push(format!("✅ {}（{} ~ {}）", e.title, e.start, e.end));
+                                lines.push(format!("✅ {}（{} ~ {}）", e.title, disp(&e.start), disp(&e.end)));
                             }
                         }
                         if !summary.ongoing.is_empty() {
                             lines.push("进行中：".to_string());
                             for e in &summary.ongoing {
-                                lines.push(format!("⏳ {}（{} ~ {}）", e.title, e.start, e.end));
+                                lines.push(format!("⏳ {}（{} ~ {}）", e.title, disp(&e.start), disp(&e.end)));
                             }
                         }
                         if !summary.upcoming.is_empty() {
                             lines.push("未开始：".to_string());
                             for e in &summary.upcoming {
-                                lines.push(format!("🔜 {}（{} ~ {}）", e.title, e.start, e.end));
+                                lines.push(format!("🔜 {}（{} ~ {}）", e.title, disp(&e.start), disp(&e.end)));
                             }
                         }
                         lines.push("以上为确定性归类，延期原因与改进建议请由 AI 结合上下文生成。".to_string());
@@ -3193,8 +3417,8 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                             match next {
                                 Some(t) => Ok(ToolOutput::text(format!(
                                     "建议专注时间段：{} ~ {}（{} 分钟）。如需创建请确认后调用 add（event_type=focus）。",
-                                    fmt(t),
-                                    fmt(t + chrono::Duration::minutes(duration)),
+                                    disp(&fmt(t)),
+                                    disp(&fmt(t + chrono::Duration::minutes(duration))),
                                     duration
                                 ))),
                                 None => Err(tool_error("schedule", "30 天内未找到可安排时间段")),
@@ -3208,7 +3432,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                             if !conflicts.is_empty() {
                                 return Ok(ToolOutput::text(format!(
                                     "时间冲突，未创建专注块：{}",
-                                    conflicts.iter().map(|c| format!("{}（{} ~ {}）", c.title, c.start, c.end)).collect::<Vec<_>>().join("、")
+                                    conflicts.iter().map(|c| format!("{}（{} ~ {}）", c.title, disp(&c.start), disp(&c.end))).collect::<Vec<_>>().join("、")
                                 )));
                             }
                             let now_s = fmt(now);
@@ -3229,7 +3453,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                             let _ = app.emit("schedule:changed", ());
                             Ok(ToolOutput::text(format!(
                                 "已创建专注时间块：{}（{} ~ {}）",
-                                event.title, event.start, event.end
+                                event.title, disp(&event.start), disp(&event.end)
                             )))
                         }
                     }
@@ -3258,7 +3482,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                         } else {
                             lines.push(format!("日程 {} 项：", day_events.len()));
                             for e in &day_events {
-                                let mut tag = format!("- {}（{} ~ {}", e.title, e.start, e.end);
+                                let mut tag = format!("- {}（{} ~ {}", e.title, disp(&e.start), disp(&e.end));
                                 if !e.event_type.is_empty() {
                                     tag.push_str(&format!("，{}", e.event_type));
                                 }
@@ -3277,6 +3501,20 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                     }
                     _ => Err(tool_error("schedule", &format!("未知动作: {}", action))),
                 }
+                }.await;
+                // Mutation Verification 轨迹：统一记录 schedule 调用结果（成功/失败），
+                // 前端 tool-trace 据此渲染卡片状态与参数摘要。
+                match &result {
+                    Ok(out) => {
+                        let t = out.as_text().unwrap_or("").to_string();
+                        record_tool_result(&cfg, "schedule", true, &truncate(&t, 200), Some(&t));
+                    }
+                    Err(e) => {
+                        let m = e.to_string();
+                        record_tool_result(&cfg, "schedule", false, &truncate(&m, 200), Some(&m));
+                    }
+                }
+                result
             })
         },
     )

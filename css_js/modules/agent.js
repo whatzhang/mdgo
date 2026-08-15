@@ -322,6 +322,9 @@ async function sendRagQuery(text) {
     showChatTyping();
 
     const requestId = crypto.randomUUID();
+    // Phase 2：快照会话 ID——视图切换后 cleanupChatState 会清空全局 currentSessionId，
+    // 但后台任务完成（rag:done）时仍需按原会话落库，故固化到局部变量。
+    const ragSessionId = currentSessionId;
     let ragDone = false;
     let partialSaved = false; // 防止错误/断联路径重复保存半截消息
     _partialAutoSaved = false; // 新一轮请求重置自动保存防重
@@ -389,7 +392,7 @@ async function sendRagQuery(text) {
         }),
         window.__TAURI__.event.listen('rag:done', async (e) => {
             if (e.payload.request_id !== requestId) return;
-            console.debug('[rag] done event requestId=' + requestId + ' content_len=' + (e.payload.content || '').length + ' sources=' + (e.payload.sources || []).length + ' tokens_in=' + e.payload.prompt_tokens + ' tokens_out=' + e.payload.completion_tokens);
+            console.debug('[rag] done event requestId=' + requestId + ' content_len=' + (e.payload.content || '').length + ' sources=' + (e.payload.sources || []).length + ' tokens_in=' + e.payload.prompt_tokens + ' tokens_out=' + e.payload.completion_tokens + ' cached_in=' + e.payload.cached_input_tokens);
             ragDone = true;
             _chatStreamingStatusMsg = '';
             // 立即快照本次响应所需数据为局部变量：
@@ -399,6 +402,8 @@ async function sendRagQuery(text) {
             const sources = e.payload.sources || [];
             const promptTokens = e.payload.prompt_tokens || 0;
             const completionTokens = e.payload.completion_tokens || 0;
+            const cachedInputTokens = e.payload.cached_input_tokens || 0;
+            const cacheCreationInputTokens = e.payload.cache_creation_input_tokens || 0;
             const toolCallsSnapshot = _streamingToolCalls.slice();
             let streamingDiv = _chatStreamingDiv;
             // 降级路径均依赖此变量，不赋值会导致引用在保存/断联时丢失
@@ -427,11 +432,11 @@ async function sendRagQuery(text) {
                 updateTurnCounter();
             }
             // ===== 落库优先：先持久化再做 UI 后处理（UI 异常不得阻断保存） =====
-            if (currentSessionId && fullContent) {
+            if (ragSessionId && fullContent) {
                 try {
                     const savedMsg = await saveChatMessageWithRetry({
                         dirPath: currentRootPath,
-                        sessionId: currentSessionId,
+                        sessionId: ragSessionId,
                         role: 'assistant',
                         content: fullContent,
                         tokenCount: completionTokens,
@@ -491,6 +496,12 @@ async function sendRagQuery(text) {
                 if (promptTokens > 0) {
                     updateContextUsage(promptTokens, LOCAL_LLM_CONTEXT_LENGTH || 10000);
                 }
+                // 更新缓存命中率（DSH 口径；provider 未上报缓存字段时显示占位）
+                updateCacheRate({
+                    prompt_tokens: promptTokens,
+                    cached_input_tokens: cachedInputTokens,
+                    cache_creation_input_tokens: cacheCreationInputTokens,
+                }, 'rag');
                 // 流式结束后对代码块进行语法高亮（复制按钮读取原始 Markdown）
                 if (streamingDiv) {
                     streamingDiv._rawContent = fullContent;
@@ -532,17 +543,17 @@ async function sendRagQuery(text) {
                 console.error('[rag] done UI 后处理异常:', e);
             }
             // 重命名"新对话"（容错：防止 sendChatMessage 中因竞态未能更新）
-            if (currentSessionId) {
+            if (ragSessionId) {
                 window.__TAURI__.core.invoke('chat_session_list', {
                     dirPath: currentRootPath,
                 }).then(sessions => {
-                    const cur = sessions.find(s => s.id === currentSessionId);
+                    const cur = sessions.find(s => s.id === ragSessionId);
                     if (cur && (cur.title === '新对话' || !cur.title)) {
                         const msg = chatMessages[0]?.content || '';
                         if (msg) {
                             window.__TAURI__.core.invoke('chat_session_rename', {
                                 dirPath: currentRootPath,
-                                id: currentSessionId,
+                                id: ragSessionId,
                                 title: msg,
                             }).then(() => {
                                 cur.title = msg;
@@ -568,7 +579,7 @@ async function sendRagQuery(text) {
             // 避免重新打开页面后回复的半截消息消失
             if (!partialSaved && _chatStreamingFullContent && _chatStreamingFullContent.trim()) {
                 partialSaved = true;
-                await savePartialAssistantMessage();
+                await savePartialAssistantMessage(ragSessionId);
             }
             showNotification('✗ ' + e.payload.message, 'error');
         }),
@@ -589,7 +600,7 @@ async function sendRagQuery(text) {
             messages: histMessages,
             requestId,
             topK: ragSettings?.topK ?? AGENT_LIMITS.ragDefaults.topK,
-            sessionId: currentSessionId,
+            sessionId: ragSessionId,
         });
     } catch (err) {
         console.error('[rag] invoke failed requestId=' + requestId + ' err=' + (err.message || err));
@@ -597,12 +608,12 @@ async function sendRagQuery(text) {
             // 断联/网络失败：保留已生成的部分内容，避免重新打开页面后丢失
             if (!partialSaved && _chatStreamingFullContent && _chatStreamingFullContent.trim()) {
                 partialSaved = true;
-                await savePartialAssistantMessage();
+                await savePartialAssistantMessage(ragSessionId);
             }
             showNotification('✗ RAG 查询失败: ' + (err.message || err), 'error');
         } else if (err.name === 'AbortError' && !ragDone) {
             partialSaved = true;
-            await savePartialAssistantMessage();
+            await savePartialAssistantMessage(ragSessionId);
         }
     } finally {
         chatAbortController?.signal.removeEventListener('abort', abortHandler);
@@ -610,7 +621,7 @@ async function sendRagQuery(text) {
         // 兜底：请求结束但未正常 done、半截内容仍未保存时落库（覆盖事件/调用顺序竞态）
         if (!partialSaved && !ragDone && _chatStreamingFullContent && _chatStreamingFullContent.trim()) {
             partialSaved = true;
-            await savePartialAssistantMessage();
+            await savePartialAssistantMessage(ragSessionId);
         }
         chatStreaming = false;
         updateChatSendButton();
@@ -687,79 +698,6 @@ async function AgentInit() {
             });
         } catch (e) {
             console.warn('注册 chat-index 事件监听失败:', e);
-        }
-        // 监听 AI 工具审批请求（编辑/删除文件确认）：系统弹窗 → IPC 回传
-        try {
-            const { listen } = window.__TAURI__.event;
-            listen('approval:request', async (e) => {
-                const { request_id, tool, summary, detail } = (e.payload || {});
-                if (!request_id) return;
-                const opName = tool === 'delete' ? '删除文件' : tool === 'edit' ? '修改文件' : '执行操作';
-                const message = `${summary || ''}${detail ? '\n\n' + detail : ''}`;
-                let approved = false;
-                try {
-                    approved = await showConfirmModalAsync(`AI 请求${opName}`, message, { blockOutsideClick: true, blockEsc: true });
-                } catch (err) {
-                    console.warn('[approval] 确认框异常:', err);
-                }
-                try {
-                    await window.__TAURI__.core.invoke('approval_respond', {
-                        requestId: request_id,
-                        approved,
-                        reason: approved ? null : '用户拒绝了此操作',
-                    });
-                } catch (err) {
-                    console.warn('[approval] 回传审批结果失败:', err);
-                }
-            });
-        } catch (e) {
-            console.warn('注册 approval 审批监听失败:', e);
-        }
-        // 监听 AI 任务计划确认请求（plan:request）：展示计划，用户批准/拒绝经 IPC 回传
-        try {
-            const { listen } = window.__TAURI__.event;
-            listen('plan:request', async (e) => {
-                const { plan_id, plan } = (e.payload || {});
-                if (!plan_id) return;
-                const p = plan || {};
-                const goal = p.goal ? '目标：' + p.goal : '';
-                const steps = Array.isArray(p.steps) ? p.steps.map((s, i) => (i + 1) + '. ' + s).join('\n') : '(无步骤)';
-                const acceptance = Array.isArray(p.acceptance) && p.acceptance.length ? '\n\n验收标准：\n' + p.acceptance.map(a => '· ' + a).join('\n') : '';
-                const touchpoints = Array.isArray(p.touchpoints) && p.touchpoints.length ? '\n\n涉及范围：\n' + p.touchpoints.map(t => '· ' + t).join('\n') : '';
-                const risks = Array.isArray(p.risks) && p.risks.length ? '\n\n风险注意：\n' + p.risks.map(r => '· ' + r).join('\n') : '';
-                const nonGoals = Array.isArray(p.non_goals) && p.non_goals.length ? '\n\n非目标（明确不做）：\n' + p.non_goals.map(n => '· ' + n).join('\n') : '';
-                const rollback = Array.isArray(p.rollback) && p.rollback.length ? '\n\n失败回滚：\n' + p.rollback.map(r => '· ' + r).join('\n') : '';
-                const message = goal + '\n\n步骤：\n' + steps + acceptance + touchpoints + risks + nonGoals + rollback;
-                let approved = false;
-                try {
-                    approved = await showConfirmModalAsync('AI 任务计划，请确认是否执行', message, { blockOutsideClick: true, blockEsc: true, modalStyle: 'max-width: 40%;width: 40%;', modelBodyStyle: 'height: 32rem;overflow-y: auto;' });
-                } catch (err) {
-                    console.warn('[plan] 计划确认框异常:', err);
-                }
-                try {
-                    await window.__TAURI__.core.invoke('plan_respond', {
-                        planId: plan_id,
-                        approved,
-                        reason: approved ? null : '用户未批准此计划',
-                    });
-                } catch (err) {
-                    console.warn('[plan] 回传计划确认结果失败:', err);
-                }
-            });
-        } catch (e) {
-            console.warn('注册 plan 计划确认监听失败:', e);
-        }
-        // 监听计划未获批准事件（超时/通道异常，非用户主动拒绝）：
-        // 右下角 sticky 常驻提醒，用户点击叉号自行关闭
-        try {
-            const { listen } = window.__TAURI__.event;
-            listen('plan:rejected', (e) => {
-                const payload = (e && e.payload) || {};
-                const reason = payload.reason ? '原因：' + payload.reason : '';
-                Notify.sticky('AI 任务计划未获批准，任务已中止。\n' + reason);
-            });
-        } catch (e) {
-            console.warn('注册 plan:rejected 监听失败:', e);
         }
         // 应用启动时，root 目录就绪即自动启动 watcher（静默运行），并同步索引开关
         if (getRootHandle()) {

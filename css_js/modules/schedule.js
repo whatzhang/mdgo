@@ -636,7 +636,7 @@
                     const eventTime = isCronVirtual ? todoFormatTime(todoE._cronTime) : '';
                     const cronClass = isCronVirtual ? ' todo-cron-event' : '';
                     const onclick = ` onclick="event.stopPropagation(); todoEditEvent('${todoE.id}')"`;
-                    html += `<div class="todo-month-event todo-${todoE.color}${cronClass}"${onclick}>${isCronVirtual ? '🔄 ' + eventTime + ' ' : ''}${escapeHtml(todoE.title)}</div>`;
+                    html += `<div class="todo-month-event todo-${todoE.color || 'blue'}${cronClass}"${onclick}>${isCronVirtual ? '🔄 ' + eventTime + ' ' : ''}${escapeHtml(todoE.title)}</div>`;
                 });
                 html += `</div><div class="todo-add-event-hint">+</div>`;
                 el.innerHTML = html;
@@ -1219,7 +1219,7 @@
                 // 每秒更新时间
                 TimerManager.set('todoModalTime', () => todoUpdateModalTime(timeDisplay), 1000);
             }
-            const defaultColor = document.querySelector('.todo-color-option[data-color="blue"]');
+            const defaultColor = document.querySelector('.todo-color-option[data-color="orange"]');
             if (defaultColor) todoSelectColor(defaultColor);
             modal.classList.add('todo-active');
         }

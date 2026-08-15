@@ -41,6 +41,10 @@ pub enum AnthropicEvent {
     Usage {
         input_tokens: u32,
         output_tokens: u32,
+        /// 命中 Anthropic 缓存读取的输入 token 数（缓存命中率 = cache_read / input）
+        cache_read_input_tokens: u32,
+        /// 本次请求写入缓存的输入 token 数
+        cache_creation_input_tokens: u32,
     },
 }
 
@@ -93,6 +97,12 @@ struct SseUsage {
     input_tokens: u32,
     #[serde(default)]
     output_tokens: u32,
+    /// 命中缓存读取的输入 token（Anthropic usage 字段，未启用缓存时缺省为 0）
+    #[serde(default)]
+    cache_read_input_tokens: u32,
+    /// 写入缓存的输入 token（Anthropic usage 字段）
+    #[serde(default)]
+    cache_creation_input_tokens: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -203,6 +213,8 @@ impl AnthropicStreamClient {
         let mut full_content = String::new();
         let mut input_tokens: u32 = 0;
         let mut output_tokens: u32 = 0;
+        let mut cache_read_input_tokens: u32 = 0;
+        let mut cache_creation_input_tokens: u32 = 0;
 
         loop {
             tokio::select! {
@@ -218,7 +230,15 @@ impl AnthropicStreamClient {
                             while let Some(pos) = find_frame_end(&buf) {
                                 let frame: Vec<u8> = buf.drain(..pos).collect();
                                 if let Some(line) = parse_data_line(&frame) {
-                                    handle_sse_line(&line, &mut full_content, &mut input_tokens, &mut output_tokens, &on_event);
+                                    handle_sse_line(
+                                        &line,
+                                        &mut full_content,
+                                        &mut input_tokens,
+                                        &mut output_tokens,
+                                        &mut cache_read_input_tokens,
+                                        &mut cache_creation_input_tokens,
+                                        &on_event,
+                                    );
                                 }
                             }
                         }
@@ -273,6 +293,8 @@ fn handle_sse_line(
     full_content: &mut String,
     input_tokens: &mut u32,
     output_tokens: &mut u32,
+    cache_read_input_tokens: &mut u32,
+    cache_creation_input_tokens: &mut u32,
     on_event: &impl Fn(AnthropicEvent),
 ) {
     let event: SseEvent = match serde_json::from_str(line) {
@@ -305,9 +327,17 @@ fn handle_sse_line(
                 if usage.output_tokens > 0 {
                     *output_tokens = usage.output_tokens;
                 }
+                if usage.cache_read_input_tokens > 0 {
+                    *cache_read_input_tokens = usage.cache_read_input_tokens;
+                }
+                if usage.cache_creation_input_tokens > 0 {
+                    *cache_creation_input_tokens = usage.cache_creation_input_tokens;
+                }
                 on_event(AnthropicEvent::Usage {
                     input_tokens: *input_tokens,
                     output_tokens: *output_tokens,
+                    cache_read_input_tokens: *cache_read_input_tokens,
+                    cache_creation_input_tokens: *cache_creation_input_tokens,
                 });
             }
         }
@@ -376,8 +406,10 @@ mod tests {
         let mut full = String::new();
         let mut it = 0u32;
         let mut ot = 0u32;
+        let mut cr = 0u32;
+        let mut cc = 0u32;
         let deltas = RefCell::new(Vec::new());
-        handle_sse_line(line, &mut full, &mut it, &mut ot, &|e| {
+        handle_sse_line(line, &mut full, &mut it, &mut ot, &mut cr, &mut cc, &|e| {
             if let AnthropicEvent::Delta(t) = e {
                 deltas.borrow_mut().push(t);
             }
@@ -392,7 +424,9 @@ mod tests {
         let mut full = String::new();
         let mut it = 0u32;
         let mut ot = 0u32;
-        handle_sse_line(line, &mut full, &mut it, &mut ot, &|_| {});
+        let mut cr = 0u32;
+        let mut cc = 0u32;
+        handle_sse_line(line, &mut full, &mut it, &mut ot, &mut cr, &mut cc, &|_| {});
         assert_eq!(full, "");
     }
 
@@ -403,13 +437,47 @@ mod tests {
         let mut full = String::new();
         let mut it = 0u32;
         let mut ot = 0u32;
+        let mut cr = 0u32;
+        let mut cc = 0u32;
         let usage = RefCell::new(Vec::new());
-        handle_sse_line(line, &mut full, &mut it, &mut ot, &|e| {
-            if let AnthropicEvent::Usage { input_tokens, output_tokens } = e {
+        handle_sse_line(line, &mut full, &mut it, &mut ot, &mut cr, &mut cc, &|e| {
+            if let AnthropicEvent::Usage { input_tokens, output_tokens, .. } = e {
                 usage.borrow_mut().push((input_tokens, output_tokens));
             }
         });
         assert_eq!(usage.into_inner(), vec![(0, 42)]);
+        assert_eq!(full, "");
+    }
+
+    #[test]
+    fn sse_event_usage_cache_fields() {
+        use std::cell::RefCell;
+        // message_start 携带完整 usage（含缓存字段），验证透传
+        let line = r#"{"type":"message_start","message":{"usage":{"input_tokens":100,"output_tokens":0,"cache_read_input_tokens":80,"cache_creation_input_tokens":20}}}"#;
+        let mut full = String::new();
+        let mut it = 0u32;
+        let mut ot = 0u32;
+        let mut cr = 0u32;
+        let mut cc = 0u32;
+        let usage = RefCell::new(Vec::new());
+        handle_sse_line(line, &mut full, &mut it, &mut ot, &mut cr, &mut cc, &|e| {
+            if let AnthropicEvent::Usage {
+                input_tokens,
+                output_tokens,
+                cache_read_input_tokens,
+                cache_creation_input_tokens,
+            } = e
+            {
+                usage.borrow_mut().push((
+                    input_tokens,
+                    output_tokens,
+                    cache_read_input_tokens,
+                    cache_creation_input_tokens,
+                ));
+            }
+        });
+        assert_eq!(usage.into_inner(), vec![(100, 0, 80, 20)]);
+        assert_eq!((cr, cc), (80, 20));
         assert_eq!(full, "");
     }
 }

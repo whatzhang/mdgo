@@ -282,3 +282,53 @@ mark.source-highlight,
     border-color: var(--color-primary, #0879e9);
     box-shadow: 0 0 0 3px rgba(8, 121, 233, 0.1);
 }
+
+/* ── 全局 Agent 任务状态条（Phase 3：任意界面可见，后台任务展示 + 停止入口） ── */
+.agent-global-task-bar {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    max-width: 22rem;
+}
+.agent-global-task-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.625rem;
+    background: rgba(24, 26, 30, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 0.5rem;
+    color: #e6e6e6;
+    font-size: 0.8125rem;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+    backdrop-filter: blur(6px);
+}
+.agent-global-task-label {
+    font-weight: 600;
+    white-space: nowrap;
+    color: #58a6ff;
+}
+.agent-global-task-status {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #d0d7de;
+}
+.agent-global-task-stop {
+    flex-shrink: 0;
+    padding: 0.125rem 0.5rem;
+    font-size: 0.75rem;
+    color: #fff;
+    background: #d1242f;
+    border: none;
+    border-radius: 0.3125rem;
+    cursor: pointer;
+}
+.agent-global-task-stop:hover {
+    background: #b91c1c;
+}

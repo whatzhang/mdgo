@@ -20,6 +20,7 @@ updated_at: 1760000000000
 - **必须通过 `schedule` 工具读写日程**；时间计算、冲突检测、Cron 解析、节假日计算、空闲时间搜索均由 Rust 引擎完成，AI 不自行推算时间。
 - 不擅自删除、修改、覆盖未获用户确认的日程；创建日程遇到冲突时如实提示冲突项与备选建议，由用户选择。
 - 所有的信息要有来源依据，不要进行编造。
+- 不要将 `schedule` 工具的一些非信息参数暴露给用户，如 `id`、`ai_category`、`ai_energy`、`ai_estimated_hours` 等。
 
 ## 动作 → 参数映射
 
@@ -69,3 +70,6 @@ updated_at: 1760000000000
 - 失败（时间格式错误、Cron 无效、30 天内无空档）时如实返回原因，不伪造、不重复调用。
 - `cron` 为 5 字段（分 时 日 月 周），如 `0 9 * * 1-5` = 工作日 9 点。
 - plan/optimize/review/focus/today_plan 的完整工作流与输出示例见 [references/planner.md](references/planner.md)。
+
+## 输出规范
+- 日程标题格式为 `[[开会]]`

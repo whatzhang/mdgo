@@ -343,6 +343,17 @@
             width: 1.125rem;
             height: 1.125rem;
         }
+        #open-history {
+            font-size: 0.875rem;
+            overflow-y: auto;
+            min-height: 0;
+            max-height: 8.5rem;
+        }
+        #open-history-line {
+            margin: 0.25rem 0;
+            border-bottom: 1px solid var(--color-border);
+            z-index: 100;
+        }
 
         #tree {
             font-size: 0.875rem;
@@ -370,6 +381,9 @@
             gap: 0.375rem;
             height: 1.25rem;
         }
+        .file-item.open-history-item {
+            padding-left: 0;
+        }
 
         .file-item:hover {
             background-color: var(--color-hover-highlight);
@@ -396,7 +410,9 @@
             position: relative;
             justify-items: center;
         }
-
+        .file-item-text.open-history-item {
+             font-size: 0.8125rem;
+        }
         .file-item-text .file-name {
             overflow: hidden;
             text-overflow: ellipsis;
@@ -2992,46 +3008,6 @@
             display: flex;
             justify-content: flex-end;
             gap: 8px;
-        }
-
-        .input-modal-btn {
-            height: 28px;
-            padding: 4px 10px;
-            font-size: 13px;
-            border-radius: var(--radius-md);
-            cursor: pointer;
-            border: none;
-            font-weight: bold;
-            box-shadow: var(--shadow-sm);
-            transition: background-color var(--transition-normal), transform var(--transition-normal), box-shadow var(--transition-normal);
-        }
-
-        .input-modal-btn:hover {
-            box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
-        }
-
-        .input-modal-btn-cancel {
-            background: transparent;
-            color: var(--color-text, #1f2328);
-            border: 1px solid var(--color-border, #d0d7de);
-        }
-
-        .input-modal-btn-confirm {
-            background: var(--color-primary, var(--color-primary-light));
-            color: var(--color-text-white);
-        }
-
-        .input-modal-btn-confirm:hover {
-            background: var(--color-primary-hover, #0550ae);
-        }
-
-        .input-modal-btn-delete {
-            background: var(--color-danger, #dc2626);
-            color: var(--color-text-white);
-        }
-
-        .input-modal-btn-delete:hover {
-            background: var(--color-danger-hover, #992222);
         }
 
         .confirm-modal {
@@ -12430,6 +12406,10 @@
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230077ff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z'/%3E%3Cline x1='16' y1='13' x2='8' y2='13'/%3E%3Cline x1='16' y1='17' x2='8' y2='17'/%3E%3Cline x1='10' y1='9' x2='8' y2='9'/%3E%3C/svg%3E") !important;
         }
 
+        .file-item-icon.file-item-icon-operate {
+            background-image: url("data:image/svg+xml,%3Csvg%20viewBox%3D%220%200%2024%2024%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22%236e40c9%22%3E%3Cg%20id%3D%22Complete%22%3E%3Cg%20id%3D%22signal%22%3E%3Cg%3E%3Cpath%20d%3D%22M2.5%2C12A9.5%2C9.5%2C0%2C1%2C1%2C12%2C21.5%22%20fill%3D%22none%22%20stroke%3D%22%236e40c9%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%222%22%2F%3E%3Cpath%20d%3D%22M7.5%2C12A4.5%2C4.5%2C0%2C1%2C1%2C12%2C16.5%22%20fill%3D%22none%22%20stroke%3D%22%236e40c9%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%222%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E") !important;
+        }
+
         .dashboard-time {
             font-size: 13px;
             color: var(--color-primary);
@@ -13707,6 +13687,19 @@
         .prompt-modal-content {
             font-size: 0.75rem;
         }
+        .file-name>span {
+            font-size: 0.75rem;
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.5rem;
+            color: var(--todo-event-purple-text);
+            background: var(--todo-event-purple-bg);
+            font-weight: 500;
+            transition: all var(--transition-fast);
+            justify-content: center;
+            justify-items: center;
+        }
     </style>
     <link rel="stylesheet" href="./css_js/modules/skill.css" />
     <link rel="stylesheet" href="./css_js/modules/mcp.css" />
@@ -13793,6 +13786,8 @@
                     <div class="new-file-modal-grid" id="new-file-modal-grid"></div>
                 </div>
             </div>
+            <div id="open-history"></div>
+            <div id="open-history-line"></div>
             <div id="tree"></div>
         </div>
         <!-- 侧边栏折叠/展开按钮（贴屏幕左侧） -->
@@ -15503,10 +15498,10 @@
                             </div>
                         </div>
                         <div class="todo-modal-footer">
+                            <button class="btn btn-sm" onclick="todoCloseModal()">取消</button>
                             <button class="btn btn-sm btn-danger" id="todo-deleteBtn" style="display: none;"
                                 onclick="todoDeleteEvent()">删除
                             </button>
-                            <button class="btn btn-sm" onclick="todoCloseModal()">取消</button>
                             <button class="btn btn-sm btn-primary" onclick="todoSaveEvent()">保存</button>
                         </div>
                     </div>
@@ -15703,7 +15698,7 @@
                         <!-- RAG 设置面板 -->
                         <div id="rag-settings-overlay" class="modal-overlay" style="display:none;"
                             onclick="closeRagSettings()">
-                            <div class="todo-modal" onclick="event.stopPropagation()" style="width:15rem">
+                            <div class="todo-modal" onclick="event.stopPropagation()" style="width:20rem">
                                 <div class="todo-modal-header">
                                     <div class="todo-modal-title">RAG 检索参数</div>
                                     <button class="todo-modal-close" onclick="closeRagSettings()">×</button>
@@ -16641,6 +16636,7 @@
             { key: '大纲笔记', value: 'toggleFile("opmlOutline")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: '任务看板', value: 'toggleFile("kanban")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: '临时编辑器', value: 'toggleFile("tempEditor")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '文件类型分布', value: 'toggleFile("fileType")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: '目录空间分析', value: 'toggleFile("dirSpace")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: '知识库面板', value: 'toggleFile("knowledge")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
             { key: 'Agent', value: 'toggleFile("aiChat")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
@@ -17051,6 +17047,7 @@
         const FILE_SCAN_TIME_KEY = 'file_scan_duration'; // 文件扫描时长键名
         const DIRECTORY_STORE_NAME = 'idb-data-store';  // 目录数据存储键名
         const CUSTOM_PROMPT_NAME = 'custom_prompt';  // 自定义提示键名
+        const OPEN_HISTORY_KEY = 'openHistory'; // 打开历史记录键名
 
         // ====== 目录名常量 ======
         const DELETED_DIR_NAME = 'mdgo_trash';         // 垃圾箱文件名
@@ -17243,6 +17240,7 @@
         let _browsingFilePath = null;       // 当前正在计时的文件路径
         let _browsingTimerStart = 0;        // 当前文件计时开始时间戳 (Date.now())
         let _docLinks = [];                  // 文档链接数组
+        let openHistory = null;           // 打开历史记录实例
 
         function _startBrowsingTimer(filePath) {
             _browsingFilePath = filePath;
@@ -17366,6 +17364,7 @@
         const opmlBackBtn = document.getElementById('opml-back-btn');
         const commonToolControls = document.getElementById('common-tool-controls');
         const demoBtn = document.getElementById('demo-btn');
+        const openHistoryContainer = document.getElementById('open-history');
 
         // 所有主视图容器的集合（切换视图时隐藏其他容器用）
         const MAIN_VIEW_CONTAINERS = [
@@ -17454,6 +17453,7 @@
                 Promise.resolve(todoEarlyInit()),// 初始化日历日程
                 Promise.resolve(initMonacoEditor()),// 初始化编辑器
                 Promise.resolve(initDashboard()), // 初始化时间进度条
+                Promise.resolve(initOpenHistory()), // 初始化打开历史记录
             ]);
         }
 
@@ -17512,7 +17512,7 @@
             if (fileName) { FILE_TEXT_CACHE.delete(fileName); }
             else { FILE_TEXT_CACHE.clear(); }
         }
-        async function toggleFile(type, data = {}) {
+        async function toggleFile(type, data = {}, isOpenHistory = false) {
             if (!isRootHandleAvailable()) {
                 showNotification('✗ 请先打开根目录', 'error');
                 return;
@@ -17541,87 +17541,87 @@
             if (type === 'newFile') {
                 newFile(data.newFileName);
             } else if (type === 'fileGraph') {
-                await openFileGraph();
+                await openFileGraph(); if (!isOpenHistory) openHistory.addItem('fileGraph');
             } else if (type === 'noteGraph') {
-                await openNoteGraph();
+                await openNoteGraph(); if (!isOpenHistory) openHistory.addItem('noteGraph');
             } else if (type === 'bookmarks') {
-                await toggleDashboardBookmarkView()
+                await toggleDashboardBookmarkView(); if (!isOpenHistory) openHistory.addItem('bookmarks');
             } else if (type === 'dashboard') {
-                await toggleDashboardView()
+                await toggleDashboardView();
             } else if (type === 'randomOpen') {
-                await randomOpen();
+                await randomOpen(isOpenHistory); 
             } else if (type === 'renderFile') {
-                await renderFile(data.relativePath, data.fileSpan);
+                await renderFile(data.relativePath, data.fileSpan); if (!isOpenHistory) openHistory.addItem('renderFile','', data.relativePath, {'relativePath': data.relativePath});
             } else if (type === 'graphQLPlayground') {
-                await openGraphQLPlayground();
+                await openGraphQLPlayground(); if (!isOpenHistory) openHistory.addItem('graphQLPlayground');
             } else if (type === 'openRestyEditor') {
-                await openOpenRestyEditor();
+                await openOpenRestyEditor(); if (!isOpenHistory) openHistory.addItem('openRestyEditor');
             } else if (type === 'swaggerDemo') {
-                await openSwaggerDemo();
+                await openSwaggerDemo(); if (!isOpenHistory) openHistory.addItem('swaggerDemo');
             } else if (type === 'mermaid') {
-                await renderMermaidFile();
+                await renderMermaidFile(); if (!isOpenHistory) openHistory.addItem('mermaid');
             } else if (type === 'whiteboard') {
-                await openWhiteboard();
+                await openWhiteboard(); if (!isOpenHistory) openHistory.addItem('whiteboard');
             } else if (type === 'canvas') {
-                await openCanvasFile();
+                await openCanvasFile(); if (!isOpenHistory) openHistory.addItem('canvas');
             } else if (type === 'timeline') {
-                await openTimeline();
+                await openTimeline(); if (!isOpenHistory) openHistory.addItem('timeline');
             } else if (type === 'regexTest') {
-                await openRegexTest();
+                await openRegexTest(); if (!isOpenHistory) openHistory.addItem('regexTest');
             } else if (type === 'calendar') {
-                await openCalendar();
+                await openCalendar(); if (!isOpenHistory) openHistory.addItem('calendar');
             } else if (type === 'cron') {
-                await openCron();
+                await openCron(); if (!isOpenHistory) openHistory.addItem('cron');
             } else if (type === 'video') {
-                await openVideoPlayer();
+                await openVideoPlayer(); if (!isOpenHistory) openHistory.addItem('video');
             } else if (type === 'raw') {
-                await openRawFile();
+                await openRawFile(); if (!isOpenHistory) openHistory.addItem('raw');
             } else if (type === 'urlEncoder') {
-                await openUrlEncoderFile();
+                await openUrlEncoderFile(); if (!isOpenHistory) openHistory.addItem('urlEncoder');
             } else if (type === 'wordCloud') {
-                await openWordCloudFile();
+                await openWordCloudFile(); if (!isOpenHistory) openHistory.addItem('wordCloud');
             } else if (type === 'gitRecords') {
-                await openGitPageCore(null);
+                await openGitPageCore(null); if (!isOpenHistory) openHistory.addItem('gitRecords');
             } else if (type === 'pomodoro') {
-                await openPomodoro();
+                await openPomodoro(); if (!isOpenHistory) openHistory.addItem('pomodoro');
             } else if (type === 'tempEditor') {
-                await openTempEditor();
+                await openTempEditor(); if (!isOpenHistory) openHistory.addItem('tempEditor');
             } else if (type === 'mindMap') {
-                await openMindMap();
+                await openMindMap(); if (!isOpenHistory) openHistory.addItem('mindMap');
             } else if (type === 'opmlOutline') {
-                await openOPMLOutline();
+                await openOPMLOutline(); if (!isOpenHistory) openHistory.addItem('opmlOutline');
             } else if (type === 'kanban') {
-                await openKanbanDemo();
+                await openKanbanDemo(); if (!isOpenHistory) openHistory.addItem('kanban');
             } else if (type === 'dirSpace') {
-                await openDirSpace();
+                await openDirSpace(); if (!isOpenHistory) openHistory.addItem('dirSpace');
             } else if (type === 'aiChat') {
-                await openAiChat();
+                await openAiChat(); if (!isOpenHistory) openHistory.addItem('aiChat');
             } else if (type === 'knowledge') {
-                await openKnowledgeBase();
+                await openKnowledgeBase(); if (!isOpenHistory) openHistory.addItem('knowledge');
             } else if (type === 'skill') {
-                await openSkillManager();
+                await openSkillManager(); if (!isOpenHistory) openHistory.addItem('skill');
             } else if (type === 'mcp') {
-                await openMcpManager();
-            } else if (type === 'fileType') {
-                await openFileType();
-            } else if (type === 'picLayoutDisplay') {  //目录右键
-                await picLayoutDisplay(data.dirPathStr);
+                await openMcpManager(); if (!isOpenHistory) openHistory.addItem('mcp');
+            } else if (type === 'fileType') { 
+                await openFileType(); if (!isOpenHistory) openHistory.addItem('fileType');
+            } else if (type === 'picLayoutDisplay') { //目录右键
+                await picLayoutDisplay(data.dirPathStr); if (!isOpenHistory) openHistory.addItem('picLayoutDisplay', '图片布局', '', data, dirname(data.dirPathStr) );
             } else if (type === 'openWordCloudFile') {
-                await openWordCloudFile(data.dirPathStr);
+                await openWordCloudFile(data.dirPathStr); if (!isOpenHistory) openHistory.addItem('openWordCloudFile', '词云', '', data, dirname(data.dirPathStr) );
             } else if (type === 'dirCanvasDisplay') {
-                await dirCanvasDisplay(data.dirPathStr);
+                await dirCanvasDisplay(data.dirPathStr); if (!isOpenHistory) openHistory.addItem('dirCanvasDisplay', '文档白板', '', data, dirname(data.dirPathStr) );
             } else if (type === 'openFileGraph') {
-                await openFileGraph(data.dirPathStr);
+                await openFileGraph(data.dirPathStr); if (!isOpenHistory) openHistory.addItem('openFileGraph', '文件图谱', '', data, dirname(data.dirPathStr) );
             } else if (type === 'openNoteLinkGraph') {
-                await openNoteLinkGraph(data.relativePath);
+                await openNoteLinkGraph(data.relativePath); if (!isOpenHistory) openHistory.addItem('openNoteLinkGraph', '文档关联图谱', '', data, basename(data.relativePath) );
             } else if (type === 'openFileType') {
-                await openFileType(data.dirPathStr);
+                await openFileType(data.dirPathStr); if (!isOpenHistory) openHistory.addItem('openFileType', '文件类型分布', '', data, dirname(data.dirPathStr) );
             } else if (type === 'restoreFile') {  //文件右键
                 await restoreFile(data.relativePath, data.fileSpan);
             } else if (type === 'deleteFile') {  //文件右键
                 await deleteFileTreeItem(data.relativePath, data.isForever, data.fileSpan);
             } else if (type === 'fileGitRecord') {  //文件右键
-                await openGitPageCore(data.relativePath);
+                await openGitPageCore(data.relativePath); if (!isOpenHistory) openHistory.addItem('fileGitRecord', 'git记录', '', data, basename(data.relativePath) );
             } else if (type === 'copyFile') {  //文件右键
                 await copyCurrentFile(data.relativePath);
             }
@@ -17939,7 +17939,7 @@
                 treeElement.removeEventListener('toggle', _treeToggleHandler);
             }
 
-            _treeClickHandler = async function (event) {
+            _treeClickHandler = async function (event, isOpenHistory = false) {
                 const fileSpan = event.target.closest('.file-item');
                 if (!fileSpan) return;
                 // 若点击的是更多菜单按钮或颜色选择器，不触发文件打开
@@ -17957,7 +17957,7 @@
                             showNotification(`✗ 无法找到文件: ${fp}`, 'error');
                             return;
                         }
-                        await toggleFile('renderFile', { relativePath: fp, fileSpan: fs });
+                        await toggleFile('renderFile', { relativePath: fp, fileSpan: fs }, isOpenHistory);
                     } catch (e) {
                         console.error('文件切换失败:', e);
                     }
@@ -19571,16 +19571,16 @@
                     <div class="input-modal-title">${escapeHtml(title)}</div>
                     <input type="text" class="input-modal-input" placeholder="">
                     <div class="input-modal-buttons">
-                        <button class="input-modal-btn input-modal-btn-cancel">取消</button>
-                        <button class="input-modal-btn input-modal-btn-confirm">确定</button>
+                        <button class="btn btn-sm" id="input-modal-cancel-btn">取消</button>
+                        <button class="btn btn-sm btn-primary" id="input-modal-confirm-btn">确定</button>
                     </div>
                 </div>
             `;
             document.body.appendChild(overlay);
             const input = overlay.querySelector('.input-modal-input');
             input.value = defaultValue;
-            const cancelBtn = overlay.querySelector('.input-modal-btn-cancel');
-            const confirmBtn = overlay.querySelector('.input-modal-btn-confirm');
+            const cancelBtn = overlay.querySelector('#input-modal-cancel-btn');
+            const confirmBtn = overlay.querySelector('#input-modal-confirm-btn');
             input.focus();
             input.select();
 
@@ -19673,7 +19673,7 @@
             })[m]);
         }
 
-        async function randomOpen() {
+        async function randomOpen(isOpenHistory = false) {
             hideAllViewContainers();
             await destroyEverything();
             let flg = true;
@@ -19696,7 +19696,7 @@
                                 showNotification(`✗ 无法找到文件: ${node.path}`, 'error');
                                 return;
                             }
-                            await toggleFile('renderFile', { relativePath: node.path, fileSpan: fileSpan });
+                            await toggleFile('renderFile', { relativePath: node.path, fileSpan: fileSpan }, isOpenHistory);
                             showNotification(`🎲 随机打开: ${escapeHtml(node.path)}`, 'success', 2000);
                             return;
                         }
@@ -21525,17 +21525,17 @@
                         <div class="input-modal-title">${isEdit ? '编辑备注' : '新增备注'}</div>
                         <textarea class="input-modal-input" style="height:7.5rem;font-size:13px;line-height:1.4;padding:0.5rem" placeholder="${api.placeholder || '请输入备注内容...'}"></textarea>
                         <div class="input-modal-buttons">
-                            <button class="input-modal-btn input-modal-btn-delete">删除备注</button>
-                            <button class="input-modal-btn input-modal-btn-cancel">取消</button>
-                            <button class="input-modal-btn input-modal-btn-confirm">确定</button>
+                            <button class="btn btn-sm btn-danger" id="input-modal-delete-btn">删除备注</button>
+                            <button class="btn btn-sm" id="input-modal-cancel-btn">取消</button>
+                            <button class="btn btn-sm btn-primary" id="input-modal-confirm-btn">确定</button>
                         </div>
                     </div>`;
                 document.body.appendChild(overlay);
                 const textarea = overlay.querySelector('textarea');
                 textarea.value = currentNote || '';
-                const cancelBtn = overlay.querySelector('.input-modal-btn-cancel');
-                const confirmBtn = overlay.querySelector('.input-modal-btn-confirm');
-                const deleteBtn = overlay.querySelector('.input-modal-btn-delete');
+                const cancelBtn = overlay.querySelector('#input-modal-cancel-btn');
+                const confirmBtn = overlay.querySelector('#input-modal-confirm-btn');
+                const deleteBtn = overlay.querySelector('#input-modal-delete-btn');
                 textarea.focus();
                 let closed = false;
                 const close = () => {
@@ -32906,7 +32906,7 @@ kanban-plugin: basic
             openFileFromPath(filePath);
         }
 
-        async function openFileFromPath(filePath) {
+        async function openFileFromPath(filePath, isOpenHistory = false) {
             if (!filePath) return;
             const normalizedPath = normalizePath(filePath);
             let targetItem = treeElement.querySelector(`.file-item[data-file-path="${normalizedPath}"]`);
@@ -32914,7 +32914,7 @@ kanban-plugin: basic
                 targetItem = await expandPathToFile(normalizedPath);
                 if (targetItem) {
                     targetItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    targetItem.click();
+                    await _treeClickHandler({ target: targetItem }, isOpenHistory);
                     showNotification('已打开文件: ' + filePath, 'success');
                     return;
                 }
@@ -35344,6 +35344,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             safeLocalStorageRemove(TOC_VISIBLE_KEY);
             safeLocalStorageRemove('highlight-colors');
             safeLocalStorageRemove('annotation-colors');
+            safeLocalStorageRemove(OPEN_HISTORY_KEY);
             _markersMap = null; // markers 缓存
             _cachedLastFile = null;    // createFileItem 预缓存：最后一次打开的文件路径
             _browserRefreshed = false;   // createFileItem 预缓存：是否浏览器刷新场景
@@ -36437,6 +36438,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const minutes = String(date.getMinutes()).padStart(2, '0');
             const seconds = String(date.getSeconds()).padStart(2, '0');
             return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+        }
+
+        function formatDateTimeNoYear(date) {
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${month}-${day} ${hours}:${minutes}`;
         }
 
         // 核心筛选逻辑 (基于当前选中的时间段)
@@ -50237,6 +50246,77 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 return parsed.content;
             }
             return null;
+        }
+
+        class OpenHistory {
+            constructor() {
+                this.openHistory = [];
+            }
+            addItem(action, title='', filePath = null, params = null, targetName = '') {
+                if (this.openHistory.length >= 10) {
+                    this.openHistory.pop(); 
+                    openHistoryContainer.removeChild(openHistoryContainer.lastChild);
+                }
+                const newItem = {'action': action, 'title': title, 'filePath': filePath, 'params': params, 'targetName': targetName, date: formatDateTimeNoYear(new Date())}
+                this.openHistory.unshift(newItem);
+                const element = this.createHistoryElement(newItem); 
+                if (openHistoryContainer.firstChild) {
+                    openHistoryContainer.insertBefore(element, openHistoryContainer.firstChild);
+                } else {
+                    openHistoryContainer.appendChild(element);
+                }
+                this.storeHistory();
+            }
+            createHistoryElement(item){
+                const fileSpan = document.createElement('div');
+                fileSpan.className = 'file-item open-history-item';
+                const textSpan = document.createElement('span');
+                textSpan.className = 'file-item-text open-history-item';
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'file-name';
+                if(item.filePath){
+                    const fileName = basename(item.filePath);
+                    nameSpan.textContent = fileName;
+                    nameSpan.title = item.filePath;
+                    const ext = getExt(fileName);
+                    const iconType = ext ? getFileTypeByExt(ext) : '';
+                    textSpan.appendChild(_fileIcon(fileName, iconType));
+                }else{
+                    const btn = DASHBOARD_BUTTON.find(btn => btn.value.includes(item.action));
+                    nameSpan.innerHTML = btn ? `打开：<span class="skill-tag-chip">${btn.key}</span>` : 
+                    (item.targetName ? `${item.targetName}` : '' ) + `&nbsp;<span class="skill-tag-chip" style="padding: 0.125rem 0.5rem;">${item.title}</span>`;
+                    const div = document.createElement('div');
+                    div.className = 'file-item-icon file-item-icon-operate';
+                    textSpan.appendChild(div);  
+                }
+                fileSpan.onclick = async () => {
+                    if(item.action === 'renderFile'){
+                        await openFileFromPath(item.params.relativePath, true);
+                    }else{
+                        await toggleFile(item.action, item.params, true);
+                    }
+                }
+                textSpan.appendChild(nameSpan);
+                fileSpan.appendChild(textSpan);
+                return fileSpan;
+            }
+            renderHistory() {
+                openHistoryContainer.innerHTML = '';
+                this.openHistory.forEach(item => {
+                    openHistoryContainer.appendChild(this.createHistoryElement(item));
+                });
+            }
+            storeHistory() {
+                safeLocalStorageSet(OPEN_HISTORY_KEY, JSON.stringify(this.openHistory));
+            }
+            loadHistory() {
+                this.openHistory = JSON.parse(safeLocalStorageGet(OPEN_HISTORY_KEY)) || [];
+                this.renderHistory();
+            }
+        }
+        function initOpenHistory() {
+            openHistory = new OpenHistory();
+            openHistory.loadHistory();
         }
     </script>
 </body>

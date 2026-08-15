@@ -70,6 +70,12 @@ pub struct RagDone {
     pub prompt_tokens: u32,
     #[serde(default)]
     pub completion_tokens: u32,
+    /// 本次请求命中 provider 缓存的输入 token 数（缓存命中率 = cached / prompt）
+    #[serde(default)]
+    pub cached_input_tokens: u32,
+    /// 本次请求写入 provider 缓存的输入 token 数
+    #[serde(default)]
+    pub cache_creation_input_tokens: u32,
 }
 
 #[derive(Clone, Serialize)]
@@ -418,6 +424,22 @@ fn emit_command_error(app: &AppHandle, channel: &str, request_id: &str, message:
 /// [`crate::core::agent::tools::ToolCallBus`]，由流式循环在此处统一转发。
 fn emit_pending_tool_events(app: &AppHandle, request_id: &str) {
     for event in tool_call_bus().drain(request_id) {
+        // 同步写入任务状态中心（后台任务快照：切回页面恢复工具卡片，与页面解耦）。
+        // call 事件用 event.seq 建档，result 事件按 call_seq 回填 ok/summary。
+        if let Some(state) = app.try_state::<crate::AppState>() {
+            let tasks = state.agent_tasks.clone();
+            if event.kind == "call" {
+                tasks.add_tool_call(
+                    request_id,
+                    event.seq,
+                    &event.tool,
+                    &event.args_preview,
+                    event.skill_id.clone(),
+                );
+            } else {
+                tasks.update_tool_result(request_id, event.call_seq, event.ok, &event.summary);
+            }
+        }
         // 直接序列化 ToolCallEvent：skill_id 经 skip_serializing_if 仅在有值时输出，
         // 避免手动重建 JSON 丢失字段（如技能来源 skill_id）。
         let mut payload = match serde_json::to_value(&event) {
@@ -438,6 +460,15 @@ fn emit_pending_tool_events(app: &AppHandle, request_id: &str) {
 fn emit_pending_trace_events(app: &AppHandle, request_id: &str) {
     let events = crate::core::trace::trace_bus().drain(request_id);
     if !events.is_empty() {
+        // 同步写入任务状态中心（后台任务快照：切回页面恢复阶段面板）。
+        if let Some(state) = app.try_state::<crate::AppState>() {
+            let tasks = state.agent_tasks.clone();
+            for ev in &events {
+                if let Ok(v) = serde_json::to_value(ev) {
+                    tasks.add_trace_event(request_id, v);
+                }
+            }
+        }
         let _ = app.emit(
             "trace:event",
             serde_json::json!({
@@ -448,40 +479,103 @@ fn emit_pending_trace_events(app: &AppHandle, request_id: &str) {
     }
 }
 
-/// P0 防幻觉一致性校验：模型在最终回答中声称"已完成写操作"，但本请求
-/// **未调用对应工具**时，向回答追加一致性提醒——封死「声称已创建但实际
-/// 未写入」的失败模式（典型：日程技能未激活/未调用时 LLM 编造"已创建"）。
+/// P0 防幻觉一致性校验（Action Claim Guard，声明表驱动）：模型在最终回答中声称
+/// "已完成某操作"，但本请求**未调用对应工具**时，向回答追加一致性提醒——
+/// 封死「声称已执行但实际未执行」的失败模式（典型：日程/文件写操作未调用时
+/// LLM 编造"已创建/已保存"）。
+///
+/// 规则由 [`crate::core::agent::ACTION_CLAIMS`] 声明表定义（verbs × objects ×
+/// required_tools），替代硬编码关键词：新增动作只需在表中增加一行。
 ///
 /// 判定刻意收窄以降低误报：
-/// - 声称词：完成式（已创建/创建了/已添加/已删除…），不含"尝试/计划/将"
-/// - 对象词：明确日程对象（日程/日历/会议/预约/专注时间块）
-/// 两者同时出现且请求内无 `schedule` 调用时才追加提醒。
+/// - 声称词：完成式（已创建/创建了/已添加…），不含"尝试/计划/将"
+/// - 对象词：明确动作对象（日程/文件/文档…）
+/// 两者同时出现且请求内未调用该动作声明的工具时才追加提醒。
 fn apply_anti_hallucination_guard(content: &mut String, tools_called: &[String]) {
-    const CLAIM_WORDS: &[&str] = &[
-        "已创建", "创建了", "已添加", "添加了", "已安排", "安排了", "已预约",
-        "预约了", "已更新", "更新了", "已删除", "删除了", "已保存", "保存了",
-        "已写入", "创建成功", "添加成功", "删除成功",
-    ];
-    const SCHEDULE_OBJECTS: &[&str] = &["日程", "日历", "会议", "预约", "专注时间块", "专注块"];
+    for claim in crate::core::agent::ACTION_CLAIMS {
+        let verb_hit = claim.verbs.iter().any(|w| content.contains(w));
+        if !verb_hit {
+            continue;
+        }
+        let object_hit = claim.objects.iter().any(|o| content.contains(o));
+        if !object_hit {
+            continue;
+        }
+        let tool_hit = claim
+            .required_tools
+            .iter()
+            .any(|t| tools_called.iter().any(|c| c == t))
+            || claim
+                .observe_tools
+                .iter()
+                .any(|t| tools_called.iter().any(|c| c == t));
+        if tool_hit {
+            continue;
+        }
+        content.push_str(&format!(
+            "\n\n> ⚠️ 一致性提醒：本次回复声称已完成「{}」相关操作，但本次请求未实际调用 {} 工具，**该操作可能未执行**。请确认对应功能已生效，或重新发起操作。",
+            claim.id,
+            claim.required_tools.join(" / ")
+        ));
+        log::warn!(
+            "[anti-hallucination] 声称 {} 但未调用对应工具（tools_called={:?}）",
+            claim.id,
+            tools_called
+        );
+        // P2-9：守卫触发计数（Hallucination Rate 分子）
+        crate::core::agent::agent_quality()
+            .hallucination_warnings
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // 首个命中即生效，避免多动作声称堆叠多条提醒
+        break;
+    }
+}
 
-    let claimed = CLAIM_WORDS.iter().any(|w| content.contains(w));
-    if !claimed {
+/// P0-2 Grounding Validator（后置兜底）：本地知识回答必须有依据。
+///
+/// 前置约束为主（rag_agent.md 的 Grounding Policy：本地事实断言必须引用来源），
+/// 本函数只做兜底：当最终回答出现**本地文件引用信号**（文件名/路径后缀等），
+/// 但本次请求既未检索知识库（未调用 kb_search/code_lookup 或无命中来源）、
+/// 也未调用任何本地文件观察工具（read/ls/glob/grep）时，追加"依据不足"提醒——
+/// 封死「引用不存在的文件 / 凭记忆断言本地内容」的引用幻觉。
+///
+/// 判定刻意收窄以降低误报：
+/// - 只认文件引用信号（.md/.rs/docs/ 等具体后缀与路径前缀），不认宽泛的"项目/配置"词；
+/// - 只要调用过本地观察工具（哪怕未检索）即视为有依据，不提醒。
+fn apply_grounding_validator(content: &mut String, has_sources: bool, tools_called: &[String]) {
+    const FILE_REF_SIGNALS: &[&str] = &[
+        ".md", ".rs", ".json", ".yaml", ".yml", ".toml", ".js", ".ts", "docs/", "src/",
+    ];
+    let has_file_ref = FILE_REF_SIGNALS.iter().any(|s| content.contains(s));
+    if !has_file_ref {
         return;
     }
-    let schedule_object = SCHEDULE_OBJECTS.iter().any(|o| content.contains(o));
-    if !schedule_object {
+    if has_sources {
         return;
     }
-    if tools_called.iter().any(|t| t == "schedule") {
+    // 调用过本地文件观察/操作工具即视为有依据（含写工具：写完引用刚写的文件是合理行为；
+    // 含 git 观察工具：复述 git 状态不算凭空断言）
+    let observed_local = tools_called.iter().any(|t| {
+        matches!(
+            t.as_str(),
+            "read" | "ls" | "glob" | "grep" | "write" | "edit" | "multi_edit" | "delete"
+                | "git_status" | "git_diff" | "git_commit" | "git_checkout"
+        )
+    });
+    if observed_local {
         return;
     }
     content.push_str(
-        "\n\n> ⚠️ 一致性提醒：本次回复声称已完成日程操作，但本次请求未实际调用 schedule 工具，**日程未写入**。请确认日程功能已激活（消息含「日程/提醒/安排/会议」等词会自动激活），或重新发起操作。",
+        "\n\n> ⚠️ 依据提醒：本次回答引用了本地文件/路径，但本次请求未检索知识库、也未读取本地文件，上述引用可能缺少依据，请核查重要信息。如确有依据，请补充引用来源。",
     );
     log::warn!(
-        "[anti-hallucination] 声称日程写操作但未调用 schedule 工具（tools_called={:?}）",
+        "[grounding] 回答含本地文件引用但无检索/读取来源（tools_called={:?}）",
         tools_called
     );
+    // P2-9：守卫触发计数（Hallucination Rate 分子）
+    crate::core::agent::agent_quality()
+        .hallucination_warnings
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// 收集本次请求的技能执行输入（预激活 ∪ LLM 动态激活 ∪ 中途停用，去重），供批量落库。
@@ -588,6 +682,26 @@ pub async fn kb_cancel_task(
     Ok(())
 }
 
+/// Agent 后台任务概览（切回 Agent 页面恢复视图用）：列出全部任务快照（最新在前）。
+///
+/// 任务状态中心 `AppState.agent_tasks` 由 `agent_query` / `kb_llm_query` 写入，
+/// 前端切出页面时任务继续运行，切回页面经本命令 + [`agent_task_get`] 重建视图。
+#[tauri::command]
+pub fn agent_task_list(
+    state: tauri::State<'_, crate::AppState>,
+) -> Vec<crate::core::agent::task_store::BackgroundAgentTask> {
+    state.agent_tasks.list()
+}
+
+/// Agent 后台任务完整快照（按 request_id）。
+#[tauri::command]
+pub fn agent_task_get(
+    state: tauri::State<'_, crate::AppState>,
+    request_id: String,
+) -> Option<crate::core::agent::task_store::BackgroundAgentTask> {
+    state.agent_tasks.get(&request_id)
+}
+
 /// 收集已连接 MCP 服务器的工具为 DynamicTool 列表（v3：携带请求级配置以接轨迹记录）。
 async fn build_mcp_agent_tools(
     state: &tauri::State<'_, crate::AppState>,
@@ -641,8 +755,38 @@ pub async fn agent_query(
     session_id: Option<String>,
 ) -> Result<(), String> {
     let cancel = task_registry.register(&request_id).await;
+    // Phase 1：后台任务状态中心注册（切出页面任务继续、切回恢复视图）。
+    // 必须在所有可能提前 return 的分支之前，保证任何路径下任务都可查询/收尾。
+    state
+        .agent_tasks
+        .register(&request_id, session_id.clone(), &dir_path, "rag", &query);
+    // Phase 2：取消来源收敛——同会话新请求替换旧任务（防同会话并发 Agent 任务堆积；
+    // 显式取消三入口之一：停止按钮 / 同会话替换 / 应用退出）。前端发送新消息时
+    // 也会先确认中断，此处为后端兜底。
+    if let Some(sid) = &session_id {
+        use crate::core::agent::task_store::AgentTaskStatus;
+        let tasks = state.agent_tasks.clone();
+        for t in tasks.list() {
+            if t.status == AgentTaskStatus::Running
+                && t.session_id.as_deref() == Some(sid.as_str())
+                && t.request_id != request_id
+            {
+                task_registry.cancel(&t.request_id).await;
+                tasks.finish(&t.request_id, AgentTaskStatus::Cancelled);
+                log::info!(
+                    "[agent_query] [0]: 同会话新请求替换旧任务 request_id={} old={}",
+                    request_id,
+                    t.request_id
+                );
+            }
+        }
+    }
     // 后端防御：限制 top_k 范围（前端 UI 为 1-50），防止异常参数触发全量检索/重排
     let top_k = top_k.clamp(1, 50);
+    // P2-9：请求计数（质量指标）
+    crate::core::agent::agent_quality()
+        .requests
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
     // 请求级任务清单（todo_write 工具）隔离：新请求开始时清空上次残留
     crate::core::agent::tools::reset_todo(&request_id);
@@ -935,6 +1079,11 @@ pub async fn agent_query(
                     emit_pending_trace_events(&app, &request_id);
                     crate::core::trace::trace_bus().clear(&request_id);
                     log::info!("[agent_query] [0.5]: 等待计划确认时被取消 request_id={}", request_id);
+                    // 问题3修复：等待计划确认时被取消（用户点停止）→ 任务状态中心收尾，
+                    // 否则 task_store 停留 running，全局状态条不消失且停止按钮失效
+                    state
+                        .agent_tasks
+                        .finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Cancelled);
                     let _ = app.emit(
                         "rag:done",
                         RagDone {
@@ -943,6 +1092,8 @@ pub async fn agent_query(
                             sources: Vec::new(),
                             prompt_tokens: 0,
                             completion_tokens: 0,
+                            cached_input_tokens: 0,
+                            cache_creation_input_tokens: 0,
                         },
                     );
                     task_registry.unregister(&request_id).await;
@@ -1008,6 +1159,11 @@ pub async fn agent_query(
                     }
                     // content 置空：拒绝原因经日志/前端计划卡片传达，空内容使前端
                     // `if (fullContent)` 跳过 push 与落库，避免污染对话历史
+                    // 问题3修复：计划被拒绝/超时 → 任务状态中心收尾（cancelled），
+                    // 否则 task_store 停留 running，全局状态条不消失、停止按钮失效
+                    state
+                        .agent_tasks
+                        .finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Cancelled);
                     let _ = app.emit(
                         "rag:done",
                         RagDone {
@@ -1016,6 +1172,8 @@ pub async fn agent_query(
                             sources: Vec::new(),
                             prompt_tokens: 0,
                             completion_tokens: 0,
+                            cached_input_tokens: 0,
+                            cache_creation_input_tokens: 0,
                         },
                     );
                     task_registry.unregister(&request_id).await;
@@ -1054,6 +1212,8 @@ pub async fn agent_query(
                     sources: Vec::new(),
                     prompt_tokens: 0,
                     completion_tokens: 0,
+                    cached_input_tokens: 0,
+                    cache_creation_input_tokens: 0,
                 },
             );
             task_registry.unregister(&request_id).await;
@@ -1268,6 +1428,8 @@ pub async fn agent_query(
         0 => "正在生成回答...".to_string(),
         n => format!("正在生成回答（基于 {} 个相关片段）...", n),
     };
+    // Phase 1：任务状态中心同步运行状态文本
+    state.agent_tasks.set_status_message(&request_id, &status_msg);
     let _ = app.emit(
         "rag:status",
         RagStatus {
@@ -1345,12 +1507,33 @@ pub async fn agent_query(
             ));
         }
     }
+    // P1-4：任务路由注入——把预分析得出的技能路由显式告知执行模型，
+    // 避免模型自行猜测「该激活哪个技能、该用哪些工具」（防激活错/漏激活导致的编造执行）。
+    // 与上方"会话挂载技能"（说明挂载状态）互补：此处是本次任务的执行建议。
+    if let Some(resolved) = &skill_resolved {
+        if !resolved.skills.is_empty() {
+            let route = resolved
+                .skills
+                .iter()
+                .map(|s| s.id.as_str())
+                .collect::<Vec<_>>()
+                .join("、");
+            catalog.push_str(&format!(
+                "\n\n【任务路由（系统预分析建议，供参考）：已预激活技能 {}，正文已注入，优先遵循其流程与工具；若与本任务不相关可忽略】",
+                route
+            ));
+        }
+    }
     // 各作用域技能基础目录（供 read 工具按需读取已激活技能的参考文档，L3）
     let skill_bases = resolve_skill_bases(&app, &dir_path);
     // 检索命中收集器：kb_search / code_lookup 工具的命中经此回传，合并进 rag:done 引用来源
     let search_sink: Arc<tokio::sync::Mutex<Vec<(SearchHit, f32)>>> = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    // 目录/文件黑名单（来自 ConfigStore，与 kb_index 索引一致）：ls/glob/grep 文件枚举工具按此过滤
+    let indexer_cfg = state.config_store.read();
     let search_config = KbSearchConfig {
         dir_path: dir_path.clone(),
+        dir_blacklist: indexer_cfg.dir_blacklist.clone(),
+        file_blacklist: indexer_cfg.file_blacklist.clone(),
         indexer: state.indexer.clone(),
         default_top_k: effective_top_k,
         request_id: request_id.clone(),
@@ -1537,10 +1720,10 @@ pub async fn agent_query(
                     request_id, full_content.len());
                 // 取消时保留已生成的部分内容：通过 rag:done 交给前端落库
                 if !full_content.is_empty() {
-                    let (prompt_tokens, completion_tokens) = final_usage
+                    let (prompt_tokens, completion_tokens, cached_input_tokens, cache_creation_input_tokens) = final_usage
                         .as_ref()
-                        .map(|u| (u.prompt_tokens, u.completion_tokens))
-                        .unwrap_or((0, 0));
+                        .map(|u| (u.prompt_tokens, u.completion_tokens, u.cached_input_tokens, u.cache_creation_input_tokens))
+                        .unwrap_or((0, 0, 0, 0));
                     let _ = app.emit(
                         "rag:done",
                         RagDone {
@@ -1549,6 +1732,8 @@ pub async fn agent_query(
                             sources: merge_search_sink(sources_clone.clone(), &search_sink).await,
                             prompt_tokens,
                             completion_tokens,
+                            cached_input_tokens,
+                            cache_creation_input_tokens,
                         },
                     );
                 }
@@ -1563,6 +1748,10 @@ pub async fn agent_query(
                 emit_pending_trace_events(&app, &request_id);
                 emit_pending_tool_events(&app, &request_id);
                 tool_call_bus().clear(&request_id);
+                // Phase 1：任务状态中心收尾（cancelled）——保留部分内容快照
+                state
+                    .agent_tasks
+                    .finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Cancelled);
                 {
                     let inputs = collect_skill_exec_inputs(skill_ctx, &active_skills, skill_exec_start.elapsed().as_millis() as u64);
                     let matched = !inputs.is_empty();
@@ -1597,6 +1786,8 @@ pub async fn agent_query(
                 }
                 full_content.push_str(&text.text);
                 delta_count += 1;
+                // Phase 1：任务状态中心累积文本（切回页面恢复部分回复）
+                state.agent_tasks.append_text(&request_id, &text.text);
                 let _ = app.emit(
                     "rag:delta",
                     RagDelta {
@@ -1671,6 +1862,10 @@ pub async fn agent_query(
             })
             .await;
         }
+        // Phase 1：任务状态中心收尾（failed）
+        state
+            .agent_tasks
+            .finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Failed);
         emit_command_error(&app, "rag:error", &request_id, "LLM 生成失败，请检查模型服务是否可用".into());
         task_registry.unregister(&request_id).await;
         return Ok(());
@@ -1707,25 +1902,45 @@ pub async fn agent_query(
             return Ok(());
         }
     }
-    let (prompt_tokens, completion_tokens) = final_usage
-        .map(|u| (u.prompt_tokens, u.completion_tokens))
-        .unwrap_or((0, 0));
+    let (prompt_tokens, completion_tokens, cached_input_tokens, cache_creation_input_tokens) = final_usage
+        .map(|u| (u.prompt_tokens, u.completion_tokens, u.cached_input_tokens, u.cache_creation_input_tokens))
+        .unwrap_or((0, 0, 0, 0));
 
-    log::info!("[agent_query] [4]: 响应完成: request_id={} content_len={} sources={} tokens_in={} tokens_out={}",
-        request_id, full_content.len(), sources_clone.len(), prompt_tokens, completion_tokens);
+    log::info!("[agent_query] [4]: 响应完成: request_id={} content_len={} sources={} tokens_in={} tokens_out={} cached_in={}",
+        request_id, full_content.len(), sources_clone.len(), prompt_tokens, completion_tokens, cached_input_tokens);
 
     // P0 防幻觉：声称完成写操作但本请求未调用对应工具 → 追加一致性提醒
     // （在 rag:done 之前修改 full_content，前端最终渲染与落库均包含提醒）
     apply_anti_hallucination_guard(&mut full_content, &tools_called);
+    // P0-2 Grounding 后置兜底：本地文件引用但无检索/读取来源 → 追加依据提醒
+    let merged_sources = merge_search_sink(sources_clone, &search_sink).await;
+    apply_grounding_validator(&mut full_content, !merged_sources.is_empty(), &tools_called);
 
+    // Phase 1：任务状态中心收尾（done）——保留最终内容/来源/用量快照，供切回页面恢复。
+    // 先固化（引用 merged_sources），随后 emit 再 move。
+    {
+        let tasks = state.agent_tasks.clone();
+        use crate::core::agent::task_store::AgentTaskStatus;
+        tasks.set_sources(
+            &request_id,
+            merged_sources
+                .iter()
+                .map(|s| serde_json::to_value(s).unwrap_or_default())
+                .collect(),
+        );
+        tasks.set_usage(&request_id, prompt_tokens, completion_tokens);
+        tasks.finish(&request_id, AgentTaskStatus::Done);
+    }
     let _ = app.emit(
         "rag:done",
         RagDone {
             request_id: request_id.clone(),
             content: full_content,
-            sources: merge_search_sink(sources_clone, &search_sink).await,
+            sources: merged_sources,
             prompt_tokens,
             completion_tokens,
+            cached_input_tokens,
+            cache_creation_input_tokens,
         },
     );
 
@@ -1760,6 +1975,11 @@ pub async fn kb_llm_query(
     request_id: String,
 ) -> Result<(), String> {
     let cancel = task_registry.register(&request_id).await;
+    // Phase 1：后台任务状态中心注册（chat 模式同样支持后台运行与切回恢复）
+    let rag_prompt = messages.last().map(|m| m.content.clone()).unwrap_or_default();
+    state
+        .agent_tasks
+        .register(&request_id, None, "", "chat", &rag_prompt);
 
     // 从中央化内存配置读取 LLM 配置
     let llm_cfg = state.llm_config.read().unwrap_or_else(|e| e.into_inner()).clone();
@@ -1880,6 +2100,10 @@ pub async fn kb_llm_query(
                         },
                     );
                 }
+                // Phase 1：任务状态中心收尾（cancelled）——保留部分内容快照
+                state
+                    .agent_tasks
+                    .finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Cancelled);
                 task_registry.unregister(&request_id).await;
                 return Ok(());
             }
@@ -1896,6 +2120,8 @@ pub async fn kb_llm_query(
                     continue;
                 }
                 full_content.push_str(&text.text);
+                // Phase 1：任务状态中心累积文本（chat 模式后台运行快照）
+                state.agent_tasks.append_text(&request_id, &text.text);
                 let _ = app.emit(
                     "llm:delta",
                     LlmDelta {
@@ -1913,6 +2139,8 @@ pub async fn kb_llm_query(
                             "request_id": request_id,
                             "prompt_tokens": usage.input_tokens,
                             "completion_tokens": usage.output_tokens,
+                            "cached_input_tokens": usage.cached_input_tokens,
+                            "cache_creation_input_tokens": usage.cache_creation_input_tokens,
                         }),
                     );
                 }
@@ -1925,6 +2153,8 @@ pub async fn kb_llm_query(
                             "request_id": request_id.clone(),
                             "prompt_tokens": call.usage.input_tokens,
                             "completion_tokens": call.usage.output_tokens,
+                            "cached_input_tokens": call.usage.cached_input_tokens,
+                            "cache_creation_input_tokens": call.usage.cache_creation_input_tokens,
                         }),
                     );
                 }
@@ -1950,6 +2180,10 @@ pub async fn kb_llm_query(
         );
         emit_pending_trace_events(&app, &request_id);
         crate::core::trace::trace_bus().clear(&request_id);
+        // Phase 1：任务状态中心收尾（failed）
+        state
+            .agent_tasks
+            .finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Failed);
         emit_command_error(&app, "llm:error", &request_id, "LLM 生成失败，请检查模型服务是否可用".into());
         task_registry.unregister(&request_id).await;
         return Ok(());
@@ -1971,6 +2205,10 @@ pub async fn kb_llm_query(
             content: full_content,
         },
     );
+    // Phase 1：任务状态中心收尾（done）
+    state
+        .agent_tasks
+        .finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Done);
 
     task_registry.unregister(&request_id).await;
     Ok(())
@@ -2067,13 +2305,20 @@ async fn kb_llm_query_anthropic(
                     },
                 );
             }
-            AnthropicEvent::Usage { input_tokens, output_tokens } => {
+            AnthropicEvent::Usage {
+                input_tokens,
+                output_tokens,
+                cache_read_input_tokens,
+                cache_creation_input_tokens,
+            } => {
                 let _ = app.emit(
                     "llm:usage",
                     serde_json::json!({
                         "request_id": request_id,
                         "prompt_tokens": input_tokens,
                         "completion_tokens": output_tokens,
+                        "cached_input_tokens": cache_read_input_tokens,
+                        "cache_creation_input_tokens": cache_creation_input_tokens,
                     }),
                 );
             }
@@ -2102,14 +2347,14 @@ async fn kb_llm_query_anthropic(
 
 #[cfg(test)]
 mod anti_hallucination_tests {
-    use super::apply_anti_hallucination_guard;
+    use super::{apply_anti_hallucination_guard, apply_grounding_validator};
 
     #[test]
     fn appends_warning_when_claims_schedule_without_call() {
         let mut content = "已创建：产品评审（2026-08-18 14:00~15:00）。当前日程汇总：...".to_string();
         apply_anti_hallucination_guard(&mut content, &[]);
         assert!(content.contains("一致性提醒"), "应追加提醒: {}", content);
-        assert!(content.contains("未实际调用 schedule"), "应指明原因");
+        assert!(content.contains("schedule"), "应指明对应工具");
     }
 
     #[test]
@@ -2117,6 +2362,39 @@ mod anti_hallucination_tests {
         let mut content = "已创建日程：产品评审（2026-08-18 14:00~15:00）。".to_string();
         apply_anti_hallucination_guard(&mut content, &["schedule".to_string()]);
         assert!(!content.contains("一致性提醒"), "调用过 schedule 不应追加提醒");
+    }
+
+    #[test]
+    fn appends_warning_when_claims_file_write_without_call() {
+        // 声明表驱动：声称"已保存文件"但未调用 write/edit/multi_edit → 提醒
+        let mut content = "已保存总结到文件 summary.md。".to_string();
+        apply_anti_hallucination_guard(&mut content, &[]);
+        assert!(content.contains("一致性提醒"), "应追加提醒: {}", content);
+        assert!(content.contains("file_write"), "应指明动作 id");
+    }
+
+    #[test]
+    fn no_warning_when_file_write_called() {
+        let mut content = "已将总结保存到文件 summary.md。".to_string();
+        apply_anti_hallucination_guard(&mut content, &["write".to_string()]);
+        assert!(!content.contains("一致性提醒"), "调用过 write 不应追加提醒");
+    }
+
+    #[test]
+    fn no_warning_when_git_claimed_but_status_observed() {
+        // 复述 git 状态（调用过 git_status）不属于"声称执行提交"→ 观察豁免
+        let mut content = "当前改动已提交，工作区干净。".to_string();
+        apply_anti_hallucination_guard(&mut content, &["git_status".to_string()]);
+        assert!(!content.contains("一致性提醒"), "git_status 观察应豁免声称判定");
+    }
+
+    #[test]
+    fn appends_warning_when_git_claimed_without_any_git_tool() {
+        // 声称"已提交"但既未调用 git_commit 也未调用 git_status/git_diff → 提醒
+        let mut content = "本次改动已提交到仓库。".to_string();
+        apply_anti_hallucination_guard(&mut content, &[]);
+        assert!(content.contains("一致性提醒"), "应追加提醒: {}", content);
+        assert!(content.contains("git_commit"), "应指明对应工具");
     }
 
     #[test]
@@ -2129,15 +2407,15 @@ mod anti_hallucination_tests {
 
     #[test]
     fn no_warning_for_unrelated_topic() {
-        // 声称词存在但对象不是日程（"已创建"+"代码文件"）→ 不拦截
-        let mut content = "已创建：示例代码文件 demo.rs，内容如下：...".to_string();
+        // 声称词存在但对象不在任何声明表中（"公式推导"非日程/文件/代码对象）→ 不拦截
+        let mut content = "已创建：一条公式推导，过程如下：...".to_string();
         apply_anti_hallucination_guard(&mut content, &[]);
-        assert!(!content.contains("一致性提醒"), "非日程对象不应拦截");
+        assert!(!content.contains("一致性提醒"), "无关对象不应拦截");
     }
 
     #[test]
     fn no_warning_for_meeting_notes_without_claim() {
-        // "会议"对象但无完成式声称词（"生成"不在声称词）→ 不拦截
+        // "会议"对象但无完成式声称词（"总结"不在声称词）→ 不拦截
         let mut content = "以下是会议纪要的要点总结。".to_string();
         apply_anti_hallucination_guard(&mut content, &[]);
         assert!(!content.contains("一致性提醒"));
@@ -2148,6 +2426,38 @@ mod anti_hallucination_tests {
         let mut content = "已创建日程A，已创建日程B。".to_string();
         apply_anti_hallucination_guard(&mut content, &[]);
         assert_eq!(content.matches("一致性提醒").count(), 1, "只追加一次提醒");
+    }
+
+    #[test]
+    fn grounding_validator_flags_file_ref_without_evidence() {
+        // 引用本地文件但未检索、未读取 → 依据提醒
+        let mut content = "项目的架构说明见 docs/architecture.md。".to_string();
+        apply_grounding_validator(&mut content, false, &[]);
+        assert!(content.contains("依据提醒"), "应追加依据提醒: {}", content);
+    }
+
+    #[test]
+    fn grounding_validator_silent_with_sources() {
+        // 有检索来源 → 不提醒
+        let mut content = "项目的架构说明见 docs/architecture.md。".to_string();
+        apply_grounding_validator(&mut content, true, &[]);
+        assert!(!content.contains("依据提醒"));
+    }
+
+    #[test]
+    fn grounding_validator_silent_when_local_tool_used() {
+        // 调用过 read/ls/glob/grep → 视为有依据，不提醒
+        let mut content = "项目的架构说明见 docs/architecture.md。".to_string();
+        apply_grounding_validator(&mut content, false, &["read".to_string()]);
+        assert!(!content.contains("依据提醒"));
+    }
+
+    #[test]
+    fn grounding_validator_silent_without_file_ref() {
+        // 无文件引用信号 → 不提醒
+        let mut content = "根据现有资料无法确认该项目是否使用 Redis Cluster。".to_string();
+        apply_grounding_validator(&mut content, false, &[]);
+        assert!(!content.contains("依据提醒"));
     }
 }
 

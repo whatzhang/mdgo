@@ -43,6 +43,12 @@ pub struct UsageInfo {
     pub completion_tokens: u32,
     #[serde(default, rename = "total_tokens")]
     pub total_tokens: u32,
+    /// 本次请求命中 provider 缓存的输入 token 数（缓存命中率 = cached / prompt）
+    #[serde(default)]
+    pub cached_input_tokens: u32,
+    /// 本次请求写入 provider 缓存的输入 token 数（openai 通道 rig 未解析，恒为 0）
+    #[serde(default)]
+    pub cache_creation_input_tokens: u32,
 }
 
 // ─── 工具函数 ───
@@ -68,6 +74,8 @@ pub fn usage_to_info(usage: &Usage) -> UsageInfo {
         prompt_tokens: usage.input_tokens as u32,
         completion_tokens: usage.output_tokens as u32,
         total_tokens: usage.total_tokens as u32,
+        cached_input_tokens: usage.cached_input_tokens as u32,
+        cache_creation_input_tokens: usage.cache_creation_input_tokens as u32,
     }
 }
 

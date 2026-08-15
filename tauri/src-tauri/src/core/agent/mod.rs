@@ -8,12 +8,13 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::SystemTime;
 
 use rig_agent::agent::hook::{
-    AgentHook, CompletionCall, CompletionCallAction, CompletionResponse, HookContext, ObservationAction,
-    RequestPatch, ToolCall, ToolCallAction,
+    AgentHook, CompletionCall, CompletionCallAction, CompletionResponse, HookContext, InvalidToolCallAction,
+    InvalidToolCallContext, ObservationAction, RequestPatch, ToolCall, ToolCallAction,
 };
 use rig_agent::agent::{Agent, AgentBuilder};
 use rig_agent::tool::{DynamicTool, ToolContext, ToolExecutionError, ToolOutput};
@@ -29,6 +30,8 @@ use crate::core::skill::SkillRegistry;
 pub mod planner;
 /// AI Agent 指标参数集中配置（单一来源）
 pub mod limits;
+/// Agent 后台任务状态中心（切出页面任务继续、切回恢复视图）
+pub mod task_store;
 
 pub use limits::{
     DEFAULT_MAX_TURNS, KB_TOP_K_SCHEMA_MAX, MAX_CONTEXT_CHARS, MAX_TOP_K, PERSISTENT_INJECTION,
@@ -120,14 +123,157 @@ pub mod tool_registry;
 
 /// 始终可用的基础工具（不随技能白名单窄化，对齐主流 Agent：文件操作与技能管理常驻）。
 ///
-/// 检索类工具（kb_search / code_lookup）不在此列：它们仅当已激活技能声明时
-/// 才可见可调——决策权在 LLM（先 activate_skill 再检索）。
+/// 检索类工具（kb_search / code_lookup）**不在此列**（属于技能披露体系，激活
+/// kb-search 技能后才可用）。其可见性由 [`SkillInstructionHook`] 显式补齐
+/// （软门禁：始终可见可调，避免 rig active_tools 硬过滤产生 UnknownToolCall
+/// 致命错误），可用性由 [`SkillGateHook`]（on_tool_call Skip 引导）与工具闭包
+/// 内部守卫（未激活返回引导）双层拦截——模型未激活技能时收到温和引导并在
+/// 下一轮激活后重试，而非整个流式请求失败。
 pub const BASE_TOOLS: &[&str] = &[
     "activate_skill", "deactivate_skill", "read", "ls", "glob", "grep", "write", "edit", "multi_edit", "delete",
     "git_status", "git_diff", "git_commit", "git_checkout", "webfetch", "deep_research", "read_subagent_result",
-    "remember", "forget", "search_memory", "todo_write", 
-    "spawn_subagent", "parallel_research", "self_review",
+    "remember", "forget", "search_memory", "todo_write", "spawn_subagent", "parallel_research", "self_review",
 ];
+
+/// 软门禁可见工具：始终出现在 `active_tools`（模型可见可调，不会 UnknownToolCall），
+/// 但未激活声明技能时由 SkillGateHook Skip + 工具闭包守卫引导，不执行实际操作。
+/// 覆盖全部**技能声明工具**（非 BASE_TOOLS 的 5 个）：检索（kb_search/code_lookup）
+/// + 日程（schedule）+ 番茄钟（pomodoro）+ RAW 解析（raw-parse）。
+/// 与 BASE_TOOLS 分离，保持"基础工具"语义纯净（这些属技能披露体系）。
+pub const SKILL_GATED_VISIBLE_TOOLS: &[&str] =
+    &["kb_search", "code_lookup", "schedule", "pomodoro", "raw-parse"];
+
+// ─── Action Claim Guard（P0-3）声明表 ───
+
+/// 一条「动作声称 → 必须调用工具」约束（Action Claim Registry 项）。
+///
+/// 语义：当最终回答同时命中 `verbs`（完成式声称词）与 `objects`（动作对象词），
+/// 但本次请求未调用 `required_tools` 中任一工具（也未调用 `observe_tools` 观察类
+/// 工具）时，判定为「声称执行了未执行的操作」，由 [`apply_anti_hallucination_guard`]
+/// 追加一致性提醒。
+///
+/// 设计约束（对照硬编码关键词守卫的升级）：
+/// - 声明式驱动：新增动作只需在 [`ACTION_CLAIMS`] 增加一行，无需改守卫逻辑；
+/// - 词集刻意收窄（完成式 + 具体对象）以降低误报，与既有 schedule 守卫口径一致；
+/// - `observe_tools` 用于「观察即豁免」场景（如 git 状态复述）：调用过观察类工具
+///   说明声称来自工具观察而非凭空断言，不判定为虚构执行；
+/// - 提醒为追加而非拦截，偶发误报只会提示用户核实，不阻断回答。
+#[derive(Debug)]
+pub struct ActionClaim {
+    pub id: &'static str,
+    pub verbs: &'static [&'static str],
+    pub objects: &'static [&'static str],
+    pub required_tools: &'static [&'static str],
+    /// 观察类工具：命中即豁免声称判定（声称来自工具观察，非虚构执行）
+    pub observe_tools: &'static [&'static str],
+}
+
+/// Action Claim Registry：全部「声称完成某操作」的约束声明（顺序即优先级，首个命中生效）。
+pub const ACTION_CLAIMS: &[ActionClaim] = &[
+    ActionClaim {
+        id: "schedule_write",
+        verbs: &[
+            "已创建", "创建了", "已添加", "添加了", "已安排", "安排了", "已预约", "预约了",
+            "已更新", "更新了", "已删除", "删除了", "已保存", "保存了", "已写入",
+            "创建成功", "添加成功", "删除成功", "已设置", "设置了", "已配置", "配置好了",
+            "已提醒", "提醒了",
+        ],
+        objects: &["日程", "日历", "会议", "预约", "专注时间块", "专注块"],
+        required_tools: &["schedule"],
+        observe_tools: &[],
+    },
+    ActionClaim {
+        id: "file_write",
+        verbs: &["已写入", "写入了", "保存了", "已保存", "创建了", "已创建", "写入成功", "保存成功", "创建成功"],
+        objects: &["文件", "文档", "笔记"],
+        required_tools: &["write", "edit", "multi_edit"],
+        observe_tools: &[],
+    },
+    ActionClaim {
+        id: "file_delete",
+        verbs: &["已删除", "删除了", "删除成功", "清理了", "已清理", "移除了", "已移除"],
+        objects: &["文件", "文档", "笔记"],
+        required_tools: &["delete"],
+        observe_tools: &[],
+    },
+    ActionClaim {
+        id: "git_commit",
+        verbs: &["已提交", "提交了", "提交成功", "已 commit", "commit 了"],
+        objects: &["代码", "改动", "修改", "提交"],
+        required_tools: &["git_commit"],
+        // 复述 git 状态（git_status/git_diff 输出）不属于"声称执行提交"→ 观察即豁免
+        observe_tools: &["git_status", "git_diff"],
+    },
+];
+
+// ─── Agent Quality Metrics（P2-9）───
+
+/// 进程内 Agent 质量计数（P2-9，轻量实现：内存计数 + 日志输出，不落库）。
+///
+/// 用途：迭代验证防幻觉守卫的实际触发率与工具执行可靠性——
+/// - Hallucination Rate ≈ `hallucination_warnings / requests`（守卫触发率）
+/// - 工具成功率 ≈ `tool_successes / (tool_successes + tool_failures)`
+///
+/// Recovery Rate（失败后换路成功）需 per-run 状态机，超出轻量范围；
+/// 先以失败率暴露可靠性，后续可在 [`ToolCallBus`] 基础上升级。
+pub struct AgentQualityCounters {
+    /// 累计请求数（agent_query 入口 +1）
+    pub requests: AtomicU64,
+    /// 防幻觉守卫触发次数（Action Claim Guard + Grounding Validator 命中 +1）
+    pub hallucination_warnings: AtomicU64,
+    /// 工具执行成功次数（record_tool_result ok=true +1）
+    pub tool_successes: AtomicU64,
+    /// 工具执行失败次数（record_tool_result ok=false +1）
+    pub tool_failures: AtomicU64,
+}
+
+impl AgentQualityCounters {
+    pub const fn new() -> Self {
+        Self {
+            requests: AtomicU64::new(0),
+            hallucination_warnings: AtomicU64::new(0),
+            tool_successes: AtomicU64::new(0),
+            tool_failures: AtomicU64::new(0),
+        }
+    }
+}
+
+static AGENT_QUALITY: OnceLock<AgentQualityCounters> = OnceLock::new();
+
+/// 获取全局质量计数器（首次调用初始化）。
+pub fn agent_quality() -> &'static AgentQualityCounters {
+    AGENT_QUALITY.get_or_init(AgentQualityCounters::new)
+}
+
+/// 输出当前质量指标摘要（日志，供调试与迭代观察）。
+#[allow(dead_code)] // 调试入口：按需调用或在控制台手动观察，不参与业务路径
+pub fn log_quality_summary() {
+    let q = agent_quality();
+    let requests = q.requests.load(Ordering::Relaxed);
+    let warnings = q.hallucination_warnings.load(Ordering::Relaxed);
+    let ok = q.tool_successes.load(Ordering::Relaxed);
+    let fail = q.tool_failures.load(Ordering::Relaxed);
+    let hallucination_rate = if requests > 0 {
+        warnings as f64 / requests as f64
+    } else {
+        0.0
+    };
+    let tool_total = ok + fail;
+    let fail_rate = if tool_total > 0 {
+        fail as f64 / tool_total as f64
+    } else {
+        0.0
+    };
+    log::info!(
+        "[agent-quality] requests={} hallucination_warnings={} (rate={:.2}) tool_ok={} tool_fail={} (fail_rate={:.2})",
+        requests,
+        warnings,
+        hallucination_rate,
+        ok,
+        fail,
+        fail_rate
+    );
+}
 
 /// Agent 单次请求的模型调用总预算定义见 [`limits::DEFAULT_MAX_TURNS`]（集中配置）
 ///
@@ -274,6 +420,51 @@ impl AgentHook for SkillGateHook {
     }
 }
 
+/// 无效工具调用恢复 Hook（对标主流 Agent 的「错误回填自纠」模式：
+/// Claude Code / LangGraph / OpenAI Agents 均把「模型调用了不存在或不允许的
+/// 工具」作为**可恢复**事件回填给模型自纠，而非终止整个 Agent 循环）。
+///
+/// rig 默认（无本 hook）对 `UnknownToolCall` 采取 fail-fast（PromptError 终止流，
+/// 整个请求失败、回答为空）；本 hook 返回 [`InvalidToolCallAction::Skip`]——
+/// 把无效调用作为「跳过 + 原因引导」回填给模型，模型在下一轮修正（换工具或
+/// 先 activate_skill），循环继续。
+///
+/// 与软门禁的关系：软门禁（[`SKILL_GATED_VISIBLE_TOOLS`] + 工具闭包守卫）覆盖
+/// 「已注册但技能未激活」的调用；本 hook 兜底「模型幻觉出完全不存在的工具名」。
+#[derive(Debug, Clone, Default)]
+pub struct InvalidToolCallHook;
+
+impl AgentHook for InvalidToolCallHook {
+    async fn on_invalid_tool_call(
+        &self,
+        _ctx: &HookContext,
+        event: &InvalidToolCallContext,
+    ) -> Option<InvalidToolCallAction> {
+        let tool = &event.tool_name;
+        let mut reason = format!(
+            "工具 '{}' 不存在或当前不可用，本次调用已跳过。",
+            tool
+        );
+        if !event.available_tools.is_empty() {
+            // 提示可用工具（截断防止刷屏）；技能声明工具需先 activate_skill
+            let hint = event
+                .available_tools
+                .iter()
+                .take(12)
+                .map(|t| format!("`{t}`"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let more = if event.available_tools.len() > 12 { "…" } else { "" };
+            reason.push_str(&format!("\n可用工具：{}{}。", hint, more));
+        }
+        reason.push_str("若需使用技能相关工具，请先调用 activate_skill 激活对应技能；否则请改用上述可用工具。");
+        log::warn!("[invalid_tool] 模型调用无效工具，已回填引导: {}", tool);
+        Some(InvalidToolCallAction::Skip {
+            reason,
+        })
+    }
+}
+
 /// 技能指令 Hook：每个模型调用（completion call）边界动态注入
 /// L1 技能目录（常驻）+ 已激活技能的 L2 指令正文，并窄化本轮模型可见的工具列表。
 ///
@@ -345,6 +536,53 @@ impl SkillInstructionHook {
             Some(parts.join("\n\n---\n\n"))
         }
     }
+
+    /// P1-5：每轮注入的激活技能约束摘要（≤800 字符，含 version 标识）。
+    ///
+    /// 正文一次性注入后，多轮任务 / 会话压缩会使技能规范漂移（模型"忘记"已激活
+    /// 技能的约束）；本摘要让模型每轮至少看到「哪些技能生效、版本、一句说明」，
+    /// 约束长任务中的行为一致性。正文仍保持一次性注入，不重复消耗 token。
+    ///
+    /// 仅统计 `Active` 状态技能；按激活顺序拼接，总量受预算截断。
+    fn skill_constraint_summary(&self) -> String {
+        const MAX_SUMMARY_CHARS: usize = 800;
+        const MAX_DESC_CHARS: usize = 120;
+        let mut parts: Vec<String> = Vec::new();
+        let mut used = 0usize;
+        for a in self.state.active_only() {
+            let (name, desc) = match self.registry.get(a.scope, &a.skill_id) {
+                Some(skill) => {
+                    let mut desc = skill.description.trim().to_string();
+                    if desc.chars().count() > MAX_DESC_CHARS {
+                        let mut d: String = desc.chars().take(MAX_DESC_CHARS).collect();
+                        d.push('…');
+                        desc = d;
+                    }
+                    (skill.name.clone(), desc)
+                }
+                None => (a.skill_id.clone(), String::new()),
+            };
+            let block = if desc.is_empty() {
+                format!("- {}（{} v{}）：已激活（正文一次性注入，请遵循其规范）", name, a.skill_id, a.version)
+            } else {
+                format!("- {}（{} v{}）：{}", name, a.skill_id, a.version, desc)
+            };
+            let block_chars = block.chars().count();
+            if used + block_chars > MAX_SUMMARY_CHARS {
+                break;
+            }
+            parts.push(block);
+            used += block_chars;
+        }
+        if parts.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "[已激活技能（约束摘要每轮常驻；正文仅注入一次，需完整内容可用 read 读取对应 SKILL.md）：\n{}\n]",
+                parts.join("\n")
+            )
+        }
+    }
 }
 
 impl AgentHook for SkillInstructionHook {
@@ -357,6 +595,15 @@ impl AgentHook for SkillInstructionHook {
         // history 进入一次，此处不重复）；回退模式（PERSISTENT_INJECTION=true）
         // 每轮从定义层重新查询注入（三拆后激活状态不持有正文）。
         let mut preamble = self.base_preamble.clone();
+        // P1-5：技能约束摘要每轮常驻（防长任务/压缩后技能规范漂移）。
+        // 正文仍一次性注入；回退模式（PERSISTENT_INJECTION=true）全文每轮注入，摘要跳过避免双份。
+        if !PERSISTENT_INJECTION {
+            let summary = self.skill_constraint_summary();
+            if !summary.is_empty() {
+                preamble.push_str("\n\n");
+                preamble.push_str(&summary);
+            }
+        }
         if PERSISTENT_INJECTION {
             if let Some(instructions) = self.persistent_instructions() {
                 preamble.push_str("\n\n---\n\n请遵循以下已激活技能的指令：\n\n");
@@ -380,6 +627,14 @@ impl AgentHook for SkillInstructionHook {
         // 模型可见全部已注册工具（注册表层已用白名单过滤）。
         if self.narrow_tools {
             let mut visible: Vec<String> = BASE_TOOLS.iter().map(|t| t.to_string()).collect();
+            // 软门禁可见性：技能声明工具（检索/日程/番茄钟/RAW）始终可见（模型可调，
+            // 不会 UnknownToolCall），未激活时由 SkillGateHook Skip 与工具闭包守卫
+            // 引导。与 BASE_TOOLS 分离，保持"基础工具"语义纯净（技能披露体系）。
+            for t in SKILL_GATED_VISIBLE_TOOLS {
+                if !visible.iter().any(|v| v == t) {
+                    visible.push(t.to_string());
+                }
+            }
             // 外部动态工具（配置驱动 HTTP 工具）常驻可见：SkillGateHook 已用
             // allow_extra 放行，此处补齐可见性——否则 active_tools 窄化后
             // 模型看不到外部工具，配置的 HTTP 工具永远不生效。
@@ -449,6 +704,12 @@ impl AgentHook for ReasoningEffortHook {
 pub struct KbSearchConfig {
     /// 检索的知识库目录
     pub dir_path: String,
+    /// 目录黑名单（gitignore 风格，如 `assets/`、`node_modules/`）：
+    /// `ls`/`glob`/`grep` 文件枚举工具按此过滤目录
+    pub dir_blacklist: Vec<String>,
+    /// 文件黑名单（gitignore 风格，如 `*.log`）：
+    /// `ls`/`glob`/`grep` 文件枚举工具按此过滤文件
+    pub file_blacklist: Vec<String>,
     /// 索引器（混合检索）
     pub indexer: Arc<Indexer>,
     /// 默认返回的片段数量（模型未指定 top_k 时使用）
@@ -562,6 +823,20 @@ pub fn build_kb_search_tool(cfg: KbSearchConfig) -> DynamicTool {
                         ToolOutput::text("检索关键词为空，请提供 query 参数"),
                     ));
                 }
+                // 软门禁（替代 rig active_tools 硬过滤）：kb_search 始终可见可调，
+                // 但仅当声明它的技能（kb-search）已激活时才执行检索；未激活时返回
+                // 引导，避免 UnknownToolCall 导致整个流式请求失败（回答为空）。
+                // allowed_tools()=None（无技能激活，含子代理独立技能态）→ 放行，
+                // 对齐子代理 allow_all 语义；Some 且未声明 kb_search → 引导。
+                let declared = cfg.skill_state.allowed_tools();
+                let unlocked = declared
+                    .as_ref()
+                    .is_none_or(|list| list.iter().any(|t| t == "kb_search"));
+                if !unlocked {
+                    let msg = "kb_search 需要先激活 kb-search 技能（请调用 activate_skill，skill_id='kb-search'）后才能执行，本次未执行检索。请先激活该技能，再重新发起检索。";
+                    log::info!("[agent] kb_search 未激活技能被调用，返回引导 request_id={}", cfg.request_id);
+                    return Ok(ToolOutput::text(msg));
+                }
                 let top_k = args
                     .get("top_k")
                     .and_then(|t| t.as_u64())
@@ -658,6 +933,19 @@ pub fn build_code_lookup_tool(cfg: KbSearchConfig) -> DynamicTool {
                     return Err(ToolExecutionError::other("符号名为空").with_model_output(
                         ToolOutput::text("请提供要查找的代码符号名"),
                     ));
+                }
+                // 软门禁（替代 rig active_tools 硬过滤）：code_lookup 始终可见可调，
+                // 但仅当声明它的技能（kb-search/code-lookup）已激活时才执行检索；
+                // 未激活时返回引导，避免 UnknownToolCall 导致整个流式请求失败。
+                // allowed_tools()=None（无技能激活，含子代理）→ 放行；Some 未声明 → 引导。
+                let declared = cfg.skill_state.allowed_tools();
+                let unlocked = declared
+                    .as_ref()
+                    .is_none_or(|list| list.iter().any(|t| t == "code_lookup"));
+                if !unlocked {
+                    let msg = "code_lookup 需要先激活声明它的技能（如 kb-search 或 code-lookup，请调用 activate_skill）后才能执行，本次未执行检索。请先激活对应技能，再重新发起检索。";
+                    log::info!("[agent] code_lookup 未激活技能被调用，返回引导 request_id={}", cfg.request_id);
+                    return Ok(ToolOutput::text(msg));
                 }
                 let top_k = args
                     .get("top_k")
@@ -906,11 +1194,17 @@ pub fn build_rag_agent(
     // 尊重工具白名单：受限场景（如只读子代理）白名单不含技能激活时跳过注册，
     // 避免子代理通过激活技能注入 SKILL.md 指令（提示注入面）。
     if tool_whitelist.is_none_or(|set| set.contains("activate_skill")) {
-        builder = builder
-            .dynamic_tool(tools::build_activate_skill_tool(registry.clone(), skill_state.clone()));
+        builder = builder.dynamic_tool(tools::build_activate_skill_tool(
+            registry.clone(),
+            skill_state.clone(),
+            search_config.clone(),
+        ));
     }
     if tool_whitelist.is_none_or(|set| set.contains("deactivate_skill")) {
-        builder = builder.dynamic_tool(tools::build_deactivate_skill_tool(skill_state.clone()));
+        builder = builder.dynamic_tool(tools::build_deactivate_skill_tool(
+            skill_state.clone(),
+            search_config.clone(),
+        ));
     }
 
     // v2：MCP 工具注册（命名 mcp:<server>:<tool>）
@@ -924,7 +1218,11 @@ pub fn build_rag_agent(
         .default_max_turns(max_turns)
         .add_hook(LlmTraceHook::new(Some(search_config.request_id.clone())))
         .add_hook(SkillInstructionHook::new(preamble, skill_state.clone(), registry.clone(), max_turns, narrow_tools, mcp_tool_names))
-        .add_hook(SkillGateHook::new(skill_state, !narrow_tools, Some(allow_extra)));
+        .add_hook(SkillGateHook::new(skill_state, !narrow_tools, Some(allow_extra)))
+        // 无效工具调用恢复（对标主流 Agent「错误回填自纠」）：模型幻觉出不存在的
+        // 工具名时，rig 默认 fail-fast 终止整个流（回答为空）；本 hook 把无效调用
+        // 作为「跳过 + 原因引导」回填，模型下一轮自纠，循环继续。
+        .add_hook(InvalidToolCallHook);
     // 审批门(可选)：先技能白名单、后审批，避免对「本就不该调用的工具」弹窗打扰用户。
     if let Some(gate) = approval_gate {
         builder = builder.add_hook(ApprovalGateHook::new(gate));

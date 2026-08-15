@@ -68,6 +68,38 @@ impl ToolRegistry {
     }
 }
 
+/// P2-7：静态工具分组元数据（filesystem / knowledge / git / schedule / memory / …）。
+///
+/// 定位：仅为「上下文组织」与「未来按需发现（tool search）」提供声明式分组，
+/// **不参与执行逻辑**（可见性仍由 SkillInstructionHook 的 active_tools 控制）。
+/// 当前工具规模（~28）未到动态发现阈值，先沉淀分组事实；超 50+ 工具时再基于
+/// 此分组实现按需加载，无需改动注册流程。
+#[allow(dead_code)] // P2-7 元数据：暂未消费，供未来按需发现使用（见函数文档）
+pub fn tool_groups() -> Vec<(&'static str, &'static [&'static str])> {
+    vec![
+        (
+            "filesystem",
+            &["read", "write", "edit", "multi_edit", "delete", "ls", "glob", "grep"],
+        ),
+        ("knowledge", &["kb_search", "code_lookup"]),
+        ("git", &["git_status", "git_diff", "git_commit", "git_checkout"]),
+        ("schedule", &["schedule"]),
+        ("memory", &["remember", "forget", "search_memory"]),
+        ("productivity", &["pomodoro", "raw-parse", "todo_write"]),
+        (
+            "research",
+            &[
+                "deep_research",
+                "read_subagent_result",
+                "spawn_subagent",
+                "parallel_research",
+                "self_review",
+                "webfetch",
+            ],
+        ),
+    ]
+}
+
 impl Default for ToolRegistry {
     fn default() -> Self {
         Self::new()

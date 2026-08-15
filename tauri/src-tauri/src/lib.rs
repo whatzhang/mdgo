@@ -130,6 +130,8 @@ pub struct AppState {
     pub schedule_day_info: std::sync::Arc<dyn crate::core::schedule::lunar::DayInfoProvider>,
     /// 日程提醒调度器（tokio 后台循环，到点经 schedule:reminder 事件推前端）
     pub schedule_scheduler: std::sync::Arc<crate::core::schedule::scheduler::ScheduleScheduler>,
+    /// Agent 后台任务状态中心（Phase 1：任务快照，切出页面任务继续、切回恢复视图）
+    pub agent_tasks: std::sync::Arc<crate::core::agent::task_store::AgentTaskStore>,
 }
 
 impl AppState {
@@ -389,6 +391,7 @@ pub fn run() {
                 schedule_stores: crate::commands::schedule::empty_store_cache(),
                 schedule_day_info: crate::commands::schedule::build_day_info_provider(),
                 schedule_scheduler: Arc::new(crate::core::schedule::scheduler::ScheduleScheduler::new()),
+                agent_tasks: Arc::new(crate::core::agent::task_store::AgentTaskStore::new()),
             });
             // 启动日程提醒调度器（后台 tokio 循环）
             {
@@ -498,6 +501,8 @@ pub fn run() {
             commands::llm::agent_query,
             commands::llm::kb_llm_query,
             commands::llm::kb_cancel_task,
+            commands::llm::agent_task_list,
+            commands::llm::agent_task_get,
             commands::approval::approval_respond,
 
             commands::plan::plan_respond,
