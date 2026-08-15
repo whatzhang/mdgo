@@ -342,12 +342,14 @@
             width: 1.125rem;
             height: 1.125rem;
         }
+
         #open-history {
             font-size: 0.875rem;
             overflow-y: auto;
             min-height: 0;
             max-height: 8.5rem;
         }
+
         #open-history-line {
             margin: 0.25rem 0;
             border-bottom: 1px solid var(--color-border);
@@ -380,6 +382,7 @@
             gap: 0.375rem;
             height: 1.25rem;
         }
+
         .file-item.open-history-item {
             padding-left: 0;
         }
@@ -409,8 +412,9 @@
             position: relative;
             justify-items: center;
         }
+
         .file-item-text.open-history-item {
-             font-size: 0.8125rem;
+            font-size: 0.8125rem;
         }
 
         .file-item-text .file-name {
@@ -8314,6 +8318,7 @@
             padding: 0.25rem;
             padding-top: 0;
         }
+
         .todo-calendar-main::-webkit-scrollbar {
             display: none;
         }
@@ -9054,7 +9059,8 @@
             color: var(--color-text-secondary);
             margin-bottom: 4px;
             display: flex;
-            justify-content: space-between;;
+            justify-content: space-between;
+            ;
             align-items: center;
         }
 
@@ -9070,7 +9076,7 @@
             overflow-y: auto;
             word-break: break-word;
             white-space: pre-wrap;
-        } 
+        }
 
         .todo-reminder-footer {
             padding: 5px 15px 15px 15px;
@@ -13655,6 +13661,7 @@
             padding: 0.5rem;
             font-size: 0.8125rem;
         }
+
         .file-name>span {
             font-size: 0.75rem;
             display: inline-flex;
@@ -15454,8 +15461,8 @@
                                         onclick="todoSelectColor(this)"></div>
                                     <div class="todo-color-option color-red" data-color="red"
                                         onclick="todoSelectColor(this)">
-                                    <div class="todo-color-option color-blue" data-color="blue"
-                                        onclick="todoSelectColor(this)"></div>
+                                        <div class="todo-color-option color-blue" data-color="blue"
+                                            onclick="todoSelectColor(this)"></div>
                                     </div>
                                 </div>
                             </div>
@@ -17497,7 +17504,7 @@
             if (fileName) { FILE_TEXT_CACHE.delete(fileName); }
             else { FILE_TEXT_CACHE.clear(); }
         }
-        async function toggleFile(type, data = {}, isOpenHistory = false) {
+        async function toggleFile(type, data = {}) {
             if (!isRootHandleAvailable()) {
                 showNotification('✗ 请先打开根目录', 'error');
                 return;
@@ -17526,87 +17533,87 @@
             if (type === 'newFile') {
                 newFile(data.newFileName);
             } else if (type === 'fileGraph') {
-                await openFileGraph(); if (!isOpenHistory) openHistory.addItem('fileGraph');
+                await openFileGraph(); openHistory.addItem('fileGraph');
             } else if (type === 'noteGraph') {
-                await openNoteGraph(); if (!isOpenHistory) openHistory.addItem('noteGraph');
+                await openNoteGraph(); openHistory.addItem('noteGraph');
             } else if (type === 'bookmarks') {
-                await toggleDashboardBookmarkView(); if (!isOpenHistory) openHistory.addItem('bookmarks');
+                await toggleDashboardBookmarkView(); openHistory.addItem('bookmarks');
             } else if (type === 'dashboard') {
                 await toggleDashboardView();
             } else if (type === 'randomOpen') {
-                await randomOpen(isOpenHistory); 
+                await randomOpen();
             } else if (type === 'renderFile') {
-                await renderFile(data.relativePath, data.fileSpan); if (!isOpenHistory) openHistory.addItem('renderFile','', data.relativePath, {'relativePath': data.relativePath});
+                await renderFile(data.relativePath, data.fileSpan); openHistory.addItem('renderFile', '', data.relativePath, { 'relativePath': data.relativePath });
             } else if (type === 'graphQLPlayground') {
-                await openGraphQLPlayground(); if (!isOpenHistory) openHistory.addItem('graphQLPlayground');
+                await openGraphQLPlayground(); openHistory.addItem('graphQLPlayground');
             } else if (type === 'openRestyEditor') {
-                await openOpenRestyEditor(); if (!isOpenHistory) openHistory.addItem('openRestyEditor');
+                await openOpenRestyEditor(); openHistory.addItem('openRestyEditor');
             } else if (type === 'swaggerDemo') {
-                await openSwaggerDemo(); if (!isOpenHistory) openHistory.addItem('swaggerDemo');
+                await openSwaggerDemo(); openHistory.addItem('swaggerDemo');
             } else if (type === 'mermaid') {
-                await renderMermaidFile(); if (!isOpenHistory) openHistory.addItem('mermaid');
+                await renderMermaidFile(); openHistory.addItem('mermaid');
             } else if (type === 'whiteboard') {
-                await openWhiteboard(); if (!isOpenHistory) openHistory.addItem('whiteboard');
+                await openWhiteboard(); openHistory.addItem('whiteboard');
             } else if (type === 'canvas') {
-                await openCanvasFile(); if (!isOpenHistory) openHistory.addItem('canvas');
+                await openCanvasFile(); openHistory.addItem('canvas');
             } else if (type === 'timeline') {
-                await openTimeline(); if (!isOpenHistory) openHistory.addItem('timeline');
+                await openTimeline(); openHistory.addItem('timeline');
             } else if (type === 'regexTest') {
-                await openRegexTest(); if (!isOpenHistory) openHistory.addItem('regexTest');
+                await openRegexTest(); openHistory.addItem('regexTest');
             } else if (type === 'calendar') {
-                await openCalendar(); if (!isOpenHistory) openHistory.addItem('calendar');
+                await openCalendar(); openHistory.addItem('calendar');
             } else if (type === 'cron') {
-                await openCron(); if (!isOpenHistory) openHistory.addItem('cron');
+                await openCron(); openHistory.addItem('cron');
             } else if (type === 'video') {
-                await openVideoPlayer(); if (!isOpenHistory) openHistory.addItem('video');
+                await openVideoPlayer(); openHistory.addItem('video');
             } else if (type === 'raw') {
-                await openRawFile(); if (!isOpenHistory) openHistory.addItem('raw');
+                await openRawFile(); openHistory.addItem('raw');
             } else if (type === 'urlEncoder') {
-                await openUrlEncoderFile(); if (!isOpenHistory) openHistory.addItem('urlEncoder');
+                await openUrlEncoderFile(); openHistory.addItem('urlEncoder');
             } else if (type === 'wordCloud') {
-                await openWordCloudFile(); if (!isOpenHistory) openHistory.addItem('wordCloud');
+                await openWordCloudFile(); openHistory.addItem('wordCloud');
             } else if (type === 'gitRecords') {
-                await openGitPageCore(null); if (!isOpenHistory) openHistory.addItem('gitRecords');
+                await openGitPageCore(null); openHistory.addItem('gitRecords');
             } else if (type === 'pomodoro') {
-                await openPomodoro(); if (!isOpenHistory) openHistory.addItem('pomodoro');
+                await openPomodoro(); openHistory.addItem('pomodoro');
             } else if (type === 'tempEditor') {
-                await openTempEditor(); if (!isOpenHistory) openHistory.addItem('tempEditor');
+                await openTempEditor(); openHistory.addItem('tempEditor');
             } else if (type === 'mindMap') {
-                await openMindMap(); if (!isOpenHistory) openHistory.addItem('mindMap');
+                await openMindMap(); openHistory.addItem('mindMap');
             } else if (type === 'opmlOutline') {
-                await openOPMLOutline(); if (!isOpenHistory) openHistory.addItem('opmlOutline');
+                await openOPMLOutline(); openHistory.addItem('opmlOutline');
             } else if (type === 'kanban') {
-                await openKanbanDemo(); if (!isOpenHistory) openHistory.addItem('kanban');
+                await openKanbanDemo(); openHistory.addItem('kanban');
             } else if (type === 'dirSpace') {
-                await openDirSpace(); if (!isOpenHistory) openHistory.addItem('dirSpace');
+                await openDirSpace(); openHistory.addItem('dirSpace');
             } else if (type === 'aiChat') {
-                await openAiChat(); if (!isOpenHistory) openHistory.addItem('aiChat');
+                await openAiChat(); openHistory.addItem('aiChat');
             } else if (type === 'knowledge') {
-                await openKnowledgeBase(); if (!isOpenHistory) openHistory.addItem('knowledge');
+                await openKnowledgeBase(); openHistory.addItem('knowledge');
             } else if (type === 'skill') {
-                await openSkillManager(); if (!isOpenHistory) openHistory.addItem('skill');
+                await openSkillManager(); openHistory.addItem('skill');
             } else if (type === 'mcp') {
-                await openMcpManager(); if (!isOpenHistory) openHistory.addItem('mcp');
-            } else if (type === 'fileType') { 
-                await openFileType(); if (!isOpenHistory) openHistory.addItem('fileType');
+                await openMcpManager(); openHistory.addItem('mcp');
+            } else if (type === 'fileType') {
+                await openFileType(); openHistory.addItem('fileType');
             } else if (type === 'picLayoutDisplay') { //目录右键
-                await picLayoutDisplay(data.dirPathStr); if (!isOpenHistory) openHistory.addItem('picLayoutDisplay', '图片布局', '', data, dirname(data.dirPathStr) );
+                await picLayoutDisplay(data.dirPathStr); openHistory.addItem('picLayoutDisplay', '图片布局', '', data, dirname(data.dirPathStr));
             } else if (type === 'openWordCloudFile') {
-                await openWordCloudFile(data.dirPathStr); if (!isOpenHistory) openHistory.addItem('openWordCloudFile', '词云', '', data, dirname(data.dirPathStr) );
+                await openWordCloudFile(data.dirPathStr); openHistory.addItem('openWordCloudFile', '词云', '', data, dirname(data.dirPathStr));
             } else if (type === 'dirCanvasDisplay') {
-                await dirCanvasDisplay(data.dirPathStr); if (!isOpenHistory) openHistory.addItem('dirCanvasDisplay', '文档白板', '', data, dirname(data.dirPathStr) );
+                await dirCanvasDisplay(data.dirPathStr); openHistory.addItem('dirCanvasDisplay', '文档白板', '', data, dirname(data.dirPathStr));
             } else if (type === 'openFileGraph') {
-                await openFileGraph(data.dirPathStr); if (!isOpenHistory) openHistory.addItem('openFileGraph', '文件图谱', '', data, dirname(data.dirPathStr) );
+                await openFileGraph(data.dirPathStr); openHistory.addItem('openFileGraph', '文件图谱', '', data, dirname(data.dirPathStr));
             } else if (type === 'openNoteLinkGraph') {
-                await openNoteLinkGraph(data.relativePath); if (!isOpenHistory) openHistory.addItem('openNoteLinkGraph', '文档关联图谱', '', data, basename(data.relativePath) );
+                await openNoteLinkGraph(data.relativePath); openHistory.addItem('openNoteLinkGraph', '文档关联图谱', '', data, basename(data.relativePath));
             } else if (type === 'openFileType') {
-                await openFileType(data.dirPathStr); if (!isOpenHistory) openHistory.addItem('openFileType', '文件类型分布', '', data, dirname(data.dirPathStr) );
+                await openFileType(data.dirPathStr); openHistory.addItem('openFileType', '文件类型分布', '', data, dirname(data.dirPathStr));
             } else if (type === 'restoreFile') {  //文件右键
                 await restoreFile(data.relativePath, data.fileSpan);
             } else if (type === 'deleteFile') {  //文件右键
                 await deleteFileTreeItem(data.relativePath, data.isForever, data.fileSpan);
             } else if (type === 'fileGitRecord') {  //文件右键
-                await openGitPageCore(data.relativePath); if (!isOpenHistory) openHistory.addItem('fileGitRecord', 'git记录', '', data, basename(data.relativePath) );
+                await openGitPageCore(data.relativePath); openHistory.addItem('fileGitRecord', 'git记录', '', data, basename(data.relativePath));
             } else if (type === 'copyFile') {  //文件右键
                 await copyCurrentFile(data.relativePath);
             }
@@ -17924,7 +17931,7 @@
                 treeElement.removeEventListener('toggle', _treeToggleHandler);
             }
 
-            _treeClickHandler = async function (event, isOpenHistory = false) {
+            _treeClickHandler = async function (event) {
                 const fileSpan = event.target.closest('.file-item');
                 if (!fileSpan) return;
                 // 若点击的是更多菜单按钮或颜色选择器，不触发文件打开
@@ -17942,7 +17949,7 @@
                             showNotification(`✗ 无法找到文件: ${fp}`, 'error');
                             return;
                         }
-                        await toggleFile('renderFile', { relativePath: fp, fileSpan: fs }, isOpenHistory);
+                        await toggleFile('renderFile', { relativePath: fp, fileSpan: fs });
                     } catch (e) {
                         console.error('文件切换失败:', e);
                     }
@@ -19673,7 +19680,7 @@
             })[m]);
         }
 
-        async function randomOpen(isOpenHistory = false) {
+        async function randomOpen() {
             hideAllViewContainers();
             await destroyEverything();
             let flg = true;
@@ -19696,7 +19703,7 @@
                                 showNotification(`✗ 无法找到文件: ${node.path}`, 'error');
                                 return;
                             }
-                            await toggleFile('renderFile', { relativePath: node.path, fileSpan: fileSpan }, isOpenHistory);
+                            await toggleFile('renderFile', { relativePath: node.path, fileSpan: fileSpan });
                             showNotification(`🎲 随机打开: ${escapeHtml(node.path)}`, 'success', 2000);
                             return;
                         }
@@ -32794,7 +32801,7 @@ kanban-plugin: basic
             openFileFromPath(filePath);
         }
 
-        async function openFileFromPath(filePath, isOpenHistory = false) {
+        async function openFileFromPath(filePath) {
             if (!filePath) return;
             const normalizedPath = normalizePath(filePath);
             let targetItem = treeElement.querySelector(`.file-item[data-file-path="${normalizedPath}"]`);
@@ -32802,7 +32809,7 @@ kanban-plugin: basic
                 targetItem = await expandPathToFile(normalizedPath);
                 if (targetItem) {
                     targetItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    await _treeClickHandler({ target: targetItem }, isOpenHistory);
+                    await _treeClickHandler({ target: targetItem });
                     showNotification('已打开文件: ' + filePath, 'success');
                     return;
                 }
@@ -52246,39 +52253,39 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             constructor() {
                 this.openHistory = [];
             }
-            addItem(action, title='', filePath = null, params = null, targetName = '') {
+            addItem(action, title = '', filePath = null, params = null, targetName = '') {
                 let delIds = [];
-                if(!isEmpty(this.openHistory)){
+                if (!isEmpty(this.openHistory)) {
                     const first = this.openHistory[0];
-                    if(filePath){
-                        if(first.action === action && first.filePath === filePath) return;
-                    }else{
-                        if(targetName){
-                            for(let item of this.openHistory){
-                                if(item.action === action && item.targetName === targetName) delIds.push(item.id);
+                    if (filePath) {
+                        if (first.action === action && first.filePath === filePath) return;
+                    } else {
+                        if (targetName) {
+                            for (let item of this.openHistory) {
+                                if (item.action === action && item.targetName === targetName) delIds.push(item.id);
                             }
-                        }else{
-                            for(let item of this.openHistory){
-                                if(item.action === action) delIds.push(item.id);
+                        } else {
+                            for (let item of this.openHistory) {
+                                if (item.action === action) delIds.push(item.id);
                             }
                         }
                     }
-                    if(!isEmpty(delIds)){
+                    if (!isEmpty(delIds)) {
                         this.openHistory = this.openHistory.filter(item => !delIds.includes(item.id));
-                        for(let id of delIds){
+                        for (let id of delIds) {
                             const element = document.getElementById(`open-history-${id}`);
-                            if(element) openHistoryContainer.removeChild(element);
+                            if (element) openHistoryContainer.removeChild(element);
                         }
                     }
                 }
                 if (this.openHistory.length >= 20) {
-                    this.openHistory.pop(); 
+                    this.openHistory.pop();
                     openHistoryContainer.removeChild(openHistoryContainer.lastChild);
                 }
                 const uuid = crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 9));
-                const newItem = {'id': uuid, 'action': action, 'title': title, 'filePath': filePath, 'params': params, 'targetName': targetName, date: formatDateTimeNoYear(new Date())}
+                const newItem = { 'id': uuid, 'action': action, 'title': title, 'filePath': filePath, 'params': params, 'targetName': targetName, date: formatDateTimeNoYear(new Date()) }
                 this.openHistory.unshift(newItem);
-                const element = this.createHistoryElement(newItem); 
+                const element = this.createHistoryElement(newItem);
                 if (openHistoryContainer.firstChild) {
                     openHistoryContainer.insertBefore(element, openHistoryContainer.firstChild);
                 } else {
@@ -52286,7 +52293,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
                 this.storeHistory();
             }
-            createHistoryElement(item){
+            createHistoryElement(item) {
                 const fileSpan = document.createElement('div');
                 fileSpan.className = 'file-item open-history-item';
                 fileSpan.id = `open-history-${item.id}`;
@@ -52294,25 +52301,25 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 textSpan.className = 'file-item-text open-history-item';
                 const nameSpan = document.createElement('span');
                 nameSpan.className = 'file-name';
-                if(item.filePath){
+                if (item.filePath) {
                     const fileName = basename(item.filePath);
                     nameSpan.textContent = fileName;
                     nameSpan.title = item.filePath;
                     const ext = getExt(fileName);
                     const iconType = ext ? getFileTypeByExt(ext) : '';
                     textSpan.appendChild(_fileIcon(fileName, iconType));
-                }else{
+                } else {
                     const btn = DASHBOARD_BUTTON.find(btn => btn.value.includes(item.action));
-                    nameSpan.innerHTML = btn ? `打开&nbsp;<span class="skill-tag-chip">${btn.key}</span>` : 
-                    (item.targetName ? `${item.targetName}` : '' ) + `&nbsp;<span class="skill-tag-chip" style="padding: 0.125rem 0.5rem;">${item.title}</span>`;
+                    nameSpan.innerHTML = btn ? `打开&nbsp;<span class="skill-tag-chip">${btn.key}</span>` :
+                        (item.targetName ? `${item.targetName}` : '') + `&nbsp;<span class="skill-tag-chip" style="padding: 0.125rem 0.5rem;">${item.title}</span>`;
                     const div = document.createElement('div');
                     div.className = 'file-item-icon file-item-icon-operate';
-                    textSpan.appendChild(div);  
+                    textSpan.appendChild(div);
                 }
                 fileSpan.onclick = async () => {
-                    if(item.action === 'renderFile'){
+                    if (item.action === 'renderFile') {
                         await openFileFromPath(item.params.relativePath, true);
-                    }else{
+                    } else {
                         await toggleFile(item.action, item.params, true);
                     }
                 }

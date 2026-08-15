@@ -1,10 +1,10 @@
 ---
 id: kanban
 scope: system
-name: 看板
+name: 看板任务
 description: 当用户要求创建、查看、整理看板任务卡片（列、卡片、勾选、移动、删除、新增列、属性）时触发。
 priority: 60
-tools: []
+tools: [read, schedule]
 triggers: [看板, 卡片, 待办, 任务卡片, 列, 看板任务, kanban]
 enabled: true
 version: 1

@@ -1,10 +1,10 @@
 ---
 id: schedule
 scope: system
-name: AI 智能日程管理
+name: 智能日程管理
 description: 当用户要求管理日程（创建/查看/修改/删除）、安排会议、设置提醒、查询节假日或空闲时间，以及进行任务规划、自动排期、时间分析、日程复盘、创建专注时间块时触发。
 priority: 50
-tools: [schedule]
+tools: [schedule, read]
 triggers: [日程, 日历, 安排, 会议, 提醒, 预约, 计划, 档期, 有空, 空闲时间, 假期, 节假日, 农历, 排期, 规划, 时间管理, 今日计划, 明日计划, 复盘]
 enabled: true
 version: 2
