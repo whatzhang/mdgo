@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use super::{ApprovalPolicy, ApprovalRequest};
 
-/// 策略:edit / delete 等破坏性写操作需要审批。
+/// 策略:edit / delete 等破坏性写操作需要审批；open-ui 的 open_file（打开文件）同样需确认。
 ///
 /// `enabled` 开关便于自动化测试与降级(如无人值守模式)。
 pub struct DestructiveWritePolicy {
@@ -115,6 +115,21 @@ impl ApprovalPolicy for DestructiveWritePolicy {
                 summary: format!("调用 MCP 工具 {t}"),
                 detail: "MCP 工具由外部服务器实现，可执行服务器侧任意逻辑（读写文件、执行命令、网络访问等）。请确认这是预期调用；如需免确认，可在审批策略配置（approval.yaml）中为该工具添加 allow 规则。".to_string(),
             }),
+            // open-ui 的 open_file：打开文件前需用户确认（对齐 delete/write 的确认语义，
+            // 防止模型未经确认打开用户未预期的文件）；open_page（跳转页面/视图）无需确认。
+            "open-ui" => {
+                if args.get("action").and_then(|v| v.as_str()) == Some("open_file") {
+                    let rel = args.get("relativePath").and_then(|v| v.as_str()).unwrap_or("?");
+                    Some(ApprovalRequest {
+                        tool: tool.to_string(),
+                        args: args.clone(),
+                        summary: format!("打开文件 {rel}"),
+                        detail: "将在系统中打开该文件预览。请确认这是预期要打开的文件。".to_string(),
+                    })
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
     }
@@ -278,6 +293,21 @@ mod tests {
         assert!(!policy.allow("read", &args));
         assert!(policy.deny("read", &args).is_none());
         assert!(policy.evaluate("read", &args).is_none());
+    }
+
+    #[test]
+    fn destructive_policy_asks_for_open_file_but_not_open_page() {
+        let policy = DestructiveWritePolicy::new(true);
+        // open_file：打开文件需用户确认，摘要含目标路径
+        let req = policy.evaluate("open-ui", &json!({"action": "open_file", "relativePath": "notes/plan.md"}));
+        let req = req.expect("open_file 应触发审批");
+        assert!(req.summary.contains("notes/plan.md"));
+        assert!(req.summary.contains("打开文件"));
+        // open_page：跳转页面无需确认（放行）
+        assert!(policy.evaluate("open-ui", &json!({"action": "open_page", "page": "calendar"})).is_none());
+        // 开关关闭时不弹
+        let off = DestructiveWritePolicy::new(false);
+        assert!(off.evaluate("open-ui", &json!({"action": "open_file", "relativePath": "a.md"})).is_none());
     }
 
     fn load_approval_rules_for_test() -> Vec<ApprovalRule> {

@@ -2154,13 +2154,15 @@
         /* 右上角关闭按钮（closable 类型） */
         .editor-notification-close {
             position: absolute;
-            top: 0.25rem;
-            right: 0.35rem;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            right: 0.25rem;
+            margin-left: 0.25rem;
             border: none;
             background: transparent;
             color: inherit;
             font-size: 1rem;
-            line-height: 1;
             padding: 0.15rem 0.35rem;
             border-radius: 0.3125rem;
             cursor: pointer;
@@ -7855,7 +7857,7 @@
 
         .todo-header-right {
             display: flex;
-            gap: 0.813rem;
+            gap: 0.5rem;
             align-items: center;
         }
 
@@ -8533,6 +8535,26 @@
             filter: brightness(0.9);
         }
 
+        /* 单点提醒（闹钟）样式 */
+        .todo-month-event.todo-reminder-event {
+            font-size: 0.6875rem;
+            border-left: 2px dotted currentColor;
+            background-image: linear-gradient(45deg, rgba(255, 255, 255, 0.25) 25%, transparent 25%, transparent 50%, rgba(255, 255, 255, 0.25) 50%, rgba(255, 255, 255, 0.25) 75%, transparent 75%, transparent);
+            background-size: 8px 8px;
+        }
+
+        .todo-week-event.todo-reminder-event {
+            border-left: 3px dotted currentColor;
+            min-height: 20px;
+            overflow: hidden;
+            background-image: linear-gradient(45deg, rgba(255, 255, 255, 0.2) 25%, transparent 25%, transparent 50%, rgba(255, 255, 255, 0.2) 50%, rgba(255, 255, 255, 0.2) 75%, transparent 75%, transparent);
+            background-size: 8px 8px;
+        }
+
+        .todo-week-event.todo-reminder-event:hover {
+            filter: brightness(0.9);
+        }
+
         .todo-event-item.todo-cron-sidebar {
             opacity: 0.8;
             border-left-style: dashed;
@@ -9206,7 +9228,7 @@
 
         jmnodes.theme-self jmnode {
             background-color: var(--color-bg);
-            color: var(--t1);
+            color: var(--t0);
             font-size: 13px;
             font-family: var(--font-family);
             border-color: #d9e1e8;
@@ -9232,14 +9254,15 @@
             color: var(--color-text-white);
             font-weight: 600;
             font-size: 18px;
-            box-shadow: 1px 1px 1px 1px var(--color-primary);
+            border: none;
+            box-shadow: none;
         }
 
         jmnodes.theme-self jmnode.root:hover {
-            border: 1px solid var(--color-primary);
-            box-shadow: 1px 1px 1px 1px var(--color-primary);
+            border: none;
+            box-shadow: none;
             z-index: 200;
-            transform: scale(1.02);
+            transform: scale(1.04);
         }
 
         jmnodes.theme-self jmexpander {}
@@ -14627,18 +14650,18 @@
                 <div id="top-right-controls" class="top-right-controls" style="display: none;">
                     <span class="opml-original-buttons" id="opml-original-buttons">
                         <button id="opml-mindmap-btn" class="btn btn-success btn-sm" onclick="mindmapViewModel()">
-                            🧠 思维导图
+                            思维导图
                         </button>
                         <button id="opml-back-btn" class="btn btn-success btn-sm" onclick="outlineViewModel()">
-                            📋 Outline
+                            大纲笔记
                         </button>
                         <button id="jsmind-save-opml-btn" class="btn btn-warning btn-sm" onclick="jsMindSaveOpml()"
                             style="display:none;">
-                            保存为Outline格式
+                            保存为大纲笔记
                         </button>
                         <button id="opml-save-mm-btn" class="btn btn-warning btn-sm" onclick="opmlSaveAsMm()"
                             style="display:none;">
-                            保存为Freemind格式
+                            保存为思维导图
                         </button>
                         <button id="jsmind-image-btn" class="btn btn-warning btn-sm" onclick="jsMindSaveImage()"
                             style="display:none;">
@@ -14688,6 +14711,10 @@
                     <button id="markdown-btn" class="btn btn-warning btn-sm" style="display: none;"
                         onclick="enterOriginalMarkdown()">
                         markdown
+                    </button>
+                    <button id="md-mindmap-btn" class="btn btn-warning btn-sm" style="display: none;"
+                        onclick="viewMarkdownAsMindmap()" title="把当前 Markdown 的标题层级渲染为思维导图">
+                        思维导图
                     </button>
                     <button id="plantuml-btn" class="btn btn-warning btn-sm" style="display: none;"
                         onclick="enterPlantUMLSvg()">
@@ -15301,8 +15328,10 @@
                             <button class="todo-view-btn" onclick="todoSwitchView('day', event)">日</button>
                         </div>
                         <button class="btn btn-sm btn-primary" onclick="todoOpenModal()">
-                            <span>+</span>
                             <span>新建日程</span>
+                        </button>
+                        <button class="btn btn-sm btn-success" onclick="todoOpenReminderModal()">
+                            <span>新建提醒</span>
                         </button>
                     </div>
                 </header>
@@ -15463,6 +15492,20 @@
                                         onclick="todoSelectColor(this)"></div>
                                 </div>
                             </div>
+                            <div class="todo-form-row">
+                                <div class="todo-form-group">
+                                    <label class="todo-form-label">提醒</label>
+                                    <label class="todo-notify-toggle"
+                                        style="display:inline-flex;align-items:center;gap:4px;font-size:0.75rem;cursor:pointer;color:var(--t2,#8b949e);">
+                                        <input type="checkbox" id="todo-eventNotify" checked> 到点提醒
+                                    </label>
+                                </div>
+                                <div class="todo-form-group">
+                                    <label class="todo-form-label">提前提醒（分钟）</label>
+                                    <input type="number" class="todo-form-input" id="todo-eventNotifyBefore" min="0"
+                                        max="1440" step="5" value="0" style="width:6rem;">
+                                </div>
+                            </div>
                             <div class="todo-form-group">
                                 <label class="todo-form-label">备注</label>
                                 <textarea class="todo-form-input" id="todo-eventDesc" style="resize: none;height: 5rem;"
@@ -15475,6 +15518,53 @@
                                 onclick="todoDeleteEvent()">删除
                             </button>
                             <button class="btn btn-sm btn-primary" onclick="todoSaveEvent()">保存</button>
+                        </div>
+                    </div>
+                </div>
+                <!-- 新建提醒模态框（闹钟式：标题/时间/颜色/备注；复用 todo-modal 样式） -->
+                <div class="todo-modal-overlay" id="todo-reminderModal">
+                    <div class="todo-modal">
+                        <div class="todo-modal-header">
+                            <div class="todo-modal-title" id="todo-reminderModalTitle">新建提醒</div>
+                            <button class="todo-modal-close" onclick="todoCloseReminderModal()">×</button>
+                        </div>
+                        <div class="todo-modal-body">
+                            <div class="todo-form-group">
+                                <label class="todo-form-label">提醒标题</label>
+                                <input type="text" class="todo-form-input" id="todo-reminderTitle"
+                                    placeholder="输入提醒标题" autocomplete="off">
+                            </div>
+                            <div class="todo-form-group">
+                                <label class="todo-form-label">提醒时间</label>
+                                <input type="datetime-local" class="todo-form-input" id="todo-reminderTime">
+                            </div>
+                            <div class="todo-form-group">
+                                <label class="todo-form-label">颜色标记</label>
+                                <div class="todo-color-picker" id="todo-reminderColorPicker">
+                                    <div class="todo-color-option color-blue todo-selected" data-color="blue"
+                                        onclick="todoReminderSelectColor(this)"></div>
+                                    <div class="todo-color-option color-orange" data-color="orange"
+                                        onclick="todoReminderSelectColor(this)"></div>
+                                    <div class="todo-color-option color-purple" data-color="purple"
+                                        onclick="todoReminderSelectColor(this)"></div>
+                                    <div class="todo-color-option color-green" data-color="green"
+                                        onclick="todoReminderSelectColor(this)"></div>
+                                    <div class="todo-color-option color-red" data-color="red"
+                                        onclick="todoReminderSelectColor(this)"></div>
+                                </div>
+                            </div>
+                            <div class="todo-form-group">
+                                <label class="todo-form-label">标记备注</label>
+                                <textarea class="todo-form-input" id="todo-reminderNote"
+                                    style="resize: none;height: 5rem;" placeholder="添加备注..."></textarea>
+                            </div>
+                        </div>
+                        <div class="todo-modal-footer">
+                            <button class="btn btn-sm" onclick="todoCloseReminderModal()">取消</button>
+                            <button class="btn btn-sm btn-danger" id="todo-reminderDeleteBtn" style="display: none;"
+                                onclick="todoDeleteReminder()">删除
+                            </button>
+                            <button class="btn btn-sm btn-primary" onclick="todoSaveReminder()">保存</button>
                         </div>
                     </div>
                 </div>
@@ -15779,7 +15869,7 @@
                                 <textarea id="chat-input" rows="4" placeholder="按下回车发送消息..."
                                     onkeydown="handleChatKeydown(event)" onkeyup="handleChatKeyup(event)"
                                     oninput="updateChatSendButton()" onfocus="updateChatSendButton()"
-                                    onblur="updateChatSendButton()"></textarea>
+                                    onblur="handleChatInputBlur()" onpaste="handleChatPaste(event)"></textarea>
                             </div>
                             <div class="chat-bottom-toolbar" id="chat-bottom-toolbar">
                                 <div class="chat-toolbar-icons">
@@ -16550,7 +16640,10 @@
         const DIR_ITEMS = [
             { key: '📄 新建文件', name: "untitled.txt", click: "createFileByParentDir" },
             { key: '📁 新建目录', name: "新建目录", click: "createDirByParentDir" },
+            { key: '📂 打开目录', name: "打开目录", click: "openDirSystem", isTauri: true },
+            { key: '🔄 还原目录', name: "还原目录", click: "restoreDir", isTauri: true, isDeleted: true },
             { key: '🗑️ 永久删除', name: "永久删除", click: "deleteDirForever", isDeleted: true },
+            { key: '🗑️ 删除目录', name: "删除目录", click: "deleteDir", isTauri: true },
             { key: '🌄 图片墙', name: "图片墙", click: "picLayoutDisplay" },
             { key: '🌐 文件图谱', name: '文件图谱', click: 'openFileGraph' },
             { key: '📃 文档白板', name: "文档白板", click: "dirCanvasDisplay" },
@@ -17301,6 +17394,7 @@
         const livePreviewBtn = document.getElementById('live-preview-btn');
         const markdownBtn = document.getElementById('markdown-btn');
         const mdImageBtn = document.getElementById('md-image-btn');
+        const mdMindmapBtn = document.getElementById('md-mindmap-btn');
         const plantumlBtn = document.getElementById('plantuml-btn');
         const plantumlSvgBtn = document.getElementById('plantuml-svg-btn');
         const newFileControls = document.getElementById('new-file-controls');
@@ -17489,7 +17583,7 @@
         async function toggleFile(type, data = {}) {
             if (!isRootHandleAvailable()) {
                 showNotification('✗ 请先打开根目录', 'error');
-                return;
+                return false;
             }
             // 切换视图前停止当前文件的浏览计时
             _stopBrowsingTimer();
@@ -17506,7 +17600,8 @@
                 || lastToggle === 'randomOpen';
 
             if (await destroyEditor(destroyForce, diffSave)) {
-                return;
+                // 编辑器销毁被取消（如未保存内容用户中止切换）→ 视为切换失败
+                return false;
             }
             hiddenAiPanel();
             currentArtPlayer?.pause();
@@ -17525,7 +17620,8 @@
             } else if (type === 'randomOpen') {
                 await randomOpen();
             } else if (type === 'renderFile') {
-                await renderFile(data.relativePath, data.fileSpan); openHistory.addItem('renderFile', '', data.relativePath, { 'relativePath': data.relativePath });
+                await renderFile(data.relativePath, data.fileSpan); 
+                openHistory.addItem('renderFile', '', data.relativePath, { 'relativePath': data.relativePath });
             } else if (type === 'graphQLPlayground') {
                 await openGraphQLPlayground(); openHistory.addItem('graphQLPlayground');
             } else if (type === 'openRestyEditor') {
@@ -17600,6 +17696,7 @@
                 await copyCurrentFile(data.relativePath);
             }
             lastToggle = type;
+            return true;
         }
 
         function setAllTypeFlag(type) {
@@ -17720,7 +17817,7 @@
                 saveBtn: false,
                 copyBtn: true,
                 livePreviewBtn: false,
-                formatBtn: false
+                formatBtn: false, opmlBtns: false 
             });
             if (fileName.endsWith('.md')) {
                 await renderMarkdownFile(fileText);
@@ -18685,6 +18782,7 @@
                 Promise.resolve(destroyRawViewer()),
                 Promise.resolve(destroyWordCloud()),
                 Promise.resolve(destroyFileGraph()),
+                Promise.resolve(destroyFileType()),
                 Promise.resolve(disposeOpenRestyEditor()),
                 Promise.resolve(destroyPomodoro()),
                 Promise.resolve(destroyBookmarkPage()),
@@ -19617,7 +19715,8 @@
                     opmlBtns: false,
                     mdImageBtn: false,
                     livePreviewBtn: false,
-                    formatBtn: false
+                    formatBtn: false,
+                    mdMindmapBtn: false,
                 });
             } else {
                 setControlsState({
@@ -19627,7 +19726,8 @@
                     markdownBtn: false,
                     plantumlSvgBtn: false,
                     mdImageBtn: false,
-                    livePreviewBtn: false
+                    livePreviewBtn: false,
+                    mdMindmapBtn: false,
                 });
             }
             // 演示按钮：仅代码/文档/图片文件可见
@@ -21187,7 +21287,7 @@
                     vmargin: 1000,
                     draggable: true,
                     hide_scrollbars_when_draggable: true,
-                    zoom: { min: 0.7, max: 2.0, step: 0.1 },
+                    zoom: { min: 0.9, max: 2.0, step: 0.1 },
                     custom_node_render: customNodeRender,
                 },
                 layout: {
@@ -24615,6 +24715,89 @@
         }
 
         let mdIsKanban = false; // 是否为看板格式
+
+        /** 把看板（kanban-plugin）解析结果 columnListData 转为 jsMind node_tree。
+         *  层级映射：列(##) → 卡片(- [ ]) → 子任务/属性（缩进项）；勾选状态用 ✓/☐ 符号保留。 */
+        function _parseKanbanDataToJsMind(columnListData) {
+            const root = { id: 'root', topic: '看板', children: [] };
+            const checkedMark = (c) => c === true ? '✓ ' : c === false ? '☐ ' : '';
+            let nodeId = 0;
+            const mkNode = (topic, parent) => {
+                const nd = { id: 'n' + (nodeId++), topic, children: [] };
+                if (!parent.children) parent.children = [];
+                parent.children.push(nd);
+                return nd;
+            };
+            for (const col of columnListData || []) {
+                const colNode = mkNode(col.title || '未命名列', root);
+                for (const card of col.cards || []) {
+                    const cardNode = mkNode(checkedMark(card.checked) + (card.content || ''), colNode);
+                    for (const task of card.taskList || []) {
+                        mkNode(checkedMark(task.checked) + (task.task || ''), cardNode);
+                    }
+                }
+            }
+            if (root.children.length === 0) return null;
+            return { meta: { name: 'kanban-outline', author: 'mdgo', version: '0.1' }, format: 'node_tree', data: root };
+        }
+
+        /** 把 Markdown 标题层级解析为 jsMind node_tree 数据（Knowledge Tree 的 Markdown 表示 → 树）。
+         *  - 普通 md：`#`/`##`/… 逐级映射树层级；跳过 frontmatter（--- 块）与非标题行；
+         *  - 看板（kanban-plugin basic/board）：复用 parseMarkdownKanban，映射 列 → 卡片 → 子任务 三级；
+         *  - 无任何可解析结构时返回 null。 */
+        function _parseMarkdownToJsMind(mdText) {
+            // 看板兼容：kanban-plugin 格式走既有看板解析器（与看板渲染同一套解析，保证层级一致）
+            if (isObsidianKanban(mdText)) {
+                return _parseKanbanDataToJsMind(parseMarkdownKanban(mdText));
+            }
+            const lines = String(mdText || '').split(/\r?\n/);
+            // 跳过 frontmatter
+            let start = 0;
+            if (lines[0] && lines[0].trim() === '---') {
+                for (let i = 1; i < lines.length; i++) {
+                    if (lines[i].trim() === '---') { start = i + 1; break; }
+                }
+            }
+            const root = { id: 'root', topic: '大纲', children: [] };
+            const stack = [{ level: 0, node: root }];
+            let nodeId = 0;
+            for (let i = start; i < lines.length; i++) {
+                const m = lines[i].match(/^\s{0,3}(#{1,6})\s+(.*)$/);
+                if (!m) continue;
+                const level = m[1].length;
+                const topic = m[2].trim();
+                if (!topic) continue;
+                while (stack.length > 1 && stack[stack.length - 1].level >= level) stack.pop();
+                const parent = stack[stack.length - 1].node;
+                const node = { id: 'n' + (nodeId++), topic, children: [] };
+                if (!parent.children) parent.children = [];
+                parent.children.push(node);
+                stack.push({ level, node });
+            }
+            if (root.children.length === 0) return null;
+            return { meta: { name: 'markdown-outline', author: 'mdgo', version: '0.1' }, format: 'node_tree', data: root };
+        }
+
+        /** 把当前 Markdown 渲染为只读思维导图（方案 B：Markdown → Knowledge Tree → jsMind 视图）。
+         * 复用现有 jsMind 渲染链路；返回顶部「预览」按钮可切回 md 渲染。 */
+        async function viewMarkdownAsMindmap() {
+            const text = currentEditor ? currentEditor.getValue() : originalContent;
+            const data = _parseMarkdownToJsMind(text);
+            if (!data) {
+                showNotification('当前文档没有可解析的结构（标题层级或看板列/卡片），无法生成思维导图', 'warning');
+                return;
+            }
+            await renderJsMind(data, false, true); // node_tree 数据、非 .mm 源、只读
+            // 思维导图视图的工具栏：提供「预览」返回 md 渲染，隐藏编辑/保存/导出图片
+            setControlsState({
+                topControls: true, editBtn: false, previewBtn: true, saveBtn: false, copyBtn: false, mdImageBtn: false, mdMindmapBtn: false,
+                livePreviewBtn: false, formatBtn: false, commonToolControls: true, demoBtn: true, opmlBtns: true, jmSaveOpmlBtn: false, opmlSaveMmBtn: false
+            });
+            if (opmlBackBtn) opmlBackBtn.style.display = 'none';
+            if (opmlMindmapBtn) opmlMindmapBtn.style.display = 'none';
+            if (tocContainer) tocContainer.style.display = 'none';
+        }
+
         async function renderMarkdownFile(text) {
             aiFabContainer.style.display = 'block';
             mdIsKanban = false;
@@ -24626,7 +24809,7 @@
             }
             mdIsKanban = false;
             await renderOriginalMarkdown(text);
-            setControlsState({ aiFab: true, mdImageBtn: true });
+            setControlsState({ aiFab: true, mdImageBtn: true, mdMindmapBtn: true});
         }
 
         async function renderOriginalMarkdown(text) {
@@ -28127,7 +28310,6 @@ kanban-plugin: basic
             tocElement.innerHTML = tocHTML;
             // 为文档中的标题添加ID
             if (type === 'md') { addHeadingIDs(headings); }
-            tocContainer.style.display = 'flex';
             showTocToggleBtn(true);
             // Markdown 文件展示 TOC link，其他文件不展示
             if (type === 'md') {
@@ -29161,7 +29343,7 @@ kanban-plugin: basic
             if (topRightControls) {
                 setControlsState({
                     topControls: true, editBtn: true, previewBtn: false,
-                    saveBtn: false, copyBtn: true, mdImageBtn: true,
+                    saveBtn: false, copyBtn: true, mdImageBtn: true, mdMindmapBtn: true,
                     aiFab: true, livePreviewBtn: false, formatBtn: false,
                     commonToolControls: true, demoBtn: true,
                 });
@@ -32495,7 +32677,6 @@ kanban-plugin: basic
             }
         }
 
-
         function toggleBookmarkFolder(header) {
             const children = header.nextElementSibling;
             if (children) {
@@ -32881,7 +33062,7 @@ kanban-plugin: basic
         }
 
         async function openFileFromPath(filePath) {
-            if (!filePath) return;
+            if (!filePath) return false;
             const normalizedPath = normalizePath(filePath);
             let targetItem = treeElement.querySelector(`.file-item[data-file-path="${normalizedPath}"]`);
             if (!targetItem) {
@@ -32890,16 +33071,17 @@ kanban-plugin: basic
                     targetItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     await _treeClickHandler({ target: targetItem });
                     showNotification('已打开文件: ' + filePath, 'success');
-                    return;
+                    return true;
                 }
                 showNotification('未找到文件: ' + filePath, 'error');
-                return;
+                return false;
             } else {
                 //递归查看是否需要展开目录，如果父目录未展开，展开父目录
                 await expandPathToFileParent(targetItem);
                 targetItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 targetItem.click();
                 showNotification('已打开文件: ' + filePath, 'success');
+                return true;
             }
         }
 
@@ -33739,6 +33921,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             }
             if (opts.mdImageBtn !== undefined) mdImageBtn.style.display = opts.mdImageBtn ? 'inline-flex' : 'none';
+            if (opts.mdMindmapBtn !== undefined) mdMindmapBtn.style.display = opts.mdMindmapBtn ? 'inline-flex' : 'none';
             if (opts.livePreviewBtn !== undefined) livePreviewBtn.style.display = opts.livePreviewBtn ? 'inline-flex' : 'none';
             if (opts.formatBtn !== undefined) formatBtn.style.display = opts.formatBtn ? 'inline-flex' : 'none';
             if (opts.jmImgBtn !== undefined) jmImgBtn.style.display = opts.jmImgBtn ? 'inline-flex' : 'none';
@@ -34236,7 +34419,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
          * @param {number}  [opts.wheelStep=5]     - 滚轮缩放步进
          * @param {boolean} [opts.panOnlyZoomed=true] - 仅在 >100% 时启用拖拽
          * @param {Function}[opts.onZoomChange]    - 缩放变化回调(zoom)
-         * @returns {{ setZoom, getZoom, zoomIn, zoomOut, reset, setTarget, destroy }}
+         * @returns {{ setZoom, getZoom, zoomIn, zoomOut, reset, setPan, setTarget, destroy }}
          */
         function createPanZoomController(opts) {
             const {
@@ -34282,6 +34465,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             function zoomIn() { setZoom(zoom + zoomStep); }
             function zoomOut() { setZoom(zoom - zoomStep); }
             function reset() { setZoom(initialZoom); }
+            /** 直接设置平移偏移（px，相对 container 原点；初始居中/程序化定位用） */
+            function setPan(x, y) {
+                if (destroyed) return;
+                panX = x;
+                panY = y;
+                applyTransform();
+            }
             function setTarget(newTarget) {
                 target = newTarget;
                 if (target) applyTransform();
@@ -34363,7 +34553,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 document.removeEventListener('mouseup', onMouseUp);
                 target = null;
             }
-            return { setZoom, getZoom, zoomIn, zoomOut, reset, setTarget, setEnabled, isEnabled, destroy };
+            return { setZoom, getZoom, zoomIn, zoomOut, reset, setPan, setTarget, setEnabled, isEnabled, destroy };
         }
 
         let zoomLevelMermaid = 100,
@@ -44642,8 +44832,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             leaf.append("circle")
                 .attr("r", d => d.r)
                 .attr("fill", G ? d => color(G[d.data]) : fill == null ? "none" : fill)
-                .attr("fill-opacity", fillOpacity)
-                .attr("style", "filter: drop-shadow(0 4px 12px rgba(0,0,0,.15));");
+                .attr("fill-opacity", fillOpacity);
             if (L) {
                 leaf.append("clipPath")
                     .attr("id", (d, i) => `cp-${i}`)
@@ -44665,8 +44854,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return svg.node();
         }
 
+        // 文件类型分布视图的缩放控制器引用（视图切换/重新打开时销毁，防事件泄漏）
+        let _fileTypePanZoom = null;
+
         async function openFileType(dirPath) {
             await switchToView(contentCommonContainer, 'flex');
+            // 清理上一次视图（内容 + 缩放控制器，防重复打开堆积/事件残留）
+            if (_fileTypePanZoom) {
+                try { _fileTypePanZoom.destroy(); } catch (e) { /* ignore */ }
+                _fileTypePanZoom = null;
+            }
+            contentCommonContainer.innerHTML = '';
             var allFiles = _getFilesByDirPath(dirPath || '');
             if (allFiles.length === 0) {
                 showNotification(`目录下没有文件`, 'warning');
@@ -44677,21 +44875,54 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
             const colors = [...new Set(data.map(d => d.id))].map((g, i) => getGraphGroupColor(i, 0));
 
-            // 传递 autoExpand: true 开启无限画布
             const svg = BubbleChart(data, {
                 padding: 10, margin: 20,
                 label: d => `${d.id}\n${d.value}`,
                 value: d => d.value,
                 group: d => d.id,
                 colors,
-                fillOpacity: 0.85,
-                autoExpand: true
+                fillOpacity: 0.85
             });
 
             const div = document.createElement('div');
-            Object.assign(div.style, { display: 'flex', height: '100%', width: '100%', justifyContent: 'center', alignItems: 'center' });
-            div.appendChild(svg);
+            Object.assign(div.style, {
+                position: 'relative', height: '100%', width: '100%',
+                overflow: 'hidden', cursor: 'grab',
+            });
+            const wrap = document.createElement('div');
+            // 注意：不设 willChange:transform（会强制合成层把 SVG 光栅化到位图，缩放变模糊）
+            Object.assign(wrap.style, { position: 'absolute', left: '0', top: '0' });
+            wrap.appendChild(svg);
+            div.appendChild(wrap);
             contentCommonContainer.appendChild(div);
+
+            const panZoom = createPanZoomController({
+                container: div,
+                target: wrap,
+                initialZoom: 100,
+                minZoom: 20,
+                maxZoom: 400,
+                wheelStep: 10,
+                panOnlyZoomed: false, // 任意缩放级别均可拖拽平移
+            });
+            _fileTypePanZoom = panZoom;
+
+            // 初始自适应：图（640×640）按容器尺寸等比缩小后居中显示
+            const cw = div.clientWidth || div.offsetWidth;
+            const ch = div.clientHeight || div.offsetHeight;
+            const SW = svg.width.baseVal.value || 640;
+            const SH = svg.height.baseVal.value || 640;
+            const fitScale = Math.min(cw / SW, ch / SH, 1);
+            panZoom.setZoom(Math.round(fitScale * 100));
+            panZoom.setPan(Math.max(0, (cw - SW * fitScale) / 2), Math.max(0, (ch - SH * fitScale) / 2));
+        }
+
+        /** 销毁文件类型分布视图的缩放控制器（视图切换清理用） */
+        function destroyFileType() {
+            if (_fileTypePanZoom) {
+                try { _fileTypePanZoom.destroy(); } catch (e) { /* ignore */ }
+                _fileTypePanZoom = null;
+            }
         }
 
         function shuffle(arr) {
@@ -47882,6 +48113,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             openrestyEditorContainer.innerHTML = '';
         }
 
+        // ========== 番茄钟：底层服务（SoundPlayer / Notifier / Store / Service，纯前端，Tauri 与本地 HTML 双模式兼容） ==========
         const POMODORO_CFG = {
             circumference: 2 * Math.PI * 45,
             storageKey: 'mdgo-pomodoro'
@@ -47986,6 +48218,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 showNotification(text, isFocus ? 'success' : 'info');
                 if (isFocus) SoundPlayer.playComplete(); else SoundPlayer.playBreakEnd();
             },
+            // 浏览器模式增强：Web Notification（需用户授权；Tauri 模式无权限则跳过）
             _tryWebNotification(text) {
                 if (typeof Notification === 'undefined') return;
                 try {
@@ -50229,9 +50462,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             addItem(action, title = '', filePath = null, params = null, targetName = '') {
                 let delIds = [];
                 if (!isEmpty(this.openHistory)) {
-                    const first = this.openHistory[0];
                     if (filePath) {
-                        if (first.action === action && first.filePath === filePath) return;
+                        for (let item of this.openHistory) {
+                            if (item.action === action && item.filePath === filePath) delIds.push(item.id);
+                        }
                     } else {
                         if (targetName) {
                             for (let item of this.openHistory) {

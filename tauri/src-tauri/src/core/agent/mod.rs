@@ -1313,6 +1313,10 @@ fn create_tool_registry(only: Option<&HashSet<String>>) -> ToolRegistry {
     if want("raw-parse") {
         reg.register("raw-parse", Box::new(tools::build_raw_tool));
     }
+    // ── 打开文件/页面工具（前端交互工具：经 FrontendBridge 调前端 toggleFile） ──
+    if want("open-ui") {
+        reg.register("open-ui", Box::new(tools::build_open_ui_tool));
+    }
     // ── 日程工具（逻辑全在 Rust core::schedule，直接调用不经前端桥） ──
     if want("schedule") {
         reg.register("schedule", Box::new(tools::build_schedule_tool));

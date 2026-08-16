@@ -2156,14 +2156,15 @@
         /* 右上角关闭按钮（closable 类型） */
         .editor-notification-close {
             position: absolute;
-            top: 0.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
             right: 0.25rem;
             margin-left: 0.25rem;
             border: none;
             background: transparent;
             color: inherit;
             font-size: 1rem;
-            line-height: 1;
             padding: 0.15rem 0.35rem;
             border-radius: 0.3125rem;
             cursor: pointer;
@@ -17597,7 +17598,7 @@
         async function toggleFile(type, data = {}) {
             if (!isRootHandleAvailable()) {
                 showNotification('✗ 请先打开根目录', 'error');
-                return;
+                return false;
             }
             // 切换视图前停止当前文件的浏览计时
             _stopBrowsingTimer();
@@ -17614,7 +17615,8 @@
                 || lastToggle === 'randomOpen';
 
             if (await destroyEditor(destroyForce, diffSave)) {
-                return;
+                // 编辑器销毁被取消（如未保存内容用户中止切换）→ 视为切换失败
+                return false;
             }
             hiddenAiPanel();
             currentArtPlayer?.pause();
@@ -17709,6 +17711,7 @@
                 await copyCurrentFile(data.relativePath);
             }
             lastToggle = type;
+            return true;
         }
 
         function setAllTypeFlag(type) {
@@ -32985,7 +32988,7 @@ kanban-plugin: basic
         }
 
         async function openFileFromPath(filePath) {
-            if (!filePath) return;
+            if (!filePath) return false;
             const normalizedPath = normalizePath(filePath);
             let targetItem = treeElement.querySelector(`.file-item[data-file-path="${normalizedPath}"]`);
             if (!targetItem) {
@@ -32994,16 +32997,17 @@ kanban-plugin: basic
                     targetItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     await _treeClickHandler({ target: targetItem });
                     showNotification('已打开文件: ' + filePath, 'success');
-                    return;
+                    return true;
                 }
                 showNotification('未找到文件: ' + filePath, 'error');
-                return;
+                return false;
             } else {
                 //递归查看是否需要展开目录，如果父目录未展开，展开父目录
                 await expandPathToFileParent(targetItem);
                 targetItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 targetItem.click();
                 showNotification('已打开文件: ' + filePath, 'success');
+                return true;
             }
         }
 

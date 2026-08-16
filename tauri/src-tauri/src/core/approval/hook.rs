@@ -63,6 +63,7 @@ fn skip_message(tool: &str, denial: &super::ApprovalDenial) -> String {
         match tool {
             "delete" => "删除文件".to_string(),
             "edit" => "编辑文件".to_string(),
+            "open-ui" => "打开文件".to_string(),
             _ => tool.to_string(),
         }
     };

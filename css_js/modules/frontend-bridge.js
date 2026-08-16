@@ -115,6 +115,15 @@ const FrontendBridge = {
             reply(false, `未注册的业务处理器: ${tool}`);
             return;
         }
+        // 归一化 handler 结果：支持返回 {ok, message} 结构化结果（业务失败时 ok=false，
+        // Rust 侧 record_tool_result 据此标记失败，轨迹/审计不把业务失败当成功）；
+        // 返回普通字符串/undefined 时视为成功（兼容既有 pomodoro/raw-parse handler）。
+        const normalize = (v) => {
+            if (v && typeof v === 'object' && typeof v.ok === 'boolean') {
+                return { ok: v.ok, message: v.message == null ? 'ok' : String(v.message) };
+            }
+            return { ok: true, message: v == null ? 'ok' : String(v) };
+        };
         let result;
         try {
             result = handler(action, args || {});
@@ -124,11 +133,12 @@ const FrontendBridge = {
         }
         if (result && typeof result.then === 'function') {
             result.then(
-                msg => reply(true, msg == null ? 'ok' : String(msg)),
+                v => { const r = normalize(v); reply(r.ok, r.message); },
                 err => reply(false, String((err && err.message) || err))
             );
         } else {
-            reply(true, result == null ? 'ok' : String(result));
+            const r = normalize(result);
+            reply(r.ok, r.message);
         }
     }
 };
@@ -179,12 +189,12 @@ FrontendBridge.register('pomodoro', (action, args) => {
             return `已${s.autoPomodoro ? '开启' : '关闭'}自动开始专注`;
         }
         case 'stop': {
-            if (!st.isRunning && st.timeLeft >= st.totalTime) return '当前没有进行中的计时';
+            if (!st.isRunning && st.timeLeft >= st.totalTime) return { ok: false, message: '当前没有进行中的计时' };
             PomodoroService.reset();
             return '已停止番茄钟';
         }
         default:
-            return `未知动作: ${action}`;
+            return { ok: false, message: `未知动作: ${action}` };
     }
 });
 
@@ -196,11 +206,11 @@ FrontendBridge.register('pomodoro', (action, args) => {
 // 工具名与 Rust 侧 build_raw_tool / SKILL.md 保持一致（raw-parse）。
 FrontendBridge.register('raw-parse', async (action, args) => {
     const path = (args && args.path) || '';
-    if (!path) return '解析失败：缺少参数 path（RAW 文件路径）';
-    if (action !== 'parse') return `未知动作: ${action}`;
+    if (!path) return { ok: false, message: '解析失败：缺少参数 path（RAW 文件路径）' };
+    if (action !== 'parse') return { ok: false, message: `未知动作: ${action}` };
     try{
         const dataUrl = await readFileAsBase64(path);
-        if (!dataUrl) return `解析失败：无法读取文件 ${path}`;
+        if (!dataUrl) return { ok: false, message: `解析失败：无法读取文件 ${path}` };
         // data URL → ArrayBuffer
         let bytes;
         try {
@@ -208,12 +218,62 @@ FrontendBridge.register('raw-parse', async (action, args) => {
             bytes = new Uint8Array(bin.length);
             for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
         } catch (e) {
-            return '解析失败：base64 解码错误';
+            return { ok: false, message: '解析失败：base64 解码错误' };
         }
         const parsed = mdgo.core.raw.parse(bytes.buffer);
-        if (!parsed.ok) return '解析失败：' + (parsed.error || '无法解析 TIFF 结构');
+        if (!parsed.ok) return { ok: false, message: '解析失败：' + (parsed.error || '无法解析 TIFF 结构') };
         return parsed.markdown || '解析成功但无可用元数据';
     }catch(e){
-        return '解析失败：' + (e.message || e);
+        return { ok: false, message: '解析失败：' + (e.message || e) };
+    }
+});
+
+// ── 打开文件/页面业务 handler：调用前端 toggleFile（打开知识库文件 / 跳转应用页面） ──
+// 协议：args {action: 'open_file'|'open_page', relativePath?, page?} → 打开后返回结果文本。
+// 复用 toggleFile 统一分发（main.html）；仅暴露"只读打开/查看"类页面，写操作（删除/复制/还原）
+// 不提供给模型；open_file 校验相对路径防穿越 + 字符白名单（防 DOM selector 注入）。
+// 业务结果结构化：失败返回 {ok:false, message}（openFileFromPath/toggleFile 真实返回值为准，
+// 避免文件不存在/未就绪时谎报"已打开"）。工具名与 Rust 侧 build_open_ui_tool / SKILL.md 一致（open-ui）。
+FrontendBridge.register('open-ui', async (action, args) => {
+    const OPEN_PAGES = [
+        'fileGraph', 'noteGraph', 'dashboard', 'calendar', 'knowledge', 'skill', 'mcp',
+        'timeline', 'canvas', 'whiteboard', 'mermaid', 'wordCloud', 'gitRecords', 'pomodoro',
+        'tempEditor', 'urlEncoder', 'video', 'raw', 'regexTest', 'cron', 'bookmarks',
+        'dirSpace', 'swaggerDemo', 'graphQLPlayground', 'openRestyEditor', 'fileType',
+    ];
+    switch (action) {
+        case 'open_file': {
+            const rel = String((args && args.relativePath) || '').trim();
+            if (!rel) return { ok: false, message: '打开文件失败：缺少 relativePath（知识库内相对路径）' };
+            // 防路径穿越：只允许知识库内相对路径（拒绝 .. 段与绝对路径/盘符）
+            if (rel.includes('..') || /^[\\/]/.test(rel) || /^[a-zA-Z]:/.test(rel)) {
+                return { ok: false, message: '打开文件失败：relativePath 必须是知识库内相对路径（不允许 ../、绝对路径或盘符）' };
+            }
+            // 字符白名单：仅允许文件名字符（字母/数字/./-/_/空格/中文/斜杠），
+            // 防 DOM selector 注入（data-file-path 属性选择器按字符串插值拼接）
+            if (!/^[\w.\-\/\\\s\u4e00-\u9fa5]+$/.test(rel)) {
+                return { ok: false, message: '打开文件失败：路径包含非法字符' };
+            }
+            try {
+                const opened = await openFileFromPath(rel);
+                if (opened) return `已打开文件：${rel}`;
+                return { ok: false, message: `打开文件失败：未找到 ${rel}（或文件树未就绪）` };
+            } catch (e) {
+                return { ok: false, message: '打开文件失败：' + ((e && e.message) || e) };
+            }
+        }
+        case 'open_page': {
+            const page = String((args && args.page) || '').trim();
+            if (!OPEN_PAGES.includes(page)) return { ok: false, message: `打开页面失败：不支持的页面 ${page || '(空)'}` };
+            try {
+                const switched = await toggleFile(page);
+                if (switched) return `已打开页面：${page}`;
+                return { ok: false, message: `打开页面失败：${page}（根目录未打开或编辑器切换被取消）` };
+            } catch (e) {
+                return { ok: false, message: '打开页面失败：' + ((e && e.message) || e) };
+            }
+        }
+        default:
+            return { ok: false, message: `未知动作: ${action}` };
     }
 });

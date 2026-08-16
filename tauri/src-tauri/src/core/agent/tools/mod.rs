@@ -2847,6 +2847,46 @@ pub fn build_raw_tool(cfg: KbSearchConfig) -> DynamicTool {
     )
 }
 
+/// 构建 open-ui 工具：打开知识库文件 / 跳转应用页面（经 FrontendBridge 调前端 toggleFile）。
+///
+/// - `open_file`：打开知识库内文件（`relativePath` 为知识库内相对路径，前端校验防穿越 + 字符白名单；
+///   会切换当前工作区到该文件，可能打断正在编辑的文件——需注意副作用）
+/// - `open_page`：跳转应用页面/视图（`page` 仅支持枚举内 29 种：图谱/日历/思维导图/看板/AI 对话/
+///   知识库/技能/MCP/文件类型分布/时间线/白板/词云/Git 记录/番茄钟/临时编辑器/URL 编码/视频/RAW/正则/
+///   Cron/书签/目录空间/Swagger/GraphQL/OpenResty 等）
+///
+/// 仅打开查看，不修改文件内容；写操作（删除/复制/还原）不暴露给模型（白名单在
+/// 前端 handler 侧实现）。复用 `build_bridge_tool`：软门禁 + 动作解析 + 轨迹 + 5s 桥超时兜底。
+/// 业务结果结构化：前端 handler 失败时回传 {ok:false}（文件不存在/页面切换被取消不再谎报成功）。
+pub fn build_open_ui_tool(cfg: KbSearchConfig) -> DynamicTool {
+    build_bridge_tool(
+        cfg,
+        "open-ui",
+        "打开知识库文件或跳转打开应用页面。动作：open_file 在系统中打开文件预览的 ui（会切换当前工作区到该文件，可能打断正在编辑的文件）；open_page 跳转系统 ui 页面/视图（仅支持下列 page 枚举，共 29 种：fileGraph 文件图谱、noteGraph 文档关联图谱、dashboard 系统首页、calendar 日历/日程、knowledge 知识库监控面板、skill 技能管理页面、mcp MCP 管理页面、timeline 文件时间线页面、canvas 无限画布、whiteboard 白板、mermaid mermaid 图表预览编辑页面、gitRecords Git 管理页面、pomodoro 番茄钟页面、tempEditor 临时编辑器、urlEncoder 编码器页面、video 视频播放页面、raw RAW 照片预览页面、regexTest 正则表达式测试页面、cron Cron 表达式测试页面、bookmarks 书签预览页面、dirSpace 目录空间数据统计大屏、swaggerDemo swagger api 预览页面、graphQLPlayground GraphQL 预览接口测试页面、openRestyEditor nginx 配置编辑器、fileType 文件类型分布）。仅打开查看，不修改文件内容；打开文件/跳转页面会切换当前工作区视图。当用户要求打开某个文件、跳转到某页面、查看图谱/日历/看板/思维导图等时调用。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["open_file", "open_page"],
+                    "description": "要执行的动作：open_file 在系统中打开文件预览的 ui；open_page 跳转系统 ui 页面/视图"
+                },
+                "relativePath": {
+                    "type": "string",
+                    "description": "知识库内相对路径（open_file 必填，如 notes/plan.md；禁止 ../、绝对路径或盘符）"
+                },
+                "page": {
+                    "type": "string",
+                    "enum": ["fileGraph", "noteGraph", "dashboard", "calendar", "knowledge", "skill", "mcp", "timeline", "canvas", "whiteboard", "mermaid", "wordCloud", "gitRecords", "pomodoro", "tempEditor", "urlEncoder", "video", "raw", "regexTest", "cron", "bookmarks", "dirSpace", "swaggerDemo", "graphQLPlayground", "openRestyEditor", "fileType"],
+                    "description": "要跳转的系统 ui 页面/视图（仅此枚举内的页面，不得发明新页面名）"
+                }
+            },
+            "required": ["action"]
+        }),
+        "open_file",
+    )
+}
+
 /// 构建日程工具：直接调用 Rust 引擎 `core::schedule`（不经 FrontendBridge——逻辑已在 Rust）。
 ///
 /// 动作与参数对齐 `resources/skills/schedule/SKILL.md`：
