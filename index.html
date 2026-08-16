@@ -15458,10 +15458,9 @@
                                     <div class="todo-color-option color-green" data-color="green"
                                         onclick="todoSelectColor(this)"></div>
                                     <div class="todo-color-option color-red" data-color="red"
-                                        onclick="todoSelectColor(this)">
-                                        <div class="todo-color-option color-blue" data-color="blue"
-                                            onclick="todoSelectColor(this)"></div>
-                                    </div>
+                                        onclick="todoSelectColor(this)"></div>
+                                    <div class="todo-color-option color-blue" data-color="blue"
+                                        onclick="todoSelectColor(this)"></div>
                                 </div>
                             </div>
                             <div class="todo-form-group">
@@ -17544,7 +17543,7 @@
             } else if (type === 'regexTest') {
                 await openRegexTest(); openHistory.addItem('regexTest');
             } else if (type === 'calendar') {
-                await openCalendar(); openHistory.addItem('calendar');
+                await openCalendar();
             } else if (type === 'cron') {
                 await openCron(); openHistory.addItem('cron');
             } else if (type === 'video') {

@@ -54,6 +54,10 @@ pub const SYSTEM_SKILL_MD: &[(&str, &str)] = &[
         "schedule",
         include_str!("../../../resources/skills/schedule/SKILL.md"),
     ),
+    (
+        "outline-mindmap",
+        include_str!("../../../resources/skills/outline-mindmap/SKILL.md"),
+    ),
 ];
 
 /// 执行全部建表 DDL + 列迁移（幂等，可重复调用）。

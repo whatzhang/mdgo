@@ -80,6 +80,8 @@ pub async fn kb_update_llm_config(
     reasoning_effort: Option<String>,
     // 最大输出 token（P3，可选；0/空 = 不设置，由服务器/模型默认）
     max_tokens: Option<u32>,
+    // 模型上下文窗口长度（token；0/缺失 = 未配置，压缩预算回退固定值）
+    context_length: Option<u32>,
 ) -> Result<(), String> {
     // 归一化：空串视为 None（前端可能传空字符串）
     let normalize = |s: Option<String>| s.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
@@ -90,6 +92,8 @@ pub async fn kb_update_llm_config(
     let max_tokens = max_tokens
         .filter(|v| *v > 0)
         .map(|v| v.clamp(1, crate::core::agent::limits::MAX_OUTPUT_TOKENS));
+    // context_length：0/None 视为未配置（0）
+    let context_length = context_length.unwrap_or(0);
     let protocol = normalize(protocol).unwrap_or_else(|| "openai".to_string());
     let protocol = if protocol == "anthropic" { "anthropic" } else { "openai" }.to_string();
 
@@ -104,6 +108,7 @@ pub async fn kb_update_llm_config(
         cfg.summary_model = summary_model.clone();
         cfg.reasoning_effort = reasoning_effort.clone();
         cfg.max_tokens = max_tokens;
+        cfg.context_length = context_length;
     }
 
     // 2. 持久化到 .mdgo/setting.json
@@ -138,6 +143,11 @@ pub async fn kb_update_llm_config(
             Some(v) => obj.insert("localLlmMaxTokens".into(), Value::Number((v as u64).into())),
             None => obj.remove("localLlmMaxTokens"),
         };
+        if context_length > 0 {
+            obj.insert("localLlmContextLength".into(), Value::Number((context_length as u64).into()));
+        } else {
+            obj.remove("localLlmContextLength");
+        };
     }
 
     let json_str = serde_json::to_string_pretty(&config)
@@ -171,6 +181,7 @@ fn extract_llm_fields(
     Option<String>,
     Option<String>,
     Option<u32>,
+    u32,
 ) {
     let get = |k: &str| {
         settings
@@ -191,6 +202,12 @@ fn extract_llm_fields(
         .and_then(|v| u32::try_from(v).ok())
         .filter(|v| *v > 0)
         .map(|v| v.clamp(1, crate::core::agent::limits::MAX_OUTPUT_TOKENS));
+    // 上下文窗口长度：0/缺失视为未配置（0）
+    let context_length = settings
+        .get("localLlmContextLength")
+        .and_then(|v| v.as_u64())
+        .and_then(|v| u32::try_from(v).ok())
+        .unwrap_or(0);
     (
         get("localLlmEndpoint"),
         get("localLlmModel"),
@@ -200,6 +217,7 @@ fn extract_llm_fields(
         norm(get("localLlmSummaryModel")),
         norm(get("localLlmReasoningEffort")),
         max_tokens,
+        context_length,
     )
 }
 
@@ -228,7 +246,7 @@ pub async fn kb_save_setting(
         .map_err(|e| format!("写入配置文件失败: {}", e))?;
 
     // 2. 提取 LLM 段同步内存（前端可能只保存非 LLM 段时 settings 缺 LLM 键 → 空，不覆盖）
-    let (endpoint, model, api_key, protocol, planner, summary, effort, max_tokens) =
+    let (endpoint, model, api_key, protocol, planner, summary, effort, max_tokens, context_length) =
         extract_llm_fields(&settings);
     if !endpoint.is_empty() || !model.is_empty() {
         let mut cfg = state.llm_config.write().unwrap_or_else(|e| e.into_inner());
@@ -240,6 +258,7 @@ pub async fn kb_save_setting(
         cfg.summary_model = summary;
         cfg.reasoning_effort = effort;
         cfg.max_tokens = max_tokens;
+        cfg.context_length = context_length;
     }
 
     log::info!("[config] 全量设置已保存: {}", setting_path.display());

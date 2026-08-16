@@ -2867,13 +2867,13 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
     let tool_app = cfg.app_handle.clone();
     DynamicTool::new(
         "schedule",
-        "日程管理：查询、创建、更新、删除日程事件，检测冲突、查询到点提醒、农历/节假日信息，查找下一个可安排时间段（可避开休息日），并将 AI 拆解的任务排布到截止日期前（plan）、统计时间投入（optimize）、复盘某日日程（review）、创建专注时间块（focus）、查看某日计划与空闲段（today_plan）。动作：list 列出全部日程；add 新建（title/start/end 必填，start/end 格式 YYYY-MM-DDTHH:MM，可选 desc/color/cron 重复表达式/notify 提醒/notify_before 提前提醒分钟数/event_type 类型 work|meeting|focus|personal|task/priority 优先级 high|medium|low/related_docs|related_tasks|related_git 关联对象/ai_category|ai_energy|ai_estimated_hours AI 元数据）；update 按 id 更新；remove 按 id 删除；conflicts 检测与现有日程的重叠（start/end 必填，可选 ignore_id）；remind 查询到点应提醒的日程；lunar 查询某日农历与节假日（date=YYYY-MM-DD）；next_available 查找下一个可安排时间段（duration_minutes 必填，可选 start_after/skip_rest_days）；plan 任务排布建议（deadline=YYYY-MM-DD 必填，tasks=[{title,hours}] 必填，可选 work_start/work_end 默认 9/18、skip_rest_days，只建议不创建）；optimize 时间统计（可选 range=7d|30d|YYYY-MM-DD..YYYY-MM-DD）；review 日复盘（可选 date，默认今天）；focus 专注块（duration_minutes 必填，可选 task/start，指定 start 时创建 type=focus，否则推荐时间段）；today_plan 某日计划（可选 date，默认今天）。当用户要求安排会议、查看日程、规划任务、复盘时间、设置提醒、查询节假日时调用。注意：list 结果不展示内部 id；删除（remove）可按 title 定位、更新（update）可按 target_title 定位，无需内部 id。",
+        "日程管理：查询/创建/更新/删除日程与闹钟提醒、冲突检测、到点提醒、农历节假日、找空闲时间段、任务排期、时间统计、日复盘、专注块、当日计划。动作：list 全部日程（输出含 id）；add 新建（title/start/end 必填，YYYY-MM-DDTHH:MM）；update 按 id 或唯一 target_title 部分更新（未传字段保留原值）；remove 按 id 或唯一 title 删除；conflicts 区间重叠检测（start/end 必填）；remind 到点应提醒；lunar 农历节假日（date）；next_available 空闲段（duration_minutes 必填）；plan 任务排布（deadline+tasks 必填，只建议不创建）；optimize 时间统计（range 默认 7d）；review 日复盘；focus 专注块（duration_minutes 必填）；today_plan 某日计划。提醒：reminder_list/reminder_add（time+title 必填）/reminder_update（不传 time 保留原时间）/reminder_remove。可选参数（add/update）：desc/color/cron（5 字段）/notify/notify_before/event_type/priority/related_docs/related_tasks/related_git/ai_category/ai_energy/ai_estimated_hours。当用户要求安排会议、查看日程、规划任务、复盘时间、设置提醒、查询节假日时调用。**强制规则：任何涉及日程/提醒的回答（含\"查询今日日程\"\"有什么安排\"\"到点提醒\"等）必须先调用本工具查询最新数据，禁止依据对话上下文或历史输出推断、复述或编造；用户提到的日程/提醒时间也以本工具返回为准。**",
         serde_json::json!({
             "type": "object",
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["list", "add", "update", "remove", "conflicts", "remind", "lunar", "next_available", "plan", "optimize", "review", "focus", "today_plan"],
+                    "enum": ["list", "add", "update", "remove", "conflicts", "remind", "lunar", "next_available", "plan", "optimize", "review", "focus", "today_plan", "reminder_list", "reminder_add", "reminder_update", "reminder_remove"],
                     "description": "要执行的动作"
                 },
                 "id": { "type": "string", "description": "事件 id（update/remove 用，与标题定位二选一）" },
@@ -2904,7 +2904,8 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                 "work_start": { "type": "integer", "description": "每日工作开始小时（plan/today_plan 可选，默认 9）" },
                 "work_end": { "type": "integer", "description": "每日工作结束小时（plan/today_plan 可选，默认 18）" },
                 "range": { "type": "string", "description": "统计范围 7d/30d/YYYY-MM-DD..YYYY-MM-DD（optimize 可选，默认 7d）" },
-                "task": { "type": "string", "description": "专注内容标题（focus 可选）" }
+                "task": { "type": "string", "description": "专注内容标题（focus 可选）" },
+                "time": { "type": "string", "description": "提醒时间 YYYY-MM-DDTHH:MM（reminder_add 必填；reminder_update 可选，不传则保留原时间）" }
             },
             "required": ["action"]
         }),
@@ -2923,17 +2924,35 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                     .and_then(|a| a.as_str())
                     .filter(|a| !a.trim().is_empty())
                     .unwrap_or("list");
-                // 软门禁（替代 rig active_tools 硬过滤）：schedule 始终可见可调，
-                // 但仅当声明它的 schedule 技能已激活时才执行；未激活返回引导，
-                // 避免 UnknownToolCall 导致整个流式请求失败（回答为空）。
-                // allowed_tools()=None（无技能激活，含子代理）→ 放行；Some 未声明 → 引导。
+                // 提醒操作归一化：reminder_* 复用 add/update/remove/list 逻辑
+                // - reminder_add：单点时间（start=end=time），强制 event_type=reminder、notify=true
+                // - reminder_update：按 id 更新（保持 reminder 类型）
+                // - reminder_remove / reminder_list：按 id 删除 / 仅列提醒
+                let raw_action = action.to_string();
+                let is_reminder_op = raw_action.starts_with("reminder_");
+                let action: &str = if is_reminder_op {
+                    match raw_action.as_str() {
+                        "reminder_add" => "add",
+                        "reminder_update" => "update",
+                        "reminder_remove" => "remove",
+                        "reminder_list" => "list",
+                        _ => return Err(tool_error("schedule", &format!("未知动作: {}", raw_action))),
+                    }
+                } else {
+                    raw_action.as_str()
+                };
+                // 软门禁（替代 rig active_tools 硬过滤）：
+                // - allowed_tools()=None（无技能激活，含子代理独立技能态）→ 放行：
+                //   全量工具模式下 schedule 本就对模型可见，可直接执行；
+                // - Some 且不含 schedule（激活了其它技能，模型在该模式下不应看到本工具）→ 引导，
+                //   避免幻觉调用导致整个流式请求失败（回答为空）。
                 let declared = cfg.skill_state.allowed_tools();
                 let unlocked = declared
                     .as_ref()
                     .is_none_or(|list| list.iter().any(|t| t == "schedule"));
                 if !unlocked {
-                    let msg = "schedule 需要先激活 schedule 技能（调用 activate_skill，skill_id='schedule'）后才能执行，本次未执行。请先激活该技能，再重新发起操作。";
-                    log::info!("[agent] schedule 未激活技能被调用，返回引导 request_id={}", cfg.request_id);
+                    let msg = "当前技能集未声明 schedule 工具（已激活的技能未包含日程管理）。如需日程功能，请先调用 activate_skill（skill_id='schedule'）激活 schedule 技能，再重新发起操作；本次未执行。";
+                    log::info!("[agent] schedule 未声明于当前技能集被调用，返回引导 request_id={}", cfg.request_id);
                     return Ok(ToolOutput::text(msg));
                 }
                 // Mutation Verification 轨迹：schedule 需走 ToolCallBus，前端 tool-trace
@@ -2961,6 +2980,17 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                 let fmt = |dt: chrono::NaiveDateTime| dt.format("%Y-%m-%dT%H:%M").to_string();
                 // 短锁：每个动作获取一次 guard（add/update 在单锁内完成读+写）；poison 恢复保证高可用
                 let store_guard = || store_ref.lock().unwrap_or_else(|e| e.into_inner());
+                // 「稍后提醒」临时事件对 Agent 不可见（与前端 _isSnoozeReminderEvent 口径一致）：
+                // 标题 `[稍后提醒] ` 前缀。所有查询/统计/冲突/排期/到点提醒均排除该事件，
+                // 避免残留的延迟提醒干扰 AI 对用户日程的判断（如误避让/误合并）。
+                let is_snooze_reminder = |e: &ScheduleEvent| e.title.starts_with("[稍后提醒]");
+                let list_visible = || -> Result<Vec<ScheduleEvent>, String> {
+                    Ok(store_guard()
+                        .list()?
+                        .into_iter()
+                        .filter(|e| !is_snooze_reminder(e))
+                        .collect())
+                };
 
                 // 内部 async 块：match 各分支的 `return Ok/Err` / `?` 提前结束本块并携带
                 // 结果，外层统一 record_tool_result（前端 tool-trace 依赖轨迹事件）。
@@ -2968,16 +2998,25 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                 match action {
                     "list" => {
                         let store = store_guard();
-                        let events = store.list().map_err(|e| tool_error("schedule", &e))?;
+                        let mut events = store.list().map_err(|e| tool_error("schedule", &e))?;
+                        events.retain(|e| !is_snooze_reminder(e)); // 稍后提醒对 Agent 不可见
+                        if is_reminder_op {
+                            // reminder_list：只列提醒（event_type=reminder 的单点事件）
+                            events.retain(|e| e.event_type == "reminder");
+                        }
                         if events.is_empty() {
-                            return Ok(ToolOutput::text("当前没有日程"));
+                            return Ok(ToolOutput::text(if is_reminder_op {
+                                "当前没有提醒".to_string()
+                            } else {
+                                "当前没有日程".to_string()
+                            }));
                         }
                         let lines: Vec<String> = events
                             .iter()
                             .map(|e| {
                                 let cron = if e.cron.trim().is_empty() { String::new() } else { format!("（重复 {}）", e.cron) };
                                 let mut extra: Vec<String> = Vec::new();
-                                if !e.event_type.is_empty() {
+                                if !e.event_type.is_empty() && !is_reminder_op {
                                     extra.push(e.event_type.clone());
                                 }
                                 if !e.priority.is_empty() {
@@ -2987,16 +3026,25 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                                     extra.push(format!("提前{}分钟提醒", e.notify_before));
                                 }
                                 let tags = if extra.is_empty() { String::new() } else { format!(" [{}]", extra.join("/")) };
-                                format!("- {}：{} ~ {}{}{}", e.title, disp(&e.start), disp(&e.end), cron, tags)
+                                if is_reminder_op {
+                                    format!("- {}（id: {}）：{}（备注 {}）{}", e.title, e.id, disp(&e.start), if e.desc.is_empty() { "无" } else { &e.desc }, tags)
+                                } else {
+                                    format!("- {}（id: {}）：{} ~ {}{}{}", e.title, e.id, disp(&e.start), disp(&e.end), cron, tags)
+                                }
                             })
                             .collect();
-                        Ok(ToolOutput::text(format!("共 {} 个日程：\n{}", events.len(), lines.join("\n"))))
+                        Ok(ToolOutput::text(format!(
+                            "共 {} 个{}：\n{}",
+                            events.len(),
+                            if is_reminder_op { "提醒" } else { "日程" },
+                            lines.join("\n")
+                        )))
                     }
                     "add" | "update" => {
-                        let input = ScheduleEventInput {
+                        let mut input = ScheduleEventInput {
                             title: get("title"),
-                            start: get("start"),
-                            end: get("end"),
+                            start: if is_reminder_op { get("time") } else { get("start") },
+                            end: if is_reminder_op { get("time") } else { get("end") },
                             color: {
                                 let c = get("color");
                                 if c.is_empty() { "blue".to_string() } else { c }
@@ -3018,6 +3066,11 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                                 estimated_hours: get_f64("ai_estimated_hours", 0.0),
                             },
                         };
+                        // 提醒（reminder_*）：强制单点时间事件类型，通知必开
+                        if is_reminder_op {
+                            input.event_type = "reminder".into();
+                            input.notify = true;
+                        }
                         if input.title.trim().is_empty() {
                             return Err(tool_error("schedule", "日程标题不能为空"));
                         }
@@ -3046,11 +3099,16 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                                 event.validate().map_err(|e| tool_error("schedule", &e))?;
                                 // 冲突提示（同一锁内，避免并发下读到过期快照）
                                 let mut conflict_events: Vec<ScheduleEvent> = Vec::new();
-                                if event.cron.trim().is_empty() {
+                                // 提醒（单点）与 Cron 事件不做日程冲突检测（提醒到点弹窗，不占日程档期）
+                                if event.cron.trim().is_empty() && event.event_type != "reminder" {
                                     if let (Some(s), Some(e)) =
                                         (rules::parse_local_time(&event.start), rules::parse_local_time(&event.end))
                                     {
-                                        let existing = store.list().map_err(|e| tool_error("schedule", &e))?;
+                                        let existing: Vec<ScheduleEvent> = store.list()
+                                            .map_err(|e| tool_error("schedule", &e))?
+                                            .into_iter()
+                                            .filter(|e| !is_snooze_reminder(e))
+                                            .collect();
                                         conflict_events = rules::find_conflicts(&existing, s, e, None);
                                     }
                                 }
@@ -3058,7 +3116,11 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                                 (event, conflict_events)
                             };
                             let _ = app.emit("schedule:changed", ()); // 通知前端刷新（AI 直写 DB 后 UI 同步）
-                            let mut msg = format!("已创建日程：{}（{} ~ {}", event.title, disp(&event.start), disp(&event.end));
+                            let mut msg = if is_reminder_op {
+                                format!("已创建提醒：{}（{}）", event.title, disp(&event.start))
+                            } else {
+                                format!("已创建日程：{}（{} ~ {}", event.title, disp(&event.start), disp(&event.end))
+                            };
                             if !conflict_events.is_empty() {
                                 msg.push_str(&format!(
                                     "\n⚠ 时间冲突：{}",
@@ -3069,7 +3131,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                                     .and_then(|e| rules::parse_local_time(&event.start).map(|s| (e - s).num_minutes()))
                                     .unwrap_or(60))
                                     .max(15);
-                                let events_snapshot = store_guard().list().map_err(|e| tool_error("schedule", &e))?;
+                                let events_snapshot = list_visible().map_err(|e| tool_error("schedule", &e))?;
                                 let provider = state.schedule_day_info.clone();
                                 let end_dt = rules::parse_local_time(&event.end).unwrap_or(now);
                                 let alts = tokio::task::spawn_blocking(move || {
@@ -3087,14 +3149,21 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                                     }
                                 }
                             }
-                            msg.push(')');
+                            if !is_reminder_op {
+                                msg.push(')');
+                            }
                             Ok(ToolOutput::text(msg))
                         } else {
                             // 单锁内完成 读→改→写（消除锁窗口：并发写者在此期间插入/删除不会被覆盖）
                             let mut store = store_guard();
                             let id = get("id");
                             let target_title = get("target_title");
-                            let mut events = store.list().map_err(|e| tool_error("schedule", &e))?;
+                            let mut events: Vec<ScheduleEvent> = store
+                                .list()
+                                .map_err(|e| tool_error("schedule", &e))?
+                                .into_iter()
+                                .filter(|e| !is_snooze_reminder(e))
+                                .collect();
                             // 定位：id 优先；未提供 id 时按 target_title 唯一匹配（list 不展示内部 id）
                             let matched_idx: Option<usize> = if !id.is_empty() {
                                 events.iter().position(|e| e.id == id)
@@ -3122,16 +3191,42 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                             let Some(existing) = matched_idx.map(|i| &mut events[i]) else {
                                 return Err(tool_error("schedule", "日程不存在"));
                             };
-                            existing.title = input.title;
-                            existing.start = input.start;
-                            existing.end = input.end;
-                            existing.color = input.color;
+                            // 部分更新：title/start/end(或 time)/color/cron/event_type/priority 未传时保留原值；
+                            // desc/notify/notify_before/related/ai 显式传值即覆盖（与 SKILL.md 契约一致）。
+                            // 注意：字符串字段"空串视为未传"意味着无法用 update 清空这些字段（清空可传显式空串的
+                            // desc 除外——desc 保留覆盖语义），权衡以安全为先。
+                            if !get("title").is_empty() {
+                                existing.title = input.title;
+                            }
+                            if is_reminder_op {
+                                // 提醒更新未传 time 时保留原提醒时间（只改标题/备注/颜色）
+                                if !get("time").is_empty() {
+                                    existing.start = input.start;
+                                    existing.end = input.end;
+                                }
+                            } else {
+                                if !get("start").is_empty() {
+                                    existing.start = input.start;
+                                }
+                                if !get("end").is_empty() {
+                                    existing.end = input.end;
+                                }
+                            }
+                            if !get("color").is_empty() {
+                                existing.color = input.color;
+                            }
+                            if !get("cron").is_empty() {
+                                existing.cron = input.cron;
+                            }
+                            if !get("event_type").is_empty() {
+                                existing.event_type = input.event_type;
+                            }
+                            if !get("priority").is_empty() {
+                                existing.priority = input.priority;
+                            }
                             existing.desc = input.desc;
-                            existing.cron = input.cron;
                             existing.notify = input.notify;
                             existing.notify_before = input.notify_before;
-                            existing.event_type = input.event_type;
-                            existing.priority = input.priority;
                             existing.related = input.related;
                             existing.ai = input.ai;
                             existing.updated_at = fmt(now);
@@ -3139,10 +3234,14 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                             let updated = existing.clone();
                             store.replace_all(events).map_err(|e| tool_error("schedule", &e))?;
                             let _ = app.emit("schedule:changed", ()); // 通知前端刷新
-                            Ok(ToolOutput::text(format!(
-                                "已更新日程：{}（{} ~ {}）",
-                                updated.title, disp(&updated.start), disp(&updated.end)
-                            )))
+                            Ok(ToolOutput::text(if is_reminder_op {
+                                format!("已更新提醒：{}（{}）", updated.title, disp(&updated.start))
+                            } else {
+                                format!(
+                                    "已更新日程：{}（{} ~ {}）",
+                                    updated.title, disp(&updated.start), disp(&updated.end)
+                                )
+                            }))
                         }
                     }
                     "remove" => {
@@ -3152,7 +3251,12 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                             return Err(tool_error("schedule", "remove 需要 id 或 title 定位"));
                         }
                         let mut store = store_guard();
-                        let events = store.list().map_err(|e| tool_error("schedule", &e))?;
+                        let events: Vec<ScheduleEvent> = store
+                            .list()
+                            .map_err(|e| tool_error("schedule", &e))?
+                            .into_iter()
+                            .filter(|e| !is_snooze_reminder(e))
+                            .collect();
                         // 定位：id 优先；未提供 id 时按 title 唯一匹配（list 不展示内部 id）
                         let removed_title: String;
                         let remove_id: String = if !id.is_empty() {
@@ -3182,7 +3286,9 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                         store.remove(&remove_id).map_err(|e| tool_error("schedule", &e))?;
                         let _ = app.emit("schedule:changed", ()); // 通知前端刷新
                         let msg = if removed_title.is_empty() {
-                            "日程已删除".to_string()
+                            if is_reminder_op { "提醒已删除".to_string() } else { "日程已删除".to_string() }
+                        } else if is_reminder_op {
+                            format!("已删除提醒：{}", removed_title)
                         } else {
                             format!("已删除日程：{}", removed_title)
                         };
@@ -3192,8 +3298,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                         let s = rules::parse_local_time(&get("start")).ok_or_else(|| tool_error("schedule", "开始时间格式无效"))?;
                         let e = rules::parse_local_time(&get("end")).ok_or_else(|| tool_error("schedule", "结束时间格式无效"))?;
                         let ignore = if get("ignore_id").is_empty() { None } else { Some(get("ignore_id")) };
-                        let store = store_guard();
-                        let events = store.list().map_err(|e| tool_error("schedule", &e))?;
+                        let events = list_visible().map_err(|e| tool_error("schedule", &e))?;
                         let conflicts = rules::find_conflicts(&events, s, e, ignore.as_deref());
                         if conflicts.is_empty() {
                             Ok(ToolOutput::text("该时间段无冲突"))
@@ -3203,8 +3308,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                         }
                     }
                     "remind" => {
-                        let store = store_guard();
-                        let events = store.list().map_err(|e| tool_error("schedule", &e))?;
+                        let events = list_visible().map_err(|e| tool_error("schedule", &e))?;
                         let due = rules::due_reminders(&events, now);
                         if due.is_empty() {
                             Ok(ToolOutput::text("当前无到点提醒"))
@@ -3233,7 +3337,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                         let start_after = if get("start_after").is_empty() { now } else { rules::parse_local_time(&get("start_after")).ok_or_else(|| tool_error("schedule", "start_after 格式无效"))? };
                         let skip = args.get("skip_rest_days").and_then(|v| v.as_bool()).unwrap_or(true);
                         // 临时 guard：取数后立即释放（guard 非 Send，不能跨 await）
-                        let events = store_guard().list().map_err(|e| tool_error("schedule", &e))?;
+                        let events = list_visible().map_err(|e| tool_error("schedule", &e))?;
                         // planner 内部调 day_info（可能 blocking 网络），须在 blocking 线程执行
                         let provider = state.schedule_day_info.clone();
                         let next = tokio::task::spawn_blocking(move || {
@@ -3268,7 +3372,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                         let ws = get_i64("work_start", 9) as u32;
                         let we = get_i64("work_end", 18) as u32;
                         let skip = args.get("skip_rest_days").and_then(|v| v.as_bool()).unwrap_or(true);
-                        let events = store_guard().list().map_err(|e| tool_error("schedule", &e))?;
+                        let events = list_visible().map_err(|e| tool_error("schedule", &e))?;
                         let provider = state.schedule_day_info.clone();
                         let tasks_for_plan = tasks.clone();
                         let results = tokio::task::spawn_blocking(move || {
@@ -3311,7 +3415,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                         } else {
                             return Err(tool_error("schedule", "range 格式无效（支持 7d / 30d / YYYY-MM-DD..YYYY-MM-DD）"));
                         };
-                        let events = store_guard().list().map_err(|e| tool_error("schedule", &e))?;
+                        let events = list_visible().map_err(|e| tool_error("schedule", &e))?;
                         let stats = tokio::task::spawn_blocking(move || {
                             crate::core::schedule::analyze::analyze_range(&events, from, to)
                         })
@@ -3362,7 +3466,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                             chrono::NaiveDate::parse_from_str(&get("date"), "%Y-%m-%d")
                                 .map_err(|_| tool_error("schedule", "日期格式无效（应为 YYYY-MM-DD）"))?
                         };
-                        let events = store_guard().list().map_err(|e| tool_error("schedule", &e))?;
+                        let events = list_visible().map_err(|e| tool_error("schedule", &e))?;
                         let summary = tokio::task::spawn_blocking(move || {
                             crate::core::schedule::analyze::day_summary(&events, date, now)
                         })
@@ -3407,7 +3511,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                         let start_str = get("start");
                         if start_str.is_empty() {
                             // 未指定开始时间：推荐下一个空档（不创建）
-                            let events = store_guard().list().map_err(|e| tool_error("schedule", &e))?;
+                            let events = list_visible().map_err(|e| tool_error("schedule", &e))?;
                             let provider = state.schedule_day_info.clone();
                             let next = tokio::task::spawn_blocking(move || {
                                 crate::core::schedule::planner::next_available(&events, provider.as_ref(), duration, now, true)
@@ -3428,7 +3532,13 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                                 .ok_or_else(|| tool_error("schedule", "start 格式无效（应为 YYYY-MM-DDTHH:MM）"))?;
                             let end = start + chrono::Duration::minutes(duration);
                             let mut store = store_guard();
-                            let conflicts = rules::find_conflicts(&store.list().map_err(|e| tool_error("schedule", &e))?, start, end, None);
+                            let existing: Vec<ScheduleEvent> = store
+                                .list()
+                                .map_err(|e| tool_error("schedule", &e))?
+                                .into_iter()
+                                .filter(|e| !is_snooze_reminder(e))
+                                .collect();
+                            let conflicts = rules::find_conflicts(&existing, start, end, None);
                             if !conflicts.is_empty() {
                                 return Ok(ToolOutput::text(format!(
                                     "时间冲突，未创建专注块：{}",
@@ -3467,7 +3577,7 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                         };
                         let ws = get_i64("work_start", 9) as u32;
                         let we = get_i64("work_end", 18) as u32;
-                        let events = store_guard().list().map_err(|e| tool_error("schedule", &e))?;
+                        let events = list_visible().map_err(|e| tool_error("schedule", &e))?;
                         let (day_events, blocks) = tokio::task::spawn_blocking(move || {
                             let day_events = rules::events_on_date(&events, date);
                             let blocks = crate::core::schedule::analyze::available_blocks(&events, date, ws, we);

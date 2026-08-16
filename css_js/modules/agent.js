@@ -338,40 +338,48 @@ async function sendRagQuery(text) {
     chatAbortController.signal.addEventListener('abort', abortHandler);
 
     // 监听 Tauri 事件
+    // 流式渲染节流（与 llm 路径一致）：rAF 合并 delta、流式轻量渲染（跳过 DOMPurify），
+    // rag:done 用完整 renderChatMarkdown（含 sanitize）覆盖最终版
+    let _streamRaf = 0;
+    const _cancelStreamRender = () => {
+        if (_streamRaf) {
+            cancelAnimationFrame(_streamRaf);
+            _streamRaf = 0;
+        }
+    };
+    const _scheduleStreamRender = () => {
+        if (_streamRaf) return;
+        _streamRaf = requestAnimationFrame(() => {
+            _streamRaf = 0;
+            const div = _chatStreamingDiv;
+            if (div && div._body) {
+                div._body.innerHTML = `<div class="markdown-body" style="zoom: 1;background: transparent;">${renderChatMarkdownStream(_chatStreamingFullContent)}</div>`;
+            }
+            if (div && window._chatAutoScroll !== false) {
+                const container = document.getElementById('chat-messages');
+                if (container) container.scrollTop = container.scrollHeight;
+            }
+        });
+    };
     const unlisteners = await Promise.all([
         window.__TAURI__.event.listen('rag:delta', (e) => {
             if (e.payload.request_id !== requestId) return;
             const delta = e.payload.content;
-            if (!_chatStreamingDiv) {
-                console.debug('[rag] FIRST delta received len=' + delta.length);
-            }
+            if (!delta) return;
             _chatStreamingFullContent += delta;
             if (!_chatStreamingDiv) {
+                console.debug('[rag] FIRST delta received len=' + delta.length);
                 removeChatTyping();
                 const container = document.getElementById('chat-messages');
                 const div = getMessageAssistant();
                 container.appendChild(div);
                 _chatStreamingDiv = div;
-                let _rafPending = false;
-                div._scroll = () => {
-                    if (!_rafPending && window._chatAutoScroll !== false) {
-                        _rafPending = true;
-                        requestAnimationFrame(() => {
-                            _rafPending = false;
-                            if (window._chatAutoScroll !== false) {
-                                container.scrollTop = container.scrollHeight;
-                            }
-                        });
-                    }
-                };
             }
             if (_chatStreamingDiv) {
                 _chatStreamingDiv._rawContent = _chatStreamingFullContent;
             }
-            if (_chatStreamingDiv && _chatStreamingDiv._body) {
-                _chatStreamingDiv._body.innerHTML = `<div class="markdown-body" style="zoom: 1;background: transparent;">${renderChatMarkdown(_chatStreamingFullContent)}</div>`;
-            }
-            if (_chatStreamingDiv) _chatStreamingDiv._scroll();
+            // rAF 节流渲染 + 滚动（合并到同一帧）
+            _scheduleStreamRender();
         }),
         window.__TAURI__.event.listen('trace:event', (e) => {
             const payload = e.payload ? e.payload : {};
@@ -398,6 +406,8 @@ async function sendRagQuery(text) {
             // 立即快照本次响应所需数据为局部变量：
             // finally 会清空 _chatStreamingDiv / _streamingToolCalls / _chatStreamingFullContent，
             // 必须先固化，保证落库与 UI 后处理不受竞态影响。
+            // 取消未执行的流式渲染帧（done 后用完整渲染覆盖，避免轻量版回写）
+            _cancelStreamRender();
             const fullContent = e.payload.content;
             const sources = e.payload.sources || [];
             const promptTokens = e.payload.prompt_tokens || 0;
@@ -431,8 +441,9 @@ async function sendRagQuery(text) {
                 chatMessages.push({ role: 'assistant', content: fullContent, sources: sources, toolCalls: toolCallsSnapshot, created_at: Date.now() });
                 updateTurnCounter();
             }
-            // ===== 落库优先：先持久化再做 UI 后处理（UI 异常不得阻断保存） =====
-            if (ragSessionId && fullContent) {
+            // ===== 落库与 UI 后处理并行（互不依赖；各自异常隔离，不互相阻断） =====
+            const persistTask = (async () => {
+                if (!ragSessionId || !fullContent) return;
                 try {
                     const savedMsg = await saveChatMessageWithRetry({
                         dirPath: currentRootPath,
@@ -466,104 +477,84 @@ async function sendRagQuery(text) {
                             sources: sourceEntries,
                         }).catch(e => console.warn('保存引用来源失败:', e));
                     }
-                    const sessions = await window.__TAURI__.core.invoke('chat_session_list', {
-                        dirPath: currentRootPath,
-                    });
-                    chatSessions = sessions;
-                    renderChatSessionList();
+                    // 记录到 AI 历史（使 AI 使用统计包含 RAG 对话）
+                    if (isTauriVisit() && fullContent) {
+                        window.addAIHistoryItemTauri({
+                            dirPath: currentRootPath, // 显式传入路径
+                            type: 'chat',
+                            label: (chatMessages[0]?.content || '对话').slice(0, 50),
+                            prompt: text,
+                            result: fullContent,
+                            fileName: '',
+                            filePath: '',
+                            tokenCount: completionTokens || 0,
+                        }).catch(e => console.warn('记录 AI 历史失败:', e));
+                    }
+                    // 会话列表刷新一次（含重命名检查；传快照 ragSessionId 防视图切换漂移）
+                    await refreshChatSessionListOnce(ragSessionId);
                 } catch (e) {
                     console.error('[rag] 保存助手消息失败（重试后仍失败）:', e);
                     showNotification('⚠ 回复未能保存到对话历史，请检查数据库', 'warning');
                 }
-            }
-            // 记录到 AI 历史（使 AI 使用统计包含 RAG 对话）
-            if (isTauriVisit() && fullContent) {
-                window.addAIHistoryItemTauri({
-                    dirPath: currentRootPath, // 显式传入路径
-                    type: 'chat',
-                    label: (chatMessages[0]?.content || '对话').slice(0, 50),
-                    prompt: text,
-                    result: fullContent,
-                    fileName: '',
-                    filePath: '',
-                    tokenCount: completionTokens || 0,
-                }).catch(e => console.warn('记录 AI 历史失败:', e));
-            }
-            // ===== UI 后处理（异常隔离，不影响持久化结果） =====
-            try {
-                // 更新上下文使用率（模型上下文窗口占用率）
-                // 优先使用 API 返回的 prompt_tokens，不可用时保留上次的值
-                if (promptTokens > 0) {
-                    updateContextUsage(promptTokens, LOCAL_LLM_CONTEXT_LENGTH || 10000);
-                }
-                // 更新缓存命中率（DSH 口径；provider 未上报缓存字段时显示占位）
-                updateCacheRate({
-                    prompt_tokens: promptTokens,
-                    cached_input_tokens: cachedInputTokens,
-                    cache_creation_input_tokens: cacheCreationInputTokens,
-                }, 'rag');
-                // 流式结束后对代码块进行语法高亮（复制按钮读取原始 Markdown）
-                if (streamingDiv) {
-                    streamingDiv._rawContent = fullContent;
-                }
-                if (streamingDiv && streamingDiv._body) {
-                    await highlightChatCodeBlocks(streamingDiv._body);
-                }
-                removeChatTyping();
-                // 兜底：如果流式过程中未能创建 DOM（如 _statusEl 等异常导致 delta 处理中断），在此创建
-                if (!streamingDiv && fullContent) {
-                    const container = document.getElementById('chat-messages');
-                    const div = getMessageAssistant();
-                    div._rawContent = fullContent;
-                    div._body.innerHTML = `<div class="markdown-body" style="zoom: 1;background: transparent;">${renderChatMarkdown(fullContent)}</div>`;
-                    container.appendChild(div);
-                    streamingDiv = div;
-                }
-                // 追加引用来源 UI
-                if (sources.length > 0 && streamingDiv) {
-                    streamingDiv._chatSources = sources;
-                    renderChatSources(streamingDiv, sources);
-                }
-                // 生成完成后追加底部操作按钮（复制/保存，hover 显示）+ 消息时间，必须为最后一个子元素
-                if (streamingDiv) {
-                    streamingDiv.appendChild(createMessageFooter('assistant', Date.now()));
-                }
-                // 流式结束后滚动到底部，确保最新消息和引用完整可见 
-                if (window._chatAutoScroll !== false) {
-                    const chatContainer = document.getElementById('chat-messages');
-                    if (chatContainer) {
-                        requestAnimationFrame(() => {
-                            if (window._chatAutoScroll !== false) {
-                                chatContainer.scrollTop = chatContainer.scrollHeight;
-                            }
-                        });
+            })();
+            const uiTask = (async () => {
+                try {
+                    // 更新上下文使用率（模型上下文窗口占用率）
+                    if (promptTokens > 0) {
+                        updateContextUsage(promptTokens, LOCAL_LLM_CONTEXT_LENGTH || 10000);
                     }
-                }
-            } catch (e) {
-                console.error('[rag] done UI 后处理异常:', e);
-            }
-            // 重命名"新对话"（容错：防止 sendChatMessage 中因竞态未能更新）
-            if (ragSessionId) {
-                window.__TAURI__.core.invoke('chat_session_list', {
-                    dirPath: currentRootPath,
-                }).then(sessions => {
-                    const cur = sessions.find(s => s.id === ragSessionId);
-                    if (cur && (cur.title === '新对话' || !cur.title)) {
-                        const msg = chatMessages[0]?.content || '';
-                        if (msg) {
-                            window.__TAURI__.core.invoke('chat_session_rename', {
-                                dirPath: currentRootPath,
-                                id: ragSessionId,
-                                title: msg,
-                            }).then(() => {
-                                cur.title = msg;
-                                chatSessions = sessions;
-                                renderChatSessionList();
-                            }).catch(e => console.warn('重命名失败:', e));
+                    // 更新缓存命中率（DSH 口径；provider 未上报缓存字段时显示占位）
+                    updateCacheRate({
+                        prompt_tokens: promptTokens,
+                        cached_input_tokens: cachedInputTokens,
+                        cache_creation_input_tokens: cacheCreationInputTokens,
+                    }, 'rag');
+                    // 流式期间为轻量渲染（未 sanitize），done 后用完整渲染覆盖（含 DOMPurify）
+                    if (streamingDiv) {
+                        streamingDiv._rawContent = fullContent;
+                    }
+                    if (streamingDiv && streamingDiv._body) {
+                        streamingDiv._body.innerHTML = `<div class="markdown-body" style="zoom: 1;background: transparent;">${renderChatMarkdown(fullContent)}</div>`;
+                    }
+                    // 流式结束后对代码块进行语法高亮（复制按钮读取原始 Markdown）
+                    if (streamingDiv && streamingDiv._body) {
+                        await highlightChatCodeBlocks(streamingDiv._body);
+                    }
+                    removeChatTyping();
+                    // 兜底：如果流式过程中未能创建 DOM（如 _statusEl 等异常导致 delta 处理中断），在此创建
+                    if (!streamingDiv && fullContent) {
+                        const container = document.getElementById('chat-messages');
+                        const div = getMessageAssistant();
+                        div._rawContent = fullContent;
+                        div._body.innerHTML = `<div class="markdown-body" style="zoom: 1;background: transparent;">${renderChatMarkdown(fullContent)}</div>`;
+                        container.appendChild(div);
+                        streamingDiv = div;
+                    }
+                    // 追加引用来源 UI
+                    if (sources.length > 0 && streamingDiv) {
+                        streamingDiv._chatSources = sources;
+                        renderChatSources(streamingDiv, sources);
+                    }
+                    // 生成完成后追加底部操作按钮（复制/保存，hover 显示）+ 消息时间，必须为最后一个子元素
+                    if (streamingDiv) {
+                        streamingDiv.appendChild(createMessageFooter('assistant', Date.now()));
+                    }
+                    // 流式结束后滚动到底部，确保最新消息和引用完整可见
+                    if (window._chatAutoScroll !== false) {
+                        const chatContainer = document.getElementById('chat-messages');
+                        if (chatContainer) {
+                            requestAnimationFrame(() => {
+                                if (window._chatAutoScroll !== false) {
+                                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                                }
+                            });
                         }
                     }
-                }).catch(e => console.warn('刷新列表失败:', e));
-            }
+                } catch (e) {
+                    console.error('[rag] done UI 后处理异常:', e);
+                }
+            })();
+            await Promise.allSettled([persistTask, uiTask]);
         }),
         window.__TAURI__.event.listen('rag:error', async (e) => {
             if (e.payload.request_id !== requestId) return;
@@ -618,6 +609,8 @@ async function sendRagQuery(text) {
     } finally {
         chatAbortController?.signal.removeEventListener('abort', abortHandler);
         unlisteners.forEach(u => u());
+        // 清理未执行的流式渲染帧（请求被取消/失败时避免残留 rAF）
+        _cancelStreamRender();
         // 兜底：请求结束但未正常 done、半截内容仍未保存时落库（覆盖事件/调用顺序竞态）
         if (!partialSaved && !ragDone && _chatStreamingFullContent && _chatStreamingFullContent.trim()) {
             partialSaved = true;

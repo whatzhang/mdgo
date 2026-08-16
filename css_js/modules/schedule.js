@@ -187,7 +187,6 @@
             remove: (dirPath, id) => window.__TAURI__.core.invoke('schedule_remove', { dirPath, id }),
             eventsOnDate: (dirPath, date) => window.__TAURI__.core.invoke('schedule_events_on_date', { dirPath, date }),
             conflicts: (dirPath, start, end, ignoreId) => window.__TAURI__.core.invoke('schedule_conflicts', { dirPath, start, end, ignoreId }),
-            remind: (dirPath) => window.__TAURI__.core.invoke('schedule_remind', { dirPath }),
             lunar: (dirPath, date) => window.__TAURI__.core.invoke('schedule_lunar', { dirPath, date }),
             nextAvailable: (dirPath, durationMinutes, startAfter, skipRestDays) => window.__TAURI__.core.invoke('schedule_next_available', { dirPath, durationMinutes, startAfter, skipRestDays }),
             setActiveDir: (dirPath) => window.__TAURI__.core.invoke('schedule_set_active_dir', { dirPath }),
@@ -304,7 +303,9 @@
                 const targetDay = date.getDate();
                 if (!_parseCronField(domField, 1, 31).includes(targetDay)) return [];
                 const targetDow = date.getDay();
-                if (!_parseCronField(dowField, 0, 6).includes(targetDow)) return [];
+                // 周字段统一 0-7（0 与 7 均为周日），与 Rust cron crate / _findNextCronTime 一致
+                const dowHits = _parseCronField(dowField, 0, 7);
+                if (!dowHits.includes(targetDow) && !(targetDow === 0 && dowHits.includes(7))) return [];
             }
 
             // 当天的实际区间（取 start~end 和 当天的交集）
@@ -342,6 +343,14 @@
         let _eventsByDateCacheKey = '';
         let _eventsCacheVersion = 0;            // 递增计数器，todoEvents 变更时 +1
 
+        /** 判断是否为"稍后提醒"临时事件（界面一律不显示）：
+         *  - 会话内：`_isSnoozed` 标记（新版前端定时器实现不落库，仅兼容旧流程）
+         *  - 存量/任何来源：标题 `[稍后提醒] ` 前缀（旧版本曾落库产生，重启后标记丢失仍能识别）
+         */
+        function _isSnoozeReminderEvent(todoE) {
+            return !!todoE && (todoE._isSnoozed === true || (typeof todoE.title === 'string' && todoE.title.startsWith('[稍后提醒]')));
+        }
+
         /**
          * 获取指定日期的所有事件（含 Cron 展开的虚拟事件）
          * @param {Date} date
@@ -355,10 +364,10 @@
                 return _eventsByDateCache.get(dateKey);
             }
             // 普通事件（非 cron 事件），按 start 日期匹配，排除稍后提醒临时事件
-            const normalEvents = todoEvents.filter(todoE => !todoE._isSnoozed && !todoE.cron && todoIsSameDay(todoE.start, date));
+            const normalEvents = todoEvents.filter(todoE => !_isSnoozeReminderEvent(todoE) && !todoE.cron && todoIsSameDay(todoE.start, date));
             // Cron 事件展开为虚拟事件，排除稍后提醒临时事件
             const cronEvents = todoEvents
-                .filter(todoE => !todoE._isSnoozed && todoE.cron)
+                .filter(todoE => !_isSnoozeReminderEvent(todoE) && todoE.cron)
                 .flatMap(todoE => _expandCronEventsForDate(todoE, date));
 
             const result = [...normalEvents, ...cronEvents].sort((a, b) => {
@@ -549,11 +558,11 @@
 
         function todoHasEvent(date) {
             // 轻量检查：先查普通事件，再查 cron 事件，命中即短路（排除稍后提醒临时事件）
-            const hasNormal = todoEvents.some(todoE => !todoE._isSnoozed && !todoE.cron && todoIsSameDay(todoE.start, date));
+            const hasNormal = todoEvents.some(todoE => !_isSnoozeReminderEvent(todoE) && !todoE.cron && todoIsSameDay(todoE.start, date));
             if (hasNormal) return true;
             // cron 事件使用缓存的解析字段快速判断，避免重复调用 _expandCronEventsForDate
             return todoEvents.some(todoE => {
-                if (todoE._isSnoozed || !todoE.cron) return false;
+                if (_isSnoozeReminderEvent(todoE) || !todoE.cron) return false;
                 // 尝试用已缓存的 cronParsed 做快速日月匹配
                 const p = todoE._cronParsed;
                 if (p) {
@@ -633,10 +642,12 @@
                 const dayEvents = getEventsForDate(date);
                 dayEvents.forEach(todoE => {
                     const isCronVirtual = todoE._isCronVirtual;
+                    const isReminder = todoE.event_type === 'reminder';
                     const eventTime = isCronVirtual ? todoFormatTime(todoE._cronTime) : '';
                     const cronClass = isCronVirtual ? ' todo-cron-event' : '';
+                    const reminderClass = isReminder ? ' todo-reminder-event' : '';
                     const onclick = ` onclick="event.stopPropagation(); todoEditEvent('${todoE.id}')"`;
-                    html += `<div class="todo-month-event todo-${todoE.color || 'blue'}${cronClass}"${onclick}>${isCronVirtual ? '🔄 ' + eventTime + ' ' : ''}${escapeHtml(todoE.title)}</div>`;
+                    html += `<div class="todo-month-event todo-${todoE.color || 'blue'}${cronClass}${reminderClass}"${onclick}>${isCronVirtual ? eventTime + ' ' : ''}${escapeHtml(todoE.title)}</div>`;
                 });
                 html += `</div><div class="todo-add-event-hint">+</div>`;
                 el.innerHTML = html;
@@ -833,7 +844,8 @@
             const startHour = eventTime.getHours() + eventTime.getMinutes() / 60;
             const duration = (eventEnd - eventTime) / (1000 * 60 * 60);
             const el = document.createElement('div');
-            el.className = `todo-week-event todo-${todoE.color}${isCronVirtual ? ' todo-cron-event' : ''}`;
+            const isReminder = todoE.event_type === 'reminder';
+            el.className = `todo-week-event todo-${todoE.color}${isCronVirtual ? ' todo-cron-event' : ''}${isReminder ? ' todo-reminder-event' : ''}`;
             el.style.top = `${startHour * 60}px`;
             el.style.height = `${Math.max(duration * 60, 20)}px`;
             // 重叠布局 - 并排显示时左右各留 4px 间隙
@@ -857,6 +869,18 @@
                     <div style="font-size:11px;">${escapeHtml(todoE.title)}</div>
                 `;
                 el.title = `Cron: ${todoE.cron}`;
+                el.style.cursor = 'pointer';
+                el.onclick = (todoEv) => {
+                    todoEv.stopPropagation();
+                    todoEditEvent(todoE.id);
+                };
+            } else if (isReminder) {
+                // 单点提醒：时间胶囊（最小高度），点击打开提醒编辑
+                el.innerHTML = `
+                    <div class="todo-event-time-small">🔔 ${todoFormatTime(eventTime)}</div>
+                    <div>${escapeHtml(todoE.title)}</div>
+                `;
+                el.title = (todoE.desc ? '备注: ' + todoE.desc : '单点提醒');
                 el.style.cursor = 'pointer';
                 el.onclick = (todoEv) => {
                     todoEv.stopPropagation();
@@ -953,7 +977,7 @@
             const now = Date.now();
             const historyMap = new Map();
             todoEvents.forEach(function (todoE) {
-                if (todoE._isSnoozed) return; // 稍后提醒临时事件不显示在历史中
+                if (_isSnoozeReminderEvent(todoE)) return; // 稍后提醒临时事件不显示在历史中
                 if (todoE.cron) {
                     const cronStart = todoE.start instanceof Date ? todoE.start : new Date(todoE.start);
                     const cronEnd = todoE.end instanceof Date ? todoE.end : new Date(todoE.end);
@@ -1221,12 +1245,22 @@
             }
             const defaultColor = document.querySelector('.todo-color-option[data-color="orange"]');
             if (defaultColor) todoSelectColor(defaultColor);
+            // 新建日程：提醒默认开启、提前 0 分钟
+            const notifyCb = todo$('todo-eventNotify');
+            if (notifyCb) notifyCb.checked = true;
+            const notifyBefore = todo$('todo-eventNotifyBefore');
+            if (notifyBefore) notifyBefore.value = '0';
             modal.classList.add('todo-active');
         }
         // 编辑事件
         function todoEditEvent(id) {
             const todoE = todoEvents.find(todoEv => todoEv.id === id);
             if (!todoE) return;
+            // 提醒（闹钟式单点事件）走独立提醒模态框
+            if (todoE.event_type === 'reminder') {
+                todoOpenReminderModal(todoE);
+                return;
+            }
             const titleEl = todo$('todo-modalTitle');
             const deleteBtn = todo$('todo-deleteBtn');
             const eventTitle = todo$('todo-eventTitle');
@@ -1256,6 +1290,11 @@
             }
             const colorEl = document.querySelector(`.todo-color-option[data-color="${todoE.color}"]`);
             if (colorEl) todoSelectColor(colorEl);
+            // 编辑日程：回填提醒开关与提前量
+            const notifyCb = todo$('todo-eventNotify');
+            if (notifyCb) notifyCb.checked = todoE.notify !== false;
+            const notifyBefore = todo$('todo-eventNotifyBefore');
+            if (notifyBefore) notifyBefore.value = todoE.notify_before || 0;
             modal.classList.add('todo-active');
         }
         // 关闭弹窗
@@ -1269,9 +1308,118 @@
         // 选择颜色
         function todoSelectColor(el) {
             if (!el) return;
-            document.querySelectorAll('.todo-color-option').forEach(c => c.classList.remove('todo-selected'));
+            document.querySelectorAll('#todo-modal .todo-color-option').forEach(c => c.classList.remove('todo-selected'));
             el.classList.add('todo-selected');
             todoSelectedColor = el.dataset.color;
+        }
+        // ── 独立提醒（闹钟式：标题/时间/颜色/备注；内部为 event_type=reminder 单点事件）──
+        let todoReminderEditing = null;
+        let todoReminderSelectedColor = 'blue';
+
+        function todoReminderSelectColor(el) {
+            if (!el) return;
+            document.querySelectorAll('#todo-reminderModal .todo-color-option').forEach(c => c.classList.remove('todo-selected'));
+            el.classList.add('todo-selected');
+            todoReminderSelectedColor = el.dataset.color;
+        }
+
+        function todoOpenReminderModal(event = null) {
+            const modal = todo$('todo-reminderModal');
+            const titleEl = todo$('todo-reminderModalTitle');
+            const inputTitle = todo$('todo-reminderTitle');
+            const inputTime = todo$('todo-reminderTime');
+            const inputNote = todo$('todo-reminderNote');
+            const deleteBtn = todo$('todo-reminderDeleteBtn');
+            if (!modal || !inputTitle || !inputTime || !inputNote) return;
+            todoReminderEditing = event;
+            const colorEls = document.querySelectorAll('#todo-reminderModal .todo-color-option');
+            if (event) {
+                titleEl.textContent = '编辑提醒';
+                inputTitle.value = event.title || '';
+                const t = event.start instanceof Date ? event.start : new Date(event.start);
+                inputTime.value = todoFormatDateTimeLocal(t);
+                inputNote.value = event.desc || '';
+                todoReminderSelectedColor = event.color || 'blue';
+                if (deleteBtn) deleteBtn.style.display = '';
+            } else {
+                titleEl.textContent = '新建提醒';
+                inputTitle.value = '';
+                const now = new Date();
+                // 默认下一个 5 分钟整点
+                now.setMinutes(now.getMinutes() + (5 - (now.getMinutes() % 5)) % 5, 0, 0);
+                inputTime.value = todoFormatDateTimeLocal(now);
+                inputNote.value = '';
+                todoReminderSelectedColor = 'blue';
+                if (deleteBtn) deleteBtn.style.display = 'none';
+            }
+            colorEls.forEach(c => c.classList.toggle('todo-selected', c.dataset.color === todoReminderSelectedColor));
+            modal.classList.add('todo-active');
+        }
+
+        function todoCloseReminderModal() {
+            const modal = todo$('todo-reminderModal');
+            if (modal) modal.classList.remove('todo-active');
+            todoReminderEditing = null;
+        }
+
+        async function todoSaveReminder() {
+            const inputTitle = todo$('todo-reminderTitle');
+            const inputTime = todo$('todo-reminderTime');
+            const inputNote = todo$('todo-reminderNote');
+            if (!inputTitle || !inputTime || !inputNote) return;
+            const title = inputTitle.value.trim();
+            const timeVal = inputTime.value;
+            if (!title) {
+                showNotification('请输入提醒标题', 'warning');
+                return;
+            }
+            if (!timeVal) {
+                showNotification('请选择提醒时间', 'warning');
+                return;
+            }
+            const t = new Date(timeVal);
+            const input = {
+                title,
+                start: _dateToLocalISO(t),
+                end: _dateToLocalISO(t),
+                color: todoReminderSelectedColor,
+                desc: inputNote.value.trim(),
+                event_type: 'reminder',
+                notify: true,
+            };
+            try {
+                if (todoReminderEditing) {
+                    const updated = await ScheduleService.update(currentRootPath, todoReminderEditing.id, input);
+                    const idx = todoEvents.findIndex(e => e.id === updated.id);
+                    if (idx >= 0) todoEvents[idx] = { ...updated, start: new Date(updated.start), end: new Date(updated.end) };
+                } else {
+                    const res = await ScheduleService.add(currentRootPath, input);
+                    todoEvents.push({ ...res.event, start: new Date(res.event.start), end: new Date(res.event.end) });
+                }
+            } catch (e) {
+                showNotification('保存提醒失败: ' + e, 'error');
+                return;
+            }
+            todoCloseReminderModal();
+            _invalidateEventsCache();
+            todoRenderAll();
+            todoUpdateLocalScheduler();
+        }
+
+        async function todoDeleteReminder() {
+            if (!todoReminderEditing) return;
+            const id = todoReminderEditing.id;
+            try {
+                await ScheduleService.remove(currentRootPath, id);
+                todoEvents = todoEvents.filter(e => e.id !== id);
+            } catch (e) {
+                showNotification('删除提醒失败: ' + e, 'error');
+                return;
+            }
+            todoCloseReminderModal();
+            _invalidateEventsCache();
+            todoRenderAll();
+            todoUpdateLocalScheduler();
         }
         async function todoSaveEvent() {
             const eventTitle = todo$('todo-eventTitle');
@@ -1309,7 +1457,8 @@
                 color: todoSelectedColor,
                 desc,
                 cron,
-                notify: true,
+                notify: (todo$('todo-eventNotify') || {}).checked !== false,
+                notify_before: parseInt((todo$('todo-eventNotifyBefore') || {}).value, 10) || 0,
             };
             try {
                 if (todoEditingEvent) {
@@ -1339,7 +1488,20 @@
             const deletedTitle = todoEditingEvent.title;
             try {
                 await ScheduleService.remove(currentRootPath, deletedId);
-                // 同时清理关联的"稍后提醒"临时事件（内存镜像）
+                // 级联清理关联的"稍后提醒"事件：先删后端持久化记录（重启后不残留孤儿提醒），再清内存镜像
+                if (deletedTitle) {
+                    try {
+                        const all = await ScheduleService.list(currentRootPath);
+                        const snoozePrefix = `[稍后提醒] ${deletedTitle}`;
+                        for (const s of all) {
+                            if (s.title === snoozePrefix) {
+                                await ScheduleService.remove(currentRootPath, s.id);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('清理稍后提醒失败:', e);
+                    }
+                }
                 todoEvents = todoEvents.filter(todoE => {
                     if (todoE.id === deletedId) return false;
                     if (deletedTitle && todoE.title === `[稍后提醒] ${deletedTitle}`) return false;
@@ -1408,6 +1570,8 @@
                 _reminderListenerBound = true;
                 window.__TAURI__.event.listen('schedule:reminder', (ev) => {
                     const payload = (ev && ev.payload) || {};
+                    // 目录归属校验：只处理当前知识库目录的提醒，避免多目录/切换竞态下错弹
+                    if (payload.dir_path && payload.dir_path !== currentRootPath) return;
                     const events = payload.events || [];
                     for (const event of events) {
                         if (_remindedEventIds.has(event.id)) continue;
@@ -1417,6 +1581,7 @@
                             start: event.start, end: event.end,
                             desc: event.desc || '', color: event.color || '',
                             cron: event.cron || '', cron_trigger: !!event.cron,
+                            event_type: event.event_type || '',
                             _snoozeCount: 0
                         });
                     }
@@ -1480,7 +1645,9 @@
             }
             const startTime = data.start ? todoFormatTime(new Date(data.start)) : '';
             const endTime = data.end ? todoFormatTime(new Date(data.end)) : '';
-            const timeStr = startTime && endTime ? `${startTime} - ${endTime}` : '';
+            // 单点提醒（闹钟）只显示一次时间；日程显示 起~止
+            const isReminder = data.event_type === 'reminder';
+            const timeStr = isReminder ? startTime : (startTime && endTime ? `${startTime} - ${endTime}` : '');
             const cronHint = isCron && data.cron ? `${escapeHtml(data.cron)}&nbsp;&nbsp;&nbsp;${todoParseCron(data.cron)}` : '';
             overlay.innerHTML = `
                 <div class="todo-reminder-modal todo-${data.color || 'blue'}">
@@ -1504,36 +1671,31 @@
             //声音提醒
             paySound();
         }
-        // 稍后提醒：5分钟后再次触发（创建临时提醒事件，经 Rust 持久化；Rust 调度器 5 分钟后再次推送）
-        async function todoSnoozeReminder(btn, eventId) {
+        // 稍后提醒：5 分钟后再次弹窗（纯前端临时定时器，不落库、不显示在日历/日程列表中）。
+        // 旧实现会创建 "[稍后提醒] xxx" 单点事件并落库——重启后 _isSnoozed 内存标记丢失，
+        // 该临时事件会以正常日程形态出现在界面中（用户不可见预期）。改为 TimerManager 定时
+        // 到点直接重新弹窗：界面零残留、无孤儿事件堆积；应用运行期间（含页面隐藏）可靠触发。
+        function todoSnoozeReminder(btn, eventId) {
             const overlay = btn.closest('.todo-reminder-overlay');
             if (overlay) overlay.remove();
             const event = todoEvents.find(e => e.id === eventId);
-            if (event) {
-                const snoozeTime = Date.now() + 5 * 60 * 1000;
-                // 创建临时提醒（不改变原事件的 start 时间，以免影响日历显示）
-                var targetTitle = event.title.startsWith('[稍后提醒]') ? event.title : `[稍后提醒] ${event.title}`;
-                try {
-                    const res = await ScheduleService.add(currentRootPath, {
-                        title: targetTitle,
-                        start: _dateToLocalISO(new Date(snoozeTime)),
-                        end: _dateToLocalISO(new Date(snoozeTime + 60 * 60 * 1000)),
-                        desc: event.desc || '',
-                        cron: '',
-                        notify: true,
-                    });
-                    todoEvents.push({
-                        ...res.event,
-                        start: new Date(res.event.start),
-                        end: new Date(res.event.end),
-                        _isSnoozed: true,
-                        _snoozeCount: (event._snoozeCount || 0) + 1
-                    });
-                    todoRenderAll();
-                } catch (e) {
-                    showNotification('稍后提醒创建失败: ' + e, 'error');
-                }
-            }
+            if (!event) return;
+            // 计数记回原事件（内存态）：连续"稍后提醒"递增，第 3 次弹窗起显示"确认"按钮
+            event._snoozeCount = (event._snoozeCount || 0) + 1;
+            const nextCount = event._snoozeCount;
+            // 一次性定时器（TimerManager.setTimeout，触发后自动清理）；key 含事件 id 与时间戳避免同名覆盖
+            const timerKey = `snooze-${eventId}-${Date.now()}`;
+            TimerManager.setTimeout(timerKey, () => {
+                todoShowReminder({
+                    id: event.id, title: event.title,
+                    start: event.start, end: event.end,
+                    desc: event.desc || '', color: event.color || '',
+                    cron: event.cron || '', cron_trigger: !!event.cron,
+                    event_type: event.event_type || '',
+                    _snoozeCount: nextCount
+                });
+            }, 5 * 60 * 1000);
+            showNotification(`已设为 5 分钟后再次提醒：${event.title}`, 'info');
         }
         // 确认（最后提醒的按钮）：关闭弹窗，不创建新事件
         function todoConfirmReminder(btn) {
@@ -1661,6 +1823,7 @@
             if (todoEvents && todoEvents.length > 0) {
                 for (let i = 0; i < todoEvents.length; i++) {
                     const ev = todoEvents[i];
+                    if (_isSnoozeReminderEvent(ev)) continue; // 稍后提醒不参与头部预告
                     let t = Infinity;
                     if (ev.cron) {
                         t = _findNextCronTime(ev, now);

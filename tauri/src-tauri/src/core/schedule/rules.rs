@@ -18,6 +18,12 @@ use std::str::FromStr;
 
 use super::ScheduleEvent;
 
+/// Cron 命中事件的单次占用时长（分钟）。
+///
+/// 统一口径：Rust 与前端（`_expandCronEventsForDate` 虚拟事件 30 分钟）一致。
+/// cron 事件 `start/end` 仅作"每天可命中的时间区间边界"，每次命中按固定时长占档。
+pub const CRON_HIT_DURATION_MINUTES: i64 = 30;
+
 /// 解析 `YYYY-MM-DDTHH:MM` 本地时间字符串
 pub fn parse_local_time(s: &str) -> Option<NaiveDateTime> {
     NaiveDateTime::parse_from_str(s.trim(), "%Y-%m-%dT%H:%M").ok()
@@ -97,6 +103,10 @@ fn same_day(start: &str, date: NaiveDate) -> bool {
 
 /// 某日事件列表：普通事件（start 同日）+ Cron 事件当天展开，按开始时间排序。
 /// 对齐前端 `getEventsForDate`。
+///
+/// Cron 命中事件统一生成为 `start=命中时刻`、`end=命中时刻+[`CRON_HIT_DURATION_MINUTES`]` 的
+/// 独立事件（与前端 30 分钟虚拟时长对齐），使空闲块 / 复盘 / 统计等下游按单次时长计算，
+/// 避免"cron 事件把原始长区间（如 09:00-18:00）整体当作占用"的失真。
 pub fn events_on_date(events: &[ScheduleEvent], date: NaiveDate) -> Vec<ScheduleEvent> {
     let mut normal: Vec<ScheduleEvent> = events
         .iter()
@@ -109,7 +119,13 @@ pub fn events_on_date(events: &[ScheduleEvent], date: NaiveDate) -> Vec<Schedule
         .flat_map(|e| {
             expand_cron_times(e, date)
                 .into_iter()
-                .map(|t| ScheduleEvent { start: t.format("%Y-%m-%dT%H:%M").to_string(), ..e.clone() })
+                .map(|t| ScheduleEvent {
+                    start: t.format("%Y-%m-%dT%H:%M").to_string(),
+                    end: (t + Duration::minutes(CRON_HIT_DURATION_MINUTES))
+                        .format("%Y-%m-%dT%H:%M")
+                        .to_string(),
+                    ..e.clone()
+                })
         })
         .collect();
     normal.append(&mut cron_hits);
@@ -117,7 +133,29 @@ pub fn events_on_date(events: &[ScheduleEvent], date: NaiveDate) -> Vec<Schedule
     normal
 }
 
-/// 与现有事件的时间重叠检测（半开区间 [start, end) 重叠）
+/// Cron 事件是否在查询区间 `[start, end)` 内存在命中占用（命中时刻 + 单次时长 与区间重叠）。
+///
+/// 供 [`find_conflicts`] 使用：cron 事件按**当天命中时刻**判定冲突，而不是把原始长区间
+/// （如每天 09:00-18:00）整体当作占用，保证空闲查询 / 排期 / 冲突检测的准确性。
+/// 最多扫描查询区间涉及的天数（上限 31 天，防止跨多年 cron 拖垮性能）。
+fn cron_overlaps(event: &ScheduleEvent, start: NaiveDateTime, end: NaiveDateTime) -> bool {
+    let mut day = start.date();
+    let last_day = end.date();
+    let mut guard = 0;
+    while day <= last_day && guard < 31 {
+        for t in expand_cron_times(event, day) {
+            if t < end && t + Duration::minutes(CRON_HIT_DURATION_MINUTES) > start {
+                return true;
+            }
+        }
+        day += Duration::days(1);
+        guard += 1;
+    }
+    false
+}
+
+/// 与现有事件的时间重叠检测（半开区间 [start, end) 重叠）。
+/// Cron 事件按当天命中时刻（+单次时长）判定；普通/提醒事件按原始区间判定。
 pub fn find_conflicts(
     events: &[ScheduleEvent],
     start: NaiveDateTime,
@@ -128,6 +166,9 @@ pub fn find_conflicts(
         .iter()
         .filter(|e| Some(e.id.as_str()) != ignore_id)
         .filter(|e| {
+            if !e.cron.trim().is_empty() {
+                return cron_overlaps(e, start, end);
+            }
             let Some(es) = parse_local_time(&e.start) else { return false };
             let Some(ee) = parse_local_time(&e.end) else { return false };
             es < end && start < ee // 重叠判定
@@ -139,6 +180,8 @@ pub fn find_conflicts(
 /// 到点应触发提醒的事件。
 /// - 普通事件：当前时间在提前提醒窗口内（`[start - notify_before, end)`；`notify_before=0` 时即
 ///   开始时间起提醒，与旧行为一致）
+/// - 提醒（`event_type=reminder`，单点时间 start==end）：到点起 5 分钟窗口内触发
+///   （前端 `_remindedEventIds` 会话内去重；窗口过期后不再触发，避免跨重启反复弹）
 /// - Cron 事件：当前分钟命中 cron（对齐前端 `_cronMatches`；Cron 事件的提醒时机仍为命中时刻）
 pub fn due_reminders(events: &[ScheduleEvent], now: NaiveDateTime) -> Vec<ScheduleEvent> {
     events
@@ -147,6 +190,11 @@ pub fn due_reminders(events: &[ScheduleEvent], now: NaiveDateTime) -> Vec<Schedu
         .filter(|e| {
             let Some(es) = parse_local_time(&e.start) else { return false };
             let Some(ee) = parse_local_time(&e.end) else { return false };
+            // 单点提醒（event_type=reminder, start==end）：到点起 5 分钟窗口内触发
+            // （窗口可能在 end 之后，故 `now > ee` 的过期判定对提醒不适用）
+            if e.event_type == "reminder" {
+                return now >= es && now < es + Duration::minutes(5);
+            }
             if now > ee {
                 return false;
             }
@@ -254,8 +302,31 @@ mod tests {
         assert_eq!(list.len(), 2);
         assert_eq!(list[0].id, "c1");
         assert_eq!(list[1].id, "n1");
-        // cron 命中事件的 start 被替换为实际命中时间
+        // cron 命中事件的 start 被替换为实际命中时间，end 为命中时刻 + 单次时长（30 分钟）
         assert_eq!(list[0].start, "2026-08-13T09:00");
+        assert_eq!(list[0].end, "2026-08-13T09:30");
+        // 普通事件保持原始起止
+        assert_eq!(list[1].start, "2026-08-13T10:00");
+        assert_eq!(list[1].end, "2026-08-13T11:00");
+    }
+
+    #[test]
+    fn find_conflicts_checks_cron_by_hit_window() {
+        // cron 事件 09:00-18:00（每天 09:00 命中）：09:15 的会议应冲突（命中 09:00-09:30 重叠），
+        // 09:45 的会议不冲突（命中窗口已过）；不再把 09:00-18:00 整体当占用。
+        let cron = event("c1", "2026-08-13T09:00", "2026-08-13T18:00", "0 9 * * *");
+        let d = NaiveDate::from_ymd_opt(2026, 8, 13).unwrap();
+        let hit_overlap = d.and_hms_opt(9, 15, 0).unwrap();
+        let hit_end = d.and_hms_opt(10, 0, 0).unwrap();
+        let conflicts = find_conflicts(&[cron.clone()], hit_overlap, hit_end, None);
+        assert_eq!(conflicts.len(), 1, "09:15-10:00 与命中窗口 09:00-09:30 重叠");
+
+        let no_overlap = d.and_hms_opt(9, 45, 0).unwrap();
+        let no_end = d.and_hms_opt(10, 45, 0).unwrap();
+        assert!(
+            find_conflicts(&[cron], no_overlap, no_end, None).is_empty(),
+            "09:45 起与命中窗口无重叠，不应误报整天占用"
+        );
     }
 
     #[test]
@@ -303,5 +374,23 @@ mod tests {
         // notify=false 时不触发（即使进了窗口）
         e.notify = false;
         assert!(due_reminders(&[e], in_window).is_empty());
+    }
+
+    #[test]
+    fn due_reminders_fires_for_reminder_type() {
+        // 单点提醒（event_type=reminder, start==end）：到点起 5 分钟窗口内触发
+        let mut e = event("r1", "2026-08-13T10:00", "2026-08-13T10:00", "");
+        e.event_type = "reminder".into();
+        let at = NaiveDate::from_ymd_opt(2026, 8, 13).unwrap().and_hms_opt(10, 0, 0).unwrap();
+        assert_eq!(due_reminders(&[e.clone()], at).len(), 1);
+        // 窗口内（10:02）仍触发
+        let within = NaiveDate::from_ymd_opt(2026, 8, 13).unwrap().and_hms_opt(10, 2, 0).unwrap();
+        assert_eq!(due_reminders(&[e.clone()], within).len(), 1);
+        // 未到点不触发
+        let before = NaiveDate::from_ymd_opt(2026, 8, 13).unwrap().and_hms_opt(9, 59, 0).unwrap();
+        assert!(due_reminders(&[e.clone()], before).is_empty());
+        // 窗口过期（10:06）不再触发（避免跨重启反复弹）
+        let after = NaiveDate::from_ymd_opt(2026, 8, 13).unwrap().and_hms_opt(10, 6, 0).unwrap();
+        assert!(due_reminders(&[e], after).is_empty());
     }
 }

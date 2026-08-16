@@ -173,6 +173,7 @@ fn apply_compaction_checkpoint(
 async fn prepare_history(
     messages: &[crate::services::llm::ChatMessage],
     compressor: &dyn ContextCompressor,
+    budget_tokens: usize,
     cancel: CancellationToken,
 ) -> crate::core::context::CompressedHistory {
     let turns: Vec<ChatTurn> = messages[..messages.len().saturating_sub(1)]
@@ -185,8 +186,21 @@ async fn prepare_history(
         })
         .collect();
     compressor
-        .compress(&turns, tokens_to_chars_budget(MAX_MESSAGE_TOKENS), cancel)
+        .compress(&turns, tokens_to_chars_budget(budget_tokens), cancel)
         .await
+}
+
+/// 历史压缩预算（token）：默认按模型上下文窗口的 **80%** 计算（用户确认的口径），
+/// 随模型窗口缩放，避免固定阈值在大窗口模型上过早压缩；
+/// - 未配置上下文窗口（context_length=0）→ 回退固定 `MAX_MESSAGE_TOKENS`（旧行为兜底）；
+/// - 极小窗口受下限保护（防预算过小导致每次请求都压缩）。
+fn compression_budget_tokens(context_length: u32) -> usize {
+    const MIN_BUDGET_TOKENS: usize = 2_000;
+    if context_length > 0 {
+        (context_length as usize * 8 / 10).max(MIN_BUDGET_TOKENS)
+    } else {
+        MAX_MESSAGE_TOKENS
+    }
 }
 
 /// 将压缩后的历史轮次转为 Rig history
@@ -1594,7 +1608,13 @@ pub async fn agent_query(
         _ => None,
     };
     let hist_messages = apply_compaction_checkpoint(&messages, checkpoint.as_ref());
-    let compressed = prepare_history(&hist_messages, compressor.as_ref(), cancel.clone()).await;
+    let compressed = prepare_history(
+        &hist_messages,
+        compressor.as_ref(),
+        compression_budget_tokens(llm_cfg.context_length),
+        cancel.clone(),
+    )
+    .await;
     // 写回新检查点：仅摘要策略成功且消息带 id 时（可定位 cutoff），
     // 失败静默（检查点缺失只是失去增量优化，不影响正确性）
     if let (Some(sid), Some(store)) = (&session_id, state.get_chat_store(&dir_path).ok()) {
@@ -2042,7 +2062,13 @@ pub async fn kb_llm_query(
     }
 
     let prompt_content = messages.last().map(|m| m.content.clone()).unwrap_or_default();
-    let compressed = prepare_history(&messages, compressor.as_ref(), cancel.clone()).await;
+    let compressed = prepare_history(
+        &messages,
+        compressor.as_ref(),
+        compression_budget_tokens(llm_cfg.context_length),
+        cancel.clone(),
+    )
+    .await;
     if compressed.dropped_chars > 0 {
         log::info!(
             "[kb_llm_query] [0]: 对话历史已压缩 request_id={} dropped={} strategy={}",

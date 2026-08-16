@@ -18,4 +18,11 @@ pub trait EventStore: Send {
     fn remove(&mut self, id: &str) -> Result<(), String>;
     /// 整体替换（批量导入用，事务保证原子性）
     fn replace_all(&mut self, events: Vec<ScheduleEvent>) -> Result<(), String>;
+    /// 记录一次已推送的提醒（幂等：同 `(event_id, trigger_at)` 首次返回 `true`，重复返回 `false`）。
+    ///
+    /// 提醒调度器据此保证"同一触发点只推一次"，避免窗口期内（如提前提醒的
+    /// `[start - notify_before, end)` 长窗口）重复推送 / 应用重启后重复弹窗。
+    fn record_reminder(&mut self, event_id: &str, trigger_at: &str) -> Result<bool, String>;
+    /// 清理 `before` 之前（含）的提醒推送记录（防止日志表无限增长）。
+    fn cleanup_reminders(&mut self, before: &str) -> Result<(), String>;
 }

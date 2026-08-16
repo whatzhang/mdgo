@@ -45,6 +45,9 @@ pub struct LlmConfig {
     /// 最大输出 token（P3：可选；None/0 = 不发送，由服务器/模型默认；>0 时显式发送，
     /// 避免本地模型（LM Studio 等）使用过小的默认输出上限导致回答截断）
     pub max_tokens: Option<u32>,
+    /// 模型上下文窗口长度（token）。压缩预算按窗口 80% 计算；0 = 未配置，
+    /// 压缩预算回退固定 MAX_MESSAGE_TOKENS（后端兜底）。
+    pub context_length: u32,
 }
 
 impl Default for LlmConfig {
@@ -58,6 +61,7 @@ impl Default for LlmConfig {
             summary_model: None,
             reasoning_effort: None,
             max_tokens: None,
+            context_length: 0,
         }
     }
 }

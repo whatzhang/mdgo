@@ -837,3 +837,28 @@ impl Default for SkillRegistry {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn system_skills_parse_including_outline_mindmap() {
+        // 编译期嵌入的全部系统技能必须能被解析；新技能添加后本测试自动回归，
+        // 防止 SKILL.md frontmatter 非法导致技能静默缺失。
+        let skills = SkillStore::scan_system();
+        assert!(
+            skills.iter().any(|s| s.id == "outline-mindmap"),
+            "outline-mindmap 技能应被解析成功"
+        );
+        // 所有系统技能声明的工具必须落在系统白名单内（parse 已过滤，此处验证无意外丢失）
+        for s in &skills {
+            assert!(
+                s.tools.iter().all(|t| ALLOWED_TOOLS.contains(&t.as_str())),
+                "技能 {} 声明了白名单外的工具: {:?}",
+                s.id,
+                s.tools
+            );
+        }
+    }
+}

@@ -100,19 +100,21 @@ pub async fn schedule_add(
     };
     event.validate()?;
     let store = store_for(&state, &dir_path)?;
-    // 冲突检测（非 Cron 事件）+ 写入：SQLite 阻塞 IO 移入 blocking 线程
+    // 冲突检测（非 Cron 事件）+ 写入：SQLite 阻塞 IO 移入 blocking 线程；
+    // 单锁内完成读+写（与工具层 add 一致），消除并发写窗口导致的新冲突漏检
     let (conflicts, event) = tokio::task::spawn_blocking(move || -> Result<(Vec<ScheduleEvent>, ScheduleEvent), String> {
+        let mut guard = lock_store(&store);
         let conflicts = if event.cron.trim().is_empty() {
             let s = rules::parse_local_time(&event.start)
                 .ok_or_else(|| "开始时间格式无效".to_string())?;
             let e = rules::parse_local_time(&event.end)
                 .ok_or_else(|| "结束时间格式无效".to_string())?;
-            let list = lock_store(&store).list()?;
+            let list = guard.list()?;
             rules::find_conflicts(&list, s, e, None)
         } else {
             Vec::new()
         };
-        lock_store(&store).upsert(event.clone())?;
+        guard.upsert(event.clone())?;
         Ok((conflicts, event))
     })
     .await
@@ -221,7 +223,8 @@ pub async fn schedule_conflicts(
     Ok(rules::find_conflicts(&events, s, e, ignore_id.as_deref()))
 }
 
-/// 到点应提醒的事件（前端/系统提醒调度轮询）
+/// 到点应提醒的事件（Agent 工具层查询用；提醒推送已由 Rust 后台调度器负责，
+/// 本命令仅供按需查询，不消费/不记录推送状态）
 #[tauri::command]
 pub async fn schedule_remind(app: AppHandle, dir_path: String) -> Result<Vec<ScheduleEvent>, String> {
     let state = app.state::<AppState>();
@@ -285,6 +288,9 @@ pub async fn schedule_next_available(
 #[tauri::command]
 pub async fn schedule_set_active_dir(app: AppHandle, dir_path: String) -> Result<(), String> {
     let state = app.state::<AppState>();
+    // 入口校验：目录必须合法且存在（sanitize 拒绝空串/相对路径/不存在的目录），
+    // 避免调度器持空/非法目录静默失效（tick 时才报错被 warn 吞掉）
+    crate::core::db::global::sanitize_kb_dir(&dir_path)?;
     state
         .schedule_scheduler
         .set_active_dir(Some(dir_path));

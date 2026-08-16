@@ -5,8 +5,8 @@
 //! - [`ScheduleEvent`]：日程事件领域模型，字段与前端数据逐一对齐
 //!   （id/title/start/end/color/desc/cron/notify/created_at/updated_at），时间格式 `YYYY-MM-DDTHH:MM`。
 //! - [`store::EventStore`]：存储抽象（trait，接口隔离 + 依赖倒置），上层只依赖此接口；
-//! - [`sqlite::SqliteStore`]：SQLite 持久化实现（全局共用 DB `%APPDATA%/com.mdgo/mdgo.db`，
-//!   `dir_path` 列做知识库隔离，WAL，全参数化 SQL）。
+//! - [`sqlite::SqliteStore`]：SQLite 持久化实现（**知识库级统一数据库** `{知识库}/.mdgo/mdgo.db`，
+//!   与 memory/prompts 共用；`dir_path` 列做知识库隔离，WAL，全参数化 SQL）。
 //! - [`rules`]：纯函数规则引擎（Cron 展开 / 冲突检测 / 提醒计算 / 时间校验）。
 //! - [`lunar`]：农历 / 节假日 / 调休信息提供（DayInfoProvider trait）。
 //!
@@ -78,7 +78,10 @@ pub struct ScheduleEvent {
     #[serde(default)]
     pub notify_before: i64,
     /// 事件类型（work/meeting/focus/personal/task 等，供时间分析聚合）
-    #[serde(default, rename = "type")]
+    ///
+    /// 统一 JSON 键为 `event_type`（前端全程使用该键）；`alias="type"` 兼容早期
+    /// `rename="type"` 的存量数据/调用方，避免字段名漂移导致校验与展示失效。
+    #[serde(default, alias = "type")]
     pub event_type: String,
     /// 优先级（high/medium/low）
     #[serde(default)]
@@ -116,7 +119,8 @@ impl ScheduleEvent {
             .ok_or_else(|| format!("开始时间格式无效: {}", self.start))?;
         let end = rules::parse_local_time(&self.end)
             .ok_or_else(|| format!("结束时间格式无效: {}", self.end))?;
-        if end <= start {
+        // 提醒（event_type=reminder）为单点时间：允许 start == end；其余类型必须 end > start
+        if end < start || (end == start && self.event_type != "reminder") {
             return Err("结束时间必须晚于开始时间".into());
         }
         Ok(())
@@ -141,7 +145,10 @@ pub struct ScheduleEventInput {
     #[serde(default)]
     pub notify_before: i64,
     /// 事件类型（work/meeting/focus/personal/task 等）
-    #[serde(default, rename = "type")]
+    ///
+    /// 统一 JSON 键为 `event_type`（与前端一致）；`alias="type"` 兼容早期 `rename="type"`
+    /// 的存量数据/调用方，避免字段名漂移导致校验（如单点提醒 start==end）与展示失效。
+    #[serde(default, alias = "type")]
     pub event_type: String,
     /// 优先级（high/medium/low）
     #[serde(default)]
@@ -180,5 +187,50 @@ mod tests {
             serde_json::from_str(r#"{"id":"e1","title":"会议","start":"2026-08-18T14:00","end":"2026-08-18T15:00"}"#)
                 .unwrap();
         assert_eq!(e.color, "blue");
+    }
+
+    #[test]
+    fn validate_allows_reminder_single_point() {
+        // 提醒（event_type=reminder）为单点时间：允许 start == end
+        let e = ScheduleEvent {
+            id: "r1".into(),
+            title: "吃药提醒".into(),
+            start: "2026-08-18T14:00".into(),
+            end: "2026-08-18T14:00".into(),
+            event_type: "reminder".into(),
+            ..Default::default()
+        };
+        assert!(e.validate().is_ok());
+        // 非提醒类型仍要求 end > start
+        let bad = ScheduleEvent { event_type: "work".into(), ..e.clone() };
+        assert!(bad.validate().is_err());
+    }
+
+    #[test]
+    fn event_type_json_key_is_event_type_with_type_alias() {
+        // 前端全程使用 event_type 键：反序列化必须正确识别，否则单点提醒校验（start==end）会误报
+        let input: ScheduleEventInput = serde_json::from_str(
+            r#"{"title":"提醒","start":"2026-08-18T14:00","end":"2026-08-18T14:00","event_type":"reminder"}"#,
+        )
+        .unwrap();
+        assert_eq!(input.event_type, "reminder", "event_type 键必须反序列化成功");
+        // 兼容早期 rename="type" 的存量调用方
+        let legacy: ScheduleEventInput = serde_json::from_str(
+            r#"{"title":"提醒","start":"2026-08-18T14:00","end":"2026-08-18T14:00","type":"reminder"}"#,
+        )
+        .unwrap();
+        assert_eq!(legacy.event_type, "reminder", "type 键（旧契约）也应兼容");
+        // 序列化输出 event_type 键（前端 todoE.event_type 读取依赖此键）
+        let e = ScheduleEvent {
+            id: "r1".into(),
+            title: "提醒".into(),
+            start: "2026-08-18T14:00".into(),
+            end: "2026-08-18T14:00".into(),
+            event_type: "reminder".into(),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&e).unwrap();
+        assert_eq!(json["event_type"], "reminder", "序列化键应为 event_type");
+        assert!(json.get("type").is_none(), "不应再输出旧键 type");
     }
 }

@@ -635,6 +635,14 @@ impl crate::core::context::HistorySummarizer for LLMClient {
         };
         let request = self.apply_common_params(request);
 
+        // 可观测性：记录摘要请求上下文（模型/预算/输入规模），用于定位"空响应/失败"根因
+        let turns_chars: usize = turns.iter().map(|t| t.content.chars().count()).sum();
+        let max_tokens_out = (max_chars / 2).clamp(128, 2048);
+        log::info!(
+            "[llm] [历史摘要] 发起: model={} turns={} chars={} max_chars={} max_tokens={}",
+            self.model, turns.len(), turns_chars, max_chars, max_tokens_out
+        );
+
         let result = self.completion_with_retry(request, cancel.clone()).await;
 
         match result {
@@ -647,14 +655,26 @@ impl crate::core::context::HistorySummarizer for LLMClient {
                 }
                 let trimmed = full.trim().to_string();
                 if trimmed.is_empty() {
-                    log::warn!("[llm] [历史摘要] 空响应");
+                    // 空响应：区分「模型输出空」与「响应解析为空」——记录 model/预算/输入规模，
+                    // 便于确认是否 summary_model 回退主模型后模型不可用或输出被截断
+                    log::warn!(
+                        "[llm] [历史摘要] 空响应: model={} turns={} chars={} max_tokens={} choices={}",
+                        self.model, turns.len(), turns_chars, max_tokens_out, response.choice.len()
+                    );
                     None
                 } else {
+                    log::info!(
+                        "[llm] [历史摘要] 成功: model={} chars_in={} chars_out={}",
+                        self.model, turns_chars, trimmed.chars().count()
+                    );
                     Some(trimmed)
                 }
             }
             Err(e) => {
-                log::warn!("[llm] [历史摘要] 非流式调用失败 err={}", e);
+                log::warn!(
+                    "[llm] [历史摘要] 非流式调用失败 err={} model={} turns={} chars={}",
+                    e, self.model, turns.len(), turns_chars
+                );
                 None
             }
         }

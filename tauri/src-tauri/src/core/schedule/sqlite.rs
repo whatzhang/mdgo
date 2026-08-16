@@ -44,6 +44,18 @@ CREATE TABLE IF NOT EXISTS schedule_events (
 CREATE INDEX IF NOT EXISTS idx_schedule_dir_time ON schedule_events(dir_path, created_at)
 "#;
 
+/// 提醒推送日志表 DDL（幂等）：记录已推送过的提醒触发点，防窗口期内重复推送 / 重启重复弹窗。
+/// 主键 `(dir_path, event_id, trigger_at)`：同一事件同一触发点只推一次。
+const CREATE_REMINDERS_LOG: &str = r#"
+CREATE TABLE IF NOT EXISTS schedule_reminders_log (
+    dir_path   TEXT NOT NULL,
+    event_id   TEXT NOT NULL,
+    trigger_at TEXT NOT NULL,
+    PRIMARY KEY (dir_path, event_id, trigger_at)
+);
+CREATE INDEX IF NOT EXISTS idx_reminders_trigger ON schedule_reminders_log(dir_path, trigger_at)
+"#;
+
 /// 列顺序（不含隔离列 dir_path），与 `ScheduleEvent` 字段一一对应
 const COLS: &str = "id, title, start, end, color, desc, cron, notify, notify_before, event_type, priority, related_json, ai_json, created_at, updated_at";
 
@@ -96,6 +108,9 @@ impl SqliteStore {
             .map_err(|e| format!("初始化日程数据表失败: {}", e))?;
         // 幂等迁移：老库补齐新列（AI 增强字段）
         ensure_columns(&conn)?;
+        // 提醒推送日志表
+        conn.execute_batch(CREATE_REMINDERS_LOG)
+            .map_err(|e| format!("初始化提醒推送日志表失败: {}", e))?;
         Ok(Self {
             conn,
             dir_path: dir_path.to_string(),
@@ -203,6 +218,29 @@ impl EventStore for SqliteStore {
                 .map_err(|err| format!("批量写入日程失败: {}", err))?;
         }
         tx.commit().map_err(|e| format!("提交事务失败: {}", e))
+    }
+
+    fn record_reminder(&mut self, event_id: &str, trigger_at: &str) -> Result<bool, String> {
+        // INSERT OR IGNORE：冲突（已推送过）时不报错且影响 0 行 → 返回 false
+        let affected = self
+            .conn
+            .execute(
+                "INSERT OR IGNORE INTO schedule_reminders_log (dir_path, event_id, trigger_at)
+                 VALUES (?1, ?2, ?3)",
+                params![self.dir_path, event_id, trigger_at],
+            )
+            .map_err(|e| format!("记录提醒推送失败: {}", e))?;
+        Ok(affected > 0)
+    }
+
+    fn cleanup_reminders(&mut self, before: &str) -> Result<(), String> {
+        self.conn
+            .execute(
+                "DELETE FROM schedule_reminders_log WHERE dir_path = ?1 AND trigger_at < ?2",
+                params![self.dir_path, before],
+            )
+            .map_err(|e| format!("清理提醒推送日志失败: {}", e))?;
+        Ok(())
     }
 }
 
@@ -401,5 +439,23 @@ mod tests {
         assert_eq!(b_list.len(), 1);
         assert_eq!(a_list[0].title, "甲库日程");
         assert_eq!(b_list[0].title, "乙库日程");
+    }
+
+    #[test]
+    fn reminder_log_is_idempotent_and_cleanable() {
+        let (_d, mut store) = tmp_store("/kb/a", "reminders.db");
+        // 首次记录 → true；同 (event_id, trigger_at) 重复 → false（幂等去重）
+        assert!(store.record_reminder("e1", "2026-08-13T10:00").unwrap());
+        assert!(!store.record_reminder("e1", "2026-08-13T10:00").unwrap());
+        // 不同触发点（cron 每次命中分钟）→ 各自首次为 true
+        assert!(store.record_reminder("e1", "2026-08-14T10:00").unwrap());
+        assert!(!store.record_reminder("e1", "2026-08-14T10:00").unwrap());
+        // 清理：只清 before 之前的
+        store.cleanup_reminders("2026-08-13T12:00").unwrap();
+        assert!(store.record_reminder("e1", "2026-08-13T10:00").unwrap(), "旧触发点被清理后再次记录应返回 true");
+        assert!(!store.record_reminder("e1", "2026-08-14T10:00").unwrap(), "新触发点未被清理");
+        // 目录隔离：另一目录同 id/trigger 不受影响
+        let (_d2, mut store2) = tmp_store("/kb/b", "reminders.db");
+        assert!(store2.record_reminder("e1", "2026-08-13T10:00").unwrap());
     }
 }

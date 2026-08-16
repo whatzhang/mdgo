@@ -2157,7 +2157,8 @@
         .editor-notification-close {
             position: absolute;
             top: 0.25rem;
-            right: 0.35rem;
+            right: 0.25rem;
+            margin-left: 0.25rem;
             border: none;
             background: transparent;
             color: inherit;
@@ -7857,7 +7858,7 @@
 
         .todo-header-right {
             display: flex;
-            gap: 0.813rem;
+            gap: 0.5rem;
             align-items: center;
         }
 
@@ -8535,6 +8536,26 @@
             filter: brightness(0.9);
         }
 
+        /* 单点提醒（闹钟）样式 */
+        .todo-month-event.todo-reminder-event {
+            font-size: 0.6875rem;
+            border-left: 2px dotted currentColor;
+            background-image: linear-gradient(45deg, rgba(255, 255, 255, 0.25) 25%, transparent 25%, transparent 50%, rgba(255, 255, 255, 0.25) 50%, rgba(255, 255, 255, 0.25) 75%, transparent 75%, transparent);
+            background-size: 8px 8px;
+        }
+
+        .todo-week-event.todo-reminder-event {
+            border-left: 3px dotted currentColor;
+            min-height: 20px;
+            overflow: hidden;
+            background-image: linear-gradient(45deg, rgba(255, 255, 255, 0.2) 25%, transparent 25%, transparent 50%, rgba(255, 255, 255, 0.2) 50%, rgba(255, 255, 255, 0.2) 75%, transparent 75%, transparent);
+            background-size: 8px 8px;
+        }
+
+        .todo-week-event.todo-reminder-event:hover {
+            filter: brightness(0.9);
+        }
+
         .todo-event-item.todo-cron-sidebar {
             opacity: 0.8;
             border-left-style: dashed;
@@ -9208,7 +9229,7 @@
 
         jmnodes.theme-self jmnode {
             background-color: var(--color-bg);
-            color: var(--t1);
+            color: var(--t0);
             font-size: 13px;
             font-family: var(--font-family);
             border-color: #d9e1e8;
@@ -9234,14 +9255,15 @@
             color: var(--color-text-white);
             font-weight: 600;
             font-size: 18px;
-            box-shadow: 1px 1px 1px 1px var(--color-primary);
+            border: none;
+            box-shadow: none;
         }
 
         jmnodes.theme-self jmnode.root:hover {
-            border: 1px solid var(--color-primary);
-            box-shadow: 1px 1px 1px 1px var(--color-primary);
+            border: none;
+            box-shadow: none;
             z-index: 200;
-            transform: scale(1.02);
+            transform: scale(1.04);
         }
 
         jmnodes.theme-self jmexpander {}
@@ -14629,18 +14651,18 @@
                 <div id="top-right-controls" class="top-right-controls" style="display: none;">
                     <span class="opml-original-buttons" id="opml-original-buttons">
                         <button id="opml-mindmap-btn" class="btn btn-success btn-sm" onclick="mindmapViewModel()">
-                            🧠 思维导图
+                            思维导图
                         </button>
                         <button id="opml-back-btn" class="btn btn-success btn-sm" onclick="outlineViewModel()">
-                            📋 Outline
+                            大纲笔记
                         </button>
                         <button id="jsmind-save-opml-btn" class="btn btn-warning btn-sm" onclick="jsMindSaveOpml()"
                             style="display:none;">
-                            保存为Outline格式
+                            保存为大纲笔记
                         </button>
                         <button id="opml-save-mm-btn" class="btn btn-warning btn-sm" onclick="opmlSaveAsMm()"
                             style="display:none;">
-                            保存为Freemind格式
+                            保存为思维导图
                         </button>
                         <button id="jsmind-image-btn" class="btn btn-warning btn-sm" onclick="jsMindSaveImage()"
                             style="display:none;">
@@ -14690,6 +14712,10 @@
                     <button id="markdown-btn" class="btn btn-warning btn-sm" style="display: none;"
                         onclick="enterOriginalMarkdown()">
                         markdown
+                    </button>
+                    <button id="md-mindmap-btn" class="btn btn-warning btn-sm" style="display: none;"
+                        onclick="viewMarkdownAsMindmap()" title="把当前 Markdown 的标题层级渲染为思维导图">
+                        思维导图
                     </button>
                     <button id="plantuml-btn" class="btn btn-warning btn-sm" style="display: none;"
                         onclick="enterPlantUMLSvg()">
@@ -15303,8 +15329,10 @@
                             <button class="todo-view-btn" onclick="todoSwitchView('day', event)">日</button>
                         </div>
                         <button class="btn btn-sm btn-primary" onclick="todoOpenModal()">
-                            <span>+</span>
                             <span>新建日程</span>
+                        </button>
+                        <button class="btn btn-sm btn-success" onclick="todoOpenReminderModal()">
+                            <span>新建提醒</span>
                         </button>
                     </div>
                 </header>
@@ -15460,10 +15488,23 @@
                                     <div class="todo-color-option color-green" data-color="green"
                                         onclick="todoSelectColor(this)"></div>
                                     <div class="todo-color-option color-red" data-color="red"
-                                        onclick="todoSelectColor(this)">
-                                        <div class="todo-color-option color-blue" data-color="blue"
-                                            onclick="todoSelectColor(this)"></div>
-                                    </div>
+                                        onclick="todoSelectColor(this)"></div>
+                                    <div class="todo-color-option color-blue" data-color="blue"
+                                        onclick="todoSelectColor(this)"></div>
+                                </div>
+                            </div>
+                            <div class="todo-form-row">
+                                <div class="todo-form-group">
+                                    <label class="todo-form-label">提醒</label>
+                                    <label class="todo-notify-toggle"
+                                        style="display:inline-flex;align-items:center;gap:4px;font-size:0.75rem;cursor:pointer;color:var(--t2,#8b949e);">
+                                        <input type="checkbox" id="todo-eventNotify" checked> 到点提醒
+                                    </label>
+                                </div>
+                                <div class="todo-form-group">
+                                    <label class="todo-form-label">提前提醒（分钟）</label>
+                                    <input type="number" class="todo-form-input" id="todo-eventNotifyBefore" min="0"
+                                        max="1440" step="5" value="0" style="width:6rem;">
                                 </div>
                             </div>
                             <div class="todo-form-group">
@@ -15478,6 +15519,53 @@
                                 onclick="todoDeleteEvent()">删除
                             </button>
                             <button class="btn btn-sm btn-primary" onclick="todoSaveEvent()">保存</button>
+                        </div>
+                    </div>
+                </div>
+                <!-- 新建提醒模态框（闹钟式：标题/时间/颜色/备注；复用 todo-modal 样式） -->
+                <div class="todo-modal-overlay" id="todo-reminderModal">
+                    <div class="todo-modal">
+                        <div class="todo-modal-header">
+                            <div class="todo-modal-title" id="todo-reminderModalTitle">新建提醒</div>
+                            <button class="todo-modal-close" onclick="todoCloseReminderModal()">×</button>
+                        </div>
+                        <div class="todo-modal-body">
+                            <div class="todo-form-group">
+                                <label class="todo-form-label">提醒标题</label>
+                                <input type="text" class="todo-form-input" id="todo-reminderTitle"
+                                    placeholder="输入提醒标题" autocomplete="off">
+                            </div>
+                            <div class="todo-form-group">
+                                <label class="todo-form-label">提醒时间</label>
+                                <input type="datetime-local" class="todo-form-input" id="todo-reminderTime">
+                            </div>
+                            <div class="todo-form-group">
+                                <label class="todo-form-label">颜色标记</label>
+                                <div class="todo-color-picker" id="todo-reminderColorPicker">
+                                    <div class="todo-color-option color-blue todo-selected" data-color="blue"
+                                        onclick="todoReminderSelectColor(this)"></div>
+                                    <div class="todo-color-option color-orange" data-color="orange"
+                                        onclick="todoReminderSelectColor(this)"></div>
+                                    <div class="todo-color-option color-purple" data-color="purple"
+                                        onclick="todoReminderSelectColor(this)"></div>
+                                    <div class="todo-color-option color-green" data-color="green"
+                                        onclick="todoReminderSelectColor(this)"></div>
+                                    <div class="todo-color-option color-red" data-color="red"
+                                        onclick="todoReminderSelectColor(this)"></div>
+                                </div>
+                            </div>
+                            <div class="todo-form-group">
+                                <label class="todo-form-label">标记备注</label>
+                                <textarea class="todo-form-input" id="todo-reminderNote"
+                                    style="resize: none;height: 5rem;" placeholder="添加备注..."></textarea>
+                            </div>
+                        </div>
+                        <div class="todo-modal-footer">
+                            <button class="btn btn-sm" onclick="todoCloseReminderModal()">取消</button>
+                            <button class="btn btn-sm btn-danger" id="todo-reminderDeleteBtn" style="display: none;"
+                                onclick="todoDeleteReminder()">删除
+                            </button>
+                            <button class="btn btn-sm btn-primary" onclick="todoSaveReminder()">保存</button>
                         </div>
                     </div>
                 </div>
@@ -15782,7 +15870,7 @@
                                 <textarea id="chat-input" rows="4" placeholder="按下回车发送消息..."
                                     onkeydown="handleChatKeydown(event)" onkeyup="handleChatKeyup(event)"
                                     oninput="updateChatSendButton()" onfocus="updateChatSendButton()"
-                                    onblur="updateChatSendButton()" onpaste="handleChatPaste(event)"></textarea>
+                                    onblur="handleChatInputBlur()" onpaste="handleChatPaste(event)"></textarea>
                             </div>
                             <div class="chat-bottom-toolbar" id="chat-bottom-toolbar">
                                 <div class="chat-toolbar-icons">
@@ -17309,6 +17397,7 @@
         const livePreviewBtn = document.getElementById('live-preview-btn');
         const markdownBtn = document.getElementById('markdown-btn');
         const mdImageBtn = document.getElementById('md-image-btn');
+        const mdMindmapBtn = document.getElementById('md-mindmap-btn');
         const plantumlBtn = document.getElementById('plantuml-btn');
         const plantumlSvgBtn = document.getElementById('plantuml-svg-btn');
         const newFileControls = document.getElementById('new-file-controls');
@@ -17441,7 +17530,8 @@
                 Promise.resolve(initTauriWindowState()), // Tauri 窗口状态（最大化/还原）
                 Promise.resolve(initSkillLoadErrorNotify()), // 技能加载失败全局提醒
                 Promise.resolve(initOpenHistory()), // 初始化打开历史记录
-                Promise.resolve(renderCacheRate()), // 初始化缓存命中率常驻显示（无数据时显示 -- 占位）
+                Promise.resolve(_restoreCacheRate()), // 恢复持久化的缓存命中率记录（重启后显示上次值）
+                Promise.resolve(renderCacheRate()), // 初始化缓存命中率常驻显示（无数据时显示占位）
                 Promise.resolve().then(() => (typeof AgentInit === 'function' ? AgentInit() : null)), // 初始化RAG（AgentInit 定义于 css_js/modules/agent.js，主脚本后加载）
                 // Agent 全局能力（任务观察者 + 全局审批/计划弹窗）应用级初始化，不随视图切换销毁——后台任务任意界面可见、权限弹框任意界面可弹出。
                 Promise.resolve().then(() => (typeof initAgentGlobalDialogs === 'function' ? initAgentGlobalDialogs() : null)),
@@ -17543,7 +17633,8 @@
             } else if (type === 'randomOpen') {
                 await randomOpen();
             } else if (type === 'renderFile') {
-                await renderFile(data.relativePath, data.fileSpan); openHistory.addItem('renderFile', '', data.relativePath, { 'relativePath': data.relativePath });
+                await renderFile(data.relativePath, data.fileSpan); 
+                openHistory.addItem('renderFile', '', data.relativePath, { 'relativePath': data.relativePath });
             } else if (type === 'graphQLPlayground') {
                 await openGraphQLPlayground(); openHistory.addItem('graphQLPlayground');
             } else if (type === 'openRestyEditor') {
@@ -17561,7 +17652,7 @@
             } else if (type === 'regexTest') {
                 await openRegexTest(); openHistory.addItem('regexTest');
             } else if (type === 'calendar') {
-                await openCalendar(); openHistory.addItem('calendar');
+                await openCalendar();
             } else if (type === 'cron') {
                 await openCron(); openHistory.addItem('cron');
             } else if (type === 'video') {
@@ -17738,7 +17829,7 @@
                 saveBtn: false,
                 copyBtn: true,
                 livePreviewBtn: false,
-                formatBtn: false
+                formatBtn: false, opmlBtns: false 
             });
             if (fileName.endsWith('.md')) {
                 await renderMarkdownFile(fileText);
@@ -18704,6 +18795,7 @@
                 Promise.resolve(destroyRawViewer()),
                 Promise.resolve(destroyWordCloud()),
                 Promise.resolve(destroyFileGraph()),
+                Promise.resolve(destroyFileType()),
                 Promise.resolve(disposeOpenRestyEditor()),
                 Promise.resolve(destroyPomodoro()),
                 Promise.resolve(destroyBookmarkPage()),
@@ -19650,7 +19742,8 @@
                     opmlBtns: false,
                     mdImageBtn: false,
                     livePreviewBtn: false,
-                    formatBtn: false
+                    formatBtn: false,
+                    mdMindmapBtn: false,
                 });
             } else {
                 setControlsState({
@@ -19660,7 +19753,8 @@
                     markdownBtn: false,
                     plantumlSvgBtn: false,
                     mdImageBtn: false,
-                    livePreviewBtn: false
+                    livePreviewBtn: false,
+                    mdMindmapBtn: false,
                 });
             }
             // 演示按钮：仅代码/文档/图片文件可见
@@ -21231,7 +21325,7 @@
                     vmargin: 1000,
                     draggable: true,
                     hide_scrollbars_when_draggable: true,
-                    zoom: { min: 0.7, max: 2.0, step: 0.1 },
+                    zoom: { min: 0.9, max: 2.0, step: 0.1 },
                     custom_node_render: customNodeRender,
                 },
                 layout: {
@@ -24644,6 +24738,89 @@
         }
 
         let mdIsKanban = false; // 是否为看板格式
+
+        /** 把看板（kanban-plugin）解析结果 columnListData 转为 jsMind node_tree。
+         *  层级映射：列(##) → 卡片(- [ ]) → 子任务/属性（缩进项）；勾选状态用 ✓/☐ 符号保留。 */
+        function _parseKanbanDataToJsMind(columnListData) {
+            const root = { id: 'root', topic: '看板', children: [] };
+            const checkedMark = (c) => c === true ? '✓ ' : c === false ? '☐ ' : '';
+            let nodeId = 0;
+            const mkNode = (topic, parent) => {
+                const nd = { id: 'n' + (nodeId++), topic, children: [] };
+                if (!parent.children) parent.children = [];
+                parent.children.push(nd);
+                return nd;
+            };
+            for (const col of columnListData || []) {
+                const colNode = mkNode(col.title || '未命名列', root);
+                for (const card of col.cards || []) {
+                    const cardNode = mkNode(checkedMark(card.checked) + (card.content || ''), colNode);
+                    for (const task of card.taskList || []) {
+                        mkNode(checkedMark(task.checked) + (task.task || ''), cardNode);
+                    }
+                }
+            }
+            if (root.children.length === 0) return null;
+            return { meta: { name: 'kanban-outline', author: 'mdgo', version: '0.1' }, format: 'node_tree', data: root };
+        }
+
+        /** 把 Markdown 标题层级解析为 jsMind node_tree 数据（Knowledge Tree 的 Markdown 表示 → 树）。
+         *  - 普通 md：`#`/`##`/… 逐级映射树层级；跳过 frontmatter（--- 块）与非标题行；
+         *  - 看板（kanban-plugin basic/board）：复用 parseMarkdownKanban，映射 列 → 卡片 → 子任务 三级；
+         *  - 无任何可解析结构时返回 null。 */
+        function _parseMarkdownToJsMind(mdText) {
+            // 看板兼容：kanban-plugin 格式走既有看板解析器（与看板渲染同一套解析，保证层级一致）
+            if (isObsidianKanban(mdText)) {
+                return _parseKanbanDataToJsMind(parseMarkdownKanban(mdText));
+            }
+            const lines = String(mdText || '').split(/\r?\n/);
+            // 跳过 frontmatter
+            let start = 0;
+            if (lines[0] && lines[0].trim() === '---') {
+                for (let i = 1; i < lines.length; i++) {
+                    if (lines[i].trim() === '---') { start = i + 1; break; }
+                }
+            }
+            const root = { id: 'root', topic: '大纲', children: [] };
+            const stack = [{ level: 0, node: root }];
+            let nodeId = 0;
+            for (let i = start; i < lines.length; i++) {
+                const m = lines[i].match(/^\s{0,3}(#{1,6})\s+(.*)$/);
+                if (!m) continue;
+                const level = m[1].length;
+                const topic = m[2].trim();
+                if (!topic) continue;
+                while (stack.length > 1 && stack[stack.length - 1].level >= level) stack.pop();
+                const parent = stack[stack.length - 1].node;
+                const node = { id: 'n' + (nodeId++), topic, children: [] };
+                if (!parent.children) parent.children = [];
+                parent.children.push(node);
+                stack.push({ level, node });
+            }
+            if (root.children.length === 0) return null;
+            return { meta: { name: 'markdown-outline', author: 'mdgo', version: '0.1' }, format: 'node_tree', data: root };
+        }
+
+        /** 把当前 Markdown 渲染为只读思维导图（方案 B：Markdown → Knowledge Tree → jsMind 视图）。
+         * 复用现有 jsMind 渲染链路；返回顶部「预览」按钮可切回 md 渲染。 */
+        async function viewMarkdownAsMindmap() {
+            const text = currentEditor ? currentEditor.getValue() : originalContent;
+            const data = _parseMarkdownToJsMind(text);
+            if (!data) {
+                showNotification('当前文档没有可解析的结构（标题层级或看板列/卡片），无法生成思维导图', 'warning');
+                return;
+            }
+            await renderJsMind(data, false, true); // node_tree 数据、非 .mm 源、只读
+            // 思维导图视图的工具栏：提供「预览」返回 md 渲染，隐藏编辑/保存/导出图片
+            setControlsState({
+                topControls: true, editBtn: false, previewBtn: true, saveBtn: false, copyBtn: false, mdImageBtn: false, mdMindmapBtn: false,
+                livePreviewBtn: false, formatBtn: false, commonToolControls: true, demoBtn: true, opmlBtns: true, jmSaveOpmlBtn: false, opmlSaveMmBtn: false
+            });
+            if (opmlBackBtn) opmlBackBtn.style.display = 'none';
+            if (opmlMindmapBtn) opmlMindmapBtn.style.display = 'none';
+            if (tocContainer) tocContainer.style.display = 'none';
+        }
+
         async function renderMarkdownFile(text) {
             aiFabContainer.style.display = 'block';
             mdIsKanban = false;
@@ -24655,7 +24832,7 @@
             }
             mdIsKanban = false;
             await renderOriginalMarkdown(text);
-            setControlsState({ aiFab: true, mdImageBtn: true });
+            setControlsState({ aiFab: true, mdImageBtn: true, mdMindmapBtn: true});
         }
 
         async function renderOriginalMarkdown(text) {
@@ -28113,7 +28290,6 @@ kanban-plugin: basic
             tocElement.innerHTML = tocHTML;
             // 为文档中的标题添加ID
             if (type === 'md') { addHeadingIDs(headings); }
-            tocContainer.style.display = 'flex';
             showTocToggleBtn(true);
             // Markdown 文件展示 TOC link，其他文件不展示
             if (type === 'md') {
@@ -29147,7 +29323,7 @@ kanban-plugin: basic
             if (topRightControls) {
                 setControlsState({
                     topControls: true, editBtn: true, previewBtn: false,
-                    saveBtn: false, copyBtn: true, mdImageBtn: true,
+                    saveBtn: false, copyBtn: true, mdImageBtn: true, mdMindmapBtn: true,
                     aiFab: true, livePreviewBtn: false, formatBtn: false,
                     commonToolControls: true, demoBtn: true,
                 });
@@ -29535,6 +29711,13 @@ kanban-plugin: basic
                 console.error('DOMPurify 渲染失败:', e);
                 return escapeHtml(text);
             }
+        }
+
+        /** 流式期间的轻量渲染：只 marked.parse（模型输出可信），跳过 DOMPurify 降本。
+         * 最终版在 llm:done / rag:done 用完整 renderChatMarkdown（含 sanitize）重新渲染覆盖。 */
+        function renderChatMarkdownStream(text) {
+            if (!text) return '';
+            return markedMd(parseWiki(text));
         }
 
         // 初始化拖拽排序
@@ -33609,6 +33792,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             }
             if (opts.mdImageBtn !== undefined) mdImageBtn.style.display = opts.mdImageBtn ? 'inline-flex' : 'none';
+            if (opts.mdMindmapBtn !== undefined) mdMindmapBtn.style.display = opts.mdMindmapBtn ? 'inline-flex' : 'none';
             if (opts.livePreviewBtn !== undefined) livePreviewBtn.style.display = opts.livePreviewBtn ? 'inline-flex' : 'none';
             if (opts.formatBtn !== undefined) formatBtn.style.display = opts.formatBtn ? 'inline-flex' : 'none';
             if (opts.jmImgBtn !== undefined) jmImgBtn.style.display = opts.jmImgBtn ? 'inline-flex' : 'none';
@@ -34106,7 +34290,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
          * @param {number}  [opts.wheelStep=5]     - 滚轮缩放步进
          * @param {boolean} [opts.panOnlyZoomed=true] - 仅在 >100% 时启用拖拽
          * @param {Function}[opts.onZoomChange]    - 缩放变化回调(zoom)
-         * @returns {{ setZoom, getZoom, zoomIn, zoomOut, reset, setTarget, destroy }}
+         * @returns {{ setZoom, getZoom, zoomIn, zoomOut, reset, setPan, setTarget, destroy }}
          */
         function createPanZoomController(opts) {
             const {
@@ -34152,6 +34336,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             function zoomIn() { setZoom(zoom + zoomStep); }
             function zoomOut() { setZoom(zoom - zoomStep); }
             function reset() { setZoom(initialZoom); }
+            /** 直接设置平移偏移（px，相对 container 原点；初始居中/程序化定位用） */
+            function setPan(x, y) {
+                if (destroyed) return;
+                panX = x;
+                panY = y;
+                applyTransform();
+            }
             function setTarget(newTarget) {
                 target = newTarget;
                 if (target) applyTransform();
@@ -34233,7 +34424,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 document.removeEventListener('mouseup', onMouseUp);
                 target = null;
             }
-            return { setZoom, getZoom, zoomIn, zoomOut, reset, setTarget, setEnabled, isEnabled, destroy };
+            return { setZoom, getZoom, zoomIn, zoomOut, reset, setPan, setTarget, setEnabled, isEnabled, destroy };
         }
 
         let zoomLevelMermaid = 100,
@@ -43394,8 +43585,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             leaf.append("circle")
                 .attr("r", d => d.r)
                 .attr("fill", G ? d => color(G[d.data]) : fill == null ? "none" : fill)
-                .attr("fill-opacity", fillOpacity)
-                .attr("style", "filter: drop-shadow(0 4px 12px rgba(0,0,0,.15));");
+                .attr("fill-opacity", fillOpacity);
             if (L) {
                 leaf.append("clipPath")
                     .attr("id", (d, i) => `cp-${i}`)
@@ -43417,8 +43607,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return svg.node();
         }
 
+        // 文件类型分布视图的缩放控制器引用（视图切换/重新打开时销毁，防事件泄漏）
+        let _fileTypePanZoom = null;
+
         async function openFileType(dirPath) {
             await switchToView(contentCommonContainer, 'flex');
+            // 清理上一次视图（内容 + 缩放控制器，防重复打开堆积/事件残留）
+            if (_fileTypePanZoom) {
+                try { _fileTypePanZoom.destroy(); } catch (e) { /* ignore */ }
+                _fileTypePanZoom = null;
+            }
+            contentCommonContainer.innerHTML = '';
             var allFiles = _getFilesByDirPath(dirPath || '');
             if (allFiles.length === 0) {
                 showNotification(`目录下没有文件`, 'warning');
@@ -43429,21 +43628,54 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
             const colors = [...new Set(data.map(d => d.id))].map((g, i) => getGraphGroupColor(i, 0));
 
-            // 传递 autoExpand: true 开启无限画布
             const svg = BubbleChart(data, {
                 padding: 10, margin: 20,
                 label: d => `${d.id}\n${d.value}`,
                 value: d => d.value,
                 group: d => d.id,
                 colors,
-                fillOpacity: 0.85,
-                autoExpand: true
+                fillOpacity: 0.85
             });
 
             const div = document.createElement('div');
-            Object.assign(div.style, { display: 'flex', height: '100%', width: '100%', justifyContent: 'center', alignItems: 'center' });
-            div.appendChild(svg);
+            Object.assign(div.style, {
+                position: 'relative', height: '100%', width: '100%',
+                overflow: 'hidden', cursor: 'grab',
+            });
+            const wrap = document.createElement('div');
+            // 注意：不设 willChange:transform（会强制合成层把 SVG 光栅化到位图，缩放变模糊）
+            Object.assign(wrap.style, { position: 'absolute', left: '0', top: '0' });
+            wrap.appendChild(svg);
+            div.appendChild(wrap);
             contentCommonContainer.appendChild(div);
+
+            const panZoom = createPanZoomController({
+                container: div,
+                target: wrap,
+                initialZoom: 100,
+                minZoom: 20,
+                maxZoom: 400,
+                wheelStep: 10,
+                panOnlyZoomed: false, // 任意缩放级别均可拖拽平移
+            });
+            _fileTypePanZoom = panZoom;
+
+            // 初始自适应：图（640×640）按容器尺寸等比缩小后居中显示
+            const cw = div.clientWidth || div.offsetWidth;
+            const ch = div.clientHeight || div.offsetHeight;
+            const SW = svg.width.baseVal.value || 640;
+            const SH = svg.height.baseVal.value || 640;
+            const fitScale = Math.min(cw / SW, ch / SH, 1);
+            panZoom.setZoom(Math.round(fitScale * 100));
+            panZoom.setPan(Math.max(0, (cw - SW * fitScale) / 2), Math.max(0, (ch - SH * fitScale) / 2));
+        }
+
+        /** 销毁文件类型分布视图的缩放控制器（视图切换清理用） */
+        function destroyFileType() {
+            if (_fileTypePanZoom) {
+                try { _fileTypePanZoom.destroy(); } catch (e) { /* ignore */ }
+                _fileTypePanZoom = null;
+            }
         }
 
         function shuffle(arr) {
@@ -47404,6 +47636,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     reasoningEffort: LOCAL_LLM_REASONING_EFFORT || null,
                     // P3：最大输出 token 下发后端（0/空 = 不设置，由服务器/模型默认）
                     maxTokens: LOCAL_LLM_MAX_TOKENS || null,
+                    // 模型上下文窗口长度（token）：后端压缩预算按 80% 计算
+                    contextLength: LOCAL_LLM_CONTEXT_LENGTH || AGENT_LIMITS.contextLength,
                 }).catch(e => console.warn('同步 LLM 配置到后端失败:', e));
             }
         }
@@ -49249,6 +49483,18 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             document.getElementById('chat-input')?.focus();
         }
 
+        /** 输入框失焦处理：失焦时若 @ picker 仍开着则关闭（不抢回焦点）。
+         * 防止"点击 picker 外部 → 输入框 blur → picker 保持打开但键盘事件进不了输入框"的卡死态。
+         * 点击 picker 内 item 不会走到这里（item 的 onmousedown preventDefault 保持焦点）。 */
+        function handleChatInputBlur() {
+            updateChatSendButton();
+            if (_chatAtPicker.active) {
+                _chatAtPicker.active = false;
+                const overlay = document.getElementById('chat-file-picker-overlay');
+                if (overlay) overlay.style.display = 'none';
+            }
+        }
+
         function renderChatFilePicker() {
             const listEl = document.getElementById('chat-file-picker-list');
             const hintEl = document.getElementById('chat-file-picker-hint');
@@ -49263,8 +49509,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
             listEl.innerHTML = items.map((f, i) => {
                 const rel = chatFileRelPath(f.path);
+                // onmousedown preventDefault：阻止点击时焦点从输入框转移（否则 picker 打开期间
+                // 输入框失焦，之后 ↑↓/Enter 键盘事件进不了输入框导致"按键失效"）；不阻止 click。
                 return `<div class="chat-file-picker-item ${i === _chatAtPicker.selected ? 'active' : ''}" data-index="${i}"
-                    onmouseenter="chatFilePickerHover(${i})" onclick="chatFilePickerSelect(${i})">
+                    onmousedown="event.preventDefault()" onmouseenter="chatFilePickerHover(${i})" onclick="chatFilePickerSelect(${i})">
                     <div class="cfp-name">${escapeHtml(f.name)}</div>
                     <div class="cfp-path">${escapeHtml(rel)} · ${escapeHtml(f.mtimeStr || '')}</div>
                 </div>`;
@@ -49276,8 +49524,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         function chatFilePickerHover(index) {
+            if (_chatAtPicker.selected === index) return;
             _chatAtPicker.selected = index;
-            renderChatFilePicker();
+            // 只切换高亮类，不重建 innerHTML：重建会替换鼠标悬停的元素，导致
+            // mousedown/mouseup 落点不同 → click 丢失（鼠标点击选择无反应）
+            const listEl = document.getElementById('chat-file-picker-list');
+            if (!listEl) return;
+            listEl.querySelectorAll('.chat-file-picker-item').forEach((el, i) => {
+                el.classList.toggle('active', i === index);
+            });
         }
 
         function chatFilePickerSelect(index) {
@@ -49297,6 +49552,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             // 只有用户编辑该 token（增删字符）或重新输入 @ 时才恢复触发
             _chatAtPicker.suppressToken = { start, tokenText: rel || item.name };
             closeChatFilePicker();
+            // 焦点保险：确保选择后键盘（↑↓/Enter/继续输入）立即回到输入框
+            const inp = document.getElementById('chat-input');
+            if (inp && document.activeElement !== inp) inp.focus();
             updateChatSendButton();
         }
 
@@ -50350,8 +50608,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return Math.ceil(cjkTokens + asciiTokens);
         }
 
-        /** 估算 chatMessages 数组的 token 总量 */
+        /** 估算 chatMessages 数组的 token 总量（带缓存：消息数与末条内容未变时复用，
+         * 避免每次发送对全量历史正则重算；发送/切换会话/删除消息后 key 变化自动失效） */
+        let _estTokensCache = { key: '', value: 0 };
         function estimateMessagesTokens(messages) {
+            if (!messages || messages.length === 0) return 0;
+            const last = messages[messages.length - 1];
+            const key = messages.length + ':' + (last?.content?.length || 0) + ':' + String(last?.content || '').slice(0, 32);
+            if (_estTokensCache.key === key) return _estTokensCache.value;
             let total = 0;
             for (const m of messages) {
                 total += 4 + estimateTokenCount(m.content);
@@ -50365,6 +50629,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                 }
             }
+            _estTokensCache = { key, value: total };
             return total;
         }
 
@@ -50549,10 +50814,34 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             chatAbortController.signal.addEventListener('abort', abortHandler);
 
             // 监听 Tauri 事件
+            // 流式渲染节流：同一帧内合并多个 delta，每帧最多重渲染一次（O(n²)→O(n)）；
+            // 流式期间用轻量渲染（跳过 DOMPurify），最终版在 llm:done 用完整渲染覆盖。
+            let _streamRaf = 0;
+            const _cancelStreamRender = () => {
+                if (_streamRaf) {
+                    cancelAnimationFrame(_streamRaf);
+                    _streamRaf = 0;
+                }
+            };
+            const _scheduleStreamRender = () => {
+                if (_streamRaf) return;
+                _streamRaf = requestAnimationFrame(() => {
+                    _streamRaf = 0;
+                    const div = _chatStreamingDiv;
+                    if (div && div._body) {
+                        div._body.innerHTML = `<div class="markdown-body" style="zoom: 1;background: transparent;">${renderChatMarkdownStream(_chatStreamingFullContent)}</div>`;
+                    }
+                    if (div && window._chatAutoScroll !== false) {
+                        const container = document.getElementById('chat-messages');
+                        if (container) container.scrollTop = container.scrollHeight;
+                    }
+                });
+            };
             const unlisteners = await Promise.all([
                 window.__TAURI__.event.listen('llm:delta', (e) => {
                     if (e.payload.request_id !== requestId) return;
                     const delta = e.payload.content;
+                    if (!delta) return;
                     _chatStreamingFullContent += delta;
                     if (!_chatStreamingDiv) {
                         removeChatTyping();
@@ -50560,26 +50849,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         const div = getMessageAssistant();
                         container.appendChild(div);
                         _chatStreamingDiv = div;
-                        let _rafPending = false;
-                        div._scroll = () => {
-                            if (!_rafPending && window._chatAutoScroll !== false) {
-                                _rafPending = true;
-                                requestAnimationFrame(() => {
-                                    _rafPending = false;
-                                    if (window._chatAutoScroll !== false) {
-                                        container.scrollTop = container.scrollHeight;
-                                    }
-                                });
-                            }
-                        };
                     }
                     if (_chatStreamingDiv) {
                         _chatStreamingDiv._rawContent = _chatStreamingFullContent;
                     }
-                    if (_chatStreamingDiv && _chatStreamingDiv._body) {
-                        _chatStreamingDiv._body.innerHTML = `<div class="markdown-body" style="zoom: 1;background: transparent;">${renderChatMarkdown(_chatStreamingFullContent)}</div>`;
-                    }
-                    if (_chatStreamingDiv) _chatStreamingDiv._scroll();
+                    // rAF 节流渲染 + 滚动（合并到同一帧）
+                    _scheduleStreamRender();
                 }),
                 window.__TAURI__.event.listen('llm:usage', (e) => {
                     if (e.payload.request_id !== requestId) return;
@@ -50588,6 +50863,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 window.__TAURI__.event.listen('llm:done', async (e) => {
                     if (e.payload.request_id !== requestId) return;
                     llmDone = true;
+                    // 取消未执行的流式渲染帧（done 后用完整渲染覆盖，避免轻量版回写）
+                    _cancelStreamRender();
                     const fullContent = e.payload.content;
                     // 立即快照本次响应所需数据为局部变量：
                     // finally 会清空 _chatStreamingDiv / _streamingToolCalls / _chatStreamingFullContent，
@@ -50595,17 +50872,21 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     const toolCallsSnapshot = _streamingToolCalls.slice();
                     const streamingDiv = _chatStreamingDiv;
                     const tokenCount = usageData?.completion_tokens || 0;
+                    // 快照会话 id：落库/列表刷新/重命名用快照，避免回复期间切换会话导致落错会话
+                    // （与 rag 路径 ragSessionId 快照语义一致）
+                    const doneSessionId = currentSessionId;
                     // 内存态（当前会话立即可见，不依赖落库结果）
                     if (fullContent) {
                         chatMessages.push({ role: 'assistant', content: fullContent, toolCalls: toolCallsSnapshot, created_at: Date.now() });
                         updateTurnCounter();
                     }
-                    // ===== 落库优先：先持久化再做 UI 后处理（UI 异常不得阻断保存） =====
-                    if (currentSessionId && fullContent) {
+                    // ===== 落库与 UI 后处理并行（互不依赖；各自异常隔离，不互相阻断） =====
+                    const persistTask = (async () => {
+                        if (!doneSessionId || !fullContent) return;
                         try {
                             const savedMsg = await saveChatMessageWithRetry({
                                 dirPath: currentRootPath,
-                                sessionId: currentSessionId,
+                                sessionId: doneSessionId,
                                 role: 'assistant',
                                 content: fullContent,
                                 tokenCount,
@@ -50619,76 +50900,55 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                     streamingDiv.dataset.messageId = savedMsg.id;
                                 }
                             }
-                            window.__TAURI__.core.invoke('chat_session_list', {
-                                dirPath: currentRootPath,
-                            }).then(sessions => {
-                                chatSessions = sessions;
-                                renderChatSessionList();
-                            }).catch(e => console.warn('刷新会话列表失败:', e));
+                            // 记录到 AI 历史（使 AI 使用统计包含聊天对话）
+                            if (isTauriVisit() && fullContent) {
+                                window.addAIHistoryItemTauri({
+                                    dirPath: currentRootPath,
+                                    type: 'chat',
+                                    label: (chatMessages[0]?.content || '对话').slice(0, 50),
+                                    prompt: text,
+                                    result: fullContent,
+                                    fileName: '',
+                                    filePath: '',
+                                    tokenCount: tokenCount || 0,
+                                }).catch(e => console.warn('记录 AI 历史失败:', e));
+                            }
+                            // 会话列表刷新一次（合并重命名检查，避免重复全量 list/渲染）
+                            await refreshChatSessionListOnce(doneSessionId);
                         } catch (e) {
                             console.error('[chat] 保存助手消息失败（重试后仍失败）:', e);
                             showNotification('⚠ 回复未能保存到对话历史，请检查数据库', 'warning');
                         }
-                    }
-                    // 记录到 AI 历史（使 AI 使用统计包含聊天对话）
-                    if (isTauriVisit() && fullContent) {
-                        window.addAIHistoryItemTauri({
-                            dirPath: currentRootPath, // 显式传入路径，避免依赖 _getDirPath()
-                            type: 'chat',
-                            label: (chatMessages[0]?.content || '对话').slice(0, 50),
-                            prompt: text,
-                            result: fullContent,
-                            fileName: '',
-                            filePath: '',
-                            tokenCount: tokenCount || 0,
-                        }).catch(e => console.warn('记录 AI 历史失败:', e));
-                    }
-                    // ===== UI 后处理（异常隔离，不影响持久化结果） =====
-                    try {
-                        // 流式结束后对代码块进行语法高亮（复制按钮读取原始 Markdown）
-                        if (streamingDiv) {
-                            streamingDiv._rawContent = fullContent;
-                        }
-                        if (streamingDiv && streamingDiv._body) {
-                            await highlightChatCodeBlocks(streamingDiv._body);
-                        }
-                        // 生成完成后追加底部操作按钮（复制/保存，hover 显示），必须为最后一个子元素
-                        if (streamingDiv) {
-                            streamingDiv.appendChild(createMessageFooter('assistant', Date.now()));
-                        }
-                        removeChatTyping();
-                        // 更新上下文使用率（模型上下文窗口占用率）
-                        // 优先使用 API 返回的 prompt_tokens，不可用时保留上次的值
-                        if (usageData && usageData.prompt_tokens) {
-                            updateContextUsage(usageData.prompt_tokens, LOCAL_LLM_CONTEXT_LENGTH || 10000);
-                        }
-                        // 更新缓存命中率（DSH 口径；provider 未上报缓存字段时显示占位）
-                        updateCacheRate(usageData, 'normal');
-                    } catch (e) {
-                        console.error('[chat] done UI 后处理异常:', e);
-                    }
-                    // 重命名"新对话"（容错：防止 sendChatMessage 中因竞态未能更新）
-                    if (currentSessionId && fullContent) {
-                        window.__TAURI__.core.invoke('chat_session_list', {
-                            dirPath: currentRootPath,
-                        }).then(sessions => {
-                            const cur = sessions.find(s => s.id === currentSessionId);
-                            if (cur && (cur.title === '新对话' || !cur.title)) {
-                                const msg = chatMessages[0]?.content || '';
-                                if (msg) {
-                                    window.__TAURI__.core.invoke('chat_session_rename', {
-                                        dirPath: currentRootPath,
-                                        id: currentSessionId,
-                                        title: msg,
-                                    }).then(() => {
-                                        cur.title = msg;
-                                        chatSessions = sessions;
-                                        renderChatSessionList();
-                                    }).catch(e => console.warn('重命名失败:', e));
-                                }
+                    })();
+                    const uiTask = (async () => {
+                        try {
+                            // 流式期间为轻量渲染（未 sanitize），done 后用完整渲染覆盖（含 DOMPurify）
+                            if (streamingDiv) {
+                                streamingDiv._rawContent = fullContent;
                             }
-                        }).catch(e => console.warn('刷新列表失败:', e));
-                    }
+                            if (streamingDiv && streamingDiv._body) {
+                                streamingDiv._body.innerHTML = `<div class="markdown-body" style="zoom: 1;background: transparent;">${renderChatMarkdown(fullContent)}</div>`;
+                            }
+                            // 流式结束后对代码块进行语法高亮（复制按钮读取原始 Markdown）
+                            if (streamingDiv && streamingDiv._body) {
+                                await highlightChatCodeBlocks(streamingDiv._body);
+                            }
+                            // 生成完成后追加底部操作按钮（复制/保存，hover 显示），必须为最后一个子元素
+                            if (streamingDiv) {
+                                streamingDiv.appendChild(createMessageFooter('assistant', Date.now()));
+                            }
+                            removeChatTyping();
+                            // 更新上下文使用率（模型上下文窗口占用率）
+                            if (usageData && usageData.prompt_tokens) {
+                                updateContextUsage(usageData.prompt_tokens, LOCAL_LLM_CONTEXT_LENGTH || 10000);
+                            }
+                            // 更新缓存命中率（DSH 口径；provider 未上报缓存字段时显示占位）
+                            updateCacheRate(usageData, 'normal');
+                        } catch (e) {
+                            console.error('[chat] done UI 后处理异常:', e);
+                        }
+                    })();
+                    await Promise.allSettled([persistTask, uiTask]);
                 }),
                 window.__TAURI__.event.listen('llm:error', async (e) => {
                     if (e.payload.request_id !== requestId) return;
@@ -50734,6 +50994,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             } finally {
                 chatAbortController?.signal.removeEventListener('abort', abortHandler);
                 unlisteners.forEach(u => u());
+                // 清理未执行的流式渲染帧（请求被取消/失败时避免残留 rAF）
+                _cancelStreamRender();
                 // 兜底：请求结束但未正常 done、半截内容仍未保存时落库（覆盖事件/调用顺序竞态）
                 if (!partialSaved && !llmDone && _chatStreamingFullContent && _chatStreamingFullContent.trim()) {
                     partialSaved = true;
@@ -50760,6 +51022,34 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 renderChatSessionList();
             } catch (e) {
                 console.warn('加载会话列表失败:', e);
+            }
+        }
+
+        /** 会话列表刷新一次（含"新对话"自动重命名检查）：合并原 llm:done/rag:done 中
+         * 落库后刷新 + 重命名刷新的两次全量 list/渲染为一次，避免结束阶段重复重活。
+         * @param {string} [sessionId] 目标会话（默认 currentSessionId；rag 路径传快照 ragSessionId，
+         *   防止视图切换后 currentSessionId 漂移导致列表/重命名落错会话） */
+        async function refreshChatSessionListOnce(sessionId) {
+            const sid = sessionId || currentSessionId;
+            if (!currentRootPath || !sid) return;
+            try {
+                const sessions = await window.__TAURI__.core.invoke('chat_session_list', { dirPath: currentRootPath });
+                chatSessions = sessions;
+                const cur = sessions.find(s => s.id === sid);
+                if (cur && (cur.title === '新对话' || !cur.title)) {
+                    const msg = chatMessages[0]?.content || '';
+                    if (msg) {
+                        await window.__TAURI__.core.invoke('chat_session_rename', {
+                            dirPath: currentRootPath,
+                            id: sid,
+                            title: msg,
+                        });
+                        cur.title = msg;
+                    }
+                }
+                renderChatSessionList();
+            } catch (e) {
+                console.warn('刷新会话列表失败:', e);
             }
         }
 
@@ -51112,7 +51402,33 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         // 各模式独立记录（normal=普通对话；rag=Agent/RAG），切换模式时显示各自的值。
         // 注：mdgo 的 prompt_tokens 天然等于三桶之和（provider 口径，DeepSeek/Anthropic 均如此），
         // 故分母直接取 prompt_tokens，与 DSH 的 billedInputTokens 等价。
+        // 命中率记录持久化到 localStorage：视图切换 / 页面刷新 / 重启后恢复上次的值
+        // （用户可见的"本次会话累计命中率"记忆，不随会话销毁丢失）。
         const _cacheRateByMode = {};
+        const _CACHE_RATE_STORAGE_KEY = 'chat_cache_rate_by_mode';
+
+        /** 持久化各模式的命中率记录（写入/清除后调用；quota/隐私模式失败静默） */
+        function _persistCacheRate() {
+            try {
+                safeLocalStorageSet(_CACHE_RATE_STORAGE_KEY, JSON.stringify(_cacheRateByMode));
+            } catch (e) { /* ignore quota */ }
+        }
+
+        /** 页面加载时从 localStorage 恢复命中率记录（容错：脏数据/损坏直接丢弃） */
+        function _restoreCacheRate() {
+            try {
+                const raw = safeLocalStorageGet(_CACHE_RATE_STORAGE_KEY);
+                if (!raw) return;
+                const data = JSON.parse(raw);
+                if (!data || typeof data !== 'object') return;
+                for (const key of ['normal', 'rag']) {
+                    const rec = data[key];
+                    if (rec && typeof rec.pct === 'number' && typeof rec.cached === 'number' && typeof rec.promptTokens === 'number') {
+                        _cacheRateByMode[key] = rec;
+                    }
+                }
+            } catch (e) { /* 忽略损坏数据 */ }
+        }
 
         /** 当前生效的缓存命中率模式键（Agent 页面强制 chatMode='rag'，故仅 normal/rag 两态） */
         function cacheRateModeKey() {
@@ -51135,6 +51451,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     promptTokens,
                 };
             }
+            _persistCacheRate();
             if (mode === cacheRateModeKey()) renderCacheRate();
         }
 
@@ -51142,6 +51459,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         function renderCacheRate() {
             const el = document.getElementById('chat-cache-rate');
             if (!el) return;
+            const wrap = document.getElementById('chat-context-usage');
             const record = _cacheRateByMode[cacheRateModeKey()];
             if (!record || record.pct === null) {
                 el.textContent = '0%';
@@ -51150,6 +51468,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 el.style.display = 'inline';
                 return;
             }
+            // 有真实命中率数据 → 确保整条底部工具栏可见（切回/重启后恢复，不被 cleanupChatState 隐藏）
+            if (wrap) wrap.style.display = 'flex';
             el.textContent = record.pct + '%';
             el.title = '缓存命中 ' + record.cached + ' / ' + record.promptTokens + ' tokens（本次写入缓存 ' + record.created + '）';
             el.className = 'chat-cache-rate' + (record.pct >= 50 ? ' hit' : '');
@@ -52256,9 +52576,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             addItem(action, title = '', filePath = null, params = null, targetName = '') {
                 let delIds = [];
                 if (!isEmpty(this.openHistory)) {
-                    const first = this.openHistory[0];
                     if (filePath) {
-                        if (first.action === action && first.filePath === filePath) return;
+                        for (let item of this.openHistory) {
+                            if (item.action === action && item.filePath === filePath) delIds.push(item.id);
+                        }
                     } else {
                         if (targetName) {
                             for (let item of this.openHistory) {
