@@ -2158,7 +2158,9 @@
             position: absolute;
             display: flex;
             align-items: center;
-            justify-content: flex-end;
+            justify-content: center;
+            top: 50%;
+            transform: translateY(-50%);
             right: 0.25rem;
             margin-left: 0.25rem;
             border: none;
@@ -4555,8 +4557,9 @@
             display: flex;
             flex-wrap: wrap;
             align-items: center;
-            gap: 6px;
-            padding: 6px 8px 6px 36px;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            margin-left: 2rem;
             border-radius: var(--radius-sm);
             cursor: pointer;
             font-size: 0.8125rem;
@@ -4641,6 +4644,7 @@
             flex-wrap: wrap;
             align-items: center;
             font-size: 11px;
+            margin-left: 1.5rem;
         }
         .bookmark-lifecycle-lbl {
             padding: 1px 6px;
@@ -4680,6 +4684,7 @@
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+            margin-left: 1.5rem;
         }
 
         #content-common-container {
@@ -16459,7 +16464,7 @@
             if (p) return p;
             return MODEL_PROFILES.find(p => p.display !== false) || MODEL_PROFILES[0] || null;
         }
-        /** 将当前活跃模型同步到 LOCAL_LLM_* 全局镜像（保持旧读取点兼容，单一数据源） */
+        
         function applyActiveProfileToGlobals() {
             const p = llmGetActiveProfile();
             if (!p) {
@@ -16608,8 +16613,6 @@
                 rerankMinScore: 0.2, bm25MsmRatio: 0.6, rerankerEnabled: true
             }
         };
-        let LOCAL_LLM_PLANNER_MODEL = '';   // P0-6：规划用小模型（可选，空 = 主模型）
-        let LOCAL_LLM_SUMMARY_MODEL = '';   // P0-6：摘要用小模型（可选，空 = 主模型）
         let LOCAL_LLM_REASONING_EFFORT = ''; // P2-18：推理等级（可选：low/medium/high）
         let LOCAL_LLM_CONTEXT_LENGTH = AGENT_LIMITS.contextLength;
         let LOCAL_LLM_MAX_TOKENS = AGENT_LIMITS.maxTokens;
@@ -32421,6 +32424,20 @@ kanban-plugin: basic
         let _bookmarkImportPromise = null; // 书签导入 Promise，避免重复导入
         let _bookmarkDestroyed = false; // 书签页面是否销毁，避免重复销毁
 
+        // 分析扫描：启动（或继续）书签 AI 分析 Worker（已在运行则无操作，空闲超时退出后经此重启）。
+        async function startBookmarkWorker() {
+            try {
+                if (window.__mdgoBookmark && window.__mdgoBookmark.bookmarkWorkerStart) {
+                    await window.__mdgoBookmark.bookmarkWorkerStart();
+                    showNotification('✓ 已启动书签分析扫描', 'success');
+                } else {
+                    showNotification('✗ 当前非 Tauri 环境或适配层未就绪', 'warning');
+                }
+            } catch (e) {
+                showNotification('✗ 分析扫描失败：' + ((e && e.message) || e), 'error');
+            }
+        }
+
         async function toggleDashboardBookmarkView() {
             await switchToView(contentCommonContainer);
             _bookmarkDestroyed = false;
@@ -32551,7 +32568,10 @@ kanban-plugin: basic
                         <button class="btn btn-sm json-btn" onclick="bookmarkCollapseToLevel(4)" title="折叠至4级">4级</button>
                         <span id="bookmark-dead-count" class="bookmark-dead-count${deadCount > 0 ? ' has-dead' : ''}" style="font-size: 0.75rem;">${deadCount > 0 ? '⚠ ' + deadCount + ' 死链' : ''}</span>
                     </div>
-                    ${hasReselect ? '<input type="file" id="bookmark-reselect-input" accept=".html,.htm" style="display:none" onchange="importBookmarkToMdgo(this)"><button class="btn btn-sm btn-primary bookmark-refresh-btn" onclick="document.getElementById(\'bookmark-reselect-input\').click()" title="重新选择书签文件导入">重新选择</button>' : ''}
+                    ${hasReselect ? `<input type="file" id="bookmark-reselect-input" accept=".html,.htm" style="display:none" onchange="importBookmarkToMdgo(this)">
+                    <button class="btn btn-sm btn-primary bookmark-refresh-btn" onclick="document.getElementById(\'bookmark-reselect-input\').click()" title="重新选择书签文件导入">重新选择</button>
+                    <button id="bookmark-scan-btn" class="btn btn-sm btn-primary" onclick="startBookmarkWorker()" title="分析扫描">分析扫描</button>
+                    ` : ''}
                 </div>
                 <div class="bookmark-tree" id="bookmark-tree">`;
             html += renderBookmarkNode(rootNode, 0, deadLinks);
@@ -47574,8 +47594,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         localLlmEndpoint: LOCAL_LLM_ENDPOINT,
                         localLlmToken: LOCAL_LLM_TOKEN,
                         localLlmModel: LOCAL_LLM_MODEL,
-                        localLlmPlannerModel: LOCAL_LLM_PLANNER_MODEL,
-                        localLlmSummaryModel: LOCAL_LLM_SUMMARY_MODEL,
                         localLlmReasoningEffort: LOCAL_LLM_REASONING_EFFORT,
                         localLlmContextLength: LOCAL_LLM_CONTEXT_LENGTH,
                         localLlmMaxTokens: LOCAL_LLM_MAX_TOKENS,
@@ -47660,8 +47678,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 LOCAL_LLM_ENDPOINT = normalizeLlmEndpoint(setting.localLlmEndpoint);
                 LOCAL_LLM_TOKEN = setting.localLlmToken;
                 LOCAL_LLM_MODEL = setting.localLlmModel;
-                LOCAL_LLM_PLANNER_MODEL = setting.localLlmPlannerModel || '';
-                LOCAL_LLM_SUMMARY_MODEL = setting.localLlmSummaryModel || '';
                 LOCAL_LLM_REASONING_EFFORT = setting.localLlmReasoningEffort || '';
                 LOCAL_LLM_CONTEXT_LENGTH = setting.localLlmContextLength;
                 LOCAL_LLM_MAX_TOKENS = setting.localLlmMaxTokens || AGENT_LIMITS.maxTokens;
@@ -47697,8 +47713,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 localLlmEndpoint: LOCAL_LLM_ENDPOINT,
                 localLlmToken: LOCAL_LLM_TOKEN,
                 localLlmModel: LOCAL_LLM_MODEL,
-                localLlmPlannerModel: LOCAL_LLM_PLANNER_MODEL,
-                localLlmSummaryModel: LOCAL_LLM_SUMMARY_MODEL,
                 localLlmReasoningEffort: LOCAL_LLM_REASONING_EFFORT,
                 localLlmContextLength: LOCAL_LLM_CONTEXT_LENGTH,
                 localLlmMaxTokens: LOCAL_LLM_MAX_TOKENS,
@@ -47717,8 +47731,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     model: LOCAL_LLM_MODEL,
                     apiKey: LOCAL_LLM_TOKEN,
                     protocol: LOCAL_LLM_PROTOCOL || 'openai',
-                    plannerModel: LOCAL_LLM_PLANNER_MODEL || null,
-                    summaryModel: LOCAL_LLM_SUMMARY_MODEL || null,
                     reasoningEffort: LOCAL_LLM_REASONING_EFFORT || null,
                     // P3：最大输出 token 下发后端（0/空 = 不设置，由服务器/模型默认）
                     maxTokens: LOCAL_LLM_MAX_TOKENS || null,

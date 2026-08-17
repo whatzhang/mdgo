@@ -104,3 +104,12 @@ pub async fn bookmark_tree(app: AppHandle, dir_path: String) -> Result<BookmarkT
     let guard = s.lock().map_err(|e| e.to_string())?;
     guard.tree()
 }
+
+/// 「分析扫描」按钮：启动（或继续）书签 Enrichment Worker。
+/// Worker 已在运行则无操作；空闲超时退出后经此重新启动。
+#[tauri::command]
+pub async fn bookmark_worker_start(app: AppHandle) -> Result<(), String> {
+    let worker = app.state::<AppState>().bookmark_worker.clone();
+    worker.ensure_running();
+    Ok(())
+}

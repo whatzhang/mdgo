@@ -852,20 +852,8 @@ pub async fn agent_query(
     }
 
     // 历史上下文压缩器：优先「摘要+滑窗」（依赖 LLM），否则纯滑窗兜底（压缩永不失败）
-    // P0-6：摘要可用独立轻量模型（summary_model），缺省回退主模型
-    let summary_llm = match &llm_cfg.summary_model {
-        Some(_) => match state
-            .llm_client_for_role(&llm_cfg, crate::ModelRole::Summary)
-            .await
-        {
-            Ok(client) => client,
-            Err(e) => {
-                log::warn!("[agent_query] [0]: 摘要模型不可用，回退主模型: {}", e);
-                llm.clone()
-            }
-        },
-        None => llm.clone(),
-    };
+    // 单一模型：压缩器直接用主模型（不存在独立摘要小模型，避免跨模型分叉）
+    let summary_llm = llm.clone();
     let summarizer: Arc<dyn crate::core::context::HistorySummarizer> = Arc::new(summary_llm);
     let compressor: Arc<dyn ContextCompressor> = Arc::new(SummarizeThenWindowCompressor::new(
         summarizer,
@@ -2035,20 +2023,8 @@ pub async fn kb_llm_query(
     }
 
     // 历史上下文压缩器：无工具对话同样适用，避免长会话被直接拒绝
-    // P0-6：摘要可用独立轻量模型（summary_model），缺省回退主模型
-    let summary_llm = match &llm_cfg.summary_model {
-        Some(_) => match state
-            .llm_client_for_role(&llm_cfg, crate::ModelRole::Summary)
-            .await
-        {
-            Ok(client) => client,
-            Err(e) => {
-                log::warn!("[kb_llm_query] [0]: 摘要模型不可用，回退主模型: {}", e);
-                llm.clone()
-            }
-        },
-        None => llm.clone(),
-    };
+    // 单一模型：压缩器直接用主模型（不存在独立摘要小模型，避免跨模型分叉）
+    let summary_llm = llm.clone();
     let summarizer: Arc<dyn crate::core::context::HistorySummarizer> = Arc::new(summary_llm);
     let compressor: Arc<dyn ContextCompressor> = Arc::new(SummarizeThenWindowCompressor::new(
         summarizer,

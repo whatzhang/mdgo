@@ -521,7 +521,6 @@ impl LLMClient {
             documents: Vec::new(),
             tools: Vec::new(),
             temperature: Some(0.3),
-            // review 修复 A2：1024 易截断中文计划，提到 2048
             max_tokens: Some(2048),
             tool_choice: None,
             additional_params: None,
@@ -761,137 +760,108 @@ impl LLMClient {
         title: &str,
         url: &str,
         content: &str,
+        context_length: u32,
         cancel: CancellationToken,
     ) -> Result<Option<BookmarkSummaryOut>, String> {
-        // 正文截断防超长输入（避免超模型上下文/输出预算）
-        const MAX_INPUT_CHARS: usize = 8000;
-        let content: String = if content.chars().count() > MAX_INPUT_CHARS {
-            let cut: String = content.chars().take(MAX_INPUT_CHARS).collect();
+        const FALLBACK_MAX_INPUT_CHARS: usize = 600;
+        // 系统提示词+分类+标题/URL+输出 的字符开销（约 1200 中文字符 ≈ 1500-2400 tokens）。
+        // 未配置 context_length 时，fallback 600 + 开销 1200 + 输出 600 ≈ 2400 chars，
+        // 按 2 tokens/char 计约 4800 tokens，对小模型（4096）安全。
+        const FIXED_OVERHEAD_CHARS: usize = 1200;
+        const SUMMARY_OUTPUT_TOKENS: u64 = 1024;
+        let output_budget_chars = SUMMARY_OUTPUT_TOKENS as usize;
+        let max_input_chars = if context_length > 0 {
+            // context_length 是 token 数，按 1 token ≈ 0.5 中文字符保守估算字符预算，
+            // 再打 80% 安全余量（避免 tokenizer 差异 + 结构输出 schema 注入撑爆窗口）。
+            let char_budget = (context_length as usize) / 2 * 80 / 100;
+            char_budget
+                .saturating_sub(FIXED_OVERHEAD_CHARS + output_budget_chars)
+                .max(200) // 下限：至少保留 200 字符正文（标题+URL 兜底）
+        } else {
+            FALLBACK_MAX_INPUT_CHARS
+        };
+        let content: String = if content.chars().count() > max_input_chars {
+            let cut: String = content.chars().take(max_input_chars).collect();
             format!("{}…（已截断）", cut)
         } else {
             content.to_string()
         };
         let content_chars = content.chars().count();
-        let schema = bookmark_summary_json_schema();
-        // 结构化输出：将 JSON Schema 交给网关（rig 映射为 response_format.json_schema）；
-        // 转换失败（schema 非 object/bool）时退回 prompt 约束 + 本地校验。
-        let output_schema = schemars::Schema::try_from(schema).ok();
         let prompt = format!(
-"你是一个信息结构化引擎，负责将浏览器书签内容 标题、URL总结摘要转换为标准化 JSON 数据。\n\
+"你是一个信息结构化引擎书签内容整理助手。请阅读下面的书签标题/URL/内容，提取出分类、标签和摘要。只输出 JSON，不输出解释。\n\
 \n\
-⚠️ 这是一个严格结构化任务：\n\
-- 只允许输出 JSON\n\
-- 不允许输出解释、注释、markdown、换行说明\n\
-- 输出必须可被 JSON.parse 直接解析\n\
+输出格式：\n\
+{{\"summary\":\"80~120字摘要\",\"category\":\"分类\",\"tags\":[\"标签1\",\"标签2\"]}}\n\
 \n\
-【任务】\n\
-对浏览器书签内容 标题、URL进行：摘要 + 分类 + 标签\n\
+分类枚举（严格匹配）：基础科学/工程技术/计算机与AI/实验数据/学术文献/教程讲义/工具软件/行业资讯/项目案例/标准规范/资源素材/行业政策/学术创作/其他\n\
+- 基础科学：自然科学理论原理\n\
+- 工程技术：工科应用技术工艺\n\
+- 计算机与AI：编程开发AI算法\n\
+- 实验数据：测试报告数据集\n\
+- 学术文献：论文综述研究报告\n\
+- 教程讲义：课程学习指南\n\
+- 工具软件：开发工具数据分析平台\n\
+- 行业资讯：技术动态产业进展\n\
+- 项目案例：工程落地实践\n\
+- 标准规范：国标行标设计准则\n\
+- 资源素材：模型图纸数据集\n\
+- 行业政策：产业科研政策\n\
+- 学术创作：技术博客科普文稿\n\
+- 其他：无法归类时用\n\
 \n\
-输出格式\n\
-{{\n\
-  \"summary\": string,\n\
-  \"category\": string,\n\
-  \"tags\": string[],\n\
-}}
+冲突优先：教程+工具→工具软件 / 资讯动态→行业资讯 / 论文+数据→学术文献\n\
 \n\
-字段规则：\n\
-1. summary\n\
-- 80~120字\n\
-- 提炼核心观点 + 结论\n\
-- 禁止复述段落\n\
-- 禁止无信息句\n\
+标签：5~8个关键词，含领域词+技术主题词，禁用空泛词（文章/方法/总结）\n\
 \n\
-2. category\n\
-- 必须从以下枚举中选择一个（严格匹配）：['基础科学','工程技术','计算机与AI','实验数据','学术文献','教程讲义','工具软件','行业资讯','项目案例','标准规范','资源素材','行业政策','学术创作','其他']\n\
-\n\
-【分类判定（强约束）】\n\
-- 基础科学：数学、物理、化学、生物、天文、地理等自然科学理论、原理研究\n\
-- 工程技术：机械、土木、能源、材料、自动化、光电、化工等工科应用技术、工艺方案\n\
-- 计算机与AI：编程、软件开发、系统架构、大模型、深度学习、算力、算法、嵌入式\n\
-- 实验数据：实验方案、观测记录、测试报告、数据集、仿真结果、图表原始数据\n\
-- 学术文献：论文、综述、期刊文献、学位论文、研究报告\n\
-- 教程讲义：课程讲义、学习指南、理论讲解、入门教学\n\
-- 工具软件：仿真软件、开发工具、测试仪器、数据分析平台、工业软件\n\
-- 行业资讯：行业新技术动态、产业进展、技术发布会（优先级最高）\n\
-- 项目案例：工程项目落地案例、研发项目实施记录、工程实践样本\n\
-- 标准规范：国标/行标、技术规范、安全规范、设计准则、接口标准\n\
-- 资源素材：模型文件、图纸、模板、数据集、开源资源、程序素材\n\
-- 行业政策：产业政策、科研扶持、行业监管规范、科技相关政务文件\n\
-- 学术创作：技术博客、研究随笔、技术稿件、科普文稿、成果撰写\n\
-- 其他：仅在无法归类时使用\n\
-\n\
-【冲突处理（必须遵守）】\n\
-- '教程 + 工具软件使用' → 工具软件优先\n\
-- '理论讲解 + 底层原理研究' → 基础科学 / 计算机与AI / 工程技术（按领域匹配）优先\n\
-- '资讯类新技术动态' → 行业资讯优先\n\
-- '软件平台介绍、仪器使用说明' → 工具软件优先\n\
-- '技术博客、随笔但包含专业原理内容' → 对应技术领域优先（计算机与AI/工程技术等）\n\
-- '论文附带实验数据' → 学术文献优先；单独存放的原始测试记录 → 实验数据优先\n\
-- '项目内附带设计规范' → 项目案例优先；独立发布的通用条文 → 标准规范优先\n\
-\n\
-3. tags\n\
-- 数量：5~8个\n\
-- 类型：关键词（不是句子）\n\
-- 必须包含：\n\
-  - 领域词\n\
-  - 关键技术词或主题词\n\
-- 禁止：\n\
-  - 空泛词（如：文章/方法/总结）\n\
-  - 重复词\n\
-\n\
-【质量检查（必须满足）\n\
-- JSON 合法\n\
-- 字段齐全\n\
-- 无多余字段\n\
-- tags 数量正确\n\
-- category 合法\n\
-- summary 长度符合要求\n\
-\n\
-标题：
-{title}
-\n\
-链接：
-{url}
-\n\
-内容：
-{content}");
+标题：{title}\n\
+链接：{url}\n\
+内容：{content}");
 
+        // 不走 output_schema（rig 会把它强转成 response_format.json_schema + strict，
+        // 本地引擎如 LM Studio 不支持 → 输出过短/解析失败）。改为纯 prompt 要求 JSON，
+        // 用本地 parse_bookmark_summary_json 兜底校验。仍用 rig 的非流式 completion 单次调用。
         let request = CompletionRequest {
             model: None,
             preamble: None,
-            chat_history: OneOrMany::one(Message::user(prompt)),
+            chat_history: OneOrMany::one(Message::user(prompt.clone())),
             documents: Vec::new(),
             tools: Vec::new(),
             temperature: Some(0.3),
-            max_tokens: Some(2048),
+            max_tokens: Some(SUMMARY_OUTPUT_TOKENS),
             tool_choice: None,
-            additional_params: None,
-            output_schema,
+            additional_params: Some(serde_json::json!({"enable_thinking": false})),
+            output_schema: None,
             record_telemetry_content: false,
         };
-        let request = self.apply_common_params(request);
+
+        // 记录本次请求体（便于与 LM Studio / Postman 对照定位）
         log::info!(
-            "[llm] [书签摘要] 发起: model={} title={}, url={}",
-            self.model, title, url
+            "[llm] [书签摘要] 请求: model={} title={} url={} chars_in={} prompt_len={}",
+            self.model, title, url, content_chars, prompt.chars().count()
         );
 
         let response = self
             .completion_with_retry(request, cancel)
             .await
             .map_err(|e| format!("LLM 调用失败: {}", e))?;
+
         let mut full = String::new();
         for item in response.choice.iter() {
             if let AssistantContent::Text(text) = item {
                 full.push_str(&text.text);
             }
         }
+        // 记录响应全文（便于定位解析失败与真实返回）
+        log::info!(
+            "[llm] [书签摘要] 响应: model={} chars_out={} body={}",
+            self.model, full.chars().count(), truncate_log(full.trim(), 2000)
+        );
+
         let trimmed = full.trim();
         let parsed = if trimmed.is_empty() {
-            // 模型返回空文本：通常是正文过短/无实质内容的页面（chars_in 很小）。仍判失败
-            // （调用方按 fail_job 走，符合「失败则失败」语义），但日志与「解析失败」区分开。
             log::warn!(
-                "[llm] [书签摘要] 模型空输出（choice 无文本）: model={} chars_in={} choices={}",
-                self.model, content_chars, response.choice.len()
+                "[llm] [书签摘要] 模型空输出: model={} chars_in={}",
+                self.model, content_chars
             );
             None
         } else {
@@ -899,7 +869,7 @@ impl LLMClient {
             if p.is_none() {
                 log::warn!(
                     "[llm] [书签摘要] 输出不可解析（非合法 JSON）: model={} chars_in={} raw_chars={} raw={}",
-                    self.model, content_chars, trimmed.chars().count(), truncate_log(trimmed, 200)
+                    self.model, content_chars, trimmed.chars().count(), truncate_log(trimmed, 500)
                 );
             }
             p

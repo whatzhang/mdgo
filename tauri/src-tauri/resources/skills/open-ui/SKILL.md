@@ -1,8 +1,8 @@
 ---
 id: open-ui
 scope: system
-name: 打开文件与页面
-description: 当用户要求打开知识库中的某个文件、跳转到某个页面或视图（文件图谱、关联图谱、系统首页、日历、知识库监控、技能管理、MCP 管理、时间线、无限画布、白板、Mermaid 图表、词云、Git 管理、番茄钟、临时编辑器、编码器、视频、RAW 照片、正则测试、Cron 测试、书签、目录空间、Swagger、GraphQL、Nginx 配置编辑器等）时触发。
+name: 打开文件 / 页面
+description: 当用户要求打开知识库中的某个文件、跳转到某个页面或视图（文件图谱、关联图谱、系统首页、日历、知识库监控、技能管理、MCP 管理、时间线、无限画布、白板、Mermaid 图表、词云、Git 管理、番茄钟、临时编辑器、编码器、视频、RAW 照片、正则测试、Cron 测试、书签预览、目录空间、Swagger、GraphQL、Nginx 配置编辑器等）时触发。
 priority: 55
 tools: [open-ui, ls, glob]
 triggers: [打开, 跳转, 打开文件, 打开页面, 跳转页面, 跳转到, 打开ui, 打开 UI, open file, open page, open ui, 文件预览, 打开预览]

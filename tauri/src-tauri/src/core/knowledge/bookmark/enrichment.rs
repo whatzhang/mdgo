@@ -25,6 +25,7 @@
 //!   旧实现 Title+Summary+Tags 顺序在长摘要时会把末尾的 tags 截掉，导致向量缺 tags。
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -37,6 +38,9 @@ use super::BookmarkStore;
 use crate::services::llm::BookmarkSummaryOut;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
+/// 连续空闲（无 pending 可处理）超过该时长即退出 Worker，避免后台空转轮询；
+/// 之后由「分析扫描」按钮（`bookmark_worker_start`）重新启动。
+const IDLE_EXIT_AFTER: Duration = Duration::from_secs(30);
 const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_BODY_BYTES: usize = 2 * 1024 * 1024; // 2MB 响应上限
 /// raw_content 保存上限（正文仅用于 LLM 总结分类，无需全量存档）
@@ -74,6 +78,9 @@ pub struct EnrichmentWorker {
     client: reqwest::Client,
     /// 可选：LLM 摘要提供者（None = 未接入 LLM，摘要任务将按失败处理并标注步骤）
     summarizer: Option<Arc<dyn BookmarkSummarizer + 'static>>,
+    /// 运行标志：true = 后台循环正在运行。空闲超时退出后置 false，
+    /// 供 `ensure_running` 判断是否需要在「分析扫描」按钮触发时重启。
+    running: Arc<AtomicBool>,
 }
 
 impl EnrichmentWorker {
@@ -88,17 +95,23 @@ impl EnrichmentWorker {
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .unwrap_or_default();
-        Self { stores, client, summarizer }
+        Self { stores, client, summarizer, running: Arc::new(AtomicBool::new(false)) }
     }
 
-    /// 启动后台循环（setup 时调用一次）。
+    /// 启动后台循环（setup 时调用一次；之后由「分析扫描」按钮 `ensure_running` 重启）。
     /// 必须用 `tauri::async_runtime::spawn`（持有全局 runtime 句柄，setup 同步回调上下文可用）；
     /// `tokio::spawn` 在 setup 无 reactor 上下文会 panic（"there is no reactor running"）。
     ///
     /// 忙态不空转：当仍有 pending 书签时连续处理（无 500ms 轮询间隔），
     /// 仅在全部 store 均空闲时才 sleep `POLL_INTERVAL`——消除大批量导入下每批之间的固定延迟。
+    /// 连续空闲超过 `IDLE_EXIT_AFTER` 即退出循环并清 running 标志，等待下次手动触发。
     pub fn spawn(self: Arc<Self>) {
+        // 已在运行则直接返回，避免重复 spawn（多触发点防抖）。
+        if self.running.swap(true, Ordering::SeqCst) {
+            return;
+        }
         tauri::async_runtime::spawn(async move {
+            let mut idle_since: Option<tokio::time::Instant> = None;
             loop {
                 let did_work = match self.tick().await {
                     Ok(did_work) => did_work,
@@ -107,11 +120,31 @@ impl EnrichmentWorker {
                         false
                     }
                 };
-                if !did_work {
+                if did_work {
+                    idle_since = None;
+                } else {
+                    let now = tokio::time::Instant::now();
+                    if idle_since.is_none() {
+                        idle_since = Some(now);
+                    } else if now.duration_since(idle_since.unwrap()) >= IDLE_EXIT_AFTER {
+                        log::info!(
+                            "[bookmark] 连续空闲超过 {:?}，Worker 退出；待「分析扫描」重新触发",
+                            IDLE_EXIT_AFTER
+                        );
+                        break;
+                    }
                     sleep(POLL_INTERVAL).await;
                 }
             }
+            self.running.store(false, Ordering::SeqCst);
         });
+    }
+
+    /// 供「分析扫描」按钮/命令调用：Worker 未运行时重新启动，已在运行则无操作（防重复）。
+    pub fn ensure_running(self: Arc<Self>) {
+        if !self.running.load(Ordering::SeqCst) {
+            self.spawn();
+        }
     }
 
     /// 单轮：遍历所有 store，逐库处理一批 pending 书签。

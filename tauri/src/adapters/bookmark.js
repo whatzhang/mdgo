@@ -51,6 +51,9 @@
 
         /** 书签目录树（页面直读 DB；叶子带 status/dead 标记） */
         bookmarkTree: (dirPath) => invoke('bookmark_tree', { dirPath }),
+
+        /** 分析扫描：启动（或继续）书签 Enrichment Worker（已在运行则无操作） */
+        bookmarkWorkerStart: () => invoke('bookmark_worker_start'),
     };
 
     window.__mdgoBookmark = bookmarkApi;

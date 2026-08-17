@@ -81,13 +81,12 @@ pub enum ModelRole {
 }
 
 impl LlmConfig {
-    /// 按角色解析模型名（缺省回退主模型）
-    pub fn model_for_role(&self, role: ModelRole) -> &str {
-        match role {
-            ModelRole::Main => &self.model,
-            ModelRole::Planner => self.planner_model.as_deref().unwrap_or(&self.model),
-            ModelRole::Summary => self.summary_model.as_deref().unwrap_or(&self.model),
-        }
+    /// 解析模型名——**所有业务 LLM 的单一获取点**。
+    ///
+    /// SOLID：主 / 规划 / 摘要统一返回 `self.model`，不存在独立小模型、也不存在「回退」逻辑，
+    /// 任何角色取到的都是同一个主模型，杜绝「某业务用了 A、另一业务用了 B」的分叉。
+    pub fn model_for_role(&self, _role: ModelRole) -> &str {
+        &self.model
     }
 }
 
@@ -180,7 +179,9 @@ impl BookmarkSummarizer for AppBookmarkSummarizer {
                 .await
                 .map_err(|e| format!("LLM 客户端不可用: {}", e))?;
             let cancel = tokio_util::sync::CancellationToken::new();
-            client.summarize_bookmark(&title, &url, &content, cancel).await
+            client
+                .summarize_bookmark(&title, &url, &content, cfg.context_length, cancel)
+                .await
         })
     }
 }
@@ -569,6 +570,7 @@ pub fn run() {
             commands::bookmark::bookmark_stat,
             commands::bookmark::bookmark_get,
             commands::bookmark::bookmark_tree,
+            commands::bookmark::bookmark_worker_start,
             // AI 历史记录命令
             commands::ai_history::ai_history_add,
             commands::ai_history::ai_history_list,
@@ -727,7 +729,7 @@ fn init_logging() {
 
     // 级别上限 + 高频第三方 target 屏蔽（行为与原 ignore 列表对齐）
     let level = if cfg!(debug_assertions) {
-        tracing::level_filters::LevelFilter::INFO
+        tracing::level_filters::LevelFilter::DEBUG
     } else {
         tracing::level_filters::LevelFilter::WARN
     };
