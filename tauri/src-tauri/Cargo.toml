@@ -106,6 +106,8 @@ pdf-extract = { version = "0.7", optional = true }
 async-trait = "0.1"
 rig-core = "0.41.0"
 rig-agent = { version = "0.41.0", default-features = false }
+# JSON Schema 结构化输出（rig-core 同版本同实例；CompletionRequest.output_schema 类型）
+schemars = "1"
 anyhow = "1.0.104"
 
 # ─── ONNX Runtime / 推理引擎 按平台选择 ───

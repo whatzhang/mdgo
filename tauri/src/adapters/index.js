@@ -50,6 +50,7 @@ window.__tauriInitPromise = (async () => {
             import('./ai-history.js').then(() => console.log('[TauriAdapter] AI 历史适配器已加载')),
             import('./skill.js').then(() => console.log('[TauriAdapter] Skill 适配器已加载')),
             import('./mcp.js').then(() => console.log('[TauriAdapter] MCP 适配器已加载')),
+            import('./bookmark.js').then(() => console.log('[TauriAdapter] 书签适配器已加载')),
         ]);
     } catch (e) {
         console.error('[TauriAdapter] 加载核心适配器失败:', e);

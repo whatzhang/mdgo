@@ -3585,7 +3585,7 @@
         .charts-grid>.chart-card {
             margin-bottom: 0;
         }
-
+       
         /* ── 知识库面板仪表板样式 ── */
         .kb-health-bar {
             display: flex;
@@ -4497,12 +4497,12 @@
         .bookmark-folder-header {
             display: flex;
             align-items: center;
-            gap: 6px;
-            padding: 7px 10px;
+            gap: 0.25rem;
+            padding: 0.25rem 0.5rem;
             border-radius: var(--radius-sm);
             cursor: pointer;
             font-weight: 600;
-            font-size: 14px;
+            font-size: 0.875rem;
             color: var(--color-text);
             transition: background-color 0.15s;
             user-select: none;
@@ -4553,12 +4553,13 @@
 
         .bookmark-item {
             display: flex;
+            flex-wrap: wrap;
             align-items: center;
             gap: 6px;
             padding: 6px 8px 6px 36px;
             border-radius: var(--radius-sm);
             cursor: pointer;
-            font-size: 13px;
+            font-size: 0.8125rem;
             color: var(--color-text);
             text-decoration: none;
             transition: background-color 0.15s;
@@ -4570,8 +4571,8 @@
         }
 
         .bookmark-item-favicon {
-            width: 16px;
-            height: 16px;
+            width: 1rem;
+            height: 1rem;
             flex-shrink: 0;
             border-radius: 2px;
         }
@@ -4630,6 +4631,55 @@
 
         .bookmark-dead-count.has-dead {
             color: var(--color-danger);
+        }
+
+        /* DB 直读书签的元信息展示（生命周期/分类/标签/摘要），置于第二行 */
+        .bookmark-meta {
+            flex-basis: 100%;
+            display: inline-flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            align-items: center;
+            font-size: 11px;
+        }
+        .bookmark-lifecycle-lbl {
+            padding: 1px 6px;
+            border-radius: 8px;
+            font-size: 11px;
+            line-height: 1.4;
+            color: var(--color-text-secondary);
+            background: var(--color-bg-subtle);
+        }
+        .bookmark-lifecycle-lbl[data-status="ready"] { color: #16a34a; background: rgba(22,163,74,.12); }
+        .bookmark-lifecycle-lbl[data-status="pending"] { color: #b45309; background: rgba(180,83,9,.12); }
+        .bookmark-lifecycle-lbl[data-status="failed"] { color: var(--color-danger); background: rgba(220,38,38,.12); }
+        .bookmark-dead-badge {
+            padding: 1px 6px;
+            border-radius: 8px;
+            font-size: 11px;
+            line-height: 1.4;
+            color: var(--color-danger);
+            background: rgba(220,38,38,.12);
+        }
+        .bookmark-cat-lbl {
+            padding: 1px 6px;
+            border-radius: 6px;
+            font-size: 11px;
+            color: #2563eb;
+            background: rgba(37,99,235,.10);
+        }
+        .bookmark-tag-lbl {
+            color: var(--color-text-tertiary);
+        }
+        .bookmark-summary-lbl {
+            flex-basis: 100%;
+            font-size: 11px;
+            color: var(--color-text-tertiary);
+            display: block;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         #content-common-container {
@@ -16094,6 +16144,17 @@
                                 </div>
                             </div>
                             <div class="stat-card">
+                                <div class="stat-icon yellow"><svg xmlns="http://www.w3.org/2000/svg" width="18"
+                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                                    </svg></div>
+                                <div class="stat-info">
+                                    <div class="stat-value" id="kb-stat-bookmarks">--</div>
+                                    <div class="stat-label">书签收藏</div>
+                                </div>
+                            </div>
+                            <div class="stat-card">
                                 <div class="stat-icon cyan"><svg xmlns="http://www.w3.org/2000/svg" width="18"
                                         height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                         stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -17132,7 +17193,6 @@
         const INDEX_SCHEDULE_FILE = 'index_schedule.json';
         const INDEX_LINK_GRAPH_FILE = 'index_link_graph.json';
         const SETTING_FILE = 'setting.json';
-        const BOOKMARK_DATA_FILE = 'index_bookmarks.json';
 
         // 获取幕布节点文本
         const getMubuText = (node) => node.getAttribute('_mubu_text') ? decodeURIComponent(node.getAttribute('_mubu_text')) : '';
@@ -32374,10 +32434,11 @@ kanban-plugin: basic
         }
 
         async function loadBookmarkFromMdgo() {
+            const dir = currentRootPath || getRootHandle().name;
             try {
-                const fh = await getFileHandleByDirHandle(await getDataDir(), BOOKMARK_DATA_FILE);
-                const text = await getFileContent(fh);
-                return JSON.parse(text);
+                const tree = await window.__mdgoBookmark.bookmarkTree(dir);
+                if (!tree || !tree.children || tree.children.length === 0) return null;
+                return { tree, deadLinks: new Set() };
             } catch (e) {
                 return null;
             }
@@ -32436,68 +32497,40 @@ kanban-plugin: basic
             });
             const doc = new DOMParser().parseFromString(html, 'text/html');
             const root = parseBookmarkHtml(doc);
-            const allUrls = [];
-            collectUrls(root, allUrls);
-            const totalUrls = allUrls.length;
-            if (totalUrls === 0) {
+            const entries = [];
+            collectBookmarkEntries(root, '', entries);
+            if (entries.length === 0) {
                 showNotification('✗ 未发现书签', 'warning');
                 return;
             }
-            contentCommonContainer.innerHTML = renderBookmarkPage(root, new Set(), true);
-            const urlToEl = new Map();
-            contentCommonContainer.querySelectorAll('.bookmark-item').forEach(el => {
-                const url = el.getAttribute('data-bookmark-url');
-                if (url) urlToEl.set(url, el);
-            });
-            await writeFileByDirHandle(await getDataDir(), BOOKMARK_DATA_FILE, JSON.stringify({ tree: root, deadLinks: [] }));
-            // 死链检查：50 并发 Worker 池 + 3s 超时
-            const deadLinks = [];
-            let idx = 0;
-            const workers = Array(50).fill(null).map(async () => {
-                while (idx < totalUrls) {
-                    if (_bookmarkDestroyed) return;
-                    const url = allUrls[idx++];
-                    if (isLocalUrl(url) || /^javascript:/i.test(url)) continue;
-                    try {
-                        const controller = new AbortController();
-                        const tid = setTimeout(() => controller.abort(), 3000);
-                        try {
-                            await fetch(url, { method: 'HEAD', mode: 'no-cors', signal: controller.signal });
-                        } finally {
-                            clearTimeout(tid);
-                        }
-                    } catch (e) {
-                        deadLinks.push(url);
-                        const el = urlToEl.get(url);
-                        if (el) {
-                            el.classList.add('bookmark-dead-link');
-                            const urlSpan = el.querySelector('.bookmark-item-url');
-                            if (urlSpan) urlSpan.classList.add('bookmark-url-dead');
-                        }
-                    }
-                }
-            });
-            await Promise.allSettled(workers);
-            // 如果页面已被销毁，不更新 UI 也不保存最终数据
-            if (_bookmarkDestroyed) return;
-            // 更新死链计数
-            const deadCountEl = document.getElementById('bookmark-dead-count');
-            if (deadCountEl) {
-                if (deadLinks.length > 0) {
-                    deadCountEl.textContent = '⚠ ' + deadLinks.length + ' 死链';
-                    deadCountEl.classList.add('has-dead');
-                }
+            // 超过 5 万条：前端提示，仅处理前 5 万条，超出直接丢弃（后端同样兜底截断）
+            const MAX_IMPORT_ENTRIES = 50000;
+            if (entries.length > MAX_IMPORT_ENTRIES) {
+                showNotification(`⚠ 书签共 ${entries.length} 条，超过 5 万条，仅导入前 ${MAX_IMPORT_ENTRIES} 条，其余丢弃`, 'warning');
+                entries.length = MAX_IMPORT_ENTRIES;
             }
-            showNotification(`✓ 书签导入完成（${totalUrls} 个书签${deadLinks.length ? '，' + deadLinks.length + ' 个死链' : ''}）`, 'success');
+            try {
+                const stats = await window.__mdgoBookmark.bookmarkImport(currentRootPath || getRootHandle().name, entries, file.name);
+                const parts = [`新增 ${stats.inserted}`];
+                if (stats.skipped > 0) parts.push(`跳过 ${stats.skipped}`);
+                if (stats.failed > 0) parts.push(`失败 ${stats.failed}`);
+                showNotification(`✓ 书签已导入知识资产（${parts.join('，')}），后台 AI 分析中`, 'success');
+                // 数据在 DB，导入成功后刷新页面（重新从 DB 拉树）
+                if (!_bookmarkDestroyed) { await toggleDashboardBookmarkView(); }
+            } catch (e) {
+                showNotification('✗ 书签导入失败：' + ((e && e.message) || e), 'error');
+            }
         }
 
-        function collectUrls(node, result) {
+        // 收集书签条目（携带浏览器目录路径与收藏时间），供 Tauri 实体层导入
+        function collectBookmarkEntries(node, folderPath, result) {
             if (!node.children) return;
             for (const child of node.children) {
                 if (child.url) {
-                    result.push(child.url);
+                    result.push({ url: child.url, title: child.title || null, folder: folderPath || null, added_at: child.added_at || null });
                 } else if (child.children) {
-                    collectUrls(child, result);
+                    const next = folderPath ? folderPath + '/' + child.title : child.title;
+                    collectBookmarkEntries(child, next, result);
                 }
             }
         }
@@ -32533,12 +32566,34 @@ kanban-plugin: basic
                 if (child.url) {
                     const isDead = deadLinks && deadLinks.has(child.url);
                     const faviconUrl = getFaviconUrl(child.url);
-                    // 过滤 javascript: 等危险协议
-                    const safeUrl = /^javascript:/i.test(child.url) ? '' : child.url;
-                    html += '<div class="bookmark-item' + (isDead ? ' bookmark-dead-link' : '') + '" data-bookmark-url="' + escapeHtml(child.url) + '" onclick="openUrlInBrowser(\'' + (safeUrl ? escapeJs(safeUrl) : 'about:blank') + '\')">' +
-                        '<img class="bookmark-item-favicon" src="' + escapeHtml(faviconUrl) + '" onerror="this.style.display=\'none\'" alt="">' +
+                    // DB 直读书签才带 status/category/summary；预览节点无则忽略
+                    const status = child.status ? bookmarkStatusLabel(child.status) : '';
+                    const statusBadge = child.status
+                        ? '<span class="bookmark-lifecycle-lbl" data-status="' + escapeHtml(child.status) + '" title="状态：' + escapeHtml(status) + '">' + escapeHtml(status) + '</span>'
+                        : '';
+                    const deadBadge = child.dead
+                        ? '<span class="bookmark-dead-badge" title="死链（抓取失败）">死链</span>'
+                        : '';
+                    const cat = child.category
+                        ? '<span class="bookmark-cat-lbl" title="分类：' + escapeHtml(child.category) + '">' + escapeHtml(child.category) + '</span>'
+                        : '';
+                    let tagsHtml = '';
+                    if (child.tags) {
+                        try {
+                            const arr = JSON.parse(child.tags);
+                            if (Array.isArray(arr)) {
+                                tagsHtml = arr.map(t => '<span class="bookmark-tag-lbl">#' + escapeHtml(String(t)) + '</span>').join('');
+                            }
+                        } catch (e) { /* 忽略非 JSON tags */ }
+                    }
+                    // URL 经 data-bookmark-url 属性承载（escapeHtml 转义），
+                    // onclick 仅读属性并二次协议校验，杜绝 JS 字符串拼接注入
+                    html += '<div class="bookmark-item' + (isDead || child.dead ? ' bookmark-dead-link' : '') + '" data-bookmark-url="' + escapeHtml(child.url) + '" onclick="openBookmarkUrl(this)">' +
+                        '<img class="bookmark-item-favicon" src="' + escapeHtml(faviconUrl[0] || '') + '" data-favicons="' + escapeHtml(JSON.stringify(faviconUrl)) + '" onerror="faviconFallback(this)" alt="">' +
                         '<span class="bookmark-item-title">' + escapeHtml(child.title || child.url) + '</span>' +
-                        '<span class="bookmark-item-url' + (isDead ? ' bookmark-url-dead' : '') + '">' + escapeHtml(shortenUrl(child.url)) + '</span>' +
+                        '<span class="bookmark-item-url' + (isDead || child.dead ? ' bookmark-url-dead' : '') + '">' + escapeHtml(shortenUrl(child.url)) + '</span>' +
+                        (statusBadge || deadBadge || cat || tagsHtml ? '<span class="bookmark-meta">' + statusBadge + deadBadge + cat + tagsHtml + '</span>' : '') +
+                        (child.summary ? '<span class="bookmark-summary-lbl" title="' + escapeHtml(child.summary) + '">' + escapeHtml(child.summary) + '</span>' : '') +
                         '</div>';
                 } else if (child.children) {
                     const count = countBookmarks(child);
@@ -32555,6 +32610,12 @@ kanban-plugin: basic
                 }
             }
             return html;
+        }
+
+        // 状态 → 中文展示名（DB 直读书签三态：pending/ready/failed）
+        function bookmarkStatusLabel(st) {
+            const map = { pending: '待处理', ready: '已就绪', failed: '失败' };
+            return map[st] || st;
         }
 
         function countBookmarks(node) {
@@ -32574,10 +32635,25 @@ kanban-plugin: basic
         function getFaviconUrl(url) {
             try {
                 const u = new URL(url);
-                return 'https://www.google.com/s2/favicons?domain=' + u.hostname + '&sz=32';
+                return [
+                    'https://www.google.com/s2/favicons?domain=' + u.hostname + '&sz=32',
+                    'https://icons.duckduckgo.com/ip3/' + u.hostname + '.ico',
+                    'https://favicon.im/' + u.hostname,
+                ];
             } catch (e) {
-                return '';
+                return [];
             }
+        }
+
+        // 图标多源回退：Google → DuckDuckGo → favicon.im，全部失败才隐藏
+        function faviconFallback(img) {
+            try {
+                const list = JSON.parse(img.getAttribute('data-favicons') || '[]');
+                const idx = list.indexOf(img.getAttribute('src'));
+                const next = list[idx + 1];
+                if (next) { img.src = next; return; }
+            } catch (e) { /* 忽略解析错误 */ }
+            img.style.display = 'none';
         }
 
         function shortenUrl(url) {
@@ -32593,14 +32669,17 @@ kanban-plugin: basic
             return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
         }
 
-        function isLocalUrl(url) {
+        // 打开书签：从 data-bookmark-url 属性读取（防注入），协议白名单 http/https
+        function openBookmarkUrl(el) {
+            const url = (el && el.getAttribute && el.getAttribute('data-bookmark-url')) || '';
             try {
                 const u = new URL(url);
-                const host = u.hostname.toLowerCase();
-                return host === 'localhost' || host === '127.0.0.1' || host === '::1' || /^192\.168\.\d+\.\d+$/.test(host);
-            } catch (e) {
-                return false;
-            }
+                if (u.protocol === 'http:' || u.protocol === 'https:') {
+                    openUrlInBrowser(url);
+                    return;
+                }
+            } catch (e) { /* 非法 URL，忽略 */ }
+            showNotification('✗ 不支持的链接协议', 'warning');
         }
 
         function toggleBookmarkFolder(header) {
@@ -32688,9 +32767,12 @@ kanban-plugin: basic
                 const a = dt.querySelector(':scope > A');
                 let current;
                 if (a) {
+                    const addDate = a.getAttribute('ADD_DATE');
+                    const addedMs = addDate ? (parseInt(addDate, 10) || 0) * 1000 : null; // Chrome ADD_DATE 为秒 → 毫秒
                     current = {
                         title: a.textContent || a.href,
                         url: a.href,
+                        added_at: addedMs > 0 ? addedMs : null,
                         children: null
                     };
                 } else {
@@ -51493,7 +51575,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         // ====== 知识库状态管理（当前目录即为知识库） ======
-        function getDirPath(dirHandle) {
+                function getDirPath(dirHandle) {
             try { return dirHandle.path || dirHandle.name || 'local'; } catch { return 'local'; }
         }
         async function refreshKnowledgeStatus() {
@@ -51521,16 +51603,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 return;
             }
             try {
-                const [kbStatus, chatStats, aiStats, scanData, embInfo, skillMetrics] = await Promise.all([
+                const [kbStatus, chatStats, aiStats, scanData, embInfo, skillMetrics, bmStats] = await Promise.all([
                     window.__TAURI__.core.invoke('kb_status', { dirPath: path }),
                     window.__TAURI__.core.invoke('kb_chat_stats', { dirPath: path }).catch(() => null),
                     window.__TAURI__.core.invoke('ai_history_stats', { dirPath: path }).catch(() => null),
                     window.__TAURI__.core.invoke('kb_dashboard_stats', { dirPath: path }).catch(() => null),
                     window.__TAURI__.core.invoke('kb_embedding_info').catch(() => null),
-                    window.__TAURI__.core.invoke('skill_metrics', { dirPath: path }).catch(e => {
-                        console.warn('技能执行指标加载失败:', e);
-                        return null;
-                    }),
+                    window.__TAURI__.core.invoke('skill_metrics', { dirPath: path }).catch(() => null), 
+                    window.__mdgoBookmark.bookmarkStat(path).catch(() => null),
                 ]);
                 if (kbStatus && kbStatus.vector_count > 0) {
                     statusDot.className = 'kb-status-dot ready';
@@ -51543,6 +51623,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     document.getElementById('kb-stat-chunks').textContent = kbStatus.chunk_count || 0;
                     document.getElementById('kb-stat-vectors').textContent = kbStatus.vector_count || 0;
                     document.getElementById('kb-stat-storage').textContent = scanData?.storage_size || '--';
+                    document.getElementById('kb-stat-bookmarks').textContent = (bmStats && bmStats.total != null) ? bmStats.total : '--';
                     if (statsRow1) statsRow1.style.display = '';
 
                     document.getElementById('kb-stat-sessions').textContent = chatStats?.session_count ?? '--';

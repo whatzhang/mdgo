@@ -11,10 +11,13 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use commands::llm::TaskRegistry;
 use commands::system::SystemMonitorState;
+use futures_util::future::BoxFuture;
 use log::LevelFilter;
 use tauri::{Emitter, Manager};
 use tracing_subscriber::filter::Targets;
 use tracing_subscriber::prelude::*;
+use crate::core::knowledge::bookmark::enrichment::BookmarkSummarizer;
+use crate::services::llm::BookmarkSummaryOut;
 use crate::core::subagent::LruResultStore;
 use crate::core::{ConfigStore, Indexer, IndexerConfig, WatcherService};
 use crate::core::skill::{SkillRegistry, SkillStore};
@@ -130,12 +133,56 @@ pub struct AppState {
     /// 日程存储（按知识库目录惰性创建）
     pub schedule_stores:
         std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<std::sync::Mutex<crate::core::schedule::sqlite::SqliteStore>>>>,
+    /// 书签知识资产存储（按知识库目录惰性创建；Arc 共享给 Enrichment Worker）
+    pub bookmark_stores:
+        std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<std::sync::Mutex<crate::core::knowledge::bookmark::BookmarkStore>>>>>,
+    /// 书签 Enrichment 后台 Worker（消费 bookmark_jobs，RAW → READY）
+    pub bookmark_worker: std::sync::Arc<crate::core::knowledge::bookmark::enrichment::EnrichmentWorker>,
     /// 农历/节假日/调休服务（全局单例，调休缓存于 %APPDATA%/com.mdgo/schedule_cache）
     pub schedule_day_info: std::sync::Arc<dyn crate::core::schedule::lunar::DayInfoProvider>,
     /// 日程提醒调度器（tokio 后台循环，到点经 schedule:reminder 事件推前端）
     pub schedule_scheduler: std::sync::Arc<crate::core::schedule::scheduler::ScheduleScheduler>,
     /// Agent 后台任务状态中心（Phase 1：任务快照，切出页面任务继续、切回恢复视图）
     pub agent_tasks: std::sync::Arc<crate::core::agent::task_store::AgentTaskStore>,
+}
+
+/// 基于 AppState LLM 配置的「书签摘要提供者」，注入 Enrichment Worker 使用。
+///
+/// 每次调用动态读取 `llm_config` 并走 `llm_client_for_role(ModelRole::Summary)`
+/// （摘要用小模型，缺省回退主模型；客户端按指纹缓存由 AppState 层管理）。
+struct AppBookmarkSummarizer {
+    app: tauri::AppHandle,
+}
+
+impl BookmarkSummarizer for AppBookmarkSummarizer {
+    fn summarize(
+        &self,
+        title: String,
+        url: String,
+        content: String,
+    ) -> BoxFuture<'static, Result<Option<BookmarkSummaryOut>, String>> {
+        let app = self.app.clone();
+        Box::pin(async move {
+            let state = app.state::<AppState>();
+            // 读取当前配置（clone 后立即释放读写锁，避免 RwLock 守卫跨 await）
+            let cfg = {
+                let g = state
+                    .llm_config
+                    .read()
+                    .map_err(|e| format!("读取 LLM 配置失败: {}", e))?;
+                g.clone()
+            };
+            if cfg.endpoint.trim().is_empty() || cfg.model.trim().is_empty() {
+                return Err("LLM 未配置（请在设置中填写端点与模型）".to_string());
+            }
+            let client = state
+                .llm_client_for_role(&cfg, crate::ModelRole::Summary)
+                .await
+                .map_err(|e| format!("LLM 客户端不可用: {}", e))?;
+            let cancel = tokio_util::sync::CancellationToken::new();
+            client.summarize_bookmark(&title, &url, &content, cancel).await
+        })
+    }
 }
 
 impl AppState {
@@ -171,6 +218,26 @@ impl AppState {
             return Ok(store.clone());
         }
         let store = std::sync::Arc::new(crate::services::prompt::PromptStore::new(&key_str)?);
+        map.insert(key_str, store.clone());
+        Ok(store)
+    }
+
+    /// 获取（或惰性创建）某知识库目录的书签存储（`{dir}/.mdgo/mdgo.db`，与 schedule 同库）。
+    /// dir_path 先规范化（防穿越 + 同目录多写法命中同一缓存实例）。
+    pub fn bookmark_store(
+        &self,
+        dir_path: &str,
+    ) -> Result<std::sync::Arc<std::sync::Mutex<crate::core::knowledge::bookmark::BookmarkStore>>, String> {
+        let key = crate::core::db::global::sanitize_kb_dir(dir_path)?;
+        let key_str = key.to_string_lossy().to_string();
+        let mut map = self.bookmark_stores.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(store) = map.get(&key_str) {
+            return Ok(store.clone());
+        }
+        let db_path = crate::core::db::global::kb_db_path(&key_str)?;
+        let store = std::sync::Arc::new(std::sync::Mutex::new(
+            crate::core::knowledge::bookmark::BookmarkStore::open_for_dir(&key_str, db_path)?,
+        ));
         map.insert(key_str, store.clone());
         Ok(store)
     }
@@ -369,6 +436,12 @@ pub fn run() {
                 )),
                 Duration::from_secs(60),
             ));
+            // ── 书签知识资产：store 缓存与 Enrichment Worker 共享同一 Arc ──
+            let bookmark_stores_shared: Arc<
+                std::sync::Mutex<
+                    HashMap<String, Arc<std::sync::Mutex<crate::core::knowledge::bookmark::BookmarkStore>>>,
+                >,
+            > = Arc::new(Mutex::new(HashMap::new()));
             app.manage(AppState {
                 config_store,
                 indexer,
@@ -383,6 +456,15 @@ pub fn run() {
                 approval_pending,
                 plan_pending: Arc::new(Mutex::new(HashMap::new())),
                 subagent_results: Arc::new(LruResultStore::new(16)),
+                bookmark_stores: bookmark_stores_shared.clone(),
+                bookmark_worker: Arc::new(
+                    crate::core::knowledge::bookmark::enrichment::EnrichmentWorker::new(
+                        bookmark_stores_shared,
+                        Some(Arc::new(AppBookmarkSummarizer {
+                            app: app.handle().clone(),
+                        }) as Arc<dyn BookmarkSummarizer>),
+                    ),
+                ),
                 memory_store: Arc::new(
                     crate::core::memory::MemoryStore::new()
                         .expect("初始化 MemoryStore 失败"),
@@ -401,6 +483,11 @@ pub fn run() {
             {
                 let sched = app.state::<AppState>().schedule_scheduler.clone();
                 sched.spawn(app.handle().clone());
+            }
+            // 启动书签 Enrichment Worker（后台 tokio 循环，RAW → READY）
+            {
+                let worker = app.state::<AppState>().bookmark_worker.clone();
+                worker.spawn();
             }
 
             // 注入 skill:changed 事件：AppHandle 就绪后替换 watcher 回调
@@ -475,6 +562,13 @@ pub fn run() {
             commands::fs_watcher::kb_start_watcher,
             commands::fs_watcher::kb_stop_watcher,
             commands::fs_watcher::kb_set_indexing_enabled,
+            // 书签知识资产命令（UI 入口：导入/列表/搜索/统计/管理）
+            commands::bookmark::bookmark_import,
+            commands::bookmark::bookmark_list,
+            commands::bookmark::bookmark_search,
+            commands::bookmark::bookmark_stat,
+            commands::bookmark::bookmark_get,
+            commands::bookmark::bookmark_tree,
             // AI 历史记录命令
             commands::ai_history::ai_history_add,
             commands::ai_history::ai_history_list,

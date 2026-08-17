@@ -51,6 +51,19 @@ pub struct UsageInfo {
     pub cache_creation_input_tokens: u32,
 }
 
+/// 书签 LLM 摘要产物（summary + 分类 + 标签），由 `LLMClient::summarize_bookmark` 产出并落库。
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct BookmarkSummaryOut {
+    /// 内容摘要（必填）
+    pub summary: String,
+    /// 分类（可选，模型未给出时留空）
+    #[serde(default)]
+    pub category: Option<String>,
+    /// 标签列表（可选，模型未给出时为空）
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
+
 // ─── 工具函数 ───
 
 /// 将配置中的 LLM 端点归一化为 Rig 的 base_url。
@@ -730,6 +743,245 @@ impl LLMClient {
         let value = validator.validate_json_text(full.trim()).ok()?;
         serde_json::from_value(value).ok()
     }
+
+    /// 书签内容摘要：一次调用 LLM 产出摘要 + 分类 + 标签（JSON），供书签 Enrichment 落库。
+    ///
+    /// 返回：
+    /// - `Ok(Some(out))`：成功结构化解析出摘要产物
+    /// - `Ok(None)`：模型空响应或输出无法解析为有效 JSON（视为不可用）
+    /// - `Err(e)`：网络/超时/取消等调用失败（携带可写入 last_error 的原因）
+    ///
+    /// 非流式 OpenAI 兼容通道；**使用网关结构化输出**（`output_schema` →
+    /// `response_format.json_schema`，rig 自动加 strict + additionalProperties:false +
+    /// 全字段 required），模型输出由网关保证符合 Schema；本地
+    /// `parse_bookmark_summary_json` 校验仍作兜底（网关不支持 response_format 时
+    /// 退回 prompt 约束）。`reasoning_effort` 透传。
+    pub async fn summarize_bookmark(
+        &self,
+        title: &str,
+        url: &str,
+        content: &str,
+        cancel: CancellationToken,
+    ) -> Result<Option<BookmarkSummaryOut>, String> {
+        // 正文截断防超长输入（避免超模型上下文/输出预算）
+        const MAX_INPUT_CHARS: usize = 8000;
+        let content: String = if content.chars().count() > MAX_INPUT_CHARS {
+            let cut: String = content.chars().take(MAX_INPUT_CHARS).collect();
+            format!("{}…（已截断）", cut)
+        } else {
+            content.to_string()
+        };
+        let content_chars = content.chars().count();
+        let schema = bookmark_summary_json_schema();
+        // 结构化输出：将 JSON Schema 交给网关（rig 映射为 response_format.json_schema）；
+        // 转换失败（schema 非 object/bool）时退回 prompt 约束 + 本地校验。
+        let output_schema = schemars::Schema::try_from(schema).ok();
+        let prompt = format!(
+"你是一个信息结构化引擎，负责将浏览器书签内容 标题、URL总结摘要转换为标准化 JSON 数据。\n\
+\n\
+⚠️ 这是一个严格结构化任务：\n\
+- 只允许输出 JSON\n\
+- 不允许输出解释、注释、markdown、换行说明\n\
+- 输出必须可被 JSON.parse 直接解析\n\
+\n\
+【任务】\n\
+对浏览器书签内容 标题、URL进行：摘要 + 分类 + 标签\n\
+\n\
+输出格式\n\
+{{\n\
+  \"summary\": string,\n\
+  \"category\": string,\n\
+  \"tags\": string[],\n\
+}}
+\n\
+字段规则：\n\
+1. summary\n\
+- 80~120字\n\
+- 提炼核心观点 + 结论\n\
+- 禁止复述段落\n\
+- 禁止无信息句\n\
+\n\
+2. category\n\
+- 必须从以下枚举中选择一个（严格匹配）：['基础科学','工程技术','计算机与AI','实验数据','学术文献','教程讲义','工具软件','行业资讯','项目案例','标准规范','资源素材','行业政策','学术创作','其他']\n\
+\n\
+【分类判定（强约束）】\n\
+- 基础科学：数学、物理、化学、生物、天文、地理等自然科学理论、原理研究\n\
+- 工程技术：机械、土木、能源、材料、自动化、光电、化工等工科应用技术、工艺方案\n\
+- 计算机与AI：编程、软件开发、系统架构、大模型、深度学习、算力、算法、嵌入式\n\
+- 实验数据：实验方案、观测记录、测试报告、数据集、仿真结果、图表原始数据\n\
+- 学术文献：论文、综述、期刊文献、学位论文、研究报告\n\
+- 教程讲义：课程讲义、学习指南、理论讲解、入门教学\n\
+- 工具软件：仿真软件、开发工具、测试仪器、数据分析平台、工业软件\n\
+- 行业资讯：行业新技术动态、产业进展、技术发布会（优先级最高）\n\
+- 项目案例：工程项目落地案例、研发项目实施记录、工程实践样本\n\
+- 标准规范：国标/行标、技术规范、安全规范、设计准则、接口标准\n\
+- 资源素材：模型文件、图纸、模板、数据集、开源资源、程序素材\n\
+- 行业政策：产业政策、科研扶持、行业监管规范、科技相关政务文件\n\
+- 学术创作：技术博客、研究随笔、技术稿件、科普文稿、成果撰写\n\
+- 其他：仅在无法归类时使用\n\
+\n\
+【冲突处理（必须遵守）】\n\
+- '教程 + 工具软件使用' → 工具软件优先\n\
+- '理论讲解 + 底层原理研究' → 基础科学 / 计算机与AI / 工程技术（按领域匹配）优先\n\
+- '资讯类新技术动态' → 行业资讯优先\n\
+- '软件平台介绍、仪器使用说明' → 工具软件优先\n\
+- '技术博客、随笔但包含专业原理内容' → 对应技术领域优先（计算机与AI/工程技术等）\n\
+- '论文附带实验数据' → 学术文献优先；单独存放的原始测试记录 → 实验数据优先\n\
+- '项目内附带设计规范' → 项目案例优先；独立发布的通用条文 → 标准规范优先\n\
+\n\
+3. tags\n\
+- 数量：5~8个\n\
+- 类型：关键词（不是句子）\n\
+- 必须包含：\n\
+  - 领域词\n\
+  - 关键技术词或主题词\n\
+- 禁止：\n\
+  - 空泛词（如：文章/方法/总结）\n\
+  - 重复词\n\
+\n\
+【质量检查（必须满足）\n\
+- JSON 合法\n\
+- 字段齐全\n\
+- 无多余字段\n\
+- tags 数量正确\n\
+- category 合法\n\
+- summary 长度符合要求\n\
+\n\
+标题：
+{title}
+\n\
+链接：
+{url}
+\n\
+内容：
+{content}");
+
+        let request = CompletionRequest {
+            model: None,
+            preamble: None,
+            chat_history: OneOrMany::one(Message::user(prompt)),
+            documents: Vec::new(),
+            tools: Vec::new(),
+            temperature: Some(0.3),
+            max_tokens: Some(2048),
+            tool_choice: None,
+            additional_params: None,
+            output_schema,
+            record_telemetry_content: false,
+        };
+        let request = self.apply_common_params(request);
+        log::info!(
+            "[llm] [书签摘要] 发起: model={} title={}, url={}",
+            self.model, title, url
+        );
+
+        let response = self
+            .completion_with_retry(request, cancel)
+            .await
+            .map_err(|e| format!("LLM 调用失败: {}", e))?;
+        let mut full = String::new();
+        for item in response.choice.iter() {
+            if let AssistantContent::Text(text) = item {
+                full.push_str(&text.text);
+            }
+        }
+        let trimmed = full.trim();
+        let parsed = if trimmed.is_empty() {
+            // 模型返回空文本：通常是正文过短/无实质内容的页面（chars_in 很小）。仍判失败
+            // （调用方按 fail_job 走，符合「失败则失败」语义），但日志与「解析失败」区分开。
+            log::warn!(
+                "[llm] [书签摘要] 模型空输出（choice 无文本）: model={} chars_in={} choices={}",
+                self.model, content_chars, response.choice.len()
+            );
+            None
+        } else {
+            let p = parse_bookmark_summary_json(trimmed);
+            if p.is_none() {
+                log::warn!(
+                    "[llm] [书签摘要] 输出不可解析（非合法 JSON）: model={} chars_in={} raw_chars={} raw={}",
+                    self.model, content_chars, trimmed.chars().count(), truncate_log(trimmed, 200)
+                );
+            }
+            p
+        };
+        Ok(parsed)
+    }
+}
+
+/// 书签摘要输出 JSON Schema（对齐 `BookmarkSummaryOut`；同时用于网关结构化输出与本地校验）。
+/// 注意：category 枚举与 prompt 分类判定一致，网关侧可强约束；不用 minLength
+/// （OpenAI strict 模式不支持该关键字；非空 summary 由本地解析单独校验）。
+fn bookmark_summary_json_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "required": ["summary", "tags"],
+        "properties": {
+            "summary": { "type": "string" },
+            "category": {
+                "type": "string",
+                "enum": [
+                    "基础科学",
+                    "工程技术",
+                    "计算机与AI",
+                    "实验数据",
+                    "学术文献",
+                    "教程讲义",
+                    "工具软件",
+                    "行业资讯",
+                    "项目案例",
+                    "标准规范",
+                    "资源素材",
+                    "行业政策",
+                    "学术创作",
+                    "其他"
+                ]
+            },
+            "tags": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+    })
+}
+
+/// 从 LLM 回复解析 `BookmarkSummaryOut`：剥离 markdown 代码块后，用 JSON Schema 严格校验再反序列化。
+/// 结构/字段/类型/必填不符即视为不可用（对齐 `review_text` 的服务端校验模式）。
+fn parse_bookmark_summary_json(raw: &str) -> Option<BookmarkSummaryOut> {
+    let t = raw.trim();
+    if t.is_empty() {
+        return None;
+    }
+    // 剥离 ```json ... ``` 围栏（部分模型会包裹）
+    let t = strip_code_fence(t);
+    let validator = crate::core::validation::JsonSchemaValidator::new(bookmark_summary_json_schema()).ok()?;
+    let value = validator.validate_json_text(t).ok()?;
+    let out = serde_json::from_value::<BookmarkSummaryOut>(value).ok()?;
+    if out.summary.trim().is_empty() {
+        return None;
+    }
+    Some(out)
+}
+
+/// 剥离 ```json``` 代码围栏
+fn strip_code_fence(s: &str) -> &str {
+    let s = s.trim();
+    if s.starts_with("```") {
+        if let Some(rest) = s.strip_prefix("```") {
+            let after_lang = match rest.find('\n') {
+                Some(i) => &rest[i + 1..],
+                None => rest,
+            };
+            return after_lang.strip_suffix("```").unwrap_or(after_lang).trim();
+        }
+    }
+    s
+}
+
+/// 截断日志文本（防超长输出刷屏）
+fn truncate_log(s: &str, max: usize) -> &str {
+    if s.chars().count() > max {
+        &s[..s.char_indices().nth(max).map(|(i, _)| i).unwrap_or(s.len())]
+    } else {
+        s
+    }
 }
 
 // ─── 重试逻辑单元测试（P0-4） ───
@@ -899,5 +1151,27 @@ mod tests {
                 "bad".into(),
             )
         )));
+    }
+
+    #[test]
+    fn bookmark_summary_schema_accepts_valid_and_rejects_invalid() {
+        // 合法：summary + tags（category 可选，须在枚举内）
+        let ok = parse_bookmark_summary_json(
+            r#"{"summary":"摘要内容","category":"工程技术","tags":["a","b"]}"#,
+        );
+        assert!(ok.is_some(), "合法结构化输出应通过");
+        assert_eq!(ok.unwrap().category.as_deref(), Some("工程技术"));
+        // category 缺省也可（tags 允许空数组）
+        assert!(parse_bookmark_summary_json(r#"{"summary":"摘要","tags":[]}"#).is_some());
+        // 枚举外 category → 拒绝
+        assert!(parse_bookmark_summary_json(r#"{"summary":"x","category":"AI","tags":[]}"#).is_none());
+        // 缺必填 tags → 拒绝
+        assert!(parse_bookmark_summary_json(r#"{"summary":"x"}"#).is_none());
+        // 类型错误（tags 为字符串而非数组）→ 拒绝
+        assert!(parse_bookmark_summary_json(r#"{"summary":"x","tags":"nope"}"#).is_none());
+        // summary 缺失 → 拒绝
+        assert!(parse_bookmark_summary_json(r#"{"tags":["a"]}"#).is_none());
+        // 空输入 → 拒绝
+        assert!(parse_bookmark_summary_json("").is_none());
     }
 }

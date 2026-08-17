@@ -5773,6 +5773,7 @@ dependencies = [
  "rig-core",
  "roxmltree",
  "rusqlite",
+ "schemars 1.2.1",
  "scraper",
  "serde",
  "serde_json",

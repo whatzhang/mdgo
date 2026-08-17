@@ -30,6 +30,7 @@ use crate::core::db::schema;
 pub const ALLOWED_TOOLS: &[&str] = &[
     "kb_search", "code_lookup", "read", "edit", "multi_edit", "delete", "ls", "glob", "grep", "write", "git_status", "git_diff", "git_commit", "git_checkout", "webfetch",
     "activate_skill", "deactivate_skill", "pomodoro", "raw-parse", "schedule", "open-ui",
+    "search_bookmarks", "get_bookmark",
 ];
 
 /// 工具展示名（与前端 fallback 一致；Tauri 模式下前端以此清单为准）
@@ -54,6 +55,8 @@ fn tool_label(key: &str) -> String {
         "raw-parse" => "RAW/ARW 照片解析".into(),
         "schedule" => "日程管理".into(),
         "open-ui" => "打开文件/页面".into(),
+        "search_bookmarks" => "搜索书签收藏".into(),
+        "get_bookmark" => "获取书签详情".into(),
         "activate_skill" => "激活技能".into(),
         "deactivate_skill" => "停用技能".into(),
         _ => key.to_string(),

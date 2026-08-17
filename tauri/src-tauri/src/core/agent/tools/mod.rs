@@ -4781,6 +4781,209 @@ pub fn build_search_memory_tool(cfg: KbSearchConfig) -> DynamicTool {
     )
 }
 
+/// 构建 search_bookmarks 工具：检索用户收藏的书签知识资产（只读）。
+/// FTS5（title/description/summary/tags/category）∪ 向量补位；排除 ARCHIVED。
+pub fn build_search_bookmarks_tool(cfg: KbSearchConfig) -> DynamicTool {
+    DynamicTool::new(
+        "search_bookmarks",
+        "检索用户收藏的书签知识资产（浏览器收藏的网页链接及其 AI 摘要/标签/分类）。在需要回忆用户收藏过哪些资料、或回答\"我收藏过什么/有没有相关资源\"时调用。只读。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string", "description": "检索关键词（空格分隔多个词）" },
+                "limit": { "type": "integer", "description": "最多返回条数（默认 5，最大 20）" },
+                "category": { "type": "string", "description": "按 AI 分类过滤（如 AI/LLM），可选" },
+                "folder": { "type": "string", "description": "按浏览器原始目录前缀过滤（如 AI），可选" }
+            },
+            "required": ["query"]
+        }),
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let cfg = cfg.clone();
+            Box::pin(async move {
+                let query = args
+                    .get("query")
+                    .and_then(|q| q.as_str())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                let limit = args
+                    .get("limit")
+                    .and_then(|l| l.as_u64())
+                    .map(|v| v as usize)
+                    .unwrap_or(5)
+                    .clamp(1, 20);
+                let category = args.get("category").and_then(|c| c.as_str()).map(|s| s.to_string());
+                let folder = args.get("folder").and_then(|f| f.as_str()).map(|s| s.to_string());
+                record_tool_call(&cfg, "search_bookmarks", &format!("query={} limit={}", query, limit), Some(&args));
+                if query.is_empty() {
+                    let e = "检索关键词不能为空".to_string();
+                    record_tool_result(&cfg, "search_bookmarks", false, &e, Some(&e));
+                    return Err(tool_error("search_bookmarks", &e));
+                }
+                let state = cfg.app_handle.state::<crate::AppState>();
+                let store = match state.bookmark_store(&cfg.dir_path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        record_tool_result(&cfg, "search_bookmarks", false, &e, Some(&e));
+                        return Err(tool_error("search_bookmarks", &e));
+                    }
+                };
+                let hits = {
+                    let store = store;
+                    match crate::core::knowledge::bookmark::search::search_with_vectors(
+                        &*store,
+                        &cfg.dir_path,
+                        &query,
+                        limit,
+                        category.as_deref(),
+                        folder.as_deref(),
+                    )
+                    .await
+                    {
+                        Ok(h) => h,
+                        Err(e) => {
+                            record_tool_result(&cfg, "search_bookmarks", false, &e, Some(&e));
+                            return Err(tool_error("search_bookmarks", &e));
+                        }
+                    }
+                };
+                if hits.is_empty() {
+                    let msg = format!("未找到与「{query}」相关的书签");
+                    record_tool_result(&cfg, "search_bookmarks", true, &msg, Some(&msg));
+                    return Ok(ToolOutput::text(msg));
+                }
+                let mut out = String::from("相关书签收藏：\n");
+                for (i, h) in hits.iter().enumerate() {
+                    out.push_str(&format!(
+                        "{}. {}（id={}）\n   URL: {}\n",
+                        i + 1,
+                        h.title.clone().unwrap_or_else(|| h.url.clone()),
+                        h.id,
+                        h.url
+                    ));
+                    if let Some(s) = &h.summary {
+                        if !s.is_empty() {
+                            out.push_str(&format!("   摘要: {}\n", s));
+                        }
+                    }
+                    if let Some(t) = &h.tags {
+                        if t != "[]" && !t.is_empty() {
+                            out.push_str(&format!("   标签: {}\n", t));
+                        }
+                    }
+                    if let Some(c) = &h.category {
+                        if !c.is_empty() {
+                            out.push_str(&format!("   分类: {}\n", c));
+                        }
+                    }
+                }
+                record_tool_result(&cfg, "search_bookmarks", true, &format!("{} 条", hits.len()), Some(&out));
+                Ok(ToolOutput::text(out))
+            })
+        },
+    )
+}
+
+/// 构建 get_bookmark 工具：按 id 获取书签详情（只读）。
+pub fn build_get_bookmark_tool(cfg: KbSearchConfig) -> DynamicTool {
+    DynamicTool::new(
+        "get_bookmark",
+        "按 id 获取某个书签收藏的完整详情（含 AI 摘要、标签、分类、抓取正文、状态）。在 search_bookmarks 定位到具体收藏后需要深入了解时调用。只读。",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "id": { "type": "string", "description": "书签 id（search_bookmarks 返回）" }
+            },
+            "required": ["id"]
+        }),
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let cfg = cfg.clone();
+            Box::pin(async move {
+                let id = args
+                    .get("id")
+                    .and_then(|i| i.as_str())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                record_tool_call(&cfg, "get_bookmark", &format!("id={}", id), Some(&args));
+                if id.is_empty() {
+                    let e = "书签 id 不能为空".to_string();
+                    record_tool_result(&cfg, "get_bookmark", false, &e, Some(&e));
+                    return Err(tool_error("get_bookmark", &e));
+                }
+                let state = cfg.app_handle.state::<crate::AppState>();
+                let store = match state.bookmark_store(&cfg.dir_path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        record_tool_result(&cfg, "get_bookmark", false, &e, Some(&e));
+                        return Err(tool_error("get_bookmark", &e));
+                    }
+                };
+                let bookmark = {
+                    let guard = match store.lock() {
+                        Ok(g) => g,
+                        Err(e) => {
+                            let e = e.to_string();
+                            record_tool_result(&cfg, "get_bookmark", false, &e, Some(&e));
+                            return Err(tool_error("get_bookmark", &e));
+                        }
+                    };
+                    guard.get(&id)
+                };
+                match bookmark {
+                    Ok(Some(b)) => {
+                        let status_line = if b.dead {
+                            format!("状态: {}（死链）", b.status)
+                        } else {
+                            format!("状态: {}", b.status)
+                        };
+                        let mut out = format!(
+                            "书签详情（id={}）：\n标题: {}\nURL: {}\n{}\n浏览器目录: {}\n",
+                            b.id,
+                            b.title.clone().unwrap_or_default(),
+                            b.url,
+                            status_line,
+                            b.browser_folder.clone().unwrap_or_default(),
+                        );
+                        if let Some(c) = &b.category {
+                            if !c.is_empty() {
+                                out.push_str(&format!("分类: {}\n", c));
+                            }
+                        }
+                        if let Some(s) = &b.summary {
+                            if !s.is_empty() {
+                                out.push_str(&format!("摘要: {}\n", s));
+                            }
+                        }
+                        if let Some(t) = &b.tags {
+                            if t != "[]" && !t.is_empty() {
+                                out.push_str(&format!("标签: {}\n", t));
+                            }
+                        }
+                        if let Some(raw) = &b.raw_content {
+                            if !raw.is_empty() {
+                                let cut: String = raw.chars().take(800).collect();
+                                out.push_str(&format!("正文（截断）: {}\n", cut));
+                            }
+                        }
+                        record_tool_result(&cfg, "get_bookmark", true, "ok", Some(&out));
+                        Ok(ToolOutput::text(out))
+                    }
+                    Ok(None) => {
+                        let msg = format!("未找到书签: {}", id);
+                        record_tool_result(&cfg, "get_bookmark", true, &msg, Some(&msg));
+                        Ok(ToolOutput::text(msg))
+                    }
+                    Err(e) => {
+                        record_tool_result(&cfg, "get_bookmark", false, &e, Some(&e));
+                        Err(tool_error("get_bookmark", &e))
+                    }
+                }
+            })
+        },
+    )
+}
+
 // ─────────────────────────── 泛化子代理执行（P1-9） ───────────────────────────
 
 /// 公共子代理执行器：从 AppState 组装 LLM 客户端与规约，构造

@@ -12,6 +12,8 @@
 //! 网关侧 `output_schema` 透传保持关闭（Ollama/llama.cpp 等本地网关对
 //! `response_format.json_schema` 支持参差，本地校验 + 重试更兼容，设计取舍见
 //! `docs/agent_gap_plan.md` P0-3）。
+//! 例外：书签摘要（`services/llm.rs::summarize_bookmark`）按业务要求使用网关
+//! `output_schema`（结构化输出，`response_format.json_schema`），本地校验仍作兜底。
 
 use jsonschema::Validator;
 use serde_json::Value;

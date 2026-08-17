@@ -56,7 +56,12 @@ fn get_pad_token_id() -> i64 {
 }
 
 /// 每个推理批次的文本数（长度相近的文本分在一组）
-const BATCH_SIZE: usize = 20;
+///
+/// 20 → 128：BGE-Small 单条序列很短（一般 <128 token），ort 动态形状下
+/// 单批 128 条对显存/内存压力极小（128 × max_seq_len × hidden_size × 4B，
+/// max_seq_len=512 / hidden=384 ≈ 100MB），而批内 padding 浪费持平，吞吐提升显著。
+/// 依赖该常量的批量 embedding（书签/文档增量）均受益。
+const BATCH_SIZE: usize = 128;
 
 // ─── 全局缓存 ───
 

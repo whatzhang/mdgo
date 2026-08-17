@@ -1351,6 +1351,13 @@ fn create_tool_registry(only: Option<&HashSet<String>>) -> ToolRegistry {
     if want("search_memory") {
         reg.register("search_memory", Box::new(tools::build_search_memory_tool));
     }
+    // ── 书签知识资产工具（只读：检索/详情；导入与管理属 UI 行为，不暴露） ──
+    if want("search_bookmarks") {
+        reg.register("search_bookmarks", Box::new(tools::build_search_bookmarks_tool));
+    }
+    if want("get_bookmark") {
+        reg.register("get_bookmark", Box::new(tools::build_get_bookmark_tool));
+    }
     if want("todo_write") {
         reg.register("todo_write", Box::new(tools::build_todo_write_tool));
     }
