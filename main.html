@@ -1162,14 +1162,14 @@
 
         .canvas-edge-path {
             fill: none;
-            stroke: var(--color-text-secondary);
+            stroke: var(--t3);
             stroke-width: 1.5;
             stroke-linecap: round;
             transition: stroke 0.15s ease, stroke-width 0.15s ease;
         }
 
         .canvas-edge-arrow {
-            fill: var(--color-text-secondary);
+            fill: var(--t3);    
             transition: fill 0.15s ease;
         }
 
@@ -1247,8 +1247,8 @@
         }
 
         .canvas-edge-path.animated {
-            stroke-dasharray: 10 6;
-            animation: dashFlow 0.6s linear infinite;
+            /* stroke-dasharray: 10 6;
+            animation: dashFlow 0.6s linear infinite; */
         }
 
         /* Canvas 保存下拉菜单样式 */
@@ -1387,12 +1387,11 @@
         }
 
         .canvas-modal-list {
-            flex: 1;
             overflow-y: auto;
-            padding: 8px;
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-            gap: 8px;
+            padding: 0.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
             max-height: 400px;
         }
 
@@ -1400,7 +1399,7 @@
             display: flex;
             flex-direction: row;
             align-items: center;
-            padding: 10px 12px;
+            padding: 0.25rem 0.5rem;
             border-radius: 6px;
             cursor: pointer;
             transition: background-color 0.2s;
@@ -1410,8 +1409,9 @@
             background-color: #f6f8fa;
         }
 
-        .canvas-file-item svg {
-            color: #656d76;
+        .canvas-file-item .file-item-icon {
+            width: 1rem;
+            height: 1rem;
         }
 
         .canvas-file-name {
@@ -14649,7 +14649,7 @@
                         <div class="timeline-filter-chip" data-filter="code">💻 代码</div>
                     </div>
                     <div class="timeline-search-box">
-                        <input type="text" id="timelineSearchInput" placeholder="搜索文件或路径">
+                        <input type="text" id="timelineSearchInput" placeholder="搜索文件或路径" autocomplete="off">
                         <span class="timeline-search-clear" id="timelineSearchClear">✕</span>
                     </div>
                     <div class="timeline-stats-group">
@@ -15447,7 +15447,7 @@
                                     <label class="todo-filter-label">结束 <input type="date" id="todo-historyEnd"
                                             onchange="todoRenderHistoryEvents()"></label>
                                     <label class="todo-filter-label-input"><input type="text" id="todo-historySearch"
-                                            placeholder="搜索标题..." oninput="todoRenderHistoryEvents()"></label>
+                                            placeholder="搜索标题..." oninput="todoRenderHistoryEvents()" autocomplete="off"></label>
                                 </div>
                                 <div id="todo-historyList" class="todo-history-list"></div>
                             </div>
@@ -16307,7 +16307,7 @@
                             <span class="skill-search-icon">🔍</span>
                             <input type="text" id="skill-search-input" class="skill-search-input"
                                 placeholder="搜索技能名称..." onkeydown="skillHandleSearchKeydown(event)"
-                                oninput="skillHandleSearchInput()">
+                                oninput="skillHandleSearchInput()" autocomplete="off">
                             <button id="skill-search-clear" class="skill-search-clear" onclick="skillClearSearch()"
                                 style="display:none;">✕</button>
                         </div>
@@ -16340,7 +16340,7 @@
                         <div class="skill-search-box" id="mcp-search-box">
                             <span class="skill-search-icon">🔍</span>
                             <input type="text" id="mcp-search-input" class="skill-search-input" placeholder="搜索服务器名称..."
-                                onkeydown="mcpHandleSearchKeydown(event)" oninput="mcpHandleSearchInput()">
+                                onkeydown="mcpHandleSearchKeydown(event)" oninput="mcpHandleSearchInput()" autocomplete="off">
                             <button id="mcp-search-clear" class="skill-search-clear" onclick="mcpClearSearch()"
                                 style="display:none;">✕</button>
                         </div>
@@ -19539,7 +19539,7 @@
                 searchWrapper.className = 'mermaid-directory-search-wrapper';
                 searchWrapper.innerHTML = `
                         <div class="mermaid-directory-search-box">
-                            <input type="text" class="mermaid-directory-search-input" placeholder="🔍 搜索目录..." value="${escapeHtml(preserveFocus ? focusValue : filterText)}">
+                            <input type="text" class="mermaid-directory-search-input" placeholder="🔍 搜索目录..." value="${escapeHtml(preserveFocus ? focusValue : filterText)}" autocomplete="off">
                             <button class="mermaid-directory-search-clear" style="${(preserveFocus ? focusValue : filterText) ? 'display: flex;' : 'display: none;'}">✕</button>
                         </div>${currentCvsDirPath ? '<button id="canvas-save-dir" class="btn btn-sm" style="flex-shrink:0;font-size: 12px;" title="保存到当前打开目录">💾</button>' : ''}`;
                 container.appendChild(searchWrapper);
@@ -19734,7 +19734,7 @@
             overlay.innerHTML = `
                 <div class="input-modal">
                     <div class="input-modal-title">${escapeHtml(title)}</div>
-                    <input type="text" class="input-modal-input" placeholder="">
+                    <input type="text" class="input-modal-input" placeholder="" autocomplete="off">
                     <div class="input-modal-buttons">
                         <button class="btn btn-sm" id="input-modal-cancel-btn">取消</button>
                         <button class="btn btn-sm btn-primary" id="input-modal-confirm-btn">确定</button>
@@ -25479,7 +25479,7 @@
                             font-size: 14px;
                             background: var(--color-bg);
                             color: var(--color-text);
-                        ">
+                        " autocomplete="off">
                     </div>
                     <div style="margin-bottom: 15px;">
                         <label style="display: block; margin-bottom: 6px; cursor: pointer; font-size: 13px;">
@@ -25678,7 +25678,7 @@
                             </select>
                             <button class="btn btn-sm json-btn" id="btn-find-mark"  onclick="findAndMark()">查找并标记</button>
                             <button class="btn btn-sm json-btn" id="btn-un-mark"  onclick="unJsonMark()">取消标记</button>
-                                <input type="text" id="jsonpath-input" class="jsonpath-input" placeholder="输入JSONPath表达式" onkeydown="if(event.key === 'Enter') jsonPathQuery();">
+                                <input type="text" id="jsonpath-input" class="jsonpath-input" placeholder="输入JSONPath表达式" onkeydown="if(event.key === 'Enter') jsonPathQuery();" autocomplete="off">
                                 <button class="btn btn-sm json-btn" id="jsonpath-btn" onclick="jsonPathQuery()">匹配</button>
                                 <button class="btn btn-sm json-btn" onclick="clearJsonHighlight()">清除高亮</button>
                         </div>
@@ -32557,7 +32557,7 @@ kanban-plugin: basic
             let html = `<div class="bookmark-header">
                     <div class="bookmark-title">🔖 书签</div>
                     <div class="bookmark-tree-search-box">
-                        <input type="text" id="bookmark-search-input" class="jsonpath-input" placeholder="搜索书签..." style="width: 280px;" oninput="filterBookmarks(this.value)">
+                        <input type="text" id="bookmark-search-input" class="jsonpath-input" placeholder="搜索书签..." style="width: 280px;" oninput="filterBookmarks(this.value)" autocomplete="off">
                     </div>
                     <div class="bookmark-toolbar">
                         <button class="btn btn-sm json-btn" onclick="bookmarkExpandAll()" title="展开所有目录">展开全部</button>
@@ -35760,12 +35760,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 modal.innerHTML = `
                     <div class="canvas-modal-content" style="width:500px;max-height:75vh;">
                         <div class="canvas-modal-header"><span>${title}</span><button class="canvas-modal-close">&times;</button></div>
-                        <div class="canvas-modal-search"><input type="text" id="file-select-search" placeholder="搜索图片..." oninput="filterFileSelectList()"></div>
+                        <div class="canvas-modal-search"><input type="text" id="file-select-search" placeholder="搜索图片..." oninput="filterFileSelectList()" autocomplete="off"></div>
                         <div class="canvas-modal-list" id="file-select-list" style="display:grid;grid-template-columns:repeat(2,1fr);gap:4px;padding:8px;overflow-y:auto;max-height:50vh;">
                             ${files.map(f => {
                     const fp = (f.path && f.path.trim()) ? f.path : (f.name || '');
                     const fn = f.name || fp;
-                    return `<div class="canvas-file-item" data-path="${fp}" data-name="${fn}" style="display:flex;align-items:center;padding:6px 10px;border-radius:4px;cursor:pointer;border:1px solid var(--color-border,#d0d7de);overflow:hidden;">
+                    return `<div class="canvas-file-item" data-path="${fp}" data-name="${fn}" style="display:flex;align-items:center;padding:6px 10px;border-radius:4px;cursor:pointer;overflow:hidden;">
                                     <span class="canvas-file-name" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${fn}</span>
                                 </div>`;
                 }).join('')}
@@ -35776,16 +35776,15 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 modal.innerHTML = `
                     <div class="canvas-modal-content" style="width:400px;max-height:70vh;">
                         <div class="canvas-modal-header"><span>${title}</span><button class="canvas-modal-close">&times;</button></div>
-                        <div class="canvas-modal-search"><input type="text" id="file-select-search" placeholder="搜索..." oninput="filterFileSelectList()"></div>
+                        <div class="canvas-modal-search"><input type="text" id="file-select-search" placeholder="搜索..." oninput="filterFileSelectList()" autocomplete="off"></div>
                         <div class="canvas-modal-list" id="file-select-list">
                             ${files.map(f => {
                     const fp = (f.path && f.path.trim()) ? f.path : (f.name || '');
                     const fn = f.name || fp;
+                    const icon = _fileIcon(f.name, f.sub_type);
                     return `<div class="canvas-file-item" data-path="${fp}" data-name="${fn}">
-                                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style="flex-shrink:0;color:#656d76;">
-                                        <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/>
-                                    </svg>
-                                    <span class="canvas-file-name" style="margin-left:10px;">${fn}</span>
+                                    ${icon?icon.outerHTML:''}
+                                    <span class="canvas-file-name" style="margin-left:0.5rem;">${fn}</span>
                                 </div>`;
                 }).join('')}
                         </div>
@@ -47409,7 +47408,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                     <div style="flex:1;">
                                         <div class="setting-tag-list" id="${inputId('dirBlacklist')}"></div>
                                         <div class="setting-tag-add-row">
-                                            <input class="setting-text" id="${inputId('dirBlacklistInput')}" placeholder="输入目录前缀">
+                                            <input class="setting-text" id="${inputId('dirBlacklistInput')}" placeholder="输入目录前缀" autocomplete="off">
                                             <button class="setting-tag-add-btn">添加</button>
                                         </div>
                                     </div>
@@ -47419,7 +47418,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                     <div style="flex:1;">
                                         <div class="setting-tag-list" id="${inputId('fileBlacklist')}"></div>
                                         <div class="setting-tag-add-row">
-                                            <input class="setting-text" id="${inputId('fileBlacklistInput')}" placeholder="输入文件前缀">
+                                            <input class="setting-text" id="${inputId('fileBlacklistInput')}" placeholder="输入文件前缀" autocomplete="off">
                                             <button class="setting-tag-add-btn">添加</button>
                                         </div>
                                     </div>
@@ -47434,7 +47433,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                     <div style="flex:1;">
                                         <div class="setting-tag-list" id="${inputId('randomDirBlacklist')}"></div>
                                         <div class="setting-tag-add-row">
-                                            <input class="setting-text" id="${inputId('randomDirBlacklistInput')}" placeholder="输入目录路径">
+                                            <input class="setting-text" id="${inputId('randomDirBlacklistInput')}" placeholder="输入目录路径" autocomplete="off">
                                             <button class="setting-tag-add-btn">添加</button>
                                         </div>
                                     </div>
@@ -47444,7 +47443,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                                     <div style="flex:1;">
                                         <div class="setting-tag-list" id="${inputId('htmlShowBlacklist')}"></div>
                                         <div class="setting-tag-add-row">
-                                            <input class="setting-text" id="${inputId('htmlShowBlacklistInput')}" placeholder="输入目录前缀">
+                                            <input class="setting-text" id="${inputId('htmlShowBlacklistInput')}" placeholder="输入目录前缀" autocomplete="off">
                                             <button class="setting-tag-add-btn">添加</button>
                                         </div>
                                     </div>
@@ -47456,11 +47455,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             <div class="setting-section-body">
                                 <div class="setting-row">
                                     <label>GraphQL 地址</label>
-                                    <input class="setting-text" id="${inputId('graphql')}" value="${escapeHtml(GRAPHQL_ENDPOINT)}">
+                                    <input class="setting-text" id="${inputId('graphql')}" value="${escapeHtml(GRAPHQL_ENDPOINT)}" autocomplete="off">
                                 </div>
                                 <div class="setting-row" ${nginxDisplay ? '' : 'style="display: none;"'}>
                                     <label>Nginx 路径</label>
-                                    <input class="setting-text" id="${inputId('nginx')}" value="${escapeHtml(NGINX_CONF_PATH)}">
+                                    <input class="setting-text" id="${inputId('nginx')}" value="${escapeHtml(NGINX_CONF_PATH)}" autocomplete="off">
                                 </div>
                             </div>
                         </div>
@@ -52424,7 +52423,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         </div>
                         <div class="prompt-modal-field">
                             <label>Prompt 内容</label>
-                            <textarea id="prompt-modal-content" class="prompt-modal-content" rows="10" placeholder="输入 prompt 内容..." style="resize: none;">${escapeHtml(promptText)}</textarea>
+                            <textarea id="prompt-modal-content" class="prompt-modal-content" rows="10" placeholder="输入 prompt 内容..." style="resize: none;" autocomplete="off">${escapeHtml(promptText)}</textarea>
                         </div>
                     </div>
                     <div class="todo-modal-footer">
