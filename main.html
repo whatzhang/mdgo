@@ -33186,6 +33186,105 @@ kanban-plugin: basic
             setTimeout(() => { targetItem.style.removeProperty('background'); }, 2500);
         }
 
+        // ── Agent 写文件后的增量文件树同步（10 万级知识库：绝不全量刷新）──
+        // 由 css_js/modules/agent.js 的 `agent:file-written` 监听调用：
+        // - created=false（编辑/覆盖已有文件）：树节点已存在 → 零成本，仅定位高亮
+        // - created=true（新建文件）：补 _scanData + 增量插入节点（复用 UI 保存流程的
+        //   createFileItem / _ensureLazyDirLoaded 模式）→ O(目录深度)，不扫描、不重建 DOM
+        // - 任何异常兜底为一次全量刷新（refreshTree），保证新文件不丢失
+        async function handleAgentFileWritten(relPath, payload) {
+            if (!relPath) return;
+            const created = !!(payload && payload.created);
+            const size = (payload && typeof payload.size === 'number') ? payload.size : 0;
+            const mtime = (payload && typeof payload.mtime === 'number') ? payload.mtime : Math.floor(Date.now() / 1000);
+            try {
+                if (!created) {
+                    // 编辑/覆盖：树中已有节点，定位高亮即可（找不到则静默，不强制刷新）
+                    await navigateToFile(relPath);
+                    return;
+                }
+                // 新建：增量更新
+                const normalizedPath = normalizePath(relPath);
+                const lastSlash = normalizedPath.lastIndexOf(SLASH);
+                const parentPath = lastSlash >= 0 ? normalizedPath.slice(0, lastSlash) : '';
+                const fileName = lastSlash >= 0 ? normalizedPath.slice(lastSlash + 1) : normalizedPath;
+                if (!fileName) return;
+                // 1) 增量补 _scanData（files 桶 + folderTree 链 + stats）：
+                //    先于 DOM 操作，使后续懒加载/搜索/统计都能看到新文件
+                patchScanDataForNewFile(normalizedPath, parentPath, fileName, size, mtime);
+                // 2) DOM 增量插入：父目录懒加载 stub → _ensureLazyDirLoaded（此时 _scanData
+                //    已补，懒加载渲染会包含新文件）；父目录已物化 → createFileItem 就地插入
+                let fileItem = null;
+                if (parentPath) {
+                    const parentDom = await _ensureLazyDirLoaded(parentPath);
+                    if (parentDom) {
+                        fileItem = parentDom.querySelector(`.file-item[data-file-path="${CSS.escape(normalizedPath)}"]`);
+                        if (!fileItem) {
+                            const ext = getExt(fileName);
+                            const iconType = ext ? getFileTypeByExt(ext) : '';
+                            fileItem = await createFileItem(fileName, normalizedPath, +parentDom.dataset.depth + 1, iconType);
+                            if (fileItem) {
+                                parentDom.appendChild(fileItem);
+                                if (!parentDom.open) {
+                                    parentDom.open = true;
+                                    saveDirExpandedState(parentPath, true);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // 根目录文件：直接挂到树根
+                    fileItem = treeElement.querySelector(`.file-item[data-file-path="${CSS.escape(normalizedPath)}"]`);
+                    if (!fileItem) {
+                        const ext = getExt(fileName);
+                        const iconType = ext ? getFileTypeByExt(ext) : '';
+                        fileItem = await createFileItem(fileName, normalizedPath, 0, iconType);
+                        if (fileItem) treeElement.appendChild(fileItem);
+                    }
+                }
+                if (fileItem) {
+                    fileItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    fileItem.style.background = '#ffe0a0';
+                    setTimeout(() => { fileItem.style.removeProperty('background'); }, 2500);
+                } else {
+                    // 兜底：树未就绪 / 父目录链未渲染 → 一次全量刷新（罕见路径）
+                    await refreshTree(false);
+                    await navigateToFile(normalizedPath);
+                }
+            } catch (err) {
+                console.warn('[tree] Agent 写文件增量同步失败，回退全量刷新:', err);
+                try {
+                    await refreshTree(false);
+                    await navigateToFile(relPath);
+                } catch (e2) { console.error('[tree] 全量刷新兜底失败:', e2); }
+            }
+        }
+
+        // 增量补 _scanData：新文件写入 files 桶、folderTree 目录链与 stats（O(深度)）。
+        // 条目结构与 scanDirToIndexByLocal 保持一致；不触发扫描/重建。
+        function patchScanDataForNewFile(relPath, parentPath, fileName, size, mtimeSec) {
+            if (!_scanData || !_scanData.files) return;
+            const extLower = (getExt(fileName) || '').toLowerCase();
+            const timeStr = _formatTimeFast(mtimeSec);
+            const entry = {
+                name: fileName, ext: extLower,
+                file_type: _EXT_TYPE_MAP[extLower] || '其他',
+                sub_type: getFileTypeByExt(extLower),
+                size: size, size_str: formatSize(size),
+                ctime: mtimeSec, mtime: mtimeSec,
+                ctime_str: timeStr, mtime_str: timeStr,
+                ctime_date_str: timeStr.slice(0, 10), mtime_date_str: timeStr.slice(0, 10),
+                path: relPath,
+            };
+            // files 桶：dirPath → 文件数组（对象格式），保持自然排序
+            const bucket = _scanData.files[parentPath] || (_scanData.files[parentPath] = []);
+            if (!bucket.some(f => f.name === fileName)) {
+                bucket.push(entry);
+                if (bucket.length > 1) bucket.sort(_naturalCompare);
+                _scanFileList.push(entry);
+            }
+        }
+
         async function navigateToDir(dirPath, isNotify = true) {
             const np = normalizePath(dirPath);
             const selector = `[data-dir-key="${CSS.escape(np)}"]`;

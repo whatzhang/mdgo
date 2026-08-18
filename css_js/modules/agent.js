@@ -210,6 +210,7 @@ function expandToolHistory(chatMsgs) {
 let ragSettings = null; // 延迟初始化，从后端加载
 let ragSettingsTippy = null;
 let kbWatcherTimer = null; // 知识库 watcher 事件防抖定时器（模块级，便于 agentCleanup 清除）
+let fileWrittenTimer = null; // Agent 写文件事件防抖定时器（模块级，便于 agentCleanup 清除）
 async function openRagSettings() {
     const overlay = document.getElementById('rag-settings-overlay');
     if (!overlay) return;
@@ -673,6 +674,46 @@ async function AgentInit() {
         } catch (e) {
             console.warn('注册 watcher 事件监听失败:', e);
         }
+        // 监听 Agent 写文件事件（write / edit / multi_edit 成功路径发射）：
+        // 增量同步左侧文件树并定位写入的文件（见 main.html handleAgentFileWritten）。
+        // 关键：绝不触发全量扫描/重建——10 万级知识库下每次写入全量刷新
+        // （walkdir 全扫 + 大 IPC 载荷 + DOM 重建）不可接受；新建走增量插入，
+        // 编辑/覆盖已有文件零成本。
+        try {
+            const { listen } = window.__TAURI__.event;
+            const writtenMap = new Map(); // rel_path → payload {created,size,mtime}
+            listen('agent:file-written', (e) => {
+                const rel = e && e.payload && e.payload.rel_path;
+                if (typeof rel !== 'string' || !rel) return;
+                writtenMap.set(rel, e.payload || {});
+                if (fileWrittenTimer) clearTimeout(fileWrittenTimer);
+                fileWrittenTimer = setTimeout(async () => {
+                    fileWrittenTimer = null;
+                    const entries = Array.from(writtenMap.entries());
+                    writtenMap.clear();
+                    try {
+                        if (typeof handleAgentFileWritten === 'function') {
+                            // 逐个增量处理（新建插入 / 编辑定位）；600ms 防抖已合并 burst，
+                            // 最终定位停留在最后一个写入的文件
+                            for (const [rel, payload] of entries) {
+                                await handleAgentFileWritten(rel, payload);
+                            }
+                        } else {
+                            // 兜底（主脚本函数未就绪）：全量刷新 + 定位
+                            if (typeof refreshTree === 'function') await refreshTree(false);
+                            const last = entries.length > 0 ? entries[entries.length - 1][0] : null;
+                            if (last && typeof navigateToFile === 'function') {
+                                await navigateToFile(last);
+                            }
+                        }
+                    } catch (err) {
+                        console.warn('[agent] 文件写入后同步文件树失败:', err);
+                    }
+                }, 600);
+            });
+        } catch (e) {
+            console.warn('注册 agent:file-written 监听失败:', e);
+        }
         // 监听 watcher 错误事件，通知用户
         try {
             const { listen } = window.__TAURI__.event;
@@ -746,5 +787,10 @@ function agentCleanup() {
     if (kbWatcherTimer) {
         clearTimeout(kbWatcherTimer);
         kbWatcherTimer = null;
+    }
+    // 清除写文件事件防抖定时器（同上）
+    if (fileWrittenTimer) {
+        clearTimeout(fileWrittenTimer);
+        fileWrittenTimer = null;
     }
 }

@@ -1635,6 +1635,41 @@ fn verify_write_back(cfg: &KbSearchConfig, rel_path: &str, expected: &str) -> Re
     }
 }
 
+/// 通知前端知识库文件已被 Agent 写入：前端据此做**增量**文件树更新
+/// （监听 `agent:file-written`，见 css_js/modules/agent.js 与 main.html 的
+/// `handleAgentFileWritten`）。
+///
+/// 覆盖 write / edit / multi_edit 三个写文件工具的成功路径。载荷：
+/// - `rel_path`：知识库相对路径
+/// - `created`：是否新建（false = 覆盖/编辑已有文件，前端无需改树，零成本）
+/// - `size` / `mtime`：文件字节数与 unix 秒时间戳（前端增量补 _scanData 用）
+///
+/// 设计要点：**绝不触发全量扫描/重建**——10 万级知识库下每次写入全量刷新
+/// （walkdir 全扫 + 大 IPC 载荷 + DOM 重建）不可接受；新建走增量插入，
+/// 编辑/覆盖零成本。
+fn notify_file_written(cfg: &KbSearchConfig, rel_path: &str, created: bool) {
+    use tauri::Emitter;
+    // 写入后单次 stat 获取元数据（廉价），供前端增量补 _scanData
+    let full = safe_resolve(&cfg.dir_path, rel_path).ok();
+    let meta = full.and_then(|p| std::fs::metadata(p).ok());
+    let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+    let mtime = meta
+        .as_ref()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let _ = cfg.app_handle.emit(
+        "agent:file-written",
+        serde_json::json!({
+            "rel_path": rel_path,
+            "created": created,
+            "size": size,
+            "mtime": mtime,
+        }),
+    );
+}
+
 /// 编辑知识库（当前打开目录）内文本文件：将唯一匹配的 old_string 精确替换为 new_string。
 ///
 /// 安全边界：路径经 `safe_resolve` 限制在打开目录内，且拒绝 `.mdgo` 内部数据。
@@ -1681,6 +1716,8 @@ pub async fn edit_file(
             atomic_write_file(&full, new_content.as_bytes())?;
             // Mutation Verification（P0-1）：回读确认替换实际生效
             let verified = verify_write_back(cfg, rel_path, &new_content)?;
+            // 通知前端：编辑已有文件 → created=false，树节点已存在，前端零成本
+            notify_file_written(cfg, rel_path, false);
             Ok(format!(
                 "已更新 {}：替换 1 处（{} 字符 → {} 字符）；{}",
                 rel_path,
@@ -1772,6 +1809,11 @@ pub async fn multi_edit_files(
             .map_err(|_| format!("回读验证失败：{} 预期内容非 UTF-8", rel))?;
         verify_write_back(cfg, rel, &expected)?;
     }
+    // 通知前端：批量编辑均为覆盖已有文件 → created=false，前端零成本
+    // （逐个发射，前端 600ms 防抖合并，仅对最后一个做定位）
+    for (rel, _, _) in edits {
+        notify_file_written(cfg, rel, false);
+    }
     Ok(format!("已批量更新 {} 个文件；全部回读验证一致 [verified]", pending.len()))
 }
 
@@ -1827,6 +1869,8 @@ pub async fn write_file(
     atomic_write_file(&full, effective.as_bytes())?;
     // Mutation Verification（P0-1）：回读确认写入实际生效
     let verified = verify_write_back(cfg, rel_path, &effective)?;
+    // 通知前端：新建文件 → 增量插入树节点 + 补 _scanData；覆盖已有 → 零成本
+    notify_file_written(cfg, rel_path, !existed);
     Ok(format!(
         "已{} {}（{} 字符）；{}",
         if existed { "覆盖写入" } else { "创建" },
