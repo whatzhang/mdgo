@@ -1781,8 +1781,8 @@ pub async fn multi_edit_files(
 /// 且拒绝 `.mdgo` 内部数据；写入为原子写（临时文件 + rename）。
 ///
 /// 格式自动处理：目标扩展名为 `.canvas` 时，内容先经 [`super::canvas::validate_canvas_json`]
-/// 确定性管线（parse → schema/ID/edge/file 校验 → sanitize → 自动布局 → 序列化），
-/// 校验失败则拒绝写入——LLM 负责语义，本函数负责机器可验证的格式正确性。
+/// 校验管线（parse → schema/ID/edge/file 校验 → sanitize → 坐标/尺寸合法性校验 → 原样序列化），
+/// 校验失败则拒绝写入——**布局由模型负责，本函数只做机器可验证的格式正确性校验，不重排坐标**。
 pub async fn write_file(
     cfg: &KbSearchConfig,
     rel_path: &str,
@@ -1839,7 +1839,7 @@ pub async fn write_file(
 pub fn build_write_tool(cfg: KbSearchConfig) -> DynamicTool {
     DynamicTool::new(
         "write",
-        "创建新文件或整体覆盖当前打开知识库目录内的文本文件。content 为文件的完整新内容（覆盖写，非追加）。适合新建文档/笔记/代码文件，或整体重写小文件（≤1MB）。只允许在打开目录内写入，父目录不存在时会自动创建，不允许写入 .mdgo 内部数据。**当目标扩展名为 .canvas 时：内容必须是 JSON Canvas（{nodes, edges}），写入前系统自动完成格式校验、节点 id 唯一化、连线引用校验、file 路径存在性校验与自动布局——无需也无法由模型指定最终坐标；内容不合法时写入被拒绝并返回原因。** 写入为不可撤销操作，覆盖已有文件前请确认用户意图。",
+        "创建新文件或整体覆盖当前打开知识库目录内的文本文件。content 为文件的完整新内容（覆盖写，非追加）。适合新建文档/笔记/代码文件，或整体重写小文件（≤1MB）。只允许在打开目录内写入，父目录不存在时会自动创建，不允许写入 .mdgo 内部数据。**当目标扩展名为 .canvas 时：内容必须是 JSON Canvas（{nodes, edges}），写入前系统校验 JSON 合法性、节点 id 唯一化、连线引用完整性、file 路径存在性与坐标/尺寸合法性——布局与坐标由模型提供并原样保留，系统不重排；内容不合法或节点缺有效尺寸时写入被拒绝并返回原因。** 写入为不可撤销操作，覆盖已有文件前请确认用户意图。",
         serde_json::json!({
             "type": "object",
             "additionalProperties": false,

@@ -616,9 +616,10 @@ impl AgentHook for SkillInstructionHook {
         }
         // 轮次预算预警：剩余模型调用轮次不足时（turn 从 1 开始计数），
         // 强制引导模型停止调用工具、基于已有信息直接给出最终答案，
-        // 避免在第 6 次请求时触发 MaxTurnsError 导致整段回答丢失。
+        // 避免触发 MaxTurnsError 导致整段回答丢失。
+        // 提前 3 轮预警（对齐主流 Agent 的收尾引导），给多步工具任务留足收尾余地。
         let remaining = self.max_turns.saturating_sub(event.turn);
-        if remaining <= 1 {
+        if remaining <= 3 {
             preamble.push_str(&format!(
                 "\n\n[预算提醒] 本次请求的模型调用预算为 {} 轮，当前已到最后 {} 轮。请停止调用任何工具，直接基于已有信息生成最终答案；如果信息不足，请如实说明缺口。",
                 self.max_turns, remaining.max(1)

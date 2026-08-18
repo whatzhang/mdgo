@@ -6,8 +6,10 @@
 
 // ── 模型调用预算 ──
 
-/// Agent 单次请求的模型调用总预算（1-based：turn=10 为最后一次，第 11 次触发 MaxTurnsError）
-pub const DEFAULT_MAX_TURNS: usize = 10;
+/// Agent 单次请求的模型调用总预算（1-based：turn=20 为最后一次，第 21 次触发 MaxTurnsError）。
+/// 20 轮对齐主流 Agent（Claude Code / Codex）的多步工具任务预算；
+/// 预算预警 Hook（`SkillInstructionHook`）在剩余 3 轮时提前引导模型收尾。
+pub const DEFAULT_MAX_TURNS: usize = 20;
 /// 技能正文注入模式回退开关：false=一次性注入（默认，对齐 Reasonix/Pi）；
 /// true=恢复每轮注入（三拆后激活状态不持有正文，回退模式由
 /// SkillInstructionHook 从 SkillRegistry 按激活记录重新查询正文，总量受预算截断）。
