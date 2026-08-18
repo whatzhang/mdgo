@@ -166,7 +166,7 @@ layout = spatial representation
 1. 理解主题；结合知识库时先用 `kb_search` 检索真实资料。
 2. 按流程分析知识结构 → 选布局模式 → 设计 nodes/edges 与坐标/尺寸。
 3. 输出完整 Canvas JSON（含 layout 意图 + 最终 x/y/width/height）。
-4. 用 `write` 写入 `xxx.canvas`（建议 `canvas/` 目录）；系统校验后原样落盘。
+4. 用 `write` 写入 `xxx.canvas`（建议 `canvas/` 目录）；系统校验后原样落盘，文件名称优先中文。
 5. 告知用户路径，说明"已可用 Canvas 页面打开查看"。
 
 ### 整理 Canvas

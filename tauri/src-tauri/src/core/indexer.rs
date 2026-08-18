@@ -778,31 +778,13 @@ impl Indexer {
         })
     }
 
-    /**
-     * 混合检索（五层检索管线：Filter → Multi-Recall → RRF → Rerank → Diversity → Context）
-     *
-     * 生产级检索精度重构，替代旧 Retrieve→Fusion→Filter 的 alpha 线性加权方案：
-     * - Filter 前置（P0 架构修复）：意图扩展名白名单在**检索前**限定候选范围——
-     *   向量路在 LanceDB 查询层用 only_if SQL 预过滤，避免无关类型文档占用
-     *   候选池名额把相关候选挤出 top_k 窗口（旧方案"查出许多不相关文档"的核心根因）
-     * - Multi-Recall：向量 + BM25（minimum_should_match 严格语义）+ 代码符号三路召回
-     * - RRF 融合：rank-based 加权融合，对分数尺度鲁棒（alpha 保留为每路权重偏置）
-     * - 双阈值：纯向量噪声的绝对余弦阈值（vec_min_score）+ 精排 sigmoid 阈值
-     * - 精排：本地 bge-reranker（cross-encoder），模型缺失/推理失败自动降级 RRF 排序
-     * - Diversity：文件聚簇（每文档 chunk 上限）+ OPML 层级去重
-     * - Context：相邻 chunk 语义合并填充 sentence_window
-     *
-     * 旧"文件名/代码符号事后加分（min 1.0）"逻辑已移除：文件名信号由精排
-     * passage 前缀（feature 化）承载，符号信号由符号路 RRF 路由承载，
-     * 避免手工加分破坏分数可比性、污染排序。
-     *
-     * @param dir_path 知识库目录路径
-     * @param query_vector 查询向量
-     * @param query 查询文本
-     * @param top_k 返回结果数量
-     * @returns 混合检索结果列表
-     */
-    pub async fn hybrid_search(
+    /// 混合检索管线的"召回 + 融合"阶段（P1-B 预检索优化器拆分）。
+    ///
+    /// 与 [`hybrid_search`] 的区别：仅执行 查询理解 → Filter 前置 → 多路召回 →
+    /// RRF 融合 → 向量噪声过滤，**不含精排、多样性聚簇与上下文窗口**。
+    /// 供预检索多查询路径使用：多查询候选合并为候选池后统一精排
+    /// （[`rerank_pool`]），再经 [`finalize_hits`] 收尾。
+    pub async fn hybrid_recall(
         &self,
         dir_path: &str,
         query_vector: &[f32],
@@ -921,7 +903,6 @@ impl Indexer {
         // 精排启用且模型就绪时：向量候选交由精排 sigmoid 阈值（rerank_min_score）裁决，
         // 此处不提前砍——避免余弦低但 cross-encoder 判定高度相关的候选被误杀（阈值协调）。
         let rerank_enabled = config.reranker_enabled;
-        let rerank_min_score = config.rerank_min_score;
         let rerank_active = rerank_enabled && crate::core::model_download::is_reranker_cached();
         let pre_filter_len = fused.len();
         let candidates: Vec<SearchHit> = fused
@@ -941,7 +922,32 @@ impl Indexer {
             candidates.len()
         );
 
+        Ok(candidates)
+    }
+
+    /// 混合检索（五层检索管线：Filter → Multi-Recall → RRF → Rerank → Diversity → Context）。
+    ///
+    /// 实现 = [`hybrid_recall`]（召回+融合）→ 精排（可选）→ [`finalize_hits`]（聚簇+上下文）。
+    /// kb_search 工具与知识库检索沿用本方法（行为不变）；预检索多查询路径改用
+    /// hybrid_recall + [`rerank_pool`]（候选池统一精排）+ finalize_hits。
+    ///
+    /// 旧"文件名/代码符号事后加分（min 1.0）"逻辑已移除：文件名信号由精排
+    /// passage 前缀（feature 化）承载，符号信号由符号路 RRF 路由承载，
+    /// 避免手工加分破坏分数可比性、污染排序。
+    pub async fn hybrid_search(
+        &self,
+        dir_path: &str,
+        query_vector: &[f32],
+        query: &str,
+        top_k: u32,
+    ) -> Result<Vec<SearchHit>, String> {
+        let candidates = self.hybrid_recall(dir_path, query_vector, query, top_k).await?;
+
         // ── 5. 双阈值（二）：精排（可选；模型未就绪/推理失败自动降级 RRF 排序）──
+        let config = self.config_store.read();
+        let rerank_enabled = config.reranker_enabled;
+        let rerank_min_score = config.rerank_min_score;
+        let rerank_active = rerank_enabled && crate::core::model_download::is_reranker_cached();
         let results: Vec<SearchHit> = if rerank_active {
             let reranker = LocalBgeReranker;
             let q = query.to_string();
@@ -984,6 +990,23 @@ impl Indexer {
             }
             candidates
         };
+
+        self.finalize_hits(dir_path, query, results, top_k).await
+    }
+
+    /// 混合检索管线的"收尾"阶段（P1-B 拆分）：多样性聚簇 + 上下文窗口填充。
+    ///
+    /// 输入为精排后（或回退 RRF 序）的命中，执行 OPML 层级去重、文件聚簇
+    /// （每文档 chunk 上限）、top_k 截断与相邻 chunk 上下文合并（sentence_window）。
+    pub async fn finalize_hits(
+        &self,
+        dir_path: &str,
+        query: &str,
+        results: Vec<SearchHit>,
+        top_k: u32,
+    ) -> Result<Vec<SearchHit>, String> {
+        let store = self.get_lance_store(dir_path).await;
+        let config = self.config_store.read();
 
         // ── 6. Diversity：OPML 层级去重 + 文件聚簇（每文档 chunk 上限）──
         let deduped = Self::dedup_opml_hierarchy(results);
@@ -1099,6 +1122,136 @@ impl Indexer {
         }
 
         Ok(result)
+    }
+
+    /// 候选池统一精排（P1-B 预检索优化器）：多查询召回合并后的候选，按**来源查询**
+    /// 分别精排取 max。
+    ///
+    /// cross-encoder 精排必须携带查询（`Reranker::rerank(query, candidates, min_score)`），
+    /// 不存在"对候选池单次精排"的调用形态；本方法等价实现：
+    /// - **池级去重**：多查询可能命中同一 (doc, chunk)，先按 doc+chunk 去重
+    ///   （保留最高分 + 合并来源查询），跨查询重复 chunk 只参与其来源查询组的推理
+    /// - 每个候选按其命中的来源查询分组，分别精排取 sigmoid 分最大值（证据叠加）
+    /// - 统一按 `min_score`（sigmoid 域）阈值过滤，跨来源分数可比
+    ///
+    /// 精排不可用/失败时返回去重后的候选池（保持 RRF 序，`score_rerank=None`，
+    /// 聚合按 RRF 域阈值）。无来源标注（`query_sources` 为空）的候选原样保留。
+    /// `source_queries`：来源查询文本（Original / Expanded(n) → 查询文本）。
+    pub async fn rerank_pool(
+        &self,
+        pool: Vec<SearchHit>,
+        source_queries: &std::collections::HashMap<crate::core::db::lance::QuerySource, String>,
+        min_score: f32,
+    ) -> Result<Vec<SearchHit>, String> {
+        if pool.is_empty() {
+            return Ok(pool);
+        }
+
+        // ── 0. 池级去重（保留最高分 + 合并来源查询）──
+        let mut seen: std::collections::HashMap<(String, u32), SearchHit> =
+            std::collections::HashMap::new();
+        for h in pool {
+            let key = (h.doc_name.clone(), h.chunk_index);
+            match seen.entry(key) {
+                std::collections::hash_map::Entry::Occupied(mut e) => {
+                    let cur = e.get_mut();
+                    if h.score > cur.score {
+                        let mut merged = cur.query_sources.clone();
+                        for s in &h.query_sources {
+                            if !merged.contains(s) {
+                                merged.push(*s);
+                            }
+                        }
+                        let mut better = h;
+                        better.query_sources = merged;
+                        *cur = better;
+                    } else {
+                        for s in &h.query_sources {
+                            if !cur.query_sources.contains(s) {
+                                cur.query_sources.push(*s);
+                            }
+                        }
+                    }
+                }
+                std::collections::hash_map::Entry::Vacant(v) => {
+                    v.insert(h);
+                }
+            }
+        }
+        let pool: Vec<SearchHit> = seen.into_values().collect();
+
+        let config = self.config_store.read();
+        let rerank_active =
+            config.reranker_enabled && crate::core::model_download::is_reranker_cached();
+        if !rerank_active {
+            // 降级：保持 RRF 序（无 score_rerank，聚合按 RRF 域阈值裁决）
+            return Ok(pool);
+        }
+
+        // 无来源标注的候选原样保留（不参与精排，防丢失）
+        let mut out_untagged: Vec<SearchHit> = pool
+            .iter()
+            .filter(|h| h.query_sources.is_empty())
+            .cloned()
+            .collect();
+        let mut best: std::collections::HashMap<(String, u32), (f32, SearchHit)> =
+            std::collections::HashMap::new();
+        let mut total_pairs = 0usize;
+        for (src, qtext) in source_queries {
+            let tagged: Vec<SearchHit> = pool
+                .iter()
+                .filter(|h| !h.query_sources.is_empty() && h.query_sources.contains(src))
+                .cloned()
+                .collect();
+            if tagged.is_empty() {
+                continue;
+            }
+            total_pairs += tagged.len();
+            let qtext = qtext.clone();
+            let reranker = LocalBgeReranker;
+            match tokio::task::spawn_blocking(move || reranker.rerank(&qtext, &tagged, 0.0)).await {
+                Ok(Ok(hits)) => {
+                    for h in hits {
+                        let key = (h.doc_name.clone(), h.chunk_index);
+                        let s = h.score;
+                        match best.entry(key) {
+                            std::collections::hash_map::Entry::Occupied(mut e) => {
+                                if s > e.get().0 {
+                                    e.insert((s, h));
+                                }
+                            }
+                            std::collections::hash_map::Entry::Vacant(v) => {
+                                v.insert((s, h));
+                            }
+                        }
+                    }
+                }
+                Ok(Err(e)) => {
+                    log::warn!("[indexer] [混合检索] 候选池精排失败，回退 RRF 排序: {}", e);
+                    return Ok(pool);
+                }
+                Err(e) => {
+                    log::warn!("[indexer] [混合检索] 候选池精排任务执行失败，回退 RRF 排序: {}", e);
+                    return Ok(pool);
+                }
+            }
+        }
+
+        out_untagged.extend(
+            best.into_values()
+                .filter(|(s, _)| *s >= min_score)
+                .map(|(_, h)| h),
+        );
+        out_untagged.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+
+        log::info!(
+            "[indexer] [混合检索] 候选池精排: pool={} pairs={} 通过阈值({})={}",
+            pool.len(),
+            total_pairs,
+            min_score,
+            out_untagged.len()
+        );
+        Ok(out_untagged)
     }
 
     /// OPML 层级去重：同一大纲文档中具有路径前缀关系的 chunk 保留最深节点。

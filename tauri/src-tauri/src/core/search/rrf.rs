@@ -191,6 +191,7 @@ pub fn rrf_fuse(
             symbol_kind: e.symbol_kind,
             chunk_type: e.chunk_type,
             score_rerank: None,
+            query_sources: Vec::new(),
         })
         .collect()
 }

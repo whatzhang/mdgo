@@ -13,6 +13,9 @@ use rig_core::OneOrMany;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
+use crate::core::agent::limits::{MAX_EXPANDED_QUERIES, QUERY_EXPANSION_RETRY_MAX};
+use crate::core::search::query_plan::QueryKind;
+
 // ─── 公共类型 ───
 
 /// 对话消息
@@ -62,6 +65,84 @@ pub struct BookmarkSummaryOut {
     /// 标签列表（可选，模型未给出时为空）
     #[serde(default)]
     pub tags: Vec<String>,
+}
+
+/// 查询扩展的结构化结果（P0/P2 预检索优化器）。
+///
+/// `queries` 不含原始查询（原始查询由调用方必保）。
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ExpansionResult {
+    /// 扩展查询列表（0 ~ `MAX_EXPANDED_QUERIES` 条）
+    #[serde(default)]
+    pub queries: Vec<ExpandedQuery>,
+}
+
+impl ExpansionResult {
+    /// 扩展查询文本列表（供调用方批量向量化/检索）
+    pub fn texts(&self) -> Vec<&str> {
+        self.queries.iter().map(|q| q.text.as_str()).collect()
+    }
+
+    /// 是否为空（无需扩展）
+    pub fn is_empty(&self) -> bool {
+        self.queries.is_empty()
+    }
+}
+
+/// 单条扩展查询（text + 检索语义类型）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ExpandedQuery {
+    /// 查询文本
+    pub text: String,
+    /// 检索语义类型（keyword / entity / semantic）；模型未给出时默认 keyword
+    #[serde(default)]
+    pub kind: QueryKind,
+}
+
+/// 解析 LLM 扩展输出：优先 JSON（结构化 text+kind），失败回退按行解析（旧格式）。
+///
+/// 解析器只做"尽力解析"，任何失败都返回空列表由调用方 fail-open；
+/// 绝不因解析失败把 LLM 原始噪声文本透传给检索。
+fn parse_expansion_output(full: &str) -> Vec<ExpandedQuery> {
+    let trimmed = full.trim();
+
+    // 1) JSON 优先：容忍 ```json 围栏与前后杂质，截取首个 { 到最后一个 }
+    let body = if let Some(stripped) = trimmed.strip_prefix("```") {
+        stripped
+            .find("```")
+            .map(|idx| &stripped[..idx])
+            .unwrap_or(stripped)
+    } else {
+        trimmed
+    };
+    if let (Some(start), Some(end)) = (body.find('{'), body.rfind('}')) {
+        if end > start {
+            if let Ok(parsed) = serde_json::from_str::<ExpansionResult>(&body[start..=end]) {
+                // JSON 合法即采用（即使 queries 为空数组——模型明确表示无需扩展，
+                // 此时不应回退按行解析，避免把解释性文字当成查询）
+                return parsed
+                    .queries
+                    .into_iter()
+                    .filter(|q| !q.text.trim().is_empty())
+                    .collect();
+            }
+        }
+    }
+
+    // 2) 回退：按行解析（兼容旧版"每行一条查询"输出），全部标 Keyword
+    full.split('\n')
+        .map(|l| {
+            l.trim()
+                .trim_start_matches(|c: char| c.is_ascii_digit() || ".-、). ".contains(c))
+                .trim()
+                .to_string()
+        })
+        .filter(|l| l.len() > 5)
+        .map(|text| ExpandedQuery {
+            text,
+            kind: QueryKind::Keyword,
+        })
+        .collect()
 }
 
 // ─── 工具函数 ───
@@ -283,11 +364,25 @@ impl LLMClient {
         request: CompletionRequest,
         cancel: CancellationToken,
     ) -> Result<CompletionResponse<openai::CompletionResponse>, CompletionError> {
+        self.completion_with_retry_n(request, cancel, LLM_RETRY_MAX)
+            .await
+    }
+
+    /// 非流式补全 + 指数退避重试（指定重试次数）。
+    ///
+    /// 预检索路径（查询扩展）使用更紧的预算（`QUERY_EXPANSION_RETRY_MAX`），
+    /// 避免慢模型在预检索阶段长时间阻塞；其余调用沿用 [`completion_with_retry`]。
+    async fn completion_with_retry_n(
+        &self,
+        request: CompletionRequest,
+        cancel: CancellationToken,
+        max_retries: usize,
+    ) -> Result<CompletionResponse<openai::CompletionResponse>, CompletionError> {
         let model = self.completion_model.clone();
         retry_loop(
             || model.completion(request.clone()),
             is_retryable_completion_error,
-            LLM_RETRY_MAX,
+            max_retries,
             Duration::from_millis(LLM_RETRY_BASE_MS),
             Duration::from_millis(LLM_RETRY_MAX_MS),
             cancel,
@@ -295,16 +390,24 @@ impl LLMClient {
         .await
     }
 
-    /// 查询扩展：使用 LLM 将用户问题改写为多个搜索查询
+    /// 查询扩展：使用 LLM 将用户问题改写为 0~2 条差异化搜索查询（P0 预检索优化器）。
     ///
-    /// 返回扩展后的查询列表（不包含原始问题）。请求失败或取消时返回空 Vec，
-    /// 由调用方降级为仅使用原始查询，避免错误文本污染检索。
+    /// 返回结构化扩展结果（`queries`，不含原始问题）。请求失败、取消、超时或
+    /// 解析失败时返回空结果，由调用方降级为仅使用原始查询（fail-open），
+    /// 避免错误文本污染检索。
+    ///
+    /// 设计边界（预检索层一次性 LLM 调用）：
+    /// - 数量自适应：LLM 输出 0~2 条，不足时不得凑数；系统侧上限 `MAX_EXPANDED_QUERIES`
+    /// - 结构化输出：`{"queries": [{"text": ..., "kind": "keyword|entity|semantic"}]}`，
+    ///   解析失败回退按行解析（旧格式，全部标 Keyword）
+    /// - 语义去重不在本函数内做：扩展查询向量在检索阶段必然计算，由调用方
+    ///   用 embedding cosine 去重（P0-4，零额外推理），此处仅做精确去重
     pub async fn expand_queries(
         &self,
         text: &str,
         history: &[ChatMessage],
         cancel: CancellationToken,
-    ) -> Vec<String> {
+    ) -> ExpansionResult {
         // 构建携带上下文的扩展 prompt
         let mut system_msg = String::new();
 
@@ -329,20 +432,19 @@ impl LLMClient {
         }
 
         system_msg.push_str(concat!(
-            "你是专业检索查询扩展助手，用于对话输入的语义理解与本地知识库混合检索。请将用户当前问题扩展为3个差异化检索查询，严格遵循以下规则：\n",
-            "1. 输出共3行，每行一条查询，无序号、无引号、无任何前缀后缀与解释内容\n",
+            "你是专业检索查询扩展助手，用于对话输入的语义理解与本地知识库混合检索。请将用户当前问题扩展为最多2条差异化检索查询，输出 JSON（除 JSON 外不要输出任何其他内容、注释或代码围栏）：\n",
+            "{\"queries\": [{\"text\": \"查询1\", \"kind\": \"keyword\"}, {\"text\": \"查询2\", \"kind\": \"entity\"}]}\n",
+            "严格遵循以下规则：\n",
+            "1. 最多 2 条；查询角度不足 2 条时不要凑数，允许只给 1 条甚至空数组\n",
             "2. 严格保留用户原始问题的核心意图，不得新增、删减或篡改任何需求\n",
-            "3. 三条查询分别对应以下三个独立维度，语义不重叠：\n",
-            "   - 关键词聚焦：剔除语气词与冗余表述，提取核心实体+核心动作，生成紧凑短语，适配关键词检索\n",
-            "   - 实体精准提问：围绕问题核心对象，生成聚焦具体实体的完整查询，适配精准语义匹配\n",
-            "   - 同义场景扩展：使用同义词、领域常用术语/典型组件替换表述，覆盖文档中的不同行文与场景\n",
+            "3. kind 取值：keyword（关键词聚焦：剔除语气词与冗余，提取核心实体+核心动作的紧凑短语，适配关键词检索）/ entity（实体精准：围绕核心对象/实体的完整查询，适配精确匹配与符号检索）/ semantic（同义场景扩展：同义词、领域常用术语/典型组件替换表述，覆盖不同行文与场景）。三条尽量语义不重叠\n",
+            "4. 当用户问题本身就是清晰的实体/符号/文件名查询时，输出空数组（不需要扩展）\n",
             "\n",
             "示例：\n",
             "问题：如何在 Rust 中处理异步错误？\n",
-            "输出：\n",
-            "Rust 异步错误处理最佳实践\n",
-            "Rust async/await 错误类型处理\n",
-            "Rust 中 tokio 错误处理方式\n",
+            "输出：{\"queries\": [{\"text\": \"Rust async/await 错误类型处理\", \"kind\": \"entity\"}, {\"text\": \"Rust tokio 异步错误处理最佳实践\", \"kind\": \"semantic\"}]}\n",
+            "问题：Redis 分布式锁代码在哪里？\n",
+            "输出：{\"queries\": [{\"text\": \"Redis 分布式锁实现\", \"kind\": \"keyword\"}, {\"text\": \"Redisson RLock 实现\", \"kind\": \"entity\"}]}\n",
             "问题：",
         ));
         system_msg.push_str(text);
@@ -368,11 +470,13 @@ impl LLMClient {
         // 直接非流式调用：expand_queries 只需要完整结果，无需流式体验。
         // 非流式请求（stream: false）返回 application/json，兼容性最好，
         // 也规避 thinking 类模型 SSE 中 reasoning 内容的解析差异。
+        // 预检索预算从紧：重试 QUERY_EXPANSION_RETRY_MAX 次（总时限由调用方 timeout 包裹）。
         let mut full = String::new();
 
-        // 非流式补全 + 指数退避重试（取消在重试循环内响应，失败降级为原查询）
-        let result = self.completion_with_retry(request, cancel.clone()).await;
-        
+        let result = self
+            .completion_with_retry_n(request, cancel.clone(), QUERY_EXPANSION_RETRY_MAX)
+            .await;
+
         match result {
             Ok(response) => {
                 log::info!(
@@ -387,72 +491,38 @@ impl LLMClient {
             }
             Err(e) => {
                 log::warn!("[llm] [输入语义扩展] 非流式调用失败 err={}", e);
-                return Vec::new();
+                return ExpansionResult::default();
             }
         }
 
         if full.trim().is_empty() {
             log::info!("[llm] [输入语义扩展] empty response");
-            return Vec::new();
+            return ExpansionResult::default();
         }
 
-        // 解析结果为查询列表：按行分割，去除编号/前缀
-        let lines: Vec<String> = full
-            .split('\n')
-            .map(|l| l.trim().trim_start_matches(|c: char| c.is_ascii_digit() || ".-、). ".contains(c)).trim().to_string())
-            .filter(|l| l.len() > 5)
-            .collect();
+        // 解析：优先 JSON（结构化 text+kind），失败回退按行解析（旧格式）
+        let parsed = parse_expansion_output(&full);
 
-        // 字符集 Jaccard 相似度（用于去重）
-        let char_jaccard = |a: &str, b: &str| -> f64 {
-            let set_a: HashSet<char> = a
-                .to_lowercase()
-                .chars()
-                .filter(|c| !c.is_whitespace())
-                .collect();
-            let set_b: HashSet<char> = b
-                .to_lowercase()
-                .chars()
-                .filter(|c| !c.is_whitespace())
-                .collect();
-            if set_a.is_empty() && set_b.is_empty() {
-                return 1.0;
+        // 轻量清洗：字节长度过滤 + 精确去重 + 数量上限
+        // （语义去重由调用方在向量化后做 embedding cosine 判定，见函数文档）
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut queries: Vec<ExpandedQuery> = Vec::new();
+        for q in parsed {
+            let t = q.text.trim().to_string();
+            if t.len() <= 5 {
+                continue;
             }
-            let intersect = set_a.intersection(&set_b).count();
-            let union = set_a.len() + set_b.len() - intersect;
-            if union == 0 {
-                0.0
-            } else {
-                intersect as f64 / union as f64
+            if !seen.insert(t.clone()) {
+                continue;
             }
-        };
-
-        // 1) 初筛：过滤掉与原始查询过于相似的变体
-        let mut candidates: Vec<String> = lines
-            .into_iter()
-            .filter(|l| char_jaccard(l, text) < 0.6)
-            .collect();
-
-        // 2) 交叉去重：如果两个变体彼此过于相似，保留更短的（更聚焦）
-        //    先将候选按与原始查询的相似度升序排列（优先保留差异最大的）
-        candidates.sort_by(|a, b| {
-            let sa = char_jaccard(a, text);
-            let sb = char_jaccard(b, text);
-            sa.partial_cmp(&sb).unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        let mut deduped: Vec<String> = Vec::new();
-        for cand in candidates {
-            let is_dup = deduped.iter().any(|existing| char_jaccard(&cand, existing) >= 0.8);
-            if !is_dup {
-                deduped.push(cand);
+            queries.push(ExpandedQuery { text: t, kind: q.kind });
+            if queries.len() >= MAX_EXPANDED_QUERIES {
+                break;
             }
         }
 
-        // 3) 上限 3 个
-        deduped.truncate(3);
-        log::info!("[llm] [输入语义扩展] output: {:?}", deduped);
-        deduped
+        log::info!("[llm] [输入语义扩展] output: {:?}", queries);
+        ExpansionResult { queries }
     }
 
     /// 轻量任务规划：对复杂任务产出结构化计划 JSON 文本。

@@ -422,6 +422,25 @@ pub fn call_embedding_query(
     call_embedding(&[&prefixed], None)
 }
 
+/// 批量生成**查询端**向量（P0 预检索优化器：多查询一次批量推理）。
+///
+/// 与 [`call_embedding_query`] 语义一致（每条自动加 BGE instruction 前缀），
+/// 内部走 `call_embedding` 的批处理（BATCH_SIZE=128），替代逐条
+/// `spawn_blocking(call_embedding_query)` 的多次阻塞调用。
+pub fn call_embedding_queries(
+    texts: &[&str],
+) -> Result<Vec<Vec<f32>>, String> {
+    if texts.is_empty() {
+        return Ok(Vec::new());
+    }
+    let prefixed: Vec<String> = texts
+        .iter()
+        .map(|t| format!("{}{}", BGE_QUERY_INSTRUCTION, t))
+        .collect();
+    let refs: Vec<&str> = prefixed.iter().map(|s| s.as_str()).collect();
+    call_embedding(&refs, None)
+}
+
 // ─── 文本分块 ───
 
 /// Markdown 专用分隔符（含标题模式，仅用于结构化 Markdown 文本）
@@ -513,7 +532,6 @@ pub fn split_sentences(text: &str) -> Vec<String> {
 }
 
 /// 计算两个 f32 向量的余弦相似度（范围 0.0 ~ 1.0）
-#[allow(dead_code)]
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
     let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
     let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();

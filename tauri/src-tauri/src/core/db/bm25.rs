@@ -741,6 +741,7 @@ impl Bm25Index {
                 symbol_kind,
                 chunk_type,
                 score_rerank: None,
+                query_sources: Vec::new(),
             });
         }
 

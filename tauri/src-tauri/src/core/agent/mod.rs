@@ -34,10 +34,11 @@ pub mod limits;
 pub mod task_store;
 
 pub use limits::{
-    DEFAULT_MAX_TURNS, KB_TOP_K_SCHEMA_MAX, MAX_CONTEXT_CHARS, MAX_TOP_K, PERSISTENT_INJECTION,
+    AGREEMENT_BONUS_WEIGHT, DEFAULT_MAX_TURNS, KB_TOP_K_SCHEMA_MAX, MAX_CONTEXT_CHARS,
+    MAX_TOP_K, PERSISTENT_INJECTION, QUERY_DIVERSITY_THRESHOLD,
 };
 use self::tool_registry::ToolRegistry;
-use crate::core::{Indexer, SearchHit, call_embedding_query};
+use crate::core::{Indexer, SearchHit, QuerySource, call_embedding_query};
 
 /// 规约文档缓存：(文件名 → (最后修改时间, 内容))。
 ///
@@ -776,6 +777,7 @@ pub async fn kb_search(cfg: &KbSearchConfig, query: &str, top_k: u32) -> Result<
         cfg.rerank_min_score,
         cfg.max_context_docs,
         cfg.max_chunks_per_doc,
+        None, // kb_search 工具为单查询路径，无跨查询一致性统计
     );
     if selected.is_empty() {
         return Ok("知识库中未找到足够相关的内容。".to_string());
@@ -983,6 +985,11 @@ pub fn build_code_lookup_tool(cfg: KbSearchConfig) -> DynamicTool {
 /// 在偏高时可能误杀）。融合分数已归一化到 [0,1]，`min_score` 作为绝对阈值有
 /// 确定语义，配合硬截断保证送入上下文的都是高置信命中。
 ///
+/// P1 预检索优化器：`query_vectors` 提供各来源查询的向量（Original/Expanded(n)），
+/// 用于**跨查询一致性加成**——被多个"不同角度"查询命中的文档证据更强，文档代表分
+/// 叠加 `agreement × AGREEMENT_BONUS_WEIGHT`（仅影响文档排序，clamp ≤ 1.0，
+/// 不改变 chunk 通过/拒绝）。来源查询对向量相似度过高视为同质（防虚假共识），不计分。
+///
 /// 返回按文档分数降序、文档内按分数降序的 `(SearchHit, score)` 列表。
 ///
 /// # 分数域契约（与 `Indexer::hybrid_search` 输出对齐）
@@ -998,6 +1005,7 @@ pub fn aggregate_hits(
     rerank_min_score: f32,
     max_docs: usize,
     max_chunks_per_doc: usize,
+    query_vectors: Option<&HashMap<QuerySource, Vec<f32>>>,
 ) -> Vec<(SearchHit, f32)> {
     // 1. 按 doc_name + chunk_index 去重，保留最高分
     let mut seen: HashMap<(String, u32), (SearchHit, f32)> = HashMap::new();
@@ -1036,7 +1044,9 @@ pub fn aggregate_hits(
     }
 
     // 3. 以每篇文档的最佳 chunk 分数作为文档代表分排序（同分按 doc_name 字典序保证确定性），
-    //    每篇文档内按分数降序截断，再取 top max_docs 文档
+    //    每篇文档内按分数降序截断，再取 top max_docs 文档。
+    //    P1：跨查询一致性加成——被多个"不同角度"查询命中的文档证据更强，
+    //    文档代表分 = 最佳 chunk 分 + agreement × AGREEMENT_BONUS_WEIGHT（clamp ≤ 1.0）。
     let mut doc_scores: Vec<(String, f32, Vec<(SearchHit, f32)>)> = doc_map
         .into_values()
         .map(|mut chunks| {
@@ -1047,7 +1057,8 @@ pub fn aggregate_hits(
                 .first()
                 .map(|(h, _)| h.doc_name.clone())
                 .unwrap_or_default();
-            (doc, best, chunks)
+            let rank_score = (best + agreement_bonus(&chunks, query_vectors)).min(1.0);
+            (doc, rank_score, chunks)
         })
         .collect();
     doc_scores.sort_by(|a, b| {
@@ -1061,6 +1072,47 @@ pub fn aggregate_hits(
         .into_iter()
         .flat_map(|(_, _, chunks)| chunks)
         .collect()
+}
+
+/// P1：跨查询一致性加成——统计文档所有 chunk 命中的**不同来源查询对**，
+/// 仅当来源查询向量差异足够大（cosine < `QUERY_DIVERSITY_THRESHOLD`，视为
+/// "不同角度"）时才计分；无向量可用的来源对保守计分（不同来源即视为不同角度）。
+///
+/// 防止"虚假共识"：三个高度相似的查询命中同一文档不加分（如 `Redis 分布式锁` /
+/// `Redis 分布式锁实现` / `Redis 分布式锁代码`），三个异构查询命中才加
+/// （如 `Redis 分布式锁` / `Redisson RLock` / `Redis Lua 原子锁`）。
+fn agreement_bonus(
+    chunks: &[(SearchHit, f32)],
+    query_vectors: Option<&HashMap<QuerySource, Vec<f32>>>,
+) -> f32 {
+    let mut srcs: Vec<QuerySource> = Vec::new();
+    for (h, _) in chunks {
+        for s in &h.query_sources {
+            if !srcs.contains(s) {
+                srcs.push(*s);
+            }
+        }
+    }
+    if srcs.len() < 2 {
+        return 0.0;
+    }
+    let mut count = 0.0f32;
+    for i in 0..srcs.len() {
+        for j in (i + 1)..srcs.len() {
+            let diverse = match (
+                query_vectors.and_then(|m| m.get(&srcs[i])),
+                query_vectors.and_then(|m| m.get(&srcs[j])),
+            ) {
+                (Some(a), Some(b)) => crate::core::db::utils::cosine_similarity(a, b)
+                    < QUERY_DIVERSITY_THRESHOLD as f64,
+                _ => true, // 无向量时保守按不同来源计
+            };
+            if diverse {
+                count += 1.0;
+            }
+        }
+    }
+    count * AGREEMENT_BONUS_WEIGHT
 }
 
 /// 将聚合后的命中组装为模型可读的上下文文本。

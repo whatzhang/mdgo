@@ -49,6 +49,15 @@ pub struct DocumentChunk {
     pub chunk_type: Option<String>,
 }
 
+/// 命中来源查询（P1 预检索优化器：跨查询一致性统计）。
+///
+/// `Original` = 用户原始查询；`Expanded(n)` = 第 n 条扩展查询（0 起）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum QuerySource {
+    Original,
+    Expanded(u8),
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SearchHit {
     pub text: String,
@@ -69,6 +78,10 @@ pub struct SearchHit {
     pub chunk_type: Option<String>,
     /// 精排分数（本地 bge-reranker sigmoid 相关性分数，仅精排启用时有值）
     pub score_rerank: Option<f32>,
+    /// 命中来源查询列表（原始 / 扩展），预检索多查询路径打标；
+    /// 其他路径（kb_search 工具/索引管线）为空。`#[serde(default)]` 保证兼容。
+    #[serde(default)]
+    pub query_sources: Vec<QuerySource>,
 }
 
 /// 代码符号条目缓存（search_symbols 内存过滤用，避免每次查询全表 LIKE 扫描）
@@ -509,6 +522,7 @@ impl LanceStore {
                     symbol_kind: symbol_kind_val,
                     chunk_type: chunk_type_val,
                     score_rerank: None,
+                    query_sources: Vec::new(),
                 });
             }
         }
@@ -571,6 +585,7 @@ impl LanceStore {
                     symbol_kind: e.symbol_kind.clone(),
                     chunk_type: e.chunk_type.clone(),
                     score_rerank: None,
+                    query_sources: Vec::new(),
                 },
                 quality,
             ));

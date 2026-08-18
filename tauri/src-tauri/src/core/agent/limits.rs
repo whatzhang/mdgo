@@ -31,6 +31,25 @@ pub const MAX_CONTEXT_CHARS: usize = 12_000;
 /// kb_search / code_lookup 工具 schema 的 top_k 上限（对齐前端 UI 1-50）
 pub const KB_TOP_K_SCHEMA_MAX: u32 = 50;
 
+// ── 预检索查询扩展（P0 预检索优化器）──
+
+/// 扩展查询数量上限（商用默认：原始查询 + 至多 2 条扩展）
+pub const MAX_EXPANDED_QUERIES: usize = 2;
+/// 单次预检索总查询数上限（原始 + 扩展，防发散）
+pub const MAX_TOTAL_QUERIES: usize = 3;
+/// 查询扩展 LLM 调用的独立总时限（秒）：并行化后已不在首答关键路径，
+/// 超时 fail-open 回退为仅原始查询
+pub const QUERY_EXPANSION_TIMEOUT_SECS: u64 = 10;
+/// 查询扩展调用的重试次数（预检索预算从紧：总尝试 = 重试次数 + 1）
+pub const QUERY_EXPANSION_RETRY_MAX: usize = 1;
+/// 扩展查询去重的 embedding cosine 阈值（≥ 视为重复，丢弃后生成的）
+pub const QUERY_DEDUP_SIMILARITY: f32 = 0.92;
+/// 跨查询一致性加成的查询对多样性判定阈值：来源查询对 cosine 低于此值
+/// 视为"不同角度"，才计入 agreement（防三个相似查询制造虚假共识）
+pub const QUERY_DIVERSITY_THRESHOLD: f32 = 0.85;
+/// 文档级一致性加成系数（叠加到文档代表分，仅影响排序、不改变通过/拒绝）
+pub const AGREEMENT_BONUS_WEIGHT: f32 = 0.05;
+
 // ── 文件工具 ──
 
 /// read 单次读取最大字符数（分页续读单元）

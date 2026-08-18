@@ -174,12 +174,143 @@ fn is_code_query(query: &str) -> bool {
     false
 }
 
+/// 扩展查询的类型（P2 预检索优化器：查询变体携带检索语义，供下游路由/去重/证据融合消费）。
+///
+/// 与 [`RetrievalIntent`]（文件范围过滤）正交：kind 描述"这条查询在检索什么角度"。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QueryKind {
+    /// 关键词聚焦：剔除语气词，提取核心实体+动作的紧凑短语（BM25 友好）
+    Keyword,
+    /// 实体精准：围绕具体实体/符号的完整查询（符号/精确匹配友好）
+    Entity,
+    /// 同义场景扩展：同义词/领域术语替换表述（语义向量友好）
+    Semantic,
+}
+
+impl Default for QueryKind {
+    fn default() -> Self {
+        QueryKind::Keyword
+    }
+}
+
+/// 扩展查询语义去重（P0-4，确定性、零 LLM 开销）。
+///
+/// 在扩展查询向量化后调用（向量反正都要计算，去重零额外推理）：
+/// - 与原始查询向量 cosine ≥ `threshold` → 丢弃（无增量价值）
+/// - 与已保留扩展向量 cosine ≥ `threshold` → 丢弃
+/// - 新增实体的查询不因语义相近被误杀（是否含新实体由调用方结合 kind/符号判定）
+///
+/// 返回保留的扩展查询下标（保持原顺序），最多 `max_keep` 个。
+pub fn dedup_expanded_queries(
+    original_vec: Option<&[f32]>,
+    vectors: &[Vec<f32>],
+    threshold: f32,
+    max_keep: usize,
+) -> Vec<usize> {
+    let mut kept: Vec<usize> = Vec::new();
+    for (i, vec) in vectors.iter().enumerate() {
+        if kept.len() >= max_keep {
+            break;
+        }
+        if let Some(ov) = original_vec {
+            if crate::core::db::utils::cosine_similarity(ov, vec) >= threshold as f64 {
+                continue;
+            }
+        }
+        let dup = kept
+            .iter()
+            .any(|&k| crate::core::db::utils::cosine_similarity(&vectors[k], vec) >= threshold as f64);
+        if !dup {
+            kept.push(i);
+        }
+    }
+    kept
+}
+
+/// 预检索是否值得调用 LLM 查询扩展（规则门，零 LLM 开销）。
+///
+/// 直接跳过的场景：空/超短查询、明显的文件名/路径、纯代码符号查询
+/// （这些场景 LLM 扩展无增益，且浪费一次调用与检索预算）。
+pub fn should_expand(query: &str, plan: &QueryPlan) -> bool {
+    let q = query.trim();
+    if q.is_empty() {
+        return false;
+    }
+    if q.chars().count() < 8 {
+        return false; // 超短查询
+    }
+    if plan.intent == RetrievalIntent::Code && !plan.symbols.is_empty() {
+        return false; // 纯符号/精确代码检索（符号路由已覆盖）
+    }
+    if is_file_path_like(q) {
+        return false; // main.rs / Cargo.toml / a/b.ts
+    }
+    true
+}
+
+/// 是否为"文件名/路径"类查询：单 token 带扩展名，或含路径分隔符。
+fn is_file_path_like(q: &str) -> bool {
+    if q.contains('/') || q.contains('\\') {
+        return true;
+    }
+    let tokens: Vec<&str> = q.split(|c: char| c.is_whitespace()).collect();
+    if tokens.len() == 1 {
+        let t = tokens[0];
+        if let Some(dot) = t.rfind('.') {
+            let ext = &t[dot + 1..];
+            if !ext.is_empty()
+                && ext.len() <= 5
+                && ext.chars().all(|c| c.is_ascii_alphanumeric())
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_expand_gates_trivial_queries() {
+        let general = QueryPlan {
+            intent: RetrievalIntent::General,
+            allowed_exts: None,
+            symbols: Vec::new(),
+        };
+        assert!(!should_expand("", &general));
+        assert!(!should_expand("Redis", &general)); // 超短
+        assert!(!should_expand("main.rs", &general)); // 文件名
+        assert!(!should_expand("src/lib/core.rs", &general)); // 路径
+        assert!(should_expand("为什么项目里的 Redis 锁这样实现？", &general)); // 正常问题
+    }
+
+    #[test]
+    fn should_expand_skips_pure_symbol_queries() {
+        let code = QueryPlan {
+            intent: RetrievalIntent::Code,
+            allowed_exts: Some(&["rs"]),
+            symbols: vec!["handleTimeout".into()],
+        };
+        assert!(!should_expand("handleTimeout 在哪里定义的", &code));
+        let code_no_symbol = QueryPlan {
+            intent: RetrievalIntent::Code,
+            allowed_exts: Some(&["rs"]),
+            symbols: Vec::new(),
+        };
+        assert!(should_expand("Rust 的异步错误处理", &code_no_symbol));
+    }
+}
+
 /// 从查询中提取疑似代码符号的标识符 token（CamelCase / snake_case）。
 ///
 /// 中文与数字 token 会被过滤（汉字的 is_uppercase/is_lowercase 均为 false），
 /// 仅保留形如 `handleTimeout`、`lru_cache`、`parseJSON` 的标识符，用于
-/// 代码符号精确检索（见符号路召回）。
-fn extract_symbol_tokens(query: &str) -> Vec<String> {
+/// 代码符号精确检索（见符号路召回）与符号实体发现（P2 预检索优化器）。
+pub fn extract_symbol_tokens(query: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     for t in query.split(|c: char| !(c.is_alphanumeric() || c == '_')) {
         let t = t.trim();

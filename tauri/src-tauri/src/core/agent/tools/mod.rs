@@ -641,6 +641,7 @@ async fn push_kb_source(cfg: &KbSearchConfig, doc_name: &str, snippet: &str) {
         symbol_kind: None,
         chunk_type: None,
         score_rerank: None,
+        query_sources: Vec::new(),
     };
     let mut guard = cfg.search_sink.lock().await;
     guard.push((hit, 0.0));

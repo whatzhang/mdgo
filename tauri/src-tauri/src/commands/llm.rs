@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -22,10 +22,18 @@ use crate::core::agent::tools::tool_call_bus;
 use crate::core::context::{
     ChatTurn, ContextCompressor, SummarizeThenWindowCompressor, tokens_to_chars_budget,
 };
+use crate::core::agent::limits::{
+    MAX_EXPANDED_QUERIES, MAX_TOTAL_QUERIES, QUERY_DEDUP_SIMILARITY, QUERY_EXPANSION_TIMEOUT_SECS,
+};
+use crate::core::db::lance::QuerySource;
+use crate::core::search::query_plan::{
+    QueryPlanner, RetrievalIntent, RuleQueryPlanner, dedup_expanded_queries,
+    extract_symbol_tokens, should_expand,
+};
 use crate::core::skill::activation::{ActivationSource, ActiveSkillState};
 use crate::core::skill::context::{SkillExecutionContext, build_skill_catalog, resolve_preactivated};
 use crate::core::skill::SkillStore;
-use crate::core::{call_embedding_query, SearchHit};
+use crate::core::{SearchHit, call_embedding_query, call_embedding_queries};
 use crate::services::llm::{LLMClient, UsageInfo, usage_to_info};
 
 // ─── 后端消息长度预算（集中定义见 crate::core::agent::limits） ───
@@ -1225,7 +1233,11 @@ pub async fn agent_query(
 
     // ── Stage 1-3: 预检索（仅技能触发时执行）──
     let (context, sources, selected_count) = if retrieval_enabled {
-        // ── Stage 1: 查询扩展 ──
+        // ── Stage 1+2: 并行 —— 原始查询立即检索 + LLM 查询扩展（P0 预检索优化器）──
+        // 规则门（零 LLM）：超短/文件名/纯符号查询直接跳过扩展，只跑原始查询
+        let plan = RuleQueryPlanner.plan(&query);
+        let expand_enabled = should_expand(&query, &plan);
+
         let _ = app.emit(
             "rag:status",
             RagStatus {
@@ -1238,16 +1250,79 @@ pub async fn agent_query(
         crate::core::trace::stage_start(&request_id, "expanding", "查询扩展");
         emit_pending_trace_events(&app, &request_id);
 
-        let expanded = llm.expand_queries(&query, &messages, cancel.clone()).await;
-        let mut queries = vec![query.clone()];
-        queries.extend(expanded);
-        log::info!("[agent_query] [1]: 查询扩展完成 request_id={} total_queries={} queries={:?}", request_id, queries.len(), queries);
+        // A) 原始查询：立即嵌入 + 混合检索召回（与 LLM 扩展并行，扩展延迟不再阻塞首答）
+        let dir_orig = dir_path.clone();
+        let state_orig = state.clone();
+        let q_orig = query.clone();
+        let original_fut = async move {
+            let q_for_embed = q_orig.clone();
+            let embed_start = std::time::Instant::now();
+            let embedding = tokio::task::spawn_blocking(move || {
+                call_embedding_query(&q_for_embed)
+            })
+            .await
+            .ok()
+            .and_then(|e| e.ok())
+            .and_then(|v| v.into_iter().next());
+            log::info!(
+                "[agent_query] [1]: 原始查询向量化 query={} 耗时={:?} success={}",
+                &q_orig, embed_start.elapsed(), embedding.is_some()
+            );
+            match embedding {
+                Some(vec) => {
+                    let start = std::time::Instant::now();
+                    let hits = state_orig
+                        .indexer
+                        .hybrid_recall(&dir_orig, &vec, &q_orig, effective_top_k)
+                        .await
+                        .unwrap_or_default();
+                    log::info!(
+                        "[agent_query] [1]: 原始查询召回完成 query={} 命中 {} 条 耗时={:?}",
+                        &q_orig, hits.len(), start.elapsed()
+                    );
+                    (hits, Some(vec))
+                }
+                None => {
+                    log::warn!("[agent_query] [1]: 原始查询向量化失败 query={} skipping", &q_orig);
+                    (Vec::new(), None)
+                }
+            }
+        };
+
+        // B) LLM 查询扩展（规则门放行时；带独立总时限，超时/失败 fail-open 为空）
+        let expand_fut = async {
+            if !expand_enabled {
+                return crate::services::llm::ExpansionResult::default();
+            }
+            tokio::time::timeout(
+                std::time::Duration::from_secs(QUERY_EXPANSION_TIMEOUT_SECS),
+                llm.expand_queries(&query, &messages, cancel.clone()),
+            )
+            .await
+            .unwrap_or_else(|_| {
+                log::warn!(
+                    "[agent_query] [1]: 查询扩展超时（>{}s），降级为仅原始查询 request_id={}",
+                    QUERY_EXPANSION_TIMEOUT_SECS, request_id
+                );
+                crate::services::llm::ExpansionResult::default()
+            })
+        };
+
+        let (original_result, expanded) = tokio::join!(original_fut, expand_fut);
+        let (original_hits, original_vec) = original_result;
+
+        log::info!(
+            "[agent_query] [1]: 查询扩展完成 request_id={} expanded={} queries={:?}",
+            request_id,
+            expanded.queries.len(),
+            expanded.queries.iter().map(|q| q.text.as_str()).collect::<Vec<_>>()
+        );
         crate::core::trace::stage_end(
             &request_id,
             "expanding",
             "ok",
             expanding_start.elapsed().as_millis() as u64,
-            &format!("queries={}", queries.len()),
+            &format!("expanded={}", expanded.queries.len()),
         );
         emit_pending_trace_events(&app, &request_id);
 
@@ -1258,8 +1333,103 @@ pub async fn agent_query(
             return Ok(());
         }
 
-        // ── Stage 2: 多查询混合检索（并行）──
-        log::info!("[agent_query] [2]: 混合检索开始 request_id={} 语义扩展数量={}",  request_id, queries.len());
+        // ── Stage 2: 扩展查询批量向量化 + embedding 去重 → 多查询召回（并行）──
+        let searching_start = std::time::Instant::now();
+        let mut queries: Vec<String> = vec![query.clone()];
+        // 各查询向量（用于跨查询一致性统计；原始 + LLM 扩展有向量，实体变体无向量）
+        let mut source_vectors: HashMap<QuerySource, Vec<f32>> = HashMap::new();
+        let original_vec_dedup = original_vec.as_deref();
+        if let Some(ov) = &original_vec {
+            source_vectors.insert(QuerySource::Original, ov.clone());
+        }
+        let expanded_texts: Vec<String> = expanded.queries.into_iter().map(|q| q.text).collect();
+
+        // 保留的扩展查询：(序号, 文本, 向量)，序号即 QuerySource::Expanded(n)
+        let mut kept_expanded: Vec<(u8, String, Vec<f32>)> = Vec::new();
+        if !expanded_texts.is_empty() {
+            let etexts_owned: Vec<String> = expanded_texts.clone();
+            let embed_start = std::time::Instant::now();
+            let vecs: Vec<Vec<f32>> = tokio::task::spawn_blocking(move || {
+                let refs: Vec<&str> = etexts_owned.iter().map(|s| s.as_str()).collect();
+                call_embedding_queries(&refs)
+            })
+            .await
+            .ok()
+            .and_then(|r| r.ok())
+            .unwrap_or_default();
+            log::info!(
+                "[agent_query] [2]: 扩展查询批量向量化 count={} 耗时={:?} success={}",
+                expanded_texts.len(), embed_start.elapsed(), !vecs.is_empty()
+            );
+
+            // P0-4：embedding 语义去重（与原始/彼此 cosine ≥ 阈值丢弃；向量缺失时保守全保留）
+            let kept_idx = if vecs.len() == expanded_texts.len() {
+                dedup_expanded_queries(
+                    original_vec_dedup,
+                    &vecs,
+                    QUERY_DEDUP_SIMILARITY,
+                    MAX_EXPANDED_QUERIES,
+                )
+            } else {
+                (0..expanded_texts.len().min(MAX_EXPANDED_QUERIES)).collect()
+            };
+            for &i in &kept_idx {
+                kept_expanded.push((i as u8, expanded_texts[i].clone(), vecs[i].clone()));
+                queries.push(expanded_texts[i].clone());
+            }
+            log::info!(
+                "[agent_query] [2]: 扩展查询去重结果 request_id={} 原始 {} → 保留 {} 条",
+                request_id, expanded_texts.len(), kept_expanded.len()
+            );
+        }
+
+        // P2：符号实体发现——代码类问题：从原始/扩展查询提取代码符号 token，
+        // 经符号索引（确定性、零 LLM）直接补 Entity 变体（精确匹配召回）。
+        let mut entity_hits: Vec<(u8, String, Vec<SearchHit>)> = Vec::new();
+        if plan.intent == RetrievalIntent::Code && queries.len() < MAX_TOTAL_QUERIES {
+            let mut tokens: Vec<String> = Vec::new();
+            let mut seen_tokens: HashSet<String> = HashSet::new();
+            for q in queries.iter().chain(std::iter::once(&query)) {
+                for t in extract_symbol_tokens(q) {
+                    if seen_tokens.insert(t.clone()) {
+                        tokens.push(t);
+                    }
+                }
+            }
+            let mut added = 0usize;
+            for token in tokens {
+                if queries.len() >= MAX_TOTAL_QUERIES {
+                    break;
+                }
+                if let Ok(hits) = state.indexer.search_symbols(&dir_path, &token, 3).await {
+                    let mut pushed = false;
+                    for h in hits {
+                        if let Some(sym) = h.symbol_name.clone() {
+                            if queries.iter().any(|q| q == &sym) {
+                                continue;
+                            }
+                            let idx = added as u8;
+                            entity_hits.push((idx, sym.clone(), vec![h]));
+                            queries.push(sym.clone());
+                            added += 1;
+                            pushed = true;
+                            break; // 每 token 至多补一条 Entity 变体
+                        }
+                    }
+                    let _ = pushed;
+                }
+                if queries.len() >= MAX_TOTAL_QUERIES {
+                    break;
+                }
+            }
+            if added > 0 {
+                log::info!(
+                    "[agent_query] [2]: 符号实体发现补充 Entity 变体 request_id={} added={}",
+                    request_id, added
+                );
+            }
+        }
+
         let _ = app.emit(
             "rag:status",
             RagStatus {
@@ -1268,54 +1438,37 @@ pub async fn agent_query(
                 message: format!("正在检索知识库... ({} 组查询)", queries.len()),
             },
         );
-        let searching_start = std::time::Instant::now();
         crate::core::trace::stage_start(&request_id, "searching", &format!("queries={}", queries.len()));
         emit_pending_trace_events(&app, &request_id);
 
-        // 对每个查询：嵌入 → 混合检索
+        // 多查询召回（并行，最多 MAX_EXPANDED_QUERIES 个扩展并发）：扩展查询各自 hybrid_recall
         let search_start = std::time::Instant::now();
-        let search_futures: Vec<_> = queries
+        let search_futures: Vec<_> = kept_expanded
             .iter()
-            .map(|q| {
+            .map(|(idx, q, vec)| {
                 let dir = dir_path.clone();
                 let state = state.clone();
+                let idx = *idx;
                 let q = q.clone();
+                let vec = vec.clone();
                 async move {
-                    let q_for_embed = q.clone();
-                    let embed_start = std::time::Instant::now();
-                    let embedding = tokio::task::spawn_blocking(move || {
-                        call_embedding_query(&q_for_embed)
-                    })
-                    .await
-                    .ok()
-                    .and_then(|e| e.ok())
-                    .and_then(|v| v.into_iter().next());
-
-                    log::info!("[agent_query] [2]: 语义扩展query向量化 query={} 耗时={:?} success={}",
-                        &q, embed_start.elapsed(), embedding.is_some());
-
-                    if let Some(vec) = embedding {
-                        let start = std::time::Instant::now();
-                        let hits = state
-                            .indexer
-                            .hybrid_search(&dir, &vec, &q, effective_top_k)
-                            .await
-                            .unwrap_or_default();
-
-                        log::info!("[agent_query] [2]: 语义扩展query混合检索， query={} 命中 {} 条文档耗时={:?}",
-                            &q, hits.len(), start.elapsed());
-
-                        hits
-                    } else {
-                        log::warn!("[agent_query] [2]: 语义扩展query向量化失败 query={} skipping", &q);
-                        Vec::new()
-                    }
+                    let start = std::time::Instant::now();
+                    let hits = state
+                        .indexer
+                        .hybrid_recall(&dir, &vec, &q, effective_top_k)
+                        .await
+                        .unwrap_or_default();
+                    log::info!(
+                        "[agent_query] [2]: 扩展查询混合检索， query={} 命中 {} 条文档耗时={:?}",
+                        &q, hits.len(), start.elapsed()
+                    );
+                    (idx, hits)
                 }
             })
             .collect();
 
-        let all_results: Vec<Vec<SearchHit>> = {
-            // 可取消的并行检索（最多并发 4 个）：取消信号到达后停止消费新结果，
+        let search_results: Vec<(u8, Vec<SearchHit>)> = {
+            // 可取消的并行检索：取消信号到达后停止消费新结果，
             // 已启动的检索会自然完成，不会拖住取消响应。
             let cancel_fut = {
                 let cancel = cancel.clone();
@@ -1324,15 +1477,63 @@ pub async fn agent_query(
                 }
             };
             futures::stream::iter(search_futures)
-                .buffer_unordered(4)
+                .buffer_unordered(MAX_EXPANDED_QUERIES.max(1))
                 .take_until(cancel_fut)
                 .collect()
                 .await
         };
 
-        // 展平所有结果
-        let all_hits: Vec<SearchHit> = all_results.into_iter().flatten().collect();
-        log::info!("[agent_query] [2]: 语义扩展query混合检索最终结果， request_id={} 命中 {} 条文档, 耗时={:?}", request_id, all_hits.len(), search_start.elapsed());
+        // P1-A：来源打标 + 候选池合并（原始 + 扩展召回 + 符号实体命中）
+        let mut pool: Vec<SearchHit> = Vec::new();
+        for (idx, hits) in search_results {
+            for mut h in hits {
+                h.query_sources = vec![QuerySource::Expanded(idx)];
+                pool.push(h);
+            }
+        }
+        for mut h in original_hits {
+            h.query_sources = vec![QuerySource::Original];
+            pool.push(h);
+        }
+        let entity_base = kept_expanded.len() as u8;
+        for (eidx, _, hits) in &entity_hits {
+            for h in hits {
+                let mut h = h.clone();
+                h.query_sources = vec![QuerySource::Expanded(entity_base + *eidx)];
+                pool.push(h);
+            }
+        }
+
+        // P1-B：候选池统一精排（按来源查询分别计分取 max；精排不可用回退 RRF 序）
+        let mut source_queries: HashMap<QuerySource, String> = HashMap::new();
+        source_queries.insert(QuerySource::Original, query.clone());
+        for (idx, q, _) in &kept_expanded {
+            source_queries.insert(QuerySource::Expanded(*idx), q.clone());
+        }
+        for (eidx, q, _) in &entity_hits {
+            source_queries.insert(QuerySource::Expanded(entity_base + *eidx), q.clone());
+        }
+        let pool_rerank_start = std::time::Instant::now();
+        let reranked = state
+            .indexer
+            .rerank_pool(pool, &source_queries, effective_rerank_min_score)
+            .await
+            .unwrap_or_default();
+        log::info!(
+            "[agent_query] [2]: 候选池精排 request_id={} pool→{} 耗时={:?}",
+            request_id, reranked.len(), pool_rerank_start.elapsed()
+        );
+
+        // 收尾：多样性聚簇 + 上下文窗口 + top_k 截断（与 kb_search 工具同语义）
+        let all_hits = state
+            .indexer
+            .finalize_hits(&dir_path, &query, reranked, effective_top_k)
+            .await
+            .unwrap_or_default();
+        log::info!(
+            "[agent_query] [2]: 预检索混合检索最终结果 request_id={} 命中 {} 条文档, 耗时={:?}",
+            request_id, all_hits.len(), search_start.elapsed()
+        );
         crate::core::trace::stage_end(
             &request_id,
             "searching",
@@ -1356,6 +1557,8 @@ pub async fn agent_query(
             }
 
             // ── Stage 3: 文档级聚合 + 绝对阈值（core::agent::aggregate_hits）──
+            // P1-A：传入查询向量，跨查询一致性加成参与文档排序（被多个不同角度
+            // 查询命中的文档证据更强；相似查询不产生虚假共识）。
             let aggregating_start = std::time::Instant::now();
             crate::core::trace::stage_start(&request_id, "aggregating", "文档级聚合");
             emit_pending_trace_events(&app, &request_id);
@@ -1365,22 +1568,24 @@ pub async fn agent_query(
                 effective_rerank_min_score,
                 effective_max_docs,
                 effective_max_chunks,
+                Some(&source_vectors),
             );
             if log::log_enabled!(log::Level::Debug) {
-                // 打印每个进入引用的命中的完整分数域（doc_name / score / score_rerank / symbol / vec / bm25），
+                // 打印每个进入引用的命中的完整分数域（doc_name / score / score_rerank / symbol / vec / bm25 / 来源查询），
                 // 用于核对"代码文件混入引用"的根因：意图路由结果 + 精排 sigmoid 分数是否恰好通过阈值。
                 log::info!("[agent_query] [3]: 文档聚合结果， request_id={} 命中 {} 条文档, effective_min_score={}， effective_max_docs={}, effective_max_chunks={}， doc=\n{:?}",
                  request_id, selected.len(), effective_min_score, effective_max_docs, effective_max_chunks,
                   selected.iter()
                     .map(|(hit, score)| {
                         format!(
-                            "{} : {:.3} (rerank={:?} symbol={:?} vec={:.3} bm25={:.3})",
+                            "{} : {:.3} (rerank={:?} symbol={:?} vec={:.3} bm25={:.3} sources={:?})",
                             hit.doc_name,
                             score,
                             hit.score_rerank,
                             hit.symbol_name,
                             hit.score_vec,
-                            hit.score_bm25
+                            hit.score_bm25,
+                            hit.query_sources
                         )
                     })
                     .collect::<Vec<_>>()
