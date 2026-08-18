@@ -4,9 +4,10 @@ scope: system
 name: git状态汇报
 description: 当用户询问工作区状态、改动、变更、未提交、diff、最近的提交记录时触发。
 priority: 45
-tools: []
+tools: [git_status, git_diff, git_checkout]
+triggers: [git状态, 未提交, 未暂存, 已暂存, 提交记录, git log, 版本历史, 仓库状态]
 enabled: true
-version: 1
+version: 2
 created_at: 1754200000000
 updated_at: 1754200000000
 ---

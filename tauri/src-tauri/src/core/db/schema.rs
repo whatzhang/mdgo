@@ -66,6 +66,14 @@ pub const SYSTEM_SKILL_MD: &[(&str, &str)] = &[
         "bookmark",
         include_str!("../../../resources/skills/bookmark/SKILL.md"),
     ),
+    (
+        "canvas",
+        include_str!("../../../resources/skills/canvas/SKILL.md"),
+    ),
+    (
+        "web-research",
+        include_str!("../../../resources/skills/web-research/SKILL.md"),
+    ),
 ];
 
 /// 执行全部建表 DDL + 列迁移（幂等，可重复调用）。

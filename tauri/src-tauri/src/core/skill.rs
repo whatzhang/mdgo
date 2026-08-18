@@ -27,10 +27,14 @@ use crate::core::db::schema;
 /// 白名单仅为声明约束：技能声明了系统外的工具名时直接忽略，不做强类型校验。
 /// 这是工具清单的「单一来源」：前端 Tauri 模式下经 `skill_allowed_tools` 下发，
 /// 本地打开 index.html（无 Tauri）时使用前端内置 fallback 副本。
+/// 覆盖全部注册工具（BASE_TOOLS + 技能声明工具），使任意技能可显式声明任一工具；
+/// BASE_TOOLS 工具本就常驻可见，声明仅影响技能详情展示与 SkillGateHook 的 declared 匹配。
 pub const ALLOWED_TOOLS: &[&str] = &[
     "kb_search", "code_lookup", "read", "edit", "multi_edit", "delete", "ls", "glob", "grep", "write", "git_status", "git_diff", "git_commit", "git_checkout", "webfetch",
     "activate_skill", "deactivate_skill", "pomodoro", "raw-parse", "schedule", "open-ui",
     "search_bookmarks", "get_bookmark",
+    "deep_research", "read_subagent_result", "spawn_subagent", "parallel_research", "self_review",
+    "remember", "forget", "search_memory", "todo_write",
 ];
 
 /// 工具展示名（与前端 fallback 一致；Tauri 模式下前端以此清单为准）
@@ -57,6 +61,15 @@ fn tool_label(key: &str) -> String {
         "open-ui" => "打开文件/页面".into(),
         "search_bookmarks" => "搜索书签收藏".into(),
         "get_bookmark" => "获取书签详情".into(),
+        "deep_research" => "深度调研".into(),
+        "read_subagent_result" => "读取子代理结果".into(),
+        "spawn_subagent" => "派生子代理".into(),
+        "parallel_research" => "并行调研".into(),
+        "self_review" => "自检".into(),
+        "remember" => "记住".into(),
+        "forget" => "遗忘".into(),
+        "search_memory" => "搜索记忆".into(),
+        "todo_write" => "任务清单".into(),
         "activate_skill" => "激活技能".into(),
         "deactivate_skill" => "停用技能".into(),
         _ => key.to_string(),

@@ -13391,6 +13391,7 @@
         }
 
         /* ═══ 演示模式 ═══ */
+        .demo-mode #content-panel-btn,
         .demo-mode #wc-nav-bar,
         .demo-mode #graph-top-right-controls,
         .demo-mode #app-header,
@@ -14818,7 +14819,7 @@
                     复制
                 </button>
             </div>
-            <!-- Canvas 白板工具栏（保存） -->
+            <!-- Canvas 画布工具栏（保存） -->
             <div id="canvas-top-left-controls" class="top-left-controls" style="display: none;">
                 <div class="canvas-save-dropdown">
                     <button id="canvas-save-toggle" class="btn btn-primary btn-sm"
@@ -16699,7 +16700,7 @@
             { key: '文本', name: "untitled.txt", ext: ".txt" },
             { key: 'md', name: "untitled.md", ext: ".md" },
             { key: '看板', name: 'untitled.canvas', ext: ".md", custom: true, param: 'kanban' },
-            { key: 'canvas', name: 'untitled.canvas', ext: ".canvas", custom: true, param: 'canvas' },
+            { key: '画布', name: 'untitled.canvas', ext: ".canvas", custom: true, param: 'canvas' },
             { key: '白板', name: 'untitled.excalidraw', ext: ".excalidraw", custom: true, param: 'whiteboard' },
             { key: '图表', name: 'untitled.mmd', ext: ".mmd", custom: true, param: 'mermaid' },
         ]
@@ -16713,7 +16714,7 @@
             { key: '🗑️ 删除目录', name: "删除目录", click: "deleteDir", isTauri: true },
             { key: '🌄 图片墙', name: "图片墙", click: "picLayoutDisplay" },
             { key: '🌐 文件图谱', name: '文件图谱', click: 'openFileGraph' },
-            { key: '📃 文档白板', name: "文档白板", click: "dirCanvasDisplay" },
+            { key: '📃 文档画布', name: "文档画布", click: "dirCanvasDisplay" },
             { key: '📚️ 文件词云', name: "文件词云", click: "openWordCloudFile" },
             { key: '🏷️ 类型分布', name: "类型分布", click: "openFileType" },
             { key: '标记', name: "标记", click: "markDir" },
@@ -16765,7 +16766,7 @@
             { key: '文档关联图谱', value: 'toggleFile("noteGraph")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: 'Mermaid', value: 'toggleFile("mermaid")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: 'Excalidraw白板', value: 'toggleFile("whiteboard")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: 'Canvas文档白板', value: 'toggleFile("canvas")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: 'Canvas画布', value: 'toggleFile("canvas")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: '思维导图', value: 'toggleFile("mindMap")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: '大纲笔记', value: 'toggleFile("opmlOutline")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: '任务看板', value: 'toggleFile("kanban")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
@@ -17408,14 +17409,14 @@
                 console.warn('累计浏览时长失败:', e);
             }
         }
-        // Canvas 白板相关函数
+        // Canvas 画布相关函数
         let canvasData = { nodes: [], edges: [] };
         // Canvas 图片节点加载并发限制（避免 20 张大图同时解码导致 CPU 飙升）
         const _CANVAS_IMG_CONCURRENCY = 4;
         let _canvasImgQueue = [];           // 待加载的图片任务队列
         let _canvasImgInFlight = 0;         // 当前正在加载的图片数量
-        let currentCvsDirPath = null;       // 当前 Canvas 白板所在目录路径
-        let dirCanvasDisplayFlag = false;      // 当前 Canvas 白板所在目录是否显示图谱
+        let currentCvsDirPath = null;       // 当前 Canvas 画布所在目录路径
+        let dirCanvasDisplayFlag = false;      // 当前 Canvas 画布所在目录是否显示图谱
         async function _canvasImgProcessQueue() {
             while (_canvasImgInFlight < _CANVAS_IMG_CONCURRENCY && _canvasImgQueue.length > 0) {
                 const task = _canvasImgQueue.shift();
@@ -17757,7 +17758,7 @@
             } else if (type === 'openWordCloudFile') {
                 await openWordCloudFile(data.dirPathStr); openHistory.addItem('openWordCloudFile', '词云', '', data, dirname(data.dirPathStr));
             } else if (type === 'dirCanvasDisplay') {
-                await dirCanvasDisplay(data.dirPathStr); openHistory.addItem('dirCanvasDisplay', '文档白板', '', data, dirname(data.dirPathStr));
+                await dirCanvasDisplay(data.dirPathStr); openHistory.addItem('dirCanvasDisplay', '文档画布', '', data, dirname(data.dirPathStr));
             } else if (type === 'openFileGraph') {
                 await openFileGraph(data.dirPathStr); openHistory.addItem('openFileGraph', '文件图谱', '', data, dirname(data.dirPathStr));
             } else if (type === 'openNoteLinkGraph') {
@@ -19256,7 +19257,7 @@
             contentMain.innerHTML = '';
         }
 
-        // 清理 Canvas 相关状态（关闭白板或切换文件时调用）
+        // 清理 Canvas 相关状态（关闭画布或切换文件时调用）
         async function cleanupCanvasState(cleanDom = false) {
             // 1. 清理 d3 SVG 状态
             if (window.canvasState) {
@@ -26434,6 +26435,38 @@ kanban-plugin: basic
             if (!node.isRoot && previewText) postProcessCodeAndDiagrams(document.getElementById(`md_nd_${node.id}`));
         }
 
+        // ---- Canvas 扩展节点类型渲染（JSON Canvas 兼容）：link/url/bookmark / code ----
+        function renderSimpleBox(node, nodeGroup, html) {
+            const foreignObject = nodeGroup.append('foreignObject')
+                .attr('x', 10)
+                .attr('y', 10)
+                .attr('width', node.width - 20)
+                .attr('height', node.height - 20)
+                .attr('overflow', 'hidden');
+            foreignObject.append('xhtml:div')
+                .attr('class', 'canvas-node-text')
+                .style('width', '100%')
+                .style('height', '100%')
+                .style('overflow', 'hidden')
+                .style('fontSize', '12px')
+                .style('lineHeight', '1.4')
+                .html(html);
+        }
+
+        function renderLinkNode(node, nodeGroup) {
+            const url = escapeHtml(node.url || '');
+            const txt = node.text ? escapeHtml(String(node.text)) : '';
+            renderSimpleBox(node, nodeGroup,
+                `<div style="font-weight:600;margin-bottom:4px;white-space:pre-wrap;">🔗 ${txt || url}</div>` +
+                (url ? `<div style="color:var(--color-primary);word-break:break-all;font-size:11px;">${url}</div>` : ''));
+        }
+
+        function renderCodeNode(node, nodeGroup) {
+            const code = node.code != null ? String(node.code) : (node.text || '');
+            renderSimpleBox(node, nodeGroup,
+                `<pre style="white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,monospace;margin:0;background:var(--color-bg-subtle);padding:6px;border-radius:6px;max-height:100%;overflow:hidden;">${escapeHtml(code)}</pre>`);
+        }
+
         function renderExcalidrawElement(container, excalidrawData) {
             const data = {
                 elements: excalidrawData.elements || [],
@@ -26670,7 +26703,7 @@ kanban-plugin: basic
             let cp2x = endX + toDirX * cpDist;
             let cp2y = endY + toDirY * cpDist;
 
-            // 沿连线垂直方向偏移控制点，避免同一方向多条连线（如文档白板内圈外圈）重叠
+            // 沿连线垂直方向偏移控制点，避免同一方向多条连线（如文档画布内圈外圈）重叠
             if (distance > 1) {
                 const idStr = String(edge.fromNode) + '|' + String(edge.toNode);
                 let hash = 0;
@@ -26920,8 +26953,8 @@ kanban-plugin: basic
                         const dt = now - (this.__lastClickTime || 0);
                         this.__lastClickTime = now;
                         if (dt < 350) {
-                            // 双击：显示内容面板
-                            if (node.type === 'text') {
+                            // 双击：显示内容面板 / 打开链接
+                            if (node.type === 'text' || node.type === 'code') {
                                 selectCanvasNode(node.id, d3.select(this), null);
                                 await showCanvasNodeContent(node);
                                 if (!node.text && !dirCanvasDisplayFlag) {
@@ -26931,6 +26964,12 @@ kanban-plugin: basic
                             } else if (node.type === 'image' || node.type === 'file') {
                                 selectCanvasNode(node.id, d3.select(this), node.file);
                                 await showNodeFileContent(node);
+                            } else if (node.type === 'link' || node.type === 'url' || node.type === 'bookmark') {
+                                selectCanvasNode(node.id, d3.select(this), null);
+                                if (node.url) {
+                                    if (typeof openUrlInBrowser === 'function') openUrlInBrowser(node.url);
+                                    else window.open(node.url, '_blank');
+                                }
                             }
                         } else {
                             // 单击：选中节点
@@ -26953,6 +26992,13 @@ kanban-plugin: basic
                 await renderTextNode(node, nodeGroup);
             } else if (node.type === 'image' || node.type === 'file') {
                 renderFileNode(node, nodeGroup);
+            } else if (node.type === 'link' || node.type === 'url' || node.type === 'bookmark') {
+                renderLinkNode(node, nodeGroup);
+            } else if (node.type === 'code') {
+                renderCodeNode(node, nodeGroup);
+            } else {
+                // 未知类型降级为文本节点（可靠渲染，不白屏）
+                await renderTextNode(node, nodeGroup);
             }
             renderConnectorDots(nodeGroup, node);
         }
@@ -26983,6 +27029,15 @@ kanban-plugin: basic
                     .style('fontSize', '13px')
                     .style('lineHeight', '1.4')
                     .html(renderedText);
+            } else if (node.type === 'image' || node.type === 'file') {
+                renderFileNode(node, nodeGroup);
+            } else if (node.type === 'link' || node.type === 'url' || node.type === 'bookmark') {
+                renderLinkNode(node, nodeGroup);
+            } else if (node.type === 'code') {
+                renderCodeNode(node, nodeGroup);
+            } else {
+                // 未知类型降级为文本节点（可靠渲染，不白屏）
+                await renderTextNode(node, nodeGroup);
             }
             renderConnectorDots(nodeGroup, node);
         }
@@ -27362,7 +27417,9 @@ kanban-plugin: basic
 
         async function showCanvasNodeContent(node) {
             const contentPanel = createNodeContentPanel('100%');
-            const htmlContent = await markedParse(parseObsidianToHTML(node.text));
+            // code 节点以 code 字段为主体内容（双击查看/编辑代码片段）
+            const bodyText = node.type === 'code' ? (node.code || node.text || '') : (node.text || '');
+            const htmlContent = await markedParse(parseObsidianToHTML(bodyText));
             contentPanel.innerHTML = ` <div class="canvas-edit-controls" id="canvas-edit-controls" ${dirCanvasDisplayFlag ? 'style="display:none;"' : ''}>
                     <button id="content-panel-btn" class="btn btn-primary btn-sm" data-node-id="${node.id}" onclick="editNodeContent(event, this)">
                         编辑内容
@@ -27746,11 +27803,11 @@ kanban-plugin: basic
                     }, 100);
                 }
             } catch (error) {
-                console.error('重新加载白板数据失败:', error);
+                console.error('重新加载画布数据失败:', error);
             }
         }
 
-        //重新加载白板数据(不恢复右侧面板)
+        //重新加载画布数据(不恢复右侧面板)
         async function reloadCanvasDataWithoutPanel() {
             try {
                 if (currentFileHandle) {
@@ -27761,7 +27818,7 @@ kanban-plugin: basic
                     await renderCanvasFile('', contentMain, true, canvasData);
                 }
             } catch (error) {
-                console.error('重新加载白板数据失败:', error);
+                console.error('重新加载画布数据失败:', error);
             }
         }
         function parseWiki(html) {
@@ -35937,14 +35994,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             document.getElementById('canvas-save-menu').classList.remove('canvas-open');
         }
 
-        let currentWhiteboardContent = ''; // 当前白板内容（JSON 字符串）
+        let currentWhiteboardContent = ''; // 当前画布内容（JSON 字符串）
         function handleBBSaveShortcut(e) {
             if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') {
                 e.preventDefault();
                 e.stopImmediatePropagation();
                 saveWhiteboardChoosePath().catch(err => {
-                    console.error('保存白板失败', err);
-                    showNotification('✗ 保存白板失败: ' + err.message, 'error');
+                    console.error('保存画布失败', err);
+                    showNotification('✗ 保存画布失败: ' + err.message, 'error');
                 });
             }
         }

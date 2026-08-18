@@ -32,6 +32,7 @@ use crate::core::SearchHit;
 use scraper::{ElementRef, Html, Selector};
 
 mod cache;
+pub mod canvas;
 
 /// 单条工具调用事件（`kind = "call"` 或 `kind = "result"`）
 #[derive(Debug, Clone, Serialize)]
@@ -1775,8 +1776,13 @@ pub async fn multi_edit_files(
 
 /// 创建新文件或整体覆盖知识库（当前打开目录）内文本文件（对齐主流 Agent 的 write 能力）。
 ///
-/// 安全边界：路径经 [`safe_resolve_new`] 限制在打开目录内（允许新建，父目录须已存在），
+/// 安全边界：路径经 [`safe_resolve_new`] 限制在打开目录内（允许新建），父目录不存在时
+/// 自动创建（先防穿越校验 + `base.join` 创建，再 canonicalize 二次校验），
 /// 且拒绝 `.mdgo` 内部数据；写入为原子写（临时文件 + rename）。
+///
+/// 格式自动处理：目标扩展名为 `.canvas` 时，内容先经 [`super::canvas::validate_canvas_json`]
+/// 确定性管线（parse → schema/ID/edge/file 校验 → sanitize → 自动布局 → 序列化），
+/// 校验失败则拒绝写入——LLM 负责语义，本函数负责机器可验证的格式正确性。
 pub async fn write_file(
     cfg: &KbSearchConfig,
     rel_path: &str,
@@ -1788,20 +1794,43 @@ pub async fn write_file(
     if content.chars().count() > MAX_EDIT_FILE_BYTES as usize {
         return Err(format!("{} 内容超过 1MB，write 单次写入上限为 1MB", rel_path));
     }
+    // Canvas 格式自动处理：.canvas 内容先经确定性校验/规整，再落盘
+    let effective = if rel_path.ends_with(".canvas") {
+        canvas::validate_canvas_json(content, &cfg.dir_path)?
+    } else {
+        content.to_string()
+    };
+    // 自动创建父目录：拒绝绝对路径与 `..`（与 safe_resolve_new 一致的口径），
+    // 先 base.join 创建目录，再交由 safe_resolve_new canonicalize 二次校验，
+    // 符号链接逃逸仍会被拦截（父目录不在 base 内则报错）。
+    let rel = std::path::Path::new(rel_path);
+    if rel.is_absolute()
+        || rel
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err("路径越界：仅允许访问限定目录内的文件".into());
+    }
+    let base = std::fs::canonicalize(&cfg.dir_path).map_err(|e| format!("无法访问目录: {}", e))?;
+    if let Some(parent) = rel.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(base.join(parent))
+                .map_err(|e| format!("创建目录失败: {}", e))?;
+        }
+    }
     let full = safe_resolve_new(&cfg.dir_path, rel_path)?;
     // canonical 后二次校验 `.mdgo`（防 `..` 穿越；父目录已 canonicalize）
-    let base = std::fs::canonicalize(&cfg.dir_path).map_err(|e| format!("无法访问目录: {}", e))?;
     ensure_not_mdgo(&full, &base, "写入")?;
     // 写入前判断目标是否存在（写入后判断恒为真，无法区分新建/覆盖）
     let existed = full.exists();
-    atomic_write_file(&full, content.as_bytes())?;
+    atomic_write_file(&full, effective.as_bytes())?;
     // Mutation Verification（P0-1）：回读确认写入实际生效
-    let verified = verify_write_back(cfg, rel_path, content)?;
+    let verified = verify_write_back(cfg, rel_path, &effective)?;
     Ok(format!(
         "已{} {}（{} 字符）；{}",
         if existed { "覆盖写入" } else { "创建" },
         rel_path,
-        content.chars().count(),
+        effective.chars().count(),
         verified
     ))
 }
@@ -1810,7 +1839,7 @@ pub async fn write_file(
 pub fn build_write_tool(cfg: KbSearchConfig) -> DynamicTool {
     DynamicTool::new(
         "write",
-        "创建新文件或整体覆盖当前打开知识库目录内的文本文件。content 为文件的完整新内容（覆盖写，非追加）。适合新建文档/笔记/代码文件，或整体重写小文件（≤1MB）。只允许在打开目录内写入，父目录须已存在（新建目录请先通过其他方式创建），不允许写入 .mdgo 内部数据。写入为不可撤销操作，覆盖已有文件前请确认用户意图。",
+        "创建新文件或整体覆盖当前打开知识库目录内的文本文件。content 为文件的完整新内容（覆盖写，非追加）。适合新建文档/笔记/代码文件，或整体重写小文件（≤1MB）。只允许在打开目录内写入，父目录不存在时会自动创建，不允许写入 .mdgo 内部数据。**当目标扩展名为 .canvas 时：内容必须是 JSON Canvas（{nodes, edges}），写入前系统自动完成格式校验、节点 id 唯一化、连线引用校验、file 路径存在性校验与自动布局——无需也无法由模型指定最终坐标；内容不合法时写入被拒绝并返回原因。** 写入为不可撤销操作，覆盖已有文件前请确认用户意图。",
         serde_json::json!({
             "type": "object",
             "additionalProperties": false,
@@ -2862,7 +2891,7 @@ pub fn build_open_ui_tool(cfg: KbSearchConfig) -> DynamicTool {
     build_bridge_tool(
         cfg,
         "open-ui",
-        "打开知识库文件或跳转打开应用页面。动作：open_file 在系统中打开文件预览的 ui（会切换当前工作区到该文件，可能打断正在编辑的文件）；open_page 跳转系统 ui 页面/视图（仅支持下列 page 枚举，共 29 种：fileGraph 文件图谱、noteGraph 文档关联图谱、dashboard 系统首页、calendar 日历/日程、knowledge 知识库监控面板、skill 技能管理页面、mcp MCP 管理页面、timeline 文件时间线页面、canvas 无限画布、whiteboard 白板、mermaid mermaid 图表预览编辑页面、gitRecords Git 管理页面、pomodoro 番茄钟页面、tempEditor 临时编辑器、urlEncoder 编码器页面、video 视频播放页面、raw RAW 照片预览页面、regexTest 正则表达式测试页面、cron Cron 表达式测试页面、bookmarks 书签预览页面、dirSpace 目录空间数据统计大屏、swaggerDemo swagger api 预览页面、graphQLPlayground GraphQL 预览接口测试页面、openRestyEditor nginx 配置编辑器、fileType 文件类型分布）。仅打开查看，不修改文件内容；打开文件/跳转页面会切换当前工作区视图。当用户要求打开某个文件、跳转到某页面、查看图谱/日历/看板/思维导图等时调用。",
+        "打开知识库文件或跳转打开应用页面。动作：open_file 在系统中打开文件预览的 ui（会切换当前工作区到该文件，可能打断正在编辑的文件）；open_page 跳转系统 ui 页面/视图（仅支持下列 page 枚举，共 26 种：fileGraph 文件图谱、noteGraph 文档关联图谱、dashboard 系统首页、calendar 日历/日程、knowledge 知识库监控面板、skill 技能管理页面、mcp MCP 管理页面、timeline 文件时间线页面、canvas 画布、whiteboard 白板、mermaid mermaid 图表预览编辑页面、wordCloud 词云、gitRecords Git 管理页面、pomodoro 番茄钟页面、tempEditor 临时编辑器、urlEncoder 编码器页面、video 视频播放页面、raw RAW 照片预览页面、regexTest 正则表达式测试页面、cron Cron 表达式测试页面、bookmarks 书签预览页面、dirSpace 目录空间数据统计大屏、swaggerDemo swagger api 预览页面、graphQLPlayground GraphQL 预览接口测试页面、openRestyEditor nginx 配置编辑器、fileType 文件类型分布）。仅打开查看，不修改文件内容；打开文件/跳转页面会切换当前工作区视图。当用户要求打开某个文件、跳转到某页面、查看图谱/日历/看板/思维导图等时调用。",
         serde_json::json!({
             "type": "object",
             "properties": {

@@ -137,11 +137,15 @@ pub const BASE_TOOLS: &[&str] = &[
 
 /// 软门禁可见工具：始终出现在 `active_tools`（模型可见可调，不会 UnknownToolCall），
 /// 但未激活声明技能时由 SkillGateHook Skip + 工具闭包守卫引导，不执行实际操作。
-/// 覆盖全部**技能声明工具**（非 BASE_TOOLS 的 5 个）：检索（kb_search/code_lookup）
-/// + 日程（schedule）+ 番茄钟（pomodoro）+ RAW 解析（raw-parse）。
+/// 覆盖**高频交互/查询类**技能声明工具（非 BASE_TOOLS）：
+/// - 检索（kb_search/code_lookup）+ 日程（schedule）+ 番茄钟（pomodoro）+ RAW（raw-parse）
+/// - 交互导航（open-ui）+ 书签查询（search_bookmarks/get_bookmark）
 /// 与 BASE_TOOLS 分离，保持"基础工具"语义纯净（这些属技能披露体系）。
-pub const SKILL_GATED_VISIBLE_TOOLS: &[&str] =
-    &["kb_search", "code_lookup", "schedule", "pomodoro", "raw-parse"];
+/// 注：Canvas 是知识文件格式（非工具），读写走通用 read/write，无需列入本清单。
+pub const SKILL_GATED_VISIBLE_TOOLS: &[&str] = &[
+    "kb_search", "code_lookup", "schedule", "pomodoro", "raw-parse",
+    "open-ui", "search_bookmarks", "get_bookmark",
+];
 
 // ─── Action Claim Guard（P0-3）声明表 ───
 

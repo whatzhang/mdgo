@@ -132,7 +132,7 @@ function handleAgentToolEvent(e, rid) {
             // P1-14：点击卡片展开/收起完整结果摘要（可检视过程）
             const detail = document.createElement('div');
             detail.className = 'tool-detail';
-            detail.style.cssText = 'display:none;margin-top:0.3rem;padding:0.3rem 0.5rem;background:rgba(0,0,0,0.04);border-radius:4px;font-size:0.72rem;color:#666;white-space:pre-wrap;word-break:break-all;max-height:12rem;overflow:auto;';
+            detail.style.cssText = 'display:none;padding:0.125rem 0.5rem;background:rgba(0,0,0,0.04);border-radius:4px;font-size:0.72rem;color:#666;white-space:pre-wrap;word-break:break-all;max-height:12rem;overflow:auto;';
             detail.textContent = String(p.summary || '');
             card.appendChild(detail);
             // P2 输出结构化：按工具类型渲染增强卡片（git_diff 文件改动列表等）
