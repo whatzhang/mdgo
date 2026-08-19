@@ -298,6 +298,19 @@ fn parse_vram_str(s: &str) -> u64 {
     (num * mult as f64) as u64
 }
 
+/// Windows：为子进程 Command 设置 `CREATE_NO_WINDOW`，避免从 GUI（Tauri）进程 spawn
+/// 控制台程序（powershell / nvidia-smi 等）时闪现黑色控制台窗口。
+/// 非 Windows 平台为空操作（macOS/Linux 无此问题）。
+#[cfg(target_os = "windows")]
+fn apply_no_window(cmd: &mut std::process::Command) {
+    use std::os::windows::process::CommandExt;
+    // CREATE_NO_WINDOW = 0x08000000：新进程不创建控制台窗口
+    cmd.creation_flags(0x0800_0000);
+}
+#[cfg(not(target_os = "windows"))]
+#[allow(dead_code)] // macOS 的 system_profiler/ioreg 无需该标志，此变体仅在 Linux 被 nvidia-smi 调用
+fn apply_no_window(_cmd: &mut std::process::Command) {}
+
 /// macOS：`system_profiler SPDisplaysDataType -json` 获取 GPU 名称/厂商/显存。
 #[cfg(target_os = "macos")]
 fn macos_gpus_static() -> Vec<GpuMetrics> {
@@ -378,7 +391,9 @@ fn macos_gpu_usages() -> Vec<f32> {
 #[cfg(target_os = "windows")]
 fn windows_gpus_static() -> Vec<GpuMetrics> {
     const SCRIPT: &str = "Get-CimInstance Win32_VideoController | Select-Object Name,AdapterRAM,PNPDeviceID | ConvertTo-Json -Compress";
-    let Ok(out) = std::process::Command::new("powershell")
+    let mut cmd = std::process::Command::new("powershell");
+    apply_no_window(&mut cmd);
+    let Ok(out) = cmd
         .args(["-NoProfile", "-NonInteractive", "-Command", SCRIPT])
         .output()
     else {
@@ -524,7 +539,9 @@ fn linux_gpus_static() -> Vec<GpuMetrics> {
 /// Linux `lspci` 也无法可靠给出显存。nvidia-smi 不可用时返回 None。
 #[cfg(any(target_os = "windows", target_os = "linux"))]
 fn nvidia_smi_gpus() -> Option<Vec<(String, u64, u64)>> {
-    let Ok(out) = std::process::Command::new("nvidia-smi")
+    let mut cmd = std::process::Command::new("nvidia-smi");
+    apply_no_window(&mut cmd);
+    let Ok(out) = cmd
         .args(["--query-gpu=name,memory.used,memory.total", "--format=csv,noheader,nounits"])
         .output()
     else {
@@ -550,7 +567,9 @@ fn nvidia_smi_gpus() -> Option<Vec<(String, u64, u64)>> {
 /// NVIDIA GPU 实时数据（使用率 + 已用显存，每周期刷新；不可用时返回空 Vec）。
 #[cfg(any(target_os = "windows", target_os = "linux"))]
 fn nvidia_smi_live() -> Vec<(f32, u64)> {
-    let Ok(out) = std::process::Command::new("nvidia-smi")
+    let mut cmd = std::process::Command::new("nvidia-smi");
+    apply_no_window(&mut cmd);
+    let Ok(out) = cmd
         .args(["--query-gpu=utilization.gpu,memory.used", "--format=csv,noheader,nounits"])
         .output()
     else {
@@ -663,7 +682,9 @@ $g = $e | Group-Object { if ($_.Name -match 'luid_0x[0-9a-fA-F]+_0x[0-9a-fA-F]+'
 $g | ConvertTo-Json -Compress
 "#;
     let mut sample = GpuLiveSample::default();
-    let Ok(out) = std::process::Command::new("powershell")
+    let mut cmd = std::process::Command::new("powershell");
+    apply_no_window(&mut cmd);
+    let Ok(out) = cmd
         .args(["-NoProfile", "-NonInteractive", "-Command", SCRIPT])
         .output()
     else {

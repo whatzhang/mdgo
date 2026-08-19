@@ -164,9 +164,13 @@ fn spawn_stdio_command(
 ) -> Result<Child, String> {
     #[cfg(windows)]
     {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW：从 GUI 进程 spawn 控制台程序（npx/cmd 等）时不闪现黑色窗口
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         // 1) 直接尝试（.exe 可执行文件）
         {
             let mut c = Command::new(command);
+            c.creation_flags(CREATE_NO_WINDOW);
             c.args(args)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
@@ -192,6 +196,7 @@ fn spawn_stdio_command(
         let mut parts = vec![command.to_string()];
         parts.extend(quoted);
         let mut c = Command::new("cmd");
+        c.creation_flags(CREATE_NO_WINDOW);
         c.arg("/C")
             .arg(parts.join(" "))
             .stdin(Stdio::piped())
@@ -633,8 +638,12 @@ pub fn extract_result(resp: Value) -> Result<Value, String> {
 fn kill_process_tree(child: &mut Child) {
     #[cfg(windows)]
     {
+        use std::os::windows::process::CommandExt;
         let pid = child.id();
-        let _ = Command::new("taskkill")
+        let mut cmd = Command::new("taskkill");
+        // CREATE_NO_WINDOW：避免 taskkill 弹出控制台窗口
+        cmd.creation_flags(0x0800_0000);
+        let _ = cmd
             .args(["/T", "/F", "/PID", &pid.to_string()])
             .output();
         let _ = child.kill();
