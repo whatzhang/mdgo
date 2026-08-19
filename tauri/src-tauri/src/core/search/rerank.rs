@@ -361,7 +361,10 @@ impl Reranker for LocalBgeReranker {
             let attention_mask = Array2::from_shape_vec((group_size, max_len), mask_flat)
                 .map_err(|e| format!("构建 attention_mask 失败: {}", e))?;
 
+            #[cfg(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64")))]
             let logits = run_batch(&mut session, input_ids, attention_mask)?;
+            #[cfg(not(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64"))))]
+            let logits = run_batch(&session, input_ids, attention_mask)?;
 
             // 输出形状 (batch, 1) 或 (batch,)：取每行首元素，sigmoid 映射到 (0,1)
             let shape = logits.shape();
