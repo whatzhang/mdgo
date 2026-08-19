@@ -1160,6 +1160,15 @@
             text-overflow: ellipsis;
         }
 
+        .canvas-node-text .markdown-body {
+            background: transparent;
+            cursor: grab;
+            margin-top: 0.125rem;
+            margin-bottom: 0.125rem;
+            line-height: 1.5;
+            white-space: normal;
+        }
+
         .canvas-edge-path {
             fill: none;
             stroke: var(--t3);
@@ -1169,7 +1178,7 @@
         }
 
         .canvas-edge-arrow {
-            fill: var(--t3);    
+            fill: var(--t3);
             transition: fill 0.15s ease;
         }
 
@@ -1369,7 +1378,7 @@
         }
 
         .canvas-modal-search {
-            padding: 12px 8px;
+            padding: 6px 8px;
             border-bottom: 1px solid #eee;
         }
 
@@ -3587,7 +3596,7 @@
         .charts-grid>.chart-card {
             margin-bottom: 0;
         }
-       
+
         /* ── 知识库面板仪表板样式 ── */
         .kb-health-bar {
             display: flex;
@@ -4646,6 +4655,7 @@
             font-size: 11px;
             margin-left: 1.5rem;
         }
+
         .bookmark-lifecycle-lbl {
             padding: 1px 6px;
             border-radius: 8px;
@@ -4654,27 +4664,43 @@
             color: var(--color-text-secondary);
             background: var(--color-bg-subtle);
         }
-        .bookmark-lifecycle-lbl[data-status="ready"] { color: #16a34a; background: rgba(22,163,74,.12); }
-        .bookmark-lifecycle-lbl[data-status="pending"] { color: #b45309; background: rgba(180,83,9,.12); }
-        .bookmark-lifecycle-lbl[data-status="failed"] { color: var(--color-danger); background: rgba(220,38,38,.12); }
+
+        .bookmark-lifecycle-lbl[data-status="ready"] {
+            color: #16a34a;
+            background: rgba(22, 163, 74, .12);
+        }
+
+        .bookmark-lifecycle-lbl[data-status="pending"] {
+            color: #b45309;
+            background: rgba(180, 83, 9, .12);
+        }
+
+        .bookmark-lifecycle-lbl[data-status="failed"] {
+            color: var(--color-danger);
+            background: rgba(220, 38, 38, .12);
+        }
+
         .bookmark-dead-badge {
             padding: 1px 6px;
             border-radius: 8px;
             font-size: 11px;
             line-height: 1.4;
             color: var(--color-danger);
-            background: rgba(220,38,38,.12);
+            background: rgba(220, 38, 38, .12);
         }
+
         .bookmark-cat-lbl {
             padding: 1px 6px;
             border-radius: 6px;
             font-size: 11px;
             color: #2563eb;
-            background: rgba(37,99,235,.10);
+            background: rgba(37, 99, 235, .10);
         }
+
         .bookmark-tag-lbl {
             color: var(--color-text-tertiary);
         }
+
         .bookmark-summary-lbl {
             flex-basis: 100%;
             font-size: 11px;
@@ -9289,7 +9315,7 @@
             font-size: 13px;
             font-family: var(--font-family);
             border-color: #d9e1e8;
-            padding: 10px;
+            padding: 8px 10px;
             box-shadow: 1px 1px 1px 1px #b1b1b1;
             z-index: 100;
         }
@@ -9739,8 +9765,8 @@
             position: absolute;
             top: 6px;
             left: 196px;
-            width: 26px;
-            height: 26px;
+            width: 1.6rem;
+            height: 1.6rem;
             z-index: 1000;
             border-radius: 0 6px 6px 0;
             border-width: 0px;
@@ -9809,18 +9835,16 @@
 
         .graph-toolbar-buttons {
             display: flex;
-            gap: 8px;
             align-items: center;
         }
 
         .graph-toolbar-buttons button {
             width: auto;
-            height: 1rem;
+            height: 0.75rem;
             border: 1px solid var(--color-border);
             background: var(--color-bg-secondary);
             border-radius: 0.25rem;
             cursor: pointer;
-            font-size: 0.813rem;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -9885,7 +9909,7 @@
         }
 
         .graph-toolbar-top .graph-toolbar-buttons button {
-            height: 1.75rem;
+            height: 1.5rem;
         }
 
         .graph-toolbar-filter-row {
@@ -9894,7 +9918,7 @@
 
         .graph-toolbar-filter-row input[type="text"] {
             width: 100%;
-            padding: 3px 26px 3px 8px;
+            padding: 4px 26px 4px 4px;
             font-size: 12px;
             height: 1.75rem;
             box-sizing: border-box;
@@ -10003,19 +10027,20 @@
             background: var(--color-bg-secondary);
             color: var(--t0);
             font-size: 14px;
-            line-height: 1.55;
-            /* padding: 80px 200px 16px 200px; */
-            padding: 6px 20px 20px 20px;
+            line-height: 1.5;
+            padding: 1rem;
         }
 
         .cron-app {
             width: 100%;
-            margin: 0 auto
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
         }
 
         /* Header */
         .cron-header {
-            margin-bottom: 16px;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -10107,7 +10132,6 @@
         .cron-card {
             background: var(--color-bg);
             border-radius: var(--radius-xxl);
-            margin-bottom: 20px;
             border: none;
             cursor: pointer;
             font-size: 13px;
@@ -10120,13 +10144,13 @@
         }
 
         .cron-expr-card {
-            padding: 16px 20px 14px
+            padding: 0.5rem;
         }
 
         .cron-expr-parts {
             display: flex;
-            gap: 16px;
-            padding: 10px 16px 20px 16px;
+            gap: 1rem;
+            padding: 0.5rem;
             overflow-x: auto
         }
 
@@ -10182,7 +10206,7 @@
             display: flex;
             gap: 6px;
             align-items: center;
-            padding: 5px 16px 10px 16px;
+            padding: 0.5rem;
         }
 
         .cron-expr-input {
@@ -10190,7 +10214,8 @@
             font-family: var(--font-mono);
             font-size: 14px;
             font-weight: 500;
-            padding: 7px 10px;
+            height: 2rem;
+            padding: 0.25rem 0.75rem;
             border: 1px solid var(--color-border);
             border-radius: var(--radius-md);
             background: var(--color-bg-secondary);
@@ -10205,7 +10230,7 @@
         }
 
         .cron-copy-btn {
-            padding: 0.438rem 0.75rem;
+            padding: 0.5rem 0.75rem;
             border-radius: var(--radius-md);
             border: 1px solid var(--color-border);
             background: var(--color-bg);
@@ -10243,8 +10268,8 @@
             color: var(--red);
             display: flex;
             align-items: flex-start;
-            gap: 6px;
-            padding: 5px 16px 0 16px;
+            gap: 0.5rem;
+            padding: 0.5rem;
         }
 
         .cron-desc-row .cron-desc-icon {
@@ -10318,7 +10343,7 @@
         }
 
         .cron-builder-body {
-            padding: 14px 18px 18px
+            padding: 0.5rem;
         }
 
         .cron-form-modes {
@@ -10562,8 +10587,8 @@
         .cron-run-item {
             display: flex;
             align-items: center;
-            gap: 8px;
-            padding: 5px 0;
+            gap: 0.5rem;
+            padding: 0.125rem 0;
             border-bottom: 1px solid var(--cron-divider);
             font-size: 12px;
         }
@@ -11233,20 +11258,20 @@
             height: 100%;
             background: var(--color-bg-secondary);
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
-        }
-
-        .urlEncoder-content {
-            display: block;
-            width: 90%;
-        }
+            column-gap: 1rem;
+            padding: 2rem 4rem;
+            box-sizing: border-box;
+        } 
 
         .urlEncoder-card {
+            width: 100%;
+            height: 60%;
             background: var(--color-bg);
             border-radius: 0.75rem;
             padding: 1rem;
-            margin-bottom: 1rem;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             transition: all 0.2s ease;
         }
@@ -11259,16 +11284,18 @@
         }
 
         .urlEncoder-textarea {
+            display: flex;
             width: calc(100% - 2rem);
-            height: 12rem;
+            height: calc(100% - 5rem);
             border: 1px solid #E5E6EB;
             border-radius: 0.5rem;
-            padding: 0.875rem 1rem;
-            font-size: 13px;
-            line-height: 1.6;
+            padding: 0.75rem 1rem;
+            font-size: 0.8125rem;
+            line-height: 1.5;
             outline: none;
             resize: vertical;
-            color: var(--t2);
+            color: var(--t1);
+            resize: none;
             background-color: var(--color-bg-secondary);
         }
 
@@ -11307,9 +11334,9 @@
         }
 
         .btn-lg {
-            padding: 0.25rem 0.4rem;
+            padding: 0.25rem 0.5rem;
             font-weight: 500;
-            font-size: 0.875rem;
+            font-size: 0.75rem;
         }
 
         .btn-snake {
@@ -15448,7 +15475,8 @@
                                     <label class="todo-filter-label">结束 <input type="date" id="todo-historyEnd"
                                             onchange="todoRenderHistoryEvents()"></label>
                                     <label class="todo-filter-label-input"><input type="text" id="todo-historySearch"
-                                            placeholder="搜索标题..." oninput="todoRenderHistoryEvents()" autocomplete="off"></label>
+                                            placeholder="搜索标题..." oninput="todoRenderHistoryEvents()"
+                                            autocomplete="off"></label>
                                 </div>
                                 <div id="todo-historyList" class="todo-history-list"></div>
                             </div>
@@ -15589,8 +15617,8 @@
                         <div class="todo-modal-body">
                             <div class="todo-form-group">
                                 <label class="todo-form-label">提醒标题</label>
-                                <input type="text" class="todo-form-input" id="todo-reminderTitle"
-                                    placeholder="输入提醒标题" autocomplete="off">
+                                <input type="text" class="todo-form-input" id="todo-reminderTitle" placeholder="输入提醒标题"
+                                    autocomplete="off">
                             </div>
                             <div class="todo-form-group">
                                 <label class="todo-form-label">提醒时间</label>
@@ -16341,7 +16369,8 @@
                         <div class="skill-search-box" id="mcp-search-box">
                             <span class="skill-search-icon">🔍</span>
                             <input type="text" id="mcp-search-input" class="skill-search-input" placeholder="搜索服务器名称..."
-                                onkeydown="mcpHandleSearchKeydown(event)" oninput="mcpHandleSearchInput()" autocomplete="off">
+                                onkeydown="mcpHandleSearchKeydown(event)" oninput="mcpHandleSearchInput()"
+                                autocomplete="off">
                             <button id="mcp-search-clear" class="skill-search-clear" onclick="mcpClearSearch()"
                                 style="display:none;">✕</button>
                         </div>
@@ -16465,7 +16494,7 @@
             if (p) return p;
             return MODEL_PROFILES.find(p => p.display !== false) || MODEL_PROFILES[0] || null;
         }
-        
+
         function applyActiveProfileToGlobals() {
             const p = llmGetActiveProfile();
             if (!p) {
@@ -17699,7 +17728,7 @@
             } else if (type === 'randomOpen') {
                 await randomOpen();
             } else if (type === 'renderFile') {
-                await renderFile(data.relativePath, data.fileSpan); 
+                await renderFile(data.relativePath, data.fileSpan);
                 openHistory.addItem('renderFile', '', data.relativePath, { 'relativePath': data.relativePath });
             } else if (type === 'graphQLPlayground') {
                 await openGraphQLPlayground(); openHistory.addItem('graphQLPlayground');
@@ -17896,7 +17925,7 @@
                 saveBtn: false,
                 copyBtn: true,
                 livePreviewBtn: false,
-                formatBtn: false, opmlBtns: false 
+                formatBtn: false, opmlBtns: false
             });
             if (fileName.endsWith('.md')) {
                 await renderMarkdownFile(fileText);
@@ -24899,7 +24928,7 @@
             }
             mdIsKanban = false;
             await renderOriginalMarkdown(text);
-            setControlsState({ aiFab: true, mdImageBtn: true, mdMindmapBtn: true});
+            setControlsState({ aiFab: true, mdImageBtn: true, mdMindmapBtn: true });
         }
 
         async function renderOriginalMarkdown(text) {
@@ -26412,9 +26441,13 @@ kanban-plugin: basic
             const previewText = node.text?.trim() || '';
             let renderedText = '';
             if (node.isRoot) {
-                renderedText = `<div id="md_nd_${node.id}" class="center-div">${previewText}</div>`
+                if (hasMarkdown(previewText)) {
+                    renderedText = `<div class="markdown-body" style="color:var(--color-text-white);" id="md_nd_${node.id}">${await markedParse(parseObsidianToHTML(previewText))}</div>`
+                } else {
+                    renderedText = `<div id="md_nd_${node.id}" class="center-div">${previewText}</div>`
+                }
             } else {
-                renderedText = previewText ? `<div class="markdown-body" style="background: transparent;cursor:grab;"  id="md_nd_${node.id}">${await markedParse(parseObsidianToHTML(previewText))}</div>` : '<p style="color:var(--t2);text-align:center;font-size:13px;">点击编辑内容...</p>';
+                renderedText = previewText ? `<div class="markdown-body" id="md_nd_${node.id}">${await markedParse(parseObsidianToHTML(previewText))}</div>` : '<p style="color:var(--t2);text-align:center;font-size:13px;">点击编辑内容...</p>';
             }
             const foreignObject = nodeGroup.append('foreignObject')
                 .attr('x', 10)
@@ -35939,7 +35972,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     const fn = f.name || fp;
                     const icon = _fileIcon(f.name, f.sub_type);
                     return `<div class="canvas-file-item" data-path="${fp}" data-name="${fn}">
-                                    ${icon?icon.outerHTML:''}
+                                    ${icon ? icon.outerHTML : ''}
                                     <span class="canvas-file-name" style="margin-left:0.5rem;">${fn}</span>
                                 </div>`;
                 }).join('')}
@@ -43494,30 +43527,28 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             aiFabContainer.style.display = 'none';
             contentMain.innerHTML = `
                     <div class="urlEncoder-container">
-                        <div class="urlEncoder-content">
-                            <div class="urlEncoder-card">
-                                <div class="urlEncoder-card-title">原始内容</div>
-                                <textarea id="encoder-input" class="urlEncoder-textarea" placeholder="请输入需要编码或解码的内容..."></textarea>
-                                <div class="urlEncoder-tip">支持中文、特殊字符、参数串自动处理</div>
-                            </div>
-                            <div class="urlEncoder-btn-group">
-                                <button class="btn btn-primary btn-lg" onclick="doEncodeUrl()">encodeURI编码</button>
-                                <button class="btn btn-primary btn-lg" onclick="doDecodeUrl()">decodeURI解码</button>
-                                <button class="btn btn-secondary btn-lg" onclick="doSwapEncodeDecode()">内容交换</button>
-                                <button class="btn btn-secondary btn-lg" onclick="clearEncoderValue()">清空输入</button>
-                                <button class="btn btn-secondary btn-lg" onclick="clearEncoderResult()">清空结果</button>
-                                <button class="btn btn-secondary btn-lg" onclick="copyEncoderResult()">复制结果</button>
-                                <button class="btn btn-success btn-lg" onclick="doEncodeURIComponent()">encodeURIComponent编码</button>
-                                <button class="btn btn-success btn-lg" onclick="doDecodeURIComponent()">decodeURIComponent解码</button>
-                            </div>
-                            <div class="urlEncoder-card">
-                                <div class="urlEncoder-card-title">转换结果</div>
-                                <textarea id="encoder-result" class="urlEncoder-textarea" readonly placeholder="转换后内容将显示在这里..."></textarea>
-                            </div>
-                            <div class="urlEncoder-footer">
-                                <p>encodeURI 保留 <code>A-Z a-z 0-9 ; , / ? : @ & = + $ - _ . ! ~ * ' ( ) #</code></p>
-                                <p>encodeURIComponent 额外编码 <code>/ ? : @ & = + $ , ; #</code>，适合作为 URL 参数值</p>
-                            </div>
+                        <div class="urlEncoder-card">
+                            <div class="urlEncoder-card-title">原始内容</div>
+                            <textarea id="encoder-input" class="urlEncoder-textarea" placeholder="请输入需要编码或解码的内容..."></textarea>
+                            <div class="urlEncoder-tip">支持中文、特殊字符、参数串自动处理</div>
+                        </div>
+                        <div class="urlEncoder-btn-group">
+                            <button class="btn btn-primary btn-lg" onclick="doEncodeUrl()">encodeURI编码</button>
+                            <button class="btn btn-primary btn-lg" onclick="doDecodeUrl()">decodeURI解码</button>
+                            <button class="btn btn-secondary btn-lg" onclick="doSwapEncodeDecode()">内容交换</button>
+                            <button class="btn btn-secondary btn-lg" onclick="clearEncoderValue()">清空输入</button>
+                            <button class="btn btn-secondary btn-lg" onclick="clearEncoderResult()">清空结果</button>
+                            <button class="btn btn-secondary btn-lg" onclick="copyEncoderResult()">复制结果</button>
+                            <button class="btn btn-success btn-lg" onclick="doEncodeURIComponent()">encodeURIComponent编码</button>
+                            <button class="btn btn-success btn-lg" onclick="doDecodeURIComponent()">decodeURIComponent解码</button>
+                        </div>
+                        <div class="urlEncoder-card">
+                            <div class="urlEncoder-card-title">转换结果</div>
+                            <textarea id="encoder-result" class="urlEncoder-textarea" readonly placeholder="转换后内容将显示在这里..."></textarea>
+                        </div>
+                        <div class="urlEncoder-footer">
+                            <p>encodeURI 保留 <code>A-Z a-z 0-9 ; , / ? : @ & = + $ - _ . ! ~ * ' ( ) #</code></p>
+                            <p>encodeURIComponent 额外编码 <code>/ ? : @ & = + $ , ; #</code>，适合作为 URL 参数值</p>
                         </div>
                     </div>`;
         }
@@ -51742,7 +51773,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         // ====== 知识库状态管理（当前目录即为知识库） ======
-                function getDirPath(dirHandle) {
+        function getDirPath(dirHandle) {
             try { return dirHandle.path || dirHandle.name || 'local'; } catch { return 'local'; }
         }
         async function refreshKnowledgeStatus() {
@@ -51776,7 +51807,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     window.__TAURI__.core.invoke('ai_history_stats', { dirPath: path }).catch(() => null),
                     window.__TAURI__.core.invoke('kb_dashboard_stats', { dirPath: path }).catch(() => null),
                     window.__TAURI__.core.invoke('kb_embedding_info').catch(() => null),
-                    window.__TAURI__.core.invoke('skill_metrics', { dirPath: path }).catch(() => null), 
+                    window.__TAURI__.core.invoke('skill_metrics', { dirPath: path }).catch(() => null),
                     window.__mdgoBookmark.bookmarkStat(path).catch(() => null),
                 ]);
                 if (kbStatus && kbStatus.vector_count > 0) {
