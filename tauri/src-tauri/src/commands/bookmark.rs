@@ -14,6 +14,9 @@ fn store(app: &AppHandle, dir_path: &str) -> Result<std::sync::Arc<std::sync::Mu
 }
 
 /// 导入书签（前端 `parseBookmarkHtml` 解析后的结构化 JSON；按 URL 去重，已存在跳过）。
+///
+/// **仅入库为 pending，不启动 Enrichment Worker**——后台分析只由
+/// 「分析扫描」（`bookmark_worker_start`）手动触发，避免导入即自动消耗 LLM。
 #[tauri::command]
 pub async fn bookmark_import(
     app: AppHandle,

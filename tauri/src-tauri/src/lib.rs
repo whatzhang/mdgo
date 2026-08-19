@@ -485,11 +485,6 @@ pub fn run() {
                 let sched = app.state::<AppState>().schedule_scheduler.clone();
                 sched.spawn(app.handle().clone());
             }
-            // 启动书签 Enrichment Worker（后台 tokio 循环，RAW → READY）
-            {
-                let worker = app.state::<AppState>().bookmark_worker.clone();
-                worker.spawn();
-            }
 
             // 注入 skill:changed 事件：AppHandle 就绪后替换 watcher 回调
             let handle = app.handle().clone();

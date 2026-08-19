@@ -147,6 +147,7 @@
             --color-bg-header: #e1e5e8;
             --color-bg-empty: #ebedf0;
             --window-header-bg: #edeff1;
+             --color-bg-subtle: #f9fafb;
 
             /* ---- 日历日程 ---- */
             --todo-primary-light: #E8F0FE;
@@ -414,7 +415,7 @@
         }
 
         .file-item-text.open-history-item {
-            font-size: 0.8125rem;
+            font-size: 0.875rem;
         }
 
         .file-item-text .file-name {
@@ -3567,6 +3568,9 @@
             margin-bottom: 0.75rem;
             overflow: visible;
         }
+        #kb-dashboard-content .activity-section .chart-card{
+            margin-bottom: 0.25rem;
+        }
 
         .heatmap-section {
             display: flex;
@@ -4414,6 +4418,7 @@
             font-size: 0.75rem;
             padding: 0.125rem 0.5rem !important;
             color: var(--t2);
+            font-weight: normal;
             background-color: var(--color-bg);
         }
 
@@ -6906,7 +6911,7 @@
             padding: 10px;
             border-radius: 15px;
             box-shadow: var(--shadow-sd);
-            height: 170px;
+            height: 200px;
             background: var(--color-bg);
             width: calc(100% - 20px);
             overflow: hidden;
@@ -6973,6 +6978,89 @@
             box-sizing: border-box;
         }
 
+        /* 系统信息面板：上半 GPU 使用率（仪表盘）、下半系统信息（高密度网格） */
+        .sysinfo-wrap {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-height: 0;
+        }
+
+        .sysinfo-gpu {
+            flex: 0 0 50%;
+            min-height: 50px;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sysinfo-gpu-head {
+            flex: 0 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1px;
+        } 
+
+        .sysinfo-gpu-chart {
+            flex: 1 1 auto;
+            min-height: 0;
+            width: 100%;
+        }
+
+        .sysinfo-text {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+        }
+
+        .sysinfo-grid {
+            width: 100%;
+            display: grid;
+            grid-template-columns: max-content minmax(0, 1fr) max-content minmax(0, 1fr);
+            column-gap: 8px;
+            row-gap: 6px;
+            font-size: 10px;
+            line-height: 1.5;
+        }
+        .si-row-full {
+            grid-column: 1 / -1; /* 跨越从第一列到最后一列 */
+            display: flex;
+            align-items: baseline;
+            column-gap: 8px; /* 保持与 Grid 的间距一致 */
+        }
+
+        /* 整行时，Key 通常左对齐更美观，覆盖原 right 对齐 */
+        .si-row-full .si-k {
+            text-align: left;
+            flex-shrink: 0; /* 防止 Key 被挤压 */
+        }
+
+        /* 整行时，Value 占据剩余空间，并允许换行显示长文本 */
+        .si-row-full .si-v {
+            flex: 1;
+            white-space: normal; /* 允许换行 */
+            overflow: visible;
+            text-overflow: clip;
+        }
+
+        .si-k {
+            color: var(--t2);
+            white-space: nowrap;
+            text-align: right;
+            font-weight: 600;
+        }
+
+        .si-v {
+            color: var(--color-text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-variant-numeric: tabular-nums;
+        }
+
         .monitor-sub {
             font-size: 10px;
             color: var(--color-text-secondary);
@@ -7003,6 +7091,9 @@
         .net-row-value-download {
             color: var(--color-note);
             font-variant-numeric: tabular-nums;
+        }
+        .net-row-value-download.write {
+            color: var(--green);
         }
 
         .monitor-divider {
@@ -7834,12 +7925,13 @@
             border-collapse: collapse;
             color: black;
             border-radius: 8px;
+            line-height: 1.5;
         }
 
         .wikitable th,
         .wikitable td {
             border: 1px solid var(--color-border);
-            padding: 0.2em;
+            padding: 0.25em;
         }
 
         .wikitable th {
@@ -14344,49 +14436,54 @@
                                     </div>
                                     <div class="monitor-body">
                                         <div class="monitor-item">
-                                            <div class="monitor-label"><svg viewBox="0 0 24 24" width="0.875rem"
-                                                    height="0.875rem" fill="none" stroke="currentColor"
+                                            <div class="monitor-label">
+                                                <div class="net-row">
+                                                    <span class="net-row-label">↓&nbsp;</span><span id="netRecv"
+                                                        class="net-row-value-download">0 B/s</span>
+                                                    <span class="monitor-uptime">｜</span>
+                                                    <span class="net-row-label">↑&nbsp;</span><span id="netSent"
+                                                        class="net-row-value-upload">0 B/s</span>
+                                                    <span class="net-row-label">&nbsp;&nbsp;网络</span>
+                                                </div>
+                                            </div>
+                                            <div id="netChart" class="monitor-chart"></div>
+                                            <div class="monitor-divider"></div>
+                                            <div class="monitor-label" style="margin-top:3px;"><svg viewBox="0 0 24 24"
+                                                    width="0.875rem" height="0.875rem" fill="none" stroke="currentColor"
                                                     stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
                                                     style="vertical-align:-2px;margin-right:4px;">
                                                     <rect x="4" y="4" width="16" height="16" rx="2" ry="2" />
                                                     <rect x="9" y="9" width="6" height="6" />
-                                                    <rect x="9" y="9" width="6" height="6" />
-                                                    <line x1="9" y1="1" x2="9" y2="4" />
-                                                    <line x1="15" y1="1" x2="15" y2="4" />
-                                                    <line x1="9" y1="20" x2="9" y2="23" />
-                                                    <line x1="15" y1="20" x2="15" y2="23" />
-                                                    <line x1="20" y1="9" x2="23" y2="9" />
-                                                    <line x1="20" y1="14" x2="23" y2="14" />
-                                                    <line x1="1" y1="9" x2="4" y2="9" />
-                                                    <line x1="1" y1="14" x2="4" y2="14" />
-                                                </svg>系统CPU</div>
-                                            <div id="cpuGauge" class="monitor-chart"></div>
-                                            <div class="monitor-sub" id="cpuCores"></div>
+                                                    <path d="M9 1v3" />
+                                                    <path d="M15 1v3" />
+                                                    <path d="M9 20v3" />
+                                                    <path d="M15 20v3" />
+                                                    <path d="M1 9h3" />
+                                                    <path d="M20 9h3" />
+                                                    <path d="M1 15h3" />
+                                                    <path d="M20 15h3" />
+                                                </svg>应用资源</div>
+                                            <div class="monitor-app">
+                                                <div class="app-stat"><span class="app-stat-label">CPU</span><span
+                                                        id="appCpuPercent" class="app-stat-value cpu">0%</span></div>
+                                                <div class="app-stat"><span class="app-stat-label">内存</span><span
+                                                        id="appMemPercent" class="app-stat-value mem">0%</span></div>
+                                            </div>
                                         </div>
                                         <div class="monitor-item">
-                                            <div class="monitor-label"><svg viewBox="0 0 24 24" width="16" height="16"
-                                                    fill="none" stroke="currentColor" stroke-width="1.8"
-                                                    stroke-linecap="round" stroke-linejoin="round"
-                                                    style="vertical-align:-2px;margin-right:4px;">
-                                                    <rect x="3" y="8" width="18" height="12" rx="1" />
-                                                    <rect x="6" y="15" width="3" height="3" rx="0.5" fill="currentColor"
-                                                        stroke="none" />
-                                                    <rect x="10.5" y="11" width="3" height="7" rx="0.5"
-                                                        fill="currentColor" stroke="none" />
-                                                    <rect x="15" y="13" width="3" height="5" rx="0.5"
-                                                        fill="currentColor" stroke="none" />
-                                                </svg>系统内存</div>
-                                            <div id="memGauge" class="monitor-chart"></div>
+                                            <div class="monitor-label">CPU/内存</div>
+                                            <div id="cpu-memGauge" class="monitor-chart"></div>
                                             <div class="monitor-sub" id="memDetail"></div>
                                         </div>
                                         <div class="monitor-item">
                                             <div class="monitor-label">
                                                 <div class="net-row">
-                                                    <span class="net-row-label">r&nbsp;</span><span id="diskRead"
-                                                        class="net-row-value-download">0 B/s</span>
+                                                    <span class="net-row-label">读&nbsp;</span><span id="diskRead"
+                                                        class="net-row-value-download write">0 B/s</span>
                                                     <span class="monitor-uptime">｜</span>
-                                                    <span class="net-row-label">w&nbsp;</span><span id="diskWrite"
+                                                    <span class="net-row-label">写&nbsp;</span><span id="diskWrite"
                                                         class="net-row-value-upload">0 B/s</span>
+                                                    <span class="net-row-label">&nbsp;&nbsp;磁盘</span>
                                                 </div>
                                             </div>
                                             <div id="diskIOChart" class="monitor-chart"></div>
@@ -14420,38 +14517,24 @@
                                                 <span class="disk-percent" id="diskNotePercent">0%</span>
                                             </div>
                                         </div>
-                                        <div class="monitor-item">
-                                            <div class="monitor-label">
-                                                <div class="net-row">
-                                                    <span class="net-row-label">↓&nbsp;</span><span id="netRecv"
-                                                        class="net-row-value-download">0 B/s</span>
-                                                    <span class="monitor-uptime">｜</span>
-                                                    <span class="net-row-label">↑&nbsp;</span><span id="netSent"
-                                                        class="net-row-value-upload">0 B/s</span>
+                                        
+                                        <div class="monitor-item" style="flex:1.35">
+                                            <div id="systemInfo" class="monitor-chart sysinfo-wrap">
+                                                <div class="sysinfo-gpu" id="sysinfoGpuSection" style="display:none">
+                                                    <div class="sysinfo-gpu-head">
+                                                        <span class="net-row">
+                                                            <span class="net-row-label">用&nbsp;</span>
+                                                            <span id="gpuMemUsed" class="net-row-value-upload">—</span>
+                                                            <span class="monitor-uptime">｜</span>
+                                                            <span class="net-row-label">总&nbsp;</span><span id="gpuMemTotal" class="net-row-value-download">—</span>
+                                                            <span class="net-row-label">&nbsp;&nbsp;GPU</span>
+                                                        </span>
+                                                    </div>
+                                                    <div id="gpuUsageChart" class="sysinfo-gpu-chart"></div>
                                                 </div>
-                                            </div>
-                                            <div id="netChart" class="monitor-chart"></div>
-                                            <div class="monitor-divider"></div>
-                                            <div class="monitor-label" style="margin-top:3px;"><svg viewBox="0 0 24 24"
-                                                    width="0.875rem" height="0.875rem" fill="none" stroke="currentColor"
-                                                    stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-                                                    style="vertical-align:-2px;margin-right:4px;">
-                                                    <rect x="4" y="4" width="16" height="16" rx="2" ry="2" />
-                                                    <rect x="9" y="9" width="6" height="6" />
-                                                    <path d="M9 1v3" />
-                                                    <path d="M15 1v3" />
-                                                    <path d="M9 20v3" />
-                                                    <path d="M15 20v3" />
-                                                    <path d="M1 9h3" />
-                                                    <path d="M20 9h3" />
-                                                    <path d="M1 15h3" />
-                                                    <path d="M20 15h3" />
-                                                </svg>应用资源</div>
-                                            <div class="monitor-app">
-                                                <div class="app-stat"><span class="app-stat-label">CPU</span><span
-                                                        id="appCpuPercent" class="app-stat-value cpu">0%</span></div>
-                                                <div class="app-stat"><span class="app-stat-label">内存</span><span
-                                                        id="appMemPercent" class="app-stat-value mem">0%</span></div>
+                                                <div class="sysinfo-text" id="systemInfoText">
+                                                    <div class="sysinfo-grid" id="systemInfoGrid"></div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -16116,12 +16199,13 @@
                                 </div>
                             </div>
                             <div class="stat-card">
-                                <div class="stat-icon orange"><svg xmlns="http://www.w3.org/2000/svg" width="18"
-                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                        <circle cx="12" cy="12" r="10" />
-                                        <line x1="12" y1="8" x2="12" y2="12" />
-                                        <line x1="12" y1="16" x2="12.01" y2="16" />
+                                <div class="stat-icon orange"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
+                                        stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                                        stroke-linejoin="round">
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" />
+                                        <line x1="16" y1="13" x2="8" y2="13" />
+                                        <line x1="16" y1="17" x2="8" y2="17" />
+                                        <polyline points="10 9 9 9 8 9" />
                                     </svg></div>
                                 <div class="stat-info">
                                     <div class="stat-value" id="kb-stat-unindexed">--</div>
@@ -16129,13 +16213,21 @@
                                 </div>
                             </div>
                             <div class="stat-card">
-                                <div class="stat-icon purple"><svg viewBox="0 0 24 24" width="18" height="18"
-                                        fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-                                        stroke-linejoin="round">
-                                        <rect x="3" y="3" width="7" height="7" rx="1" />
-                                        <rect x="14" y="3" width="7" height="7" rx="1" />
-                                        <rect x="3" y="14" width="7" height="7" rx="1" />
-                                        <rect x="14" y="14" width="7" height="7" rx="1" />
+                                <div class="stat-icon purple"><svg xmlns="http://www.w3.org/2000/svg" width="24"
+                                        height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="6" cy="6" r="1.5" fill="currentColor" />
+                                        <circle cx="12" cy="6" r="1.5" fill="currentColor" />
+                                        <circle cx="18" cy="6" r="1.5" fill="currentColor" />
+                                        <circle cx="6" cy="12" r="1.5" fill="currentColor" />
+                                        <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+                                        <circle cx="18" cy="12" r="1.5" fill="currentColor" />
+                                        <circle cx="6" cy="18" r="1.5" fill="currentColor" />
+                                        <circle cx="12" cy="18" r="1.5" fill="currentColor" />
+                                        <circle cx="18" cy="18" r="1.5" fill="currentColor" />
+                                        <path d="M6 6L12 12" stroke-width="2" opacity="0.6" />
+                                        <path d="M18 6L12 12" stroke-width="2" opacity="0.6" />
+                                        <path d="M12 12L12 18" stroke-width="2" opacity="0.6" />
                                     </svg></div>
                                 <div class="stat-info">
                                     <div class="stat-value" id="kb-stat-chunks">0</div>
@@ -16178,17 +16270,6 @@
                                 </div>
                             </div>
                             <div class="stat-card">
-                                <div class="stat-icon yellow"><svg xmlns="http://www.w3.org/2000/svg" width="18"
-                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-stat-bookmarks">--</div>
-                                    <div class="stat-label">书签收藏</div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
                                 <div class="stat-icon cyan"><svg xmlns="http://www.w3.org/2000/svg" width="18"
                                         height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                         stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -16203,11 +16284,7 @@
                                 <div class="stat-icon blue"><svg xmlns="http://www.w3.org/2000/svg" width="18"
                                         height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                         stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                                        <polyline points="14 2 14 8 20 8" />
-                                        <line x1="16" y1="13" x2="8" y2="13" />
-                                        <line x1="16" y1="17" x2="8" y2="17" />
-                                        <polyline points="10 9 9 9 8 9" />
+                                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                                     </svg></div>
                                 <div class="stat-info">
                                     <div class="stat-value" id="kb-stat-messages">--</div>
@@ -16225,22 +16302,48 @@
                                     <div class="stat-label">AI操作</div>
                                 </div>
                             </div>
-                        </div>
-
-                        <!-- 技能执行统计（独立于知识库索引状态，始终展示） -->
-                        <div class="chart-card" style="margin-bottom: 0.25rem;">
-                            <div class="activity-column">
-                                <div class="chart-title" style="display: flex; justify-content: space-between;">
-                                    <div><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
-                                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-                                            stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
-                                            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-                                        </svg>技能执行统计</div>
-                                    <span id="kb-skill-summary" style="font-size:0.6875rem;color:var(--t3);"></span>
+                            <div class="stat-card">
+                                <div class="stat-icon purple"><svg xmlns="http://www.w3.org/2000/svg" width="18"
+                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                                    </svg></div>
+                                <div class="stat-info">
+                                    <div class="stat-value" id="kb-stat-bookmarks">--</div>
+                                    <div class="stat-label">书签总数</div>
                                 </div>
-                                <div id="kb-skill-metrics"
-                                    style="padding:0.5rem;font-size:0.75rem;color:var(--t2);overflow-x:auto;display:flex;justify-content: center;align-items: center;">
-                                    <div style="color:var(--t3);">暂无执行数据，使用 /技能名 或关键词触发技能后刷新查看</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon yellow"><svg xmlns="http://www.w3.org/2000/svg" width="18"
+                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                                    </svg></div>
+                                <div class="stat-info">
+                                    <div class="stat-value" id="kb-stat-bookmarks-padding">--</div>
+                                    <div class="stat-label">未解析书签</div>
+                                </div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon blue"><svg xmlns="http://www.w3.org/2000/svg" width="18"
+                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                                    </svg></div>
+                                <div class="stat-info">
+                                    <div class="stat-value" id="kb-stat-bookmarks-ready">--</div>
+                                    <div class="stat-label">已解析书签</div>
+                                </div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon cyan"><svg xmlns="http://www.w3.org/2000/svg" width="18"
+                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                                    </svg></div>
+                                <div class="stat-info">
+                                    <div class="stat-value" id="kb-stat-bookmarks-dead">--</div>
+                                    <div class="stat-label">死链书签</div>
                                 </div>
                             </div>
                         </div>
@@ -16310,17 +16413,21 @@
                                     <div id="kb-ai-trend" style="height:7rem;"></div>
                                 </div>
                             </div>
-                            <div class="chart-card">
-                                <div class="activity-column">
-                                    <div class="chart-title">
-                                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                        </div>
+                        <!-- 技能执行统计（独立于知识库索引状态，始终展示） -->
+                        <div class="chart-card" style="margin-bottom: 0.25rem;">
+                            <div class="activity-column">
+                                <div class="chart-title" style="display: flex; justify-content: space-between;">
+                                    <div><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
                                             stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
                                             stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
-                                            <path
-                                                d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" />
-                                        </svg>热门处理文件
-                                    </div>
-                                    <div id="kb-ai-top-files" style="flex:1;overflow:auto;max-height:12.5rem;"></div>
+                                            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                                        </svg>技能执行统计</div>
+                                    <span id="kb-skill-summary" style="font-size:0.6875rem;color:var(--t3);"></span>
+                                </div>
+                                <div id="kb-skill-metrics"
+                                    style="padding:0.5rem;font-size:0.75rem;color:var(--t2);overflow-x:auto;display:flex;justify-content: center;align-items: center;">
+                                    <div style="color:var(--t3);">暂无执行数据，使用 /技能名 或关键词触发技能后刷新查看</div>
                                 </div>
                             </div>
                         </div>
@@ -16471,7 +16578,6 @@
             { id: 'siliconflow', name: '硅基流动', protocol: 'openai', baseURL: 'https://api.siliconflow.cn/v1', models: [], docs: 'https://cloud.siliconflow.cn' },
             { id: 'ollama', name: 'Ollama', protocol: 'openai', baseURL: 'http://localhost:11434/v1', models: [], docs: 'https://ollama.com' },
             { id: 'lm-studio', name: 'LM studio', protocol: 'openai', baseURL: 'https://localhost:1234/v1', models: [], docs: 'https://api-docs.deepseek.com' },
-
             { id: 'custom', name: '自定义', protocol: 'openai', baseURL: '', models: [], docs: '' },
         ];
         const MODEL_PROFILES_STORAGE_KEY = 'mdgo_model_profiles';
@@ -26486,7 +26592,7 @@ kanban-plugin: basic
                 .html(html);
         }
 
-        function renderLinkNode(node, nodeGroup) {
+        function renderUrlNode(node, nodeGroup) {
             const url = escapeHtml(node.url || '');
             const txt = node.text ? escapeHtml(String(node.text)) : '';
             renderSimpleBox(node, nodeGroup,
@@ -26497,7 +26603,7 @@ kanban-plugin: basic
         function renderCodeNode(node, nodeGroup) {
             const code = node.code != null ? String(node.code) : (node.text || '');
             renderSimpleBox(node, nodeGroup,
-                `<pre style="white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,monospace;margin:0;background:var(--color-bg-subtle);padding:6px;border-radius:6px;max-height:100%;overflow:hidden;">${escapeHtml(code)}</pre>`);
+                `<pre style="white-space:pre-wrap;font-family:var(--font-mono);margin:0;background:var(--color-bg-subtle);padding:6px;border-radius:6px;max-height:100%;overflow:hidden;">${escapeHtml(code)}</pre>`);
         }
 
         function renderExcalidrawElement(container, excalidrawData) {
@@ -26997,7 +27103,7 @@ kanban-plugin: basic
                             } else if (node.type === 'image' || node.type === 'file') {
                                 selectCanvasNode(node.id, d3.select(this), node.file);
                                 await showNodeFileContent(node);
-                            } else if (node.type === 'link' || node.type === 'url' || node.type === 'bookmark') {
+                            } else if (node.type === 'url') {
                                 selectCanvasNode(node.id, d3.select(this), null);
                                 if (node.url) {
                                     if (typeof openUrlInBrowser === 'function') openUrlInBrowser(node.url);
@@ -27025,8 +27131,8 @@ kanban-plugin: basic
                 await renderTextNode(node, nodeGroup);
             } else if (node.type === 'image' || node.type === 'file') {
                 renderFileNode(node, nodeGroup);
-            } else if (node.type === 'link' || node.type === 'url' || node.type === 'bookmark') {
-                renderLinkNode(node, nodeGroup);
+            } else if (node.type === 'url') {
+                renderUrlNode(node, nodeGroup);
             } else if (node.type === 'code') {
                 renderCodeNode(node, nodeGroup);
             } else {
@@ -27064,8 +27170,8 @@ kanban-plugin: basic
                     .html(renderedText);
             } else if (node.type === 'image' || node.type === 'file') {
                 renderFileNode(node, nodeGroup);
-            } else if (node.type === 'link' || node.type === 'url' || node.type === 'bookmark') {
-                renderLinkNode(node, nodeGroup);
+            } else if (node.type === 'url') {
+                renderUrlNode(node, nodeGroup);
             } else if (node.type === 'code') {
                 renderCodeNode(node, nodeGroup);
             } else {
@@ -27297,6 +27403,12 @@ kanban-plugin: basic
             } catch (e) {
                 contentDiv.innerHTML = `<div style="color:#cf222e; padding:20px;">无效的 JSON Canvas 格式: ${escapeHtml(e.message)}</div>`;
                 return;
+            }
+            // 兼容旧文件：link / bookmark 节点类型已合并为 url，加载时统一归一化
+            if (Array.isArray(canvasData.nodes)) {
+                for (const n of canvasData.nodes) {
+                    if (n && (n.type === 'link' || n.type === 'bookmark')) n.type = 'url';
+                }
             }
             const nodes = canvasData.nodes || [];
             const edges = canvasData.edges || [];
@@ -32621,7 +32733,8 @@ kanban-plugin: basic
                 const parts = [`新增 ${stats.inserted}`];
                 if (stats.skipped > 0) parts.push(`跳过 ${stats.skipped}`);
                 if (stats.failed > 0) parts.push(`失败 ${stats.failed}`);
-                showNotification(`✓ 书签已导入知识资产（${parts.join('，')}），后台 AI 分析中`, 'success');
+                // 导入仅入库（pending），AI 分析需点击「分析扫描」手动触发，不自动消耗 LLM
+                showNotification(`✓ 书签已导入知识资产（${parts.join('，')}），点击「分析扫描」开始 AI 分析`, 'success');
                 // 数据在 DB，导入成功后刷新页面（重新从 DB 拉树）
                 if (!_bookmarkDestroyed) { await toggleDashboardBookmarkView(); }
             } catch (e) {
@@ -32956,6 +33069,12 @@ kanban-plugin: basic
                 let viewList = [];
                 const data = safeLocalStorageGet(VIEW_OPER_RECORDS_KEY);
                 viewList = data ? JSON.parse(data) : [];
+                if(!isEmpty(viewList)){
+                    var item = viewList[0];
+                    if(item.name === name && item.type === typeInfo.key && action === item.action){
+                        return;
+                    }
+                }
                 const timestamp = time || Date.now();
                 viewList.push({
                     path: path,
@@ -32970,7 +33089,7 @@ kanban-plugin: basic
                     return b.viewTime - a.viewTime;
                 });
                 // 只保留最近的50条
-                viewList = viewList.slice(0, 50);
+                viewList = viewList.slice(0, 30);
                 safeLocalStorageSet(VIEW_OPER_RECORDS_KEY, JSON.stringify(viewList));
             } catch (error) {
                 console.warn('记录操作日志失败:', error);
@@ -38252,31 +38371,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         function initSystemMonitor() {
             closeSystemMonitor();
-            const cpuOption = {
-                series: [{
-                    type: 'gauge',
-                    center: ['50%', '55%'],
-                    radius: '85%',
-                    startAngle: 220,
-                    endAngle: -40,
-                    min: 0,
-                    max: 100,
-                    splitNumber: 5,
-                    progress: { show: true, width: 6, roundCap: true },
-                    axisLine: { lineStyle: { width: 6, color: [[0.5, '#2ea043'], [0.8, '#d97706'], [1, '#dc2626']] } },
-                    axisTick: { show: false },
-                    splitLine: { show: false },
-                    axisLabel: { show: false },
-                    detail: {
-                        fontSize: 12,
-                        fontWeight: 'bold',
-                        color: '#333',
-                        formatter: '{value}%',
-                        offsetCenter: ['7%', '60%']
-                    },
-                    data: [{ value: 0.15 }]
-                }]
-            };
 
             const memOption = {
                 series: [{
@@ -38289,18 +38383,72 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     max: 100,
                     splitNumber: 5,
                     progress: { show: true, width: 6, roundCap: true },
-                    axisLine: { lineStyle: { width: 6, color: [[0.5, '#2ea043'], [0.8, '#d97706'], [1, '#dc2626']] } },
-                    axisTick: { show: false },
+                    axisLine: {roundCap: true, lineStyle: { width: 6, color: [[0.5, '#2ea043'], [0.8, '#d97706'], [1, '#dc2626']] } },
                     splitLine: { show: false },
                     axisLabel: { show: false },
-                    detail: {
-                        fontSize: 12,
-                        fontWeight: 'bold',
-                        color: '#333',
-                        formatter: '{value}%',
-                        offsetCenter: ['7%', '60%']
+                    title: {
+                        fontSize: 10,
+                        color: '#646a73',
+                        fontWeight: 'normal',
                     },
-                    data: [{ value: 0.15 }]
+                    anchor: {
+                        show: true,
+                        showAbove: true,
+                        size: 5,
+                        itemStyle: {
+                        color: '#fff'
+                        }
+                    }, 
+                    detail: {
+                        fontSize: 10,
+                        color: '#646a73',
+                        fontWeight: 'normal',
+                        formatter: '{value}%',
+                    },
+                    data: [
+                           { value: 0.15, name: 'mem', title: {  offsetCenter: ['35%', '60%'] }, detail: {  offsetCenter: ['40%', '85%'] } },
+                            { value: 0.15, name: 'cpu', title: {  offsetCenter: ['-35%', '60%'] }, detail: {  offsetCenter: ['-40%', '85%'] } },
+                        ]
+                }]
+            };
+
+            // GPU 使用率曲线图（参考磁盘读写速率图表：时间轴折线 + 渐变面积，最多保留 60 个采样点）
+            const gpuUsageLineOption = {
+                animation: false,
+                tooltip: false,
+                grid: {
+                    left: 5,
+                    right: 5,
+                    top: 5,
+                    bottom: 5
+                },
+                xAxis: {
+                    type: 'time',
+                    axisLine: { show: false },
+                    axisLabel: { show: false },
+                    axisTick: { show: false },
+                    splitLine: { show: false }
+                },
+                yAxis: {
+                    type: 'value',
+                    min: 0,
+                    max: 100,
+                    interval: 20,
+                    splitLine: { show: false },
+                    axisLabel: { show: false },
+                    axisTick: { show: false }
+                },
+                series: [{
+                    name: 'GPU',
+                    type: 'line',
+                    smooth: true,
+                    symbol: 'none',
+                    large: true,
+                    data: _gpuUsageData,
+                    lineStyle: { color: '#a855f7', width: 1.5 },
+                    areaStyle: {
+                        color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(168,85,247,0.3)' }, { offset: 1, color: 'rgba(168,85,247,0.0)' }] }
+                    }
                 }]
             };
 
@@ -38462,19 +38610,19 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 ]
             };
 
-            const cpuChart = initChart('cpuGauge', 'cpuGauge');
-            cpuChart.setOption(cpuOption);
-            const memChart = initChart('memGauge', 'memGauge');
+            const memChart = initChart('cpu-memGauge', 'cpu-memGauge');
             memChart.setOption(memOption);
             const netChart = initChart('netChart', 'netChart');
             netChart.setOption(netOption);
             const diskIOChart = initChart('diskIOChart', 'diskIOChart');
             diskIOChart.setOption(diskIOOption);
+            const gpuUsageChart = initChart('gpuUsageChart', 'gpuUsageChart');
+            gpuUsageChart.setOption(gpuUsageLineOption);
 
-            cpuChart.resize();
             memChart.resize();
             netChart.resize();
             diskIOChart.resize();
+            gpuUsageChart.resize();
 
             if (!chartsResizeBound) {
                 window.addEventListener('resize', resizeDashboardCharts);
@@ -38482,24 +38630,95 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
+        // 渲染系统信息高密度网格（系统/架构/主机/CPU/核心 + GPU 名称）
+        // 仅在内容变化时重渲染（缓存键排除动态的 usage/mem_used 字段），避免每 3 秒无谓的 DOM 操作
+        function _renderSystemInfo(sys) {
+            const grid = document.getElementById('systemInfoGrid');
+            if (!grid) return;
+            const gpus = Array.isArray(sys.gpus) ? sys.gpus : [];
+            const key = JSON.stringify([
+                sys.os, sys.arch, sys.host_name, sys.kernel,
+                sys.cpu_brand, sys.cpu_vendor,
+                sys.cpu_physical_cores, sys.cpu_logical_cores,
+                gpus.map(g => [g.name, g.vendor, g.vram]),
+            ]);
+            if (key === _lastSystemInfoJson) return;
+            _lastSystemInfoJson = key;
+
+            const gpu0 = gpus[0] || null;
+            const esc = escapeHtml;
+            const coreText = (sys.cpu_physical_cores != null ? sys.cpu_physical_cores + '物理/' : '') + (sys.cpu_logical_cores || 0) + '逻辑';
+            const pairs = [
+                ['系统', sys.os || '—'],
+                ['架构', sys.arch || '—'],
+                ['主机', sys.host_name || '—'],
+                ['内核', sys.kernel || '—'],
+            ];
+            let html = '';
+            for (let i = 0; i < pairs.length; i += 2) {
+                const a = pairs[i];
+                const b = pairs[i + 1];
+                html += `<span class="si-k">${esc(a[0])}</span><span class="si-v" title="${esc(a[1])}">${esc(a[1])}</span>`;
+                if (b) {
+                    html += `<span class="si-k">${esc(b[0])}</span><span class="si-v" title="${esc(b[1])}">${esc(b[1])}</span>`;
+                } 
+            }
+            html += `<span class="si-row-full"><span class="si-k">CPU</span><span class="si-v" title="${sys.cpu_brand}">${sys.cpu_brand}</span></span>`;
+            html += `<span class="si-row-full"><span class="si-k">GPU</span><span class="si-v" title="${gpu0.name}">${gpu0.name}</span></span>`;
+            grid.innerHTML = html;
+        }
+
         // 处理 WebSocket 推送的系统监控数据（仅仪表盘可见时更新 DOM）
         function _handleWsMetrics(data) {
             const d = data.data || data;
             if (!d || !d.cpu || !d.network || !_dashboardMetricsActive) return;
             // 系统监控已关闭（离开仪表盘视图）→ 跳过所有 DOM 更新
-            const cpuChart = dashboardCharts['cpuGauge'];
-            const memChart = dashboardCharts['memGauge'];
-            if (!cpuChart || !memChart) return;
+            const memChart = dashboardCharts['cpu-memGauge'];
+            if (!memChart) return;
 
-            cpuChart.setOption({ series: [{ data: [{ value: d.cpu.percent }] }] });
-            const cpuCores = document.getElementById('cpuCores');
-            if (cpuCores) cpuCores.textContent = d.cpu.core_count + ' 核';
+            memChart.setOption({ series: [{ data: [
+                { value: d.memory.percent, name: 'mem', title: {  offsetCenter: ['35%', '60%'] }, detail: {  offsetCenter: ['40%', '85%'] } },
+                { value: d.cpu.percent, name: 'cpu', title: {  offsetCenter: ['-35%', '60%'] }, detail: {  offsetCenter: ['-40%', '85%'] } },
+            ]}]});
 
-            memChart.setOption({ series: [{ data: [{ value: d.memory.percent }] }] });
             const usedGB = (d.memory.used / 1073741824).toFixed(1);
             const totalGB = (d.memory.total / 1073741824).toFixed(1);
             const memDetail = document.getElementById('memDetail');
-            if (memDetail) memDetail.textContent = usedGB + SLASH + totalGB + ' GB';
+            if (memDetail) memDetail.textContent =  d.cpu.core_count + ' 核       ' + usedGB + SLASH + totalGB + ' GB';
+
+            // 系统信息（静态文本，内容变化时才重渲染）
+            if (d.system) _renderSystemInfo(d.system);
+            // GPU 使用率曲线图：无 GPU 时隐藏整个区块；usage 不可用（-1）时仅显示 N/A
+            const gpuUsageChart = dashboardCharts['gpuUsageChart'];
+            if (gpuUsageChart) {
+                const gpus = d.system && Array.isArray(d.system.gpus) ? d.system.gpus : [];
+                const gpuSection = document.getElementById('sysinfoGpuSection');
+                if (gpus.length && gpuSection) {
+                    // 注意：必须清空内联 display（不能设为 block），否则会覆盖 .sysinfo-gpu 的
+                    // display:flex，导致图表容器失去 flex 撑高而塌缩为 0 高度、曲线不显示
+                    gpuSection.style.display = '';
+                    const g = gpus[0];
+                    const usage = (typeof g.usage === 'number' && g.usage >= 0) ? Math.min(g.usage, 100) : -1;
+                    // 已用 / 总显存（样式与网络上传下载行一致）
+                    const gpuMemUsed = document.getElementById('gpuMemUsed');
+                    const gpuMemTotal = document.getElementById('gpuMemTotal');
+                    if (gpuMemUsed) gpuMemUsed.textContent = (g.mem_used != null && g.mem_used > 0) ? _wsFormatBytes(g.mem_used) : '—';
+                    if (gpuMemTotal) gpuMemTotal.textContent = g.vram > 0 ? _wsFormatBytes(g.vram) : '—';
+                    if (usage >= 0) {
+                        _gpuUsageData.push([Date.now(), usage]);
+                        if (_gpuUsageData.length > _NET_MAX_POINTS) _gpuUsageData.shift();
+                        gpuUsageChart.setOption({ series: [{ data: _gpuUsageData }] });
+                    }
+                    // 区块首次从隐藏变为可见时，图表尺寸为 0，仅此时按实际尺寸重排一次
+                    if (!_gpuSectionVisible) {
+                        _gpuSectionVisible = true;
+                        gpuUsageChart.resize();
+                    }
+                } else if (gpuSection) {
+                    gpuSection.style.display = 'none';
+                    _gpuSectionVisible = false;
+                }
+            }
 
             const netRecv = document.getElementById('netRecv');
             const netSent = document.getElementById('netSent');
@@ -38634,7 +38853,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         let _netUploadData = [];
         let _diskReadData = [];
         let _diskWriteData = [];
+        // GPU 使用率曲线图数据（时间轴采样点，最多保留 60 个）
+        let _gpuUsageData = [];
         const _NET_MAX_POINTS = 60;
+        // GPU 区块是否可见（用于只在隐藏→可见切换时重排一次图表，避免每周期触发布局）
+        let _gpuSectionVisible = false;
+        // 系统信息文本缓存（避免每次推送重复重渲染 DOM）
+        let _lastSystemInfoJson = null;
 
         function startTauriSystemMonitor() {
             if (!isTauriVisit()) return;
@@ -38669,16 +38894,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         function closeSystemMonitor() {
             _dashboardMetricsActive = false;
             stopTauriSystemMonitor();
-            const cpuChart = dashboardCharts['cpuGauge'];
-            const memChart = dashboardCharts['memGauge'];
-            if (cpuChart) {
-                cpuChart.dispose();
-                dashboardCharts['cpuGauge'] = null;
-            }
+            const memChart = dashboardCharts['cpu-memGauge'];
             if (memChart) {
                 memChart.dispose();
-                dashboardCharts['memGauge'] = null;
+                dashboardCharts['cpu-memGauge'] = null;
             }
+            const gpuUsageChart = dashboardCharts['gpuUsageChart'];
+            if (gpuUsageChart) {
+                gpuUsageChart.dispose();
+                dashboardCharts['gpuUsageChart'] = null;
+            }
+            _gpuSectionVisible = false;
             const netChart = dashboardCharts['netChart'];
             if (netChart) {
                 netChart.dispose();
@@ -50042,11 +50268,34 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         /** 发送按钮点击事件：发送或停止 */
         function handleChatSendClick() {
             if (chatStreaming) {
-                // 停止生成
-                chatAbortController?.abort();
+                stopChatGeneration();
                 return;
             }
             sendChatMessage();
+        }
+
+        /**
+         * 停止生成：通知后端取消 + 立即复位前端状态。
+         *
+         * 修复"点击停止无反应"：旧实现仅 `chatAbortController?.abort()` 异步通知后端，
+         * 按钮要等后端响应后 query 的 finally 才复位；一旦后端响应慢（工具执行中/思考中）
+         * 或 kb_cancel_task 静默失败，界面就会卡死在停止态、会话无法停止。
+         * 现在点击后立即复位按钮与流式状态（即时反馈），已生成内容异步落库，
+         * 后端任务在下一个取消检查点停止（同会话新请求也会替换旧任务兜底）。
+         */
+        async function stopChatGeneration() {
+            // 1. 通知后端取消（立即发起，不等待结果；失败静默，后端取消检查点兜底）
+            const controller = chatAbortController;
+            controller?.abort();
+            // 2. 保存半截消息：同步进入函数体（内部守卫要求 chatStreaming 仍为 true，
+            //    故必须先于状态复位调用）；_partialAutoSaved 置位后 query finally 不会重复入库
+            const savePromise = savePartialAssistantMessage()
+                .catch(e => console.warn('停止生成时保存半截消息失败:', e));
+            // 3. 立即复位按钮与流式状态（点击即有反馈）
+            chatStreaming = false;
+            updateChatSendButton();
+            // 4. 等待保存收尾（最多 1.5s，不阻塞；内容兜底由后端 rag:done/llm:done 落库）
+            await Promise.race([savePromise, new Promise(resolve => setTimeout(resolve, 1500))]);
         }
 
         /** 折叠/展开右侧历史面板 */
@@ -51121,7 +51370,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }
                 });
             };
-            const unlisteners = await Promise.all([
+            let unlisteners;
+            try {
+                unlisteners = await Promise.all([
                 window.__TAURI__.event.listen('llm:delta', (e) => {
                     if (e.payload.request_id !== requestId) return;
                     const delta = e.payload.content;
@@ -51250,6 +51501,19 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 window.__TAURI__.event.listen('agent:tool_call', (e) => handleAgentToolEvent(e, requestId)),
                 window.__TAURI__.event.listen('agent:tool_result', (e) => handleAgentToolEvent(e, requestId)),
             ]);
+            } catch (e) {
+                // 事件监听注册失败：复位流式状态，避免 chatStreaming 卡死 → 停止按钮失效/会话无法停止
+                console.error('[chat] 事件监听注册失败:', e);
+                chatStreaming = false;
+                updateChatSendButton();
+                chatAbortController = null;
+                _chatStreamingDiv = null;
+                _chatStreamingSources = null;
+                _chatStreamingFullContent = '';
+                removeChatTyping();
+                showNotification('✗ 无法建立流式通道: ' + (e.message || e), 'error');
+                return;
+            }
 
             try {
                 let messages = expandToolHistory(chatMessages);
@@ -51820,13 +52084,17 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     document.getElementById('kb-stat-files').textContent = kbStatus.file_count || 0;
                     document.getElementById('kb-stat-chunks').textContent = kbStatus.chunk_count || 0;
                     document.getElementById('kb-stat-vectors').textContent = kbStatus.vector_count || 0;
-                    document.getElementById('kb-stat-storage').textContent = scanData?.storage_size || '--';
-                    document.getElementById('kb-stat-bookmarks').textContent = (bmStats && bmStats.total != null) ? bmStats.total : '--';
+                    document.getElementById('kb-stat-storage').textContent = scanData?.storage_size || 0;
+                    document.getElementById('kb-stat-bookmarks').textContent = (bmStats && bmStats.total) ? bmStats.total : 0;
+                    document.getElementById('kb-stat-bookmarks-padding').textContent = (bmStats && bmStats.pending) ? bmStats.pending : 0;
+                    document.getElementById('kb-stat-bookmarks-dead').textContent = (bmStats && bmStats.dead) ? bmStats.dead : 0;
+                    document.getElementById('kb-stat-bookmarks-ready').textContent = (bmStats && bmStats.ready) ? bmStats.ready : 0;
+
                     if (statsRow1) statsRow1.style.display = '';
 
-                    document.getElementById('kb-stat-sessions').textContent = chatStats?.session_count ?? '--';
-                    document.getElementById('kb-stat-messages').textContent = chatStats?.message_count ?? '--';
-                    document.getElementById('kb-stat-ai-ops').textContent = aiStats?.total_count ?? '--';
+                    document.getElementById('kb-stat-sessions').textContent = chatStats?.session_count ?? 0;
+                    document.getElementById('kb-stat-messages').textContent = chatStats?.message_count ?? 0;
+                    document.getElementById('kb-stat-ai-ops').textContent = aiStats?.total_count ?? 0;
 
                     const unindexed = Math.max(0, _scanFileList.length - (kbStatus.file_count || 0));
                     document.getElementById('kb-stat-unindexed').textContent = unindexed;
@@ -52044,23 +52312,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 } else {
                     trendContainer.innerHTML = '<div style="font-size:0.6875rem;color:var(--t3);width:100%;text-align:center;justify-content:center;">暂无趋势数据</div>';
                 }
-            }
-            var topFiles = aiStats.top_files || [];
-            var filesEl = document.getElementById('kb-ai-top-files');
-            if (filesEl) {
-                if (topFiles.length > 0) {
-                    filesEl.innerHTML = topFiles.slice(0, 10).map(function (f) {
-                        return '<div class="activity-item" title="' + (f.file_path || '') + '">' +
-                            '<div class="activity-time">' + f.count + '次</div>' +
-                            '<div class="activity-content">' +
-                            '<div class="activity-file">' + (f.file_name || '') + '</div>' +
-                            '</div>' +
-                            '</div>';
-                    }).join('');
-                } else {
-                    filesEl.innerHTML = '<div style="font-size:0.6875rem;color:var(--t3);text-align:center;padding:1rem;">暂无数据</div>';
-                }
-            }
+            } 
         }
 
         /** 渲染技能执行统计（skill_metrics 数据） */
@@ -52895,6 +53147,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 } else {
                     openHistoryContainer.appendChild(element);
                 }
+                element.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 this.storeHistory();
             }
             createHistoryElement(item) {

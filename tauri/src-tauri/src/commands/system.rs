@@ -95,6 +95,43 @@ pub struct ServiceMetrics {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct GpuMetrics {
+    /// GPU 名称（如 Apple M2 Pro / NVIDIA GeForce RTX 3060）
+    pub name: String,
+    /// GPU 厂商（如 Apple / NVIDIA / AMD / Intel）
+    pub vendor: String,
+    /// 显存总量（字节）；共享内存或不可得时为 0
+    pub vram: u64,
+    /// 已用显存（字节）；不可得时为 null
+    pub mem_used: Option<u64>,
+    /// GPU 使用率（0~100）；平台不支持时为 -1
+    pub usage: f32,
+}
+
+/// 系统静态信息（OS / 架构 / 主机名 / 内核 / CPU / GPU），采集一次后基本不变。
+#[derive(Debug, Clone, Serialize)]
+pub struct SystemInfoMetrics {
+    /// 操作系统显示名（如 "macOS 14.5" / "Windows 11 Pro"）
+    pub os: String,
+    /// CPU 架构（如 aarch64 / x86_64）
+    pub arch: String,
+    /// 主机名（如 MacBook-Pro）
+    pub host_name: String,
+    /// 内核版本（如 23.5.0）
+    pub kernel: String,
+    /// CPU 型号（如 Apple M2 Pro）
+    pub cpu_brand: String,
+    /// CPU 厂商（如 Apple / GenuineIntel）
+    pub cpu_vendor: String,
+    /// 物理核心数（部分平台不可得为 None）
+    pub cpu_physical_cores: Option<usize>,
+    /// 逻辑核心数
+    pub cpu_logical_cores: usize,
+    /// GPU 列表；无 GPU 时为空数组（前端据此隐藏 GPU 区块）
+    pub gpus: Vec<GpuMetrics>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct MetricsData {
     pub host_ip: String,
     pub cpu: CpuMetrics,
@@ -104,6 +141,7 @@ pub struct MetricsData {
     pub disk_io: DiskIOMetrics,
     pub uptime: u64,
     pub service: ServiceMetrics,
+    pub system: SystemInfoMetrics,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -199,6 +237,491 @@ fn compute_network_rates(
     (sent_bytes as f64 / elapsed, recv_bytes as f64 / elapsed)
 }
 
+// ============== 系统静态信息 + GPU 采集 ==============
+
+/// 操作系统显示名（如 "macOS 14.5" / "Windows 11 Pro" / "Ubuntu 24.04"）。
+fn os_label() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        let v = System::os_version().unwrap_or_default();
+        if v.is_empty() { "macOS".to_string() } else { format!("macOS {v}") }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        System::long_os_version().unwrap_or_else(|| "Windows".to_string())
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let name = System::name().unwrap_or_else(|| "Linux".to_string());
+        let v = System::os_version().unwrap_or_default();
+        if v.is_empty() { name } else { format!("{name} {v}") }
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        System::name().unwrap_or_else(|| std::env::consts::OS.to_string())
+    }
+}
+
+/// 采集系统静态信息（OS / 架构 / 主机名 / 内核 / CPU / GPU）。
+///
+/// 调用前需确保 `sys.refresh_cpu_all()` 已被调用（填充 CPU brand/vendor）。
+fn collect_system_info(sys: &System) -> SystemInfoMetrics {
+    let cpu0 = sys.cpus().first();
+    // macOS 的 sysinfo cpu_arch() 返回 "arm64"，统一归一化为 "aarch64" 展示
+    let arch = System::cpu_arch();
+    let arch = if arch == "arm64" { "aarch64".to_string() } else { arch };
+    SystemInfoMetrics {
+        os: os_label(),
+        arch,
+        host_name: System::host_name().unwrap_or_default(),
+        kernel: System::kernel_version().unwrap_or_default(),
+        cpu_brand: cpu0.map(|c| c.brand().to_string()).unwrap_or_default(),
+        cpu_vendor: cpu0.map(|c| c.vendor_id().to_string()).unwrap_or_default(),
+        cpu_physical_cores: System::physical_core_count(),
+        cpu_logical_cores: sys.cpus().len(),
+        gpus: collect_gpus_static(),
+    }
+}
+
+/// 解析 "0 MB" / "8 GB" / "1.5 GB" 形式的显存字符串为字节数。
+#[cfg(target_os = "macos")]
+fn parse_vram_str(s: &str) -> u64 {
+    let mut parts = s.trim().split_whitespace();
+    let num: f64 = parts.next().and_then(|n| n.parse().ok()).unwrap_or(0.0);
+    let mult = match parts.next().unwrap_or("").to_uppercase().as_str() {
+        "KB" => 1024u64,
+        "MB" => 1024u64.pow(2),
+        "GB" => 1024u64.pow(3),
+        "TB" => 1024u64.pow(4),
+        _ => 0,
+    };
+    (num * mult as f64) as u64
+}
+
+/// macOS：`system_profiler SPDisplaysDataType -json` 获取 GPU 名称/厂商/显存。
+#[cfg(target_os = "macos")]
+fn macos_gpus_static() -> Vec<GpuMetrics> {
+    let Ok(out) = std::process::Command::new("system_profiler")
+        .args(["SPDisplaysDataType", "-json"])
+        .output()
+    else {
+        return Vec::new();
+    };
+    if !out.status.success() {
+        return Vec::new();
+    }
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&String::from_utf8_lossy(&out.stdout))
+    else {
+        return Vec::new();
+    };
+    let Some(arr) = json.get("SPDisplaysDataType").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    arr.iter()
+        .filter_map(|g| {
+            let obj = g.as_object()?;
+            let name = obj
+                .get("_name")
+                .or_else(|| obj.get("sppci_model"))
+                .or_else(|| obj.get("model"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if name.is_empty() {
+                return None;
+            }
+            let vendor = obj
+                .get("spdisplays_vendor")
+                .or_else(|| obj.get("sppci_vendor"))
+                .or_else(|| obj.get("vendor"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let vram = obj
+                .get("spdisplays_vram")
+                .and_then(|v| v.as_str())
+                .map(parse_vram_str)
+                .unwrap_or(0);
+            Some(GpuMetrics { name, vendor, vram, mem_used: None, usage: -1.0 })
+        })
+        .collect()
+}
+
+/// macOS：`ioreg -c IOAccelerator -r -l` 读取 PerformanceStatistics 中的
+/// "Device Utilization %"（Apple Silicon / 部分 Intel Mac 可用，无需 sudo）。
+/// 返回按加速器顺序的使用率列表；读取失败返回空 Vec。
+#[cfg(target_os = "macos")]
+fn macos_gpu_usages() -> Vec<f32> {
+    static GPU_UTIL_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r#"Device Utilization %</key>\s*<(?:integer|real)>([0-9.]+)"#).unwrap()
+    });
+    let Ok(out) = std::process::Command::new("ioreg")
+        .args(["-c", "IOAccelerator", "-r", "-l"])
+        .output()
+    else {
+        return Vec::new();
+    };
+    if !out.status.success() {
+        return Vec::new();
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let usages: Vec<f32> = GPU_UTIL_RE
+        .captures_iter(&text)
+        .filter_map(|cap| cap[1].parse::<f32>().ok().map(|v| v.clamp(0.0, 100.0)))
+        .collect();
+    if usages.is_empty() { vec![-1.0] } else { usages }
+}
+
+/// Windows：`Get-CimInstance Win32_VideoController` 获取 GPU 名称/厂商/显存。
+#[cfg(target_os = "windows")]
+fn windows_gpus_static() -> Vec<GpuMetrics> {
+    const SCRIPT: &str = "Get-CimInstance Win32_VideoController | Select-Object Name,AdapterRAM,PNPDeviceID | ConvertTo-Json -Compress";
+    let Ok(out) = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", SCRIPT])
+        .output()
+    else {
+        return Vec::new();
+    };
+    if !out.status.success() {
+        return Vec::new();
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let json: serde_json::Value = serde_json::from_str(text.trim()).unwrap_or(serde_json::Value::Null);
+    let arr = match json {
+        serde_json::Value::Array(a) => a,
+        serde_json::Value::Object(_) => vec![json],
+        _ => return Vec::new(),
+    };
+    let mut gpus: Vec<GpuMetrics> = arr
+        .iter()
+        .filter_map(|g| {
+            let name = g
+                .get("Name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            // 过滤无意义的基础显示适配器
+            if name.is_empty() || name.eq_ignore_ascii_case("Microsoft Basic Display Adapter") {
+                return None;
+            }
+            let vendor = g
+                .get("PNPDeviceID")
+                .and_then(|v| v.as_str())
+                .map(|id| {
+                    let upper = id.to_uppercase();
+                    upper
+                        .split("VEN_")
+                        .nth(1)
+                        .and_then(|s| s.split('&').next())
+                        .map(windows_vendor_name)
+                        .unwrap_or_else(|| "Unknown".to_string())
+                })
+                .unwrap_or_default();
+            let vram = g.get("AdapterRAM").and_then(|v| v.as_u64()).unwrap_or(0);
+            Some(GpuMetrics { name, vendor, vram, mem_used: None, usage: -1.0 })
+        })
+        .collect();
+
+    // NVIDIA 显卡：用 nvidia-smi 覆盖名称/显存/已用显存（WMI AdapterRAM 为 32 位上限，8GB+ 显存会被截断）
+    if let Some(nv) = nvidia_smi_gpus() {
+        for (i, g) in gpus.iter_mut().enumerate() {
+            if let Some((name, mem_used, vram)) = nv.get(i) {
+                g.name = name.clone();
+                g.vram = *vram;
+                if *mem_used > 0 {
+                    g.mem_used = Some(*mem_used);
+                }
+            }
+        }
+    }
+    gpus
+}
+
+/// Windows PCI Vendor ID → 厂商名。
+#[cfg(target_os = "windows")]
+fn windows_vendor_name(ven: &str) -> String {
+    match ven {
+        "10DE" => "NVIDIA",
+        "1002" => "AMD",
+        "8086" => "Intel",
+        "13B5" => "ARM",
+        "1414" => "Microsoft",
+        "102B" => "Matrox",
+        "15AD" => "VMware",
+        "1AF4" => "Red Hat",
+        "1234" => "QEMU",
+        _ => "Unknown",
+    }
+    .to_string()
+}
+
+/// Linux：`lspci -mm` 解析 VGA/3D/Display 控制器作为 GPU 列表。
+#[cfg(target_os = "linux")]
+fn linux_gpus_static() -> Vec<GpuMetrics> {
+    let Ok(out) = std::process::Command::new("lspci").arg("-mm").output() else {
+        return Vec::new();
+    };
+    if !out.status.success() {
+        return Vec::new();
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut gpus = Vec::new();
+    for line in text.lines() {
+        if !(line.contains("VGA compatible controller")
+            || line.contains("3D controller")
+            || line.contains("Display controller"))
+        {
+            continue;
+        }
+        // lspci -mm 输出：slot "class" "vendor" "device" "svendor" "sdevice" "rev" ...
+        let parts: Vec<&str> = line.split('"').collect();
+        let vendor = parts
+            .get(3)
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("")
+            .to_string();
+        let device = parts
+            .get(5)
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("")
+            .to_string();
+        if device.is_empty() && vendor.is_empty() {
+            continue;
+        }
+        gpus.push(GpuMetrics {
+            name: if device.is_empty() { vendor.clone() } else { device },
+            vendor,
+            vram: 0,
+            mem_used: None,
+            usage: -1.0,
+        });
+    }
+
+    // NVIDIA 显卡：用 nvidia-smi 覆盖名称/显存/已用显存（lspci 无法给出显存总量）
+    if let Some(nv) = nvidia_smi_gpus() {
+        for (i, g) in gpus.iter_mut().enumerate() {
+            if let Some((name, mem_used, vram)) = nv.get(i) {
+                g.name = name.clone();
+                g.vram = *vram;
+                if *mem_used > 0 {
+                    g.mem_used = Some(*mem_used);
+                }
+            }
+        }
+    }
+    gpus
+}
+
+/// NVIDIA GPU 静态信息（`nvidia-smi` 提供：名称、已用显存、显存总量，单位 MiB 换算为字节）。
+///
+/// 必要原因：Windows WMI `Win32_VideoController.AdapterRAM` 是 32 位 DWORD，
+/// 8GB 及以上显存的显卡会被截断为 ~4GB（如 RTX 2070 SUPER 8G 显示为 4293918720）；
+/// Linux `lspci` 也无法可靠给出显存。nvidia-smi 不可用时返回 None。
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+fn nvidia_smi_gpus() -> Option<Vec<(String, u64, u64)>> {
+    let Ok(out) = std::process::Command::new("nvidia-smi")
+        .args(["--query-gpu=name,memory.used,memory.total", "--format=csv,noheader,nounits"])
+        .output()
+    else {
+        return None;
+    };
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let list: Vec<(String, u64, u64)> = text
+        .lines()
+        .filter_map(|l| {
+            let mut it = l.split(',');
+            let name = it.next()?.trim().to_string();
+            let used_mi: u64 = it.next()?.trim().parse().ok()?;
+            let total_mi: u64 = it.next()?.trim().parse().ok()?;
+            Some((name, used_mi.saturating_mul(1024 * 1024), total_mi.saturating_mul(1024 * 1024)))
+        })
+        .collect();
+    if list.is_empty() { None } else { Some(list) }
+}
+
+/// NVIDIA GPU 实时数据（使用率 + 已用显存，每周期刷新；不可用时返回空 Vec）。
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+fn nvidia_smi_live() -> Vec<(f32, u64)> {
+    let Ok(out) = std::process::Command::new("nvidia-smi")
+        .args(["--query-gpu=utilization.gpu,memory.used", "--format=csv,noheader,nounits"])
+        .output()
+    else {
+        return Vec::new();
+    };
+    if !out.status.success() {
+        return Vec::new();
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    text.lines()
+        .filter_map(|l| {
+            let mut it = l.split(',');
+            let u: f32 = it.next()?.trim().parse().ok()?;
+            let m: u64 = it.next()?.trim().parse().ok()?;
+            Some((u.clamp(0.0, 100.0), m.saturating_mul(1024 * 1024)))
+        })
+        .collect()
+}
+
+/// 采集 GPU 静态信息（名称/厂商/显存），按平台分发。
+#[cfg(target_os = "macos")]
+fn collect_gpus_static() -> Vec<GpuMetrics> {
+    macos_gpus_static()
+}
+#[cfg(target_os = "windows")]
+fn collect_gpus_static() -> Vec<GpuMetrics> {
+    windows_gpus_static()
+}
+#[cfg(target_os = "linux")]
+fn collect_gpus_static() -> Vec<GpuMetrics> {
+    linux_gpus_static()
+}
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+fn collect_gpus_static() -> Vec<GpuMetrics> {
+    Vec::new()
+}
+
+/// 每采集周期刷新 GPU 使用率与已用显存（就地写入 `gpus[i]`）。
+///
+/// Windows 不走此函数：Windows 使用 GPU Engine 性能计数器（与任务管理器同源，
+/// 见 `spawn_gpu_collector`），避免与 nvidia-smi 的"内核占用"语义不一致。
+#[cfg(not(target_os = "windows"))]
+fn update_gpu_usages(gpus: &mut [GpuMetrics]) {
+    if gpus.is_empty() {
+        return;
+    }
+    #[cfg(target_os = "macos")]
+    let live: Vec<(f32, Option<u64>)> = macos_gpu_usages().into_iter().map(|u| (u, None)).collect();
+    #[cfg(target_os = "linux")]
+    let live: Vec<(f32, Option<u64>)> = nvidia_smi_live().into_iter().map(|(u, m)| (u, Some(m))).collect();
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    let live: Vec<(f32, Option<u64>)> = Vec::new();
+
+    if live.is_empty() {
+        for g in gpus.iter_mut() {
+            g.usage = -1.0;
+        }
+        return;
+    }
+    for (i, g) in gpus.iter_mut().enumerate() {
+        if let Some((u, m)) = live.get(i) {
+            g.usage = *u;
+            if let Some(mem) = m {
+                if *mem > 0 {
+                    g.mem_used = Some(*mem);
+                }
+            }
+        } else {
+            g.usage = -1.0;
+        }
+    }
+}
+
+// ============== Windows：GPU Engine 计数器（任务管理器同源） ==============
+
+/// Windows GPU 实时采样结果（按 GPU 索引对齐，与 `gpus` 列表顺序一致）。
+#[cfg(target_os = "windows")]
+#[derive(Default)]
+struct GpuLiveSample {
+    /// 各 GPU 使用率（任务管理器语义：该适配器全部引擎利用率求和，封顶 100）
+    usages: Vec<f32>,
+    /// 各 GPU 已用显存（字节）
+    mem_used: Vec<u64>,
+}
+
+/// Windows：聚合 GPU Engine 性能计数器，得到与任务管理器一致的 GPU 使用率，
+/// 以及 GPUAdapterMemory 的已用显存。
+///
+/// 说明：任务管理器的 GPU 百分比 = 该适配器所有引擎（3D/Copy/Video 等）利用率求和（封顶 100），
+/// 而 nvidia-smi `utilization.gpu` 只是"内核执行时间占比"，两者语义不同（任务管理器通常更高）。
+/// 这里按 LUID 分组聚合；过滤软件适配器（无显存且无负载，如 Microsoft Basic Render Driver），
+/// 再按 LUID 排序，按索引与 `gpus` 列表（Win32_VideoController 顺序）对齐。
+#[cfg(target_os = "windows")]
+fn windows_gpu_live_sample() -> GpuLiveSample {
+    const SCRIPT: &str = r#"
+$e = Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine -ErrorAction SilentlyContinue
+$m = @{}
+Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory -ErrorAction SilentlyContinue | ForEach-Object {
+    if ($_.Name -match 'luid_0x[0-9a-fA-F]+_0x[0-9a-fA-F]+') { $m[$matches[0]] = [uint64]$_.DedicatedUsage }
+}
+$g = $e | Group-Object { if ($_.Name -match 'luid_0x[0-9a-fA-F]+_0x[0-9a-fA-F]+') { $matches[0] } else { '' } } | ForEach-Object {
+    $sum = 0.0
+    foreach ($x in $_.Group) { $sum += [double]$x.UtilizationPercentage }
+    [PSCustomObject]@{
+        luid = $_.Name
+        usage = [math]::Min(100, [math]::Round($sum, 1))
+        mem_used = $m[$_.Name]
+    }
+} | Where-Object { $_.luid -ne '' -and ($_.mem_used -gt 1MB -or $_.usage -gt 0) } | Sort-Object luid
+$g | ConvertTo-Json -Compress
+"#;
+    let mut sample = GpuLiveSample::default();
+    let Ok(out) = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", SCRIPT])
+        .output()
+    else {
+        return sample;
+    };
+    if !out.status.success() {
+        return sample;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(text.trim()) else {
+        return sample;
+    };
+    let arr = match json {
+        serde_json::Value::Array(a) => a,
+        _ => return sample,
+    };
+    for item in arr {
+        let Some(obj) = item.as_object() else { continue };
+        let Some(usage) = obj.get("usage").and_then(|v| v.as_f64()) else { continue };
+        let mem = obj.get("mem_used").and_then(|v| v.as_u64()).unwrap_or(0);
+        sample.usages.push((usage as f32).clamp(0.0, 100.0));
+        sample.mem_used.push(mem);
+    }
+    sample
+}
+
+/// Windows：启动独立的 GPU 采集线程（PowerShell 查询约需数百毫秒，放独立线程避免阻塞主监控循环）。
+/// 每周期采样一次，结果写入共享的 `GpuLiveSample`；随 `running` 原子标志自动停止。
+#[cfg(target_os = "windows")]
+fn spawn_gpu_collector(
+    gpu_live: Arc<std::sync::Mutex<GpuLiveSample>>,
+    running: Arc<AtomicBool>,
+) {
+    std::thread::Builder::new()
+        .name("gpu-monitor".into())
+        .spawn(move || {
+            while running.load(Ordering::SeqCst) {
+                let mut sample = windows_gpu_live_sample();
+                // PowerShell 不可用/无计数器时，回退 nvidia-smi（NVIDIA 显卡）
+                if sample.usages.is_empty() {
+                    let nv = nvidia_smi_live();
+                    sample.usages = nv.iter().map(|(u, _)| *u).collect();
+                    sample.mem_used = nv.iter().map(|(_, m)| *m).collect();
+                }
+                if let Ok(mut guard) = gpu_live.lock() {
+                    *guard = sample;
+                }
+                for _ in 0..MONITOR_SLEEP_SEGMENTS {
+                    if !running.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    thread::sleep(MONITOR_SLEEP_SEGMENT);
+                }
+            }
+        })
+        .expect("gpu-monitor 线程创建失败");
+}
+
 // ============== 核心采集函数 ==============
 
 /// 全量扫描进程树，找出 root_pid 的所有后代 PID。
@@ -283,6 +806,7 @@ fn collect_metrics(
     cached_host_ip: &str,
     cached_type: &str,
     seen_devices: &mut HashSet<String>,
+    system_info: &SystemInfoMetrics,
 ) -> SystemMetricsPayload {
     sys.refresh_cpu_usage();
     sys.refresh_memory();
@@ -391,6 +915,7 @@ fn collect_metrics(
                 app_mem_percent,
                 app_mem_bytes,
             },
+            system: system_info.clone(),
         },
     }
 }
@@ -443,9 +968,20 @@ pub fn start_monitor(app: AppHandle, state: tauri::State<'_, SystemMonitorState>
                 let pid = sysinfo::Pid::from_u32(std::process::id());
 
                 // === 预热阶段 ===
+                // 一次性加载完整 CPU 信息（brand/vendor/频率），供系统信息采集使用
+                sys.refresh_cpu_all();
                 sys.refresh_cpu_usage();
                 thread::sleep(CPU_WARMUP_DELAY);
                 disks.refresh(false);
+
+                // 系统静态信息（OS/架构/主机名/内核/CPU/GPU），启动时采集一次
+                let mut system_info = collect_system_info(&sys);
+
+                // Windows：启动独立的 GPU 采集线程（GPU Engine 计数器，任务管理器同源）
+                #[cfg(target_os = "windows")]
+                let gpu_live = Arc::new(std::sync::Mutex::new(GpuLiveSample::default()));
+                #[cfg(target_os = "windows")]
+                spawn_gpu_collector(gpu_live.clone(), running.clone());
 
                 // 初始全量扫描，建立应用 PID 列表（主进程 + WebView 子进程）
                 let mut app_pids = find_app_pids(&mut sys, pid);
@@ -489,6 +1025,22 @@ pub fn start_monitor(app: AppHandle, state: tauri::State<'_, SystemMonitorState>
                     }
                     full_refresh_counter = (full_refresh_counter + 1) % FULL_REFRESH_INTERVAL;
 
+                    // ---------- GPU 实时数据（每周期刷新，随 collect_metrics 一并下发） ----------
+                    // Windows：读取 GPU 采集线程的最新样本（任务管理器语义）；其余平台就地采集
+                    #[cfg(target_os = "windows")]
+                    if let Ok(guard) = gpu_live.lock() {
+                        for (i, g) in system_info.gpus.iter_mut().enumerate() {
+                            g.usage = guard.usages.get(i).copied().unwrap_or(-1.0);
+                            if let Some(m) = guard.mem_used.get(i).copied() {
+                                if m > 0 {
+                                    g.mem_used = Some(m);
+                                }
+                            }
+                        }
+                    }
+                    #[cfg(not(target_os = "windows"))]
+                    update_gpu_usages(&mut system_info.gpus);
+
                     let mut payload = collect_metrics(
                         &mut sys,
                         &disks,
@@ -496,6 +1048,7 @@ pub fn start_monitor(app: AppHandle, state: tauri::State<'_, SystemMonitorState>
                         &cached_host_ip,
                         &cached_type,
                         &mut seen_devices,
+                        &system_info,
                     );
 
                     // ---------- 网络 IO 速率 ----------

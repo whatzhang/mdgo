@@ -1,15 +1,16 @@
 //! Canvas 知识画布格式校验（确定性内部模块，非 Agent 工具，不做任何布局）。
 //!
-//! 架构（v6）：Canvas 是「Agent 可以读写的知识文件格式」，**布局完全由模型负责**。
+//! 架构（v7）：Canvas 是「Agent 可以读写的知识文件格式」，**布局完全由模型负责**，
+//! 数据格式只含 `nodes` / `edges`，无任何 layout 字段。
 //! - **LLM（经 Skill 引导）负责全部语义与空间**：理解知识、设计节点/关系、
-//!   决定布局模式/层级/坐标/尺寸/连线方向，输出带最终 x/y/width/height 的完整 Canvas
+//!   决定层级/坐标/尺寸/连线方向，输出带最终 x/y/width/height 的完整 Canvas
 //! - **本模块只做机器可验证的合法性校验**：JSON parse、schema 校验、ID 唯一化、
 //!   edge 引用完整性、file 路径存在性、坐标/尺寸合法性；**绝不计算/覆盖坐标**，
 //!   模型写入的 x/y/width/height 原样保留
 //! - **write 工具检测 `.canvas` 扩展名后自动调用本管线**（见 tools::write_file）
 //!
 //! 与前端 D3 渲染器（main.html renderCanvasFile）共用 JSON Canvas 数据格式 `{nodes, edges}`：
-//! - 节点：`text` / `file`（绑定知识库文件）/ `image` / `link` / `url` / `bookmark` / `code`
+//! - 节点：`text` / `file`（绑定知识库文件）/ `image` / `url` / `code`
 //! - 边：`fromNode -> toNode`（带方向与可选 label）
 //! - 节点必须包含模型计算的 `x/y/width/height`（缺失或非法 → 拒绝写入）
 
@@ -70,52 +71,8 @@ pub struct CanvasEdge {
     pub to_side: Option<String>,
 }
 
-/// 布局分组（模型声明的空间区域提示；系统不据此重排）
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct CanvasGroup {
-    pub id: String,
-    #[serde(default)]
-    pub nodes: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-}
-
-/// 模型声明的布局意图记录（仅持久化保存；**系统不解释、不据此重排坐标**）。
-///
-/// v6 边界：`layout` 是「AI 的布局意图」，最终空间状态以模型写入的
-/// `x/y/width/height` 为准。本模块保留该字段原样序列化，仅在校验/重编号
-/// 时同步其内部 id 引用。
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct CanvasLayout {
-    /// 布局算法版本（当前 1；仅记录）
-    #[serde(default = "default_layout_version")]
-    pub version: u32,
-    /// 布局模式：hierarchy / flow / radial / grouped（仅记录，不执行）
-    #[serde(default = "default_layout_mode")]
-    pub mode: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub root: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub direction: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub main_path: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub groups: Vec<CanvasGroup>,
-}
-
-fn default_layout_version() -> u32 {
-    1
-}
-
-fn default_layout_mode() -> String {
-    "hierarchy".into()
-}
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CanvasFile {
-    /// 模型布局意图（仅记录；缺省不参与任何布局计算）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub layout: Option<CanvasLayout>,
     pub nodes: Vec<CanvasNode>,
     #[serde(default)]
     pub edges: Vec<CanvasEdge>,
@@ -161,26 +118,6 @@ fn sanitize_ids(canvas: &mut CanvasFile) {
             }
         }
     }
-    // 同步更新 layout 意图中的 id 引用（root / 分组节点列表 / 主链）
-    if let Some(layout) = &mut canvas.layout {
-        if let Some(r) = layout.root.as_mut() {
-            if let Some(new) = map.get(r) {
-                *r = new.clone();
-            }
-        }
-        for g in &mut layout.groups {
-            for nid in g.nodes.iter_mut() {
-                if let Some(new) = map.get(nid) {
-                    *nid = new.clone();
-                }
-            }
-        }
-        for nid in &mut layout.main_path {
-            if let Some(new) = map.get(nid) {
-                *nid = new.clone();
-            }
-        }
-    }
 }
 
 /// 校验 file/image 节点引用的文件是否真实存在于知识库根目录（dir），
@@ -205,7 +142,7 @@ fn degrade_missing_file_nodes(canvas: &mut CanvasFile, dir: &str) -> usize {
     degraded
 }
 
-/// 坐标/尺寸合法性校验（v6：布局由模型负责，系统只校验参数合法）。
+/// 坐标/尺寸合法性校验（v7：布局由模型负责，系统只校验参数合法）。
 ///
 /// - `width`/`height` 必须 > 0（节点有实际尺寸，模型必须给出布局）
 /// - `x`/`y` 必须是有限数（防 NaN/Infinity 污染画布坐标）
@@ -229,17 +166,24 @@ fn validate_geometry(canvas: &CanvasFile) -> Result<(), String> {
 }
 
 /// **Canvas 确定性校验管线入口**（供 write 工具对 `.canvas` 文件调用）：
-/// parse → schema 校验 → 空节点清理 → ID 唯一化 → edge 引用校验 →
+/// parse → schema 校验 → 空节点清理 → 类型归一化 → ID 唯一化 → edge 引用校验 →
 /// file 存在性校验 → 坐标/尺寸合法性校验 → 原样序列化。
 ///
-/// v6 边界：**不执行任何布局计算、不覆盖模型坐标**。模型写入的
-/// x/y/width/height 原样保留；`layout` 意图仅作记录一并保存。
+/// v8 边界：**不执行任何布局计算、不覆盖模型坐标**。模型写入的
+/// x/y/width/height 原样保留；格式只含 nodes/edges，无 layout 字段；
+/// 节点类型统一为 text/file/image/url/code（旧文件的 link/bookmark 归一化为 url）。
 /// 任一步失败返回明确错误（write 拒绝写入），保证落盘的 `.canvas` 合法可渲染。
 pub fn validate_canvas_json(content: &str, dir: &str) -> Result<String, String> {
     let mut canvas: CanvasFile = serde_json::from_str(content)
         .map_err(|e| format!("无效的 JSON Canvas 格式: {}", e))?;
     if canvas.nodes.is_empty() {
         return Err("画布无节点（nodes 为空数组）".into());
+    }
+    // 类型归一化：link / bookmark 已合并为 url（兼容旧文件）
+    for n in &mut canvas.nodes {
+        if n.ty == "link" || n.ty == "bookmark" {
+            n.ty = "url".into();
+        }
     }
     sanitize_ids(&mut canvas);
     let _degraded = degrade_missing_file_nodes(&mut canvas, dir);
@@ -272,7 +216,6 @@ mod tests {
     #[test]
     fn sanitize_ids_renumbers_and_keeps_edge_references() {
         let mut canvas = CanvasFile {
-            layout: None,
             nodes: vec![text_node("a-b"), text_node("c d"), text_node("root")],
             edges: vec![
                 CanvasEdge { id: "e1".into(), from_node: "a-b".into(), to_node: "c d".into(), label: None, from_side: None, to_side: None },
@@ -298,7 +241,6 @@ mod tests {
     #[test]
     fn sanitize_ids_drops_dangling_edges() {
         let mut canvas = CanvasFile {
-            layout: None,
             nodes: vec![text_node("a"), text_node("b")],
             edges: vec![
                 CanvasEdge { id: "e1".into(), from_node: "a".into(), to_node: "b".into(), label: None, from_side: None, to_side: None },
@@ -315,7 +257,6 @@ mod tests {
     #[test]
     fn sanitize_ids_fills_missing_and_duplicate_edge_ids() {
         let mut canvas = CanvasFile {
-            layout: None,
             nodes: vec![text_node("n1"), text_node("n2")],
             edges: vec![
                 CanvasEdge { id: "".into(), from_node: "n1".into(), to_node: "n2".into(), label: None, from_side: None, to_side: None },
@@ -343,7 +284,6 @@ mod tests {
         std::fs::create_dir_all(tmp.join("docs")).unwrap();
         std::fs::write(tmp.join("docs/real.md"), "# real").unwrap();
         let mut canvas = CanvasFile {
-            layout: None,
             nodes: vec![
                 CanvasNode { id: "n1".into(), ty: "file".into(), x: 0.0, y: 0.0, width: 240.0, height: 120.0, text: Some("真实文件".into()), file: Some("docs/real.md".into()), url: None, code: None, is_root: None },
                 CanvasNode { id: "n2".into(), ty: "file".into(), x: 0.0, y: 0.0, width: 240.0, height: 120.0, text: Some("编造路径".into()), file: Some("docs/fake.md".into()), url: None, code: None, is_root: None },
@@ -362,9 +302,8 @@ mod tests {
 
     #[test]
     fn validate_canvas_json_preserves_model_coordinates() {
-        // v6 核心：模型提供的坐标/尺寸原样保留（不重算、不覆盖）
+        // v7 核心：模型提供的坐标/尺寸原样保留（不重算、不覆盖），格式仅 nodes/edges
         let raw = r#"{
-            "layout": {"mode": "flow", "direction": "LR", "root": "n1"},
             "nodes": [
                 {"id": "n1", "type": "text", "text": "A", "x": 100, "y": 50, "width": 200, "height": 80, "isRoot": true},
                 {"id": "n2", "type": "text", "text": "B", "x": 400, "y": 50, "width": 240, "height": 100}
@@ -385,10 +324,6 @@ mod tests {
         // fromSide/toSide 原样保留（前端连线方向依赖）
         assert_eq!(parsed.edges[0].from_side.as_deref(), Some("right"));
         assert_eq!(parsed.edges[0].to_side.as_deref(), Some("left"));
-        // layout 意图保留
-        let lay = parsed.layout.expect("layout 应保留");
-        assert_eq!(lay.mode, "flow");
-        assert_eq!(lay.direction.as_deref(), Some("LR"));
         // 边 id 补全、引用有效
         assert_eq!(parsed.edges.len(), 1);
         assert!(!parsed.edges[0].id.is_empty());
@@ -406,30 +341,6 @@ mod tests {
         // 非 JSON / 空 nodes → 拒绝
         assert!(validate_canvas_json("not json", ".").is_err());
         assert!(validate_canvas_json(r#"{"nodes":[],"edges":[]}"#, ".").is_err(), "空画布应拒绝");
-    }
-
-    #[test]
-    fn sanitize_ids_remaps_layout_root_and_groups() {
-        let mut canvas = CanvasFile {
-            layout: Some(CanvasLayout {
-                version: 1,
-                mode: "grouped".into(),
-                root: Some("root".into()),
-                direction: None,
-                main_path: vec!["root".into(), "a".into()],
-                groups: vec![CanvasGroup { id: "g1".into(), nodes: vec!["root".into(), "a".into()], title: None }],
-            }),
-            nodes: vec![
-                CanvasNode { id: "root".into(), ty: "text".into(), x: 0.0, y: 0.0, width: 240.0, height: 120.0, text: Some("R".into()), file: None, url: None, code: None, is_root: Some(true) },
-                CanvasNode { id: "a".into(), ty: "text".into(), x: 300.0, y: 0.0, width: 240.0, height: 120.0, text: Some("A".into()), file: None, url: None, code: None, is_root: None },
-            ],
-            edges: vec![CanvasEdge { id: "e1".into(), from_node: "root".into(), to_node: "a".into(), label: None, from_side: None, to_side: None }],
-        };
-        sanitize_ids(&mut canvas);
-        let layout = canvas.layout.expect("layout 应保留");
-        assert_eq!(layout.root.as_deref(), Some("n1"), "root 应重映射为 n1");
-        assert_eq!(layout.main_path, vec!["n1".to_string(), "n2".to_string()], "main_path 应重映射");
-        assert_eq!(layout.groups[0].nodes, vec!["n1".to_string(), "n2".to_string()], "groups 应重映射");
     }
 
     #[test]
@@ -456,10 +367,10 @@ mod tests {
             let parsed: CanvasFile = serde_json::from_str(&text)
                 .unwrap_or_else(|e| panic!("{} 解析失败: {}", name, e));
             assert!(!parsed.nodes.is_empty(), "{} 应有节点", name);
-            // 用例含模型坐标（v6：x/y/width/height 由用例文件提供）
+            // 用例含模型坐标（v7：x/y/width/height 由用例文件提供）
             assert!(
                 parsed.nodes.iter().all(|n| n.width > 0.0 && n.height > 0.0),
-                "{} 的节点应含有效尺寸（v6 布局由模型提供）",
+                "{} 的节点应含有效尺寸（v7 布局由模型提供）",
                 name
             );
             // 管线通过且坐标原样保留

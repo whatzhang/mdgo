@@ -39,7 +39,7 @@ use crate::services::llm::BookmarkSummaryOut;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 /// 连续空闲（无 pending 可处理）超过该时长即退出 Worker，避免后台空转轮询；
-/// 之后由「分析扫描」按钮（`bookmark_worker_start`）重新启动。
+/// 之后由「分析扫描」按钮（`bookmark_worker_start`）重新启动（唯一触发入口）。
 const IDLE_EXIT_AFTER: Duration = Duration::from_secs(30);
 const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_BODY_BYTES: usize = 2 * 1024 * 1024; // 2MB 响应上限
@@ -49,8 +49,12 @@ const MAX_RAW_CONTENT_CHARS: usize = 20_000;
 /// Tags/Category/Title 空间，保证存储文本与模型实际嵌入内容一致——超长摘要宁可截断
 /// 尾部 summary，也不能让 tags 被模型侧静默截掉）
 const MAX_SUMMARY_CHARS_IN_EMBED: usize = 300;
-/// 单轮抓取批上限
-const FETCH_BATCH: usize = 256;
+/// 单轮抓取批上限（原 256 过大：中途关闭应用会导致整批待重处理——重抓取+重总结；
+/// 收窄到 32，中断影响面小，配合阶段C 分块提交，数据能逐块保存）
+const FETCH_BATCH: usize = 32;
+/// 阶段C 分块提交粒度（每块 embedding → upsert → ready 独立提交；
+/// 中断只损失当前块，其余块已入库为 ready）
+const EMBED_CHUNK: usize = 16;
 /// 单轮并发抓取数（HTTP 并发池大小）
 const FETCH_CONCURRENCY: usize = 128;
 /// LLM 总结并发数（网络任务并发；落库集中在主协程锁内短操作）
@@ -98,7 +102,8 @@ impl EnrichmentWorker {
         Self { stores, client, summarizer, running: Arc::new(AtomicBool::new(false)) }
     }
 
-    /// 启动后台循环（setup 时调用一次；之后由「分析扫描」按钮 `ensure_running` 重启）。
+    /// 启动后台循环（**仅由「分析扫描」按钮 `bookmark_worker_start` 触发**；
+    /// 导入与应用启动均不自动启动，避免无操作即自动消耗 LLM）。
     /// 必须用 `tauri::async_runtime::spawn`（持有全局 runtime 句柄，setup 同步回调上下文可用）；
     /// `tokio::spawn` 在 setup 无 reactor 上下文会 panic（"there is no reactor running"）。
     ///
@@ -225,7 +230,7 @@ impl EnrichmentWorker {
         // ─── 阶段B：LLM 总结（失败直接终态，不后续） ───
         let summarized = self.summarize_batch(&store, &fetched).await?;
 
-        // ─── 阶段C：批量 embedding → 增量写向量 → ready ───
+        // ─── 阶段C：分块 embedding → 逐块写向量 + ready（小块独立提交，中断损失最小） ───
         if summarized.is_empty() {
             return Ok(true);
         }
@@ -252,37 +257,53 @@ impl EnrichmentWorker {
             out
         };
 
-        // 2. 批量 ONNX 推理（spawn_blocking；内部按 embedding::BATCH_SIZE 分批）
-        let embeddings: Vec<Vec<f32>> = {
-            let batch: Vec<String> = texts.iter().map(|(_, t)| t.clone()).collect();
-            tokio::task::spawn_blocking(move || {
+        // 2-4. 分块提交：每块「embedding 推理 → upsert → mark_ready」独立完成。
+        //     中断/关闭应用时，已提交的块保持 ready，仅当前块待重处理——
+        //     避免大批书签在整批提交窗口内全部丢失保存进度。
+        let uri = crate::core::db::utils::get_data_dir(&dir_path);
+        let mut done = 0usize;
+        for chunk in texts.chunks(EMBED_CHUNK) {
+            // 2a. 块内批量 ONNX 推理（失败降级：无向量仍 ready，关键词检索可用）
+            let batch: Vec<String> = chunk.iter().map(|(_, t)| t.clone()).collect();
+            let embeddings: Vec<Vec<f32>> = match tokio::task::spawn_blocking(move || {
                 let refs: Vec<&str> = batch.iter().map(|t| t.as_str()).collect();
                 crate::core::db::utils::call_embedding(&refs, None)
             })
             .await
-            .map_err(|e| format!("embedding 任务失败: {}", e))?
-            .map_err(|e| format!("书签向量化失败: {}", e))?
-        };
-        log::info!("[bookmark] 向量化批推理完成：{} 条", texts.len());
+            {
+                Ok(Ok(v)) => v,
+                Ok(Err(e)) => {
+                    log::warn!("[bookmark] 向量化失败，该块书签降级为 ready（无向量，关键词检索仍可用）: {}", e);
+                    Vec::new()
+                }
+                Err(e) => {
+                    log::warn!("[bookmark] embedding 任务失败，该块书签降级为 ready（无向量）: {}", e);
+                    Vec::new()
+                }
+            };
 
-        // 3. 增量 upsert → LanceDB（按 bookmark_id 覆盖；text 列存完整 embedding_text 便于核对）
-        let uri = crate::core::db::utils::get_data_dir(&dir_path);
-        let vec_rows: Vec<(String, String, String, Vec<f32>)> = texts
-            .iter()
-            .zip(embeddings.into_iter())
-            .filter(|(_, emb)| !emb.is_empty())
-            .map(|((id, text), emb)| (id.clone(), id.clone(), text.clone(), emb))
-            .collect();
-        if !vec_rows.is_empty() {
-            super::vector::upsert_batch(&uri, vec_rows).await?;
-        }
-
-        // 4. 置 ready
-        {
-            let s = store.lock().map_err(|e| e.to_string())?;
-            for (id, _) in &texts {
-                s.mark_ready(id)?;
+            // 3a. 块内增量 upsert → LanceDB（失败仅告警不阻断 ready）
+            let vec_rows: Vec<(String, String, String, Vec<f32>)> = chunk
+                .iter()
+                .zip(embeddings.into_iter())
+                .filter(|(_, emb)| !emb.is_empty())
+                .map(|((id, text), emb)| (id.clone(), id.clone(), text.clone(), emb))
+                .collect();
+            if !vec_rows.is_empty() {
+                if let Err(e) = super::vector::upsert_batch(&uri, vec_rows).await {
+                    log::warn!("[bookmark] 向量库 upsert 失败，该块书签降级为 ready（无向量）: {}", e);
+                }
             }
+
+            // 4a. 块内置 ready（本块独立提交）
+            {
+                let s = store.lock().map_err(|e| e.to_string())?;
+                for (id, _) in chunk {
+                    s.mark_ready(id)?;
+                }
+            }
+            done += chunk.len();
+            log::info!("[bookmark] 块提交完成：{}/{} 条 ready", done, texts.len());
         }
         log::info!("[bookmark] 批处理完成，{} 条置为 ready", texts.len());
         Ok(true)

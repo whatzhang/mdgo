@@ -362,8 +362,10 @@ async function sendRagQuery(text) {
             }
         });
     };
-    const unlisteners = await Promise.all([
-        window.__TAURI__.event.listen('rag:delta', (e) => {
+    let unlisteners;
+    try {
+        unlisteners = await Promise.all([
+            window.__TAURI__.event.listen('rag:delta', (e) => {
             if (e.payload.request_id !== requestId) return;
             const delta = e.payload.content;
             if (!delta) return;
@@ -578,6 +580,20 @@ async function sendRagQuery(text) {
         window.__TAURI__.event.listen('agent:tool_call', (e) => handleAgentToolEvent(e, requestId)),
         window.__TAURI__.event.listen('agent:tool_result', (e) => handleAgentToolEvent(e, requestId)),
     ]);
+    } catch (e) {
+        // 事件监听注册失败：复位流式状态，避免 chatStreaming 卡死 → 停止按钮失效/会话无法停止
+        console.error('[rag] 事件监听注册失败:', e);
+        chatStreaming = false;
+        updateChatSendButton();
+        chatAbortController = null;
+        _chatStreamingDiv = null;
+        _chatStreamingSources = null;
+        _chatStreamingStatusMsg = '';
+        _chatStreamingFullContent = '';
+        removeChatTyping();
+        showNotification('✗ 无法建立流式通道: ' + (e.message || e), 'error');
+        return;
+    }
 
     try {
         const histMessages = trimChatHistory(expandToolHistory(chatMessages), 0.4);
@@ -697,6 +713,7 @@ async function AgentInit() {
                             // 最终定位停留在最后一个写入的文件
                             for (const [rel, payload] of entries) {
                                 await handleAgentFileWritten(rel, payload);
+                                recordOperation(basename(rel), rel, OPERATION_TYPES.CREATE);
                             }
                         } else {
                             // 兜底（主脚本函数未就绪）：全量刷新 + 定位

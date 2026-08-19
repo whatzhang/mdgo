@@ -5,15 +5,15 @@ name: 知识画布（Canvas）
 description: >-
   AI 驱动的知识画布能力。当用户要求把主题、知识、资料整理为可视化知识画布，
   生成、分析、整理 Canvas，或寻找画布中的孤立节点、知识缺口、关系错误时触发。
-  Canvas 使用 JSON Canvas 格式，包含 nodes 与 edges。
-  Canvas 的知识结构、空间布局、节点位置、节点尺寸以及连线方向均由模型根据语义自主设计。
+  Canvas 使用 JSON Canvas 格式，数据只含 `nodes` 与 `edges`（无 layout 字段）。
+  知识结构、空间布局、节点位置、节点尺寸与连线方向均由模型根据语义自主设计。
   系统仅负责 JSON 格式校验、路径安全和文件写入，不重新计算或覆盖模型生成的布局。
   结构化大纲/思维导图文件（.opml/.mm）使用 outline-mindmap；图表代码使用 mermaid。
 priority: 45
 tools: [kb_search, read, write]
 triggers: [canvas, 画布, 知识画布, 思维画布, 整理画布, 生成画布, 知识梳理, 管理我的知识, 画布整理]
 enabled: true
-version: 6
+version: 10
 created_at: 1787026405889
 updated_at: 1787026405889
 ---
@@ -43,6 +43,9 @@ Edge = 知识关系
 
 > **Canvas 的布局本身就是知识表达的一部分。**
 
+**工具边界**：只有当「二维空间」确实提升理解（层级/流程/关联/领域分布）时才用 Canvas；
+简单的列表/笔记直接用 Markdown，结构化大纲用 outline-mindmap（.opml/.mm），图表/流程图代码用 mermaid。
+
 ## 核心原则：模型负责完整布局
 
 生成 Canvas 时，**模型负责一切**：
@@ -66,9 +69,90 @@ Edge = 知识关系
 ```
 
 程序 **禁止**：重新计算 x/y、重算 width/height、修改模型布局、重排 nodes、
-改变 edge 方向、按 mode 自动布局、用算法覆盖模型坐标。
+改变 edge 方向、用算法覆盖模型坐标。
 
 **不要输出「系统之后会自动布局」或「x/y 暂时随便填」——你必须直接完成最终布局。**
+
+## Canvas JSON 格式规范（系统校验的唯一标准，严格按此输出）
+
+写入 `.canvas` 的内容必须是**完整合法的纯 JSON 对象**，且**只允许使用下表字段**。
+系统按此 schema 校验（后端 `canvas.rs` 校验器 + 前端 `renderCanvasFile` D3 渲染器共用同一格式）：
+未知字段会被丢弃；节点缺有效尺寸等会导致**写入被拒绝**。
+
+### 顶层结构
+
+```json
+{
+  "nodes": [ ... ],
+  "edges": [ ... ]
+}
+```
+
+> **数据格式只含 `nodes` 与 `edges`。
+> 所有布局（x/y/width/height、分组区域、主流程方向）由你直接通过节点坐标与连线表达，
+
+### 节点 `nodes[]`
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `id` | string | 是 | 节点唯一标识（系统会统一重编号为 n1..nN，并在边中同步引用） |
+| `type` | string | 是 | **仅限**：`text` / `file` / `image` / `url` / `code` |
+| `x` / `y` | number | 是 | 左上角坐标，必须为有限数值（NaN/Infinity 会被拒绝） |
+| `width` / `height` | number | 是 | 必须 > 0；缺失或非法 → 写入被拒绝 |
+| `text` | string | 否 | 节点文本（`text` 节点应填写） |
+| `file` | string | 否 | 知识库内真实相对路径（`file`/`image` 节点；路径不存在会被自动降级为 `text`） |
+| `url` | string | 否 | 链接地址（`url` 节点；旧 `link`/`bookmark` 类型已合并为此） |
+| `code` | string | 否 | 代码内容（`code` 节点） |
+| `isRoot` | boolean | 否 | 主题中心标记（camelCase），整个画布最多一个节点为 `true` |
+
+> **节点 type 没有 `group` / `node` 取值**：分组与模块化不通过节点类型表达——请用**空间分区**（不同区域明显分离）表达分组，组内/组间关系仍用 `edges` 表达。
+
+### 边 `edges[]`
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `id` | string | 否 | 缺失或重复时系统自动补唯一 id |
+| `fromNode` / `toNode` | string | 是 | 必须引用存在的节点 id；悬空边会被删除 |
+| `label` | string | 否 | 连线标签（仅记录，前端当前不渲染） |
+| `fromSide` / `toSide` | string | 是 | 连线锚定边：`right` / `left` / `top` / `bottom` |
+
+### 完整示例（最小合法画布，可直接参照结构）
+
+```json
+{
+  "nodes": [
+    {"id":"n1","type":"text","text":"Kubernetes 学习大纲","x":400,"y":80,"width":280,"height":80,"isRoot":true},
+    {"id":"n2","type":"text","text":"容器基础 (Docker)","x":140,"y":280,"width":240,"height":80},
+    {"id":"n3","type":"text","text":"Pods 与 Deployments","x":460,"y":280,"width":240,"height":80},
+    {"id":"n4","type":"code","code":"kubectl get pods","x":140,"y":440,"width":260,"height":80},
+    {"id":"n5","type":"url","text":"K8s 官方文档","url":"https://kubernetes.io/zh-cn/docs/","x":460,"y":440,"width":260,"height":80}
+  ],
+  "edges": [
+    {"fromNode":"n1","toNode":"n2","fromSide":"left","toSide":"top"},
+    {"fromNode":"n1","toNode":"n3","fromSide":"right","toSide":"top"},
+    {"fromNode":"n2","toNode":"n4","fromSide":"bottom","toSide":"top"},
+    {"fromNode":"n3","toNode":"n5","fromSide":"bottom","toSide":"top"}
+  ]
+}
+```
+
+### 输出硬性要求
+
+1. **输出纯 JSON**：不要包裹 ```json 代码围栏，不要前后缀解释文字、省略号或注释。
+2. 只使用上表字段——**不要发明** `layout`、`groupId`、节点/边上的 `type`（除节点 `type` 枚举外）等系统不认识的键。
+3. 字符串内禁止控制字符；文本中的 `"` 与 `\` 必须按 JSON 标准转义。
+4. 所有节点必须有 `x/y/width/height`；节点之间不重叠；边只引用已存在的节点 id。
+5. 内容不合法时写入会被拒绝——输出前按下方自检清单逐项核对。
+
+### 常见错误（务必避免）
+
+- 输出 `layout` / `mode` / `main_path` / `groups` 字段 → 已废除，会被丢弃。
+- 节点 `type` 用 `group` / `node` / `link` / `bookmark` → 不存在的类型（link/bookmark 已合并为 `url`），会被当普通文本渲染，分组/层级结构丢失。
+- 边加 `type`（如 `"type":"flow"` / `"type":"hierarchy"`）→ 会被丢弃。
+- JSON 外套 ```json 代码围栏、或前后加解释文字 → 解析失败，写入被拒。
+- 节点缺 `width`/`height`（≤0）或坐标含 NaN/Infinity → 写入被拒。
+- 边引用不存在的节点 id → 悬空边被删除。
+- 文本未转义 `"` / `\` 或含控制字符 → JSON 解析失败。
 
 ## 生成 Canvas 的正确流程
 
@@ -76,7 +160,7 @@ Edge = 知识关系
 
 ```text
 1. 理解主题 → 2. 提取核心概念 → 3. 建立知识关系 → 4. 判断关系方向
-→ 5. 确定主题中心 → 6. 确定一级/二级/三级结构 → 7. 判断整体布局模式
+→ 5. 确定主题中心 → 6. 确定一级/二级/三级结构 → 7. 设计整体空间布局
 → 8. 设计二维空间 → 9. 决定节点坐标 → 10. 决定节点尺寸
 → 11. 决定 Edge 方向 → 12. 检查空间冲突 → 13. 检查箭头方向
 → 14. 检查整体可读性 → 15. 输出最终 Canvas JSON
@@ -84,18 +168,15 @@ Edge = 知识关系
 
 **不得先随机生成节点，然后再尝试补布局。**
 
-## 布局模式（自主选择）
+## 空间布局设计（完全由你决定）
 
-根据知识结构选择最合适的模式，并据此设计坐标：
+布局没有任何字段记录，全部由你通过节点坐标/尺寸直接表达。根据知识结构自由设计空间：
 
-1. **hierarchy**（分类/包含/上下级/知识树）：默认 TB（父在上、子在下）。
-   父节点在子节点上方；同层尽量同 y；同一父节点的子节点相邻；子树尽量不交叉。
-2. **flow**（流程/Pipeline/因果/时间线/生命周期）：默认 LR（自左向右）。
-   主链 x 严格递增；不要让主流程出现 ←↑↓ 的无意义方向变化。
-3. **radial**（中心概念/知识全景/核心技术生态）：root 在视觉中心，
-   一级概念围绕 root、二级靠近所属一级；强相关概念距离更近。
-   一级概念过多时**不要强行 radial**，主动改选 hierarchy 或 grouped。
-4. **grouped**（复杂体系/多领域/架构全景）：各组空间上明显分离、组内紧凑。
+1. **树/分类/上下级知识**：父在上、子在下；同层尽量同 y；同一父节点的子节点相邻；子树尽量不交叉。
+2. **流程/因果/时间线/生命周期**：主链自左向右（x 严格递增）；不要让主流程出现 ←↑↓ 的无意义方向变化。
+3. **中心概念/知识全景**：root 放在视觉中心，一级概念围绕 root、二级靠近所属一级；强相关概念距离更近。
+   一级概念过多时不要强行中心放射，改用清晰的分区排布。
+4. **复杂体系/多领域**：各组空间上明显分离、组内紧凑。
 
 ## 布局优先级
 
@@ -105,18 +186,19 @@ Edge = 知识关系
 
 不要为了「整齐」破坏知识关系（如 A→B→C 必须保持流程方向，即使竖向更好排）。
 
+> 说明：以上「布局优先级」只用于**取舍决策**，画布 JSON 中不存在任何布局字段——空间最终由你写出的坐标直接体现。
+
 ## Edge 是知识关系的唯一真相
 
 ```text
 edges = semantic truth
-layout = spatial representation
+space = spatial representation
 ```
 
 - `edges` 描述知识关系，**不得为了视觉修改 fromNode/toNode**。
-- Edge 空间方向必须与语义方向一致：A→B 且 LR 时 A 在左 B 在右；TB 时 A 在上 B 在下。
+- Edge 空间方向必须与语义方向一致：A→B 且自左向右排布时 A 在左 B 在右；自上而下时 A 在上 B 在下。
   避免「视觉上 B←A 但 edge 是 A→B」的冲突。
-- `layout.mode/root/direction/main_path/groups` 只是你的布局意图记录，
-  系统不会据此重排——坐标最终以你写出的 x/y/width/height 为准。
+- 空间布局（谁在左/右/上/下、距离远近、分组区域）完全由你决定并通过坐标直接表达，无任何附加字段。
 
 ## 坐标与尺寸规则
 
@@ -131,18 +213,28 @@ layout = spatial representation
 ## 分组 / Root / 主流程 / 孤立节点
 
 - **分组体现空间边界**：不同组明显分离，不要 Data/Retrieval/Data 交叉混杂。
+  分组**不使用节点类型**（无 `group`/`node` 类型）——组内节点用 `text`/`code`/`file`/`url` 等正常类型，
+  分组信息完全通过空间分区（坐标）表达。
 - **Root 规则**：`isRoot:true` 最多一个；root 是主题核心，位于视觉中心或主要起点，不放边角。
 - **主流程优先布局**：A→B→C→D 优先排主轴，支线 B→X/B→Y 挂到对应节点下方/旁侧，
   不让支线破坏主流程。
 - **复杂 Canvas**（>25 节点）：核心主题 → 一级领域 → 各领域内部局部结构，不要平铺。
 - **孤立节点**：有意义的独立知识放「相关知识/参考资料」区域；空节点删除；
-  file/image/link 可作 Reference 区域。
+  file/image/url 可作 Reference 区域。
 
 ## 最终自检（视觉模拟检查）
 
 输出前逐项检查：
 
 ```text
+【格式硬校验（不满足即写入被拒）】
+□ 顶层只有 nodes 与 edges，无 layout 及其它字段？
+□ 每个节点都有 id / type / x / y / width / height，且 width/height > 0？
+□ type 只用了 text/file/image/url/code？
+□ 每条边 fromNode/toNode 都指向存在的节点 id？
+□ 文本中的引号/反斜杠已按 JSON 转义，无控制字符？
+
+【内容与空间（不满足需调整坐标）】
 □ 一眼看出主题中心？
 □ 一级知识清楚？
 □ 二级知识属于正确的一级？
@@ -164,17 +256,21 @@ layout = spatial representation
 
 ### 创建 Canvas
 1. 理解主题；结合知识库时先用 `kb_search` 检索真实资料。
-2. 按流程分析知识结构 → 选布局模式 → 设计 nodes/edges 与坐标/尺寸。
-3. 输出完整 Canvas JSON（含 layout 意图 + 最终 x/y/width/height）。
-4. 用 `write` 写入 `xxx.canvas`（建议 `canvas/` 目录）；系统校验后原样落盘，文件名称优先中文。
+2. 按流程分析知识结构 → 设计空间布局 → 决定 nodes/edges 与坐标/尺寸。
+3. 输出完整 Canvas JSON——**严格遵循上方《Canvas JSON 格式规范》**：
+   顶层只有 `nodes`/`edges`；节点 type 仅用 text/file/image/url/code；
+   边仅用 fromNode/toNode（可带 label）；不输出任何 schema 之外的字段；不加代码围栏。
+4. 用 `write` 写入 `xxx.canvas`（建议 `canvas/` 目录）。写入前系统会自动校验；
+   **若被拒绝并返回原因（如缺尺寸、非法字段、悬空边），按原因修正后重新写入，不要绕过或放弃**。
+   校验通过后原样落盘，文件名称优先中文。
 5. 告知用户路径，说明"已可用 Canvas 页面打开查看"。
 
 ### 整理 Canvas
 1. 用 `read` 读取 `.canvas`（含坐标）。
 2. 分析节点/边/空间结构：删除无意义/空节点、合并重复概念、补充关系、
-   重新设计坐标以改善可读性（改 layout 意图与节点坐标）。
+   重新设计坐标以改善可读性。
 3. 保留真实 `file` 路径；可再 `kb_search` 补资料。
-4. 用 `write` 覆盖原文件；覆盖前说明改动，如有疑虑先征询用户。
+4. 用 `write` 覆盖原文件（同样会经系统校验）；覆盖前说明改动，如有疑虑先征询用户。
 
 ### 回答画布相关问题
 1. 用 `read` 读取 `.canvas`，理解后回答；不凭记忆编造。
@@ -183,5 +279,3 @@ layout = spatial representation
 
 - `write` 覆盖已有画布前确认用户意图（不可撤销）。
 - `file` 节点只能引用真实存在的相对路径，**禁止编造**。
-- 不修改 `.mdgo` 受控数据。
-- 不调用任何 Canvas 专用 Function（read_canvas / canvas_generate / canvas_organize 已不存在）。

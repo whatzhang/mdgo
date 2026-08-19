@@ -51,7 +51,6 @@ pub struct AiHistoryStats {
     pub favorite_count: u32,
     pub count_by_type: Vec<TypeCount>,
     pub daily_trend: Vec<DailyCount>,
-    pub top_files: Vec<FileCount>,
     pub total_token_usage: u64,
 }
 
@@ -64,13 +63,6 @@ pub struct TypeCount {
 #[derive(Debug, Serialize)]
 pub struct DailyCount {
     pub date: String,
-    pub count: u32,
-}
-
-#[derive(Debug, Serialize)]
-pub struct FileCount {
-    pub file_name: String,
-    pub file_path: String,
     pub count: u32,
 }
 
@@ -377,26 +369,6 @@ impl AiHistoryStore {
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|e| format!("读取趋势失败: {}", e))?;
 
-            // 最热文件排行 Top 10
-            let mut stmt = conn
-                .prepare_cached(
-                    "SELECT file_name, file_path, COUNT(*) as cnt FROM ai_history
-                     WHERE file_name != '' AND file_name IS NOT NULL
-                     GROUP BY file_name, file_path ORDER BY cnt DESC LIMIT 10",
-                )
-                .map_err(|e| format!("文件排行查询失败: {}", e))?;
-            let top_files = stmt
-                .query_map([], |row| {
-                    Ok(FileCount {
-                        file_name: row.get(0)?,
-                        file_path: row.get(1)?,
-                        count: row.get(2)?,
-                    })
-                })
-                .map_err(|e| format!("文件排行查询失败: {}", e))?
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| format!("读取文件排行失败: {}", e))?;
-
             let total_token_usage: u64 = conn
                 .query_row(
                     "SELECT COALESCE(SUM(token_count), 0) FROM ai_history",
@@ -410,7 +382,6 @@ impl AiHistoryStore {
                 favorite_count,
                 count_by_type,
                 daily_trend,
-                top_files,
                 total_token_usage,
             })
         })
