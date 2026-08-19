@@ -387,70 +387,48 @@ fn macos_gpu_usages() -> Vec<f32> {
     if usages.is_empty() { vec![-1.0] } else { usages }
 }
 
-/// Windows：`Get-CimInstance Win32_VideoController` 获取 GPU 名称/厂商/显存。
+/// Windows：从注册表读取 GPU 静态信息（名称/显存/厂商），进程内完成，替代 PowerShell 子进程。
+///
+/// 注册表位置：`HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-...}\000X`
+/// - `DriverDesc` → 名称
+/// - `HardwareInformation.qwMemorySize` → 显存字节（QWORD，**精确**；WMI AdapterRAM 为 32 位上限，
+///   8GB+ 显卡会被截断为 ~4GB）
+/// - `MatchingDeviceId` → PCI 设备 ID（`VEN_xxxx` → 厂商）
 #[cfg(target_os = "windows")]
 fn windows_gpus_static() -> Vec<GpuMetrics> {
-    const SCRIPT: &str = "Get-CimInstance Win32_VideoController | Select-Object Name,AdapterRAM,PNPDeviceID | ConvertTo-Json -Compress";
-    let mut cmd = std::process::Command::new("powershell");
-    apply_no_window(&mut cmd);
-    let Ok(out) = cmd
-        .args(["-NoProfile", "-NonInteractive", "-Command", SCRIPT])
-        .output()
-    else {
-        return Vec::new();
+    use winreg::enums::*;
+    use winreg::RegKey;
+    const CLASS_KEY: &str =
+        r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}";
+    let mut gpus = Vec::new();
+    let Ok(class) = RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey(CLASS_KEY) else {
+        return gpus;
     };
-    if !out.status.success() {
-        return Vec::new();
-    }
-    let text = String::from_utf8_lossy(&out.stdout);
-    let json: serde_json::Value = serde_json::from_str(text.trim()).unwrap_or(serde_json::Value::Null);
-    let arr = match json {
-        serde_json::Value::Array(a) => a,
-        serde_json::Value::Object(_) => vec![json],
-        _ => return Vec::new(),
-    };
-    let mut gpus: Vec<GpuMetrics> = arr
-        .iter()
-        .filter_map(|g| {
-            let name = g
-                .get("Name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .trim()
-                .to_string();
-            // 过滤无意义的基础显示适配器
-            if name.is_empty() || name.eq_ignore_ascii_case("Microsoft Basic Display Adapter") {
-                return None;
-            }
-            let vendor = g
-                .get("PNPDeviceID")
-                .and_then(|v| v.as_str())
-                .map(|id| {
-                    let upper = id.to_uppercase();
-                    upper
-                        .split("VEN_")
-                        .nth(1)
-                        .and_then(|s| s.split('&').next())
-                        .map(windows_vendor_name)
-                        .unwrap_or_else(|| "Unknown".to_string())
-                })
-                .unwrap_or_default();
-            let vram = g.get("AdapterRAM").and_then(|v| v.as_u64()).unwrap_or(0);
-            Some(GpuMetrics { name, vendor, vram, mem_used: None, usage: -1.0 })
-        })
-        .collect();
-
-    // NVIDIA 显卡：用 nvidia-smi 覆盖名称/显存/已用显存（WMI AdapterRAM 为 32 位上限，8GB+ 显存会被截断）
-    if let Some(nv) = nvidia_smi_gpus() {
-        for (i, g) in gpus.iter_mut().enumerate() {
-            if let Some((name, mem_used, vram)) = nv.get(i) {
-                g.name = name.clone();
-                g.vram = *vram;
-                if *mem_used > 0 {
-                    g.mem_used = Some(*mem_used);
-                }
-            }
+    let mut keys: Vec<String> = class.enum_keys().flatten().collect();
+    keys.sort(); // 0000..0009 顺序稳定（与 nvidia-smi 回退索引对齐）
+    for sub in keys {
+        let Ok(sk) = class.open_subkey(&sub) else { continue };
+        let Ok(name) = sk.get_value::<String, _>("DriverDesc") else { continue };
+        let name = name.trim().to_string();
+        // 过滤无意义的基础显示适配器
+        if name.is_empty() || name.eq_ignore_ascii_case("Microsoft Basic Display Adapter") {
+            continue;
         }
+        let vram = sk.get_value::<u64, _>("HardwareInformation.qwMemorySize").unwrap_or(0);
+        let vendor = sk
+            .get_value::<String, _>("MatchingDeviceId")
+            .ok()
+            .map(|id| {
+                let upper = id.to_uppercase();
+                upper
+                    .split("VEN_")
+                    .nth(1)
+                    .and_then(|s| s.split('&').next())
+                    .map(windows_vendor_name)
+                    .unwrap_or_else(|| "Unknown".to_string())
+            })
+            .unwrap_or_default();
+        gpus.push(GpuMetrics { name, vendor, vram, mem_used: None, usage: -1.0 });
     }
     gpus
 }
@@ -534,10 +512,9 @@ fn linux_gpus_static() -> Vec<GpuMetrics> {
 
 /// NVIDIA GPU 静态信息（`nvidia-smi` 提供：名称、已用显存、显存总量，单位 MiB 换算为字节）。
 ///
-/// 必要原因：Windows WMI `Win32_VideoController.AdapterRAM` 是 32 位 DWORD，
-/// 8GB 及以上显存的显卡会被截断为 ~4GB（如 RTX 2070 SUPER 8G 显示为 4293918720）；
-/// Linux `lspci` 也无法可靠给出显存。nvidia-smi 不可用时返回 None。
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+/// 仅 Linux 使用：Windows 已改用注册表（`HardwareInformation.qwMemorySize`）获取名称/显存，
+/// 精度更高且无需子进程；Linux `lspci` 无法可靠给出显存。nvidia-smi 不可用时返回 None。
+#[cfg(target_os = "linux")]
 fn nvidia_smi_gpus() -> Option<Vec<(String, u64, u64)>> {
     let mut cmd = std::process::Command::new("nvidia-smi");
     apply_no_window(&mut cmd);
@@ -655,63 +632,166 @@ struct GpuLiveSample {
     mem_used: Vec<u64>,
 }
 
-/// Windows：聚合 GPU Engine 性能计数器，得到与任务管理器一致的 GPU 使用率，
-/// 以及 GPUAdapterMemory 的已用显存。
+/// 从 PDH 实例名中提取 LUID，如 "pid_123_luid_0x00000000_0x000171C9_phys_0_eng_0_engtype_3D"
+/// → "luid_0x00000000_0x000171C9"
+#[cfg(target_os = "windows")]
+fn extract_luid(name: &str) -> Option<String> {
+    let parts: Vec<&str> = name.split('_').collect();
+    let idx = parts.iter().position(|p| p.to_uppercase().starts_with("LUID"))?;
+    let mut tok = parts[idx].to_string();
+    for p in parts.iter().skip(idx + 1).take(2) {
+        tok.push('_');
+        tok.push_str(p);
+    }
+    Some(tok)
+}
+
+/// PDH：进程内读取一批通配计数器（路径列表）的全部实例值。
+/// 同一查询内两次采样（间隔约 1 秒），使 fraction/rate 型计数器（GPU Engine 使用率）可计算。
+/// 返回与 `paths` 一一对应的实例列表 `Vec<(实例名, 值)>`；单个计数器失败时对应项为空 Vec。
+#[cfg(target_os = "windows")]
+fn pdh_read_all(paths: &[&str]) -> Vec<Vec<(String, f64)>> {
+    use std::ptr;
+    use std::thread;
+    use std::time::Duration;
+    use windows_sys::Win32::System::Performance::*;
+    unsafe {
+        let empty = || vec![Vec::new(); paths.len()];
+        let mut query: PDH_HQUERY = ptr::null_mut();
+        if PdhOpenQueryW(ptr::null(), 0, &mut query) != 0 {
+            return empty();
+        }
+        let mut counters: Vec<PDH_HCOUNTER> = Vec::with_capacity(paths.len());
+        for p in paths {
+            let wide_path: Vec<u16> = p.encode_utf16().chain(std::iter::once(0)).collect();
+            let mut counter: PDH_HCOUNTER = ptr::null_mut();
+            if PdhAddEnglishCounterW(query, wide_path.as_ptr(), 0, &mut counter) != 0 {
+                counters.push(ptr::null_mut()); // 索引对齐
+                continue;
+            }
+            counters.push(counter);
+        }
+        if counters.iter().all(|c| c.is_null()) {
+            PdhCloseQuery(query);
+            return empty();
+        }
+        // 两次采样：fraction/rate 型计数器需间隔才能计算出格式化值
+        let _ = PdhCollectQueryData(query);
+        thread::sleep(Duration::from_millis(1100));
+        if PdhCollectQueryData(query) != 0 {
+            PdhCloseQuery(query);
+            return empty();
+        }
+        let mut result: Vec<Vec<(String, f64)>> = Vec::with_capacity(paths.len());
+        for &counter in &counters {
+            if counter.is_null() {
+                result.push(Vec::new());
+                continue;
+            }
+            let mut buf_size: u32 = 0;
+            let mut item_count: u32 = 0;
+            // 第一次调用：仅取所需缓冲区大小（返回 PDH_MORE_DATA）
+            if PdhGetFormattedCounterArrayW(
+                counter,
+                PDH_FMT_DOUBLE,
+                &mut buf_size,
+                &mut item_count,
+                ptr::null_mut(),
+            ) != PDH_MORE_DATA
+            {
+                result.push(Vec::new());
+                continue;
+            }
+            let item_size = std::mem::size_of::<PDH_FMT_COUNTERVALUE_ITEM_W>();
+            let cap = ((buf_size as usize).max(item_size) / item_size) + 4;
+            let mut buf: Vec<PDH_FMT_COUNTERVALUE_ITEM_W> = Vec::with_capacity(cap);
+            let rc = PdhGetFormattedCounterArrayW(
+                counter,
+                PDH_FMT_DOUBLE,
+                &mut buf_size,
+                &mut item_count,
+                buf.as_mut_ptr(),
+            );
+            if rc != 0 {
+                result.push(Vec::new());
+                continue;
+            }
+            buf.set_len(item_count as usize);
+            let mut items = Vec::with_capacity(buf.len());
+            for it in &buf {
+                if it.FmtValue.CStatus != 0 || it.szName.is_null() {
+                    continue;
+                }
+                let mut len = 0usize;
+                while *it.szName.add(len) != 0 {
+                    len += 1;
+                }
+                let name = String::from_utf16_lossy(std::slice::from_raw_parts(it.szName, len));
+                items.push((name, it.FmtValue.Anonymous.doubleValue));
+            }
+            result.push(items);
+        }
+        PdhCloseQuery(query);
+        result
+    }
+}
+
+/// Windows：进程内读取 GPU Engine 使用率与 GPU Adapter Memory 已用显存（PDH，任务管理器同源），
+/// 替代 PowerShell 子进程（消除每次约 0.7s 的进程启动开销与窗口闪现）。
 ///
-/// 说明：任务管理器的 GPU 百分比 = 该适配器所有引擎（3D/Copy/Video 等）利用率求和（封顶 100），
-/// 而 nvidia-smi `utilization.gpu` 只是"内核执行时间占比"，两者语义不同（任务管理器通常更高）。
-/// 这里按 LUID 分组聚合；过滤软件适配器（无显存且无负载，如 Microsoft Basic Render Driver），
-/// 再按 LUID 排序，按索引与 `gpus` 列表（Win32_VideoController 顺序）对齐。
+/// 任务管理器的 GPU 百分比 = 该适配器所有引擎（3D/Copy/Video 等）利用率求和（封顶 100），
+/// 与 nvidia-smi `utilization.gpu`（内核执行时间占比）语义不同（任务管理器通常更高）。
+/// 按 LUID 分组聚合；过滤软件适配器（无显存且无负载，如 Microsoft Basic Render Driver）；
+/// 按 LUID 排序，按索引与 `gpus` 列表（注册表顺序）对齐。
 #[cfg(target_os = "windows")]
 fn windows_gpu_live_sample() -> GpuLiveSample {
-    const SCRIPT: &str = r#"
-$e = Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine -ErrorAction SilentlyContinue
-$m = @{}
-Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory -ErrorAction SilentlyContinue | ForEach-Object {
-    if ($_.Name -match 'luid_0x[0-9a-fA-F]+_0x[0-9a-fA-F]+') { $m[$matches[0]] = [uint64]$_.DedicatedUsage }
-}
-$g = $e | Group-Object { if ($_.Name -match 'luid_0x[0-9a-fA-F]+_0x[0-9a-fA-F]+') { $matches[0] } else { '' } } | ForEach-Object {
-    $sum = 0.0
-    foreach ($x in $_.Group) { $sum += [double]$x.UtilizationPercentage }
-    [PSCustomObject]@{
-        luid = $_.Name
-        usage = [math]::Min(100, [math]::Round($sum, 1))
-        mem_used = $m[$_.Name]
+    let all = pdh_read_all(&[
+        r"\GPU Engine(*)\utilization percentage",
+        r"\GPU Adapter Memory(*)\Dedicated Usage",
+    ]);
+    let (usage_items, mem_items) = (all.get(0), all.get(1));
+
+    let mut usage_map: HashMap<String, f64> = HashMap::new();
+    if let Some(items) = usage_items {
+        for (name, v) in items {
+            if let Some(luid) = extract_luid(name) {
+                *usage_map.entry(luid).or_default() += v;
+            }
+        }
     }
-} | Where-Object { $_.luid -ne '' -and ($_.mem_used -gt 1MB -or $_.usage -gt 0) } | Sort-Object luid
-$g | ConvertTo-Json -Compress
-"#;
+    let mut mem_map: HashMap<String, f64> = HashMap::new();
+    if let Some(items) = mem_items {
+        for (name, v) in items {
+            if let Some(luid) = extract_luid(name) {
+                *mem_map.entry(luid).or_default() += v;
+            }
+        }
+    }
+
+    // 合并 LUID 集合（使用率优先；部分集成显卡可能无 engine 计数器但有显存）
+    let mut luids: Vec<String> = usage_map.keys().cloned().collect();
+    for k in mem_map.keys() {
+        if !luids.contains(k) {
+            luids.push(k.clone());
+        }
+    }
+    luids.sort();
+
     let mut sample = GpuLiveSample::default();
-    let mut cmd = std::process::Command::new("powershell");
-    apply_no_window(&mut cmd);
-    let Ok(out) = cmd
-        .args(["-NoProfile", "-NonInteractive", "-Command", SCRIPT])
-        .output()
-    else {
-        return sample;
-    };
-    if !out.status.success() {
-        return sample;
-    }
-    let text = String::from_utf8_lossy(&out.stdout);
-    let Ok(json) = serde_json::from_str::<serde_json::Value>(text.trim()) else {
-        return sample;
-    };
-    let arr = match json {
-        serde_json::Value::Array(a) => a,
-        _ => return sample,
-    };
-    for item in arr {
-        let Some(obj) = item.as_object() else { continue };
-        let Some(usage) = obj.get("usage").and_then(|v| v.as_f64()) else { continue };
-        let mem = obj.get("mem_used").and_then(|v| v.as_u64()).unwrap_or(0);
-        sample.usages.push((usage as f32).clamp(0.0, 100.0));
-        sample.mem_used.push(mem);
+    for luid in luids {
+        let usage = usage_map.get(&luid).copied().unwrap_or(0.0);
+        let mem = mem_map.get(&luid).copied().unwrap_or(0.0);
+        // 过滤软件适配器（Microsoft Basic Render Driver：无显存且无负载）
+        if usage <= 0.0 && mem <= 1024.0 * 1024.0 {
+            continue;
+        }
+        sample.usages.push(usage.min(100.0) as f32);
+        sample.mem_used.push(mem as u64);
     }
     sample
 }
 
-/// Windows：启动独立的 GPU 采集线程（PowerShell 查询约需数百毫秒，放独立线程避免阻塞主监控循环）。
+/// Windows：启动独立的 GPU 采集线程（PDH 采样含 ~1s 的两次采样间隔，放独立线程避免阻塞主监控循环）。
 /// 每周期采样一次，结果写入共享的 `GpuLiveSample`；随 `running` 原子标志自动停止。
 #[cfg(target_os = "windows")]
 fn spawn_gpu_collector(
@@ -723,7 +803,7 @@ fn spawn_gpu_collector(
         .spawn(move || {
             while running.load(Ordering::SeqCst) {
                 let mut sample = windows_gpu_live_sample();
-                // PowerShell 不可用/无计数器时，回退 nvidia-smi（NVIDIA 显卡）
+                // PDH 无计数器（如旧版 Windows）时，回退 nvidia-smi（NVIDIA 显卡）
                 if sample.usages.is_empty() {
                     let nv = nvidia_smi_live();
                     sample.usages = nv.iter().map(|(u, _)| *u).collect();
