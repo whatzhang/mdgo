@@ -5,7 +5,7 @@ use crate::core::context::ChatTurn;
 /// 一次模型发起的工具调用（OpenAI 协议视图）。
 ///
 /// 与 rig 的 `ToolCall` 解耦（依赖倒置）：本项目会话层只依赖本 DTO，
-/// 由转换层（`commands::llm::chat_turns_to_history`）映射为 rig 消息。
+/// 由 core/loop 会话层（`crate::core::loop::session::Session::derive_history`）映射为模型消息。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ToolCallDto {
     /// 工具调用 ID（`call_*`），用于与 tool 结果消息的 `tool_call_id` 配对
@@ -19,13 +19,15 @@ pub struct ToolCallDto {
 /// 将历史按「工具调用单元」分组：一条 assistant（带 `tool_calls`）与其
 /// 紧随其后的连续 tool 结果消息同组，其余消息各自成组。
 ///
-/// 这是「工具调用配对」语义的**唯一后端来源**（P1-1，此前在
-/// `core/context::group_turns` 与 `commands/llm::chat_turns_to_history` 各有一份
-/// 近似实现，改一处漏一处）：
+/// 这是「工具调用配对」语义的**唯一后端来源**（P1-1，rig 时代的
+/// `core/context::group_turns` 与 `commands/llm::chat_turns_to_history` 各有近似
+/// 实现，改一处漏一处；rig 移除后收敛到本函数）。
+/// ⚠️ 前端 `chat-history.js` 的 `groupToolUnits` 是同一语义的镜像副本（历史裁剪用）；
+/// 修改本函数时须同步前端，避免配对语义漂移（B8）。
 /// - 压缩切分（`core::context` 的滑窗/摘要策略）必须以单元为单位——否则会把
 ///   assistant 的 tool_call 与 tool 结果切到不同侧，产生「孤儿 tool 消息」
 ///   导致 OpenAI 协议拒绝请求；
-/// - 历史 → 模型消息转换（`commands::llm::chat_turns_to_history`）用同一分组
+/// - 历史 → 模型消息转换（`crate::core::loop::session::derive_history`）用同一分组
 ///   判定孤儿 tool_call（无配对结果的调用不重放）。
 ///
 /// 返回 `(单元起始下标, 单元)`，供压缩器计算保留起点（`kept_from`）。
@@ -43,20 +45,6 @@ pub fn group_tool_units(history: &[ChatTurn]) -> Vec<(usize, Vec<ChatTurn>)> {
         }
     }
     units
-}
-
-/// 收集历史中「存在配对 tool 结果」的 tool_call id 集合。
-///
-/// 供 `chat_turns_to_history` 过滤孤儿 tool_call（成功但空输出的工具其 result
-/// 为空串，前端不生成 tool 消息；无配对结果的 tool_call 不得重放，否则
-/// OpenAI 协议会因 tool_call 无配对结果而拒绝请求）。与 [`group_tool_units`]
-/// 共享同一配对语义（P1-1）。
-pub fn paired_tool_call_ids(turns: &[ChatTurn]) -> std::collections::HashSet<&str> {
-    turns
-        .iter()
-        .filter(|t| t.role == "tool")
-        .filter_map(|t| t.tool_call_id.as_deref())
-        .collect()
 }
 
 #[derive(Debug, Serialize, Clone)]

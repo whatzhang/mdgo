@@ -3,20 +3,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use futures::StreamExt;
-use rig_agent::agent::MultiTurnStreamItem;
-use rig_agent::streaming::StreamingChat;
-use rig_core::completion::message::{ToolCall, ToolFunction};
-use rig_core::completion::{AssistantContent, Message};
-use rig_core::streaming::StreamedAssistantContent;
-use rig_core::OneOrMany;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::core::agent::{
-    KbSearchConfig, aggregate_hits, build_chat_agent, build_context_text, build_rag_agent,
-    load_agent_rules,
+    KbSearchConfig, aggregate_hits, build_context_text, load_agent_rules,
 };
 use crate::core::agent::tools::tool_call_bus;
 use crate::core::context::{
@@ -26,6 +19,10 @@ use crate::core::agent::limits::{
     MAX_EXPANDED_QUERIES, MAX_TOTAL_QUERIES, QUERY_DEDUP_SIMILARITY, QUERY_EXPANSION_TIMEOUT_SECS,
 };
 use crate::core::db::lance::QuerySource;
+use crate::core::r#loop::{
+    LlmAdapter as LoopLlmAdapter, LlmMessage, LlmRole, LoopAgent, LoopConfig, LoopEvent,
+    Session, SessionEvent, ToolCall as LoopToolCall, TurnOutcome,
+};
 use crate::core::search::query_plan::{
     QueryPlanner, RetrievalIntent, RuleQueryPlanner, dedup_expanded_queries,
     extract_symbol_tokens, should_expand,
@@ -34,7 +31,7 @@ use crate::core::skill::activation::{ActivationSource, ActiveSkillState};
 use crate::core::skill::context::{SkillExecutionContext, build_skill_catalog, resolve_preactivated};
 use crate::core::skill::SkillStore;
 use crate::core::{SearchHit, call_embedding_query, call_embedding_queries};
-use crate::services::llm::{LLMClient, UsageInfo, usage_to_info};
+use crate::services::llm::{ChatMessage, LLMClient, UsageInfo};
 
 // ─── 后端消息长度预算（集中定义见 crate::core::agent::limits） ───
 use crate::core::agent::limits::{MAX_MESSAGE_CHARS, MAX_MESSAGE_TOKENS, SUMMARY_MAX_CHARS};
@@ -224,97 +221,11 @@ fn compression_budget_tokens(context_length: u32) -> usize {
     }
 }
 
-/// 将压缩后的历史轮次转为 Rig history
-fn chat_turns_to_history(turns: &[ChatTurn]) -> Vec<Message> {
-    // 统计历史中实际存在的 tool 结果 id：过滤「孤儿 tool_call」
-    // （成功但空输出的工具其 result 为空串，前端不生成 tool 消息），
-    // 否则 OpenAI 协议会因 tool_call 无配对结果而拒绝请求（review 修复）。
-    // P1-1：配对语义与压缩器共享同一来源（core::chat_types::paired_tool_call_ids）
-    let tool_result_ids: std::collections::HashSet<&str> =
-        crate::core::chat_types::paired_tool_call_ids(turns);
-    turns
-        .iter()
-        .map(|t| match t.role.as_str() {
-            "system" => Message::system(&t.content),
-            "assistant" => {
-                let has_tools = t.tool_calls.as_ref().is_some_and(|c| !c.is_empty());
-                if !has_tools {
-                    return Message::assistant(&t.content);
-                }
-                let mut contents: Vec<AssistantContent> = Vec::new();
-                if !t.content.is_empty() {
-                    contents.push(AssistantContent::text(&t.content));
-                }
-                for tc in t.tool_calls.iter().flatten() {
-                    // 仅保留历史中有对应 tool 结果消息的调用（孤儿调用剔除）
-                    if !tool_result_ids.contains(tc.id.as_str()) {
-                        continue;
-                    }
-                    // 参数为模型原始 JSON 字符串：解析失败时降级为空对象（防御，不阻断请求）
-                    let args = serde_json::from_str(&tc.arguments)
-                        .unwrap_or_else(|_| serde_json::Value::Object(Default::default()));
-                    contents.push(AssistantContent::ToolCall(ToolCall::new(
-                        tc.id.clone(),
-                        ToolFunction::new(tc.name.clone(), args),
-                    )));
-                }
-                // 全部被过滤且无文本：补占位文本，避免空 assistant 消息（协议同样会拒绝）
-                if contents.is_empty() {
-                    contents.push(AssistantContent::text("（此前发起的部分工具调用结果为空，已省略）"));
-                }
-                Message::Assistant {
-                    id: None,
-                    content: OneOrMany::many(contents)
-                        .expect("contents 至少含一个占位文本，expect 安全"),
-                }
-            }
-            "tool" => Message::tool_result_with_call_id(
-                t.tool_call_id.clone().unwrap_or_default(),
-                t.tool_call_id.clone(),
-                &t.content,
-            ),
-            _ => Message::user(&t.content),
-        })
-        .collect()
-}
-
-/// 流式消费循环的"下一个事件或取消"等待器。
-///
-/// 用 `tokio::select!` 同时等待流事件与取消信号:
-/// - `Ok(Some(item))`:正常事件
-/// - `Ok(None)`:流正常结束
-/// - `Err(())`:取消已触发 —— 调用方应立即 return,select 会丢弃挂起中的
-///   stream future;rig 的流是惰性驱动的,drop 会尽力断开底层 reqwest 连接
-///   (连接可能被连接池复用,但取消不再依赖下一个 SSE chunk 到达)。
-async fn next_or_cancel<T>(
-    stream: &mut (impl futures_util::Stream<Item = T> + Unpin),
-    cancel: &CancellationToken,
-) -> Result<Option<T>, ()> {
-    tokio::select! {
-        biased; // 取消与流事件同时就绪时取消优先(严格"立即断开")
-        _ = cancel.cancelled() => Err(()),
-        item = stream.next() => Ok(item),
-    }
-}
-
 /// 判断流式错误是否为「模型上下文窗口超限」（P1-3：context_length_exceeded）。
 ///
 /// 命中时收紧压缩预算后重试一次（对齐 DSH `agent/request-error` 语义：
 /// 仅在压缩推进时重试，最多 1 次，避免无限循环）。覆盖 OpenAI 兼容网关的
 /// 常见错误文案（HTTP 400 + error.message / provider 文本）。
-fn is_context_overflow_error(e: &rig_agent::agent::StreamingError) -> bool {
-    let text = e.to_string().to_lowercase();
-    const MARKERS: &[&str] = &[
-        "context length",
-        "context_length",
-        "maximum context",
-        "max context",
-        "context window",
-        "too many tokens",
-        "token limit",
-    ];
-    MARKERS.iter().any(|m| text.contains(m))
-}
 
 /// 计算各作用域技能基础目录（供 read 工具按需读取已激活技能的参考文档，渐进式披露 L3）。
 ///
@@ -727,10 +638,20 @@ async fn get_or_create_llm_client(
 /// 取消正在运行的任务
 #[tauri::command]
 pub async fn kb_cancel_task(
-    state: tauri::State<'_, TaskRegistry>,
+    state: tauri::State<'_, crate::AppState>,
+    task_registry: tauri::State<'_, TaskRegistry>,
     request_id: String,
 ) -> Result<(), String> {
-    state.cancel(&request_id).await;
+    task_registry.cancel(&request_id).await;
+    // B2：取消即标记任务为 cancelled（生成路径的 rag:done/llm:done 收尾是幂等的；
+    // 对早退路径（无终态事件）这里是唯一收尾点，防全局任务条滞留 running）
+    if let Some(task) = state.agent_tasks.get(&request_id) {
+        if task.status == crate::core::agent::task_store::AgentTaskStatus::Running {
+            state
+                .agent_tasks
+                .finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Cancelled);
+        }
+    }
     Ok(())
 }
 
@@ -754,44 +675,6 @@ pub fn agent_task_get(
     state.agent_tasks.get(&request_id)
 }
 
-/// 收集已连接 MCP 服务器的工具为 DynamicTool 列表（v3：携带请求级配置以接轨迹记录）。
-async fn build_mcp_agent_tools(
-    state: &tauri::State<'_, crate::AppState>,
-    search_config: &KbSearchConfig,
-) -> Vec<rig_agent::tool::DynamicTool> {
-    let mut tools = Vec::new();
-    let infos = state.mcp.list().await;
-    
-    // 检测工具列表是否有更新（用于调试/监控）
-    let mut has_updates = false;
-    
-    for info in infos {
-        if info.status != crate::core::mcp::STATUS_CONNECTED {
-            continue;
-        }
-        if let Some(detail) = state.mcp.get(&info.name).await {
-            // 检查工具列表更新时间（用于监控，不影响构建逻辑）
-            if detail.tools.iter().any(|t| t.name.contains('_')) {
-                has_updates = true;
-            }
-            
-            for def in detail.tools {
-                tools.push(crate::core::mcp::build_mcp_tool(
-                    info.name.clone(),
-                    def,
-                    state.mcp.clone(),
-                    search_config.clone(),
-                ));
-            }
-        }
-    }
-    
-    if !tools.is_empty() {
-        log::info!("[mcp] Agent 已挂载 {} 个 MCP 工具{}", tools.len(), 
-            if has_updates { "（检测到工具列表可能已更新）" } else { "" });
-    }
-    tools
-}
 
 /// RAG 查询：技能解析 → 查询扩展 → 混合检索 → 文档聚合 → RAG Agent 生成（全流式）
 #[tauri::command]
@@ -849,19 +732,7 @@ pub async fn agent_query(
     // 从中央化内存配置读取 LLM 配置
     let llm_cfg = state.llm_config.read().unwrap_or_else(|e| e.into_inner()).clone();
 
-    // v2：Agent/RAG 模式的工具编排基于 rig OpenAI 通道，暂不支持 Anthropic 协议。
-    // 明确报错而非发错格式请求（避免 OpenAI 语义的误导性错误）。
-    if llm_cfg.protocol == "anthropic" {
-        log::warn!("[agent_query] [0]: Anthropic 协议暂不支持 Agent 模式: request_id={}", request_id);
-        emit_command_error(
-            &app,
-            "rag:error",
-            &request_id,
-            "Agent/RAG 模式暂不支持 Anthropic 模型，请在设置中切换到 OpenAI 兼容模型".into(),
-        );
-        task_registry.unregister(&request_id).await;
-        return Ok(());
-    }
+    // v3：Anthropic 经 LlmAdapter seam 统一支持（OpenAI/Anthropic 双协议；rig 路径已移除）
 
     // 构建 LLM 客户端（失败转为错误事件，避免 panic 与注册表泄漏）
     let llm = match get_or_create_llm_client(
@@ -877,6 +748,8 @@ pub async fn agent_query(
         Err(e) => {
             log::error!("[agent_query] [0]: LLMClient 初始化失败: request_id={} err={}", request_id, e);
             emit_command_error(&app, "rag:error", &request_id, format!("LLM 客户端初始化失败: {}", e));
+            // B2：早退路径任务状态收尾（防全局任务条滞留 running）
+            state.agent_tasks.finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Failed);
             task_registry.unregister(&request_id).await;
             return Ok(());
         }
@@ -885,6 +758,7 @@ pub async fn agent_query(
     if !llm.is_configured() {
         log::warn!("[agent_query] [0]: LLM 未配置: request_id={}", request_id);
         emit_command_error(&app, "rag:error", &request_id, "LLM 未配置，请在设置中填写端点地址和模型名称".into());
+        state.agent_tasks.finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Failed);
         task_registry.unregister(&request_id).await;
         return Ok(());
     }
@@ -1359,6 +1233,8 @@ pub async fn agent_query(
         // 检查取消
         if cancel.is_cancelled() {
             log::info!("[agent_query] [1]: 对话取消，直接结束 request_id={}", request_id);
+            // B2：早退路径任务状态收尾（防全局任务条滞留 running）
+            state.agent_tasks.finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Cancelled);
             task_registry.unregister(&request_id).await;
             return Ok(());
         }
@@ -1575,6 +1451,8 @@ pub async fn agent_query(
 
         if cancel.is_cancelled() {
             log::info!("[agent_query] [2]: 对话取消，直接结束 request_id={}", request_id);
+            // B2：早退路径任务状态收尾
+            state.agent_tasks.finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Cancelled);
             task_registry.unregister(&request_id).await;
             return Ok(());
         }
@@ -1681,6 +1559,16 @@ pub async fn agent_query(
 
     if cancel.is_cancelled() {
         log::info!("[agent_query] [4]: 对话取消，直接结束 request_id={}", request_id);
+        // B2：早退路径任务状态收尾 + generating 阶段闭合（B3）
+        crate::core::trace::stage_end(
+            &request_id,
+            "generating",
+            "cancelled",
+            generating_start.elapsed().as_millis() as u64,
+            "生成前取消",
+        );
+        emit_pending_trace_events(&app, &request_id);
+        state.agent_tasks.finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Cancelled);
         task_registry.unregister(&request_id).await;
         return Ok(());
     }
@@ -1715,8 +1603,7 @@ pub async fn agent_query(
     };
     let context = format!("{}{}", context, memory_block);
 
-    // 构建 RAG Agent：预载检索上下文 + 检索/文件/技能工具（模型可补充检索、按需激活技能）
-    let model = llm.completion_model().clone();
+    // 构建 Agent（v3：LoopAgent 由 agent_generate_loop_v2 组装，此处仅完成 Stage 0-3 产物）
     // 取第一个预激活技能的 ID 作为工具轨迹标注来源
     let primary_skill_id = skill_ctx.and_then(|c| c.skill_ids.first().cloned());
     // L1 技能目录（id + description，常驻 preamble，模型始终知道自己有哪些技能）
@@ -1789,102 +1676,412 @@ pub async fn agent_query(
     };
     // Agent 规约（角色/语言/安全边界）从资源目录加载，打包后跟随安装包
     let agent_rules = load_agent_rules(&app, "rag_agent.md");
-    let mcp_tools = build_mcp_agent_tools(&state, &search_config).await;
-    let agent = build_rag_agent(
-        model,
-        &context,
-        search_config,
-        state.skill_registry.clone(),
+    // v3：自研 LoopAgent 生成路径（Stage 0-3 业务管线不变；rig 生成路径已移除）
+    return agent_generate_loop_v2(
+        &app,
+        &state,
+        task_registry,
+        llm_cfg,
+        query,
+        messages,
+        request_id,
+        session_id,
+        dir_path,
+        context,
         catalog,
         agent_rules,
-        state.approval_gate.clone(),
-        crate::core::agent::DEFAULT_MAX_TURNS,
-        None, // 主对话全量工具
-        true, // 主对话启用技能体系的工具窄化与门禁
-        mcp_tools, // v2：MCP 工具
-        llm_cfg.reasoning_effort.clone(), // P2-18：思考程度透传流式请求
-        llm_cfg.max_tokens, // P3：最大输出 token（None/0 = 服务器默认）
-    );
-    log::info!("[agent_query] [4]: 构建 Agent 完成 request_id={}", request_id);
+        search_config,
+        sources_clone,
+        active_skills,
+        compressor,
+        state.skill_metrics.clone(),
+        skill_resolved.as_ref().map(|r| r.context.clone()),
+        cancel,
+    )
+    .await;
+}
 
-    // 技能执行计时起点（进入生成阶段即视为执行开始）
-    let skill_exec_start = std::time::Instant::now();
 
-    // 当前问题作为 prompt，历史消息（去掉最后一条当前问题）压缩后作为 history
-    // P0-5：先应用会话压缩检查点（摘要 + cutoff 之后的增量消息），压缩后写回新检查点
-    let checkpoint: Option<crate::core::context::CompactionState> = match (&session_id, &dir_path) {
-        (Some(sid), _) => {
-            let sid = sid.clone();
-            let store = state.get_chat_store(&dir_path).ok();
-            match store {
-                Some(store) => tokio::task::spawn_blocking(move || {
-                    store
-                        .get_compaction_state(&sid)
-                        .ok()
-                        .flatten()
-                        .and_then(|raw| crate::core::context::CompactionState::from_json(&raw))
-                })
-                .await
-                .ok()
-                .flatten(),
-                None => None,
+/// 按协议选择 LlmAdapter（统一入口，实现在 core/agent/loop_tools；命令层薄转发）。
+fn build_adapter(llm_cfg: &crate::LlmConfig) -> Arc<dyn LoopLlmAdapter> {
+    crate::core::agent::loop_tools::build_loop_adapter(llm_cfg)
+}
+
+/// 纯 LLM 对话（v3 LoopAgent，无工具）
+#[tauri::command]
+pub async fn kb_llm_query(
+    app: AppHandle,
+    state: tauri::State<'_, crate::AppState>,
+    task_registry: tauri::State<'_, TaskRegistry>,
+    dir_path: String,
+    messages: Vec<crate::services::llm::ChatMessage>,
+    request_id: String,
+    session_id: Option<String>,
+) -> Result<(), String> {
+    let cancel = task_registry.register(&request_id).await;
+    // Phase 1：后台任务状态中心注册（chat 模式同样支持后台运行与切回恢复）
+    let rag_prompt = messages.last().map(|m| m.content.clone()).unwrap_or_default();
+    state
+        .agent_tasks
+        .register(&request_id, session_id.clone(), "", "chat", &rag_prompt);
+
+    // 从中央化内存配置读取 LLM 配置
+    let llm_cfg = state.llm_config.read().unwrap_or_else(|e| e.into_inner()).clone();
+
+    // v2：Anthropic Messages 协议走独立流式通道（普通对话，不含 Agent 工具编排）
+    if llm_cfg.protocol == "anthropic" {
+        return kb_llm_query_anthropic(&app, &state, task_registry, messages, request_id, llm_cfg).await;
+    }
+
+    // v3：自研 LoopAgent 纯对话路径（rig 生成路径已移除）
+    return kb_llm_query_loop_v2(
+        &app,
+        &state,
+        task_registry,
+        dir_path,
+        messages,
+        request_id,
+        session_id,
+        llm_cfg,
+        cancel,
+    )
+    .await;
+}
+
+// ─── 自研 LoopAgent 通道（v3） ───
+
+/// 把聊天历史消息播种为事件溯源会话（`messages[..len-1]` 为历史；最后一条由 turn 作为输入）。
+///
+/// 纯函数（可单测）：`ChatMessage`（role/content/tool_calls/tool_call_id）→ `SessionEvent`。
+/// 工具配对语义由 `Session::derive_history` 统一处理（无配对的调用/结果自动剔除）。
+fn seed_session_from_messages(session: &mut Session, messages: &[ChatMessage]) {
+    for m in messages {
+        match m.role.as_str() {
+            "user" => {
+                session.append(SessionEvent::UserMessage {
+                    id: m.id.clone().unwrap_or_default(),
+                    content: m.content.clone(),
+                    source: "chat".into(),
+                });
             }
+            "assistant" => {
+                session.append(SessionEvent::AssistantMessage {
+                    content: m.content.clone(),
+                    tool_calls: m
+                        .tool_calls
+                        .as_deref()
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|tc| LoopToolCall {
+                            id: tc.id.clone(),
+                            name: tc.name.clone(),
+                            arguments: tc.arguments.clone(),
+                        })
+                        .collect(),
+                    usage: None,
+                    interrupted: false,
+                });
+            }
+            "tool" => {
+                session.append(SessionEvent::ToolResult {
+                    call_id: m.tool_call_id.clone().unwrap_or_default(),
+                    content: m.content.clone(),
+                    is_error: false,
+                });
+            }
+            _ => {}
         }
-        _ => None,
+    }
+}
+
+/// 压缩产物 `ChatTurn` → 协议 `ChatMessage`（供压缩后播种会话；id 置空无影响）。
+fn chat_turn_to_message(t: crate::core::context::ChatTurn) -> ChatMessage {
+    ChatMessage {
+        id: None,
+        role: t.role,
+        content: t.content,
+        tool_calls: t.tool_calls,
+        tool_call_id: t.tool_call_id,
+    }
+}
+
+/// 加载会话压缩检查点（P0-5：摘要 + cutoff 之后的增量消息；无检查点/解析失败 = None）。
+async fn load_compaction_checkpoint(
+    state: &tauri::State<'_, crate::AppState>,
+    session_id: Option<&str>,
+    dir_path: &str,
+) -> Option<crate::core::context::CompactionState> {
+    let sid = session_id?;
+    let store = state.get_chat_store(dir_path).ok()?;
+    let sid_owned = sid.to_string();
+    tokio::task::spawn_blocking(move || {
+        store
+            .get_compaction_state(&sid_owned)
+            .ok()
+            .flatten()
+            .and_then(|raw| crate::core::context::CompactionState::from_json(&raw))
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+/// v3：自研 LoopAgent 纯对话（无工具）——替代 rig `build_chat_agent` + `stream_chat`。
+///
+/// 前端事件协议与 rig 版完全一致（`llm:delta`/`llm:usage`/`llm:done`/`llm:error` +
+/// 任务状态中心 + 取消保留部分内容）；v3 已是唯一实现（rig 路径已移除）。
+async fn kb_llm_query_loop_v2(
+    app: &AppHandle,
+    state: &tauri::State<'_, crate::AppState>,
+    task_registry: tauri::State<'_, TaskRegistry>,
+    dir_path: String,
+    messages: Vec<ChatMessage>,
+    request_id: String,
+    session_id: Option<String>,
+    llm_cfg: crate::LlmConfig,
+    cancel: CancellationToken,
+) -> Result<(), String> {
+    if messages.is_empty() {
+        emit_command_error(app, "llm:error", &request_id, "消息不能为空".into());
+        // B2：早退路径任务状态收尾
+        state.agent_tasks.finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Failed);
+        task_registry.unregister(&request_id).await;
+        return Ok(());
+    }
+    // 1) LLM 适配器（OpenAI / Anthropic 按协议选择；transport 与业务解耦）
+    if llm_cfg.endpoint.trim().is_empty() || llm_cfg.model.trim().is_empty() {
+        emit_command_error(app, "llm:error", &request_id, "LLM 未配置".into());
+        state.agent_tasks.finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Failed);
+        task_registry.unregister(&request_id).await;
+        return Ok(());
+    }
+    let adapter: Arc<dyn LoopLlmAdapter> = build_adapter(&llm_cfg);
+
+    // 1.5) 压缩接线（修复 v3 回归）：构造摘要+滑窗压缩器（摘要用主模型 LLMClient），
+    // 历史超预算时压缩后再播种会话（与 RAG 路径同语义；budget 按模型窗口 80%）。
+    // LLMClient 构建失败 → 降级纯滑窗压缩（摘要缺失不影响正确性）。
+    let compressor: Arc<dyn ContextCompressor> = match state
+        .llm_client_for(&llm_cfg.endpoint, &llm_cfg.model, &llm_cfg.api_key)
+        .await
+    {
+        Ok(client) => {
+            let summarizer: Arc<dyn crate::core::context::HistorySummarizer> = Arc::new(client);
+            Arc::new(SummarizeThenWindowCompressor::new(summarizer, SUMMARY_MAX_CHARS))
+        }
+        Err(e) => {
+            log::warn!("[kb_llm_query_v3] LLMClient 构建失败，历史压缩降级纯滑窗: {}", e);
+            Arc::new(crate::core::context::SlidingWindowCompressor)
+        }
     };
-    let hist_messages = apply_compaction_checkpoint(&messages, checkpoint.as_ref());
-    // P1-3：上下文溢出重试——模型上下文窗口超限（context_length_exceeded）时
-    // 收紧压缩预算（60%）重新压缩历史后重试一次（对齐 DSH agent/request-error
-    // 语义：仅在压缩推进时重试，最多 1 次，避免无限循环）。
-    let mut compress_budget_tokens = compression_budget_tokens(llm_cfg.context_length);
-    let mut overflow_retries = 0usize;
-    const MAX_OVERFLOW_RETRIES: usize = 1;
-    // 初值 None 仅用于 expect 兜底（循环正常退出前必被赋值）；编译器提示 unused 属预期
-    #[allow(unused_assignments)]
-    let mut stream_outcome: Option<(
-        String,            // full_content
-        Option<UsageInfo>, // final_usage
-        u64,               // delta_count
-        bool,              // stream_failed
-        bool,              // max_turns_hit
-        Vec<String>,       // tools_called
-        Option<String>,    // last_tool_summary（空内容兜底用）
-        std::time::Instant, // llm_start（最终日志耗时）
-    )> = None;
-    'stream_attempt: loop {
+
+    // 2) 会话播种（历史压缩 + 当前问题作为输入）
+    let mut session = Session::new(session_id.as_deref().unwrap_or(&request_id));
+    let (history, prompt) = messages.split_at(messages.len().saturating_sub(1));
     let compressed = prepare_history(
-        &hist_messages,
+        history,
         compressor.as_ref(),
-        compress_budget_tokens,
+        compression_budget_tokens(llm_cfg.context_length),
         cancel.clone(),
     )
     .await;
-    // 写回新检查点：仅摘要策略成功且消息带 id 时（可定位 cutoff），
-    // 失败静默（检查点缺失只是失去增量优化，不影响正确性）
-    if let (Some(sid), Some(store)) = (&session_id, state.get_chat_store(&dir_path).ok()) {
-        if compressed.strategy == "summarize+window" {
-            let summary = compressed
-                .turns
+    let history_messages: Vec<ChatMessage> =
+        compressed.turns.into_iter().map(chat_turn_to_message).collect();
+    seed_session_from_messages(&mut session, &history_messages);
+    let prompt_content = prompt.last().map(|m| m.content.clone()).unwrap_or_default();
+
+    // 3) LoopAgent（无工具纯对话；系统规约与 rig 版一致）
+    let system_prompt = load_agent_rules(app, "chat_agent.md");
+    let mut config = LoopConfig::new(crate::core::agent::DEFAULT_MAX_TURNS, system_prompt);
+    config.max_tokens = llm_cfg.max_tokens;
+    let mut agent = LoopAgent::new(adapter, config, &request_id);
+    agent.replace_session(session);
+
+    // 4) 流式转发（delta → llm:delta + 任务快照；usage → llm:usage；
+    //    工具结果 → 实时 drain ToolCallBus 转发 agent:tool_call/result，对齐 rig 版逐步轨迹）
+    let generating_start = std::time::Instant::now();
+    crate::core::trace::stage_start(&request_id, "generating", "chat");
+    emit_pending_trace_events(app, &request_id);
+    let tasks = state.agent_tasks.clone();
+    let app_emit = app.clone();
+    let rid = request_id.clone();
+    let outcome = agent
+        .turn(
+            &request_id,
+            LlmMessage::text(LlmRole::User, prompt_content),
+            cancel,
+            &mut |ev| match ev {
+                LoopEvent::Delta(t) => {
+                    tasks.append_text(&rid, &t);
+                    let _ = app_emit.emit("llm:delta", LlmDelta { request_id: rid.clone(), content: t });
+                }
+                LoopEvent::ToolResult { .. } => {
+                    // 每批工具执行完成时实时转发轨迹（BusToolEventSink 已写入 call+result）
+                    emit_pending_tool_events(&app_emit, &rid);
+                }
+                LoopEvent::ReasoningDelta(r) => {
+                    // B5：推理过程实时转发（前端可折叠展示；不占回答文本）
+                    let _ = app_emit.emit(
+                        "llm:thinking",
+                        serde_json::json!({ "request_id": rid.clone(), "content": r }),
+                    );
+                }
+                LoopEvent::Usage(u) => {
+                    let _ = app_emit.emit(
+                        "llm:usage",
+                        serde_json::json!({
+                            "request_id": rid,
+                            "prompt_tokens": u.prompt_tokens,
+                            "completion_tokens": u.completion_tokens,
+                            "cached_input_tokens": u.cached_input_tokens,
+                            "cache_creation_input_tokens": u.cache_creation_input_tokens,
+                        }),
+                    );
+                }
+                _ => {}
+            },
+        )
+        .await;
+
+    // 4.5) 事件溯源写路径（B4）：与 RAG 对齐，chat 模式同样持久化本请求窗口事件
+    if let (Some(sid), Ok(store)) = (session_id.as_deref(), state.get_chat_store(&dir_path)) {
+        let events: Vec<(u64, &crate::core::r#loop::SessionEvent)> = agent
+            .session()
+            .events()
+            .iter()
+            .map(|e| (e.seq, &e.event))
+            .collect();
+        if let Err(e) = store.upsert_session_events(sid, &events) {
+            log::warn!("[kb_llm_query_v3] 会话事件落库失败 session={} err={}", sid, e);
+        }
+    }
+
+    // 5) 收尾：任务状态中心 + llm:done / llm:error（保留部分内容语义与 rig 版一致）
+    use crate::core::agent::task_store::AgentTaskStatus;
+    match &outcome {
+        TurnOutcome::Failed { content, err, .. } if content.is_empty() => {
+            log::warn!("[kb_llm_query_v3] 流式失败 request_id={} err={}", request_id, err);
+            crate::core::trace::stage_end(&request_id, "generating", "error", generating_start.elapsed().as_millis() as u64, &err.to_string());
+            emit_pending_trace_events(app, &request_id);
+            state
+                .agent_tasks
+                .finish(&request_id, AgentTaskStatus::Failed);
+            emit_command_error(app, "llm:error", &request_id, format!("LLM 生成失败: {}", err));
+        }
+        TurnOutcome::Cancelled { .. } => {
+            crate::core::trace::stage_end(&request_id, "generating", "cancelled", generating_start.elapsed().as_millis() as u64, "生成阶段取消");
+            emit_pending_trace_events(app, &request_id);
+            state
+                .agent_tasks
+                .finish(&request_id, AgentTaskStatus::Cancelled);
+            let _ = app.emit("llm:done", LlmDone { request_id: request_id.clone(), content: outcome.content().to_string() });
+        }
+        _ => {
+            crate::core::trace::stage_end(&request_id, "generating", "ok", generating_start.elapsed().as_millis() as u64, "生成完成");
+            emit_pending_trace_events(app, &request_id);
+            state
+                .agent_tasks
+                .finish(&request_id, AgentTaskStatus::Done);
+            let _ = app.emit("llm:done", LlmDone { request_id: request_id.clone(), content: outcome.content().to_string() });
+        }
+    }
+    task_registry.unregister(&request_id).await;
+    Ok(())
+}
+
+/// v3：自研 LoopAgent Agent/RAG 生成路径（替代 rig `build_rag_agent` + `stream_chat`）。
+///
+/// Stage 0-3（技能预激活/规划/预检索/记忆注入）由 `agent_query` 完成并传入产物；本函数只做
+/// Stage 4 生成：`LlmAdapter`（OpenAI/Anthropic 按协议选择）+ 迁移工具注册表 + 业务 Hook
+/// （技能注入/门禁/审批）+ `BusToolEventSink`（前端工具轨迹协议零改动）→ `LoopAgent::turn()`。
+///
+/// 前端事件协议与 rig 版一致：`rag:delta`/`rag:done`（含引用来源合并 + token 用量）/
+/// `rag:error` + 任务状态中心 + 取消保留部分内容 + 防幻觉/grounding 校验。
+#[allow(clippy::too_many_arguments)]
+async fn agent_generate_loop_v2(
+    app: &AppHandle,
+    state: &tauri::State<'_, crate::AppState>,
+    task_registry: tauri::State<'_, TaskRegistry>,
+    llm_cfg: crate::LlmConfig,
+    query: String,
+    messages: Vec<ChatMessage>,
+    request_id: String,
+    session_id: Option<String>,
+    dir_path: String,
+    context: String,
+    catalog: String,
+    agent_rules: String,
+    search_config: KbSearchConfig,
+    sources_clone: Vec<RagSource>,
+    active_skills: Arc<ActiveSkillState>,
+    compressor: Arc<dyn ContextCompressor>,
+    metrics: Arc<crate::core::skill::metrics::SkillMetrics>,
+    skill_ctx: Option<crate::core::skill::context::SkillExecutionContext>,
+    cancel: CancellationToken,
+) -> Result<(), String> {
+    // 1) LLM 适配器（OpenAI / Anthropic 按协议选择；transport 与业务解耦）
+    if llm_cfg.endpoint.trim().is_empty() || llm_cfg.model.trim().is_empty() {
+        emit_command_error(app, "rag:error", &request_id, "LLM 未配置，请在设置中填写端点地址和模型名称".into());
+        // B2：早退路径任务状态收尾 + generating 阶段闭合（B3）
+        crate::core::trace::stage_end(&request_id, "generating", "error", 0, "LLM 未配置");
+        emit_pending_trace_events(app, &request_id);
+        state.agent_tasks.finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Failed);
+        task_registry.unregister(&request_id).await;
+        return Ok(());
+    }
+    let adapter: Arc<dyn LoopLlmAdapter> = build_adapter(&llm_cfg);
+    // B3：generating 阶段耗时基准（stage_start 在 agent_query 已发起，此处仅计时）
+    let generating_start = std::time::Instant::now();
+    // 技能执行计时起点（进入生成阶段即视为执行开始）
+    let skill_exec_start = std::time::Instant::now();
+
+    // 2) 会话播种（历史；会话 ID 用聊天 session_id——事件日志按会话聚合，而非按请求分片）。
+    //    压缩接线（修复 v3 回归）：先应用会话压缩检查点（摘要 + cutoff 增量），
+    //    再按上下文预算压缩（token 预算门 → 摘要+滑窗/纯滑窗），压缩产物播种会话。
+    let mut session = Session::new(session_id.as_deref().unwrap_or(&request_id));
+    let checkpoint = load_compaction_checkpoint(state, session_id.as_deref(), &dir_path).await;
+    let hist_messages = apply_compaction_checkpoint(&messages, checkpoint.as_ref());
+    let compressed = prepare_history(
+        &hist_messages,
+        compressor.as_ref(),
+        compression_budget_tokens(llm_cfg.context_length),
+        cancel.clone(),
+    )
+    .await;
+    if compressed.dropped_chars > 0 {
+        log::info!(
+            "[agent_query_v3] 对话历史已压缩 request_id={} dropped={} strategy={}",
+            request_id,
+            compressed.dropped_chars,
+            compressed.strategy
+        );
+        let _ = app.emit(
+            "rag:status",
+            RagStatus {
+                request_id: request_id.clone(),
+                stage: "compressing".into(),
+                message: format!("已压缩历史（节省 {} 字符）", compressed.dropped_chars),
+            },
+        );
+    }
+    let history_messages: Vec<ChatMessage> =
+        compressed.turns.into_iter().map(chat_turn_to_message).collect();
+    seed_session_from_messages(&mut session, &history_messages);
+    // 写回新检查点：仅摘要策略成功且消息带 id 时（可定位 cutoff）；失败静默（只是失去增量优化）
+    if compressed.strategy == "summarize+window" {
+        if let (Some(sid), Some(store)) = (session_id.as_deref(), state.get_chat_store(&dir_path).ok()) {
+            let summary = history_messages
                 .iter()
-                .find(|t| t.role == "system")
-                .map(|t| t.content.clone())
+                .find(|m| m.role == "system")
+                .map(|m| m.content.clone())
                 .unwrap_or_default();
             if !summary.is_empty() {
-                if let Some(first_kept_id) = hist_messages
-                    .get(compressed.kept_from)
-                    .and_then(|m| m.id.clone())
-                {
-                    // P5：记录 Session 生命周期激活技能（跨请求恢复引用，含版本校验）。
-                    // 注意：仅当本请求触发 summarize+window 压缩时才更新检查点；
-                    // 未压缩时保留上一检查点的引用（技能更新由恢复时版本校验兜底）。
+                if let Some(first_kept_id) = hist_messages.get(compressed.kept_from).and_then(|m| m.id.clone()) {
                     let session_skills: Vec<crate::core::context::SessionSkillRef> = active_skills
                         .activated()
                         .iter()
                         .filter(|a| {
-                            a.lifetime
-                                == crate::core::skill::activation::SkillLifetime::Session
-                                && a.status
-                                    == crate::core::skill::activation::ActivationStatus::Active
+                            a.lifetime == crate::core::skill::activation::SkillLifetime::Session
+                                && a.status == crate::core::skill::activation::ActivationStatus::Active
                         })
                         .map(|a| crate::core::context::SessionSkillRef {
                             skill_id: a.skill_id.clone(),
@@ -1898,689 +2095,209 @@ pub async fn agent_query(
                         tokens_before: 0,
                         session_skills,
                     };
-                    let sid = sid.clone();
+                    let sid = sid.to_string();
                     let store = store.clone();
                     let json = new_state.to_json();
-                    let _ = tokio::task::spawn_blocking(move || {
-                        store.set_compaction_state(&sid, &json)
-                    })
-                    .await;
+                    let _ = tokio::task::spawn_blocking(move || store.set_compaction_state(&sid, &json)).await;
                 }
             }
         }
     }
-    if compressed.dropped_chars > 0 {
-        log::info!(
-            "[agent_query] [4]: 对话历史已压缩 request_id={} dropped={} strategy={}",
-            request_id, compressed.dropped_chars, compressed.strategy
-        );
-        let _ = app.emit(
-            "rag:status",
-            RagStatus {
-                request_id: request_id.clone(),
-                stage: "generating".into(),
-                message: format!(
-                    "对话历史较长，已自动压缩旧消息（节省约 {} 字符）",
-                    compressed.dropped_chars
-                ),
-            },
-        );
+    let mut system = agent_rules;
+    if !context.trim().is_empty() {
+        system.push_str(&format!("\n\n检索到的知识库上下文：\n{context}"));
     }
-    // 压缩阶段取消只中断压缩，此处快速检查避免取消后再发起一次 HTTP 请求
-    if cancel.is_cancelled() {
-        log::info!("[agent_query] [4]: 对话在压缩后取消，不发起请求 request_id={}", request_id);
-        task_registry.unregister(&request_id).await;
-        return Ok(());
+    if !catalog.trim().is_empty() {
+        system.push_str(&format!("\n\n---\n\n{catalog}"));
     }
-    let mut history = chat_turns_to_history(&compressed.turns);
-    // Session 技能激活状态由挂载 mode 持久化驱动（P5 检查点 session_skills 保留写回，
-    // 供未来多代理/MCP 扩展；恢复注入已移除——active 挂载由 resolve_preactivated 每请求
-    // 激活并注入正文，warm/已移除技能不应被自动恢复推翻，符合用户当前挂载配置）。
-    // 预激活技能正文一次性注入：作为 history 首条 system 消息。
-    // 不随每轮 preamble 注入（避免常驻消耗 token），随历史受压缩机制管理。
-    // 回退模式（PERSISTENT_INJECTION=true）下跳过：正文由每轮 Hook 注入，避免双份。
-    if !crate::core::agent::PERSISTENT_INJECTION {
-        if let Some(resolved) = &skill_resolved {
-            if !resolved.skills.is_empty() {
-                let instructions = crate::core::skill::context::format_skill_instructions(
-                    &resolved.skills,
-                    crate::core::skill::activation::MAX_SKILL_INJECTION_CHARS,
-                );
-                if !instructions.is_empty() {
-                    let mut injected = vec![Message::system(format!(
-                        "【已激活技能指令（仅提供一次，请遵循）】\n{}",
-                        instructions
-                    ))];
-                    injected.extend(history);
-                    history = injected;
-                    log::info!(
-                        "[agent_query] [4]: 预激活技能正文一次性注入 history: chars={} skills={:?} request_id={}",
-                        instructions.chars().count(),
-                        resolved.skills.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(),
-                        request_id
+
+    let mut config = LoopConfig::new(crate::core::agent::DEFAULT_MAX_TURNS, system);
+    config.max_tokens = llm_cfg.max_tokens;
+    // 溢出重试的压缩回调待会话压缩接入后提供（当前 None：溢出按失败处理，防死循环）
+
+    // 3) 工具注册表（迁移工具 + 技能激活 + 反思/澄清 + 桥接/外部/MCP）+ 业务 Hook + 事件 sink
+    let search_sink = search_config.search_sink.clone();
+    let mut registry = crate::core::agent::loop_tools::build_loop_tool_registry(search_config.clone());
+    crate::core::agent::loop_tools::register_skill_tools(
+        &mut registry,
+        search_config.clone(),
+        state.skill_registry.clone(),
+        active_skills.clone(),
+    );
+    let mcp_tool_names = crate::core::agent::loop_tools::register_mcp_tools(&mut registry, search_config.clone()).await;
+    let mut allow_extra: HashSet<String> = crate::core::agent::external_tools::load_external_tools_or_default()
+        .iter()
+        .map(|d| d.name.clone())
+        .collect();
+    allow_extra.extend(mcp_tool_names.iter().cloned());
+    let mut agent = LoopAgent::new(adapter, config, session_id.as_deref().unwrap_or(&request_id));
+    agent.replace_session(session);
+    agent.set_tools(Arc::new(registry));
+    agent.set_sink(Arc::new(crate::core::agent::loop_tools::BusToolEventSink::new(search_config.clone())));
+    // 先技能门禁、后审批（与 rig 挂载顺序一致）；放行集 = 外部工具 ∪ MCP 工具
+    agent.add_hook(Arc::new(crate::core::agent::loop_hooks::SkillGateHook {
+        base_tools: crate::core::agent::BASE_TOOLS,
+        state: active_skills.clone(),
+        allow_extra: Arc::new(allow_extra),
+    }));
+    if let Some(gate) = state.approval_gate.clone() {
+        agent.add_hook(Arc::new(crate::core::agent::loop_hooks::ApprovalHook { gate }));
+    }
+    // 技能指令注入 + active_tools 窄化（P1-5 约束摘要每轮常驻；MCP 工具名并入可见性）
+    agent.add_hook(Arc::new(crate::core::agent::loop_hooks::SkillInstructionHook {
+        state: active_skills.clone(),
+        registry: state.skill_registry.clone(),
+        mcp_tool_names,
+    }));
+
+    // 4) turn + 事件转发（rag:delta / rag:thinking / llm usage；工具轨迹由 BusToolEventSink
+    //    经 ToolCallBus 实时 drain 转发——对齐 rig 版逐步轨迹，不再等请求结束批量出现）
+    let tasks = state.agent_tasks.clone();
+    let app_emit = app.clone();
+    let rid = request_id.clone();
+    let mut usage_info: Option<UsageInfo> = None;
+    // 防幻觉守卫证据（在 turn 回调中实时收集；ToolCallBus 已被实时 drain，不再读总线）
+    let mut tools_called_evidence: Vec<String> = Vec::new();
+    let mut last_success_result: Option<String> = None;
+    let outcome = agent
+        .turn(
+            &request_id,
+            LlmMessage::text(LlmRole::User, query),
+            cancel,
+            &mut |ev| match ev {
+                LoopEvent::Delta(t) => {
+                    tasks.append_text(&rid, &t);
+                    let _ = app_emit.emit("rag:delta", RagDelta { request_id: rid.clone(), content: t });
+                }
+                LoopEvent::ReasoningDelta(r) => {
+                    // B5：推理过程实时转发（前端可折叠展示；不占回答文本）
+                    let _ = app_emit.emit(
+                        "rag:thinking",
+                        serde_json::json!({ "request_id": rid.clone(), "content": r }),
                     );
                 }
-            }
-        }
-    }
-    let mut stream = agent
-        .stream_chat(Message::user(query.clone()), history)
-        .into_future()
+                LoopEvent::ToolResult { call, result } => {
+                    // 实时收集防幻觉守卫证据（必须在任何 drain 之前；bus 已被实时消费）
+                    if !result.is_error {
+                        if !tools_called_evidence.iter().any(|t| t == &call.name) {
+                            tools_called_evidence.push(call.name.clone());
+                        }
+                        if !result.content.trim().is_empty() {
+                            last_success_result = Some(result.content.clone());
+                        }
+                    }
+                    // 每批工具执行完成时实时转发轨迹（BusToolEventSink 已写入 call+result）
+                    emit_pending_tool_events(&app_emit, &rid);
+                }
+                LoopEvent::Usage(u) => {
+                    usage_info = Some(UsageInfo {
+                        prompt_tokens: u.prompt_tokens,
+                        completion_tokens: u.completion_tokens,
+                        total_tokens: u.total_tokens,
+                        cached_input_tokens: u.cached_input_tokens,
+                        cache_creation_input_tokens: u.cache_creation_input_tokens,
+                    });
+                }
+                _ => {}
+            },
+        )
         .await;
 
-    // 流式生成
-    let llm_start = std::time::Instant::now();
-    let mut full_content = String::new();
-    let mut final_usage: Option<UsageInfo> = None;
-    let mut delta_count = 0u64;
-    let mut stream_failed = false;
-    let mut last_tool_summary: Option<String> = None;
-    // P0-6：模型调用轮次预算耗尽标记（MaxTurnsError，区别于网络/服务故障）
-    let mut max_turns_hit = false;
-    // P1-3：上下文溢出标记——内层循环 break 后据此收紧预算重试
-    let mut overflow_retry = false;
-    // 本请求**实际执行成功**的工具名（防幻觉校验用：声称写操作但未调用对应工具时
-    // 追加提醒）。P0-5 起改为从 ToolCallBus 的成功 result 事件收集——仅凭模型发起
-    // 工具调用事件（rig 对 hook 跳过/失败的调用同样上报 ToolCall 项）会把被拒/失败
-    // 的调用误当作"已执行"，掩护虚构声称。
-    let mut tools_called: Vec<String> = Vec::new();
-    loop {
-        let item = match next_or_cancel(&mut stream, &cancel).await {
-            Err(()) => {
-                log::info!("[agent_query] [4]: 对话取消，立即断开请求 request_id={} accumulated={}",
-                    request_id, full_content.len());
-                // 取消时保留已生成的部分内容：通过 rag:done 交给前端落库
-                if !full_content.is_empty() {
-                    let (prompt_tokens, completion_tokens, cached_input_tokens, cache_creation_input_tokens) = final_usage
-                        .as_ref()
-                        .map(|u| (u.prompt_tokens, u.completion_tokens, u.cached_input_tokens, u.cache_creation_input_tokens))
-                        .unwrap_or((0, 0, 0, 0));
-                    let _ = app.emit(
-                        "rag:done",
-                        RagDone {
-                            request_id: request_id.clone(),
-                            content: full_content.clone(),
-                            sources: merge_search_sink(sources_clone.clone(), &search_sink).await,
-                            prompt_tokens,
-                            completion_tokens,
-                            cached_input_tokens,
-                            cache_creation_input_tokens,
-                        },
-                    );
-                }
-                // 取消时补发残留工具事件并清理总线
-                crate::core::trace::stage_end(
-                    &request_id,
-                    "generating",
-                    "cancelled",
-                    generating_start.elapsed().as_millis() as u64,
-                    &format!("chars={}", full_content.len()),
-                );
-                emit_pending_trace_events(&app, &request_id);
-                emit_pending_tool_events(&app, &request_id);
-                tool_call_bus().clear(&request_id);
-                // Phase 1：任务状态中心收尾（cancelled）——保留部分内容快照
-                state
-                    .agent_tasks
-                    .finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Cancelled);
-                {
-                    let inputs = collect_skill_exec_inputs(skill_ctx, &active_skills, skill_exec_start.elapsed().as_millis() as u64);
-                    let matched = !inputs.is_empty();
-                    let metrics = state.skill_metrics.clone();
-                    let dir = dir_path.clone();
-                    let rid = request_id.clone();
-                    let _ = tokio::task::spawn_blocking(move || {
-                        if matched {
-                            metrics.record_dispatch_matched(&dir);
-                        }
-                        record_skill_execution(&metrics, &dir, inputs, false, Some("cancelled"), &rid);
-                    })
-                    .await;
-                }
-                task_registry.unregister(&request_id).await;
-                return Ok(());
-            }
-            Ok(None) => break,
-            Ok(Some(item)) => item,
-        };
-        match item {
-            Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::ToolCall { tool_call, .. })) => {
-                log::info!("[agent_query] [4]: 工具调用: name={} arguments={}",
-                    tool_call.function.name, tool_call.function.arguments);
-                // P0-5：不再在此处收集工具名——rig 对「hook 跳过/失败」的调用同样
-                // 上报 ToolCall 项，须以 ToolCallBus 的成功 result（ok=true）为准，
-                // 在循环底部 drain 前统一收集（见下方 merge 代码）。
-            }
-            Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(text))) => {
-                if text.text.is_empty() {
-                    continue;
-                }
-                full_content.push_str(&text.text);
-                delta_count += 1;
-                // Phase 1：任务状态中心累积文本（切回页面恢复部分回复）
-                state.agent_tasks.append_text(&request_id, &text.text);
-                let _ = app.emit(
-                    "rag:delta",
-                    RagDelta {
-                        request_id: request_id.clone(),
-                        content: text.text,
-                    },
-                );
-            }
-            Ok(MultiTurnStreamItem::FinalResponse(res)) => {
-                let usage = res.usage();
-                if usage.has_values() {
-                    log::info!("[agent_query] [4]: Agent 最终 token 使用: request_id={} input_tokens={} output_tokens={}",
-                        request_id, usage.input_tokens, usage.output_tokens);
-                    final_usage = Some(usage_to_info(&usage));
-                }
-            }
-            Ok(MultiTurnStreamItem::CompletionCall(call)) => {
-                if call.usage.has_values() {
-                    final_usage = Some(usage_to_info(&call.usage));
-                }
-            }
-            Ok(_) => {}
-            Err(e) => {
-                // P1-3：上下文窗口超限 → 收紧预算重试一次（溢出通常发生在首轮，
-                // 已产出内容很少；重试后若仍超限走下方通用错误路径，不无限循环）
-                if !overflow_retry
-                    && overflow_retries < MAX_OVERFLOW_RETRIES
-                    && is_context_overflow_error(&e)
-                {
-                    overflow_retries += 1;
-                    overflow_retry = true;
-                    compress_budget_tokens = compress_budget_tokens * 3 / 5;
-                    log::warn!(
-                        "[agent_query] [4]: 上下文超限，压缩历史后重试 request_id={} attempt={} budget_tokens={}",
-                        request_id, overflow_retries, compress_budget_tokens
-                    );
-                    let _ = app.emit(
-                        "rag:status",
-                        RagStatus {
-                            request_id: request_id.clone(),
-                            stage: "generating".into(),
-                            message: "模型上下文窗口不足，已压缩历史后重试…".into(),
-                        },
-                    );
-                    // 先清空本尝试未转发的事件（重试会从全新历史重新生成）
-                    emit_pending_tool_events(&app, &request_id);
-                    break;
-                }
-                // P0-6：区分 MaxTurnsError（轮次预算耗尽）与网络/服务故障——
-                // 前者有部分内容时不再静默按成功收尾，向用户显式说明截断原因
-                let is_max_turns = matches!(
-                    &e,
-                    rig_agent::agent::StreamingError::Prompt(p)
-                        if matches!(p.as_ref(), rig_agent::completion::PromptError::MaxTurnsError { .. })
-                );
-                if is_max_turns {
-                    log::warn!(
-                        "[agent_query] [4]: 模型调用轮次预算耗尽（MaxTurnsError）request_id={} err={}",
-                        request_id, e
-                    );
-                    max_turns_hit = true;
-                    stream_failed = true;
-                    break;
-                }
-                log::warn!("[agent_query] [4]: Agent 流式响应错误: request_id={} err={}", request_id, e);
-                stream_failed = true;
-                break;
-            }
+    // 5) 事件溯源写路径：本轮事件落库（幂等 upsert；读路径/回放后续切换）
+    if let (Some(sid), Ok(store)) = (session_id.as_deref(), state.get_chat_store(&dir_path)) {
+        let events: Vec<(u64, &crate::core::r#loop::SessionEvent)> = agent
+            .session()
+            .events()
+            .iter()
+            .map(|e| (e.seq, &e.event))
+            .collect();
+        if let Err(e) = store.upsert_session_events(sid, &events) {
+            log::warn!("[agent_query_v3] 会话事件落库失败 session={} err={}", sid, e);
         }
-        // P0-5：以「执行成功」的工具结果（ToolCallBus ok=true）作为防幻觉守卫输入，
-        // 必须在 drain（emit_pending_tool_events）之前收集——drain 会消费事件桶。
-        // 失败/被审批拒绝/被 hook 跳过的调用不构成"已执行操作"的证据。
-        for t in tool_call_bus().successful_tool_names(&request_id) {
-            if !tools_called.iter().any(|c| c == &t) {
-                tools_called.push(t);
-            }
-        }
-        // 捕获最后一个成功的工具调用结果内容（用于兜底：模型调用工具成功但未生成文本时）
-        if let Some(result) = tool_call_bus().peek_last_success_result(&request_id) {
-            last_tool_summary = Some(result);
-        }
-        // 转发工具调用轨迹（工具在 Rig 流式内部执行，结果已写入总线）
-        emit_pending_tool_events(&app, &request_id);
-    }
-    
-    // P1-3：上下文溢出 → 收紧预算后重试（continue 回到 'stream_attempt 顶部重新压缩）
-    if overflow_retry {
-        continue 'stream_attempt;
-    }
-    stream_outcome = Some((
-        full_content,
-        final_usage,
-        delta_count,
-        stream_failed,
-        max_turns_hit,
-        tools_called,
-        last_tool_summary,
-        llm_start,
-    ));
-    break 'stream_attempt;
-    }
-    let (mut full_content, final_usage, delta_count, stream_failed, max_turns_hit, mut tools_called, mut last_tool_summary, llm_start) =
-        stream_outcome.expect("'stream_attempt 循环正常退出时必已赋值");
-     
-     log::info!("[agent_query] [4]: Agent 流式响应完成: request_id={} took={:?} delta_count={} content_len={}",
-        request_id, llm_start.elapsed(), delta_count, full_content.len());
-    crate::core::trace::stage_end(
-        &request_id,
-        "generating",
-        "ok",
-        generating_start.elapsed().as_millis() as u64,
-        &format!("chars={} delta={}", full_content.len(), delta_count),
-    );
-    emit_pending_trace_events(&app, &request_id);
-
-    // 流式失败且无任何内容 → 显式报错，避免静默失败或空消息污染前端
-    if stream_failed && full_content.is_empty() && !cancel.is_cancelled() {
-        log::info!("[agent_query] [4]: 流式响应失败 request_id={}", request_id);
-        let error_code = if max_turns_hit { "max_turns" } else { "llm_stream_failed" };
-        crate::core::trace::stage_end(
-            &request_id,
-            "generating",
-            "error",
-            generating_start.elapsed().as_millis() as u64,
-            error_code,
-        );
-        emit_pending_trace_events(&app, &request_id);
-        emit_pending_tool_events(&app, &request_id);
-        tool_call_bus().clear(&request_id);
-        {
-            let inputs = collect_skill_exec_inputs(skill_ctx, &active_skills, skill_exec_start.elapsed().as_millis() as u64);
-            let matched = !inputs.is_empty();
-            let metrics = state.skill_metrics.clone();
-            let dir = dir_path.clone();
-            let rid = request_id.clone();
-            let error_code = error_code.to_string();
-            let _ = tokio::task::spawn_blocking(move || {
-                if matched {
-                    metrics.record_dispatch_matched(&dir);
-                }
-                record_skill_execution(&metrics, &dir, inputs, false, Some(&error_code), &rid);
-            })
-            .await;
-        }
-        // Phase 1：任务状态中心收尾（failed）
-        state
-            .agent_tasks
-            .finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Failed);
-        // P0-6：轮次预算耗尽与网络故障给出不同的可操作提示
-        let msg = if max_turns_hit {
-            "已达模型调用轮次上限，未能生成回答。请精简需求或分步提问，或联系管理员调高轮次预算".to_string()
-        } else {
-            "LLM 生成失败，请检查模型服务是否可用".to_string()
-        };
-        emit_command_error(&app, "rag:error", &request_id, msg);
-        task_registry.unregister(&request_id).await;
-        return Ok(());
     }
 
-    // ── Done ──
-    // 流式正常结束但内容为空：若工具调用成功，以工具结果兜底；否则报错。
+    // 6) 工具轨迹兜底转发（实时 drain 后的残余；正常为空）+ 防幻觉/grounding 校验
+    emit_pending_tool_events(app, &request_id);
+    let tools_called: Vec<String> = tools_called_evidence;
+    let mut full_content = outcome.content().to_string();
     if full_content.trim().is_empty() {
-        if let Some(summary) = last_tool_summary.take() {
-            log::info!("[agent_query] [4]: 模型未生成文本但工具调用成功，以工具结果兜底 request_id={} summary={}",
-                request_id, summary);
+        // 模型未生成文本但工具成功：以工具结果兜底
+        if let Some(summary) = last_success_result {
             full_content = summary;
-            // 继续走到 rag:done 正常发射
-        } else {
-            log::warn!("[agent_query] [4]: 响应完成但内容为空 request_id={}", request_id);
-            emit_pending_tool_events(&app, &request_id);
-            tool_call_bus().clear(&request_id);
-            {
-                let inputs = collect_skill_exec_inputs(skill_ctx, &active_skills, skill_exec_start.elapsed().as_millis() as u64);
-                let matched = !inputs.is_empty();
-                let metrics = state.skill_metrics.clone();
-                let dir = dir_path.clone();
-                let rid = request_id.clone();
-                let error_code = if max_turns_hit { "max_turns" } else { "llm_empty_output" };
-                let _ = tokio::task::spawn_blocking(move || {
-                    if matched {
-                        metrics.record_dispatch_matched(&dir);
-                    }
-                    record_skill_execution(&metrics, &dir, inputs, false, Some(error_code), &rid);
-                })
-                .await;
-            }
-            let msg = if max_turns_hit {
-                "已达模型调用轮次上限，未能生成回答。请精简需求或分步提问".to_string()
-            } else {
-                "LLM 生成失败，请检查模型服务是否可用".to_string()
-            };
-            emit_command_error(&app, "rag:error", &request_id, msg);
-            task_registry.unregister(&request_id).await;
-            return Ok(());
         }
     }
-    let (prompt_tokens, completion_tokens, cached_input_tokens, cache_creation_input_tokens) = final_usage
+    apply_anti_hallucination_guard(&mut full_content, &tools_called);
+    let merged_sources = merge_search_sink(sources_clone, &search_sink).await;
+    apply_grounding_validator(&mut full_content, !merged_sources.is_empty(), &tools_called);
+    let (prompt_tokens, completion_tokens, cached_input_tokens, cache_creation_input_tokens) = usage_info
+        .as_ref()
         .map(|u| (u.prompt_tokens, u.completion_tokens, u.cached_input_tokens, u.cache_creation_input_tokens))
         .unwrap_or((0, 0, 0, 0));
 
-    log::info!("[agent_query] [4]: 响应完成: request_id={} content_len={} sources={} tokens_in={} tokens_out={} cached_in={}",
-        request_id, full_content.len(), sources_clone.len(), prompt_tokens, completion_tokens, cached_input_tokens);
-
-    // P0-5：兜底合并——流结束前最后一轮工具结果若未经循环底部 drain 收集，
-    // 在此补收（drain 前的最后一次机会；此后 emit_pending_tool_events 会消费）
-    for t in tool_call_bus().successful_tool_names(&request_id) {
-        if !tools_called.iter().any(|c| c == &t) {
-            tools_called.push(t);
-        }
-    }
-
-    // P0-6：轮次预算耗尽且有部分内容 → 不静默按成功收尾，追加截断说明并提示
-    if max_turns_hit && !full_content.trim().is_empty() {
-        let note = "\n\n> （已达模型调用轮次上限，本次回答可能不完整。如需继续，请直接追问后续内容。）";
-        if !full_content.contains("轮次上限") {
-            full_content.push_str(note);
-        }
-        let _ = app.emit(
-            "rag:status",
-            RagStatus {
-                request_id: request_id.clone(),
-                stage: "generating".into(),
-                message: "已达模型调用轮次上限，回答可能不完整".into(),
-            },
+    // 7) 任务状态中心收尾 + generating 阶段闭合（B3）+ rag:done / rag:error + 技能执行统计
+    use crate::core::agent::task_store::AgentTaskStatus;
+    // 技能执行指标（rig 时代在流式终态记录；v3 接线恢复——含预激活 ∪ LLM 动态激活）
+    let record_exec = |success: bool, error_code: Option<String>| {
+        let inputs = collect_skill_exec_inputs(
+            skill_ctx.as_ref(),
+            &active_skills,
+            skill_exec_start.elapsed().as_millis() as u64,
         );
-    }
-
-    // P0 防幻觉：声称完成写操作但本请求未调用对应工具 → 追加一致性提醒
-    // （在 rag:done 之前修改 full_content，前端最终渲染与落库均包含提醒）
-    apply_anti_hallucination_guard(&mut full_content, &tools_called);
-    // P0-2 Grounding 后置兜底：本地文件引用但无检索/读取来源 → 追加依据提醒
-    let merged_sources = merge_search_sink(sources_clone, &search_sink).await;
-    apply_grounding_validator(&mut full_content, !merged_sources.is_empty(), &tools_called);
-
-    // Phase 1：任务状态中心收尾（done）——保留最终内容/来源/用量快照，供切回页面恢复。
-    // 先固化（引用 merged_sources），随后 emit 再 move。
-    {
-        let tasks = state.agent_tasks.clone();
-        use crate::core::agent::task_store::AgentTaskStatus;
-        tasks.set_sources(
-            &request_id,
-            merged_sources
-                .iter()
-                .map(|s| serde_json::to_value(s).unwrap_or_default())
-                .collect(),
-        );
-        tasks.set_usage(&request_id, prompt_tokens, completion_tokens);
-        tasks.finish(&request_id, AgentTaskStatus::Done);
-    }
-    let _ = app.emit(
-        "rag:done",
-        RagDone {
-            request_id: request_id.clone(),
-            content: full_content,
-            sources: merged_sources,
-            prompt_tokens,
-            completion_tokens,
-            cached_input_tokens,
-            cache_creation_input_tokens,
-        },
-    );
-
-    // 收尾：补发残留工具事件并清理总线
-    emit_pending_tool_events(&app, &request_id);
-    tool_call_bus().clear(&request_id);
-    {
-        let inputs = collect_skill_exec_inputs(skill_ctx, &active_skills, skill_exec_start.elapsed().as_millis() as u64);
-        let matched = !inputs.is_empty();
-        let metrics = state.skill_metrics.clone();
+        let metrics = metrics.clone();
         let dir = dir_path.clone();
         let rid = request_id.clone();
         let _ = tokio::task::spawn_blocking(move || {
-            if matched {
-                metrics.record_dispatch_matched(&dir);
-            }
-            record_skill_execution(&metrics, &dir, inputs, true, None, &rid);
-        })
-        .await;
-    }
-    task_registry.unregister(&request_id).await;
-    Ok(())
-}
-
-/// 纯 LLM 对话（Rig Agent，无工具）
-#[tauri::command]
-pub async fn kb_llm_query(
-    app: AppHandle,
-    state: tauri::State<'_, crate::AppState>,
-    task_registry: tauri::State<'_, TaskRegistry>,
-    messages: Vec<crate::services::llm::ChatMessage>,
-    request_id: String,
-) -> Result<(), String> {
-    let cancel = task_registry.register(&request_id).await;
-    // Phase 1：后台任务状态中心注册（chat 模式同样支持后台运行与切回恢复）
-    let rag_prompt = messages.last().map(|m| m.content.clone()).unwrap_or_default();
-    state
-        .agent_tasks
-        .register(&request_id, None, "", "chat", &rag_prompt);
-
-    // 从中央化内存配置读取 LLM 配置
-    let llm_cfg = state.llm_config.read().unwrap_or_else(|e| e.into_inner()).clone();
-
-    // v2：Anthropic Messages 协议走独立流式通道（普通对话，不含 Agent 工具编排）
-    if llm_cfg.protocol == "anthropic" {
-        return kb_llm_query_anthropic(&app, task_registry, messages, request_id, llm_cfg).await;
-    }
-
-    // 构建 LLM 客户端（失败转为错误事件，避免 panic 与注册表泄漏）
-    let llm = match get_or_create_llm_client(
-        &state,
-        &llm_cfg.endpoint,
-        &llm_cfg.model,
-        &llm_cfg.api_key,
-        llm_cfg.reasoning_effort.as_deref(),
-    )
-    .await
-    {
-        Ok(llm) => llm,
-        Err(e) => {
-            log::error!("[kb_llm_query] [0]: LLM 客户端初始化失败: request_id={} err={}", request_id, e);
-            emit_command_error(&app, "llm:error", &request_id, format!("LLM 客户端初始化失败: {}", e));
-            task_registry.unregister(&request_id).await;
-            return Ok(());
-        }
+            record_skill_execution(&metrics, &dir, inputs, success, error_code.as_deref(), &rid);
+        });
     };
-
-    if !llm.is_configured() {
-        emit_command_error(&app, "llm:error", &request_id, "LLM 未配置".into());
-        task_registry.unregister(&request_id).await;
-        return Ok(());
-    }
-
-    // 历史上下文压缩器：无工具对话同样适用，避免长会话被直接拒绝
-    // 单一模型：压缩器直接用主模型（不存在独立摘要小模型，避免跨模型分叉）
-    let summary_llm = llm.clone();
-    let summarizer: Arc<dyn crate::core::context::HistorySummarizer> = Arc::new(summary_llm);
-    let compressor: Arc<dyn ContextCompressor> = Arc::new(SummarizeThenWindowCompressor::new(
-        summarizer,
-        SUMMARY_MAX_CHARS,
-    ));
-
-    if messages.is_empty() {
-        emit_command_error(&app, "llm:error", &request_id, "消息不能为空".into());
-        task_registry.unregister(&request_id).await;
-        return Ok(());
-    }
-
-    let prompt_content = messages.last().map(|m| m.content.clone()).unwrap_or_default();
-    let compressed = prepare_history(
-        &messages,
-        compressor.as_ref(),
-        compression_budget_tokens(llm_cfg.context_length),
-        cancel.clone(),
-    )
-    .await;
-    if compressed.dropped_chars > 0 {
-        log::info!(
-            "[kb_llm_query] [0]: 对话历史已压缩 request_id={} dropped={} strategy={}",
-            request_id, compressed.dropped_chars, compressed.strategy
-        );
-    }
-    // 压缩阶段取消只中断压缩，此处快速检查避免取消后再发起一次 HTTP 请求
-    if cancel.is_cancelled() {
-        log::info!("[kb_llm_query] [1]: 对话在压缩后取消，不发起请求 request_id={}", request_id);
-        task_registry.unregister(&request_id).await;
-        return Ok(());
-    }
-    let history = chat_turns_to_history(&compressed.turns);
-
-    // Agent 规约（角色/语言/安全边界）从资源目录加载，打包后跟随安装包
-    let agent_rules = load_agent_rules(&app, "chat_agent.md");
-    let agent = build_chat_agent(
-        llm.completion_model().clone(),
-        agent_rules,
-        llm_cfg.reasoning_effort.clone(), // P2-18：思考程度透传流式请求
-        llm_cfg.max_tokens, // P3：最大输出 token（None/0 = 服务器默认）
-    );
-    let mut stream = agent
-        .stream_chat(Message::user(prompt_content.clone()), history)
-        .into_future()
-        .await;
-
-    let kb_gen_start = std::time::Instant::now();
-    crate::core::trace::stage_start(&request_id, "generating", "kb_llm_query");
-    emit_pending_trace_events(&app, &request_id);
-
-    let mut full_content = String::new();
-    let mut stream_failed = false;
-    loop {
-        let item = match next_or_cancel(&mut stream, &cancel).await {
-            Err(()) => {
-                log::info!("[kb_llm_query] [1]: 对话取消，立即断开请求 request_id={} accumulated={}",
-                    request_id, full_content.len());
-                crate::core::trace::stage_end(
-                    &request_id,
-                    "generating",
-                    "cancelled",
-                    kb_gen_start.elapsed().as_millis() as u64,
-                    &format!("chars={}", full_content.len()),
-                );
-                emit_pending_trace_events(&app, &request_id);
-                crate::core::trace::trace_bus().clear(&request_id);
-                // 取消时保留已生成的部分内容：通过 llm:done 交给前端落库
-                if !full_content.is_empty() {
-                    let _ = app.emit(
-                        "llm:done",
-                        LlmDone {
-                            request_id: request_id.clone(),
-                            content: full_content.clone(),
-                        },
-                    );
-                }
-                // Phase 1：任务状态中心收尾（cancelled）——保留部分内容快照
-                state
-                    .agent_tasks
-                    .finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Cancelled);
-                task_registry.unregister(&request_id).await;
-                return Ok(());
-            }
-            Ok(None) => break,
-            Ok(Some(item)) => item,
-        };
-        match item {
-            Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::ToolCall { tool_call, .. })) => {
-                log::info!("[kb_llm_query] [1]: agent 工具调用: name={} arguments={}",
-                    tool_call.function.name, tool_call.function.arguments);
-            }
-            Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(text))) => {
-                if text.text.is_empty() {
-                    continue;
-                }
-                full_content.push_str(&text.text);
-                // Phase 1：任务状态中心累积文本（chat 模式后台运行快照）
-                state.agent_tasks.append_text(&request_id, &text.text);
-                let _ = app.emit(
-                    "llm:delta",
-                    LlmDelta {
-                        request_id: request_id.clone(),
-                        content: text.text,
-                    },
-                );
-            }
-            Ok(MultiTurnStreamItem::FinalResponse(res)) => {
-                let usage = res.usage();
-                if usage.has_values() {
-                    let _ = app.emit(
-                        "llm:usage",
-                        serde_json::json!({
-                            "request_id": request_id,
-                            "prompt_tokens": usage.input_tokens,
-                            "completion_tokens": usage.output_tokens,
-                            "cached_input_tokens": usage.cached_input_tokens,
-                            "cache_creation_input_tokens": usage.cache_creation_input_tokens,
-                        }),
-                    );
-                }
-            }
-            Ok(MultiTurnStreamItem::CompletionCall(call)) => {
-                if call.usage.has_values() {
-                    let _ = app.emit(
-                        "llm:usage",
-                        serde_json::json!({
-                            "request_id": request_id.clone(),
-                            "prompt_tokens": call.usage.input_tokens,
-                            "completion_tokens": call.usage.output_tokens,
-                            "cached_input_tokens": call.usage.cached_input_tokens,
-                            "cache_creation_input_tokens": call.usage.cache_creation_input_tokens,
-                        }),
-                    );
-                }
-            }
-            Ok(_) => {}
-            Err(e) => {
-                log::warn!("[kb_llm_query] [1]: agent 流式错误: request_id={} err={}", request_id, e);
-                stream_failed = true;
-                break;
-            }
+    match &outcome {
+        TurnOutcome::Failed { err, .. } if full_content.trim().is_empty() => {
+            log::warn!("[agent_query_v3] 流式失败 request_id={} err={}", request_id, err);
+            crate::core::trace::stage_end(&request_id, "generating", "error", generating_start.elapsed().as_millis() as u64, &err.to_string());
+            emit_pending_trace_events(app, &request_id);
+            state.agent_tasks.finish(&request_id, AgentTaskStatus::Failed);
+            record_exec(false, Some("failed".into()));
+            emit_command_error(app, "rag:error", &request_id, format!("LLM 生成失败，请检查模型服务是否可用: {}", err));
+        }
+        TurnOutcome::Cancelled { .. } => {
+            crate::core::trace::stage_end(&request_id, "generating", "cancelled", generating_start.elapsed().as_millis() as u64, "生成阶段取消");
+            emit_pending_trace_events(app, &request_id);
+            state.agent_tasks.finish(&request_id, AgentTaskStatus::Cancelled);
+            record_exec(false, Some("cancelled".into()));
+            let _ = app.emit(
+                "rag:done",
+                RagDone {
+                    request_id: request_id.clone(),
+                    content: full_content,
+                    sources: merged_sources,
+                    prompt_tokens,
+                    completion_tokens,
+                    cached_input_tokens,
+                    cache_creation_input_tokens,
+                },
+            );
+        }
+        _ => {
+            crate::core::trace::stage_end(&request_id, "generating", "ok", generating_start.elapsed().as_millis() as u64, "生成完成");
+            emit_pending_trace_events(app, &request_id);
+            state.agent_tasks.finish(&request_id, AgentTaskStatus::Done);
+            record_exec(true, None);
+            let _ = app.emit(
+                "rag:done",
+                RagDone {
+                    request_id: request_id.clone(),
+                    content: full_content,
+                    sources: merged_sources,
+                    prompt_tokens,
+                    completion_tokens,
+                    cached_input_tokens,
+                    cache_creation_input_tokens,
+                },
+            );
         }
     }
-
-    // 流式失败且无任何内容 → 显式报错，避免静默失败或空消息污染前端
-    if stream_failed && full_content.is_empty() && !cancel.is_cancelled() {
-        log::warn!("[kb_llm_query] [1]: 流式响应失败: request_id={}", request_id);
-        crate::core::trace::stage_end(
-            &request_id,
-            "generating",
-            "error",
-            kb_gen_start.elapsed().as_millis() as u64,
-            "llm_stream_failed",
-        );
-        emit_pending_trace_events(&app, &request_id);
-        crate::core::trace::trace_bus().clear(&request_id);
-        // Phase 1：任务状态中心收尾（failed）
-        state
-            .agent_tasks
-            .finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Failed);
-        emit_command_error(&app, "llm:error", &request_id, "LLM 生成失败，请检查模型服务是否可用".into());
-        task_registry.unregister(&request_id).await;
-        return Ok(());
-    }
-    crate::core::trace::stage_end(
-        &request_id,
-        "generating",
-        "ok",
-        kb_gen_start.elapsed().as_millis() as u64,
-        &format!("chars={}", full_content.len()),
-    );
-    emit_pending_trace_events(&app, &request_id);
-    crate::core::trace::trace_bus().clear(&request_id);
-
-    let _ = app.emit(
-        "llm:done",
-        LlmDone {
-            request_id: request_id.clone(),
-            content: full_content,
-        },
-    );
-    // Phase 1：任务状态中心收尾（done）
-    state
-        .agent_tasks
-        .finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Done);
-
+    // 清空工具总线（实时 drain 已消费全部事件；此处清理桶防残留）
+    tool_call_bus().clear(&request_id);
     task_registry.unregister(&request_id).await;
     Ok(())
 }
@@ -2594,6 +2311,7 @@ pub async fn kb_llm_query(
 /// 取消时保留已生成的部分内容（通过 llm:done 交给前端落库），与 openai 通道一致。
 async fn kb_llm_query_anthropic(
     app: &AppHandle,
+    state: &tauri::State<'_, crate::AppState>,
     task_registry: tauri::State<'_, TaskRegistry>,
     messages: Vec<crate::services::llm::ChatMessage>,
     request_id: String,
@@ -2626,6 +2344,8 @@ async fn kb_llm_query_anthropic(
     );
     if !client.is_configured() {
         emit_command_error(app, "llm:error", &request_id, "Anthropic 未配置（缺少地址或模型）".into());
+        // B2：早退路径任务状态收尾
+        state.agent_tasks.finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Failed);
         task_registry.unregister(&request_id).await;
         return Ok(());
     }
@@ -2644,6 +2364,7 @@ async fn kb_llm_query_anthropic(
     }
     if body.is_empty() {
         emit_command_error(app, "llm:error", &request_id, "消息不能为空".into());
+        state.agent_tasks.finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Failed);
         task_registry.unregister(&request_id).await;
         return Ok(());
     }
@@ -2697,6 +2418,16 @@ async fn kb_llm_query_anthropic(
         .await
     {
         Ok(full_content) => {
+            // 正常完成或取消（stream_chat 取消时返回 Ok(部分内容)）：统一 llm:done + Done/Cancelled
+            let cancelled = cancel.is_cancelled();
+            state.agent_tasks.finish(
+                &request_id,
+                if cancelled {
+                    crate::core::agent::task_store::AgentTaskStatus::Cancelled
+                } else {
+                    crate::core::agent::task_store::AgentTaskStatus::Done
+                },
+            );
             let _ = app.emit(
                 "llm:done",
                 LlmDone {
@@ -2707,7 +2438,18 @@ async fn kb_llm_query_anthropic(
         }
         Err(e) => {
             log::warn!("[kb_llm_query_anthropic] 请求失败: request_id={} err={}", request_id, e);
-            if !cancel.is_cancelled() {
+            if cancel.is_cancelled() {
+                // B10：取消引发的失败也要给终态事件 + 任务收尾（部分内容不可得时按空处理）
+                state.agent_tasks.finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Cancelled);
+                let _ = app.emit(
+                    "llm:done",
+                    LlmDone {
+                        request_id: request_id.clone(),
+                        content: String::new(),
+                    },
+                );
+            } else {
+                state.agent_tasks.finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Failed);
                 emit_command_error(app, "llm:error", &request_id, e);
             }
         }
@@ -2718,7 +2460,11 @@ async fn kb_llm_query_anthropic(
 
 #[cfg(test)]
 mod anti_hallucination_tests {
-    use super::{apply_anti_hallucination_guard, apply_grounding_validator};
+    use super::{
+        apply_anti_hallucination_guard, apply_grounding_validator, seed_session_from_messages,
+    };
+    use crate::core::r#loop::{LlmRole, Session};
+    use crate::services::llm::ChatMessage;
 
     #[test]
     fn appends_warning_when_claims_schedule_without_call() {
@@ -2829,6 +2575,65 @@ mod anti_hallucination_tests {
         let mut content = "根据现有资料无法确认该项目是否使用 Redis Cluster。".to_string();
         apply_grounding_validator(&mut content, false, &[]);
         assert!(!content.contains("依据提醒"));
+    }
+
+    // ── v3 会话播种（seed_session_from_messages）──
+
+    fn chat_msg(role: &str, content: &str) -> ChatMessage {
+        ChatMessage {
+            id: None,
+            role: role.to_string(),
+            content: content.to_string(),
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+
+    #[test]
+    fn seed_plain_history_projects_user_assistant() {
+        let mut s = Session::new("s1");
+        let msgs = vec![chat_msg("user", "你好"), chat_msg("assistant", "你好！")];
+        seed_session_from_messages(&mut s, &msgs);
+        let history = s.derive_history();
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].role, LlmRole::User);
+        assert_eq!(history[0].plain_text(), "你好");
+        assert_eq!(history[1].role, LlmRole::Assistant);
+        assert_eq!(history[1].plain_text(), "你好！");
+    }
+
+    #[test]
+    fn seed_tool_round_trip_pairs_correctly() {
+        let mut s = Session::new("s1");
+        let mut asst = chat_msg("assistant", "");
+        asst.tool_calls = Some(vec![crate::core::ToolCallDto {
+            id: "call_1".into(),
+            name: "read".into(),
+            arguments: "{\"path\":\"a.md\"}".into(),
+        }]);
+        let mut tool = chat_msg("tool", "file content");
+        tool.tool_call_id = Some("call_1".into());
+        seed_session_from_messages(
+            &mut s,
+            &[chat_msg("user", "读文件"), asst, tool, chat_msg("assistant", "内容如上")],
+        );
+        let history = s.derive_history();
+        // user → assistant(tool_call) → tool → assistant(text)
+        assert_eq!(history.len(), 4);
+        assert_eq!(history[1].tool_calls().len(), 1);
+        assert_eq!(history[1].tool_calls()[0].name, "read");
+        assert_eq!(history[2].role, LlmRole::Tool);
+        assert_eq!(history[3].plain_text(), "内容如上");
+    }
+
+    #[test]
+    fn seed_orphan_tool_result_dropped() {
+        let mut s = Session::new("s1");
+        let mut tool = chat_msg("tool", "orphan");
+        tool.tool_call_id = Some("call_x".into()); // 无对应 assistant 调用
+        seed_session_from_messages(&mut s, &[chat_msg("user", "q"), tool]);
+        let history = s.derive_history();
+        assert_eq!(history.len(), 1); // 仅 user；孤儿 tool 结果被剔除
     }
 }
 

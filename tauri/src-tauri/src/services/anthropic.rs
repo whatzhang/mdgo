@@ -229,6 +229,15 @@ impl AnthropicStreamClient {
                             // 处理完整帧（以 \n\n 分隔）
                             while let Some(pos) = find_frame_end(&buf) {
                                 let frame: Vec<u8> = buf.drain(..pos).collect();
+                                // 消费分隔符（\n\n 或 \r\n\r\n）——必须消费，
+                                // 否则 find_frame_end 下次返回 0，drain(..0) 不推进 → 死循环
+                                if buf.starts_with(b"\r\n\r\n") {
+                                    buf.drain(..4);
+                                } else if buf.starts_with(b"\n\n") {
+                                    buf.drain(..2);
+                                } else if buf.first() == Some(&b'\n') {
+                                    buf.drain(..1);
+                                }
                                 if let Some(line) = parse_data_line(&frame) {
                                     handle_sse_line(
                                         &line,
@@ -255,18 +264,29 @@ impl AnthropicStreamClient {
     }
 }
 
-/// 查找帧结束位置（SSE 帧以 `\n\n` 分隔；Anthropic 官方流式使用 `\n\n`，
-/// 若需兼容 `\r\n\r\n` 帧需扩展此函数）。
+/// 查找帧结束位置：`\n\n` 或 `\r\n\r\n` 取先出现者，返回**分隔符起始下标**
+/// （即帧内容结束位置；分隔符由调用方消费）。
 fn find_frame_end(buf: &[u8]) -> Option<usize> {
-    if buf.len() < 2 {
-        return None;
-    }
+    let mut lf: Option<usize> = None;
     for i in 0..buf.len().saturating_sub(1) {
         if buf[i] == b'\n' && buf[i + 1] == b'\n' {
-            return Some(i);
+            lf = Some(i);
+            break;
         }
     }
-    None
+    let mut crlf: Option<usize> = None;
+    for i in 0..buf.len().saturating_sub(3) {
+        if buf[i] == b'\r' && buf[i + 1] == b'\n' && buf[i + 2] == b'\r' && buf[i + 3] == b'\n' {
+            crlf = Some(i);
+            break;
+        }
+    }
+    match (lf, crlf) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b),
+        (None, None) => None,
+    }
 }
 
 /// 提取帧内的 data: 行内容（可能多行 data:，取拼接）。

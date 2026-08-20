@@ -1,19 +1,17 @@
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 
-use rig_core::client::completion::CompletionClient;
-use rig_core::completion::{
-    AssistantContent, CompletionError, CompletionModel, CompletionRequest, CompletionResponse,
-    Message, Usage,
-};
-use rig_core::providers::openai;
-use rig_core::OneOrMany;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
 use crate::core::agent::limits::{MAX_EXPANDED_QUERIES, QUERY_EXPANSION_RETRY_MAX};
+use crate::core::r#loop::{
+    CompletionRequest as LoopRequest, CompletionResponse as LoopResponse, LlmAdapter, LlmError,
+    LlmMessage, LlmRole, OpenAiAdapter,
+};
 use crate::core::search::query_plan::QueryKind;
 
 // ─── 公共类型 ───
@@ -147,12 +145,7 @@ fn parse_expansion_output(full: &str) -> Vec<ExpandedQuery> {
 
 // ─── 工具函数 ───
 
-/// 将配置中的 LLM 端点归一化为 Rig 的 base_url。
-///
-/// 配置可能携带完整路径（如 `http://host/v1/chat/completions`），而 Rig 的
-/// OpenAI provider 会自动拼接 `/chat/completions`，因此需要剥离该后缀。
-/// 注意只剥离 `/chat/completions`，保留版本前缀 `/v1`：否则 `.../v1/chat/completions`
-/// 会退化为 `.../chat/completions`，被部分网关（如 LM Studio 前置代理）拒绝。
+/// 将配置中的 LLM 端点归一化（剥离 `/chat/completions` 后缀，保留 `/v1` 前缀）。
 fn normalize_base_url(endpoint: &str) -> String {
     let trimmed = endpoint.trim_end_matches('/');
     let lower = trimmed.to_ascii_lowercase();
@@ -160,17 +153,6 @@ fn normalize_base_url(endpoint: &str) -> String {
         return trimmed[..idx].to_string();
     }
     trimmed.to_string()
-}
-
-/// 将 Rig 的用量信息转换为项目内的 `UsageInfo`
-pub fn usage_to_info(usage: &Usage) -> UsageInfo {
-    UsageInfo {
-        prompt_tokens: usage.input_tokens as u32,
-        completion_tokens: usage.output_tokens as u32,
-        total_tokens: usage.total_tokens as u32,
-        cached_input_tokens: usage.cached_input_tokens as u32,
-        cache_creation_input_tokens: usage.cache_creation_input_tokens as u32,
-    }
 }
 
 // ─── LLM 客户端 ───
@@ -183,12 +165,6 @@ pub fn usage_to_info(usage: &Usage) -> UsageInfo {
 /// 已知限制：Rig 对流式请求默认注入 `stream_options: {"include_usage": true}`，
 /// 主流本地服务器（Ollama / llama.cpp / vLLM / LM Studio）均宽松忽略；若对接
 /// 严格校验参数的兼容网关返回 400，需自定义 Provider 扩展关闭该字段。
-/// LLM HTTP 请求级总超时（秒）：作用于每一次 LLM 请求（含 SSE 流式读取期），
-/// 防止服务端挂起导致请求永久悬挂。正常单轮生成远低于该值；子代理等多轮
-/// 流程每轮独立计超时，不叠加；父链取消时由 drop 传播中止，此超时仅兜底
-/// 极端挂起场景。
-const LLM_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
-
 // ─── LLM 调用重试（P0-4）：非流式调用指数退避，对齐 Pi provider retry ───
 /// 最大重试次数（首次调用之外的额外尝试次数；总尝试 = 重试次数 + 1）
 const LLM_RETRY_MAX: usize = 3;
@@ -197,7 +173,9 @@ const LLM_RETRY_BASE_MS: u64 = 2000;
 /// 退避延迟上限（毫秒）
 const LLM_RETRY_MAX_MS: u64 = 60_000;
 
-/// 判断 HTTP 状态码是否可重试（429 限流 / 408 超时 / 5xx 服务端错误）
+/// 判断 HTTP 状态码是否可重试（429 限流 / 408 超时 / 5xx 服务端错误）。
+/// 当前仅测试路径使用（`completion_with_retry` 经 `LlmError` 判定），保留供回归。
+#[allow(dead_code)]
 pub(crate) fn is_retryable_status_code(code: u16) -> bool {
     code == 429 || code == 408 || (500..=599).contains(&code)
 }
@@ -218,102 +196,10 @@ pub(crate) fn mask_secret(secret: &str) -> String {
     format!("<len={} fnv={:016x}>", secret.len(), h)
 }
 
-/// 从 provider 错误文本中提取 HTTP 状态码（存在时），用于重试判定。
-///
-/// 优先匹配显式标注形态（`HTTP 401` / `status: 401` / `status code 401`）；
-/// 其次匹配裸状态码（仅限常见集合），避免把 token 数/业务数字误判为状态码。
-fn status_from_provider_message(msg: &str) -> Option<u16> {
-    // 形态1：显式标注
-    let explicit = regex::Regex::new(r"(?i)\b(?:http|status(?:\s*code)?)\s*[:=]?\s*([45]\d\d)\b")
-        .ok()?;
-    if let Some(m) = explicit.captures(msg).and_then(|c| c.get(1)) {
-        if let Ok(code) = m.as_str().parse() {
-            return Some(code);
-        }
-    }
-    // 形态2：裸状态码（限常见集合，防误匹配数字）
-    const BARE_CODES: &[&str] = &["401", "403", "404", "408", "422", "429", "500", "502", "503", "504"];
-    let bare = regex::Regex::new(r"\b([45]\d\d)\b").ok()?;
-    for c in bare.captures_iter(msg) {
-        let s = c.get(1).map(|m| m.as_str()).unwrap_or("");
-        if BARE_CODES.contains(&s) {
-            if let Ok(code) = s.parse() {
-                return Some(code);
-            }
-        }
-    }
-    None
-}
-
-/// 判断 provider 错误文本是否命中「确定性（永久）错误」关键词——不应重试。
-///
-/// 覆盖常见 OpenAI 兼容网关的明文错误；无状态码且无关键词时保守视为可重试
-/// （保持旧行为，避免把未知瞬时错误误判为永久失败）。
-fn is_permanent_provider_message(msg: &str) -> bool {
-    let lower = msg.to_lowercase();
-    const PERMANENT_MARKERS: &[&str] = &[
-        "unauthorized",
-        "invalid api key",
-        "incorrect api key",
-        "authentication",
-        "forbidden",
-        "permission",
-        "insufficient_quota",
-        "invalid_request_error",
-        "invalid request",
-        "model not found",
-        "does not exist",
-        "not found",
-        "bad request",
-        "unsupported",
-        "context length",
-        "context_length_exceeded",
-        "maximum context",
-        "token limit",
-    ];
-    PERMANENT_MARKERS.iter().any(|m| lower.contains(m))
-}
-
-/// 判断 rig 补全错误是否为瞬时错误（可重试）。
-///
-/// - `HttpError`：连接/超时/流中断类视为瞬时；HTTP 状态码按 `is_retryable_status_code` 判定
-/// - `ProviderResponse`：带状态码则按码判定；无状态码时按响应体关键词判定
-/// - `ProviderError`：从消息中提取状态码按码判定；无状态码时按永久错误关键词判定
-/// - 其余（JsonError/UrlError/RequestError/ResponseError）：确定性错误，不重试
-pub(crate) fn is_retryable_completion_error(e: &CompletionError) -> bool {
-    match e {
-        CompletionError::HttpError(http_err) => match http_err {
-            rig_core::http_client::Error::InvalidStatusCode(s)
-            | rig_core::http_client::Error::InvalidStatusCodeWithMessage(s, _) => {
-                is_retryable_status_code(s.as_u16())
-            }
-            // 连接错误/超时/流中断/协议错误：瞬时
-            rig_core::http_client::Error::Instance(_)
-            | rig_core::http_client::Error::StreamEnded
-            | rig_core::http_client::Error::Protocol(_) => true,
-            // InvalidHeaderValue / NoHeaders / InvalidContentType：确定性
-            _ => false,
-        },
-        CompletionError::ProviderResponse(pe) => match pe.status {
-            Some(s) => is_retryable_status_code(s.as_u16()),
-            // 无状态码（非 HTTP 传输）：按响应体关键词判定，空体保守重试
-            None => {
-                let body = pe.body.as_str();
-                if body.is_empty() {
-                    true
-                } else {
-                    !is_permanent_provider_message(body)
-                }
-            }
-        },
-        CompletionError::ProviderError(msg) => match status_from_provider_message(msg) {
-            Some(code) => is_retryable_status_code(code),
-            // 无状态码：永久错误关键词命中即不重试（如 401/403/context 溢出等），
-            // 其余保守重试（旧行为：全部重试，最长 ~14s 延迟）
-            None => !is_permanent_provider_message(msg),
-        },
-        _ => false,
-    }
+/// 判断 LlmError 是否可重试（瞬时错误：429/408/5xx/连接/超时/provider 文本）。
+/// 对齐 `core::loop::LlmError::is_retryable`（P0-4 语义：确定性 4xx/溢出不重试）。
+pub(crate) fn is_retryable_llm_error(e: &LlmError) -> bool {
+    e.is_retryable()
 }
 
 /// 泛型指数退避重试循环（依赖倒置：调用方注入"执行一次"的闭包与可重试判定）。
@@ -372,7 +258,8 @@ pub struct LLMClient {
     model: String,
     /// 推理努力等级（P2-18：low/medium/high，透传 additional_params）
     reasoning_effort: Option<String>,
-    completion_model: openai::CompletionModel,
+    /// 非流式 LLM 适配器（LlmAdapter seam；OpenAI 兼容）
+    adapter: Arc<dyn LlmAdapter>,
 }
 
 impl LLMClient {
@@ -385,22 +272,13 @@ impl LLMClient {
     ) -> Result<Self, String> {
         let base_url = normalize_base_url(&endpoint);
 
-        // 注入带超时的 http client：rig_core 对 reqwest::Client 直接实现了
-        // HttpClientExt，CompletionsClient::builder().http_client(...) 可注入。
-        // 注意必须用 rig_core 重新导出的 reqwest(0.13) 类型——rig 的 HttpClientExt
-        // 只对该版本实现；mdgo 直接依赖的 reqwest 0.12 是不同 crate 实例，不满足约束。
-        // timeout 为请求级总时长（含 SSE 流式），300s 内正常生成不受影响，仅兜底挂起。
-        let http_client = rig_core::http_client::ReqwestClient::builder()
-            .timeout(LLM_REQUEST_TIMEOUT)
-            .build()
-            .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
-        let client = openai::CompletionsClient::builder()
-            .api_key(&api_key)
-            .base_url(&base_url)
-            .http_client(http_client)
-            .build()
-            .map_err(|e| format!("创建 LLM 客户端失败: {}", e))?;
-        let completion_model = client.completion_model(&model);
+        // 非流式适配器（LlmAdapter seam；OpenAI 兼容，transport 与业务解耦）
+        let adapter: Arc<dyn LlmAdapter> = Arc::new(OpenAiAdapter::new(
+            base_url.clone(),
+            model.clone(),
+            api_key.clone(),
+            reasoning_effort.clone(),
+        ));
 
         // P0-1（安全）：api_key 绝不明文落日志（见 mask_secret）。仅输出不可逆掩码。
         log::info!("[llm] LLMClient init base_url={}，api_key={}， model={}", base_url, mask_secret(&api_key), model);
@@ -409,22 +287,16 @@ impl LLMClient {
             endpoint: base_url,
             model,
             reasoning_effort,
-            completion_model,
+            adapter,
         })
     }
 
-    /// 向补全请求注入通用参数（P2-18：reasoning_effort 透传 additional_params）。
-    ///
-    /// 非流式调用点（查询扩展/规划/摘要/评审）构造 `CompletionRequest` 后统一调用。
-    fn apply_common_params(&self, mut request: CompletionRequest) -> CompletionRequest {
+    /// 向补全请求注入通用参数（P2-18：reasoning_effort 透传）。
+    fn apply_common_params(&self, mut request: LoopRequest) -> LoopRequest {
         if let Some(effort) = &self.reasoning_effort {
             let effort = effort.trim().to_lowercase();
             if !effort.is_empty() {
-                let mut params = request.additional_params.take().unwrap_or_else(|| serde_json::json!({}));
-                if let Some(obj) = params.as_object_mut() {
-                    obj.insert("reasoning_effort".into(), serde_json::Value::String(effort));
-                    request.additional_params = Some(params);
-                }
+                request.reasoning_effort = Some(effort);
             }
         }
         request
@@ -435,40 +307,31 @@ impl LLMClient {
         !self.endpoint.is_empty() && !self.model.is_empty()
     }
 
-    /// 获取底层 Rig 补全模型（用于构建 Agent）
-    pub fn completion_model(&self) -> &openai::CompletionModel {
-        &self.completion_model
-    }
-
-    /// 非流式补全 + 指数退避重试（P0-4）。
+    /// 非流式补全 + 指数退避重试（P0-4，经 LlmAdapter）。
     ///
-    /// 仅对瞬时错误（429/408/5xx/连接/超时/流中断）重试；
+    /// 仅对瞬时错误（429/408/5xx/连接/超时）重试；
     /// 重试间隔受 `cancel` 控制（取消即中止，不再等待）。
-    /// 流式主链路（agent 生成）不做请求级重试：rig agent 流重放会重复执行
-    /// 工具副作用，由 300s 超时 + 用户重试兜底（设计取舍，见规划文档 P0-4）。
     async fn completion_with_retry(
         &self,
-        request: CompletionRequest,
+        request: LoopRequest,
         cancel: CancellationToken,
-    ) -> Result<CompletionResponse<openai::CompletionResponse>, CompletionError> {
+    ) -> Result<LoopResponse, LlmError> {
         self.completion_with_retry_n(request, cancel, LLM_RETRY_MAX)
             .await
     }
 
-    /// 非流式补全 + 指数退避重试（指定重试次数）。
-    ///
-    /// 预检索路径（查询扩展）使用更紧的预算（`QUERY_EXPANSION_RETRY_MAX`），
-    /// 避免慢模型在预检索阶段长时间阻塞；其余调用沿用 [`completion_with_retry`]。
+    /// 非流式补全 + 指数退避重试（指定重试次数，经 LlmAdapter）。
     async fn completion_with_retry_n(
         &self,
-        request: CompletionRequest,
+        request: LoopRequest,
         cancel: CancellationToken,
         max_retries: usize,
-    ) -> Result<CompletionResponse<openai::CompletionResponse>, CompletionError> {
-        let model = self.completion_model.clone();
+    ) -> Result<LoopResponse, LlmError> {
+        let adapter = self.adapter.clone();
+        let cancel_for_call = cancel.clone();
         retry_loop(
-            || model.completion(request.clone()),
-            is_retryable_completion_error,
+            || adapter.complete(request.clone(), cancel_for_call.clone()),
+            is_retryable_llm_error,
             max_retries,
             Duration::from_millis(LLM_RETRY_BASE_MS),
             Duration::from_millis(LLM_RETRY_MAX_MS),
@@ -536,51 +399,34 @@ impl LLMClient {
         ));
         system_msg.push_str(text);
 
-        // 构造 Rig 请求（单条 user 消息，模型参数固定为低温度 + 短输出）
-        let request = CompletionRequest {
-            model: None,
-            preamble: None,
-            chat_history: OneOrMany::one(Message::user(system_msg)),
-            documents: Vec::new(),
-            tools: Vec::new(),
-            temperature: Some(0.2),
-            max_tokens: Some(1024),
-            tool_choice: None,
-            additional_params: None,
-            output_schema: None,
-            record_telemetry_content: false,
-        };
+        // 构造 LlmAdapter 请求（单条 user 消息，模型参数固定为低温度 + 短输出）
+        let mut request = LoopRequest::new(vec![LlmMessage::text(LlmRole::User, system_msg)]);
+        request.temperature = Some(0.2);
+        request.max_tokens = Some(1024);
         let request = self.apply_common_params(request);
 
         log::info!("[llm] [输入语义扩展] input: query='{}' history_count={} ", text, history.len());
 
         // 直接非流式调用：expand_queries 只需要完整结果，无需流式体验。
-        // 非流式请求（stream: false）返回 application/json，兼容性最好，
-        // 也规避 thinking 类模型 SSE 中 reasoning 内容的解析差异。
         // 预检索预算从紧：重试 QUERY_EXPANSION_RETRY_MAX 次（总时限由调用方 timeout 包裹）。
-        let mut full = String::new();
-
         let result = self
             .completion_with_retry_n(request, cancel.clone(), QUERY_EXPANSION_RETRY_MAX)
             .await;
 
-        match result {
+        let full = match result {
             Ok(response) => {
                 log::info!(
-                    "[llm] [输入语义扩展] response choice={:?} usage={:?}",
-                    response.choice, response.usage
+                    "[llm] [输入语义扩展] response chars={} usage={:?}",
+                    response.content.chars().count(),
+                    response.usage
                 );
-                for item in response.choice.iter() {
-                    if let AssistantContent::Text(text) = item {
-                        full.push_str(&text.text);
-                    }
-                }
+                response.content
             }
             Err(e) => {
                 log::warn!("[llm] [输入语义扩展] 非流式调用失败 err={}", e);
                 return ExpansionResult::default();
             }
-        }
+        };
 
         if full.trim().is_empty() {
             log::info!("[llm] [输入语义扩展] empty response");
@@ -670,20 +516,13 @@ impl LLMClient {
             }
         }
 
-        // 构造 Rig 请求（非流式，与 expand_queries 同构；不用 output_schema 保证网关兼容）
-        let request = CompletionRequest {
-            model: None,
-            preamble: Some(preamble),
-            chat_history: OneOrMany::one(Message::user(user_msg)),
-            documents: Vec::new(),
-            tools: Vec::new(),
-            temperature: Some(0.3),
-            max_tokens: Some(2048),
-            tool_choice: None,
-            additional_params: None,
-            output_schema: None,
-            record_telemetry_content: false,
-        };
+        // 构造 LlmAdapter 请求（非流式，与 expand_queries 同构；不用 output_schema 保证网关兼容）
+        let mut request = LoopRequest::new(vec![
+            LlmMessage::text(LlmRole::System, preamble),
+            LlmMessage::text(LlmRole::User, user_msg),
+        ]);
+        request.temperature = Some(0.3);
+        request.max_tokens = Some(2048);
         let request = self.apply_common_params(request);
 
         log::info!("[llm] [任务规划] input: query_len={} history_count={}", query.len(), history.len());
@@ -692,12 +531,7 @@ impl LLMClient {
 
         match result {
             Ok(response) => {
-                let mut full = String::new();
-                for item in response.choice.iter() {
-                    if let AssistantContent::Text(text) = item {
-                        full.push_str(&text.text);
-                    }
-                }
+                let full = response.content;
                 let trimmed = full.trim();
                 if trimmed.is_empty() {
                     log::warn!("[llm] [任务规划] 空响应");
@@ -787,21 +621,10 @@ impl crate::core::context::HistorySummarizer for LLMClient {
             prompt.push_str(&format!("{label}: {}\n", t.content));
         }
 
-        // 构造 Rig 请求(非流式调用模式与 expand_queries 一致:
-        // stream=false 返回 application/json,兼容性最好)
-        let request = CompletionRequest {
-            model: None,
-            preamble: None,
-            chat_history: OneOrMany::one(Message::user(prompt)),
-            documents: Vec::new(),
-            tools: Vec::new(),
-            temperature: Some(0.3),
-            max_tokens: Some((max_chars / 2).clamp(128, 2048) as u64),
-            tool_choice: None,
-            additional_params: None,
-            output_schema: None,
-            record_telemetry_content: false,
-        };
+        // 构造 LlmAdapter 请求（非流式，与 expand_queries 一致）
+        let mut request = LoopRequest::new(vec![LlmMessage::text(LlmRole::User, prompt)]);
+        request.temperature = Some(0.3);
+        request.max_tokens = Some((max_chars / 2).clamp(128, 2048) as u32);
         let request = self.apply_common_params(request);
 
         // 可观测性：记录摘要请求上下文（模型/预算/输入规模），用于定位"空响应/失败"根因
@@ -816,19 +639,13 @@ impl crate::core::context::HistorySummarizer for LLMClient {
 
         match result {
             Ok(response) => {
-                let mut full = String::new();
-                for item in response.choice.iter() {
-                    if let AssistantContent::Text(text) = item {
-                        full.push_str(&text.text);
-                    }
-                }
+                let full = response.content;
                 let trimmed = full.trim().to_string();
                 if trimmed.is_empty() {
-                    // 空响应：区分「模型输出空」与「响应解析为空」——记录 model/预算/输入规模，
-                    // 便于确认是否 summary_model 回退主模型后模型不可用或输出被截断
+                    // 空响应：区分「模型输出空」与「响应解析为空」——记录 model/预算/输入规模
                     log::warn!(
-                        "[llm] [历史摘要] 空响应: model={} turns={} chars={} max_tokens={} choices={}",
-                        self.model, turns.len(), turns_chars, max_tokens_out, response.choice.len()
+                        "[llm] [历史摘要] 空响应: model={} turns={} chars={} max_tokens={}",
+                        self.model, turns.len(), turns_chars, max_tokens_out
                     );
                     None
                 } else {
@@ -872,27 +689,12 @@ impl LLMClient {
              只输出 JSON：{{\"verdict\": \"通过\" 或 \"需修正\", \"issues\": [{{\"issue\": \"问题描述\", \"fix\": \"具体修正建议\"}}]}}，无问题时 issues 为空数组。\n\n\
              用户目标：{goal}\n\n初稿：\n{draft}"
         );
-        let request = CompletionRequest {
-            model: None,
-            preamble: None,
-            chat_history: OneOrMany::one(Message::user(system_msg)),
-            documents: Vec::new(),
-            tools: Vec::new(),
-            temperature: Some(0.2),
-            max_tokens: Some(1024),
-            tool_choice: None,
-            additional_params: None,
-            output_schema: None,
-            record_telemetry_content: false,
-        };
+        let mut request = LoopRequest::new(vec![LlmMessage::text(LlmRole::User, system_msg)]);
+        request.temperature = Some(0.2);
+        request.max_tokens = Some(1024);
         let request = self.apply_common_params(request);
         let result = self.completion_with_retry(request, cancel).await.ok()?;
-        let mut full = String::new();
-        for item in result.choice.iter() {
-            if let AssistantContent::Text(text) = item {
-                full.push_str(&text.text);
-            }
-        }
+        let full = result.content;
         // P0-3 结构化校验：非法输出视为评审失败（降级不评审）
         let validator =
             crate::core::validation::JsonSchemaValidator::new(review_json_schema()).ok()?;
@@ -974,22 +776,14 @@ impl LLMClient {
 链接：{url}\n\
 内容：{content}");
 
-        // 不走 output_schema（rig 会把它强转成 response_format.json_schema + strict，
-        // 本地引擎如 LM Studio 不支持 → 输出过短/解析失败）。改为纯 prompt 要求 JSON，
-        // 用本地 parse_bookmark_summary_json 兜底校验。仍用 rig 的非流式 completion 单次调用。
-        let request = CompletionRequest {
-            model: None,
-            preamble: None,
-            chat_history: OneOrMany::one(Message::user(prompt.clone())),
-            documents: Vec::new(),
-            tools: Vec::new(),
-            temperature: Some(0.3),
-            max_tokens: Some(SUMMARY_OUTPUT_TOKENS),
-            tool_choice: None,
-            additional_params: Some(serde_json::json!({"enable_thinking": false})),
-            output_schema: None,
-            record_telemetry_content: false,
-        };
+        // 不走 output_schema（本地引擎如 LM Studio 不支持 strict json_schema → 输出过短/
+        // 解析失败）。改为纯 prompt 要求 JSON，用本地 parse_bookmark_summary_json 兜底校验。
+        // 仍用 LlmAdapter 的非流式 completion 单次调用；enable_thinking 关闭透传 extra_params。
+        let mut request = LoopRequest::new(vec![LlmMessage::text(LlmRole::User, prompt.clone())]);
+        request.temperature = Some(0.3);
+        request.max_tokens = Some(SUMMARY_OUTPUT_TOKENS as u32);
+        request.extra_params = Some(serde_json::json!({ "enable_thinking": false }));
+        let request = self.apply_common_params(request);
 
         // 记录本次请求体（便于与 LM Studio / Postman 对照定位）
         log::info!(
@@ -1002,12 +796,7 @@ impl LLMClient {
             .await
             .map_err(|e| format!("LLM 调用失败: {}", e))?;
 
-        let mut full = String::new();
-        for item in response.choice.iter() {
-            if let AssistantContent::Text(text) = item {
-                full.push_str(&text.text);
-            }
-        }
+        let full = response.content;
         // 记录响应全文（便于定位解析失败与真实返回）
         log::info!(
             "[llm] [书签摘要] 响应: model={} chars_out={} body={}",
@@ -1251,74 +1040,20 @@ mod tests {
     }
 
     #[test]
-    fn retryable_completion_error_classification() {
-        // ProviderError：瞬时文本（无永久关键词）保守重试
-        assert!(is_retryable_completion_error(&CompletionError::ProviderError(
-            "rate limited".into()
-        )));
-        // ProviderError：显式 429 状态码 → 重试
-        assert!(is_retryable_completion_error(&CompletionError::ProviderError(
-            "HTTP 429 Too Many Requests".into()
-        )));
-        // ProviderError：显式 401 → 不重试（P0-4）
-        assert!(!is_retryable_completion_error(&CompletionError::ProviderError(
-            "HTTP 401 Unauthorized: invalid api key".into()
-        )));
-        // ProviderError：永久错误关键词（context 溢出/认证）→ 不重试（P0-4）
-        assert!(!is_retryable_completion_error(&CompletionError::ProviderError(
-            "This model's maximum context length is 16385 tokens".into()
-        )));
-        assert!(!is_retryable_completion_error(&CompletionError::ProviderError(
-            "Incorrect API key provided".into()
-        )));
-        // ResponseError（解析失败）：不重试
-        assert!(!is_retryable_completion_error(&CompletionError::ResponseError(
-            "bad json".into()
-        )));
-        // HttpError::Instance（连接/超时类）：重试
-        assert!(is_retryable_completion_error(&CompletionError::HttpError(
-            rig_core::http_client::Error::Instance(Box::new(std::io::Error::other("conn reset")))
-        )));
-        // HttpError 带 429 状态码：重试
-        assert!(is_retryable_completion_error(&CompletionError::HttpError(
-            rig_core::http_client::Error::InvalidStatusCodeWithMessage(
-                http::StatusCode::TOO_MANY_REQUESTS,
-                "rate limit".into(),
-            )
-        )));
-        // HttpError 带 400 状态码：不重试
-        assert!(!is_retryable_completion_error(&CompletionError::HttpError(
-            rig_core::http_client::Error::InvalidStatusCodeWithMessage(
-                http::StatusCode::BAD_REQUEST,
-                "bad".into(),
-            )
-        )));
-    }
-
-    #[test]
-    fn provider_message_status_extraction() {
-        // 显式标注形态
-        assert_eq!(status_from_provider_message("HTTP 401 Unauthorized"), Some(401));
-        assert_eq!(status_from_provider_message("status: 429 too many"), Some(429));
-        assert_eq!(status_from_provider_message("status code 503"), Some(503));
-        // 裸状态码（常见集合）
-        assert_eq!(status_from_provider_message("error 500 internal"), Some(500));
-        // 数字但非状态码 → 不误判（token 数/业务数字）
-        assert_eq!(status_from_provider_message("maximum context length is 16385 tokens"), None);
-        assert_eq!(status_from_provider_message("random 4123 number"), None);
-        // 无状态码
-        assert_eq!(status_from_provider_message("connection reset"), None);
-    }
-
-    #[test]
-    fn permanent_provider_message_detection() {
-        assert!(is_permanent_provider_message("Incorrect API key provided"));
-        assert!(is_permanent_provider_message("maximum context length exceeded"));
-        assert!(is_permanent_provider_message("model not found"));
-        assert!(is_permanent_provider_message("insufficient_quota"));
-        // 瞬时消息不应误判
-        assert!(!is_permanent_provider_message("rate limited, retry later"));
-        assert!(!is_permanent_provider_message("overloaded server"));
+    fn retryable_llm_error_classification() {
+        use crate::core::r#loop::LlmError;
+        // 瞬时：连接/超时/provider 文本
+        assert!(is_retryable_llm_error(&LlmError::Http("conn reset".into())));
+        assert!(is_retryable_llm_error(&LlmError::Timeout));
+        assert!(is_retryable_llm_error(&LlmError::Provider("rate limited".into())));
+        // 状态码：429/5xx 可重试；401/400 不重试（P0-4）
+        assert!(is_retryable_llm_error(&LlmError::StatusCode(429, String::new())));
+        assert!(is_retryable_llm_error(&LlmError::StatusCode(503, String::new())));
+        assert!(!is_retryable_llm_error(&LlmError::StatusCode(401, String::new())));
+        assert!(!is_retryable_llm_error(&LlmError::StatusCode(400, String::new())));
+        // 确定性：上下文溢出/业务 4xx 不重试
+        assert!(!is_retryable_llm_error(&LlmError::ContextOverflow));
+        assert!(!is_retryable_llm_error(&LlmError::InvalidRequest("bad".into())));
     }
 
     #[test]

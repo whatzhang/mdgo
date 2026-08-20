@@ -23,18 +23,19 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::db::schema;
 
-/// 允许 Skill 声明的内置工具白名单（与 Rig Agent 注册的内置工具一致）。
+/// 允许 Skill 声明的内置工具白名单（与 core/loop v3 注册表一致）。
 /// 白名单仅为声明约束：技能声明了系统外的工具名时直接忽略，不做强类型校验。
 /// 这是工具清单的「单一来源」：前端 Tauri 模式下经 `skill_allowed_tools` 下发，
 /// 本地打开 index.html（无 Tauri）时使用前端内置 fallback 副本。
 /// 覆盖全部注册工具（BASE_TOOLS + 技能声明工具），使任意技能可显式声明任一工具；
 /// BASE_TOOLS 工具本就常驻可见，声明仅影响技能详情展示与 SkillGateHook 的 declared 匹配。
+/// ⚠️ 新增/改名注册表工具时须同步本清单（编译期断言见 tests::allowed_tools_cover_registry）。
 pub const ALLOWED_TOOLS: &[&str] = &[
     "kb_search", "code_lookup", "read", "edit", "multi_edit", "delete", "ls", "glob", "grep", "write", "git_status", "git_diff", "git_commit", "git_checkout", "webfetch",
     "activate_skill", "deactivate_skill", "pomodoro", "raw-parse", "schedule", "open-ui",
     "search_bookmarks", "get_bookmark",
     "deep_research", "read_subagent_result", "spawn_subagent", "parallel_research", "self_review",
-    "remember", "forget", "search_memory", "todo_write",
+    "remember", "forget", "search_memory", "todo_write", "ask_user_question",
 ];
 
 /// 工具展示名（与前端 fallback 一致；Tauri 模式下前端以此清单为准）
@@ -875,6 +876,30 @@ mod tests {
                 "技能 {} 声明了白名单外的工具: {:?}",
                 s.id,
                 s.tools
+            );
+        }
+    }
+
+    #[test]
+    fn allowed_tools_cover_registry_and_base_tools() {
+        // B9：白名单必须覆盖 BASE_TOOLS ∪ SKILL_GATED_VISIBLE_TOOLS（v3 注册表可声明面），
+        // 防止新增工具后技能表单无法声明、或声明了运行时不存在工具。
+        let registry_names: std::collections::HashSet<&str> = crate::core::agent::BASE_TOOLS
+            .iter()
+            .chain(crate::core::agent::SKILL_GATED_VISIBLE_TOOLS.iter())
+            .copied()
+            .collect();
+        for t in ALLOWED_TOOLS {
+            assert!(
+                registry_names.contains(t),
+                "ALLOWED_TOOLS 含注册表面外的工具: {t}"
+            );
+        }
+        // 反向：注册表可声明工具（非 BASE_TOOLS 常驻）必须在白名单内
+        for t in crate::core::agent::SKILL_GATED_VISIBLE_TOOLS {
+            assert!(
+                ALLOWED_TOOLS.contains(t),
+                "技能可见工具 {t} 未列入 ALLOWED_TOOLS（技能表单无法声明）"
             );
         }
     }

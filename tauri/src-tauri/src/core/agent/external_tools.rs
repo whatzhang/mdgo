@@ -6,19 +6,20 @@
 //!   timeout），YAML 文件配置（`%APPDATA%/com.mdgo/agent_tools.yaml`）。
 //! - [`load_external_tools`]：配置加载（文件不存在返回空集，不阻断启动；
 //!   解析失败记日志并降级为空集——外部工具是可选能力）。
-//! - [`build_external_tool`]：把定义转为 rig `DynamicTool`，闭包内以
-//!   HTTP POST JSON 调用外部端点，响应文本返回模型。
+//! - [`load_external_tools_or_default`]：便捷加载（默认路径 + mtime 缓存）。
 //!
 //! 这是 MCP 全协议客户端的最小前置形态：先支持"配置驱动的 HTTP 工具"，
 //! 后续可按同一注册面接入 stdio/MCP 传输（规划文档 P2-15）。
+//!
+//! 注：外部工具的**执行**（HTTP 调用适配）在 rig 时代由本模块
+//! `build_external_tool`（DynamicTool）承担，v3 迁移时已移除；
+//! 接入 v3 注册表（core/loop Tool trait）为增量工作（见 blueprint §6 待办）。
 
 use std::path::Path;
 
-use rig_agent::tool::{DynamicTool, ToolContext, ToolExecutionError, ToolOutput};
 use serde::Deserialize;
 
-use crate::core::agent::limits::{EXTERNAL_TIMEOUT_SECS, MAX_EXTERNAL_RESPONSE_CHARS};
-use crate::core::agent::KbSearchConfig;
+use crate::core::agent::limits::EXTERNAL_TIMEOUT_SECS;
 
 /// 外部工具响应体上限（字符）见 limits::MAX_EXTERNAL_RESPONSE_CHARS
 
@@ -97,104 +98,6 @@ pub fn load_external_tools(path: &Path) -> Result<Vec<ExternalToolDef>, String> 
         .collect())
 }
 
-/// 构建外部工具 DynamicTool（HTTP JSON 调用适配器）。
-pub fn build_external_tool(def: ExternalToolDef, cfg: KbSearchConfig) -> DynamicTool {
-    let name = def.name.clone();
-    let description = def.description.clone();
-    let parameters = def.params_schema.clone();
-    DynamicTool::new(
-        name.clone(),
-        description,
-        parameters,
-        move |_ctx: &mut ToolContext, args: serde_json::Value| {
-            let cfg = cfg.clone();
-            let def = def.clone();
-            Box::pin(async move {
-                // 工具轨迹记录（与内置工具一致）
-                crate::core::agent::tools::record_tool_call(
-                    &cfg,
-                    &def.name,
-                    &args.to_string().chars().take(80).collect::<String>(),
-                    Some(&args),
-                );
-                let client = reqwest::Client::new();
-                let url = def.url.clone();
-                let timeout = std::time::Duration::from_secs(def.timeout_secs.max(1));
-                let result = tokio::time::timeout(timeout, async {
-                    match def.method.to_ascii_uppercase().as_str() {
-                        "GET" => client.get(&url).query(&args).send().await,
-                        _ => client.post(&url).json(&args).send().await,
-                    }
-                })
-                .await;
-                match result {
-                    Ok(Ok(resp)) => {
-                        let status = resp.status();
-                        match resp.text().await {
-                            Ok(body) if status.is_success() => {
-                                // 响应体截断护栏：超过上限截断并提示，防撑爆模型上下文
-                                let truncated = body.chars().count() > MAX_EXTERNAL_RESPONSE_CHARS;
-                                let final_body = if truncated {
-                                    let cut: String = body
-                                        .chars()
-                                        .take(MAX_EXTERNAL_RESPONSE_CHARS)
-                                        .collect();
-                                    format!("{}（响应体过长已截断，共 {} 字符）", cut, body.chars().count())
-                                } else {
-                                    body
-                                };
-                                crate::core::agent::tools::record_tool_result(
-                                    &cfg,
-                                    &def.name,
-                                    true,
-                                    &format!(
-                                        "HTTP {}，{} 字符{}",
-                                        status,
-                                        final_body.chars().count(),
-                                        if truncated { "（已截断）" } else { "" }
-                                    ),
-                                    Some(&final_body),
-                                );
-                                Ok(ToolOutput::text(final_body))
-                            }
-                            Ok(body) => {
-                                let msg = format!("HTTP {} 错误: {}", status, body);
-                                crate::core::agent::tools::record_tool_result(
-                                    &cfg,
-                                    &def.name,
-                                    false,
-                                    &msg,
-                                    Some(&msg),
-                                );
-                                Err(ToolExecutionError::other(msg))
-                            }
-                            Err(e) => {
-                                crate::core::agent::tools::record_tool_result(
-                                    &cfg,
-                                    &def.name,
-                                    false,
-                                    &e.to_string(),
-                                    Some(&e.to_string()),
-                                );
-                                Err(ToolExecutionError::other(format!("读取响应失败: {e}")))
-                            }
-                        }
-                    }
-                    Ok(Err(e)) => {
-                        let msg = format!("外部工具请求失败: {e}");
-                        crate::core::agent::tools::record_tool_result(&cfg, &def.name, false, &msg, Some(&msg));
-                        Err(ToolExecutionError::other(msg))
-                    }
-                    Err(_) => {
-                        let msg = format!("外部工具请求超时（{}s）", def.timeout_secs);
-                        crate::core::agent::tools::record_tool_result(&cfg, &def.name, false, &msg, Some(&msg));
-                        Err(ToolExecutionError::other(msg))
-                    }
-                }
-            })
-        },
-    )
-}
 
 /// 外部工具配置缓存（mtime 感知：配置文件未变化时复用已解析结果）。
 ///

@@ -376,11 +376,17 @@ pub async fn chat_session_clear_messages(
     let sid = session_id.clone();
 
     // 1. 清空 SQLite 中的消息
+    let store_for_blocking = store.clone();
     tokio::task::spawn_blocking(move || {
-        crate::core::db::with_busy_retry(3, || store.clear_session_messages(&session_id))
+        crate::core::db::with_busy_retry(3, || store_for_blocking.clear_session_messages(&session_id))
     })
     .await
     .map_err(|e| format!("任务执行失败: {}", e))??;
+
+    // 1.5 B4：同步清理会话事件日志（防清空后事件溯源残留旧轮次）
+    if let Err(e) = store.clear_session_events(&sid) {
+        log::warn!("[chat] 清空会话事件日志失败: {}", e);
+    }
 
     // 2. 从对话索引中删除该会话的所有已索引消息
     if let Err(e) = indexer.remove_chat_session(&dir_path, &sid).await {

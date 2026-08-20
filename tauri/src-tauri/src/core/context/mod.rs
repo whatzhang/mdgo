@@ -177,7 +177,7 @@ impl ChatTurn {
 /// 返回 `(单元起始下标, 单元)`，供压缩器计算保留起点（`kept_from`）。
 ///
 /// P1-1：配对语义已收敛到 `crate::core::chat_types::group_tool_units`
-/// （本模块与 `commands::llm::chat_turns_to_history` 共享同一实现）。
+/// （会话回放 `core::loop::session::derive_history` 与其共享同一实现）。
 fn group_turns(history: &[ChatTurn]) -> Vec<(usize, Vec<ChatTurn>)> {
     crate::core::chat_types::group_tool_units(history)
 }

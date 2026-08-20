@@ -79,11 +79,6 @@ impl ActivationStatus {
 /// 超限正文截断并引导用 read 读取完整 `{skill_id}/SKILL.md`（L3 参考路径）。
 pub const MAX_SKILL_BODY_CHARS: usize = 4000;
 
-/// 请求入口一次性注入的正文总量上限（字符；≈4000 token）。
-///
-/// 多技能预激活（/技能名 + 会话挂载）拼接时按此上限截断，避免 preamble 膨胀。
-pub const MAX_SKILL_INJECTION_CHARS: usize = 8000;
-
 /// 技能激活来源（替代旧 matcher 的匹配层级）。
 ///
 /// 决策已交由 LLM：本地不再做关键词 / embedding / 模糊匹配，

@@ -399,6 +399,8 @@ fn scope_rank(scope: SkillScope) -> u8 {
 /// - 按 priority 降序拼接（高优先级技能优先进入）
 /// - 超过 `max_chars` 时丢弃后续低优先级技能，并追加截断提示
 /// - 空正文技能跳过；空输入返回空串
+/// 当前仅测试路径使用（v3 技能正文注入改由 SkillInstructionHook 每轮组装），保留供回归。
+#[allow(dead_code)]
 pub fn format_skill_instructions(skills: &[Skill], max_chars: usize) -> String {
     let mut sorted = skills.to_vec();
     sorted.sort_by(|a, b| b.priority.cmp(&a.priority));

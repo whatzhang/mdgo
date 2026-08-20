@@ -10,17 +10,11 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use futures_util::StreamExt;
-use rig_agent::agent::MultiTurnStreamItem;
-use rig_agent::streaming::StreamingChat;
-use rig_core::completion::Message;
-use rig_core::providers::openai;
-use rig_core::streaming::StreamedAssistantContent;
 use tauri::Manager;
+use tokio_util::sync::CancellationToken;
 
-use crate::core::agent::{build_rag_agent, KbSearchConfig};
+use crate::core::agent::KbSearchConfig;
 use crate::core::skill::activation::ActiveSkillState;
-use crate::core::skill::SkillRegistry;
 
 /// 子代理执行模式（P1-9：写型子代理 + 并行派发）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,8 +60,8 @@ pub fn write_tool_set() -> HashSet<String> {
     set
 }
 
-// 子代理默认轮次上限 / 摘要字符预算见 crate::core::agent::limits（SUBAGENT_MAX_TURNS / SUBAGENT_SUMMARY_CHARS）
-pub use crate::core::agent::limits::{SUBAGENT_MAX_TURNS, SUBAGENT_SUMMARY_CHARS};
+// 子代理摘要字符预算见 crate::core::agent::limits（SUBAGENT_SUMMARY_CHARS）
+pub use crate::core::agent::limits::SUBAGENT_SUMMARY_CHARS;
 
 /// 子代理执行规格
 pub struct SubagentSpec {
@@ -118,23 +112,20 @@ impl Drop for ToolBusGuard {
 pub struct SubagentRunner;
 
 impl SubagentRunner {
-    /// 执行一次只读调研子代理。
+    /// 执行一次只读调研子代理（v3：自研 LoopAgent 内核，替代 rig）。
     ///
-    /// `model` / `search_config` / `skill_registry` / `base_rules` 由调用方
-    /// （deep_research 工具闭包）从 AppState 组装；本类型不依赖任何命令层代码。
+    /// `adapter` / `search_config` / `base_rules` 由调用方（deep_research 工具闭包）
+    /// 从 AppState 组装；本类型不依赖任何命令层代码。
     ///
-    /// 取消传播：rig 0.41 的 agent 工具在流式 poll 栈内顺序执行（不 spawn 独立
-    /// task，`bg_handle` spawn 仅存在于测试代码），因此父链取消后 drop stream 会
-    /// 级联 drop 正在 await 的本执行体，子代理不会成为孤儿任务。
+    /// 取消传播：LoopAgent::turn 内偏置 select! 优先响应取消，工具调度器同样感知
+    /// cancel token；父链取消后子代理不会成为孤儿任务。
     pub async fn run(
-        model: openai::CompletionModel,
+        adapter: Arc<dyn crate::core::r#loop::LlmAdapter>,
         search_config: KbSearchConfig,
-        skill_registry: Arc<SkillRegistry>,
         base_rules: String,
         spec: &SubagentSpec,
     ) -> SubagentOutcome {
         // 独立上下文：新的 request_id、空技能激活态、独立检索命中收集器
-        let cancel = search_config.cancel.clone();
         let mut sub_cfg = search_config;
         sub_cfg.request_id = spec.request_id.clone();
         sub_cfg.skill_state = Arc::new(ActiveSkillState::new());
@@ -181,22 +172,21 @@ impl SubagentRunner {
             }
         };
 
-        // 只读工具子集 + 无预检索上下文 + 无技能目录 + 无审批门 + 更大轮次预算
-        let agent = build_rag_agent(
-            model,
-            "",
-            sub_cfg,
-            skill_registry,
-            String::new(),
-            base_rules,
-            approval_gate,
-            spec.max_turns,
-            Some(&effective_whitelist),
-            false, // 子代理不窄化：注册表已白名单过滤，模型可见全部白名单工具
-            Vec::new(), // v2：子代理受限场景不挂载 MCP 工具
-            None, // P2-18：子代理不注入思考程度（受限只读场景，保持默认行为）
-            None, // P3：子代理不显式设置最大输出 token（跟随服务器/模型默认）
-        );
+        // 新内核执行：LoopAgent + 迁移工具注册表（按白名单过滤）+ 审批门（写型）+ 事件 sink。
+        // 子代理不带技能 Hook（注册表白名单已过滤，对齐 rig 版 narrow_tools=false 语义）。
+        let cancel = sub_cfg.cancel.clone().unwrap_or_else(CancellationToken::new);
+        let full_registry = crate::core::agent::loop_tools::build_loop_tool_registry(sub_cfg.clone());
+        let registry =
+            crate::core::agent::loop_tools::filter_registry(&full_registry, &effective_whitelist);
+        let config = crate::core::r#loop::LoopConfig::new(spec.max_turns, base_rules);
+        let mut agent = crate::core::r#loop::LoopAgent::new(adapter, config, &spec.request_id);
+        agent.set_tools(Arc::new(registry));
+        agent.set_sink(Arc::new(crate::core::agent::loop_tools::BusToolEventSink::new(
+            sub_cfg.clone(),
+        )));
+        if let Some(gate) = approval_gate {
+            agent.add_hook(Arc::new(crate::core::agent::loop_hooks::ApprovalHook { gate }));
+        }
 
         log::info!(
             "[subagent] 开始调研 request_id={} task_len={} max_turns={}",
@@ -213,40 +203,31 @@ impl SubagentRunner {
 
         let mut full = String::new();
         let mut failed = false;
-        let mut stream = agent
-            .stream_chat(Message::user(spec.task.clone()), Vec::<Message>::new())
-            .into_future()
-            .await;
-        loop {
-            // 父链取消（用户点"停止"）时立即中止：rig 工具在 poll 栈内执行，
-            // 但本循环显式 select! 取消可在工具间间隙/等待时更早响应。
-            let item = if let Some(cancel) = &cancel {
-                tokio::select! {
-                    biased;
-                    _ = cancel.cancelled() => {
-                        failed = true;
-                        log::info!("[subagent] 调研被父链取消 request_id={}", spec.request_id);
-                        break;
+        let outcome = agent
+            .turn(
+                &spec.request_id,
+                crate::core::r#loop::LlmMessage::text(
+                    crate::core::r#loop::LlmRole::User,
+                    spec.task.clone(),
+                ),
+                cancel,
+                &mut |ev| {
+                    if let crate::core::r#loop::LoopEvent::Delta(t) = ev {
+                        full.push_str(&t);
                     }
-                    item = stream.next() => item,
-                }
-            } else {
-                stream.next().await
-            };
-            let Some(item) = item else { break };
-            match item {
-                Ok(MultiTurnStreamItem::StreamAssistantItem(
-                    StreamedAssistantContent::Text(text),
-                )) => full.push_str(&text.text),
-                Ok(MultiTurnStreamItem::FinalResponse(_)) => {}
-                Err(e) => {
-                    failed = true;
-                    log::warn!("[subagent] 调研流失败 request_id={} err={}", spec.request_id, e);
-                    // 流失败后 rig 通常不再产出,显式 break 避免继续 poll
-                    break;
-                }
-                _ => {}
+                },
+            )
+            .await;
+        match &outcome {
+            crate::core::r#loop::TurnOutcome::Failed { err, .. } => {
+                failed = true;
+                log::warn!("[subagent] 调研失败 request_id={} err={}", spec.request_id, err);
             }
+            crate::core::r#loop::TurnOutcome::Cancelled { .. } => {
+                failed = true;
+                log::info!("[subagent] 调研被父链取消 request_id={}", spec.request_id);
+            }
+            _ => {}
         }
 
         // 正常路径手动清理（幂等；被取消 drop 时由 ToolBusGuard::drop 兜底）

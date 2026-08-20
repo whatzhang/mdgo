@@ -125,6 +125,17 @@ impl ChatStore {
                 value TEXT NOT NULL
             );
 
+            -- v3 事件溯源会话日志（append-only；seq 单调，按 (session_id, seq) 幂等覆盖）
+            CREATE TABLE IF NOT EXISTS session_events (
+                session_id TEXT NOT NULL,
+                seq INTEGER NOT NULL,
+                event_type TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (session_id, seq)
+            );
+            CREATE INDEX IF NOT EXISTS idx_session_events_session ON session_events(session_id);
+
             -- 消息按会话查询（增量索引、幂等筛查、消息读取）高频执行，必须走索引避免全表扫描
             CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id);
             ",
@@ -765,6 +776,89 @@ impl ChatStore {
                 rusqlite::params![state_json, session_id],
             )
             .map_err(|e| format!("写入压缩检查点失败: {}", e))?;
+            Ok(())
+        })
+    }
+
+    /// 覆盖会话事件日志（v3 事件溯源写路径；按会话全量替换，单事务原子）。
+    ///
+    /// `events` 为 `(seq, &SessionEvent)` 对；`payload` 序列化完整事件（无损 JSON），
+    /// `event_type` 为判别名（`SessionEvent::type_name`）供索引/查询。
+    ///
+    /// 语义说明（B4 修复）：**全量删除后插入**而非按 seq REPLACE——前端按上下文预算
+    /// 裁剪历史后重发，若按 seq 增量 REPLACE 会残留上一版窗口的高 seq 旧事件，造成
+    /// 日志混杂；全量替换保证事件日志 = 本次请求实际发送/产生的窗口（裁剪历史 + 新轮）。
+    /// 读路径（回放）与前端裁剪契约冲突，暂以 legacy chat_messages 为 UI 数据源，
+    /// 事件日志作为「本请求窗口审计 + 未来迁移数据」，见 B4 决策注释。
+    pub fn upsert_session_events(
+        &self,
+        session_id: &str,
+        events: &[(u64, &crate::core::r#loop::SessionEvent)],
+    ) -> Result<(), String> {
+        let now = unix_timestamp_now();
+        self.pool.with_write_txn(|conn| {
+            conn.execute("DELETE FROM session_events WHERE session_id = ?1", rusqlite::params![session_id])
+                .map_err(|e| format!("清理旧会话事件失败: {}", e))?;
+            if events.is_empty() {
+                return Ok(());
+            }
+            let mut stmt = conn
+                .prepare(
+                    "INSERT INTO session_events (session_id, seq, event_type, payload, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                )
+                .map_err(|e| format!("准备会话事件写入失败: {}", e))?;
+            for (seq, ev) in events {
+                let payload =
+                    serde_json::to_string(ev).map_err(|e| format!("序列化会话事件失败: {}", e))?;
+                stmt.execute(rusqlite::params![
+                    session_id,
+                    seq,
+                    ev.type_name(),
+                    payload,
+                    now
+                ])
+                .map_err(|e| format!("写入会话事件失败: {}", e))?;
+            }
+            Ok(())
+        })
+    }
+
+    /// 读取会话事件日志（按 seq 升序；无记录返回空）。
+    pub fn load_session_events(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<(u64, crate::core::r#loop::SessionEvent)>, String> {
+        self.pool.with_read(|conn| {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT seq, payload FROM session_events WHERE session_id = ?1 ORDER BY seq ASC",
+                )
+                .map_err(|e| format!("准备会话事件读取失败: {}", e))?;
+            let rows = stmt
+                .query_map(rusqlite::params![session_id], |row| {
+                    Ok((row.get::<_, u64>(0)?, row.get::<_, String>(1)?))
+                })
+                .map_err(|e| format!("读取会话事件失败: {}", e))?;
+            let mut out = Vec::new();
+            for row in rows {
+                let (seq, payload) = row.map_err(|e| format!("读取会话事件行失败: {}", e))?;
+                let ev = serde_json::from_str(&payload)
+                    .map_err(|e| format!("反序列化会话事件失败: {}", e))?;
+                out.push((seq, ev));
+            }
+            Ok(out)
+        })
+    }
+
+    /// 清空会话事件日志（B4：chat_session_clear_messages 配套；防残留旧轮次事件）。
+    pub fn clear_session_events(&self, session_id: &str) -> Result<(), String> {
+        self.pool.with_write_txn(|conn| {
+            conn.execute(
+                "DELETE FROM session_events WHERE session_id = ?1",
+                rusqlite::params![session_id],
+            )
+            .map_err(|e| format!("清理会话事件失败: {}", e))?;
             Ok(())
         })
     }
@@ -1530,4 +1624,94 @@ fn unix_timestamp_to_year_month(ts: u64) -> String {
 
 fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+}
+
+#[cfg(test)]
+mod session_events_tests {
+    use super::*;
+    use crate::core::r#loop::{Session, SessionEvent};
+
+    fn store() -> (ChatStore, tempfile::TempDir) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let s = ChatStore::new(dir.path().to_str().unwrap()).expect("ChatStore::new");
+        (s, dir)
+    }
+
+    fn sample_events() -> Vec<(u64, SessionEvent)> {
+        vec![
+            (0, SessionEvent::TurnStart { turn: 1 }),
+            (
+                1,
+                SessionEvent::UserMessage {
+                    id: "u1".into(),
+                    content: "你好".into(),
+                    source: "chat".into(),
+                },
+            ),
+            (
+                2,
+                SessionEvent::AssistantMessage {
+                    content: "你好！".into(),
+                    tool_calls: vec![],
+                    usage: None,
+                    interrupted: false,
+                },
+            ),
+            (3, SessionEvent::TurnEnd { turn: 1, reason: crate::core::r#loop::TurnEndReason::Completed }),
+        ]
+    }
+
+    #[test]
+    fn upsert_and_load_round_trip() {
+        let (s, _dir) = store();
+        let events = sample_events();
+        let refs: Vec<(u64, &SessionEvent)> = events.iter().map(|(seq, ev)| (*seq, ev)).collect();
+        s.upsert_session_events("sess-1", &refs).expect("upsert");
+
+        let loaded = s.load_session_events("sess-1").expect("load");
+        assert_eq!(loaded.len(), 4);
+        // seq 升序 + 内容一致
+        assert_eq!(loaded[0], (0, events[0].1.clone()));
+        assert_eq!(loaded[3].0, 3);
+        assert!(matches!(&loaded[3].1, SessionEvent::TurnEnd { .. }));
+    }
+
+    #[test]
+    fn upsert_is_idempotent_by_seq() {
+        let (s, _dir) = store();
+        let events = sample_events();
+        let refs: Vec<(u64, &SessionEvent)> = events.iter().map(|(seq, ev)| (*seq, ev)).collect();
+        // 写两次 → 行数不变（(session_id, seq) 主键幂等）
+        s.upsert_session_events("sess-2", &refs).expect("upsert-1");
+        s.upsert_session_events("sess-2", &refs).expect("upsert-2");
+        let loaded = s.load_session_events("sess-2").expect("load");
+        assert_eq!(loaded.len(), 4);
+    }
+
+    #[test]
+    fn different_sessions_isolated() {
+        let (s, _dir) = store();
+        let events = sample_events();
+        let refs: Vec<(u64, &SessionEvent)> = events.iter().map(|(seq, ev)| (*seq, ev)).collect();
+        s.upsert_session_events("sess-a", &refs).expect("upsert-a");
+        s.upsert_session_events("sess-b", &refs).expect("upsert-b");
+        assert_eq!(s.load_session_events("sess-a").expect("a").len(), 4);
+        assert_eq!(s.load_session_events("sess-b").expect("b").len(), 4);
+        assert!(s.load_session_events("sess-none").expect("none").is_empty());
+    }
+
+    #[test]
+    fn session_to_persist_pairs_match_events() {
+        // Session::events() 的 (seq, event) 对可直接交给 upsert_session_events
+        let mut session = Session::new("sess-3");
+        session.append(SessionEvent::TurnStart { turn: 1 });
+        session.append(SessionEvent::UserMessage { id: "u".into(), content: "q".into(), source: "chat".into() });
+        let refs: Vec<(u64, &SessionEvent)> = session.events().iter().map(|e| (e.seq, &e.event)).collect();
+        let (s, _dir) = store();
+        s.upsert_session_events("sess-3", &refs).expect("upsert");
+        let loaded = s.load_session_events("sess-3").expect("load");
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].1.type_name(), "turn_start");
+        assert_eq!(loaded[1].1.type_name(), "user_message");
+    }
 }

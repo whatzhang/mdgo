@@ -5,16 +5,16 @@
 //! - [`ApprovalPolicy`]:判定「是否需要审批」(单一职责,开闭——新规则 = 新实现)
 //! - [`ApprovalTransport`]:向用户请求决定的通道抽象(依赖倒置,实现可替换)
 //! - [`ApprovalGate`]:组合策略 + 会话内已决缓存(单一职责:编排)
-//! - [`hook::ApprovalGateHook`]:rig 拦截点,只负责决定 Run 还是 Skip
 //!
-//! 新增需要审批的工具类型 = 实现 [`ApprovalPolicy`] 并注册,无需改动门/Hook 本身。
+//! 新增需要审批的工具类型 = 实现 [`ApprovalPolicy`] 并注册,无需改动门本身。
+//! 审批在 Agent 循环中的拦截由 `core::agent::loop_hooks::ApprovalHook` 承担
+//! (对齐 DeepSeek Harness `LoopHook` 范式,替代原 rig `AgentHook`)。
 //!
 //! # 拒绝原因分类
 //!
 //! [`DenialCategory`] 让上层(Agent Hook)能按「用户拒绝 / 通道不可用 / 超时」生成
 //! 不同的反馈语义,避免模型把审批失败误读为"等待用户文字输入确认"。
 
-pub mod hook;
 pub mod policy;
 pub mod transport;
 

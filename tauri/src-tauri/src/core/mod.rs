@@ -19,6 +19,7 @@ pub mod schedule;
 pub mod knowledge;
 
 pub mod chat_types;
+pub mod r#loop;
 mod embedding;
 mod indexer;
 pub(crate) mod model_download;

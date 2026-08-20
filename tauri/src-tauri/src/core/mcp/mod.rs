@@ -29,7 +29,6 @@ pub use crate::core::mcp::client::{
     StdioMcpClient, MCP_PROTOCOL_VERSION, MCP_PROTOCOL_VERSION_FALLBACK,
 };
 pub use crate::core::mcp::http::HttpStreamableClient;
-use crate::core::agent::KbSearchConfig;
 use crate::core::agent::limits::MCP_MAX_OUTPUT_CHARS;
 
 /// 服务器状态枚举（字符串，直接序列化给前端）。
@@ -969,7 +968,8 @@ fn redact_all_urls(text: &str) -> String {
 }
 
 /// 轻量参数校验：检查 schema.required 声明的字段是否齐全（不校验类型，容错）。
-fn validate_args(schema: &Value, args: &Value) -> Result<(), String> {
+/// `pub(crate)`：v3 Agent 工具（loop_tools::McpTool）复用同一校验。
+pub(crate) fn validate_args(schema: &Value, args: &Value) -> Result<(), String> {
     let Some(required) = schema.get("required").and_then(Value::as_array) else {
         return Ok(());
     };
@@ -985,85 +985,6 @@ fn validate_args(schema: &Value, args: &Value) -> Result<(), String> {
         }
     }
     Ok(())
-}
-
-/// 构建 MCP 工具的 rig DynamicTool（供 Agent 使用）。
-///
-/// 注册名规范化为 `mcp_<server>_<tool>`（下划线）：冒号不符合 OpenAI function name
-/// 约束（`^[a-zA-Z0-9_-]{1,64}$`），部分严格服务端会拒绝含冒号的工具定义。
-/// 闭包内仍用原始 server/tool 名调用 MCP（registry.call_tool 按原始名路由）。
-///
-/// 与内置工具对齐（P2-15）：
-/// - 参数 schema 校验（required 缺失 → invalid_args，不进执行链路）；
-/// - 工具调用轨迹（record_tool_call / record_tool_result，前端 agent:tool_call 事件）；
-/// - 审批门由 rig `ApprovalGateHook` 统一拦截（策略层已支持 `mcp_*` 通配）。
-pub fn build_mcp_tool(
-    server: String,
-    def: McpToolDef,
-    registry: Arc<McpRegistry>,
-    cfg: KbSearchConfig,
-) -> rig_agent::tool::DynamicTool {
-    use crate::core::agent::tools::{record_tool_call, record_tool_result};
-    use rig_agent::tool::{DynamicTool, ToolContext, ToolExecutionError, ToolOutput};
-    let normalized = format!(
-        "mcp_{}_{}",
-        server.replace([' ', ':'], "_"),
-        def.name.replace([' ', ':'], "_")
-    );
-    let description = if def.description.trim().is_empty() {
-        format!("MCP 工具（服务器 {}）", server)
-    } else {
-        format!("{}（MCP 服务器 {}）", def.description, server)
-    };
-    let schema = if def.input_schema.is_null() || def.input_schema.as_object().is_none() {
-        serde_json::json!({ "type": "object", "properties": {} })
-    } else {
-        def.input_schema.clone()
-    };
-    let name_arg = normalized.clone();
-    DynamicTool::new(
-        name_arg,
-        description,
-        schema.clone(),
-        move |_ctx: &mut ToolContext, args: serde_json::Value| {
-            let registry = registry.clone();
-            let server = server.clone();
-            let tool = def.name.clone();
-            let cfg = cfg.clone();
-            let schema = schema.clone();
-            let full_name = normalized.clone();
-            Box::pin(async move {
-                // 参数 schema 校验：required 字段缺失直接拒绝（无效调用不进执行链路）
-                if let Err(e) = validate_args(&schema, &args) {
-                    return Err(ToolExecutionError::invalid_args(e));
-                }
-                let preview = truncate_output(&serde_json::to_string(&args).unwrap_or_default(), 120);
-                record_tool_call(&cfg, &full_name, &preview, Some(&args));
-                match registry.call_tool(&server, &tool, args).await {
-                    Ok(text) => {
-                        record_tool_result(
-                            &cfg,
-                            &full_name,
-                            true,
-                            &truncate_output(&text, 200),
-                            Some(&text),
-                        );
-                        Ok(ToolOutput::text(text))
-                    }
-                    Err(e) => {
-                        record_tool_result(
-                            &cfg,
-                            &full_name,
-                            false,
-                            &truncate_output(&e, 200),
-                            Some(&e),
-                        );
-                        Err(ToolExecutionError::other(e))
-                    }
-                }
-            })
-        },
-    )
 }
 
 #[cfg(test)]
