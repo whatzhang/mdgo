@@ -135,17 +135,19 @@ function handleAgentToolEvent(e, rid) {
             detail.style.cssText = 'display:none;padding:0.125rem 0.5rem;background:rgba(0,0,0,0.04);border-radius:4px;font-size:0.72rem;color:#666;white-space:pre-wrap;word-break:break-all;max-height:12rem;overflow:auto;';
             detail.textContent = String(p.summary || '');
             card.appendChild(detail);
-            // P2 输出结构化：按工具类型渲染增强卡片（git_diff 文件改动列表等）
+            // P1-5 输出结构化：按工具类型渲染增强卡片（单一通用渲染器 + 各类型投影）
             if (p.structured && typeof p.structured === 'object') {
                 const sEl = document.createElement('div');
                 sEl.className = 'tool-structured';
                 sEl.style.cssText = 'margin-top:0.3rem;padding:0.3rem 0.5rem;background:rgba(0,0,0,0.03);border-radius:4px;font-size:0.72rem;color:#555;';
-                if (p.tool === 'git_diff' && Array.isArray(p.structured.files)) {
+                const s = p.structured;
+                const rows = [];
+                if (p.tool === 'git_diff' && Array.isArray(s.files)) {
                     const title = document.createElement('div');
-                    title.textContent = `文件改动（${p.structured.files.length}）：`;
+                    title.textContent = `文件改动（${s.files.length}）：`;
                     title.style.cssText = 'color:#666;margin-bottom:0.2rem;';
                     sEl.appendChild(title);
-                    for (const f of p.structured.files) {
+                    for (const f of s.files) {
                         const row = document.createElement('div');
                         const fpath = String(f.path || '');
                         const adds = Number(f.additions || 0);
@@ -153,9 +155,34 @@ function handleAgentToolEvent(e, rid) {
                         row.innerHTML = `<span style="word-break:break-all;">${escapeHtml(fpath)}</span> <span style="color:#2e7d32;">+${adds}</span> <span style="color:#c62828;">-${dels}</span>`;
                         sEl.appendChild(row);
                     }
-                    card.appendChild(sEl);
+                } else if (Array.isArray(s.sources)) {
+                    // kb_search / code_lookup：引用来源清单（doc_name + score / 符号）
+                    const title = document.createElement('div');
+                    title.textContent = `引用来源（${s.sources.length}）：`;
+                    title.style.cssText = 'color:#666;margin-bottom:0.2rem;';
+                    sEl.appendChild(title);
+                    for (const src of s.sources) {
+                        const row = document.createElement('div');
+                        const name = String(src.doc_name || src.symbol_name || '');
+                        const score = Number(src.score || 0);
+                        const sym = src.symbol_name ? ` [${escapeHtml(String(src.symbol_kind || '符号'))} ${escapeHtml(String(src.symbol_name))}]` : '';
+                        row.innerHTML = `<span style="word-break:break-all;">${escapeHtml(name)}</span>${sym}${score ? ` <span style="color:#888;">${score.toFixed(2)}</span>` : ''}`;
+                        sEl.appendChild(row);
+                    }
+                } else if (Array.isArray(s.files)) {
+                    // read：文件读取清单（path + chars + ok）
+                    const title = document.createElement('div');
+                    title.textContent = `读取文件（${s.files.length}）：`;
+                    title.style.cssText = 'color:#666;margin-bottom:0.2rem;';
+                    sEl.appendChild(title);
+                    for (const f of s.files) {
+                        const row = document.createElement('div');
+                        const ok = f.ok === false ? '<span style="color:#c62828;">✗</span> ' : '';
+                        row.innerHTML = `${ok}<span style="word-break:break-all;">${escapeHtml(String(f.path || ''))}</span> <span style="color:#888;">${Number(f.chars || 0)} 字符</span>`;
+                        sEl.appendChild(row);
+                    }
                 }
-                // 其他工具的结构化渲染可在此扩展（grep/ls 列表等）
+                if (sEl.childElementCount > 0) card.appendChild(sEl);
             }
             card.style.cursor = 'pointer';
             card.addEventListener('click', (ev) => {
@@ -183,27 +210,10 @@ function handleAgentToolEvent(e, rid) {
 // 并紧随其后的 {role:'tool', tool_call_id, content:结果} 结果消息，
 // 使模型在后续轮次能看到自己此前调用过哪些工具、拿到什么结果。
 // 老数据（无 call_id 或 result 的记录）降级为普通文本消息，行为不变。
+// P1-1：实现已收敛到 css_js/modules/chat-history.js（window.chatHistory），
+// 本函数保留为薄包装以兼容既有调用点。
 function expandToolHistory(chatMsgs) {
-    const out = [];
-    for (const m of chatMsgs) {
-        const tools = (Array.isArray(m.toolCalls) ? m.toolCalls : []).filter(tc => tc && tc.call_id && tc.tool);
-        if (m.role === 'assistant' && tools.length > 0) {
-            const protocolTools = tools.map(tc => ({
-                id: String(tc.call_id),
-                name: String(tc.tool),
-                arguments: (typeof tc.args === 'string' && tc.args) ? tc.args : '{}',
-            }));
-            out.push({ id: m.id || null, role: 'assistant', content: m.content, tool_calls: protocolTools });
-            for (const tc of tools) {
-                if (typeof tc.result === 'string' && tc.result) {
-                    out.push({ id: m.id || null, role: 'tool', content: tc.result, tool_call_id: String(tc.call_id) });
-                }
-            }
-        } else {
-            out.push({ id: m.id || null, role: m.role, content: m.content });
-        }
-    }
-    return out;
+    return window.chatHistory.expandToolHistory(chatMsgs);
 }
 
 // ─── RAG 检索参数设置 ───
@@ -780,7 +790,7 @@ function renderTracePanel(events) {
             + '<span style="color:#888;">' + icon + ' ' + traceEscapeHtml(ev.stage) + detail + '</span>'
             + '<span style="color:#888;white-space:nowrap;">' + dur + '</span></div>';
     }).join('');
-    return '<details style="margin-top:8px;border:1px solid #333;border-radius:6px;padding:6px 8px;">'
+    return '<details style="margin-top:4px;">'
         + '<summary style="cursor:pointer;font-size:12px;color:#888;user-select:none;">⚙ 阶段耗时（trace）</summary>'
         + '<div style="margin-top:4px;">' + rows + '</div></details>';
 }

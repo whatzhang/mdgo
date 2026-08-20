@@ -225,6 +225,27 @@ impl ToolCallBus {
         }
         None
     }
+
+    /// 收集该请求下「执行成功」的工具名集合（P0-5 防幻觉守卫用）。
+    ///
+    /// ⚠️ 必须在 drain 之前调用（drain 会消费事件桶）；drain 后本方法返回空。
+    /// 语义：只统计 `ok=true` 的 result 事件——失败/被审批拒绝/被 hook 跳过的
+    /// 工具调用不构成"已执行该操作"的证据，不得用于豁免 Action Claim 判定。
+    pub fn successful_tool_names(&self, request_id: &str) -> Vec<String> {
+        if let Ok(map) = self.map.lock() {
+            if let Some(events) = map.get(request_id) {
+                let mut names: Vec<String> = events
+                    .iter()
+                    .filter(|e| e.kind == "result" && e.ok)
+                    .map(|e| e.tool.clone())
+                    .collect();
+                names.sort();
+                names.dedup();
+                return names;
+            }
+        }
+        Vec::new()
+    }
 }
 
 static TOOL_CALL_BUS: OnceLock<ToolCallBus> = OnceLock::new();
@@ -245,6 +266,11 @@ pub fn record_tool_call(
     args_preview: &str,
     args: Option<&serde_json::Value>,
 ) {
+    // P0-7：请求已取消时不再写入总线——取消路径已 clear 请求桶，此处写入只会
+    // 重建桶造成内存残留与陈旧轨迹（取消后无人消费这些事件）。
+    if cfg.cancel.as_ref().is_some_and(|c| c.is_cancelled()) {
+        return;
+    }
     let skill_id = cfg
         .skill_state
         .active_only()
@@ -286,6 +312,11 @@ pub fn record_tool_result_structured(
     result: Option<&str>,
     structured: Option<serde_json::Value>,
 ) {
+    // P0-7：请求已取消时不再写回总线（桶已 clear，重建只残留内存与陈旧轨迹），
+    // 也不再计入质量计数（取消产生的"失败"不是工具真实失败）。
+    if cfg.cancel.as_ref().is_some_and(|c| c.is_cancelled()) {
+        return;
+    }
     const MAX_RESULT_CHARS: usize = 12_000;
     let result = result.map(|r| truncate(r, MAX_RESULT_CHARS)).unwrap_or_default();
     tool_call_bus().record_result_structured(&cfg.request_id, tool, ok, summary, &result, structured);
@@ -1512,6 +1543,18 @@ pub async fn git_commit(dir: &str, message: &str) -> Result<String, String> {
     if msg.is_empty() {
         return Err("commit message 不能为空".into());
     }
+    // P0-9：与 edit/write/delete 对齐的 .mdgo 防护——暂存区含 .mdgo 内部数据时拒绝提交，
+    // 防止模型经 git_commit 把应用内部状态（配置/技能/索引）写进仓库历史。
+    let staged = run_git_tool(dir, &["diff", "--cached", "--name-only"], 10).await?;
+    for line in staged.lines() {
+        let p = line.trim();
+        if is_mdgo_internal(p) {
+            return Err(format!(
+                "暂存区包含 .mdgo 内部数据（{}），不允许提交（.mdgo 为应用内部数据目录，配置/技能/索引不应进入 Git 历史）。请先移除 .mdgo 相关暂存再重试。",
+                p
+            ));
+        }
+    }
     let text = run_git_tool(dir, &["commit", "-m", msg], 15).await?;
     // Mutation Verification（P0-1）：提交后确认 HEAD 存在且最近提交 subject 与本次一致。
     // 注意 `git log --format=%s` 只输出规范化后的 subject（首行）；msg 可能含多行/尾随
@@ -1544,6 +1587,16 @@ pub async fn git_checkout(dir: &str, paths: &[String]) -> Result<String, String>
     }
     if paths.len() > 20 {
         return Err("paths 最多 20 个文件".into());
+    }
+    // P0-9：与 edit/write/delete 对齐的 .mdgo 防护——禁止恢复 .mdgo 内部数据
+    // （应用内部状态不应被 git_checkout 覆盖/改动）。
+    for p in paths {
+        if is_mdgo_internal(p) {
+            return Err(format!(
+                "{} 为 .mdgo 内部数据（配置/技能/索引），不允许恢复（git_checkout）。请移除 .mdgo 路径后重试。",
+                p
+            ));
+        }
     }
     let mut args: Vec<&str> = vec!["checkout", "--"];
     for p in paths {
@@ -1834,8 +1887,14 @@ pub async fn write_file(
     if is_mdgo_internal(rel_path) {
         return Err(".mdgo 为应用内部数据目录（配置/技能/索引），不允许写入".into());
     }
-    if content.chars().count() > MAX_EDIT_FILE_BYTES as usize {
-        return Err(format!("{} 内容超过 1MB，write 单次写入上限为 1MB", rel_path));
+    // P0-10：1MB 上限按**字节**计（UTF-8 中文 1 字 ≈ 3 字节；按字符数会低估实际体积，
+    // 允许写入远超磁盘/内存预期的内容）
+    if content.len() > MAX_EDIT_FILE_BYTES as usize {
+        return Err(format!(
+            "{} 内容超过 1MB（{} 字节），write 单次写入上限为 1MB",
+            rel_path,
+            content.len()
+        ));
     }
     // Canvas 格式自动处理：.canvas 内容先经确定性校验/规整，再落盘
     let effective = if rel_path.ends_with(".canvas") {
@@ -1843,9 +1902,8 @@ pub async fn write_file(
     } else {
         content.to_string()
     };
-    // 自动创建父目录：拒绝绝对路径与 `..`（与 safe_resolve_new 一致的口径），
-    // 先 base.join 创建目录，再交由 safe_resolve_new canonicalize 二次校验，
-    // 符号链接逃逸仍会被拦截（父目录不在 base 内则报错）。
+    // P0-10：路径校验全部前置（先于任何文件系统副作用），失败不得残留目录。
+    // 1) 词法拒绝：绝对路径与 `..` 穿越（与 safe_resolve_new 一致的口径）
     let rel = std::path::Path::new(rel_path);
     if rel.is_absolute()
         || rel
@@ -1854,15 +1912,27 @@ pub async fn write_file(
     {
         return Err("路径越界：仅允许访问限定目录内的文件".into());
     }
-    let base = std::fs::canonicalize(&cfg.dir_path).map_err(|e| format!("无法访问目录: {}", e))?;
-    if let Some(parent) = rel.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(base.join(parent))
-                .map_err(|e| format!("创建目录失败: {}", e))?;
+    // 2) 词法校验父目录组件不得含 `.mdgo`（is_mdgo_internal 的字符串前缀检查之外的
+    //    路径形态，如大小写/多段组合，也能在建目录前被拦截）
+    let parent = rel.parent().unwrap_or_else(|| std::path::Path::new(""));
+    for comp in parent.components() {
+        if comp.as_os_str().eq_ignore_ascii_case(".mdgo") {
+            return Err(".mdgo 为应用内部数据目录（配置/技能/索引），不允许写入".into());
         }
     }
+    let base = std::fs::canonicalize(&cfg.dir_path).map_err(|e| format!("无法访问目录: {}", e))?;
+    let full_parent = base.join(parent);
+    // 3) 词法防逃逸：拼接结果必须仍在根目录内（canonicalize 前的第一道闸）
+    if !full_parent.starts_with(&base) {
+        return Err("路径越界：仅允许访问限定目录内的文件".into());
+    }
+    // 4) 全部静态校验通过后才允许创建目录（失败路径不再产生副作用）
+    if !parent.as_os_str().is_empty() {
+        std::fs::create_dir_all(&full_parent)
+            .map_err(|e| format!("创建目录失败: {}", e))?;
+    }
     let full = safe_resolve_new(&cfg.dir_path, rel_path)?;
-    // canonical 后二次校验 `.mdgo`（防 `..` 穿越；父目录已 canonicalize）
+    // canonical 后二次校验 `.mdgo`（防符号链接逃逸；父目录已 canonicalize）
     ensure_not_mdgo(&full, &base, "写入")?;
     // 写入前判断目标是否存在（写入后判断恒为真，无法区分新建/覆盖）
     let existed = full.exists();
@@ -1884,7 +1954,7 @@ pub async fn write_file(
 pub fn build_write_tool(cfg: KbSearchConfig) -> DynamicTool {
     DynamicTool::new(
         "write",
-        "创建新文件或整体覆盖当前打开知识库目录内的文本文件。content 为文件的完整新内容（覆盖写，非追加）。适合新建文档/笔记/代码文件，或整体重写小文件（≤1MB）。只允许在打开目录内写入，父目录不存在时会自动创建，不允许写入 .mdgo 内部数据。**当目标扩展名为 .canvas 时：内容必须是 JSON Canvas（{nodes, edges}），写入前系统校验 JSON 合法性、节点 id 唯一化、连线引用完整性、file 路径存在性与坐标/尺寸合法性——布局与坐标由模型提供并原样保留，系统不重排；内容不合法或节点缺有效尺寸时写入被拒绝并返回原因。** 写入为不可撤销操作，覆盖已有文件前请确认用户意图。",
+        "创建新文件或整体覆盖当前打开知识库目录内的文本文件。content 为文件的完整新内容（覆盖写，非追加）。适合新建文档/笔记/代码文件，或整体重写小文件（≤1MB，按 UTF-8 字节计）。只允许在打开目录内写入，父目录不存在时会自动创建，不允许写入 .mdgo 内部数据。**当目标扩展名为 .canvas 时：内容必须是 JSON Canvas（{nodes, edges}），写入前系统校验 JSON 合法性、节点 id 唯一化、连线引用完整性、file 路径存在性与坐标/尺寸合法性——布局与坐标由模型提供并原样保留，系统不重排；内容不合法或节点缺有效尺寸时写入被拒绝并返回原因。** 写入为不可撤销操作，覆盖已有文件前请确认用户意图。",
         serde_json::json!({
             "type": "object",
             "additionalProperties": false,
@@ -2251,12 +2321,23 @@ pub fn build_read_tool(cfg: KbSearchConfig) -> DynamicTool {
                             out.push_str(&format!("===== {p}（读取失败）=====\n{e}\n"));
                         }
                     }
-                    record_tool_result(
+                    // P1-5：结构化输出（多文件读取清单）
+                    let structured = serde_json::json!({
+                        "files": entries.iter().map(|(p, r)| {
+                            let (chars, ok) = match r {
+                                Ok(text) => (text.chars().count(), true),
+                                Err(_) => (0usize, false),
+                            };
+                            serde_json::json!({ "path": p, "chars": chars, "ok": ok })
+                        }).collect::<Vec<_>>(),
+                    });
+                    record_tool_result_structured(
                         &cfg,
                         "read",
                         !failed,
                         &format!("{} 个文件", paths.len()),
                         Some(&out),
+                        Some(structured),
                     );
                     return Ok(ToolOutput::text(out));
                 }
@@ -2282,7 +2363,13 @@ pub fn build_read_tool(cfg: KbSearchConfig) -> DynamicTool {
                 record_tool_call(&cfg, "read", &args_preview, Some(&args));
                 match read(&cfg, &rel, offset).await {
                     Ok(text) => {
-                        record_tool_result(&cfg, "read", true, &format!("{} 字符", text.chars().count()), Some(&text));
+                        // P1-5：结构化输出（单文件读取元信息）
+                        let structured = serde_json::json!({
+                            "path": rel,
+                            "chars": text.chars().count(),
+                            "offset": offset,
+                        });
+                        record_tool_result_structured(&cfg, "read", true, &format!("{} 字符", text.chars().count()), Some(&text), Some(structured));
                         Ok(ToolOutput::text(text))
                     }
                     Err(e) => {
@@ -2805,12 +2892,17 @@ fn build_bridge_tool(
             Box::pin(async move {
                 // 软门禁（替代 rig active_tools 硬过滤）：pomodoro/raw-parse 始终可见
                 // 可调，但仅当声明它的技能已激活时才执行；未激活返回引导，避免
-                // UnknownToolCall 导致整个流式请求失败。allowed_tools()=None（无技能
-                // 激活，含子代理）→ 放行；Some 且未声明该工具 → 引导。
-                let declared = cfg.skill_state.allowed_tools();
-                let unlocked = declared
-                    .as_ref()
-                    .is_none_or(|list| list.iter().any(|t| t == &tool));
+                // UnknownToolCall 导致整个流式请求失败。
+                // P0-8：主对话（skill_gating=true）下 None（无激活技能）→ 引导激活，
+                // 与 SkillGateHook 语义一致；子代理（skill_gating=false）白名单把关。
+                let unlocked = if !cfg.skill_gating {
+                    true
+                } else {
+                    cfg.skill_state
+                        .allowed_tools()
+                        .as_ref()
+                        .is_some_and(|list| list.iter().any(|t| t == &tool))
+                };
                 if !unlocked {
                     let msg = format!(
                         "{} 需要先激活声明它的技能（调用 activate_skill，从技能目录选择）后才能执行，本次未执行。请先激活对应技能，再重新发起操作。",
@@ -3056,14 +3148,17 @@ pub fn build_schedule_tool(cfg: KbSearchConfig) -> DynamicTool {
                     raw_action.as_str()
                 };
                 // 软门禁（替代 rig active_tools 硬过滤）：
-                // - allowed_tools()=None（无技能激活，含子代理独立技能态）→ 放行：
-                //   全量工具模式下 schedule 本就对模型可见，可直接执行；
-                // - Some 且不含 schedule（激活了其它技能，模型在该模式下不应看到本工具）→ 引导，
-                //   避免幻觉调用导致整个流式请求失败（回答为空）。
-                let declared = cfg.skill_state.allowed_tools();
-                let unlocked = declared
-                    .as_ref()
-                    .is_none_or(|list| list.iter().any(|t| t == "schedule"));
+                // P0-8：主对话（skill_gating=true）下仅当 schedule 技能 Active 时执行，
+                // None（无激活技能）→ 引导激活（与 SkillGateHook 语义一致）；
+                // 子代理（skill_gating=false）白名单已过滤，直接放行。
+                let unlocked = if !cfg.skill_gating {
+                    true
+                } else {
+                    cfg.skill_state
+                        .allowed_tools()
+                        .as_ref()
+                        .is_some_and(|list| list.iter().any(|t| t == "schedule"))
+                };
                 if !unlocked {
                     let msg = "当前技能集未声明 schedule 工具（已激活的技能未包含日程管理）。如需日程功能，请先调用 activate_skill（skill_id='schedule'）激活 schedule 技能，再重新发起操作；本次未执行。";
                     log::info!("[agent] schedule 未声明于当前技能集被调用，返回引导 request_id={}", cfg.request_id);
@@ -4641,6 +4736,158 @@ pub fn build_todo_write_tool(cfg: KbSearchConfig) -> DynamicTool {
                     Err(e) => {
                         record_tool_result(&cfg, "todo_write", false, &e, Some(&e));
                         Err(tool_error("todo_write", &e))
+                    }
+                }
+            })
+        },
+    )
+}
+
+// ─────────────────────────── 用户澄清提问工具（P1-4） ───────────────────────────
+
+/// 构建 ask_user_question 工具：任务信息不足时向用户提出澄清问题（对齐 DSH
+/// `ask_user_question` seam）。模型在歧义场景（需求含糊、多选一、缺关键参数）
+/// 应主动询问而非猜测。
+///
+/// 通道与审批/规划确认同构：oneshot 挂起表（`AppState.user_question_pending`）
+/// + `question:request` 事件 → 前端弹窗 → `question_respond` IPC 回传。
+/// 超时（见 `limits::ASK_USER_TIMEOUT_SECS`）与父链取消均视为「未回答」，
+/// 返回引导让模型改用已有信息作答或如实说明缺口。
+pub fn build_ask_user_question_tool(cfg: KbSearchConfig) -> DynamicTool {
+    DynamicTool::new(
+        "ask_user_question",
+        "向用户提出一个澄清问题（当任务需求含糊、存在多选一决策、或缺少关键参数时使用，不要猜测）。用户回答后，本工具返回其回答文本。问题应具体、可回答；options 可给候选选项（用户可选择或自由输入）；一次只问一个最关键的问题。",
+        serde_json::json!({
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "要询问用户的具体问题"
+                },
+                "header": {
+                    "type": "string",
+                    "description": "可选的弹窗标题（默认“AI 需要确认”）"
+                },
+                "options": {
+                    "type": "array",
+                    "maxItems": 6,
+                    "items": { "type": "string", "minLength": 1 },
+                    "description": "可选候选选项（用户可点选，也可自由输入其他回答）"
+                }
+            },
+            "required": ["question"]
+        }),
+        move |_ctx: &mut ToolContext, args: serde_json::Value| {
+            let cfg = cfg.clone();
+            Box::pin(async move {
+                let question = args
+                    .get("question")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                if question.is_empty() {
+                    return Err(tool_error("ask_user_question", "question 不能为空"));
+                }
+                let header = args
+                    .get("header")
+                    .and_then(|s| s.as_str())
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty());
+                let options: Vec<String> = args
+                    .get("options")
+                    .and_then(|a| a.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
+                            .filter(|s| !s.is_empty())
+                            .take(6)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                record_tool_call(&cfg, "ask_user_question", &question, Some(&args));
+
+                // ── 请求用户回答：挂起表 + 事件 + oneshot + 超时/取消 ──
+                use tauri::Emitter; // app.emit 需要 Emitter trait（与工具模块既有用法一致）
+                let app = cfg.app_handle.clone();
+                let question_id = format!("q_{}", uuid::Uuid::new_v4());
+                {
+                    let state = app.state::<crate::AppState>();
+                    let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();
+                    state
+                        .user_question_pending
+                        .lock()
+                        .map_err(|e| tool_error("ask_user_question", &format!("挂起表锁异常: {}", e)))?
+                        .insert(question_id.clone(), tx);
+                    let _ = app.emit(
+                        "question:request",
+                        serde_json::json!({
+                            "question_id": question_id,
+                            "request_id": cfg.request_id,
+                            "question": question,
+                            "header": header,
+                            "options": options,
+                        }),
+                    );
+                    // rx 已 move 进闭包；借用 app 后释放 state 锁（作用域结束）
+                    let answer: Option<String> = {
+                        let pending = state.user_question_pending.clone();
+                        let cancel_fut = async {
+                            match &cfg.cancel {
+                                Some(c) => c.cancelled().await,
+                                None => std::future::pending::<()>().await,
+                            }
+                        };
+                        let mut cancel_fut = Box::pin(cancel_fut);
+                        let mut timeout =
+                            Box::pin(tokio::time::timeout(
+                                std::time::Duration::from_secs(
+                                    crate::core::agent::limits::ASK_USER_TIMEOUT_SECS,
+                                ),
+                                rx,
+                            ));
+                        tokio::select! {
+                            _ = &mut cancel_fut => {
+                                let _ = pending.lock().unwrap_or_else(|e| e.into_inner()).remove(&question_id);
+                                None
+                            }
+                            res = &mut timeout => match res {
+                                Ok(Ok(ans)) => ans,
+                                Ok(Err(_)) => None, // 通道关闭（异常路径）
+                                Err(_) => {
+                                    let _ = pending.lock().unwrap_or_else(|e| e.into_inner()).remove(&question_id);
+                                    None
+                                }
+                            },
+                        }
+                    };
+                    match answer {
+                        Some(text) if !text.trim().is_empty() => {
+                            let trimmed = text.trim().to_string();
+                            record_tool_result(
+                                &cfg,
+                                "ask_user_question",
+                                true,
+                                &format!("用户回答：{}", trimmed),
+                                Some(&trimmed),
+                            );
+                            Ok(ToolOutput::text(format!("用户回答：{}", trimmed)))
+                        }
+                        _ => {
+                            record_tool_result(
+                                &cfg,
+                                "ask_user_question",
+                                false,
+                                "用户未回答（取消或超时）",
+                                Some("用户未回答（取消或超时）"),
+                            );
+                            Err(tool_error(
+                                "ask_user_question",
+                                "用户未在限时内回答或取消了提问，请基于已有信息继续，或如实告知用户信息不足",
+                            ))
+                        }
                     }
                 }
             })

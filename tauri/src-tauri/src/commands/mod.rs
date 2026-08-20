@@ -15,6 +15,7 @@ pub mod mcp;
 pub mod open_url;
 pub mod plan;
 pub mod prompt;
+pub mod question;
 pub mod schedule;
 pub mod skill;
 pub mod system;

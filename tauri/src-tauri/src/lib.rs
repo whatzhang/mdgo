@@ -83,10 +83,25 @@ pub enum ModelRole {
 impl LlmConfig {
     /// 解析模型名——**所有业务 LLM 的单一获取点**。
     ///
-    /// SOLID：主 / 规划 / 摘要统一返回 `self.model`，不存在独立小模型、也不存在「回退」逻辑，
-    /// 任何角色取到的都是同一个主模型，杜绝「某业务用了 A、另一业务用了 B」的分叉。
-    pub fn model_for_role(&self, _role: ModelRole) -> &str {
-        &self.model
+    /// P0-6/P1-6 路由：规划（Planner）/摘要（Summary）角色使用独立轻量模型
+    /// （`planner_model`/`summary_model`），未配置或为空时回退主模型（`self.model`）；
+    /// 主生成（Main）恒用主模型。多模型客户端按指纹缓存（见 `llm_client_for_cfg`）。
+    /// 注意：AI 历史统计/UI 仍以主模型为口径，分叉仅影响请求路由，不改变数据归属。
+    pub fn model_for_role(&self, role: ModelRole) -> &str {
+        let fallback = self.model.as_str();
+        match role {
+            ModelRole::Main => fallback,
+            ModelRole::Planner => self
+                .planner_model
+                .as_deref()
+                .filter(|m| !m.trim().is_empty())
+                .unwrap_or(fallback),
+            ModelRole::Summary => self
+                .summary_model
+                .as_deref()
+                .filter(|m| !m.trim().is_empty())
+                .unwrap_or(fallback),
+        }
     }
 }
 
@@ -118,6 +133,10 @@ pub struct AppState {
     /// 规划确认挂起表（plan:request 与 plan_respond 共享，单一数据源）
     pub plan_pending:
         Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<PlanDecision>>>>,
+    /// 用户澄清提问挂起表（ask_user_question 工具与 question_respond 共享，单一数据源；
+    /// 应答值 = 用户回答文本，None = 用户取消/未回答）
+    pub user_question_pending:
+        Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<Option<String>>>>>,
     /// 子代理完整输出存储（LRU 有界：最多保留 16 条，按最近访问淘汰）
     pub subagent_results: Arc<LruResultStore>,
     /// 跨会话长期记忆存储（系统级全局单例：`{系统数据目录}/com.mdgo/memory.db`）
@@ -287,10 +306,13 @@ impl AppState {
             api_key.to_string(),
             reasoning_effort.map(|s| s.to_string()),
         )?;
-        // 容量治理：多模型缓存最多保留 8 项（超出清空，客户端重建成本低）
+        // 容量治理：多模型缓存最多保留 8 项——超出时**逐条淘汰最旧**（近似 FIFO），
+        // 而非清空全部（P2 修复：全清会让高频切换配置/多角色路由时命中率骤降）
         const MAX_CACHED_CLIENTS: usize = 8;
         if cache.len() >= MAX_CACHED_CLIENTS {
-            cache.clear();
+            if let Some(oldest) = cache.keys().next().cloned() {
+                cache.remove(&oldest);
+            }
         }
         cache.insert(fingerprint, client.clone());
         Ok(client)
@@ -456,6 +478,8 @@ pub fn run() {
                 approval_gate: Some(approval_gate),
                 approval_pending,
                 plan_pending: Arc::new(Mutex::new(HashMap::new())),
+                // 用户澄清提问挂起表（ask_user_question 工具 ↔ question_respond）
+                user_question_pending: Arc::new(Mutex::new(HashMap::new())),
                 subagent_results: Arc::new(LruResultStore::new(16)),
                 bookmark_stores: bookmark_stores_shared.clone(),
                 bookmark_worker: Arc::new(
@@ -599,6 +623,7 @@ pub fn run() {
             commands::llm::agent_task_list,
             commands::llm::agent_task_get,
             commands::approval::approval_respond,
+            commands::question::question_respond,
 
             commands::plan::plan_respond,
             // 前端通信桥命令（WebSocket）

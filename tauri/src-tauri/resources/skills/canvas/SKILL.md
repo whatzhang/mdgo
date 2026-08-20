@@ -98,7 +98,7 @@ Edge = 知识关系
 | `id` | string | 是 | 节点唯一标识（系统会统一重编号为 n1..nN，并在边中同步引用） |
 | `type` | string | 是 | **仅限**：`text` / `file` / `image` / `url` / `code` |
 | `x` / `y` | number | 是 | 左上角坐标，必须为有限数值（NaN/Infinity 会被拒绝） |
-| `width` / `height` | number | 是 | 必须 > 0；缺失或非法 → 写入被拒绝 |
+| `width` / `height` | number | 是 | 必须 > 0，height最小为80；缺失或非法 → 写入被拒绝 |
 | `text` | string | 否 | 节点文本（`text` 节点应填写） |
 | `file` | string | 否 | 知识库内真实相对路径（`file`/`image` 节点；路径不存在会被自动降级为 `text`） |
 | `url` | string | 否 | 链接地址（`url` 节点；旧 `link`/`bookmark` 类型已合并为此） |
@@ -141,14 +141,11 @@ Edge = 知识关系
 1. **输出纯 JSON**：不要包裹 ```json 代码围栏，不要前后缀解释文字、省略号或注释。
 2. 只使用上表字段——**不要发明** `layout`、`groupId`、节点/边上的 `type`（除节点 `type` 枚举外）等系统不认识的键。
 3. 字符串内禁止控制字符；文本中的 `"` 与 `\` 必须按 JSON 标准转义。
-4. 所有节点必须有 `x/y/width/height`；节点之间不重叠；边只引用已存在的节点 id。
+4. 所有节点必须有 `x/y/width/height`；节点之间不重叠；边只引用已存在的节点 id；height最小为80。
 5. 内容不合法时写入会被拒绝——输出前按下方自检清单逐项核对。
 
 ### 常见错误（务必避免）
 
-- 输出 `layout` / `mode` / `main_path` / `groups` 字段 → 已废除，会被丢弃。
-- 节点 `type` 用 `group` / `node` / `link` / `bookmark` → 不存在的类型（link/bookmark 已合并为 `url`），会被当普通文本渲染，分组/层级结构丢失。
-- 边加 `type`（如 `"type":"flow"` / `"type":"hierarchy"`）→ 会被丢弃。
 - JSON 外套 ```json 代码围栏、或前后加解释文字 → 解析失败，写入被拒。
 - 节点缺 `width`/`height`（≤0）或坐标含 NaN/Infinity → 写入被拒。
 - 边引用不存在的节点 id → 悬空边被删除。

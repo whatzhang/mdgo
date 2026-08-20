@@ -108,6 +108,9 @@ pub const WEBFETCH_MAX_REDIRECTS: u32 = 5;
 /// pomodoro 时长上限（分钟）
 pub const POMODORO_MINUTES_MAX: u32 = 180;
 
+/// ask_user_question 等待用户回答的超时（秒）；超时视为「未回答」
+pub const ASK_USER_TIMEOUT_SECS: u64 = 120;
+
 // ── 输出 token ──
 
 /// 最大输出 token 合法上限（防御性 clamp：防异常配置/恶意超大值直传服务端；

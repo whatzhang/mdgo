@@ -202,11 +202,83 @@ pub(crate) fn is_retryable_status_code(code: u16) -> bool {
     code == 429 || code == 408 || (500..=599).contains(&code)
 }
 
+/// P0-1（安全）：对敏感凭据（api_key 等）输出不可逆掩码，禁止明文落日志。
+///
+/// 使用确定性 FNV-1a 64 位哈希 + 长度，任何能读日志的人也无法还原凭据；
+/// 仍可凭哈希比对配置是否变化（运维排查用）。空串显示 `<empty>`。
+pub(crate) fn mask_secret(secret: &str) -> String {
+    if secret.is_empty() {
+        return "<empty>".to_string();
+    }
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325; // FNV-1a 偏移基
+    for b in secret.as_bytes() {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("<len={} fnv={:016x}>", secret.len(), h)
+}
+
+/// 从 provider 错误文本中提取 HTTP 状态码（存在时），用于重试判定。
+///
+/// 优先匹配显式标注形态（`HTTP 401` / `status: 401` / `status code 401`）；
+/// 其次匹配裸状态码（仅限常见集合），避免把 token 数/业务数字误判为状态码。
+fn status_from_provider_message(msg: &str) -> Option<u16> {
+    // 形态1：显式标注
+    let explicit = regex::Regex::new(r"(?i)\b(?:http|status(?:\s*code)?)\s*[:=]?\s*([45]\d\d)\b")
+        .ok()?;
+    if let Some(m) = explicit.captures(msg).and_then(|c| c.get(1)) {
+        if let Ok(code) = m.as_str().parse() {
+            return Some(code);
+        }
+    }
+    // 形态2：裸状态码（限常见集合，防误匹配数字）
+    const BARE_CODES: &[&str] = &["401", "403", "404", "408", "422", "429", "500", "502", "503", "504"];
+    let bare = regex::Regex::new(r"\b([45]\d\d)\b").ok()?;
+    for c in bare.captures_iter(msg) {
+        let s = c.get(1).map(|m| m.as_str()).unwrap_or("");
+        if BARE_CODES.contains(&s) {
+            if let Ok(code) = s.parse() {
+                return Some(code);
+            }
+        }
+    }
+    None
+}
+
+/// 判断 provider 错误文本是否命中「确定性（永久）错误」关键词——不应重试。
+///
+/// 覆盖常见 OpenAI 兼容网关的明文错误；无状态码且无关键词时保守视为可重试
+/// （保持旧行为，避免把未知瞬时错误误判为永久失败）。
+fn is_permanent_provider_message(msg: &str) -> bool {
+    let lower = msg.to_lowercase();
+    const PERMANENT_MARKERS: &[&str] = &[
+        "unauthorized",
+        "invalid api key",
+        "incorrect api key",
+        "authentication",
+        "forbidden",
+        "permission",
+        "insufficient_quota",
+        "invalid_request_error",
+        "invalid request",
+        "model not found",
+        "does not exist",
+        "not found",
+        "bad request",
+        "unsupported",
+        "context length",
+        "context_length_exceeded",
+        "maximum context",
+        "token limit",
+    ];
+    PERMANENT_MARKERS.iter().any(|m| lower.contains(m))
+}
+
 /// 判断 rig 补全错误是否为瞬时错误（可重试）。
 ///
 /// - `HttpError`：连接/超时/流中断类视为瞬时；HTTP 状态码按 `is_retryable_status_code` 判定
-/// - `ProviderResponse`：带状态码则按码判定，无状态码保守重试
-/// - `ProviderError`：provider 文本错误（429/5xx 常在此处），保守重试
+/// - `ProviderResponse`：带状态码则按码判定；无状态码时按响应体关键词判定
+/// - `ProviderError`：从消息中提取状态码按码判定；无状态码时按永久错误关键词判定
 /// - 其余（JsonError/UrlError/RequestError/ResponseError）：确定性错误，不重试
 pub(crate) fn is_retryable_completion_error(e: &CompletionError) -> bool {
     match e {
@@ -222,11 +294,24 @@ pub(crate) fn is_retryable_completion_error(e: &CompletionError) -> bool {
             // InvalidHeaderValue / NoHeaders / InvalidContentType：确定性
             _ => false,
         },
-        CompletionError::ProviderResponse(pe) => pe
-            .status
-            .map(|s| is_retryable_status_code(s.as_u16()))
-            .unwrap_or(true),
-        CompletionError::ProviderError(_) => true,
+        CompletionError::ProviderResponse(pe) => match pe.status {
+            Some(s) => is_retryable_status_code(s.as_u16()),
+            // 无状态码（非 HTTP 传输）：按响应体关键词判定，空体保守重试
+            None => {
+                let body = pe.body.as_str();
+                if body.is_empty() {
+                    true
+                } else {
+                    !is_permanent_provider_message(body)
+                }
+            }
+        },
+        CompletionError::ProviderError(msg) => match status_from_provider_message(msg) {
+            Some(code) => is_retryable_status_code(code),
+            // 无状态码：永久错误关键词命中即不重试（如 401/403/context 溢出等），
+            // 其余保守重试（旧行为：全部重试，最长 ~14s 延迟）
+            None => !is_permanent_provider_message(msg),
+        },
         _ => false,
     }
 }
@@ -234,8 +319,11 @@ pub(crate) fn is_retryable_completion_error(e: &CompletionError) -> bool {
 /// 泛型指数退避重试循环（依赖倒置：调用方注入"执行一次"的闭包与可重试判定）。
 ///
 /// - 可重试错误：退避 `base_delay * 2^attempt`（上限 `max_delay`）后重试，至多 `max_retries` 次
-/// - 不可重试错误 / 达到上限：立即返回
+/// - 不可重试错误 / 达到上限 / 已取消：立即返回
 /// - 退避期间监听 `cancel`：取消后立即返回当前错误，不继续等待
+/// - 注：泛型错误类型 E 无法凭空构造，故「进入本循环前已取消」时仍会执行首次调用；
+///   调用方（commands/llm.rs 各调用点）在进入前已检查 `cancel.is_cancelled()`，
+///   此处负责失败后与退避间隙的取消兜底（P0-3 修复：删除原先的空块死代码）。
 pub(crate) async fn retry_loop<F, Fut, T, E>(
     mut call: F,
     is_retryable: fn(&E) -> bool,
@@ -251,13 +339,11 @@ where
 {
     let mut attempt = 0usize;
     loop {
-        if cancel.is_cancelled() {
-            // 取消时不发起新尝试：透传当前错误（若尚未调用则返回一个不可重试语义）
-        }
         match call().await {
             Ok(value) => return Ok(value),
             Err(e) => {
-                if attempt >= max_retries || !is_retryable(&e) {
+                // 达到上限 / 不可重试 / 已取消 → 立即返回（取消优先于重试）
+                if attempt >= max_retries || !is_retryable(&e) || cancel.is_cancelled() {
                     return Err(e);
                 }
                 let delay = base_delay
@@ -316,7 +402,8 @@ impl LLMClient {
             .map_err(|e| format!("创建 LLM 客户端失败: {}", e))?;
         let completion_model = client.completion_model(&model);
 
-        log::info!("[llm] LLMClient init base_url={}，api_key={}， model={}", base_url, api_key, model);
+        // P0-1（安全）：api_key 绝不明文落日志（见 mask_secret）。仅输出不可逆掩码。
+        log::info!("[llm] LLMClient init base_url={}，api_key={}， model={}", base_url, mask_secret(&api_key), model);
 
         Ok(Self {
             endpoint: base_url,
@@ -1165,9 +1252,24 @@ mod tests {
 
     #[test]
     fn retryable_completion_error_classification() {
-        // ProviderError：保守重试
+        // ProviderError：瞬时文本（无永久关键词）保守重试
         assert!(is_retryable_completion_error(&CompletionError::ProviderError(
             "rate limited".into()
+        )));
+        // ProviderError：显式 429 状态码 → 重试
+        assert!(is_retryable_completion_error(&CompletionError::ProviderError(
+            "HTTP 429 Too Many Requests".into()
+        )));
+        // ProviderError：显式 401 → 不重试（P0-4）
+        assert!(!is_retryable_completion_error(&CompletionError::ProviderError(
+            "HTTP 401 Unauthorized: invalid api key".into()
+        )));
+        // ProviderError：永久错误关键词（context 溢出/认证）→ 不重试（P0-4）
+        assert!(!is_retryable_completion_error(&CompletionError::ProviderError(
+            "This model's maximum context length is 16385 tokens".into()
+        )));
+        assert!(!is_retryable_completion_error(&CompletionError::ProviderError(
+            "Incorrect API key provided".into()
         )));
         // ResponseError（解析失败）：不重试
         assert!(!is_retryable_completion_error(&CompletionError::ResponseError(
@@ -1191,6 +1293,43 @@ mod tests {
                 "bad".into(),
             )
         )));
+    }
+
+    #[test]
+    fn provider_message_status_extraction() {
+        // 显式标注形态
+        assert_eq!(status_from_provider_message("HTTP 401 Unauthorized"), Some(401));
+        assert_eq!(status_from_provider_message("status: 429 too many"), Some(429));
+        assert_eq!(status_from_provider_message("status code 503"), Some(503));
+        // 裸状态码（常见集合）
+        assert_eq!(status_from_provider_message("error 500 internal"), Some(500));
+        // 数字但非状态码 → 不误判（token 数/业务数字）
+        assert_eq!(status_from_provider_message("maximum context length is 16385 tokens"), None);
+        assert_eq!(status_from_provider_message("random 4123 number"), None);
+        // 无状态码
+        assert_eq!(status_from_provider_message("connection reset"), None);
+    }
+
+    #[test]
+    fn permanent_provider_message_detection() {
+        assert!(is_permanent_provider_message("Incorrect API key provided"));
+        assert!(is_permanent_provider_message("maximum context length exceeded"));
+        assert!(is_permanent_provider_message("model not found"));
+        assert!(is_permanent_provider_message("insufficient_quota"));
+        // 瞬时消息不应误判
+        assert!(!is_permanent_provider_message("rate limited, retry later"));
+        assert!(!is_permanent_provider_message("overloaded server"));
+    }
+
+    #[test]
+    fn mask_secret_never_leaks_plaintext() {
+        let secret = "sk-abcdef1234567890";
+        let masked = mask_secret(secret);
+        assert!(!masked.contains("sk-"), "掩码不得包含明文前缀");
+        assert!(!masked.contains("abcdef"), "掩码不得包含明文片段");
+        assert_eq!(mask_secret(secret), mask_secret(secret), "确定性（可比对配置变更）");
+        assert_ne!(mask_secret("sk-other-key"), masked, "不同凭据不同掩码");
+        assert_eq!(mask_secret(""), "<empty>");
     }
 
     #[test]

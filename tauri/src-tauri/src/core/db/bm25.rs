@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::Mutex;
 
-use tantivy::collector::TopDocs;
+use tantivy::collector::{Count, TopDocs};
 use tantivy::query::{
     BooleanQuery, BoostQuery, Occur, Query, QueryParser, TermQuery,
 };
@@ -797,22 +797,39 @@ impl Bm25Index {
         let index = self.open_index()?;
         let schema = Self::schema();
         let doc_name_field = schema.get_field("doc_name").unwrap();
+        let term = tantivy::Term::from_field_text(doc_name_field, doc_name);
+
+        // 先统计匹配文档数——`writer.delete_term()` 返回的是 **Opstamp（操作戳）**
+        // 而非删除文档数（tantivy 语义）。原实现误把操作戳当「删除条数」返回，
+        // 调用方（remove_file）据此把 chunk_delta 扣成整个索引的操作戳数量，
+        // 导致「删除一个文件 → chunk_count/vector_count 元数据被清零、整个知识库
+        // 显示被清空」。用 Count collector 在删除前统计 doc_name 精确匹配的真实数量。
+        let term_query = TermQuery::new(term.clone(), IndexRecordOption::Basic);
+        let reader = index
+            .reader_builder()
+            .reload_policy(ReloadPolicy::Manual)
+            .try_into()
+            .map_err(|e| format!("打开 BM25 读取器失败: {}", e))?;
+        let searcher = reader.searcher();
+        let matched = searcher
+            .search(&term_query, &Count)
+            .map_err(|e| format!("统计 BM25 待删除文档数失败: {}", e))?;
 
         let mut writer: tantivy::IndexWriter<TantivyDocument> = index
             .writer(50_000_000)
             .map_err(|e| format!("创建 BM25 writer 失败: {}", e))?;
 
-        // Tantivy 使用 term 删除，返回删除的文档数
-        let term = tantivy::Term::from_field_text(doc_name_field, doc_name);
-        let deleted_count = writer.delete_term(term);
-        log::info!("[bm25] 删除文档 '{}': 删除了 {} 条", doc_name, deleted_count);
-
+        // Tantivy 使用 term 删除（doc_name 精确匹配，仅删除该文档的 chunk）
+        writer.delete_term(term);
         writer
             .commit()
             .map_err(|e| format!("BM25 提交删除失败: {}", e))?;
 
         self.invalidate_reader();
-        Ok(deleted_count as usize)
+        if matched > 0 {
+            log::info!("[bm25] 删除文档 '{}': 删除了 {} 条", doc_name, matched);
+        }
+        Ok(matched)
     }
 
     /// 清空索引
@@ -898,5 +915,86 @@ fn escape_query(input: &str) -> String {
         output.push(c);
     }
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn chunk(id: &str, doc_name: &str, idx: u32, text: &str) -> DocumentChunk {
+        DocumentChunk {
+            id: id.to_string(),
+            doc_name: doc_name.to_string(),
+            chunk_index: idx,
+            text: text.to_string(),
+            path_depth: None,
+            path_json: None,
+            sentence_window: None,
+            symbol_name: None,
+            symbol_kind: None,
+            embedding_text: None,
+            chunk_type: None,
+        }
+    }
+
+    /// P1 回归：`delete_document` 必须返回**真实删除的文档（chunk）数**，
+    /// 而非 `writer.delete_term()` 的 Opstamp（操作戳）——原实现把操作戳当
+    /// 「删除条数」返回，导致单文件删除时 chunk_delta 元数据被扣成 0、
+    /// 整个知识库显示被清空。
+    #[test]
+    fn delete_document_returns_real_count_not_opstamp() {
+        let dir = tempfile::tempdir().expect("创建临时目录失败");
+        let idx = Bm25Index::create(&dir.path().to_string_lossy()).expect("创建 BM25 索引失败");
+
+        // 两个文档：a.txt 3 个 chunk、b.txt 2 个 chunk
+        let chunks = vec![
+            chunk("a1", "a.txt", 0, "Alpha 第一段内容"),
+            chunk("a2", "a.txt", 1, "Alpha 第二段内容"),
+            chunk("a3", "a.txt", 2, "Alpha 第三段内容"),
+            chunk("b1", "b.txt", 0, "Beta 唯一段"),
+            chunk("b2", "b.txt", 1, "Beta 第二段"),
+        ];
+        idx.add_documents(&chunks).expect("写入 BM25 失败");
+
+        // 删除 a.txt：必须只返回 3（a.txt 的 chunk 数），绝不是索引操作戳（≥5）
+        let deleted = idx.delete_document("a.txt").expect("删除 a.txt 失败");
+        assert_eq!(deleted, 3, "delete_document 应返回该文档的真实 chunk 数，而非操作戳");
+
+        // b.txt 不受影响：仍可精确删除，返回 2
+        let deleted_b = idx.delete_document("b.txt").expect("删除 b.txt 失败");
+        assert_eq!(deleted_b, 2, "b.txt 的 chunk 应完整保留并可精确删除");
+
+        // 已删除/不存在的文档返回 0（幂等，不污染元数据）
+        let again = idx.delete_document("a.txt").expect("重复删除应成功");
+        assert_eq!(again, 0, "已删除文档再次删除应返回 0");
+        let missing = idx.delete_document("never-existed.txt").expect("删除不存在文档应成功");
+        assert_eq!(missing, 0, "不存在文档删除应返回 0");
+    }
+
+    /// 删除只影响目标文档：同库其他文档的检索仍命中（doc_name 精确匹配语义）。
+    #[test]
+    fn delete_document_leaves_other_docs_searchable() {
+        let dir = tempfile::tempdir().expect("创建临时目录失败");
+        let idx = Bm25Index::create(&dir.path().to_string_lossy()).expect("创建 BM25 索引失败");
+        idx.add_documents(&[
+            chunk("x1", "keep.txt", 0, "保留文档内容 独特词汇甲"),
+            chunk("y1", "drop.txt", 0, "被删文档内容 独特词汇乙"),
+        ])
+        .expect("写入 BM25 失败");
+
+        assert_eq!(idx.delete_document("drop.txt").unwrap(), 1);
+        // 删除后 keep.txt 仍可检索
+        let hits = idx
+            .search_with_plan("独特词汇甲", 5, 0.6)
+            .expect("检索失败");
+        assert!(
+            hits.iter().any(|h| h.doc_name == "keep.txt"),
+            "删除 drop.txt 后 keep.txt 必须仍可检索（不能被连带删除）"
+        );
+        assert!(
+            !hits.iter().any(|h| h.doc_name == "drop.txt"),
+            "drop.txt 的 chunk 必须已被删除"
+        );
+    }
 }
 

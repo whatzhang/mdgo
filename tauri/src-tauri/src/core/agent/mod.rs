@@ -134,6 +134,7 @@ pub const BASE_TOOLS: &[&str] = &[
     "activate_skill", "deactivate_skill", "read", "ls", "glob", "grep", "write", "edit", "multi_edit", "delete",
     "git_status", "git_diff", "git_commit", "git_checkout", "webfetch", "deep_research", "read_subagent_result",
     "remember", "forget", "search_memory", "todo_write", "spawn_subagent", "parallel_research", "self_review",
+    "ask_user_question",
 ];
 
 /// 软门禁可见工具：始终出现在 `active_tools`（模型可见可调，不会 UnknownToolCall），
@@ -734,6 +735,12 @@ pub struct KbSearchConfig {
     pub skill_id: Option<String>,
     /// 当前请求的激活技能状态（`read` 工具按需读取 L3 references；钩子动态注入 L2 指令）
     pub skill_state: Arc<ActiveSkillState>,
+    /// 技能软门禁开关（P0-8 修复）：主对话 true——技能声明类工具（kb_search/
+    /// code_lookup/schedule/pomodoro/raw-parse/open-ui）仅当声明技能 Active 时执行，
+    /// 无激活技能（`allowed_tools()==None`）时返回引导（与 SkillGateHook 语义一致）；
+    /// 子代理等受限场景 false——工具白名单已在注册表层过滤，无需技能声明即可执行
+    /// （对齐子代理 allow_all 语义，避免破坏只读/写型子代理的检索能力）。
+    pub skill_gating: bool,
     /// 各作用域技能基础目录（(scope, 绝对路径)），`read` 工具据此定位已激活技能的 references
     pub skill_bases: Vec<(String, String)>,
     /// 检索命中收集器：kb_search / code_lookup 工具将聚合后的命中写入，
@@ -748,8 +755,13 @@ pub struct KbSearchConfig {
 
 /// 执行一次完整检索：嵌入 → 混合检索 → 文档级聚合 → 生成模型可读文本。
 ///
-/// 返回的文本按文档分组，同文档的多个片段合并，供模型直接作为上下文。
-pub async fn kb_search(cfg: &KbSearchConfig, query: &str, top_k: u32) -> Result<String, String> {
+/// 返回的文本按文档分组，同文档的多个片段合并，供模型直接作为上下文；
+/// 结构化输出（来源列表）供前端增强卡片渲染（P1-5）。
+pub async fn kb_search(
+    cfg: &KbSearchConfig,
+    query: &str,
+    top_k: u32,
+) -> Result<(String, Option<serde_json::Value>), String> {
     log::info!("[skill] kb_search: query={}, top_k={}", query, top_k);
     let embedding = tokio::task::spawn_blocking({
         let query = query.to_string();
@@ -767,7 +779,7 @@ pub async fn kb_search(cfg: &KbSearchConfig, query: &str, top_k: u32) -> Result<
         .hybrid_search(&cfg.dir_path, &embedding, query, top_k)
         .await?;
     if hits.is_empty() {
-        return Ok("知识库中未找到相关内容。".to_string());
+        return Ok(("知识库中未找到相关内容。".to_string(), None));
     }
 
     let hits_len = hits.len();
@@ -780,7 +792,7 @@ pub async fn kb_search(cfg: &KbSearchConfig, query: &str, top_k: u32) -> Result<
         None, // kb_search 工具为单查询路径，无跨查询一致性统计
     );
     if selected.is_empty() {
-        return Ok("知识库中未找到足够相关的内容。".to_string());
+        return Ok(("知识库中未找到足够相关的内容。".to_string(), None));
     }
 
     // 命中回传：合并进 rag:done 的引用来源（供前端渲染"引用"）
@@ -789,7 +801,22 @@ pub async fn kb_search(cfg: &KbSearchConfig, query: &str, top_k: u32) -> Result<
         .await
         .extend(selected.iter().cloned());
     log::info!("[skill] kb_search 结果: 选中={}， 命中={} ，min_score={}， max_context_docs={}， max_chunks_per_doc={}", selected.len(), hits_len, cfg.min_score, cfg.max_context_docs, cfg.max_chunks_per_doc);
-    Ok(build_context_text(&selected, MAX_CONTEXT_CHARS))
+    // P1-8：工具输出同样过注入防护——检索片段可能含恶意指令，包裹并提示模型忽略
+    // （与主链路预检索的 wrap_suspicious 语义一致，见 commands/llm.rs）
+    // P1-5：结构化输出（来源列表）供前端渲染增强卡片
+    let text = crate::core::security::wrap_suspicious(&build_context_text(
+        &selected,
+        MAX_CONTEXT_CHARS,
+    ));
+    let structured = serde_json::json!({
+        "sources": selected.iter().map(|(hit, score)| {
+            serde_json::json!({
+                "doc_name": hit.doc_name,
+                "score": score,
+            })
+        }).collect::<Vec<_>>(),
+    });
+    Ok((text, Some(structured)))
 }
 
 /// 构建 kb_search 工具。
@@ -833,12 +860,18 @@ pub fn build_kb_search_tool(cfg: KbSearchConfig) -> DynamicTool {
                 // 软门禁（替代 rig active_tools 硬过滤）：kb_search 始终可见可调，
                 // 但仅当声明它的技能（kb-search）已激活时才执行检索；未激活时返回
                 // 引导，避免 UnknownToolCall 导致整个流式请求失败（回答为空）。
-                // allowed_tools()=None（无技能激活，含子代理独立技能态）→ 放行，
-                // 对齐子代理 allow_all 语义；Some 且未声明 kb_search → 引导。
-                let declared = cfg.skill_state.allowed_tools();
-                let unlocked = declared
-                    .as_ref()
-                    .is_none_or(|list| list.iter().any(|t| t == "kb_search"));
+                // P0-8：主对话（skill_gating=true）下 `allowed_tools()==None`（无任何
+                // 激活技能）按「未激活」处理 → 引导激活，与 SkillGateHook 语义一致
+                // （原先 is_none_or 放行会绕过技能披露，且与 Hook 行为互相矛盾）；
+                // 子代理（skill_gating=false）由注册表白名单把关，直接放行。
+                let unlocked = if !cfg.skill_gating {
+                    true
+                } else {
+                    cfg.skill_state
+                        .allowed_tools()
+                        .as_ref()
+                        .is_some_and(|list| list.iter().any(|t| t == "kb_search"))
+                };
                 if !unlocked {
                     let msg = "kb_search 需要先激活 kb-search 技能（请调用 activate_skill，skill_id='kb-search'）后才能执行，本次未执行检索。请先激活该技能，再重新发起检索。";
                     log::info!("[agent] kb_search 未激活技能被调用，返回引导 request_id={}", cfg.request_id);
@@ -854,8 +887,8 @@ pub fn build_kb_search_tool(cfg: KbSearchConfig) -> DynamicTool {
 
                 tools::record_tool_call(&cfg, "kb_search", &query, Some(&args));
                 match kb_search(&cfg, &query, top_k).await {
-                    Ok(text) => {
-                        tools::record_tool_result(&cfg, "kb_search", true, &format!("{} 字符", text.chars().count()), Some(&text));
+                    Ok((text, structured)) => {
+                        tools::record_tool_result_structured(&cfg, "kb_search", true, &format!("{} 字符", text.chars().count()), Some(&text), structured);
                         Ok(ToolOutput::text(text))
                     }
                     Err(e) => {
@@ -871,11 +904,16 @@ pub fn build_kb_search_tool(cfg: KbSearchConfig) -> DynamicTool {
 
 /// 执行代码符号检索：按符号名（函数/类/方法名等）精确或前缀匹配定位代码定义。
 ///
-/// 返回的文本按文档分组，供模型直接作为上下文。与 `kb_search`（语义检索）互补。
-pub async fn code_search(cfg: &KbSearchConfig, symbol: &str, top_k: u32) -> Result<String, String> {
+/// 返回的文本按文档分组，供模型直接作为上下文。与 `kb_search`（语义检索）互补；
+/// 结构化输出（来源列表）供前端增强卡片渲染（P1-5）。
+pub async fn code_search(
+    cfg: &KbSearchConfig,
+    symbol: &str,
+    top_k: u32,
+) -> Result<(String, Option<serde_json::Value>), String> {
     let hits = cfg.indexer.search_symbols(&cfg.dir_path, symbol, top_k).await?;
     if hits.is_empty() {
-        return Ok(format!("知识库中未找到与符号 '{}' 相关的代码。", symbol));
+        return Ok((format!("知识库中未找到与符号 '{}' 相关的代码。", symbol), None));
     }
 
     let mut parts: Vec<String> = Vec::new();
@@ -900,7 +938,21 @@ pub async fn code_search(cfg: &KbSearchConfig, symbol: &str, top_k: u32) -> Resu
         .await
         .extend(hits.iter().map(|h| (h.clone(), h.score)));
 
-    Ok(parts.join("\n"))
+    // P1-8：与 kb_search 一致，工具输出过注入防护（代码片段同样可能含指令性内容）
+    // P1-5：结构化输出（来源列表）供前端增强卡片渲染
+    let structured = serde_json::json!({
+        "sources": hits.iter().map(|h| {
+            serde_json::json!({
+                "doc_name": h.doc_name,
+                "symbol_name": h.symbol_name,
+                "symbol_kind": h.symbol_kind,
+            })
+        }).collect::<Vec<_>>(),
+    });
+    Ok((
+        crate::core::security::wrap_suspicious(&parts.join("\n")),
+        Some(structured),
+    ))
 }
 
 /// 构建 code_lookup 工具。
@@ -944,11 +996,16 @@ pub fn build_code_lookup_tool(cfg: KbSearchConfig) -> DynamicTool {
                 // 软门禁（替代 rig active_tools 硬过滤）：code_lookup 始终可见可调，
                 // 但仅当声明它的技能（kb-search/code-lookup）已激活时才执行检索；
                 // 未激活时返回引导，避免 UnknownToolCall 导致整个流式请求失败。
-                // allowed_tools()=None（无技能激活，含子代理）→ 放行；Some 未声明 → 引导。
-                let declared = cfg.skill_state.allowed_tools();
-                let unlocked = declared
-                    .as_ref()
-                    .is_none_or(|list| list.iter().any(|t| t == "code_lookup"));
+                // P0-8：主对话（skill_gating=true）下 None 按「未激活」引导（与 Hook 一致）；
+                // 子代理（skill_gating=false）白名单已过滤，直接放行。
+                let unlocked = if !cfg.skill_gating {
+                    true
+                } else {
+                    cfg.skill_state
+                        .allowed_tools()
+                        .as_ref()
+                        .is_some_and(|list| list.iter().any(|t| t == "code_lookup"))
+                };
                 if !unlocked {
                     let msg = "code_lookup 需要先激活声明它的技能（如 kb-search 或 code-lookup，请调用 activate_skill）后才能执行，本次未执行检索。请先激活对应技能，再重新发起检索。";
                     log::info!("[agent] code_lookup 未激活技能被调用，返回引导 request_id={}", cfg.request_id);
@@ -964,8 +1021,8 @@ pub fn build_code_lookup_tool(cfg: KbSearchConfig) -> DynamicTool {
 
                 tools::record_tool_call(&cfg, "code_lookup", &symbol, Some(&args));
                 match code_search(&cfg, &symbol, top_k).await {
-                    Ok(text) => {
-                        tools::record_tool_result(&cfg, "code_lookup", true, &format!("{} 字符", text.chars().count()), Some(&text));
+                    Ok((text, structured)) => {
+                        tools::record_tool_result_structured(&cfg, "code_lookup", true, &format!("{} 字符", text.chars().count()), Some(&text), structured);
                         Ok(ToolOutput::text(text))
                     }
                     Err(e) => {
@@ -1396,6 +1453,11 @@ fn create_tool_registry(only: Option<&HashSet<String>>) -> ToolRegistry {
     // ── 反思质量门工具（BASE_TOOLS） ──
     if want("self_review") {
         reg.register("self_review", Box::new(tools::build_self_review_tool));
+    }
+
+    // ── 用户澄清提问工具（P1-4；BASE_TOOLS，子代理白名单不含，天然隔离） ──
+    if want("ask_user_question") {
+        reg.register("ask_user_question", Box::new(tools::build_ask_user_question_tool));
     }
 
     // ── 长期记忆工具（BASE_TOOLS；remember/forget 为写操作，子代理白名单排除） ──

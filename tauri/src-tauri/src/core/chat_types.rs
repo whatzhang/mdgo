@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::core::context::ChatTurn;
+
 /// 一次模型发起的工具调用（OpenAI 协议视图）。
 ///
 /// 与 rig 的 `ToolCall` 解耦（依赖倒置）：本项目会话层只依赖本 DTO，
@@ -12,6 +14,49 @@ pub struct ToolCallDto {
     pub name: String,
     /// 参数 JSON 字符串（模型原始产出，回放时原样解析）
     pub arguments: String,
+}
+
+/// 将历史按「工具调用单元」分组：一条 assistant（带 `tool_calls`）与其
+/// 紧随其后的连续 tool 结果消息同组，其余消息各自成组。
+///
+/// 这是「工具调用配对」语义的**唯一后端来源**（P1-1，此前在
+/// `core/context::group_turns` 与 `commands/llm::chat_turns_to_history` 各有一份
+/// 近似实现，改一处漏一处）：
+/// - 压缩切分（`core::context` 的滑窗/摘要策略）必须以单元为单位——否则会把
+///   assistant 的 tool_call 与 tool 结果切到不同侧，产生「孤儿 tool 消息」
+///   导致 OpenAI 协议拒绝请求；
+/// - 历史 → 模型消息转换（`commands::llm::chat_turns_to_history`）用同一分组
+///   判定孤儿 tool_call（无配对结果的调用不重放）。
+///
+/// 返回 `(单元起始下标, 单元)`，供压缩器计算保留起点（`kept_from`）。
+pub fn group_tool_units(history: &[ChatTurn]) -> Vec<(usize, Vec<ChatTurn>)> {
+    let mut units: Vec<(usize, Vec<ChatTurn>)> = Vec::new();
+    for (idx, turn) in history.iter().enumerate() {
+        if turn.is_tool_message() {
+            // 并入当前组（防御：若没有当前组（孤儿 tool 消息）则自成一组）
+            match units.last_mut() {
+                Some((_, last)) => last.push(turn.clone()),
+                None => units.push((idx, vec![turn.clone()])),
+            }
+        } else {
+            units.push((idx, vec![turn.clone()]));
+        }
+    }
+    units
+}
+
+/// 收集历史中「存在配对 tool 结果」的 tool_call id 集合。
+///
+/// 供 `chat_turns_to_history` 过滤孤儿 tool_call（成功但空输出的工具其 result
+/// 为空串，前端不生成 tool 消息；无配对结果的 tool_call 不得重放，否则
+/// OpenAI 协议会因 tool_call 无配对结果而拒绝请求）。与 [`group_tool_units`]
+/// 共享同一配对语义（P1-1）。
+pub fn paired_tool_call_ids(turns: &[ChatTurn]) -> std::collections::HashSet<&str> {
+    turns
+        .iter()
+        .filter(|t| t.role == "tool")
+        .filter_map(|t| t.tool_call_id.as_deref())
+        .collect()
 }
 
 #[derive(Debug, Serialize, Clone)]

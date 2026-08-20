@@ -140,6 +140,11 @@ impl SubagentRunner {
         sub_cfg.skill_state = Arc::new(ActiveSkillState::new());
         sub_cfg.search_sink = Arc::new(tokio::sync::Mutex::new(Vec::new()));
         sub_cfg.skill_id = None;
+        // P0-8：子代理关闭技能软门禁——工具白名单已在注册表层过滤（只读/写型集合），
+        // 技能声明类工具（kb_search 等）无需技能激活即可执行；若继承主对话的
+        // skill_gating=true，空技能态（allowed_tools()==None）会误判为「未激活」并
+        // 返回引导，导致子代理丧失检索能力。
+        sub_cfg.skill_gating = false;
 
         // 按模式选择工具白名单：只读（调研）或写型（编辑/删除，挂审批门）
         let whitelist = match spec.mode {

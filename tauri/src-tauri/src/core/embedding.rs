@@ -94,6 +94,22 @@ where
     })
 }
 
+/// 用本地 embedding 模型的 tokenizer（WordPiece，BGE 系）估算文本 token 数（P1-2）。
+///
+/// 非 LLM 原生 tokenizer，但对中文/混合文本的估算精度远高于字符折算
+/// （原 `chars/2`：中文 1 token/1.5 字符、英文 1 token/4 字符的粗糙折中）；
+/// 用于对话历史压缩预算门（`core::context::TokenizerBackedEstimator`）。
+/// 模型未初始化 / tokenizer 解析失败时返回 `None`，调用方回退近似估算。
+pub fn estimate_tokens(text: &str) -> Option<usize> {
+    if text.is_empty() {
+        return Some(0);
+    }
+    if TOKENIZER_JSON.get().is_none() {
+        return None;
+    }
+    with_tokenizer(|tok| tok.encode(text, false).ok().map(|enc| enc.len()))
+}
+
 // ─── ONNX Session 创建（按平台两条独立实现路径）───
 
 /// 创建 tract-onnx 推理 Session（Intel Mac / Linux 纯 CPU 后端）。

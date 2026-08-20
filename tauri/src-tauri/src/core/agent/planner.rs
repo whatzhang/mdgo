@@ -52,6 +52,10 @@ pub fn validate_plan_json(text: &str) -> Result<Value, Vec<String>> {
 }
 
 /// 任务性动词/意图：命中即视为复杂任务候选（规则路由信号之一）。
+///
+/// P1-9：从「先/再」等高频连词中剥离——「先……再……」是常见叙述结构，
+/// 与"需要规划"相关性弱（原表把它们当多意图信号导致误报）。本表只保留
+/// 明确的「任务/交付型」动词。
 const PLAN_VERBS: &[&str] = &[
     "重构", "设计", "分析", "总结", "迁移", "调研", "实现", "搭建",
     "规划", "计划", "优化", "评估", "对比", "架构", "方案", "步骤",
@@ -59,7 +63,10 @@ const PLAN_VERBS: &[&str] = &[
 ];
 
 /// 多意图连接词：中等长度问题含此信号也视为复杂任务。
-const MULTI_INTENT_MARKERS: &[&str] = &["并且", "同时", "以及", "然后", "还要", "先", "再"];
+///
+/// P1-9：移除 "先"/"再"（误报源）——"先看 A 再看 B" 这类一次性指令不需要
+/// 规划确认；保留真正表示「多任务并行/串行编排」的连接词。
+const MULTI_INTENT_MARKERS: &[&str] = &["并且", "同时", "以及", "然后", "还要"];
 
 /// 长问题判定阈值（字符）：超过即直接视为复杂任务。
 const LONG_QUERY_CHARS: usize = 120;
@@ -73,18 +80,33 @@ const SHORT_QUERY_CHARS: usize = 40;
 /// - 问题长度 ≥ `LONG_QUERY_CHARS`
 /// - 含任务性动词/意图（`PLAN_VERBS`）
 /// - 中等长度且含多意图连接词（`MULTI_INTENT_MARKERS`）
+///
+/// P1-9 反例守卫（显式抑制误报）：
+/// - 纯提问型（疑问句结尾「?/？/吗/呢」）且长度中等 → 不规划（用户要答案，不是要计划）
+/// - 单文件/单主题的轻量操作（"读取/查看/翻译/解释 X"）→ 不规划
 pub fn should_plan(query: &str) -> bool {
     let q = query.trim();
     let chars = q.chars().count();
     if chars >= LONG_QUERY_CHARS {
         return true;
     }
-    let has_verb = PLAN_VERBS.iter().any(|v| q.contains(v));
+    // P1-9：疑问句抑制——"这个文件是干什么的？" 不是规划任务
+    let is_question = q.ends_with('?')
+        || q.ends_with('？')
+        || q.ends_with("吗")
+        || q.ends_with("呢")
+        || q.ends_with("什么")
+        || q.ends_with("哪些");
     if chars <= SHORT_QUERY_CHARS {
-        return has_verb;
+        return !is_question && PLAN_VERBS.iter().any(|v| q.contains(v));
     }
-    if has_verb {
-        return true;
+    // P1-9：轻量单动作动词（查看类）不触发规划——"解释/翻译/朗读/查看 X" 是原子操作
+    const LIGHT_ACTIONS: &[&str] = &["查看", "解释", "翻译", "朗读", "读取", "打开", "转换"];
+    if LIGHT_ACTIONS.iter().any(|a| q.contains(a)) && !q.contains("并且") && !q.contains("同时") {
+        return false;
+    }
+    if PLAN_VERBS.iter().any(|v| q.contains(v)) {
+        return !is_question;
     }
     MULTI_INTENT_MARKERS.iter().any(|m| q.contains(m))
 }
@@ -224,6 +246,20 @@ mod tests {
         assert!(should_plan(long));
         // 多意图连接词（中等长度）
         assert!(should_plan("重构登录模块并且同时优化数据库索引"));
+    }
+
+    /// P1-9 回归：抑制「先/再」叙述结构与疑问句的误报
+    #[test]
+    fn should_plan_suppresses_common_false_positives() {
+        // "先……再……" 是普通叙述，不是多任务规划信号（原表含"先/再"会误报）
+        assert!(!should_plan("先读取文件 A，再读取文件 B"));
+        // 疑问句（即使含任务动词）不规划——用户要的是答案不是计划
+        assert!(!should_plan("这个项目应该怎么重构？"));
+        assert!(!should_plan("帮我分析一下这个项目的性能瓶颈在哪里？"));
+        // 中等长度纯查看/解释类操作不规划
+        assert!(!should_plan("请解释一下这份文档的目录结构，说明各章节的用途"));
+        // 真正的中等长度多任务仍规划
+        assert!(should_plan("请设计一个完整的迁移方案，同时评估数据库选型与索引策略"));
     }
 
     #[test]

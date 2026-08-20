@@ -43,11 +43,64 @@ impl TokenEstimator for ApproxTokenEstimator {
     }
 }
 
+/// 精确 token 估算器（P1-2）：基于本地 embedding 模型 tokenizer（WordPiece，BGE 系）。
+///
+/// 对中文/混合文本的估算精度远高于字符折算；tokenizer 不可用（模型未初始化/
+/// 解析失败）时回退 [`ApproxTokenEstimator`]，任何路径都不 panic。
+pub struct TokenizerBackedEstimator;
+
+impl TokenEstimator for TokenizerBackedEstimator {
+    fn estimate(&self, text: &str) -> usize {
+        crate::core::embedding::estimate_tokens(text)
+            .unwrap_or_else(|| ApproxTokenEstimator.estimate(text))
+    }
+}
+
+/// 估算整段历史轮次的 token 总量（P1-2 压缩预算门用）。
+///
+/// 返回 `None` 表示 tokenizer 不可用（调用方回退字符预算口径）。
+pub fn estimate_turns_tokens(turns: &[ChatTurn]) -> Option<usize> {
+    let mut total = 0usize;
+    for t in turns {
+        match crate::core::embedding::estimate_tokens(&t.content) {
+            Some(n) => total = total.saturating_add(n),
+            None => return None,
+        }
+        // 工具调用参数同样计入（与前端 unitTokens 口径一致）
+        if let Some(calls) = &t.tool_calls {
+            for c in calls {
+                match crate::core::embedding::estimate_tokens(&c.arguments) {
+                    Some(n) => total = total.saturating_add(n),
+                    None => return None,
+                }
+            }
+        }
+    }
+    Some(total)
+}
+
 /// 把 token 预算换算为字符预算（`budget_tokens * 2`，`ApproxTokenEstimator` 的逆运算）。
 ///
 /// 额外 `+1` 余量由估算器的 `+1` 抵消，保证换算回环一致。
 pub fn tokens_to_chars_budget(budget_tokens: usize) -> usize {
     budget_tokens * 2
+}
+
+/// 统一按「字符」计成本（预算单位为字符，见 `tokens_to_chars_budget`）。
+///
+/// ⚠️ 历史教训（P1 修复）：`str::len()` 返回**字节**数，中文 1 字 ≈ 3 字节，
+/// 若按字节与字符预算比较，中文历史会被误判超预算 → 过早压缩、保留过少。
+/// 所有预算比较必须使用本函数。
+fn char_len(s: &str) -> usize {
+    s.chars().count()
+}
+
+/// 单元/消息序列的字符成本合计（预算口径统一为字符）。
+fn unit_char_len(units: &[(usize, Vec<ChatTurn>)]) -> usize {
+    units
+        .iter()
+        .map(|(_, u)| u.iter().map(|t| char_len(&t.content)).sum::<usize>())
+        .sum()
 }
 
 /// 会话级技能恢复引用（P5）：记录上次会话激活的 Session 生命周期技能标识。
@@ -122,20 +175,11 @@ impl ChatTurn {
 /// 压缩切分必须以单元为单位，否则会把 assistant 的 tool_call 与 tool 结果
 /// 切到不同侧，产生「孤儿 tool 消息」导致 OpenAI 协议拒绝请求。
 /// 返回 `(单元起始下标, 单元)`，供压缩器计算保留起点（`kept_from`）。
+///
+/// P1-1：配对语义已收敛到 `crate::core::chat_types::group_tool_units`
+/// （本模块与 `commands::llm::chat_turns_to_history` 共享同一实现）。
 fn group_turns(history: &[ChatTurn]) -> Vec<(usize, Vec<ChatTurn>)> {
-    let mut units: Vec<(usize, Vec<ChatTurn>)> = Vec::new();
-    for (idx, turn) in history.iter().enumerate() {
-        if turn.is_tool_message() {
-            // 并入当前组（防御：若没有当前组（孤儿 tool 消息）则自成一组）
-            match units.last_mut() {
-                Some((_, last)) => last.push(turn.clone()),
-                None => units.push((idx, vec![turn.clone()])),
-            }
-        } else {
-            units.push((idx, vec![turn.clone()]));
-        }
-    }
-    units
+    crate::core::chat_types::group_tool_units(history)
 }
 
 /// 压缩结果
@@ -197,10 +241,7 @@ impl ContextCompressor for SlidingWindowCompressor {
         _cancel: CancellationToken,
     ) -> CompressedHistory {
         let units = group_turns(history);
-        let total: usize = units
-            .iter()
-            .map(|(_, u)| u.iter().map(|t| t.content.len()).sum::<usize>())
-            .sum();
+        let total = unit_char_len(&units);
         if total <= budget {
             return CompressedHistory {
                 turns: history.to_vec(),
@@ -213,7 +254,7 @@ impl ContextCompressor for SlidingWindowCompressor {
         let mut used = 0usize;
         // 从后往前按「工具调用单元」保留（最新优先，保证 tool_call 与 tool 结果成对）
         for (start, unit) in units.iter().rev() {
-            let len = unit.iter().map(|t| t.content.len()).sum::<usize>();
+            let len = unit.iter().map(|t| char_len(&t.content)).sum::<usize>();
             if !kept_units.is_empty() && used + len > budget {
                 break;
             }
@@ -261,7 +302,7 @@ impl ContextCompressor for SummarizeThenWindowCompressor {
         budget: usize,
         cancel: CancellationToken,
     ) -> CompressedHistory {
-        let total: usize = history.iter().map(|t| t.content.len()).sum();
+        let total: usize = history.iter().map(|t| char_len(&t.content)).sum();
         if total <= budget {
             return CompressedHistory {
                 turns: history.to_vec(),
@@ -305,12 +346,12 @@ impl ContextCompressor for SummarizeThenWindowCompressor {
 
         // 3. 摘要恒保留(它是压缩的核心,若摘要本身超预算则降级纯滑窗),
         //    滑窗只作用于 recent 部分,避免摘要被当作"最旧消息"砍掉
-        if summary.len() > budget {
+        if char_len(&summary) > budget {
             return SlidingWindowCompressor
                 .compress(history, budget, CancellationToken::new())
                 .await;
         }
-        let recent_budget = budget.saturating_sub(summary.len());
+        let recent_budget = budget.saturating_sub(char_len(&summary));
         // recent 滑窗为纯内存操作(无异步中断点),无需携带取消信号
         let recent_result = SlidingWindowCompressor
             .compress(&recent, recent_budget, CancellationToken::new())
@@ -326,7 +367,7 @@ impl ContextCompressor for SummarizeThenWindowCompressor {
             tool_call_id: None,
         });
         merged.extend(recent_result.turns);
-        let kept_chars: usize = merged.iter().map(|t| t.content.len()).sum();
+        let kept_chars: usize = merged.iter().map(|t| char_len(&t.content)).sum();
         CompressedHistory {
             dropped_chars: total.saturating_sub(kept_chars),
             turns: merged,
@@ -377,6 +418,11 @@ mod tests {
             .collect()
     }
 
+    /// 测试用字符成本（与生产 `char_len` 同口径）
+    fn used_chars(turns: &[ChatTurn]) -> usize {
+        turns.iter().map(|t| t.content.chars().count()).sum()
+    }
+
     #[tokio::test]
     async fn sliding_window_passthrough_within_budget() {
         let h = long_history(3, 10);
@@ -390,7 +436,7 @@ mod tests {
     async fn sliding_window_keeps_latest_within_budget() {
         let h = long_history(10, 100); // 1000 chars
         let r = SlidingWindowCompressor.compress(&h, 250, CancellationToken::new()).await;
-        let used: usize = r.turns.iter().map(|t| t.content.len()).sum();
+        let used = used_chars(&r.turns);
         assert!(used <= 250);
         // 最后一条消息(最新)必须保留
         assert_eq!(r.turns.last(), h.last());
@@ -439,7 +485,7 @@ mod tests {
             .turns
             .iter()
             .any(|t| t.role == "system" && t.content == "[摘要]"));
-        let used: usize = r.turns.iter().map(|t| t.content.len()).sum();
+        let used = used_chars(&r.turns);
         assert!(used <= 300);
         // 最近消息(原始)必须保留
         assert_eq!(r.turns.last(), h.last());
@@ -451,7 +497,7 @@ mod tests {
         let c = SummarizeThenWindowCompressor::new(Arc::new(FailingSummarizer), 200);
         let r = c.compress(&h, 300, CancellationToken::new()).await;
         assert_eq!(r.strategy, "sliding-window");
-        let used: usize = r.turns.iter().map(|t| t.content.len()).sum();
+        let used = used_chars(&r.turns);
         assert!(used <= 300);
     }
 
@@ -480,8 +526,24 @@ mod tests {
                 .count(),
             "tool 结果消息数量必须等于 assistant 工具调用数量（成对）"
         );
-        let used: usize = r.turns.iter().map(|t| t.content.len()).sum();
+        let used = used_chars(&r.turns);
         assert!(used <= 300);
+    }
+
+    /// P1 回归：中文内容（1 字 = 3 字节）不得因字节/字符口径混用被过早压缩。
+    ///
+    /// 历史 bug：预算按字符（token*2）而成本按 `content.len()`（字节）比较，
+    /// 中文历史被误判超预算 → 保留过少、摘要过频。本用例验证预算口径为字符。
+    #[tokio::test]
+    async fn chinese_content_not_over_compressed() {
+        // 3 条中文消息，每条 100 汉字 = 300 字节 ≈ 100 字符
+        let h: Vec<ChatTurn> = (0..3)
+            .map(|i| turn("user", &format!("问题{}：{}", i, "中".repeat(100))))
+            .collect();
+        // 预算 800 字符：3 条共约 305 字符，远低于预算 → 必须原样返回（strategy=none）
+        let r = SlidingWindowCompressor.compress(&h, 800, CancellationToken::new()).await;
+        assert_eq!(r.strategy, "none", "中文历史在字符预算内不得被压缩");
+        assert_eq!(r.turns, h);
     }
 
     #[test]

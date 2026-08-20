@@ -18,7 +18,7 @@ pub mod validation;
 pub mod schedule;
 pub mod knowledge;
 
-mod chat_types;
+pub mod chat_types;
 mod embedding;
 mod indexer;
 pub(crate) mod model_download;

@@ -193,6 +193,19 @@ async fn prepare_history(
             tool_call_id: m.tool_call_id.clone(),
         })
         .collect();
+    // P1-2：精确 token 预算门——本地 tokenizer（BGE WordPiece）可用时，历史未超
+    // token 预算直接原样返回（零压缩开销，且不再因字符/字节折算误判而过早压缩）；
+    // tokenizer 不可用（模型未初始化/解析失败）回退字符预算口径（压缩器内部逻辑）。
+    if let Some(total) = crate::core::context::estimate_turns_tokens(&turns) {
+        if total <= budget_tokens {
+            return crate::core::context::CompressedHistory {
+                turns,
+                dropped_chars: 0,
+                strategy: "none",
+                kept_from: 0,
+            };
+        }
+    }
     compressor
         .compress(&turns, tokens_to_chars_budget(budget_tokens), cancel)
         .await
@@ -216,11 +229,9 @@ fn chat_turns_to_history(turns: &[ChatTurn]) -> Vec<Message> {
     // 统计历史中实际存在的 tool 结果 id：过滤「孤儿 tool_call」
     // （成功但空输出的工具其 result 为空串，前端不生成 tool 消息），
     // 否则 OpenAI 协议会因 tool_call 无配对结果而拒绝请求（review 修复）。
-    let tool_result_ids: std::collections::HashSet<&str> = turns
-        .iter()
-        .filter(|t| t.role == "tool")
-        .filter_map(|t| t.tool_call_id.as_deref())
-        .collect();
+    // P1-1：配对语义与压缩器共享同一来源（core::chat_types::paired_tool_call_ids）
+    let tool_result_ids: std::collections::HashSet<&str> =
+        crate::core::chat_types::paired_tool_call_ids(turns);
     turns
         .iter()
         .map(|t| match t.role.as_str() {
@@ -284,6 +295,25 @@ async fn next_or_cancel<T>(
         _ = cancel.cancelled() => Err(()),
         item = stream.next() => Ok(item),
     }
+}
+
+/// 判断流式错误是否为「模型上下文窗口超限」（P1-3：context_length_exceeded）。
+///
+/// 命中时收紧压缩预算后重试一次（对齐 DSH `agent/request-error` 语义：
+/// 仅在压缩推进时重试，最多 1 次，避免无限循环）。覆盖 OpenAI 兼容网关的
+/// 常见错误文案（HTTP 400 + error.message / provider 文本）。
+fn is_context_overflow_error(e: &rig_agent::agent::StreamingError) -> bool {
+    let text = e.to_string().to_lowercase();
+    const MARKERS: &[&str] = &[
+        "context length",
+        "context_length",
+        "maximum context",
+        "max context",
+        "context window",
+        "too many tokens",
+        "token limit",
+    ];
+    MARKERS.iter().any(|m| text.contains(m))
 }
 
 /// 计算各作用域技能基础目录（供 read 工具按需读取已激活技能的参考文档，渐进式披露 L3）。
@@ -1750,6 +1780,8 @@ pub async fn agent_query(
         max_chunks_per_doc: effective_max_chunks,
         skill_id: primary_skill_id,
         skill_state: active_skills.clone(),
+        // P0-8：主对话启用技能软门禁（技能声明工具须激活后执行）
+        skill_gating: true,
         skill_bases,
         search_sink: search_sink.clone(),
         app_handle: app.clone(),
@@ -1801,10 +1833,29 @@ pub async fn agent_query(
         _ => None,
     };
     let hist_messages = apply_compaction_checkpoint(&messages, checkpoint.as_ref());
+    // P1-3：上下文溢出重试——模型上下文窗口超限（context_length_exceeded）时
+    // 收紧压缩预算（60%）重新压缩历史后重试一次（对齐 DSH agent/request-error
+    // 语义：仅在压缩推进时重试，最多 1 次，避免无限循环）。
+    let mut compress_budget_tokens = compression_budget_tokens(llm_cfg.context_length);
+    let mut overflow_retries = 0usize;
+    const MAX_OVERFLOW_RETRIES: usize = 1;
+    // 初值 None 仅用于 expect 兜底（循环正常退出前必被赋值）；编译器提示 unused 属预期
+    #[allow(unused_assignments)]
+    let mut stream_outcome: Option<(
+        String,            // full_content
+        Option<UsageInfo>, // final_usage
+        u64,               // delta_count
+        bool,              // stream_failed
+        bool,              // max_turns_hit
+        Vec<String>,       // tools_called
+        Option<String>,    // last_tool_summary（空内容兜底用）
+        std::time::Instant, // llm_start（最终日志耗时）
+    )> = None;
+    'stream_attempt: loop {
     let compressed = prepare_history(
         &hist_messages,
         compressor.as_ref(),
-        compression_budget_tokens(llm_cfg.context_length),
+        compress_budget_tokens,
         cancel.clone(),
     )
     .await;
@@ -1924,7 +1975,14 @@ pub async fn agent_query(
     let mut delta_count = 0u64;
     let mut stream_failed = false;
     let mut last_tool_summary: Option<String> = None;
-    // 本请求实际调用过的工具名（防幻觉校验用：声称写操作但未调用对应工具时追加提醒）
+    // P0-6：模型调用轮次预算耗尽标记（MaxTurnsError，区别于网络/服务故障）
+    let mut max_turns_hit = false;
+    // P1-3：上下文溢出标记——内层循环 break 后据此收紧预算重试
+    let mut overflow_retry = false;
+    // 本请求**实际执行成功**的工具名（防幻觉校验用：声称写操作但未调用对应工具时
+    // 追加提醒）。P0-5 起改为从 ToolCallBus 的成功 result 事件收集——仅凭模型发起
+    // 工具调用事件（rig 对 hook 跳过/失败的调用同样上报 ToolCall 项）会把被拒/失败
+    // 的调用误当作"已执行"，掩护虚构声称。
     let mut tools_called: Vec<String> = Vec::new();
     loop {
         let item = match next_or_cancel(&mut stream, &cancel).await {
@@ -1989,9 +2047,9 @@ pub async fn agent_query(
             Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::ToolCall { tool_call, .. })) => {
                 log::info!("[agent_query] [4]: 工具调用: name={} arguments={}",
                     tool_call.function.name, tool_call.function.arguments);
-                if !tools_called.iter().any(|t| t == &tool_call.function.name) {
-                    tools_called.push(tool_call.function.name.clone());
-                }
+                // P0-5：不再在此处收集工具名——rig 对「hook 跳过/失败」的调用同样
+                // 上报 ToolCall 项，须以 ToolCallBus 的成功 result（ok=true）为准，
+                // 在循环底部 drain 前统一收集（见下方 merge 代码）。
             }
             Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(text))) => {
                 if text.text.is_empty() {
@@ -2024,9 +2082,58 @@ pub async fn agent_query(
             }
             Ok(_) => {}
             Err(e) => {
+                // P1-3：上下文窗口超限 → 收紧预算重试一次（溢出通常发生在首轮，
+                // 已产出内容很少；重试后若仍超限走下方通用错误路径，不无限循环）
+                if !overflow_retry
+                    && overflow_retries < MAX_OVERFLOW_RETRIES
+                    && is_context_overflow_error(&e)
+                {
+                    overflow_retries += 1;
+                    overflow_retry = true;
+                    compress_budget_tokens = compress_budget_tokens * 3 / 5;
+                    log::warn!(
+                        "[agent_query] [4]: 上下文超限，压缩历史后重试 request_id={} attempt={} budget_tokens={}",
+                        request_id, overflow_retries, compress_budget_tokens
+                    );
+                    let _ = app.emit(
+                        "rag:status",
+                        RagStatus {
+                            request_id: request_id.clone(),
+                            stage: "generating".into(),
+                            message: "模型上下文窗口不足，已压缩历史后重试…".into(),
+                        },
+                    );
+                    // 先清空本尝试未转发的事件（重试会从全新历史重新生成）
+                    emit_pending_tool_events(&app, &request_id);
+                    break;
+                }
+                // P0-6：区分 MaxTurnsError（轮次预算耗尽）与网络/服务故障——
+                // 前者有部分内容时不再静默按成功收尾，向用户显式说明截断原因
+                let is_max_turns = matches!(
+                    &e,
+                    rig_agent::agent::StreamingError::Prompt(p)
+                        if matches!(p.as_ref(), rig_agent::completion::PromptError::MaxTurnsError { .. })
+                );
+                if is_max_turns {
+                    log::warn!(
+                        "[agent_query] [4]: 模型调用轮次预算耗尽（MaxTurnsError）request_id={} err={}",
+                        request_id, e
+                    );
+                    max_turns_hit = true;
+                    stream_failed = true;
+                    break;
+                }
                 log::warn!("[agent_query] [4]: Agent 流式响应错误: request_id={} err={}", request_id, e);
                 stream_failed = true;
                 break;
+            }
+        }
+        // P0-5：以「执行成功」的工具结果（ToolCallBus ok=true）作为防幻觉守卫输入，
+        // 必须在 drain（emit_pending_tool_events）之前收集——drain 会消费事件桶。
+        // 失败/被审批拒绝/被 hook 跳过的调用不构成"已执行操作"的证据。
+        for t in tool_call_bus().successful_tool_names(&request_id) {
+            if !tools_called.iter().any(|c| c == &t) {
+                tools_called.push(t);
             }
         }
         // 捕获最后一个成功的工具调用结果内容（用于兜底：模型调用工具成功但未生成文本时）
@@ -2037,6 +2144,25 @@ pub async fn agent_query(
         emit_pending_tool_events(&app, &request_id);
     }
     
+    // P1-3：上下文溢出 → 收紧预算后重试（continue 回到 'stream_attempt 顶部重新压缩）
+    if overflow_retry {
+        continue 'stream_attempt;
+    }
+    stream_outcome = Some((
+        full_content,
+        final_usage,
+        delta_count,
+        stream_failed,
+        max_turns_hit,
+        tools_called,
+        last_tool_summary,
+        llm_start,
+    ));
+    break 'stream_attempt;
+    }
+    let (mut full_content, final_usage, delta_count, stream_failed, max_turns_hit, mut tools_called, mut last_tool_summary, llm_start) =
+        stream_outcome.expect("'stream_attempt 循环正常退出时必已赋值");
+     
      log::info!("[agent_query] [4]: Agent 流式响应完成: request_id={} took={:?} delta_count={} content_len={}",
         request_id, llm_start.elapsed(), delta_count, full_content.len());
     crate::core::trace::stage_end(
@@ -2051,12 +2177,13 @@ pub async fn agent_query(
     // 流式失败且无任何内容 → 显式报错，避免静默失败或空消息污染前端
     if stream_failed && full_content.is_empty() && !cancel.is_cancelled() {
         log::info!("[agent_query] [4]: 流式响应失败 request_id={}", request_id);
+        let error_code = if max_turns_hit { "max_turns" } else { "llm_stream_failed" };
         crate::core::trace::stage_end(
             &request_id,
             "generating",
             "error",
             generating_start.elapsed().as_millis() as u64,
-            "llm_stream_failed",
+            error_code,
         );
         emit_pending_trace_events(&app, &request_id);
         emit_pending_tool_events(&app, &request_id);
@@ -2067,11 +2194,12 @@ pub async fn agent_query(
             let metrics = state.skill_metrics.clone();
             let dir = dir_path.clone();
             let rid = request_id.clone();
+            let error_code = error_code.to_string();
             let _ = tokio::task::spawn_blocking(move || {
                 if matched {
                     metrics.record_dispatch_matched(&dir);
                 }
-                record_skill_execution(&metrics, &dir, inputs, false, Some("llm_stream_failed"), &rid);
+                record_skill_execution(&metrics, &dir, inputs, false, Some(&error_code), &rid);
             })
             .await;
         }
@@ -2079,7 +2207,13 @@ pub async fn agent_query(
         state
             .agent_tasks
             .finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Failed);
-        emit_command_error(&app, "rag:error", &request_id, "LLM 生成失败，请检查模型服务是否可用".into());
+        // P0-6：轮次预算耗尽与网络故障给出不同的可操作提示
+        let msg = if max_turns_hit {
+            "已达模型调用轮次上限，未能生成回答。请精简需求或分步提问，或联系管理员调高轮次预算".to_string()
+        } else {
+            "LLM 生成失败，请检查模型服务是否可用".to_string()
+        };
+        emit_command_error(&app, "rag:error", &request_id, msg);
         task_registry.unregister(&request_id).await;
         return Ok(());
     }
@@ -2102,15 +2236,21 @@ pub async fn agent_query(
                 let metrics = state.skill_metrics.clone();
                 let dir = dir_path.clone();
                 let rid = request_id.clone();
+                let error_code = if max_turns_hit { "max_turns" } else { "llm_empty_output" };
                 let _ = tokio::task::spawn_blocking(move || {
                     if matched {
                         metrics.record_dispatch_matched(&dir);
                     }
-                    record_skill_execution(&metrics, &dir, inputs, false, Some("llm_empty_output"), &rid);
+                    record_skill_execution(&metrics, &dir, inputs, false, Some(error_code), &rid);
                 })
                 .await;
             }
-            emit_command_error(&app, "rag:error", &request_id, "LLM 生成失败，请检查模型服务是否可用".into());
+            let msg = if max_turns_hit {
+                "已达模型调用轮次上限，未能生成回答。请精简需求或分步提问".to_string()
+            } else {
+                "LLM 生成失败，请检查模型服务是否可用".to_string()
+            };
+            emit_command_error(&app, "rag:error", &request_id, msg);
             task_registry.unregister(&request_id).await;
             return Ok(());
         }
@@ -2121,6 +2261,30 @@ pub async fn agent_query(
 
     log::info!("[agent_query] [4]: 响应完成: request_id={} content_len={} sources={} tokens_in={} tokens_out={} cached_in={}",
         request_id, full_content.len(), sources_clone.len(), prompt_tokens, completion_tokens, cached_input_tokens);
+
+    // P0-5：兜底合并——流结束前最后一轮工具结果若未经循环底部 drain 收集，
+    // 在此补收（drain 前的最后一次机会；此后 emit_pending_tool_events 会消费）
+    for t in tool_call_bus().successful_tool_names(&request_id) {
+        if !tools_called.iter().any(|c| c == &t) {
+            tools_called.push(t);
+        }
+    }
+
+    // P0-6：轮次预算耗尽且有部分内容 → 不静默按成功收尾，追加截断说明并提示
+    if max_turns_hit && !full_content.trim().is_empty() {
+        let note = "\n\n> （已达模型调用轮次上限，本次回答可能不完整。如需继续，请直接追问后续内容。）";
+        if !full_content.contains("轮次上限") {
+            full_content.push_str(note);
+        }
+        let _ = app.emit(
+            "rag:status",
+            RagStatus {
+                request_id: request_id.clone(),
+                stage: "generating".into(),
+                message: "已达模型调用轮次上限，回答可能不完整".into(),
+            },
+        );
+    }
 
     // P0 防幻觉：声称完成写操作但本请求未调用对应工具 → 追加一致性提醒
     // （在 rag:done 之前修改 full_content，前端最终渲染与落库均包含提醒）

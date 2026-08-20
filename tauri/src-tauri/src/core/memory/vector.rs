@@ -99,6 +99,18 @@ impl MemoryVectorIndex {
         Ok(count)
     }
 
+    /// 移除已删除记忆的向量（P1-7：删除路径）。
+    ///
+    /// 原实现 `sync` 只增不删——记忆删除后陈旧向量累积（召回命中已删除内容、
+    /// 内存随增删 churn 增长）。`live_ids` 为当前仍存在的记忆 id 集；
+    /// 返回被移除的向量条数。
+    pub fn prune(&self, live_ids: &std::collections::HashSet<String>) -> usize {
+        let mut vectors = self.vectors.lock().unwrap_or_else(|e| e.into_inner());
+        let before = vectors.len();
+        vectors.retain(|id, _| live_ids.contains(id));
+        before - vectors.len()
+    }
+
     /// 查询向量 top-k 检索（余弦相似度），返回 (id, score)。
     pub fn search(&self, query_emb: &[f32], limit: usize) -> Vec<(String, f32)> {
         let vectors = self.vectors.lock().map(|m| m.clone()).unwrap_or_default();

@@ -182,6 +182,102 @@
         } catch (e) {
             console.warn('注册 plan:rejected 监听失败:', e);
         }
+        // AI 澄清提问请求（ask_user_question 工具）：弹窗收集用户回答 → IPC 回传
+        // 协议与 approval/plan 同构：question:request → 前端弹窗 → question_respond 回传
+        try {
+            await listen('question:request', (e) => {
+                const { question_id, question, header, options } = (e.payload || {});
+                if (!question_id || !question) return;
+                showQuestionModalAsync({ question_id, question, header, options })
+                    .then(answer => {
+                        return window.__TAURI__.core.invoke('question_respond', {
+                            questionId: question_id,
+                            answer: answer || null,
+                        });
+                    })
+                    .catch(err => {
+                        console.warn('[question] 回传提问结果失败:', err);
+                        // 回传失败兜底：仍尝试以 null 回传，避免挂起表残留
+                        window.__TAURI__.core.invoke('question_respond', {
+                            questionId: question_id,
+                            answer: null,
+                        }).catch(() => { });
+                    });
+            });
+        } catch (e) {
+            console.warn('注册 question:request 监听失败:', e);
+        }
+    }
+
+    // ── 澄清提问弹窗（P1-4：ask_user_question 工具的前端通道） ──
+    // 独立实现（不依赖主页面 confirm 弹窗）：问题 + 候选选项（可点选）+ 自由输入
+    function showQuestionModalAsync({ question_id, question, header, options }) {
+        return new Promise((resolve) => {
+            const overlay = document.createElement('div');
+            overlay.className = 'agent-question-overlay';
+            overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;';
+            const box = document.createElement('div');
+            box.style.cssText = 'background:#fff;border-radius:10px;padding:1.2rem 1.4rem;max-width:30rem;width:92%;max-height:80vh;overflow:auto;box-shadow:0 8px 30px rgba(0,0,0,0.25);font-family:system-ui,sans-serif;';
+            const title = document.createElement('div');
+            title.textContent = header || 'AI 需要确认';
+            title.style.cssText = 'font-size:1rem;font-weight:600;color:#333;margin-bottom:0.6rem;';
+            const text = document.createElement('div');
+            text.textContent = question;
+            text.style.cssText = 'font-size:0.9rem;color:#444;white-space:pre-wrap;line-height:1.5;margin-bottom:0.8rem;word-break:break-all;';
+            box.appendChild(title);
+            box.appendChild(text);
+
+            const input = document.createElement('textarea');
+            input.placeholder = '输入回答…';
+            input.style.cssText = 'width:100%;box-sizing:border-box;min-height:4.5rem;border:1px solid #d0d0d0;border-radius:6px;padding:0.5rem;font-size:0.85rem;resize:vertical;';
+
+            const btns = document.createElement('div');
+            btns.style.cssText = 'display:flex;gap:0.5rem;justify-content:flex-end;margin-top:0.8rem;';
+            const cancelBtn = document.createElement('button');
+            cancelBtn.textContent = '取消';
+            cancelBtn.style.cssText = 'padding:0.35rem 0.9rem;border-radius:6px;border:1px solid #ccc;background:#f5f5f5;color:#555;font-size:0.85rem;cursor:pointer;';
+            const okBtn = document.createElement('button');
+            okBtn.textContent = '提交回答';
+            okBtn.style.cssText = 'padding:0.35rem 0.9rem;border-radius:6px;border:none;background:#2f6fed;color:#fff;font-size:0.85rem;cursor:pointer;';
+            okBtn.disabled = true;
+            okBtn.style.opacity = '0.5';
+
+            const finish = (answer) => {
+                overlay.remove();
+                resolve(answer);
+            };
+            cancelBtn.onclick = () => finish(null);
+            const pick = (val) => {
+                input.value = val;
+                okBtn.disabled = !val.trim();
+                okBtn.style.opacity = okBtn.disabled ? '0.5' : '1';
+            };
+            okBtn.onclick = () => finish(input.value.trim() || null);
+            input.addEventListener('input', () => {
+                okBtn.disabled = !input.value.trim();
+                okBtn.style.opacity = okBtn.disabled ? '0.5' : '1';
+            });
+            // 候选选项（点选即填入输入框，可再编辑）
+            if (Array.isArray(options) && options.length) {
+                const optBox = document.createElement('div');
+                optBox.style.cssText = 'display:flex;flex-wrap:wrap;gap:0.4rem;margin-bottom:0.7rem;';
+                for (const opt of options.slice(0, 6)) {
+                    const b = document.createElement('button');
+                    b.textContent = opt;
+                    b.style.cssText = 'padding:0.3rem 0.7rem;border-radius:999px;border:1px solid #2f6fed;background:#eef4ff;color:#2f6fed;font-size:0.8rem;cursor:pointer;';
+                    b.onclick = () => pick(opt);
+                    optBox.appendChild(b);
+                }
+                box.appendChild(optBox);
+            }
+            box.appendChild(input);
+            btns.appendChild(cancelBtn);
+            btns.appendChild(okBtn);
+            box.appendChild(btns);
+            overlay.appendChild(box);
+            document.body.appendChild(overlay);
+            setTimeout(() => input.focus(), 50);
+        });
     }
 
     window.initAgentGlobalDialogs = initAgentGlobalDialogs;

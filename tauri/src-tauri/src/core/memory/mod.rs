@@ -296,8 +296,12 @@ impl MemoryStore {
     }
 
     /// 列出记忆（可选按 scope 过滤），按更新时间倒序；过滤已过期条目（O2）。
+    ///
+    /// P1-7：上限放宽到 10_000（原 100 会截断检索/向量同步的可见全集，导致
+    /// 最近 100 条之外的记忆永远无法被召回）。记忆为本地个人规模（几百条量级），
+    /// 10k 上限仅作防御性护栏，不构成功能截断。
     pub fn list(&self, scope: Option<&str>, limit: usize) -> Result<Vec<MemoryItem>, String> {
-        let limit = limit.clamp(1, 100) as i64;
+        let limit = limit.clamp(1, 10_000) as i64;
         let now = Self::now_ms() as i64;
         self.pool.with_read(|conn| {
             let mut stmt = match scope {
@@ -338,7 +342,8 @@ impl MemoryStore {
     }
 
     fn list_visible_with(conn: &Connection, dir_path: &str, limit: usize) -> Result<Vec<MemoryItem>, String> {
-        let limit = limit.clamp(1, 100) as i64;
+        // P1-7：上限 10_000（原 100 截断可见全集，检索降级路/向量可见集会漏掉旧记忆）
+        let limit = limit.clamp(1, 10_000) as i64;
         let now = Self::now_ms() as i64;
         let mut stmt = conn
             .prepare_cached(
@@ -411,7 +416,8 @@ impl MemoryStore {
                 }
                 _ => {
                     // 降级：关键词打分（title ×3、body/keywords ×1），过滤过期
-                    let all = Self::list_visible_with(conn, dir_path, 100)?;
+                    // P1-7：取全量可见记忆（10k 上限），不再截断最近 100 条
+                    let all = Self::list_visible_with(conn, dir_path, 10_000)?;
                     let mut scored: Vec<(i64, MemoryItem)> = Vec::new();
                     for item in all {
                         let title_l = item.title.to_lowercase();
@@ -477,7 +483,14 @@ pub async fn search_hybrid(
     let index2 = index.clone();
     let vec_hits: Vec<(String, f32)> = tokio::task::spawn_blocking(move || -> Result<Vec<(String, f32)>, String> {
         // 惰性增量索引：对比全量 id 与已索引集，为新增记忆补 embedding
-        let all: Vec<String> = store2.list(None, 100)?.into_iter().map(|m| m.id).collect();
+        // P1-7：全量 id（10k 上限）——原 100 会漏索引旧记忆；先清理已删除记忆的
+        // 陈旧向量（prune，原实现只增不删），再为新增补索引
+        let all: Vec<String> = store2.list(None, 10_000)?.into_iter().map(|m| m.id).collect();
+        let live: std::collections::HashSet<String> = all.iter().cloned().collect();
+        let pruned = index2.prune(&live);
+        if pruned > 0 {
+            log::info!("[memory] 向量索引清理已删除记忆 {} 条", pruned);
+        }
         index2.sync(&all, |id| store2.get(id).ok().flatten().map(|m| (m.title, m.body)))?;
         let q_emb = crate::core::db::utils::call_embedding_query(&q)
             .map_err(|e| format!("查询向量化失败: {e}"))?
@@ -486,7 +499,7 @@ pub async fn search_hybrid(
             .ok_or_else(|| "查询向量为空".to_string())?;
         // 两级可见域过滤：只保留「当前库 ∪ 全局」的记忆命中，防跨知识库向量串入
         let visible: std::collections::HashSet<String> = store2
-            .list_visible(&dp, 100)?
+            .list_visible(&dp, 10_000)?
             .into_iter()
             .map(|m| m.id)
             .collect();

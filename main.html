@@ -415,7 +415,7 @@
         }
 
         .file-item-text.open-history-item {
-            font-size: 0.875rem;
+            font-size: 13px;
         }
 
         .file-item-text .file-name {
@@ -1105,7 +1105,6 @@
         .canvas-svg {
             width: 100%;
             height: 100%;
-            cursor: grab;
         }
 
         .canvas-svg:active {
@@ -1265,31 +1264,6 @@
         .canvas-save-dropdown {
             position: relative;
             display: inline-block;
-        }
-
-        .canvas-save-menu {
-            position: absolute;
-            left: 0;
-            top: 100%;
-            background: var(--color-bg);
-            border: 1px solid #e2e8f0;
-            border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            transition: all 0.2s ease;
-            display: none;
-            min-width: 240px;
-            max-height: 350px;
-            overflow-y: auto;
-            z-index: 200;
-            padding: 0;
-        }
-
-        .canvas-save-menu::-webkit-scrollbar {
-            display: none;
-        }
-
-        .canvas-save-menu.canvas-open {
-            display: block;
         }
 
         /* Canvas 底部节点类型选择工具栏 */
@@ -3781,7 +3755,7 @@
             align-items: center;
             justify-content: center;
             border-bottom: 1px solid #f5f7fa;
-            gap: 0.5rem;
+            gap: 0.25rem;
             cursor: pointer;
             height: 2.25rem;
             box-sizing: border-box;
@@ -3814,7 +3788,7 @@
         }
 
         .activity-file {
-            font-size: 0.8125rem;
+            font-size: 13px;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -5654,7 +5628,6 @@
             padding: 0;
             font-size: 0.875rem;
             font-family: var(--font-family);
-            font-weight: 500;
             line-height: 1.3;
             background: transparent;
             color: var(--t0);
@@ -14934,9 +14907,6 @@
                 <div class="canvas-save-dropdown">
                     <button id="canvas-save-toggle" class="btn btn-primary btn-sm"
                         onclick="handleCanvasSaveToggleClick(event)">保存</button>
-                    <div id="canvas-save-menu" class="canvas-save-menu">
-                        <div id="canvas-save-directory-tree"></div>
-                    </div>
                 </div>
             </div>
             <!-- Canvas 底部工具栏（新建节点类型选择） -->
@@ -18113,7 +18083,7 @@
                 formatBtn: isKanban ? false : true,
                 opmlBtns: false,
                 commonToolControls: true,
-                demoBtn: true
+                demoBtn: true, mdMindmapBtn: false,
             });
         }
 
@@ -18958,8 +18928,6 @@
         async function cleanupData() {
             const canvasControls = document.getElementById('canvas-top-left-controls');
             if (canvasControls) canvasControls.style.display = 'none';
-            const canvasSaveMenu = document.getElementById('canvas-save-menu');
-            if (canvasSaveMenu) canvasSaveMenu.classList.remove('canvas-open');
             tocElement.innerHTML = '';
             tocLinkElement.innerHTML = '';   // 清空在途的 TOC links 渲染，使旧 panel 脱离文档后自动失效
             _docLinks = [];
@@ -19166,6 +19134,7 @@
                             fileItem = await createFileItem(fileName, newRelativePath, depth + 1, iconType);
                             if (fileItem) {
                                 parentDom.appendChild(fileItem);
+                                handleFileCreated(newRelativePath);
                                 // 展开父目录
                                 if (!parentDom.open) {
                                     parentDom.open = true;
@@ -19177,7 +19146,7 @@
                             const ext = getExt(fileName);
                             const iconType = ext ? getFileTypeByExt(ext) : '';
                             fileItem = await createFileItem(fileName, fileName, 0, iconType);
-                            if (fileItem) tree.appendChild(fileItem);
+                            if (fileItem){ tree.appendChild(fileItem); handleFileCreated(fileName);}
                         }
                         if (fileItem) {
                             if (currentActiveItem) currentActiveItem.classList.remove('active-file');
@@ -19197,7 +19166,6 @@
                         } else {
                             showNotification(`✗ 创建文件失败: ${newRelativePath}`, 'error');
                         }
-                        scanDashboardData(true);
                     } catch (error) {
                         console.error('创建文件失败:', error);
                         showNotification('✗ 创建文件失败: ' + error.message, 'error');
@@ -19257,7 +19225,7 @@
                                 const ext = getExt(fileName);
                                 const iconType = ext ? getFileTypeByExt(ext) : '';
                                 const fileItem = await createFileItem(fileName, newRelativePath, +dom.dataset.depth + 1, iconType);
-                                if (fileItem) dom.appendChild(fileItem);
+                                if (fileItem){ dom.appendChild(fileItem); handleFileCreated(newRelativePath);}
                             }
                             const fileSpan = document.querySelector('.file-item[data-file-path="' + newRelativePath + '"]');
                             if (fileSpan) clickFileSpan(newRelativePath, fileSpan);
@@ -19268,14 +19236,13 @@
                             const ext = getExt(fileName);
                             const iconType = ext ? getFileTypeByExt(ext) : '';
                             const fileItem = await createFileItem(fileName, fileName, 0, iconType);
-                            if (fileItem) tree.appendChild(fileItem);
+                            if (fileItem){ tree.appendChild(fileItem); handleFileCreated(fileName);}
                         }
                     }
                     const fileSpan = document.querySelector('.file-item[data-file-path="' + fileName + '"]');
                     if (fileSpan) clickFileSpan(newRelativePath, fileSpan);
                     recordOperation(fileName, newRelativePath, !isCreate ? OPERATION_TYPES.SAVE : OPERATION_TYPES.CREATE);
                     showNotification(`✓ 文件已保存: ${newRelativePath}`, 'success');
-                    scanDashboardData(true);
                 };
                 if (fileExists) {
                     await navigateToFile(newRelativePath);
@@ -19556,11 +19523,6 @@
                     !(newFileSaveBtn && newFileSaveBtn.contains(e.target))) {
                     newFileSaveMenu.classList.remove('mermaid-open');
                 }
-            }
-            // canvas 保存菜单点击外部关闭
-            const canvasSaveMenu = document.getElementById('canvas-save-menu');
-            if (canvasSaveMenu) {
-                canvasSaveMenu.classList.remove('canvas-open');
             }
             // 新建文件 drpdown 点击外部关闭
             closeNewFilePanelOnClick();
@@ -20363,8 +20325,7 @@
 
             // 批量并发：限制单批 100 个，避免大目录下过多并发 Promise 导致 OOM
             const fileItems = await _batchProcess(fileEntries, (nd) => {
-                const fileItem = createFileItem(nd.name, nd.path, nd.depth, nd.iconType);
-                return fileItem;
+                return createFileItem(nd.name, nd.path, nd.depth, nd.iconType);
             });
             await _batchProcess(dirEntries, (de) => renderTreeFromData(de.children, de.details));
 
@@ -24607,10 +24568,10 @@
                             saveDirExpandedState(dirDom.dataset.dirKey, true);
                         }
                         dirDom.appendChild(fileItem);
+                        handleFileCreated(newRelativePath);
                         const fileSpan = document.querySelector('.file-item[data-file-path="' + newRelativePath + '"]');
                         if (fileSpan) clickFileSpan(newRelativePath, fileSpan);
                     }
-                    scanDashboardData(true);
                 }
             } catch (error) {
                 console.error('保存 SVG 失败:', error);
@@ -27280,12 +27241,7 @@ kanban-plugin: basic
         let _canvasEscHandler = null;
         function _ensureCanvasEscHandler() {
             if (_canvasEscHandler) return; // 已注册，避免重复
-            _canvasEscHandler = function (e) {
-                if (e.key === 'Escape' && connectingFrom) {
-                    cancelConnecting();
-                    showNotification('已取消连线', 'info');
-                }
-            };
+            _canvasEscHandler =  handleCanvasShortcut;
             document.addEventListener('keydown', _canvasEscHandler);
         }
         _ensureCanvasEscHandler();
@@ -27403,12 +27359,6 @@ kanban-plugin: basic
             } catch (e) {
                 contentDiv.innerHTML = `<div style="color:#cf222e; padding:20px;">无效的 JSON Canvas 格式: ${escapeHtml(e.message)}</div>`;
                 return;
-            }
-            // 兼容旧文件：link / bookmark 节点类型已合并为 url，加载时统一归一化
-            if (Array.isArray(canvasData.nodes)) {
-                for (const n of canvasData.nodes) {
-                    if (n && (n.type === 'link' || n.type === 'bookmark')) n.type = 'url';
-                }
             }
             const nodes = canvasData.nodes || [];
             const edges = canvasData.edges || [];
@@ -30468,10 +30418,10 @@ kanban-plugin: basic
                             saveDirExpandedState(dirDom.dataset.dirKey, true);
                         }
                         dirDom.appendChild(fileItem);
+                        handleFileCreated(newRelativePath);
                         const fileSpan = document.querySelector('.file-item[data-file-path="' + newRelativePath + '"]');
                         if (fileSpan) clickFileSpan(newRelativePath, fileSpan);
                     }
-                    scanDashboardData(true);
                 }
                 recordOperation(newFileName, newRelativePath, OPERATION_TYPES.COPY);
                 showNotification(`✓ 已复制为 ${newFileName}`, 'success');
@@ -30503,31 +30453,32 @@ kanban-plugin: basic
                         if (fileSpan) fileSpan.remove();
                         await deletedEmpty(relativePath, `✓ 文件 "${entryName}" 已永久删除`);
                         if (isCurrentViewFile) toggleDashboardView(false)
+                        if(openHistory) openHistory.deleteItem(relativePath);
                         showNotification(`✓ 文件 "${entryName}" 已永久删除`, 'success');
+                        scanDashboardData(true);
                     }
                 });
             } else {
                 const entryName = getFileName(entry);
-                showConfirmModal('确认删除', `确定要将文件 "${entryName}" 移动到 垃圾箱（${DELETED_DIR_NAME}） 目录吗?`, (confirmed) => {
+                showConfirmModal('确认删除', `确定要将文件 "${entryName}" 移动到垃圾箱吗?`,async (confirmed) => {
                     if (confirmed) {
-                        doDeleteFile(entry, relativePath).then(async target => {
-                            if (target && target.targetFileHandle && target.deletedRelativePath) {
-                                if (fileSpan) fileSpan.remove();
-                                clearMarker(relativePath, false);
-                                await _ensureLazyDirLoaded(DELETED_DIR_NAME);
-                                const deletedDirDom = document.querySelector('[data-dir-key="' + DELETED_DIR_NAME + '"]');
-                                if (deletedDirDom) {
-                                    const deletedFileName = target.targetFileHandle.name || entryName;
-                                    const fileItem = await createFileItem(deletedFileName, target.deletedRelativePath, +deletedDirDom.dataset.depth + 1);
-                                    if (fileItem) deletedDirDom.appendChild(fileItem);
-                                }
-                                if (isCurrentViewFile) toggleDashboardView(false)
+                        const target = await doDeleteFile(entry, relativePath) 
+                        if (target && target.targetFileHandle && target.deletedRelativePath) {
+                            if (fileSpan) fileSpan.remove();
+                            clearMarker(relativePath, false);
+                            await _ensureLazyDirLoaded(DELETED_DIR_NAME);
+                            const deletedDirDom = document.querySelector('[data-dir-key="' + DELETED_DIR_NAME + '"]');
+                            if (deletedDirDom) {
+                                const deletedFileName = target.targetFileHandle.name || entryName;
+                                const fileItem = await createFileItem(deletedFileName, target.deletedRelativePath, +deletedDirDom.dataset.depth + 1);
+                                if (fileItem){ deletedDirDom.appendChild(fileItem);handleFileCreated(target.deletedRelativePath); handleFileDel(relativePath);}
                             }
-                        });
+                            if (isCurrentViewFile) toggleDashboardView(false)
+                            if(openHistory) openHistory.deleteItem(relativePath);
+                        }
                     }
                 });
             }
-            scanDashboardData(true);
         }
 
         async function deletedEmpty(relativePath, message) {
@@ -30662,14 +30613,13 @@ kanban-plugin: basic
                         if (deletedDirDom) {
                             if (!fileExists) {
                                 const fileItem = await createFileItem(fileName, originalPath, +deletedDirDom.dataset.depth + 1);
-                                if (fileItem) deletedDirDom.appendChild(fileItem);
+                                if (fileItem){ deletedDirDom.appendChild(fileItem); handleFileCreated(originalPath);}
                             }
                             const fileSpan = document.querySelector('.file-item[data-file-path="' + originalPath + '"]');
                             if (fileSpan) clickFileSpan(originalPath, fileSpan);
                         }
                         recordOperation(fileName, originalPath, OPERATION_TYPES.RESTORE);
                         showNotification(`✓ 文件已还原: ${originalPath}`, 'success');
-                        scanDashboardData(true);
                     };
                     if (fileExists) {
                         await navigateToFile(originalPath);
@@ -30698,6 +30648,8 @@ kanban-plugin: basic
                     await window.__TAURI__.core.invoke('move_dir_to_trash', { path: np });
                     recordOperation(dirName, np, OPERATION_TYPES.DELETE);
                     await clearMarker(np, true);
+                    // 删除打开历史记录中该目录下的所有文件
+                    if(openHistory) openHistory.deleteItemByPrefix(np);
                     // 若当前打开的文件位于被删目录下，关闭视图
                     const activePath = currentActiveItem ? normalizePath(currentActiveItem.dataset.filePath || '') : '';
                     if (activePath && (activePath === np || activePath.startsWith(np + SLASH))) {
@@ -30750,6 +30702,7 @@ kanban-plugin: basic
                     }
                     recordOperation(dirName, np, OPERATION_TYPES.DELETE_PERMANENT);
                     await clearMarker(np, true);
+                    if(openHistory) openHistory.deleteItemByPrefix(np);
                     // 若当前打开的文件位于被删目录下，关闭视图
                     const activePath = currentActiveItem ? normalizePath(currentActiveItem.dataset.filePath || '') : '';
                     if (activePath && (activePath === np || activePath.startsWith(np + SLASH))) {
@@ -31016,9 +30969,9 @@ kanban-plugin: basic
             const days = Math.floor(hours / 24);
             const months = Math.floor(days / 30);
             const years = Math.floor(days / 365);
-            if (seconds < 60) return '1分钟前';
-            if (minutes < 60) return minutes + '分钟前';
-            if (hours < 24) return hours + '小时前';
+            if (seconds < 60) return '1m前';
+            if (minutes < 60) return minutes + 'm前';
+            if (hours < 24) return hours + 'h前';
             if (days < 30) return days + '天前';
             if (months < 12) return months + '月前';
             return years + '年前';
@@ -31052,7 +31005,7 @@ kanban-plugin: basic
                     : `openFileFromPath(this.getAttribute('data-path'))`;
                 return `<div class="activity-item" id="${id}" data-path="${escapeHtml(np)}" ondblclick="${onDblClick}">
                     <div class="activity-time" style="color:${hex};font-weight:bold;">●</div>
-                    <div style="color:${hex};font-size: 0.75rem;width: auto;max-width: 3.25rem;text-align: center;" title="${timeStr.trim()}">${timeAge(i.time)}</div>
+                    <div style="color:${hex};font-size: 0.75rem;width: auto;max-width: 2.5rem;text-align: center;" title="${timeStr.trim()}">${timeAge(i.time)}</div>
                     <div class="activity-content"><div class="activity-file" title="${escapeHtml(np)}">${icon}&nbsp;${escapeHtml(i.name)}</div></div>
                     <div class="activity-marker-clear-dot" title="取消标记" data-path="${escapeHtml(np)}" onclick="${onClickClear}">✕</div>
                 </div>`;
@@ -31157,7 +31110,7 @@ kanban-plugin: basic
                 updateFilePathInMarkers(relativePath, newRelativePath),
                 updateFileNameInAIHistory(relativePath, newName, newRelativePath),
                 updateFilePathInViewRecords(relativePath, newRelativePath, newName),
-                updateLastFileKey(relativePath, newRelativePath)
+                updateLastFileKey(relativePath, newRelativePath),
             ]);
             const hasFailed = idxOk.some(v => v === false);
             if (hasFailed) {
@@ -31172,6 +31125,8 @@ kanban-plugin: basic
             span.dataset.title = newName;
             safeLocalStorageSet(LAST_FILE_KEY, newRelativePath);
             recordOperation(newName, newRelativePath, OPERATION_TYPES.RENAME);
+            // 更新打开历史记录（更新到新路径，而非删除，避免重命名后条目消失）
+            if(openHistory) openHistory.updateItemPath(relativePath, newRelativePath, newName);
             showNotification(`✓ 已重命名为 ${newName}` + (hasFailed ? '（部分索引未更新）' : ''), hasFailed ? 'warning' : 'success');
             // 异步刷新扫描数据（不阻塞重命名流程，失败不提示）
             scanDashboardData(true);
@@ -32226,7 +32181,7 @@ kanban-plugin: basic
             }));
             document.getElementById('editList').innerHTML = sortedByMtimeTop10.map(i =>
                 `<div class="activity-item" ondblclick="openFileFromPath('${i.path}')">
-                    <div class="activity-time" style="width: auto;max-width: 3.25rem;" title="${formatTime(i.time)}">${timeAge(i.time)}</div>
+                    <div class="activity-time" style="width: auto;max-width: 2.5rem;" title="${formatTime(i.time)}">${timeAge(i.time)}</div>
                     <div class="activity-content">
                         <div class="activity-file" title="${i.path}">${i.name}</div>
                     </div>
@@ -32242,7 +32197,7 @@ kanban-plugin: basic
             ).join('');
             document.getElementById('operationList').innerHTML = operationList.map(i =>
                 `<div class="activity-item" ondblclick="openFileFromPathAndType('${i.path}','${i.type}',${i.timestamp})">
-                    <div class="activity-time" style="width: auto;max-width: 3.25rem;" title="${formatTime(i.time)}">${timeAge(i.time)}</div>
+                    <div class="activity-time" style="width: auto;max-width: 2.5rem;" title="${formatTime(i.time)}">${timeAge(i.time)}</div>
                     <div class="activity-content">
                         <div class="activity-file" title="${i.path}">${i.name}</div>
                     </div>` +
@@ -33337,6 +33292,82 @@ kanban-plugin: basic
             targetItem.style.background = '#ffe0a0';
             setTimeout(() => { targetItem.style.removeProperty('background'); }, 2500);
         }
+       async function handleFileCreated(relPath){
+            const now = new Date();
+            const normalizedPath = normalizePath(relPath);
+            const parentPath = dirname(normalizedPath);
+            const fileName = basename(normalizedPath);
+            if (!fileName) return;
+            // 调用 get_file_meta 接口获取单个文件信息（size/mtime）
+            let size = 0;
+            let mtimeSec = Math.floor(now.getTime() / 1000);
+            try {
+                const rootHandle = getRootHandle();
+                if (rootHandle && rootHandle.path) {
+                    const fullPath = joinPath(rootHandle.path, relPath);
+                    const meta = await window.__TAURI__.core.invoke('get_file_meta', { path: fullPath });
+                    if (meta) {
+                        size = (typeof meta.size === 'number') ? meta.size : 0;
+                        mtimeSec = (meta.modified && meta.modified > 0) ? meta.modified : Math.floor(now.getTime() / 1000);
+                    }
+                }
+            } catch (e) {
+                console.warn('[tree] 获取文件元信息失败，使用默认值:', e);
+            }
+            patchScanDataForNewFile(normalizedPath, parentPath, fileName, size, mtimeSec);
+       }
+       async function handleFileRename(relPath, oldPath){
+            const normalizedPath = normalizePath(relPath);
+            const parentPath = dirname(normalizedPath);
+            const fileName = basename(normalizedPath);
+
+            const oldNormalizedPath = normalizePath(oldPath);
+            const oldParentPath = dirname(oldNormalizedPath);
+            const oldFileName = basename(oldNormalizedPath);
+            if (!fileName || !oldFileName) return;
+            // 不创建空桶副作用：旧桶不存在直接返回
+            const oldBucket = _scanData.files[oldParentPath];
+            if (!oldBucket || isEmpty(oldBucket)) return;
+            const fileEntry = oldBucket.find(f => f.name === oldFileName);
+            if (!fileEntry) return;
+            if (parentPath === oldParentPath) {
+                // 同目录重命名：原地更新 name/path 并重排
+                fileEntry.name = fileName;
+                fileEntry.path = normalizedPath;
+                oldBucket.sort(_naturalCompare);
+            } else {
+                // 跨目录重命名：从旧桶移除，插入新桶
+                oldBucket.splice(oldBucket.indexOf(fileEntry), 1);
+                fileEntry.name = fileName;
+                fileEntry.path = normalizedPath;
+                const newBucket = _scanData.files[parentPath] || (_scanData.files[parentPath] = []);
+                newBucket.push(fileEntry);
+                newBucket.sort(_naturalCompare);
+            }
+            // 同步 _scanFileList（用 oldNormalizedPath 查找，与 scan 条目的 path 格式一致）
+            const entry = _scanFileList.find(i => i.path === oldNormalizedPath);
+            if (entry) {
+                entry.name = fileName;
+                entry.path = normalizedPath;
+            }
+       }
+       async function handleFileDel(relPath){
+            const normalizedPath = normalizePath(relPath);
+            const parentPath = dirname(normalizedPath);
+            const fileName = basename(normalizedPath);
+            if (!fileName) return;
+            // 不创建空桶副作用
+            const bucket = _scanData.files[parentPath];
+            if (!bucket || isEmpty(bucket)) return;
+            // 从 _scanFileList 中删除
+            const entry = _scanFileList.find(i => i.path === normalizedPath);
+            if (entry) {
+                _scanFileList.splice(_scanFileList.indexOf(entry), 1);
+            }
+            // 从 _scanData 中删除（findIndex 替代 indexOf，避免误删最后一个元素）
+            const idx = bucket.findIndex(f => f.name === fileName);
+            if (idx >= 0) bucket.splice(idx, 1);
+       }
 
         // ── Agent 写文件后的增量文件树同步（10 万级知识库：绝不全量刷新）──
         // 由 css_js/modules/agent.js 的 `agent:file-written` 监听调用：
@@ -34301,7 +34332,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (dirDom) {
                 if (!overwrite) {
                     const fileItem = await createFileItem(fileName, newRelativePath, +dirDom.dataset.depth + 1);
-                    if (fileItem) dirDom.appendChild(fileItem);
+                    if (fileItem){ dirDom.appendChild(fileItem); handleFileCreated(newRelativePath);}
                 }
                 const fileSpan = document.querySelector('.file-item[data-file-path="' + newRelativePath + '"]');
                 if (fileSpan) clickFileSpan(newRelativePath, fileSpan);
@@ -34309,14 +34340,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const tree = document.getElementById('tree');
                 if (!overwrite) {
                     const fileItem = await createFileItem(fileName, newRelativePath, 0);
-                    if (fileItem) tree.appendChild(fileItem);
+                    if (fileItem){ tree.appendChild(fileItem); handleFileCreated(newRelativePath);}
                 }
                 const fileSpan = document.querySelector('.file-item[data-file-path="' + newRelativePath + '"]');
                 if (fileSpan) clickFileSpan(newRelativePath, fileSpan);
             }
             safeLocalStorageSet(LAST_FILE_KEY, newRelativePath);
             showNotification(`✓ 已保存为 ${newRelativePath}`, 'success');
-            scanDashboardData(true);
         }
 
         async function clickFileSpan(newRelativePath, fileSpan, expand = true) {
@@ -36214,37 +36244,48 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }
         }
 
+        let _canvasSaveDebounced = null;
         async function handleCanvasSaveToggleClick(e) {
-            e.stopPropagation();
-            const saveMenu = document.getElementById('canvas-save-menu');
-            if (saveMenu.classList.contains('canvas-open')) {
-                saveMenu.classList.remove('canvas-open');
-            } else {
-                saveMenu.classList.add('canvas-open');
-                await loadCanvasDirectoryTree();
+            if(e) e.stopPropagation();
+            const data = canvasData;
+            const content = JSON.stringify({
+                nodes: data.nodes,
+                edges: data.edges
+            });
+            if(currentFileHandle) {
+                const fileHandle = currentFileHandle;
+                // 稳定持有防抖函数，复用同一 timer 实现真正的去抖；惰性创建，传参为最新 content/handle
+                if (!_canvasSaveDebounced) {
+                    _canvasSaveDebounced = timeDebounce(async (fh, ct) => {
+                        await enqueueFileAtomic(fh, async () => {
+                            await _writeToFileHandle(fh, ct);
+                            showNotification('✓ 画布保存成功', 'success');
+                        });
+                    }, 500);
+                }
+                _canvasSaveDebounced(fileHandle, content);
+            }else{
+                await showSaveModal({
+                    title: '保存canvas画布文件',
+                    getDefaultFileName: () => 'untitled.canvas',
+                    getContent: () => content,
+                    onSave: doSaveToFolder
+                });
             }
         }
-
-        async function loadCanvasDirectoryTree() {
-            const container = document.getElementById('canvas-save-directory-tree');
-            const content = JSON.stringify({
-                nodes: canvasData.nodes,
-                edges: canvasData.edges
-            });
-            await renderDirectoryTree({
-                container: container,
-                onSave: doSaveCanvasToFolder,
-                getDefaultFileName: () => 'untitled.canvas',
-                getContent: () => content,
-                closeMenu: () => document.getElementById('canvas-save-menu').classList.remove('canvas-open')
-            });
+        function handleCanvasShortcut(e) {
+            if (e.key === 'Escape' && connectingFrom) {
+                cancelConnecting();
+                showNotification('已取消连线', 'info');
+                return;
+            }
+            if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                handleCanvasSaveToggleClick();
+            }
         }
-
-        async function doSaveCanvasToFolder(handle, dirPath, fileName, content, isCreate = false) {
-            await doSaveToFolder(handle, dirPath, fileName, content, isCreate);
-            document.getElementById('canvas-save-menu').classList.remove('canvas-open');
-        }
-
+ 
         let currentWhiteboardContent = ''; // 当前画布内容（JSON 字符串）
         function handleBBSaveShortcut(e) {
             if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') {
@@ -37394,7 +37435,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         }
 
         // 防抖搜索
-        function timelineFindDebounce(func, wait) {
+        function timeDebounce(func, wait) {
             let timeout;
             return function (...args) {
                 clearTimeout(timeout);
@@ -37409,7 +37450,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const upd = () => {
                     cl.style.display = s.value.trim() ? 'inline-block' : 'none';
                 };
-                _timelineSearchHandler = timelineFindDebounce(() => {
+                _timelineSearchHandler = timeDebounce(() => {
                     timelineSearchKeyword = s.value;
                     timelineUpdate();
                     upd();
@@ -51166,22 +51207,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             return total;
         }
 
-        // 工具消息单元的 token 估算：assistant(tool_calls) + 其后续连续 tool 结果
-        function unitTokens(unit) {
-            let t = 0;
-            for (const m of unit.group) {
-                t += 4 + estimateTokenCount(m.content);
-                if (Array.isArray(m.tool_calls)) {
-                    for (const tc of m.tool_calls) {
-                        const argsText = typeof tc.arguments === 'string'
-                            ? tc.arguments
-                            : (tc.arguments ? JSON.stringify(tc.arguments) : '{}');
-                        t += estimateTokenCount(argsText);
-                    }
-                }
-            }
-            return t;
-        }
+        // P1-1：unitTokens 与裁剪/配对逻辑一并收敛到 css_js/modules/chat-history.js
+        // （window.chatHistory），本处不再保留重复实现。
 
         /**
          * 裁剪对话历史，同时满足：
@@ -51195,51 +51222,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
          *                                  RAG 场景建议传 0.4，纯对话传 0.6
          * @returns {Array} 裁剪后的消息数组。若被裁剪会在控制台输出提示并在 UI 上显示通知。
          */
+        // P1-1：配对/分组语义已收敛到 css_js/modules/chat-history.js（window.chatHistory），
+        // 本函数保留为薄包装以兼容既有调用点，避免改动散落各处。
         function trimChatHistory(messages, budgetRatio) {
-            if (messages.length <= 2) return messages; // 只有 1 轮或刚输入，无需裁剪
-            const ratio = (budgetRatio !== undefined) ? budgetRatio : HISTORY_BUDGET_RATIO;
-            const budget = Math.floor(LOCAL_LLM_CONTEXT_LENGTH * ratio);
-            // 按「工具调用单元」分组（review 修复：避免单条裁剪切散 tool_call 与 tool 结果）
-            const units = [];
-            for (const m of messages) {
-                if (m.role === 'tool') {
-                    const last = units[units.length - 1];
-                    if (last && last.role === 'assistant') {
-                        last.group.push(m);
-                    } else {
-                        units.push({ role: 'orphan-tool', group: [m] }); // 防御：孤儿 tool 自成组
-                    }
-                } else if (m.role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
-                    units.push({ role: 'assistant', group: [m] });
-                } else {
-                    units.push({ role: 'other', group: [m] });
-                }
-            }
-            let totalTokens = 0;
-            for (const u of units) totalTokens += unitTokens(u);
-            if (totalTokens <= budget) return messages;
-            // 从旧到新按组保留（最新优先），组内 token 含 tool_calls arguments
-            const keptLast = units[units.length - 1];
-            const trimmedUnits = [keptLast];
-            let keptTokens = unitTokens(keptLast);
-            let droppedCount = 0;
-            for (let i = units.length - 2; i >= 0; i--) {
-                const uTokens = unitTokens(units[i]);
-                if (keptTokens + uTokens > budget) {
-                    droppedCount++;
-                    continue;
-                }
-                trimmedUnits.unshift(units[i]);
-                keptTokens += uTokens;
-            }
-            if (droppedCount > 0) {
-                console.warn('[chat] 对话 token 超预算(' + totalTokens + '>' + budget + ')，丢弃了' + droppedCount + '条旧消息');
-            }
-            const out = [];
-            for (const u of trimmedUnits) {
-                for (const m of u.group) out.push(m);
-            }
-            return out;
+            return window.chatHistory.trimChatHistory(messages, budgetRatio);
         }
 
         async function sendChatMessage() {
@@ -53108,6 +53094,56 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             constructor() {
                 this.openHistory = [];
             }
+            deleteItemByPrefix(dirPrefix){
+                if(!dirPrefix) return;
+                if (!isEmpty(this.openHistory)) {
+                    const ids = this.openHistory.filter(item => item.filePath.startsWith(dirPrefix)).map(item => item.id);
+                    if(!isEmpty(ids)){
+                        for (let id of ids) {
+                            const element = document.getElementById(`open-history-${id}`);
+                            if (element) openHistoryContainer.removeChild(element);
+                        }
+                        this.openHistory = this.openHistory.filter(item => !ids.includes(item.id));
+                    }
+                }
+            }
+            deleteItem(filePath) {
+                if(!filePath) return;
+                if (!isEmpty(this.openHistory)) {
+                    const ids = this.openHistory.filter(item => item.filePath === filePath).map(item => item.id);
+                    if(!isEmpty(ids)){
+                        for (let id of ids) {
+                            const element = document.getElementById(`open-history-${id}`);
+                            if (element) openHistoryContainer.removeChild(element);
+                        }
+                        this.openHistory = this.openHistory.filter(item => !ids.includes(item.id));
+                    }
+                }
+            }
+            updateItemPath(oldPath, newPath, newName) {
+                if(!oldPath || !newPath) return;
+                if (isEmpty(this.openHistory)) return;
+                let changed = false;
+                for (let item of this.openHistory) {
+                    if (item.filePath === oldPath) {
+                        item.filePath = newPath;
+                        // 点击处理器读取 item.params.relativePath，需同步否则会打开旧路径
+                        if (item.params && item.params.relativePath === oldPath) {
+                            item.params.relativePath = newPath;
+                        }
+                        const element = document.getElementById(`open-history-${item.id}`);
+                        if (element) {
+                            const nameSpan = element.querySelector('.file-name');
+                            if (nameSpan) {
+                                nameSpan.textContent = newName || basename(newPath);
+                                nameSpan.title = newPath;
+                            }
+                        }
+                        changed = true;
+                    }
+                }
+                if (changed) this.storeHistory();
+            }
             addItem(action, title = '', filePath = null, params = null, targetName = '') {
                 let delIds = [];
                 if (!isEmpty(this.openHistory)) {
@@ -53203,6 +53239,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             openHistory.loadHistory();
         }
     </script>
+    <script src="./css_js/modules/chat-history.js"></script>
     <script src="./css_js/modules/skill.js"></script>
     <script src="./css_js/modules/mcp.js"></script>
     <script src="./css_js/modules/agent.js"></script>
