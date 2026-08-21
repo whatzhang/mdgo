@@ -1111,6 +1111,27 @@
             cursor: grabbing;
         }
 
+        /* canvas 节点内嵌 Excalidraw 只读预览：彻底惰性化，不允许任何平移/缩放/交互，
+           指针与滚轮事件穿透到父画布，由 d3 zoom 统一缩放，图像随画布整体缩放不漂移 */
+        .excalidraw-readonly,
+        .excalidraw-readonly * {
+            pointer-events: none !important;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* canvas 节点内嵌子画布只读：内部节点不响应任何指针事件（悬停/选中/点击），
+           事件穿透到父节点，父节点选中/拖拽不受影响 */
+        .canvas-readonly,
+        .canvas-readonly * {
+            pointer-events: none !important;
+        }
+
+        .canvas-readonly .canvas-connector-dot {
+            opacity: 0 !important;
+        }
+
         .canvas-node {
             cursor: grab;
         }
@@ -1120,7 +1141,10 @@
             filter: drop-shadow(0 0.5rem 1rem rgba(0, 0, 0, 0.18));
         }
 
-        .canvas-node-dragging .canvas-node-rect {
+        /* 悬停/选中/拖拽/root 样式只作用于节点自身的 rect（子选择器 >）：
+           内嵌子画布是父节点 foreignObject 的后代，若用后代选择器，
+           父节点选中/悬停会把样式级联到子画布内的所有节点（全被选中高亮） */
+        .canvas-node-dragging > .canvas-node-rect {
             stroke: var(--color-primary);
             stroke-width: 2;
             filter: drop-shadow(0 0.5rem 0.75rem rgba(9, 105, 218, 0.25));
@@ -1128,27 +1152,33 @@
 
         .canvas-node-rect {
             fill: var(--color-bg);
-            rx: 8;
-            ry: 8;
+            rx: 16;
+            ry: 16;
             filter: drop-shadow(0 0.5rem 0.75rem rgba(0, 0, 0, 0.12));
             transition: stroke 0.15s ease, stroke-width 0.15s ease, filter 0.15s ease;
         }
 
-        .canvas-node:hover .canvas-node-rect {
+        .canvas-node:hover > .canvas-node-rect {
             stroke: var(--color-primary-light);
             stroke-width: 1;
         }
 
-        .canvas-node-selected .canvas-node-rect {
+        .canvas-node-selected > .canvas-node-rect {
             stroke: var(--color-primary-light);
             stroke-width: 1;
             filter: drop-shadow(0 0 6px rgba(9, 105, 218, 0.4));
         }
 
-        .canvas-node.is-root .canvas-node-rect {
+        .canvas-node.is-root > .canvas-node-rect {
             fill: #0969da;
             stroke: #0969da;
             stroke-width: 1.5;
+        }
+
+        /* 节点内容（foreignObject）按节点矩形同步圆角裁剪，
+           避免内部文字/图片的直角覆盖节点圆角，使整个节点视觉上统一为圆角 */
+        .canvas-node > foreignObject {
+            clip-path: inset(0 0 0 0 round 16px);
         }
 
         .canvas-node-text {
@@ -1194,6 +1224,8 @@
         .canvas-edge-group:hover .canvas-edge-path {
             stroke: #3182f7;
             stroke-width: 2.25;
+            /* 箭头通过 marker 绘制（非独立元素），悬停时切换到蓝色 marker 使箭头同步变蓝 */
+            marker-end: url(#arrowhead-hover);
         }
 
         .canvas-edge-group:hover .canvas-edge-arrow {
@@ -1209,9 +1241,10 @@
             opacity: 0;
         }
 
-        .canvas-node:hover .canvas-connector-dot,
-        .canvas-node.canvas-node-selected .canvas-connector-dot,
-        .canvas-svg.connecting-mode .canvas-connector-dot {
+        /* 连接点显示同样只用子选择器，避免父节点悬停/选中时级联到内嵌子画布的连接点 */
+        .canvas-node:hover > .canvas-connector-dot,
+        .canvas-node.canvas-node-selected > .canvas-connector-dot,
+        .canvas-svg.connecting-mode > .canvas-group .canvas-connector-dot {
             opacity: 0.7;
         }
 
@@ -1251,13 +1284,13 @@
         /* ---- 虚线流动动画 ---- */
         @keyframes dashFlow {
             to {
-                stroke-dashoffset: -40;
+               stroke-dashoffset: -16; /* 10 + 6 = 16，必须是整数倍 */
             }
         }
 
         .canvas-edge-path.animated {
             /* stroke-dasharray: 10 6;
-            animation: dashFlow 0.6s linear infinite; */
+            animation: dashFlow 0.5s linear infinite; */
         }
 
         /* Canvas 保存下拉菜单样式 */
@@ -13853,6 +13886,10 @@
             justify-content: center;
             justify-items: center;
         }
+
+        .canvas-node>foreignObject .markdown-body {
+            cursor: inherit;
+        }
     </style>
     <link rel="stylesheet" href="./css_js/modules/skill.css" />
     <link rel="stylesheet" href="./css_js/modules/mcp.css" />
@@ -14913,7 +14950,7 @@
             <div id="canvas-top-left-controls" class="top-left-controls" style="display: none;">
                 <div class="canvas-save-dropdown">
                     <button id="canvas-save-toggle" class="btn btn-primary btn-sm"
-                        onclick="handleCanvasSaveToggleClick(event)">保存</button>
+                        onclick="handleDoCanvasSave(event)">保存</button>
                 </div>
             </div>
             <!-- Canvas 底部工具栏（新建节点类型选择） -->
@@ -17521,28 +17558,9 @@
                 console.warn('累计浏览时长失败:', e);
             }
         }
-        // Canvas 画布相关函数
-        let canvasData = { nodes: [], edges: [] };
-        // Canvas 图片节点加载并发限制（避免 20 张大图同时解码导致 CPU 飙升）
-        const _CANVAS_IMG_CONCURRENCY = 4;
-        let _canvasImgQueue = [];           // 待加载的图片任务队列
-        let _canvasImgInFlight = 0;         // 当前正在加载的图片数量
         let currentCvsDirPath = null;       // 当前 Canvas 画布所在目录路径
         let dirCanvasDisplayFlag = false;      // 当前 Canvas 画布所在目录是否显示图谱
-        async function _canvasImgProcessQueue() {
-            while (_canvasImgInFlight < _CANVAS_IMG_CONCURRENCY && _canvasImgQueue.length > 0) {
-                const task = _canvasImgQueue.shift();
-                _canvasImgInFlight++;
-                try { await task(); } catch (e) { console.error('canvas 图片加载失败:', e); }
-                _canvasImgInFlight = Math.max(0, _canvasImgInFlight - 1);
-                _canvasImgProcessQueue();
-            }
-        }
-        function _canvasImgEnqueue(fn) {
-            _canvasImgQueue.push(fn);
-            _canvasImgProcessQueue();
-        }
-        let connectingFrom = null; // { nodeId, side } | null — 连线模式：已选中的起点连接点
+
         let mmModel = ''; // 当前思维导图模型类型（opml 或 mm）
         let isTempEditor = false; // 是否为临时编辑器
         // 视图切换缓存：避免来回切换时反复转换导致数据丢失
@@ -17978,7 +17996,7 @@
             } else if (fileName.endsWith('.canvas')) {
                 await renderCanvasFile(await getFileText(), contentMain);
             } else if (fileName.endsWith('.excalidraw')) {
-                await renderExcalidrawFile(await getFileText(), contentMain, false);
+                await renderExcalidrawFile(await getFileText(), contentMain);
             } else if (fileName.endsWith('.mmd')) {
                 await renderMermaidFile(await getFileText());
             } else {
@@ -18027,7 +18045,7 @@
             } else if (fileName.endsWith('.canvas')) {
                 await renderCanvasFile(fileText, contentMain);
             } else if (fileName.endsWith('.excalidraw')) {
-                await renderExcalidrawFile(fileText, contentMain, false);
+                await renderExcalidrawFile(fileText, contentMain);
             } else {
                 try {
                     enterEditMode(false, fileText);
@@ -19364,71 +19382,6 @@
                 jsMindHandle = null;
             }
             contentMain.innerHTML = '';
-        }
-
-        // 清理 Canvas 相关状态（关闭画布或切换文件时调用）
-        async function cleanupCanvasState(cleanDom = false) {
-            // 1. 清理 d3 SVG 状态
-            if (window.canvasState) {
-                try {
-                    const { svg, zoom } = window.canvasState;
-                    if (svg && zoom) {
-                        svg.on('.zoom', null);
-                        svg.on('pointerdown', null);
-                        svg.on('pointerup', null);
-                    }
-                } catch (e) {
-                    console.warn('清理 Canvas SVG 状态失败:', e);
-                }
-                window.canvasState = null;
-            }
-            // 清理 document 级 pointerup 备份监听器
-            if (window._svgPointerUpCleanup) {
-                document.removeEventListener('pointerup', window._svgPointerUpCleanup);
-                window._svgPointerUpCleanup = null;
-            }
-            // 2. 清理 DOM（canvas 容器）
-            if (cleanDom) {
-                const container = contentMain.querySelector('.canvas-container');
-                if (container) {
-                    container.innerHTML = '';
-                }
-                // 3. 清理节点编辑面板
-                const contentPanel = document.getElementById('node-content-panel');
-                if (contentPanel) {
-                    contentPanel.remove();
-                }
-                // 4. 清理 canvas 相关的全局状态
-                canvasData = { nodes: [], edges: [] };
-                _nodeMapCache = new Map();
-                if (currentFileHandle) {
-                    cleanupFileSaveQueue(currentFileHandle);
-                }
-                _canvasImgQueue = [];
-                _canvasImgInFlight = 0;
-                selectedCanvasNodeId = null;
-                pendingCanvasNodeType = null;
-                cancelConnecting(); // 确保退出连线模式
-                // 4.5. 移除 Esc 键盘监听器
-                if (_canvasEscHandler) {
-                    document.removeEventListener('keydown', _canvasEscHandler);
-                    _canvasEscHandler = null;
-                }
-                // 5. 清理模态框（如果存在）
-                const modal = document.getElementById('file-select-modal');
-                if (modal) modal.remove();
-                // 5.5. 清理 Object URL（释放图片 blob 内存）
-                if (currentObjectUrls && currentObjectUrls.length > 0) {
-                    currentObjectUrls.forEach(url => {
-                        try { URL.revokeObjectURL(url); } catch (e) { /* 忽略 */ }
-                    });
-                    currentObjectUrls.length = 0;
-                }
-                // 6. 隐藏底部工具栏
-                const bottomToolbar = document.getElementById('canvas-bottom-toolbar');
-                if (bottomToolbar) bottomToolbar.style.display = 'none';
-                contentMain.innerHTML = '';
-            }
         }
 
         // 销毁 OPML 大纲编辑器，释放资源
@@ -24669,17 +24622,12 @@
             }
         }
 
-        async function displaySaveMode() {
-            await saveFileOnly();
-        }
-
         async function saveCurrentEditContent(newContent, fileHandle = null) {
             const targetHandle = fileHandle || currentFileHandle;
             if (!targetHandle || !newContent) return;
             await saveExistFileContent(newContent, true, targetHandle);
         }
 
-        // ====== 演示模式/全屏 图片路径转换工具 ======
         /** 将 .mm / .opml 内容中的 _local_images 绝对路径转为相对路径 */
         function convertMmOpmlContentToRelative(content, fileFullPath) {
             if (!content || typeof content !== 'string' || !currentRootPath || !fileFullPath) return content;
@@ -26394,235 +26342,76 @@ kanban-plugin: basic
             });
         }
 
-        let _panelGeneration = 0;
-        const _nodePanelState = {
-            node: null,
-            nodeType: 'text',
-            filePath: '',
-            fileContent: ''
-        };
-
-        function setNodePanelState(patch = {}) {
-            if ('node' in patch) _nodePanelState.node = patch.node ? JSON.parse(JSON.stringify(patch.node)) : null;
-            if ('nodeType' in patch) _nodePanelState.nodeType = patch.nodeType || 'text';
-            if ('filePath' in patch) _nodePanelState.filePath = patch.filePath || '';
-            if ('fileContent' in patch) _nodePanelState.fileContent = patch.fileContent || '';
-        }
-
-        function getNodePanelState() { return _nodePanelState; }
-
-        function clearNodePanelState() {
-            _nodePanelState.node = null;
-            _nodePanelState.nodeType = 'text';
-            _nodePanelState.filePath = '';
-            _nodePanelState.fileContent = '';
-        }
-
-        function isPanelGenerationStale(generation) { return generation !== _panelGeneration; }
-
-        function calculateCanvasBounds(nodes) {
-            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-            nodes.forEach(node => {
-                minX = Math.min(minX, node.x);
-                minY = Math.min(minY, node.y);
-                maxX = Math.max(maxX, node.x + node.width);
-                maxY = Math.max(maxY, node.y + node.height);
-            });
-            // 空画布：以 (0, 0) 为中心，使用合理默认尺寸
-            if (nodes.length === 0) {
-                minX = -400; minY = -300;
-                maxX = 400; maxY = 300;
-            }
-            const padding = 100;
-            return {
-                minX,
-                minY,
-                maxX,
-                maxY,
-                contentWidth: maxX - minX + padding * 2,
-                contentHeight: maxY - minY + padding * 2,
-                centerX: (minX + maxX) / 2,
-                centerY: (minY + maxY) / 2
-            };
-        }
-
-        function initCanvasZoom(svg, group) {
-            const zoom = d3.zoom()
-                .scaleExtent([0.1, 4])
-                .on('zoom', (event) => {
-                    group.attr('transform', event.transform);
-                });
-            svg.call(zoom);
-            return zoom;
-        }
-
-        // ---- 共享：创建单条连线 DOM 元素 ----
-        function createEdgeGroupElement(edge, edgesGroup, nodeMap) {
-            const fromNode = nodeMap.get(edge.fromNode);
-            const toNode = nodeMap.get(edge.toNode);
-            if (!fromNode || !toNode) return null;
-
-            const path = calculateEdgePath(fromNode, toNode, edge);
-            const edgeGroup = edgesGroup.append('g').attr('class', 'canvas-edge-group');
-
-            // 可见路径（带箭头和动画）
-            edgeGroup.append('path')
-                .attr('class', 'canvas-edge-path animated')
-                .attr('d', path)
-                .attr('stroke', '#1f2328')
-                .attr('stroke-width', '0.975')
-                .attr('marker-end', 'url(#arrowhead)')
-                .style('pointer-events', 'none');
-
-            // 磁吸热区路径（宽透明描边便于选中，负责接收鼠标事件）
-            edgeGroup.append('path')
-                .attr('class', 'canvas-edge-hit')
-                .attr('d', path)
-                .datum(edge)
-                .on('dblclick', async function (event) {
-                    event.stopPropagation();
-                    await deleteEdge(edge.id);
-                });
-
-            return edgeGroup;
-        }
-
-        // 全局节点索引缓存（O(1) 查找，节点变更时更新）
-        let _nodeMapCache = new Map();
-        function rebuildNodeMap() {
-            _nodeMapCache = new Map(canvasData.nodes.map(n => [n.id, n]));
-        }
-
-        function renderCanvasEdges(edges, nodes, group) {
-            const edgesGroup = group.append('g').attr('class', 'canvas-edges');
-            rebuildNodeMap();
-            const nodeMap = _nodeMapCache;
-            edges.forEach(edge => {
-                createEdgeGroupElement(edge, edgesGroup, nodeMap);
-            });
-        }
-        const selectCanvasNode = (id, nodeGroup, path) => {
-            d3.selectAll('.canvas-node-selected').classed('canvas-node-selected', false);
-            nodeGroup.classed('canvas-node-selected', true);
-            selectedCanvasNodeId = id;
-            updateDeleteNodeButtonState();
-            const dom = document.getElementById('selectedNodeFilePath');
-            if (dom && path) dom.textContent = `📝 ${escapeHtml(path)}`;
-        }
-        async function renderTextNode(node, nodeGroup) {
-            // 点击/双击处理已迁移到 drag.end（通过累计偏移检测点击），
-            // 避免 D3 drag 抑制原生 click 事件导致节点无法选中。
-            const previewText = node.text?.trim() || '';
-            let renderedText = '';
-            if (node.isRoot) {
-                if (hasMarkdown(previewText)) {
-                    renderedText = `<div class="markdown-body" style="color:var(--color-text-white);" id="md_nd_${node.id}">${await markedParse(parseObsidianToHTML(previewText))}</div>`
-                } else {
-                    renderedText = `<div id="md_nd_${node.id}" class="center-div">${previewText}</div>`
+        // 节点内嵌 Excalidraw 只读预览（官方推荐方案）：
+        // 用官方 exportToSvg 把场景导出为静态 SVG，配合 viewBox + preserveAspectRatio="xMidYMid meet"
+        async function renderExcalidrawStaticPreview(text, contentDiv) {
+            const lib = window.ExcalidrawLib;
+            if (!lib || !contentDiv) return;
+            try {
+                const raw = JSON.parse(text);
+                const data = raw && typeof raw === 'object' ? raw : {};
+                const appState = data.appState || {};
+                let restored = null;
+                try {
+                    restored = lib.restore
+                        ? lib.restore({ elements: data.elements || [], appState, files: data.files || {} }, null)
+                        : null;
+                } catch (e) {
+                    console.warn('Excalidraw restore 失败，使用原始 elements:', e);
+                    restored = null;
                 }
-            } else {
-                renderedText = previewText ? `<div class="markdown-body" id="md_nd_${node.id}">${await markedParse(parseObsidianToHTML(previewText))}</div>` : '<p style="color:var(--t2);text-align:center;font-size:13px;">点击编辑内容...</p>';
-            }
-            const foreignObject = nodeGroup.append('foreignObject')
-                .attr('x', 10)
-                .attr('y', 10)
-                .attr('width', node.width - 20)
-                .attr('height', node.height - 20)
-                .attr('overflow', 'hidden');
-            foreignObject.append('xhtml:div')
-                .attr('class', 'canvas-node-text' + (node.isRoot ? ' center-div' : ''))
-                .style('width', '100%')
-                .style('height', '100%')
-                .style('overflow', 'hidden')
-                .style('color', node.isRoot ? 'white' : '#1f2328')
-                .style('fontFamily', '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif')
-                .style('fontSize', '13px')
-                .style('lineHeight', '1.4')
-                .html(renderedText);
-            if (!node.isRoot && previewText) postProcessCodeAndDiagrams(document.getElementById(`md_nd_${node.id}`));
-        }
-
-        // ---- Canvas 扩展节点类型渲染（JSON Canvas 兼容）：link/url/bookmark / code ----
-        function renderSimpleBox(node, nodeGroup, html) {
-            const foreignObject = nodeGroup.append('foreignObject')
-                .attr('x', 10)
-                .attr('y', 10)
-                .attr('width', node.width - 20)
-                .attr('height', node.height - 20)
-                .attr('overflow', 'hidden');
-            foreignObject.append('xhtml:div')
-                .attr('class', 'canvas-node-text')
-                .style('width', '100%')
-                .style('height', '100%')
-                .style('overflow', 'hidden')
-                .style('fontSize', '12px')
-                .style('lineHeight', '1.4')
-                .html(html);
-        }
-
-        function renderUrlNode(node, nodeGroup) {
-            const url = escapeHtml(node.url || '');
-            const txt = node.text ? escapeHtml(String(node.text)) : '';
-            renderSimpleBox(node, nodeGroup,
-                `<div style="font-weight:600;margin-bottom:4px;white-space:pre-wrap;">🔗 ${txt || url}</div>` +
-                (url ? `<div style="color:var(--color-primary);word-break:break-all;font-size:11px;">${url}</div>` : ''));
-        }
-
-        function renderCodeNode(node, nodeGroup) {
-            const code = node.code != null ? String(node.code) : (node.text || '');
-            renderSimpleBox(node, nodeGroup,
-                `<pre style="white-space:pre-wrap;font-family:var(--font-mono);margin:0;background:var(--color-bg-subtle);padding:6px;border-radius:6px;max-height:100%;overflow:hidden;">${escapeHtml(code)}</pre>`);
-        }
-
-        function renderExcalidrawElement(container, excalidrawData) {
-            const data = {
-                elements: excalidrawData.elements || [],
-                appState: {
-                    viewBackgroundColor: excalidrawData.appState ? excalidrawData.appState.viewBackgroundColor : "#ffffff",
-                    zoom: { value: 1 },
-                    activeTool: {
-                        type: "hand"
-                    }
-                },
-                files: excalidrawData.files || {}
-            }
-            const { Excalidraw, serializeAsJSON, restore, exportToBlob } = window.ExcalidrawLib;
-            if (!Excalidraw || !container) return false;
-            rootExcalidraw = ReactDOM.createRoot(container);
-            rootExcalidraw.render(
-                React.createElement(Excalidraw, {
-                    langCode: "zh-CN",
-                    excalidrawAPI: (api) => {
-                        excalidrawAPI = api;
-                        setTimeout(() => {
-                            if (api) {
-                                api.scrollToContent(excalidrawData.elements, {
-                                    fitToViewport: true,
-                                    viewportZoomFactor: 0.9,
-                                });
-                            }
-                        }, 50);
+                const elements = (restored && restored.elements) || data.elements || [];
+                const files = (restored && restored.files) || data.files || {};
+                const svg = await lib.exportToSvg({
+                    elements,
+                    appState: {
+                        exportBackground: false,
+                        viewBackgroundColor: appState.viewBackgroundColor || '#ffffff',
+                        exportPadding: 8,
+                        exportScale: 1,
                     },
-                    initialData: data,
-                    uiOptions: {
-                        welcomeScreen: false,
-                        saveFileButton: false,
-                        loadButton: false,
-                        exportButton: false
+                    files,
+                });
+                if (!svg) throw new Error('导出 SVG 失败');
+                // 使用 svg 自带的 viewBox（exportToSvg 会生成 "0 0 W H"），异常时用 getBBox 兜底
+                const vb = svg.viewBox && svg.viewBox.baseVal;
+                if (vb && vb.width > 0 && vb.height > 0) {
+                    svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.width} ${vb.height}`);
+                } else {
+                    let bbox = null;
+                    try { bbox = svg.getBBox(); } catch (e) { /* ignore */ }
+                    if (bbox && bbox.width > 0 && bbox.height > 0) {
+                        const pad = 8;
+                        svg.setAttribute('viewBox', `${bbox.x - pad} ${bbox.y - pad} ${bbox.width + pad * 2} ${bbox.height + pad * 2}`);
                     }
-                })
-            );
-            setTimeout(() => {
-                window.addEventListener('keydown', handleBBSaveShortcutNoCreate, true);
-                const menuBtn = container.querySelector(".dropdown-menu-button.main-menu-trigger.zen-mode-transition");
-                if (menuBtn) {
-                    menuBtn.setAttribute("showPanel", "no");
-                    menuBtn.removeEventListener("click", handleBBMenuClick);
-                    menuBtn.addEventListener("click", handleBBMenuClick);
                 }
-            }, 200);
+                svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+                svg.removeAttribute('width');
+                svg.removeAttribute('height');
+                svg.style.width = '100%';
+                svg.style.height = '100%';
+                svg.style.display = 'block';
+                contentDiv.innerHTML = '';
+                contentDiv.appendChild(svg);
+            } catch (e) {
+                console.error('Excalidraw 静态预览渲染失败:', e);
+                contentDiv.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:#cf222e;font-size:12px;">无法加载文件！</div>`;
+            }
         }
 
+        async function renderExcalidrawFile(text, contentDiv) {
+            let excalidrawData;
+            try {
+                excalidrawData = JSON.parse(text);
+            } catch (e) {
+                contentDiv.innerHTML = '<div style="color:#cf222e; padding:20px;">无效的 Excalidraw 格式: ' + escapeHtml(e.message) + '</div>';
+                return;
+            }
+            contentDiv.innerHTML = `<div id="excalidraw-container" style="display: flex;justify-content: center;align-items: center;width:100%;height:100%;"></div>`;
+            const container = contentDiv.querySelector('#excalidraw-container') || document.getElementById('excalidraw-container');
+            if (!container) return;
+            await renderExcalidrawElement(container, excalidrawData);
+        }
         async function renderEmbeddedExcalidraw(container, excalidrawData) {
             const Excalidraw = window.ExcalidrawLib && window.ExcalidrawLib.Excalidraw;
             if (!Excalidraw || !container) return false;
@@ -26631,11 +26420,17 @@ kanban-plugin: basic
                 try { container._reactRoot.unmount(); } catch (e) { /* 忽略 */ }
                 container._reactRoot = null;
             }
+            // 断开旧的 ResizeObserver（容器重建/重渲染时避免监听泄漏）
+            if (container.__excalidrawResizeObserver) {
+                try { container.__excalidrawResizeObserver.disconnect(); } catch (e) { /* 忽略 */ }
+                container.__excalidrawResizeObserver = null;
+            }
             let root = ReactDOM.createRoot(container);
             container._reactRoot = root;
             root.render(
                 React.createElement(Excalidraw, {
                     excalidrawAPI: (api) => {
+                        container.__excalidrawAPI = api;
                         setTimeout(() => {
                             if (api) {
                                 api.scrollToContent(excalidrawData.elements, {
@@ -26643,7 +26438,7 @@ kanban-plugin: basic
                                     viewportZoomFactor: 0.9,
                                 });
                             }
-                        }, 50);
+                        }, 100);
                     },
                     initialData: {
                         elements: excalidrawData.elements || [],
@@ -26690,6 +26485,31 @@ kanban-plugin: basic
                     renderTopRightUI: null
                 })
             );
+            // 节点缩放时图像自适应：容器尺寸变化后重新 fitToViewport。
+            // 关键：scrollToContent 的 fit 缩放依赖 Excalidraw 内部 state 的宽高（由它自己的
+            // ResizeObserver 测量更新），本观察器注册更早，同一帧先触发时 state 还是旧尺寸，
+            // 立即 fit 会用过期尺寸算出过小的缩放导致图像变得特别小。
+            // 因此用防抖延迟调用，确保其内部已更新到最新容器尺寸后再 fit。
+            let refitTimer = null;
+            const refitEmbeddedExcalidraw = () => {
+                if (refitTimer) clearTimeout(refitTimer);
+                refitTimer = setTimeout(() => {
+                    const api = container.__excalidrawAPI;
+                    if (!api || !container.isConnected) return;
+                    const w = container.clientWidth, h = container.clientHeight;
+                    if (w > 0 && h > 0) {
+                        api.scrollToContent(excalidrawData.elements, {
+                            fitToViewport: true,
+                            viewportZoomFactor: 0.95,
+                        });
+                    }
+                }, 80);
+            };
+            try {
+                const ro = new ResizeObserver(refitEmbeddedExcalidraw);
+                ro.observe(container);
+                container.__excalidrawResizeObserver = ro;
+            } catch (e) { /* ResizeObserver 不可用时忽略 */ }
             setTimeout(() => {
                 const appMenuTop = document.querySelector('.App-menu.App-menu_top');
                 if (appMenuTop) appMenuTop.remove();
@@ -26697,1232 +26517,66 @@ kanban-plugin: basic
                 if (island) island.remove();
                 const footer = document.querySelector('.excalidraw-footer');
                 if (footer) footer.style.display = 'none';
+                const footerBar = document.querySelector('.App-menu_bottom');
+                if (footerBar) footerBar.style.display = 'none';
+                const appMenuTopLeft = document.querySelector('.App-menu_top__left');
+                if (appMenuTopLeft) appMenuTopLeft.style.display = 'none';
+                // canvas 节点内嵌只读预览：彻底惰性化（不允许任何平移/缩放/交互），
+                if (container.closest('svg.canvas-svg')) {
+                    container.classList.add('excalidraw-readonly');
+                }
             }, 200);
         }
 
-        async function renderEmbeddedMarkdown(node, file, contentDiv) {
-            try {
-                const fileHandle = await getEmbedNodeFileHandleByPath(node.file);
-                if (!fileHandle) {
-                    contentDiv.html(`<div style="display:flex;align-items:center;gap:6px;color:#cf222e;font-weight:500;">无法加载文件！ ${escapeHtml(node.file)}</div>`);
-                    return;
-                }
-                const previewText = await getFileContent(fileHandle);
-                const renderedText = await markedParse(parseObsidianToHTML(previewText));
-                contentDiv.html(`<div class="markdown-body" style="zoom: 0.6;background: transparent;" id="md_nd_${node.id}">${renderedText}</div>`);
-            } catch (error) {
-                console.error('加载 markdown 预览失败:', error);
-                contentDiv.html(`<div style="display:flex;align-items:center;gap:6px;color:#cf222e;font-weight:500;">无法加载文件！ ${escapeHtml(node.file)}</div>`);
-            }
-        }
-
-        async function renderFileNode(node, nodeGroup) {
-            // 点击/双击处理已迁移到 drag.end
-            const foreignObject = nodeGroup.append('foreignObject')
-                .attr('x', 10)
-                .attr('y', 10)
-                .attr('width', node.width - 20)
-                .attr('height', node.height - 20)
-                .attr('overflow', 'hidden');
-            if (isPicImage(getExt(node.file))) {
-                const contentDiv = foreignObject.append('xhtml:div')
-                    .attr('class', 'center-div')
-                    .style('overflow', 'hidden')
-                    .style('border-radius', '8px')
-                    .style('padding', '8px')
-                    .style('background', 'white')
-                // 异步加载图片（受并发限制，最多同时加载 4 张，避免 CPU 飙升）
-                _canvasImgEnqueue(async () => {
-                    try {
-                        const fileHandle = await getEmbedNodeFileHandleByPath(node.file);
-                        if (!fileHandle) {
-                            contentDiv.html(`<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:#cf222e;font-size:12px;">无法加载图片！${escapeHtml(node.file)}</div>`);
-                            return;
-                        }
-                        const file = await getFile(fileHandle);
-                        const blobUrl = URL.createObjectURL(file);
-                        currentObjectUrls.push(blobUrl);
-                        contentDiv.html(`<img src="${blobUrl}" loading="lazy" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:4px;" />`);
-                    } catch (error) {
-                        console.error('加载图片预览失败:', error);
-                        contentDiv.html(`<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:#cf222e;font-size:12px;">加载失败！${escapeHtml(node.file)}</div>`);
+        function renderExcalidrawElement(container, excalidrawData) {
+            const data = {
+                elements: excalidrawData.elements || [],
+                appState: {
+                    viewBackgroundColor: excalidrawData.appState ? excalidrawData.appState.viewBackgroundColor : "#ffffff",
+                    zoom: { value: 1 },
+                    activeTool: {
+                        type: "hand"
                     }
-                });
-            } else if (node.file.endsWith('.mmd')) {
-                const contentDiv = foreignObject.append('xhtml:div')
-                    .attr('class', 'center-div')
-                    .style('overflow', 'hidden')
-                    .html(`<div style="color:#8b9496;">⌛ 加载中...</div>`);
-                await embedNodeMmd(node.file, null, contentDiv, null);
-            } else if (node.file.endsWith('.md')) {
-                const contentDiv = foreignObject.append('xhtml:div')
-                    .html(`<div style="color:#8b9496;">⌛ 加载中...</div>`);
-                await renderEmbeddedMarkdown(node, null, contentDiv).then(() => {
-                    postProcessCodeAndDiagrams(document.getElementById(`md_nd_${node.id}`));
-                });
-            } else {
-                const contentDiv = foreignObject.append('xhtml:div')
-                    .attr('class', 'canvas-node-text')
-                    .style('color', 'var(--color-text)')
-                    .style('background-color', 'var(--color-bg)')
-                    .html(`<div style="color:var(--color-warning);display:inline-block; width:100%; text-align:center;" title="📄 ${escapeHtml(node.file)}">📄 ${escapeHtml(basename(node.file) || node.file)}</div>`);
+                },
+                files: excalidrawData.files || {}
             }
-        }
-
-        function calculateEdgePath(fromNode, toNode, edge) {
-            // 计算起点（所在边的中点）
-            let startX = fromNode.x + fromNode.width / 2;
-            let startY = fromNode.y + fromNode.height / 2;
-            if (edge.fromSide === 'right') startX = fromNode.x + fromNode.width;
-            if (edge.fromSide === 'left') startX = fromNode.x;
-            if (edge.fromSide === 'top') startY = fromNode.y;
-            if (edge.fromSide === 'bottom') startY = fromNode.y + fromNode.height;
-
-            // 计算终点（所在边的中点）
-            let endX = toNode.x + toNode.width / 2;
-            let endY = toNode.y + toNode.height / 2;
-            if (edge.toSide === 'right') endX = toNode.x + toNode.width;
-            if (edge.toSide === 'left') endX = toNode.x;
-            if (edge.toSide === 'top') endY = toNode.y;
-            if (edge.toSide === 'bottom') endY = toNode.y + toNode.height;
-
-            // 出/入方向向量（垂直于边的方向，指向节点外部）
-            const dirMap = {
-                right: [1, 0],
-                left: [-1, 0],
-                top: [0, -1],
-                bottom: [0, 1],
-            };
-            const [fromDirX, fromDirY] = dirMap[edge.fromSide] || [1, 0];
-            const [toDirX, toDirY] = dirMap[edge.toSide] || [-1, 0];
-
-            const dx = endX - startX;
-            const dy = endY - startY;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            if (distance === 0) return `M ${startX} ${startY} L ${endX} ${endY}`;
-
-            // 控制点延伸距离：取总距离的 50%，上限 150px，保证近距离也不会太弯
-            const cpDist = Math.min(distance * 0.5, 150);
-
-            // 控制点沿出/入方向延伸，保证首尾段为水平/垂直直线，箭头方向正
-            let cp1x = startX + fromDirX * cpDist;
-            let cp1y = startY + fromDirY * cpDist;
-            let cp2x = endX + toDirX * cpDist;
-            let cp2y = endY + toDirY * cpDist;
-
-            // 沿连线垂直方向偏移控制点，避免同一方向多条连线（如文档画布内圈外圈）重叠
-            if (distance > 1) {
-                const idStr = String(edge.fromNode) + '|' + String(edge.toNode);
-                let hash = 0;
-                for (let c = 0; c < idStr.length; c++) {
-                    hash = ((hash << 5) - hash) + idStr.charCodeAt(c);
-                    hash |= 0;
-                }
-                const dir = (hash % 3) - 1; // -1, 0, 1
-                if (dir !== 0) {
-                    const perpOffset = 16 * dir;
-                    const nx = -dy / distance; // 垂直方向
-                    const ny = dx / distance;
-                    cp1x += nx * perpOffset;
-                    cp1y += ny * perpOffset;
-                    cp2x += nx * perpOffset;
-                    cp2y += ny * perpOffset;
-                }
-            }
-
-            return `M ${startX} ${startY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${endY}`;
-        }
-
-        function updateEdgesForNode(nodeId) {
-            const nodeMap = _nodeMapCache;
-            // 在当前 canvas-group 内查找所有 edge-group（包括拖拽时被移出 canvas-edges 的）
-            const canvasGroup = document.querySelector('.canvas-group');
-            const edgeGroups = canvasGroup
-                ? canvasGroup.querySelectorAll('.canvas-edge-group')
-                : document.querySelectorAll('.canvas-edge-group');
-            edgeGroups.forEach(el => {
-                const edge = d3.select(el).select('.canvas-edge-hit').datum();
-                if (edge && (edge.fromNode === nodeId || edge.toNode === nodeId)) {
-                    const fromNode = nodeMap.get(edge.fromNode);
-                    const toNode = nodeMap.get(edge.toNode);
-                    if (fromNode && toNode) {
-                        const path = calculateEdgePath(fromNode, toNode, edge);
-                        d3.select(el).selectAll('path').attr('d', path);
-                    }
-                }
-            });
-        }
-
-        // ---- 文件保存串行队列（已迁移到全局 _fileSaveQueues，保留兼容接口） ----
-        // 等待所有排队保存完成
-        async function flushSaveQueue() {
-            if (currentFileHandle) {
-                await flushFileSaveQueue(currentFileHandle);
-            }
-        }
-
-        async function saveEdgesToFile(edges) {
-            if (!currentFileHandle) return;
-            const fileHandle = currentFileHandle;
-            try {
-                await enqueueFileAtomic(fileHandle, async () => {
-                    const text = await getFileContent(fileHandle);
-                    let canvasDataLocal = JSON.parse(text);
-                    canvasDataLocal.edges = edges;
-                    const newContent = JSON.stringify(canvasDataLocal);
-                    await _writeToFileHandle(fileHandle, newContent);
-                    if (fileHandle === currentFileHandle) {
-                        originalContent = newContent;
-                    }
-                });
-            } catch (err) {
-                console.error('保存连线失败:', err);
-                showNotification('✗ 保存连线失败: ' + err.message, 'error');
-            }
-        }
-
-        async function deleteEdge(edgeId) {
-            // 从内存数据中移除
-            canvasData.edges = canvasData.edges.filter(e => e.id !== edgeId);
-            // 从 DOM 中增量移除（不触发全局刷新）
-            removeEdgeFromCanvas(edgeId);
-            // 持久化到文件
-            if (currentFileHandle) {
-                await saveEdgesToFile(canvasData.edges);
-            }
-            showNotification('连线已删除', 'success');
-        }
-
-        function addEdgeToCanvas(edge) {
-            const edgesGroup = d3.select('.canvas-edges');
-            if (edgesGroup.empty()) return;
-            createEdgeGroupElement(edge, edgesGroup, _nodeMapCache);
-        }
-
-        function removeEdgeFromCanvas(edgeId) {
-            const edgesGroup = d3.select('.canvas-edges');
-            if (edgesGroup.empty()) return;
-            edgesGroup.selectAll('.canvas-edge-group').each(function () {
-                const hitPath = d3.select(this).select('.canvas-edge-hit');
-                const edge = hitPath.datum();
-                if (edge && edge.id === edgeId) {
-                    d3.select(this).remove();
-                }
-            });
-        }
-
-        async function renderCanvasNode(node, group) {
-            const nodeGroup = group.append('g')
-                .attr('class', 'canvas-node')
-                .attr('data-node-id', node.id)
-                .attr('transform', `translate(${node.x}, ${node.y})`)
-                .style('cursor', 'grab')
-                .classed('is-root', !!node.isRoot);
-            const EDGE_ZONE = 14;
-            let resizeMode = null;
-            let initX, initY, initW, initH;
-            // 在 DOM 上缓存节点尺寸（供委托的 mousemove 使用，避免闭包查找）
-            nodeGroup.node().__nodeW = node.width;
-            nodeGroup.node().__nodeH = node.height;
-            nodeGroup.node().__hoveredEdge = null;
-            // 拖拽：缩放/移动统一处理（event.dx/dy 是增量值，非累计）
-            const drag = d3.drag()
-                .on('start', function (event) {
-                    const nodeEl = this;
-                    const nodesGroup = nodeEl.parentNode;
-                    const svgG = nodesGroup ? nodesGroup.parentNode : null;
-                    if (!svgG) return;
-
-                    // 标记该节点正在被拖拽（用于 drag.end 中判断是否需要恢复层级）
-                    nodeEl.__wasDragging = true;
-
-                    // 1. 将关联连线从 canvas-edges 移到 svgG（放在节点之前，节点会在连线之上）
-                    const edgesGroup = svgG.querySelector('.canvas-edges');
-                    if (edgesGroup) {
-                        edgesGroup.querySelectorAll('.canvas-edge-group').forEach(el => {
-                            const edge = d3.select(el).select('.canvas-edge-hit').datum();
-                            if (edge && (edge.fromNode === node.id || edge.toNode === node.id)) {
-                                svgG.insertBefore(el, nodesGroup.nextSibling);
+            const { Excalidraw, serializeAsJSON, restore, exportToBlob } = window.ExcalidrawLib;
+            if (!Excalidraw || !container) return false;
+            rootExcalidraw = ReactDOM.createRoot(container);
+            rootExcalidraw.render(
+                React.createElement(Excalidraw, {
+                    langCode: "zh-CN",
+                    excalidrawAPI: (api) => {
+                        excalidrawAPI = api;
+                        setTimeout(() => {
+                            if (api) {
+                                api.scrollToContent(excalidrawData.elements, {
+                                    fitToViewport: true,
+                                    viewportZoomFactor: 0.9,
+                                });
                             }
-                        });
+                        }, 100);
+                    },
+                    initialData: data,
+                    uiOptions: {
+                        welcomeScreen: false,
+                        saveFileButton: false,
+                        loadButton: false,
+                        exportButton: false
                     }
-
-                    // 2. 将被拖拽节点从 canvas-nodes 移到 svgG 最顶层
-                    svgG.appendChild(nodeEl);
-
-                    // 3. 给拖拽中的节点添加样式类
-                    d3.select(nodeEl).classed('canvas-node-dragging', true);
-
-                    resizeMode = this.__hoveredEdge;
-                    initX = node.x; initY = node.y;
-                    initW = node.width; initH = node.height;
-                    this.__accDx = 0;
-                    this.__accDy = 0;
-                    const cursorMap = {
-                        e: 'ew-resize', w: 'ew-resize', s: 'ns-resize', n: 'ns-resize',
-                        se: 'nwse-resize', nw: 'nwse-resize', sw: 'nesw-resize', ne: 'nesw-resize'
-                    };
-                    d3.select(this)
-                        .style('cursor', resizeMode ? cursorMap[resizeMode] : 'grabbing')
-                        .attr('opacity', 0.9);
                 })
-                .on('drag', function (event) {
-                    // 累加增量偏移（event.dx/dy 是每帧增量）
-                    this.__accDx += event.dx;
-                    this.__accDy += event.dy;
-                    const accDx = this.__accDx;
-                    const accDy = this.__accDy;
-                    const ng = d3.select(this);
-                    if (!resizeMode) {
-                        // ---- 移动模式 ----
-                        node.x = initX + accDx;
-                        node.y = initY + accDy;
-                        ng.attr('transform', `translate(${node.x}, ${node.y})`);
-                        updateEdgesForNode(node.id);
-                        return;
-                    }
-                    // ---- 缩放模式 ----
-                    let newW = initW, newH = initH, newX = initX, newY = initY;
-                    if (resizeMode.includes('e')) newW = initW + accDx;
-                    if (resizeMode.includes('w')) { newW = initW - accDx; newX = initX + accDx; }
-                    if (resizeMode.includes('s')) newH = initH + accDy;
-                    if (resizeMode.includes('n')) { newH = initH - accDy; newY = initY + accDy; }
-                    // 最小尺寸下限：不低于 40px，且不低于初始尺寸（允许用户缩回原始大小）
-                    const MIN_W = Math.min(100, initW);
-                    const MIN_H = Math.min(80, initH);
-                    if (newW < MIN_W) { newW = MIN_W; if (resizeMode.includes('w')) newX = initX + initW - MIN_W; }
-                    if (newH < MIN_H) { newH = MIN_H; if (resizeMode.includes('n')) newY = initY + initH - MIN_H; }
-                    node.x = newX; node.y = newY;
-                    node.width = newW; node.height = newH;
-                    // 更新 DOM 缓存尺寸（事件委托 mousemove 使用）
-                    this.__nodeW = newW;
-                    this.__nodeH = newH;
-                    ng.attr('transform', `translate(${newX}, ${newY})`);
-                    ng.select('.canvas-node-rect').attr('width', newW).attr('height', newH);
-                    const fo = ng.select('foreignObject');
-                    if (!fo.empty()) {
-                        // text 节点 foreignObject 在 (10,10) 偏移处；file/image/md 节点同样在 (10,10) 偏移处
-                        const padding = (node.type === 'text' || node.type === 'image' || node.type === 'file') ? 20 : 0;
-                        fo.attr('width', Math.max(0, newW - padding))
-                            .attr('height', Math.max(0, newH - padding));
-                    }
-                    ng.selectAll('.canvas-connector-dot').each(function () {
-                        const dot = d3.select(this);
-                        const side = dot.attr('data-side');
-                        if (side === 'top') dot.attr('cx', newW / 2).attr('cy', -2);
-                        if (side === 'bottom') dot.attr('cx', newW / 2).attr('cy', newH + 2);
-                        if (side === 'left') dot.attr('cx', -2).attr('cy', newH / 2);
-                        if (side === 'right') dot.attr('cx', newW + 2).attr('cy', newH / 2);
-                    });
-                    updateEdgesForNode(node.id);
-                })
-                .on('end', async function (event) {
-                    const nodeEl = this;
-                    d3.select(nodeEl)
-                        .style('cursor', 'grab')
-                        .attr('opacity', 1)
-                        .classed('canvas-node-dragging', false);
-
-                    if (nodeEl.__wasDragging) {
-                        nodeEl.__wasDragging = false;
-                        const svgG = nodeEl.parentNode;
-                        const edgesGroup = svgG.querySelector('.canvas-edges');
-                        const nodesGroup = svgG.querySelector('.canvas-nodes');
-
-                        // 1. 将关联连线移回 edgesGroup
-                        if (edgesGroup) {
-                            Array.from(svgG.children).forEach(el => {
-                                if (el.matches && el.matches('.canvas-edge-group')) {
-                                    edgesGroup.appendChild(el);
-                                }
-                            });
-                        }
-
-                        // 2. 将节点移回 nodesGroup 末尾（保持在其他节点之上）
-                        if (nodesGroup) {
-                            nodesGroup.appendChild(nodeEl);
-                        }
-
-                        // 3. 确保整体层级正确：edgesGroup 在 nodesGroup 之前（下层）
-                        if (edgesGroup && nodesGroup) {
-                            const pos = nodesGroup.compareDocumentPosition(edgesGroup);
-                            if (pos & Node.DOCUMENT_POSITION_FOLLOWING) {
-                                svgG.insertBefore(edgesGroup, nodesGroup);
-                            }
-                        }
-                    }
-
-                    // 通过累计偏移判断是否点击（无拖拽），D3 drag 会抑制原生 click 事件
-                    const totalDx = Math.abs(this.__accDx || 0);
-                    const totalDy = Math.abs(this.__accDy || 0);
-                    if (!resizeMode && totalDx < 5 && totalDy < 5) {
-                        const now = Date.now();
-                        const dt = now - (this.__lastClickTime || 0);
-                        this.__lastClickTime = now;
-                        if (dt < 350) {
-                            // 双击：显示内容面板 / 打开链接
-                            if (node.type === 'text' || node.type === 'code') {
-                                selectCanvasNode(node.id, d3.select(this), null);
-                                await showCanvasNodeContent(node);
-                                if (!node.text && !dirCanvasDisplayFlag) {
-                                    const btn = document.getElementById('content-panel-btn');
-                                    if (btn) btn.click();
-                                }
-                            } else if (node.type === 'image' || node.type === 'file') {
-                                selectCanvasNode(node.id, d3.select(this), node.file);
-                                await showNodeFileContent(node);
-                            } else if (node.type === 'url') {
-                                selectCanvasNode(node.id, d3.select(this), null);
-                                if (node.url) {
-                                    if (typeof openUrlInBrowser === 'function') openUrlInBrowser(node.url);
-                                    else window.open(node.url, '_blank');
-                                }
-                            }
-                        } else {
-                            // 单击：选中节点
-                            const path = (node.type === 'image' || node.type === 'file') ? node.file : null;
-                            selectCanvasNode(node.id, d3.select(this), path);
-                        }
-                    }
-                    if (currentFileHandle && (node.x !== initX || node.y !== initY || node.width !== initW || node.height !== initH)) {
-                        await saveNodesToFile(canvasData.nodes);
-                        rebuildNodeMap();
-                    }
-                    resizeMode = null;
-                });
-            nodeGroup.call(drag);
-            nodeGroup.append('rect')
-                .attr('class', 'canvas-node-rect')
-                .attr('width', node.width)
-                .attr('height', node.height);
-            if (node.type === 'text') {
-                await renderTextNode(node, nodeGroup);
-            } else if (node.type === 'image' || node.type === 'file') {
-                renderFileNode(node, nodeGroup);
-            } else if (node.type === 'url') {
-                renderUrlNode(node, nodeGroup);
-            } else if (node.type === 'code') {
-                renderCodeNode(node, nodeGroup);
-            } else {
-                // 未知类型降级为文本节点（可靠渲染，不白屏）
-                await renderTextNode(node, nodeGroup);
-            }
-            renderConnectorDots(nodeGroup, node);
-        }
-
-        async function refreshNodeContentInDOM(node) {
-            const nodeGroup = d3.select(`.canvas-node[data-node-id="${node.id}"]`);
-            if (nodeGroup.empty()) return;
-            nodeGroup.selectAll('foreignObject').remove();
-            nodeGroup.selectAll('.canvas-connector-dot').remove();
-            if (node.type === 'text') {
-                const foreignObject = nodeGroup.append('foreignObject')
-                    .attr('x', 10)
-                    .attr('y', 10)
-                    .attr('width', node.width - 20)
-                    .attr('height', node.height - 20)
-                    .attr('overflow', 'hidden');
-                const previewText = node.text || '';
-                const renderedText = previewText.trim()
-                    ? await markedParse(parseObsidianToHTML(previewText))
-                    : '<p style="color:var(--t2);text-align:center;font-size:13px;">点击编辑内容...</p>';
-                foreignObject.append('xhtml:div')
-                    .attr('class', 'canvas-node-text')
-                    .style('width', '100%')
-                    .style('height', '100%')
-                    .style('overflow', 'hidden')
-                    .style('color', node.isRoot ? 'white' : '#1f2328')
-                    .style('fontFamily', '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif')
-                    .style('fontSize', '13px')
-                    .style('lineHeight', '1.4')
-                    .html(renderedText);
-            } else if (node.type === 'image' || node.type === 'file') {
-                renderFileNode(node, nodeGroup);
-            } else if (node.type === 'url') {
-                renderUrlNode(node, nodeGroup);
-            } else if (node.type === 'code') {
-                renderCodeNode(node, nodeGroup);
-            } else {
-                // 未知类型降级为文本节点（可靠渲染，不白屏）
-                await renderTextNode(node, nodeGroup);
-            }
-            renderConnectorDots(nodeGroup, node);
-        }
-
-        function renderConnectorDots(nodeGroup, node) {
-            const sides = [
-                { side: 'top', cx: node.width / 2, cy: -2 },
-                { side: 'bottom', cx: node.width / 2, cy: node.height + 2 },
-                { side: 'left', cx: -2, cy: node.height / 2 },
-                { side: 'right', cx: node.width + 2, cy: node.height / 2 },
-            ];
-
-            sides.forEach(({ side, cx, cy }) => {
-                const dot = nodeGroup.append('circle')
-                    .attr('class', 'canvas-connector-dot')
-                    .attr('cx', cx)
-                    .attr('cy', cy)
-                    .attr('r', 5)
-                    .attr('data-node-id', node.id)
-                    .attr('data-side', side)
-                    .on('mousedown touchstart pointerdown', function (event) {
-                        // 阻止按下事件冒泡到 nodeGroup，避免触发节点拖拽
-                        event.stopPropagation();
-                        // 阻止浏览器默认行为（文本选中等）
-                        event.preventDefault();
-                    })
-                    .on('click', function (event) {
-                        event.stopPropagation();
-                        handleConnectorClick(node.id, side);
-                    });
-
-                // 如果该连接点正处于激活状态（连线起点），添加高亮类
-                if (connectingFrom && connectingFrom.nodeId === node.id && connectingFrom.side === side) {
-                    dot.classed('connecting-active', true);
-                }
-            });
-        }
-
-        async function handleConnectorClick(nodeId, side) {
-            if (!connectingFrom) {
-                // 开始连线
-                connectingFrom = { nodeId, side };
-                setConnectingMode(true);
-                showNotification('已选择起点，请点击目标节点的连接点完成连线（按 Esc 取消）', 'info');
-            } else if (connectingFrom.nodeId === nodeId && connectingFrom.side === side) {
-                // 点击同一个连接点——取消连线
-                cancelConnecting();
-            } else if (connectingFrom.nodeId === nodeId) {
-                // 不允许自连接
-                showNotification('不支持节点自连接，请选择其他节点', 'warning');
-            } else {
-                // 完成连线
-                await createConnectorEdge(connectingFrom.nodeId, connectingFrom.side, nodeId, side);
-                cancelConnecting();
-            }
-        }
-
-        function setConnectingMode(active) {
-            const svgEl = d3.select('.canvas-svg');
-            if (active) {
-                svgEl.classed('connecting-mode', true);
-                // 重新高亮当前起点连接点
-                d3.selectAll('.canvas-connector-dot').classed('connecting-active', function () {
-                    const el = d3.select(this);
-                    return connectingFrom
-                        && el.attr('data-node-id') === connectingFrom.nodeId
-                        && el.attr('data-side') === connectingFrom.side;
-                });
-            } else {
-                svgEl.classed('connecting-mode', false);
-                d3.selectAll('.canvas-connector-dot').classed('connecting-active', false);
-            }
-        }
-
-        function cancelConnecting() {
-            connectingFrom = null;
-            setConnectingMode(false);
-        }
-
-        async function createConnectorEdge(fromNodeId, fromSide, toNodeId, toSide) {
-            const newEdge = {
-                id: 'edge_' + Date.now(),
-                fromNode: fromNodeId,
-                fromSide: fromSide,
-                toNode: toNodeId,
-                toSide: toSide,
-                animated: true,
-            };
-            // 更新内存数据
-            canvasData.edges.push(newEdge);
-            // 增量添加到 DOM（不触发全局刷新）
-            addEdgeToCanvas(newEdge);
-            // 持久化到文件
-            if (currentFileHandle) {
-                await saveEdgesToFile(canvasData.edges);
-            }
-            showNotification('连线已创建', 'success');
-        }
-
-        // 键盘 Esc 取消连线（命名函数引用，可正确移除避免泄漏）
-        let _canvasEscHandler = null;
-        function _ensureCanvasEscHandler() {
-            if (_canvasEscHandler) return; // 已注册，避免重复
-            _canvasEscHandler = handleCanvasShortcut;
-            document.addEventListener('keydown', _canvasEscHandler);
-        }
-        _ensureCanvasEscHandler();
-
-        // 节点光标委托处理器（挂载在父级 nodesGroup 上，避免每个节点独立注册 mousemove）
-        function _setupNodeCursorDelegation(nodesGroup) {
-            const EDGE_ZONE = 14;
-            nodesGroup.on('mousemove', function (event) {
-                // 找到鼠标所在的 .canvas-node 子元素
-                let target = event.target;
-                while (target && target !== this) {
-                    if (target.classList && target.classList.contains('canvas-node')) break;
-                    target = target.parentNode;
-                }
-                if (!target || target === this) {
-                    // 鼠标不在任何节点上，恢复所有节点光标
-                    d3.select(this).selectAll('.canvas-node').style('cursor', 'grab');
-                    return;
-                }
-                // 读取 DOM 缓存
-                const el = target;
-                const w = el.__nodeW || 200;
-                const h = el.__nodeH || 120;
-                // 使用 d3.pointer 获取相对坐标
-                const [mx, my] = d3.pointer(event, el);
-                const onRight = mx > w - EDGE_ZONE;
-                const onLeft = mx < EDGE_ZONE;
-                const onBottom = my > h - EDGE_ZONE;
-                const onTop = my < EDGE_ZONE;
-
-                let hovered = null;
-                let cursor = 'grab';
-                if (onRight && onBottom) { hovered = 'se'; cursor = 'nwse-resize'; }
-                else if (onLeft && onBottom) { hovered = 'sw'; cursor = 'nesw-resize'; }
-                else if (onRight && onTop) { hovered = 'ne'; cursor = 'nesw-resize'; }
-                else if (onLeft && onTop) { hovered = 'nw'; cursor = 'nwse-resize'; }
-                else if (onRight) { hovered = 'e'; cursor = 'ew-resize'; }
-                else if (onLeft) { hovered = 'w'; cursor = 'ew-resize'; }
-                else if (onBottom) { hovered = 's'; cursor = 'ns-resize'; }
-                else if (onTop) { hovered = 'n'; cursor = 'ns-resize'; }
-
-                el.__hoveredEdge = hovered;
-                d3.select(el).style('cursor', cursor);
-            });
-        }
-
-        async function renderCanvasNodes(nodes, group) {
-            const nodesGroup = group.append('g').attr('class', 'canvas-nodes');
-            // 注册委托 mousemove（单例，全局一次）
-            _setupNodeCursorDelegation(nodesGroup);
-            // 串行渲染确保 DOM 顺序与数据一致
-            for (const node of nodes) {
-                await renderCanvasNode(node, nodesGroup);
-            }
-            rebuildNodeMap(); // 所有节点渲染完成后建立索引
-        }
-
-        function fitCanvasToContent(container, contentWidth, contentHeight, centerX, centerY, svg, zoom) {
-            const currentContainerWidth = container.clientWidth || 800;
-            const currentContainerHeight = container.clientHeight || 600;
-            const svgNode = svg.node();
-            if (svgNode) {
-                svgNode.setAttribute('width', currentContainerWidth);
-                svgNode.setAttribute('height', currentContainerHeight);
-            }
-            const scale = Math.min(currentContainerWidth / contentWidth, currentContainerHeight / contentHeight) * 0.9;
-            const transform = d3.zoomIdentity
-                .translate(currentContainerWidth / 2, currentContainerHeight / 2)
-                .scale(scale)
-                .translate(-centerX, -centerY);
-            svg.transition().duration(500).call(zoom.transform, transform);
-        }
-
-        function addCanvasControls(contentDiv, svg, zoom, fitFn) {
-            const controls = document.createElement('div');
-            controls.className = 'image-controls';
-            controls.innerHTML = `
-                <button class="image-btn" id="canvas-zoom-in" title="放大">
-                    <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
-                        <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
-                    </svg>
-                </button>
-                <button class="image-btn" id="canvas-zoom-out" title="缩小">
-                    <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
-                        <path d="M19 13H5v-2h14v2z"/>
-                    </svg>
-                </button>
-                <button class="image-btn reset" id="canvas-reset" title="重置">
-                    <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
-                        <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
-                    </svg>
-                </button> `;
-            contentDiv.appendChild(controls);
-            controls.querySelector('#canvas-zoom-in').onclick = () => svg.transition().call(zoom.scaleBy, 1.3);
-            controls.querySelector('#canvas-zoom-out').onclick = () => svg.transition().call(zoom.scaleBy, 0.7);
-            controls.querySelector('#canvas-reset').onclick = fitFn;
-        }
-
-        async function renderCanvasFile(text, contentDiv, showSaveBtn = false, _canvasData = null) {
-            // 等待所有排队保存完成后再渲染新文件，防止数据串写
-            await flushSaveQueue();
-            // 确保 Esc 键盘监听器已注册（canvasDestroy 可能已移除）
-            _ensureCanvasEscHandler();
-            showCanvasControls(showSaveBtn);
-            try {
-                if (text) {
-                    canvasData = JSON.parse(text);
-                } else {
-                    if (_canvasData) {
-                        canvasData = _canvasData;
-                    } else {
-                        throw new Error('数据不能为空！');
-                    }
-                }
-            } catch (e) {
-                contentDiv.innerHTML = `<div style="color:#cf222e; padding:20px;">无效的 JSON Canvas 格式: ${escapeHtml(e.message)}</div>`;
-                return;
-            }
-            const nodes = canvasData.nodes || [];
-            const edges = canvasData.edges || [];
-            // 清理当前 container 的 object URLs（<img> 将被销毁，释放 blob 内存）
-            if (currentObjectUrls && currentObjectUrls.length > 0) {
-                currentObjectUrls.forEach(url => { try { URL.revokeObjectURL(url); } catch (e) { /* 忽略 */ } });
-                currentObjectUrls.length = 0;
-            }
-            contentDiv.innerHTML = `
-                <div class="canvas-container">
-                    <svg class="canvas-svg"></svg>
-                </div>
-                <span id="selectedNodeFilePath" style="position: absolute; bottom: 20px; left: 10px; font-size:12px;font-weight:500;color:var(--color-primary);z-index: 3004;"></span>`;
-            const container = contentDiv.querySelector('.canvas-container');
-            const containerWidth = container.clientWidth || 800;
-            const containerHeight = container.clientHeight || 600;
-            const svgEl = contentDiv.querySelector('.canvas-svg');
-            svgEl.setAttribute('width', containerWidth);
-            svgEl.setAttribute('height', containerHeight);
-            const svg = d3.select(svgEl);
-            const g = svg.append('g').attr('class', 'canvas-group');
-
-            // 添加箭头 marker 定义
-            const defs = svg.append('defs');
-            defs.append('marker')
-                .attr('id', 'arrowhead')
-                .attr('markerWidth', '7')
-                .attr('markerHeight', '5')
-                .attr('refX', '6')
-                .attr('refY', '2.5')
-                .attr('orient', 'auto')
-                .append('polygon')
-                .attr('points', '0 0, 7 2.5, 0 5')
-                .attr('fill', '#1f2328');
-
-            const bounds = calculateCanvasBounds(nodes);
-            const zoom = initCanvasZoom(svg, g);
-
-            // SVG 空白区域点击：关闭面板 + 自适应缩放
-            let svgClickStart = null;
-            svg.on('pointerdown', function (event) {
-                svgClickStart = { x: event.clientX, y: event.clientY };
-                // 每次 pointerdown 重新注册 document 级 pointerup，拖拽到 SVG 外释放时清理状态
-                if (window._svgPointerUpCleanup) {
-                    document.removeEventListener('pointerup', window._svgPointerUpCleanup);
-                }
-                window._svgPointerUpCleanup = () => { svgClickStart = null; };
-                document.addEventListener('pointerup', window._svgPointerUpCleanup);
-            });
-            svg.on('pointerup', async function (event) {
-                if (!svgClickStart) return;
-                const dx = Math.abs(event.clientX - svgClickStart.x);
-                const dy = Math.abs(event.clientY - svgClickStart.y);
-                svgClickStart = null;
-                // pointerup 已在 SVG 内触发，清理 document 级备份监听器
-                if (window._svgPointerUpCleanup) {
-                    document.removeEventListener('pointerup', window._svgPointerUpCleanup);
-                    window._svgPointerUpCleanup = null;
-                }
-                if (dx < 4 && dy < 4) {
-                    await closeNodeContentPanel();
-                    fitCanvasToContent(container, bounds.contentWidth, bounds.contentHeight, bounds.centerX, bounds.centerY, svg, zoom);
-                }
-            });
-            const containerSelector = contentDiv.querySelector('.canvas-container');
-            const contentMainContainer = contentMain.querySelector('.canvas-container');
-            if (containerSelector === contentMainContainer) {
-                // 清理旧的 canvasState（如果存在 d3 zoom 监听器）
-                cleanupCanvasState();
-                window.canvasState = {
-                    svg,
-                    zoom,
-                    containerWidth,
-                    containerHeight,
-                    contentWidth: bounds.contentWidth,
-                    contentHeight: bounds.contentHeight,
-                    centerX: bounds.centerX,
-                    centerY: bounds.centerY
-                };
-            }
-            renderCanvasEdges(edges, nodes, g);
-            await renderCanvasNodes(nodes, g);
-            const fitFn = () => fitCanvasToContent(container, bounds.contentWidth, bounds.contentHeight, bounds.centerX, bounds.centerY, svg, zoom);
-            addCanvasControls(contentDiv, svg, zoom, fitFn);
-            setTimeout(fitFn, 100);
-        }
-
-        async function renderExcalidrawFile(text, contentDiv, isEmbedded = false) {
-            let excalidrawData;
-            try {
-                excalidrawData = JSON.parse(text);
-            } catch (e) {
-                contentDiv.innerHTML = '<div style="color:#cf222e; padding:20px;">无效的 Excalidraw 格式: ' + escapeHtml(e.message) + '</div>';
-                return;
-            }
-            contentDiv.innerHTML = `<div id="excalidraw-container" style="width:100%;height:100%;"></div>`;
-            const container = document.getElementById('excalidraw-container');
-            if (!container) return;
-            if (isEmbedded) {
-                renderEmbeddedExcalidraw(container, excalidrawData);
-            } else {
-                renderExcalidrawElement(container, excalidrawData);
-            }
-        }
-
-        function createNodeContentPanel(height = '100%') {
-            let contentPanel = document.getElementById('node-content-panel');
-            if (!contentPanel) {
-                contentPanel = document.createElement('div');
-                contentPanel.id = 'node-content-panel';
-                contentPanel.style.position = 'absolute';
-                contentPanel.style.right = '0';
-                contentPanel.style.top = '0';
-                contentPanel.style.width = '50%';
-                contentPanel.style.height = height;
-                contentPanel.style.backgroundColor = 'var(--color-bg)';
-                contentPanel.style.boxShadow = '-5px 0 12px rgba(0, 0, 0, 0.12)';
-                contentPanel.style.transition = 'all 0.2s ease';
-                contentPanel.style.overflowY = 'auto';
-                contentPanel.style.zIndex = '200';
-                contentMain.appendChild(contentPanel);
-                const canvasContainer = contentMain.querySelector('.canvas-container');
-                if (canvasContainer) {
-                    canvasContainer.style.width = '50%';
-                    canvasContainer.style.position = 'relative';
-                }
-                setControlsState({ editBtn: false });
-            }
-            return contentPanel;
-        }
-
-        function adjustCanvasViewport() {
-            if (window.canvasState) {
-                const { svg, zoom, containerWidth, contentWidth, contentHeight, centerX, centerY } = window.canvasState;
-                const canvasContainer = contentMain.querySelector('.canvas-container');
-                const currentContainerWidth = canvasContainer ? canvasContainer.clientWidth : containerWidth * 0.5;
-                const currentContainerHeight = canvasContainer ? canvasContainer.clientHeight : window.canvasState.containerHeight;
-                const svgNode = svg.node();
-                if (svgNode) {
-                    svgNode.setAttribute('width', currentContainerWidth);
-                    svgNode.setAttribute('height', currentContainerHeight);
-                }
-                const scale = Math.min(currentContainerWidth / contentWidth, currentContainerHeight / contentHeight) * 0.9;
-                const transform = d3.zoomIdentity
-                    .translate(currentContainerWidth / 2, currentContainerHeight / 2)
-                    .scale(scale)
-                    .translate(-centerX, -centerY);
-                svg.transition().duration(300).call(zoom.transform, transform);
-            }
-        }
-
-        async function showCanvasNodeContent(node) {
-            const contentPanel = createNodeContentPanel('100%');
-            // code 节点以 code 字段为主体内容（双击查看/编辑代码片段）
-            const bodyText = node.type === 'code' ? (node.code || node.text || '') : (node.text || '');
-            const htmlContent = await markedParse(parseObsidianToHTML(bodyText));
-            contentPanel.innerHTML = ` <div class="canvas-edit-controls" id="canvas-edit-controls" ${dirCanvasDisplayFlag ? 'style="display:none;"' : ''}>
-                    <button id="content-panel-btn" class="btn btn-primary btn-sm" data-node-id="${node.id}" onclick="editNodeContent(event, this)">
-                        编辑内容
-                    </button>
-                </div>
-                <div class="markdown-body" style="padding: 8px 8px;background: transparent;">${htmlContent}</div>`;
-            setControlsState({ copyBtn: false });
-            setNodePanelState({ node, nodeType: 'text', filePath: '', fileContent: '' });
-            const gen = _panelGeneration;
-            postProcessMarkdown(contentPanel).then(result => {
-                if (isPanelGenerationStale(gen)) return;
-                adjustCanvasViewport();
-            });
-        }
-
-        async function showNodeFileContent(node) {
-            if (isPicImage(getExt(node.file))) {
-                openCanvasImageFile(node.file);
-                return;
-            }
-            if (node.file.endsWith('.canvas') || node.file.endsWith('.excalidraw') || node.file.endsWith('.mmd')) {
-                openCanvasLinkedFile(node.file);
-                return;
-            }
-            if (node.file.endsWith('.md')) {
-                const contentPanel = createNodeContentPanel('100%');
-                try {
-                    const fileHandle = await getEmbedNodeFileHandleByPath(node.file);
-                    if (!fileHandle) {
-                        throw new Error('文件不存在');
-                    }
-                    const text = await getFileContent(fileHandle);
-                    const htmlContent = await markedParse(parseObsidianToHTML(text));
-                    contentPanel.innerHTML = `
-                        <div class="canvas-edit-controls" id="canvas-edit-controls" ${dirCanvasDisplayFlag ? 'style="display:none;"' : ''}>
-                            <button class="btn btn-primary btn-sm" data-node-id="${node.id}" onclick="editNodeContent(event, this)">
-                                编辑内容
-                            </button>
-                        </div>
-                        <div class="markdown-body" style="padding: 8px 8px;background: transparent;">${htmlContent}</div>`;
-                    setNodePanelState({ node, nodeType: 'file', filePath: node.file, fileContent: text });
-                    const gen = _panelGeneration;
-                    postProcessMarkdown(contentPanel).then(result => {
-                        if (isPanelGenerationStale(gen)) return;
-                        adjustCanvasViewport();
-                    });
-                } catch (error) {
-                    contentPanel.innerHTML = `<div style="color:#cf222e; padding:20px;">加载文件失败: ${escapeHtml(error.message)}</div>`;
-                }
-                setControlsState({ copyBtn: false });
-            }
-        }
-
-        async function openCanvasImageFile(filePath) {
-            try {
-                const fileHandle = await getEmbedNodeFileHandleByPath(filePath);
-                if (!fileHandle) {
-                    throw new Error('文件不存在');
-                }
-                const file = await getFile(fileHandle);
-                const blobUrl = URL.createObjectURL(file);
-                currentObjectUrls.push(blobUrl);
-                showImageModal(blobUrl);
-            } catch (error) {
-                console.error('打开图片失败:', error);
-                showNotification('✗ 打开图片失败: ' + error.message, 'error');
-            }
-        }
-
-        async function embedNodeMmd(filePath, text, contentDiv, dom) {
-            let html = '';
-            try {
-                let mermaidCode = text || '';
-                if (contentDiv) {
-                    const fileHandle = await getEmbedNodeFileHandleByPath(filePath);
-                    if (!fileHandle) {
-                        contentDiv.html(`<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:#cf222e;font-size:12px;">无法加载图片！${escapeHtml(filePath)}</div>`);
-                        return;
-                    }
-                    mermaidCode = await getFileContent(fileHandle);
-                }
-                try {
-                    await mermaid.parse(mermaidCode);
-                    const { svg } = await mermaid.render("mermaid_mmd_node" + crypto.randomUUID(), mermaidCode);
-                    html = `<div style="display:flex; justify-content:center; align-items:center; width:100%; height:100%; box-sizing:border-box;">${svg}</div>`;
-                } catch (err) {
-                    const eMermaid = extractErrorMessageMermaid(err);
-                    html = `<div style="color:#cf222e;">渲染出错: ${escMermaid(eMermaid)}</div>`;
-                }
-            } catch (error) {
-                console.error('加载 mmd 文件失败:', error);
-                html = `<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:#cf222e;font-size:12px;">加载文件失败！ ${escapeHtml(filePath)}</div>`;
-            } finally {
-                if (contentDiv) {
-                    contentDiv.html(html);
-                }
-                if (dom) {
-                    dom.innerHTML = html;
-                }
-            }
-        }
-
-        async function openCanvasLinkedFile(filePath) {
-            try {
-                const fileHandle = await getEmbedNodeFileHandleByPath(filePath);
-                if (!fileHandle) {
-                    throw new Error('文件不存在');
-                }
-                const fileText = await getFileContent(fileHandle);
-                const modal = document.createElement('div');
-                modal.style.cssText = `
-                        position: fixed;
-                        top: 0;
-                        left: 0;
-                        width: 100%;
-                        height: 100%;
-                        background: rgba(0,0,0,0.2);
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        z-index: 10000;
-                        cursor: zoom-out;`;
-                const container = document.createElement('div');
-                container.style.cssText = `
-                        width: 75%;
-                        height: 85%;
-                        background: var(--color-bg);
-                        border-radius: 15px;
-                        overflow: hidden;`;
-                modal.appendChild(container);
-                document.body.appendChild(modal);
-                if (filePath.endsWith('.excalidraw')) {
-                    await renderExcalidrawFile(fileText, container, true);
-                } else if (filePath.endsWith('.canvas')) {
-                    // 保存当前父 canvas 数据，renderCanvasFile 会覆盖全局 canvasData
-                    const parentCanvasData = canvasData;
-                    await renderCanvasFile(fileText, container);
-                    // 恢复父 canvas 数据，避免关闭模态框后移动节点时连线断开
-                    canvasData = parentCanvasData;
-                    rebuildNodeMap();
-                } else if (filePath.endsWith('.mmd')) {
-                    await embedNodeMmd(filePath, fileText, null, container);
-                } else {
-                    await renderExcalidrawFile(fileText, container, true);
-                }
-                let modalClosed = false;
-                const closeModal = () => {
-                    if (modalClosed) return;
-                    modalClosed = true;
-                    modal.remove();
-                    document.removeEventListener('keydown', escHandler);
-                };
-                const escHandler = (e) => {
-                    if (e.key === 'Escape') closeModal();
-                };
-                document.addEventListener('keydown', escHandler);
-                modal.onclick = (e) => {
-                    if (e.target === modal) closeModal();
-                };
-            } catch (error) {
-                console.error('打开文件失败:', error);
-                showNotification('✗ 打开文件失败: ' + error.message, 'error');
-            }
-        }
-
-        async function closeNodeContentPanel() {
-            _panelGeneration++;
-            const contentPanel = document.getElementById('node-content-panel');
-            if (contentPanel) {
-                if (currentNodeEditor && currentNodeEditor.getValue) {
-                    const { node: nodeData, nodeType, filePath, fileContent } = getNodePanelState();
-                    const isFileNode = nodeType === 'file' && filePath;
-                    const newText = currentNodeEditor.getValue();
-                    const originalContent = isFileNode ? fileContent : (nodeData.text || '');
-                    if (newText !== originalContent) {
-                        if (isFileNode) {
-                            await saveFileNodeContent(filePath, newText);
-                        } else {
-                            nodeData.text = newText;
-                            await saveNodeText(nodeData.id, newText);
-                        }
-                        for (const node of canvasData.nodes) {
-                            if (node.id === nodeData.id) {
-                                node.text = newText;
-                                break;
-                            }
-                        }
-                        // 增量更新 DOM，避免全局重渲染闪跳
-                        const updatedNode = canvasData.nodes.find(n => n.id === nodeData.id);
-                        if (updatedNode) {
-                            await refreshNodeContentInDOM(updatedNode);
-                        }
-                    }
-                    destroyNodeEditor();
-                }
-                clearNodePanelState();
-                contentPanel.remove();
-                const canvasContainer = contentMain.querySelector('.canvas-container');
-                if (canvasContainer) {
-                    canvasContainer.style.width = '100%';
-                }
-                adjustCanvasViewport(); // 面板关闭后重新适配画布视口
-            }
-            setControlsState({ editBtn: true, copyBtn: true, demoBtn: true, commonToolControls: true });
-        }
-
-        function editNodeContent(event, button) {
-            event.stopPropagation();
-            const contentPanel = button.closest('#node-content-panel');
-            if (!contentPanel) return;
-            // 进入编辑模式，隐藏右上角演示按钮
-            setControlsState({ demoBtn: false, commonToolControls: false });
-            const { node: nodeData, nodeType, filePath, fileContent } = getNodePanelState();
-            const isFileNode = nodeType === 'file' && filePath;
-            const editValue = isFileNode ? fileContent : (nodeData.text || '');
-            const headerLabel = isFileNode ? `📝 编辑文件: ${basename(filePath)}` : '📝 编辑节点内容';
-            contentPanel.innerHTML = `
-                    <div class="canvas-edit-controls">
-                        <button class="btn btn-success btn-sm" onclick="saveNodeContent(event, this)">显示</button>
-                    </div>
-                    ${createEditorContainer(headerLabel, 'node-editor-inner', 'height: 100%;')}`;
-            // 状态对象独立于 DOM，innerHTML 替换不影响 _nodePanelState，无需重写
-            const gen = _panelGeneration;
+            );
             setTimeout(() => {
-                if (isPanelGenerationStale(gen)) return;
-                destroyNodeEditor();
-                const editorInner = document.getElementById('node-editor-inner');
-                if (editorInner) {
-                    initMonacoEditor().then(() => {
-                        currentNodeEditor = createMonacoEditor(editorInner, {
-                            value: editValue,
-                            language: 'markdown'
-                        });
-                        updateStatus(currentNodeEditor, contentPanel, '', true);
-                    });
+                window.addEventListener('keydown', handleBBSaveShortcutNoCreate, true);
+                const menuBtn = container.querySelector(".dropdown-menu-button.main-menu-trigger.zen-mode-transition");
+                if (menuBtn) {
+                    menuBtn.setAttribute("showPanel", "no");
+                    menuBtn.removeEventListener("click", handleBBMenuClick);
+                    menuBtn.addEventListener("click", handleBBMenuClick);
                 }
-            }, 100);
+            }, 200);
         }
 
-        async function saveNodeContent(event, button) {
-            event.stopPropagation();
-            const contentPanel = button.closest('#node-content-panel');
-            if (!contentPanel) return;
-            const { node: nodeData, nodeType, filePath, fileContent } = getNodePanelState();
-            const isFileNode = nodeType === 'file' && filePath;
-            if (currentNodeEditor && currentNodeEditor.getValue) {
-                const newText = currentNodeEditor.getValue();
-                const originalContent = isFileNode ? fileContent : (nodeData.text || '');
-                const renderPreviewPanel = async (text) => {
-                    const htmlContent = await markedParse(parseObsidianToHTML(text));
-                    const fileLabel = isFileNode ? `<span style="font-size:13px;font-weight:500;color:var(--color-primary-light);">📝 ${escapeHtml(filePath)}</span>` : '';
-                    contentPanel.innerHTML = `<div class="canvas-edit-controls" id="canvas-edit-controls">
-                                ${fileLabel}
-                                <button class="btn btn-primary btn-sm" data-node-id="${nodeData.id}" onclick="editNodeContent(event, this)">
-                                    编辑内容
-                                </button> 
-                            </div>
-                            <div class="markdown-body" style="padding: 8px 8px;background: transparent;">${htmlContent}</div>`;
-                    setNodePanelState({ fileContent: text });
-                    destroyNodeEditor();
-                    setControlsState({ demoBtn: true, commonToolControls: true });
-                    postProcessMarkdown(contentPanel);
-                };
-                if (newText === originalContent) {
-                    await renderPreviewPanel(originalContent);
-                } else {
-                    if (isFileNode) {
-                        await saveFileNodeContent(filePath, newText).then(async () => {
-                            await renderPreviewPanel(newText);
-                            await reloadCanvasData();
-                        }).catch(err => {
-                            console.error('保存文件失败:', err);
-                            showNotification('✗ 保存失败: ' + err.message, 'error');
-                        });
-                    } else {
-                        nodeData.text = newText;
-                        for (const node of canvasData.nodes) {
-                            if (node.id === nodeData.id) {
-                                node.text = newText;
-                                break;
-                            }
-                        }
-                        await saveNodeText(nodeData.id, newText).then(async () => {
-                            await renderPreviewPanel(newText);
-                            await reloadCanvasData();
-                        }).catch(err => {
-                            console.error('保存节点失败:', err);
-                            showNotification('✗ 保存失败: ' + err.message, 'error');
-                        });
-                    }
-                }
-            }
-            setControlsState({ copyBtn: false });
-        }
-
-        async function saveFileNodeContent(filePath, content) {
-            const fileHandle = await getEmbedNodeFileHandleByPath(filePath);
-            if (!fileHandle) throw new Error('文件不存在: ' + filePath);
-            await writeFileHandle(fileHandle, content);
-            showNotification('✓ 文件保存成功', 'success');
-        }
-
-        async function saveNodeText(nodeId, newText) {
-            if (!currentFileHandle) return;
-            const fileHandle = currentFileHandle;
-            try {
-                await enqueueFileAtomic(fileHandle, async () => {
-                    const text = await getFileContent(fileHandle);
-                    let canvasDataLocal = JSON.parse(text);
-                    canvasDataLocal.nodes.forEach(node => {
-                        if (node.id === nodeId) {
-                            node.text = newText;
-                        }
-                    });
-                    const newContent = JSON.stringify(canvasDataLocal);
-                    await _writeToFileHandle(fileHandle, newContent);
-                    if (fileHandle === currentFileHandle) {
-                        originalContent = newContent;
-                    }
-                });
-                showNotification('✓ 节点保存成功', 'success');
-            } catch (err) {
-                console.error('保存节点文本失败:', err);
-                showNotification('✗ 保存节点失败: ' + err.message, 'error');
-            }
-        }
-
-        async function saveNodesToFile(nodes) {
-            if (!currentFileHandle) return;
-            const fileHandle = currentFileHandle;
-            try {
-                await enqueueFileAtomic(fileHandle, async () => {
-                    const text = await getFileContent(fileHandle);
-                    let canvasDataLocal = JSON.parse(text);
-                    canvasDataLocal.nodes = nodes;
-                    const newContent = JSON.stringify(canvasDataLocal);
-                    await _writeToFileHandle(fileHandle, newContent);
-                    if (fileHandle === currentFileHandle) {
-                        originalContent = newContent;
-                    }
-                });
-                showNotification('✓ 节点保存成功', 'success');
-            } catch (err) {
-                console.error('保存节点失败:', err);
-                showNotification('✗ 保存节点失败: ' + err.message, 'error');
-            }
-        }
-
-        async function reloadCanvasData() {
-            try {
-                // 保存右侧面板的状态
-                const contentPanel = document.getElementById('node-content-panel');
-                const panelData = contentPanel ? {
-                    nodeData: getNodePanelState().node,
-                    scrollTop: contentPanel.scrollTop,
-                    gen: _panelGeneration
-                } : null;
-
-                if (currentFileHandle) {
-                    // 重新读取文件
-                    const text = await getFileContent(currentFileHandle);
-                    await renderCanvasFile(text, contentMain);
-                } else {
-                    // 对于新canvas，直接使用内存中的数据重新渲染
-                    await renderCanvasFile('', contentMain, true, canvasData);
-                }
-                // 恢复右侧面板
-                if (panelData) {
-                    setTimeout(() => {
-                        if (isPanelGenerationStale(panelData.gen)) return;
-                        const node = panelData.nodeData;
-                        if (node.type === 'text') {
-                            showCanvasNodeContent(node);
-                        } else if (node.type === 'file') {
-                            showNodeFileContent(node);
-                        }
-                        const newPanel = document.getElementById('node-content-panel');
-                        if (newPanel) {
-                            newPanel.scrollTop = panelData.scrollTop;
-                        }
-                    }, 100);
-                }
-            } catch (error) {
-                console.error('重新加载画布数据失败:', error);
-            }
-        }
-
-        //重新加载画布数据(不恢复右侧面板)
-        async function reloadCanvasDataWithoutPanel() {
-            try {
-                if (currentFileHandle) {
-                    const text = await getFileContent(currentFileHandle);
-                    await renderCanvasFile(text, contentMain);
-                } else {
-                    // 对于新canvas，直接使用内存中的数据重新渲染
-                    await renderCanvasFile('', contentMain, true, canvasData);
-                }
-            } catch (error) {
-                console.error('重新加载画布数据失败:', error);
-            }
-        }
         function parseWiki(html) {
             return html.replace(/\[\[([^\|#\]]+)(?:\|([^\]]+))?\]\]([\r\n]*)/g, (match, link, alias, newlines) => {
                 const displayText = alias || link;
@@ -28747,13 +27401,7 @@ kanban-plugin: basic
                 window.dispatchEvent(new Event('resize'));
             });
             // 主页面为canvas 时 resize
-            if (canvasData && canvasData.nodes && canvasData.nodes.length > 0) {
-                const canvasContainer = contentMain.querySelector('.canvas-container');
-                if (canvasContainer) {
-                    canvasContainer.style.width = sidebarVisible ? '' : '100%';
-                    adjustCanvasViewport();
-                }
-            }
+            if (_canvasObject) _canvasObject.resizeCanvas();
         }
 
         function showTocToggleBtn(visible) {
@@ -35996,10 +34644,24 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             }, 0);
         }
 
+        let _canvasObject = null;
+        // 清理 Canvas 相关状态（关闭画布或切换文件时调用）
+        async function cleanupCanvasState(cleanDom = false) {
+            if (_canvasObject) await _canvasObject.cleanupCanvasState(cleanDom);
+            _canvasObject = null;
+        }
+
+        function handleCanvasAddNode(type) {
+            if (_canvasObject) _canvasObject.canvasAddNode(type);
+        }
+        function handleCanvasDeleteNode(node) {
+            if (_canvasObject) _canvasObject.canvasDeleteNode(node);
+        }
+
         async function openCanvasFile(data = { nodes: [], edges: [] }) {
             await destroyEverything();
             // 先清理旧的 canvas 状态
-            cleanupCanvasState(true);
+            await cleanupCanvasState(true);
             // 设置标志
             currentFileHandle = null;
             // 切换到 canvas 视图
@@ -36008,74 +34670,28 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             await renderCanvasFile('', contentMain, true, data);
         }
 
+        async function renderCanvasFile(text, contentDiv, showSaveBtn = false, _canvasData = null) {
+            _canvasObject = new CanvasLess();
+            await _canvasObject.renderCanvas(text, contentDiv, showSaveBtn, _canvasData);
+        }
+
+        async function handleDoCanvasSave(e) {
+            if (e) e.stopPropagation();
+            await _canvasObject.canvasSave();
+        }
+
+        async function flushSaveQueue() {
+            if (currentFileHandle) {
+                await flushFileSaveQueue(currentFileHandle);
+            }
+        }
+
         function showCanvasControls(isCreate = false) {
             const canvasControls = document.getElementById('canvas-top-left-controls');
             if (canvasControls) canvasControls.style.display = isCreate ? 'flex' : 'none';
             const bottomToolbar = document.getElementById('canvas-bottom-toolbar');
             if (bottomToolbar) bottomToolbar.style.display = 'flex';
         }
-
-        let selectedCanvasNodeId = null;
-        let pendingCanvasNodeType = null; // 等待创建节点类型
-
-        function handleCanvasAddNode(type) {
-            if (type === 'text') {
-                createCanvasNode('text', null);
-            } else if (type === 'image' || type === 'file') {
-                pendingCanvasNodeType = type;
-                showFileSelectModal({
-                    type: type,
-                    onSelect: (fp, fn) => {
-                        const fileData = { path: fp, name: fn };
-                        createCanvasNode(type, fileData);
-                        pendingCanvasNodeType = null;
-                    }
-                });
-            }
-        }
-
-        function addNodeToCanvas(node) {
-            const nodesGroup = d3.select('.canvas-nodes');
-            if (nodesGroup.empty()) return;
-            renderCanvasNode(node, nodesGroup);
-            rebuildNodeMap();
-        }
-
-        function createCanvasNode(type, fileData) {
-            const newNode = {
-                id: 'node_' + Date.now(),
-                type: type,
-                x: 30 + Math.random() * 200,
-                y: 30 + Math.random() * 200,
-                width: type === 'text' ? 200 : 300,
-                height: type === 'text' ? 120 : 200
-            };
-
-            if (type === 'text') {
-                newNode.text = '';
-            } else if (type === 'image') {
-                newNode.file = fileData.path || fileData.name;
-                newNode.fileData = fileData;
-            } else if (type === 'file') {
-                newNode.file = fileData.path || fileData.name;
-                newNode.fileData = fileData;
-            }
-
-            canvasData.nodes.push(newNode);
-            rebuildNodeMap();
-
-            // 增量添加 DOM（不触发全局重渲染）
-            addNodeToCanvas(newNode);
-
-            // 持久化到文件
-            if (currentFileHandle) {
-                saveNodesToFile(canvasData.nodes).catch(err => {
-                    console.error('保存节点失败:', err);
-                    showNotification('✗ 保存失败: ' + err.message, 'error');
-                });
-            }
-        }
-
         /**
         /**
          * 通用文件/图片选择模态框
@@ -36180,127 +34796,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             });
         }
 
-        function getFilePreviewUrl(fileData) {
-            // 返回文件预览URL
-            if (fileData.handle) {
-                return URL.createObjectURL(fileData.handle);
-            }
-            return '';
-        }
-
-        function removeNodeFromCanvas(nodeId) {
-            // 移除节点 DOM
-            d3.selectAll(`.canvas-node[data-node-id="${nodeId}"]`).remove();
-            // 移除关联的连线 DOM（一次性筛选，避免 while(true) 低效遍历）
-            d3.selectAll('.canvas-edge-group').filter(function () {
-                const edge = d3.select(this).select('.canvas-edge-hit').datum();
-                return edge && (edge.fromNode === nodeId || edge.toNode === nodeId);
-            }).remove();
-            // 关闭节点内容面板（如有未保存内容则自动保存）
-            const contentPanel = document.getElementById('node-content-panel');
-            if (contentPanel && _nodePanelState.node && _nodePanelState.node.id === nodeId) {
-                closeNodeContentPanel();
-            }
-            // 更新节点计数（如果存在）
-            const nodeCountEl = document.getElementById('node-count');
-            if (nodeCountEl) {
-                const n = parseInt(nodeCountEl.textContent) || 0;
-                nodeCountEl.textContent = Math.max(0, n - 1);
-            }
-            // 更新 window.canvasState 的边界（删除全部节点后避免 adjustCanvasViewport 使用旧边界）
-            if (window.canvasState && canvasData.nodes.length === 0) {
-                const emptyBounds = calculateCanvasBounds([]);
-                window.canvasState.contentWidth = emptyBounds.contentWidth;
-                window.canvasState.contentHeight = emptyBounds.contentHeight;
-                window.canvasState.centerX = emptyBounds.centerX;
-                window.canvasState.centerY = emptyBounds.centerY;
-            }
-        }
-
-        async function handleCanvasDeleteNode() {
-            if (!selectedCanvasNodeId) {
-                showNotification('请选择要删除的节点', 'warning');
-                return;
-            }
-            // 如果正处于连线模式，取消连线状态避免残留
-            if (connectingFrom) {
-                cancelConnecting();
-            }
-            const nodeId = selectedCanvasNodeId;
-            // 从 canvasData 中删除节点
-            canvasData.nodes = canvasData.nodes.filter(n => n.id !== nodeId);
-            // 同时删除与该节点相关的边
-            canvasData.edges = canvasData.edges.filter(e => e.fromNode !== nodeId && e.toNode !== nodeId);
-            rebuildNodeMap(); // 更新节点索引
-            // 持久化（节点+边）
-            if (currentFileHandle) {
-                await saveNodesToFile(canvasData.nodes);
-                await saveEdgesToFile(canvasData.edges);
-            } else {
-                // 新画布虽无文件句柄，但标记数据已变更供后续保存感知
-                canvasData._dirty = true;
-            }
-            // 增量删除 DOM（不重新渲染整张画布）
-            removeNodeFromCanvas(nodeId);
-            // 重置选择状态
-            selectedCanvasNodeId = null;
-            updateDeleteNodeButtonState();
-        }
-
-        function updateDeleteNodeButtonState() {
-            const deleteBtn = document.getElementById('canvas-delete-btn');
-            if (deleteBtn) {
-                if (selectedCanvasNodeId) {
-                    deleteBtn.style.display = 'flex';
-                } else {
-                    deleteBtn.style.display = 'none';
-                }
-            }
-        }
-
-        let _canvasSaveDebounced = null;
-        async function handleCanvasSaveToggleClick(e) {
-            if (e) e.stopPropagation();
-            const data = canvasData;
-            const content = JSON.stringify({
-                nodes: data.nodes,
-                edges: data.edges
-            });
-            if (currentFileHandle) {
-                const fileHandle = currentFileHandle;
-                // 稳定持有防抖函数，复用同一 timer 实现真正的去抖；惰性创建，传参为最新 content/handle
-                if (!_canvasSaveDebounced) {
-                    _canvasSaveDebounced = timeDebounce(async (fh, ct) => {
-                        await enqueueFileAtomic(fh, async () => {
-                            await _writeToFileHandle(fh, ct);
-                            showNotification('✓ 画布保存成功', 'success');
-                        });
-                    }, 500);
-                }
-                _canvasSaveDebounced(fileHandle, content);
-            } else {
-                await showSaveModal({
-                    title: '保存canvas画布文件',
-                    getDefaultFileName: () => 'untitled.canvas',
-                    getContent: () => content,
-                    onSave: doSaveToFolder
-                });
-            }
-        }
-        function handleCanvasShortcut(e) {
-            if (e.key === 'Escape' && connectingFrom) {
-                cancelConnecting();
-                showNotification('已取消连线', 'info');
-                return;
-            }
-            if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') {
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                handleCanvasSaveToggleClick();
-            }
-        }
-
-        let currentWhiteboardContent = ''; // 当前画布内容（JSON 字符串）
+        let currentWhiteboardContent = '';
         function handleBBSaveShortcut(e) {
             if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') {
                 e.preventDefault();
@@ -53215,7 +51711,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     textSpan.appendChild(_fileIcon(fileName, iconType));
                 } else {
                     const btn = DASHBOARD_BUTTON.find(btn => btn.value.includes(item.action));
-                    nameSpan.innerHTML = btn ? `打开&nbsp;<span class="skill-tag-chip">${btn.key}</span>` :
+                    nameSpan.innerHTML = btn ? `<span class="skill-tag-chip">${btn.key}</span>` :
                         (item.targetName ? `${item.targetName}` : '') + `&nbsp;<span class="skill-tag-chip" style="padding: 0.125rem 0.5rem;">${item.title}</span>`;
                     const div = document.createElement('div');
                     div.className = 'file-item-icon file-item-icon-operate';
@@ -53251,6 +51747,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             openHistory.loadHistory();
         }
     </script>
+    <script src="./css_js/modules/canvas.js"></script>
     <script src="./css_js/modules/chat-history.js"></script>
     <script src="./css_js/modules/skill.js"></script>
     <script src="./css_js/modules/mcp.js"></script>
