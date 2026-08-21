@@ -147,7 +147,7 @@
             --color-bg-header: #e1e5e8;
             --color-bg-empty: #ebedf0;
             --window-header-bg: #edeff1;
-             --color-bg-subtle: #f9fafb;
+            --color-bg-subtle: #f9fafb;
 
             /* ---- 日历日程 ---- */
             --todo-primary-light: #E8F0FE;
@@ -3542,7 +3542,8 @@
             margin-bottom: 0.75rem;
             overflow: visible;
         }
-        #kb-dashboard-content .activity-section .chart-card{
+
+        #kb-dashboard-content .activity-section .chart-card {
             margin-bottom: 0.25rem;
         }
 
@@ -6973,7 +6974,7 @@
             align-items: center;
             justify-content: space-between;
             margin-bottom: 1px;
-        } 
+        }
 
         .sysinfo-gpu-chart {
             flex: 1 1 auto;
@@ -6998,23 +6999,28 @@
             font-size: 10px;
             line-height: 1.5;
         }
+
         .si-row-full {
-            grid-column: 1 / -1; /* 跨越从第一列到最后一列 */
+            grid-column: 1 / -1;
+            /* 跨越从第一列到最后一列 */
             display: flex;
             align-items: baseline;
-            column-gap: 8px; /* 保持与 Grid 的间距一致 */
+            column-gap: 8px;
+            /* 保持与 Grid 的间距一致 */
         }
 
         /* 整行时，Key 通常左对齐更美观，覆盖原 right 对齐 */
         .si-row-full .si-k {
             text-align: left;
-            flex-shrink: 0; /* 防止 Key 被挤压 */
+            flex-shrink: 0;
+            /* 防止 Key 被挤压 */
         }
 
         /* 整行时，Value 占据剩余空间，并允许换行显示长文本 */
         .si-row-full .si-v {
             flex: 1;
-            white-space: normal; /* 允许换行 */
+            white-space: normal;
+            /* 允许换行 */
             overflow: visible;
             text-overflow: clip;
         }
@@ -7065,6 +7071,7 @@
             color: var(--color-note);
             font-variant-numeric: tabular-nums;
         }
+
         .net-row-value-download.write {
             color: var(--green);
         }
@@ -11329,7 +11336,7 @@
             column-gap: 1rem;
             padding: 2rem 4rem;
             box-sizing: border-box;
-        } 
+        }
 
         .urlEncoder-card {
             width: 100%;
@@ -14490,7 +14497,7 @@
                                                 <span class="disk-percent" id="diskNotePercent">0%</span>
                                             </div>
                                         </div>
-                                        
+
                                         <div class="monitor-item">
                                             <div id="systemInfo" class="monitor-chart sysinfo-wrap">
                                                 <div class="sysinfo-gpu" id="sysinfoGpuSection" style="display:none">
@@ -14499,7 +14506,8 @@
                                                             <span class="net-row-label">用&nbsp;</span>
                                                             <span id="gpuMemUsed" class="net-row-value-upload">—</span>
                                                             <span class="monitor-uptime">｜</span>
-                                                            <span class="net-row-label">总&nbsp;</span><span id="gpuMemTotal" class="net-row-value-download">—</span>
+                                                            <span class="net-row-label">总&nbsp;</span><span
+                                                                id="gpuMemTotal" class="net-row-value-download">—</span>
                                                             <span class="net-row-label">&nbsp;&nbsp;GPU</span>
                                                         </span>
                                                     </div>
@@ -14679,7 +14687,6 @@
                                     <div class="mermaid-dropdown-item" data-format="png">导出 PNG</div>
                                     <div class="mermaid-dropdown-item" data-format="jpg">导出 JPG</div>
                                     <div class="mermaid-dropdown-item" data-format="webp">导出 WEBP</div>
-                                    <div class="mermaid-dropdown-item" data-format="pdf">导出 PDF</div>
                                     <div class="mermaid-dropdown-item" data-format="code">导出代码</div>
                                 </div>
                             </div>
@@ -16169,8 +16176,8 @@
                                 </div>
                             </div>
                             <div class="stat-card">
-                                <div class="stat-icon orange"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
-                                        stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                                <div class="stat-icon orange"><svg viewBox="0 0 24 24" width="18" height="18"
+                                        fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
                                         stroke-linejoin="round">
                                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" />
                                         <line x1="16" y1="13" x2="8" y2="13" />
@@ -19146,7 +19153,7 @@
                             const ext = getExt(fileName);
                             const iconType = ext ? getFileTypeByExt(ext) : '';
                             fileItem = await createFileItem(fileName, fileName, 0, iconType);
-                            if (fileItem){ tree.appendChild(fileItem); handleFileCreated(fileName);}
+                            if (fileItem) { tree.appendChild(fileItem); handleFileCreated(fileName); }
                         }
                         if (fileItem) {
                             if (currentActiveItem) currentActiveItem.classList.remove('active-file');
@@ -19225,7 +19232,7 @@
                                 const ext = getExt(fileName);
                                 const iconType = ext ? getFileTypeByExt(ext) : '';
                                 const fileItem = await createFileItem(fileName, newRelativePath, +dom.dataset.depth + 1, iconType);
-                                if (fileItem){ dom.appendChild(fileItem); handleFileCreated(newRelativePath);}
+                                if (fileItem) { dom.appendChild(fileItem); handleFileCreated(newRelativePath); }
                             }
                             const fileSpan = document.querySelector('.file-item[data-file-path="' + newRelativePath + '"]');
                             if (fileSpan) clickFileSpan(newRelativePath, fileSpan);
@@ -19236,7 +19243,7 @@
                             const ext = getExt(fileName);
                             const iconType = ext ? getFileTypeByExt(ext) : '';
                             const fileItem = await createFileItem(fileName, fileName, 0, iconType);
-                            if (fileItem){ tree.appendChild(fileItem); handleFileCreated(fileName);}
+                            if (fileItem) { tree.appendChild(fileItem); handleFileCreated(fileName); }
                         }
                     }
                     const fileSpan = document.querySelector('.file-item[data-file-path="' + fileName + '"]');
@@ -27241,7 +27248,7 @@ kanban-plugin: basic
         let _canvasEscHandler = null;
         function _ensureCanvasEscHandler() {
             if (_canvasEscHandler) return; // 已注册，避免重复
-            _canvasEscHandler =  handleCanvasShortcut;
+            _canvasEscHandler = handleCanvasShortcut;
             document.addEventListener('keydown', _canvasEscHandler);
         }
         _ensureCanvasEscHandler();
@@ -29467,11 +29474,13 @@ kanban-plugin: basic
             if (!canvas || !canvas.width || !canvas.height) {
                 throw new Error('画布生成失败，尺寸为空');
             }
-            name = name ? name.replace(/\.\w+$/, '.png') : 'export.png';
-            const link = document.createElement('a');
-            link.download = name;
-            link.href = canvas.toDataURL('image/png');
-            link.click();
+            const pngName = name ? name.replace(/\.\w+$/, '.png') : 'export.png';
+            await new Promise((resolve) => {
+                canvas.toBlob((blob) => {
+                    downloadBlob(blob, pngName);
+                    resolve();
+                }, 'image/png');
+            });
             showNotification('图片导出成功！', 'success');
         }
 
@@ -30453,16 +30462,16 @@ kanban-plugin: basic
                         if (fileSpan) fileSpan.remove();
                         await deletedEmpty(relativePath, `✓ 文件 "${entryName}" 已永久删除`);
                         if (isCurrentViewFile) toggleDashboardView(false)
-                        if(openHistory) openHistory.deleteItem(relativePath);
+                        if (openHistory) openHistory.deleteItem(relativePath);
                         showNotification(`✓ 文件 "${entryName}" 已永久删除`, 'success');
                         scanDashboardData(true);
                     }
                 });
             } else {
                 const entryName = getFileName(entry);
-                showConfirmModal('确认删除', `确定要将文件 "${entryName}" 移动到垃圾箱吗?`,async (confirmed) => {
+                showConfirmModal('确认删除', `确定要将文件 "${entryName}" 移动到垃圾箱吗?`, async (confirmed) => {
                     if (confirmed) {
-                        const target = await doDeleteFile(entry, relativePath) 
+                        const target = await doDeleteFile(entry, relativePath)
                         if (target && target.targetFileHandle && target.deletedRelativePath) {
                             if (fileSpan) fileSpan.remove();
                             clearMarker(relativePath, false);
@@ -30471,10 +30480,10 @@ kanban-plugin: basic
                             if (deletedDirDom) {
                                 const deletedFileName = target.targetFileHandle.name || entryName;
                                 const fileItem = await createFileItem(deletedFileName, target.deletedRelativePath, +deletedDirDom.dataset.depth + 1);
-                                if (fileItem){ deletedDirDom.appendChild(fileItem);handleFileCreated(target.deletedRelativePath); handleFileDel(relativePath);}
+                                if (fileItem) { deletedDirDom.appendChild(fileItem); handleFileCreated(target.deletedRelativePath); handleFileDel(relativePath); }
                             }
                             if (isCurrentViewFile) toggleDashboardView(false)
-                            if(openHistory) openHistory.deleteItem(relativePath);
+                            if (openHistory) openHistory.deleteItem(relativePath);
                         }
                     }
                 });
@@ -30613,7 +30622,7 @@ kanban-plugin: basic
                         if (deletedDirDom) {
                             if (!fileExists) {
                                 const fileItem = await createFileItem(fileName, originalPath, +deletedDirDom.dataset.depth + 1);
-                                if (fileItem){ deletedDirDom.appendChild(fileItem); handleFileCreated(originalPath);}
+                                if (fileItem) { deletedDirDom.appendChild(fileItem); handleFileCreated(originalPath); }
                             }
                             const fileSpan = document.querySelector('.file-item[data-file-path="' + originalPath + '"]');
                             if (fileSpan) clickFileSpan(originalPath, fileSpan);
@@ -30649,7 +30658,7 @@ kanban-plugin: basic
                     recordOperation(dirName, np, OPERATION_TYPES.DELETE);
                     await clearMarker(np, true);
                     // 删除打开历史记录中该目录下的所有文件
-                    if(openHistory) openHistory.deleteItemByPrefix(np);
+                    if (openHistory) openHistory.deleteItemByPrefix(np);
                     // 若当前打开的文件位于被删目录下，关闭视图
                     const activePath = currentActiveItem ? normalizePath(currentActiveItem.dataset.filePath || '') : '';
                     if (activePath && (activePath === np || activePath.startsWith(np + SLASH))) {
@@ -30702,7 +30711,7 @@ kanban-plugin: basic
                     }
                     recordOperation(dirName, np, OPERATION_TYPES.DELETE_PERMANENT);
                     await clearMarker(np, true);
-                    if(openHistory) openHistory.deleteItemByPrefix(np);
+                    if (openHistory) openHistory.deleteItemByPrefix(np);
                     // 若当前打开的文件位于被删目录下，关闭视图
                     const activePath = currentActiveItem ? normalizePath(currentActiveItem.dataset.filePath || '') : '';
                     if (activePath && (activePath === np || activePath.startsWith(np + SLASH))) {
@@ -31126,7 +31135,7 @@ kanban-plugin: basic
             safeLocalStorageSet(LAST_FILE_KEY, newRelativePath);
             recordOperation(newName, newRelativePath, OPERATION_TYPES.RENAME);
             // 更新打开历史记录（更新到新路径，而非删除，避免重命名后条目消失）
-            if(openHistory) openHistory.updateItemPath(relativePath, newRelativePath, newName);
+            if (openHistory) openHistory.updateItemPath(relativePath, newRelativePath, newName);
             showNotification(`✓ 已重命名为 ${newName}` + (hasFailed ? '（部分索引未更新）' : ''), hasFailed ? 'warning' : 'success');
             // 异步刷新扫描数据（不阻塞重命名流程，失败不提示）
             scanDashboardData(true);
@@ -33024,9 +33033,9 @@ kanban-plugin: basic
                 let viewList = [];
                 const data = safeLocalStorageGet(VIEW_OPER_RECORDS_KEY);
                 viewList = data ? JSON.parse(data) : [];
-                if(!isEmpty(viewList)){
+                if (!isEmpty(viewList)) {
                     var item = viewList[0];
-                    if(item.name === name && item.type === typeInfo.key && action === item.action){
+                    if (item.name === name && item.type === typeInfo.key && action === item.action) {
                         return;
                     }
                 }
@@ -33292,7 +33301,7 @@ kanban-plugin: basic
             targetItem.style.background = '#ffe0a0';
             setTimeout(() => { targetItem.style.removeProperty('background'); }, 2500);
         }
-       async function handleFileCreated(relPath){
+        async function handleFileCreated(relPath) {
             const now = new Date();
             const normalizedPath = normalizePath(relPath);
             const parentPath = dirname(normalizedPath);
@@ -33315,8 +33324,8 @@ kanban-plugin: basic
                 console.warn('[tree] 获取文件元信息失败，使用默认值:', e);
             }
             patchScanDataForNewFile(normalizedPath, parentPath, fileName, size, mtimeSec);
-       }
-       async function handleFileRename(relPath, oldPath){
+        }
+        async function handleFileRename(relPath, oldPath) {
             const normalizedPath = normalizePath(relPath);
             const parentPath = dirname(normalizedPath);
             const fileName = basename(normalizedPath);
@@ -33350,8 +33359,8 @@ kanban-plugin: basic
                 entry.name = fileName;
                 entry.path = normalizedPath;
             }
-       }
-       async function handleFileDel(relPath){
+        }
+        async function handleFileDel(relPath) {
             const normalizedPath = normalizePath(relPath);
             const parentPath = dirname(normalizedPath);
             const fileName = basename(normalizedPath);
@@ -33367,7 +33376,7 @@ kanban-plugin: basic
             // 从 _scanData 中删除（findIndex 替代 indexOf，避免误删最后一个元素）
             const idx = bucket.findIndex(f => f.name === fileName);
             if (idx >= 0) bucket.splice(idx, 1);
-       }
+        }
 
         // ── Agent 写文件后的增量文件树同步（10 万级知识库：绝不全量刷新）──
         // 由 css_js/modules/agent.js 的 `agent:file-written` 监听调用：
@@ -34332,7 +34341,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (dirDom) {
                 if (!overwrite) {
                     const fileItem = await createFileItem(fileName, newRelativePath, +dirDom.dataset.depth + 1);
-                    if (fileItem){ dirDom.appendChild(fileItem); handleFileCreated(newRelativePath);}
+                    if (fileItem) { dirDom.appendChild(fileItem); handleFileCreated(newRelativePath); }
                 }
                 const fileSpan = document.querySelector('.file-item[data-file-path="' + newRelativePath + '"]');
                 if (fileSpan) clickFileSpan(newRelativePath, fileSpan);
@@ -34340,7 +34349,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const tree = document.getElementById('tree');
                 if (!overwrite) {
                     const fileItem = await createFileItem(fileName, newRelativePath, 0);
-                    if (fileItem){ tree.appendChild(fileItem); handleFileCreated(newRelativePath);}
+                    if (fileItem) { tree.appendChild(fileItem); handleFileCreated(newRelativePath); }
                 }
                 const fileSpan = document.querySelector('.file-item[data-file-path="' + newRelativePath + '"]');
                 if (fileSpan) clickFileSpan(newRelativePath, fileSpan);
@@ -35261,7 +35270,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             renderMermaidMermaid();
         }
 
-        function downloadBlob(blob, fileName) {
+        async function downloadBlob(blob, fileName) {
             if (!blob) {
                 console.error('downloadBlob: blob is null or undefined');
                 showNotification('下载失败：生成的文件为空', 'error');
@@ -35272,13 +35281,45 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 showNotification('下载失败：文件格式错误', 'error');
                 return;
             }
+            try {
+                const ext = (fileName.split('.').pop() || '').toLowerCase();
+                const filters = ext
+                    ? [{ name: ext.toUpperCase() + ' 文件', extensions: [ext] }]
+                    : undefined;
+                const savePath = await window.__TAURI__.dialog.save({
+                    defaultPath: fileName,
+                    filters: filters,
+                });
+                if (!savePath) return; // 用户取消
+                const arrayBuffer = await blob.arrayBuffer();
+                const bytes = new Uint8Array(arrayBuffer);
+                await window.__TAURI__.core.invoke('write_file_binary', {
+                    path: savePath,
+                    content: Array.from(bytes),
+                });
+                showNotification('✓ 已保存：' + savePath, 'success');
+                // 在系统资源管理器中定位并高亮显示该文件
+                try {
+                    await window.__TAURI__.core.invoke('show_file_dir_window', {
+                        path: savePath,
+                        isFile: true,
+                    });
+                } catch (e) {
+                    console.warn('显示文件所在目录失败:', e);
+                }
+                return;
+            } catch (err) {
+                console.error('Tauri 保存失败，降级到浏览器下载:', err);
+                showNotification('保存失败，已降级到浏览器下载：' + (err && err.message ? err.message : err), 'warning');
+            }
+            // 非 Tauri 模式或 Tauri 失败时降级：浏览器 Blob 下载
             const doc = document.createElement("a");
             doc.href = URL.createObjectURL(blob);
             doc.download = fileName;
             document.body.appendChild(doc);
             doc.click();
             document.body.removeChild(doc);
-            setTimeout(() => URL.revokeObjectURL(doc.href), 5000);
+            setTimeout(() => URL.revokeObjectURL(doc.href), 60000);
         }
 
         function getSvgStringMermaid() {
@@ -35326,34 +35367,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 downloadBlob(new Blob([svgMermaid], { type: "image/svg+xml;charset=utf-8" }), "mermaid_chart.svg");
                 return;
             }
-            if (fmtMermaid === "pdf") {
-                const img = new Image();
-                img.onload = () => {
-                    const s = 4;
-                    const c = document.createElement("canvas");
-                    // 使用实际尺寸而不是 naturalWidth/naturalHeight
-                    const actualWidth = img.width || img.naturalWidth || 800;
-                    const actualHeight = img.height || img.naturalHeight || 600;
-                    c.width = actualWidth * s;
-                    c.height = actualHeight * s;
-                    const xMermaid = c.getContext("2d");
-                    xMermaid.scale(s, s);
-                    xMermaid.fillStyle = "#fff";
-                    xMermaid.fillRect(0, 0, actualWidth, actualHeight);
-                    xMermaid.drawImage(img, 0, 0, actualWidth, actualHeight);
-                    const u = c.toDataURL("image/png"), w = window.open("");
-                    w.document.write('<!DOCTYPE html><html><body style="margin:0;text-align:center"><img src="' + u + '" style="max-width:100%"></body></html>',);
-                    w.document.close();
-                    setTimeout(() => {
-                        try {
-                            w.print();
-                        } catch (e) {
-                        }
-                    }, 300);
-                };
-                img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgMermaid)));
-                return;
-            }
             const img = new Image();
             img.onload = () => {
                 const s = 4, c = document.createElement("canvas");
@@ -35362,9 +35375,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 const actualHeight = img.height || img.naturalHeight || 600;
                 c.width = actualWidth * s;
                 c.height = actualHeight * s;
+                c.style.backgroundColor = "#fff";
                 const x = c.getContext("2d");
                 x.scale(s, s);
-                if (fmtMermaid === "jpg") {
+                if (fmtMermaid === "jpg" || fmtMermaid === "webp" || fmtMermaid === "png") {
                     x.fillStyle = "#fff";
                     x.fillRect(0, 0, actualWidth, actualHeight);
                 }
@@ -35374,7 +35388,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     if (bMermaid) downloadBlob(bMermaid, "mermaid_chart." + fmtMermaid);
                 }, mMermaid, 0.92,);
             };
-            img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgMermaid)));
+            img.src = "data:image/svg+xml;utf8," + encodeURIComponent(svgMermaid);
         }
 
         async function loadSaveDirectoryTreeMermaid() {
@@ -36246,13 +36260,13 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
 
         let _canvasSaveDebounced = null;
         async function handleCanvasSaveToggleClick(e) {
-            if(e) e.stopPropagation();
+            if (e) e.stopPropagation();
             const data = canvasData;
             const content = JSON.stringify({
                 nodes: data.nodes,
                 edges: data.edges
             });
-            if(currentFileHandle) {
+            if (currentFileHandle) {
                 const fileHandle = currentFileHandle;
                 // 稳定持有防抖函数，复用同一 timer 实现真正的去抖；惰性创建，传参为最新 content/handle
                 if (!_canvasSaveDebounced) {
@@ -36264,7 +36278,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     }, 500);
                 }
                 _canvasSaveDebounced(fileHandle, content);
-            }else{
+            } else {
                 await showSaveModal({
                     title: '保存canvas画布文件',
                     getDefaultFileName: () => 'untitled.canvas',
@@ -36285,7 +36299,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 handleCanvasSaveToggleClick();
             }
         }
- 
+
         let currentWhiteboardContent = ''; // 当前画布内容（JSON 字符串）
         function handleBBSaveShortcut(e) {
             if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') {
@@ -38424,7 +38438,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     max: 100,
                     splitNumber: 5,
                     progress: { show: true, width: 6, roundCap: true },
-                    axisLine: {roundCap: true, lineStyle: { width: 6, color: [[0.5, '#2ea043'], [0.8, '#d97706'], [1, '#dc2626']] } },
+                    axisLine: { roundCap: true, lineStyle: { width: 6, color: [[0.5, '#2ea043'], [0.8, '#d97706'], [1, '#dc2626']] } },
                     splitLine: { show: false },
                     axisLabel: { show: false },
                     title: {
@@ -38437,9 +38451,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         showAbove: true,
                         size: 5,
                         itemStyle: {
-                        color: '#fff'
+                            color: '#fff'
                         }
-                    }, 
+                    },
                     detail: {
                         fontSize: 10,
                         color: '#646a73',
@@ -38447,9 +38461,9 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         formatter: '{value}%',
                     },
                     data: [
-                           { value: 0.15, name: 'mem', title: {  offsetCenter: ['35%', '60%'] }, detail: {  offsetCenter: ['40%', '85%'] } },
-                            { value: 0.15, name: 'cpu', title: {  offsetCenter: ['-35%', '60%'] }, detail: {  offsetCenter: ['-40%', '85%'] } },
-                        ]
+                        { value: 0.15, name: 'mem', title: { offsetCenter: ['35%', '60%'] }, detail: { offsetCenter: ['40%', '85%'] } },
+                        { value: 0.15, name: 'cpu', title: { offsetCenter: ['-35%', '60%'] }, detail: { offsetCenter: ['-40%', '85%'] } },
+                    ]
                 }]
             };
 
@@ -38702,7 +38716,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 html += `<span class="si-k">${esc(a[0])}</span><span class="si-v" title="${esc(a[1])}">${esc(a[1])}</span>`;
                 if (b) {
                     html += `<span class="si-k">${esc(b[0])}</span><span class="si-v" title="${esc(b[1])}">${esc(b[1])}</span>`;
-                } 
+                }
             }
             html += `<span class="si-row-full"><span class="si-k">CPU</span><span class="si-v" title="${sys.cpu_brand}">${sys.cpu_brand}</span></span>`;
             html += `<span class="si-row-full"><span class="si-k">GPU</span><span class="si-v" title="${gpu0.name}">${gpu0.name}</span></span>`;
@@ -38717,15 +38731,19 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const memChart = dashboardCharts['cpu-memGauge'];
             if (!memChart) return;
 
-            memChart.setOption({ series: [{ data: [
-                { value: d.memory.percent, name: 'mem', title: {  offsetCenter: ['35%', '60%'] }, detail: {  offsetCenter: ['40%', '85%'] } },
-                { value: d.cpu.percent, name: 'cpu', title: {  offsetCenter: ['-35%', '60%'] }, detail: {  offsetCenter: ['-40%', '85%'] } },
-            ]}]});
+            memChart.setOption({
+                series: [{
+                    data: [
+                        { value: d.memory.percent, name: 'mem', title: { offsetCenter: ['35%', '60%'] }, detail: { offsetCenter: ['40%', '85%'] } },
+                        { value: d.cpu.percent, name: 'cpu', title: { offsetCenter: ['-35%', '60%'] }, detail: { offsetCenter: ['-40%', '85%'] } },
+                    ]
+                }]
+            });
 
             const usedGB = (d.memory.used / 1073741824).toFixed(1);
             const totalGB = (d.memory.total / 1073741824).toFixed(1);
             const memDetail = document.getElementById('memDetail');
-            if (memDetail) memDetail.textContent =  d.cpu.core_count + ' 核       ' + usedGB + SLASH + totalGB + ' GB';
+            if (memDetail) memDetail.textContent = d.cpu.core_count + ' 核       ' + usedGB + SLASH + totalGB + ' GB';
 
             // 系统信息（静态文本，内容变化时才重渲染）
             if (d.system) _renderSystemInfo(d.system);
@@ -39709,11 +39727,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     ctx.fillStyle = '#ffffff';
                     ctx.fillRect(0, 0, canvas.width, canvas.height);
                     ctx.drawImage(img, 0, 0);
-                    var link = document.createElement('a');
-                    link.download = 'regex-railroad.png';
-                    link.href = canvas.toDataURL('image/png');
-                    link.click();
-                    showNotification('图片导出成功！', 'success');
+                    canvas.toBlob((blob) => {
+                        downloadBlob(blob, 'regex-railroad.png');
+                        showNotification('图片导出成功！', 'success');
+                    }, 'image/png');
                 };
                 img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgStr)));
             };
@@ -43712,13 +43729,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                             const preview = previews[0];
                             const jpegData = new Uint8Array(buffer, preview.offset, preview.length);
                             const blob = new Blob([jpegData], { type: 'image/jpeg' });
-                            const url = URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = filename.replace(/\.[^.]+$/, '_preview.jpg');
-                            a.click();
+                            downloadBlob(blob, filename.replace(/\.[^.]+$/, '_preview.jpg'));
                             showNotification('预览已下载', 'success');
-                            setTimeout(() => URL.revokeObjectURL(url), 5000);
                         } else {
                             alert('此文件不包含内嵌 JPEG 预览');
                         }
@@ -51359,134 +51371,134 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             let unlisteners;
             try {
                 unlisteners = await Promise.all([
-                window.__TAURI__.event.listen('llm:delta', (e) => {
-                    if (e.payload.request_id !== requestId) return;
-                    const delta = e.payload.content;
-                    if (!delta) return;
-                    _chatStreamingFullContent += delta;
-                    if (!_chatStreamingDiv) {
-                        removeChatTyping();
-                        const container = document.getElementById('chat-messages');
-                        const div = getMessageAssistant();
-                        container.appendChild(div);
-                        _chatStreamingDiv = div;
-                    }
-                    if (_chatStreamingDiv) {
-                        _chatStreamingDiv._rawContent = _chatStreamingFullContent;
-                    }
-                    // rAF 节流渲染 + 滚动（合并到同一帧）
-                    _scheduleStreamRender();
-                }),
-                window.__TAURI__.event.listen('llm:usage', (e) => {
-                    if (e.payload.request_id !== requestId) return;
-                    usageData = e.payload;
-                }),
-                window.__TAURI__.event.listen('llm:done', async (e) => {
-                    if (e.payload.request_id !== requestId) return;
-                    llmDone = true;
-                    // 取消未执行的流式渲染帧（done 后用完整渲染覆盖，避免轻量版回写）
-                    _cancelStreamRender();
-                    const fullContent = e.payload.content;
-                    // 立即快照本次响应所需数据为局部变量：
-                    // finally 会清空 _chatStreamingDiv / _streamingToolCalls / _chatStreamingFullContent，
-                    // 必须先固化，保证落库不受竞态影响。
-                    const toolCallsSnapshot = _streamingToolCalls.slice();
-                    const streamingDiv = _chatStreamingDiv;
-                    const tokenCount = usageData?.completion_tokens || 0;
-                    // 快照会话 id：落库/列表刷新/重命名用快照，避免回复期间切换会话导致落错会话
-                    // （与 rag 路径 ragSessionId 快照语义一致）
-                    const doneSessionId = currentSessionId;
-                    // 内存态（当前会话立即可见，不依赖落库结果）
-                    if (fullContent) {
-                        chatMessages.push({ role: 'assistant', content: fullContent, toolCalls: toolCallsSnapshot, created_at: Date.now() });
-                        updateTurnCounter();
-                    }
-                    // ===== 落库与 UI 后处理并行（互不依赖；各自异常隔离，不互相阻断） =====
-                    const persistTask = (async () => {
-                        if (!doneSessionId || !fullContent) return;
-                        try {
-                            const savedMsg = await saveChatMessageWithRetry({
-                                dirPath: currentRootPath,
-                                sessionId: doneSessionId,
-                                role: 'assistant',
-                                content: fullContent,
-                                tokenCount,
-                                toolCalls: JSON.stringify(toolCallsSnapshot),
-                            });
-                            // 回填真实 message_id（删除本轮对话时按 id 精确匹配后端删除）
-                            if (savedMsg && savedMsg.id) {
-                                const lastMsg = chatMessages[chatMessages.length - 1];
-                                if (lastMsg && lastMsg.role === 'assistant') lastMsg.id = savedMsg.id;
-                                if (streamingDiv && !streamingDiv.dataset.messageId) {
-                                    streamingDiv.dataset.messageId = savedMsg.id;
-                                }
-                            }
-                            // 记录到 AI 历史（使 AI 使用统计包含聊天对话）
-                            if (isTauriVisit() && fullContent) {
-                                window.addAIHistoryItemTauri({
-                                    dirPath: currentRootPath,
-                                    type: 'chat',
-                                    label: (chatMessages[0]?.content || '对话').slice(0, 50),
-                                    prompt: text,
-                                    result: fullContent,
-                                    fileName: '',
-                                    filePath: '',
-                                    tokenCount: tokenCount || 0,
-                                }).catch(e => console.warn('记录 AI 历史失败:', e));
-                            }
-                            // 会话列表刷新一次（合并重命名检查，避免重复全量 list/渲染）
-                            await refreshChatSessionListOnce(doneSessionId);
-                        } catch (e) {
-                            console.error('[chat] 保存助手消息失败（重试后仍失败）:', e);
-                            showNotification('⚠ 回复未能保存到对话历史，请检查数据库', 'warning');
-                        }
-                    })();
-                    const uiTask = (async () => {
-                        try {
-                            // 流式期间为轻量渲染（未 sanitize），done 后用完整渲染覆盖（含 DOMPurify）
-                            if (streamingDiv) {
-                                streamingDiv._rawContent = fullContent;
-                            }
-                            if (streamingDiv && streamingDiv._body) {
-                                streamingDiv._body.innerHTML = `<div class="markdown-body" style="zoom: 1;background: transparent;">${renderChatMarkdown(fullContent)}</div>`;
-                            }
-                            // 流式结束后对代码块进行语法高亮（复制按钮读取原始 Markdown）
-                            if (streamingDiv && streamingDiv._body) {
-                                await highlightChatCodeBlocks(streamingDiv._body);
-                            }
-                            // 生成完成后追加底部操作按钮（复制/保存，hover 显示），必须为最后一个子元素
-                            if (streamingDiv) {
-                                streamingDiv.appendChild(createMessageFooter('assistant', Date.now()));
-                            }
+                    window.__TAURI__.event.listen('llm:delta', (e) => {
+                        if (e.payload.request_id !== requestId) return;
+                        const delta = e.payload.content;
+                        if (!delta) return;
+                        _chatStreamingFullContent += delta;
+                        if (!_chatStreamingDiv) {
                             removeChatTyping();
-                            // 更新上下文使用率（模型上下文窗口占用率）
-                            if (usageData && usageData.prompt_tokens) {
-                                updateContextUsage(usageData.prompt_tokens, LOCAL_LLM_CONTEXT_LENGTH || 10000);
-                            }
-                            // 更新缓存命中率（DSH 口径；provider 未上报缓存字段时显示占位）
-                            updateCacheRate(usageData, 'normal');
-                        } catch (e) {
-                            console.error('[chat] done UI 后处理异常:', e);
+                            const container = document.getElementById('chat-messages');
+                            const div = getMessageAssistant();
+                            container.appendChild(div);
+                            _chatStreamingDiv = div;
                         }
-                    })();
-                    await Promise.allSettled([persistTask, uiTask]);
-                }),
-                window.__TAURI__.event.listen('llm:error', async (e) => {
-                    if (e.payload.request_id !== requestId) return;
-                    llmDone = true;
-                    removeChatTyping();
-                    // 生成失败/断联：保留已生成的部分内容（落库 + 入内存），
-                    // 避免重新打开页面后回复的半截消息消失
-                    if (!partialSaved && _chatStreamingFullContent && _chatStreamingFullContent.trim()) {
-                        partialSaved = true;
-                        await savePartialAssistantMessage();
-                    }
-                    showNotification('✗ ' + e.payload.message, 'error');
-                }),
-                // 工具调用轨迹（预留：聊天 Agent 后续若接入工具同样可视化）
-                window.__TAURI__.event.listen('agent:tool_call', (e) => handleAgentToolEvent(e, requestId)),
-                window.__TAURI__.event.listen('agent:tool_result', (e) => handleAgentToolEvent(e, requestId)),
-            ]);
+                        if (_chatStreamingDiv) {
+                            _chatStreamingDiv._rawContent = _chatStreamingFullContent;
+                        }
+                        // rAF 节流渲染 + 滚动（合并到同一帧）
+                        _scheduleStreamRender();
+                    }),
+                    window.__TAURI__.event.listen('llm:usage', (e) => {
+                        if (e.payload.request_id !== requestId) return;
+                        usageData = e.payload;
+                    }),
+                    window.__TAURI__.event.listen('llm:done', async (e) => {
+                        if (e.payload.request_id !== requestId) return;
+                        llmDone = true;
+                        // 取消未执行的流式渲染帧（done 后用完整渲染覆盖，避免轻量版回写）
+                        _cancelStreamRender();
+                        const fullContent = e.payload.content;
+                        // 立即快照本次响应所需数据为局部变量：
+                        // finally 会清空 _chatStreamingDiv / _streamingToolCalls / _chatStreamingFullContent，
+                        // 必须先固化，保证落库不受竞态影响。
+                        const toolCallsSnapshot = _streamingToolCalls.slice();
+                        const streamingDiv = _chatStreamingDiv;
+                        const tokenCount = usageData?.completion_tokens || 0;
+                        // 快照会话 id：落库/列表刷新/重命名用快照，避免回复期间切换会话导致落错会话
+                        // （与 rag 路径 ragSessionId 快照语义一致）
+                        const doneSessionId = currentSessionId;
+                        // 内存态（当前会话立即可见，不依赖落库结果）
+                        if (fullContent) {
+                            chatMessages.push({ role: 'assistant', content: fullContent, toolCalls: toolCallsSnapshot, created_at: Date.now() });
+                            updateTurnCounter();
+                        }
+                        // ===== 落库与 UI 后处理并行（互不依赖；各自异常隔离，不互相阻断） =====
+                        const persistTask = (async () => {
+                            if (!doneSessionId || !fullContent) return;
+                            try {
+                                const savedMsg = await saveChatMessageWithRetry({
+                                    dirPath: currentRootPath,
+                                    sessionId: doneSessionId,
+                                    role: 'assistant',
+                                    content: fullContent,
+                                    tokenCount,
+                                    toolCalls: JSON.stringify(toolCallsSnapshot),
+                                });
+                                // 回填真实 message_id（删除本轮对话时按 id 精确匹配后端删除）
+                                if (savedMsg && savedMsg.id) {
+                                    const lastMsg = chatMessages[chatMessages.length - 1];
+                                    if (lastMsg && lastMsg.role === 'assistant') lastMsg.id = savedMsg.id;
+                                    if (streamingDiv && !streamingDiv.dataset.messageId) {
+                                        streamingDiv.dataset.messageId = savedMsg.id;
+                                    }
+                                }
+                                // 记录到 AI 历史（使 AI 使用统计包含聊天对话）
+                                if (isTauriVisit() && fullContent) {
+                                    window.addAIHistoryItemTauri({
+                                        dirPath: currentRootPath,
+                                        type: 'chat',
+                                        label: (chatMessages[0]?.content || '对话').slice(0, 50),
+                                        prompt: text,
+                                        result: fullContent,
+                                        fileName: '',
+                                        filePath: '',
+                                        tokenCount: tokenCount || 0,
+                                    }).catch(e => console.warn('记录 AI 历史失败:', e));
+                                }
+                                // 会话列表刷新一次（合并重命名检查，避免重复全量 list/渲染）
+                                await refreshChatSessionListOnce(doneSessionId);
+                            } catch (e) {
+                                console.error('[chat] 保存助手消息失败（重试后仍失败）:', e);
+                                showNotification('⚠ 回复未能保存到对话历史，请检查数据库', 'warning');
+                            }
+                        })();
+                        const uiTask = (async () => {
+                            try {
+                                // 流式期间为轻量渲染（未 sanitize），done 后用完整渲染覆盖（含 DOMPurify）
+                                if (streamingDiv) {
+                                    streamingDiv._rawContent = fullContent;
+                                }
+                                if (streamingDiv && streamingDiv._body) {
+                                    streamingDiv._body.innerHTML = `<div class="markdown-body" style="zoom: 1;background: transparent;">${renderChatMarkdown(fullContent)}</div>`;
+                                }
+                                // 流式结束后对代码块进行语法高亮（复制按钮读取原始 Markdown）
+                                if (streamingDiv && streamingDiv._body) {
+                                    await highlightChatCodeBlocks(streamingDiv._body);
+                                }
+                                // 生成完成后追加底部操作按钮（复制/保存，hover 显示），必须为最后一个子元素
+                                if (streamingDiv) {
+                                    streamingDiv.appendChild(createMessageFooter('assistant', Date.now()));
+                                }
+                                removeChatTyping();
+                                // 更新上下文使用率（模型上下文窗口占用率）
+                                if (usageData && usageData.prompt_tokens) {
+                                    updateContextUsage(usageData.prompt_tokens, LOCAL_LLM_CONTEXT_LENGTH || 10000);
+                                }
+                                // 更新缓存命中率（DSH 口径；provider 未上报缓存字段时显示占位）
+                                updateCacheRate(usageData, 'normal');
+                            } catch (e) {
+                                console.error('[chat] done UI 后处理异常:', e);
+                            }
+                        })();
+                        await Promise.allSettled([persistTask, uiTask]);
+                    }),
+                    window.__TAURI__.event.listen('llm:error', async (e) => {
+                        if (e.payload.request_id !== requestId) return;
+                        llmDone = true;
+                        removeChatTyping();
+                        // 生成失败/断联：保留已生成的部分内容（落库 + 入内存），
+                        // 避免重新打开页面后回复的半截消息消失
+                        if (!partialSaved && _chatStreamingFullContent && _chatStreamingFullContent.trim()) {
+                            partialSaved = true;
+                            await savePartialAssistantMessage();
+                        }
+                        showNotification('✗ ' + e.payload.message, 'error');
+                    }),
+                    // 工具调用轨迹（预留：聊天 Agent 后续若接入工具同样可视化）
+                    window.__TAURI__.event.listen('agent:tool_call', (e) => handleAgentToolEvent(e, requestId)),
+                    window.__TAURI__.event.listen('agent:tool_result', (e) => handleAgentToolEvent(e, requestId)),
+                ]);
             } catch (e) {
                 // 事件监听注册失败：复位流式状态，避免 chatStreaming 卡死 → 停止按钮失效/会话无法停止
                 console.error('[chat] 事件监听注册失败:', e);
@@ -52298,7 +52310,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 } else {
                     trendContainer.innerHTML = '<div style="font-size:0.6875rem;color:var(--t3);width:100%;text-align:center;justify-content:center;">暂无趋势数据</div>';
                 }
-            } 
+            }
         }
 
         /** 渲染技能执行统计（skill_metrics 数据） */
@@ -53094,11 +53106,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             constructor() {
                 this.openHistory = [];
             }
-            deleteItemByPrefix(dirPrefix){
-                if(!dirPrefix) return;
+            deleteItemByPrefix(dirPrefix) {
+                if (!dirPrefix) return;
                 if (!isEmpty(this.openHistory)) {
                     const ids = this.openHistory.filter(item => item.filePath.startsWith(dirPrefix)).map(item => item.id);
-                    if(!isEmpty(ids)){
+                    if (!isEmpty(ids)) {
                         for (let id of ids) {
                             const element = document.getElementById(`open-history-${id}`);
                             if (element) openHistoryContainer.removeChild(element);
@@ -53108,10 +53120,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             }
             deleteItem(filePath) {
-                if(!filePath) return;
+                if (!filePath) return;
                 if (!isEmpty(this.openHistory)) {
                     const ids = this.openHistory.filter(item => item.filePath === filePath).map(item => item.id);
-                    if(!isEmpty(ids)){
+                    if (!isEmpty(ids)) {
                         for (let id of ids) {
                             const element = document.getElementById(`open-history-${id}`);
                             if (element) openHistoryContainer.removeChild(element);
@@ -53121,7 +53133,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             }
             updateItemPath(oldPath, newPath, newName) {
-                if(!oldPath || !newPath) return;
+                if (!oldPath || !newPath) return;
                 if (isEmpty(this.openHistory)) return;
                 let changed = false;
                 for (let item of this.openHistory) {
