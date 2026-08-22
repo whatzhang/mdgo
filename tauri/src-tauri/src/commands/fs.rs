@@ -297,6 +297,14 @@ pub async fn delete(app: AppHandle, path: String) -> Result<(), String> {
                 log::error!("[fs] 清理删除文件的索引失败 ({}): {}", rel, e);
             }
         }
+        // 目录删除：额外清理 folder 节点与子目录节点（生命周期级联）
+        if canon.is_dir() {
+            if let Ok(rel) = rel_path_from(&dir, &canon) {
+                if let Err(e) = state.graph_engine.remove_path(&dir, &rel) {
+                    log::warn!("[fs] 目录图清理失败 ({}): {}", rel, e);
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -415,7 +423,23 @@ async fn remove_dir_with_index(app: &AppHandle, root: &str, abs_path: &Path) -> 
             log::error!("[fs] 清理删除目录的索引失败 ({}): {}", rel, e);
         }
     }
+    // 目录级图清理（生命周期级联）：删除 folder 节点 + 该目录下全部节点/边
+    // （collect_remove_targets 只收集文件；folder 节点与子目录节点需在此批量清）
+    if let Ok(rel) = rel_path_from(root, abs_path) {
+        if let Err(e) = state.graph_engine.remove_path(root, &rel) {
+            log::warn!("[fs] 目录图清理失败 ({}): {}", rel, e);
+        }
+    }
     Ok(())
+}
+
+/// 计算 abs_path 相对知识库根 root 的相对路径（正斜杠；不在根内返回 Err）。
+fn rel_path_from(root: &str, abs_path: &Path) -> Result<String, String> {
+    let root_norm = Path::new(root);
+    let rel = abs_path
+        .strip_prefix(root_norm)
+        .map_err(|_| "路径不在知识库目录内".to_string())?;
+    Ok(rel.to_string_lossy().replace('\\', "/"))
 }
 
 /// 将目录移动到垃圾箱（仅 Tauri 调用）

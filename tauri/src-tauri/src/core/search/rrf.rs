@@ -26,6 +26,9 @@ pub struct RrfConfig {
     pub weight_bm25: f32,
     /// 符号路权重（代码查询专用，固定权重）
     pub weight_symbol: f32,
+    /// 图路权重（GraphRAG：文档关系图召回，默认 0.15——图路为佐证/关联补充，
+    /// 权重低于向量/BM25，避免图路噪声压过语义精确匹配）
+    pub weight_graph: f32,
 }
 
 impl Default for RrfConfig {
@@ -35,6 +38,7 @@ impl Default for RrfConfig {
             weight_vec: 0.6,
             weight_bm25: 0.4,
             weight_symbol: 1.0,
+            weight_graph: 0.15,
         }
     }
 }
@@ -119,6 +123,22 @@ fn accumulate(
                     entry.symbol_kind = hit.symbol_kind;
                 }
             }
+            // 图路：仅贡献 RRF 排名分 + 文本兜底，不写分数域（保持分数语义纯净）。
+            // 图路命中的 doc 多为"关联文档"（图结构佐证），文本取自该文档 top chunk。
+            FuseField::Graph => {
+                if entry.text.is_empty() {
+                    entry.text = hit.text.clone();
+                }
+                if entry.path_json.is_none() {
+                    entry.path_json = hit.path_json;
+                }
+                if entry.sentence_window.is_none() {
+                    entry.sentence_window = hit.sentence_window;
+                }
+                if entry.chunk_type.is_none() {
+                    entry.chunk_type = hit.chunk_type;
+                }
+            }
         }
     }
 }
@@ -128,28 +148,49 @@ enum FuseField {
     Vec,
     Bm25,
     Symbol,
+    Graph,
 }
 
-/// 三路 RRF 融合（向量 / BM25 / 代码符号），返回按融合分数降序的结果。
+/// 多路 RRF 融合（向量 / BM25 / 代码符号 / 图路），返回按融合分数降序的结果。
 ///
-/// - 双路/三路命中的文档获得叠加贡献 → 自然奖励"多路共识"
+/// - 多路命中的文档获得叠加贡献 → 自然奖励"多路共识"
 /// - 单路命中的低质量文档仅获单路贡献 → 排名靠后，被精排/阈值过滤
 /// - 结果 `score` 归一化到 [0,1]（除以本批最高分），供无精排阶段的排序与阈值使用；
 ///   精排阶段会以 `score_rerank` 覆盖最终分
+///
+/// `graph_hits` 为空时行为与旧三路完全一致（图路不参与累加）。
+/// 兼容包装（保留旧三路 API 形态；新调用应使用 [`rrf_fuse_graph`]）。
+#[allow(dead_code)]
 pub fn rrf_fuse(
     vec_hits: Vec<SearchHit>,
     bm25_hits: Vec<SearchHit>,
     symbol_hits: Vec<SearchHit>,
     cfg: &RrfConfig,
 ) -> Vec<SearchHit> {
+    rrf_fuse_graph(vec_hits, bm25_hits, symbol_hits, Vec::new(), cfg)
+}
+
+/// 四路 RRF 融合（含图路）。图路命中在 `Entry` 中仅累加 rrf 贡献与补充文本，
+/// 不写入 `score_vec/score_bm25`（保持其它路分数语义纯净）。
+pub fn rrf_fuse_graph(
+    vec_hits: Vec<SearchHit>,
+    bm25_hits: Vec<SearchHit>,
+    symbol_hits: Vec<SearchHit>,
+    graph_hits: Vec<SearchHit>,
+    cfg: &RrfConfig,
+) -> Vec<SearchHit> {
     let k = cfg.k.max(1);
     let mut map: HashMap<(String, u32), Entry> = HashMap::new();
 
     let sym_count = symbol_hits.len();
+    let graph_count = graph_hits.len();
     accumulate(&mut map, vec_hits, cfg.weight_vec, k, FuseField::Vec);
     accumulate(&mut map, bm25_hits, cfg.weight_bm25, k, FuseField::Bm25);
     if !symbol_hits.is_empty() {
         accumulate(&mut map, symbol_hits, cfg.weight_symbol, k, FuseField::Symbol);
+    }
+    if !graph_hits.is_empty() {
+        accumulate(&mut map, graph_hits, cfg.weight_graph, k, FuseField::Graph);
     }
 
     let mut entries: Vec<(String, u32, Entry)> = map
@@ -170,9 +211,10 @@ pub fn rrf_fuse(
     let norm = if max_score > 0.0 { 1.0 / max_score } else { 0.0 };
 
     log::info!(
-        "[rrf] 融合完成: candidates={} 符号路命中={} max_rrf={:.4}",
+        "[rrf] 融合完成: candidates={} 符号路命中={} 图路命中={} max_rrf={:.4}",
         entries.len(),
         sym_count,
+        graph_count,
         max_score
     );
 

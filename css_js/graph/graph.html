@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识图谱 OS</title>
+    <!-- 独立样式文件（SOLID：样式与结构分离） -->
+    <link rel="stylesheet" href="./graph.css" />
+</head>
+
+<body>
+    <!--
+      mdgo Knowledge Graph OS 图谱页（新逻辑，独立于主页面 fileGraph/noteGraph）。
+      【iframe 契约】本页由主页面 common-iframe 加载：
+        - 生命周期：必须暴露 window.destroyCommon()，主页面 cleanupCommonIframe() 切换视图时调用
+        - 上下文：启动时读取 window.frameElement?.dataset（{ dirPath, focusNodeId }）
+        - 通信：postMessage 双向协议（graph:ready / graph:open-node / graph:focus-request / graph:refresh）
+      【构建分发】本目录随 vite staticCopy(css_js/**) 进入 dist，零 vite 配置改动。
+    -->
+
+    <!-- ===== 顶栏 Toolbar ===== -->
+    <header class="kg-toolbar" id="kg-toolbar">
+        <div class="kg-toolbar-group">
+            <span class="kg-title">知识图谱</span>
+            <select class="kg-select" id="kg-graph-type" title="图谱类型">
+                <option value="document">Document 图谱</option>
+                <option value="chunk">Chunk 语义图</option>
+                <option value="entity">Entity 实体图</option>
+            </select>
+            <select class="kg-select" id="kg-layout" title="布局">
+                <option value="force">力导向</option>
+                <option value="radial">径向</option>
+                <option value="circle">环形</option>
+            </select>
+            <span class="kg-lod-badge" id="kg-lod-badge" title="当前 LOD 层级">L1</span>
+        </div>
+        <div class="kg-toolbar-group">
+            <input class="kg-search" id="kg-search-input" type="text" placeholder="搜索节点…" autocomplete="off" />
+            <button class="kg-btn" id="kg-refresh-btn" title="刷新图谱">⟳ 刷新</button>
+            <button class="kg-btn" id="kg-stats-btn" title="图统计">📊</button>
+        </div>
+    </header>
+
+    <!-- ===== 主体：左侧边栏 + 图谱画布 ===== -->
+    <main class="kg-main">
+        <!-- 左侧边栏（可折叠） -->
+        <aside class="kg-sidebar" id="kg-sidebar">
+            <div class="kg-sidebar-section">
+                <div class="kg-sidebar-title">构建状态</div>
+                <div class="kg-build-status" id="kg-build-status">检测中…</div>
+                <div class="kg-progress-track"><div class="kg-progress-bar" id="kg-progress-bar" style="width:0%"></div></div>
+            </div>
+            <div class="kg-sidebar-section">
+                <div class="kg-sidebar-title">类型过滤</div>
+                <div class="kg-type-filters" id="kg-type-filters"><!-- 由 panel 渲染 --></div>
+            </div>
+            <div class="kg-sidebar-section">
+                <div class="kg-sidebar-title">统计</div>
+                <div class="kg-stats" id="kg-stats"><!-- 由 panel 渲染 --></div>
+            </div>
+        </aside>
+
+        <!-- 图谱画布（Sigma 挂载点） -->
+        <section class="kg-canvas" id="kg-canvas">
+            <div class="kg-canvas-placeholder" id="kg-canvas-placeholder">
+                <div class="kg-placeholder-text">图谱引擎加载中…</div>
+            </div>
+        </section>
+
+        <!-- 右侧浮动详情卡 -->
+        <div class="kg-detail-card" id="kg-detail-card" hidden>
+            <div class="kg-detail-head">
+                <span class="kg-detail-title" id="kg-detail-title"></span>
+                <button class="kg-detail-close" id="kg-detail-close" title="关闭">✕</button>
+            </div>
+            <div class="kg-detail-body" id="kg-detail-body"></div>
+            <div class="kg-detail-actions" id="kg-detail-actions"></div>
+        </div>
+    </main>
+
+    <!-- ===== 底部状态栏 ===== -->
+    <footer class="kg-statusbar">
+        <span>节点 <b id="kg-stat-nodes">0</b></span>
+        <span>边 <b id="kg-stat-edges">0</b></span>
+        <span id="kg-stat-lod">LOD L1</span>
+        <span id="kg-stat-engine">引擎: --</span>
+    </footer>
+
+    <!--
+      【模块加载】独立 JS 文件，按依赖顺序加载（IIFE 模块挂 window 全局）：
+        model（无依赖）→ api/store（依赖 model）→ layout/renderer（依赖 store）
+        → interaction（依赖全部）→ panel → app（ESM 入口，组装 + 生命周期）。
+      Sigma 引擎由 app.js 动态 import（缺失时降级占位提示）。
+      按 SOLID：所有业务模块独立文件，graph.html 不内联任何业务脚本。
+    -->
+    <script src="./graph-model.js"></script>
+    <script src="./graph-api.js"></script>
+    <script src="./graph-store.js"></script>
+    <script src="./graph-layout.js"></script>
+    <script src="./graph-renderer.js"></script>
+    <script src="./graph-interaction.js"></script>
+    <script src="./graph-panel.js"></script>
+    <script type="module" src="./graph-app.js"></script>
+</body>
+
+</html>

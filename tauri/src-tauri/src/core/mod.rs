@@ -17,6 +17,7 @@ pub mod trace;
 pub mod validation;
 pub mod schedule;
 pub mod knowledge;
+pub mod graph;
 
 pub mod chat_types;
 pub mod r#loop;

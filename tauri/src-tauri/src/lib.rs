@@ -162,6 +162,8 @@ pub struct AppState {
     pub schedule_scheduler: std::sync::Arc<crate::core::schedule::scheduler::ScheduleScheduler>,
     /// Agent 后台任务状态中心（Phase 1：任务快照，切出页面任务继续、切回恢复视图）
     pub agent_tasks: std::sync::Arc<crate::core::agent::task_store::AgentTaskStore>,
+    /// 知识图谱引擎（Graph Intelligence Layer：SQLite 图存储 + Document Graph 构建调度）
+    pub graph_engine: std::sync::Arc<crate::core::graph::GraphEngine>,
 }
 
 /// 基于 AppState LLM 配置的「书签摘要提供者」，注入 Enrichment Worker 使用。
@@ -370,9 +372,11 @@ pub fn run() {
 
     log::info!("[startup] 启动 mdgo...");
 
-    // 初始化共享服务
+    // ── 初始化共享服务
     let config_store = Arc::new(ConfigStore::new(IndexerConfig::default()));
     let indexer = Arc::new(Indexer::new(config_store.clone()));
+    // 知识图谱引擎（Graph Intelligence Layer）
+    let graph_engine = Arc::new(crate::core::graph::GraphEngine::new());
 
     // watcher 错误回调：通过日志输出
     let on_error: Arc<dyn Fn(&str) + Send + Sync> = Arc::new(|msg: &str| {
@@ -465,10 +469,15 @@ pub fn run() {
                     HashMap<String, Arc<std::sync::Mutex<crate::core::knowledge::bookmark::BookmarkStore>>>,
                 >,
             > = Arc::new(Mutex::new(HashMap::new()));
+
+            // 注入知识图谱引擎到索引器（索引写库后联动 Document Graph）
+            indexer.set_graph_engine(graph_engine.clone());
+
             app.manage(AppState {
                 config_store,
                 indexer,
                 watcher,
+                graph_engine,
                 chat_stores: Mutex::new(HashMap::new()),
                 ai_history_stores: Mutex::new(HashMap::new()),
                 llm_config: RwLock::new(LlmConfig::default()),
@@ -573,6 +582,17 @@ pub fn run() {
             commands::knowledge::kb_embedding_info,
             commands::knowledge::kb_get_indexer_config,
             commands::knowledge::kb_update_indexer_config,
+            // 知识图谱命令（Graph Intelligence Layer）
+            commands::graph::graph_status,
+            commands::graph::graph_stats,
+            commands::graph::graph_related,
+            commands::graph::graph_expand,
+            commands::graph::graph_search,
+            commands::graph::graph_overview,
+            commands::graph::graph_extract_entities,
+            commands::graph::graph_experience_record,
+            commands::graph::graph_experience_search,
+            commands::graph::graph_experience_events,
             commands::config::kb_config_read,
             commands::config::kb_config_write,
             commands::config::kb_config_delete,

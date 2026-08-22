@@ -13,7 +13,7 @@ use crate::core::db::utils::IgnoreMatcher;
 use crate::core::pipeline;
 use crate::core::search::query_plan::{CODE_EXTENSIONS, QueryPlanner, RetrievalIntent, RuleQueryPlanner};
 use crate::core::search::rerank::{LocalBgeReranker, Reranker};
-use crate::core::search::rrf::{rrf_fuse, RrfConfig};
+use crate::core::search::rrf::{rrf_fuse_graph, RrfConfig};
 use crate::core::types::{FileTypeCount, IndexMeta, KbIndexResult, KbStatus};
 
 const KB_SUPPORTED_EXTS: &[&str] = utils::KB_SUPPORTED_EXTS;
@@ -222,6 +222,10 @@ pub struct Indexer {
     indexing_lock: Mutex<()>,
     /// 全量索引进行中标记（用于 watcher 路径检查，避免元数据竞态）
     reindex_in_progress: std::sync::atomic::AtomicBool,
+    /// 知识图谱引擎钩子（可选注入：索引写库后同步更新 Document Graph）。
+    /// 保持 Indexer 纯逻辑：None 时图联动静默跳过（独立测试/无图场景）。
+    /// 用 std Mutex（注入/读取为同步操作，无需 async；与 tokio Mutex 字段区分）
+    graph_engine: std::sync::Mutex<Option<std::sync::Arc<crate::core::graph::GraphEngine>>>,
 }
 
 impl Indexer {
@@ -233,6 +237,56 @@ impl Indexer {
             bm25_cache: Mutex::new(None),
             indexing_lock: Mutex::new(()),
             reindex_in_progress: std::sync::atomic::AtomicBool::new(false),
+            graph_engine: std::sync::Mutex::new(None),
+        }
+    }
+
+    /// 注入知识图谱引擎（AppState 组装时调用；幂等）
+    pub fn set_graph_engine(&self, engine: std::sync::Arc<crate::core::graph::GraphEngine>) {
+        *self.graph_engine.lock().unwrap_or_else(|e| e.into_inner()) = Some(engine);
+    }
+
+    /// 取图引擎钩子（None = 未注入，图联动跳过）
+    fn graph(&self) -> Option<std::sync::Arc<crate::core::graph::GraphEngine>> {
+        self.graph_engine
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    /// 索引写库后联动更新 Document Graph（单文件：更新节点 + 重写出边；失败仅告警）。
+    fn sync_graph_file(&self, dir_path: &str, rel_path: &str) {
+        if let Some(engine) = self.graph() {
+            let cfg = self.config_store.read();
+            let ignore = IgnoreMatcher::new(&cfg.dir_blacklist, &cfg.file_blacklist);
+            if let Err(e) = engine.build_file(dir_path, rel_path, &ignore) {
+                log::warn!("[indexer] 图增量更新失败 ({}): {}", rel_path, e);
+            }
+            // Phase 3：Level 1 实体抽取（规则；失败仅告警，不影响索引/图）
+            if let Err(e) = engine.extract_entities_file(dir_path, rel_path, None) {
+                log::warn!("[indexer] 实体抽取失败 ({}): {}", rel_path, e);
+            }
+        }
+    }
+
+    /// 删除文件后联动清理 Document Graph（生命周期级联）。
+    fn sync_graph_remove(&self, dir_path: &str, rel_path: &str) {
+        if let Some(engine) = self.graph() {
+            if let Err(e) = engine.remove_path(dir_path, rel_path) {
+                log::warn!("[indexer] 图删除清理失败 ({}): {}", rel_path, e);
+            }
+        }
+    }
+
+    /// 全量索引收尾：重建 Document Graph（build_all；失败仅告警，不阻断索引结果）。
+    async fn sync_graph_all(&self, dir_path: &str) {
+        if let Some(engine) = self.graph() {
+            let cfg = self.config_store.read();
+            let ignore = IgnoreMatcher::new(&cfg.dir_blacklist, &cfg.file_blacklist);
+            match engine.build_all(dir_path, &ignore) {
+                Ok(()) => log::info!("[indexer] Document Graph 全量重建完成: {}", dir_path),
+                Err(e) => log::warn!("[indexer] Document Graph 全量重建失败: {}", e),
+            }
         }
     }
 
@@ -466,6 +520,10 @@ impl Indexer {
         set_progress(100, "索引完成".to_string());
         self.reindex_in_progress
             .store(false, std::sync::atomic::Ordering::Release);
+
+        // 索引收尾：联动重建 Document Graph（失败仅告警，不阻断索引结果）
+        self.sync_graph_all(dir_path).await;
+
         Ok(KbIndexResult { file_count, chunk_count: total_chunks, vector_count: total_vectors, indexed_at: now })
     }
 
@@ -505,6 +563,9 @@ impl Indexer {
         log::info!("[indexer] 更新元数据,new_count: {}, old_count: {}, file_delta: {}, chunk_delta: {}, vector_delta: {}", new_count, old_count, file_delta, chunk_delta, vector_delta);
 
         self.update_metadata_delta(dir_path, file_delta, chunk_delta, vector_delta).await;
+
+        // 索引写库成功 → 联动更新 Document Graph（节点 + 出边；失败仅告警）
+        self.sync_graph_file(dir_path, rel_path);
         Ok(())
     }
 
@@ -640,6 +701,11 @@ impl Indexer {
 
         self.update_metadata_delta(dir_path, file_delta, chunk_delta, chunk_delta)
             .await;
+
+        // 批量写库成功 → 联动更新 Document Graph（逐文件节点 + 出边；失败仅告警）
+        for (rel, _) in files {
+            self.sync_graph_file(dir_path, rel);
+        }
         Ok(())
     }
 
@@ -675,6 +741,11 @@ impl Indexer {
         } else {
             log::warn!("[indexer] 文件无索引数据，跳过元数据更新: {}", rel_path);
         }
+
+        // 图清理无条件执行（R1 修复）：全量建图（build_incremental）包含未索引文件
+        // （<10 字符/非支持扩展名等），这些文件无索引数据但可能有图节点——
+        // 若仅在"有索引数据"时才清理，会残留孤儿节点。delete_by_path 找不到时返回 0，无害。
+        self.sync_graph_remove(dir_path, rel_path);
 
         Ok(())
     }
@@ -876,13 +947,60 @@ impl Indexer {
                 symbol_hits = filter_hits_by_ext(symbol_hits, exts);
             }
         }
+
+        // ── 2.5 图路召回（GraphRAG，Phase 2）──
+        // 文档关系图（Document Graph）提供「图结构关联」的独立召回路：
+        //   查询 → 图节点搜索（种子） → 邻域 1 跳 → 关联 doc 路径集合
+        //   → 从 LanceDB 取各 doc 首个 chunk 文本作为 SearchHit（权重低，RRF 排名贡献）。
+        // 价值：命中"语义向量未必相关、但图关系明确关联"的文档（如互为引用/同目录簇），
+        // 且与向量/BM25 同 key 时叠加 RRF 贡献（多路共识奖励）。
+        // 降级：图引擎未注入 / 图未构建 / 查询无种子 → 返回空，不影响其它路。
+        let mut graph_hits: Vec<SearchHit> = Vec::new();
+        if let Some(engine) = self.graph() {
+            match engine.search(dir_path, query, 5) {
+                Ok(seeds) if !seeds.is_empty() => {
+                    // 收集种子节点邻域中的 doc 节点路径（去重，限 20）
+                    let mut doc_paths: Vec<String> = Vec::new();
+                    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+                    for seed in seeds.iter().take(3) {
+                        match engine.neighborhood(dir_path, &seed.id, 1, 50, 100, None, 0.0) {
+                            Ok(nb) => {
+                                for n in nb.nodes {
+                                    if n.node_type == crate::core::graph::model::NodeType::Doc {
+                                        if let Some(p) = n.path {
+                                            if seen.insert(p.clone()) && doc_paths.len() < 20 {
+                                                doc_paths.push(p);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => log::warn!("[indexer] [混合检索] 图路邻域查询失败: {}", e),
+                        }
+                    }
+                    // 从 LanceDB 取各 doc 首个 chunk 文本（图路 SearchHit；失败跳过单个 doc）
+                    if !doc_paths.is_empty() {
+                        for doc in &doc_paths {
+                            match store.fetch_first_chunk(doc).await {
+                                Ok(Some(hit)) => graph_hits.push(hit),
+                                Ok(None) => { /* 该 doc 未索引 chunk，跳过 */ }
+                                Err(e) => log::warn!("[indexer] [混合检索] 图路拉取文档 chunk 失败 ({}): {}", doc, e),
+                            }
+                        }
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => log::warn!("[indexer] [混合检索] 图路种子搜索失败（降级跳过图路）: {}", e),
+            }
+        }
         log::info!(
-            "[indexer] [混合检索] query='{}' intent={:?} vec_hits={} bm25_hits={} symbol_hits={}",
+            "[indexer] [混合检索] query='{}' intent={:?} vec_hits={} bm25_hits={} symbol_hits={} graph_hits={}",
             query,
             plan.intent,
             vec_hits.len(),
             bm25_hits.len(),
-            symbol_hits.len()
+            symbol_hits.len(),
+            graph_hits.len()
         );
 
         // ── 3. RRF 融合（SRP：rank-based 加权融合；alpha 保留为每路权重偏置）──
@@ -892,8 +1010,9 @@ impl Indexer {
             weight_vec: alpha,
             weight_bm25: 1.0 - alpha,
             weight_symbol: 1.0,
+            weight_graph: config.graph_weight,
         };
-        let fused = rrf_fuse(vec_hits, bm25_hits, symbol_hits, &rrf_cfg);
+        let fused = rrf_fuse_graph(vec_hits, bm25_hits, symbol_hits, graph_hits, &rrf_cfg);
         log::info!("[indexer] [混合检索] RRF 融合完成: alpha={:.2} candidates={}", alpha, fused.len());
 
         // ── 4. 双阈值（一）：纯向量噪声过滤 ──
@@ -1708,79 +1827,104 @@ impl Indexer {
         }
         log::info!("[indexer] [增量索引] 共发现 {} 个未索引文件, 共 {} 个文件", unindexed_count, total);
 
-        // 先读取 + 分块所有未索引文件，合并 DocumentChunk
-        progress(15, &format!("正在读取 {} 个未索引文件...", unindexed_count));
+        // 确保 BM25 索引存在（write_chunks 需要）
+        let bm25 = self.get_bm25_index(dir_path).await?;
+
+        // ── 流式批处理（A2 修复）──
+        // 旧实现：先把所有未索引文件的 chunk 全量 flat_map 进一个 Vec 再单批 embedding，
+        // 100 万 chunk 峰值内存 2.5GB+，且不可中断。现改为「文件级流式读取 + chunk 级分批」：
+        //   逐文件 read/chunk → 累积到 batch_chunk_limit（64/128/256）→ 一次 embedding → 写入 → 释放。
+        // 峰值内存 = 单批 chunk 文本 + 单批向量，与 index_all / index_files_batch 同级。
         let cfg = self.config_store.read();
+        let chunk_size = cfg.chunk_size;
+        let chunk_overlap = cfg.chunk_overlap;
+        drop(cfg);
         let html_matcher = html_render_matcher(dir_path);
-        let mut all_file_data: Vec<(String, Vec<DocumentChunk>)> = Vec::new(); // (rel_path, chunks)
+        let chunk_limit = batch_chunk_limit();
+
+        let mut batch_chunks: Vec<DocumentChunk> = Vec::with_capacity(chunk_limit);
         let mut total_new_chunks: u32 = 0;
         let mut file_count: u32 = 0;
+        let total_work = unindexed_paths.len().max(1);
+
+        // 冲刷当前批：embedding + 写库 + 清空（返回本批向量数）。
+        // 定义为内部 async fn（Rust 闭包无法直接 await），store/bm25 显式传入。
+        async fn flush_batch(
+            batch: &mut Vec<DocumentChunk>,
+            store: &LanceStore,
+            bm25: &Bm25Index,
+        ) -> Result<usize, String> {
+            if batch.is_empty() {
+                return Ok(0);
+            }
+            let vectors = pipeline::embed_chunks(batch, None).await?;
+            pipeline::write_chunks(store, bm25, batch, &vectors).await.map_err(|e| {
+                log::error!("[indexer] [增量索引] 写入数据库失败: {}", e);
+                e
+            })?;
+            let n = vectors.len();
+            batch.clear();
+            batch.shrink_to_fit();
+            Ok(n)
+        }
 
         for (idx, (rel, abs)) in unindexed_paths.iter().enumerate() {
             let content = match pipeline::read_document(Path::new(abs)) {
                 Some(c) if c.len() >= 10 => c,
                 _ => continue,
             };
-            let doc_chunks = pipeline::chunk_document(rel, &content, cfg.chunk_size, cfg.chunk_overlap, html_matcher.as_ref());
+            let doc_chunks =
+                pipeline::chunk_document(rel, &content, chunk_size, chunk_overlap, html_matcher.as_ref());
             if doc_chunks.is_empty() {
                 continue;
             }
-            let n = doc_chunks.len() as u32;
-            total_new_chunks += n;
-            file_count += 1;
-            all_file_data.push((rel.clone(), doc_chunks));
 
-            let read_pct = 15 + ((idx + 1) * 5 / unindexed_paths.len().max(1)) as u8;
-            progress(read_pct.min(19), &format!("读取文件 {}/{} (累积 {} 个文本块)", idx + 1, unindexed_paths.len(), total_new_chunks));
+            // 单文件 chunk 超限：先冲刷已有批，再分片处理本文件（避免单文件把整批撑爆）
+            if doc_chunks.len() > chunk_limit {
+                let flushed = flush_batch(&mut batch_chunks, &store, &bm25).await?;
+                total_new_chunks += flushed as u32;
+                for slice in doc_chunks.chunks(chunk_limit) {
+                    let mut owned = slice.to_vec();
+                    let v = flush_batch(&mut owned, &store, &bm25).await?;
+                    total_new_chunks += v as u32;
+                }
+                file_count += 1; // 一个文件计一次（分片不计）
+            } else {
+                // 批内放不下 → 先冲刷
+                if !batch_chunks.is_empty() && batch_chunks.len() + doc_chunks.len() > chunk_limit {
+                    let flushed = flush_batch(&mut batch_chunks, &store, &bm25).await?;
+                    total_new_chunks += flushed as u32;
+                }
+                file_count += 1;
+                batch_chunks.extend(doc_chunks);
+            }
+
+            let read_pct = 15 + ((idx + 1) * 5 / total_work) as u8;
+            progress(
+                read_pct.min(19),
+                &format!("读取文件 {}/{} (已向量化 {} 个文本块)", idx + 1, unindexed_paths.len(), total_new_chunks),
+            );
         }
 
-        if all_file_data.is_empty() {
+        // 冲刷末批
+        let tail = flush_batch(&mut batch_chunks, &store, &bm25).await?;
+        total_new_chunks += tail as u32;
+
+        if total_new_chunks == 0 {
             progress(100, "增量索引完成（无有效内容）");
             return Ok(KbIndexResult { file_count: 0, chunk_count: 0, vector_count: 0, indexed_at: 0 });
         }
 
-        // 合并所有 chunks，一次性批量 Embedding
-        let all_chunks: Vec<DocumentChunk> = all_file_data.iter()
-            .flat_map(|(_, chunks)| chunks.iter().cloned())
-            .collect();
-
-        progress(20, &format!("正在向量化 {} 个文本块（单批推理）...", all_chunks.len()));
-        let embed_progress = |done: usize, total_groups: usize, msg: &str| {
-            let embed_pct = 20 + (done * 60 / total_groups.max(1)) as u8;
-            progress(embed_pct.min(80), msg);
-        };
-        let all_vectors = pipeline::embed_chunks(&all_chunks, Some(&embed_progress)).await?;
-
-        // 分批写入 LanceDB + BM25
-        progress(82, "正在写入数据库...");
-        let batch_limit = batch_chunk_limit();
-        let bm25 = self.get_bm25_index(dir_path).await?;
-        for batch_idx in (0..all_chunks.len()).step_by(batch_limit) {
-            let end = (batch_idx + batch_limit).min(all_chunks.len());
-            let batch_chunks = &all_chunks[batch_idx..end];
-            let batch_vectors = &all_vectors[batch_idx..end];
-
-            pipeline::write_chunks(&store, &bm25, batch_chunks, batch_vectors)
-                .await
-                .map_err(|e| {
-                    log::error!("[indexer] [增量索引] 写入数据库失败: {}", e);
-                    e
-                })?;
-
-            let write_pct = 82 + ((batch_idx + batch_limit) * 13 / all_chunks.len().max(1)) as u8;
-            progress(write_pct.min(95), &format!("写入数据库 {}/{} 文本块", end, all_chunks.len()));
-        }
-
         // 批量更新元数据
-        self.update_metadata_delta(dir_path, file_count as i32, total_new_chunks as i32, all_vectors.len() as i32).await;
+        self.update_metadata_delta(dir_path, file_count as i32, total_new_chunks as i32, total_new_chunks as i32).await;
 
         progress(100, &format!("增量索引完成: {} 文件, {} 文本块", file_count, total_new_chunks));
-        log::info!("[indexer] [增量索引] 共索引 {} 个文件, {} 个文本块, {} 个向量", file_count, total_new_chunks, all_vectors.len() as u32);
-        
+        log::info!("[indexer] [增量索引] 共索引 {} 个文件, {} 个文本块", file_count, total_new_chunks);
+
         Ok(KbIndexResult {
             file_count,
             chunk_count: total_new_chunks,
-            vector_count: all_vectors.len() as u32,
+            vector_count: total_new_chunks,
             indexed_at: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64,
         })
     }

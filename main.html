@@ -16912,7 +16912,8 @@
             { key: '文件时间线', value: 'toggleFile("timeline")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: 'git记录', value: 'toggleFile("gitRecords")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: '文件图谱', value: 'toggleFile("fileGraph")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: '文档关联图谱', value: 'toggleFile("noteGraph")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '文档双链图谱', value: 'toggleFile("noteGraph")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
+            { key: '知识图谱', value: 'toggleFile("graphOS")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
             { key: 'Mermaid', value: 'toggleFile("mermaid")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: 'Excalidraw白板', value: 'toggleFile("whiteboard")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
             { key: 'Canvas画布', value: 'toggleFile("canvas")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
@@ -17822,6 +17823,8 @@
                 await openFileGraph(); openHistory.addItem('fileGraph');
             } else if (type === 'noteGraph') {
                 await openNoteGraph(); openHistory.addItem('noteGraph');
+            } else if (type === 'graphOS') {
+                await window.graphBridge.open(getDirPath(getRootHandle())); openHistory.addItem('graphOS');
             } else if (type === 'bookmarks') {
                 await toggleDashboardBookmarkView(); openHistory.addItem('bookmarks');
             } else if (type === 'dashboard') {
@@ -51755,5 +51758,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
     <script src="./css_js/modules/agent_global.js"></script>
     <script src="./css_js/modules/frontend-bridge.js"></script>
     <script src="./css_js/modules/schedule.js"></script>
+    <script src="./css_js/modules/graph-bridge.js"></script>
     <div id="agent-global-task-bar" class="agent-global-task-bar" style="display:none;"></div>
 </body>

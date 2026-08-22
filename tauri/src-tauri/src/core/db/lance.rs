@@ -711,30 +711,46 @@ impl LanceStore {
     /// 获取所有已索引的文档名列表（去重）。
     ///
     /// 用于 `index_unindexed` 中批量判断哪些文件已索引，避免逐文件 O(N) 查询。
+    ///
+    /// 分页扫描实现（A1 修复）：旧实现硬编码 `limit(10_000)`，50 万文件级知识库下
+    /// 增量判重会漏掉超出前 1 万行之外的文档名 → 已索引文件被误判为未索引而重复重建。
+    /// 现改为按 `PAGE_SIZE` 分页（select 仅 doc_name 列，offset 游标），流式累积去重，
+    /// 内存占用 O(唯一文档数)，与全量 limit 等价但不受行数上限截断。
     pub async fn list_document_names(&self) -> Result<std::collections::HashSet<String>, String> {
+        const PAGE_SIZE: u32 = 10_000;
         let table = self.open_table().await?;
-        let batches: Vec<RecordBatch> = table
-            .query()
-            .limit(10_000)
-            .execute()
-            .await
-            .map_err(|e| format!("扫描文档名失败: {}", e))?
-            .try_collect()
-            .await
-            .map_err(|e| format!("读取文档名失败: {}", e))?;
-
         let mut names = std::collections::HashSet::new();
-        for batch in &batches {
-            let doc_names = batch
-                .column_by_name("doc_name")
-                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
-            if let Some(arr) = doc_names {
-                for i in 0..batch.num_rows() {
-                    if !arr.is_null(i) {
-                        names.insert(arr.value(i).to_string());
+        let mut offset: u32 = 0;
+        loop {
+            let batches: Vec<RecordBatch> = table
+                .query()
+                .limit(PAGE_SIZE as usize)
+                .offset(offset as usize)
+                .execute()
+                .await
+                .map_err(|e| format!("扫描文档名失败: {}", e))?
+                .try_collect()
+                .await
+                .map_err(|e| format!("读取文档名失败: {}", e))?;
+
+            let mut page_rows = 0usize;
+            for batch in &batches {
+                page_rows += batch.num_rows();
+                let doc_names = batch
+                    .column_by_name("doc_name")
+                    .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+                if let Some(arr) = doc_names {
+                    for i in 0..batch.num_rows() {
+                        if !arr.is_null(i) {
+                            names.insert(arr.value(i).to_string());
+                        }
                     }
                 }
             }
+            if page_rows == 0 || page_rows < PAGE_SIZE as usize {
+                break; // 末页（无更多数据或不足一页）
+            }
+            offset += PAGE_SIZE;
         }
         Ok(names)
     }
@@ -824,6 +840,77 @@ impl LanceStore {
 
         results.sort_by(|a, b| a.0.cmp(&b.0));
         Ok(results)
+    }
+
+    /// 获取指定文档的第一个 chunk（图路召回用：图结构关联的 doc 提供代表文本）。
+    ///
+    /// 独立查询（不依赖 `fetch_chunks_between` 的区间语义）：零向量 + only_if(doc_name)
+    /// 预过滤 + limit 1，避免区间参数溢出问题；文档无 chunk 时返回 None。
+    pub async fn fetch_first_chunk(&self, doc_name: &str) -> Result<Option<SearchHit>, String> {
+        let table = self.open_table().await?;
+        let schema = table
+            .schema()
+            .await
+            .map_err(|e| format!("读取表 schema 失败: {}", e))?;
+        let dim = schema
+            .fields()
+            .iter()
+            .find_map(|f| match f.data_type() {
+                DataType::FixedSizeList(_, size) => Some(*size as usize),
+                _ => None,
+            })
+            .ok_or_else(|| "无法从表 schema 读取向量维度".to_string())?;
+        let query_vec = vec![0.0f32; dim];
+        let escaped = doc_name.replace('\'', "''");
+        let filter_sql = format!("doc_name = '{}'", escaped);
+        let batches: Vec<RecordBatch> = table
+            .query()
+            .nearest_to(query_vec)
+            .map_err(|e| format!("nearest_to 失败: {}", e))?
+            .only_if(&filter_sql)
+            .distance_type(DistanceType::Cosine)
+            .limit(1)
+            .execute()
+            .await
+            .map_err(|e| format!("图路首 chunk 查询失败: {}", e))?
+            .try_collect()
+            .await
+            .map_err(|e| format!("读取图路首 chunk 结果失败: {}", e))?;
+
+        for batch in &batches {
+            let texts = batch
+                .column_by_name("text")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+            let chunk_idxs = batch
+                .column_by_name("chunk_index")
+                .and_then(|c| c.as_any().downcast_ref::<UInt32Array>());
+            let path_jsons = batch
+                .column_by_name("path_json")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+            if let (Some(texts), Some(chunk_idxs)) = (texts, chunk_idxs) {
+                for i in 0..batch.num_rows() {
+                    let path_json_val = path_jsons.and_then(|arr| {
+                        if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
+                    });
+                    return Ok(Some(SearchHit {
+                        text: texts.value(i).to_string(),
+                        doc_name: doc_name.to_string(),
+                        chunk_index: chunk_idxs.value(i),
+                        score: 0.0,
+                        score_vec: 0.0,
+                        score_bm25: 0.0,
+                        path_json: path_json_val,
+                        sentence_window: None,
+                        symbol_name: None,
+                        symbol_kind: None,
+                        chunk_type: None,
+                        score_rerank: None,
+                        query_sources: Vec::new(),
+                    }));
+                }
+            }
+        }
+        Ok(None)
     }
 
     /// 仅删除当前表（不删除数据目录），用于知识库重新索引时保留对话索引数据

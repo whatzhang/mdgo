@@ -1,0 +1,328 @@
+/* ===== mdgo Knowledge Graph OS 图谱页样式（css_js/graph/graph.css） =====
+ * 【设计】独立样式文件（SOLID：结构与样式分离）；iframe 内独立作用域。
+ *        跟随主页面视觉：复用 CSS 变量名（--t1/--t2/--t3/--color-primary/--border），
+ *        iframe 内定义兜底值，主页面变量不强制同步。
+ */
+
+/* ─── 主题变量（兜底；主页面已定义时自动继承同名义变量） ─── */
+:root {
+    --kg-bg: #ffffff;
+    --kg-bg-side: #f6f8fa;
+    --kg-border: #d0d7de;
+    --kg-t1: #1f2328;
+    --kg-t2: #57606a;
+    --kg-t3: #8c959f;
+    --kg-primary: #0969da;
+    --kg-accent: #1a7f37;
+    --kg-radius: 6px;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html,
+body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    color: var(--kg-t1);
+    background: var(--kg-bg);
+}
+
+/* ─── 布局骨架：flex 三栏（顶栏 / 主体 / 状态栏） ─── */
+body {
+    display: flex;
+    flex-direction: column;
+}
+
+.kg-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--kg-border);
+    background: var(--kg-bg-side);
+    flex: none;
+}
+
+.kg-toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.kg-title {
+    font-weight: 600;
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+.kg-select,
+.kg-search {
+    padding: 3px 8px;
+    border: 1px solid var(--kg-border);
+    border-radius: var(--kg-radius);
+    background: var(--kg-bg);
+    color: var(--kg-t1);
+    font-size: 12px;
+}
+
+.kg-search {
+    width: 180px;
+}
+
+.kg-btn {
+    padding: 3px 10px;
+    border: 1px solid var(--kg-border);
+    border-radius: var(--kg-radius);
+    background: var(--kg-bg);
+    color: var(--kg-t1);
+    cursor: pointer;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.kg-btn:hover {
+    background: var(--kg-bg-side);
+    border-color: var(--kg-primary);
+}
+
+.kg-btn-sm {
+    padding: 2px 8px;
+    font-size: 11px;
+}
+
+.kg-lod-badge {
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: rgba(9, 105, 218, 0.12);
+    color: var(--kg-primary);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+/* ─── 主体：侧栏 + 画布 ─── */
+.kg-main {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+}
+
+.kg-sidebar {
+    width: 220px;
+    flex: none;
+    overflow-y: auto;
+    border-right: 1px solid var(--kg-border);
+    background: var(--kg-bg-side);
+    padding: 10px;
+}
+
+.kg-sidebar-section {
+    margin-bottom: 14px;
+}
+
+.kg-sidebar-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--kg-t3);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+}
+
+.kg-build-status {
+    font-size: 12px;
+    color: var(--kg-t2);
+    margin-bottom: 6px;
+}
+
+.kg-progress-track {
+    height: 4px;
+    border-radius: 999px;
+    background: var(--kg-border);
+    overflow: hidden;
+}
+
+.kg-progress-bar {
+    height: 100%;
+    background: var(--kg-primary);
+    transition: width 0.3s ease;
+}
+
+.kg-type-filters .kg-filter-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+    font-size: 12px;
+    color: var(--kg-t2);
+    cursor: pointer;
+}
+
+.kg-filter-check {
+    accent-color: var(--kg-primary);
+}
+
+.kg-stats .kg-stat-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    padding: 2px 0;
+    color: var(--kg-t2);
+}
+
+.kg-muted {
+    color: var(--kg-t3);
+    font-size: 12px;
+}
+
+/* ─── 画布 ─── */
+.kg-canvas {
+    flex: 1;
+    position: relative;
+    min-width: 0;
+    background: var(--kg-bg);
+}
+
+.kg-canvas-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--kg-bg);
+    z-index: 1;
+}
+
+.kg-placeholder-text {
+    color: var(--kg-t3);
+    font-size: 13px;
+    text-align: center;
+    padding: 0 24px;
+    line-height: 1.6;
+}
+
+/* Sigma 挂载容器 */
+.kg-canvas > canvas {
+    display: block;
+}
+
+/* ─── 右侧浮动详情卡 ─── */
+.kg-detail-card {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 260px;
+    max-height: 70%;
+    overflow-y: auto;
+    background: var(--kg-bg);
+    border: 1px solid var(--kg-border);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    z-index: 5;
+}
+
+.kg-detail-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--kg-border);
+    background: var(--kg-bg-side);
+    border-radius: 8px 8px 0 0;
+}
+
+.kg-detail-title {
+    font-weight: 600;
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.kg-detail-close {
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: var(--kg-t3);
+    font-size: 13px;
+    padding: 0 2px;
+}
+
+.kg-detail-close:hover {
+    color: var(--kg-t1);
+}
+
+.kg-detail-body {
+    padding: 8px 10px;
+}
+
+.kg-detail-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 12px;
+    padding: 3px 0;
+    color: var(--kg-t2);
+}
+
+.kg-detail-row code {
+    font-size: 11px;
+    color: var(--kg-t1);
+    word-break: break-all;
+    max-width: 170px;
+}
+
+.kg-detail-meta {
+    margin-top: 6px;
+    padding: 6px;
+    border-radius: var(--kg-radius);
+    background: var(--kg-bg-side);
+    font-size: 11px;
+    color: var(--kg-t2);
+    word-break: break-all;
+}
+
+.kg-detail-actions {
+    display: flex;
+    gap: 6px;
+    padding: 0 10px 10px;
+}
+
+/* ─── 底部状态栏 ─── */
+.kg-statusbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 3px 10px;
+    border-top: 1px solid var(--kg-border);
+    background: var(--kg-bg-side);
+    font-size: 11px;
+    color: var(--kg-t3);
+    flex: none;
+}
+
+.kg-statusbar b {
+    color: var(--kg-t1);
+    font-weight: 600;
+}
+
+/* ─── 暗色主题适配（跟随主页面 prefers-color-scheme） ─── */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --kg-bg: #0d1117;
+        --kg-bg-side: #161b22;
+        --kg-border: #30363d;
+        --kg-t1: #e6edf3;
+        --kg-t2: #9da7b3;
+        --kg-t3: #6e7681;
+        --kg-primary: #4493f8;
+        --kg-accent: #3fb950;
+    }
+}

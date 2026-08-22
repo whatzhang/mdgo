@@ -39,7 +39,27 @@ pub async fn kb_start_watcher(
     }));
 
     // 启动 watcher（Idempotent）
-    state.watcher.start(&dir_path, &dir_blacklist, &file_blacklist)
+    state.watcher.start(&dir_path, &dir_blacklist, &file_blacklist)?;
+
+    // ── 启动同步（A3 修复：sync_on_start 此前定义了但全仓无调用点）──
+    // 打开知识库目录启动监听时，对比文件修改时间与上次索引时间戳，
+    // 自动增量索引「新增/修改」过的文件，保证索引与文件系统一致（离线修改/复制场景）。
+    // 与 watcher.start 串行执行（同一知识库目录），失败仅告警不阻断启动；
+    // 全量重建场景（kb_index 已 pause watcher）由索引自身保证一致性，此处幂等跳过。
+    let indexer = state.indexer.clone();
+    let sync_dir = dir_path.clone();
+    tauri::async_runtime::spawn(async move {
+        match indexer.sync_on_start(&sync_dir).await {
+            Ok(n) => {
+                if n > 0 {
+                    log::info!("[fs_watcher] 启动同步完成：{} 个文件已增量索引", n);
+                }
+            }
+            Err(e) => log::warn!("[fs_watcher] 启动同步失败（继续使用 watcher 增量）: {}", e),
+        }
+    });
+
+    Ok(())
 }
 
 /// 停止文件监听

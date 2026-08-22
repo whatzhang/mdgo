@@ -130,6 +130,7 @@ pub async fn kb_update_indexer_config(
     rerank_min_score: Option<f32>,
     bm25_msm_ratio: Option<f32>,
     reranker_enabled: Option<bool>,
+    graph_weight: Option<f32>,
 ) -> Result<(), String> {
     let state = app.state::<AppState>();
     let mut cfg = state.config_store.read();
@@ -146,6 +147,7 @@ pub async fn kb_update_indexer_config(
     if let Some(v) = rerank_min_score { cfg.rerank_min_score = v.clamp(0.0, 1.0); }
     if let Some(v) = bm25_msm_ratio { cfg.bm25_msm_ratio = v.clamp(0.0, 1.0); }
     if let Some(v) = reranker_enabled { cfg.reranker_enabled = v; }
+    if let Some(v) = graph_weight { cfg.graph_weight = v.clamp(0.0, 0.5); }
     state.config_store.update(cfg);
     Ok(())
 }

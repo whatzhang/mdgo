@@ -28,6 +28,9 @@ pub struct IndexerConfig {
     pub bm25_msm_ratio: f32,
     /// 是否启用本地 cross-encoder 精排（模型未就绪时自动降级 RRF 排序）
     pub reranker_enabled: bool,
+    /// GraphRAG 图路召回权重（RRF 第四路；0 = 关闭图路）。
+    /// 图路为「图结构关联」佐证，权重低于向量/BM25，避免图噪声压过语义精确匹配。
+    pub graph_weight: f32,
 }
 
 impl Default for IndexerConfig {
@@ -50,6 +53,7 @@ impl Default for IndexerConfig {
             rerank_min_score: 0.2,
             bm25_msm_ratio: 0.6,
             reranker_enabled: true,
+            graph_weight: 0.15,
         }
     }
 }

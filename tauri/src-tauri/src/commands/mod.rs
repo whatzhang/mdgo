@@ -9,6 +9,7 @@ pub mod fs;
 pub mod fs_watcher;
 pub mod git;
 pub mod git_types;
+pub mod graph;
 pub mod knowledge;
 pub mod llm;
 pub mod mcp;
