@@ -465,6 +465,11 @@ pub fn run() {
                     HashMap<String, Arc<std::sync::Mutex<crate::core::knowledge::bookmark::BookmarkStore>>>,
                 >,
             > = Arc::new(Mutex::new(HashMap::new()));
+            // 系统内置技能改为运行时读盘（与全局/项目技能一致）：启动时解析
+            // 打包资源目录并注入注册表；未打包环境回退源码 resources/skills。
+            skill_registry.set_system_dir(crate::core::skill::SkillStore::resolve_system_skills_dir(
+                app.handle(),
+            ));
             app.manage(AppState {
                 config_store,
                 indexer,

@@ -40,10 +40,74 @@ pub fn validate_time(start: &str, end: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// 将前端 5 字段 Cron 补秒后解析为 `cron` crate 的 Schedule
+/// 将前端 5 字段 Cron 补秒后解析为 `cron` crate 的 Schedule。
+///
+/// 星期（第 5 字段）语义对齐前端与文档的标准约定（`0`/`7`=周日，`1`=周一 … `6`=周六）：
+/// `cron` crate 0.13 的数字 dow 是 `1`=周日 … `7`=周六（名字 `MON`/`SUN` 已按同一映射，
+/// 与标准一致），因此数字须从标准约定归一化到 crate 约定，否则 `0 9 * * 1-5`
+/// 后端会按「周日~周四」而非「周一~周五」触发，与前端展示/提醒不一致。
 fn parse_cron(cron_expr: &str) -> Result<Schedule, String> {
-    let expr = format!("0 {}", cron_expr.trim());
+    let expr = normalize_dow(cron_expr.trim());
+    let expr = format!("0 {}", expr);
     Schedule::from_str(&expr).map_err(|e| format!("Cron 表达式无效: {}", e))
+}
+
+/// 将 5 字段 Cron 表达式第 5 字段（日周）的**数字**从标准约定（0/7=周日,1=周一...6=周六）
+/// 映射到 `cron` crate 0.13 约定（1=周日...7=周六）。名字（MON/TUE...）与通配符不做映射：
+/// crate 名字即按 1=周日 语义解析（MON=周一），与标准一致；`*`/`*/K` 覆盖整周，映射后等价。
+fn normalize_dow(cron_expr: &str) -> String {
+    let fields: Vec<&str> = cron_expr.split_whitespace().collect();
+    if fields.len() != 5 {
+        return cron_expr.to_string(); // 非 5 字段：不归一化，交由解析器报错
+    }
+    let dow = fields[4];
+    // 无数字（纯名字/通配符）→ 无需归一化
+    if !dow.chars().any(|c| c.is_ascii_digit()) {
+        return cron_expr.to_string();
+    }
+    // 单个数字 → crate 约定（0/7=周日=1；1..=6 → n+1）
+    let map_num = |t: &str| -> String {
+        if t == "*" {
+            return t.to_string();
+        }
+        match t.parse::<i32>().ok() {
+            Some(n) if (0..=7).contains(&n) => {
+                let m = if n == 0 || n == 7 { 1 } else { n + 1 };
+                m.to_string()
+            }
+            _ => t.to_string(), // 非法值原样保留，交由解析器报错
+        }
+    };
+    let mapped_dow = dow
+        .split(',')
+        .map(|part| {
+            // part 形如：N | N-M | * | N/K | N-M/K | */K
+            let (range_part, step) = match part.split_once('/') {
+                Some((r, s)) => (r, Some(s)),
+                None => (part, None),
+            };
+            let (lo, hi) = match range_part.split_once('-') {
+                Some((a, b)) => (a, b),
+                None => (range_part, range_part),
+            };
+            let mapped_range = if lo == "*" && hi == "*" {
+                "*".to_string()
+            } else if lo == hi {
+                map_num(lo)
+            } else {
+                format!("{}-{}", map_num(lo), map_num(hi))
+            };
+            match step {
+                Some(s) => format!("{}/{}", mapped_range, s),
+                None => mapped_range,
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "{} {} {} {} {}",
+        fields[0], fields[1], fields[2], fields[3], mapped_dow
+    )
 }
 
 /// Cron 事件在指定日期（本地）内命中的所有时间点，裁剪到事件起止区间。
@@ -84,7 +148,6 @@ pub fn expand_cron_times(event: &ScheduleEvent, date: NaiveDate) -> Vec<NaiveDat
 }
 
 /// Cron 事件在 `after` 之后的下一次命中时间（本地时间；公开 API，供提醒调度/前端 upcoming 使用）
-#[allow(dead_code)]
 pub fn next_cron_time(event: &ScheduleEvent, after: NaiveDateTime) -> Option<NaiveDateTime> {
     if event.cron.trim().is_empty() {
         return None;
@@ -92,6 +155,28 @@ pub fn next_cron_time(event: &ScheduleEvent, after: NaiveDateTime) -> Option<Nai
     let schedule = parse_cron(&event.cron).ok()?;
     let from = Local.from_local_datetime(&after).single()?;
     schedule.after(&from).next().map(|t| t.naive_local())
+}
+
+/// 事件在 `now` 之后是否仍有安排（`list` 动作的「未来日程」语义）：
+/// - 普通事件 / 提醒（单点）：结束时间 >= now（进行中或未开始）；
+/// - Cron 事件：事件窗口 [start, end] 内、now 之后仍存在一次命中（窗口已关闭或
+///   窗口内已无未来命中的 cron 不算「未来有日程」）。
+pub fn is_upcoming(event: &ScheduleEvent, now: NaiveDateTime) -> bool {
+    if !event.cron.trim().is_empty() {
+        let Some(end_dt) = parse_local_time(&event.end) else {
+            return true; // 结束时间缺失/无法解析：保守保留
+        };
+        if end_dt < now {
+            return false; // 窗口已结束，cron 不再产生未来实例
+        }
+        return next_cron_time(event, now)
+            .map(|t| t <= end_dt)
+            .unwrap_or(false);
+    }
+    match parse_local_time(&event.end) {
+        Some(end_dt) => end_dt >= now,
+        None => true, // 结束时间缺失/无法解析：保守保留
+    }
 }
 
 /// 事件是否与某日重合（start 与 date 同日；含跨夜事件按 start 日归属，对齐前端 `todoIsSameDay` 语义）
@@ -345,6 +430,89 @@ mod tests {
         let self_only = find_conflicts(&[a, b], s, e, Some("a"));
         assert_eq!(self_only.len(), 1);
         assert_eq!(self_only[0].id, "b");
+    }
+
+    #[test]
+    fn is_upcoming_filters_past_but_keeps_ongoing_and_future() {
+        let now = NaiveDate::from_ymd_opt(2026, 8, 23).unwrap().and_hms_opt(14, 0, 0).unwrap();
+        // 已结束（昨天）→ 排除
+        let past = event("past", "2026-08-22T09:00", "2026-08-22T10:00", "");
+        assert!(!is_upcoming(&past, now), "已结束日程不应出现在 list");
+        // 进行中（13:00-15:00，now=14:00）→ 保留
+        let ongoing = event("ongoing", "2026-08-23T13:00", "2026-08-23T15:00", "");
+        assert!(is_upcoming(&ongoing, now), "进行中日程应保留");
+        // 未来（明天）→ 保留
+        let future = event("future", "2026-08-24T09:00", "2026-08-24T10:00", "");
+        assert!(is_upcoming(&future, now), "未来日程应保留");
+        // 结束时间缺失 → 保守保留
+        let no_end = ScheduleEvent { start: "2026-08-24T09:00".into(), end: String::new(), ..Default::default() };
+        assert!(is_upcoming(&no_end, now), "结束时间缺失应保守保留");
+    }
+
+    #[test]
+    fn normalize_dow_maps_standard_to_crate_convention() {
+        // 标准 0/7=周日,1=周一...6=周六 → crate 1=周日...7=周六
+        assert_eq!(normalize_dow("0 9 * * 1"), "0 9 * * 2"); // 周一
+        assert_eq!(normalize_dow("0 9 * * 0"), "0 9 * * 1"); // 周日
+        assert_eq!(normalize_dow("0 9 * * 7"), "0 9 * * 1"); // 周日（7 别名）
+        assert_eq!(normalize_dow("0 9 * * 6"), "0 9 * * 7"); // 周六
+        assert_eq!(normalize_dow("0 9 * * 1-5"), "0 9 * * 2-6"); // 周一~周五（工作日）
+        assert_eq!(normalize_dow("0 9 * * 0,7"), "0 9 * * 1,1"); // 周末
+        assert_eq!(normalize_dow("0 9 * * 1-5/2"), "0 9 * * 2-6/2");
+        // 名字与通配符保持原样（crate 名字即 1=周日 语义，与标准一致；* 覆盖整周）
+        assert_eq!(normalize_dow("0 9 * * MON-FRI"), "0 9 * * MON-FRI");
+        assert_eq!(normalize_dow("0 9 * * *"), "0 9 * * *");
+        assert_eq!(normalize_dow("0 9 * * */2"), "0 9 * * */2");
+        // 非 5 字段不归一化
+        assert_eq!(normalize_dow("0 9 * *"), "0 9 * *");
+    }
+
+    #[test]
+    fn parse_cron_treats_1_5_as_weekdays() {
+        // 回归：`0 9 * * 1-5` 应按前端/文档语义 = 周一~周五 09:00 触发
+        // （cron crate 0.13 数字 dow 为 1=周日，若未归一化会按周日~周四触发）
+        let e = event("wd", "2026-08-22T09:00", "2026-08-31T18:00", "0 9 * * 1-5");
+        // 周六 14:00 → 下次命中应为周一 08-24 09:00（而非周日 08-23）
+        let saturday = NaiveDate::from_ymd_opt(2026, 8, 22).unwrap().and_hms_opt(14, 0, 0).unwrap();
+        let next = next_cron_time(&e, saturday).expect("应有下次命中");
+        assert_eq!(next.date(), NaiveDate::from_ymd_opt(2026, 8, 24).unwrap(), "1-5 应为周一~周五");
+        // 周日 09:00 不应命中（周末）
+        let sunday = NaiveDate::from_ymd_opt(2026, 8, 23).unwrap().and_hms_opt(9, 0, 0).unwrap();
+        let monday = NaiveDate::from_ymd_opt(2026, 8, 24).unwrap().and_hms_opt(9, 0, 0).unwrap();
+        let hits = expand_cron_times(&e, NaiveDate::from_ymd_opt(2026, 8, 23).unwrap());
+        assert!(
+            !hits.iter().any(|t| *t == sunday),
+            "周日不应命中 1-5: {:?}",
+            hits
+        );
+        let mon_hits = expand_cron_times(&e, NaiveDate::from_ymd_opt(2026, 8, 24).unwrap());
+        assert!(
+            mon_hits.iter().any(|t| *t == monday),
+            "周一应命中 1-5: {:?}",
+            mon_hits
+        );
+    }
+
+    #[test]
+    fn is_upcoming_cron_requires_future_hit_in_window() {
+        let now = NaiveDate::from_ymd_opt(2026, 8, 23).unwrap().and_hms_opt(14, 0, 0).unwrap();
+        // cron 窗口当天 09:00-18:00（每分钟命中）：now=14:00，下一分钟仍有命中 → 保留
+        let cron_open = event("cron-open", "2026-08-23T09:00", "2026-08-23T18:00", "* * * * *");
+        assert!(is_upcoming(&cron_open, now), "窗口未关闭的 cron 仍有未来实例");
+        // cron 窗口当天 09:00-18:00（每天 09:00 命中一次）：now=14:00，当日命中已过 → 排除
+        let cron_daily_past = event("cron-daily", "2026-08-23T09:00", "2026-08-23T18:00", "0 9 * * *");
+        assert!(!is_upcoming(&cron_daily_past, now), "窗口内已无未来命中的 cron 不应列出");
+        // cron 窗口当天 09:00-10:00：窗口已过（now=14:00）→ 排除
+        let cron_closed = event("cron-closed", "2026-08-23T09:00", "2026-08-23T10:00", "0 9 * * *");
+        assert!(!is_upcoming(&cron_closed, now), "窗口已结束的 cron 无未来实例");
+        // cron 窗口仍在未来但按表达式已无未来命中：周六 14:00，工作日 09:00 cron，窗口周日 09:00 结束
+        // （周六→下次工作日命中是周一，已超出窗口）→ 排除
+        let saturday = NaiveDate::from_ymd_opt(2026, 8, 22).unwrap().and_hms_opt(14, 0, 0).unwrap();
+        let cron_weekday = event("cron-wd", "2026-08-22T09:00", "2026-08-23T09:00", "0 9 * * 1-5");
+        assert!(!is_upcoming(&cron_weekday, saturday), "窗口内已无未来命中的 cron 不应列出");
+        // 普通 cron 事件 start 未到（下周一才开始）→ 保留
+        let cron_not_started = event("cron-future", "2026-08-24T09:00", "2026-08-31T18:00", "0 9 * * 1-5");
+        assert!(is_upcoming(&cron_not_started, now), "未开始的 cron 事件应保留");
     }
 
     #[test]

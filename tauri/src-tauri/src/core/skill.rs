@@ -20,6 +20,7 @@ use std::sync::RwLock;
 
 use rusqlite::{Connection, TransactionBehavior};
 use serde::{Deserialize, Serialize};
+use tauri::Manager;
 
 use crate::core::db::schema;
 
@@ -529,24 +530,25 @@ impl SkillStore {
         scope_dir.join(skill_id)
     }
 
-    /// 解析系统内置技能（编译期嵌入常量，scope=system）
-    pub fn scan_system() -> Vec<Skill> {
-        schema::SYSTEM_SKILL_MD
-            .iter()
-            .filter_map(|(id, content)| {
-                match parse_skill_md(content, SkillScope::System, String::new()) {
-                    Ok(mut skill) => {
-                        skill.id = id.to_string();
-                        skill.scope = SkillScope::System;
-                        Some(skill)
-                    }
-                    Err(e) => {
-                        log::warn!("[skill] 系统内置技能解析失败 ({}): {:?}", id, e);
-                        None
-                    }
-                }
-            })
-            .collect()
+    /// 系统内置 Skill 目录（开发/测试兜底：源码 `resources/skills`；运行时由
+    /// [`SkillRegistry::set_system_dir`] 注入打包资源目录后覆盖）。
+    pub fn system_skills_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("resources")
+            .join("skills")
+    }
+
+    /// 解析系统内置 Skill 目录：运行时资源目录优先（打包后），源码资源目录回退（开发期）。
+    ///
+    /// 与全局/项目技能同一套「运行时读盘」逻辑；`read` 工具的技能基础目录
+    /// 也复用此解析（见 `commands/llm.rs::resolve_skill_bases`）。
+    pub fn resolve_system_skills_dir(app: &tauri::AppHandle) -> PathBuf {
+        app.path()
+            .resource_dir()
+            .ok()
+            .map(|r| r.join("skills"))
+            .filter(|p| p.is_dir())
+            .unwrap_or_else(Self::system_skills_dir)
     }
 
     /// 扫描目录下全部 Skill，并收集解析失败项（供前端消息提醒）。
@@ -693,6 +695,8 @@ impl SkillDb {
 /// Skill 注册表：内存读写分离（读走 RwLock，写路径先落盘再刷新）。
 ///
 /// 键 = `(scope, id)`；同名 id 按「系统 < 全局 < 项目」优先级覆盖。
+/// 系统技能与全局/项目一致：**运行时从磁盘扫描**（目录由 [`Self::set_system_dir`] 注入），
+/// 不再编译期嵌入内存，SKILL.md 变更经 watcher 触发 reload 热更新。
 pub struct SkillRegistry {
     inner: RwLock<HashMap<(SkillScope, String), Skill>>,
     /// 最近一次加载的目录（避免重复全量重建；写操作/watcher 会主动 reload）
@@ -701,6 +705,8 @@ pub struct SkillRegistry {
     db_conns: std::sync::Mutex<HashMap<String, Connection>>,
     /// 最近一次 reload 的加载失败项（供命令层转发前端提醒；读走即清空）
     load_errors: std::sync::Mutex<Vec<String>>,
+    /// 系统内置技能目录（运行时解析注入；未注入时回退源码资源目录，供开发/测试）
+    system_dir: RwLock<Option<PathBuf>>,
 }
 
 impl SkillRegistry {
@@ -710,7 +716,26 @@ impl SkillRegistry {
             last_loaded_dir: RwLock::new(None),
             db_conns: std::sync::Mutex::new(HashMap::new()),
             load_errors: std::sync::Mutex::new(Vec::new()),
+            system_dir: RwLock::new(None),
         }
+    }
+
+    /// 注入系统内置技能目录（启动时由资源目录解析；与全局/项目技能一致改为运行时读盘）。
+    pub fn set_system_dir(&self, dir: PathBuf) {
+        *self
+            .system_dir
+            .write()
+            .unwrap_or_else(|e| e.into_inner()) = Some(dir.clone());
+        log::info!("[skill] 系统内置技能目录已注入: {}", dir.display());
+    }
+
+    /// 当前生效的系统技能目录（未注入时回退源码资源目录，供开发/测试）。
+    pub fn system_dir(&self) -> PathBuf {
+        self.system_dir
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+            .unwrap_or_else(SkillStore::system_skills_dir)
     }
 
     /// 目录未加载过时执行一次全量重建（幂等）
@@ -731,12 +756,14 @@ impl SkillRegistry {
     pub fn reload(&self, dir_path: &str) -> Result<usize, String> {
         let mut merged: HashMap<(SkillScope, String), Skill> = HashMap::new();
 
-        // 1. 系统内置（嵌入常量）
-        for skill in SkillStore::scan_system() {
+        // 1. 系统内置（运行时读盘：资源目录 skills/，与全局/项目同一套扫描逻辑）
+        let mut load_errors: Vec<String> = Vec::new();
+        let system_dir = self.system_dir();
+        for skill in SkillStore::scan_dir_with_errors(&system_dir, SkillScope::System, &mut load_errors)
+        {
             merged.insert((skill.scope, skill.id.clone()), skill);
         }
         // 2. 用户全局（覆盖系统同名） + 3. 用户项目（覆盖全局同名）
-        let mut load_errors: Vec<String> = Vec::new();
         for skill in SkillStore::scan_dir_with_errors(
             &SkillStore::global_skills_dir(),
             SkillScope::Global,
@@ -862,9 +889,17 @@ mod tests {
 
     #[test]
     fn system_skills_parse_including_outline_mindmap() {
-        // 编译期嵌入的全部系统技能必须能被解析；新技能添加后本测试自动回归，
-        // 防止 SKILL.md frontmatter 非法导致技能静默缺失。
-        let skills = SkillStore::scan_system();
+        // 系统内置技能改为运行时读盘（与全局/项目一致）：扫描源码资源目录必须能解析；
+        // 新技能添加后本测试自动回归，防止 SKILL.md frontmatter 非法导致技能静默缺失。
+        let system_dir = SkillStore::system_skills_dir();
+        assert!(system_dir.is_dir(), "系统技能目录应存在: {}", system_dir.display());
+        let mut errors: Vec<String> = Vec::new();
+        let skills = SkillStore::scan_dir_with_errors(&system_dir, SkillScope::System, &mut errors);
+        assert!(
+            errors.is_empty(),
+            "系统内置技能存在解析失败项: {:?}",
+            errors
+        );
         assert!(
             skills.iter().any(|s| s.id == "outline-mindmap"),
             "outline-mindmap 技能应被解析成功"

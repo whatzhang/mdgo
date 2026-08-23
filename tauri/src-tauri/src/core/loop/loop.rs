@@ -12,6 +12,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use chrono::Datelike;
 use futures::StreamExt;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
@@ -387,6 +388,26 @@ impl LoopAgent {
                 }
             }
         }
+        // 当前本地时间上下文（主流 Agent 做法：每次请求在 system prompt 最前注入
+        // 日期+时间+星期+时区，作为「今天/现在/明天」等相对时间解析的唯一权威依据；
+        // 会话可能很长，时间必须逐请求刷新、绝不落会话日志缓存）
+        let now_local = chrono::Local::now();
+        let weekday_cn = match now_local.weekday() {
+            chrono::Weekday::Mon => "一",
+            chrono::Weekday::Tue => "二",
+            chrono::Weekday::Wed => "三",
+            chrono::Weekday::Thu => "四",
+            chrono::Weekday::Fri => "五",
+            chrono::Weekday::Sat => "六",
+            chrono::Weekday::Sun => "日",
+        };
+        let time_block = format!(
+            "[当前时间] 本地时间 {}（星期{}，{}）。用户说“今天/现在/明天/后天/本周/本月”等相对时间时一律以此为准，禁止自行推算或猜测日期。",
+            now_local.format("%Y-%m-%d %H:%M"),
+            weekday_cn,
+            now_local.format("%:z")
+        );
+        system = format!("{}\n\n{}", time_block, system);
         // 预算预警（剩余轮次不足时强制引导收敛，避免 MaxTurnsError 丢失整段回答）
         let remaining = hook_ctx.remaining_turns;
         if remaining <= self.config.budget_warning_threshold {

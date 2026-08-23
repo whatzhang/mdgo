@@ -2553,7 +2553,7 @@ impl ScheduleTool {
             cfg,
             spec: ToolSpec::new(
                 "schedule",
-        "日程管理：查询/创建/更新/删除日程与闹钟提醒、冲突检测、到点提醒、农历节假日、找空闲时间段、任务排期、时间统计、日复盘、专注块、当日计划。动作：list 全部日程（输出含 id）；add 新建（title/start/end 必填，YYYY-MM-DDTHH:MM）；update 按 id 或唯一 target_title 部分更新（未传字段保留原值）；remove 按 id 或唯一 title 删除；conflicts 区间重叠检测（start/end 必填）；remind 到点应提醒；lunar 农历节假日（date）；next_available 空闲段（duration_minutes 必填）；plan 任务排布（deadline+tasks 必填，只建议不创建）；optimize 时间统计（range 默认 7d）；review 日复盘；focus 专注块（duration_minutes 必填）；today_plan 某日计划。提醒：reminder_list/reminder_add（time+title 必填）/reminder_update（不传 time 保留原时间）/reminder_remove。可选参数（add/update）：desc/color/cron（5 字段）/notify/notify_before/event_type/priority/related_docs/related_tasks/related_git/ai_category/ai_energy/ai_estimated_hours。当用户要求安排会议、查看日程、规划任务、复盘时间、设置提醒、查询节假日时调用。**强制规则：任何涉及日程/提醒的回答（含\"查询今日日程\"\"有什么安排\"\"到点提醒\"等）必须先调用本工具查询最新数据，禁止依据对话上下文或历史输出推断、复述或编造；用户提到的日程/提醒时间也以本工具返回为准。**",
+        "日程管理：查询/创建/更新/删除日程与闹钟提醒、冲突检测、到点提醒、农历节假日、找空闲时间段、任务排期、时间统计、日复盘、专注块、当日计划。动作：list 当前时刻之后的日程与提醒、以及仍有未来实例的重复（cron）日程（输出含 id；查询某日含已过去时段的完整日程请用 today_plan/review 并传 date）；add 新建（title/start/end 必填，YYYY-MM-DDTHH:MM）；update 按 id 或唯一 target_title 部分更新（未传字段保留原值）；remove 按 id 或唯一 title 删除；conflicts 区间重叠检测（start/end 必填）；remind 到点应提醒；lunar 农历节假日（date）；next_available 空闲段（duration_minutes 必填）；plan 任务排布（deadline+tasks 必填，只建议不创建）；optimize 时间统计（range 默认 7d）；review 日复盘；focus 专注块（duration_minutes 必填）；today_plan 某日计划。提醒：reminder_list/reminder_add（time+title 必填）/reminder_update（不传 time 保留原时间）/reminder_remove。可选参数（add/update）：desc/color/cron（5 字段）/notify/notify_before/event_type/priority/related_docs/related_tasks/related_git/ai_category/ai_energy/ai_estimated_hours。当用户要求安排会议、查看日程、规划任务、复盘时间、设置提醒、查询节假日时调用。**强制规则：任何涉及日程/提醒的回答（含\"查询今日日程\"\"有什么安排\"\"到点提醒\"等）必须先调用本工具查询最新数据，禁止依据对话上下文或历史输出推断、复述或编造；用户提到的日程/提醒时间也以本工具返回为准。**",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -2703,6 +2703,10 @@ let cfg = self.cfg.clone();
                     // reminder_list：只列提醒（event_type=reminder 的单点事件）
                     events.retain(|e| e.event_type == "reminder");
                 }
+                // list 语义：只返回「当前时刻之后」的日程与提醒，以及仍有未来实例的
+                // 重复（cron）日程（cron 事件窗口 [start,end] 内 now 之后仍有命中才算）；
+                // 查询某日含已过去时段的完整日程请用 today_plan/review 并传 date。
+                events.retain(|e| rules::is_upcoming(e, now));
                 if events.is_empty() {
                     return Ok(Value::String(if is_reminder_op {
                         "当前没有提醒".to_string()

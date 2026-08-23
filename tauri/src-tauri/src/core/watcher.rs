@@ -385,6 +385,7 @@ impl WatcherService {
     /// 确保 Skill 目录监控已启动（幂等）。
     ///
     /// 监控目标：
+    /// - 系统内置 Skill 目录（运行时读盘后与全局/项目一致，支持热更新）
     /// - 用户全局 Skill 目录（始终）
     /// - 用户项目 Skill 目录（存在时；不存在则监听 `.mdgo` 父目录，创建技能时会触发）
     pub fn ensure_skill_watching(&self, dir_path: &str) {
@@ -407,6 +408,11 @@ impl WatcherService {
         };
 
         let mut watch_paths: Vec<std::path::PathBuf> = Vec::new();
+        // 系统内置技能目录（运行时读盘，SKILL.md 变更同样触发注册表重建）
+        let system_dir = registry.system_dir();
+        if system_dir.is_dir() {
+            watch_paths.push(system_dir);
+        }
         let global_dir = SkillStore::global_skills_dir();
         if global_dir.is_dir() {
             watch_paths.push(global_dir);

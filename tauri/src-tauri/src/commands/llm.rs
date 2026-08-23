@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use futures::StreamExt;
@@ -229,26 +228,17 @@ fn compression_budget_tokens(context_length: u32) -> usize {
 
 /// 计算各作用域技能基础目录（供 read 工具按需读取已激活技能的参考文档，渐进式披露 L3）。
 ///
-/// - system：应用资源目录下的 `skills`（开发期资源未同步时回退到源码资源目录）
+/// - system：应用资源目录下的 `skills`（运行时读盘，开发期资源未同步时回退源码资源目录）
 /// - global：用户全局技能目录 `{appdata}/com.mdgo/skills`
 /// - project：`{打开目录}/.mdgo/skills`
 ///
 /// read 工具按「激活技能 → 作用域匹配 → 基础目录/skill_id」定位，仅限已激活技能。
 fn resolve_skill_bases(app: &AppHandle, dir_path: &str) -> Vec<(String, String)> {
     let mut bases = Vec::new();
-    let sys = app
-        .path()
-        .resource_dir()
-        .map(|r| r.join("skills"))
-        .unwrap_or_default();
-    let sys = if sys.exists() {
-        sys
-    } else {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("resources")
-            .join("skills")
-    };
-    bases.push(("system".to_string(), sys.to_string_lossy().to_string()));
+    bases.push((
+        "system".to_string(),
+        SkillStore::resolve_system_skills_dir(app).to_string_lossy().to_string(),
+    ));
     bases.push((
         "global".to_string(),
         SkillStore::global_skills_dir().to_string_lossy().to_string(),

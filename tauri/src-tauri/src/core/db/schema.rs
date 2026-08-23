@@ -4,77 +4,13 @@
 //! 提供：
 //! - `init_all(conn)`：依次执行全部 `CREATE TABLE IF NOT EXISTS` + 列迁移
 //! - `seed_system_data(conn, system_skills)`：写入系统内置 Skill 种子数据
-//! - `SYSTEM_SKILL_MD`：系统内置 Skill 的 SKILL.md 原文（编译期嵌入，随安装包分发）
+//!
+//! 注：系统内置 Skill 的 SKILL.md 不再编译期嵌入——与全局/项目技能一致，
+//! 运行时从资源目录 `skills/` 读盘扫描（见 `core/skill.rs` 的 `SkillStore::scan_dir_with_errors`）。
 
 use rusqlite::Connection;
 
 use crate::core::skill::Skill;
-
-/// 系统内置 Skill 的 SKILL.md 原文（id → 内容）。
-/// 编译期 `include_str!` 嵌入二进制，保证 dev / 打包环境一致；
-/// 文件归档于 `tauri/src-tauri/resources/skills/{id}/SKILL.md`，并随 bundle 打包。
-pub const SYSTEM_SKILL_MD: &[(&str, &str)] = &[
-    (
-        "kb-summary",
-        include_str!("../../../resources/skills/kb-summary/SKILL.md"),
-    ),
-    (
-        "repo-status",
-        include_str!("../../../resources/skills/repo-status/SKILL.md"),
-    ),
-    (
-        "code-lookup",
-        include_str!("../../../resources/skills/code-lookup/SKILL.md"),
-    ),
-    (
-        "kb-search",
-        include_str!("../../../resources/skills/kb-search/SKILL.md"),
-    ),
-    (
-        "mermaid",
-        include_str!("../../../resources/skills/mermaid/SKILL.md"),
-    ),
-    (
-        "note-writing",
-        include_str!("../../../resources/skills/note-writing/SKILL.md"),
-    ),
-    (
-        "pomodoro",
-        include_str!("../../../resources/skills/pomodoro/SKILL.md"),
-    ),
-    (
-        "raw-photography",
-        include_str!("../../../resources/skills/raw-photography/SKILL.md"),
-    ),
-    (
-        "kanban",
-        include_str!("../../../resources/skills/kanban/SKILL.md"),
-    ),
-    (
-        "schedule",
-        include_str!("../../../resources/skills/schedule/SKILL.md"),
-    ),
-    (
-        "outline-mindmap",
-        include_str!("../../../resources/skills/outline-mindmap/SKILL.md"),
-    ),
-    (
-        "open-ui",
-        include_str!("../../../resources/skills/open-ui/SKILL.md"),
-    ),
-    (
-        "bookmark",
-        include_str!("../../../resources/skills/bookmark/SKILL.md"),
-    ),
-    (
-        "canvas",
-        include_str!("../../../resources/skills/canvas/SKILL.md"),
-    ),
-    (
-        "web-research",
-        include_str!("../../../resources/skills/web-research/SKILL.md"),
-    ),
-];
 
 /// 执行全部建表 DDL + 列迁移（幂等，可重复调用）。
 pub fn init_all(conn: &Connection) -> Result<(), String> {

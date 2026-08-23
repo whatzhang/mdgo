@@ -29,7 +29,8 @@ updated_at: 1760000000000
 
 | 用户意图 | action | 参数 |
 |---|---|---|
-| 查看全部日程 | `list` | —（输出含每条的 `id`，供 update/remove 使用） |
+| 查看全部日程 | `list` | —（**仅返回当前时刻之后的日程与提醒，以及仍有未来实例的重复 cron 日程**；输出含每条的 `id`，供 update/remove 使用） |
+| 查看某日完整日程（含已过去时段，如“今天有什么安排”） | `today_plan` | 可选 `date`（默认今天，省略即系统当前日期） |
 | 新建日程 | `add` | `title`、`start`、`end`（YYYY-MM-DDTHH:MM）必填；可选 `desc`/`color`/`cron`（5 字段重复表达式）/`notify`/`notify_before`（提前提醒分钟数）/`event_type`/`priority`/`related_docs`/`related_tasks`/`related_git`/`ai_category`/`ai_energy`/`ai_estimated_hours` |
 | 修改日程 | `update` | `id`（取自 `list` 输出）或唯一 `target_title`；**支持部分更新**：未传 `title`/`start`/`end`/`color`/`cron`/`event_type`/`priority` 时保留原值（`desc`/`notify`/`notify_before`/`related`/`ai` 显式传值即覆盖） |
 | 删除日程 | `remove` | 优先 `id`（取自 `list` 输出）；标题唯一时也可用 `title` 定位 |
@@ -54,7 +55,8 @@ updated_at: 1760000000000
 
 ## 自然语言时间解析
 - 把用户口语时间转为结构化参数：如"明天下午 3 点开会 1 小时" → `add` `start=明天15:00` `end=明天16:00` `title=开会`。
-- 今天/明天/后天、几点几分、上午/下午/晚上均需换算为 `YYYY-MM-DDTHH:MM` 本地时间。
+- **系统会在上下文注入当前本地时间**（`[当前时间] 本地时间 YYYY-MM-DD HH:MM（星期X）`）；"今天/现在/明天/后天"一律以此为准换算为 `YYYY-MM-DDTHH:MM`，**禁止凭训练知识猜测日期**。
+- "查询今天的日程"等需要某日完整安排（含已过去时段）的场景：用 `today_plan`（省略 `date` 即系统当前日期），不要用 `list`（`list` 只返回未来日程）。
 - 模糊时间（"最近找时间讨论"）**不要创建日程**：调用 `next_available` 推荐具体时间段，向用户确认后再 `add`。
 
 ## 冲突处理规则
