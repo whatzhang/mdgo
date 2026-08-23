@@ -1,9 +1,19 @@
 // macOS 链接器对齐段警告（tract-onnx 固有，可安全忽略）
 #![allow(linker_messages)]
 mod commands;
+// 🟠 L31：`core` 保持私有（不暴露整个 core 层公共 API 面）；benchmark bin 通过
+// 下面的窄门面 `bench_api` 访问所需符号（`required-features = ["bench"]` 见 Cargo.toml）。
 mod core;
 mod services;
 mod tray;
+
+/// 🟠 L31：benchmark 专用窄门面——只在 `bench` feature 下公开，仅导出基准所需符号，
+/// 默认构建不把 core 层（约 20 个模块）的公共 API 暴露到 `mdgo_lib` 外部。
+#[cfg(feature = "bench")]
+pub mod bench_api {
+    pub use crate::core::db::utils::{call_embedding_query, ensure_model_ready};
+    pub use crate::core::{ConfigStore, Indexer, IndexerConfig};
+}
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};

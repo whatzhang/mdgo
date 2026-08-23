@@ -17,6 +17,52 @@ pub struct KbDashboardStats {
 /// 索引当前目录（全量重建）
 ///
 /// 使用本地模型，无需 API 配置。黑名单控制哪些目录/文件跳过。
+/// P0-1 分块参数校验（🟠 M27 修复：`kb_index` / `kb_update_indexer_config` 共用同一规则，
+/// 杜绝双份复制漂移；并新增 **size+overlap 联合校验**，对齐 I-budget-2 不变式）。
+///
+/// - `chunk_size` 必须在 [64, 窗口−8]（token）；
+/// - `chunk_overlap` 必须 < `chunk_size / 2`；
+/// - `chunk_size + chunk_overlap ≤ 窗口−8`：否则 `ChunkBudget::from_config` 会把 overlap
+///   静默钳到 0（用户设置被悄悄丢弃），此处改为显式拒绝；
+/// - 返回最终生效的 `(chunk_size, chunk_overlap)`（未提供的参数沿用当前配置值参与校验）。
+fn validate_chunk_params(
+    chunk_size: Option<usize>,
+    chunk_overlap: Option<usize>,
+    current_size: usize,
+    current_overlap: usize,
+) -> Result<(usize, usize), String> {
+    let max_seq = crate::core::get_max_seq_len();
+    let max_ok = crate::core::db::token_budget::max_chunk_tokens(max_seq);
+
+    let size = match chunk_size {
+        Some(v) if v < 64 || v > max_ok => {
+            return Err(format!(
+                "chunk_size 需在 [64, {}]（token）之间；当前 embedding 模型窗口 {}，预留 {} token 给 special tokens",
+                max_ok, max_seq, 8
+            ));
+        }
+        Some(v) => v,
+        None => current_size,
+    };
+    let overlap = chunk_overlap.unwrap_or(current_overlap);
+    if overlap >= size / 2 {
+        return Err(format!(
+            "chunk_overlap 需小于 chunk_size 的一半（当前 chunk_size={} token）",
+            size
+        ));
+    }
+    if size.saturating_add(overlap) > max_ok {
+        return Err(format!(
+            "chunk_size + chunk_overlap 需 ≤ 模型窗口预算 {}（当前 {} + {} = {}）；请减小分块大小或重叠",
+            max_ok,
+            size,
+            overlap,
+            size.saturating_add(overlap)
+        ));
+    }
+    Ok((size, overlap))
+}
+
 /// 索引期间自动暂停 watcher 增量处理，避免并发写 DB 竞态。
 #[tauri::command]
 pub async fn kb_index(
@@ -32,12 +78,19 @@ pub async fn kb_index(
     let state = app.state::<AppState>();
 
     let old_cfg = state.config_store.read();
+    // P0-1：分块参数校验（🟠 M27：公共校验函数，含 size+overlap 联合校验）
+    let (chunk_size_final, chunk_overlap_final) = validate_chunk_params(
+        chunk_size,
+        chunk_overlap,
+        old_cfg.chunk_size,
+        old_cfg.chunk_overlap,
+    )?;
     // 更新配置，保留已有值，新字段可选
     state.config_store.update(IndexerConfig {
         dir_blacklist,
         file_blacklist,
-        chunk_size: chunk_size.unwrap_or(old_cfg.chunk_size),
-        chunk_overlap: chunk_overlap.unwrap_or(old_cfg.chunk_overlap),
+        chunk_size: chunk_size_final,
+        chunk_overlap: chunk_overlap_final,
         top_k: top_k.unwrap_or(old_cfg.top_k),
         min_score: min_score.unwrap_or(old_cfg.min_score),
         ..old_cfg
@@ -130,11 +183,18 @@ pub async fn kb_update_indexer_config(
     rerank_min_score: Option<f32>,
     bm25_msm_ratio: Option<f32>,
     reranker_enabled: Option<bool>,
+    // 🟠 M23 修复：证据校验开关接线（原为死配置——`evidence_check_enabled` 无任何
+    // 命令参数与前端入口，C2 特性不可达；现可经此参数开启）
+    evidence_check_enabled: Option<bool>,
 ) -> Result<(), String> {
     let state = app.state::<AppState>();
     let mut cfg = state.config_store.read();
-    if let Some(v) = chunk_size { cfg.chunk_size = v; }
-    if let Some(v) = chunk_overlap { cfg.chunk_overlap = v; }
+
+    // P0-1：分块参数校验（🟠 M27：公共校验函数，含 size+overlap 联合校验——
+    // 拒绝非法值，不再静默接受；chunk 超模型窗口会被静默截断）
+    let (size, overlap) = validate_chunk_params(chunk_size, chunk_overlap, cfg.chunk_size, cfg.chunk_overlap)?;
+    cfg.chunk_size = size;
+    cfg.chunk_overlap = overlap;
     if let Some(v) = top_k { cfg.top_k = v; }
     if let Some(v) = min_score { cfg.min_score = v; }
     if let Some(v) = fusion_alpha { cfg.fusion_alpha = v.clamp(0.0, 1.0); }
@@ -146,6 +206,7 @@ pub async fn kb_update_indexer_config(
     if let Some(v) = rerank_min_score { cfg.rerank_min_score = v.clamp(0.0, 1.0); }
     if let Some(v) = bm25_msm_ratio { cfg.bm25_msm_ratio = v.clamp(0.0, 1.0); }
     if let Some(v) = reranker_enabled { cfg.reranker_enabled = v; }
+    if let Some(v) = evidence_check_enabled { cfg.evidence_check_enabled = v; }
     state.config_store.update(cfg);
     Ok(())
 }
@@ -270,6 +331,7 @@ pub async fn kb_embedding_info() -> Result<crate::core::types::KbEmbeddingInfo, 
             model_name: db_utils::get_local_embedding_model_name(),
             dimension: 0,
             status: status.into(),
+            max_position_embeddings: 0,
         });
     }
 
@@ -281,9 +343,36 @@ pub async fn kb_embedding_info() -> Result<crate::core::types::KbEmbeddingInfo, 
             model_name,
             dimension,
             status: "loaded".into(),
+            // P0-1：前端据此约束 chunk_size 上限（窗口 - special tokens 预留）
+            max_position_embeddings: crate::core::get_max_seq_len() as u32,
         })
     })
     .await
     .map_err(|e| format!("Embedding 任务执行失败: {}", e))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 🟠 M27：分块参数校验——范围 / overlap 上限 / size+overlap 联合校验
+    #[test]
+    fn validate_chunk_params_range_and_joint() {
+        // 窗口 512 → max_ok = 504
+        // 合法值
+        let ok = validate_chunk_params(Some(448), Some(56), 448, 56).unwrap();
+        assert_eq!(ok, (448, 56));
+
+        // chunk_size 超窗口
+        assert!(validate_chunk_params(Some(600), None, 448, 56).is_err());
+        // chunk_size 低于下限
+        assert!(validate_chunk_params(Some(32), None, 448, 56).is_err());
+        // overlap ≥ size/2
+        assert!(validate_chunk_params(Some(448), Some(224), 448, 56).is_err());
+        // 联合校验：448 + 100 > 504 → 拒绝（旧实现会通过并静默钳 overlap 到 0）
+        assert!(validate_chunk_params(Some(448), Some(100), 448, 56).is_err());
+        // 边界：恰好等于预算
+        assert!(validate_chunk_params(Some(448), Some(56), 448, 56).is_ok());
+    }
 }
 

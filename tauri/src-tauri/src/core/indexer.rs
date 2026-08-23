@@ -7,7 +7,9 @@ use tokio::sync::Mutex;
 use crate::core::chat_types::ChatMessage;
 use crate::core::config::ConfigStore;
 use crate::core::db::bm25::Bm25Index;
+use crate::core::db::chunk_splitter::ChunkResult;
 use crate::core::db::lance::{DocumentChunk, LanceStore, SearchHit};
+use crate::core::db::token_budget;
 use crate::core::db::utils;
 use crate::core::db::utils::IgnoreMatcher;
 use crate::core::pipeline;
@@ -17,6 +19,15 @@ use crate::core::search::rrf::{rrf_fuse, RrfConfig};
 use crate::core::types::{FileTypeCount, IndexMeta, KbIndexResult, KbStatus};
 
 const KB_SUPPORTED_EXTS: &[&str] = utils::KB_SUPPORTED_EXTS;
+
+/// B3：检索期上下文扩展的最大字符数（sentence_window 上限；整节召回防撑爆 LLM 上下文）。
+/// 与 agent 侧 MAX_CONTEXT_CHARS（12_000）保持在同一量级，扩展文本过大时截断。
+const MAX_WINDOW_CHARS: usize = 6_000;
+
+/// B2b：精排候选截断上限（cross-encoder 本地推理是延迟大头；只对 RRF 序 Top-N 精排）。
+/// 50 为延迟/精度折中：基准实测 30 截断 Recall@10 降 13.5pp（RRF 30 名外相关文档丢失），
+/// 50 截断在 avg ~1.5s 时保留更多召回。
+const RERANK_MAX_CANDIDATES: usize = 50;
 
 /// 动态批次上限：按机器内存调整（64/128/256），低内存机器用小批次避免峰值内存过高。
 /// 仅执行一次探测，进程生命周期内保持不变。
@@ -110,6 +121,54 @@ fn ext_filter_sql(exts: &[&str]) -> String {
         .map(|e| format!("LOWER(doc_name) LIKE '%.{}'", e.to_lowercase()))
         .collect();
     format!("({})", clauses.join(" OR "))
+}
+
+/// 构造 tags 列（JSON 数组字符串，如 `["redis","运维"]`）的 LIKE 过滤条件（🟠 M10）。
+///
+/// - **JSON 元素精确匹配**：模式锚定 JSON 引号（`%"tag"%`），`tag:web` 不会误命中
+///   "webdev" 等子串；
+/// - **大小写不敏感**：`LOWER(tags)` 与小写模式，`tag:redis` 可命中 frontmatter 的 `Redis`；
+/// - **通配符转义**：`%`/`_`/`\` 前缀 `\` 并声明 `ESCAPE '\'`，标签含下划线（如
+///   `rag_notes`）不再被当作通配符；
+/// - 注：假设 DataFusion 字符串字面量按标准 SQL 处理（反斜杠为字面字符），与
+///   `escape_sql_string` 的 `\\` 约定一致；若标签含 SQL 引号，serde_json 已将其
+///   JSON 转义为 `\"`，不产生裸引号。
+fn tag_like_condition(tag: &str) -> String {
+    let json_enc = serde_json::to_string(tag).unwrap_or_else(|_| format!("\"{}\"", tag));
+    let lower = json_enc.to_lowercase();
+    let mut pattern = String::with_capacity(lower.len() + 8);
+    for c in lower.chars() {
+        match c {
+            '%' | '_' | '\\' => {
+                pattern.push('\\');
+                pattern.push(c);
+            }
+            _ => pattern.push(c),
+        }
+    }
+    format!("LOWER(tags) LIKE '%{}%' ESCAPE '\\'", pattern)
+}
+
+/// 🟠 M14：`index_all` 的 RAII 复位守卫——无论成功、`?` 错误还是 panic 路径，
+/// drop 时都把 `reindex_in_progress` 复位为 false（否则一次失败的全量索引会让
+/// watcher 增量路径被永久跳过，直到重启或下次成功 index_all）。
+struct ReindexGuard<'a>(&'a std::sync::atomic::AtomicBool);
+
+impl Drop for ReindexGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, std::sync::atomic::Ordering::Release);
+    }
+}
+
+/// 🟠 M11：精排失败回退时的阈值过滤——与 `hybrid_recall` 步骤 4 的 THRESHOLD-4 条件
+/// 一致，但**不加 `rerank_active` 放行项**（精排已失败 = 未精排语义）：无 BM25/符号
+/// 佐证且原始余弦低于 `vec_min_score` 的纯向量噪声必须被过滤，避免直通 finalize。
+fn apply_threshold_filter(hits: Vec<SearchHit>, vec_min_score: f32) -> Vec<SearchHit> {
+    hits.into_iter()
+        .filter(|h| {
+            h.score_bm25 > 0.0 || h.symbol_name.is_some() || h.score_vec >= vec_min_score
+        })
+        .collect()
 }
 
 /// 计算向量/BM25 融合权重 α（0~1，越高越偏向语义向量）。
@@ -222,6 +281,8 @@ pub struct Indexer {
     indexing_lock: Mutex<()>,
     /// 全量索引进行中标记（用于 watcher 路径检查，避免元数据竞态）
     reindex_in_progress: std::sync::atomic::AtomicBool,
+    /// A2：最近一次检索的分阶段耗时（benchmark 消费）
+    last_timings: Mutex<Option<crate::core::types::RetrievalTimings>>,
 }
 
 impl Indexer {
@@ -233,7 +294,16 @@ impl Indexer {
             bm25_cache: Mutex::new(None),
             indexing_lock: Mutex::new(()),
             reindex_in_progress: std::sync::atomic::AtomicBool::new(false),
+            last_timings: Mutex::new(None),
         }
+    }
+
+    /// A2：读取最近一次混合检索的分阶段耗时（benchmark / 可观测性）。
+    /// 🟠 L24：多查询并发路径（预检索优化器对原始+扩展查询并行跑 hybrid_recall）
+    /// 会互相覆盖本值且 finalize 段不补全——benchmark 走单查询 hybrid_search 不受
+    /// 影响；可观测性数据在多查询路径以"最后一次写入"为准（已知局限）。
+    pub async fn last_retrieval_timings(&self) -> Option<crate::core::types::RetrievalTimings> {
+        self.last_timings.lock().await.clone()
     }
 
     /// 检测是否有全量索引正在执行（watcher 路径跳过 index_file 用）
@@ -304,12 +374,17 @@ impl Indexer {
         let _guard = self.indexing_lock.lock().await;
         self.reindex_in_progress
             .store(true, std::sync::atomic::Ordering::Release);
+        // 🟠 M14 修复：RAII guard——index_all 的任何提前返回（含 `?` 错误路径）都复位
+        // reindex_in_progress，避免「一次失败的全量索引后 watcher 增量被永久跳过」
+        // （watcher 在 reindex_in_progress=true 时跳过整批增量事件）。
+        let _reindex_guard = ReindexGuard(&self.reindex_in_progress);
+
+        // P0-1：Token Budget 统计窗口开始（截断/重切/embedding 兜底计数）
+        pipeline::reset_budget_stats();
 
         let config = self.config_store.read();
         let base_dir = Path::new(dir_path);
         if !base_dir.exists() {
-            self.reindex_in_progress
-                .store(false, std::sync::atomic::Ordering::Release);
             return Err(format!("目录不存在: {}", dir_path));
         }
 
@@ -333,8 +408,6 @@ impl Indexer {
         let files = scan_directory(base_dir, &ignore)?;
         let total = files.len() as u32;
         if total == 0 {
-            self.reindex_in_progress
-                .store(false, std::sync::atomic::Ordering::Release);
             return Err("目录中没有可索引的文件".into());
         }
         msg(2, &format!("已发现 {} 个文件", total));
@@ -407,7 +480,7 @@ impl Indexer {
                 );
             };
 
-            let vectors = pipeline::embed_chunks(&batch_chunks, Some(&embed_progress)).await?;
+            let vectors = pipeline::embed_chunks(&batch_chunks, Some(&embed_progress), &utils::get_cache_dir(dir_path)).await?;
 
             set_progress(
                 embed_base + embed_total_pct,
@@ -455,7 +528,7 @@ impl Indexer {
             })
             .collect();
 
-        let meta = IndexMeta { file_count, chunk_count: total_chunks, vector_count: total_vectors, indexed_at: now, type_distribution };
+        let meta = IndexMeta { file_count, chunk_count: total_chunks, vector_count: total_vectors, indexed_at: now, type_distribution, chunk_params_version: config.chunk_params_version() };
         if let Err(e) = std::fs::write(
             &Path::new(&utils::get_data_dir(dir_path)).join("index_meta.json"),
             &serde_json::to_string(&meta).unwrap_or_default(),
@@ -466,12 +539,48 @@ impl Indexer {
         set_progress(100, "索引完成".to_string());
         self.reindex_in_progress
             .store(false, std::sync::atomic::Ordering::Release);
-        Ok(KbIndexResult { file_count, chunk_count: total_chunks, vector_count: total_vectors, indexed_at: now })
+
+        // P0-1：统计窗口结束，透传截断/重切计数
+        let (truncated_chunks, resplit_chunks) = pipeline::budget_stats();
+        if truncated_chunks > 0 {
+            log::warn!(
+                "[indexer] 全量索引完成，{} 个 chunk 显式降级截断（健康态应为 0），{} 个超限被重切",
+                truncated_chunks,
+                resplit_chunks
+            );
+        }
+        Ok(KbIndexResult { file_count, chunk_count: total_chunks, vector_count: total_vectors, indexed_at: now, truncated_chunks: truncated_chunks as u32, resplit_chunks: resplit_chunks as u32 })
     }
 
     /// ─── 单文件索引（增量）───
 
+    /// P0-4 版本守卫（🟠 M13 修复）：索引元数据缺失或分块参数版本与当前配置不一致时
+    /// 返回 `true`，调用方（增量写入路径）应跳过本次写入并提示全量重建，
+    /// 避免「新参数分块写入旧参数索引」导致新旧粒度混库。
+    ///
+    /// 空版本（旧索引）同样视为不匹配（M21 语义：分块口径已从字符升级为 token，
+    /// 旧索引必须重建后才能增量）。
+    fn params_version_mismatch(&self, dir_path: &str) -> bool {
+        let Some(meta) = load_metadata(&utils::get_data_dir(dir_path)) else {
+            return false; // 无索引记录（首次全量/首次增量场景）不做守卫
+        };
+        let cfg_version = self.config_store.read().chunk_params_version();
+        if meta.chunk_params_version.is_empty() || meta.chunk_params_version != cfg_version {
+            log::warn!(
+                "[indexer] 分块参数已变更（索引={} 当前={}），跳过增量写入，请全量重建索引",
+                meta.chunk_params_version,
+                cfg_version
+            );
+            return true;
+        }
+        false
+    }
+
     pub async fn index_file(&self, dir_path: &str, rel_path: &str, abs_path: &str) -> Result<(), String> {
+        // 🟠 M13：分块参数版本不一致 → 跳过 watcher 单文件增量（防止新旧参数混库）
+        if self.params_version_mismatch(dir_path) {
+            return Ok(());
+        }
         // document_stage → chunk_stage → embedding_stage → index_stage
         let content = match pipeline::read_document(Path::new(abs_path)) {
             Some(c) if c.len() >= 10 => c,
@@ -485,7 +594,7 @@ impl Indexer {
             return Ok(());
         }
 
-        let vectors = pipeline::embed_chunks(&doc_chunks, None).await?;
+        let vectors = pipeline::embed_chunks(&doc_chunks, None, &utils::get_cache_dir(dir_path)).await?;
 
         // ── LanceDB：确保表存在，先删后写（统一入口 replace_document_chunks，A1）──
         let store = self.get_lance_store(dir_path).await;
@@ -524,6 +633,10 @@ impl Indexer {
         files: &[(String, String)],
     ) -> Result<(), String> {
         if files.is_empty() {
+            return Ok(());
+        }
+        // 🟠 M13：分块参数版本不一致 → 跳过 watcher 批量增量（防止新旧参数混库）
+        if self.params_version_mismatch(dir_path) {
             return Ok(());
         }
 
@@ -588,7 +701,7 @@ impl Indexer {
                         log::warn!("[indexer] 批量索引删除 BM25 旧数据失败 ({}): {}", rel, e);
                     }
                     for slice in chunks.chunks(chunk_limit) {
-                        let vectors = pipeline::embed_chunks(slice, None).await?;
+                        let vectors = pipeline::embed_chunks(slice, None, &utils::get_cache_dir(dir_path)).await?;
                         store.add_chunks(slice, &vectors).await.map_err(|e| {
                             log::error!("[indexer] 批量索引写入 LanceDB 失败 ({}): {}", rel, e);
                             e
@@ -611,7 +724,7 @@ impl Indexer {
                     .iter()
                     .flat_map(|(_, chunks)| chunks.iter().cloned())
                     .collect();
-                let vectors = pipeline::embed_chunks(&batch_chunks, None).await?;
+                let vectors = pipeline::embed_chunks(&batch_chunks, None, &utils::get_cache_dir(dir_path)).await?;
 
                 // ── index_stage：逐文件先删后写（统一入口），元数据用差值累加 ──
                 let mut offset = 0usize;
@@ -741,6 +854,15 @@ impl Indexer {
         let meta_path = Path::new(&data_dir).join("index_meta.json");
         let _ = std::fs::remove_file(&meta_path);
 
+        // P0-5：清空索引时同步清空 embedding 缓存（数据/模型变更场景）
+        if let Ok(cache) =
+            crate::core::db::embedding_cache::EmbeddingCache::open(&utils::get_cache_dir(dir_path))
+        {
+            if let Err(e) = cache.clear() {
+                log::warn!("[indexer] 清空 embedding 缓存失败: {}", e);
+            }
+        }
+
         self.invalidate_cache().await;
 
         log::info!("[indexer] 清除全部索引完成: {}", dir_path);
@@ -769,12 +891,24 @@ impl Indexer {
             ("unknown".into(), 0)
         };
 
+        // P0-4：配置版本化——分块参数已变更但索引未重建 → stale=true（前端提示重建）。
+        // 🟠 修复（M21）：旧索引（版本字段为空串）视为 stale——本批次把分块口径从
+        // 字符升级为 token 且重写了分块算法，旧索引必须提示重建（与 types.rs 注释一致）。
+        let cfg_version = self.config_store.read().chunk_params_version();
+        let stale = meta
+            .as_ref()
+            .map(|m| {
+                m.chunk_params_version.is_empty() || m.chunk_params_version != cfg_version
+            })
+            .unwrap_or(false);
+
         Ok(KbStatus {
             file_count: meta.as_ref().map(|m| m.file_count).unwrap_or(0),
             chunk_count: meta.as_ref().map(|m| m.chunk_count).unwrap_or(0),
             vector_count,
             indexed_at: meta.as_ref().map(|m| m.indexed_at).unwrap_or(0),
             status,
+            stale,
         })
     }
 
@@ -793,37 +927,67 @@ impl Indexer {
     ) -> Result<Vec<SearchHit>, String> {
         let store = self.get_lance_store(dir_path).await;
         let config = self.config_store.read();
+        let mut timings = crate::core::types::RetrievalTimings::default();
 
         // ── 0. 查询理解（SRP：RuleQueryPlanner 只负责把查询结构化为执行计划）──
+        let planner_start = std::time::Instant::now();
         let plan = RuleQueryPlanner.plan(query);
+        timings.planner_ms = planner_start.elapsed().as_millis() as u64;
 
         // ── 1. Filter 前置（P0 架构修复）──
         // 向量路在 LanceDB 查询层用 only_if SQL 预过滤；BM25 路（tantivy 无 SQL 级
         // 过滤）在 msm 严格检索之后做内存过滤（召回损失有界）。
-        let filter_sql = plan.allowed_exts.map(ext_filter_sql);
-        let vec_k = config.candidate_k.max(top_k);
-        let bm25_k = config.candidate_k.max(top_k);
+        let mut filter_sql = plan.allowed_exts.map(ext_filter_sql);
+        // A3/C1：显式标签过滤（`tag:rag` / `标签:redis`）下推到 LanceDB only_if。
+        // 🟠 M10 修复：JSON 元素精确匹配（tags 列为 JSON 数组字符串，`%"tag"%` 锚定
+        // 引号，`tag:web` 不再误命中 "webdev"）；LOWER 规避 DataFusion LIKE 大小写
+        // 敏感（`tag:redis` 可命中 "Redis"）；转义 LIKE 通配符（% _ \）并声明
+        // ESCAPE '\'；多标签按 AND 语义合并（M9 部分修复）。
+        if !plan.tags.is_empty() {
+            let tag_conds: Vec<String> = plan.tags.iter().map(|t| tag_like_condition(t)).collect();
+            let tag_sql = tag_conds.join(" AND ");
+            filter_sql = Some(match filter_sql {
+                Some(ext) => format!("({}) AND ({})", ext, tag_sql),
+                None => tag_sql,
+            });
+            log::info!("[indexer] [混合检索] 标签过滤下推: tags={:?}", plan.tags);
+        }
+        // B2：自适应候选池（按意图收窄；尊重用户收紧的配置；不小于 top_k）
+        let adaptive_k = match plan.intent {
+            RetrievalIntent::Code => 40,
+            RetrievalIntent::Outline => 40,
+            RetrievalIntent::Document => 80,
+            RetrievalIntent::General => 60,
+        }
+        .min(config.candidate_k);
+        let vec_k = adaptive_k.max(top_k);
+        let bm25_k = adaptive_k.max(top_k);
 
         // ── 2. Multi-Recall：向量 + BM25 并行（互不依赖，并行摊薄磁盘/CPU 延迟）──
+        // A2：计时放在 future 内部（tokio::join 之后测 elapsed 会把两路合并，
+        // dense/bm25 分段计时失真——基准实测 bm25_ms 恒为 0）
         let bm25_index = self.get_bm25_index(dir_path).await;
         let vec_future = async {
-            match &filter_sql {
+            let start = std::time::Instant::now();
+            let r = match &filter_sql {
                 Some(sql) => store.search_vectors_with_filter(query_vector, vec_k, sql).await,
                 None => store.search_vectors(query_vector, vec_k).await,
-            }
+            };
+            (r, start.elapsed().as_millis() as u64)
         };
         let msm_ratio = config.bm25_msm_ratio;
         let bm25_future = async {
+            let start = std::time::Instant::now();
             let idx = match bm25_index {
                 Ok(idx) => idx,
                 Err(e) => {
                     log::warn!("[indexer] [混合检索] 获取 BM25 索引失败, error: {}", e);
-                    return Vec::new();
+                    return (Vec::new(), start.elapsed().as_millis() as u64);
                 }
             };
             let idx = Arc::clone(&idx);
             let q = query.to_string();
-            match tokio::task::spawn_blocking(move || idx.search_with_plan(&q, bm25_k, msm_ratio)).await {
+            let hits = match tokio::task::spawn_blocking(move || idx.search_with_plan(&q, bm25_k, msm_ratio)).await {
                 Ok(Ok(hits)) => hits,
                 Ok(Err(e)) => {
                     log::warn!("[indexer] [混合检索] BM25 检索失败，本次查询退化为纯向量, error: {}", e);
@@ -833,9 +997,12 @@ impl Indexer {
                     log::warn!("[indexer] [混合检索] BM25 检索任务执行失败, error: {}", e);
                     Vec::new()
                 }
-            }
+            };
+            (hits, start.elapsed().as_millis() as u64)
         };
-        let (vec_res, bm25_res) = tokio::join!(vec_future, bm25_future);
+        let ((vec_res, dense_ms), (bm25_res, bm25_ms)) = tokio::join!(vec_future, bm25_future);
+        timings.dense_ms = dense_ms;
+        timings.bm25_ms = bm25_ms;
         let vec_hits = match vec_res {
             Ok(hits) => hits,
             Err(e) => {
@@ -853,6 +1020,7 @@ impl Indexer {
 
         // 符号路召回（Code 意图）：符号名精确/前缀匹配，独立于向量/BM25。
         // 多符号并行召回（join_all），符号路命中在步骤 4 通过 symbol_name 佐证放行。
+        let symbol_start = std::time::Instant::now();
         let mut symbol_hits: Vec<SearchHit> = Vec::new();
         if plan.intent == RetrievalIntent::Code && !plan.symbols.is_empty() {
             let tasks: Vec<_> = plan
@@ -876,6 +1044,7 @@ impl Indexer {
                 symbol_hits = filter_hits_by_ext(symbol_hits, exts);
             }
         }
+        timings.symbol_ms = symbol_start.elapsed().as_millis() as u64;
         log::info!(
             "[indexer] [混合检索] query='{}' intent={:?} vec_hits={} bm25_hits={} symbol_hits={}",
             query,
@@ -886,6 +1055,7 @@ impl Indexer {
         );
 
         // ── 3. RRF 融合（SRP：rank-based 加权融合；alpha 保留为每路权重偏置）──
+        let rrf_start = std::time::Instant::now();
         let alpha = compute_alpha(query, config.fusion_alpha, plan.intent);
         let rrf_cfg = RrfConfig {
             k: config.rrf_k.max(1),
@@ -894,7 +1064,35 @@ impl Indexer {
             weight_symbol: 1.0,
         };
         let fused = rrf_fuse(vec_hits, bm25_hits, symbol_hits, &rrf_cfg);
+        timings.rrf_ms = rrf_start.elapsed().as_millis() as u64;
         log::info!("[indexer] [混合检索] RRF 融合完成: alpha={:.2} candidates={}", alpha, fused.len());
+
+        // 🟠 M9 修复：标签过滤对**全部三路**生效——向量路已由 only_if SQL 下推
+        // （M10），但 BM25/符号路无法 SQL 下推，此处对融合结果统一内存过滤：
+        // tags 字段为 JSON 数组字符串（frontmatter tags+aliases），按 AND 语义
+        // （与向量路 only_if 一致）、大小写不敏感匹配。
+        let mut fused = fused;
+        if !plan.tags.is_empty() {
+            let tag_filter_before = fused.len();
+            fused.retain(|h| {
+                let tags: Vec<String> = h
+                    .tags
+                    .as_deref()
+                    .and_then(|s| serde_json::from_str(s).ok())
+                    .unwrap_or_default();
+                plan.tags
+                    .iter()
+                    .all(|t| tags.iter().any(|tag| tag.eq_ignore_ascii_case(t)))
+            });
+            if fused.len() != tag_filter_before {
+                log::info!(
+                    "[indexer] [混合检索] 融合后标签内存过滤: {} → {}（tags={:?}）",
+                    tag_filter_before,
+                    fused.len(),
+                    plan.tags
+                );
+            }
+        }
 
         // ── 4. 双阈值（一）：纯向量噪声过滤 ──
         // 无 BM25/符号佐证（仅向量召回）且原始余弦低于绝对阈值 → 语义噪声，丢弃。
@@ -922,6 +1120,9 @@ impl Indexer {
             candidates.len()
         );
 
+        // A2：写入召回+融合阶段耗时（hybrid_search 调用后补全 rerank/finalize/total）
+        *self.last_timings.lock().await = Some(timings);
+
         Ok(candidates)
     }
 
@@ -941,9 +1142,11 @@ impl Indexer {
         query: &str,
         top_k: u32,
     ) -> Result<Vec<SearchHit>, String> {
+        let search_all_start = std::time::Instant::now();
         let candidates = self.hybrid_recall(dir_path, query_vector, query, top_k).await?;
 
         // ── 5. 双阈值（二）：精排（可选；模型未就绪/推理失败自动降级 RRF 排序）──
+        let rerank_start = std::time::Instant::now();
         let config = self.config_store.read();
         let rerank_enabled = config.reranker_enabled;
         let rerank_min_score = config.rerank_min_score;
@@ -951,7 +1154,17 @@ impl Indexer {
         let results: Vec<SearchHit> = if rerank_active {
             let reranker = LocalBgeReranker;
             let q = query.to_string();
-            let cands = candidates.clone();
+            // B2b：精排候选截断——cross-encoder 是延迟大头（基准实测占全链路 90%+，
+            // CPU 上每候选 ~150-300ms）。只对 RRF 序 Top-N 精排：Recall 由多路召回保证，
+            // 精排只负责把真正相关的排到前面（相关文档在 RRF 前 30 的比例远超阈值）。
+            let rerank_all = candidates;
+            let rerank_count = rerank_all.len().min(RERANK_MAX_CANDIDATES);
+            // 🟠 L23：只克隆 Top-N（旧实现 clone 整个候选池再 take，浪费）
+            let cands: Vec<SearchHit> = rerank_all
+                .iter()
+                .take(RERANK_MAX_CANDIDATES)
+                .cloned()
+                .collect();
             match tokio::task::spawn_blocking(move || {
                 reranker.rerank(&q, &cands, rerank_min_score)
             })
@@ -965,7 +1178,7 @@ impl Indexer {
                             .collect();
                         log::info!(
                             "[indexer] [混合检索] 精排完成: {} → {} 通过阈值({}), sigmoid分数:\n{:?}",
-                            candidates.len(),
+                            rerank_count,
                             hits.len(),
                             rerank_min_score,
                             detail
@@ -975,11 +1188,15 @@ impl Indexer {
                 }
                 Ok(Err(e)) => {
                     log::warn!("[indexer] [混合检索] 精排失败，回退 RRF 排序: {}", e);
-                    candidates
+                    // 🟠 M11 修复：精排激活时 hybrid_recall 已旁路 vec_min_score 阈值
+                    // （交由精排 sigmoid 裁决）；精排失败回退时该过滤必须补上，
+                    // 否则纯向量噪声（无 BM25/符号佐证、cosine < vec_min_score）直通
+                    // finalize 与最终结果（行为与「未启用精排」不对称）。
+                    apply_threshold_filter(rerank_all, config.vec_min_score)
                 }
                 Err(e) => {
                     log::warn!("[indexer] [混合检索] 精排任务执行失败，回退 RRF 排序: {}", e);
-                    candidates
+                    apply_threshold_filter(rerank_all, config.vec_min_score)
                 }
             }
         } else {
@@ -990,8 +1207,23 @@ impl Indexer {
             }
             candidates
         };
+        let rerank_ms = rerank_start.elapsed().as_millis() as u64;
 
-        self.finalize_hits(dir_path, query, results, top_k).await
+        // ── 6. 收尾（finalize_hits：聚簇 + 上下文扩展）──
+        let finalize_start = std::time::Instant::now();
+        let out = self.finalize_hits(dir_path, query, results, top_k).await?;
+
+        // A2：补全分阶段耗时（rerank/finalize/total）——hybrid_recall 已写入召回各段
+        {
+            let mut guard = self.last_timings.lock().await;
+            if let Some(mut t) = guard.take() {
+                t.rerank_ms = rerank_ms;
+                t.finalize_ms = finalize_start.elapsed().as_millis() as u64;
+                t.total_ms = search_all_start.elapsed().as_millis() as u64;
+                *guard = Some(t);
+            }
+        }
+        Ok(out)
     }
 
     /// 混合检索管线的"收尾"阶段（P1-B 拆分）：多样性聚簇 + 上下文窗口填充。
@@ -1009,7 +1241,14 @@ impl Indexer {
         let config = self.config_store.read();
 
         // ── 6. Diversity：OPML 层级去重 + 文件聚簇（每文档 chunk 上限）──
-        let deduped = Self::dedup_opml_hierarchy(results);
+        let mut deduped = Self::dedup_opml_hierarchy(results);
+        // D5：文件概览 chunk（symbol_kind="file"）轻微降权——与正文 chunk 同时命中时
+        // 概览（符号清单/imports 摘要）不应排前面；单独命中时仍保留（按文件名/用途搜索的价值）
+        for h in deduped.iter_mut() {
+            if h.symbol_kind.as_deref() == Some("file") {
+                h.score *= 0.85;
+            }
+        }
         log::info!("[indexer] [混合检索] OPML 层级去重: candidates={}", deduped.len());
 
         let max_per_doc = config.max_chunks_per_doc.max(1) as usize;
@@ -1028,7 +1267,31 @@ impl Indexer {
             .collect();
         log::info!("[indexer] [混合检索] 文件聚簇(max_chunks_per_doc={}) → {}", max_per_doc, clustered.len());
 
-        let mut result: Vec<SearchHit> = clustered.into_iter().take(top_k as usize).collect();
+        // B4：轻量 MMR——同节（同 doc + 同 path_json）重复 chunk 的多样性惩罚。
+        // 文件聚簇解决"同文档太多"，本节惩罚解决"同章节相邻 chunk 刷屏"：
+        // 同节第二个及之后的命中降权（λ≈0.2 近似），由 take(top_k) 自然淘汰重复信息。
+        // 注意：path_json 为 None 的文档（代码/纯文本，无标题层级）不做同节惩罚——
+        // 它们同 doc 的多个 chunk 是正常的多函数/多段内容，不应互相降权。
+        let mut section_seen: std::collections::HashSet<(String, String)> =
+            std::collections::HashSet::new();
+        let mut mmr_scored: Vec<SearchHit> = Vec::with_capacity(clustered.len());
+        for mut h in clustered {
+            if let Some(pj) = h.path_json.clone() {
+                let key = (h.doc_name.clone(), pj);
+                if section_seen.contains(&key) {
+                    h.score *= 0.8;
+                } else {
+                    section_seen.insert(key);
+                }
+            }
+            mmr_scored.push(h);
+        }
+        mmr_scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let mut result: Vec<SearchHit> = mmr_scored.into_iter().take(top_k as usize).collect();
 
         // ── 7. Context（Post-Retrieval Context Window）：相邻 chunk 语义合并 ──
         // 为每个 top_k 结果的相邻 chunks 做上下文合并，填充 sentence_window。
@@ -1090,6 +1353,9 @@ impl Indexer {
                     }
                     let hit = &mut result[result_idx];
                     let mut merged = String::new();
+                    // 🟠 L22：累计字符计数（旧实现每轮 `merged.chars().count()` 全量
+                    // 重扫，大节文本下 O(n²)）
+                    let mut merged_chars = 0usize;
                     let mut has_parent = false;
                     for (idx, text, path_json) in &sub {
                         // OPML/FreeMind: 检测 path_json 是否为父节点（当前 chunk 路径的前缀）
@@ -1107,9 +1373,16 @@ impl Indexer {
                         }
                         if merged.is_empty() {
                             merged.push_str(text);
+                            merged_chars = text.chars().count();
                         } else {
                             merged.push('\n');
                             merged.push_str(text);
+                            merged_chars += 1 + text.chars().count();
+                        }
+                        // B3：限制最大扩展字符数（整节召回会拉入多 chunk；
+                        // 上限防 LLM 上下文被扩展文本撑爆，超出即截断）
+                        if merged_chars >= MAX_WINDOW_CHARS {
+                            break;
                         }
                     }
                     // 仅当有实质扩展内容时才设置 sentence_window
@@ -1188,19 +1461,42 @@ impl Indexer {
             return Ok(pool);
         }
 
-        // 无来源标注的候选原样保留（不参与精排，防丢失）
+        // 🟠 M16：候选池精排上限——cross-encoder 本地推理是延迟大头（CPU 每候选
+        // ~150-300ms），多查询路径（原始+扩展 ≤5 路 × 每路 40-80 条）全量精排可达
+        // 分钟级延迟；只对 RRF 序 Top-N **打标候选**精排（Recall 由多路召回保证，
+        // 精排只负责排序；上限取 100，高于单查询路径的 50 以覆盖多查询合并）。
+        const RERANK_POOL_MAX_CANDIDATES: usize = 100;
+        // 无来源标注的候选原样保留（不参与精排，防丢失）——🟠 M17：保持 RRF 域
+        // 排序，**不与 sigmoid 域分数混排**（两域物理意义不同，跨域比较无意义）。
         let mut out_untagged: Vec<SearchHit> = pool
             .iter()
             .filter(|h| h.query_sources.is_empty())
             .cloned()
             .collect();
+        out_untagged.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let mut tagged_pool: Vec<SearchHit> = pool
+            .iter()
+            .filter(|h| !h.query_sources.is_empty())
+            .cloned()
+            .collect();
+        tagged_pool.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        tagged_pool.truncate(RERANK_POOL_MAX_CANDIDATES);
+
         let mut best: std::collections::HashMap<(String, u32), (f32, SearchHit)> =
             std::collections::HashMap::new();
         let mut total_pairs = 0usize;
         for (src, qtext) in source_queries {
-            let tagged: Vec<SearchHit> = pool
+            let tagged: Vec<SearchHit> = tagged_pool
                 .iter()
-                .filter(|h| !h.query_sources.is_empty() && h.query_sources.contains(src))
+                .filter(|h| h.query_sources.contains(src))
                 .cloned()
                 .collect();
             if tagged.is_empty() {
@@ -1237,21 +1533,28 @@ impl Indexer {
             }
         }
 
-        out_untagged.extend(
-            best.into_values()
-                .filter(|(s, _)| *s >= min_score)
-                .map(|(_, h)| h),
-        );
-        out_untagged.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        // 🟠 M17：sigmoid 域（精排通过阈值）单独排序，RRF 域（未标注）在前保持原序，
+        // 两域不再混排；下游 aggregate_hits 按分数域契约各自裁决。
+        let mut reranked: Vec<SearchHit> = best
+            .into_values()
+            .filter(|(s, _)| *s >= min_score)
+            .map(|(_, h)| h)
+            .collect();
+        reranked.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        reranked.extend(out_untagged);
 
         log::info!(
             "[indexer] [混合检索] 候选池精排: pool={} pairs={} 通过阈值({})={}",
-            pool.len(),
+            tagged_pool.len(),
             total_pairs,
             min_score,
-            out_untagged.len()
+            reranked.len()
         );
-        Ok(out_untagged)
+        Ok(reranked)
     }
 
     /// OPML 层级去重：同一大纲文档中具有路径前缀关系的 chunk 保留最深节点。
@@ -1363,6 +1666,7 @@ impl Indexer {
             vector_count: 0,
             indexed_at: 0,
             type_distribution: vec![],
+            chunk_params_version: String::new(),
         });
 
         let now = SystemTime::now()
@@ -1376,6 +1680,8 @@ impl Indexer {
             vector_count: (meta.vector_count as i32 + vector_delta).max(0) as u32,
             indexed_at: now,
             type_distribution: meta.type_distribution,
+            // 增量路径保留既有版本：若分块参数已变更，status() 仍会标 stale
+            chunk_params_version: meta.chunk_params_version,
         };
         save_metadata(&data_dir, &new_meta);
     }
@@ -1489,9 +1795,33 @@ impl Indexer {
                     symbol_kind: None,
                     embedding_text: None,
                     chunk_type: None,
+                    doc_title: None,
+                    tags: None,
                 }
             })
             .collect();
+
+        // P0-1：对话消息为原子单元（1 消息 = 1 chunk，chunk_index 与消息游标一一对应），
+        // 不做重切；超限仅计数告警（显式降级——长消息截断不再是静默行为）
+        {
+            let cfg = self.config_store.read();
+            let validator = token_budget::TokenBudgetValidator::new(
+                token_budget::budget_from_config(cfg.chunk_size, cfg.chunk_overlap),
+                token_budget::global_token_counter(),
+            );
+            drop(cfg);
+            let plain_chunks: Vec<ChunkResult> = chunks
+                .iter()
+                .map(|c| ChunkResult::plain(c.text.clone()))
+                .collect();
+            let (_, report) = validator.count_only(plain_chunks);
+            if report.truncated_count > 0 {
+                log::warn!(
+                    "[indexer] [对话增量索引] {} 条消息超模型窗口将被截断（显式降级）；建议调大 chunk_size 或缩短长消息",
+                    report.truncated_count
+                );
+            }
+        }
 
         // 生成 embedding（批量，1 次调用，放入 spawn_blocking 避免阻塞 Tokio）
         let texts: Vec<String> = chunks.iter().map(|c| c.text.clone()).collect();
@@ -1597,6 +1927,20 @@ impl Indexer {
             return Ok(0);
         }
 
+        // P0-4：分块参数已变更 → 跳过增量同步（避免新旧参数混库），提示全量重建。
+        // 🟠 修复（M21）：空版本（旧索引）同样视为已变更——必须全量重建而非混参增量。
+        if let Some(m) = meta.as_ref() {
+            let cfg_version = self.config_store.read().chunk_params_version();
+            if m.chunk_params_version.is_empty() || m.chunk_params_version != cfg_version {
+                log::warn!(
+                    "[indexer] [启动同步] 分块参数已变更（索引={} 当前={}），跳过增量同步，请全量重建索引",
+                    m.chunk_params_version,
+                    cfg_version
+                );
+                return Ok(0);
+            }
+        }
+
         let base_dir = Path::new(dir_path);
         if !base_dir.exists() {
             return Err(format!("[indexer] [启动同步] 目录不存在: {}", dir_path));
@@ -1658,6 +2002,17 @@ impl Indexer {
     ) -> Result<KbIndexResult, String> {
         let _guard = self.indexing_lock.lock().await;
 
+        // 🟠 M13：分块参数版本不一致 → 拒绝手动增量（返回错误信息提示全量重建）
+        if self.params_version_mismatch(dir_path) {
+            return Err(
+                "分块参数已变更（索引版本与当前配置不一致），请先全量重建索引（kb_index 全量索引）后再执行增量索引"
+                    .into(),
+            );
+        }
+
+        // P0-1：Token Budget 统计窗口开始
+        pipeline::reset_budget_stats();
+
         let config = self.config_store.read();
         let base_dir = Path::new(dir_path);
         if !base_dir.exists() {
@@ -1704,6 +2059,8 @@ impl Indexer {
                 chunk_count: 0,
                 vector_count: 0,
                 indexed_at: 0,
+                truncated_chunks: 0,
+                resplit_chunks: 0,
             });
         }
         log::info!("[indexer] [增量索引] 共发现 {} 个未索引文件, 共 {} 个文件", unindexed_count, total);
@@ -1736,7 +2093,7 @@ impl Indexer {
 
         if all_file_data.is_empty() {
             progress(100, "增量索引完成（无有效内容）");
-            return Ok(KbIndexResult { file_count: 0, chunk_count: 0, vector_count: 0, indexed_at: 0 });
+            return Ok(KbIndexResult { file_count: 0, chunk_count: 0, vector_count: 0, indexed_at: 0, truncated_chunks: 0, resplit_chunks: 0 });
         }
 
         // 合并所有 chunks，一次性批量 Embedding
@@ -1749,7 +2106,7 @@ impl Indexer {
             let embed_pct = 20 + (done * 60 / total_groups.max(1)) as u8;
             progress(embed_pct.min(80), msg);
         };
-        let all_vectors = pipeline::embed_chunks(&all_chunks, Some(&embed_progress)).await?;
+        let all_vectors = pipeline::embed_chunks(&all_chunks, Some(&embed_progress), &utils::get_cache_dir(dir_path)).await?;
 
         // 分批写入 LanceDB + BM25
         progress(82, "正在写入数据库...");
@@ -1776,12 +2133,23 @@ impl Indexer {
 
         progress(100, &format!("增量索引完成: {} 文件, {} 文本块", file_count, total_new_chunks));
         log::info!("[indexer] [增量索引] 共索引 {} 个文件, {} 个文本块, {} 个向量", file_count, total_new_chunks, all_vectors.len() as u32);
-        
+
+        // P0-1：统计窗口结束，透传截断/重切计数
+        let (truncated_chunks, resplit_chunks) = pipeline::budget_stats();
+        if truncated_chunks > 0 {
+            log::warn!(
+                "[indexer] [增量索引] {} 个 chunk 显式降级截断（健康态应为 0），{} 个超限被重切",
+                truncated_chunks,
+                resplit_chunks
+            );
+        }
         Ok(KbIndexResult {
             file_count,
             chunk_count: total_new_chunks,
             vector_count: all_vectors.len() as u32,
             indexed_at: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64,
+            truncated_chunks: truncated_chunks as u32,
+            resplit_chunks: resplit_chunks as u32,
         })
     }
 }
@@ -1936,4 +2304,34 @@ fn trigger_reranker_download_background() {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 🟠 M10：标签过滤条件构造——JSON 元素精确匹配 + 大小写不敏感 + 通配符转义
+    #[test]
+    fn tag_like_condition_json_element_exact_match() {
+        // 普通标签：锚定 JSON 引号，`tag:web` 不误命中 "webdev"
+        let sql = tag_like_condition("web");
+        assert_eq!(sql, "LOWER(tags) LIKE '%\"web\"%' ESCAPE '\\'");
+        assert!(!sql.contains("webdev"), "子串不得裸匹配");
+
+        // 大小写不敏感：tag:redis 可命中 frontmatter 的 "Redis"
+        let sql2 = tag_like_condition("Redis");
+        assert!(sql2.contains("redis"), "模式应小写化");
+        assert!(sql2.contains("LOWER(tags)"), "列应 LOWER");
+    }
+
+    #[test]
+    fn tag_like_condition_escapes_wildcards() {
+        // 下划线标签（如 rag_notes）不得被当作 LIKE 通配符
+        let sql = tag_like_condition("rag_notes");
+        assert!(sql.contains("%\"rag\\_notes\"%"), "下划线应转义: {}", sql);
+
+        // 百分号标签
+        let sql2 = tag_like_condition("50%off");
+        assert!(sql2.contains("%\"50\\%off\"%"), "百分号应转义: {}", sql2);
+    }
 }

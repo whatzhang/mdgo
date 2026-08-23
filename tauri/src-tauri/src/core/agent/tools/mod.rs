@@ -621,6 +621,7 @@ async fn push_kb_source(cfg: &KbSearchConfig, doc_name: &str, snippet: &str) {
         symbol_name: None,
         symbol_kind: None,
         chunk_type: None,
+        tags: None,
         score_rerank: None,
         query_sources: Vec::new(),
     };

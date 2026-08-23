@@ -21,8 +21,24 @@ use tokio_util::sync::CancellationToken;
 use super::llm_seam::{CompletionRequest, CompletionResponse, LlmAdapter};
 use super::types::{FinishReason, LlmError, LlmMessage, LlmRole, StreamEvent, TokenUsage, ToolCall};
 
-/// 默认请求级总超时（含 SSE 读取期），对齐现有 300s。
-pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(300);
+/// 默认请求级总超时（非流式 complete 用）。对齐主流 Agent（DSH 的请求 deadline 由
+/// 循环层持有）并面向慢速端点：600s 内单次非流式调用必须完成，超时走重试。
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
+/// 流式请求总超时（含 SSE 读取期）作为兜底上限。
+///
+/// 真正的流式保护是 [`STREAM_IDLE_TIMEOUT`]（空闲看门狗）：reqwest 的 `.timeout()`
+/// 覆盖整个请求（连接 + 发送 + 读 body），若只靠总超时，慢模型长流式生成会被
+/// 客户端整点掐断（日志表现为 `llm: http: error decoding response body`）。
+/// 慢速但持续吐字的流不会被空闲看门狗误杀；总上限 30 分钟兜底死流。
+pub const STREAM_TOTAL_TIMEOUT: Duration = Duration::from_secs(1800);
+/// 流式空闲超时（无数据块持续此时间 → 判定死流并中止），对齐 DSH
+/// `DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300s` 并拉长到 10 分钟（每收到一个数据块
+/// 即重新计时；模型思考/慢速生成期间持续有块到达，不会误杀）。
+/// 🟠 L26：边界——**不输出 `reasoning_content` 且静默思考 >10 分钟**的推理端点
+/// 会被误杀为死流（错误信息明确、可重试，属可接受的权衡）。
+pub const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(600);
+/// 连接阶段超时（快速失败，避免死端点挂满总时限）
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// OpenAI 兼容补全适配器。
 #[derive(Clone)]
@@ -51,7 +67,8 @@ impl OpenAiAdapter {
         }
     }
 
-    /// 自定义超时（默认 300s）。
+    /// 自定义单次非流式调用超时（🟠 L25：旧注释"默认 300s"已过时——实际默认
+    /// `DEFAULT_TIMEOUT` = 600s）。流式请求的总时限由 `STREAM_TOTAL_TIMEOUT` 承担。
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
@@ -61,9 +78,10 @@ impl OpenAiAdapter {
         format!("{}/chat/completions", self.base_url)
     }
 
-    fn http_client(&self) -> reqwest::Client {
+    fn http_client(&self, total_timeout: Duration) -> reqwest::Client {
         reqwest::Client::builder()
-            .timeout(self.timeout)
+            .timeout(total_timeout)
+            .connect_timeout(CONNECT_TIMEOUT)
             .build()
             .expect("reqwest client build")
     }
@@ -150,7 +168,7 @@ impl LlmAdapter for OpenAiAdapter {
         req: CompletionRequest,
         cancel: CancellationToken,
     ) -> Result<CompletionResponse, LlmError> {
-        let client = self.http_client();
+        let client = self.http_client(self.timeout);
         let body = self.build_body(&req, false);
         let send = client
             .post(self.chat_url())
@@ -175,7 +193,7 @@ impl LlmAdapter for OpenAiAdapter {
         req: CompletionRequest,
         cancel: CancellationToken,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, LlmError>> + Send>>, LlmError> {
-        let client = self.http_client();
+        let client = self.http_client(STREAM_TOTAL_TIMEOUT);
         let body = self.build_body(&req, true);
         let send = client
             .post(self.chat_url())
@@ -219,26 +237,43 @@ impl LlmAdapter for OpenAiAdapter {
                     st.errored = true;
                     return Some((Err(LlmError::Cancelled), st));
                 }
-                // 4) 拉取下一字节块
-                match st.bytes.next().await {
-                    Some(Ok(chunk)) => {
+                // 4) 拉取下一字节块（空闲看门狗：超过 STREAM_IDLE_TIMEOUT 无新数据块
+                //    判定死流，返回明确错误；每块到达自动重新计时，慢速持续输出不受影响）
+                match tokio::time::timeout(STREAM_IDLE_TIMEOUT, st.bytes.next()).await {
+                    Ok(Some(Ok(chunk))) => {
                         st.parser.push_bytes(&chunk);
                         // 继续循环弹出 pending
                     }
-                    Some(Err(e)) => {
+                    Ok(Some(Err(e))) => {
                         st.parser.finish();
+                        // 🟠 L25：Err 分支清空 pending——finish() 可能压入收尾 Finish 事件，
+                        // 不清空则下一轮 poll 会在 Err 之后多吐一个 `Ok(Finish)`
+                        st.parser.pending.clear();
                         if st.errored {
                             return None;
                         }
                         st.errored = true;
                         return Some((Err(LlmError::Http(e.to_string())), st));
                     }
-                    None => {
+                    Ok(None) => {
                         st.parser.finish();
                         // finish() 可能压入收尾 Finish 事件，循环弹出后再结束
                         if st.parser.pending.is_empty() {
                             return None;
                         }
+                    }
+                    Err(_) => {
+                        st.parser.finish();
+                        // 🟠 L25：同 Err 分支——清空 pending 防 Err 后多吐 Finish
+                        st.parser.pending.clear();
+                        if st.errored {
+                            return None;
+                        }
+                        st.errored = true;
+                        return Some((Err(LlmError::Http(format!(
+                            "流式响应空闲超时（{}s 内无数据，可能为死流）",
+                            STREAM_IDLE_TIMEOUT.as_secs()
+                        ))), st));
                     }
                 }
             }

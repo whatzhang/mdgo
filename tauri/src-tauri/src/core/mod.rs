@@ -9,6 +9,7 @@ pub mod search;
 pub mod approval;
 pub mod context;
 pub mod eval;
+pub mod evidence;
 pub mod memory;
 pub mod mcp;
 pub mod security;
@@ -30,6 +31,7 @@ pub use chat_types::{ChatMessage, ChatMessageSource, ChatSession, ChatSessionSea
 pub use config::{ConfigStore, IndexerConfig};
 pub use db::lance::{QuerySource, SearchHit};
 pub use db::utils::{call_embedding_query, call_embedding_queries, KbProgress};
+pub(crate) use embedding::get_max_seq_len;
 pub use indexer::Indexer;
 pub use types::{KbIndexResult, KbStatus};
 pub use watcher::WatcherService;

@@ -87,8 +87,21 @@ const SHORT_QUERY_CHARS: usize = 40;
 pub fn should_plan(query: &str) -> bool {
     let q = query.trim();
     let chars = q.chars().count();
+    // 🟠 L29 修复：多意图连接词判定与 `MULTI_INTENT_MARKERS` 全清单一致
+    // （旧实现只排除「并且/同时」，漏了「以及/然后/还要」——同一结构仅因连接词
+    // 不同而规划结论相反）。
+    let has_multi_intent = MULTI_INTENT_MARKERS.iter().any(|m| q.contains(m));
+    // P1-9：轻量单动作动词不触发规划——"解释/翻译/查看/总结 X" 是原子操作；
+    // 含真正的多意图连接词时仍视为复杂任务。
+    const LIGHT_ACTIONS: &[&str] = &[
+        "查看", "解释", "翻译", "朗读", "读取", "打开", "转换",
+        "总结", "汇总", "概括",
+    ];
+    let is_light_action = LIGHT_ACTIONS.iter().any(|a| q.contains(a)) && !has_multi_intent;
     if chars >= LONG_QUERY_CHARS {
-        return true;
+        // 长问题仍视为复杂任务候选：含多意图连接词 → 规划；
+        // 纯轻量单动作（无多意图连接词）直执行。
+        return has_multi_intent || !is_light_action;
     }
     // P1-9：疑问句抑制——"这个文件是干什么的？" 不是规划任务
     let is_question = q.ends_with('?')
@@ -98,17 +111,20 @@ pub fn should_plan(query: &str) -> bool {
         || q.ends_with("什么")
         || q.ends_with("哪些");
     if chars <= SHORT_QUERY_CHARS {
+        // 轻量动作（含总结/汇总/概括类）直接执行，不规划
+        if is_light_action {
+            return false;
+        }
         return !is_question && PLAN_VERBS.iter().any(|v| q.contains(v));
     }
-    // P1-9：轻量单动作动词（查看类）不触发规划——"解释/翻译/朗读/查看 X" 是原子操作
-    const LIGHT_ACTIONS: &[&str] = &["查看", "解释", "翻译", "朗读", "读取", "打开", "转换"];
-    if LIGHT_ACTIONS.iter().any(|a| q.contains(a)) && !q.contains("并且") && !q.contains("同时") {
+    // 中等长度：轻量单动作同样抑制（"总结/转换 X" 是原子操作，不需要 7 步规划确认）
+    if is_light_action {
         return false;
     }
     if PLAN_VERBS.iter().any(|v| q.contains(v)) {
         return !is_question;
     }
-    MULTI_INTENT_MARKERS.iter().any(|m| q.contains(m))
+    has_multi_intent
 }
 
 /// 用户对任务计划的决定（plan:request 确认通道的回传值）。
@@ -260,6 +276,46 @@ mod tests {
         assert!(!should_plan("请解释一下这份文档的目录结构，说明各章节的用途"));
         // 真正的中等长度多任务仍规划
         assert!(should_plan("请设计一个完整的迁移方案，同时评估数据库选型与索引策略"));
+    }
+
+    /// 回归：总结/汇总/概括是原子单动作，短查询不再误触发多步规划
+    /// （修复：`将上面的内容总结为画布` 曾触发 7 步规划 + 用户确认，白等一次慢 LLM 调用）
+    #[test]
+    fn should_plan_suppresses_summarize_actions() {
+        assert!(!should_plan("将上面的内容总结为画布，要求画布节点包含详细内容"));
+        assert!(!should_plan("总结一下这个文档的要点"));
+        assert!(!should_plan("概括这份报告的核心结论"));
+        // 含真正多意图连接词的总结任务仍规划
+        assert!(should_plan("总结这个项目的架构，并且评估其性能瓶颈"));
+    }
+
+    /// 🟠 L29 回归：轻量动词 + 任一多意图连接词（含「以及/然后/还要」，非仅
+    /// 「并且/同时」）都必须规划；长查询含多意图连接词时不被轻量动词压制。
+    #[test]
+    fn should_plan_light_action_respects_all_multi_intent_markers() {
+        // 全清单连接词 + 轻量动词（中等长度 40~120 字符，走多意图分支）
+        assert!(should_plan(
+            "请你详细解释这个系统的整体架构设计与模块划分，然后评估其性能瓶颈并给出优化建议"
+        ));
+        assert!(should_plan(
+            "请你翻译这份英文技术文档的全部章节内容与示例代码，还要整理关键术语对照表并给出使用建议"
+        ));
+        assert!(should_plan(
+            "请查看模块 A 的核心实现细节与关键算法，同时分析模块 B 的依赖关系与调用链并评估影响范围"
+        ));
+        assert!(should_plan(
+            "请你全面分析这个技术方案的可行性与兼容性影响，以及评估迁移成本、实施风险与回滚预案"
+        ));
+        assert!(should_plan("总结这个项目的架构，并且评估其性能瓶颈"));
+        // 纯轻量单动作（无多意图连接词）→ 不规划
+        assert!(!should_plan("解释这个系统的架构"));
+        assert!(!should_plan("总结这个项目的要点"));
+        // 长查询（≥120 字符）含多意图连接词 → 规划（不被轻量动词压制）
+        let long = "请详细解释这个系统的整体架构设计，然后评估其性能瓶颈，最后给出优化方案，并说明每个方案的成本收益与实施步骤，包括迁移路径与回滚预案，覆盖数据库选型与索引策略的对比分析，以及监控告警体系的建设方案";
+        assert!(should_plan(long));
+        // 长查询纯轻量单动作 → 不规划（长度 ≥120 字符且无多意图连接词）
+        let long_light = "请查看这个项目的 README 文档内容，读取其中的使用说明、配置方法、命令列表、常见问题、排障指引、版本历史、更新日志、贡献指南、许可证信息、架构概述、模块划分与目录结构，涵盖开发环境搭建步骤与发布流程，汇总成要点列表";
+        assert!(!should_plan(long_light));
     }
 
     #[test]

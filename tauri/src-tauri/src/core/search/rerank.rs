@@ -10,6 +10,7 @@
 //! # 降级策略
 //! 模型缺失 / 推理失败时返回 `Err`，调用方回退到 RRF 排序（检索永不阻断）。
 
+use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
@@ -19,7 +20,70 @@ use std::sync::Arc;
 use ndarray::Array2;
 
 use crate::core::db::lance::SearchHit;
+use crate::core::db::utils::fnv1a_128;
 use crate::core::model_download::reranker_cache_dir;
+
+// ─── B5：精排分数缓存（会话内重复查询 + 相同候选 → 跳过 cross-encoder 推理） ───
+//
+// 键 = fnv1a_128(query + "\n" + doc_name + ":" + chunk_index + "\n" + text 哈希)；值 = sigmoid 相关性分。
+// cross-encoder 是检索链路最大延迟项，重复查询（如连续追问）命中后直接复用。
+// 🟠 M12 修复：键纳入**候选正文内容哈希**——① 不同知识库同名同序号 chunk 内容
+// 不同则键不同（不再串库）；② 文档编辑重索引后内容变化 → 键变化 → 自然失效
+// （不再返回旧内容算出的分数）。容量 [`RERANK_CACHE_CAPACITY`]，FIFO 淘汰
+// （精排调用频率低，Mutex 足够）。
+
+const RERANK_CACHE_CAPACITY: usize = 2048;
+
+struct RerankCacheInner {
+    map: HashMap<u128, f32>,
+    order: VecDeque<u128>,
+}
+
+pub struct RerankScoreCache {
+    inner: Mutex<RerankCacheInner>,
+}
+
+impl RerankScoreCache {
+    fn new() -> Self {
+        Self {
+            inner: Mutex::new(RerankCacheInner {
+                map: HashMap::new(),
+                order: VecDeque::new(),
+            }),
+        }
+    }
+
+    fn key(query: &str, doc_name: &str, chunk_index: u32, text: &str) -> u128 {
+        // 内容哈希用候选正文（与索引内容一致的文本），FNV-1a 128 非加密用途足够
+        let text_hash = fnv1a_128(text.as_bytes());
+        fnv1a_128(format!("{}\n{}:{}\n{:x}", query, doc_name, chunk_index, text_hash).as_bytes())
+    }
+
+    fn get(&self, query: &str, doc_name: &str, chunk_index: u32, text: &str) -> Option<f32> {
+        let key = Self::key(query, doc_name, chunk_index, text);
+        self.inner.lock().unwrap_or_else(|e| e.into_inner()).map.get(&key).copied()
+    }
+
+    fn put(&self, query: &str, doc_name: &str, chunk_index: u32, text: &str, score: f32) {
+        let key = Self::key(query, doc_name, chunk_index, text);
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if inner.map.contains_key(&key) {
+            return;
+        }
+        inner.map.insert(key, score);
+        inner.order.push_back(key);
+        while inner.order.len() > RERANK_CACHE_CAPACITY {
+            if let Some(oldest) = inner.order.pop_front() {
+                inner.map.remove(&oldest);
+            }
+        }
+    }
+}
+
+fn global_rerank_cache() -> &'static RerankScoreCache {
+    static CACHE: OnceLock<RerankScoreCache> = OnceLock::new();
+    CACHE.get_or_init(RerankScoreCache::new)
+}
 
 // ─── 按平台选择后端（与 embedding.rs 一致）───
 
@@ -273,6 +337,26 @@ impl Reranker for LocalBgeReranker {
             return Ok(Vec::new());
         }
 
+        // B5：查缓存——已精排过的 (query, chunk) 直接复用分数，只推理未命中项
+        let cache = global_rerank_cache();
+        let cached_scores: Vec<Option<f32>> = candidates
+            .iter()
+            .map(|h| cache.get(query, &h.doc_name, h.chunk_index, &h.text))
+            .collect();
+        let need_infer: Vec<usize> = cached_scores
+            .iter()
+            .enumerate()
+            .filter_map(|(i, s)| if s.is_none() { Some(i) } else { None })
+            .collect();
+        // 🔴 修复：初始分数数组必须保留缓存命中分（旧实现 417 行重新声明同名
+        // `scores` 遮蔽本数组，混合「命中+未命中」批次中缓存项分数被清零并在
+        // assemble 中被 min_score 阈值整体丢弃——回归测试见 `tests::` 模块）。
+        let mut scores = scores_from_cache(&cached_scores);
+        if need_infer.is_empty() {
+            log::debug!("[reranker] 全部 {} 条候选命中缓存，跳过推理", candidates.len());
+            return Self::assemble(query, candidates, &scores, min_score);
+        }
+
         let models_dir = reranker_cache_dir();
         ensure_initialized(&models_dir)?;
 
@@ -282,10 +366,11 @@ impl Reranker for LocalBgeReranker {
 
         // ── 1. 并行分词：query + passage 拼接为 pair（cross-encoder 输入）──
         // passage 前缀拼接 doc_name：文件名是文档主题强信号（feature 化，替代旧的手工加分）
-        let pairs: Vec<(usize, String, String)> = candidates
+        // 仅对未命中项推理（orig_idx 保留候选原下标）
+        let pairs: Vec<(usize, String, String)> = need_infer
             .iter()
-            .enumerate()
-            .map(|(i, h)| {
+            .map(|&i| {
+                let h = &candidates[i];
                 let passage = if h.doc_name.is_empty() {
                     h.text.clone()
                 } else {
@@ -332,7 +417,9 @@ impl Reranker for LocalBgeReranker {
             .unwrap_or_else(|e| e.into_inner());
 
         // ── 4. 批量推理 + sigmoid → 分数 ──
-        let mut scores = vec![0.0f32; candidates.len()];
+        // 🔴 修复：不再在此重新声明 `scores`（旧实现遮蔽了 346 行的缓存分数数组，
+        // 使混合「命中+未命中」批次中缓存项分数保持 0.0 被 min_score 整体丢弃）；
+        // 直接复用外层 scores：缓存项分数保留，推理只覆盖 need_infer 下标。
         for group in groups {
             let group_size = group.len();
             let max_len = group
@@ -388,6 +475,28 @@ impl Reranker for LocalBgeReranker {
         }
 
         // ── 5. 过滤低分 + 按精排分数降序 ──
+        // B5：写缓存（仅对本次推理的候选；键含正文哈希，见 `RerankScoreCache` 注释）
+        for &i in &need_infer {
+            cache.put(
+                query,
+                &candidates[i].doc_name,
+                candidates[i].chunk_index,
+                &candidates[i].text,
+                scores[i],
+            );
+        }
+        Self::assemble(query, candidates, &scores, min_score)
+    }
+}
+
+impl LocalBgeReranker {
+    /// 组装结果：过滤低分 + 按分数降序（缓存与推理路径共用）
+    fn assemble(
+        query: &str,
+        candidates: &[SearchHit],
+        scores: &[f32],
+        min_score: f32,
+    ) -> Result<Vec<SearchHit>, String> {
         let mut reranked: Vec<(SearchHit, f32)> = candidates
             .iter()
             .cloned()
@@ -413,5 +522,85 @@ impl Reranker for LocalBgeReranker {
         );
 
         Ok(reranked.into_iter().map(|(h, _)| h).collect())
+    }
+}
+
+/// 由缓存命中分数构建初始分数数组：命中位取缓存分，未命中位为 0.0（由推理回填）。
+/// 独立成纯函数供单测——🔴-2 回归：混合「命中+未命中」批次中缓存分必须保留。
+fn scores_from_cache(cached_scores: &[Option<f32>]) -> Vec<f32> {
+    let mut scores = vec![0.0f32; cached_scores.len()];
+    for (i, s) in cached_scores.iter().enumerate() {
+        if let Some(v) = s {
+            scores[i] = *v;
+        }
+    }
+    scores
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hit(text: &str, chunk_index: u32) -> SearchHit {
+        SearchHit {
+            text: text.to_string(),
+            doc_name: "doc.md".to_string(),
+            chunk_index,
+            score: 0.0,
+            score_vec: 0.0,
+            score_bm25: 0.0,
+            path_json: None,
+            sentence_window: None,
+            symbol_name: None,
+            symbol_kind: None,
+            chunk_type: None,
+            tags: None,
+            score_rerank: None,
+            query_sources: Vec::new(),
+        }
+    }
+
+    /// 🔴-2 回归：混合批次（部分命中缓存）中，缓存命中项分数必须保留——
+    /// 旧实现 417 行重新声明 `scores` 遮蔽缓存数组，命中项分数变 0.0 被阈值丢弃。
+    #[test]
+    fn scores_from_cache_preserves_cached_hits_in_mixed_batch() {
+        // 混合批次：第 0 项命中（0.6），第 1 项未命中（将由推理回填），第 2 项命中（0.4）
+        let cached = vec![Some(0.6), None, Some(0.4)];
+        let scores = scores_from_cache(&cached);
+        assert_eq!(scores, vec![0.6, 0.0, 0.4], "缓存命中分不得被清零");
+    }
+
+    /// 🔴-2 回归：assemble 用合并后的分数过滤——缓存命中项（0.6/0.4 ≥ min_score 0.2）
+    /// 必须存活且排前；未命中且推理失败保持 0.0 的候选被过滤（与修复前行为对比的关键）。
+    #[test]
+    fn assemble_keeps_cached_score_candidates() {
+        let candidates = vec![
+            hit("缓存命中A", 1),
+            hit("未命中且零分", 2),
+            hit("缓存命中B", 3),
+        ];
+        // 模拟修复后的合并结果：缓存分保留 + 推理回填（未命中项推理成功 0.7）
+        let scores = vec![0.6, 0.7, 0.4];
+        let out = LocalBgeReranker::assemble("查询", &candidates, &scores, 0.2).unwrap();
+        let names: Vec<&str> = out.iter().map(|h| h.text.as_str()).collect();
+        assert_eq!(names, vec!["未命中且零分", "缓存命中A", "缓存命中B"], "按分数降序");
+        for h in &out {
+            assert!(h.score_rerank.is_some(), "精排输出必须写 score_rerank");
+        }
+
+        // 修复前行为模拟：缓存分被清零后，命中项 0.0 < 0.2 被丢弃
+        let scores_zeroed = vec![0.0, 0.7, 0.0];
+        let out2 = LocalBgeReranker::assemble("查询", &candidates, &scores_zeroed, 0.2).unwrap();
+        assert_eq!(out2.len(), 1, "缓存分被清零时命中项会被阈值丢弃（修复前缺陷）");
+        assert_eq!(out2[0].text, "未命中且零分");
+    }
+
+    /// 阈值边界：等于 min_score 的候选保留，低于的丢弃
+    #[test]
+    fn assemble_threshold_boundary() {
+        let candidates = vec![hit("恰好等于阈值", 1), hit("低于阈值", 2)];
+        let out = LocalBgeReranker::assemble("q", &candidates, &[0.2, 0.199], 0.2).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].text, "恰好等于阈值");
     }
 }

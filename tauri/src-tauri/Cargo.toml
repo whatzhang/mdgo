@@ -4,6 +4,7 @@ version = "1.0.0"
 description = "mdgo"
 authors = ["whatzhang"]
 edition = "2024"
+default-run = "mdgo" 
 
 [lib]
 name = "mdgo_lib"
@@ -12,6 +13,13 @@ crate-type = ["lib", "cdylib"]
 [features]
 default = ["pdf-extract"]
 pdf-extract = ["dep:pdf-extract"]
+# 🟠 L31：检索基准（benchmark bin 依赖 core 公开面；默认构建不启用，控制 API 暴露面）
+bench = []
+
+[[bin]]
+name = "benchmark"
+path = "src/bin/benchmark.rs"
+required-features = ["bench"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

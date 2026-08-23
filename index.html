@@ -15781,17 +15781,17 @@
                                     </div>
                                     <div class="rag-settings-row">
                                         <label>分块大小</label>
-                                        <input type="number" id="rag-setting-chunk-size" min="100" max="4000" step="50"
+                                        <input type="number" id="rag-setting-chunk-size" min="64" max="4000" step="50"
                                             value="448">
                                         <span class="setting-help"
-                                            data-tippy-content="文档被切分成索引块时的目标字符数。默认值已按本地嵌入模型的 token 窗口（512）自动对齐（448 字符），避免长块被静默截断导致向量语义受损。更小的块（如 300）检索更精确；更大的块（如 1000）上下文更完整但可能超过模型窗口。">ⓘ</span>
+                                            data-tippy-content="文档被切分成索引块时的目标 token 数（P0-2 起按 token 预算计，而非字符）。默认值按本地嵌入模型的 token 窗口自动对齐（512 窗口 → 448 token）。最终硬上限由 TokenBudgetValidator 按模型窗口裁决：超限块自动重切，无法重切的原子块（如超宽表格）会显式计数告警，不再静默截断。">ⓘ</span>
                                     </div>
                                     <div class="rag-settings-row">
                                         <label>分块重叠</label>
                                         <input type="number" id="rag-setting-chunk-overlap" min="0" max="500" step="10"
                                             value="56">
                                         <span class="setting-help"
-                                            data-tippy-content="相邻文档块之间重叠的字符数。该值仅对按字符切分的格式（代码、大纲等）生效；Markdown 已启用语义边界分块（标题/段落/代码/表格边界），正常分块不重叠，此值仅影响超长块的二次拆分。">ⓘ</span>
+                                            data-tippy-content="相邻文档块之间重叠的 token 数（须小于分块大小的一半）。用于在索引期拼接前块尾部，保持跨块上下文完整；对超长块的二次拆分同样生效。">ⓘ</span>
                                     </div>
                                     <div class="rag-settings-row">
                                         <label>语义融合权重</label>
@@ -16537,11 +16537,15 @@
             // pomodoro
             pomodoroMinutesMax: 180,
             // RAG 默认配置（Tauri 下由 kb_get_indexer_config 下发覆盖，本地模式使用）
+            // P0-2 起 chunkSize/chunkOverlap 语义为 token 数（非字符）；
+            // maxPositionEmbeddings 为本地 embedding 模型窗口（bge-small-zh=512），
+            // 用于本地模式下 chunk_size 上限校验（窗口 - 8 预留）。
             ragDefaults: {
                 topK: 10, minScore: 0.3, chunkSize: 448, chunkOverlap: 56,
                 fusionAlpha: 0.6, maxContextDocs: 4, maxChunksPerDoc: 3,
                 candidateK: 100, rrfK: 60, vecMinScore: 0.35,
-                rerankMinScore: 0.2, bm25MsmRatio: 0.6, rerankerEnabled: true
+                rerankMinScore: 0.2, bm25MsmRatio: 0.6, rerankerEnabled: true,
+                maxPositionEmbeddings: 512
             }
         };
         let LOCAL_LLM_PLANNER_MODEL = '';   // P0-6：规划用小模型（可选，空 = 主模型）

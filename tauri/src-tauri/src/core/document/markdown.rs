@@ -236,9 +236,37 @@ fn build_line_offsets(text: &str) -> Vec<usize> {
 /// （至少含一行 `键: 值`），才认定为 frontmatter；否则视为普通文档
 /// （首行 `---` 只是 ThematicBreak 分割线，B3：`---\n段落\n---` 不得被剥离）。
 fn strip_frontmatter(text: &str) -> String {
+    parse_frontmatter(text).1
+}
+
+// ─── FrontMatter 元数据（P0-1：tags/aliases/title 重新纳入检索） ───
+
+/// FrontMatter 元数据（Obsidian tags/aliases/title 等检索信号）。
+#[derive(Debug, Clone, Default)]
+pub struct FrontmatterMeta {
+    /// `title:` 字段（文档显式标题；缺失时检索侧回退文件名）
+    pub title: Option<String>,
+    /// `tags:` 字段（YAML 数组或逗号分隔字符串）
+    pub tags: Vec<String>,
+    /// `aliases:` 字段（标题别名，与 tags 同路参与检索）
+    pub aliases: Vec<String>,
+    /// `category:` 字段（分类）
+    pub category: Option<String>,
+}
+
+/// 解析并剥离文档开头的 YAML FrontMatter。
+///
+/// 判定规则与 [`strip_frontmatter`] 一致；成功时返回 `(元数据, 剥离后的正文)`，
+/// 未命中（非 frontmatter）时返回 `(None, 原文本)`。元数据解析失败仅丢弃元数据，
+/// **绝不丢弃正文**（B3 保证）。
+pub fn parse_frontmatter(text: &str) -> (Option<FrontmatterMeta>, String) {
+    // 🟠 L9：BOM 剥离——Windows 记事本保存的 UTF-8 文件常带 \u{feff} 前缀，
+    // `trim()` 不剥离 BOM，旧实现首行 `---` 判定失效导致 frontmatter 既不剥离
+    // 也不解析（原始 YAML 进 chunk 正文污染索引）。
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let lines: Vec<&str> = text.split('\n').collect();
     if lines.first().map(|l| l.trim()) != Some("---") {
-        return text.to_string();
+        return (None, text.to_string());
     }
     let mut close_idx = None;
     for (idx, line) in lines.iter().enumerate().skip(1) {
@@ -251,14 +279,58 @@ fn strip_frontmatter(text: &str) -> String {
         }
     }
     let Some(close_idx) = close_idx else {
-        return text.to_string();
+        return (None, text.to_string());
     };
-    // 中间内容必须像 YAML（含 `键: 值`），否则 "---\n正文\n---" 这类普通文档被误剥
     let body = &lines[1..close_idx];
     if !looks_like_yaml(body) {
-        return text.to_string();
+        return (None, text.to_string());
     }
-    lines[close_idx + 1..].join("\n")
+    let yaml_text = body.join("\n");
+    let meta = parse_frontmatter_yaml(&yaml_text);
+    (Some(meta), lines[close_idx + 1..].join("\n"))
+}
+
+/// 从 YAML 文本解析元数据（serde_yaml，容错：失败仅丢元数据）。
+fn parse_frontmatter_yaml(yaml_text: &str) -> FrontmatterMeta {
+    let mut meta = FrontmatterMeta::default();
+    let Ok(value) = serde_yaml::from_str::<serde_yaml::Value>(yaml_text) else {
+        return meta;
+    };
+    let serde_yaml::Value::Mapping(map) = value else {
+        return meta;
+    };
+    let get = |key: &str| map.get(&serde_yaml::Value::String(key.to_string()));
+
+    if let Some(v) = get("title").and_then(|v| v.as_str()) {
+        meta.title = Some(v.trim().to_string());
+    }
+    if let Some(v) = get("category").and_then(|v| v.as_str()) {
+        meta.category = Some(v.trim().to_string());
+    }
+    meta.tags = extract_string_list(get("tags"));
+    meta.aliases = extract_string_list(get("aliases"));
+    meta
+}
+
+/// 提取字符串列表：支持 YAML 数组 / 逗号分隔字符串（含中文逗号）。
+fn extract_string_list(v: Option<&serde_yaml::Value>) -> Vec<String> {
+    let Some(v) = v else {
+        return Vec::new();
+    };
+    match v {
+        serde_yaml::Value::Sequence(seq) => seq
+            .iter()
+            .filter_map(|x| x.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
+        serde_yaml::Value::String(s) => s
+            .split([',', '，'])
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 /// 判断 frontmatter 候选内容是否像 YAML：至少包含一行 `键: 值`。
@@ -281,4 +353,53 @@ fn looks_like_yaml(body: &[&str]) -> bool {
             }
         }
     })
+}
+
+// ─── P0-1 测试：FrontMatter 解析 ───
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_frontmatter_extracts_metadata() {
+        let text = "---\ntitle: Redis 连接池\ntags:\n  - redis\n  - 运维\naliases:\n  - Redis Pool\n  - 连接池\ncategory: 技术笔记\n---\n# 正文\n内容";
+        let (meta, body) = parse_frontmatter(text);
+        let meta = meta.expect("应识别 frontmatter");
+        assert_eq!(meta.title.as_deref(), Some("Redis 连接池"));
+        assert_eq!(meta.tags, vec!["redis", "运维"]);
+        assert_eq!(meta.aliases, vec!["Redis Pool", "连接池"]);
+        assert_eq!(meta.category.as_deref(), Some("技术笔记"));
+        assert_eq!(body, "# 正文\n内容");
+    }
+
+    #[test]
+    fn parse_frontmatter_comma_string_tags() {
+        let text = "---\ntags: rag, search, 混合检索\n---\n正文";
+        let (meta, body) = parse_frontmatter(text);
+        let meta = meta.unwrap();
+        assert_eq!(meta.tags, vec!["rag", "search", "混合检索"]);
+        assert_eq!(body, "正文");
+    }
+
+    #[test]
+    fn parse_frontmatter_not_yaml_keeps_text() {
+        // 首行 --- 但中间不是 YAML（B3 回归：不得误剥普通文档）
+        let text = "---\n普通段落文字\n---\n正文内容";
+        let (meta, body) = parse_frontmatter(text);
+        assert!(meta.is_none());
+        assert_eq!(body, text);
+        // 无闭合
+        let text2 = "---\ntitle: x\n没有闭合";
+        let (m2, b2) = parse_frontmatter(text2);
+        assert!(m2.is_none());
+        assert_eq!(b2, text2);
+    }
+
+    #[test]
+    fn strip_frontmatter_delegates() {
+        let text = "---\ntags: [a, b]\n---\n正文";
+        assert_eq!(strip_frontmatter(text), "正文");
+        assert_eq!(strip_frontmatter("无 frontmatter 文档"), "无 frontmatter 文档");
+    }
 }

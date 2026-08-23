@@ -13,8 +13,12 @@ use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
-/// LLM HTTP 请求级总超时（秒）：对齐 openai 通道的 LLM_REQUEST_TIMEOUT。
-const ANTHROPIC_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
+/// LLM HTTP 请求级总超时（秒）：🟠 L27 旧注释引用的 `LLM_REQUEST_TIMEOUT` 常量
+/// 在代码库中不存在（openai 通道实际为 `STREAM_TOTAL_TIMEOUT=1800s` /
+/// `DEFAULT_TIMEOUT=600s`），值对齐但命名过时，已更正表述。
+const ANTHROPIC_REQUEST_TIMEOUT: Duration = Duration::from_secs(1800);
+/// 流式空闲超时（无数据块持续此时间 → 判定死流），对齐 DSH idleWatchdog 并拉长到 10 分钟。
+const ANTHROPIC_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(600);
 /// 默认最大输出 tokens（前端未配置时的兜底）。
 const ANTHROPIC_DEFAULT_MAX_TOKENS: u32 = 4096;
 
@@ -186,7 +190,11 @@ impl AnthropicStreamClient {
         }
 
         let client = reqwest::Client::builder()
+            // reqwest 总超时覆盖流式 body 读取：300s 会掐断慢模型的长流式生成
+            // （表现为"error decoding response body"）；流式放宽到 30 分钟，
+            // 连接阶段单独 15s 快速失败。
             .timeout(ANTHROPIC_REQUEST_TIMEOUT)
+            .connect_timeout(std::time::Duration::from_secs(15))
             .build()
             .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
 
@@ -222,9 +230,11 @@ impl AnthropicStreamClient {
                     // 取消：返回已累积内容，由命令层按"取消保留部分内容"处理
                     break;
                 }
-                item = stream.next() => {
+                // 空闲看门狗（对齐 DeepSeek Harness idleWatchdog）：无数据块持续
+                // ANTHROPIC_STREAM_IDLE_TIMEOUT 判定死流；慢速持续输出每块自动重新计时。
+                item = tokio::time::timeout(ANTHROPIC_STREAM_IDLE_TIMEOUT, stream.next()) => {
                     match item {
-                        Some(Ok(chunk)) => {
+                        Ok(Some(Ok(chunk))) => {
                             buf.extend_from_slice(&chunk);
                             // 处理完整帧（以 \n\n 分隔）
                             while let Some(pos) = find_frame_end(&buf) {
@@ -251,11 +261,20 @@ impl AnthropicStreamClient {
                                 }
                             }
                         }
-                        Some(Err(e)) => {
+                        Ok(Some(Err(e))) => {
                             if cancel.is_cancelled() { break; }
                             return Err(format!("Anthropic 流式读取失败: {}", e));
                         }
-                        None => break,
+                        Ok(None) => break,
+                        Err(_) => {
+                            // 🟠 L27：空闲超时丢弃已累积内容（与"取消保留部分内容"
+                            // 行为不一致）——错误信息中明确说明，提示用户已生成部分内容
+                            // 会丢失；完整修复需把部分内容随错误一并返回（改签名，后续排期）。
+                            return Err(format!(
+                                "Anthropic 流式响应空闲超时（{}s 内无数据，可能为死流）；已累积的部分内容将丢弃",
+                                ANTHROPIC_STREAM_IDLE_TIMEOUT.as_secs()
+                            ));
+                        }
                     }
                 }
             }

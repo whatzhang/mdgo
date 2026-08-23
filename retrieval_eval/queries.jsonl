@@ -1,0 +1,42 @@
+{"id": "q001", "query": "为什么 embedding 后英文 chunk 数量特别多", "intent": "semantic", "difficulty": "medium", "language": "zh"}
+{"id": "q002", "query": "RAG 分块 token 预算怎么配置", "intent": "semantic", "difficulty": "medium", "language": "zh"}
+{"id": "q003", "query": "TokenBudgetValidator 的职责是什么", "intent": "semantic", "difficulty": "medium", "language": "zh"}
+{"id": "q004", "query": "什么是 RRF 融合", "intent": "semantic", "difficulty": "easy", "language": "zh"}
+{"id": "q005", "query": "检索精度怎么提升", "intent": "semantic", "difficulty": "hard", "language": "zh"}
+{"id": "q006", "query": "cross-encoder 精排是怎么工作的", "intent": "semantic", "difficulty": "medium", "language": "zh"}
+{"id": "q007", "query": "chunk 内容哈希有什么用", "intent": "semantic", "difficulty": "medium", "language": "zh"}
+{"id": "q008", "query": "embedding 模型窗口怎么对齐分块", "intent": "semantic", "difficulty": "medium", "language": "zh"}
+{"id": "q009", "query": "向量库底层用的是什么", "intent": "semantic", "difficulty": "easy", "language": "zh"}
+{"id": "q010", "query": "索引元数据是怎么持久化的", "intent": "semantic", "difficulty": "medium", "language": "zh"}
+{"id": "q011", "query": "how does rrf fusion work", "intent": "semantic", "difficulty": "hard", "language": "en"}
+{"id": "q012", "query": "what is the token budget validator", "intent": "semantic", "difficulty": "hard", "language": "en"}
+{"id": "q013", "query": "how is bm25 field boost configured", "intent": "semantic", "difficulty": "hard", "language": "en"}
+{"id": "q014", "query": "explain the retrieval pipeline stages", "intent": "semantic", "difficulty": "hard", "language": "en"}
+{"id": "q015", "query": "index_all 函数在哪个文件", "intent": "code", "difficulty": "easy", "language": "zh"}
+{"id": "q016", "query": "finalize_hits 做了什么", "intent": "code", "difficulty": "medium", "language": "zh"}
+{"id": "q017", "query": "rrf_fuse 的实现", "intent": "code", "difficulty": "medium", "language": "zh"}
+{"id": "q018", "query": "compute_alpha 动态权重逻辑", "intent": "code", "difficulty": "medium", "language": "zh"}
+{"id": "q019", "query": "fetch_chunks_between 上下文扩展", "intent": "code", "difficulty": "medium", "language": "zh"}
+{"id": "q020", "query": "split_text_token_aware 在哪", "intent": "code", "difficulty": "easy", "language": "zh"}
+{"id": "q021", "query": "build_document_chunks 的实现", "intent": "code", "difficulty": "medium", "language": "zh"}
+{"id": "q022", "query": "frontmatter 解析改造涉及哪些文件", "intent": "code", "difficulty": "medium", "language": "zh"}
+{"id": "q023", "query": "aggregate_hits 聚合逻辑", "intent": "code", "difficulty": "medium", "language": "zh"}
+{"id": "q024", "query": "embedding 缓存是怎么接入索引的", "intent": "code", "difficulty": "medium", "language": "zh"}
+{"id": "q025", "query": "chunk_size 参数校验在哪", "intent": "exact", "difficulty": "easy", "language": "zh"}
+{"id": "q026", "query": "SCHEMA_VERSION 常量在哪", "intent": "exact", "difficulty": "easy", "language": "zh"}
+{"id": "q027", "query": "RrfConfig 结构体定义", "intent": "exact", "difficulty": "medium", "language": "zh"}
+{"id": "q028", "query": "ValidationReport 有哪些字段", "intent": "exact", "difficulty": "medium", "language": "zh"}
+{"id": "q029", "query": "混合检索的设计文档", "intent": "navigation", "difficulty": "easy", "language": "zh"}
+{"id": "q030", "query": "分块相关的设计文档", "intent": "navigation", "difficulty": "easy", "language": "zh"}
+{"id": "q031", "query": "RAG 检索评估文档", "intent": "navigation", "difficulty": "easy", "language": "zh"}
+{"id": "q032", "query": "预检索优化器方案文档", "intent": "navigation", "difficulty": "easy", "language": "zh"}
+{"id": "q033", "query": "RAG 分块从代码评审到落地的完整过程", "intent": "cross", "difficulty": "hard", "language": "zh"}
+{"id": "q034", "query": "BM25 与向量融合的完整链路", "intent": "cross", "difficulty": "hard", "language": "zh"}
+{"id": "q035", "query": "从查询理解到上下文组装的全流程", "intent": "cross", "difficulty": "hard", "language": "zh"}
+{"id": "q036", "query": "frontmatter 元数据从解析到检索", "intent": "cross", "difficulty": "medium", "language": "zh"}
+{"id": "q037", "query": "TokenBudgetValidator 重切策略", "intent": "entity", "difficulty": "medium", "language": "zh"}
+{"id": "q038", "query": "SemanticChunkEngine 前缀截断", "intent": "entity", "difficulty": "medium", "language": "zh"}
+{"id": "q039", "query": "LocalBgeReranker 在哪", "intent": "entity", "difficulty": "easy", "language": "zh"}
+{"id": "q040", "query": "rag 检索相关的设计文档", "intent": "tag", "difficulty": "medium", "language": "zh"}
+{"id": "q041", "query": "日程相关的实现代码", "intent": "tag", "difficulty": "easy", "language": "zh"}
+{"id": "q042", "query": "书签功能相关的代码", "intent": "tag", "difficulty": "easy", "language": "zh"}

@@ -1,0 +1,42 @@
+{"query_id": "q001", "relevant_documents": ["docs/分块 Token 预算设计.md", "docs/代码审查报告-RAG全链路P0批次.md"], "relevant_chunks": []}
+{"query_id": "q002", "relevant_documents": ["docs/分块 Token 预算设计.md", "tauri/src-tauri/src/core/config.rs"], "relevant_chunks": []}
+{"query_id": "q003", "relevant_documents": ["tauri/src-tauri/src/core/db/token_budget.rs", "docs/分块 Token 预算设计.md"], "relevant_chunks": []}
+{"query_id": "q004", "relevant_documents": ["tauri/src-tauri/src/core/search/rrf.rs", "docs/混合检索技术设计.md"], "relevant_chunks": []}
+{"query_id": "q005", "relevant_documents": ["docs/检索 V2 架构评估与实施记录.md"], "relevant_chunks": []}
+{"query_id": "q006", "relevant_documents": ["tauri/src-tauri/src/core/search/rerank.rs", "docs/混合检索技术设计.md"], "relevant_chunks": []}
+{"query_id": "q007", "relevant_documents": ["tauri/src-tauri/src/core/db/utils.rs", "docs/分块 Token 预算设计.md"], "relevant_chunks": []}
+{"query_id": "q008", "relevant_documents": ["tauri/src-tauri/src/core/embedding.rs", "docs/分块 Token 预算设计.md"], "relevant_chunks": []}
+{"query_id": "q009", "relevant_documents": ["tauri/src-tauri/src/core/db/lance.rs"], "relevant_chunks": []}
+{"query_id": "q010", "relevant_documents": ["tauri/src-tauri/src/core/types.rs", "tauri/src-tauri/src/core/indexer.rs"], "relevant_chunks": []}
+{"query_id": "q011", "relevant_documents": ["tauri/src-tauri/src/core/search/rrf.rs", "docs/混合检索技术设计.md"], "relevant_chunks": []}
+{"query_id": "q012", "relevant_documents": ["tauri/src-tauri/src/core/db/token_budget.rs", "docs/分块 Token 预算设计.md"], "relevant_chunks": []}
+{"query_id": "q013", "relevant_documents": ["tauri/src-tauri/src/core/db/bm25.rs"], "relevant_chunks": []}
+{"query_id": "q014", "relevant_documents": ["docs/检索 V2 架构评估与实施记录.md", "docs/混合检索技术设计.md"], "relevant_chunks": []}
+{"query_id": "q015", "relevant_documents": ["tauri/src-tauri/src/core/indexer.rs"], "relevant_chunks": []}
+{"query_id": "q016", "relevant_documents": ["tauri/src-tauri/src/core/indexer.rs"], "relevant_chunks": []}
+{"query_id": "q017", "relevant_documents": ["tauri/src-tauri/src/core/search/rrf.rs"], "relevant_chunks": []}
+{"query_id": "q018", "relevant_documents": ["tauri/src-tauri/src/core/indexer.rs"], "relevant_chunks": []}
+{"query_id": "q019", "relevant_documents": ["tauri/src-tauri/src/core/indexer.rs"], "relevant_chunks": []}
+{"query_id": "q020", "relevant_documents": ["tauri/src-tauri/src/core/document/text_split.rs"], "relevant_chunks": []}
+{"query_id": "q021", "relevant_documents": ["tauri/src-tauri/src/core/db/utils.rs"], "relevant_chunks": []}
+{"query_id": "q022", "relevant_documents": ["tauri/src-tauri/src/core/document/markdown.rs", "tauri/src-tauri/src/core/pipeline.rs"], "relevant_chunks": []}
+{"query_id": "q023", "relevant_documents": ["tauri/src-tauri/src/core/agent/mod.rs"], "relevant_chunks": []}
+{"query_id": "q024", "relevant_documents": ["tauri/src-tauri/src/core/pipeline.rs", "tauri/src-tauri/src/core/db/embedding_cache.rs"], "relevant_chunks": []}
+{"query_id": "q025", "relevant_documents": ["tauri/src-tauri/src/commands/knowledge.rs", "tauri/src-tauri/src/core/config.rs"], "relevant_chunks": []}
+{"query_id": "q026", "relevant_documents": ["tauri/src-tauri/src/core/db/bm25.rs"], "relevant_chunks": []}
+{"query_id": "q027", "relevant_documents": ["tauri/src-tauri/src/core/search/rrf.rs"], "relevant_chunks": []}
+{"query_id": "q028", "relevant_documents": ["tauri/src-tauri/src/core/db/token_budget.rs"], "relevant_chunks": []}
+{"query_id": "q029", "relevant_documents": ["docs/混合检索技术设计.md", "docs/混合检索逻辑契约.md"], "relevant_chunks": []}
+{"query_id": "q030", "relevant_documents": ["docs/分块 Token 预算设计.md", "docs/代码审查报告-RAG全链路P0批次.md"], "relevant_chunks": []}
+{"query_id": "q031", "relevant_documents": ["docs/检索 V2 架构评估与实施记录.md"], "relevant_chunks": []}
+{"query_id": "q032", "relevant_documents": ["docs/预检索优化器设计方案.md"], "relevant_chunks": []}
+{"query_id": "q033", "relevant_documents": ["docs/代码审查报告-RAG全链路P0批次.md", "docs/分块 Token 预算设计.md", "tauri/src-tauri/src/core/db/token_budget.rs"], "relevant_chunks": []}
+{"query_id": "q034", "relevant_documents": ["tauri/src-tauri/src/core/db/bm25.rs", "tauri/src-tauri/src/core/db/lance.rs", "tauri/src-tauri/src/core/search/rrf.rs", "docs/混合检索技术设计.md"], "relevant_chunks": []}
+{"query_id": "q035", "relevant_documents": ["tauri/src-tauri/src/core/search/query_plan.rs", "tauri/src-tauri/src/core/agent/mod.rs", "docs/混合检索技术设计.md"], "relevant_chunks": []}
+{"query_id": "q036", "relevant_documents": ["tauri/src-tauri/src/core/document/markdown.rs", "tauri/src-tauri/src/core/pipeline.rs", "tauri/src-tauri/src/core/db/bm25.rs"], "relevant_chunks": []}
+{"query_id": "q037", "relevant_documents": ["tauri/src-tauri/src/core/db/token_budget.rs"], "relevant_chunks": []}
+{"query_id": "q038", "relevant_documents": ["tauri/src-tauri/src/core/document/chunk_engine.rs"], "relevant_chunks": []}
+{"query_id": "q039", "relevant_documents": ["tauri/src-tauri/src/core/search/rerank.rs"], "relevant_chunks": []}
+{"query_id": "q040", "relevant_documents": ["docs/检索 V2 架构评估与实施记录.md", "docs/分块 Token 预算设计.md"], "relevant_chunks": []}
+{"query_id": "q041", "relevant_documents": ["tauri/src-tauri/src/core/schedule/scheduler.rs", "tauri/src-tauri/src/core/schedule/mod.rs", "tauri/src-tauri/src/core/schedule/planner.rs", "tauri/src-tauri/src/core/schedule/sqlite.rs"], "relevant_chunks": []}
+{"query_id": "q042", "relevant_documents": ["tauri/src-tauri/src/core/knowledge/bookmark/mod.rs", "tauri/src-tauri/src/core/knowledge/bookmark/repository.rs", "tauri/src-tauri/src/core/knowledge/bookmark/vector.rs", "tauri/src-tauri/src/core/knowledge/bookmark/importer.rs"], "relevant_chunks": []}

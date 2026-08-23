@@ -1,5 +1,16 @@
 const _CANVAS_IMG_CONCURRENCY = 4;         // Canvas 图片节点加载并发限制（避免 20 张大图同时解码导致 CPU 飙升）
-
+function editCanvasNodeContent(e, btn){
+    // L35：_canvasObject 未初始化时静默跳过，避免 TypeError 中断（画布未加载/已销毁时点击节点按钮）
+    if (_canvasObject && typeof _canvasObject.editNodeContent === 'function') {
+        _canvasObject.editNodeContent(e, btn);
+    }
+}
+function saveCanvasNodeContent(e, btn){
+    // L35：同上，save 路径同样防护
+    if (_canvasObject && typeof _canvasObject.saveNodeContent === 'function') {
+        _canvasObject.saveNodeContent(e, btn);
+    }
+}
 class CanvasLess {
     constructor() {
         this.selectedCanvasNodeId = null;
@@ -1196,7 +1207,7 @@ class CanvasLess {
         const bodyText = node.type === 'code' ? (node.code || node.text || '') : (node.text || '');
         const htmlContent = await markedParse(parseObsidianToHTML(bodyText));
         contentPanel.innerHTML = ` <div class="canvas-edit-controls" id="canvas-edit-controls" ${dirCanvasDisplayFlag ? 'style="display:none;"' : ''}>
-                    <button id="content-panel-btn" class="btn btn-primary btn-sm" data-node-id="${node.id}" onclick="editNodeContent(event, this)">
+                    <button id="content-panel-btn" class="btn btn-primary btn-sm" data-node-id="${node.id}" onclick="editCanvasNodeContent(event, this)">
                         编辑内容
                     </button>
                 </div>
@@ -1230,7 +1241,7 @@ class CanvasLess {
                 const htmlContent = await markedParse(parseObsidianToHTML(text));
                 contentPanel.innerHTML = `
                         <div class="canvas-edit-controls" id="canvas-edit-controls" ${dirCanvasDisplayFlag ? 'style="display:none;"' : ''}>
-                            <button class="btn btn-primary btn-sm" data-node-id="${node.id}" onclick="editNodeContent(event, this)">
+                            <button class="btn btn-primary btn-sm" data-node-id="${node.id}" onclick="editCanvasNodeContent(event, this)">
                                 编辑内容
                             </button>
                         </div>
@@ -1618,7 +1629,7 @@ class CanvasLess {
         const headerLabel = isFileNode ? `📝 编辑文件: ${basename(filePath)}` : '📝 编辑节点内容';
         contentPanel.innerHTML = `
                     <div class="canvas-edit-controls">
-                        <button class="btn btn-success btn-sm" onclick="saveNodeContent(event, this)">显示</button>
+                        <button class="btn btn-success btn-sm" onclick="saveCanvasNodeContent(event, this)">显示</button>
                     </div>
                     ${createEditorContainer(headerLabel, 'node-editor-inner', 'height: 100%;')}`;
         // 状态对象独立于 DOM，innerHTML 替换不影响 _nodePanelState，无需重写
@@ -1653,7 +1664,7 @@ class CanvasLess {
                 const fileLabel = isFileNode ? `<span style="font-size:13px;font-weight:500;color:var(--color-primary-light);">📝 ${escapeHtml(filePath)}</span>` : '';
                 contentPanel.innerHTML = `<div class="canvas-edit-controls" id="canvas-edit-controls">
                                 ${fileLabel}
-                                <button class="btn btn-primary btn-sm" data-node-id="${nodeData.id}" onclick="editNodeContent(event, this)">
+                                <button class="btn btn-primary btn-sm" data-node-id="${nodeData.id}" onclick="editCanvasNodeContent(event, this)">
                                     编辑内容
                                 </button> 
                             </div>

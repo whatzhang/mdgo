@@ -31,10 +31,16 @@ pub const KB_TOP_K_SCHEMA_MAX: u32 = 50;
 pub const MAX_EXPANDED_QUERIES: usize = 2;
 /// 单次预检索总查询数上限（原始 + 扩展，防发散）
 pub const MAX_TOTAL_QUERIES: usize = 3;
-/// 查询扩展 LLM 调用的独立总时限（秒）：并行化后已不在首答关键路径，
-/// 超时 fail-open 回退为仅原始查询
-pub const QUERY_EXPANSION_TIMEOUT_SECS: u64 = 10;
-/// 查询扩展调用的重试次数（预检索预算从紧：总尝试 = 重试次数 + 1）
+/// 查询扩展 LLM 调用的独立总时限（秒）。
+///
+/// 扩展与原始查询检索经 `tokio::join!` 并发，但流水线**必须等它到点才进入下一阶段**
+/// （日志：慢端点 `查询扩展超时（>10s）` 后流水线才继续），处于首答关键路径上。
+/// 慢模型端点上 10s 几乎必然超时、每次白等 10s 却拿不到扩展结果——收窄到 5s：
+/// 慢端点少等 5s；正常端点（扩展输出短，通常 <5s）功能不受影响。超时 fail-open 回退为仅原始查询。
+pub const QUERY_EXPANSION_TIMEOUT_SECS: u64 = 5;
+/// 查询扩展调用的重试次数（预检索预算从紧：总尝试 = 重试次数 + 1）。
+/// 🟠 L28 修复：5s 总时限下最多容纳 1 次重试（退避 2s 起步，第 2 次重试需再等
+/// 4s，必然超时）——旧值 2 使重试形同虚设；1 次重试覆盖瞬时抖动且不挤占时限。
 pub const QUERY_EXPANSION_RETRY_MAX: usize = 1;
 /// 扩展查询去重的 embedding cosine 阈值（≥ 视为重复，丢弃后生成的）
 pub const QUERY_DEDUP_SIMILARITY: f32 = 0.92;

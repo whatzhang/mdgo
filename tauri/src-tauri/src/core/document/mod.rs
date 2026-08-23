@@ -19,6 +19,7 @@ pub mod markdown;
 pub mod node;
 pub mod parser;
 pub mod text_split;
+pub mod token_budget;
 
 pub use parser::MarkdownParser;
 pub use markdown::ComrakMarkdownParser;

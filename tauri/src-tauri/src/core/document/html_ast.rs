@@ -94,12 +94,12 @@ impl HtmlDocumentParser {
             return;
         }
         match name.as_str() {
-            // 非内容元素跳过
+            // 非内容元素跳过（D3：footer 版权 / aside 侧边栏为常见噪音源，不参与索引）
             "script" | "style" | "nav" | "iframe" | "noscript" | "svg" | "form" | "button"
-            | "input" | "select" | "textarea" | "label" => return,
+            | "input" | "select" | "textarea" | "label" | "footer" | "aside" => return,
             // 容器元素：含块级子元素时递归（标题层级栈生效）；否则作为段落叶子挂载
             // （修复 `<div>hello <a>link</a></div>` 裸文本丢失）
-            "div" | "section" | "article" | "main" | "header" | "footer" | "aside" | "figure"
+            "div" | "section" | "article" | "main" | "header" | "figure"
             | "details" | "summary" | "span" | "a" | "strong" | "em" | "b" | "i" | "u"
             | "small" | "mark" | "sub" | "sup" => {
                 let has_block_child = el.children().filter_map(ElementRef::wrap).any(|ce| {

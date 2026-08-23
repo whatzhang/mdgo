@@ -266,13 +266,17 @@ fn identifier_analyzer() -> TextAnalyzer {
         .build()
 }
 
-/// BM25 索引 schema 版本号（v4：text 字段仅索引纯正文 + 新增 display_text 展示字段）。
+/// BM25 索引 schema 版本号（v5：新增 tags 字段 + title 优先 frontmatter）。
 ///
 /// tantivy 的 schema 变更后旧索引目录无法复用，开发阶段直接删除重建；
 /// `open()` 读取标记文件内容，与当前版本不符即自动重建，避免旧目录报错阻断启动。
 /// 标记文件名与版本号保持一致（C1）。
-const SCHEMA_VERSION: &str = "4";
-const SCHEMA_MARKER: &str = ".schema_v4";
+/// 🟠 L19：**版本重建只覆盖 BM25 目录**——本批次同时改了 chunk id 生成规则
+/// （UUID→内容哈希），LanceDB 主键与 BM25 doc_id 也随之变化；升级部署后
+/// 必须对每个知识库执行一次全量重建（`kb_index`），否则新旧主键混存
+/// （LanceDB 按 doc_name 先删后写不去重旧 id）。
+const SCHEMA_VERSION: &str = "5";
+const SCHEMA_MARKER: &str = ".schema_v5";
 
 /// Windows 下 tantivy commit/merge 偶发 `PermissionDenied`（Defender 实时扫描刚创建的
 /// segment 文件；或上一 commit 残留的后台 merge 与本次 commit 竞争 `.managed.json` 重命名）。
@@ -374,6 +378,16 @@ impl Bm25Index {
             )
             .set_stored();
         builder.add_text_field("heading", heading_options);
+        // 文档标签（P0-1：frontmatter tags + aliases，jieba 分词），权重 2.0
+        // ——"按标签检索"的轻量实现（BM25 加权而非结构化过滤）
+        let tags_options = TextOptions::default()
+            .set_indexing_options(
+                TextFieldIndexing::default()
+                    .set_tokenizer("jieba_chinese")
+                    .set_index_option(IndexRecordOption::WithFreqsAndPositions),
+            )
+            .set_stored();
+        builder.add_text_field("tags", tags_options);
         // 代码符号名（标识符分词，整体匹配），权重 2.0
         let symbol_options = TextOptions::default()
             .set_indexing_options(
@@ -526,6 +540,7 @@ impl Bm25Index {
         let display_text_field = schema.get_field("display_text").unwrap();
         let title_field = schema.get_field("title").unwrap();
         let heading_field = schema.get_field("heading").unwrap();
+        let tags_field = schema.get_field("tags").unwrap();
         let symbol_name_field = schema.get_field("symbol_name").unwrap();
         let symbol_kind_field = schema.get_field("symbol_kind").unwrap();
         let chunk_type_field = schema.get_field("chunk_type").unwrap();
@@ -537,6 +552,15 @@ impl Bm25Index {
         for chunk in chunks {
             // text 仅索引纯正文（B5），展示文本单独存 display_text
             let body = body_text(chunk);
+            // P0-1：title 优先使用 frontmatter title（缺失回退文件名主干）
+            let title = chunk
+                .doc_title
+                .as_deref()
+                .filter(|t| !t.trim().is_empty())
+                .map(|t| t.to_string())
+                .unwrap_or_else(|| file_title(&chunk.doc_name));
+            // P0-1：tags 字段（frontmatter tags + aliases，JSON 数组字符串）
+            let tags = chunk.tags.as_deref().unwrap_or("");
             writer
                 .add_document(doc!(
                     doc_id_field => chunk.id.as_str(),
@@ -545,8 +569,9 @@ impl Bm25Index {
                     chunk_index_field => chunk.chunk_index as u64,
                     text_field => body.as_str(),
                     display_text_field => chunk.text.as_str(),
-                    title_field => file_title(&chunk.doc_name).as_str(),
+                    title_field => title.as_str(),
                     heading_field => heading_text(&chunk.path_json).as_str(),
+                    tags_field => tags,
                     symbol_name_field => chunk.symbol_name.as_deref().unwrap_or(""),
                     symbol_kind_field => chunk.symbol_kind.as_deref().unwrap_or(""),
                     chunk_type_field => chunk.chunk_type.as_deref().unwrap_or(""),
@@ -597,12 +622,14 @@ impl Bm25Index {
         Self::collect_hits(&searcher, query, top_k)
     }
 
-    /// 构建带 Field Boost 的 QueryParser（title > heading > symbol > file_path > text）。
+    /// 构建带 Field Boost 的 QueryParser（title 3.0 > heading 2.5 > tags 2.0 =
+    /// symbol 2.0 > text/file_path 1.0）。🟠 L20：旧注释"tags = title"与 boost 值不符。
     fn build_query_parser(index: &Index) -> QueryParser {
         let schema = Self::schema();
         let text_field = schema.get_field("text").unwrap();
         let title_field = schema.get_field("title").unwrap();
         let heading_field = schema.get_field("heading").unwrap();
+        let tags_field = schema.get_field("tags").unwrap();
         let symbol_name_field = schema.get_field("symbol_name").unwrap();
         let file_path_field = schema.get_field("file_path").unwrap();
 
@@ -612,6 +639,7 @@ impl Bm25Index {
                 text_field,
                 title_field,
                 heading_field,
+                tags_field,
                 symbol_name_field,
                 file_path_field,
             ],
@@ -619,6 +647,7 @@ impl Bm25Index {
         parser.set_field_boost(text_field, 1.0);
         parser.set_field_boost(title_field, 3.0);
         parser.set_field_boost(heading_field, 2.5);
+        parser.set_field_boost(tags_field, 2.0);
         parser.set_field_boost(symbol_name_field, 2.0);
         parser.set_field_boost(file_path_field, 1.0);
         parser
@@ -634,6 +663,7 @@ impl Bm25Index {
             (schema.get_field("text").unwrap(), 1.0),
             (schema.get_field("title").unwrap(), 3.0),
             (schema.get_field("heading").unwrap(), 2.5),
+            (schema.get_field("tags").unwrap(), 2.0),
             (schema.get_field("symbol_name").unwrap(), 2.0),
             (schema.get_field("file_path").unwrap(), 1.0),
         ];
@@ -678,6 +708,7 @@ impl Bm25Index {
         let symbol_name_field = schema.get_field("symbol_name").unwrap();
         let symbol_kind_field = schema.get_field("symbol_kind").unwrap();
         let chunk_type_field = schema.get_field("chunk_type").unwrap();
+        let tags_field = schema.get_field("tags").unwrap();
 
         let collector = TopDocs::with_limit(top_k as usize).order_by_score();
         let top_docs = searcher
@@ -726,6 +757,12 @@ impl Bm25Index {
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty())
                 .map(|s| s.to_string());
+            // 🟠 M9：tags 字段（schema v5 起存在；JSON 数组字符串）
+            let tags = doc
+                .get_first(tags_field)
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
 
             raw_scores.push(*score as f32);
             hits.push(SearchHit {
@@ -740,6 +777,7 @@ impl Bm25Index {
                 symbol_name,
                 symbol_kind,
                 chunk_type,
+                tags,
                 score_rerank: None,
                 query_sources: Vec::new(),
             });
@@ -934,6 +972,8 @@ mod tests {
             symbol_kind: None,
             embedding_text: None,
             chunk_type: None,
+            doc_title: None,
+            tags: None,
         }
     }
 

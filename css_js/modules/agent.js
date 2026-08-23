@@ -218,12 +218,20 @@ function expandToolHistory(chatMsgs) {
 
 // ─── RAG 检索参数设置 ───
 let ragSettings = null; // 延迟初始化，从后端加载
+// P0-1：embedding 模型窗口（token），用于约束 chunk_size 上限。
+// 本地模式回退 AGENT_LIMITS.ragDefaults.maxPositionEmbeddings；Tauri 下由 kb_embedding_info 下发覆盖。
+let ragEmbedWindow = (typeof AGENT_LIMITS !== 'undefined' && AGENT_LIMITS.ragDefaults && AGENT_LIMITS.ragDefaults.maxPositionEmbeddings) || 512;
+// M29：embedding 窗口信息是否有效（kb_embedding_info 成功且非 0）；false 时跳过前端 maxChunk 拒绝分支，
+// 交由后端 kb_update_indexer_config 返回权威错误（避免 info 失败时按 512 兜底误拒 >512 的合法值）。
+let ragEmbedWindowValid = false;
 let ragSettingsTippy = null;
 let kbWatcherTimer = null; // 知识库 watcher 事件防抖定时器（模块级，便于 agentCleanup 清除）
 let fileWrittenTimer = null; // Agent 写文件事件防抖定时器（模块级，便于 agentCleanup 清除）
 async function openRagSettings() {
     const overlay = document.getElementById('rag-settings-overlay');
     if (!overlay) return;
+    // L36：先显示 overlay 再异步拉取配置（kb_embedding_info 可能触发 ONNX 初始化，避免阻塞首次打开）
+    overlay.style.display = 'flex';
     // 从后端加载当前配置
     try {
         if (window.__TAURI__?.core?.invoke) {
@@ -243,11 +251,61 @@ async function openRagSettings() {
             document.getElementById('rag-setting-rerank-min-score').value = cfg.rerank_min_score ?? rd.rerankMinScore;
             document.getElementById('rag-setting-bm25-msm').value = cfg.bm25_msm_ratio ?? rd.bm25MsmRatio;
             document.getElementById('rag-setting-reranker-enabled').checked = cfg.reranker_enabled ?? rd.rerankerEnabled;
+            // M23：证据校验开关（对应后端 kb_update_indexer_config 的 evidence_check_enabled）
+            const evidenceChk = document.getElementById('rag-setting-evidence-check');
+            if (evidenceChk) evidenceChk.checked = cfg.evidence_check_enabled ?? false;
+            // P0-1/M29：拉取 embedding 模型窗口 → 展示提示并约束 chunk_size 输入范围。
+            // 仅当 info 成功且窗口非 0 时启用前端硬上限校验（ragEmbedWindowValid=true）；
+            // info 失败/模型未就绪时跳过前端 maxChunk 拒绝分支，交给后端 kb_update_indexer_config 返回权威错误。
+            let embedInfoOk = false;
+            try {
+                const info = await window.__TAURI__.core.invoke('kb_embedding_info');
+                const win = info?.max_position_embeddings;
+                if (typeof win === 'number' && win > 0) {
+                    ragEmbedWindow = win;
+                    ragEmbedWindowValid = true;
+                    embedInfoOk = true;
+                } else {
+                    ragEmbedWindow = 512; // 模型未就绪/无窗口信息：不启用前端硬上限
+                    ragEmbedWindowValid = false;
+                }
+            } catch (e) {
+                ragEmbedWindow = 512; // 拉取失败：不启用前端硬上限（交给后端权威校验）
+                ragEmbedWindowValid = false;
+            }
+            const chunkSizeInput = document.getElementById('rag-setting-chunk-size');
+            const windowHint = document.getElementById('rag-setting-window-hint');
+            if (embedInfoOk) {
+                const maxChunk = Math.max(64, ragEmbedWindow - 8); // 窗口 - special tokens 预留
+                if (chunkSizeInput) {
+                    chunkSizeInput.min = 64;
+                    chunkSizeInput.max = maxChunk;
+                }
+                if (windowHint) {
+                    windowHint.textContent = `embedding 模型窗口: ${ragEmbedWindow} token（分块大小上限 ${maxChunk}）`;
+                }
+            } else if (windowHint) {
+                windowHint.textContent = '未获取到 embedding 模型窗口，分块大小上限以后端校验为准';
+            }
+        } else {
+            // L36：非 Tauri（本地模式）直接用默认窗口写入 hint 与输入框 max
+            const win = (AGENT_LIMITS && AGENT_LIMITS.ragDefaults && AGENT_LIMITS.ragDefaults.maxPositionEmbeddings) || 512;
+            ragEmbedWindow = win;
+            ragEmbedWindowValid = true;
+            const maxChunk = Math.max(64, win - 8); // 窗口 - special tokens 预留
+            const chunkSizeInput = document.getElementById('rag-setting-chunk-size');
+            if (chunkSizeInput) {
+                chunkSizeInput.min = 64;
+                chunkSizeInput.max = maxChunk;
+            }
+            const windowHint = document.getElementById('rag-setting-window-hint');
+            if (windowHint) {
+                windowHint.textContent = `embedding 模型窗口: ${win} token（分块大小上限 ${maxChunk}）`;
+            }
         }
     } catch (e) {
         console.warn('[rag-settings] 加载配置失败:', e);
     }
-    overlay.style.display = 'flex';
     // 初始化 ⓘ 提示
     if (!ragSettingsTippy) {
         ragSettingsTippy = tippy(overlay.querySelectorAll('.setting-help'), {
@@ -270,8 +328,27 @@ function closeRagSettings() {
 async function saveRagSettings() {
     const topK = parseInt(document.getElementById('rag-setting-topk').value) || 10;
     const minScore = parseFloat(document.getElementById('rag-setting-min-score').value) || 0.3;
-    const chunkSize = parseInt(document.getElementById('rag-setting-chunk-size').value) || 448;
-    const chunkOverlap = parseInt(document.getElementById('rag-setting-chunk-overlap').value) || 56;
+    // L33：parseInt 结果为 0（分块重叠为 0 即不重叠，是合法语义）不得被默认值吞掉，仅 NaN 回退默认
+    const chunkSizeRaw = parseInt(document.getElementById('rag-setting-chunk-size').value, 10);
+    const chunkSize = Number.isFinite(chunkSizeRaw) ? chunkSizeRaw : 448;
+    const chunkOverlapRaw = parseInt(document.getElementById('rag-setting-chunk-overlap').value, 10);
+    const chunkOverlap = Number.isFinite(chunkOverlapRaw) ? chunkOverlapRaw : 56;
+    // P0-1：分块参数校验（与后端 kb_update_indexer_config 同规则，拒绝非法值——
+    // chunk 超模型窗口会被静默截断，必须显式拒绝）
+    const maxChunk = Math.max(64, ragEmbedWindow - 8);
+    // M29：仅当 embedding 窗口信息有效（ragEmbedWindowValid）时执行 maxChunk 拒绝；
+    // info 拉取失败/未就绪时跳过前端上限校验，交给后端 kb_update_indexer_config 返回权威错误。
+    if (chunkSize < 64 || (ragEmbedWindowValid && chunkSize > maxChunk)) {
+        const boundMsg = ragEmbedWindowValid
+            ? `分块大小需在 [64, ${maxChunk}]（token）之间（embedding 模型窗口 ${ragEmbedWindow}）`
+            : '分块大小不能小于 64（token）';
+        showNotification(boundMsg, 'error');
+        return;
+    }
+    if (chunkOverlap >= Math.floor(chunkSize / 2)) {
+        showNotification(`分块重叠需小于分块大小的一半（当前分块大小 ${chunkSize}）`, 'error');
+        return;
+    }
     const fusionAlpha = parseFloat(document.getElementById('rag-setting-fusion-alpha').value) || 0.6;
     const maxContextDocs = parseInt(document.getElementById('rag-setting-max-docs').value) || 4;
     const maxChunksPerDoc = parseInt(document.getElementById('rag-setting-max-chunks').value) || 3;
@@ -281,8 +358,10 @@ async function saveRagSettings() {
     const rerankMinScore = parseFloat(document.getElementById('rag-setting-rerank-min-score').value) || 0.2;
     const bm25MsmRatio = parseFloat(document.getElementById('rag-setting-bm25-msm').value) || 0.6;
     const rerankerEnabled = document.getElementById('rag-setting-reranker-enabled').checked;
+    // M23：证据校验开关（后端 kb_update_indexer_config 的 evidence_check_enabled）
+    const evidenceCheckEnabled = !!document.getElementById('rag-setting-evidence-check')?.checked;
     // 更新本地状态
-    ragSettings = { topK, minScore, chunkSize, chunkOverlap, fusionAlpha, maxContextDocs, maxChunksPerDoc, candidateK, rrfK, vecMinScore, rerankMinScore, bm25MsmRatio, rerankerEnabled };
+    ragSettings = { topK, minScore, chunkSize, chunkOverlap, fusionAlpha, maxContextDocs, maxChunksPerDoc, candidateK, rrfK, vecMinScore, rerankMinScore, bm25MsmRatio, rerankerEnabled, evidenceCheckEnabled };
     // 持久化到后端
     try {
         if (window.__TAURI__?.core?.invoke) {
@@ -300,6 +379,7 @@ async function saveRagSettings() {
                 rerankMinScore,
                 bm25MsmRatio,
                 rerankerEnabled,
+                evidenceCheckEnabled,
             });
             showNotification('RAG 参数已保存', 'success');
         }

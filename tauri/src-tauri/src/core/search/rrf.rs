@@ -51,6 +51,8 @@ struct Entry {
     symbol_name: Option<String>,
     symbol_kind: Option<String>,
     chunk_type: Option<String>,
+    /// 🟠 M9：文档标签（JSON 数组字符串），供融合后内存标签过滤
+    tags: Option<String>,
 }
 
 /// 将单路 hits 的排名贡献累加到融合表。
@@ -78,6 +80,7 @@ fn accumulate(
                     entry.symbol_kind = hit.symbol_kind;
                 }
                 entry.chunk_type = entry.chunk_type.clone().or(hit.chunk_type);
+                entry.tags = entry.tags.clone().or(hit.tags);
             }
             FuseField::Bm25 => {
                 entry.score_bm25 = entry.score_bm25.max(hit.score_bm25.max(hit.score));
@@ -96,6 +99,9 @@ fn accumulate(
                 }
                 if entry.chunk_type.is_none() {
                     entry.chunk_type = hit.chunk_type;
+                }
+                if entry.tags.is_none() {
+                    entry.tags = hit.tags;
                 }
             }
             // 符号路：携带符号证据（symbol_name/symbol_kind）供下游保留与展示；
@@ -117,6 +123,9 @@ fn accumulate(
                 if entry.symbol_name.is_none() {
                     entry.symbol_name = hit.symbol_name;
                     entry.symbol_kind = hit.symbol_kind;
+                }
+                if entry.tags.is_none() {
+                    entry.tags = hit.tags;
                 }
             }
         }
@@ -190,6 +199,7 @@ pub fn rrf_fuse(
             symbol_name: e.symbol_name,
             symbol_kind: e.symbol_kind,
             chunk_type: e.chunk_type,
+            tags: e.tags,
             score_rerank: None,
             query_sources: Vec::new(),
         })

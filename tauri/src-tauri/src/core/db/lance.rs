@@ -47,6 +47,10 @@ pub struct DocumentChunk {
     pub embedding_text: Option<String>,
     /// 分块类型（AST 语义分块用）：paragraph/code/table/list/quote/section 等
     pub chunk_type: Option<String>,
+    /// 文档显式标题（P0-1：frontmatter title；BM25 title 字段优先使用，不落 LanceDB 列）
+    pub doc_title: Option<String>,
+    /// 文档标签（P0-1：frontmatter tags+aliases 的 JSON 数组字符串；BM25 tags 字段，不落 LanceDB 列）
+    pub tags: Option<String>,
 }
 
 /// 命中来源查询（P1 预检索优化器：跨查询一致性统计）。
@@ -76,6 +80,9 @@ pub struct SearchHit {
     pub symbol_kind: Option<String>,
     /// 分块类型（AST 语义分块用）
     pub chunk_type: Option<String>,
+    /// 文档标签（P0-1：frontmatter tags+aliases 的 JSON 数组字符串；
+    /// 🟠 M9：落 SearchHit 供融合后内存标签过滤——BM25/符号路无法 SQL 下推）
+    pub tags: Option<String>,
     /// 精排分数（本地 bge-reranker sigmoid 相关性分数，仅精排启用时有值）
     pub score_rerank: Option<f32>,
     /// 命中来源查询列表（原始 / 扩展），预检索多查询路径打标；
@@ -95,6 +102,8 @@ struct SymbolEntry {
     path_json: Option<String>,
     sentence_window: Option<String>,
     chunk_type: Option<String>,
+    /// 🟠 M9：文档标签（JSON 数组字符串），供融合后标签过滤
+    tags: Option<String>,
 }
 
 pub struct LanceStore {
@@ -144,12 +153,15 @@ impl LanceStore {
         )
         .await;
         if let Ok(Ok(table)) = open_result {
-            let _ = Self::migrate_add_column(&table, "path_depth", DataType::UInt32).await;
-            let _ = Self::migrate_add_column(&table, "path_json", DataType::Utf8).await;
-            let _ = Self::migrate_add_column(&table, "sentence_window", DataType::Utf8).await;
-            let _ = Self::migrate_add_column(&table, "symbol_name", DataType::Utf8).await;
-            let _ = Self::migrate_add_column(&table, "symbol_kind", DataType::Utf8).await;
-            let _ = Self::migrate_add_column(&table, "chunk_type", DataType::Utf8).await;
+            // 🟠 L14：迁移失败留日志（旧实现 `let _ =` 静默吞错）
+            Self::migrate_add_column_logged(&table, "path_depth", DataType::UInt32).await;
+            Self::migrate_add_column_logged(&table, "path_json", DataType::Utf8).await;
+            Self::migrate_add_column_logged(&table, "sentence_window", DataType::Utf8).await;
+            Self::migrate_add_column_logged(&table, "symbol_name", DataType::Utf8).await;
+            Self::migrate_add_column_logged(&table, "symbol_kind", DataType::Utf8).await;
+            Self::migrate_add_column_logged(&table, "chunk_type", DataType::Utf8).await;
+            // A3：tags 列（frontmatter 标签；供 metadata 过滤下推）
+            Self::migrate_add_column_logged(&table, "tags", DataType::Utf8).await;
             // 兼容旧表：补建向量索引（已有索引则瞬间跳过；构建失败不阻断，仅影响检索性能）
             if let Err(e) = self.ensure_vector_index().await {
                 log::warn!("[lance] 确保向量索引失败（检索将退化为全表扫描）: {}", e);
@@ -174,6 +186,8 @@ impl LanceStore {
             Field::new("symbol_name", DataType::Utf8, true),
             Field::new("symbol_kind", DataType::Utf8, true),
             Field::new("chunk_type", DataType::Utf8, true),
+            // A3：frontmatter 标签（JSON 数组字符串），供 metadata 过滤下推
+            Field::new("tags", DataType::Utf8, true),
             Field::new(
                 "vector",
                 DataType::FixedSizeList(
@@ -246,12 +260,29 @@ impl LanceStore {
     }
 
     /// 尝试为已有表添加新列（兼容旧版本创建的 schema）
-    async fn migrate_add_column(table: &lancedb::Table, name: &str, dtype: DataType) {
+    async fn migrate_add_column(
+        table: &lancedb::Table,
+        name: &str,
+        dtype: DataType,
+    ) -> Result<(), String> {
         use lancedb::table::NewColumnTransform;
         // 构建新列 schema（仅包含要添加的列）
         let new_schema = Arc::new(ArrowSchema::new(vec![Field::new(name, dtype.clone(), true)]));
         let transform = NewColumnTransform::AllNulls(new_schema);
-        let _ = table.add_columns(transform, None).await;
+        table
+            .add_columns(transform, None)
+            .await
+            .map(|_| ())
+            .map_err(|e| format!("添加列 {} 失败: {}", name, e))
+    }
+
+    /// 🟠 L14：迁移加列 + 失败留日志——旧实现 `let _ =` 静默吞错，若迁移失败
+    /// （文件锁/IO），首次 `add_chunks` 会以 schema 不匹配硬失败且发生在 open 阶段，
+    /// 排查困难。
+    async fn migrate_add_column_logged(table: &lancedb::Table, name: &str, dtype: DataType) {
+        if let Err(e) = Self::migrate_add_column(table, name, dtype).await {
+            log::warn!("[lance] 迁移加列失败 ({})，后续写入可能 schema 不匹配: {}", name, e);
+        }
     }
 
     /// 获取或打开已有表
@@ -312,6 +343,7 @@ impl LanceStore {
         let mut symbol_name_arr: Vec<Option<&str>> = Vec::with_capacity(n);
         let mut symbol_kind_arr: Vec<Option<&str>> = Vec::with_capacity(n);
         let mut chunk_type_arr: Vec<Option<&str>> = Vec::with_capacity(n);
+        let mut tags_arr: Vec<Option<&str>> = Vec::with_capacity(n);
 
         for chunk in chunks {
             id_arr.push(chunk.id.as_str());
@@ -324,6 +356,7 @@ impl LanceStore {
             symbol_name_arr.push(chunk.symbol_name.as_deref());
             symbol_kind_arr.push(chunk.symbol_kind.as_deref());
             chunk_type_arr.push(chunk.chunk_type.as_deref());
+            tags_arr.push(chunk.tags.as_deref());
         }
 
         let vector_arrays: Vec<Option<Vec<Option<f32>>>> = vectors
@@ -348,6 +381,7 @@ impl LanceStore {
                 Field::new("symbol_name", DataType::Utf8, true),
                 Field::new("symbol_kind", DataType::Utf8, true),
                 Field::new("chunk_type", DataType::Utf8, true),
+                Field::new("tags", DataType::Utf8, true),
                 Field::new(
                     "vector",
                     DataType::FixedSizeList(
@@ -369,6 +403,7 @@ impl LanceStore {
                 Arc::new(StringArray::from(symbol_name_arr)),
                 Arc::new(StringArray::from(symbol_kind_arr)),
                 Arc::new(StringArray::from(chunk_type_arr)),
+                Arc::new(StringArray::from(tags_arr)),
                 Arc::new(vector_arr),
             ],
         )
@@ -490,6 +525,10 @@ impl LanceStore {
             let chunk_types = batch
                 .column_by_name("chunk_type")
                 .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+            // 🟠 M9：tags 列（旧表迁移前可能缺失 → None，融合后过滤时视为无标签）
+            let tags_col = batch
+                .column_by_name("tags")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
 
             for i in 0..batch.num_rows() {
                 let dist = distances.value(i);
@@ -509,6 +548,9 @@ impl LanceStore {
                 let chunk_type_val = chunk_types.and_then(|arr| {
                     if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
                 });
+                let tags_val = tags_col.and_then(|arr| {
+                    if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
+                });
                 hits.push(SearchHit {
                     text: texts.value(i).to_string(),
                     doc_name: doc_names.value(i).to_string(),
@@ -521,6 +563,7 @@ impl LanceStore {
                     symbol_name: symbol_name_val,
                     symbol_kind: symbol_kind_val,
                     chunk_type: chunk_type_val,
+                    tags: tags_val,
                     score_rerank: None,
                     query_sources: Vec::new(),
                 });
@@ -584,6 +627,7 @@ impl LanceStore {
                     symbol_name: Some(e.symbol_name.clone()),
                     symbol_kind: e.symbol_kind.clone(),
                     chunk_type: e.chunk_type.clone(),
+                    tags: e.tags.clone(),
                     score_rerank: None,
                     query_sources: Vec::new(),
                 },
@@ -633,6 +677,7 @@ impl LanceStore {
                 "path_json",
                 "sentence_window",
                 "chunk_type",
+                "tags",
             ]))
             .execute()
             .await
@@ -671,6 +716,10 @@ impl LanceStore {
             let chunk_types = batch
                 .column_by_name("chunk_type")
                 .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+            // 🟠 M9：tags 列（旧表迁移前可能缺失 → None）
+            let tags_col = batch
+                .column_by_name("tags")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
 
             for i in 0..batch.num_rows() {
                 if symbol_names.is_null(i) {
@@ -691,6 +740,9 @@ impl LanceStore {
                         if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
                     }),
                     chunk_type: chunk_types.and_then(|arr| {
+                        if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
+                    }),
+                    tags: tags_col.and_then(|arr| {
                         if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
                     }),
                 });

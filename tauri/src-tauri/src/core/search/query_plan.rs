@@ -30,7 +30,7 @@ pub enum RetrievalIntent {
 /// 共用本清单，避免两套列表漂移导致"已索引的代码文件在 Code 意图下被漏检"。
 pub const CODE_EXTENSIONS: &[&str] = &[
     "py", "js", "ts", "rs", "go", "java", "lua", "sh", "bat", "sql", "yaml", "yml", "toml",
-    "conf",
+    "conf", "c", "cpp", "cc", "h", "hpp", "rb", "php",
 ];
 
 /// 意图 → 允许检索的文件扩展名白名单（候选过滤条件，检索前确定）。
@@ -55,6 +55,8 @@ pub struct QueryPlan {
     pub allowed_exts: Option<&'static [&'static str]>,
     /// 疑似代码符号的标识符 token（仅 Code 意图有值），用于符号路召回
     pub symbols: Vec<String>,
+    /// 显式标签过滤（A3/C1：`tag:xxx` / `标签:xxx` 语法）——LanceDB only_if 下推
+    pub tags: Vec<String>,
 }
 
 /// 查询计划器抽象（依赖倒置：检索管线只依赖 trait，不感知具体路由实现）。
@@ -80,15 +82,36 @@ impl QueryPlanner for RuleQueryPlanner {
             intent,
             allowed_exts: intent_allowed_exts(intent),
             symbols,
+            tags: extract_tag_filters(query),
         }
     }
 }
 
+/// 提取显式标签过滤（`tag:rag` / `标签:redis`）：用于 metadata 过滤下推。
+///
+/// 支持中英文标签词（不含空白/标点）；`[^A-Za-z0-9_]` 为显式 ASCII 字符类
+/// （`\w` 默认 Unicode 会把汉字算词字符，故显式列出），允许中文前缀
+/// （"找一下标签:redis" 可命中）且排除 "retag:xx" 类误匹配；无匹配返回空。
+fn extract_tag_filters(query: &str) -> Vec<String> {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| {
+        regex::Regex::new(r"(?:^|[^A-Za-z0-9_])(?:tag|标签)\s*:\s*([^\s,，。;；]+)").unwrap()
+    });
+    re.captures_iter(query)
+        .filter_map(|c| c.get(1).map(|m| m.as_str().trim().to_string()))
+        .filter(|t| !t.is_empty())
+        .collect()
+}
+
 /// 根据查询文本进行轻量级意图路由（规则启发式，无 LLM 开销）。
 ///
-/// 优先判定代码（符号/关键字/代码语法特征），其次大纲（opml/思维导图等），
+/// 优先判定代码（符号/关键字/代码语法特征/显式扩展名），其次大纲（opml/思维导图等），
 /// 再文档（readme/markdown 等），默认通用。
 pub fn route_intent(query: &str) -> RetrievalIntent {
+    // P0-2：显式代码扩展名（`config.rs`、`.py 文件` 等）→ 直接 Code（精确文件检索）
+    if has_explicit_extension(query) {
+        return RetrievalIntent::Code;
+    }
     if is_code_query(query) {
         return RetrievalIntent::Code;
     }
@@ -107,6 +130,40 @@ pub fn route_intent(query: &str) -> RetrievalIntent {
         return RetrievalIntent::Document;
     }
     RetrievalIntent::General
+}
+
+/// 查询是否包含显式代码扩展名（`.rs`、`.py` 等，词边界保护避免 "5.0" 误匹配）。
+///
+/// 扩展名清单与 [`CODE_EXTENSIONS`] 保持一致（避免"路由为 Code 但过滤白名单不含该扩展名"的漏检）。
+/// 🟠 M18 修复：同时校验**前导边界**与**后随边界**——扩展名前必须是文件名主干字符
+/// （字母/数字/下划线/连字符），扩展名后必须是结尾或非词延续字符，排除
+/// `config.rs_backup`、`config.rs-old`、`.rsx`、`config.rst` 等误匹配。
+fn has_explicit_extension(query: &str) -> bool {
+    CODE_EXTENSIONS.iter().any(|ext| {
+        let needle = format!(".{}", ext);
+        let bytes = query.as_bytes();
+        let mut start = 0usize;
+        while let Some(rel) = query[start..].find(&needle) {
+            let idx = start + rel;
+            if idx > 0 {
+                let before = bytes[idx - 1];
+                if !(before.is_ascii_alphanumeric() || before == b'_' || before == b'-') {
+                    start = idx + needle.len();
+                    continue;
+                }
+            }
+            let after = idx + needle.len();
+            let ok_after = after >= bytes.len()
+                || !(bytes[after].is_ascii_alphanumeric()
+                    || bytes[after] == b'_'
+                    || bytes[after] == b'-');
+            if ok_after {
+                return true;
+            }
+            start = after;
+        }
+        false
+    })
 }
 
 /// 检测查询是否为"代码风格"的查询。
@@ -146,19 +203,11 @@ fn is_code_query(query: &str) -> bool {
     if (has_camel || has_snake) && (query.contains("::") || query.contains("->")) {
         return true;
     }
-    // 代码文件扩展名
-    if query.contains(".py")
-        || query.contains(".rs")
-        || query.contains(".ts")
-        || query.contains(".js")
-        || query.contains(".go")
-        || query.contains(".java")
-        || query.contains(".cpp")
-        || query.contains(".c")
-        || query.contains(".h")
-        || query.contains(".rb")
-        || query.contains(".php")
-    {
+    // 代码文件扩展名（🟠 M18：与 CODE_EXTENSIONS 单一来源一致，含 c/cpp/h/rb/php）
+    let has_code_ext = CODE_EXTENSIONS
+        .iter()
+        .any(|ext| query.contains(&format!(".{}", ext)));
+    if has_code_ext {
         let code_keywords = [
             "function", "class", "struct", "enum", "trait", "interface", "namespace", "lambda",
             "async", "await", "callback", "prototype", "constructor", "方法", "函数", "变量",
@@ -280,6 +329,7 @@ mod tests {
             intent: RetrievalIntent::General,
             allowed_exts: None,
             symbols: Vec::new(),
+            tags: Vec::new(),
         };
         assert!(!should_expand("", &general));
         assert!(!should_expand("Redis", &general)); // 超短
@@ -294,14 +344,47 @@ mod tests {
             intent: RetrievalIntent::Code,
             allowed_exts: Some(&["rs"]),
             symbols: vec!["handleTimeout".into()],
+            tags: Vec::new(),
         };
         assert!(!should_expand("handleTimeout 在哪里定义的", &code));
         let code_no_symbol = QueryPlan {
             intent: RetrievalIntent::Code,
             allowed_exts: Some(&["rs"]),
             symbols: Vec::new(),
+            tags: Vec::new(),
         };
         assert!(should_expand("Rust 的异步错误处理", &code_no_symbol));
+    }
+
+    #[test]
+    fn tag_filter_extraction() {
+        let p = RuleQueryPlanner.plan("tag:rag 的笔记");
+        assert_eq!(p.tags, vec!["rag"]);
+        let p2 = RuleQueryPlanner.plan("找一下标签:redis 相关的文档");
+        assert_eq!(p2.tags, vec!["redis"]);
+        let p3 = RuleQueryPlanner.plan("普通查询没有标签语法");
+        assert!(p3.tags.is_empty());
+    }
+
+    #[test]
+    fn route_intent_explicit_extension_is_code() {
+        // P0-2：显式扩展名 → Code（无论是否含代码关键字）
+        assert_eq!(route_intent("config.rs 在哪里"), RetrievalIntent::Code);
+        assert_eq!(route_intent("src/tools/parse_json.py 的实现"), RetrievalIntent::Code);
+        assert_eq!(route_intent("看下 indexer.rs"), RetrievalIntent::Code);
+        // 🟠 M18：清单新增的语言扩展名同样路由 Code
+        assert_eq!(route_intent("main.c 的实现"), RetrievalIntent::Code);
+        assert_eq!(route_intent("utils.cpp 在哪"), RetrievalIntent::Code);
+        assert_eq!(route_intent("types.h 文件"), RetrievalIntent::Code);
+        // 词边界保护：不得误匹配 "5.0"、"config.rst"
+        assert_eq!(route_intent("版本 5.0 的说明"), RetrievalIntent::General);
+        assert_eq!(route_intent("config.rst 文档"), RetrievalIntent::Document);
+        // 🟠 M18：前后边界——".rs" 后接 "_"/"-" 或前无文件名主干时不得误判 Code
+        assert_eq!(route_intent("config.rs_backup 的说明"), RetrievalIntent::General);
+        assert_eq!(route_intent("config.rs-old 的说明"), RetrievalIntent::General);
+        assert_eq!(route_intent("看下 .rs 配置"), RetrievalIntent::General);
+        // 文档扩展名不进代码清单
+        assert_eq!(route_intent("分块 Token 预算设计.md 讲了什么"), RetrievalIntent::General);
     }
 }
 

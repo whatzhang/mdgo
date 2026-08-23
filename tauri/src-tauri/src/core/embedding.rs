@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 #[cfg(not(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64"))))]
@@ -30,8 +31,33 @@ fn get_hidden_size() -> usize {
 /// 从 config.json 加载的实际 max_position_embeddings，初始化为 512 作为安全默认值
 static MAX_SEQ_LEN: OnceLock<usize> = OnceLock::new();
 /// 从 config.json 读取 max_position_embeddings，未初始化时返回 512
-fn get_max_seq_len() -> usize {
+pub(crate) fn get_max_seq_len() -> usize {
     *MAX_SEQ_LEN.get().unwrap_or(&512)
+}
+
+// ─── 截断可观测性（P0-1：消灭静默截断）───
+//
+// 分块层（TokenBudgetValidator）负责消灭"常见超限"；embedding 层保留截断作为
+// 最后兜底（原子块超限等），但每次截断都会计数并告警，绝不静默。
+// 索引流程在窗口内 reset/read（indexer::index_all / index_unindexed），
+// 统计进入 KbIndexResult.truncated_chunks 供 UI 展示。
+
+/// 进程内累计被截断的文本条数（embedding 层兜底计数）
+static EMBED_TRUNCATED: AtomicU64 = AtomicU64::new(0);
+/// 🟠 L6 修复：基线快照（reset 时记录，读取返回窗口内增量）——watcher 增量路径
+/// 也在累计全局计数，硬清零会让 index_all 窗口混入窗口外数据。
+static EMBED_TRUNCATED_BASE: AtomicU64 = AtomicU64::new(0);
+
+/// 重置截断计数基线（索引窗口开始时调用）
+pub(crate) fn reset_embedding_truncated_count() {
+    EMBED_TRUNCATED_BASE.store(EMBED_TRUNCATED.load(Ordering::Relaxed), Ordering::Relaxed);
+}
+
+/// 读取窗口内截断计数（当前值 − 基线）
+pub(crate) fn embedding_truncated_count() -> u64 {
+    EMBED_TRUNCATED
+        .load(Ordering::Relaxed)
+        .saturating_sub(EMBED_TRUNCATED_BASE.load(Ordering::Relaxed))
 }
 /// 输出的向量维度，等于模型的 hidden_size
 pub fn get_embedding_dimension() -> usize {
@@ -108,6 +134,49 @@ pub fn estimate_tokens(text: &str) -> Option<usize> {
         return None;
     }
     with_tokenizer(|tok| tok.encode(text, false).ok().map(|enc| enc.len()))
+}
+
+/// 与 embedding 推理**同口径**的 tokenize（含 special tokens，对齐 `call_embedding_parallel`
+/// 内的 `encode(text, true)`），返回 `(token 数, 字符偏移边界)`。
+///
+/// 字符偏移边界：`boundaries[i]` = 第 i 个 token 起始的**字符**偏移（0-based），
+/// `boundaries[n]` = 文本总字符数（末尾哨兵）。token i 覆盖字符区间
+/// `[boundaries[i], boundaries[i+1])`。special token（如 [CLS]/[SEP]）偏移为 0 或末尾，
+/// 可能产生空区间，切分时自然跳过。
+///
+/// 模型未初始化时返回 `None`（调用方降级为字符估算）。
+pub fn tokenize_with_offsets(text: &str) -> Option<(usize, Vec<usize>)> {
+    if TOKENIZER_JSON.get().is_none() {
+        return None;
+    }
+    with_tokenizer(|tok| {
+        let enc = tok.encode(text, true).ok()?;
+        let n = enc.get_ids().len();
+        let total_chars = text.chars().count();
+        // 字节偏移 → 字符偏移映射表（一次性构建；token 边界只落在字符边界上）
+        let mut byte_to_char = vec![0usize; text.len() + 1];
+        let mut ci = 0usize;
+        for (i, c) in text.char_indices() {
+            let w = c.len_utf8();
+            for k in 0..w {
+                byte_to_char[i + k] = ci;
+            }
+            ci += 1;
+        }
+        byte_to_char[text.len()] = total_chars;
+        let mut boundaries = Vec::with_capacity(n + 1);
+        // 防御：保证边界单调不减（特殊 token 的 offset 可能异常/零宽/重复——
+        // 一旦回退会破坏下游窗口切分，如 text_split 的 byte 区间切片越界）
+        let mut prev = 0usize;
+        for (s, _e) in enc.get_offsets() {
+            let v = byte_to_char[*s.min(&text.len())];
+            let v = v.max(prev);
+            boundaries.push(v);
+            prev = v;
+        }
+        boundaries.push(total_chars.max(prev));
+        Some((n, boundaries))
+    })
 }
 
 // ─── ONNX Session 创建（按平台两条独立实现路径）───
@@ -396,15 +465,20 @@ fn post_process_batch(
 
 // ─── 模型窗口对齐 ───
 
-/// 推荐的分块字符数：中文文本最坏情况下 1 字符 ≈ 1 token，
-/// 预留余量使 chunk 落在模型窗口内避免静默截断。范围 [256, 1024]。
+// P0-1：分块预算单一来源已迁移至 `core::db::token_budget::ChunkBudget`
+// （`config.rs` 默认值改由其生成）。以下两个函数保留为便捷委托，
+// 供未来 P0-2 按语言自适应等场景调用；当前无调用方。
+//
+// 推荐的目标分块 token 数（ChunkBudget.target_tokens；512 窗口 → 448）。
+#[allow(dead_code)]
 pub fn recommended_chunk_size() -> usize {
-    get_max_seq_len().saturating_sub(64).clamp(256, 1024)
+    crate::core::db::token_budget::ChunkBudget::from_model_window(get_max_seq_len()).target_tokens
 }
 
-/// 推荐的分块重叠字符数（约为分块大小的 1/8，范围 [16, 128]）。
+/// 推荐的相邻 chunk 重叠 token 数（ChunkBudget.overlap_tokens；512 窗口 → 56）。
+#[allow(dead_code)]
 pub fn recommended_chunk_overlap() -> usize {
-    (recommended_chunk_size() / 8).clamp(16, 128)
+    crate::core::db::token_budget::ChunkBudget::from_model_window(get_max_seq_len()).overlap_tokens
 }
 
 // ─── 公开 API ───
@@ -445,11 +519,14 @@ pub fn call_embedding_parallel(
         Vec::with_capacity(texts.len());
 
     // 使用 rayon 并行分词，每个线程使用自己的 thread_local tokenizer
-    let tokenized: Vec<Result<(usize, Vec<i64>, Vec<i64>, Vec<i64>, usize), String>> = texts
+    // P0-1：截断可观测——🟠 M20 修复：每批用**局部计数**统计本批截断条数，
+    // 收齐后再一次性累加进全局（旧实现是 rayon 闭包内直接 fetch_add 全局 +
+    // 快照差分，对话与文档索引并发调用时两批的增量互相污染，truncated_chunks 虚高）。
+    let tokenized: Vec<Result<(usize, Vec<i64>, Vec<i64>, Vec<i64>, usize, bool), String>> = texts
         .par_iter()
         .enumerate()
         .map(|(idx, text)| {
-            let (ids, mask, type_ids) = with_tokenizer(|tok| -> Result<_, String> {
+            let (ids, mask, type_ids, truncated) = with_tokenizer(|tok| -> Result<_, String> {
                 let enc = tok
                     .encode(*text, true)
                     .map_err(|e| format!("分词失败: {}", e))?;
@@ -465,23 +542,44 @@ pub fn call_embedding_parallel(
                     .map(|&id| id as i64)
                     .collect();
 
+                // P0-1：截断必须可观测——超限先标记（分块层 TokenBudgetValidator
+                // 应已消灭常见超限；此处仅兜底原子块等无法重切场景）。
+                let max_len = get_max_seq_len();
+                let truncated = ids.len() > max_len;
                 // 截断至模型支持的最大长度
-                let truncated_len = ids.len().min(get_max_seq_len());
+                let truncated_len = ids.len().min(max_len);
                 let ids = ids[..truncated_len].to_vec();
                 let mask = mask[..truncated_len].to_vec();
                 let type_ids = type_ids[..truncated_len].to_vec();
-                Ok((ids, mask, type_ids))
+                Ok((ids, mask, type_ids, truncated))
             })?;
 
             let valid_count = mask.iter().filter(|&&m| m > 0).count();
-            Ok((idx, ids, mask, type_ids, valid_count))
+            Ok((idx, ids, mask, type_ids, valid_count, truncated))
         })
         .collect();
 
-    // 收集结果
+    // 收集结果（局部统计本批截断数，避免并发批次互相污染）
+    let mut batch_truncated = 0usize;
     for r in tokenized {
-        let (idx, ids, mask, type_ids, valid_count) = r?;
+        let (idx, ids, mask, type_ids, valid_count, truncated) = r?;
+        if truncated {
+            batch_truncated += 1;
+        }
         items.push((idx, ids, mask, type_ids, valid_count));
+    }
+    if batch_truncated > 0 {
+        EMBED_TRUNCATED.fetch_add(batch_truncated as u64, Ordering::Relaxed);
+    }
+
+    // P0-1：本批存在截断 → 显式告警（每批一次，避免逐条刷屏）
+    if batch_truncated > 0 {
+        log::warn!(
+            "[ort_embedding] 本批 {} 条文本超模型窗口（max_seq_len={}）被截断，尾部语义丢失；\
+             请检查分块参数（TokenBudgetValidator 应已拦截常规超限）",
+            batch_truncated,
+            get_max_seq_len()
+        );
     }
 
     // ── 3. 按长度降序排序 + 分组 ──

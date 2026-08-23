@@ -415,11 +415,23 @@ pub fn call_embedding(
 /// 使用本地 BGE-Small-ZH 模型生成**查询端**向量（自动加 BGE instruction 前缀）。
 ///
 /// 与文档端（不加前缀）配合使用，可提升检索精度 3-5%。
+///
+/// B1：进程内查询向量缓存（键 = 模型作用域 + 原始查询文本哈希；实现为 FIFO 淘汰，
+/// 模块注释已注明是 LRU 的轻量近似——🟠 L17：措辞统一为 FIFO），重复/近似查询零推理。
 pub fn call_embedding_query(
     text: &str,
 ) -> Result<Vec<Vec<f32>>, String> {
+    if let Some(v) = super::query_embedding_cache::global_query_embedding_cache().get(text) {
+        // 按字符截断（字节切片会在中文多字节字符中间 panic，如 "求" 占 3 字节）
+        log::debug!("[embedding] 查询向量缓存命中: {:?}", text.chars().take(40).collect::<String>());
+        return Ok(vec![v]);
+    }
     let prefixed = format!("{}{}", BGE_QUERY_INSTRUCTION, text);
-    call_embedding(&[&prefixed], None)
+    let result = call_embedding(&[&prefixed], None)?;
+    if let Some(v) = result.first().cloned() {
+        super::query_embedding_cache::global_query_embedding_cache().put(text, v);
+    }
+    Ok(result)
 }
 
 /// 批量生成**查询端**向量（P0 预检索优化器：多查询一次批量推理）。
@@ -427,27 +439,52 @@ pub fn call_embedding_query(
 /// 与 [`call_embedding_query`] 语义一致（每条自动加 BGE instruction 前缀），
 /// 内部走 `call_embedding` 的批处理（BATCH_SIZE=128），替代逐条
 /// `spawn_blocking(call_embedding_query)` 的多次阻塞调用。
+///
+/// B1：逐条查缓存，仅对未命中批量推理。
 pub fn call_embedding_queries(
     texts: &[&str],
 ) -> Result<Vec<Vec<f32>>, String> {
     if texts.is_empty() {
         return Ok(Vec::new());
     }
-    let prefixed: Vec<String> = texts
+    let cache = super::query_embedding_cache::global_query_embedding_cache();
+    // 逐条查缓存（保持输入顺序）
+    let cached: Vec<Option<Vec<f32>>> = texts.iter().map(|t| cache.get(t)).collect();
+    let miss_indices: Vec<usize> = cached
+        .iter()
+        .enumerate()
+        .filter_map(|(i, v)| if v.is_none() { Some(i) } else { None })
+        .collect();
+    if miss_indices.is_empty() {
+        return Ok(cached.into_iter().map(|v| v.unwrap()).collect());
+    }
+    let miss_texts: Vec<&str> = miss_indices.iter().map(|&i| texts[i]).collect();
+    let prefixed: Vec<String> = miss_texts
         .iter()
         .map(|t| format!("{}{}", BGE_QUERY_INSTRUCTION, t))
         .collect();
     let refs: Vec<&str> = prefixed.iter().map(|s| s.as_str()).collect();
-    call_embedding(&refs, None)
+    let miss_vectors = call_embedding(&refs, None)?;
+    // 回填缓存 + 组装结果
+    let mut result = Vec::with_capacity(texts.len());
+    let mut miss_iter = miss_vectors.into_iter();
+    for (i, _) in texts.iter().enumerate() {
+        match &cached[i] {
+            Some(v) => result.push(v.clone()),
+            None => {
+                if let Some(v) = miss_iter.next() {
+                    cache.put(texts[i], v.clone());
+                    result.push(v);
+                } else {
+                    return Err("查询向量批量推理结果与输入不一致".into());
+                }
+            }
+        }
+    }
+    Ok(result)
 }
 
 // ─── 文本分块 ───
-
-/// Markdown 专用分隔符（含标题模式，仅用于结构化 Markdown 文本）
-#[allow(dead_code)]
-pub const MARKDOWN_TEXT_SEPARATORS: &[&str] = &[
-    "\n## ", "\n### ", "\n#### ", "\n---\n", "\n\n", "\n", ". ", "。", "！", "？", "，", " ",
-];
 
 /// 按字符数（而非字节数）切分文本，中英文场景更一致。
 ///
@@ -486,50 +523,7 @@ pub fn split_text_char_based(text: &str, max_chars: usize, overlap: usize) -> Ve
     chunks
 }
 
-// ─── 句子分割与语义工具 ───
-
-/// 将文本分割为句子列表，保留句尾标点。
-///
-/// 支持中英文混合文本：
-/// - 中文边界：。！？……
-/// - 英文边界：. ! ?（句点后需有空白或结尾）
-/// - 换行符视为句子边界
-/// - 短片段（≤3 字符且无中文）合并到前一句，减少英文缩写误切
-#[allow(dead_code)]
-pub fn split_sentences(text: &str) -> Vec<String> {
-    let text = text.trim();
-    if text.is_empty() {
-        return vec![];
-    }
-
-    static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| {
-        Regex::new(r"[^。！？!?\n]+[。！？!?\n]?|……+[^……]*……?").unwrap()
-    });
-
-    let sentences: Vec<String> = re.find_iter(text)
-        .map(|m| m.as_str().trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
-
-    // 合并可能被误切的英文缩写（如 "Mr." "Dr." "U.S."）
-    let mut merged: Vec<String> = Vec::new();
-    for s in sentences {
-        if let Some(last) = merged.last_mut() {
-            if s.chars().count() <= 3 && !s.contains(|c: char| c >= '\u{4e00}') {
-                last.push(' ');
-                last.push_str(&s);
-                continue;
-            }
-        }
-        merged.push(s);
-    }
-
-    if merged.is_empty() {
-        merged.push(text.to_string());
-    }
-    merged
-}
+// ─── 语义工具 ───
 
 /// 计算两个 f32 向量的余弦相似度（范围 0.0 ~ 1.0）
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
@@ -542,15 +536,69 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
     (dot / (norm_a * norm_b)) as f64
 }
 
+// ─── 稳定内容哈希（P0-5） ───
+
+/// FNV-1a 128 位哈希（确定性、零依赖）。
+///
+/// 用途：chunk 稳定身份（`build_document_chunks` 的 id）与 embedding 缓存键。
+/// 非加密用途：KB 规模（10^6 级 chunk）下碰撞概率可忽略，且碰撞后果仅是
+/// 缓存未命中 / 同 id 覆盖（幂等），不致命。
+const FNV_128_OFFSET: u128 = 0x6c62272e07bb014262b821756295c58d;
+const FNV_128_PRIME: u128 = 0x0000000001000000000000000000013b;
+
+pub fn fnv1a_128(data: &[u8]) -> u128 {
+    let mut h = FNV_128_OFFSET;
+    for &b in data {
+        h ^= b as u128;
+        h = h.wrapping_mul(FNV_128_PRIME);
+    }
+    h
+}
+
+/// 稳定十六进制哈希（32 位十六进制小写）
+pub fn stable_hash_hex(input: &str) -> String {
+    format!("{:032x}", fnv1a_128(input.as_bytes()))
+}
+
+/// 分块器/哈希版本标记（chunk 身份稳定契约的一部分；分块逻辑变化时递增）
+pub const CHUNK_IDENTITY_VERSION: &str = "mdgo-chunk-v1";
+
 // ─── DocumentChunk 批量创建 ───
 
+/// 构建 DocumentChunk 列表。
+///
+/// P0-5：id 由随机 UUID 改为**稳定内容哈希**（`rel_path#hash`）——同内容同 id：
+/// - 幂等：同一文件重复索引产出相同 id（先删后写语义不变）；
+/// - 支持 embedding 内容哈希缓存（增量索引只重嵌变化 chunk）；
+/// - 哈希输入 = 规范化文本 + 语义元数据 + 位置 + 版本（identity 稳定契约）。
 pub fn build_document_chunks(rel_path: &str, chunks: &[ChunkResult]) -> Vec<DocumentChunk> {
     chunks
         .iter()
         .enumerate()
         .map(|(i, r)| {
+            // P0-5：稳定内容哈希 id（identity 稳定契约；tags 参与哈希——
+            // 文档标签变化 → 检索行为变化 → chunk 身份随之更新；
+            // 🟠 L18：doc_title 同样参与——title 变化改变 BM25 title 字段与检索行为，
+            // 旧实现只含 tags 造成身份契约前后不一）
+            let tags_json = r
+                .tags
+                .as_ref()
+                .map(|t| serde_json::to_string(t).unwrap_or_default())
+                .unwrap_or_default();
+            let hash_input = format!(
+                "{}|{}|{}\n{}\n{}\n{}\n{}\n{}\n{}",
+                CHUNK_IDENTITY_VERSION,
+                rel_path,
+                i,
+                r.text,
+                r.embedding_text.as_deref().unwrap_or(""),
+                r.path_json.as_deref().unwrap_or(""),
+                r.symbol_name.as_deref().unwrap_or(""),
+                r.doc_title.as_deref().unwrap_or(""),
+                tags_json,
+            );
             DocumentChunk {
-                id: format!("{}:{}:{}", rel_path, i, uuid::Uuid::new_v4()),
+                id: format!("{}#{}", rel_path, stable_hash_hex(&hash_input)),
                 doc_name: rel_path.to_string(),
                 chunk_index: i as u32,
                 text: r.text.clone(),
@@ -561,6 +609,8 @@ pub fn build_document_chunks(rel_path: &str, chunks: &[ChunkResult]) -> Vec<Docu
                 symbol_kind: r.symbol_kind.clone(),
                 embedding_text: r.embedding_text.clone(),
                 chunk_type: r.chunk_type.clone(),
+                doc_title: r.doc_title.clone(),
+                tags: r.tags.as_ref().map(|t| serde_json::to_string(t).unwrap_or_default()),
             }
         })
         .collect()
@@ -585,6 +635,14 @@ pub fn get_bm25_dir(dir_path: &str) -> String {
     Path::new(dir_path)
         .join(".mdgo")
         .join("bm25")
+        .to_string_lossy()
+        .to_string()
+}
+
+/// 获取 embedding 缓存目录：{dir_path}/.mdgo（P0-5，缓存独立于 LanceDB/BM25 数据）
+pub fn get_cache_dir(dir_path: &str) -> String {
+    Path::new(dir_path)
+        .join(".mdgo")
         .to_string_lossy()
         .to_string()
 }
@@ -614,5 +672,43 @@ mod ignore_matcher_tests {
     fn matches_empty_rules_never_hits() {
         let m = IgnoreMatcher::new(&[], &[]);
         assert!(!m.matches("docs/a.html"));
+    }
+}
+
+// ─── P0-5 测试：稳定哈希与 chunk 身份 ───
+
+#[cfg(test)]
+mod chunk_identity_tests {
+    use super::*;
+    use crate::core::db::chunk_splitter::ChunkResult;
+
+    #[test]
+    fn stable_hash_deterministic() {
+        let a = stable_hash_hex("同一内容");
+        let b = stable_hash_hex("同一内容");
+        let c = stable_hash_hex("不同内容");
+        assert_eq!(a, b, "同输入哈希必须一致");
+        assert_ne!(a, c, "不同输入哈希必须不同");
+    }
+
+    #[test]
+    fn chunk_ids_stable_and_content_sensitive() {
+        let c1 = vec![ChunkResult::plain("内容甲".into())];
+        let c2 = vec![ChunkResult::plain("内容甲".into())];
+        let c3 = vec![ChunkResult::plain("内容乙".into())];
+        let d1 = build_document_chunks("a.md", &c1);
+        let d2 = build_document_chunks("a.md", &c2);
+        let d3 = build_document_chunks("a.md", &c3);
+        assert_eq!(d1[0].id, d2[0].id, "同内容同 id（幂等）");
+        assert_ne!(d1[0].id, d3[0].id, "内容变化 → id 变化");
+        assert!(d1[0].id.starts_with("a.md#"), "id 应带 doc 前缀: {}", d1[0].id);
+    }
+
+    #[test]
+    fn chunk_ids_unique_within_doc() {
+        // 同文档内重复内容（相同文本不同位置）→ id 仍唯一（位置参与哈希）
+        let chunks = vec![ChunkResult::plain("重复内容".into()), ChunkResult::plain("重复内容".into())];
+        let docs = build_document_chunks("dup.md", &chunks);
+        assert_ne!(docs[0].id, docs[1].id, "同文档重复 chunk id 必须唯一（LanceDB 主键）");
     }
 }

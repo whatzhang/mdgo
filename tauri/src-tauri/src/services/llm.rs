@@ -165,13 +165,19 @@ fn normalize_base_url(endpoint: &str) -> String {
 /// 已知限制：Rig 对流式请求默认注入 `stream_options: {"include_usage": true}`，
 /// 主流本地服务器（Ollama / llama.cpp / vLLM / LM Studio）均宽松忽略；若对接
 /// 严格校验参数的兼容网关返回 400，需自定义 Provider 扩展关闭该字段。
-// ─── LLM 调用重试（P0-4）：非流式调用指数退避，对齐 Pi provider retry ───
+// ─── LLM 调用重试（P0-4）：非流式调用指数退避，对齐主流 Agent（DeepSeek Harness）设置 ───
+// DSH 默认：maxRetries=5、初始退避 500ms、最大退避 10s、jitter 0.1。
+// mdgo 面向慢速本地/自建端点，在 DSH 基础上把耐心拉长：
 /// 最大重试次数（首次调用之外的额外尝试次数；总尝试 = 重试次数 + 1）
-const LLM_RETRY_MAX: usize = 3;
+const LLM_RETRY_MAX: usize = 5;
 /// 退避起始延迟（毫秒），此后每次翻倍
 const LLM_RETRY_BASE_MS: u64 = 2000;
 /// 退避延迟上限（毫秒）
-const LLM_RETRY_MAX_MS: u64 = 60_000;
+/// 🟠 M26 修复：32s 使上限可达（退避序列 2/4/8/16/32 在第 5 次重试触及）；
+/// 旧值 120s 在默认序列下永远达不到，是死常量，且让最坏等待（6×单请求超时 +
+/// 退避）膨胀到小时级——交互式规划/摘要路径由命令层外层 deadline 兜底（见
+/// `commands/llm.rs` 的规划总时限），本常量只控制单次调用内的重试耐心。
+const LLM_RETRY_MAX_MS: u64 = 32_000;
 
 /// 判断 HTTP 状态码是否可重试（429 限流 / 408 超时 / 5xx 服务端错误）。
 /// 当前仅测试路径使用（`completion_with_retry` 经 `LlmError` 判定），保留供回归。
@@ -469,16 +475,18 @@ impl LLMClient {
         cancel: CancellationToken,
         correction: Option<&str>,
     ) -> Option<String> {
-        // 指令部分放 preamble（system role，提高弱模型遵守度——review 修复 A1）
+        // 指令部分放 preamble（system role，提高弱模型遵守度——review 修复 A1）。
+        // 字段最小化：risks/touchpoints/non_goals/rollback 仅在确有内容时输出
+        // （Plan 解析对缺省字段宽容），避免模型为凑空数组多吐数百字符拖慢响应。
         let preamble = String::from(concat!(
             "你是任务规划助手。用户将提出一个需要多步骤执行的复杂任务。请输出一个 JSON 计划，严格遵循以下格式（除 JSON 外不要输出任何其他内容、注释或代码围栏）：\n",
-            "{\"goal\": \"一句话任务目标\", \"steps\": [\"步骤1\", ...], \"acceptance\": [\"可验证的验收标准1\", ...], \"risks\": [...], \"touchpoints\": [...], \"non_goals\": [...], \"rollback\": [...]}\n",
+            "{\"goal\": \"一句话任务目标\", \"steps\": [\"步骤1\", ...], \"acceptance\": [\"可验证的验收标准1\", ...]}\n",
             "要求：\n",
-            "1. 键名必须严格为 goal / steps / acceptance / risks / touchpoints / non_goals / rollback，禁止添加 plan_id、name 等其他任何键\n",
+            "1. 键名必须严格为 goal / steps / acceptance（必填）；risks / touchpoints / non_goals / rollback 可选，禁止添加其他任何键\n",
             "2. goal 一句话概括目标，不含冗长描述\n",
             "3. steps 3-8 步，每步不超过 60 字，具体、可执行、按顺序\n",
             "4. acceptance 2-5 条，每条可客观验证\n",
-            "5. risks / touchpoints / non_goals / rollback 无相关内容时给空数组\n",
+            "5. risks / touchpoints / non_goals / rollback 仅在确有内容时输出，没有则省略该字段，不要输出空数组\n",
             "6. 只输出一个合法 JSON 对象，不要输出任何其他内容、注释或代码围栏\n",
         ));
 
@@ -522,7 +530,12 @@ impl LLMClient {
             LlmMessage::text(LlmRole::User, user_msg),
         ]);
         request.temperature = Some(0.3);
-        request.max_tokens = Some(2048);
+        // 计划 JSON 输出有界（steps 3-8 步 + goal + acceptance），1024 token 足够；
+        // 收紧上限可截断推理模型的思考/冗余输出，直接压缩慢端点的生成时长。
+        // 🟠 L30：权衡——推理模型把思考 token 计入同一 completion 预算时可能截断
+        // JSON（→ 触发修正重试，属一次额外调用的降级路径，可接受）；若后续对
+        // reasoning_effort 非空的模型放宽到 1536 可减少重试。
+        request.max_tokens = Some(1024);
         let request = self.apply_common_params(request);
 
         log::info!("[llm] [任务规划] input: query_len={} history_count={}", query.len(), history.len());

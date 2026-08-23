@@ -15964,17 +15964,18 @@
                                     </div>
                                     <div class="rag-settings-row">
                                         <label>分块大小</label>
-                                        <input type="number" id="rag-setting-chunk-size" min="100" max="4000" step="50"
+                                        <input type="number" id="rag-setting-chunk-size" min="64" max="4000" step="50"
                                             value="448">
                                         <span class="setting-help"
-                                            data-tippy-content="文档被切分成索引块时的目标字符数。默认值已按本地嵌入模型的 token 窗口（512）自动对齐（448 字符），避免长块被静默截断导致向量语义受损。更小的块（如 300）检索更精确；更大的块（如 1000）上下文更完整但可能超过模型窗口。">ⓘ</span>
+                                            data-tippy-content="文档被切分成索引块时的目标 token 数（P0-2 起按 token 预算计，而非字符）。默认值按本地嵌入模型的 token 窗口自动对齐（512 窗口 → 448 token）。最终硬上限由 TokenBudgetValidator 按模型窗口裁决：超限块自动重切，无法重切的原子块（如超宽表格）会显式计数告警，不再静默截断。">ⓘ</span>
+                                        <span id="rag-setting-window-hint" style="display:block;font-size:11px;color:#8a8a8a;margin-top:2px;width:100%">正在读取 embedding 模型窗口…</span>
                                     </div>
                                     <div class="rag-settings-row">
                                         <label>分块重叠</label>
                                         <input type="number" id="rag-setting-chunk-overlap" min="0" max="500" step="10"
                                             value="56">
                                         <span class="setting-help"
-                                            data-tippy-content="相邻文档块之间重叠的字符数。该值仅对按字符切分的格式（代码、大纲等）生效；Markdown 已启用语义边界分块（标题/段落/代码/表格边界），正常分块不重叠，此值仅影响超长块的二次拆分。">ⓘ</span>
+                                            data-tippy-content="相邻文档块之间重叠的 token 数（须小于分块大小的一半）。用于在索引期拼接前块尾部，保持跨块上下文完整；对超长块的二次拆分同样生效。">ⓘ</span>
                                     </div>
                                     <div class="rag-settings-row">
                                         <label>语义融合权重</label>
@@ -16038,6 +16039,14 @@
                                             style="width:auto;margin:0;">
                                         <span class="setting-help"
                                             data-tippy-content="启用本地 bge-reranker Cross-Encoder 对候选结果精排。首次启用会自动后台下载模型（约 1.1GB），下载完成前自动降级为 RRF 排序，检索永不阻断。">ⓘ</span>
+                                    </div>
+                                    <!-- M23：证据校验开关（仅 Tauri/main.html 有，浏览器版 index.html/index_cdn.html 不加） -->
+                                    <div class="rag-settings-row">
+                                        <label>证据校验（回答尾部标注无证据断言）</label>
+                                        <input type="checkbox" id="rag-setting-evidence-check"
+                                            style="width:auto;margin:0;">
+                                        <span class="setting-help"
+                                            data-tippy-content="启用后，回答末尾会标注无证据支撑的断言（LLM 判定），帮助区分检索支撑与模型推断。">ⓘ</span>
                                     </div>
                                 </div>
                                 <div class="todo-modal-footer">
@@ -16756,11 +16765,15 @@
             // pomodoro
             pomodoroMinutesMax: 180,
             // RAG 默认配置（Tauri 下由 kb_get_indexer_config 下发覆盖，本地模式使用）
+            // P0-2 起 chunkSize/chunkOverlap 语义为 token 数（非字符）；
+            // maxPositionEmbeddings 为本地 embedding 模型窗口（bge-small-zh=512），
+            // 用于本地模式下 chunk_size 上限校验（窗口 - 8 预留）。
             ragDefaults: {
                 topK: 10, minScore: 0.3, chunkSize: 448, chunkOverlap: 56,
                 fusionAlpha: 0.6, maxContextDocs: 4, maxChunksPerDoc: 3,
                 candidateK: 100, rrfK: 60, vecMinScore: 0.35,
-                rerankMinScore: 0.2, bm25MsmRatio: 0.6, rerankerEnabled: true
+                rerankMinScore: 0.2, bm25MsmRatio: 0.6, rerankerEnabled: true,
+                maxPositionEmbeddings: 512
             }
         };
         let LOCAL_LLM_REASONING_EFFORT = ''; // P2-18：推理等级（可选：low/medium/high）
@@ -48320,6 +48333,14 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const last = await getLastChatSession();
             chatMode = 'rag';
             renderCacheRate(); // 进入 Agent 页面：渲染 Agent（rag）模式各自的缓存命中率
+            // 修复：首次进入（无历史会话/无缓存命中数据）时底部工具栏（模型/用量/对话次数）
+            // 从未被 updateContextUsage 激活而保持 display:none——进入即用 0 用量激活显示，
+            // 与 setChatMode 切换模式时的行为一致（cleanupChatState 离开时隐藏、进入时恢复）。
+            // L34：仅当工具栏当前隐藏时才重置为 0，避免覆盖已有会话的真实用量显示。
+            const ctxUsageEl = document.getElementById('chat-context-usage');
+            if (ctxUsageEl && ctxUsageEl.style.display === 'none') {
+                updateContextUsage(0, LOCAL_LLM_CONTEXT_LENGTH || 10000);
+            }
             const lastMode = chatMode;
             let activeTasks = [];
             let hasRunningTask = false;
@@ -50445,7 +50466,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const percentEl = document.getElementById('context-percent');
             const ringEl = document.getElementById('context-ring-fg');
             const tooltipEl = document.getElementById('context-ring-container');
-            if (!el || !percentEl || !ringEl) return;
+            // L34：tooltipEl 缺失时直接返回（chat-context-ring-container 不存在时不再抛错中断 openAiChat）
+            if (!el || !percentEl || !ringEl || !tooltipEl) return;
             if (total <= 0) {
                 el.style.display = 'none';
                 return;
@@ -50596,6 +50618,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     statusDot.className = 'kb-status-dot ready';
                     const dateStr = kbStatus.indexed_at ? new Date(kbStatus.indexed_at).toLocaleString() : '';
                     statusText.textContent = `已索引 (${dateStr})`;
+                    // D8：分块参数已变更但索引未重建 → 提示重建（后端 IndexMeta.chunk_params_version 比对）
+                    if (kbStatus.stale) {
+                        statusText.textContent += ' ⚠️ 分块参数已变更，请重建索引';
+                        statusDot.className = 'kb-status-dot error';
+                    }
                     if (emptyMsg) emptyMsg.style.display = 'none';
                     if (dashboardContent) dashboardContent.style.display = '';
 

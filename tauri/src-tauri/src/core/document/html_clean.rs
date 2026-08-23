@@ -1,4 +1,4 @@
-﻿//! Markdown 内嵌 HTML 清洗（v2：Mark 标注/备注入库前剥离）。
+//! Markdown 内嵌 HTML 清洗（v2：Mark 标注/备注入库前剥离）。
 //!
 //! 在索引管线解析前调用：剥离用户自定义标注/备注生成的 HTML 标签
 //! （`<mark style title>`、Obsidian `==text==` 转换的 `<span class="ob-highlight">`、
@@ -13,9 +13,10 @@ use std::sync::OnceLock;
 /// 围栏代码块 / 行内代码占位前缀。
 const CODE_PLACEHOLDER_PREFIX: &str = "\u{0}MDGO_CODE_";
 
-/// 是否 Markdown 类文件（与 pipeline::chunk_document 扩展名判断一致）。
+/// 是否 Markdown 类文件（与 pipeline::chunk_document 扩展名判断一致；大小写不敏感）。
 pub fn is_markdown_ext(ext: &str) -> bool {
-    matches!(ext, "md" | "markdown" | "mdown" | "rst")
+    let e = ext.to_ascii_lowercase();
+    matches!(e.as_str(), "md" | "markdown" | "mdown" | "rst")
 }
 
 /// 剥离 Markdown 中自定义 HTML 标注/备注标签，保留标签内部文本。

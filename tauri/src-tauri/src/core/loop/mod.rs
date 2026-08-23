@@ -11,7 +11,7 @@
 //! - [`error`]：LoopError（MaxTurns/ContextOverflow/Cancelled）
 //! - [`loop`]：LoopAgent turn/step 状态机（消费 LlmAdapter 流 + 驱动工具调度 + 事件溯源会话）
 //!
-//! 设计对齐 DeepSeek Harness 核心（`docs/deepseek-harness-architecture-report.md` §2-§4）：
+//! 设计对齐 DeepSeek Harness 核心（外部调研报告已移出 docs/，见 `docs/Agent 全链路评审与 DSH 对比.md`）：
 //! LLM adapter seam、事件溯源会话、turn/step 状态机、工具流水线与并行调度。业务层
 //! （core/search|skill|memory|planner|approval|context）只依赖本模块的公开窄接口，
 //! 重构期间零改动；后续按"以 DSH 核心为基石"原则将业务逐步迁移到本内核之上。

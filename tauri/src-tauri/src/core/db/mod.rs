@@ -1,9 +1,12 @@
 pub mod bm25;
 pub mod chunk_splitter;
+pub mod embedding_cache;
 pub mod global;
 pub mod lance;
 pub mod pool;
+pub mod query_embedding_cache;
 pub mod schema;
+pub mod token_budget;
 pub mod utils;
 
 use std::time::Duration;

@@ -908,32 +908,53 @@ pub async fn agent_query(
         // P0-3：结构化输出校验 + 修正重试（最多 3 次尝试：1 次原始 + 2 次修正）。
         // 校验失败用可读错误构造修正提示引导模型重发；全部失败 fail-open 不规划。
         const PLAN_JSON_MAX_ATTEMPTS: usize = 3;
+        // 🟠 M26 修复：交互式规划的总时限——`generate_plan_json` 内部有
+        // completion_with_retry（重试 5 次 × 单请求超时 600s），叠加 3 次修正尝试
+        // 最坏可达 30 分钟以上无反馈；90s 后 fail-open 不规划（与"全部失败不规划"
+        // 的既有语义一致），慢端点不再无限吊起用户。
+        const PLAN_GENERATION_DEADLINE_SECS: u64 = 90;
         let mut plan: Option<crate::core::agent::planner::Plan> = None;
         let mut correction: Option<String> = None;
-        for attempt in 0..PLAN_JSON_MAX_ATTEMPTS {
-            let Some(plan_json) = plan_llm
-                .generate_plan_json(&query, &messages, cancel.clone(), correction.as_deref())
-                .await
-            else {
-                break; // 生成失败/取消：fail-open 不规划
-            };
-            if let Some(p) = crate::core::agent::planner::parse_plan(&plan_json) {
-                plan = Some(p);
-                break;
+        let plan_generation = async {
+            for attempt in 0..PLAN_JSON_MAX_ATTEMPTS {
+                let Some(plan_json) = plan_llm
+                    .generate_plan_json(&query, &messages, cancel.clone(), correction.as_deref())
+                    .await
+                else {
+                    break; // 生成失败/取消：fail-open 不规划
+                };
+                if let Some(p) = crate::core::agent::planner::parse_plan(&plan_json) {
+                    plan = Some(p);
+                    break;
+                }
+                if attempt + 1 < PLAN_JSON_MAX_ATTEMPTS {
+                    let errors = crate::core::agent::planner::validate_plan_json(&plan_json)
+                        .map(|_| Vec::new())
+                        .unwrap_or_else(|e| e);
+                    correction = Some(crate::core::validation::build_fix_prompt(
+                        &errors,
+                        "请重新输出符合要求的计划 JSON（goal 目标、steps 步骤、acceptance 验收均必填且类型正确）。",
+                    ));
+                    log::warn!(
+                        "[agent_query] [0.5]: 计划 JSON 校验失败，第 {} 次修正重试 request_id={}",
+                        attempt + 1, request_id
+                    );
+                }
             }
-            if attempt + 1 < PLAN_JSON_MAX_ATTEMPTS {
-                let errors = crate::core::agent::planner::validate_plan_json(&plan_json)
-                    .map(|_| Vec::new())
-                    .unwrap_or_else(|e| e);
-                correction = Some(crate::core::validation::build_fix_prompt(
-                    &errors,
-                    "请重新输出符合要求的计划 JSON（goal 目标、steps 步骤、acceptance 验收均必填且类型正确）。",
-                ));
-                log::warn!(
-                    "[agent_query] [0.5]: 计划 JSON 校验失败，第 {} 次修正重试 request_id={}",
-                    attempt + 1, request_id
-                );
-            }
+        };
+        if tokio::time::timeout(
+            std::time::Duration::from_secs(PLAN_GENERATION_DEADLINE_SECS),
+            plan_generation,
+        )
+        .await
+        .is_err()
+        {
+            log::warn!(
+                "[agent_query] [0.5]: 计划生成超时（{}s），fail-open 不规划 request_id={}",
+                PLAN_GENERATION_DEADLINE_SECS,
+                request_id
+            );
+            plan = None;
         }
         if let Some(plan) = plan {
             log::info!(
@@ -2273,11 +2294,41 @@ async fn agent_generate_loop_v2(
             emit_pending_trace_events(app, &request_id);
             state.agent_tasks.finish(&request_id, AgentTaskStatus::Done);
             record_exec(true, None);
+
+            // C2：证据校验（默认关）——回答中未获检索上下文支撑的断言附加标注。
+            // 轻量规则版（零 LLM 调用）；开启会增加一次规则计算，不增加 LLM 延迟。
+            let evidence_enabled = state.config_store.read().evidence_check_enabled;
+            let content = if evidence_enabled {
+                let claims = crate::core::evidence::verify_grounding(
+                    &full_content,
+                    &context,
+                    0.5,
+                    1,
+                    3,
+                );
+                if claims.is_empty() {
+                    full_content
+                } else {
+                    let note = claims.join("；");
+                    log::warn!(
+                        "[agent_query_v3] 证据校验: {} 条断言未获上下文支撑 request_id={}",
+                        claims.len(),
+                        request_id
+                    );
+                    format!(
+                        "{}\n\n⚠️ 以下论断未在检索内容中找到充分证据（可进一步核实）: {}",
+                        full_content, note
+                    )
+                }
+            } else {
+                full_content
+            };
+
             let _ = app.emit(
                 "rag:done",
                 RagDone {
                     request_id: request_id.clone(),
-                    content: full_content,
+                    content,
                     sources: merged_sources,
                     prompt_tokens,
                     completion_tokens,

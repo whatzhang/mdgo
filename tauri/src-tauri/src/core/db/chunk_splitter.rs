@@ -29,6 +29,10 @@ pub struct ChunkResult {
     pub embedding_text: Option<String>,
     /// 分块类型（AST 语义分块用）：paragraph/code/table/list/quote/section 等
     pub chunk_type: Option<String>,
+    /// 文档显式标题（P0-1：frontmatter `title`，缺失时检索侧回退文件名；BM25 title 字段优先使用）
+    pub doc_title: Option<String>,
+    /// 文档标签（P0-1：frontmatter `tags` + `aliases`；BM25 tags 字段）
+    pub tags: Option<Vec<String>>,
 }
 
 impl ChunkResult {
@@ -43,6 +47,8 @@ impl ChunkResult {
             symbol_kind: None,
             embedding_text: None,
             chunk_type: None,
+            doc_title: None,
+            tags: None,
         }
     }
 
@@ -57,6 +63,8 @@ impl ChunkResult {
             symbol_kind,
             embedding_text: None,
             chunk_type: None,
+            doc_title: None,
+            tags: None,
         }
     }
 
@@ -72,6 +80,8 @@ impl ChunkResult {
             symbol_kind: Some("file".to_string()),
             embedding_text: None,
             chunk_type: None,
+            doc_title: None,
+            tags: None,
         }
     }
 }
@@ -94,6 +104,8 @@ impl From<Chunk> for ChunkResult {
             symbol_kind: None,
             embedding_text: Some(chunk.embedding_text),
             chunk_type: Some(chunk.chunk_type),
+            doc_title: None,
+            tags: None,
         }
     }
 }
@@ -111,14 +123,30 @@ pub trait ChunkSplitter: Send + Sync {
 /// 纯文本文档分割器
 ///
 /// 按句子边界（。！？等）切分，适合代码、配置、普通文本等文件。
+/// P0-2：token 感知切分（一次 tokenize + 按 token 预算定位切分点）；
+/// tokenizer 不可用时降级字符切分。
 pub struct PlainTextChunkSplitter;
 
 impl ChunkSplitter for PlainTextChunkSplitter {
     fn split(&self, text: &str, max_size: usize, overlap: usize) -> Vec<ChunkResult> {
-        utils::split_text(text, max_size, overlap)
-            .into_iter()
-            .map(ChunkResult::plain)
-            .collect()
+        let counter = crate::core::document::token_budget::global_token_counter();
+        let pieces = crate::core::document::text_split::split_text_token_aware(
+            text,
+            max_size,
+            overlap,
+            crate::core::document::text_split::GENERIC_TEXT_SEPARATORS,
+            &*counter,
+        )
+        .unwrap_or_else(|| {
+            // 🟠 M8 修复：tokenizer 不可用降级字符切分前，先把 token 语义的
+            // max_size/overlap 按文本实际密度折算为字符预算（旧实现直接把 token
+            // 值当字符数：英文 ≈4 字符/token，分片会放大到预算的 ~4 倍，
+            // 先产出一批超限 chunk 再被 Validator 全量重切）。
+            let (char_max, char_overlap) =
+                crate::core::document::token_budget::char_budget_pair(text, max_size, overlap, &*counter);
+            utils::split_text(text, char_max, char_overlap)
+        });
+        pieces.into_iter().map(ChunkResult::plain).collect()
     }
 }
 
@@ -140,10 +168,17 @@ pub struct CodeAwareChunkSplitter {
     symbol_pattern: Option<Regex>,
 }
 
-/// 所有代码语言的符号提取通用正则（匹配常见函数/类定义语法）
+/// 所有代码语言的符号提取通用正则（匹配常见函数/类定义语法）。
+///
+/// D4 增强：
+/// - 可选前缀扩展：`pub` / `export` / `export default` / `public` / `private` / `protected` / `async`
+/// - 泛型签名后跟符号名：`impl<T> Foo`、`fn foo<T>(`（`impl\s+` 后允许 `<...>`）
+/// - 符号名取关键字后第一个标识符（捕获组 1）
 static CODE_SYMBOL_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-    Regex::new(r"(?m)^[\t ]*(?:(?:pub\s+)?(?:async\s+)?(?:fn|def|function|func|async function|class|struct|enum|trait|interface|type|object|impl)\s+)(\w+)")
-        .expect("CODE_SYMBOL_RE 编译失败")
+    Regex::new(
+        r"(?m)^[\t ]*(?:(?:pub|export|export\s+default|public|private|protected|async)\s+)*?(?:fn|def|function|func|class|struct|enum|trait|interface|type|object)\s+(\w+)|^(?:impl)\s*<[^>]*>\s*(\w+)|^(?:impl)\s+(\w+)|^(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?(?:\(|function|class)",
+    )
+    .expect("CODE_SYMBOL_RE 编译失败")
 });
 
 /// 语言特定分隔符映射表
@@ -274,9 +309,11 @@ fn merge_small_chunks(chunks: &[String], max_size: usize, overlap: usize) -> Vec
     }
 
     // overlap 处理：若还有空间，在块间插入 overlap 字符
+    // 🟠 L15：`> 0` 取代旧 `> 10` 门槛——调用方已把 token overlap 按文本密度折算为
+    // 字符（英文低密度文本折算后可能 ≤10 字符），旧门槛会把有效 overlap 静默丢弃。
     if overlap > 0 && result.len() > 1 {
         let overlap_size = overlap.min(max_size / 4);
-        if overlap_size > 10 {
+        if overlap_size > 0 {
             let mut merged = Vec::new();
             for i in 0..result.len() {
                 if i == 0 {
@@ -329,6 +366,8 @@ fn merge_small_chunks_symbol_aware(chunks: Vec<ChunkResult>, max_size: usize) ->
                     symbol_kind: prev.symbol_kind.clone(),
                     embedding_text: prev.embedding_text.clone().or(chunk.embedding_text),
                     chunk_type: prev.chunk_type.clone().or(chunk.chunk_type),
+                    doc_title: prev.doc_title.clone().or(chunk.doc_title),
+                    tags: prev.tags.clone().or(chunk.tags),
                 };
                 continue;
             }
@@ -344,6 +383,8 @@ fn merge_small_chunks_symbol_aware(chunks: Vec<ChunkResult>, max_size: usize) ->
                     symbol_kind: prev.symbol_kind.clone(),
                     embedding_text: prev.embedding_text.clone().or(chunk.embedding_text),
                     chunk_type: prev.chunk_type.clone().or(chunk.chunk_type),
+                    doc_title: prev.doc_title.clone().or(chunk.doc_title),
+                    tags: prev.tags.clone().or(chunk.tags),
                 };
                 continue;
             }
@@ -362,7 +403,11 @@ fn merge_small_chunks_symbol_aware(chunks: Vec<ChunkResult>, max_size: usize) ->
 /// - 也检测 `pub/async/pub async` 前缀（Rust 等语言）
 fn extract_symbol_info(text: &str, re: &Regex) -> (Option<String>, Option<String>) {
     if let Some(caps) = re.captures(text) {
-        let name = caps.get(1).map(|m| m.as_str().to_string());
+        // D4：多分支正则——取任一非空捕获组作为符号名
+        let name = caps
+            .iter()
+            .skip(1)
+            .find_map(|m| m.map(|m| m.as_str().to_string()));
         let kind = detect_symbol_kind(text);
         (name, kind)
     } else {
@@ -402,14 +447,14 @@ fn detect_symbol_kind(text: &str) -> Option<String> {
 
 /// 从代码文本中提取所有定义的符号名（函数、类、结构体等），去重并保持顺序。
 fn extract_all_symbols(text: &str) -> Vec<String> {
-    let re = Regex::new(r"(?m)^[\t ]*(?:(?:pub\s+)?(?:async\s+)?(?:fn|def|function|func|async function|class|struct|enum|trait|interface|type|object|impl)\s+)(\w+)")
-        .expect("extract_all_symbols regex 编译失败");
+    let re = &CODE_SYMBOL_RE;
     let mut seen = std::collections::HashSet::new();
     let mut symbols = Vec::new();
     for cap in re.captures_iter(text) {
-        if let Some(m) = cap.get(1) {
+        // D4：多分支正则——取任一非空捕获组
+        if let Some(m) = cap.iter().skip(1).find_map(|m| m) {
             let name = m.as_str();
-            if seen.insert(name) {
+            if seen.insert(name.to_string()) {
                 symbols.push(name.to_string());
             }
         }
@@ -537,6 +582,12 @@ fn split_code_with_overview(
     max_size: usize,
     overlap: usize,
 ) -> Vec<ChunkResult> {
+    // P0-2：max_size/overlap 语义为 token（`chunk_size` 配置升级后），
+    // 按文本实际 token 密度折算为字符预算供 char-based 递归切分（英文 ~4 字符/token，
+    // 中文 ~1 字符/token）；密度波动由 TokenBudgetValidator 兜底最终裁决。
+    let counter = crate::core::document::token_budget::global_token_counter();
+    let (max_size, overlap) =
+        crate::core::document::token_budget::char_budget_pair(text, max_size, overlap, &*counter);
     // 1. 使用语言特定分隔符做递归切分
     let raw_chunks = split_recursive_by_separators(text, &splitter.separators, max_size);
     // 2. 简单合并太小的原始块（无符号信息，仅基于长度）
@@ -573,18 +624,15 @@ fn split_code_with_overview(
 pub struct MarkdownSplitConfig {
     /// 开启 Setext 标题识别（=== / --- 二级标题）
     pub enable_setext_heading: bool,
-    /// 单章节宽松上限系数，字符数超过则二次拆分
-    pub oversize_factor: f32,
-    /// 拆分时正文最小预留字符数，防止前缀占满空间
-    pub min_body_reserve_chars: usize,
+    /// 拆分时正文最小预留 token 数，防止前缀占满空间
+    pub min_body_reserve_tokens: usize,
 }
 
 impl Default for MarkdownSplitConfig {
     fn default() -> Self {
         Self {
             enable_setext_heading: true,
-            oversize_factor: 1.25,
-            min_body_reserve_chars: 50,
+            min_body_reserve_tokens: 64,
         }
     }
 }
@@ -612,11 +660,6 @@ impl MarkdownChunkSplitter {
             config: MarkdownSplitConfig::default(),
         }
     }
-
-    #[allow(dead_code)]
-    pub fn with_config(config: MarkdownSplitConfig) -> Self {
-        Self { config }
-    }
 }
 
 impl Default for MarkdownChunkSplitter {
@@ -640,11 +683,14 @@ impl ChunkSplitter for MarkdownChunkSplitter {
         let parser = ComrakMarkdownParser;
         let document = parser.parse(text, !config.enable_setext_heading);
 
+        // P0-2：token 预算（max_chars/overlap 语义为 token）注入引擎
+        let budget = crate::core::document::token_budget::budget_from_config(max_chars, overlap);
         let engine = SemanticChunkEngine::new(
-            max_chars,
-            overlap,
-            config.oversize_factor,
-            config.min_body_reserve_chars,
+            budget.target_tokens,
+            budget.overlap_tokens,
+            config.min_body_reserve_tokens,
+            budget.prefix_max_tokens,
+            crate::core::document::token_budget::global_token_counter(),
         );
         engine
             .build(&document)
@@ -688,11 +734,14 @@ impl ChunkSplitter for HtmlChunkSplitter {
             }
         };
         let config = MarkdownSplitConfig::default();
+        // P0-2：token 预算注入引擎
+        let budget = crate::core::document::token_budget::budget_from_config(max_chars, overlap);
         let engine = SemanticChunkEngine::new(
-            max_chars,
-            overlap,
-            config.oversize_factor,
-            config.min_body_reserve_chars,
+            budget.target_tokens,
+            budget.overlap_tokens,
+            config.min_body_reserve_tokens,
+            budget.prefix_max_tokens,
+            crate::core::document::token_budget::global_token_counter(),
         );
         engine
             .build(&document)
@@ -744,6 +793,10 @@ macro_rules! impl_tree_chunk_splitter {
                     return utils::split_text_char_based(text, max_size, overlap)
                         .into_iter().map(ChunkResult::plain).collect();
                 }
+                // P0-2：max_size/overlap 语义为 token → 按密度折算字符预算（TreeProcessor 为 char-based）
+                let counter = crate::core::document::token_budget::global_token_counter();
+                let (max_size, overlap) =
+                    crate::core::document::token_budget::char_budget_pair(text, max_size, overlap, &*counter);
                 let mut result = Vec::new();
                 for root_node in &nodes {
                     TreeProcessor::process_node(root_node, &[], max_size, overlap, &mut result);
@@ -900,7 +953,7 @@ impl TreeProcessor {
         let (path_depth, path_json) = Self::path_to_metadata(path);
         let char_count = combined.chars().count();
 
-        if char_count <= max_size * 6 / 5 {
+        if char_count <= max_size.saturating_mul(6) / 5 {
             result.push(ChunkResult {
                 text: combined,
                 path_depth,
@@ -910,6 +963,8 @@ impl TreeProcessor {
                 symbol_kind: None,
                 embedding_text: None,
                 chunk_type: None,
+                doc_title: None,
+                tags: None,
             });
             return;
         }
@@ -930,6 +985,8 @@ impl TreeProcessor {
                 symbol_kind: None,
                 embedding_text: None,
                 chunk_type: None,
+                doc_title: None,
+                tags: None,
             });
         }
     }
@@ -956,6 +1013,8 @@ impl TreeProcessor {
             symbol_kind: None,
             embedding_text: None,
             chunk_type: None,
+            doc_title: None,
+            tags: None,
         });
     }
 
@@ -1009,7 +1068,7 @@ impl TreeProcessor {
                 let text = child.text().to_string();
                 let added = text.chars().count() + 2; // "- " overhead
                 // 如果加入后超出上限，先 flush 再继续
-                if max_size > 0 && buf_chars > 0 && buf_chars + added > max_size * 6 / 5 {
+                if max_size > 0 && buf_chars > 0 && buf_chars + added > max_size.saturating_mul(6) / 5 {
                     Self::flush_sibling_buf(&mut buf, &mut buf_chars, parent_path, result);
                 }
                 buf.push(text);
@@ -1213,186 +1272,6 @@ impl FreeMindChunkSplitter {
 
 impl_tree_chunk_splitter!(FreeMindChunkSplitter, FreeMindChunkSplitter::parse_freemind);
 
-// ─── SemanticChunkSplitter（语义分块） ───
-
-/// 语义分块器：通过 sentence-level embedding 相似度找到语义边界进行切分。
-///
-/// # 算法（Greg Kamradt 方法）
-/// 1. 将文本分割为句子
-/// 2. 用滑动窗口（默认 5 句）分组句子，对每组生成 embedding
-/// 3. 计算相邻组的余弦相似度
-/// 4. 在相似度低于阈值百分位数的位置切分
-/// 5. 合并过小的 chunk（< 30% max_size）
-///
-/// # 退化策略
-/// 若 embedding 调用失败（如模型未就绪），自动回退到字符级分块。
-#[allow(dead_code)]
-pub struct SemanticChunkSplitter {
-    /// 滑动窗口大小（句子数），默认 5
-    pub window_size: usize,
-    /// 相似度阈值百分位数（0.0~1.0），默认 0.9
-    pub threshold_percentile: f64,
-}
-
-impl Default for SemanticChunkSplitter {
-    fn default() -> Self {
-        Self {
-            window_size: 5,
-            threshold_percentile: 0.9,
-        }
-    }
-}
-
-impl ChunkSplitter for SemanticChunkSplitter {
-    fn split(&self, text: &str, max_size: usize, overlap: usize) -> Vec<ChunkResult> {
-        // 1. Split into sentences
-        let sentences = utils::split_sentences(text);
-        if sentences.len() <= 1 {
-            return vec![ChunkResult::plain(text.to_string())];
-        }
-
-        // 2. Group sentences into overlapping windows of window_size
-        let groups: Vec<String> = if sentences.len() <= self.window_size {
-            vec![sentences.join("")]
-        } else {
-            sentences.windows(self.window_size)
-                .map(|w| w.join(""))
-                .collect()
-        };
-
-        // 3. Compute embedding for each group
-        let refs: Vec<&str> = groups.iter().map(|s| s.as_str()).collect();
-        let embeddings = match utils::call_embedding(&refs, None) {
-            Ok(e) => e,
-            Err(_) => {
-                // Fallback to character-based splitting
-                log::warn!("[semantic_chunk] embedding call failed, falling back to char-based split");
-                return utils::split_text_char_based(text, max_size, overlap)
-                    .into_iter().map(ChunkResult::plain).collect();
-            }
-        };
-
-        // 4. Calculate cosine similarities between adjacent groups
-        let similarities: Vec<f64> = embeddings.windows(2)
-            .map(|w| utils::cosine_similarity(&w[0], &w[1]))
-            .collect();
-
-        // 5. Find threshold — break where similarity drops below percentile
-        let threshold = if similarities.is_empty() {
-            0.0
-        } else {
-            let mut sorted = similarities.clone();
-            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-            let idx = ((sorted.len() as f64) * self.threshold_percentile).floor() as usize;
-            let idx = idx.min(sorted.len().saturating_sub(1));
-            sorted[idx]
-        };
-
-        // 6. Build chunks at semantic breakpoints
-        let mut chunk_sentences: Vec<Vec<String>> = Vec::new();
-        let mut current: Vec<String> = Vec::new();
-        current.push(sentences[0].clone());
-
-        for i in 0..similarities.len() {
-            let sentence_idx = i + 1;
-            if sentence_idx < sentences.len() {
-                if similarities[i] < threshold {
-                    if !current.is_empty() {
-                        chunk_sentences.push(std::mem::take(&mut current));
-                    }
-                }
-                current.push(sentences[sentence_idx].clone());
-            }
-        }
-        if !current.is_empty() {
-            chunk_sentences.push(current);
-        }
-
-        // 7. Convert to ChunkResult
-        let results: Vec<ChunkResult> = chunk_sentences.into_iter()
-            .map(|group| ChunkResult::plain(group.join("")))
-            .collect();
-
-        // 8. Merge chunks that are too small (< 30% of max_size)
-        let min_size = (max_size as f64 * 0.3).max(1.0) as usize;
-        if results.len() > 1 {
-            let mut merged: Vec<ChunkResult> = Vec::new();
-            for chunk in results.into_iter() {
-                if let Some(last) = merged.last_mut() {
-                    if last.text.chars().count() < min_size {
-                        last.text.push('\n');
-                        last.text.push_str(&chunk.text);
-                        continue;
-                    }
-                }
-                merged.push(chunk);
-            }
-            merged
-        } else {
-            results
-        }
-    }
-}
-
-// ─── SentenceWindowChunkSplitter（句子窗口分块） ───
-
-/// 句子窗口分块器：句子级细粒度分块 + 上下文窗口元数据。
-///
-/// # 原理（LlamaIndex SentenceWindowNodeParser 思路）
-/// - 每个句子作为独立 chunk（被 embedding 和检索）
-/// - chunk 的 `sentence_window` 字段存储该句子周边的扩展上下文
-/// - 检索到该 chunk 后，后处理阶段可用窗口文本代替原句传给 LLM
-///
-/// # 使用场景
-/// 对召回精度要求高（精确匹配句子）、同时对上下文完整性有要求的场景。
-/// 相比传统固定大小分块，句子窗口在检索阶段更精确，在生成阶段更完整。
-#[allow(dead_code)]
-pub struct SentenceWindowChunkSplitter {
-    /// 上下文窗口大小（前后句子数），默认 2（即前后各 2 句，共 5 句窗口）
-    pub context_window: usize,
-}
-
-impl Default for SentenceWindowChunkSplitter {
-    fn default() -> Self {
-        Self { context_window: 2 }
-    }
-}
-
-impl ChunkSplitter for SentenceWindowChunkSplitter {
-    fn split(&self, text: &str, _max_size: usize, _overlap: usize) -> Vec<ChunkResult> {
-        let sentences = utils::split_sentences(text);
-        if sentences.is_empty() || sentences.len() <= 1 {
-            return vec![ChunkResult::plain(text.to_string())];
-        }
-
-        let n = sentences.len();
-        let window = self.context_window;
-        let mut results = Vec::with_capacity(n);
-
-        for i in 0..n {
-            let sentence_text = sentences[i].clone();
-
-            // Build context window: window sentences before + after
-            let window_start = i.saturating_sub(window);
-            let window_end = (i + window + 1).min(n);
-            let window_text = sentences[window_start..window_end].join("");
-
-            results.push(ChunkResult {
-                text: sentence_text,
-                path_depth: None,
-                path_json: None,
-                sentence_window: Some(window_text),
-                symbol_name: None,
-                symbol_kind: None,
-                embedding_text: None,
-                chunk_type: None,
-            });
-        }
-
-        results
-    }
-}
-
 // ─── ChunkSplitterFactory（工厂模式） ───
 
 /// 文件扩展名到分割器的映射注册表
@@ -1491,3 +1370,66 @@ impl Default for ChunkSplitterFactory {
 
 // 确保分割器可作静态变量
 static PLAIN_TEXT_SPLITTER: PlainTextChunkSplitter = PlainTextChunkSplitter;
+
+// ─── P0-3 测试：工厂路由（I-7 类型策略） ───
+
+#[cfg(test)]
+mod factory_tests {
+    use super::*;
+
+    #[test]
+    fn factory_routes_by_extension() {
+        let f = ChunkSplitterFactory::new();
+        let md = "# 标题\n\n正文内容段落。\n\n## 子标题\n\n子节内容。\n";
+
+        // Markdown → AST 语义分块（带标题路径 path_json）
+        let md_chunks = f.get_splitter("md").split(md, 448, 56);
+        assert!(!md_chunks.is_empty());
+        assert!(
+            md_chunks.iter().any(|c| c.path_json.is_some()),
+            "Markdown 应走 AST 语义分块（带 heading 路径）"
+        );
+
+        // 纯文本 / 未知扩展名 → 无路径
+        for ext in ["txt", "xyz", "log"] {
+            let chunks = f.get_splitter(ext).split(md, 448, 56);
+            assert!(
+                chunks.iter().all(|c| c.path_json.is_none()),
+                "{} 应走纯文本分块（无路径）",
+                ext
+            );
+        }
+
+        // 代码 → 符号感知（Rust fn 提取 symbol_name）
+        let code = "fn main() {\n    let x = 1;\n}\n\nfn helper() {\n    let y = 2;\n}\n";
+        let code_chunks = f.get_splitter("rs").split(code, 448, 56);
+        assert!(!code_chunks.is_empty());
+        assert!(
+            code_chunks.iter().any(|c| c.symbol_name.is_some()),
+            "Rust 代码应提取符号名"
+        );
+
+        // HTML → AST 语义分块
+        let html = "<html><body><h1>标题</h1><p>正文段落</p></body></html>";
+        let html_chunks = f.get_splitter("html").split(html, 448, 56);
+        assert!(!html_chunks.is_empty(), "HTML 应产出 chunk");
+
+        // OPML 树形 → path_depth 有值
+        let opml = r#"<?xml version="1.0"?><opml version="2.0"><body>
+            <outline text="项目"><outline text="第一阶段"/></outline>
+        </body></opml>"#;
+        let opml_chunks = f.get_splitter("opml").split(opml, 448, 56);
+        assert!(
+            opml_chunks.iter().any(|c| c.path_depth.is_some()),
+            "OPML 应走树形分块（带路径深度）"
+        );
+    }
+
+    /// 未知扩展名不 panic，且兜底纯文本
+    #[test]
+    fn factory_unknown_ext_falls_back() {
+        let f = ChunkSplitterFactory::new();
+        let chunks = f.get_splitter("totally-unknown-ext").split("一段普通文本。", 448, 56);
+        assert!(!chunks.is_empty());
+    }
+}
