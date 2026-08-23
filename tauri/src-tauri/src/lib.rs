@@ -273,31 +273,39 @@ impl AppState {
         model: &str,
         api_key: &str,
     ) -> Result<services::llm::LLMClient, String> {
-        self.llm_client_for_cfg(endpoint, model, api_key, None).await
+        self.llm_client_for_cfg(endpoint, model, api_key, None, "openai").await
     }
 
     /// 按模型角色路由客户端（P0-6）：规划/摘要可用独立轻量模型，缺省回退主模型；
-    /// reasoning_effort（P2-18）作为客户端属性参与指纹缓存。
+    /// reasoning_effort（P2-18）作为客户端属性参与指纹缓存；协议（openai/anthropic）
+    /// 决定适配器（D2 修复：此前恒 OpenAI）。
     pub async fn llm_client_for_role(
         &self,
         cfg: &LlmConfig,
         role: ModelRole,
     ) -> Result<services::llm::LLMClient, String> {
         let model = cfg.model_for_role(role).to_string();
-        self.llm_client_for_cfg(&cfg.endpoint, &model, &cfg.api_key, cfg.reasoning_effort.as_deref())
-            .await
+        self.llm_client_for_cfg(
+            &cfg.endpoint,
+            &model,
+            &cfg.api_key,
+            cfg.reasoning_effort.as_deref(),
+            &cfg.protocol,
+        )
+        .await
     }
 
     /// 带 reasoning_effort 的客户端工厂（供 commands 层主对话/聊天流式链路使用；
-    /// effort 参与指纹缓存，配置热更新后自动重建）。
+    /// effort 与 protocol 参与指纹缓存，配置热更新后自动重建）。
     pub(crate) async fn llm_client_for_cfg(
         &self,
         endpoint: &str,
         model: &str,
         api_key: &str,
         reasoning_effort: Option<&str>,
+        protocol: &str,
     ) -> Result<services::llm::LLMClient, String> {
-        let fingerprint = format!("{}|{}|{}|{}", endpoint, model, api_key, reasoning_effort.unwrap_or(""));
+        let fingerprint = format!("{}|{}|{}|{}|{}", endpoint, model, api_key, reasoning_effort.unwrap_or(""), protocol);
         let mut cache = self.llm_client_cache.lock().await;
         if let Some(client) = cache.get(&fingerprint) {
             return Ok(client.clone());
@@ -307,6 +315,7 @@ impl AppState {
             model.to_string(),
             api_key.to_string(),
             reasoning_effort.map(|s| s.to_string()),
+            protocol,
         )?;
         // 容量治理：多模型缓存最多保留 8 项——超出时**逐条淘汰最旧**（近似 FIFO），
         // 而非清空全部（P2 修复：全清会让高频切换配置/多角色路由时命中率骤降）
@@ -518,6 +527,8 @@ pub fn run() {
                 let sched = app.state::<AppState>().schedule_scheduler.clone();
                 sched.spawn(app.handle().clone());
             }
+            // 启动后台 Graph AI Worker（Phase 3：构建后异步智能抽取，队列驱动）
+            crate::core::graph::worker::spawn_ai_worker(app.handle().clone());
 
             // 注入 skill:changed 事件：AppHandle 就绪后替换 watcher 回调
             let handle = app.handle().clone();
@@ -593,6 +604,37 @@ pub fn run() {
             commands::graph::graph_experience_record,
             commands::graph::graph_experience_search,
             commands::graph::graph_experience_events,
+            // Cluster + Graph Query API（下一代 AI 知识图谱 PRD §24/§36/§39）
+            commands::graph::graph_clusters,
+            commands::graph::graph_cluster,
+            commands::graph::graph_cluster_subgraph,
+            commands::graph::graph_rebuild_clusters,
+            commands::graph::graph_version,
+            commands::graph::graph_path,
+            commands::graph::graph_common_neighbors,
+            commands::graph::graph_subgraph,
+            // AI 层命令（P1/P2：抽取/摘要/候选/缺口/冲突/重复/GraphRAG/推荐/收藏/演化/指标）
+            commands::graph::graph_ai_extract,
+            commands::graph::graph_ai_enqueue_all,
+            commands::graph::graph_ai_summarize_clusters,
+            commands::graph::graph_ai_candidates,
+            commands::graph::graph_ai_confirm,
+            commands::graph::graph_ai_reject,
+            commands::graph::graph_ai_gaps,
+            commands::graph::graph_ai_conflicts,
+            commands::graph::graph_ai_duplicates,
+            commands::graph::graph_query,
+            commands::graph::graph_recommend,
+            commands::graph::graph_favorite,
+            commands::graph::graph_favorites,
+            commands::graph::graph_evolution,
+            commands::graph::graph_metrics,
+            commands::graph::graph_recluster,
+            commands::graph::graph_memory_set,
+            commands::graph::graph_memory_preferences,
+            commands::graph::graph_build_chunks,
+            commands::graph::graph_chunks,
+            commands::graph::graph_chunk_similarity,
             commands::config::kb_config_read,
             commands::config::kb_config_write,
             commands::config::kb_config_delete,

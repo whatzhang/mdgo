@@ -238,6 +238,8 @@ impl<'a> GraphBuilder<'a> {
                 path: Some(dir.clone()),
                 meta: None,
                 degree: None,
+            created_at: None,
+            content: None,
             })?;
             // 父目录边
             if let Some(parent) = parent_dir(dir) {
@@ -267,6 +269,8 @@ impl<'a> GraphBuilder<'a> {
                 path: Some(f.clone()),
                 meta: Some(format!("{{\"ext\":\"{}\"}}", ext)),
                 degree: None,
+            created_at: None,
+            content: None,
             })?;
             if let Some(parent) = parent_dir(f) {
                 let pid = node_id_for(NodeType::Folder, &parent);
@@ -338,6 +342,8 @@ impl<'a> GraphBuilder<'a> {
             path: Some(rel.clone()),
             meta: Some(format!("{{\"ext\":\"{}\"}}", ext)),
             degree: None,
+        created_at: None,
+        content: None,
         })?;
 
         // 目录包含边（可能换目录/重命名）

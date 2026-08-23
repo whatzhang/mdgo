@@ -11,7 +11,7 @@
 
 <body>
     <!--
-      mdgo Knowledge Graph OS 图谱页（新逻辑，独立于主页面 fileGraph/noteGraph）。
+      mdgo Knowledge Graph OS 图谱页（下一代 AI 知识图谱 PRD 形态）。
       【iframe 契约】本页由主页面 common-iframe 加载：
         - 生命周期：必须暴露 window.destroyCommon()，主页面 cleanupCommonIframe() 切换视图时调用
         - 上下文：启动时读取 window.frameElement?.dataset（{ dirPath, focusNodeId }）
@@ -19,78 +19,135 @@
       【构建分发】本目录随 vite staticCopy(css_js/**) 进入 dist，零 vite 配置改动。
     -->
 
-    <!-- ===== 顶栏 Toolbar ===== -->
-    <header class="kg-toolbar" id="kg-toolbar">
-        <div class="kg-toolbar-group">
-            <span class="kg-title">知识图谱</span>
-            <select class="kg-select" id="kg-graph-type" title="图谱类型">
-                <option value="document">Document 图谱</option>
-                <option value="chunk">Chunk 语义图</option>
-                <option value="entity">Entity 实体图</option>
-            </select>
-            <select class="kg-select" id="kg-layout" title="布局">
-                <option value="force">力导向</option>
-                <option value="radial">径向</option>
-                <option value="circle">环形</option>
-            </select>
-            <span class="kg-lod-badge" id="kg-lod-badge" title="当前 LOD 层级">L1</span>
+    <!-- ===== 顶部导航（PRD §6：Logo + 5 视图分段控件 + 搜索） ===== -->
+    <header class="kg-topbar">
+        <div class="kg-logo">
+            <span class="kg-logo-mark">◈</span>
+            <div class="kg-logo-text">
+                <span>知识图谱</span>
+                <small>KNOWLEDGE GRAPH</small>
+            </div>
         </div>
-        <div class="kg-toolbar-group">
-            <input class="kg-search" id="kg-search-input" type="text" placeholder="搜索节点…" autocomplete="off" />
-            <button class="kg-btn" id="kg-refresh-btn" title="刷新图谱">⟳ 刷新</button>
-            <button class="kg-btn" id="kg-stats-btn" title="图统计">📊</button>
+        <nav class="kg-views" id="kg-views" aria-label="视图切换">
+            <button class="kg-view-btn active" data-view="global">全局视图</button>
+            <button class="kg-view-btn" data-view="document">文档关系</button>
+            <button class="kg-view-btn" data-view="topics">主题聚类</button>
+            <button class="kg-view-btn" data-view="domains">领域地图</button>
+            <button class="kg-view-btn" data-view="timeline">时间轴</button>
+        </nav>
+        <div class="kg-topbar-right">
+            <input class="kg-search" id="kg-search-input" type="text" placeholder="搜索节点、文档、概念… (⌘K)" autocomplete="off" />
+            <button class="kg-btn" id="kg-refresh-btn" title="刷新图谱">⟳</button>
         </div>
     </header>
 
-    <!-- ===== 主体：左侧边栏 + 图谱画布 ===== -->
+    <!-- ===== 主体：左侧面板 + 图谱画布 + 右侧详情 ===== -->
     <main class="kg-main">
-        <!-- 左侧边栏（可折叠） -->
+        <!-- 左侧面板（PRD §7-§10/§29） -->
         <aside class="kg-sidebar" id="kg-sidebar">
-            <div class="kg-sidebar-section">
-                <div class="kg-sidebar-title">构建状态</div>
+            <div class="kg-side-section">
+                <div class="kg-side-title">图谱概览</div>
+                <div class="kg-overview-stats">
+                    <div class="kg-ov-big"><b id="kg-stat-nodes">0</b><span>节点</span></div>
+                    <div class="kg-ov-big"><b id="kg-stat-edges">0</b><span>关系</span></div>
+                </div>
+                <div class="kg-ov-cats" id="kg-overview-cats"><!-- 分类计数（点击过滤） --></div>
+            </div>
+            <div class="kg-side-section">
+                <div class="kg-side-title">分类过滤</div>
+                <div class="kg-type-filters" id="kg-type-filters"><!-- 由 panel 渲染 --></div>
+            </div>
+            <div class="kg-side-section">
+                <div class="kg-side-title">关系过滤</div>
+                <div class="kg-relation-filters" id="kg-relation-filters"><!-- 由 panel 渲染 --></div>
+            </div>
+            <div class="kg-side-section">
+                <div class="kg-side-title">布局模式</div>
+                <div class="kg-layout-modes" id="kg-layout-modes">
+                    <button class="kg-layout-btn" data-layout="force">力导向</button>
+                    <button class="kg-layout-btn" data-layout="hierarchy">层级</button>
+                    <button class="kg-layout-btn" data-layout="radial">放射</button>
+                    <button class="kg-layout-btn active" data-layout="cluster">聚类</button>
+                </div>
+            </div>
+            <div class="kg-side-section kg-side-grow">
+                <div class="kg-side-title">AI 分析</div>
+                <div class="kg-ai-actions">
+                    <button class="kg-ai-act" data-ai-action="candidates" title="待确认的 AI 关系">待确认</button>
+                    <button class="kg-ai-act" data-ai-action="re-enqueue" title="全库重新入队并触发后台 AI 分析（LLM 配置变更后使用）">重新分析</button>
+                    <button class="kg-ai-act" data-ai-action="extract" title="AI 实体关系抽取">抽取</button>
+                    <button class="kg-ai-act" data-ai-action="summarize" title="AI 簇摘要">摘要</button>
+                    <button class="kg-ai-act" data-ai-action="gaps" title="知识缺口">缺口</button>
+                    <button class="kg-ai-act" data-ai-action="conflicts" title="知识冲突">冲突</button>
+                    <button class="kg-ai-act" data-ai-action="duplicates" title="重复概念">重复</button>
+                    <button class="kg-ai-act" data-ai-action="evolution" title="知识演化洞察">演化</button>
+                    <button class="kg-ai-act" data-ai-action="query" title="图谱问答（GraphRAG：图证据 + 文档检索 + LLM 回答）">问答</button>
+                    <button class="kg-ai-act" data-ai-action="experience" title="经验库检索（历史问题 → 解决方案）">经验</button>
+                    <button class="kg-ai-act" data-ai-action="recluster-directory" title="按目录结构重新聚类">目录聚类</button>
+                    <button class="kg-ai-act" data-ai-action="recluster-embedding" title="按 Embedding 语义重新聚类（需本地模型）">语义聚类</button>
+                    <button class="kg-ai-act" data-ai-action="favorites" title="我的收藏（My Knowledge）">收藏</button>
+                    <button class="kg-ai-act" data-ai-action="memory" title="我的知识偏好（Memory Graph）">偏好</button>
+                    <button class="kg-ai-act" data-ai-action="chunk-build" title="重建文档结构层（chunk/section）">内容层</button>
+                    <button class="kg-ai-act" data-ai-action="chunk-sim" title="构建 chunk 语义相似边（需本地模型）">相似边</button>
+                </div>
+                <div class="kg-ai-analysis" id="kg-ai-analysis"><!-- 由 panel 渲染 --></div>
+            </div>
+            <div class="kg-side-section">
                 <div class="kg-build-status" id="kg-build-status">检测中…</div>
                 <div class="kg-progress-track"><div class="kg-progress-bar" id="kg-progress-bar" style="width:0%"></div></div>
             </div>
-            <div class="kg-sidebar-section">
-                <div class="kg-sidebar-title">类型过滤</div>
-                <div class="kg-type-filters" id="kg-type-filters"><!-- 由 panel 渲染 --></div>
-            </div>
-            <div class="kg-sidebar-section">
-                <div class="kg-sidebar-title">统计</div>
-                <div class="kg-stats" id="kg-stats"><!-- 由 panel 渲染 --></div>
-            </div>
         </aside>
 
-        <!-- 图谱画布（Sigma 挂载点） -->
+        <!-- 图谱画布（Sigma 挂载点 + MiniMap + 工具栏） -->
         <section class="kg-canvas" id="kg-canvas">
             <div class="kg-canvas-placeholder" id="kg-canvas-placeholder">
                 <div class="kg-placeholder-text">图谱引擎加载中…</div>
             </div>
+            <!-- HTML 面板视图（主题聚类/领域地图/时间轴/空态） -->
+            <div class="kg-view-panel" id="kg-view-panel" hidden></div>
+            <!-- 工具栏（PRD §44） -->
+            <div class="kg-canvas-toolbar" id="kg-canvas-toolbar">
+                <button class="kg-ctl" data-action="fit" title="适应窗口">⤢</button>
+                <button class="kg-ctl" data-action="out" title="缩小">−</button>
+                <button class="kg-ctl" data-action="in" title="放大">＋</button>
+                <button class="kg-ctl" data-action="reset" title="重置">↺</button>
+            </div>
         </section>
 
-        <!-- 右侧浮动详情卡 -->
-        <div class="kg-detail-card" id="kg-detail-card" hidden>
+        <!-- 右侧节点详情（PRD §16-20：概览/内容/关系/分析 四 Tab） -->
+        <aside class="kg-detail" id="kg-detail" hidden>
             <div class="kg-detail-head">
-                <span class="kg-detail-title" id="kg-detail-title"></span>
+                <span class="kg-detail-icon" id="kg-detail-icon">●</span>
+                <div class="kg-detail-titles">
+                    <div class="kg-detail-title" id="kg-detail-title"></div>
+                    <div class="kg-detail-subtitle" id="kg-detail-subtitle"></div>
+                </div>
+                <button class="kg-detail-star" id="kg-detail-star" title="收藏到 My Knowledge">☆</button>
                 <button class="kg-detail-close" id="kg-detail-close" title="关闭">✕</button>
             </div>
+            <div class="kg-detail-tabs" id="kg-detail-tabs">
+                <button class="kg-detail-tab active" data-tab="overview">概览</button>
+                <button class="kg-detail-tab" data-tab="content">内容</button>
+                <button class="kg-detail-tab" data-tab="relations">关系</button>
+                <button class="kg-detail-tab" data-tab="analysis">分析</button>
+            </div>
             <div class="kg-detail-body" id="kg-detail-body"></div>
-            <div class="kg-detail-actions" id="kg-detail-actions"></div>
-        </div>
+        </aside>
     </main>
 
     <!-- ===== 底部状态栏 ===== -->
     <footer class="kg-statusbar">
-        <span>节点 <b id="kg-stat-nodes">0</b></span>
-        <span>边 <b id="kg-stat-edges">0</b></span>
-        <span id="kg-stat-lod">LOD L1</span>
+        <span>节点 <b id="kg-stat-nodes-2">0</b></span>
+        <span>边 <b id="kg-stat-edges-2">0</b></span>
+        <span id="kg-stat-lod">LOD L0 聚类</span>
         <span id="kg-stat-engine">引擎: --</span>
+        <span id="kg-stat-version">v0</span>
     </footer>
 
     <!--
       【模块加载】独立 JS 文件，按依赖顺序加载（IIFE 模块挂 window 全局）：
         model（无依赖）→ api/store（依赖 model）→ layout/renderer（依赖 store）
-        → interaction（依赖全部）→ panel → app（ESM 入口，组装 + 生命周期）。
+        → interaction（依赖全部）→ panel → views → minimap → app（ESM 入口，组装 + 生命周期）。
       Sigma 引擎由 app.js 动态 import（缺失时降级占位提示）。
       按 SOLID：所有业务模块独立文件，graph.html 不内联任何业务脚本。
     -->
@@ -101,6 +158,7 @@
     <script src="./graph-renderer.js"></script>
     <script src="./graph-interaction.js"></script>
     <script src="./graph-panel.js"></script>
+    <script src="./graph-views.js"></script>
     <script type="module" src="./graph-app.js"></script>
 </body>
 

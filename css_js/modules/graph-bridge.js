@@ -108,8 +108,8 @@
                 case 'graph:open-node': {
                     // 用户点击文件节点 → 复用主页面打开文件链路
                     const path = msg.payload && msg.payload.path;
-                    if (path && typeof window.toggleFile === 'function') {
-                        window.toggleFile('renderFile', { relativePath: path });
+                    if (path && typeof window.openFileFromPath === 'function') {
+                        window.openFileFromPath(path);
                     }
                     break;
                 }

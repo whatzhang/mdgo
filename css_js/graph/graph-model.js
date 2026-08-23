@@ -11,18 +11,20 @@
 (function () {
     'use strict';
 
-    /** 节点类型（对应六类图演进：doc/chunk 先行，entity/experience/memory 预留） */
+    /** 节点类型（六类图演进 + 内容层 chunk/section） */
     const NODE_TYPES = Object.freeze([
-        'doc', 'folder', 'chunk', 'entity', 'experience', 'memory', 'cluster',
+        'doc', 'folder', 'chunk', 'section', 'entity', 'experience', 'memory', 'cluster',
     ]);
 
-    /** 关系类型（Document Graph 阶段） */
+    /** 关系类型（Document Graph + 内容层语义关系） */
     const RELATIONS = Object.freeze([
         'CONTAINS', 'REFERENCES', 'IMPORTS', 'DERIVED_FROM', 'SAME_TOPIC',
+        'SOLVED_BY', 'IMPLEMENTED_IN', 'VALIDATED_BY', 'REPLACED_BY', 'DEPRECATED',
+        'PREFERS', 'AVOIDS', 'USES', 'BELONGS_TO', 'SIMILAR_TO', 'DEPENDS_ON',
     ]);
 
-    /** LOD 层级常量 */
-    const LOD = Object.freeze({ OVERVIEW: 0, LOCAL: 1, FOCUS: 2 });
+    /** LOD 层级常量（PRD §12：L0 聚类 → L4 Chunk/Entity 细粒度） */
+    const LOD = Object.freeze({ CLUSTERS: 0, CORE: 1, IMPORTANT: 2, FULL: 3, DETAIL: 4 });
 
     /** 默认邻域查询上限（与后端契约一致） */
     const QUERY_LIMITS = Object.freeze({
@@ -33,6 +35,58 @@
         SEARCH_LIMIT: 20,
         OVERVIEW_NODES: 5000,
     });
+
+    /** 节点分类（PRD §8：分类过滤升级为 11 类；type 是后端语义，category 是展示分组） */
+    const CATEGORIES = Object.freeze([
+        'all', 'doc', 'folder', 'code', 'config', 'image', 'concept', 'entity', 'script', 'project', 'other',
+    ]);
+
+    /** type → category 映射（doc 按扩展名细分 code/config/image/script；folder/概念类保持） */
+    const CATEGORY_LABELS = Object.freeze({
+        all: '全部', doc: '文档', folder: '目录', code: '代码', config: '配置',
+        image: '图片', concept: '概念', entity: '实体', script: '脚本', project: '项目', other: '其他',
+    });
+
+    /** 分类 → 颜色（PRD §8.1 推荐固定颜色语义，柔和低饱和） */
+    const CATEGORY_COLORS = Object.freeze({
+        folder: '#4c8bf5', doc: '#e8b339', code: '#e08a3c', config: '#3dab6f',
+        image: '#e8749a', concept: '#8a6fd8', script: '#3aa8b8', entity: '#6b7b8f',
+        project: '#c26f4a', other: '#9aa1a9', cluster: '#6b7b8f',
+    });
+
+    /** 文件扩展名 → 分类（doc 细分） */
+    const EXT_CATEGORY = Object.freeze({
+        js: 'code', ts: 'code', tsx: 'code', jsx: 'code', rs: 'code', py: 'code',
+        java: 'code', go: 'code', c: 'code', cpp: 'code', h: 'code', cs: 'code',
+        php: 'code', rb: 'code', kt: 'code', swift: 'code', html: 'code', css: 'code',
+        json: 'config', yaml: 'config', yml: 'config', toml: 'config', ini: 'config',
+        conf: 'config', xml: 'config', env: 'config', properties: 'config',
+        png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', svg: 'image', webp: 'image', ico: 'image',
+        sh: 'script', bat: 'script', cmd: 'script', ps1: 'script', mjs: 'script', cjs: 'script',
+    });
+
+    /** 节点 → 展示分类（依据 meta.ext；无则按 type） */
+    function categoryOf(node) {
+        if (!node) return 'other';
+        if (node.type === 'folder' || node.type === 'section') return 'folder';
+        if (node.type === 'chunk') return 'doc'; // 内容层归入文档分类
+        if (node.type === 'concept') return 'concept';
+        if (node.type === 'entity') return 'entity';
+        if (node.type === 'project') return 'project';
+        if (node.type === 'cluster') return 'cluster';
+        if (node.type === 'doc' || node.type === 'code') {
+            let ext = '';
+            try {
+                if (node.meta && typeof node.meta === 'object') ext = String(node.meta.ext || '').toLowerCase();
+            } catch (e) { /* ignore */ }
+            if (!ext && typeof node.meta === 'string') {
+                try { ext = String((JSON.parse(node.meta) || {}).ext || '').toLowerCase(); } catch (e) { /* ignore */ }
+            }
+            if (ext && EXT_CATEGORY[ext]) return EXT_CATEGORY[ext];
+            return 'doc';
+        }
+        return 'other';
+    }
 
     /**
      * GraphNode 工厂：统一补默认值 + 校验。
@@ -54,6 +108,8 @@
             ...(input.path ? { path: input.path } : {}),
             ...(input.meta ? { meta: input.meta } : {}),
             ...(typeof input.degree === 'number' ? { degree: input.degree } : {}),
+            ...(input.content ? { content: input.content } : {}),
+            ...(typeof input.created_at === 'number' ? { created_at: input.created_at } : {}),
         };
     }
 
@@ -161,6 +217,11 @@
         RELATIONS,
         LOD,
         QUERY_LIMITS,
+        CATEGORIES,
+        CATEGORY_LABELS,
+        CATEGORY_COLORS,
+        EXT_CATEGORY,
+        categoryOf,
         createNode,
         createEdge,
         GraphData,

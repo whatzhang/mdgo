@@ -133,6 +133,8 @@ impl<'a> EntityMerger<'a> {
                     path: None,
                     meta: Some(meta.to_string()),
                     degree: None,
+                created_at: None,
+                content: None,
                 };
                 self.store.upsert_node(&node)?;
                 // 边重定向：把指向旧名（若存在独立节点）的边并入 canonical id
@@ -171,6 +173,8 @@ impl<'a> EntityMerger<'a> {
                     path: None,
                     meta: Some(meta.to_string()),
                     degree: None,
+                created_at: None,
+                content: None,
                 };
                 self.store.upsert_node(&node)?;
                 for c in &candidates {

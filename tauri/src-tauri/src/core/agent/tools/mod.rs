@@ -2393,3 +2393,101 @@ pub(crate) async fn run_subagent_impl(
         .insert(sub_request_id.clone(), outcome.full_output.clone());
     Ok((sub_request_id, outcome))
 }
+
+// ─── 知识图谱工具（PRD §56：Agent 使用知识图谱 / reason_over_graph） ───
+
+/// 图谱节点搜索（Agent 定位知识实体；PRD §56 get_user_context 前端）。
+pub async fn graph_search_nodes(
+    cfg: &KbSearchConfig,
+    keyword: &str,
+    limit: u32,
+) -> Result<String, String> {
+    let engine = cfg.app_handle.state::<crate::AppState>().graph_engine.clone();
+    let nodes = engine.search(&cfg.dir_path, keyword, limit.clamp(1, 50))?;
+    if nodes.is_empty() {
+        return Ok("图谱中未找到匹配节点。".to_string());
+    }
+    let mut lines = vec![format!("图谱节点搜索「{}」命中 {} 条：", keyword, nodes.len())];
+    for n in nodes {
+        let path = n.path.as_deref().unwrap_or("");
+        lines.push(format!(
+            "- {}（{}，{} 度{}）",
+            n.name,
+            n.node_type.as_str(),
+            n.degree.unwrap_or(0),
+            if path.is_empty() { String::new() } else { format!("，{}", path) }
+        ));
+    }
+    Ok(lines.join("\n"))
+}
+
+/// 图节点邻域 + 关系（Agent 推理证据；PRD §56 find_related_knowledge / find_evidence）。
+pub async fn graph_find_related(
+    cfg: &KbSearchConfig,
+    node: &str,
+    depth: u32,
+) -> Result<String, String> {
+    let engine = cfg.app_handle.state::<crate::AppState>().graph_engine.clone();
+    // 先按名称定位节点
+    let found = {
+        let store = engine.store(&cfg.dir_path)?;
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
+        let hits = guard.search_nodes(node, 10)?;
+        hits.into_iter().find(|h| {
+            crate::core::graph::merger::canonicalize(&h.name)
+                == crate::core::graph::merger::canonicalize(node)
+        })
+    };
+    let node_id = match found {
+        Some(n) => n.id,
+        None => {
+            // 规则兜底：搜索首个命中
+            let store = engine.store(&cfg.dir_path)?;
+            let guard = store.lock().unwrap_or_else(|e| e.into_inner());
+            match guard.search_nodes(node, 5)?.into_iter().next() {
+                Some(n) => n.id,
+                None => return Ok(format!("图谱中未找到「{}」相关节点。", node)),
+            }
+        }
+    };
+    let nb = engine.neighborhood(&cfg.dir_path, &node_id, depth.clamp(1, 2), 60, 120, None, 0.0)?;
+    let mut lines = vec![format!("「{}」的图谱邻域（{} 节点 / {} 关系）：", node, nb.nodes.len(), nb.edges.len())];
+    for e in nb.edges {
+        let sname = nb.nodes.iter().find(|n| n.id == e.source).map(|n| n.name.clone()).unwrap_or_else(|| e.source.clone());
+        let tname = nb.nodes.iter().find(|n| n.id == e.target).map(|n| n.name.clone()).unwrap_or_else(|| e.target.clone());
+        lines.push(format!("- {} --{}--> {}", sname, e.relation.as_str(), tname));
+    }
+    Ok(lines.join("\n"))
+}
+
+/// 图谱两节点最短路径（Agent 推理；PRD §56 reason_over_graph / §24 find_path）。
+pub async fn graph_find_path(cfg: &KbSearchConfig, a: &str, b: &str) -> Result<String, String> {
+    let engine = cfg.app_handle.state::<crate::AppState>().graph_engine.clone();
+    // 名称 → 节点 id（规则：精确/规范名匹配，否则首个 LIKE 命中）
+    let resolve = |name: &str| -> Result<Option<String>, String> {
+        let store = engine.store(&cfg.dir_path)?;
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
+        let canon = crate::core::graph::merger::canonicalize(name);
+        let hits = guard.search_nodes(name, 10)?;
+        for h in &hits {
+            if crate::core::graph::merger::canonicalize(&h.name) == canon {
+                return Ok(Some(h.id.clone()));
+            }
+        }
+        Ok(hits.into_iter().next().map(|h| h.id))
+    };
+    let Some(sa) = resolve(a)? else { return Ok(format!("图谱中未找到「{}」。", a)); };
+    let Some(sb) = resolve(b)? else { return Ok(format!("图谱中未找到「{}」。", b)); };
+    let path = engine.find_path(&cfg.dir_path, &sa, &sb, 6)?;
+    if !path.found {
+        return Ok(format!("图谱中「{}」与「{}」之间未找到可达路径（≤6 跳）。", a, b));
+    }
+    let mut lines = vec![format!("「{}」→「{}」的最短路径（{} 跳）：", a, b, path.path_ids.len() - 1)];
+    let names: Vec<String> = path
+        .nodes
+        .iter()
+        .map(|n| n.name.clone())
+        .collect();
+    lines.push(names.join(" → "));
+    Ok(lines.join("\n"))
+}

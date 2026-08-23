@@ -15,5 +15,10 @@ rustflags = ["-C", "target-feature=-crt-static"]
 CFLAGS = "-MD"
 CXXFLAGS = "-MD"
 
-#[build]
-#jobs = 1
+# ─── 编译/测试加速（AMD 3900XT 12C/24T） ───
+# - jobs=24：显式使用全部逻辑核心（cargo 默认受检测核心数限制，显式声明更稳）
+# - incremental=true：增量编译（dev/test 共用 target/debug 缓存）
+# - future-incompat-report：保持现状（不额外开启，避免编译期检查开销）
+[build]
+jobs = 24
+incremental = true

@@ -627,9 +627,10 @@ async fn get_or_create_llm_client(
     reasoning_effort: Option<&str>,
 ) -> Result<LLMClient, String> {
     // 委托 AppState 的公共工厂:供 commands 层与工具闭包(子代理)共用；
-    // reasoning_effort 参与客户端指纹缓存（P2-18：思考程度变化后自动重建）
+    // reasoning_effort 参与客户端指纹缓存（P2-18：思考程度变化后自动重建）；
+    // 协议固定 openai（本调用点无 anthropic 配置上下文；Anthropic 对话走独立通道）
     state
-        .llm_client_for_cfg(endpoint, model, api_key, reasoning_effort)
+        .llm_client_for_cfg(endpoint, model, api_key, reasoning_effort, "openai")
         .await
 }
 

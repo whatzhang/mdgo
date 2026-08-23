@@ -264,24 +264,40 @@ pub struct LLMClient {
 
 impl LLMClient {
     /// 构建客户端。配置非法（如 api_key 含非法 HTTP 头字符）时返回 Err。
+    /// `protocol`：`openai`（Chat Completions，默认）/ `anthropic`（Messages API）——
+    /// 经 LlmAdapter seam 按协议选择适配器（D2 修复：此前恒用 OpenAI 适配器，
+    /// anthropic 协议配置必然失败且无提示）。
     pub fn new(
         endpoint: String,
         model: String,
         api_key: String,
         reasoning_effort: Option<String>,
+        protocol: &str,
     ) -> Result<Self, String> {
         let base_url = normalize_base_url(&endpoint);
 
-        // 非流式适配器（LlmAdapter seam；OpenAI 兼容，transport 与业务解耦）
-        let adapter: Arc<dyn LlmAdapter> = Arc::new(OpenAiAdapter::new(
-            base_url.clone(),
-            model.clone(),
-            api_key.clone(),
-            reasoning_effort.clone(),
-        ));
+        // LlmAdapter seam 按协议选择（与 agent/对话路径 build_loop_adapter 对齐）
+        let adapter: Arc<dyn LlmAdapter> = if protocol == "anthropic" {
+            // Anthropic 适配器：流式收集实现 complete；reasoning_effort 由
+            // extended thinking 预算映射（此处暂不启用 thinking，None）
+            Arc::new(crate::core::r#loop::AnthropicAdapter::new(
+                base_url.clone(),
+                api_key.clone(),
+                model.clone(),
+                4096,
+                None,
+            ))
+        } else {
+            Arc::new(OpenAiAdapter::new(
+                base_url.clone(),
+                model.clone(),
+                api_key.clone(),
+                reasoning_effort.clone(),
+            ))
+        };
 
         // P0-1（安全）：api_key 绝不明文落日志（见 mask_secret）。仅输出不可逆掩码。
-        log::info!("[llm] LLMClient init base_url={}，api_key={}， model={}", base_url, mask_secret(&api_key), model);
+        log::info!("[llm] LLMClient init base_url={}，api_key={}， model={}， protocol={}", base_url, mask_secret(&api_key), model, protocol);
 
         Ok(Self {
             endpoint: base_url,
@@ -668,6 +684,89 @@ impl crate::core::context::HistorySummarizer for LLMClient {
 }
 
 impl LLMClient {
+    /// 通用结构化 JSON 补全（图谱 AI / 分析等业务共用；失败或解析失败返回 None，fail-open）。
+    ///
+    /// - system：系统指令（含输出 JSON 格式约束）
+    /// - user：用户内容
+    /// - 返回解析后的 JSON；模型输出非 JSON 时尝试剥离代码围栏后重试解析
+    pub async fn complete_json(
+        &self,
+        system: &str,
+        user: &str,
+        cancel: CancellationToken,
+    ) -> Option<serde_json::Value> {
+        let text = self
+            .complete_text(system, user, 2048, cancel)
+            .await?;
+        let trimmed = text.trim();
+        // 剥离 ```json ... ``` 围栏（弱模型常见输出）
+        let cleaned = if trimmed.starts_with("```") {
+            let inner = trimmed
+                .trim_start_matches('`')
+                .trim_start_matches("json")
+                .trim();
+            inner.trim_end_matches('`').trim().to_string()
+        } else {
+            trimmed.to_string()
+        };
+        match serde_json::from_str(&cleaned) {
+            Ok(v) => Some(v),
+            Err(_) => {
+                // 再试：从文本中截取第一个 { ... } 平衡块
+                let start = cleaned.find('{')?;
+                let mut depth = 0i32;
+                let mut end = cleaned.len();
+                for (i, ch) in cleaned[start..].char_indices() {
+                    match ch {
+                        '{' => depth += 1,
+                        '}' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                end = start + i + 1;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                let slice = &cleaned[start..end];
+                serde_json::from_str(slice).ok()
+            }
+        }
+    }
+
+    /// 通用文本补全（图谱 AI 等业务共用；失败/空响应返回 None，fail-open）。
+    pub async fn complete_text(
+        &self,
+        system: &str,
+        user: &str,
+        max_tokens: u32,
+        cancel: CancellationToken,
+    ) -> Option<String> {
+        let mut request = LoopRequest::new(vec![
+            LlmMessage::text(LlmRole::System, system.to_string()),
+            LlmMessage::text(LlmRole::User, user.to_string()),
+        ]);
+        request.temperature = Some(0.3);
+        request.max_tokens = Some(max_tokens.clamp(128, 4096));
+        let request = self.apply_common_params(request);
+        match self.completion_with_retry(request, cancel).await {
+            Ok(response) => {
+                let trimmed = response.content.trim().to_string();
+                if trimmed.is_empty() {
+                    log::warn!("[llm] complete_text 空响应");
+                    None
+                } else {
+                    Some(trimmed)
+                }
+            }
+            Err(e) => {
+                log::warn!("[llm] complete_text 失败 err={}", e);
+                None
+            }
+        }
+    }
+
     /// 反思评审（P1-8 质量门）：对初稿做质量自检，返回结构化问题列表。
     ///
     /// 校验失败/取消/LLM 不可用返回 `None`（调用方降级为"不评审"，不影响主流程）；
@@ -1087,5 +1186,39 @@ mod tests {
         assert!(parse_bookmark_summary_json(r#"{"tags":["a"]}"#).is_none());
         // 空输入 → 拒绝
         assert!(parse_bookmark_summary_json("").is_none());
+    }
+
+    #[test]
+    fn test_llm_client_protocol_selection() {
+        // D2 修复：protocol 决定适配器（openai 默认 / anthropic Messages）；
+        // 两者都应能构建成功（不发起网络请求，仅构造 adapter）。
+        let openai = LLMClient::new(
+            "http://localhost:11434/v1".into(),
+            "qwen2.5".into(),
+            "key".into(),
+            None,
+            "openai",
+        )
+        .unwrap();
+        assert!(openai.is_configured());
+        let anthropic = LLMClient::new(
+            "https://api.anthropic.com".into(),
+            "claude-3-5-sonnet-latest".into(),
+            "sk-ant-xxx".into(),
+            None,
+            "anthropic",
+        )
+        .unwrap();
+        assert!(anthropic.is_configured());
+        // 未知协议回落 OpenAI 兼容（宽松处理，不报错）
+        let unknown = LLMClient::new(
+            "http://localhost:11434/v1".into(),
+            "model".into(),
+            "key".into(),
+            None,
+            "unknown",
+        )
+        .unwrap();
+        assert!(unknown.is_configured());
     }
 }

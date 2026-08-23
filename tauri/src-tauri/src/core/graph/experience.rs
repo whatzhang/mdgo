@@ -27,8 +27,9 @@ use serde::{Deserialize, Serialize};
 use super::model::{GraphNode, NodeType, Relation};
 use super::storage::GraphStore;
 
-/// 事件来源类型
+/// 事件来源类型（serde 兼容小写 snake_case：git_commit / ai_operation / chat_message）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum EventSource {
     GitCommit,
     AiOperation,
@@ -80,21 +81,24 @@ pub struct ExperienceHit {
     pub score: f32,
 }
 
-/// LLM 精抽取器抽象（预留 Phase 4.2；注入后替换规则拆解，改 record 为 async）
-#[allow(dead_code)]
+/// LLM 精抽取器抽象（Phase 4.2 已接线：`ai::LlmExperienceExtractor` 为
+/// `GraphLlm` 适配实现，命令层经 `graph_experience_record` 注入；
+/// 未注入时 record 保持规则降级）。
 pub trait ExperienceLlmExtractor: Send + Sync {
     /// 从 (title, body) 拆出 (problem, solution)
     fn extract_problem_solution(
         &self,
         title: &str,
         body: &str,
-    ) -> Box<dyn std::future::Future<Output = Result<(String, String), String>> + Send + '_>;
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<(String, String), String>> + Send + '_>,
+    >;
 }
 
 /// Experience Brain：事件采集 + P/S/R 图写入 + 查询。
 pub struct ExperienceBrain<'a> {
     store: &'a GraphStore,
-    /// 可选 LLM 精抽取（None = 规则实现；当前未接线，字段预留）
+    /// 可选 LLM 精抽取（None = 规则实现；命令层按配置注入）
     #[allow(dead_code)]
     llm: Option<&'a dyn ExperienceLlmExtractor>,
 }
@@ -107,17 +111,26 @@ impl<'a> ExperienceBrain<'a> {
     /// 记录一条事件并写入图（problem→solution→doc 骨架）。
     /// 事件表为 append-only（id 主键幂等）。
     ///
-    /// 同步实现：当前 LLM 精抽取未接线（`llm=None`），拆解走规则实现；
-    /// 未来注入 LLM 后改 async（由调用方 block_on 编排）。
+    /// 同步规则实现：拆解走 `rule_extract`；LLM 富化路径由调用方
+    /// 先抽取再经 [`Self::record_extracted`] 写图（见 `GraphEngine::experience_record_ai`）。
     /// 多步写入（事件+节点+边）包在单个事务中（R5 修复：原子性）。
     pub fn record(&self, event: &ExperienceEvent) -> Result<(), String> {
-        // 1. 拆解 problem/solution（规则实现；LLM 注入时由调用方替换）
         let (problem, solution) = Self::rule_extract(&event.title, &event.body);
+        self.record_extracted(event, &problem, &solution)
+    }
 
-        // 2. 事务内写入：事件落表 + 建 P/S 节点 + 边（全部成功或全部回滚）
+    /// 用外部抽取的 (problem, solution) 写图（LLM 富化结果入口；同步、事务内）。
+    /// problem/solution 为空串（如纯 chore commit）→ 仅存事件，不建图。
+    pub fn record_extracted(
+        &self,
+        event: &ExperienceEvent,
+        problem: &str,
+        solution: &str,
+    ) -> Result<(), String> {
+        // 事务内写入：事件落表 + 建 P/S 节点 + 边（全部成功或全部回滚）
         self.store.with_transaction(|_conn| {
-            // 2.1 事件落表（骨架：graph_properties 中以 `exp:{id}` 键存储 JSON；
-            //     规模化后可迁移独立表，这里保持单表图存储的简洁性）
+            // 1. 事件落表（骨架：graph_properties 中以 `exp:{id}` 键存储 JSON；
+            //    规模化后可迁移独立表，这里保持单表图存储的简洁性）
             let key = format!("exp:{}", event.id);
             let value = serde_json::to_string(event)
                 .map_err(|e| format!("序列化经验事件失败: {}", e))?;
@@ -128,32 +141,36 @@ impl<'a> ExperienceBrain<'a> {
                 return Ok(());
             }
 
-            // 2.2 建 P/S 节点 + 边
-            let pid = format!("experience:problem:{}", Self::hash(&problem));
-            let sid = format!("experience:solution:{}", Self::hash(&solution));
+            // 2. 建 P/S 节点 + 边
+            let pid = format!("experience:problem:{}", Self::hash(problem));
+            let sid = format!("experience:solution:{}", Self::hash(solution));
             let now = event.created_at.max(1);
 
             self.store.upsert_node(&GraphNode {
                 id: pid.clone(),
                 node_type: NodeType::Experience,
-                name: truncate(&problem, 80),
+                name: truncate(problem, 80),
                 path: None,
                 meta: Some(format!(
                     "{{\"kind\":\"problem\",\"text\":{}}}",
-                    serde_json::to_string(&problem).unwrap_or_else(|_| "\"\"".into())
+                    serde_json::to_string(problem).unwrap_or_else(|_| "\"\"".into())
                 )),
                 degree: None,
+            created_at: None,
+            content: None,
             })?;
             self.store.upsert_node(&GraphNode {
                 id: sid.clone(),
                 node_type: NodeType::Experience,
-                name: truncate(&solution, 80),
+                name: truncate(solution, 80),
                 path: None,
                 meta: Some(format!(
                     "{{\"kind\":\"solution\",\"text\":{}}}",
-                    serde_json::to_string(&solution).unwrap_or_else(|_| "\"\"".into())
+                    serde_json::to_string(solution).unwrap_or_else(|_| "\"\"".into())
                 )),
                 degree: None,
+            created_at: None,
+            content: None,
             })?;
 
             // problem --SOLVED_BY--> solution
@@ -196,6 +213,8 @@ impl<'a> ExperienceBrain<'a> {
                     now
                 )),
                 degree: None,
+            created_at: None,
+            content: None,
             })?;
             self.store.upsert_edge(
                 &super::model::GraphEdge {
@@ -341,5 +360,61 @@ mod tests {
         assert_eq!(kws, vec!["缓存穿透".to_string()]);
         let s = ExperienceBrain::score(&kws, "缓存穿透问题解决");
         assert_eq!(s, 1.0);
+    }
+
+    /// 临时 store（对齐 storage 测试模式）
+    fn temp_store(name: &str) -> (GraphStore, tempfile::TempDir) {
+        let dir = tempfile::Builder::new()
+            .prefix(&format!("mdgo_graph_exp_{}_", name))
+            .tempdir()
+            .unwrap();
+        let db = dir.path().join("mdgo.db");
+        let store = GraphStore::open_for_dir(dir.path().to_string_lossy().as_ref(), &db).unwrap();
+        (store, dir)
+    }
+
+    fn sample_event(id: &str) -> ExperienceEvent {
+        ExperienceEvent {
+            id: id.to_string(),
+            source: EventSource::GitCommit,
+            title: "fix: 修复缓存穿透".to_string(),
+            body: "使用布隆过滤器避免缓存击穿".to_string(),
+            file_path: Some("src/cache.rs".to_string()),
+            created_at: 1_700_000_000_000,
+        }
+    }
+
+    #[test]
+    fn test_record_extracted_writes_ps_graph() {
+        let (store, _dir) = temp_store("ps_graph");
+        let brain = ExperienceBrain::new(&store, None::<&dyn ExperienceLlmExtractor>);
+        let event = sample_event("evt-1");
+        // LLM 富化结果（外部抽取的 P/S）写图
+        brain
+            .record_extracted(&event, "缓存穿透导致数据库压力", "布隆过滤器拦截无效请求")
+            .unwrap();
+        // 事件落表（append-only）
+        assert!(store.get_property("exp:evt-1").unwrap().is_some());
+        // P/S 节点 + 事件节点存在（SOLVED_BY / VALIDATED_BY / IMPLEMENTED_IN 边已写入）
+        let pid = "experience:problem:".to_string()
+            + &ExperienceBrain::hash("缓存穿透导致数据库压力");
+        let sid = "experience:solution:".to_string()
+            + &ExperienceBrain::hash("布隆过滤器拦截无效请求");
+        assert!(store.get_node(&pid).unwrap().is_some(), "problem 节点缺失");
+        assert!(store.get_node(&sid).unwrap().is_some(), "solution 节点缺失");
+        assert!(store.get_node("experience:event:evt-1").unwrap().is_some(), "事件节点缺失");
+        // 图版本因图变更已 bump
+        assert!(store.graph_version().unwrap() > 0);
+    }
+
+    #[test]
+    fn test_record_extracted_empty_ps_stores_event_only() {
+        let (store, _dir) = temp_store("ps_empty");
+        let brain = ExperienceBrain::new(&store, None::<&dyn ExperienceLlmExtractor>);
+        let event = sample_event("evt-2");
+        // 空 P/S（如纯 chore commit）：仅存事件，不建图
+        brain.record_extracted(&event, "", "").unwrap();
+        assert!(store.get_property("exp:evt-2").unwrap().is_some());
+        assert!(store.get_node("experience:event:evt-2").unwrap().is_none());
     }
 }

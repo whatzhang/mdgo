@@ -594,9 +594,161 @@ impl Tool for GlobTool {
     }
 }
 
+/// graph_search_nodes：图谱节点搜索（PRD §56：Agent 定位知识实体）。
+pub struct GraphSearchTool {
+    cfg: KbSearchConfig,
+}
+
+impl GraphSearchTool {
+    pub fn new(cfg: KbSearchConfig) -> Self {
+        Self { cfg }
+    }
+}
+
+#[async_trait]
+impl Tool for GraphSearchTool {
+    fn spec(&self) -> &ToolSpec {
+        static SPEC: std::sync::OnceLock<ToolSpec> = std::sync::OnceLock::new();
+        SPEC.get_or_init(|| {
+            read_only_spec(
+                "graph_search_nodes",
+                "在本地知识图谱中搜索节点（文档/目录/实体/概念/技术等），返回匹配节点的名称、类型与度数。当用户询问某个概念/技术/项目是否在知识库中、或需要定位图谱实体时调用。",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "keyword": { "type": "string", "description": "搜索关键词" },
+                        "limit": { "type": "integer", "description": "最多返回条数，默认 10，上限 50" }
+                    },
+                    "required": ["keyword"]
+                }),
+            )
+        })
+    }
+
+    async fn execute(&self, args: Value, ctx: &ToolRunContext<'_>) -> Result<Value, ToolError> {
+        let keyword = args.get("keyword").and_then(|s| s.as_str()).unwrap_or_default().trim().to_string();
+        if keyword.is_empty() {
+            return Err(ToolError::InvalidArgs("keyword 为空".into()));
+        }
+        let limit = args.get("limit").and_then(|v| v.as_u64()).map(|v| v as u32).unwrap_or(10);
+        ctx.sink.on_call(ctx.call_id, "graph_search_nodes", &keyword, &args);
+        match super::tools::graph_search_nodes(&self.cfg, &keyword, limit).await {
+            Ok(text) => {
+                ctx.sink.on_result(ctx.call_id, "graph_search_nodes", true, &format!("{} 字符", text.chars().count()), Some(&text));
+                Ok(Value::String(text))
+            }
+            Err(e) => {
+                ctx.sink.on_result(ctx.call_id, "graph_search_nodes", false, &e, Some(&e));
+                Err(ToolError::Failed(e))
+            }
+        }
+    }
+}
+
+/// graph_find_related：图节点邻域与关系（PRD §56 find_related_knowledge / find_evidence）。
+pub struct GraphFindRelatedTool {
+    cfg: KbSearchConfig,
+}
+
+impl GraphFindRelatedTool {
+    pub fn new(cfg: KbSearchConfig) -> Self {
+        Self { cfg }
+    }
+}
+
+#[async_trait]
+impl Tool for GraphFindRelatedTool {
+    fn spec(&self) -> &ToolSpec {
+        static SPEC: std::sync::OnceLock<ToolSpec> = std::sync::OnceLock::new();
+        SPEC.get_or_init(|| {
+            read_only_spec(
+                "graph_find_related",
+                "查询知识图谱中某节点的邻域与关系（如 A 引用 B、A 使用 Redis）。用于回答「X 和哪些知识相关」「X 使用了什么」等问题，返回实体间关系证据。",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "node": { "type": "string", "description": "节点名称（实体/概念/文档名）" },
+                        "depth": { "type": "integer", "description": "扩展深度，默认 1，上限 2" }
+                    },
+                    "required": ["node"]
+                }),
+            )
+        })
+    }
+
+    async fn execute(&self, args: Value, ctx: &ToolRunContext<'_>) -> Result<Value, ToolError> {
+        let node = args.get("node").and_then(|s| s.as_str()).unwrap_or_default().trim().to_string();
+        if node.is_empty() {
+            return Err(ToolError::InvalidArgs("node 为空".into()));
+        }
+        let depth = args.get("depth").and_then(|v| v.as_u64()).map(|v| v as u32).unwrap_or(1);
+        ctx.sink.on_call(ctx.call_id, "graph_find_related", &node, &args);
+        match super::tools::graph_find_related(&self.cfg, &node, depth).await {
+            Ok(text) => {
+                ctx.sink.on_result(ctx.call_id, "graph_find_related", true, &format!("{} 字符", text.chars().count()), Some(&text));
+                Ok(Value::String(text))
+            }
+            Err(e) => {
+                ctx.sink.on_result(ctx.call_id, "graph_find_related", false, &e, Some(&e));
+                Err(ToolError::Failed(e))
+            }
+        }
+    }
+}
+
+/// graph_find_path：图谱最短路径（PRD §56 reason_over_graph / §24 find_path）。
+pub struct GraphFindPathTool {
+    cfg: KbSearchConfig,
+}
+
+impl GraphFindPathTool {
+    pub fn new(cfg: KbSearchConfig) -> Self {
+        Self { cfg }
+    }
+}
+
+#[async_trait]
+impl Tool for GraphFindPathTool {
+    fn spec(&self) -> &ToolSpec {
+        static SPEC: std::sync::OnceLock<ToolSpec> = std::sync::OnceLock::new();
+        SPEC.get_or_init(|| {
+            read_only_spec(
+                "graph_find_path",
+                "查询知识图谱中两个节点之间的最短关系路径（如 Redis → Cache → Application → Kubernetes）。用于回答「A 和 B 有什么关系/如何关联」类问题，返回路径上的节点与跳数。",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "source": { "type": "string", "description": "起点名称" },
+                        "target": { "type": "string", "description": "终点名称" }
+                    },
+                    "required": ["source", "target"]
+                }),
+            )
+        })
+    }
+
+    async fn execute(&self, args: Value, ctx: &ToolRunContext<'_>) -> Result<Value, ToolError> {
+        let source = args.get("source").and_then(|s| s.as_str()).unwrap_or_default().trim().to_string();
+        let target = args.get("target").and_then(|s| s.as_str()).unwrap_or_default().trim().to_string();
+        if source.is_empty() || target.is_empty() {
+            return Err(ToolError::InvalidArgs("source/target 不能为空".into()));
+        }
+        ctx.sink.on_call(ctx.call_id, "graph_find_path", &format!("{} -> {}", source, target), &args);
+        match super::tools::graph_find_path(&self.cfg, &source, &target).await {
+            Ok(text) => {
+                ctx.sink.on_result(ctx.call_id, "graph_find_path", true, &format!("{} 字符", text.chars().count()), Some(&text));
+                Ok(Value::String(text))
+            }
+            Err(e) => {
+                ctx.sink.on_result(ctx.call_id, "graph_find_path", false, &e, Some(&e));
+                Err(ToolError::Failed(e))
+            }
+        }
+    }
+}
+
 /// 构建已迁移工具的注册表（M1 并行验证期：新 loop 路径使用；rig 版工具下线于 Phase 5）。
-pub fn build_loop_tool_registry(cfg: KbSearchConfig) -> HashMapToolRegistry {
-    let mut reg = HashMapToolRegistry::new();
+pub fn build_loop_tool_registry(cfg: KbSearchConfig) -> HashMapToolRegistry {    let mut reg = HashMapToolRegistry::new();
     // 只读（concurrency_safe=true）
     reg.register(Arc::new(KbSearchTool::new(cfg.clone())));
     reg.register(Arc::new(CodeLookupTool::new(cfg.clone())));
@@ -630,6 +782,10 @@ pub fn build_loop_tool_registry(cfg: KbSearchConfig) -> HashMapToolRegistry {
     reg.register(Arc::new(ScheduleTool::new(cfg.clone())));
     reg.register(Arc::new(SearchBookmarksTool::new(cfg.clone())));
     reg.register(Arc::new(GetBookmarkTool::new(cfg.clone())));
+    // 知识图谱（PRD §56：Agent 使用知识图谱；只读可并行）
+    reg.register(Arc::new(GraphSearchTool::new(cfg.clone())));
+    reg.register(Arc::new(GraphFindRelatedTool::new(cfg.clone())));
+    reg.register(Arc::new(GraphFindPathTool::new(cfg.clone())));
     // 前端桥接工具（pomodoro/raw-parse/open-ui，技能声明门控）+ 外部 HTTP 工具（配置驱动）
     register_bridge_tools(&mut reg, cfg.clone());
     register_external_tools(&mut reg, cfg.clone());

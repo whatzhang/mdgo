@@ -269,6 +269,8 @@ pub async fn kb_save_setting(
 ///
 /// 读 `{dir}/.mdgo/setting.json`（不存在返回空对象）；内存 `LlmConfig` 非空时
 /// 用其覆盖 LLM 段（内存为最近一次保存的权威值，避免启动顺序导致文件旧值残留）。
+/// D3 修复：内存 LLM 配置为空（应用重启后 RwLock 回到 default）时，**先从文件回填内存**，
+/// 消除「前端必须再保存一次配置，后台 Worker 才会认为 LLM 已配置」的隐式依赖。
 #[tauri::command]
 pub async fn kb_load_setting(
     state: State<'_, AppState>,
@@ -281,6 +283,28 @@ pub async fn kb_load_setting(
         .ok()
         .and_then(|text| serde_json::from_str(&text).ok())
         .unwrap_or_else(|| serde_json::json!({}));
+
+    // D3：文件 → 内存回填（仅当内存为空且文件含 LLM 配置）
+    {
+        let mem = state.llm_config.read().unwrap_or_else(|e| e.into_inner()).clone();
+        if mem.endpoint.trim().is_empty() && mem.model.trim().is_empty() {
+            let (endpoint, model, api_key, protocol, planner, summary, effort, max_tokens, context_length) =
+                extract_llm_fields(&config);
+            if !endpoint.is_empty() || !model.is_empty() {
+                let mut w = state.llm_config.write().unwrap_or_else(|e| e.into_inner());
+                w.endpoint = endpoint;
+                w.model = model;
+                w.api_key = api_key;
+                w.protocol = protocol;
+                w.planner_model = planner;
+                w.summary_model = summary;
+                w.reasoning_effort = effort;
+                w.max_tokens = max_tokens;
+                w.context_length = context_length;
+                log::info!("[config] LLM 配置已从 setting.json 回填内存（D3）");
+            }
+        }
+    }
 
     // 内存 LLM 配置优先（仅当已配置时覆盖，避免空配置误清文件值）
     let cfg = state.llm_config.read().unwrap_or_else(|e| e.into_inner()).clone();
