@@ -176,7 +176,7 @@ pub struct CodeAwareChunkSplitter {
 /// - 符号名取关键字后第一个标识符（捕获组 1）
 static CODE_SYMBOL_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(
-        r"(?m)^[\t ]*(?:(?:pub|export|export\s+default|public|private|protected|async)\s+)*?(?:fn|def|function|func|class|struct|enum|trait|interface|type|object)\s+(\w+)|^(?:impl)\s*<[^>]*>\s*(\w+)|^(?:impl)\s+(\w+)|^(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?(?:\(|function|class)",
+        r"(?m)^[\t ]*(?:(?:pub|export|export\s+default|public|private|protected|async)\s+)*?(?:fn|def|function|func|class|struct|enum|trait|interface|type|object)\s+(\w+)|^(?:impl)\s*<[^>]*>\s*(\w+)|^(?:impl)\s+(\w+)|^(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?(?:\(|function|class)|^[\t ]*(?:(?:pub|export|export\s+default|public|private|protected|async)\s+)*(?:const|let|var|static)\s+(\w+)\s*:\s*[^=\r\n]+?=",
     )
     .expect("CODE_SYMBOL_RE 编译失败")
 });
@@ -1431,5 +1431,32 @@ mod factory_tests {
         let f = ChunkSplitterFactory::new();
         let chunks = f.get_splitter("totally-unknown-ext").split("一段普通文本。", 448, 56);
         assert!(!chunks.is_empty());
+    }
+
+    /// 🟠 P0-2 回归：类型标注的常量声明（`pub const SCHEMA_VERSION: &str = "5"`）
+    /// 必须提取出符号名（旧正则 `const\s+(\w+)\s*=` 被 `: &str` 隔断而漏提）。
+    #[test]
+    fn typed_const_symbol_extraction() {
+        // 类型标注形式（Rust 常量/静态）
+        let (name, kind) = extract_symbol_info(
+            "pub const SCHEMA_VERSION: &str = \"5\";",
+            &CODE_SYMBOL_RE,
+        );
+        assert_eq!(name.as_deref(), Some("SCHEMA_VERSION"), "类型标注 const 应提取符号名");
+        assert!(kind.is_some(), "应识别符号类型");
+
+        // 无可见性前缀的类型标注 const
+        let (name2, _) = extract_symbol_info(
+            "const DEFAULT_LIMIT: usize = 100;",
+            &CODE_SYMBOL_RE,
+        );
+        assert_eq!(name2.as_deref(), Some("DEFAULT_LIMIT"), "无前缀类型标注 const 应提取");
+
+        // 带可见性前缀的静态变量
+        let (name3, _) = extract_symbol_info(
+            "static MAX_CHUNKS_PER_DOC: usize = 3;",
+            &CODE_SYMBOL_RE,
+        );
+        assert_eq!(name3.as_deref(), Some("MAX_CHUNKS_PER_DOC"));
     }
 }

@@ -598,6 +598,9 @@ impl Bm25Index {
     /// - 每个词在 text/title/heading/symbol/file_path 字段任一命中即算该词命中（保留 Field Boost）
     /// - 词间必须满足 `msm_ratio` 比例的词命中（默认 0.6）才进入候选
     /// - 查询词过少（≤1）或分词为空时退化为宽松 OR（QueryParser），避免收窄过度
+    /// - 多词 msm 严格检索**空结果**时，宽松 OR 兜底重试一次（有界例外——
+    ///   仅当严格检索一无所获才触发，避免"RrfConfig 结构体定义"类查询因类型名/专名
+    ///   无法凑够 msm 词数而被整体漏召回；不影响严格语义正常工作的查询）
     pub fn search_with_plan(
         &self,
         query_str: &str,
@@ -619,7 +622,25 @@ impl Bm25Index {
             Self::build_msm_query(&terms, msm_ratio)
         };
 
-        Self::collect_hits(&searcher, query, top_k)
+        let hits = Self::collect_hits(&searcher, query, top_k)?;
+        // msm 空结果 → 宽松 OR 兜底（多词且严格无命中时才触发）
+        if hits.is_empty() && terms.len() >= 2 {
+            let parser = Self::build_query_parser(&index);
+            let loose = parser
+                .parse_query(&escape_query(query_str))
+                .map_err(|e| format!("解析 BM25 宽松查询失败: {}", e))?;
+            let loose_hits = Self::collect_hits(&searcher, loose, top_k)?;
+            if !loose_hits.is_empty() {
+                log::info!(
+                    "[bm25] msm 严格检索空结果（terms={:?}, msm_ratio={}）→ 宽松 OR 兜底召回 {} 条",
+                    terms,
+                    msm_ratio,
+                    loose_hits.len()
+                );
+                return Ok(loose_hits);
+            }
+        }
+        Ok(hits)
     }
 
     /// 构建带 Field Boost 的 QueryParser（title 3.0 > heading 2.5 > tags 2.0 =

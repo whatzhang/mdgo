@@ -199,6 +199,20 @@ fn is_code_query(query: &str) -> bool {
     let has_snake = query
         .split(|c: char| !(c.is_alphanumeric() || c == '_'))
         .any(|word| word.contains('_') && word.len() >= 3);
+    // 🟠 P0-1 修复：裸标识符 + 代码定位词 → Code（旧实现要求 `::`/`->` 语法特征，
+    // 使 "RrfConfig 结构体定义"/"SCHEMA_VERSION 常量在哪"/"ValidationReport 有哪些字段"
+    // 类查询路由到 General，丢失符号路召回——v3 基线 q026/q027/q028/q039 recall=0）。
+    // 定位词从紧（"定义/在哪/常量/结构体/字段"等明确指向代码实体），避免误伤
+    // 文档类查询（"README 文档"、"FTP 服务器部署"等无标识符或无数码定位词不受影响）。
+    let code_locators = [
+        "定义", "在哪", "常量", "结构体", "字段", "变量", "枚举", "函数", "方法",
+        "实现", "声明", "源码", "代码", "写法", "签名",
+    ];
+    if (has_camel || has_snake)
+        && code_locators.iter().any(|kw| lower.contains(kw))
+    {
+        return true;
+    }
     // 代码语法特征
     if (has_camel || has_snake) && (query.contains("::") || query.contains("->")) {
         return true;
@@ -385,6 +399,24 @@ mod tests {
         assert_eq!(route_intent("看下 .rs 配置"), RetrievalIntent::General);
         // 文档扩展名不进代码清单
         assert_eq!(route_intent("分块 Token 预算设计.md 讲了什么"), RetrievalIntent::General);
+    }
+
+    /// 🟠 P0-1 回归：裸标识符 + 代码定位词 → Code（旧实现要求 `::`/`->`，
+    /// 使 "RrfConfig 结构体定义" 类查询路由到 General 丢失符号路——v3 基线 recall=0）
+    #[test]
+    fn route_intent_bare_identifier_with_locator_is_code() {
+        // 应路由 Code（恢复符号路召回）
+        assert_eq!(route_intent("RrfConfig 结构体定义"), RetrievalIntent::Code);
+        assert_eq!(route_intent("SCHEMA_VERSION 常量在哪"), RetrievalIntent::Code);
+        assert_eq!(route_intent("ValidationReport 有哪些字段"), RetrievalIntent::Code);
+        assert_eq!(route_intent("LocalBgeReranker 在哪个文件"), RetrievalIntent::Code);
+        assert_eq!(route_intent("index_all 函数的实现"), RetrievalIntent::Code);
+        assert_eq!(route_intent("tokenize_with_offsets 的签名"), RetrievalIntent::Code);
+        // 反例：无标识符或无数码定位词 → 不被误路由
+        assert_eq!(route_intent("README 文档讲了什么"), RetrievalIntent::Document);
+        assert_eq!(route_intent("FTP 服务器的部署说明"), RetrievalIntent::General);
+        assert_eq!(route_intent("混合检索的设计文档"), RetrievalIntent::Document);
+        assert_eq!(route_intent("版本 5.0 的说明"), RetrievalIntent::General);
     }
 }
 
