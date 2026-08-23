@@ -1670,6 +1670,7 @@ pub async fn agent_query(
         // P0-8：主对话启用技能软门禁（技能声明工具须激活后执行）
         skill_gating: true,
         skill_bases,
+        skill_registry: state.skill_registry.clone(),
         search_sink: search_sink.clone(),
         app_handle: app.clone(),
         cancel: Some(cancel.clone()),

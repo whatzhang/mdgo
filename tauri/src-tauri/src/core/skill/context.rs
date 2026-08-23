@@ -427,11 +427,11 @@ pub fn format_skill_instructions(skills: &[Skill], max_chars: usize) -> String {
     if truncated {
         match truncated_skill {
             Some(id) => out.push_str(&format!(
-                "\n\n[技能指令已按预算截断（{} 等技能正文超出预算）；如需完整内容请用 read 读取对应技能的 SKILL.md]",
+                "\n\n[技能指令已按预算截断（{} 等技能正文超出预算）；如需完整内容请用 read 读取对应技能的 SKILL.md（正文已加载进内存，读取不落盘）]",
                 id
             )),
             None => out.push_str(
-                "\n\n[技能指令已按预算截断，如需完整内容请用 read 读取对应技能的 SKILL.md]",
+                "\n\n[技能指令已按预算截断，如需完整内容请用 read 读取对应技能的 SKILL.md（正文已加载进内存，读取不落盘）]",
             ),
         }
     }

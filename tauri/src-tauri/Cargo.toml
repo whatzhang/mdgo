@@ -144,12 +144,24 @@ opt-level = 1
 debug = "line-tables-only"
 codegen-units = 256
 incremental = true
+# Windows MSVC：unpacked 让链接器不处理调试信息（加速链接，符号文件独立生成）；
+# 配合 debug="line-tables-only" 显著缩短「改一行→可运行」的链接时间
+split-debuginfo = "unpacked"
 
+# 第三方 crate：不生成调试符号（依赖无需断点），显著加速链接与增量重编；
+# 仍保留 opt-level=1 保证依赖运行速度（测试/索引性能不受损）
 [profile.dev.package."*"]
 opt-level = 1
+debug = false
 
-# 单测同样走 opt-level=1 + line-tables-only：测试运行快 3-5x，断点仍可用
+# 单测同样走 opt-level=1 + line-tables-only：测试运行快 3-5x，断点仍可用；
+# 依赖侧 debug=false 加速测试二进制链接（测试编译慢的主因之一）
 [profile.test]
 opt-level = 1
 debug = "line-tables-only"
 codegen-units = 256
+split-debuginfo = "unpacked"
+
+[profile.test.package."*"]
+opt-level = 1
+debug = false

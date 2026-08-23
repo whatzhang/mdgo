@@ -18513,7 +18513,7 @@
                     return;
                 }
                 // 第1步：收集选区内所有高亮/标注 span（先收集，后操作，避免 range 移位）
-                const allSpans = searchRoot.querySelectorAll('mark[style], mark[title]');
+                const allSpans = searchRoot.querySelectorAll('mark[style], mark[title], span[style], span[title]');
                 const spansToClear = [];
                 for (const span of allSpans) {
                     if (range.intersectsNode(span)) {
@@ -18539,31 +18539,35 @@
                     parent.removeChild(span);
                 }
                 searchRoot.normalize();
-                // 第3步：从原始文件内容中精确移除 span HTML
+                // 第3步：从原始文件内容中精确移除 span HTML（按实际移除的标记数统计）
                 spansToClear.sort((a, b) => b.outerHTML.length - a.outerHTML.length);
                 let relativePath = currentActiveItem ? currentActiveItem.dataset.filePath : '';
                 let newContent = originalContent;
-                let actualRemoved = 0;
+                const countMarkTags = (str) => (str.match(/<mark\b[^>]*>/g) || []).length;
+                const marksBefore = countMarkTags(newContent);
                 for (const { outerHTML, innerText } of spansToClear) {
+                    // 函数替换器：避免 innerText 中的 $&、$1 等被当作替换模式解释
+                    const replaceWithText = () => innerText;
                     const escapedHtml = outerHTML.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                     const pattern = new RegExp(escapedHtml, 'g');
-                    const beforeReplace = newContent;
-                    newContent = newContent.replace(pattern, innerText);
-                    if (newContent !== beforeReplace) {
-                        actualRemoved++;
-                    } else {
-                        const escapedText = innerText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                        const fallbackPattern = new RegExp(
-                            `<mark[^>]*style=["'][^"']*["'][^>]*(?:title=["'][^"']*["'][^>]*)?>\\s*${escapedText}\\s*</mark>`,
-                            'g'
-                        );
-                        const beforeFallback = newContent;
-                        newContent = newContent.replace(fallbackPattern, innerText);
-                        if (newContent !== beforeFallback) {
-                            actualRemoved++;
-                        }
+                    if ((newContent.match(pattern) || []).length > 0) {
+                        newContent = newContent.replace(pattern, replaceWithText);
+                        continue;
+                    }
+                    // 降级：DOM outerHTML 与源文件序列化存在差异（属性顺序/引号等）时，
+                    // 用宽松正则按文本匹配 <mark> 包裹
+                    const escapedText = innerText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const fallbackPattern = new RegExp(
+                        `<mark[^>]*style=["'][^"']*["'][^>]*(?:title=["'][^"']*["'][^>]*)?>\\s*${escapedText}\\s*</mark>`,
+                        'g'
+                    );
+                    if ((newContent.match(fallbackPattern) || []).length > 0) {
+                        newContent = newContent.replace(fallbackPattern, replaceWithText);
                     }
                 }
+                // 统计：清除前后文件内容中 <mark> 标签数的差值 = 实际移除的标记数
+                // （同一 HTML 的重复标记、嵌套标记均按真实移除数量计数）
+                const actualRemoved = marksBefore - countMarkTags(newContent);
                 // 第4步：保存文件
                 if (actualRemoved > 0) {
                     await saveExistFileContent(newContent, false, fileHandle);

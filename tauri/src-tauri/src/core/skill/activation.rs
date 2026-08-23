@@ -76,7 +76,8 @@ impl ActivationStatus {
 /// 单技能正文注入上限（字符；≈2000 token，`ApproxTokenEstimator` chars/2）。
 ///
 /// `activate_skill` 工具结果与请求入口一次性注入共用此上限；
-/// 超限正文截断并引导用 read 读取完整 `{skill_id}/SKILL.md`（L3 参考路径）。
+/// 超限正文截断并引导用 read 读取完整 `{skill_id}/SKILL.md`（技能正文已随启动
+/// 加载进内存注册表，read 走内存直读、不落盘）。
 pub const MAX_SKILL_BODY_CHARS: usize = 4000;
 
 /// 技能激活来源（替代旧 matcher 的匹配层级）。

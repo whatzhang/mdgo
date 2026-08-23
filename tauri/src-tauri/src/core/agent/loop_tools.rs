@@ -277,14 +277,14 @@ impl Tool for ReadTool {
         SPEC.get_or_init(|| {
             read_only_spec(
                 "read",
-                "读取文件内容，单次最多返回 8192 字符，支持分页续读。支持两类路径：1) 知识库目录内的相对路径（如 docs/note.md，可读取打开目录中的所有文件，含子目录）；2) 当前激活技能的参考文档路径（如 references/flowchart.md，通常由技能 SKILL.md 中以相对链接给出；未激活技能时无法读取，需先 activate_skill）。当返回内容末尾提示\"内容过长\"时，内容只显示了第 1~8192 字符，若需要文件后续部分，请再次调用本工具并指定 offset 参数（如 offset=8192）继续读取，不要从头重读全文。如需一次读取多个文件，可用 paths 数组并行读取（最多 10 个）。",
+                "读取文件内容，单次最多返回 8192 字符，支持分页续读。支持三类路径：1) 知识库目录内的相对路径（如 docs/note.md，可读取打开目录中的所有文件，含子目录）；2) 当前激活技能的参考文档路径（如 references/flowchart.md，通常由技能 SKILL.md 中以相对链接给出；未激活技能时无法读取，需先 activate_skill）；3) 已激活技能的 SKILL.md 完整正文路径（如 outline-mindmap/SKILL.md，技能正文已随系统启动加载进内存，直接读取不落盘，激活时正文被截断可据此获取完整内容）。当返回内容末尾提示\"内容过长\"时，内容只显示了第 1~8192 字符，若需要文件后续部分，请再次调用本工具并指定 offset 参数（如 offset=8192）继续读取，不要从头重读全文。如需一次读取多个文件，可用 paths 数组并行读取（最多 10 个）。",
                 json!({
                     "type": "object",
                     "additionalProperties": false,
                     "properties": {
                         "path": {
                             "type": "string",
-                            "description": "文件相对路径：知识库内路径，或技能参考文档路径（如 references/flowchart.md）。与 paths 二选一"
+                            "description": "文件相对路径：知识库内路径、技能参考文档路径（如 references/flowchart.md），或已激活技能 SKILL.md 完整正文路径（如 outline-mindmap/SKILL.md）。与 paths 二选一"
                         },
                         "paths": {
                             "type": "array",
@@ -1008,7 +1008,7 @@ impl Tool for ActivateSkillTool {
         SPEC.get_or_init(|| {
             read_only_spec(
                 "activate_skill",
-                "激活一个技能以加载其详细指令（SKILL.md 正文核心段，一次性提供、不重复注入）并解锁其声明的专用工具。技能 ID 见常驻技能目录；仅当目录中的技能与当前任务明确相关时才调用。激活后：1) 正文随本工具结果一次性进入上下文，后续轮次不再重复注入，请遵循其中的流程与输出规范；2) 其声明的检索工具（如 kb_search）将可用；3) 可用 read 工具读取其 references/ 下的参考资料；正文被截断时可用 read 读取 {skill_id}/SKILL.md 获取完整内容。重复激活同一技能只会返回已激活提示，不会重复返回正文。",
+                "激活一个技能以加载其详细指令（SKILL.md 正文核心段，一次性提供、不重复注入）并解锁其声明的专用工具。技能 ID 见常驻技能目录；仅当目录中的技能与当前任务明确相关时才调用。激活后：1) 正文随本工具结果一次性进入上下文，后续轮次不再重复注入，请遵循其中的流程与输出规范；2) 其声明的检索工具（如 kb_search）将可用；3) 可用 read 工具读取其 references/ 下的参考资料；正文被截断时可用 read 读取 {skill_id}/SKILL.md 获取完整内容（技能正文已随系统启动加载进内存，读取不落盘）。重复激活同一技能只会返回已激活提示，不会重复返回正文。",
                 json!({
                     "type": "object",
                     "properties": {
@@ -1062,7 +1062,7 @@ impl Tool for ActivateSkillTool {
         let mut msg = format!("<active_skill id=\"{id}\" version=\"{}\" source=\"llm\">\n{body_short}\n</active_skill>", skill.version);
         if truncated {
             msg.push_str(&format!(
-                "\n\n[技能正文超过单次注入预算（{body_chars} 字符），已显示前 {} 字符；如需完整内容，可用 read 读取 '{id}/SKILL.md'（已激活技能目录内）]",
+                "\n\n[技能正文超过单次注入预算（{body_chars} 字符），已显示前 {} 字符；如需完整内容，可用 read 读取 '{id}/SKILL.md'（正文已随系统启动加载进内存，读取不落盘）]",
                 MAX_SKILL_BODY_CHARS
             ));
         }

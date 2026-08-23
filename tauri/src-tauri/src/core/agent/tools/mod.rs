@@ -634,7 +634,10 @@ async fn push_kb_source(cfg: &KbSearchConfig, doc_name: &str, snippet: &str) {
 ///
 /// 解析顺序：
 /// 1. 知识库目录内的相对路径（如 `docs/note.md`）
-/// 2. 当前激活技能目录下的相对路径（如 `references/flowchart.md`），
+/// 2. 已激活技能的 SKILL.md 完整正文（如 `outline-mindmap/SKILL.md`）——
+///    从内存注册表直读（技能启动时已加载进系统，系统内置技能为编译期嵌入，
+///    无需落盘；激活正文超预算截断时引导走此路径）
+/// 3. 当前激活技能目录下的相对路径（如 `references/flowchart.md`），
 ///    按激活技能逐一尝试；技能基础目录由 `cfg.skill_bases` 提供，仅限已激活技能
 pub async fn read(cfg: &KbSearchConfig, rel_path: &str, offset: usize) -> Result<String, String> {
     match safe_resolve(&cfg.dir_path, rel_path) {
@@ -647,12 +650,19 @@ pub async fn read(cfg: &KbSearchConfig, rel_path: &str, offset: usize) -> Result
             // （与子代理摘要/预检索上下文处理保持一致；无命中时原样返回）
             return Ok(crate::core::security::wrap_suspicious(&result));
         }
-        Err(e) if cfg.skill_state.active_only().is_empty() => {
-            // 无任何已激活（Active）技能：若目标是技能参考路径，明确指出需先激活技能，
-            // 避免模型误以为文件不存在而反复尝试（浪费多轮工具调用）
-            return Err(skill_ref_hint(rel_path, e));
+        Err(e) => {
+            // 知识库内未找到：已激活技能 SKILL.md 完整正文走内存注册表直读
+            // （技能已随启动加载进系统，系统内置技能为编译期嵌入、不落盘；
+            // 命中未激活的已知技能时返回「先 activate_skill」的明确引导）
+            if let Some(text) = read_active_skill_md(cfg, rel_path, offset)? {
+                return Ok(text);
+            }
+            if cfg.skill_state.active_only().is_empty() {
+                // 无任何已激活（Active）技能：若目标是技能参考路径，明确指出需先激活技能，
+                // 避免模型误以为文件不存在而反复尝试（浪费多轮工具调用）
+                return Err(skill_ref_hint(rel_path, e));
+            }
         }
-        Err(_) => {}
     }
     let mut last_err = "文件不存在（知识库内与已激活技能的参考目录均未找到）".to_string();
     for skill in cfg.skill_state.active_only() {
@@ -671,6 +681,83 @@ pub async fn read(cfg: &KbSearchConfig, rel_path: &str, offset: usize) -> Result
         }
     }
     Err(skill_ref_hint(rel_path, last_err))
+}
+
+/// 读取已激活技能的 SKILL.md 完整正文（内存注册表直读，不经过磁盘）。
+///
+/// 支持 `{skill_id}/SKILL.md` 路径（激活正文超预算截断时的引导路径）：
+/// 技能正文随注册表在启动时已加载进系统内存（系统内置技能为编译期
+/// `include_str!` 嵌入），此处直接取用完整正文并按 [`read_text`] 相同的
+/// offset 分页语义返回，避免模型为获取完整指令而去磁盘上找并不存在的文件。
+///
+/// 返回 `Ok(None)` 表示该路径不是技能正文路径（或技能未激活），由调用方继续
+/// 走磁盘参考文档解析；命中未激活的已知技能时返回带激活引导的错误。
+fn read_active_skill_md(
+    cfg: &KbSearchConfig,
+    rel_path: &str,
+    offset: usize,
+) -> Result<Option<String>, String> {
+    let p = Path::new(rel_path);
+    let is_skill_md = p.file_name().and_then(|n| n.to_str()) == Some("SKILL.md");
+    if !is_skill_md {
+        return Ok(None);
+    }
+    let id = p
+        .parent()
+        .and_then(|d| d.file_name())
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_string();
+    // 裸 `SKILL.md`（无技能 ID 前缀）：交给磁盘分支（base/{skill_id}/SKILL.md）
+    if id.is_empty() {
+        return Ok(None);
+    }
+    for act in cfg.skill_state.active_only() {
+        if act.skill_id != id {
+            continue;
+        }
+        let skill = cfg
+            .skill_registry
+            .get(act.scope, &act.skill_id)
+            .or_else(|| cfg.skill_registry.find_enabled(&act.skill_id));
+        if let Some(skill) = skill {
+            let body = skill.body.trim();
+            let full = if body.is_empty() {
+                format!(
+                    "技能 {}（{} v{}）无正文内容。",
+                    skill.name, skill.id, skill.version
+                )
+            } else {
+                format!(
+                    "{}（{} v{}）SKILL.md 完整正文（系统内存直读）：\n\n{}",
+                    skill.name, skill.id, skill.version, body
+                )
+            };
+            let total = full.chars().count();
+            if offset >= total {
+                return Ok(Some(format!(
+                    "[已达文件末尾（共 {total} 字符），offset={offset} 超出范围]"
+                )));
+            }
+            let chunk: String = full.chars().skip(offset).take(MAX_FILE_READ_CHARS).collect();
+            if offset + MAX_FILE_READ_CHARS >= total {
+                return Ok(Some(chunk));
+            }
+            return Ok(Some(format!(
+                "{chunk}\n\n[内容过长：已显示第 {}~{} 字符（共 {total} 字符）。可再次调用 read 并指定 offset={} 读取后续内容]",
+                offset + 1,
+                offset + chunk.chars().count(),
+                offset + MAX_FILE_READ_CHARS
+            )));
+        }
+    }
+    // 是技能正文路径但该技能未激活：给出明确引导，避免模型误以为文件不存在而反复尝试
+    if cfg.skill_registry.find_enabled(&id).is_some() {
+        return Err(format!(
+            "技能 '{id}' 未激活，无法读取其 SKILL.md。请先调用 activate_skill 激活该技能后重试。"
+        ));
+    }
+    Ok(None)
 }
 
 /// 当读取路径指向技能参考文档（`references/` 开头）而解析失败时，

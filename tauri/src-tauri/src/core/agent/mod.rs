@@ -16,6 +16,7 @@ use tauri::{AppHandle, Manager};
 use tokio_util::sync::CancellationToken;
 
 use crate::core::skill::activation::ActiveSkillState;
+use crate::core::skill::SkillRegistry;
 
 pub mod planner;
 /// AI Agent 指标参数集中配置（单一来源）
@@ -324,6 +325,9 @@ pub struct KbSearchConfig {
     pub skill_gating: bool,
     /// 各作用域技能基础目录（(scope, 绝对路径)），`read` 工具据此定位已激活技能的 references
     pub skill_bases: Vec<(String, String)>,
+    /// 技能注册表（内存常驻）：系统内置技能为编译期嵌入、启动时已解析进内存，
+    /// `read` 工具读取已激活技能 SKILL.md 完整正文时直接从内存取用，不落盘
+    pub skill_registry: Arc<SkillRegistry>,
     /// 检索命中收集器：kb_search / code_lookup 工具将聚合后的命中写入，
     /// 命令层在请求结束（rag:done）时合并进引用来源列表，供前端渲染"引用"。
     pub search_sink: Arc<tokio::sync::Mutex<Vec<(SearchHit, f32)>>>,

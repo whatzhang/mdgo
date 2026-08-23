@@ -66,7 +66,7 @@ impl SkillInstructionHook {
             String::new()
         } else {
             format!(
-                "[已激活技能（约束摘要每轮常驻；正文仅注入一次，需完整内容可用 read 读取对应 SKILL.md）：\n{}\n]",
+                "[已激活技能（约束摘要每轮常驻；正文仅注入一次，需完整内容可用 read 读取对应技能 SKILL.md，正文已随启动加载进内存、读取不落盘）：\n{}\n]",
                 parts.join("\n")
             )
         }
