@@ -15,12 +15,16 @@
     <link rel="stylesheet" href="./css_js/cdn/editor.main.css" media="print" onload="this.media='all'" />
     <link rel="stylesheet" href="./css_js/cdn/swagger-editor.min.css" media="print" onload="this.media='all'" />
     <link rel="stylesheet" href="./css_js/cdn/github-markdown-light.min.css" media="print" onload="this.media='all'" />
+    <!-- Markdown 业务样式（P0-7 抽取：Obsidian 语法/选区工具条/实时预览/.markdown-body） -->
+    <link rel="stylesheet" href="./css_js/modules/markdown.css" />
     <link rel="stylesheet" href="./css_js/cdn/mono-font.css" />
     <link rel="stylesheet" href="./css_js/cdn/tippy.css" media="print" onload="this.media='all'" />
     <link rel="stylesheet" href="./css_js/cdn/jsmind.css" media="print" onload="this.media='all'" />
     <link rel="stylesheet" href="./css_js/cdn/katex.min.css" media="print" onload="this.media='all'" />
     <!-- 核心 JS 库（同步加载，体积小） -->
     <script src="./css_js/cdn/marked.min.js"></script>
+    <!-- Markdown 业务模块（P0-7 抽取：markedMd/parseWiki；必须先于主脚本加载，供主脚本与各模块全局调用） -->
+    <script src="./css_js/modules/markdown.js"></script>
     <script src="./css_js/cdn/katex.min.js"></script>
     <script src="./css_js/cdn/auto-render.min.js"></script>
     <script src="./css_js/cdn/purify.min.js"></script>
@@ -2208,296 +2212,6 @@
             }
         }
 
-        .ob-highlight {
-            background-color: #fffaaf;
-            padding: 0 4px;
-            border-radius: 3px;
-        }
-
-        .markdown-selection-toolbar {
-            position: fixed;
-            display: none;
-            align-items: center;
-            gap: 2px;
-            padding: 4px;
-            background: var(--color-bg);
-            border-radius: 6px;
-            animation: popIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
-            transform-origin: bottom center;
-            user-select: none;
-            white-space: nowrap;
-            opacity: 0;
-            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
-            transition: all 0.2s ease;
-            z-index: 1000;
-            width: auto;
-            font-family: var(--font-family);
-            font-weight: 500;
-            font-size: 0.8125rem;
-        }
-
-        @keyframes popIn {
-            from {
-                opacity: 0;
-                transform: translateY(8px) scale(0.92);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0) scale(1);
-            }
-        }
-
-        .markdown-selection-toolbar.visible {
-            display: flex;
-            opacity: 1;
-        }
-
-        .markdown-selection-btn {
-            border: none;
-            background: transparent;
-            cursor: pointer;
-            border-radius: 0.375rem;
-            color: var(--color-text);
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .markdown-selection-btn:hover {
-            background: #f3f4f6;
-            color: var(--color-primary);
-        }
-
-        .markdown-selection-btn:active {
-            transform: scale(0.96);
-        }
-
-        .selection-color-picker {
-            position: absolute;
-            top: calc(100% + 6px);
-            left: 0;
-            background: var(--color-bg);
-            border: 1px solid #e5e7eb;
-            border-radius: 6px;
-            padding: 6px;
-            gap: 8px;
-            display: none;
-            z-index: 1000;
-            min-width: 180px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            transition: all 0.2s ease;
-        }
-
-        .selection-color-picker.visible {
-            display: inline-flex;
-        }
-
-        .color-options {
-            display: block;
-            align-items: center;
-            gap: 0.25rem;
-        }
-
-        .color-options-text {
-            display: block;
-            align-items: center;
-            gap: 0.125rem;
-        }
-
-        .color-option-text {
-            width: 15px;
-            height: 15px;
-            font-size: 15px;
-            background-color: transparent;
-            border: none;
-            cursor: pointer;
-            padding: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .color-option-text:hover {
-            transform: scale(1.15);
-            font-weight: bold;
-        }
-
-        .color-option-text.active {
-            transform: scale(1.4);
-            font-weight: bold;
-        }
-
-        .color-option-bg {
-            width: 15px;
-            height: 15px;
-            border: none;
-            border-radius: 3px;
-            cursor: pointer;
-            transition: transform 0.15s ease, margin 0.15s ease;
-            padding: 0;
-            position: relative;
-            background-clip: padding-box;
-            align-items: center;
-            justify-content: center;
-            box-sizing: border-box;
-        }
-
-        .color-option-bg:hover {
-            transform: scale(1.15);
-            margin: 0 1.125px;
-        }
-
-        .color-option-bg.active {
-            transform: scale(1.3);
-            margin: 0 2.25px;
-        }
-
-        .color-option-search {
-            width: auto;
-            height: 0.9375rem;
-            padding: 0.125rem 0.125rem;
-            border-radius: 0.375rem;
-            background-color: transparent;
-            color: var(--color-text);
-            border: none;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .color-option-search:hover {
-            color: var(--color-primary);
-        }
-
-        .ob-internal-link {
-            color: var(--color-primary);
-            text-decoration: none;
-            border-bottom: 1px dotted var(--color-primary);
-        }
-
-        .ob-embedded-note {
-            border: 1px solid #eee;
-            border-radius: 4px;
-            padding: 16px;
-            margin: 8px 0;
-            background: #fafafa;
-        }
-
-        .ob-callout {
-            border-left: 4px solid #888;
-            background-color: #f5f5f5;
-            padding: 8px 12px;
-            margin: 8px 0;
-        }
-
-        .ob-callout-title {
-            font-weight: 600;
-        }
-
-        .ob-callout-content> :last-child {
-            margin-bottom: 0;
-        }
-
-        .ob-callout-content> :first-child {
-            margin-top: 4px;
-        }
-
-        .ob-callout-note,
-        .ob-callout-info {
-            border-left-color: #448aff;
-        }
-
-        .ob-callout-tip {
-            border-left-color: #00bcd4;
-        }
-
-        .ob-callout-warning {
-            border-left-color: #ff9800;
-        }
-
-        .ob-callout-danger,
-        .ob-callout-error {
-            border-left-color: #f44336;
-        }
-
-        .ob-callout-success {
-            border-left-color: #4caf50;
-        }
-
-        .ob-callout-question {
-            border-left-color: #9c27b0;
-        }
-
-        .ob-callout-abstract {
-            border-left-color: #00bcd4;
-        }
-
-        .ob-callout-quote {
-            border-left-color: #666666;
-        }
-
-        .ob-callout-note .ob-callout-title,
-        .ob-callout-info .ob-callout-title {
-            color: #448aff;
-        }
-
-        .ob-callout-tip .ob-callout-title {
-            color: #00bcd4;
-        }
-
-        .ob-callout-warning .ob-callout-title {
-            color: #ff9800;
-        }
-
-        .ob-callout-danger .ob-callout-title,
-        .ob-callout-error .ob-callout-title {
-            color: #f44336;
-        }
-
-        .ob-callout-success .ob-callout-title {
-            color: #4caf50;
-        }
-
-        .ob-callout-question .ob-callout-title {
-            color: #9c27b0;
-        }
-
-        .ob-tag {
-            display: inline-block;
-            background-color: #e1f5fe;
-            border: 1px solid #b3e5fc;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 14px;
-            color: #2196f3;
-            margin-right: 4px;
-            margin-bottom: 4px;
-            transition: all 0.2s ease;
-        }
-
-        .ob-block-ref {
-            text-decoration: none;
-            color: inherit;
-        }
-
-        .ob-footnote {
-            font-size: 0.9em;
-            color: var(--t2);
-            margin: 4px 0;
-            padding-left: 8px;
-            border-top: 1px solid #eee;
-        }
-
-        .ob-footnote-ref {
-            font-size: 0.8em;
-        }
-
-        .ob-math-block {
-            text-align: center;
-            margin: 12px 0;
-        }
 
         .kanban-container {
             display: flex;
@@ -7391,53 +7105,6 @@
             border-top-color: #2563eb;
         }
 
-        /* 实时预览模式样式 */
-        .content-live-preview {
-            display: none;
-            flex: 1;
-            overflow-y: auto;
-            background: var(--color-bg);
-            padding: 0;
-        }
-
-        .content-live-preview::-webkit-scrollbar {
-            display: none;
-        }
-
-        .live-preview-container {
-            display: flex;
-            flex-direction: row;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-        }
-
-        .live-preview-editor {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            background: #1e1e1e;
-            min-width: 50%;
-            border-right: 1px solid var(--color-border);
-        }
-
-        .live-preview-editor>div:first-child {
-            width: 100%;
-            height: calc(100% - 28px);
-        }
-
-        .live-preview-render {
-            flex: 1;
-            overflow-y: auto;
-            padding: 1rem;
-            background: var(--color-bg-secondary);
-            min-width: 50%;
-        }
-
-        .live-preview-render .markdown-body {
-            max-width: 100%;
-            cursor: text;
-        }
 
         /* ===== 正则表达式专业工作台样式 ===== */
         #regex-test-container {
@@ -11462,68 +11129,6 @@
             height: 0.75rem;
         }
 
-        .markdown-body {
-            color-scheme: light;
-            -ms-text-size-adjust: 100%;
-            -webkit-text-size-adjust: 100%;
-            font-weight: 400;
-            color: var(--color-text);
-            background-color: var(--color-bg-secondary);
-            font-family: var(--font-family);
-            font-size: 14px;
-            line-height: 1.5;
-            word-wrap: break-word;
-            overflow-y: auto;
-            -ms-overflow-style: none;
-            padding: 10px;
-            cursor: text;
-        }
-
-        .markdown-body::-webkit-scrollbar {
-            display: none;
-        }
-
-        .markdown-body h1 {
-            margin: .67em 0;
-            font-weight: 600;
-            padding-bottom: .3em;
-            font-size: 1.5em;
-            border-bottom: 1px solid #d1d9e0b3
-        }
-
-        .markdown-body h2 {
-            font-weight: 600;
-            padding-bottom: .3em;
-            font-size: 1.4em;
-            border-bottom: 1px solid #d1d9e0b3
-        }
-
-        .markdown-body h3 {
-            font-weight: 600;
-            font-size: 1.2em
-        }
-
-        .markdown-body hr {
-            height: .15em;
-        }
-
-        .markdown-body pre code.hljs {
-            padding: 0 !important;
-            font-size: 12 !important;
-            font-family: var(--font-mono) !important;
-        }
-
-        .markdown-body .highlight pre,
-        .markdown-body pre {
-            padding: 1rem;
-            overflow: auto;
-            font-size: 12px;
-            font-family: var(--font-mono);
-            line-height: 1.45;
-            color: #abb2bf;
-            background: #282c34;
-            border-radius: 6px
-        }
 
         .jsmind-container {
             width: 100%;
@@ -15026,6 +14631,9 @@
                     <div class="ai-result-header">
                         <div class="ai-result-title" id="ai-result-title">处理结果</div>
                         <div class="ai-result-btns">
+                            <button class="btn btn-ss ai-result-btn" id="ai-result-insert"
+                                onclick="insertAIResultToDoc()" title="P1-5：将结果作为原生内容插入当前文档（光标处或末尾）">插入到文档
+                            </button>
                             <button class="btn btn-ss ai-result-btn" id="ai-result-save"
                                 onclick="saveAIResultModal()">保存
                             </button>
@@ -16556,6 +16164,9 @@
         </div>
     </div>
     <script>
+        // P0-5：启动性能埋点（主脚本开始时刻，initAll 完成后输出总耗时）
+        const MDGO_SCRIPT_START_TS = performance.now();
+        const MDGO_BOOT_MS_KEY = 'mdgo_last_boot_ms';
         window.mdgo = window.mdgo || {};
         window.mdgo.core = window.mdgo.core || {};
 
@@ -17684,6 +17295,8 @@
                     });
                     require(['vs/editor/editor.main'], () => {
                         initFormatProviders();
+                        // P0-1 智能输入（/ @ [[ #）：suggest.js 定义，Monaco 就绪后注册
+                        if (typeof initMarkdownSuggest === 'function') initMarkdownSuggest();
                         resolve();
                     });
                 });
@@ -17706,7 +17319,13 @@
         document.addEventListener('DOMContentLoaded', async () => {
             initDiffModel();
             compileAllRules();
+            const t0 = performance.now();
             await initAll();
+            // P0-5：启动耗时埋点（脚本开始 → initAll 完成；目录树耗时另有 TREE_LOAD_TIME_KEY）
+            const totalMs = Math.round(performance.now() - MDGO_SCRIPT_START_TS);
+            const initMs = Math.round(performance.now() - t0);
+            console.info(`[mdgo-perf] 总启动 ${totalMs}ms（主脚本→initAll 完成），initAll ${initMs}ms`);
+            try { safeLocalStorageSet(MDGO_BOOT_MS_KEY, String(totalMs)); } catch (e) { }
             await updateTimeAll();
             await updateTimeHeader();
         });
@@ -18100,10 +17719,21 @@
             aiFabContainer.style.display = 'none';
             let initialContent = previewFileText || text || originalContent;
             contentEdit.innerHTML = createEditorContainer('📝 编辑模式 - ' + currentFileName);
+            // P0-4：导出按钮组（复制MD/HTML/PDF），export.js 定义
+            if (typeof initExportFooter === 'function') initExportFooter();
+            // P2-4：反向链接按钮（semantic.js 定义）
+            if (typeof initSemanticButtons === 'function') initSemanticButtons();
+            // P2-5：智能整理按钮（organize.js 定义）
+            if (typeof initOrganizeButton === 'function') initOrganizeButton();
+            // P2-7：幻灯片放映按钮（slides.js 定义）
+            if (typeof initSlidesButton === 'function') initSlidesButton();
             const editorInner = document.getElementById('editor-inner');
+            // P2-1：块编辑容器（Notion 式，TipTap），block.js 定义（自行创建 monaco-host 双容器）
+            if (typeof initBlockToggle === 'function') initBlockToggle(editorInner);
+            const editorHost = editorInner;
             const isKanban = isObsidianKanban(initialContent);
             initMonacoEditor().then(() => {
-                currentEditor = createMonacoEditor(editorInner, {
+                currentEditor = createMonacoEditor(editorHost, {
                     value: initialContent,
                     language: getMonacoLanguage(currentFileName)
                 });
@@ -18154,6 +17784,13 @@
             const editorInner = document.getElementById('editor-inner-live');
             const previewContent = document.getElementById('live-preview-content');
             await updateLivePreviewContent(initialContent, previewContent);
+            // P0-4：导出按钮组（复制MD/HTML/PDF），export.js 定义
+            if (typeof initExportFooter === 'function') initExportFooter();
+            // 修复：live preview 与 edit 模式 footer 初始化对齐——实时预览也有 Monaco 编辑器，
+            // 补齐 反链/整理/放映 按钮（块切换不适配分屏，不注入）
+            if (typeof initSemanticButtons === 'function') initSemanticButtons();
+            if (typeof initOrganizeButton === 'function') initOrganizeButton();
+            if (typeof initSlidesButton === 'function') initSlidesButton();
             initMonacoEditor().then(() => {
                 currentEditor = createMonacoEditor(editorInner, {
                     value: initialContent,
@@ -18173,6 +17810,44 @@
                         await updateLivePreviewContent(content, previewContent);
                     }, 300);
                 });
+                // ===== P0-2：编辑器 ⇄ 预览 同步滚动 + 光标联动 =====
+                const previewScrollEl = document.getElementById('live-preview-render');
+                let _liveSyncFromEditor = false;
+                let _liveSyncFromPreview = false;
+                if (previewScrollEl) {
+                    currentEditor.onDidScrollChange(() => {
+                        if (_liveSyncFromPreview) return;
+                        _liveSyncFromEditor = true;
+                        const emax = currentEditor.getScrollHeight() - currentEditor.getLayoutInfo().height;
+                        const ratio = emax > 0 ? currentEditor.getScrollTop() / emax : 0;
+                        previewScrollEl.scrollTop = ratio * (previewScrollEl.scrollHeight - previewScrollEl.clientHeight);
+                        _liveSyncFromEditor = false;
+                    });
+                    previewScrollEl.addEventListener('scroll', () => {
+                        if (_liveSyncFromEditor) return;
+                        _liveSyncFromPreview = true;
+                        const pmax = previewScrollEl.scrollHeight - previewScrollEl.clientHeight;
+                        const ratio = pmax > 0 ? previewScrollEl.scrollTop / pmax : 0;
+                        const emax = currentEditor.getScrollHeight() - currentEditor.getLayoutInfo().height;
+                        currentEditor.setScrollTop(ratio * emax);
+                        _liveSyncFromPreview = false;
+                    }, { passive: true });
+                    // 光标联动：光标行 → 预览滚动到对应比例位置（防抖 60ms，避免高频抖动）
+                    currentEditor.onDidChangeCursorPosition(() => {
+                        if (_liveSyncFromPreview) return;
+                        const model = currentEditor.getModel();
+                        const line = currentEditor.getPosition() && currentEditor.getPosition().lineNumber;
+                        if (!model || !line) return;
+                        const total = model.getLineCount();
+                        if (total <= 0) return;
+                        const target = ((line - 1) / total) * (previewScrollEl.scrollHeight - previewScrollEl.clientHeight);
+                        if (Math.abs(target - previewScrollEl.scrollTop) > 40) {
+                            _liveSyncFromEditor = true;
+                            previewScrollEl.scrollTop = target;
+                            _liveSyncFromEditor = false;
+                        }
+                    });
+                }
                 updateStatus(currentEditor, editorInnerDiv, '', false);
                 currentEditor.focus();
             });
@@ -18495,6 +18170,10 @@
                     showNotification('✗ 保存失败: ' + (err && err.message ? err.message : err), 'error');
                 });
             });
+            // P0-3：专注模式（打字机 Ctrl+Shift+T / 聚焦段落 Ctrl+Shift+P），focus-mode.js 定义
+            if (typeof initFocusMode === 'function') initFocusMode(editor);
+            // P1-4：幽灵文本续写（Ctrl+J 触发 / Tab 接受 / Esc 拒绝），ghost.js 定义
+            if (typeof initGhostText === 'function') initGhostText(editor);
             return editor;
         }
 
@@ -24968,9 +24647,15 @@
             mdIsKanban = false;
             await renderOriginalMarkdown(text);
             setControlsState({ aiFab: true, mdImageBtn: true, mdMindmapBtn: true });
+            // P2-4：文档关联提示（后台语义检索，防抖 2s，不打断）
+            if (typeof maybeSuggestRelated === 'function') maybeSuggestRelated();
         }
 
         async function renderOriginalMarkdown(text) {
+            // P0-5：超大 Markdown 渲染保护提示（2MB+，图表/公式重渲染可能卡顿）
+            if (text && text.length > 2 * 1024 * 1024 && typeof showNotification === 'function') {
+                showNotification('⚠ 大文件（' + Math.round(text.length / 1024 / 1024 * 10) / 10 + 'MB）：图表/公式渲染可能较慢，建议使用源码模式编辑', 'warning', 4000);
+            }
             const htmlContent = await markedParse(parseObsidianToHTML(text));
             contentMain.innerHTML = `<article id="content-article" class="markdown-body">${htmlContent}</article>`;
             postProcessMarkdown(contentMain.querySelector('#content-article'));
@@ -26594,13 +26279,6 @@ kanban-plugin: basic
             }, 200);
         }
 
-        function parseWiki(html) {
-            return html.replace(/\[\[([^\|#\]]+)(?:\|([^\]]+))?\]\]([\r\n]*)/g, (match, link, alias, newlines) => {
-                const displayText = alias || link;
-                return `<a href="${link}" target="_blank" class="ob-internal-link">${displayText}</a>${newlines}`;
-            });
-        }
-
         function parseObsidianToHTML(text) {
             // 先移除代码块内容，避免在代码块内错误处理
             const codeBlocks = [];
@@ -27445,15 +27123,86 @@ kanban-plugin: basic
 
         async function postProcessMarkdown(dom = document) {
             const runPostProcessing = () => {
+                // 修复(S2)：AI 块必须先于代码后处理执行——postProcessCodeAndDiagrams 会把
+                // ```ai-block 的 language-ai-block 类剥成 language-plaintext，导致
+                // bindAiBlocks 匹配不到（前 5 个 pre 内必现）；先渲染卡片后代码后处理不再触碰
+                if (typeof bindAiBlocks === 'function') bindAiBlocks(dom);
                 postProcessCodeAndDiagrams(dom);
                 bindImagePreview(dom);
                 dealWithTippy(dom);
+                // P0-2：双链点击跳转 + 标题锚点（主内容预览与实时预览共用）
+                bindInternalLinks(dom);
+                bindHeadingAnchors(dom);
+                // P2-2：表格 → 数据库视图按钮（db-view.js 定义）
+                if (typeof bindDbViews === 'function') bindDbViews(dom);
             };
             if (typeof requestIdleCallback === 'function') {
                 requestIdleCallback(runPostProcessing, { timeout: 200 });
             } else {
                 setTimeout(runPostProcessing, 0);
             }
+        }
+
+        /**
+         * P0-2：Obsidian 双链（.ob-internal-link）点击跳转 —— 在知识库中解析目标笔记并打开。
+         * 外部链接（http/mailto/#/javascript:）不拦截；绑定幂等（data-mdgo-bound）。
+         */
+        function bindInternalLinks(dom) {
+            if (!dom) return;
+            dom.querySelectorAll('a.ob-internal-link').forEach(a => {
+                if (a.dataset.mdgoBound) return;
+                a.dataset.mdgoBound = '1';
+                a.addEventListener('click', (e) => {
+                    const href = (a.getAttribute('href') || '').trim();
+                    if (!href || /^(https?:|mailto:|#|javascript:)/i.test(href)) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openFileByWikiLink(href);
+                });
+            });
+        }
+
+        /** 按 wiki 链接文本在知识库中解析并打开目标笔记（支持 '架构' / '架构.md' / 'docs/架构'） */
+        async function openFileByWikiLink(target) {
+            if (!target) return;
+            const norm = normalizePath(target.replace(/\.md$/i, '')).toLowerCase();
+            const list = Array.isArray(_scanFileList) ? _scanFileList : [];
+            // 1) 精确 path 匹配（带扩展名）
+            let hit = list.find(f => f.path && normalizePath(f.path).toLowerCase() === normalizePath(target).toLowerCase());
+            // 2) 文件名（去扩展名）匹配
+            if (!hit) {
+                hit = list.find(f => f.name && f.name.replace(/\.md$/i, '').toLowerCase() === norm);
+            }
+            // 3) path 去扩展名匹配
+            if (!hit) {
+                hit = list.find(f => f.path && normalizePath(f.path).replace(/\.md$/i, '').toLowerCase() === norm);
+            }
+            if (hit) {
+                await openFileFromPath(hit.path);
+            } else {
+                showNotification('未找到双链目标: ' + target, 'warning');
+            }
+        }
+
+        /** P0-2：为渲染后的标题生成锚点 id（中文保留 slug），供目录/滚动定位 */
+        function bindHeadingAnchors(dom) {
+            if (!dom) return;
+            const seen = {};
+            dom.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach(h => {
+                if (h.id) return;
+                const base = slugifyHeading(h.textContent || 'section');
+                let id = base, n = 2;
+                while (seen[id]) id = base + '-' + (n++);
+                seen[id] = true;
+                h.id = id;
+            });
+        }
+
+        function slugifyHeading(text) {
+            return String(text).trim()
+                .replace(/[\s]+/g, '-')
+                .replace(/[^\w\u4e00-\u9fa5\-_]/g, '')
+                .slice(0, 60) || 'section';
         }
 
         /**
@@ -28581,16 +28330,6 @@ kanban-plugin: basic
                 return await replaceMediaUrl(markedMd(str), true);
             } else {
                 return markedMd(str);
-            }
-        }
-
-        function markedMd(str) {
-            if (!str) return '';
-            try {
-                return marked.parse(str);
-            } catch (error) {
-                console.error('Markdown 解析错误:', error);
-                return str;
             }
         }
 
@@ -32983,6 +32722,37 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             showNotification('✓ 结果已复制到剪贴板', 'success');
         }
 
+        /**
+         * P1-5：AI 生成内容原生化插入 —— 将弹窗结果插入当前文档
+         * （有编辑器选区 → 插入光标处；否则追加到文档末尾），入 undo 栈可撤销。
+         */
+        async function insertAIResultToDoc() {
+            const text = (aiResultContext || '').trim();
+            if (!text) { showNotification('无可插入的内容', 'warning'); return; }
+            const doc = window.MdgoDocument;
+            if (!doc || !doc.editable) {
+                showNotification('请先在编辑模式下打开文档', 'warning');
+                return;
+            }
+            const insertText = text.endsWith('\n') ? text : text + '\n';
+            let ok = false;
+            if (doc.getSelection()) {
+                const sel = doc.getSelection();
+                // 替换选区并补换行（原生化：结果可继续编辑）
+                ok = doc.replace(sel.range, insertText);
+            } else {
+                const pos = window.currentEditor.getPosition();
+                ok = doc.insertAt(pos, (pos && pos.column > 1 ? '\n' : '') + insertText);
+            }
+            if (ok) {
+                showNotification('✓ 已插入到文档（Ctrl+Z 可撤销）', 'success');
+                closeAIResultModal();
+                window.currentEditor.focus();
+            } else {
+                showNotification('插入失败', 'error');
+            }
+        }
+
         async function saveAIResultModal() {
             const titleElement = document.getElementById('ai-result-title');
             const defaultFileName = titleElement.dataset.fileName;
@@ -36358,8 +36128,12 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             } else if (selectedType === 'ai') {
                 commentContainer.innerHTML = '';
                 displaySelectionToolbar([commentContainer]);
-                AI_SELECTION_ACTIONS.forEach(item => {
-                    if (!!item.display) {
+                // P1-3：合并内联 AI 动作（ai-inline.js）——就地应用，可撤销。
+                // 修复：渲染条件原为 `!!item.display || !item.display === undefined`（恒等于
+                // !!item.display，内联动作无 display 字段永不渲染）；改为 item.display !== false
+                const inlineActions = (window.MdgoInlineAI && window.MdgoInlineAI.ACTIONS) || [];
+                [...AI_SELECTION_ACTIONS, ...inlineActions].forEach(item => {
+                    if (item.display !== false) {
                         const btn = document.createElement('button');
                         btn.type = 'button';
                         btn.className = 'color-option-search';
@@ -36706,6 +36480,10 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 displayAiPanel(markdownSelectionState.text);
             } else if (id === 'custom') {
                 await showCustomPromptPopup();
+            } else if (window.MdgoInlineAI && window.MdgoInlineAI.getAction(id)) {
+                // P1-3：内联 AI 动作——就地应用（编辑器内替换/插入，可撤销）
+                await window.MdgoInlineAI.run(id, key);
+                return;
             } else {
                 let item = AI_SELECTION_ACTIONS.find(i => i.id === id);
                 if (!item && customPrompt) {
@@ -51800,6 +51578,18 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
     </script>
     <script src="./css_js/modules/canvas.js"></script>
     <script src="./css_js/modules/chat-history.js"></script>
+    <script src="./css_js/modules/editor/suggest.js"></script>
+    <script src="./css_js/modules/editor/focus-mode.js"></script>
+    <script src="./css_js/modules/editor/export.js"></script>
+    <script src="./css_js/modules/editor/core.js"></script>
+    <script src="./css_js/modules/editor/ai-inline.js"></script>
+    <script src="./css_js/modules/editor/ghost.js"></script>
+    <script src="./css_js/modules/editor/ai-blocks.js"></script>
+    <script src="./css_js/modules/editor/semantic.js"></script>
+    <script src="./css_js/modules/editor/organize.js"></script>
+    <script src="./css_js/modules/editor/db-view.js"></script>
+    <script src="./css_js/modules/editor/slides.js"></script>
+    <script src="./css_js/modules/editor/block.js"></script>
     <script src="./css_js/modules/skill.js"></script>
     <script src="./css_js/modules/mcp.js"></script>
     <script src="./css_js/modules/agent.js"></script>

@@ -237,11 +237,9 @@ pub fn write_file(path: String, content: String) -> Result<(), String> {
     }
     let p = Path::new(&path);
     if let Some(parent) = p.parent() {
-        // 对父目录执行 canonicalize 防止符号链接绕过
-        let _ = canonicalize_safe(&parent.to_string_lossy()).map_err(|e| {
-            format!("父目录路径不安全 ({}): {}", parent.display(), e)
-        })?;
+        // 修复：先 create_dir_all 再 canonicalize（原实现 canonicalize 前置使 create_dir_all 成死代码）
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        let _ = canonicalize_safe(&parent.to_string_lossy());
     }
     fs::write(p, &content).map_err(|e| format!("写入文件失败 ({}): {}", path, e))
 }
@@ -254,13 +252,43 @@ pub fn write_file_binary(path: String, content: Vec<u8>) -> Result<(), String> {
     }
     let p = Path::new(&path);
     if let Some(parent) = p.parent() {
-        // 对父目录执行 canonicalize 防止符号链接绕过
-        let _ = canonicalize_safe(&parent.to_string_lossy()).map_err(|e| {
-            format!("父目录路径不安全 ({}): {}", parent.display(), e)
-        })?;
+        // 修复：先 create_dir_all 再 canonicalize（原实现 canonicalize 前置使 create_dir_all 成死代码）
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        let _ = canonicalize_safe(&parent.to_string_lossy());
     }
     fs::write(p, &content).map_err(|e| format!("写入文件失败 ({}): {}", path, e))
+}
+
+/// 原子写入文件内容（文本，P0-6）：同目录临时文件 + rename 原子替换。
+/// 消除"整文件覆盖写中途崩溃丢文件"风险（编辑器高频保存专用；
+/// 临时文件与目标同目录保证同一文件系统，rename 原子性成立）。
+#[tauri::command]
+pub fn write_file_atomic(path: String, content: String) -> Result<(), String> {
+    if !is_path_safe(Path::new(&path)) {
+        return Err("路径不安全".into());
+    }
+    let p = Path::new(&path);
+    if let Some(parent) = p.parent() {
+        // 修复：先 create_dir_all 再 canonicalize——原实现先 canonicalize 校验，
+        // 父目录不存在时直接 Err 提前返回，create_dir_all 成为死代码
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        let _ = canonicalize_safe(&parent.to_string_lossy());
+    }
+    // 同目录临时文件：.{文件名}.{pid}.tmp（pid 防并发写冲突，写完即 rename）
+    let file_name = p
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "mdgo_tmp".into());
+    let tmp = p.with_file_name(format!(".{}.{}.tmp", file_name, std::process::id()));
+    if let Err(e) = fs::write(&tmp, &content) {
+        let _ = fs::remove_file(&tmp);
+        return Err(format!("写入临时文件失败 ({}): {}", path, e));
+    }
+    if let Err(e) = fs::rename(&tmp, p) {
+        let _ = fs::remove_file(&tmp);
+        return Err(format!("原子替换失败 ({}): {}", path, e));
+    }
+    Ok(())
 }
 
 /// 删除文件或目录（同时清理知识库索引：LanceDB 向量 + BM25 倒排索引）

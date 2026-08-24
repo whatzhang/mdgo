@@ -1,0 +1,982 @@
+/**
+ * ===== Markdown 业务样式（css_js/modules/markdown.css） =====
+ *
+ * 【职责】从 main.html 内联 <style> 抽取的 Markdown 渲染/编辑样式（P0-7 分期落地）：
+ *   1. Obsidian 语法样式（.ob-*：双链/嵌入/callout/标签/块引用/脚注/数学块）
+ *   2. 选区工具条样式（.markdown-selection-toolbar / .selection-color-picker 等，
+ *      聊天选区工具条复用同一 class）
+ *   3. 实时预览样式（.content-live-preview / .live-preview-*）
+ *   4. Markdown 正文样式（.markdown-body 及其标题/代码块子规则）
+ * 【加载】<head> 中 github-markdown-light.min.css 之后引入。
+ * 【迁移状态】v1：样式与 main.html 内联副本逐字一致（双份加载，行为不变）；
+ *             下一轮验证视觉一致后删除 main.html 内联副本。
+ */
+.ob-highlight {
+    background-color: #fffaaf;
+    padding: 0 4px;
+    border-radius: 3px;
+}
+
+.markdown-selection-toolbar {
+    position: fixed;
+    display: none;
+    align-items: center;
+    gap: 2px;
+    padding: 4px;
+    background: var(--color-bg);
+    border-radius: 6px;
+    animation: popIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+    transform-origin: bottom center;
+    user-select: none;
+    white-space: nowrap;
+    opacity: 0;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
+    transition: all 0.2s ease;
+    z-index: 1000;
+    width: auto;
+    font-family: var(--font-family);
+    font-weight: 500;
+    font-size: 0.8125rem;
+}
+
+@keyframes popIn {
+    from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.92);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.markdown-selection-toolbar.visible {
+    display: flex;
+    opacity: 1;
+}
+
+.markdown-selection-btn {
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    border-radius: 0.375rem;
+    color: var(--color-text);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.markdown-selection-btn:hover {
+    background: #f3f4f6;
+    color: var(--color-primary);
+}
+
+.markdown-selection-btn:active {
+    transform: scale(0.96);
+}
+
+.selection-color-picker {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    background: var(--color-bg);
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 6px;
+    gap: 8px;
+    display: none;
+    z-index: 1000;
+    min-width: 180px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    transition: all 0.2s ease;
+}
+
+.selection-color-picker.visible {
+    display: inline-flex;
+}
+
+.color-options {
+    display: block;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.color-options-text {
+    display: block;
+    align-items: center;
+    gap: 0.125rem;
+}
+
+.color-option-text {
+    width: 15px;
+    height: 15px;
+    font-size: 15px;
+    background-color: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.color-option-text:hover {
+    transform: scale(1.15);
+    font-weight: bold;
+}
+
+.color-option-text.active {
+    transform: scale(1.4);
+    font-weight: bold;
+}
+
+.color-option-bg {
+    width: 15px;
+    height: 15px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: transform 0.15s ease, margin 0.15s ease;
+    padding: 0;
+    position: relative;
+    background-clip: padding-box;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+}
+
+.color-option-bg:hover {
+    transform: scale(1.15);
+    margin: 0 1.125px;
+}
+
+.color-option-bg.active {
+    transform: scale(1.3);
+    margin: 0 2.25px;
+}
+
+.color-option-search {
+    width: auto;
+    height: 0.9375rem;
+    padding: 0.125rem 0.125rem;
+    border-radius: 0.375rem;
+    background-color: transparent;
+    color: var(--color-text);
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.color-option-search:hover {
+    color: var(--color-primary);
+}
+
+.ob-internal-link {
+    color: var(--color-primary);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--color-primary);
+}
+
+.ob-embedded-note {
+    border: 1px solid #eee;
+    border-radius: 4px;
+    padding: 16px;
+    margin: 8px 0;
+    background: #fafafa;
+}
+
+.ob-callout {
+    border-left: 4px solid #888;
+    background-color: #f5f5f5;
+    padding: 8px 12px;
+    margin: 8px 0;
+}
+
+.ob-callout-title {
+    font-weight: 600;
+}
+
+.ob-callout-content> :last-child {
+    margin-bottom: 0;
+}
+
+.ob-callout-content> :first-child {
+    margin-top: 4px;
+}
+
+.ob-callout-note,
+.ob-callout-info {
+    border-left-color: #448aff;
+}
+
+.ob-callout-tip {
+    border-left-color: #00bcd4;
+}
+
+.ob-callout-warning {
+    border-left-color: #ff9800;
+}
+
+.ob-callout-danger,
+.ob-callout-error {
+    border-left-color: #f44336;
+}
+
+.ob-callout-success {
+    border-left-color: #4caf50;
+}
+
+.ob-callout-question {
+    border-left-color: #9c27b0;
+}
+
+.ob-callout-abstract {
+    border-left-color: #00bcd4;
+}
+
+.ob-callout-quote {
+    border-left-color: #666666;
+}
+
+.ob-callout-note .ob-callout-title,
+.ob-callout-info .ob-callout-title {
+    color: #448aff;
+}
+
+.ob-callout-tip .ob-callout-title {
+    color: #00bcd4;
+}
+
+.ob-callout-warning .ob-callout-title {
+    color: #ff9800;
+}
+
+.ob-callout-danger .ob-callout-title,
+.ob-callout-error .ob-callout-title {
+    color: #f44336;
+}
+
+.ob-callout-success .ob-callout-title {
+    color: #4caf50;
+}
+
+.ob-callout-question .ob-callout-title {
+    color: #9c27b0;
+}
+
+.ob-tag {
+    display: inline-block;
+    background-color: #e1f5fe;
+    border: 1px solid #b3e5fc;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 14px;
+    color: #2196f3;
+    margin-right: 4px;
+    margin-bottom: 4px;
+    transition: all 0.2s ease;
+}
+
+.ob-block-ref {
+    text-decoration: none;
+    color: inherit;
+}
+
+.ob-footnote {
+    font-size: 0.9em;
+    color: var(--t2);
+    margin: 4px 0;
+    padding-left: 8px;
+    border-top: 1px solid #eee;
+}
+
+.ob-footnote-ref {
+    font-size: 0.8em;
+}
+
+.ob-math-block {
+    text-align: center;
+    margin: 12px 0;
+}
+
+/* 实时预览模式样式 */
+.content-live-preview {
+    display: none;
+    flex: 1;
+    overflow-y: auto;
+    background: var(--color-bg);
+    padding: 0;
+}
+
+.content-live-preview::-webkit-scrollbar {
+    display: none;
+}
+
+.live-preview-container {
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+.live-preview-editor {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #1e1e1e;
+    min-width: 50%;
+    border-right: 1px solid var(--color-border);
+}
+
+.live-preview-editor>div:first-child {
+    width: 100%;
+    height: calc(100% - 28px);
+}
+
+.live-preview-render {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem;
+    background: var(--color-bg-secondary);
+    min-width: 50%;
+}
+
+.live-preview-render .markdown-body {
+    max-width: 100%;
+    cursor: text;
+}
+
+.markdown-body {
+    color-scheme: light;
+    -ms-text-size-adjust: 100%;
+    -webkit-text-size-adjust: 100%;
+    font-weight: 400;
+    color: var(--color-text);
+    background-color: var(--color-bg-secondary);
+    font-family: var(--font-family);
+    font-size: 14px;
+    line-height: 1.5;
+    word-wrap: break-word;
+    overflow-y: auto;
+    -ms-overflow-style: none;
+    padding: 10px;
+    cursor: text;
+}
+
+.markdown-body::-webkit-scrollbar {
+    display: none;
+}
+
+.markdown-body h1 {
+    margin: .67em 0;
+    font-weight: 600;
+    padding-bottom: .3em;
+    font-size: 1.5em;
+    border-bottom: 1px solid #d1d9e0b3
+}
+
+.markdown-body h2 {
+    font-weight: 600;
+    padding-bottom: .3em;
+    font-size: 1.4em;
+    border-bottom: 1px solid #d1d9e0b3
+}
+
+.markdown-body h3 {
+    font-weight: 600;
+    font-size: 1.2em
+}
+
+.markdown-body hr {
+    height: .15em;
+}
+
+.markdown-body pre code.hljs {
+    padding: 0 !important;
+    font-size: 12 !important;
+    font-family: var(--font-mono) !important;
+}
+
+.markdown-body .highlight pre,
+.markdown-body pre {
+    padding: 1rem;
+    overflow: auto;
+    font-size: 12px;
+    font-family: var(--font-mono);
+    line-height: 1.45;
+    color: #abb2bf;
+    background: #282c34;
+    border-radius: 6px
+}
+
+/* ===== 专注模式（P0-3）：打字机 + 聚焦段落 =====
+   Monaco line decoration 的 className 作用在行元素上：
+   - .mdgo-focus-line：当前段落行轻微高亮
+   - .mdgo-focus-dim：段落外行淡出（opacity 作用于整行文本） */
+.mdgo-focus-line {
+    background: rgba(255, 255, 255, 0.07) !important;
+}
+
+.mdgo-focus-dim {
+    opacity: 0.42;
+    background: rgba(0, 0, 0, 0.15) !important;
+}
+
+/* ===== 导出（P0-4）：打印 PDF 样式 =====
+   仅显示 #mdgo-print-root（export.js 渲染的 Markdown 内容），隐藏其余 UI */
+@media print {
+    body > *:not(#mdgo-print-root) {
+        display: none !important;
+    }
+
+    #mdgo-print-root {
+        display: block !important;
+    }
+
+    #mdgo-print-root .markdown-body {
+        padding: 0;
+        max-width: none;
+        overflow: visible;
+        background: #fff;
+    }
+
+    #mdgo-print-root pre,
+    #mdgo-print-root blockquote {
+        page-break-inside: avoid;
+    }
+
+    #mdgo-print-root h1,
+    #mdgo-print-root h2,
+    #mdgo-print-root h3 {
+        page-break-after: avoid;
+    }
+}
+
+/* 编辑器 footer 导出按钮组（P0-4） */
+.mdgo-export-btn {
+    border: 1px solid var(--color-border, #444);
+    background: transparent;
+    color: var(--color-text, #ccc);
+    font-size: 11px;
+    line-height: 1;
+    padding: 3px 7px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.mdgo-export-btn:hover {
+    background: rgba(22, 91, 250, 0.15);
+    border-color: var(--color-primary, #165bfa);
+    color: var(--color-primary, #165bfa);
+}
+
+.mdgo-export-btn:disabled {
+    opacity: 0.5;
+    cursor: wait;
+}
+
+/* ===== 块编辑（P2-1，TipTap） ===== */
+.mdgo-block-editor {
+    height: 100%;
+    overflow-y: auto;
+    padding: 16px 24px;
+    font-family: var(--font-family);
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--color-text, #d4d4d4);
+    background: var(--color-bg-secondary, #1e1e1e);
+    outline: none;
+}
+
+.mdgo-block-editor > * {
+    margin: 0.35em 0;
+}
+
+.mdgo-block-editor h1 { font-size: 1.8em; margin: 0.5em 0; }
+.mdgo-block-editor h2 { font-size: 1.5em; margin: 0.5em 0; }
+.mdgo-block-editor h3 { font-size: 1.3em; margin: 0.5em 0; }
+.mdgo-block-editor h4 { font-size: 1.15em; margin: 0.5em 0; }
+.mdgo-block-editor h5 { font-size: 1em; margin: 0.5em 0; }
+
+.mdgo-block-editor ul,
+.mdgo-block-editor ol {
+    padding-left: 1.5em;
+}
+
+.mdgo-block-editor li {
+    margin: 0.15em 0;
+}
+
+.mdgo-block-editor ul[data-type="taskList"] {
+    list-style: none;
+    padding-left: 0.25em;
+}
+
+.mdgo-block-editor ul[data-type="taskList"] li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5em;
+}
+
+.mdgo-block-editor ul[data-type="taskList"] li > label {
+    margin-top: 0.2em;
+    flex-shrink: 0;
+}
+
+.mdgo-block-editor blockquote {
+    border-left: 3px solid var(--color-primary, #165bfa);
+    padding-left: 12px;
+    margin: 0.5em 0;
+    color: var(--color-text-secondary, #aaa);
+}
+
+.mdgo-block-editor pre {
+    background: #282c34;
+    border-radius: 6px;
+    padding: 12px;
+    overflow: auto;
+    font-family: var(--font-mono);
+    font-size: 12px;
+}
+
+.mdgo-block-editor code {
+    font-family: var(--font-mono);
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+    padding: 0 4px;
+}
+
+.mdgo-block-editor pre code {
+    background: transparent;
+    padding: 0;
+}
+
+.mdgo-block-editor table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.5em 0;
+}
+
+.mdgo-block-editor th,
+.mdgo-block-editor td {
+    border: 1px solid var(--color-border, #555);
+    padding: 4px 10px;
+    min-width: 48px;
+}
+
+.mdgo-block-editor th {
+    background: rgba(255, 255, 255, 0.06);
+    font-weight: 600;
+}
+
+.mdgo-block-editor img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
+}
+
+.mdgo-block-editor hr {
+    border: none;
+    border-top: 1px solid var(--color-border, #555);
+    margin: 1em 0;
+}
+
+.mdgo-block-editor .selectedCell::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(22, 91, 250, 0.15);
+    pointer-events: none;
+}
+
+/* TipTap DragHandle（块拖拽手柄） */
+.mdgo-block-editor .drag-handle {
+    position: absolute;
+    left: -22px;
+    top: 0;
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-tertiary, #888);
+    cursor: grab;
+    opacity: 0;
+    transition: opacity 0.15s;
+    border-radius: 3px;
+    background: transparent;
+    border: none;
+    font-size: 12px;
+}
+
+.mdgo-block-editor .drag-handle:hover {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.mdgo-block-editor .ProseMirror > *:hover > .drag-handle,
+.mdgo-block-editor .drag-handle[data-drag-handle-active] {
+    opacity: 1;
+}
+
+/* ===== AI 块（P2-3） ===== */
+.mdgo-ai-block {
+    border: 1px solid var(--color-border, #444);
+    border-left: 3px solid var(--color-primary, #165bfa);
+    border-radius: 8px;
+    margin: 10px 0;
+    background: var(--color-bg-subtle, rgba(255, 255, 255, 0.04));
+    overflow: hidden;
+}
+
+.mdgo-ai-block-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--color-border, #333);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text-secondary, #aaa);
+}
+
+.mdgo-ai-block-refresh {
+    border: none;
+    background: transparent;
+    color: var(--color-primary, #165bfa);
+    cursor: pointer;
+    font-size: 12px;
+    border-radius: 4px;
+    padding: 2px 8px;
+}
+
+.mdgo-ai-block-refresh:hover {
+    background: rgba(22, 91, 250, 0.15);
+}
+
+.mdgo-ai-block-body {
+    padding: 10px 12px;
+    font-size: 13px;
+    line-height: 1.6;
+    min-height: 24px;
+}
+
+.mdgo-ai-block-body .mdgo-ai-block-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.mdgo-ai-block-todo {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.mdgo-ai-block-link {
+    cursor: pointer;
+    color: var(--color-primary, #4daafc);
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.mdgo-ai-block-link:hover {
+    background: rgba(22, 91, 250, 0.12);
+}
+
+.mdgo-ai-block-score {
+    color: var(--color-text-tertiary, #888);
+    font-size: 11px;
+}
+
+.mdgo-ai-block-tag {
+    display: inline-block;
+    background: rgba(22, 91, 250, 0.15);
+    color: var(--color-primary, #4daafc);
+    border-radius: 12px;
+    padding: 2px 10px;
+    margin: 2px 4px 2px 0;
+    font-size: 12px;
+}
+
+/* ===== 语义推荐（P2-4）：反链面板 ===== */
+.mdgo-semantic-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    z-index: 2000;
+}
+
+.mdgo-semantic-panel {
+    width: 320px;
+    max-height: 70vh;
+    background: var(--color-bg, #1f1f1f);
+    border: 1px solid var(--color-border, #444);
+    border-radius: 10px 0 0 10px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: -4px 0 16px rgba(0, 0, 0, 0.35);
+}
+
+.mdgo-semantic-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--color-border, #333);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.mdgo-semantic-close {
+    border: none;
+    background: transparent;
+    color: var(--color-text-secondary, #aaa);
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.mdgo-semantic-body {
+    overflow-y: auto;
+    padding: 8px;
+}
+
+.mdgo-semantic-empty {
+    color: var(--color-text-tertiary, #888);
+    font-size: 12px;
+    padding: 12px;
+    text-align: center;
+}
+
+.mdgo-semantic-item {
+    padding: 8px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.mdgo-semantic-item:hover {
+    background: rgba(22, 91, 250, 0.12);
+}
+
+/* ===== 智能整理（P2-5）：footer 下拉菜单 ===== */
+/* 修复：菜单 absolute 定位需要 positioned 祖先（.editor-footer 原非 positioned，
+   菜单锚定视口且被 footer overflow:hidden 裁剪） */
+.editor-footer {
+    position: relative;
+}
+
+.mdgo-organize-menu {
+    position: absolute;
+    bottom: 34px;
+    right: 8px;
+    background: var(--color-bg, #1f1f1f);
+    border: 1px solid var(--color-border, #444);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    padding: 4px;
+    min-width: 180px;
+    z-index: 1500;
+}
+
+.mdgo-organize-item {
+    padding: 7px 12px;
+    font-size: 12px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.mdgo-organize-item:hover {
+    background: rgba(22, 91, 250, 0.12);
+}
+
+/* ===== 幻灯片（P2-7） ===== */
+.mdgo-slides-overlay {
+    position: fixed;
+    inset: 0;
+    background: #111;
+    z-index: 3000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.mdgo-slides-page {
+    width: min(1100px, 92vw);
+    max-height: 84vh;
+    overflow: auto;
+    color: #eee;
+    background: transparent;
+    font-size: 1.15em;
+    padding: 24px;
+}
+
+.mdgo-slides-nav {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 24px;
+    padding: 6px 14px;
+}
+
+.mdgo-slides-count {
+    color: #aaa;
+    font-size: 13px;
+    margin-right: 6px;
+}
+
+.mdgo-slides-nav button {
+    border: none;
+    background: rgba(255, 255, 255, 0.12);
+    color: #eee;
+    border-radius: 16px;
+    padding: 4px 12px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.mdgo-slides-nav button:hover:not(:disabled) {
+    background: var(--color-primary, #165bfa);
+}
+
+.mdgo-slides-nav button:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+@media print {
+    body > *:not(.mdgo-slides-overlay) {
+        display: none !important;
+    }
+
+    .mdgo-slides-overlay {
+        position: static;
+        background: #fff;
+        display: block;
+    }
+
+    .mdgo-slides-page {
+        page-break-after: always;
+        color: #000;
+        max-height: none;
+        overflow: visible;
+    }
+
+    .mdgo-slides-nav {
+        display: none !important;
+    }
+}
+
+/* ===== 表格转数据库视图（P2-2） ===== */
+.mdgo-db-wrap {
+    position: relative;
+    margin: 8px 0;
+}
+
+.mdgo-db-btn {
+    position: absolute;
+    right: 8px;
+    top: -12px;
+    border: 1px solid var(--color-border, #444);
+    background: var(--color-bg, #1f1f1f);
+    color: var(--color-primary, #4daafc);
+    font-size: 11px;
+    border-radius: 10px;
+    padding: 2px 10px;
+    cursor: pointer;
+    z-index: 5;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.mdgo-db-btn:hover {
+    background: rgba(22, 91, 250, 0.15);
+}
+
+.mdgo-db-panel {
+    width: min(720px, 92vw);
+    border-radius: 10px;
+}
+
+.mdgo-db-body {
+    padding: 10px;
+    overflow: auto;
+}
+
+.mdgo-db-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.mdgo-db-filter {
+    flex: 1;
+    background: var(--color-bg-secondary, #1e1e1e);
+    color: var(--color-text, #ddd);
+    border: 1px solid var(--color-border, #444);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 12px;
+}
+
+.mdgo-db-count {
+    color: var(--color-text-tertiary, #888);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.mdgo-db-table-wrap {
+    max-height: 50vh;
+    overflow: auto;
+}
+
+.mdgo-db-table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 12px;
+}
+
+.mdgo-db-table th,
+.mdgo-db-table td {
+    border: 1px solid var(--color-border, #444);
+    padding: 5px 10px;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.mdgo-db-table th {
+    background: rgba(255, 255, 255, 0.06);
+    cursor: pointer;
+    user-select: none;
+    position: sticky;
+    top: 0;
+}
+
+.mdgo-db-table th:hover {
+    background: rgba(22, 91, 250, 0.15);
+}
+
+.mdgo-db-table th.sorted {
+    color: var(--color-primary, #4daafc);
+}
+
+.mdgo-db-empty {
+    text-align: center;
+    color: var(--color-text-tertiary, #888);
+    padding: 16px;
+}

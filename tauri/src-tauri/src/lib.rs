@@ -555,6 +555,7 @@ pub fn run() {
             commands::fs::read_file_binary,
             commands::fs::write_file,
             commands::fs::write_file_binary,
+            commands::fs::write_file_atomic,
             commands::fs::delete,
             commands::fs::move_dir_to_trash,
             commands::fs::restore_dir_from_trash,

@@ -231,7 +231,8 @@
                 this._mergeBuffer();
             }
             if (this._buffer === null) {
-                await invoke('write_file', { path: this._path, content: '' });
+                // 修复：空内容写也统一走原子写（与文本分支一致，避免双语义）
+                await invoke('write_file_atomic', { path: this._path, content: '' });
                 return;
             }
             if (this._isBinary) {
@@ -240,7 +241,8 @@
                     content: Array.from(this._buffer),
                 });
             } else {
-                await invoke('write_file', { path: this._path, content: this._buffer });
+                // P0-6：文本保存走原子写（同目录 tmp + rename），防止中途崩溃丢文件
+                await invoke('write_file_atomic', { path: this._path, content: this._buffer });
             }
         }
 
