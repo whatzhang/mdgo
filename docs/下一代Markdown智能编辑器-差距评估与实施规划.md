@@ -466,17 +466,10 @@ Monaco 保留为"源码模式"（代码文件、JSON、大文件场景），三�
 >   main.html 3 内联块语法全过。
 | P2-5 | 智能整理命令 | 自动目录/大纲生成（`/` 菜单或右键菜单「生成目录」，非 /ai 自然语言）；自动标签（frontmatter tags 建议）；重复笔记检测（向量近邻 + 文件名相似 → 合并引导）；日记→周报/月报（日程 + 日记检索聚合）；过期任务/临时笔记归档（`expires_at` 语义 + 待办扫描）；全部封装为 Skill 或 `editor:*` 命令 | 各整理命令一次点击/一条命令产出可审阅结果 |
 
-> **P2-5 实施状态（目标推进记录）**：
-> - ✅ **v1（完成）**：`css_js/modules/editor/organize.js` + footer「整理」下拉菜单（6 项）：
->   ① **生成目录**：解析标题层级（跳过 frontmatter/代码块）→ 目录 Markdown 插入 frontmatter
->   之后（可撤销）；② **标签建议**：frontmatter tags + 行内 #tag + 高频词（2-4 字中文/4+
->   英文，停用词过滤）→ 弹窗点选写入/更新 frontmatter tags（无 frontmatter 自动创建）；
->   ③ **重复笔记检测**：basename 去扩展名分组 + Levenshtein ≤2 相似 → 弹窗（点击打开）；
->   ④ **周报/月报**：聚合本周/本月日期命名日记（`YYYY-MM-DD.md`）→ `read_file` 读取 →
->   AI 生成结构化报告 → 弹窗复制；⑤ **归档已完成**：扫描 `- [x]` → "✅ 已完成归档"区块
->   追加文档末尾（未完成保留）。main.html footer 按钮（:17727）+ 模块加载（:51581）。
-> - ✅ 验证：generateToc（H1/H2 提取）PASS、archiveDone（2 完成/1 未完成）PASS、相似 stem
->   检测 PASS；语法全过（dupScan 面板渲染依赖真实 DOM，留运行时）。
+> **P2-5 实施状态：❌ 已删除（用户要求删除整理按钮及全部相关逻辑）**。
+> `css_js/modules/editor/organize.js` 已删除；main.html 移除两处 `initOrganizeButton`
+> 调用与模块加载；`markdown.css` 移除 `.mdgo-organize-menu/.mdgo-organize-item` 与
+> `.editor-footer` 定位样式。
 
 | P2-6 | 拼写/语法检查 | 轻量本地（`nspell`/`typo-js` 中文分词+词典）或可配置远程 LanguageTool API；错误波浪线 + 悬浮建议；只读检查不自动改文 | 中英文检查出波浪线，建议可接受 |
 

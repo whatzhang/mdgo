@@ -17723,8 +17723,6 @@
             if (typeof initExportFooter === 'function') initExportFooter();
             // P2-4：反向链接按钮（semantic.js 定义）
             if (typeof initSemanticButtons === 'function') initSemanticButtons();
-            // P2-5：智能整理按钮（organize.js 定义）
-            if (typeof initOrganizeButton === 'function') initOrganizeButton();
             // P2-7：幻灯片放映按钮（slides.js 定义）
             if (typeof initSlidesButton === 'function') initSlidesButton();
             const editorInner = document.getElementById('editor-inner');
@@ -17787,9 +17785,8 @@
             // P0-4：导出按钮组（复制MD/HTML/PDF），export.js 定义
             if (typeof initExportFooter === 'function') initExportFooter();
             // 修复：live preview 与 edit 模式 footer 初始化对齐——实时预览也有 Monaco 编辑器，
-            // 补齐 反链/整理/放映 按钮（块切换不适配分屏，不注入）
+            // 补齐 反链/放映 按钮（块切换不适配分屏，不注入）
             if (typeof initSemanticButtons === 'function') initSemanticButtons();
-            if (typeof initOrganizeButton === 'function') initOrganizeButton();
             if (typeof initSlidesButton === 'function') initSlidesButton();
             initMonacoEditor().then(() => {
                 currentEditor = createMonacoEditor(editorInner, {
@@ -51586,7 +51583,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
     <script src="./css_js/modules/editor/ghost.js"></script>
     <script src="./css_js/modules/editor/ai-blocks.js"></script>
     <script src="./css_js/modules/editor/semantic.js"></script>
-    <script src="./css_js/modules/editor/organize.js"></script>
     <script src="./css_js/modules/editor/db-view.js"></script>
     <script src="./css_js/modules/editor/slides.js"></script>
     <script src="./css_js/modules/editor/block.js"></script>

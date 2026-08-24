@@ -768,37 +768,6 @@
     background: rgba(22, 91, 250, 0.12);
 }
 
-/* ===== 智能整理（P2-5）：footer 下拉菜单 ===== */
-/* 修复：菜单 absolute 定位需要 positioned 祖先（.editor-footer 原非 positioned，
-   菜单锚定视口且被 footer overflow:hidden 裁剪） */
-.editor-footer {
-    position: relative;
-}
-
-.mdgo-organize-menu {
-    position: absolute;
-    bottom: 34px;
-    right: 8px;
-    background: var(--color-bg, #1f1f1f);
-    border: 1px solid var(--color-border, #444);
-    border-radius: 8px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
-    padding: 4px;
-    min-width: 180px;
-    z-index: 1500;
-}
-
-.mdgo-organize-item {
-    padding: 7px 12px;
-    font-size: 12px;
-    border-radius: 6px;
-    cursor: pointer;
-}
-
-.mdgo-organize-item:hover {
-    background: rgba(22, 91, 250, 0.12);
-}
-
 /* ===== 幻灯片（P2-7） ===== */
 .mdgo-slides-overlay {
     position: fixed;
