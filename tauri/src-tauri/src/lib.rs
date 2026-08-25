@@ -153,6 +153,8 @@ pub struct AppState {
     pub memory_store: Arc<crate::core::memory::MemoryStore>,
     /// 记忆向量索引（O1：内存惰性增量，embedding 本地 BGE 模型）
     pub memory_vectors: Arc<crate::core::memory::vector::MemoryVectorIndex>,
+    /// AI 用量统计缓存（内存，30s TTL，dashboard 热力图数据源）
+    pub ai_stats_cache: Arc<crate::commands::stats::AiStatsCache>,
     /// Prompt 模板存储（按知识库目录惰性创建，`{dir}/.mdgo/mdgo.db`）
     pub prompt_stores:
         std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<crate::services::prompt::PromptStore>>>,
@@ -513,6 +515,7 @@ pub fn run() {
                     Arc::new(crate::core::memory::vector::LocalEmbedder),
                 )),
                 prompt_stores: std::sync::Mutex::new(std::collections::HashMap::new()),
+                ai_stats_cache: Arc::new(crate::commands::stats::AiStatsCache::default()),
                 mcp: Arc::new(crate::core::mcp::McpRegistry::new()),
                 schedule_stores: crate::commands::schedule::empty_store_cache(),
                 schedule_day_info: crate::commands::schedule::build_day_info_provider(),
@@ -684,6 +687,7 @@ pub fn run() {
             commands::schedule::schedule_next_available,
             commands::schedule::schedule_set_active_dir,
             commands::schedule::schedule_clear_active_dir,
+            commands::stats::stats_ai_usage,
         ]);
 
     // Windows/Linux：拦截主窗口关闭请求，点击右上角关闭按钮 → 隐藏到系统托盘。

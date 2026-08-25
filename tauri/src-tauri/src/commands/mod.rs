@@ -18,4 +18,5 @@ pub mod prompt;
 pub mod question;
 pub mod schedule;
 pub mod skill;
+pub mod stats;
 pub mod system;

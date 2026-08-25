@@ -4467,7 +4467,7 @@
             cursor: pointer;
             font-size: 13px;
             font-family: var(--font-family);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
             transition: all 0.2s ease;
             display: inline-flex;
             align-items: center;
@@ -4476,7 +4476,7 @@
 
         .tool-button:hover {
             color: var(--color-primary);
-            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
             transform: scale(1.04);
         }
 
@@ -5189,15 +5189,29 @@
             left: 0;
             right: 0;
             z-index: 120;
-            max-height: 20rem;
+            max-height: 21rem;
             min-width: 12rem;
-            max-width: 15rem;
+            max-width: 20rem;
             overflow-y: auto;
             background: var(--color-bg, #fff);
             border-radius: 0.5rem;
             box-shadow: 0 0.25rem 0.5rem rgba(0, 0, 0, 0.12);
-            padding: 0.5rem;
             overflow-x: hidden;
+            box-sizing: border-box;
+            padding: 0.5rem;
+        }
+        .chat-toolbar-popup::-webkit-scrollbar {
+            display: none;
+        }
+
+        .chat-toolbar-popup-warp{
+            display: block;
+            overflow-y: auto;
+            max-height: 20rem;
+        }
+
+        .chat-toolbar-popup-warp::-webkit-scrollbar {
+            display: none;
         }
 
         .chat-toolbar-popup.long {
@@ -6597,10 +6611,10 @@
         }
 
         .heatmap-container {
-            display: inline-flex;
+            display: flex;
             flex-wrap: wrap;
             gap: 0.75rem;
-            justify-content: space-between;
+            justify-content: center;
             align-items: center;
             box-sizing: border-box;
         }
@@ -6610,8 +6624,7 @@
         }
 
         .heatmap-right {
-            flex: 1 1 0;
-            min-width: 1000px;
+            flex: 0 0 auto;
         }
 
         .file-sum-heatmap {
@@ -12217,7 +12230,7 @@
             align-items: center;
             padding: 0 5px;
             transition: 0.2s;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
             transition: all 0.2s ease;
             width: 160px;
             height: 30px;
@@ -13312,6 +13325,7 @@
         }
 
         .prompt-popup-row:hover {
+            border-radius: 0.375rem;
             background: rgba(22, 91, 250, 0.06);
         }
 
@@ -13714,6 +13728,47 @@
                 </div>
                 <canvas id="graph-canvas" class="graph-canvas"></canvas>
             </div>
+            <div id="behavior-analysis-container" class="dashboard-container" style="display: none;padding: 10px;">
+                <div class="charts-grid">
+                    <div class="chart-card">
+                        <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                                style="vertical-align:-2px;margin-right:4px;">
+                                <polyline points="21 8 21 21 3 21 3 8" />
+                                <rect x="1" y="3" width="22" height="5" />
+                                <line x1="10" y1="12" x2="14" y2="12" />
+                            </svg>文档浏览近 7 天趋势</div>
+                        <div id="habit-weekly-chart" class="chart-container chart-container--bar"
+                            style="height:200px;margin-top: 0.5rem;">
+                        </div>
+                    </div>
+                    <div class="chart-card">
+                        <div class="activity-column">
+                            <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                    stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                                    stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
+                                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                                </svg>使用时段活跃度</div>
+                            <div id="habit-heatmap-chart" class="chart-container"
+                                style="height:200px;margin-top: 0.5rem;"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="heatmap-section">
+                    <div class="activity-column">
+                        <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                                style="vertical-align:-2px;margin-right:4px;">
+                                <line x1="18" y1="20" x2="18" y2="10" />
+                                <line x1="12" y1="20" x2="12" y2="4" />
+                                <line x1="6" y1="20" x2="6" y2="14" />
+                            </svg>文档浏览时长 Top 20</div>
+                        <div id="habit-top20-chart" class="chart-container chart-container--bar"
+                            style="height:200px;margin-top: 0.5rem;">
+                        </div>
+                    </div>
+                </div>
+            </div>
             <div id="dir-space-container" class="dashboard-container" style="display: none;padding: 10px;">
                 <div class="charts-grid">
                     <div class="chart-card">
@@ -13933,6 +13988,11 @@
                             title="暂停贪吃蛇动画"><svg viewBox="0 0 24 24" fill="currentColor" id="snake-pause-icon">
                                 <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
                             </svg></button>
+                        <button class="btn btn-secondary btn-snake" id="timeShowToggleBtn"
+                            onclick="toggleTimeShowGame()" title="暂停时钟热力图动画"><svg viewBox="0 0 24 24"
+                                fill="currentColor" id="timeShow-pause-icon">
+                                <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+                            </svg></button>
                     </div>
                     <div class="heatmap-container">
                         <div class="heatmap-left">
@@ -13957,9 +14017,8 @@
                             <div class="monitor-body">
                                 <div class="monitor-item">
                                     <div class="monitor-label"><svg viewBox="0 0 24 24" width="14" height="14"
-                                            fill="none" stroke="currentColor" stroke-width="1.8"
-                                            stroke-linecap="round" stroke-linejoin="round"
-                                            style="vertical-align:-2px;margin-right:4px;">
+                                            fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                                            stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
                                             <rect x="3" y="3" width="7" height="18" rx="1" />
                                             <rect x="14" y="3" width="7" height="7" rx="1" />
                                             <rect x="14" y="14" width="7" height="7" rx="1" />
@@ -13969,9 +14028,8 @@
                                 </div>
                                 <div class="monitor-item">
                                     <div class="monitor-label"><svg viewBox="0 0 24 24" width="14" height="14"
-                                            fill="none" stroke="currentColor" stroke-width="1.8"
-                                            stroke-linecap="round" stroke-linejoin="round"
-                                            style="vertical-align:-2px;margin-right:4px;">
+                                            fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                                            stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
                                             <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
                                             <line x1="3" y1="9" x2="21" y2="9" />
                                             <line x1="9" y1="21" x2="9" y2="9" />
@@ -13982,9 +14040,9 @@
                                 <div class="monitor-item">
                                     <div class="monitor-label" style="margin-top:4px;">
                                         <div class="monitor-icon">
-                                            <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'
-                                                fill='none' stroke='#0077ff' stroke-width='1.8'
-                                                stroke-linecap='round' stroke-linejoin='round'>
+                                            <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'
+                                                stroke='#0077ff' stroke-width='1.8' stroke-linecap='round'
+                                                stroke-linejoin='round'>
                                                 <path
                                                     d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z' />
                                                 <line x1='16' y1='13' x2='8' y2='13' />
@@ -14002,9 +14060,9 @@
                                     </div>
                                     <div class="monitor-label" style="margin-top:4px;">
                                         <div class="monitor-icon">
-                                            <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'
-                                                fill='none' stroke='purple' stroke-width='1.8'
-                                                stroke-linecap='round' stroke-linejoin='round'>
+                                            <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'
+                                                stroke='purple' stroke-width='1.8' stroke-linecap='round'
+                                                stroke-linejoin='round'>
                                                 <path
                                                     d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z' />
                                                 <polyline points='10 13 8 15 10 17' />
@@ -14021,9 +14079,9 @@
                                     </div>
                                     <div class="monitor-label" style="margin-top:4px;">
                                         <div class="monitor-icon">
-                                            <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'
-                                                fill='none' stroke='orange' stroke-width='1.8'
-                                                stroke-linecap='round' stroke-linejoin='round'>
+                                            <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'
+                                                stroke='orange' stroke-width='1.8' stroke-linecap='round'
+                                                stroke-linejoin='round'>
                                                 <path
                                                     d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z' />
                                                 <rect x='8' y='11' width='8' height='6' rx='1' />
@@ -14044,9 +14102,14 @@
                         </div>
                         <div class="monitor-panel" id="monitor-panel" style="display: none">
                             <div class="monitor-header">
-                                <span style="display: inline-flex;align-items: center;justify-content: center;gap: 4px;font-size: 1rem;font-weight: 600;color: var(--color-text);"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                               <path d="M2 5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-7v2h3a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2h3v-2H4a2 2 0 0 1-2-2V5zm18 11V5H4v11h16z" fill="#0D0D0D"/>
-                            </svg>系统监控</span>
+                                <span
+                                    style="display: inline-flex;align-items: center;justify-content: center;gap: 4px;font-size: 1rem;font-weight: 600;color: var(--color-text);"><svg
+                                        viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                        xmlns="http://www.w3.org/2000/svg">
+                                        <path
+                                            d="M2 5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-7v2h3a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2h3v-2H4a2 2 0 0 1-2-2V5zm18 11V5H4v11h16z"
+                                            fill="#0D0D0D" />
+                                    </svg>系统监控</span>
                                 <span>
                                     <span class="monitor-uptime" id="pcIp">加载中...</span>
                                     <span class="monitor-uptime">｜</span>
@@ -14147,8 +14210,8 @@
                                                     <span class="net-row-label">用&nbsp;</span>
                                                     <span id="gpuMemUsed" class="net-row-value-upload">—</span>
                                                     <span class="monitor-uptime">｜</span>
-                                                    <span class="net-row-label">总&nbsp;</span><span
-                                                        id="gpuMemTotal" class="net-row-value-download">—</span>
+                                                    <span class="net-row-label">总&nbsp;</span><span id="gpuMemTotal"
+                                                        class="net-row-value-download">—</span>
                                                     <span class="net-row-label">&nbsp;&nbsp;GPU</span>
                                                 </span>
                                             </div>
@@ -14205,47 +14268,6 @@
                                         d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" />
                                 </svg>最近活跃</div>
                             <div id="viewRankList" class="viewRankList"></div>
-                        </div>
-                    </div>
-                </div>
-                <div class="activity-section-three">
-                    <div class="chart-card">
-                        <div class="activity-column">
-                            <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
-                                    stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-                                    stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
-                                    <polyline points="21 8 21 21 3 21 3 8" />
-                                    <rect x="1" y="3" width="22" height="5" />
-                                    <line x1="10" y1="12" x2="14" y2="12" />
-                                </svg>近 7 天趋势</div>
-                            <div id="habit-weekly-chart" class="chart-container chart-container--bar"
-                                style="height:200px;margin-top: 0.5rem;">
-                            </div>
-                        </div>
-                    </div>
-                    <div class="chart-card">
-                        <div class="activity-column">
-                            <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
-                                    stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-                                    stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
-                                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                                </svg>时段活跃度</div>
-                            <div id="habit-heatmap-chart" class="chart-container"
-                                style="height:200px;margin-top: 0.5rem;"></div>
-                        </div>
-                    </div>
-                    <div class="chart-card">
-                        <div class="activity-column">
-                            <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
-                                    stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-                                    stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
-                                    <line x1="18" y1="20" x2="18" y2="10" />
-                                    <line x1="12" y1="20" x2="12" y2="4" />
-                                    <line x1="6" y1="20" x2="6" y2="14" />
-                                </svg>浏览时长 Top 10</div>
-                            <div id="habit-top10-chart" class="chart-container chart-container--bar"
-                                style="height:200px;margin-top: 0.5rem;">
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -15804,7 +15826,8 @@
                                 <option value="full">全量重新索引</option>
                                 <option value="incremental">增量索引</option>
                             </select>
-                            <button class="btn btn-primary btn-sm" onclick="refreshKnowledgeStatus()">刷新</button>
+                            <button id="kb-index-refresh" class="btn btn-primary btn-sm"
+                                onclick="refreshKnowledgeStatus()">刷新</button>
                         </div>
                     </div>
 
@@ -16526,35 +16549,39 @@
             FORMAT: { key: '格式化', color: '#f22431ff' },
         };
         let DASHBOARD_BUTTON = [
-            { key: '行为记录分析', value: 'analyzeFileOs()', display: false, fileProtocolDisplay: false, tauriDisplay: false },
-            { key: 'GraphQLPlayground', value: 'toggleFile("graphQLPlayground")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: 'OpenResty', value: 'toggleFile("openRestyEditor")', display: true, fileProtocolDisplay: false, tauriDisplay: false },
-            { key: 'Swagger', value: 'toggleFile("swaggerDemo")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: '番茄钟', value: 'toggleFile("pomodoro")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: '正则表达式', value: 'toggleFile("regexTest")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: 'Cron', value: 'toggleFile("cron")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: '视频播放器', value: 'toggleFile("video")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: 'Raw查看', value: 'toggleFile("raw")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: 'url编解码', value: 'toggleFile("urlEncoder")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: '书签', value: 'toggleFile("bookmarks")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: '文件词云', value: 'toggleFile("wordCloud")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: '文件时间线', value: 'toggleFile("timeline")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: 'git记录', value: 'toggleFile("gitRecords")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: '文件图谱', value: 'toggleFile("fileGraph")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: '文档关联图谱', value: 'toggleFile("noteGraph")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: 'Mermaid', value: 'toggleFile("mermaid")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: 'Excalidraw白板', value: 'toggleFile("whiteboard")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: 'Canvas画布', value: 'toggleFile("canvas")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: '思维导图', value: 'toggleFile("mindMap")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: '大纲笔记', value: 'toggleFile("opmlOutline")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: '任务看板', value: 'toggleFile("kanban")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: '临时编辑器', value: 'toggleFile("tempEditor")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: '文件类型分布', value: 'toggleFile("fileType")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: '目录空间分析', value: 'toggleFile("dirSpace")', display: true, fileProtocolDisplay: true, tauriDisplay: true },
-            { key: '知识库面板', value: 'toggleFile("knowledge")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
-            { key: 'Agent', value: 'toggleFile("aiChat")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
-            { key: 'Skill', value: 'toggleFile("skill")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
-            { key: 'MCP', value: 'toggleFile("mcp")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
+            { key: 'GraphQL', value: 'toggleFile("graphQLPlayground")', display: true, type: 'A' },
+            { key: 'OpenResty', value: 'toggleFile("openRestyEditor")', display: false, type: 'A' },
+            { key: 'Swagger', value: 'toggleFile("swaggerDemo")', display: true, type: 'A' },
+            { key: '正则表达式', value: 'toggleFile("regexTest")', display: true, type: 'A' },
+            { key: 'Cron', value: 'toggleFile("cron")', display: true, type: 'A' },
+            { key: 'Raw查看', value: 'toggleFile("raw")', display: true, type: 'A' },
+            { key: 'url编解码', value: 'toggleFile("urlEncoder")', display: true, type: 'A' },
+
+            { key: '番茄钟', value: 'toggleFile("pomodoro")', display: true, type: 'B' },
+            { key: '临时编辑器', value: 'toggleFile("tempEditor")', display: true, type: 'B' },
+            { key: '视频播放器', value: 'toggleFile("video")', display: true, type: 'B' },
+            { key: '文件时间线', value: 'toggleFile("timeline")', display: true, type: 'B' },
+            { key: '文件图谱', value: 'toggleFile("fileGraph")', display: true, type: 'B' },
+            { key: '文件词云', value: 'toggleFile("wordCloud")', display: true, type: 'B' },
+            { key: '文档关联图谱', value: 'toggleFile("noteGraph")', display: true, type: 'B' },
+            { key: '文件类型分布', value: 'toggleFile("fileType")', display: true, type: 'B' },
+            { key: '行为记录大屏', value: 'toggleFile("behaviorAnalysis")', display: true, type: 'B' },
+            { key: '行为记录分析', value: 'analyzeFileOs()', display: false, type: 'B' },
+            { key: '目录空间分析', value: 'toggleFile("dirSpace")', display: true, type: 'B' },
+
+            { key: '书签', value: 'toggleFile("bookmarks")', display: true, type: 'C' },
+            { key: 'Mermaid图表', value: 'toggleFile("mermaid")', display: true, type: 'C' },
+            { key: '白板', value: 'toggleFile("whiteboard")', display: true, type: 'C' },
+            { key: '画布', value: 'toggleFile("canvas")', display: true, type: 'C' },
+            { key: '思维导图', value: 'toggleFile("mindMap")', display: true, type: 'C' },
+            { key: '大纲笔记', value: 'toggleFile("opmlOutline")', display: true, type: 'C' },
+            { key: '任务看板', value: 'toggleFile("kanban")', display: true, type: 'C' },
+            { key: 'git记录', value: 'toggleFile("gitRecords")', display: true, type: 'C' },
+
+            { key: '知识库大屏', value: 'toggleFile("knowledge")', display: true, type: 'D' },
+            { key: 'Agent', value: 'toggleFile("aiChat")', display: true, type: 'D' },
+            { key: 'Skill', value: 'toggleFile("skill")', display: true, type: 'D' },
+            { key: 'MCP', value: 'toggleFile("mcp")', display: true, type: 'D' },
         ]
         // 高亮字体颜色（深色系，确保可读性）
         const HIGHLIGHT_FONT_COLORS = [
@@ -17143,6 +17170,8 @@
         let _currentDirTotalBytes = 1;      // 当前目录总大小(bytes)，用于 diskNote 计算
         let _snakePaused = false;           // 贪吃蛇动画暂停状态
         let _snakeAutoPauseTimer = null;    // 贪吃蛇自动暂停定时器
+        let _timeShowPaused = false;
+        let _timeShowAutoPauseTimer = null;
         // 左侧文件树
         let _markersMap = null;             // markers 缓存（Map，首次 readMarkers 时加载）
         let _cachedLastFile = null;         // createFileItem 预缓存：最后一次打开的文件路径
@@ -17234,6 +17263,7 @@
         const contentCommonContainer = document.getElementById('content-common-container');
         const swaggerEditorContainer = document.getElementById('swagger-editor-container');
         const dirSpaceContainer = document.getElementById('dir-space-container');
+        const behaviorAnalysisContainer = document.getElementById('behavior-analysis-container');
         const dashboardContainer = document.getElementById('dashboard-container');
         const dashboardButtons = document.getElementById('tools-buttons-container');
         const graphqlPlaygroundContainer = document.getElementById('graphql-playground-container');
@@ -17272,7 +17302,7 @@
             graphqlPlaygroundContainer, regexTestContainer, calendarContainer,
             cronViewContainer, videoViewContainer, gitRecordsContainer,
             swaggerEditorContainer, dirSpaceContainer, chatContainer, knowledgeContainer,
-            mcpContainer,
+            mcpContainer, behaviorAnalysisContainer
         ];
 
         const AUX_CONTROLS = [
@@ -17505,6 +17535,8 @@
                 await openKanbanDemo(); openHistory.addItem('kanban');
             } else if (type === 'dirSpace') {
                 await openDirSpace(); openHistory.addItem('dirSpace');
+            } else if (type === 'behaviorAnalysis') {
+                await openBehaviorAnalysis(); openHistory.addItem('behaviorAnalysis');
             } else if (type === 'aiChat') {
                 await openAiChat(); openHistory.addItem('aiChat');
             } else if (type === 'knowledge') {
@@ -17806,14 +17838,14 @@
                 mdMindmapBtn: false,
                 mdImageBtn: false,
                 mdHtmlBtn: false,
-                mdPdfBtn: false, demoPPTBtn: false, 
+                mdPdfBtn: false, demoPPTBtn: false,
             });
             formatBtn.style.display = 'inline-flex';
         }
 
-        // ====== 空闲检测：5 分钟无操作判定为空闲 ======
+        // ====== 空闲检测：20 分钟无操作判定为空闲 ======
         let lastActivityTime = Date.now();
-        const IDLE_TIMEOUT = 5 * 60 * 1000; // 5分钟空闲阈值
+        const IDLE_TIMEOUT = 20 * 60 * 1000; // 20分钟空闲阈值
         // 空闲检测：记录用户最后活动时间
         function updateActivity() {
             lastActivityTime = Date.now();
@@ -18557,6 +18589,8 @@
             dashboardCharts = {};
             TimerManager.clear('snakeGame');
             if (_snakeAutoPauseTimer) { clearTimeout(_snakeAutoPauseTimer); _snakeAutoPauseTimer = null; }
+            if (_timeShowAutoPauseTimer) { clearTimeout(_timeShowAutoPauseTimer); _timeShowAutoPauseTimer = null; }
+            if (window._heatmapClockTimer) { clearInterval(window._heatmapClockTimer); window._heatmapClockTimer = null; }
             // 清理看板 Sortable 实例
             if (sortableInstances && sortableInstances.length > 0) {
                 sortableInstances.forEach(instance => {
@@ -19518,7 +19552,7 @@
                     plantumlSvgBtn: false,
                     mdImageBtn: false,
                     mdHtmlBtn: false,
-                    mdPdfBtn: false, 
+                    mdPdfBtn: false,
                     livePreviewBtn: false,
                     mdMindmapBtn: false,
                 });
@@ -26822,7 +26856,7 @@ kanban-plugin: basic
                 tocElement.style.flex = '';
                 if (typeof requestIdleCallback === 'function') {
                     requestIdleCallback(() => generateTOCLinks(markdownText, type, opmlData), { timeout: 1000 });
-                }else{
+                } else {
                     setTimeout(() => generateTOCLinks(markdownText, type, opmlData), 0);
                 }
             } else {
@@ -29889,7 +29923,6 @@ kanban-plugin: basic
             ]);
             // 延迟帧渲染习惯分析，绑定 resize 事件
             requestAnimationFrame(async () => {
-                renderHabitAnalysis();
                 if (!chartsResizeBound) {
                     window.addEventListener('resize', resizeDashboardCharts);
                     chartsResizeBound = true;
@@ -30742,7 +30775,7 @@ kanban-plugin: basic
                 });
             });
             // 确保所有图表尺寸与容器对齐
-            requestAnimationFrame(() => resizeDashboardCharts());
+            requestAnimationFrame(() => resizeDirSpaceCharts());
         }
         let _currentNetSearchQuery = SEARCH_BTNS[1].query; // 默认选中第二个搜索引擎（Google）
         let _currentNetSearchName = SEARCH_BTNS[1].name;
@@ -30765,7 +30798,7 @@ kanban-plugin: basic
             const hasKeyFlag = hasKey === true || hasKey === 'true';
             const url = `${query}${hasKeyFlag ? encodeURIComponent(key) : ''}`;
             openUrlInBrowser(url);
-        }
+        } 
         function initDashboard() {
             let html = `
                 <div class="net-search-box" id="tools-buttons-search">
@@ -30776,18 +30809,9 @@ kanban-plugin: basic
                         <div class="net-search-dropdown" id="net-search-dropdown"></div>
                     </div>
                 </div>`;
-            const fileProtocol = isLocalVisit();
-            const isTauri = isTauriVisit();
-            const httpLocal = !fileProtocol && !isTauri;
             DASHBOARD_BUTTON.forEach(b => {
                 if (b.display) {
-                    if (fileProtocol && b.fileProtocolDisplay) {
-                        html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
-                    } else if (isTauri && b.tauriDisplay) {
-                        html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
-                    } else if (httpLocal && b.fileProtocolDisplay) {
-                        html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
-                    }
+                    html += `<button class="tool-button" onclick='${b.value}'>${b.key}</button>`;
                 }
             });
             dashboardButtons.innerHTML = html;
@@ -30823,11 +30847,20 @@ kanban-plugin: basic
                 dirSpaceChartsBound = false;
             }
         }
+        async function openBehaviorAnalysis() {
+            await switchToView(behaviorAnalysisContainer);
+            renderHabitAnalysis();
+            if (!dirSpaceChartsBound) {
+                window.addEventListener('resize', resizeDirSpaceCharts);
+                dirSpaceChartsBound = true;
+            }
+            requestAnimationFrame(() => resizeDirSpaceCharts());
+        }
+
         async function openDirSpace() {
             await switchToView(dirSpaceContainer);
             const stats = await renderDashStats();
             await renderDashCharts(stats, _scanData);
-            // 绑定 DirSpace resize 事件
             if (!dirSpaceChartsBound) {
                 window.addEventListener('resize', resizeDirSpaceCharts);
                 dirSpaceChartsBound = true;
@@ -30859,13 +30892,7 @@ kanban-plugin: basic
             if (!(isTauriVisit() && navigator.userAgent.includes('Mac'))) {
                 const timeDisplay = dashboardContainer.querySelector('#dashboard-time');
                 if (timeDisplay) {
-                    todoUpdateModalTime(timeDisplay);
-                    TimerManager.set('dashboardTime', () => {
-                        // 空闲时不更新时间，减少 CPU 占用
-                        if (!isIdle()) {
-                            todoUpdateModalTime(timeDisplay);
-                        }
-                    }, 1000);
+                    todoUpdateDay(timeDisplay);
                 }
             }
             if (data) {
@@ -31397,10 +31424,10 @@ kanban-plugin: basic
             const sorted = [...records]
                 .filter(r => (r.durationMs || 0) > 0)
                 .sort((a, b) => (b.durationMs || 0) - (a.durationMs || 0))
-                .slice(0, 10);
+                .slice(0, 20);
 
-            const top10Chart = initChart('habit-top10-chart', 'habit-top10-chart');
-            top10Chart.setOption({
+            const top20Chart = initDirSpaceChart('habit-top20-chart', 'habit-top20-chart');
+            top20Chart.setOption({
                 tooltip: {
                     trigger: 'axis',
                     textStyle: { fontSize: 11 },
@@ -31410,11 +31437,19 @@ kanban-plugin: basic
                         return record.name + '<br/>总时长: ' + _fmtDuration(record.durationMs) + '<br/>打开次数: ' + (record.count || 0) + ' 次';
                     }
                 },
-                grid: { left: '3%', right: '15%', bottom: '3%', top: '3%', containLabel: true },
-                xAxis: { type: 'value', name: '分钟', axisLabel: { fontSize: '0.6875rem' } },
-                yAxis: {
+                grid: { left: '3%', right: '3%', bottom: '3%', top: '10%', containLabel: true }, // 建议增大 bottom 以容纳旋转后的类目轴文字
+                xAxis: {
                     type: 'category',
-                    data: sorted.map(r => r.name.length > 10 ? r.name.slice(0, 10) + '…' : r.name).reverse(),
+                    data: sorted.map(r => r.name.length > 10 ? r.name.slice(0, 10) + '…' : r.name),
+                    axisLabel: {
+                        fontSize: '0.6875rem',
+                        rotate: 45,  // 建议：类目较多时旋转45度防止文字重叠
+                        interval: 0  // 强制显示所有类目标签
+                    }
+                },
+                yAxis: {
+                    type: 'value',
+                    name: '分钟',
                     axisLabel: { fontSize: '0.6875rem' }
                 },
                 series: [{
@@ -31422,12 +31457,12 @@ kanban-plugin: basic
                     data: sorted.map(r => Math.round((r.durationMs || 0) / 60000 * 10) / 10).reverse(),
                     itemStyle: {
                         color: '#ED8A5D',
-                        borderRadius: [0, 4, 4, 0]
+                        borderRadius: [4, 4, 0, 0]
                     },
                     barMaxWidth: 24,
                     label: {
                         show: true,
-                        position: 'right',
+                        position: 'top',
                         formatter: function (p) {
                             const idx = sorted.length - 1 - p.dataIndex;
                             const record = sorted[idx];
@@ -31445,7 +31480,7 @@ kanban-plugin: basic
                 const h = new Date(r.viewTime).getHours();
                 if (!isNaN(h)) hourData[h] += 1;
             });
-            const heatmapChart = initChart('habit-heatmap-chart', 'habit-heatmap-chart');
+            const heatmapChart = initDirSpaceChart('habit-heatmap-chart', 'habit-heatmap-chart');
             heatmapChart.setOption({
                 tooltip: {
                     trigger: 'axis',
@@ -31503,7 +31538,7 @@ kanban-plugin: basic
                 const dayLabel = (i === 0 ? '今天' : (i === 1 ? '昨天' : '周' + dayNames[d.getDay()]));
                 weekData.push({ label: dayLabel, value: Math.round(dayDuration / 60000 * 10) / 10, ts: dayStart });
             }
-            const weeklyChart = initChart('habit-weekly-chart', 'habit-weekly-chart');
+            const weeklyChart = initDirSpaceChart('habit-weekly-chart', 'habit-weekly-chart');
             weeklyChart.setOption({
                 tooltip: {
                     trigger: 'axis',
@@ -31534,12 +31569,6 @@ kanban-plugin: basic
                     symbolSize: 6,
                     itemStyle: { color: '#2EA043' }
                 }]
-            });
-            // 下一帧确保尺寸正确（此时浏览器已完成布局）
-            requestAnimationFrame(() => {
-                top10Chart.resize();
-                heatmapChart.resize();
-                weeklyChart.resize();
             });
         }
 
@@ -45986,20 +46015,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 render();
             }
             //nginx 配置
-            const fileProtocol = isLocalVisit();
-            const isTauri = isTauriVisit();
-            const httpLocal = !fileProtocol && !isTauri;
             let nginxDisplay = false;
             const nginxRestyButton = DASHBOARD_BUTTON.find(b => b.key === 'OpenResty')
             if (nginxRestyButton) {
                 if (nginxRestyButton.display) {
-                    if (fileProtocol && nginxRestyButton.fileProtocolDisplay) {
-                        nginxDisplay = true;
-                    } else if (isTauri && nginxRestyButton.tauriDisplay) {
-                        nginxDisplay = true;
-                    } else if (httpLocal && nginxRestyButton.fileProtocolDisplay) {
-                        nginxDisplay = true;
-                    }
+                    nginxDisplay = true;
                 }
             }
             const rootDirPath = safeLocalStorageGet("ROOT_DIR") || currentRootPath;
@@ -46491,8 +46511,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             RANDOM_RULES = compileIgnorePatterns(RANDOM_DIR_BLACKLIST);
             HTML_RULES = compileIgnorePatterns(HTML_CODE_SHOW_BLACKLIST);
         }
-        async  function togglePPTMode() {
-            const fileText = currentEditor ? currentEditor.getValue() : originalContent ;
+        async function togglePPTMode() {
+            const fileText = currentEditor ? currentEditor.getValue() : originalContent;
             let initialContent = previewFileText || fileText || await getFileText();
             window.markdownSlides(initialContent);
         }
@@ -47232,7 +47252,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     active: { label: '立即生效', title: '立即生效：挂载即加载指令与工具，立即生效并占用对话上下文' },
                 };
                 const MODE_OFF = { label: '关闭', title: '关闭：此技能不会自动使用。点击整行挂载为"自动准备"' };
-                popup.innerHTML = enabledSkills.map(skill => {
+                let html = enabledSkills.map(skill => {
                     const attachedItem = attached.find(a => a.scope === skill.scope && a.id === skill.id);
                     const mode = attachedItem ? attachedItem.mode : null; // 'warm' | 'active' | null
                     const meta = mode ? (MODE_META[mode] || MODE_OFF) : MODE_OFF;
@@ -47275,6 +47295,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         </div>
                     `;
                 }).join('');
+                 popup.innerHTML = `<div class="chat-toolbar-popup-warp">${html}</div>`;
             } catch (e) {
                 console.warn('渲染技能选择器失败:', e);
                 picker.style.display = 'none';
@@ -47383,7 +47404,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             popup.innerHTML = MODEL_PROFILES.map(p => {
                 const vendor = llmGetVendorById(p.vendorId);
                 const isActive = p.id === activeId;
-                return `<div style="display:flex;align-items:center;gap:0.375rem;padding:0.375rem 0.5rem;border-radius:0.25rem;${isActive ? 'cursor:default;background:rgba(22,91,250,.12);' : 'cursor:pointer;'}" onclick="chatSelectModel(this);" data-id="${escapeHtml(p.id)}" title="${escapeHtml(p.baseURL || '')}">
+                return `<div style="display:flex;align-items:center;gap:0.375rem;padding:0.25rem 0.5rem;border-radius:0.25rem;${isActive ? 'cursor:default;background:rgba(22,91,250,.12);' : 'cursor:pointer;'}" onclick="chatSelectModel(this);" data-id="${escapeHtml(p.id)}" title="${escapeHtml(p.baseURL || '')}">
                     <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(p.model)}<span class="chat-model-vendor" style="opacity:.7;font-size:.65rem;margin-left:0.25rem;">${vendor ? escapeHtml(vendor.name) : ''}</span></span>
                     ${p.protocol === 'anthropic' ? '<span style="font-size:.6rem;padding:0 4px;border-radius:6px;background:rgba(217,119,6,.18);color:#d97706;">A</span>' : ''}
                     ${isActive ? '✓' : ''}
@@ -50587,62 +50608,55 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const progressWrap = document.getElementById('kb-progress-wrap');
             const progressBar = document.getElementById('kb-progress-bar');
             const progressText = document.getElementById('kb-progress-text');
-
-            if (!indexSel || !progressWrap || !progressBar || !progressText) {
-                console.error('[KB] DOM 元素缺失:', { indexSel, progressWrap, progressBar, progressText });
-                showNotification('页面组件加载异常，请刷新后重试', 'error');
-                return;
-            }
+            const kbIndexRefreshBtn = document.getElementById('kb-index-refresh');
+            const kbWatcherCheckbox = document.getElementById('kb-watcher-checkbox');
 
             indexSel.disabled = true;
+            kbIndexRefreshBtn.disabled = true;
+            kbWatcherCheckbox.disabled = true;
             progressWrap.style.display = '';
 
             const path = getDirPath(dirHandle);
             console.log('[KB] path =', path, 'isTauriVisit =', isTauriVisit());
 
-            // Tauri 环境：委托 Rust 后端索引
-            if (isTauriVisit()) {
+            try {
+                // 监听进度事件
+                let unlisten;
                 try {
-                    // 监听进度事件
-                    let unlisten;
-                    try {
-                        const { listen } = window.__TAURI__.event;
-                        unlisten = await listen('kb-progress', (e) => {
-                            const { percent, message } = e.payload;
-                            progressBar.style.width = (percent || 0) + '%';
-                            progressText.textContent = message || '';
-                        });
-                    } catch (e) { console.warn('注册进度监听失败:', e); }
-
-                    const result = await window.__TAURI__.core.invoke('kb_index', {
-                        dirPath: path,
-                        dirBlacklist: DIR_BLACKLIST,
-                        fileBlacklist: FILE_BLACKLIST,
+                    const { listen } = window.__TAURI__.event;
+                    unlisten = await listen('kb-progress', (e) => {
+                        const { percent, message } = e.payload;
+                        progressBar.style.width = (percent || 0) + '%';
+                        progressText.textContent = message || '';
                     });
+                } catch (e) { console.warn('注册进度监听失败:', e); }
 
-                    if (unlisten) unlisten();
+                const result = await window.__TAURI__.core.invoke('kb_index', {
+                    dirPath: path,
+                    dirBlacklist: DIR_BLACKLIST,
+                    fileBlacklist: FILE_BLACKLIST,
+                });
 
-                    progressWrap.style.display = 'none';
-                    indexSel.disabled = false;
-                    await refreshKnowledgeStatus();
-                    showNotification('\u2705 索引完成: ' + result.file_count + ' 个文件, ' + result.chunk_count + ' 个文本块', 'success');
+                if (unlisten) unlisten();
 
-                    return;
-                } catch (e) {
-                    progressWrap.style.display = 'none';
-                    indexSel.disabled = false;
-                    console.error('Rust kb_index 失败:', e);
-                    const errMsg = typeof e === 'string' ? e : (e.message || JSON.stringify(e) || '未知错误(请查看控制台)');
-                    showNotification('\u2717 索引失败: ' + errMsg, 'error');
-                    return;
-                }
+                progressWrap.style.display = 'none';
+                indexSel.disabled = false;
+                await refreshKnowledgeStatus();
+                showNotification('\u2705 索引完成: ' + result.file_count + ' 个文件, ' + result.chunk_count + ' 个文本块', 'success');
+
+                return;
+            } catch (e) {
+                console.error('Rust kb_index 失败:', e);
+                const errMsg = typeof e === 'string' ? e : (e.message || JSON.stringify(e) || '未知错误(请查看控制台)');
+                showNotification('\u2717 索引失败: ' + errMsg, 'error');
+                return;
+            } finally {
+                // 非 Tauri 环境不支持知识库索引
+                progressWrap.style.display = 'none';
+                indexSel.disabled = false;
+                kbIndexRefreshBtn.disabled = false;
+                kbWatcherCheckbox.disabled = false;
             }
-
-            // 非 Tauri 环境不支持知识库索引
-            progressWrap.style.display = 'none';
-            indexSel.disabled = false;
-            console.warn('[KB] isTauriVisit() =', isTauriVisit(), '— 非 Tauri 环境无法索引');
-            showNotification('✗ 非 Tauri 环境不支持知识库索引', 'error');
         }
 
         /** 增量索引：只索引未索引的文件 */
@@ -50657,63 +50671,56 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             const progressWrap = document.getElementById('kb-progress-wrap');
             const progressBar = document.getElementById('kb-progress-bar');
             const progressText = document.getElementById('kb-progress-text');
-
-            if (!indexSel || !progressWrap || !progressBar || !progressText) {
-                console.error('[KB] DOM 元素缺失:', { indexSel, progressWrap, progressBar, progressText });
-                showNotification('页面组件加载异常，请刷新后重试', 'error');
-                return;
-            }
+            const kbIndexRefreshBtn = document.getElementById('kb-index-refresh');
+            const kbWatcherCheckbox = document.getElementById('kb-watcher-checkbox');
 
             indexSel.disabled = true;
+            kbIndexRefreshBtn.disabled = true;
+            kbWatcherCheckbox.disabled = true;
             progressWrap.style.display = '';
 
             const path = getDirPath(dirHandle);
 
-            if (isTauriVisit()) {
+            try {
+                let unlisten;
                 try {
-                    let unlisten;
-                    try {
-                        const { listen } = window.__TAURI__.event;
-                        unlisten = await listen('kb-progress', (e) => {
-                            const { percent, message } = e.payload;
-                            progressBar.style.width = (percent || 0) + '%';
-                            progressText.textContent = message || '';
-                        });
-                    } catch (e) { console.warn('注册进度监听失败:', e); }
-
-                    const result = await window.__TAURI__.core.invoke('kb_index_unindexed', {
-                        dirPath: path,
-                        dirBlacklist: DIR_BLACKLIST,
-                        fileBlacklist: FILE_BLACKLIST,
+                    const { listen } = window.__TAURI__.event;
+                    unlisten = await listen('kb-progress', (e) => {
+                        const { percent, message } = e.payload;
+                        progressBar.style.width = (percent || 0) + '%';
+                        progressText.textContent = message || '';
                     });
+                } catch (e) { console.warn('注册进度监听失败:', e); }
 
-                    if (unlisten) unlisten();
+                const result = await window.__TAURI__.core.invoke('kb_index_unindexed', {
+                    dirPath: path,
+                    dirBlacklist: DIR_BLACKLIST,
+                    fileBlacklist: FILE_BLACKLIST,
+                });
 
-                    progressWrap.style.display = 'none';
-                    indexSel.disabled = false;
-                    await refreshKnowledgeStatus();
-                    const msg = result.file_count > 0
-                        ? ('\u2705 增量索引完成: ' + result.file_count + ' 个文件')
-                        : '\u2705 所有文件均已索引，无需增量';
-                    showNotification(msg, 'success');
-                    return;
-                } catch (e) {
-                    progressWrap.style.display = 'none';
-                    indexSel.disabled = false;
-                    console.error('Rust kb_index_unindexed 失败:', e);
-                    const errMsg = typeof e === 'string' ? e : (e.message || JSON.stringify(e) || '未知错误(请查看控制台)');
-                    showNotification('\u2717 增量索引失败: ' + errMsg, 'error');
-                    return;
-                }
+                if (unlisten) unlisten();
+
+                progressWrap.style.display = 'none';
+                indexSel.disabled = false;
+                await refreshKnowledgeStatus();
+                const msg = result.file_count > 0
+                    ? ('\u2705 增量索引完成: ' + result.file_count + ' 个文件')
+                    : '\u2705 所有文件均已索引，无需增量';
+                showNotification(msg, 'success');
+                return;
+            } catch (e) {
+                console.error('Rust kb_index_unindexed 失败:', e);
+                const errMsg = typeof e === 'string' ? e : (e.message || JSON.stringify(e) || '未知错误(请查看控制台)');
+                showNotification('\u2717 增量索引失败: ' + errMsg, 'error');
+                return;
+            } finally {
+                progressWrap.style.display = 'none';
+                indexSel.disabled = false;
+                kbIndexRefreshBtn.disabled = false;
+                kbWatcherCheckbox.disabled = false;
             }
-
-            progressWrap.style.display = 'none';
-            indexSel.disabled = false;
-            console.warn('[KB] isTauriVisit() =', isTauriVisit(), '— 非 Tauri 环境无法索引');
-            showNotification('✗ 非 Tauri 环境不支持知识库索引', 'error');
         }
 
-        // ====== 模型管理 UI（v2：厂商向导 + 双协议测试） ======
         /** 渲染设置面板中的模型列表 */
         function renderSettingModelList() {
             const listEl = document.getElementById('settingModelList');
@@ -51440,18 +51447,91 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             openHistory = new OpenHistory();
             openHistory.loadHistory();
         }
-        async function renderDashAiHeatmap(){
-             const heatmapDataArr = [];
+        // 3x5 点阵字体库
+        const DOT_FONT = {
+            '0': ['111', '101', '101', '101', '111'],
+            '1': ['010', '110', '010', '010', '111'],
+            '2': ['111', '001', '010', '100', '111'],
+            '3': ['111', '001', '111', '001', '111'],
+            '4': ['101', '101', '111', '001', '001'],
+            '5': ['111', '100', '111', '001', '111'],
+            '6': ['111', '100', '111', '101', '111'],
+            '7': ['111', '001', '010', '100', '100'],
+            '8': ['111', '101', '111', '101', '111'],
+            '9': ['111', '101', '111', '001', '111'],
+            '-': ['000', '000', '111', '000', '000'],
+            ':': ['000', '010', '000', '010', '000'],
+            ' ': ['000', '000', '000', '000', '000']
+        };
 
+        // 根据当前时间生成时钟热力图数据
+        function getClockHeatmapData(year) {
+            const now = new Date();
+            const h = String(now.getHours()).padStart(2, '0');
+            const m = String(now.getMinutes()).padStart(2, '0');
+            const s = String(now.getSeconds()).padStart(2, '0');
+            const timeStr = `${h}:${m}:${s}`; // 12个字符
+
+            // 找到当年1月1日所在的周的周一
+            const jan1 = new Date(year, 0, 1);
+            const dayOfWeek = jan1.getDay();
+            const firstMondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+            const firstMonday = new Date(year, 0, 1 + firstMondayOffset);
+            const clockData = [];
+            // 每个字符宽3列，间隔1列，共需 12*4 = 48列。日历一般有53周，足够放下。
+            for (let i = 0; i < timeStr.length; i++) {
+                const char = timeStr[i];
+                const matrix = DOT_FONT[char];
+                if (!matrix) continue;
+                for (let r = 0; r < 5; r++) {
+                    for (let c = 0; c < 3; c++) {
+                        if (matrix[r][c] === '1') {
+                            // 计算在日历上的位置：列(周)和行(星期)
+                            const weekCol = i * 4 + c + 10;
+                            const dayRow = r + 1; // 0-4行，对应周一到周五，避免遮挡下方的月份标签
+                            const date = new Date(firstMonday);
+                            date.setDate(date.getDate() + weekCol * 7 + dayRow);
+
+                            // 格式化为 YYYY-MM-DD
+                            const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+                            // 使用特殊值 1000 代表时钟像素
+                            clockData.push([dateStr, 1000]);
+                        }
+                    }
+                }
+            }
+            return clockData;
+        }
+
+        async function renderDashAiHeatmap() {
             const heatmapContainer = document.getElementById('ai-sum-heatmap');
+            if (!heatmapContainer) return;
+            const year = new Date().getFullYear();
+            // 1. 获取 AI 用量统计
+            let stats = null;
+            try {
+                const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+                if (invoke && currentRootPath) {
+                    stats = await invoke('stats_ai_usage', { dirPath: currentRootPath, days: 365 });
+                }
+            } catch (e) {
+                console.warn('[mdgo] AI 用量统计获取失败:', e);
+            }
+            // 2. 初始化图表
             if (dashboardCharts.aiHeatmapChart) dashboardCharts.aiHeatmapChart.dispose();
             dashboardCharts.aiHeatmapChart = echarts.init(heatmapContainer);
             const heatmapChart = dashboardCharts.aiHeatmapChart;
-            // 日历格子大小
+
             const CALENDAR_CELL = 20;
-            const CELL_W = CALENDAR_CELL - 6;
-            const CELL_H = CALENDAR_CELL - 6;
-            const year = new Date().getFullYear();
+            const callByDate = new Map(stats ? stats.daily.map(d => [d.date, d.ai_calls]) : []);
+            const tokenByDate = new Map(stats ? stats.daily.map(d => [d.date, d.tokens]) : []);
+            const msgByDate = new Map(stats ? stats.daily.map(d => [d.date, d.messages]) : []);
+
+            const heatmapDataArr = [];
+            for (let d = new Date(year, 0, 1); d <= new Date(year, 11, 31); d.setDate(d.getDate() + 1)) {
+                const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                heatmapDataArr.push([dateStr, callByDate.get(dateStr) || 0]);
+            }
 
             const option = {
                 tooltip: {
@@ -51460,25 +51540,19 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     },
                     formatter: function (params) {
                         const dateStr = params.value[0];
-                        const count = params.value[1];
-                        const dayFiles = filesByDate[dateStr] || [];
+                        const count = params.value[1] || 0;
+
+                        // 时钟层（series[1]）像素：仅在时钟系列上触发该提示，避免误判真实 AI 调用=1000 的天
+                        if (params.seriesIndex === 1) {
+                            return `<div style="font-weight:500;font-size:0.8125rem;">⏰ 动态时钟像素</div>`;
+                        }
+
+                        const tokens = tokenByDate.get(dateStr) || 0;
+                        const msgs = msgByDate.get(dateStr) || 0;
                         const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
                         const weekDay = weekDays[new Date(dateStr).getDay()];
-                        let content = `<div style="font-weight:500; margin-bottom:0.125rem;font-size:0.8125rem;">📅 ${dateStr} (${weekDay})</div><div style="margin-bottom:0.25rem;font-size:0.8125rem;font-weight:500;">📄 共 ${count} 个文件</div>`;
-                        const dayFileCount = dayFiles.length;
-                        if (dayFileCount > 0) {
-                            content += `<div style="border-top:1px solid #eee; padding-top:0.2rem; margin-top:0.2rem;font-weight:500;">`;
-                            dayFiles.sort((a, b) => b.ctime - a.ctime).slice(0, 10).forEach(f => {
-                                const t = new Date(f.ctime * 1000);
-                                const ts = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
-                                content += `<div style="font-size:0.75rem;white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:12.5rem;" title="${f.name}">📄 ${f.name} <span style="color:var(--t3);">${ts}</span></div>`;
-                            });
-                            if (dayFileCount > 10) {
-                                content += `<div style="font-size:0.75rem;">♻️ 还有 ${dayFileCount - 10} 个文件</div>`;
-                            }
-                            content += `</div>`;
-                        }
-                        return content;
+                        return `<div style="font-weight:500;margin-bottom:0.125rem;font-size:0.8125rem;">📅 ${dateStr} (${weekDay})</div>` +
+                            `<div style="font-size:0.8125rem;line-height:1.7;">🤖 AI 调用 <b>${count}</b> 次<br>💬 对话消息 <b>${msgs}</b> 条<br>🪙 Token <b>${tokens}</b></div>`;
                     }
                 },
                 visualMap: {
@@ -51488,14 +51562,16 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                     splitNumber: 6,
                     calculable: true,
                     show: false,
+                    // 关键：只控制 seriesIndex 0 (底层数据)，不影响时钟图层
+                    seriesIndex: 0,
                     pieces: [
                         { value: 0, color: '#ebedf0' },
-                        { value: 1, color: '#cde2f9ff' },
-                        { gte: 1, lt: 3, color: '#c0ddf9ff' },
-                        { gte: 3, lt: 8, color: '#94c3f8ff' },
-                        { gte: 8, lt: 15, color: '#6babf9ff' },
-                        { gte: 15, lt: 30, color: '#4e9bfaff' },
-                        { gte: 30, color: '#007aff' }
+                        { value: 1, color: '#c8e6c9' },
+                        { gte: 1, lt: 3, color: '#a5d6a7' },
+                        { gte: 3, lt: 8, color: '#81c784' },
+                        { gte: 8, lt: 15, color: '#66bb6a' },
+                        { gte: 15, lt: 30, color: '#43a047' },
+                        { gte: 30, color: '#2e7d32' }
                     ]
                 },
                 calendar: {
@@ -51510,10 +51586,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         borderColor: 'transparent',
                         backgroundColor: 'transparent'
                     },
-                    splitLine: {
-                        show: false,
-                        lineStyle: { color: '#b7b8baff', width: 1 }
-                    },
+                    splitLine: { show: false },
                     range: year,
                     yearLabel: { show: false },
                     monthLabel: { color: '#666', fontSize: 10 },
@@ -51526,6 +51599,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 },
                 series: [
                     {
+                        // 图层 1: 原始 AI 用量热力图
                         type: 'heatmap',
                         coordinateSystem: 'calendar',
                         data: heatmapDataArr,
@@ -51543,44 +51617,99 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                         }
                     },
                     {
-                        name: 'snake',
-                        type: 'scatter',
+                        // 图层 2: 动态时钟热力图
+                        type: 'heatmap',
                         coordinateSystem: 'calendar',
-                        symbol: 'roundRect',
-                        symbolSize: [CELL_W, CELL_H],
+                        data: getClockHeatmapData(year), // 初始时间
                         itemStyle: {
-                            borderRadius: 4,
-                            borderWidth: 0,
+                            color: 'RGB(204,204,255)', // 更浅的紫色
+                            shadowBlur: 3,
+                            shadowColor: 'RGB(204,204,255, 0.4)', // 半透明的浅紫色阴影
+                            borderRadius: 4
                         },
-                        data: [],
-                        z: 10,
-                        animation: false
-                    },
-                    {
-                        name: 'food',
-                        type: 'scatter',
-                        coordinateSystem: 'calendar',
-                        symbol: 'roundRect',
-                        symbolSize: [CELL_W, CELL_H],
-                        itemStyle: {
-                            borderRadius: 4,
-                            borderWidth: 0,
-                        },
-                        data: [],
-                        z: 11,
-                        animation: false
+                        z: 10, // 提高层级，确保在 AI 数据上方
+                        silent: true // 不响应鼠标事件，防止干扰 tooltip
                     }
                 ]
             };
+
             heatmapChart.setOption(option);
+            const timeDisplay = dashboardContainer.querySelector('#dashboard-time');
+
+            // 3. 开启时钟动画定时器
+            function clearClockTimer() {
+                TimerManager.set('dashboardTime', () => {
+                    if (!isIdle()) {
+                        todoUpdateModalTime(timeDisplay);
+                    }
+                }, 1000);
+                if (window._heatmapClockTimer) clearInterval(window._heatmapClockTimer);
+            }
+            function setClockTimer() {
+                clearClockTimer();
+                TimerManager.clear('dashboardTime');
+                todoUpdateDay(timeDisplay);
+                window._heatmapClockTimer = setInterval(() => {
+                    if (heatmapChart && !heatmapChart.isDisposed()) {
+                        // 每秒只更新 series[1] 的数据
+                        heatmapChart.setOption({
+                            series: [{}, { data: getClockHeatmapData(year) }]
+                        });
+                    } else {
+                        clearInterval(window._heatmapClockTimer);
+                    }
+                }, 1000);
+            }
+            setClockTimer();
+
+            function _scheduleAutoPause() {
+                if (_timeShowAutoPauseTimer) clearTimeout(_timeShowAutoPauseTimer);
+                _timeShowAutoPauseTimer = setTimeout(() => {
+                    if (!_timeShowPaused) {
+                        _timeShowPaused = true;
+                        clearClockTimer();
+                        const btn = document.getElementById('timeShowToggleBtn');
+                        const pauseIcon = document.getElementById('timeShow-pause-icon');
+                        if (btn) { pauseIcon.innerHTML = '<path d="M8 5v14l11-7z"/>'; btn.title = '继续时钟热力图动画'; }
+                        heatmapChart.setOption({
+                            series: [{}, { data: [] }]
+                        });
+                    }
+                    _timeShowAutoPauseTimer = null;
+                }, 30000);
+            }
+            _scheduleAutoPause();
+
+            // 暴露点击方法供 HTML onclick 调用（按钮已通过 onclick="toggleSnake()" 绑定）
+            window.toggleTimeShowGame = () => {
+                const btn = document.getElementById('timeShowToggleBtn');
+                const pauseIcon = document.getElementById('timeShow-pause-icon');
+                if (!btn || !pauseIcon) return;
+                _timeShowPaused = !_timeShowPaused;
+                if (_timeShowPaused) {
+                    clearClockTimer();
+                    pauseIcon.innerHTML = '<path d="M8 5v14l11-7z"/>';
+                    btn.title = '继续时钟热力图动画';
+                    heatmapChart.setOption({
+                        series: [{}, { data: [] }]
+                    });
+                    if (_timeShowAutoPauseTimer) { clearTimeout(_timeShowAutoPauseTimer); _timeShowAutoPauseTimer = null; }
+                } else {
+                    // 恢复：立即重绘时钟像素（不等下一秒）
+                    setClockTimer();
+                    heatmapChart.setOption({
+                        series: [{}, { data: getClockHeatmapData(year) }]
+                    });
+                    pauseIcon.innerHTML = '<path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />';
+                    btn.title = '暂停时钟热力图动画';
+                }
+            };
         }
     </script>
     <script src="./css_js/modules/canvas.js"></script>
     <script src="./css_js/modules/chat-history.js"></script>
     <script src="./css_js/modules/editor/export.js"></script>
-    <script src="./css_js/modules/editor/core.js"></script>
     <script src="./css_js/modules/editor/slides.js"></script>
-    <script src="./css_js/modules/editor/block.js"></script>
     <script src="./css_js/modules/skill.js"></script>
     <script src="./css_js/modules/mcp.js"></script>
     <script src="./css_js/modules/agent.js"></script>

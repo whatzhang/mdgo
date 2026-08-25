@@ -317,6 +317,33 @@ impl AiHistoryStore {
     /// 获取 AI 操作统计摘要。
     ///
     /// 包含总数、收藏数、按类型分布、近 30 日趋势、最热文件 Top 10 和总 token 用量。
+    /// 按天统计 AI 调用次数与 token 用量，自 ts_ms（毫秒时间戳）起。
+    /// 返回 (日期 YYYY-MM-DD, 调用次数, token 总量)，按日期升序。
+    pub fn daily_usage_since(&self, ts_ms: i64) -> Result<Vec<(String, u32, u64)>, String> {
+        self.pool.with_read(|conn| {
+            let mut stmt = conn
+                .prepare_cached(
+                    "SELECT strftime('%Y-%m-%d', created_at / 1000, 'unixepoch') as day,
+                            COUNT(*) as cnt,
+                            COALESCE(SUM(token_count), 0) as tk
+                     FROM ai_history WHERE created_at >= ?1
+                     GROUP BY day ORDER BY day ASC",
+                )
+                .map_err(|e| format!("AI 调用统计查询失败: {}", e))?;
+            let rows = stmt
+                .query_map(rusqlite::params![ts_ms], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?, row.get::<_, u64>(2)?))
+                })
+                .map_err(|e| format!("AI 调用统计查询失败: {}", e))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| format!("读取 AI 调用统计失败: {}", e))?;
+            Ok(rows)
+        })
+    }
+
+    /// 获取 AI 操作统计摘要。
+    ///
+    /// 包含总数、收藏数、按类型分布、近 30 日趋势、最热文件 Top 10 和总 token 用量。
     pub fn get_stats(&self) -> Result<AiHistoryStats, String> {
         self.pool.with_read(|conn| {
             let total_count: u32 = conn

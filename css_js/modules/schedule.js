@@ -1153,6 +1153,15 @@
             todoRenderAll();
             _ensureHolidayData(todoCurrentDate.getFullYear());
         }
+        function todoUpdateDay(el) {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = now.getMonth() + 1;
+            const day = now.getDate();
+            const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
+            const weekDay = weekDays[now.getDay()];
+            el.textContent = `${year}年${month}月${day}日 周${weekDay}`;
+        }
         // 实时时间更新
         function todoUpdateModalTime(el) {
             const now = new Date();

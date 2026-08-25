@@ -69,6 +69,44 @@ pub struct ChatStore {
 }
 
 impl ChatStore {
+    // ═══════════════ 统计（AI 用量聚合，供 stats_ai_usage 命令） ═══════════════
+
+    /// 按天统计对话消息数与 token 用量，自 ts_ms（毫秒时间戳）起。
+    /// 返回 (日期 YYYY-MM-DD, 消息数, token 总量)，按日期升序。
+    pub fn daily_messages_since(&self, ts_ms: i64) -> Result<Vec<(String, u32, u64)>, String> {
+        self.pool.with_read(|conn| {
+            let mut stmt = conn
+                .prepare_cached(
+                    "SELECT strftime('%Y-%m-%d', created_at / 1000, 'unixepoch') as day,
+                            COUNT(*) as cnt,
+                            COALESCE(SUM(token_count), 0) as tk
+                     FROM chat_messages WHERE created_at >= ?1
+                     GROUP BY day ORDER BY day ASC",
+                )
+                .map_err(|e| format!("对话消息统计查询失败: {}", e))?;
+            let rows = stmt
+                .query_map(rusqlite::params![ts_ms], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?, row.get::<_, u64>(2)?))
+                })
+                .map_err(|e| format!("对话消息统计查询失败: {}", e))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| format!("读取对话消息统计失败: {}", e))?;
+            Ok(rows)
+        })
+    }
+
+    /// 会话数（自 ts_ms 起创建）。
+    pub fn session_count_since(&self, ts_ms: i64) -> Result<u64, String> {
+        self.pool.with_read(|conn| {
+            conn.query_row(
+                "SELECT COUNT(*) FROM chat_sessions WHERE created_at >= ?1",
+                rusqlite::params![ts_ms],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("会话数查询失败: {}", e))
+        })
+    }
+
     /// 创建新的 ChatStore，自动创建数据库目录和表
     pub fn new(db_dir_path: &str) -> Result<Self, String> {
         let db_path = Self::get_db_path(db_dir_path);
