@@ -231,7 +231,7 @@
                 this._mergeBuffer();
             }
             if (this._buffer === null) {
-                await invoke('write_file', { path: this._path, content: '' });
+                await invoke('write_file_atomic', { path: this._path, content: '' });
                 return;
             }
             if (this._isBinary) {
@@ -240,7 +240,7 @@
                     content: Array.from(this._buffer),
                 });
             } else {
-                await invoke('write_file', { path: this._path, content: this._buffer });
+                await invoke('write_file_atomic', { path: this._path, content: this._buffer });
             }
         }
 

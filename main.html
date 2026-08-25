@@ -15,6 +15,7 @@
     <link rel="stylesheet" href="./css_js/cdn/editor.main.css" media="print" onload="this.media='all'" />
     <link rel="stylesheet" href="./css_js/cdn/swagger-editor.min.css" media="print" onload="this.media='all'" />
     <link rel="stylesheet" href="./css_js/cdn/github-markdown-light.min.css" media="print" onload="this.media='all'" />
+    <link rel="stylesheet" href="./css_js/modules/markdown.css" />
     <link rel="stylesheet" href="./css_js/cdn/mono-font.css" />
     <link rel="stylesheet" href="./css_js/cdn/tippy.css" media="print" onload="this.media='all'" />
     <link rel="stylesheet" href="./css_js/cdn/jsmind.css" media="print" onload="this.media='all'" />
@@ -1144,7 +1145,7 @@
         /* 悬停/选中/拖拽/root 样式只作用于节点自身的 rect（子选择器 >）：
            内嵌子画布是父节点 foreignObject 的后代，若用后代选择器，
            父节点选中/悬停会把样式级联到子画布内的所有节点（全被选中高亮） */
-        .canvas-node-dragging > .canvas-node-rect {
+        .canvas-node-dragging>.canvas-node-rect {
             stroke: var(--color-primary);
             stroke-width: 2;
             filter: drop-shadow(0 0.5rem 0.75rem rgba(9, 105, 218, 0.25));
@@ -1158,18 +1159,18 @@
             transition: stroke 0.15s ease, stroke-width 0.15s ease, filter 0.15s ease;
         }
 
-        .canvas-node:hover > .canvas-node-rect {
+        .canvas-node:hover>.canvas-node-rect {
             stroke: var(--color-primary-light);
             stroke-width: 1;
         }
 
-        .canvas-node-selected > .canvas-node-rect {
+        .canvas-node-selected>.canvas-node-rect {
             stroke: var(--color-primary-light);
             stroke-width: 1;
             filter: drop-shadow(0 0 6px rgba(9, 105, 218, 0.4));
         }
 
-        .canvas-node.is-root > .canvas-node-rect {
+        .canvas-node.is-root>.canvas-node-rect {
             fill: #0969da;
             stroke: #0969da;
             stroke-width: 1.5;
@@ -1177,7 +1178,7 @@
 
         /* 节点内容（foreignObject）按节点矩形同步圆角裁剪，
            避免内部文字/图片的直角覆盖节点圆角，使整个节点视觉上统一为圆角 */
-        .canvas-node > foreignObject {
+        .canvas-node>foreignObject {
             clip-path: inset(0 0 0 0 round 16px);
         }
 
@@ -1242,9 +1243,9 @@
         }
 
         /* 连接点显示同样只用子选择器，避免父节点悬停/选中时级联到内嵌子画布的连接点 */
-        .canvas-node:hover > .canvas-connector-dot,
-        .canvas-node.canvas-node-selected > .canvas-connector-dot,
-        .canvas-svg.connecting-mode > .canvas-group .canvas-connector-dot {
+        .canvas-node:hover>.canvas-connector-dot,
+        .canvas-node.canvas-node-selected>.canvas-connector-dot,
+        .canvas-svg.connecting-mode>.canvas-group .canvas-connector-dot {
             opacity: 0.7;
         }
 
@@ -1284,7 +1285,8 @@
         /* ---- 虚线流动动画 ---- */
         @keyframes dashFlow {
             to {
-               stroke-dashoffset: -16; /* 10 + 6 = 16，必须是整数倍 */
+                stroke-dashoffset: -16;
+                /* 10 + 6 = 16，必须是整数倍 */
             }
         }
 
@@ -2208,296 +2210,6 @@
             }
         }
 
-        .ob-highlight {
-            background-color: #fffaaf;
-            padding: 0 4px;
-            border-radius: 3px;
-        }
-
-        .markdown-selection-toolbar {
-            position: fixed;
-            display: none;
-            align-items: center;
-            gap: 2px;
-            padding: 4px;
-            background: var(--color-bg);
-            border-radius: 6px;
-            animation: popIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
-            transform-origin: bottom center;
-            user-select: none;
-            white-space: nowrap;
-            opacity: 0;
-            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
-            transition: all 0.2s ease;
-            z-index: 1000;
-            width: auto;
-            font-family: var(--font-family);
-            font-weight: 500;
-            font-size: 0.8125rem;
-        }
-
-        @keyframes popIn {
-            from {
-                opacity: 0;
-                transform: translateY(8px) scale(0.92);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0) scale(1);
-            }
-        }
-
-        .markdown-selection-toolbar.visible {
-            display: flex;
-            opacity: 1;
-        }
-
-        .markdown-selection-btn {
-            border: none;
-            background: transparent;
-            cursor: pointer;
-            border-radius: 0.375rem;
-            color: var(--color-text);
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .markdown-selection-btn:hover {
-            background: #f3f4f6;
-            color: var(--color-primary);
-        }
-
-        .markdown-selection-btn:active {
-            transform: scale(0.96);
-        }
-
-        .selection-color-picker {
-            position: absolute;
-            top: calc(100% + 6px);
-            left: 0;
-            background: var(--color-bg);
-            border: 1px solid #e5e7eb;
-            border-radius: 6px;
-            padding: 6px;
-            gap: 8px;
-            display: none;
-            z-index: 1000;
-            min-width: 180px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            transition: all 0.2s ease;
-        }
-
-        .selection-color-picker.visible {
-            display: inline-flex;
-        }
-
-        .color-options {
-            display: block;
-            align-items: center;
-            gap: 0.25rem;
-        }
-
-        .color-options-text {
-            display: block;
-            align-items: center;
-            gap: 0.125rem;
-        }
-
-        .color-option-text {
-            width: 15px;
-            height: 15px;
-            font-size: 15px;
-            background-color: transparent;
-            border: none;
-            cursor: pointer;
-            padding: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .color-option-text:hover {
-            transform: scale(1.15);
-            font-weight: bold;
-        }
-
-        .color-option-text.active {
-            transform: scale(1.4);
-            font-weight: bold;
-        }
-
-        .color-option-bg {
-            width: 15px;
-            height: 15px;
-            border: none;
-            border-radius: 3px;
-            cursor: pointer;
-            transition: transform 0.15s ease, margin 0.15s ease;
-            padding: 0;
-            position: relative;
-            background-clip: padding-box;
-            align-items: center;
-            justify-content: center;
-            box-sizing: border-box;
-        }
-
-        .color-option-bg:hover {
-            transform: scale(1.15);
-            margin: 0 1.125px;
-        }
-
-        .color-option-bg.active {
-            transform: scale(1.3);
-            margin: 0 2.25px;
-        }
-
-        .color-option-search {
-            width: auto;
-            height: 0.9375rem;
-            padding: 0.125rem 0.125rem;
-            border-radius: 0.375rem;
-            background-color: transparent;
-            color: var(--color-text);
-            border: none;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .color-option-search:hover {
-            color: var(--color-primary);
-        }
-
-        .ob-internal-link {
-            color: var(--color-primary);
-            text-decoration: none;
-            border-bottom: 1px dotted var(--color-primary);
-        }
-
-        .ob-embedded-note {
-            border: 1px solid #eee;
-            border-radius: 4px;
-            padding: 16px;
-            margin: 8px 0;
-            background: #fafafa;
-        }
-
-        .ob-callout {
-            border-left: 4px solid #888;
-            background-color: #f5f5f5;
-            padding: 8px 12px;
-            margin: 8px 0;
-        }
-
-        .ob-callout-title {
-            font-weight: 600;
-        }
-
-        .ob-callout-content> :last-child {
-            margin-bottom: 0;
-        }
-
-        .ob-callout-content> :first-child {
-            margin-top: 4px;
-        }
-
-        .ob-callout-note,
-        .ob-callout-info {
-            border-left-color: #448aff;
-        }
-
-        .ob-callout-tip {
-            border-left-color: #00bcd4;
-        }
-
-        .ob-callout-warning {
-            border-left-color: #ff9800;
-        }
-
-        .ob-callout-danger,
-        .ob-callout-error {
-            border-left-color: #f44336;
-        }
-
-        .ob-callout-success {
-            border-left-color: #4caf50;
-        }
-
-        .ob-callout-question {
-            border-left-color: #9c27b0;
-        }
-
-        .ob-callout-abstract {
-            border-left-color: #00bcd4;
-        }
-
-        .ob-callout-quote {
-            border-left-color: #666666;
-        }
-
-        .ob-callout-note .ob-callout-title,
-        .ob-callout-info .ob-callout-title {
-            color: #448aff;
-        }
-
-        .ob-callout-tip .ob-callout-title {
-            color: #00bcd4;
-        }
-
-        .ob-callout-warning .ob-callout-title {
-            color: #ff9800;
-        }
-
-        .ob-callout-danger .ob-callout-title,
-        .ob-callout-error .ob-callout-title {
-            color: #f44336;
-        }
-
-        .ob-callout-success .ob-callout-title {
-            color: #4caf50;
-        }
-
-        .ob-callout-question .ob-callout-title {
-            color: #9c27b0;
-        }
-
-        .ob-tag {
-            display: inline-block;
-            background-color: #e1f5fe;
-            border: 1px solid #b3e5fc;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 14px;
-            color: #2196f3;
-            margin-right: 4px;
-            margin-bottom: 4px;
-            transition: all 0.2s ease;
-        }
-
-        .ob-block-ref {
-            text-decoration: none;
-            color: inherit;
-        }
-
-        .ob-footnote {
-            font-size: 0.9em;
-            color: var(--t2);
-            margin: 4px 0;
-            padding-left: 8px;
-            border-top: 1px solid #eee;
-        }
-
-        .ob-footnote-ref {
-            font-size: 0.8em;
-        }
-
-        .ob-math-block {
-            text-align: center;
-            margin: 12px 0;
-        }
 
         .kanban-container {
             display: flex;
@@ -3595,7 +3307,7 @@
             overflow: visible;
             display: flex;
             flex-direction: column;
-            gap: 0.75rem;
+            gap: 0.5rem;
             position: relative;
         }
 
@@ -3704,13 +3416,11 @@
             margin-bottom: 0.25rem;
             color: var(--color-text);
             white-space: nowrap;
-            position: absolute;
-            top: 0.75rem;
-            left: 0.75rem;
             z-index: 1;
             display: flex;
             align-items: center;
             gap: 0.375rem;
+            width: 100%;
         }
 
         .chart-title-heatmap>svg {
@@ -6887,21 +6597,21 @@
         }
 
         .heatmap-container {
-            display: flex;
+            display: inline-flex;
             flex-wrap: wrap;
             gap: 0.75rem;
-            justify-content: center;
+            justify-content: space-between;
+            align-items: center;
             box-sizing: border-box;
         }
 
         .heatmap-left {
             flex: 0 0 auto;
-            margin-top: 30px;
         }
 
         .heatmap-right {
             flex: 1 1 0;
-            min-width: 300px;
+            min-width: 1000px;
         }
 
         .file-sum-heatmap {
@@ -6915,12 +6625,8 @@
 
         .ai-file-summary {
             display: block;
-            padding: 10px;
-            border-radius: 15px;
-            box-shadow: var(--shadow-sd);
             height: 200px;
-            background: var(--color-bg);
-            width: calc(100% - 20px);
+            width: 100%;
             overflow: hidden;
         }
 
@@ -7391,53 +7097,6 @@
             border-top-color: #2563eb;
         }
 
-        /* 实时预览模式样式 */
-        .content-live-preview {
-            display: none;
-            flex: 1;
-            overflow-y: auto;
-            background: var(--color-bg);
-            padding: 0;
-        }
-
-        .content-live-preview::-webkit-scrollbar {
-            display: none;
-        }
-
-        .live-preview-container {
-            display: flex;
-            flex-direction: row;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-        }
-
-        .live-preview-editor {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            background: #1e1e1e;
-            min-width: 50%;
-            border-right: 1px solid var(--color-border);
-        }
-
-        .live-preview-editor>div:first-child {
-            width: 100%;
-            height: calc(100% - 28px);
-        }
-
-        .live-preview-render {
-            flex: 1;
-            overflow-y: auto;
-            padding: 1rem;
-            background: var(--color-bg-secondary);
-            min-width: 50%;
-        }
-
-        .live-preview-render .markdown-body {
-            max-width: 100%;
-            cursor: text;
-        }
 
         /* ===== 正则表达式专业工作台样式 ===== */
         #regex-test-container {
@@ -11462,68 +11121,6 @@
             height: 0.75rem;
         }
 
-        .markdown-body {
-            color-scheme: light;
-            -ms-text-size-adjust: 100%;
-            -webkit-text-size-adjust: 100%;
-            font-weight: 400;
-            color: var(--color-text);
-            background-color: var(--color-bg-secondary);
-            font-family: var(--font-family);
-            font-size: 14px;
-            line-height: 1.5;
-            word-wrap: break-word;
-            overflow-y: auto;
-            -ms-overflow-style: none;
-            padding: 10px;
-            cursor: text;
-        }
-
-        .markdown-body::-webkit-scrollbar {
-            display: none;
-        }
-
-        .markdown-body h1 {
-            margin: .67em 0;
-            font-weight: 600;
-            padding-bottom: .3em;
-            font-size: 1.5em;
-            border-bottom: 1px solid #d1d9e0b3
-        }
-
-        .markdown-body h2 {
-            font-weight: 600;
-            padding-bottom: .3em;
-            font-size: 1.4em;
-            border-bottom: 1px solid #d1d9e0b3
-        }
-
-        .markdown-body h3 {
-            font-weight: 600;
-            font-size: 1.2em
-        }
-
-        .markdown-body hr {
-            height: .15em;
-        }
-
-        .markdown-body pre code.hljs {
-            padding: 0 !important;
-            font-size: 12 !important;
-            font-family: var(--font-mono) !important;
-        }
-
-        .markdown-body .highlight pre,
-        .markdown-body pre {
-            padding: 1rem;
-            overflow: auto;
-            font-size: 12px;
-            font-family: var(--font-mono);
-            line-height: 1.45;
-            color: #abb2bf;
-            background: #282c34;
-            border-radius: 6px
-        }
 
         .jsmind-container {
             width: 100%;
@@ -14342,218 +13939,223 @@
                             <div id="file-sum-heatmap" class="file-sum-heatmap"></div>
                         </div>
                         <div class="heatmap-right">
-                            <div id="ai-file-summary" class="ai-file-summary">
-                                <div class="monitor-panel" id="file-sum-panel" style="display: none">
-                                    <div class="monitor-header">
-                                        <span></span>
-                                        <span>
-                                            <span class="monitor-uptime" id="fileScanTime">文件扫盘时长：加载中...</span>
-                                            <span class="monitor-uptime">｜</span>
-                                            <span class="monitor-uptime" id="permissionTime">授权时长：加载中...</span>
-                                        </span>
+                            <div id="ai-sum-heatmap" class="file-sum-heatmap"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="heatmap-section">
+                    <div id="ai-file-summary" class="ai-file-summary">
+                        <div class="monitor-panel" id="file-sum-panel" style="display: none">
+                            <div class="monitor-header">
+                                <span></span>
+                                <span>
+                                    <span class="monitor-uptime" id="fileScanTime">文件扫盘时长：加载中...</span>
+                                    <span class="monitor-uptime">｜</span>
+                                    <span class="monitor-uptime" id="permissionTime">授权时长：加载中...</span>
+                                </span>
+                            </div>
+                            <div class="monitor-body">
+                                <div class="monitor-item">
+                                    <div class="monitor-label"><svg viewBox="0 0 24 24" width="14" height="14"
+                                            fill="none" stroke="currentColor" stroke-width="1.8"
+                                            stroke-linecap="round" stroke-linejoin="round"
+                                            style="vertical-align:-2px;margin-right:4px;">
+                                            <rect x="3" y="3" width="7" height="18" rx="1" />
+                                            <rect x="14" y="3" width="7" height="7" rx="1" />
+                                            <rect x="14" y="14" width="7" height="7" rx="1" />
+                                        </svg>侧面板</div>
+                                    <div id="fileSumTreeGauge" class="monitor-chart"></div>
+                                    <div class="monitor-sub" id="treeLoadTime"></div>
+                                </div>
+                                <div class="monitor-item">
+                                    <div class="monitor-label"><svg viewBox="0 0 24 24" width="14" height="14"
+                                            fill="none" stroke="currentColor" stroke-width="1.8"
+                                            stroke-linecap="round" stroke-linejoin="round"
+                                            style="vertical-align:-2px;margin-right:4px;">
+                                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                            <line x1="3" y1="9" x2="21" y2="9" />
+                                            <line x1="9" y1="21" x2="9" y2="9" />
+                                        </svg>主面板</div>
+                                    <div id="dashboardLoadGauge" class="monitor-chart"></div>
+                                    <div class="monitor-sub" id="dashboardLoadTime"></div>
+                                </div>
+                                <div class="monitor-item">
+                                    <div class="monitor-label" style="margin-top:4px;">
+                                        <div class="monitor-icon">
+                                            <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'
+                                                fill='none' stroke='#0077ff' stroke-width='1.8'
+                                                stroke-linecap='round' stroke-linejoin='round'>
+                                                <path
+                                                    d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z' />
+                                                <line x1='16' y1='13' x2='8' y2='13' />
+                                                <line x1='16' y1='17' x2='8' y2='17' />
+                                                <line x1='10' y1='9' x2='8' y2='9' />
+                                            </svg>
+                                        </div>
+                                        文档
                                     </div>
-                                    <div class="monitor-body">
-                                        <div class="monitor-item">
-                                            <div class="monitor-label"><svg viewBox="0 0 24 24" width="14" height="14"
-                                                    fill="none" stroke="currentColor" stroke-width="1.8"
-                                                    stroke-linecap="round" stroke-linejoin="round"
-                                                    style="vertical-align:-2px;margin-right:4px;">
-                                                    <rect x="3" y="3" width="7" height="18" rx="1" />
-                                                    <rect x="14" y="3" width="7" height="7" rx="1" />
-                                                    <rect x="14" y="14" width="7" height="7" rx="1" />
-                                                </svg>侧面板</div>
-                                            <div id="fileSumTreeGauge" class="monitor-chart"></div>
-                                            <div class="monitor-sub" id="treeLoadTime"></div>
+                                    <div class="monitor-disk" style="margin-top:2px;">
+                                        <div class="disk-bar">
+                                            <div class="disk-bar-fill doc" id="docBarFill"></div>
                                         </div>
-                                        <div class="monitor-item">
-                                            <div class="monitor-label"><svg viewBox="0 0 24 24" width="14" height="14"
-                                                    fill="none" stroke="currentColor" stroke-width="1.8"
-                                                    stroke-linecap="round" stroke-linejoin="round"
-                                                    style="vertical-align:-2px;margin-right:4px;">
-                                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                                                    <line x1="3" y1="9" x2="21" y2="9" />
-                                                    <line x1="9" y1="21" x2="9" y2="9" />
-                                                </svg>主面板</div>
-                                            <div id="dashboardLoadGauge" class="monitor-chart"></div>
-                                            <div class="monitor-sub" id="dashboardLoadTime"></div>
+                                        <span class="disk-percent doc" id="docPercent">0%</span>
+                                    </div>
+                                    <div class="monitor-label" style="margin-top:4px;">
+                                        <div class="monitor-icon">
+                                            <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'
+                                                fill='none' stroke='purple' stroke-width='1.8'
+                                                stroke-linecap='round' stroke-linejoin='round'>
+                                                <path
+                                                    d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z' />
+                                                <polyline points='10 13 8 15 10 17' />
+                                                <polyline points='14 13 16 15 14 17' />
+                                            </svg>
                                         </div>
-                                        <div class="monitor-item">
-                                            <div class="monitor-label" style="margin-top:4px;">
-                                                <div class="monitor-icon">
-                                                    <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'
-                                                        fill='none' stroke='#0077ff' stroke-width='1.8'
-                                                        stroke-linecap='round' stroke-linejoin='round'>
-                                                        <path
-                                                            d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z' />
-                                                        <line x1='16' y1='13' x2='8' y2='13' />
-                                                        <line x1='16' y1='17' x2='8' y2='17' />
-                                                        <line x1='10' y1='9' x2='8' y2='9' />
-                                                    </svg>
-                                                </div>
-                                                文档
-                                            </div>
-                                            <div class="monitor-disk" style="margin-top:2px;">
-                                                <div class="disk-bar">
-                                                    <div class="disk-bar-fill doc" id="docBarFill"></div>
-                                                </div>
-                                                <span class="disk-percent doc" id="docPercent">0%</span>
-                                            </div>
-                                            <div class="monitor-label" style="margin-top:4px;">
-                                                <div class="monitor-icon">
-                                                    <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'
-                                                        fill='none' stroke='purple' stroke-width='1.8'
-                                                        stroke-linecap='round' stroke-linejoin='round'>
-                                                        <path
-                                                            d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z' />
-                                                        <polyline points='10 13 8 15 10 17' />
-                                                        <polyline points='14 13 16 15 14 17' />
-                                                    </svg>
-                                                </div>
-                                                代码
-                                            </div>
-                                            <div class="monitor-disk" style="margin-top:2px;">
-                                                <div class="disk-bar">
-                                                    <div class="disk-bar-fill code" id="codeBarFill"></div>
-                                                </div>
-                                                <span class="disk-percent code" id="codePercent">0%</span>
-                                            </div>
-                                            <div class="monitor-label" style="margin-top:4px;">
-                                                <div class="monitor-icon">
-                                                    <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'
-                                                        fill='none' stroke='orange' stroke-width='1.8'
-                                                        stroke-linecap='round' stroke-linejoin='round'>
-                                                        <path
-                                                            d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z' />
-                                                        <rect x='8' y='11' width='8' height='6' rx='1' />
-                                                        <circle cx='10' cy='13' r='1' />
-                                                        <path d='M16 17l-2-2-2 2' />
-                                                    </svg>
-                                                </div>
-                                                图片
-                                            </div>
-                                            <div class="monitor-disk" style="margin-top:2px;">
-                                                <div class="disk-bar">
-                                                    <div class="disk-bar-fill img" id="imgBarFill"></div>
-                                                </div>
-                                                <span class="disk-percent img" id="imgPercent">0%</span>
-                                            </div>
+                                        代码
+                                    </div>
+                                    <div class="monitor-disk" style="margin-top:2px;">
+                                        <div class="disk-bar">
+                                            <div class="disk-bar-fill code" id="codeBarFill"></div>
                                         </div>
+                                        <span class="disk-percent code" id="codePercent">0%</span>
+                                    </div>
+                                    <div class="monitor-label" style="margin-top:4px;">
+                                        <div class="monitor-icon">
+                                            <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'
+                                                fill='none' stroke='orange' stroke-width='1.8'
+                                                stroke-linecap='round' stroke-linejoin='round'>
+                                                <path
+                                                    d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z' />
+                                                <rect x='8' y='11' width='8' height='6' rx='1' />
+                                                <circle cx='10' cy='13' r='1' />
+                                                <path d='M16 17l-2-2-2 2' />
+                                            </svg>
+                                        </div>
+                                        图片
+                                    </div>
+                                    <div class="monitor-disk" style="margin-top:2px;">
+                                        <div class="disk-bar">
+                                            <div class="disk-bar-fill img" id="imgBarFill"></div>
+                                        </div>
+                                        <span class="disk-percent img" id="imgPercent">0%</span>
                                     </div>
                                 </div>
-                                <div class="monitor-panel" id="monitor-panel" style="display: none">
-                                    <div class="monitor-header">
-                                        <span></span>
-                                        <span>
-                                            <span class="monitor-uptime" id="pcIp">加载中...</span>
+                            </div>
+                        </div>
+                        <div class="monitor-panel" id="monitor-panel" style="display: none">
+                            <div class="monitor-header">
+                                <span style="display: inline-flex;align-items: center;justify-content: center;gap: 4px;font-size: 1rem;font-weight: 600;color: var(--color-text);"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                               <path d="M2 5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-7v2h3a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2h3v-2H4a2 2 0 0 1-2-2V5zm18 11V5H4v11h16z" fill="#0D0D0D"/>
+                            </svg>系统监控</span>
+                                <span>
+                                    <span class="monitor-uptime" id="pcIp">加载中...</span>
+                                    <span class="monitor-uptime">｜</span>
+                                    <span class="monitor-uptime" id="serviceUptime">服务Live:加载中...</span>
+                                    <span class="monitor-uptime">｜</span>
+                                    <span class="monitor-uptime" id="monitorUptime">电脑Live: 加载中...</span>
+                                </span>
+                            </div>
+                            <div class="monitor-body">
+                                <div class="monitor-item">
+                                    <div class="monitor-label">
+                                        <div class="net-row">
+                                            <span class="net-row-label">↓&nbsp;</span><span id="netRecv"
+                                                class="net-row-value-download">0 B/s</span>
                                             <span class="monitor-uptime">｜</span>
-                                            <span class="monitor-uptime" id="serviceUptime">服务Live:加载中...</span>
-                                            <span class="monitor-uptime">｜</span>
-                                            <span class="monitor-uptime" id="monitorUptime">电脑Live: 加载中...</span>
-                                        </span>
+                                            <span class="net-row-label">↑&nbsp;</span><span id="netSent"
+                                                class="net-row-value-upload">0 B/s</span>
+                                            <span class="net-row-label">&nbsp;&nbsp;网络</span>
+                                        </div>
                                     </div>
-                                    <div class="monitor-body">
-                                        <div class="monitor-item">
-                                            <div class="monitor-label">
-                                                <div class="net-row">
-                                                    <span class="net-row-label">↓&nbsp;</span><span id="netRecv"
-                                                        class="net-row-value-download">0 B/s</span>
-                                                    <span class="monitor-uptime">｜</span>
-                                                    <span class="net-row-label">↑&nbsp;</span><span id="netSent"
-                                                        class="net-row-value-upload">0 B/s</span>
-                                                    <span class="net-row-label">&nbsp;&nbsp;网络</span>
-                                                </div>
-                                            </div>
-                                            <div id="netChart" class="monitor-chart"></div>
-                                            <div class="monitor-divider"></div>
-                                            <div class="monitor-label" style="margin-top:3px;"><svg viewBox="0 0 24 24"
-                                                    width="0.875rem" height="0.875rem" fill="none" stroke="currentColor"
-                                                    stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-                                                    style="vertical-align:-2px;margin-right:4px;">
-                                                    <rect x="4" y="4" width="16" height="16" rx="2" ry="2" />
-                                                    <rect x="9" y="9" width="6" height="6" />
-                                                    <path d="M9 1v3" />
-                                                    <path d="M15 1v3" />
-                                                    <path d="M9 20v3" />
-                                                    <path d="M15 20v3" />
-                                                    <path d="M1 9h3" />
-                                                    <path d="M20 9h3" />
-                                                    <path d="M1 15h3" />
-                                                    <path d="M20 15h3" />
-                                                </svg>应用资源</div>
-                                            <div class="monitor-app">
-                                                <div class="app-stat"><span class="app-stat-label">CPU</span><span
-                                                        id="appCpuPercent" class="app-stat-value cpu">0%</span></div>
-                                                <div class="app-stat"><span class="app-stat-label">内存</span><span
-                                                        id="appMemPercent" class="app-stat-value mem">0%</span></div>
-                                            </div>
+                                    <div id="netChart" class="monitor-chart"></div>
+                                    <div class="monitor-divider"></div>
+                                    <div class="monitor-label" style="margin-top:3px;"><svg viewBox="0 0 24 24"
+                                            width="0.875rem" height="0.875rem" fill="none" stroke="currentColor"
+                                            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                                            style="vertical-align:-2px;margin-right:4px;">
+                                            <rect x="4" y="4" width="16" height="16" rx="2" ry="2" />
+                                            <rect x="9" y="9" width="6" height="6" />
+                                            <path d="M9 1v3" />
+                                            <path d="M15 1v3" />
+                                            <path d="M9 20v3" />
+                                            <path d="M15 20v3" />
+                                            <path d="M1 9h3" />
+                                            <path d="M20 9h3" />
+                                            <path d="M1 15h3" />
+                                            <path d="M20 15h3" />
+                                        </svg>应用资源</div>
+                                    <div class="monitor-app">
+                                        <div class="app-stat"><span class="app-stat-label">CPU</span><span
+                                                id="appCpuPercent" class="app-stat-value cpu">0%</span></div>
+                                        <div class="app-stat"><span class="app-stat-label">内存</span><span
+                                                id="appMemPercent" class="app-stat-value mem">0%</span></div>
+                                    </div>
+                                </div>
+                                <div class="monitor-item">
+                                    <div class="monitor-label">CPU/内存</div>
+                                    <div id="cpu-memGauge" class="monitor-chart"></div>
+                                    <div class="monitor-sub" id="memDetail"></div>
+                                </div>
+                                <div class="monitor-item">
+                                    <div class="monitor-label">
+                                        <div class="net-row">
+                                            <span class="net-row-label">读&nbsp;</span><span id="diskRead"
+                                                class="net-row-value-download write">0 B/s</span>
+                                            <span class="monitor-uptime">｜</span>
+                                            <span class="net-row-label">写&nbsp;</span><span id="diskWrite"
+                                                class="net-row-value-upload">0 B/s</span>
+                                            <span class="net-row-label">&nbsp;&nbsp;磁盘</span>
                                         </div>
-                                        <div class="monitor-item">
-                                            <div class="monitor-label">CPU/内存</div>
-                                            <div id="cpu-memGauge" class="monitor-chart"></div>
-                                            <div class="monitor-sub" id="memDetail"></div>
+                                    </div>
+                                    <div id="diskIOChart" class="monitor-chart"></div>
+                                    <div class="monitor-divider"></div>
+                                    <div class="monitor-label" style="margin-top:4px;"><svg viewBox="0 0 24 24"
+                                            width="0.875rem" height="0.875rem" fill="none" stroke="currentColor"
+                                            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                                            style="vertical-align:-2px;margin-right:4px;">
+                                            <ellipse cx="12" cy="5" rx="9" ry="3" />
+                                            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+                                            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+                                        </svg>系统磁盘</div>
+                                    <div class="monitor-disk">
+                                        <div class="disk-bar">
+                                            <div class="disk-bar-fill" id="diskBarFill"></div>
                                         </div>
-                                        <div class="monitor-item">
-                                            <div class="monitor-label">
-                                                <div class="net-row">
-                                                    <span class="net-row-label">读&nbsp;</span><span id="diskRead"
-                                                        class="net-row-value-download write">0 B/s</span>
-                                                    <span class="monitor-uptime">｜</span>
-                                                    <span class="net-row-label">写&nbsp;</span><span id="diskWrite"
-                                                        class="net-row-value-upload">0 B/s</span>
-                                                    <span class="net-row-label">&nbsp;&nbsp;磁盘</span>
-                                                </div>
-                                            </div>
-                                            <div id="diskIOChart" class="monitor-chart"></div>
-                                            <div class="monitor-divider"></div>
-                                            <div class="monitor-label" style="margin-top:4px;"><svg viewBox="0 0 24 24"
-                                                    width="0.875rem" height="0.875rem" fill="none" stroke="currentColor"
-                                                    stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-                                                    style="vertical-align:-2px;margin-right:4px;">
-                                                    <ellipse cx="12" cy="5" rx="9" ry="3" />
-                                                    <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
-                                                    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-                                                </svg>系统磁盘</div>
-                                            <div class="monitor-disk">
-                                                <div class="disk-bar">
-                                                    <div class="disk-bar-fill" id="diskBarFill"></div>
-                                                </div>
-                                                <span class="disk-percent" id="diskPercent">0%</span>
-                                            </div>
-                                            <div class="monitor-label" style="margin-top:4px;"><svg viewBox="0 0 24 24"
-                                                    width="0.875rem" height="0.875rem" fill="none" stroke="currentColor"
-                                                    stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-                                                    style="vertical-align:-2px;margin-right:4px;">
-                                                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-                                                    <line x1="8" y1="21" x2="16" y2="21" />
-                                                    <line x1="12" y1="17" x2="12" y2="21" />
-                                                </svg>当前目录</div>
-                                            <div class="monitor-disk">
-                                                <div class="disk-bar">
-                                                    <div class="disk-bar-fill" id="diskNoteBarFill"></div>
-                                                </div>
-                                                <span class="disk-percent" id="diskNotePercent">0%</span>
-                                            </div>
+                                        <span class="disk-percent" id="diskPercent">0%</span>
+                                    </div>
+                                    <div class="monitor-label" style="margin-top:4px;"><svg viewBox="0 0 24 24"
+                                            width="0.875rem" height="0.875rem" fill="none" stroke="currentColor"
+                                            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                                            style="vertical-align:-2px;margin-right:4px;">
+                                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                                            <line x1="8" y1="21" x2="16" y2="21" />
+                                            <line x1="12" y1="17" x2="12" y2="21" />
+                                        </svg>当前目录</div>
+                                    <div class="monitor-disk">
+                                        <div class="disk-bar">
+                                            <div class="disk-bar-fill" id="diskNoteBarFill"></div>
                                         </div>
+                                        <span class="disk-percent" id="diskNotePercent">0%</span>
+                                    </div>
+                                </div>
 
-                                        <div class="monitor-item">
-                                            <div id="systemInfo" class="monitor-chart sysinfo-wrap">
-                                                <div class="sysinfo-gpu" id="sysinfoGpuSection" style="display:none">
-                                                    <div class="sysinfo-gpu-head">
-                                                        <span class="net-row">
-                                                            <span class="net-row-label">用&nbsp;</span>
-                                                            <span id="gpuMemUsed" class="net-row-value-upload">—</span>
-                                                            <span class="monitor-uptime">｜</span>
-                                                            <span class="net-row-label">总&nbsp;</span><span
-                                                                id="gpuMemTotal" class="net-row-value-download">—</span>
-                                                            <span class="net-row-label">&nbsp;&nbsp;GPU</span>
-                                                        </span>
-                                                    </div>
-                                                    <div id="gpuUsageChart" class="sysinfo-gpu-chart"></div>
-                                                </div>
-                                                <div class="sysinfo-text" id="systemInfoText">
-                                                    <div class="sysinfo-grid" id="systemInfoGrid"></div>
-                                                </div>
+                                <div class="monitor-item">
+                                    <div id="systemInfo" class="monitor-chart sysinfo-wrap">
+                                        <div class="sysinfo-gpu" id="sysinfoGpuSection" style="display:none">
+                                            <div class="sysinfo-gpu-head">
+                                                <span class="net-row">
+                                                    <span class="net-row-label">用&nbsp;</span>
+                                                    <span id="gpuMemUsed" class="net-row-value-upload">—</span>
+                                                    <span class="monitor-uptime">｜</span>
+                                                    <span class="net-row-label">总&nbsp;</span><span
+                                                        id="gpuMemTotal" class="net-row-value-download">—</span>
+                                                    <span class="net-row-label">&nbsp;&nbsp;GPU</span>
+                                                </span>
                                             </div>
+                                            <div id="gpuUsageChart" class="sysinfo-gpu-chart"></div>
+                                        </div>
+                                        <div class="sysinfo-text" id="systemInfoText">
+                                            <div class="sysinfo-grid" id="systemInfoGrid"></div>
                                         </div>
                                     </div>
                                 </div>
@@ -14878,7 +14480,7 @@
                     </span>
                     <button id="live-preview-btn" class="btn btn-success btn-sm" style="display: none;"
                         onclick="enterLivePreviewMode()">
-                        实时预览
+                        分屏预览
                     </button>
                     <button id="preview-btn" class="btn btn-success btn-sm" style="display: none;"
                         onclick="previewFile()">
@@ -14913,12 +14515,24 @@
                         onclick="mdToImage()">
                         导出为图片
                     </button>
+                    <button id="md-html-btn" class="btn btn-warning btn-sm" style="display: none;" onclick="mdToHtml()"
+                        title="导出为HTML">
+                        HTML
+                    </button>
+                    <button id="md-pdf-btn" class="btn btn-warning btn-sm" style="display: none;" onclick="mdToPdf()"
+                        title="导出为PDF">
+                        PDF
+                    </button>
                     <button id="copy-clipboard-btn" class="btn btn-warning btn-sm" style="display: inline-flex;"
                         onclick="copyToClipboard()">
                         复制
                     </button>
                 </div>
                 <div id="common-tool-controls" class="top-right-controls" style="display: none;">
+                    <button id="demo-ppt-btn" class="btn btn-orange btn-sm" style="display:none;"
+                        onclick="togglePPTMode()" title="Markdown 幻灯片放映（--- 分页，←/→ 翻页，Esc 退出）">
+                        放映
+                    </button>
                     <button id="demo-btn" class="btn btn-orange btn-sm" style="display:none;"
                         onclick="toggleDemoMode()">
                         演示
@@ -15968,7 +15582,9 @@
                                             value="448">
                                         <span class="setting-help"
                                             data-tippy-content="文档被切分成索引块时的目标 token 数（P0-2 起按 token 预算计，而非字符）。默认值按本地嵌入模型的 token 窗口自动对齐（512 窗口 → 448 token）。最终硬上限由 TokenBudgetValidator 按模型窗口裁决：超限块自动重切，无法重切的原子块（如超宽表格）会显式计数告警，不再静默截断。">ⓘ</span>
-                                        <span id="rag-setting-window-hint" style="display:block;font-size:11px;color:#8a8a8a;margin-top:2px;width:100%">正在读取 embedding 模型窗口…</span>
+                                        <span id="rag-setting-window-hint"
+                                            style="display:block;font-size:11px;color:#8a8a8a;margin-top:2px;width:100%">正在读取
+                                            embedding 模型窗口…</span>
                                     </div>
                                     <div class="rag-settings-row">
                                         <label>分块重叠</label>
@@ -17605,6 +17221,9 @@
         const livePreviewBtn = document.getElementById('live-preview-btn');
         const markdownBtn = document.getElementById('markdown-btn');
         const mdImageBtn = document.getElementById('md-image-btn');
+        const mdHtmlBtn = document.getElementById('md-html-btn');
+        const mdPdfBtn = document.getElementById('md-pdf-btn');
+        const demoPPTBtn = document.getElementById('demo-ppt-btn');
         const mdMindmapBtn = document.getElementById('md-mindmap-btn');
         const plantumlBtn = document.getElementById('plantuml-btn');
         const plantumlSvgBtn = document.getElementById('plantuml-svg-btn');
@@ -18088,7 +17707,7 @@
         function createEditorContainer(headerLabel, innerId = 'editor-inner', containerStyle = '') {
             return `<div class="editor-container"${containerStyle ? ` style="${containerStyle}"` : ''}>
                 <div class="editor-header">${headerLabel}</div>
-                <div id="${innerId}" style="width:100%;height:calc(100% - 60px);overflow: hidden;"></div>
+                <div id="${innerId}" style="width:100%;height:calc(100% - 60px);overflow: visible;"></div>
                 ${createEditorFooter()}
             </div>`;
         }
@@ -18140,8 +17759,7 @@
             editorInnerDiv.style.width = '50%';
             editorInnerDiv.style.height = '100%';
             editorInnerDiv.style.display = 'flex';
-            editorInnerDiv.innerHTML =
-                createEditorContainer('📝 编辑预览模式 - ' + currentFileName, 'editor-inner-live', 'height: 100%;');
+            editorInnerDiv.innerHTML = createEditorContainer('📝 编辑预览模式 - ' + currentFileName, 'editor-inner-live', 'height: 100%;');
             const previewInnerDiv = document.createElement('div');
             previewInnerDiv.id = 'content-live-preview ';
             previewInnerDiv.classList.add('content-live-preview');
@@ -18162,7 +17780,7 @@
                     lineNumbers: 'on',
                     lineNumbersMinChars: 5,
                     scrollbar: {
-                        vertical: 'hidden',
+                        vertical: 'on',
                         horizontal: 'hidden',
                         scrollByPage: true
                     }
@@ -18171,7 +17789,7 @@
                     TimerManager.setTimeout('livePreview', async () => {
                         const content = currentEditor.getValue();
                         await updateLivePreviewContent(content, previewContent);
-                    }, 300);
+                    }, 1000);
                 });
                 updateStatus(currentEditor, editorInnerDiv, '', false);
                 currentEditor.focus();
@@ -18184,7 +17802,11 @@
                 previewBtn: true,
                 livePreviewBtn: false,
                 editBtn: true,
-                formatBtn: false
+                formatBtn: false,
+                mdMindmapBtn: false,
+                mdImageBtn: false,
+                mdHtmlBtn: false,
+                mdPdfBtn: false, demoPPTBtn: false, 
             });
             formatBtn.style.display = 'inline-flex';
         }
@@ -18485,7 +18107,6 @@
                     invisibleCharacters: true,
                     nonBasicASCII: false
                 }
-
             });
             editor.focus();
             // v2：Ctrl/Cmd+S 保存当前文件（Monaco 内注册，避免与浏览器默认"另存为"冲突）
@@ -19882,6 +19503,8 @@
                     copyBtn: true,
                     opmlBtns: false,
                     mdImageBtn: false,
+                    mdHtmlBtn: false,
+                    mdPdfBtn: false,
                     livePreviewBtn: false,
                     formatBtn: false,
                     mdMindmapBtn: false,
@@ -19894,6 +19517,8 @@
                     markdownBtn: false,
                     plantumlSvgBtn: false,
                     mdImageBtn: false,
+                    mdHtmlBtn: false,
+                    mdPdfBtn: false, 
                     livePreviewBtn: false,
                     mdMindmapBtn: false,
                 });
@@ -19901,7 +19526,8 @@
             // 演示按钮：仅代码/文档/图片文件可见
             setControlsState({
                 commonToolControls: true,
-                demoBtn: true
+                demoBtn: true,
+                demoPPTBtn: false,
             });
         }
 
@@ -24948,7 +24574,7 @@
             await renderJsMind(data, false, true); // node_tree 数据、非 .mm 源、只读
             // 思维导图视图的工具栏：提供「预览」返回 md 渲染，隐藏编辑/保存/导出图片
             setControlsState({
-                topControls: true, editBtn: false, previewBtn: true, saveBtn: false, copyBtn: false, mdImageBtn: false, mdMindmapBtn: false,
+                topControls: true, editBtn: false, previewBtn: true, saveBtn: false, copyBtn: false, mdImageBtn: false, mdHtmlBtn: false, mdPdfBtn: false, mdMindmapBtn: false,
                 livePreviewBtn: false, formatBtn: false, commonToolControls: true, demoBtn: true, opmlBtns: true, jmSaveOpmlBtn: false, opmlSaveMmBtn: false
             });
             if (opmlBackBtn) opmlBackBtn.style.display = 'none';
@@ -24967,7 +24593,10 @@
             }
             mdIsKanban = false;
             await renderOriginalMarkdown(text);
-            setControlsState({ aiFab: true, mdImageBtn: true, mdMindmapBtn: true });
+            setControlsState({
+                aiFab: true, mdImageBtn: true, mdHtmlBtn: true, mdPdfBtn: true, mdMindmapBtn: true,
+                editBtn: true, livePreviewBtn: true, commonToolControls: true, demoPPTBtn: true, demoBtn: true
+            });
         }
 
         async function renderOriginalMarkdown(text) {
@@ -27191,8 +26820,11 @@ kanban-plugin: basic
             if (type === 'md') {
                 tocLinkElement.style.display = '';
                 tocElement.style.flex = '';
-                // TOC links（含慢速的 mermaid 图示）异步渲染，不阻塞 TOC 树显示
-                setTimeout(() => generateTOCLinks(markdownText, type, opmlData), 0);
+                if (typeof requestIdleCallback === 'function') {
+                    requestIdleCallback(() => generateTOCLinks(markdownText, type, opmlData), { timeout: 1000 });
+                }else{
+                    setTimeout(() => generateTOCLinks(markdownText, type, opmlData), 0);
+                }
             } else {
                 tocLinkElement.innerHTML = '';
                 tocLinkElement.style.display = 'none';
@@ -27448,12 +27080,66 @@ kanban-plugin: basic
                 postProcessCodeAndDiagrams(dom);
                 bindImagePreview(dom);
                 dealWithTippy(dom);
+                bindInternalLinks(dom);
+                bindDbViews(dom);
             };
             if (typeof requestIdleCallback === 'function') {
                 requestIdleCallback(runPostProcessing, { timeout: 200 });
             } else {
                 setTimeout(runPostProcessing, 0);
             }
+        }
+
+        async function bindDbViews(dom) {
+            if (!dom) return;
+            dom.querySelectorAll('table').forEach(tableEl => {
+                if (tableEl.closest('.mdgo-ai-block') || tableEl.closest('.mdgo-db-wrap')) return;
+                const firstRow = tableEl.querySelector('tr');
+                if (!firstRow || !firstRow.querySelector('th')) return; // 仅带表头的表格
+                const wrap = document.createElement('div');
+                wrap.className = 'mdgo-db-wrap';
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'mdgo-db-btn';
+                btn.textContent = 'csv';
+                btn.title = '复制表格为CSV格式';
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const { headers, rows } = parseTable(tableEl);
+                    const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+                    copyTextToClipboard(csv);
+                    showNotification('✓ CSV已复制到剪贴板', 'success');
+                });
+                tableEl.parentNode.insertBefore(wrap, tableEl);
+                wrap.appendChild(tableEl);
+                wrap.appendChild(btn);
+            });
+        }
+        function parseTable(tableEl) {
+            const rows = [];
+            const trs = tableEl.querySelectorAll('tr');
+            if (trs.length === 0) return { headers: [], rows: [] };
+            const headers = [...trs[0].querySelectorAll('th, td')].map(c => (c.textContent || '').trim());
+            for (let i = 1; i < trs.length; i++) {
+                const cells = [...trs[i].querySelectorAll('th, td')].map(c => (c.textContent || '').trim());
+                if (cells.length > 0) rows.push(cells);
+            }
+            return { headers, rows };
+        }
+
+        function bindInternalLinks(dom) {
+            if (!dom) return;
+            dom.querySelectorAll('a.ob-internal-link').forEach(a => {
+                if (a.dataset.mdgoBound) return;
+                a.dataset.mdgoBound = '1';
+                a.addEventListener('click', (e) => {
+                    const href = (a.getAttribute('href') || '').trim();
+                    if (!href || /^(https?:|mailto:|#|javascript:)/i.test(href)) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openFileFromPath(normalizePath(href));
+                });
+            });
         }
 
         /**
@@ -28147,6 +27833,12 @@ kanban-plugin: basic
                 }, 'image/png');
             });
             showNotification('图片导出成功！', 'success');
+        }
+        async function mdToHtml() {
+            window.mdgoExport.exportHtml();
+        }
+        async function mdToPdf() {
+            window.mdgoExport.exportPdf();
         }
 
         let isExporting = false; // 导出状态
@@ -30145,64 +29837,6 @@ kanban-plugin: basic
             });
             return result;
         }
-        async function renderDashboard(param = null) {
-            let data = {
-                "stats": {
-                    "total_files": 0,
-                    "total_folders": 0,
-                    "total_size_bytes": 0,
-                    "total_size_str": ""
-                },
-                "files": [],
-                "folderTree": {}
-            };
-            if (!param || !isEmpty(param)) data = param;
-            _currentDirTotalBytes = data.stats.total_size_bytes;
-            // 单次遍历完成所有数据处理 (stats + heatmap + 活动列表预排序 + treemap 映射)
-            const stats = await renderDashStats();
-            // 更新统计卡片 (轻量操作,同步)
-            const { todayEdit, deletedCount, sortedByMtimeTop10 } = stats;
-            const viewData = loadViewData();
-            const todayMs = new Date().setHours(0, 0, 0, 0);
-            document.getElementById('todayViewCount').innerText = viewData.sumList.filter(r => r.lastViewTime >= todayMs).length;
-            document.getElementById('totalFiles').innerText = data.stats.total_files;
-            document.getElementById('totalFolders').innerText = data.stats.total_folders;
-            document.getElementById('totalSpace').innerText = data.stats.total_size_str;
-            document.getElementById('todayEdit').innerText = todayEdit;
-            document.getElementById('deletedCount').innerText = deletedCount;
-            const todayDuration_ = viewData.sumList
-                .filter(r => r.lastViewTime >= todayMs)
-                .reduce((sum, r) => sum + (r.durationMs || 0), 0);
-            const todayMinutes_ = Math.floor(todayDuration_ / 60000);
-            document.getElementById('todayDurationStat').innerText = todayMinutes_ + ' 分钟';
-            // 构建热力图数据 (从 stats 中直接取，无需二次遍历)
-            const heatmapData = {
-                monthData: stats.heatmapMonthData,
-                year: stats.year,
-                filesByDate: stats.heatmapFilesByDate
-            };
-            // 从 stats 预提取文件类型计数，避免 renderFileSumPanel 重复遍历
-            const fileTypeCounts = {
-                doc: stats.docCount || 0,
-                code: stats.codeCount || 0,
-                image: stats.imgCount || 0
-            };
-            // 并行启动所有板块渲染
-            await Promise.all([
-                renderFileSumPanel(data, fileTypeCounts),
-                renderDashHeatmap(heatmapData),
-                renderDashActivity(sortedByMtimeTop10, viewData),
-            ]);
-            // 分帧渲染所有图表后，绑定窗口 resize 事件
-            requestAnimationFrame(async () => {
-                await renderDashCharts(stats, data);
-                renderHabitAnalysis();
-                if (!chartsResizeBound) {
-                    window.addEventListener('resize', resizeDashboardCharts);
-                    chartsResizeBound = true;
-                }
-            });
-        }
 
         async function renderDashboardLight(param = null) {
             let data = {
@@ -30250,6 +29884,7 @@ kanban-plugin: basic
             await Promise.all([
                 renderFileSumPanel(data, fileTypeCounts),
                 renderDashHeatmap(heatmapData),
+                renderDashAiHeatmap(),
                 renderDashActivity(sortedByMtimeTop10, viewData),
             ]);
             // 延迟帧渲染习惯分析，绑定 resize 事件
@@ -32920,6 +32555,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (opts.previewBtn !== undefined) previewBtn.style.display = opts.previewBtn ? 'inline-flex' : 'none';
             if (opts.saveBtn !== undefined) fileSaveBtn.style.display = opts.saveBtn ? 'inline-flex' : 'none';
             if (opts.markdownBtn !== undefined) markdownBtn.style.display = opts.markdownBtn ? 'inline-flex' : 'none';
+            if (opts.mdHtmlBtn !== undefined) mdHtmlBtn.style.display = opts.mdHtmlBtn ? 'inline-flex' : 'none';
+            if (opts.mdPdfBtn !== undefined) mdPdfBtn.style.display = opts.mdPdfBtn ? 'inline-flex' : 'none';
             if (opts.plantumlBtn !== undefined) plantumlBtn.style.display = opts.plantumlBtn ? 'inline-flex' : 'none';
             if (opts.plantumlSvgBtn !== undefined) plantumlSvgBtn.style.display = opts.plantumlSvgBtn ? 'inline-flex' : 'none';
             if (opts.copyBtn !== undefined) copyClipboardBtn.style.display = opts.copyBtn ? 'inline-flex' : 'none';
@@ -32939,6 +32576,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             if (opts.opmlSaveMmBtn !== undefined) opmlSaveMmBtn.style.display = opts.opmlSaveMmBtn ? 'inline-flex' : 'none';
             if (opts.commonToolControls !== undefined) commonToolControls.style.display = opts.commonToolControls ? 'flex' : 'none';
             if (opts.demoBtn !== undefined) demoBtn.style.display = opts.demoBtn ? 'inline-flex' : 'none';
+            if (opts.demoPPTBtn !== undefined) demoPPTBtn.style.display = opts.demoPPTBtn ? 'inline-flex' : 'none';
         }
 
         async function showAIResultModal(action, titles, content, fileName, filePath) {
@@ -46853,6 +46491,11 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             RANDOM_RULES = compileIgnorePatterns(RANDOM_DIR_BLACKLIST);
             HTML_RULES = compileIgnorePatterns(HTML_CODE_SHOW_BLACKLIST);
         }
+        async  function togglePPTMode() {
+            const fileText = currentEditor ? currentEditor.getValue() : originalContent ;
+            let initialContent = previewFileText || fileText || await getFileText();
+            window.markdownSlides(initialContent);
+        }
 
         let _isDemoMode = false; // 是否进入演示模式
         let _demoExitBar = null; // 退出演示指示条
@@ -47140,6 +46783,8 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             }
         }
+        window.enterFullAppscreen = enterFullscreen;
+        window.exitFullAppscreen = exitFullscreen;
 
         // Tauri 窗口最大化时调整 header padding
         async function initTauriWindowState() {
@@ -48816,9 +48461,7 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
         function initChatSelectionToolbar() {
             document.addEventListener('selectionchange', () => {
                 // 仅聊天视图激活时响应
-                const chatContainer = document.getElementById('chat-container');
                 if (!chatContainer || chatContainer.style.display === 'none') {
-                    hideChatSelectionToolbar();
                     return;
                 }
                 handleChatSelectionChange();
@@ -51797,9 +51440,147 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
             openHistory = new OpenHistory();
             openHistory.loadHistory();
         }
+        async function renderDashAiHeatmap(){
+             const heatmapDataArr = [];
+
+            const heatmapContainer = document.getElementById('ai-sum-heatmap');
+            if (dashboardCharts.aiHeatmapChart) dashboardCharts.aiHeatmapChart.dispose();
+            dashboardCharts.aiHeatmapChart = echarts.init(heatmapContainer);
+            const heatmapChart = dashboardCharts.aiHeatmapChart;
+            // 日历格子大小
+            const CALENDAR_CELL = 20;
+            const CELL_W = CALENDAR_CELL - 6;
+            const CELL_H = CALENDAR_CELL - 6;
+            const year = new Date().getFullYear();
+
+            const option = {
+                tooltip: {
+                    position: function (point) {
+                        return { left: point[0] + 10, top: point[1] + 10 };
+                    },
+                    formatter: function (params) {
+                        const dateStr = params.value[0];
+                        const count = params.value[1];
+                        const dayFiles = filesByDate[dateStr] || [];
+                        const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+                        const weekDay = weekDays[new Date(dateStr).getDay()];
+                        let content = `<div style="font-weight:500; margin-bottom:0.125rem;font-size:0.8125rem;">📅 ${dateStr} (${weekDay})</div><div style="margin-bottom:0.25rem;font-size:0.8125rem;font-weight:500;">📄 共 ${count} 个文件</div>`;
+                        const dayFileCount = dayFiles.length;
+                        if (dayFileCount > 0) {
+                            content += `<div style="border-top:1px solid #eee; padding-top:0.2rem; margin-top:0.2rem;font-weight:500;">`;
+                            dayFiles.sort((a, b) => b.ctime - a.ctime).slice(0, 10).forEach(f => {
+                                const t = new Date(f.ctime * 1000);
+                                const ts = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+                                content += `<div style="font-size:0.75rem;white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:12.5rem;" title="${f.name}">📄 ${f.name} <span style="color:var(--t3);">${ts}</span></div>`;
+                            });
+                            if (dayFileCount > 10) {
+                                content += `<div style="font-size:0.75rem;">♻️ 还有 ${dayFileCount - 10} 个文件</div>`;
+                            }
+                            content += `</div>`;
+                        }
+                        return content;
+                    }
+                },
+                visualMap: {
+                    min: 0,
+                    max: heatmapDataArr.length > 0 ? Math.max(...heatmapDataArr.map(d => d[1])) : 10,
+                    type: 'piecewise',
+                    splitNumber: 6,
+                    calculable: true,
+                    show: false,
+                    pieces: [
+                        { value: 0, color: '#ebedf0' },
+                        { value: 1, color: '#cde2f9ff' },
+                        { gte: 1, lt: 3, color: '#c0ddf9ff' },
+                        { gte: 3, lt: 8, color: '#94c3f8ff' },
+                        { gte: 8, lt: 15, color: '#6babf9ff' },
+                        { gte: 15, lt: 30, color: '#4e9bfaff' },
+                        { gte: 30, color: '#007aff' }
+                    ]
+                },
+                calendar: {
+                    top: 20,
+                    left: 35,
+                    right: 1,
+                    bottom: 10,
+                    cellSize: [CALENDAR_CELL, CALENDAR_CELL],
+                    itemStyle: {
+                        borderRadius: 4,
+                        borderWidth: 3,
+                        borderColor: 'transparent',
+                        backgroundColor: 'transparent'
+                    },
+                    splitLine: {
+                        show: false,
+                        lineStyle: { color: '#b7b8baff', width: 1 }
+                    },
+                    range: year,
+                    yearLabel: { show: false },
+                    monthLabel: { color: '#666', fontSize: 10 },
+                    dayLabel: {
+                        color: '#666',
+                        fontSize: 9,
+                        firstDay: 1,
+                        nameMap: ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+                    }
+                },
+                series: [
+                    {
+                        type: 'heatmap',
+                        coordinateSystem: 'calendar',
+                        data: heatmapDataArr,
+                        itemStyle: {
+                            borderRadius: 4,
+                            borderWidth: 0
+                        },
+                        emphasis: {
+                            itemStyle: {
+                                borderWidth: 5,
+                                shadowBlur: 5,
+                                color: 'orange',
+                                shadowColor: 'rgba(111, 108, 108, 0.25)'
+                            }
+                        }
+                    },
+                    {
+                        name: 'snake',
+                        type: 'scatter',
+                        coordinateSystem: 'calendar',
+                        symbol: 'roundRect',
+                        symbolSize: [CELL_W, CELL_H],
+                        itemStyle: {
+                            borderRadius: 4,
+                            borderWidth: 0,
+                        },
+                        data: [],
+                        z: 10,
+                        animation: false
+                    },
+                    {
+                        name: 'food',
+                        type: 'scatter',
+                        coordinateSystem: 'calendar',
+                        symbol: 'roundRect',
+                        symbolSize: [CELL_W, CELL_H],
+                        itemStyle: {
+                            borderRadius: 4,
+                            borderWidth: 0,
+                        },
+                        data: [],
+                        z: 11,
+                        animation: false
+                    }
+                ]
+            };
+            heatmapChart.setOption(option);
+        }
     </script>
     <script src="./css_js/modules/canvas.js"></script>
     <script src="./css_js/modules/chat-history.js"></script>
+    <script src="./css_js/modules/editor/export.js"></script>
+    <script src="./css_js/modules/editor/core.js"></script>
+    <script src="./css_js/modules/editor/slides.js"></script>
+    <script src="./css_js/modules/editor/block.js"></script>
     <script src="./css_js/modules/skill.js"></script>
     <script src="./css_js/modules/mcp.js"></script>
     <script src="./css_js/modules/agent.js"></script>
