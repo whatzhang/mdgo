@@ -105,6 +105,18 @@ pub struct McpServerInfo {
     pub enabled: bool,
 }
 
+/// 统计列表项（kb_mcp 使用）。
+#[derive(Clone, serde::Serialize)]
+pub struct McpServerStat {
+    pub name: String,
+    /// connected / stopped / connecting / failed
+    pub status: String,
+    /// stdio / http
+    pub server_type: String,
+    /// 创建时间（秒级时间戳；旧配置无记录时为 0）
+    pub created_at: u64,
+}
+
 /// 前端详情（不含运行日志：日志体积大且变化频繁，改为按需经 mcp_logs 单独拉取）。
 #[derive(Clone, serde::Serialize)]
 pub struct McpServerDetail {
@@ -288,7 +300,29 @@ impl McpRegistry {
         out
     }
 
-    /// 服务器详情（含配置、工具清单与运行期日志）。
+    /// 服务器统计列表（含状态分类、传输类型、创建时间）。
+    ///
+    /// 供 `kb_mcp` 统计命令使用：connected=已连接、stopped=已断开（含 connecting 中间态归入断开）、
+    /// failed=失败；类型由配置推断（url 非空 → http，否则 → stdio）。
+    pub async fn stats(&self) -> Vec<McpServerStat> {
+        let servers = self.servers.lock().await;
+        let mut out: Vec<McpServerStat> = Vec::new();
+        for (name, state) in servers.iter() {
+            let guard = state.lock().await;
+            out.push(McpServerStat {
+                name: name.clone(),
+                status: guard.status.clone(),
+                server_type: if guard.config.is_stdio() {
+                    "stdio".to_string()
+                } else {
+                    "http".to_string()
+                },
+                created_at: guard.config.created_at.unwrap_or(0),
+            });
+        }
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        out
+    }
     pub async fn get(&self, name: &str) -> Option<McpServerDetail> {
         let servers = self.servers.lock().await;
         let state = servers.get(name)?;
@@ -332,6 +366,16 @@ impl McpRegistry {
             }
         }
         let previous = configs.get(name).cloned();
+        // 保留创建时间：新建服务器记录当前时间；已存在则沿用原值（前端传参不含该字段）
+        let mut config = config.clone();
+        if config.created_at.is_none() {
+            config.created_at = Some(
+                previous
+                    .as_ref()
+                    .and_then(|p| p.created_at)
+                    .unwrap_or_else(now_secs),
+            );
+        }
         configs.insert(name.to_string(), config.clone());
         drop(servers);
         Self::save_configs(&dir, &configs)?;

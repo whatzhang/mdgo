@@ -1,5 +1,6 @@
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::core::skill::SkillScope;
 use crate::core::types::{FileTypeCount, IndexMeta};
 use crate::core::{IndexerConfig, KbIndexResult, KbProgress, KbStatus, SearchHit, call_embedding_query};
 use crate::AppState;
@@ -10,6 +11,45 @@ use crate::AppState;
 pub struct KbDashboardStats {
     pub storage_size: String,
     pub type_distribution: Vec<FileTypeCount>,
+}
+
+/// Skill 统计项（列表每项仅展示名称 / ID / description / tools）
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SkillStatItem {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub tools: Vec<String>,
+}
+
+/// kb_skill 返回值：总量 / 分层（system / global / project）/ 启停 + 列表
+#[derive(Debug, serde::Serialize)]
+pub struct SkillStats {
+    pub total: usize,
+    pub system_count: usize,
+    pub global_count: usize,
+    pub project_count: usize,
+    pub enabled_count: usize,
+    pub disabled_count: usize,
+    pub skills: Vec<SkillStatItem>,
+}
+
+/// MCP 统计项（列表每项仅展示名称 / 类型 / 创建时间）
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct McpStatItem {
+    pub name: String,
+    pub server_type: String,
+    pub created_at: u64,
+}
+
+/// kb_mcp 返回值：已连接 / 已断开 / 失败 数量 + 列表
+#[derive(Debug, serde::Serialize)]
+pub struct McpStats {
+    pub connected_count: usize,
+    pub disconnected_count: usize,
+    pub failed_count: usize,
+    pub total: usize,
+    pub servers: Vec<McpStatItem>,
 }
 
 // ─── 命令 ───
@@ -183,15 +223,11 @@ pub async fn kb_update_indexer_config(
     rerank_min_score: Option<f32>,
     bm25_msm_ratio: Option<f32>,
     reranker_enabled: Option<bool>,
-    // 🟠 M23 修复：证据校验开关接线（原为死配置——`evidence_check_enabled` 无任何
-    // 命令参数与前端入口，C2 特性不可达；现可经此参数开启）
     evidence_check_enabled: Option<bool>,
 ) -> Result<(), String> {
     let state = app.state::<AppState>();
     let mut cfg = state.config_store.read();
 
-    // P0-1：分块参数校验（🟠 M27：公共校验函数，含 size+overlap 联合校验——
-    // 拒绝非法值，不再静默接受；chunk 超模型窗口会被静默截断）
     let (size, overlap) = validate_chunk_params(chunk_size, chunk_overlap, cfg.chunk_size, cfg.chunk_overlap)?;
     cfg.chunk_size = size;
     cfg.chunk_overlap = overlap;
@@ -308,6 +344,88 @@ pub async fn kb_dashboard_stats(
     Ok(KbDashboardStats {
         storage_size,
         type_distribution,
+    })
+}
+
+/// Skill 基本统计（总量 / 分层数量 / 启停数量 + 精简列表）。
+///
+/// 数据源为 `SkillRegistry`（内存注册表，首次访问 `ensure_loaded` 重建）。
+/// 统计口径：
+/// - 分层：system（系统内置）/ global（用户全局）/ project（项目）；
+/// - 启停：按 `enabled` 字段；
+/// - 列表：每项仅展示 id / name / description / tools（供前端表格精简展示）。
+#[tauri::command]
+pub async fn kb_skill(
+    app: AppHandle,
+    dir_path: String,
+) -> Result<SkillStats, String> {
+    let state = app.state::<AppState>();
+    state.skill_registry.ensure_loaded(&dir_path)?;
+    let skills = state.skill_registry.list(None);
+
+    let total = skills.len();
+    let system_count = skills.iter().filter(|s| s.scope == SkillScope::System).count();
+    let global_count = skills.iter().filter(|s| s.scope == SkillScope::Global).count();
+    let project_count = skills.iter().filter(|s| s.scope == SkillScope::Project).count();
+    let enabled_count = skills.iter().filter(|s| s.enabled).count();
+    let disabled_count = total - enabled_count;
+
+    let list = skills
+        .iter()
+        .map(|s| SkillStatItem {
+            id: s.id.clone(),
+            name: s.name.clone(),
+            description: s.description.clone(),
+            tools: s.tools.clone(),
+        })
+        .collect();
+
+    Ok(SkillStats {
+        total,
+        system_count,
+        global_count,
+        project_count,
+        enabled_count,
+        disabled_count,
+        skills: list,
+    })
+}
+
+/// MCP 基本统计（已连接 / 已断开 / 失败数量 + 精简列表）。
+///
+/// 数据源为 `McpRegistry`（内存注册表，`set_root` 后从 .mdgo/mcp.json 加载）。
+/// 统计口径：
+/// - connected = 已连接；stopped / connecting = 已断开；failed = 失败；
+/// - 列表每项仅展示 name / server_type（stdio|http，由配置推断）/ created_at（秒）。
+#[tauri::command]
+pub async fn kb_mcp(
+    app: AppHandle,
+    dir_path: String,
+) -> Result<McpStats, String> {
+    let state = app.state::<AppState>();
+    state.mcp.set_root(&dir_path).await;
+    let stats = state.mcp.stats().await;
+
+    let total = stats.len();
+    let connected_count = stats.iter().filter(|s| s.status == "connected").count();
+    let failed_count = stats.iter().filter(|s| s.status == "failed").count();
+    let disconnected_count = total - connected_count - failed_count;
+
+    let servers = stats
+        .iter()
+        .map(|s| McpStatItem {
+            name: s.name.clone(),
+            server_type: s.server_type.clone(),
+            created_at: s.created_at,
+        })
+        .collect();
+
+    Ok(McpStats {
+        connected_count,
+        disconnected_count,
+        failed_count,
+        total,
+        servers,
     })
 }
 

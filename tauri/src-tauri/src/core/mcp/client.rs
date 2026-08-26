@@ -131,6 +131,9 @@ pub struct McpServerConfig {
     pub headers: HashMap<String, String>,
     #[serde(default = "default_enabled")]
     pub enabled: bool,
+    /// 创建时间（秒级时间戳；旧配置无此字段时反序列化为 None，由 upsert 补齐）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<u64>,
 }
 
 fn default_enabled() -> bool {

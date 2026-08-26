@@ -636,10 +636,15 @@ color: rgb(147 51 234 / 1);
 }
 .skill-chip.global {
     color: rgb(22 163 74 / 1);
+    background-color: rgb(22 163 74 / 0.12);
 }
+
 .skill-chip.project {
     color: rgb(219 39 119 / 1);
+    background-color: rgb(219 39 119 / 0.12);
 }
+
 .skill-chip.system {
-    color: rgb(147 51 234 / 1);   
+    color: rgb(147 51 234 / 1);
+    background-color: rgb(147 51 234 / 0.12);
 }

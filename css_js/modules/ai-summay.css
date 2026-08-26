@@ -1,0 +1,12 @@
+/* ===== MCP 管理模块样式（模块标杆：css_js/modules/mcp.css） =====
+ * 职责：MCP 服务器管理页面的样式（仅本模块特有规则）。
+ * 说明：MCP 页面与 Skill 页面同构（v2 设计），布局类（.skill-layout、
+ *       .skill-sidebar、.skill-list、.skill-form-* 等）由 skill.css 提供，
+ *       本文件只维护 #mcp-container 及后续 mcp 专属规则。
+ * 依赖：必须在 index.html 主 <style> 与 skill.css 之后加载（使用其 CSS 变量与布局类）。
+ */
+#mcp-container {
+    display: none;
+    height: 100%;
+    width: 100%;
+}

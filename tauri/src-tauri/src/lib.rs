@@ -590,6 +590,8 @@ pub fn run() {
             commands::knowledge::kb_clear,
             commands::knowledge::kb_dashboard_stats,
             commands::knowledge::kb_embedding_info,
+            commands::knowledge::kb_skill,
+            commands::knowledge::kb_mcp,
             commands::knowledge::kb_get_indexer_config,
             commands::knowledge::kb_update_indexer_config,
             commands::config::kb_config_read,
