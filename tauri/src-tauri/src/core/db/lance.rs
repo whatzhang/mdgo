@@ -142,27 +142,19 @@ impl LanceStore {
 
     /// 创建或确保向量表存在（固定 384 维，本地 bge-small-zh-v1.5 模型）
     ///
-    /// 如果表已存在则直接返回（无需检查维度——全局统一使用本地模型）。
+    /// 开发阶段策略：表已存在则直接返回（不做列迁移——表结构以本文件 schema 为准；
+    /// 结构变更时由调用方 drop_table_only 后重建）；表不存在则按当前 schema 创建。
     pub async fn create_table(&self) -> Result<(), String> {
         let db = self.get_connection().await?;
 
-        // 表已存在 → 迁移新列（向后兼容）
+        // 表已存在 → 直接返回（开发阶段不做向后兼容迁移）
         let open_result = tokio::time::timeout(
             Duration::from_secs(30),
             db.open_table(&self.table_name).execute(),
         )
         .await;
-        if let Ok(Ok(table)) = open_result {
-            // 🟠 L14：迁移失败留日志（旧实现 `let _ =` 静默吞错）
-            Self::migrate_add_column_logged(&table, "path_depth", DataType::UInt32).await;
-            Self::migrate_add_column_logged(&table, "path_json", DataType::Utf8).await;
-            Self::migrate_add_column_logged(&table, "sentence_window", DataType::Utf8).await;
-            Self::migrate_add_column_logged(&table, "symbol_name", DataType::Utf8).await;
-            Self::migrate_add_column_logged(&table, "symbol_kind", DataType::Utf8).await;
-            Self::migrate_add_column_logged(&table, "chunk_type", DataType::Utf8).await;
-            // A3：tags 列（frontmatter 标签；供 metadata 过滤下推）
-            Self::migrate_add_column_logged(&table, "tags", DataType::Utf8).await;
-            // 兼容旧表：补建向量索引（已有索引则瞬间跳过；构建失败不阻断，仅影响检索性能）
+        if let Ok(Ok(_table)) = open_result {
+            // 补建向量索引（已有索引则瞬间跳过；构建失败不阻断，仅影响检索性能）
             if let Err(e) = self.ensure_vector_index().await {
                 log::warn!("[lance] 确保向量索引失败（检索将退化为全表扫描）: {}", e);
             }
@@ -257,32 +249,6 @@ impl LanceStore {
         .map_err(|e| format!("创建向量索引失败: {}", e))?;
         log::info!("[lance] IVF-SQ 向量索引创建完成");
         Ok(())
-    }
-
-    /// 尝试为已有表添加新列（兼容旧版本创建的 schema）
-    async fn migrate_add_column(
-        table: &lancedb::Table,
-        name: &str,
-        dtype: DataType,
-    ) -> Result<(), String> {
-        use lancedb::table::NewColumnTransform;
-        // 构建新列 schema（仅包含要添加的列）
-        let new_schema = Arc::new(ArrowSchema::new(vec![Field::new(name, dtype.clone(), true)]));
-        let transform = NewColumnTransform::AllNulls(new_schema);
-        table
-            .add_columns(transform, None)
-            .await
-            .map(|_| ())
-            .map_err(|e| format!("添加列 {} 失败: {}", name, e))
-    }
-
-    /// 🟠 L14：迁移加列 + 失败留日志——旧实现 `let _ =` 静默吞错，若迁移失败
-    /// （文件锁/IO），首次 `add_chunks` 会以 schema 不匹配硬失败且发生在 open 阶段，
-    /// 排查困难。
-    async fn migrate_add_column_logged(table: &lancedb::Table, name: &str, dtype: DataType) {
-        if let Err(e) = Self::migrate_add_column(table, name, dtype).await {
-            log::warn!("[lance] 迁移加列失败 ({})，后续写入可能 schema 不匹配: {}", name, e);
-        }
     }
 
     /// 获取或打开已有表

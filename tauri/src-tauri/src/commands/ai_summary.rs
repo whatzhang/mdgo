@@ -19,8 +19,10 @@ use tokio_util::sync::CancellationToken;
 
 use crate::AppState;
 
-/// 最大并发 LLM 调用数（本地小模型并发过高会 OOM/排队；远端 API 也可调节）
-const MAX_CONCURRENT: usize = 4;
+/// 最大并发 LLM 调用数。行为 11 + 知识库 3 = 14 个分类，全并发一次发出，
+/// 总耗时 ≈ 最慢单分类耗时（消除批数等待）。若本地小模型并发 OOM/排队，
+/// 可调低该值（如 4/8）以串行化。
+const MAX_CONCURRENT: usize = 14;
 
 /// 一个待分析分类（前端采集的原始文本 + 该分类的分析指令）。
 #[derive(Debug, Clone, serde::Deserialize)]
