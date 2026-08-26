@@ -3444,7 +3444,8 @@
 
         .activity-section-two {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            /* minmax(0, 1fr) 防止被手风琴固定宽度内容撑开溢出窗口 */
+            grid-template-columns: minmax(0, 1fr);
             gap: 0.625rem;
             width: 100%;
             box-sizing: border-box;
@@ -3466,10 +3467,289 @@
 
         .activity-column {
             width: 100%;
+            min-width: 0; /* 允许收缩，防止子内容撑开溢出 */
             overflow: hidden;
             display: flex;
             flex-direction: column;
             padding: 2px
+        }
+
+        /* AI 总结面板（手风琴） */
+        .ai-summary-panel-title {
+            font-weight: 600;
+            font-size: 0.9375rem;
+            color: var(--color-text, #333);
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .ai-summary-loading,
+        .ai-summary-empty {
+            padding: 1rem 0.5rem;
+            text-align: center;
+            color: var(--color-text-secondary, #888);
+            font-size: 0.8125rem;
+        }
+
+        /* ─── 横向手风琴（demo.html 飞书风格，响应式自适应） ─── */
+        .ai-summary-panel {
+            min-width: 0; /* 允许收缩，防止溢出 */
+        }
+
+        .ai-summary-panel .h-accordion {
+            display: flex;
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+            height: 26rem;
+            background: #ffffff;
+            border-radius: 14px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+            overflow: hidden;
+        }
+
+        .ai-summary-panel .h-accordion-item {
+            display: flex;
+            flex-direction: row;
+            /* 未激活固定窄条；窗口过窄由媒体查询切换纵向，不做宽度收缩（避免挤压内容区） */
+            flex: 0 0 56px;
+            min-width: 56px;
+            transition: flex-grow 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+                flex-basis 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+                background-color 0.3s,
+                box-shadow 0.3s;
+            background: #ffffff;
+            border-right: 1px solid #f0f1f3;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .ai-summary-panel .h-accordion-item:last-child {
+            border-right: none;
+        }
+
+        .ai-summary-panel .h-accordion-item.active {
+            flex: 1 1 0;
+            min-width: 0;
+            background: #ffffff;
+            cursor: default;
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.1);
+            z-index: 2;
+        }
+
+        .ai-summary-panel .h-accordion-header {
+            /* 固定窄条标题栏（demo 原版）：header 占 56px，content 占剩余空间 */
+            flex: 0 0 56px;
+            width: 56px;
+            min-width: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            border: none;
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            font-size: 0.8125rem;
+            font-weight: 500;
+            color: #3d3d3d;
+            letter-spacing: 2px;
+            padding: 16px 0;
+            transition: background 0.25s, color 0.25s;
+            user-select: none;
+            position: relative;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        .ai-summary-panel .h-accordion-item.active .h-accordion-header {
+            color: #3370ff;
+            background: #f7f8fa;
+        }
+
+        .ai-summary-panel .h-accordion-header::after {
+            content: '';
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: #c9cdd4;
+            transition: background 0.3s, transform 0.3s, box-shadow 0.3s;
+        }
+
+        .ai-summary-panel .h-accordion-item.active .h-accordion-header::after {
+            background: #3370ff;
+            transform: translateX(-50%) scale(1.6);
+            box-shadow: 0 0 0 4px rgba(51, 112, 255, 0.15);
+        }
+
+        .ai-summary-panel .h-accordion-item:not(.active):hover {
+            background: #fafbfc;
+        }
+
+        .ai-summary-panel .h-accordion-item:not(.active):hover .h-accordion-header {
+            color: #3370ff;
+        }
+
+        .ai-summary-panel .h-accordion-content {
+            flex: 1;
+            min-width: 0;
+            opacity: 0;
+            transform: translateX(-16px) scale(0.98);
+            transition: opacity 0.35s ease 0.1s,
+                transform 0.35s ease 0.1s;
+            padding: 18px 20px 16px;
+            line-height: 1.8;
+            color: #4e5969;
+            font-size: 0.875rem;
+            display: flex;
+            align-items: flex-start;
+            overflow-y: auto;
+        }
+
+        .ai-summary-panel .h-accordion-item.active .h-accordion-content {
+            opacity: 1;
+            transform: translateX(0) scale(1);
+        }
+
+        /* 内容子元素：填充手风琴内容区，防止 markdown 内容宽度计算异常 */
+        .ai-summary-panel .h-accordion-content .ai-acc-content {
+            flex: 1 1 auto;
+            width: 100%;
+            min-width: 0;
+            max-width: 100%;
+        }
+
+        /* 窄窗口响应式：14 个横向标题栏放不下时，切换为纵向手风琴 */
+        @media (max-width: 720px) {
+            .ai-summary-panel .h-accordion {
+                flex-direction: column;
+                height: auto;
+                max-height: 30rem;
+            }
+
+            .ai-summary-panel .h-accordion-item {
+                flex: 0 0 auto;
+                min-width: 0;
+                flex-direction: column;
+                border-right: none;
+                border-bottom: 1px solid #f0f1f3;
+            }
+
+            .ai-summary-panel .h-accordion-item:last-child {
+                border-bottom: none;
+            }
+
+            .ai-summary-panel .h-accordion-item.active {
+                flex: 0 0 auto;
+            }
+
+            .ai-summary-panel .h-accordion-header {
+                flex: 0 0 40px;
+                width: 100%;
+                writing-mode: horizontal-tb;
+                letter-spacing: 0;
+                padding: 0 12px;
+                justify-content: flex-start;
+            }
+
+            .ai-summary-panel .h-accordion-header::after {
+                bottom: auto;
+                left: auto;
+                right: 12px;
+                top: 50%;
+                transform: translateY(-50%);
+            }
+
+            .ai-summary-panel .h-accordion-item.active .h-accordion-header::after {
+                transform: translateY(-50%) scale(1.6);
+            }
+
+            .ai-summary-panel .h-accordion-content {
+                padding: 12px 14px;
+            }
+
+            .ai-acc-badge {
+                margin-top: 0;
+                margin-left: 8px;
+            }
+        }
+
+        .ai-summary-panel .h-accordion-content::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .ai-summary-panel .h-accordion-content::-webkit-scrollbar-thumb {
+            background: #d0d3d6;
+            border-radius: 2px;
+        }
+
+        .ai-acc-badge {
+            display: inline-block;
+            margin-top: 8px;
+            font-size: 0.625rem;
+            line-height: 1;
+            padding: 2px 4px;
+            border-radius: 6px;
+            background: #f2f3f5;
+            color: #86909c;
+            writing-mode: horizontal-tb;
+            letter-spacing: 0;
+        }
+
+        .ai-acc-badge-warn {
+            background: #fff7e8;
+            color: #f5a623;
+        }
+
+        /* 手风琴内容区 markdown 基础样式 */
+        .ai-summary-panel .h-accordion-content h1,
+        .ai-summary-panel .h-accordion-content h2,
+        .ai-summary-panel .h-accordion-content h3 {
+            margin: 0.5rem 0 0.25rem;
+            font-size: 1em;
+            color: #1d2129;
+        }
+
+        .ai-summary-panel .h-accordion-content p {
+            margin: 0.25rem 0;
+        }
+
+        .ai-summary-panel .h-accordion-content ul,
+        .ai-summary-panel .h-accordion-content ol {
+            margin: 0.25rem 0;
+            padding-left: 1.25rem;
+        }
+
+        .ai-summary-panel .h-accordion-content table {
+            border-collapse: collapse;
+            margin: 0.375rem 0;
+            font-size: 0.8125rem;
+        }
+
+        .ai-summary-panel .h-accordion-content th,
+        .ai-summary-panel .h-accordion-content td {
+            border: 1px solid #e5e6eb;
+            padding: 0.25rem 0.5rem;
+        }
+
+        .ai-summary-panel .h-accordion-content code {
+            background: #f2f3f5;
+            border-radius: 4px;
+            padding: 0 4px;
+            font-size: 0.8125rem;
+        }
+
+        .ai-summary-panel .h-accordion-content pre {
+            background: #f7f8fa;
+            border-radius: 8px;
+            padding: 0.625rem;
+            overflow-x: auto;
         }
 
         .activity-column .editList,
@@ -13964,11 +14244,7 @@
                 </div>
                 <div class="activity-section-two" id="ai-summary-panel" style="display: none;">
                     <div class="chart-card">
-                        <div class="activity-column" id="ai-summary-left">
-                        </div>
-                    </div>
-                    <div class="chart-card">
-                        <div class="activity-column" id="ai-summary-right">
+                        <div class="activity-column ai-summary-panel" id="ai-summary-left">
                         </div>
                     </div>
                 </div>
@@ -16597,14 +16873,6 @@
                 value: '解读分析文件内容，根据分析结果输出合适的 Excalidraw 图形代码，并严格遵守 Excalidraw JSON 语法规范，确保代码可直接导入渲染',
                 title: 'Excalidraw 图'
             },
-            operation: {
-                key: '知识行为分析',
-                display: false,
-                ext: ".md",
-                systemPrompt: '你是一个“开发者知识行为分析引擎”。我会提供多个JSON文件，包含文件目录结构、文件元数据、文件标签、用户操作日志、AI调用历史、文件查看记录、时间序列行为数据。注意：你不能读取真实文件内容，只能基于文件名、文件路径、文件类型、文件大小、时间信息、标签、AI操作类型、用户行为记录进行统计分析与合理预测。禁止假设文件具体内容、虚构系统架构、推断不存在的信息、过度脑补。请输出简洁、结构化、有洞察的信息。分析任务：1.技术关注方向：基于文件名、路径目录、高频访问、高频AI操作，统计当前最活跃技术主题、高频技术关键词、最近重点关注方向、长期稳定主题，输出TOP技术主题、技术热度排行、技术趋势变化，使用Markdown表格。2.用户行为分析：统计查看次数最多的文件、AI操作最多的文件、高频summarize/analyze/reformat行为、高频标记文件、最近活跃时间段，分析用户更偏向学习、总结、架构设计、Prompt Engineering、知识整理，输出行为统计表、AI使用偏好、操作模式总结。3.知识结构分析：仅基于路径结构、文件分类、标签、文件名相似度分析知识聚类、高频目录、技术分类分布、可形成专题的知识集合，输出知识分类树、推荐专题、高频知识目录，必要时使用Mermaid。4.时间趋势分析：基于ctime、mtime、viewTime、AI history时间分析最近活跃主题、最近新增主题、最近AI使用增长方向、技术兴趣迁移，输出时间趋势总结、最近7天热点、最近30天变化，必要时使用Mermaid timeline。5.文件价值分析：识别高频访问文件、高频AI加工文件、高频标记文件、长期活跃文件、低活跃但高关注文件，输出文件、活跃度、AI参与度、标签情况、综合价值表格，不要推断文件具体内容。6.AI使用模式分析：统计summarize、analyze、reformat、drawio、custom prompt次数，分析用户最常见AI工作流、高频Prompt模式、AI主要用途，输出AI行为统计、Prompt使用模式、AI工作流总结，必要时使用Mermaid饼图。输出要求：输出简洁、不写废话、不做无依据推断、使用Markdown、能表格就不用长文本、能图表就不用大段解释、重点展示统计结果与趋势、所有分析必须基于已有数据、所有预测必须标记为“推测”。优先输出表格、Mermaid、时间线、Top Ranking，避免长篇解释、空洞总结、AI套话、项目架构脑补',
-                value: '进行知识行为分析，以下为文件名称及内容\n\n',
-                title: '知识行为分析结果'
-            },
         };
         // 新建文件的模板列表
         const NEW_FILES = [
@@ -16677,7 +16945,6 @@
             { key: '文档关联图谱', value: 'toggleFile("noteGraph")', display: true, type: 'B' },
             { key: '文件类型分布', value: 'toggleFile("fileType")', display: true, type: 'B' },
             { key: '行为记录大屏', value: 'toggleFile("behaviorAnalysis")', display: true, type: 'B' },
-            { key: '行为记录分析', value: 'analyzeFileOs()', display: false, type: 'B' },
             { key: '目录空间分析', value: 'toggleFile("dirSpace")', display: true, type: 'B' },
 
             { key: '书签', value: 'toggleFile("bookmarks")', display: true, type: 'C' },
@@ -32300,138 +32567,6 @@ kanban-plugin: basic
             aiChatTooltip.classList.remove('ai-fab-tooltip-hidden');
         }
 
-        const SUB_OPERATION = {
-            operation: {
-                INDEX_HISTORY_FILE: {
-                    name: '大模型调用历史记录.json',
-                    prompt: '你是一个AI行为记录提炼引擎。当前输入是“大模型调用历史记录”JSON。你不能分析真实文件内容，只能基于AI调用记录进行统计与提炼。请提取：1.高频AI操作类型（summarize/analyze/reformat/drawio等）；2.高频Prompt关键词；3.高频处理文件；4.AI调用时间分布；5.AI行为趋势；6.重复工作流模式；7.高频AI任务链；8.用户AI使用偏好；9.最近7天AI热点；10.长期稳定AI行为。输出为精简结构化JSON。禁止输出解释性文字。禁止推断文件内容。输出字段：topActions、topPrompts、topFiles、timeDistribution、workflowPatterns、aiPreference、recentHotspots、longTermPatterns、statisticsSummary。'
-                },
-                INDEX_DELETED_FILE: {
-                    name: '已删除文件索引.json',
-                    prompt: '你是一个文件生命周期分析引擎。当前输入是“已删除文件索引”JSON。请仅基于文件路径、文件名、删除时间、标签、目录结构进行统计分析。提取：1.高频删除目录；2.高频删除文件类型；3.短生命周期文件；4.长期后删除文件；5.批量删除行为；6.删除时间分布；7.可能低价值知识区域（推测）；8.用户清理行为模式。输出精简结构化JSON。禁止推断文件内容。输出字段：topDeletedDirs、topDeletedTypes、shortLifeFiles、longLifeDeletedFiles、batchDeletePatterns、deleteTimeDistribution、lowValueAreasPrediction、cleanupBehavior、statisticsSummary。'
-                },
-                INDEX_FILE_SCAN_DATA_FILE: {
-                    name: '知识库文件信息及目录层级.json',
-                    prompt: '你是一个知识结构提炼引擎。当前输入是“知识库文件信息及目录层级”JSON。请仅基于文件名、目录结构、文件类型、文件大小、标签、时间信息进行统计分析。提取：1.TOP技术关键词；2.高频目录；3.知识聚类；4.技术分类分布；5.文件类型分布；6.大文件分布；7.最近新增知识方向；8.长期活跃知识区域；9.潜在专题集合（推测）；10.知识结构树。输出精简结构化JSON。禁止推断文件正文。输出字段：topKeywords、topDirectories、knowledgeClusters、techCategoryDistribution、fileTypeDistribution、largeFileDistribution、recentTopics、longTermKnowledgeAreas、topicPredictions、knowledgeTree、statisticsSummary。'
-                },
-                INDEX_MARKERS_FILE: {
-                    name: '文件标记信息.json',
-                    prompt: '你是一个知识价值提炼引擎。当前输入是“文件标记信息”JSON。请仅基于文件标记、标签、时间、路径、操作记录进行统计分析。提取：1.高频标记文件；2.高频标签；3.核心知识区域（推测）；4.高价值知识目录；5.收藏趋势；6.重点关注主题；7.长期关注文件；8.标签聚类；9.知识兴趣变化。输出精简结构化JSON。禁止推断文件具体内容。输出字段：topMarkedFiles、topTags、coreKnowledgePrediction、highValueDirs、favoriteTrends、focusTopics、longTermFocusFiles、tagClusters、interestChanges、statisticsSummary。'
-                },
-                INDEX_OPER_FILE: {
-                    name: '系统操作记录.json',
-                    prompt: '你是一个开发者行为分析引擎。当前输入是“系统操作记录”JSON。请仅基于操作类型、时间、文件路径、行为记录进行统计分析。提取：1.高频操作；2.高频访问文件；3.最近活跃时间段；4.操作时间分布；5.行为模式；6.高频工作流；7.文件活跃度排行；8.最近7天热点行为；9.长期稳定行为；10.知识整理倾向（推测）。输出精简结构化JSON。禁止推断文件正文内容。输出字段：topOperations、topVisitedFiles、activeTimeRanges、timeDistribution、behaviorPatterns、workflowPatterns、fileActivityRanking、recentHotBehaviors、longTermBehaviors、organizationPreferencePrediction、statisticsSummary。'
-                }
-            }
-        };
-
-        async function analyzeFileOs() {
-            const action = 'operation';
-            const name = PROMPTS[action].key;
-            try {
-                const operations = SUB_OPERATION.operation;
-                const fileDataPromises = [
-                    getAssetsDataContent(INDEX_HISTORY_FILE),
-                    getAssetsDataContent(INDEX_DELETED_FILE),
-                    getAssetsDataContent(INDEX_FILE_SCAN_DATA_FILE),
-                    getAssetsDataContent(INDEX_MARKERS_FILE),
-                    getAssetsDataContent(INDEX_OPER_FILE)
-                ];
-                const [aiHistoryData, deletedIndex, scanData, markers, operRecords] = await Promise.all(fileDataPromises);
-                const fileConfigs = [
-                    { key: 'INDEX_HISTORY_FILE', data: aiHistoryData },
-                    { key: 'INDEX_DELETED_FILE', data: deletedIndex },
-                    { key: 'INDEX_FILE_SCAN_DATA_FILE', data: scanData },
-                    { key: 'INDEX_MARKERS_FILE', data: markers },
-                    { key: 'INDEX_OPER_FILE', data: operRecords }
-                ];
-                const individualResults = {};
-                fileConfigs.forEach(({ key, data }) => {
-                    if (!data) individualResults[key] = null;
-                });
-                const validConfigs = fileConfigs.filter(({ data }) => data);
-                const chunks = [];
-                for (let i = 0; i < validConfigs.length; i += 2) {
-                    chunks.push(validConfigs.slice(i, i + 2));
-                }
-                for (const chunk of chunks) {
-                    await Promise.all(chunk.map(async ({ key, data }) => {
-                        const config = operations[key];
-                        const prompt = config.prompt + '\n\n' + config.name + ':\n' + data;
-                        try {
-                            const result = await callAIAPI(prompt, '');
-                            individualResults[key] = result;
-                            const now = new Date();
-                            const time = now.getTime();
-                            const dateStr = formatDateTime(now);
-                            addAIHistoryItem({
-                                type: action,
-                                label: PROMPTS[action].title,
-                                prompt: config.prompt,
-                                result: result,
-                                fileName: config.name,
-                                filePath: '',
-                                date: dateStr,
-                                lastAccess: time
-                            });
-                        } catch (error) {
-                            console.error(`调用AI失败 - ${key}:`, error);
-                            individualResults[key] = null;
-                            showNotification(`${config.name} 分析失败: ${(error && error.message) || error}`, 'warning');
-                        }
-                    }));
-                }
-                const finalPrompt = `你是一个知识整合引擎。请基于以下5个独立分析结果，进行深度整合与提炼，生成一个全面的知识库分析报告（PRO）。
-输入格式：每个分析结果都是独立的JSON结构。
-
-请整合输出以下内容：
-1. 知识库整体画像（规模、结构、活跃度）
-2. AI使用全景分析
-3. 知识流转生命周期
-4. 用户行为模式总结
-5. 知识价值评估
-6. 优化建议
-
-输出为结构化Markdown格式。
-
-以下是5个分析结果：
-
-1. 大模型调用历史记录分析：
-${individualResults.INDEX_HISTORY_FILE || '无数据'}
-
-2. 已删除文件索引分析：
-${individualResults.INDEX_DELETED_FILE || '无数据'}
-
-3. 知识库文件信息及目录层级分析：
-${individualResults.INDEX_FILE_SCAN_DATA_FILE || '无数据'}
-
-4. 文件标记信息分析：
-${individualResults.INDEX_MARKERS_FILE || '无数据'}
-
-5. 系统操作记录分析：
-${individualResults.INDEX_OPER_FILE || '无数据'}`;
-
-                const finalResult = await callAIAPI(finalPrompt, PROMPTS[action].systemPrompt);
-                const now = new Date();
-                const time = now.getTime();
-                const dateStr = formatDateTime(now);
-                addAIHistoryItem({
-                    type: action,
-                    label: PROMPTS[action].title,
-                    prompt: PROMPTS[action].systemPrompt,
-                    result: finalResult,
-                    fileName: name,
-                    filePath: '',
-                    date: dateStr,
-                    lastAccess: time
-                });
-                recordOperation(name, '', OPERATION_TYPES.AI, time, name);
-                await showAIResultModal(name, PROMPTS[action].title, finalResult, name, '');
-            } catch (error) {
-                console.error('操作失败:', error);
-                showNotification(name + '操作失败！' + ((error && error.message) || error), 'error');
-            }
-        }
         /**
          * 健壮精细 HTML 清洗提取纯文本（浏览器环境）
          * @param {string} html 原始HTML字符串
@@ -51414,15 +51549,144 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
                 }
             });
         }
+        /** 渲染 AI 总结面板（手风琴） */
+        // ─── AI 总结面板：每天首次打开软件后台异步总结一次 ───
+        const AI_SUMMARY_CACHE_KEY = 'mdgo_ai_summary_cache';
+        const AI_SUMMARY_DATE_KEY = 'mdgo_ai_summary_last_date';
+        // 缓存结构版本：代码改动导致缓存结构/渲染变化时 +1，旧缓存自动失效
+        const AI_SUMMARY_CACHE_VERSION = 2;
+
+        /** 校验缓存是否有效：结构正确且至少有一个成功结果（全失败缓存视为无效） */
+        function isAiSummaryCacheValid(data) {
+            if (!data || data.v !== AI_SUMMARY_CACHE_VERSION) return false;
+            const all = [...(data.behavior || []), ...(data.knowledge || [])];
+            if (!all.length) return false;
+            return all.some(x => x && x.ok);
+        }
+
+        /**
+         * 启动 AI 总结（dashboard 打开时调用）：
+         * - 有今日且有效的缓存 → 直接渲染缓存；
+         * - 无缓存/缓存无效 → 后台异步采集数据 + 并发调用 LLM 总结，完成后渲染并落缓存。
+         */
         async function startAiSummary() {
             if (!isTauriVisit()) return;
-            const left = document.getElementById('ai-summary-left');
-            const right = document.getElementById('ai-summary-right');
-            // TODO 调用 Rust 端 ai_summary 函数，获取摘要内容
-            // const result =  await window.__TAURI__.core.invoke('ai_summary');
-            // if(result){
+            const panel = document.getElementById('ai-summary-left');
+            if (!panel) return;
 
-            // }
+            // 1. 先尝试渲染今日缓存（秒开）
+            const today = new Date().toDateString();
+            const lastDate = safeLocalStorageGet(AI_SUMMARY_DATE_KEY);
+            const cached = safeLocalStorageGet(AI_SUMMARY_CACHE_KEY);
+            if (lastDate === today && cached) {
+                try {
+                    const data = JSON.parse(cached);
+                    if (isAiSummaryCacheValid(data)) {
+                        renderAiSummaryPanels(panel, data);
+                        return; // 今日已总结，直接返回
+                    }
+                    console.warn('[aiSummay] 缓存无效（版本过期或全失败），重新总结');
+                } catch (e) {
+                    console.warn('[aiSummay] 缓存解析失败，重新总结', e);
+                }
+            }
+
+            // 2. 无有效缓存 → 后台异步总结（不阻塞 dashboard 渲染）
+            panel.innerHTML = '<div class="ai-summary-loading">⏳ 正在分析用户行为与知识库…</div>';
+            runAiSummaryBackground(panel);
+        }
+
+        /** 后台异步总结任务（防重入） */
+        let _aiSummaryRunning = false;
+        async function runAiSummaryBackground(panel) {
+            if (_aiSummaryRunning) return;
+            _aiSummaryRunning = true;
+            try {
+                const data = await window.aiSummay.getSummary(7);
+                // 缓存带上版本号（旧缓存自动失效）
+                const payload = { v: AI_SUMMARY_CACHE_VERSION, ...data };
+                renderAiSummaryPanels(panel, payload);
+                // 落缓存 + 记录日期（每天首次打开后不再重复总结）
+                safeLocalStorageSet(AI_SUMMARY_CACHE_KEY, JSON.stringify(payload));
+                safeLocalStorageSet(AI_SUMMARY_DATE_KEY, new Date().toDateString());
+            } catch (e) {
+                console.warn('[aiSummay] 后台总结失败:', e);
+                panel.innerHTML = '<div class="ai-summary-empty">总结暂时不可用</div>';
+            } finally {
+                _aiSummaryRunning = false;
+            }
+        }
+
+        /** 渲染单个横向手风琴面板（行为 + 知识库全部合并展示） */
+        function renderAiSummaryPanels(panel, data) {
+            const all = [
+                ...(data.behavior || []),
+                ...(data.knowledge || []),
+            ];
+            panel.innerHTML = renderHorizontalAccordion('🧠 行为总结分析与 📚 知识库分析', all, 'ai-sum-acc');
+            bindHorizontalAccordion(panel);
+        }
+
+        /**
+         * 横向手风琴（demo.html 飞书风格）：每个分类一个纵向标题栏，点击水平展开。
+         * 首个分类默认展开。
+         */
+        function renderHorizontalAccordion(title, sections, idPrefix) {
+            if (!sections || !sections.length) {
+                return `<div class="ai-summary-panel-title">${title}</div><div class="ai-summary-empty">暂无总结数据</div>`;
+            }
+            const items = sections.map((s, i) => {
+                const isActive = i === 0 ? ' active' : '';
+                const okBadge = s.ok ? '' : `<span class="ai-acc-badge ai-acc-badge-warn">降级</span>`;
+                const body = s.result ? `<div class="ai-acc-content markdown-body">${renderSummaryMarkdown(s.result)}</div>` : '<div class="ai-acc-content">暂无内容</div>';
+                return `
+                <div class="h-accordion-item${isActive}" data-key="${s.key}">
+                    <button class="h-accordion-header" aria-expanded="${isActive === ' active'}">${s.label}${okBadge}</button>
+                    <div class="h-accordion-content">${body}</div>
+                </div>`;
+            }).join('');
+            return `<div class="ai-summary-panel-title">${title}</div>
+                <div class="h-accordion" id="${idPrefix}">${items}</div>`;
+        }
+
+        /** 模型输出 markdown → 安全 HTML（复用页面渲染器；无则基础转义换行） */
+        function renderSummaryMarkdown(text) {
+            if (!text) return '';
+            // 优先复用聊天 markdown 渲染（marked + DOMPurify sanitize + escapeHtml 兜底）
+            if (typeof renderChatMarkdown === 'function') {
+                try {
+                    return renderChatMarkdown(text);
+                } catch (e) {
+                    console.warn('[aiSummay] markdown 渲染失败，回退转义', e);
+                }
+            }
+            return escapeHtml(text).replace(/\n/g, '<br>');
+        }
+
+        /** 绑定横向手风琴交互（demo.html 逻辑：点击标题展开/收起，同组互斥） */
+        function bindHorizontalAccordion(root) {
+            if (!root) return;
+            const accordion = root.querySelector('.h-accordion');
+            if (!accordion) return;
+            const items = accordion.querySelectorAll('.h-accordion-item');
+            function setActiveItem(activeItem) {
+                items.forEach(item => {
+                    const isTarget = item === activeItem;
+                    item.classList.toggle('active', isTarget);
+                    const header = item.querySelector('.h-accordion-header');
+                    if (header) header.setAttribute('aria-expanded', isTarget);
+                });
+            }
+            accordion.addEventListener('click', function (e) {
+                const header = e.target.closest('.h-accordion-header');
+                if (!header) return;
+                const item = header.parentElement;
+                if (item.classList.contains('active')) {
+                    setActiveItem(null);
+                } else {
+                    setActiveItem(item);
+                }
+            });
         }
         class OpenHistory {
             constructor() {
@@ -51841,5 +52105,6 @@ ${individualResults.INDEX_OPER_FILE || '无数据'}`;
     <script src="./css_js/modules/agent_global.js"></script>
     <script src="./css_js/modules/frontend-bridge.js"></script>
     <script src="./css_js/modules/schedule.js"></script>
+    <script src="./css_js/modules/ai-summay.js"></script>
     <div id="agent-global-task-bar" class="agent-global-task-bar" style="display:none;"></div>
 </body>

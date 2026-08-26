@@ -313,6 +313,42 @@ impl LLMClient {
         !self.endpoint.is_empty() && !self.model.is_empty()
     }
 
+    /// 通用非流式补全（含指数退避重试与取消）——供对话外业务（总结/分析/提炼）复用。
+    ///
+    /// - `system`：系统提示词（可空，传空串则仅发 user 消息）
+    /// - `user`：用户输入（必填）
+    /// - `max_tokens`：输出上限（None 使用模型默认）
+    /// - `temperature`：采样温度
+    ///
+    /// 返回模型纯文本；失败返回 `Err`（调用方自行降级）。遵循 SOLID：
+    /// 复用同一重试策略（`completion_with_retry`），避免各业务重复实现退避逻辑。
+    pub async fn complete_text(
+        &self,
+        system: &str,
+        user: &str,
+        max_tokens: Option<u32>,
+        temperature: Option<f32>,
+        cancel: CancellationToken,
+    ) -> Result<String, String> {
+        let mut request = if system.trim().is_empty() {
+            LoopRequest::new(vec![LlmMessage::text(LlmRole::User, user)])
+        } else {
+            LoopRequest::new(vec![
+                LlmMessage::text(LlmRole::System, system),
+                LlmMessage::text(LlmRole::User, user),
+            ])
+        };
+        request.max_tokens = max_tokens;
+        request.temperature = temperature;
+        let request = self.apply_common_params(request);
+
+        let response = self
+            .completion_with_retry(request, cancel)
+            .await
+            .map_err(|e| format!("LLM 调用失败: {}", e))?;
+        Ok(response.content)
+    }
+
     /// 非流式补全 + 指数退避重试（P0-4，经 LlmAdapter）。
     ///
     /// 仅对瞬时错误（429/408/5xx/连接/超时）重试；

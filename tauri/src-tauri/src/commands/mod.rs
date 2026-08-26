@@ -1,5 +1,6 @@
 pub mod approval;
 pub mod ai_history;
+pub mod ai_summary;
 pub mod bookmark;
 pub mod bridge;
 pub mod chat;
