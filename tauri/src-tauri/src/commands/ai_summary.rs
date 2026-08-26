@@ -13,7 +13,7 @@
 use std::sync::Arc;
 
 use futures::future::join_all;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
@@ -55,6 +55,7 @@ pub struct SummarySectionResult {
 /// - 结果按输入顺序返回（join_all 保序）。
 #[tauri::command]
 pub async fn kb_ai_summary(
+    app: AppHandle,
     state: State<'_, AppState>,
     sections: Vec<SummarySection>,
 ) -> Result<Vec<SummarySectionResult>, String> {
@@ -83,6 +84,10 @@ pub async fn kb_ai_summary(
         .await
         .map_err(|e| format!("初始化 LLM 客户端失败: {}", e))?;
 
+    // 按需加载基础分析指令（prompt/summay_analysis.md，读取逻辑与 skill 一致：
+    // 运行时资源目录优先，源码 resources/prompt 回退；加载失败回退内置常量）
+    let base_instruction = load_summary_instruction(&app);
+
     // 并发执行：信号量限流，避免同时打爆本地模型
     let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT));
     let futures: Vec<_> = sections
@@ -90,13 +95,15 @@ pub async fn kb_ai_summary(
         .map(|s| {
             let client = client.clone();
             let semaphore = semaphore.clone();
+            let base_instruction = base_instruction.clone();
             async move {
                 let _permit = semaphore.acquire().await;
                 let cancel = CancellationToken::new();
                 let instruction = if s.instruction.trim().is_empty() {
-                    DEFAULT_SUMMARY_INSTRUCTION.to_string()
+                    base_instruction
                 } else {
-                    s.instruction.clone()
+                    // 分类级指令优先，但以基础指令为前缀（基础指令约束通用分析原则与输出格式）
+                    format!("{}\n\n{}", base_instruction, s.instruction)
                 };
                 let user_text = if s.text.trim().is_empty() {
                     "（该分类暂无数据）".to_string()
@@ -143,7 +150,39 @@ pub async fn kb_ai_summary(
     Ok(results)
 }
 
-/// 默认分析指令（分类未提供 instruction 时使用）：行为/知识库数据通用总结框架。
+/// 分析指令文件名（位于打包资源 `prompt/` 目录；源码期回退 `resources/prompt/`）。
+const SUMMARY_INSTRUCTION_FILE: &str = "prompt/summay_analysis.md";
+
+/// 按需加载基础分析指令（读取逻辑与 skill 一致）：
+/// 1. 运行时资源目录优先（打包后 `resource_dir()/prompt/summay_analysis.md`）；
+/// 2. 未打包环境回退源码 `resources/prompt/summay_analysis.md`；
+/// 3. 均不存在/读取失败 → 回退内置常量（不阻塞功能）。
+fn load_summary_instruction(app: &AppHandle) -> String {
+    // 1) 打包资源目录
+    if let Ok(dir) = app.path().resource_dir() {
+        let p = dir.join(SUMMARY_INSTRUCTION_FILE);
+        if let Ok(content) = std::fs::read_to_string(&p) {
+            let t = content.trim();
+            if !t.is_empty() {
+                return t.to_string();
+            }
+        }
+    }
+    // 2) 源码 resources/prompt 兜底（开发期）
+    let src = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("resources")
+        .join(SUMMARY_INSTRUCTION_FILE);
+    if let Ok(content) = std::fs::read_to_string(&src) {
+        let t = content.trim();
+        if !t.is_empty() {
+            return t.to_string();
+        }
+    }
+    log::warn!("[ai_summary] 未找到 {}, 使用内置默认指令", SUMMARY_INSTRUCTION_FILE);
+    DEFAULT_SUMMARY_INSTRUCTION.to_string()
+}
+
+/// 内置兜底指令（外部 prompt 文件缺失时使用）：行为/知识库数据通用总结框架。
 const DEFAULT_SUMMARY_INSTRUCTION: &str = concat!(
     "你是一个知识库用户行为与知识资产分析助手。下面提供的是 mdgo 知识库采集到的统计数据文本。\n",
     "请基于这些数据输出简洁、结构化、有洞察的总结与建议，要求：\n",

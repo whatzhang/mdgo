@@ -26,7 +26,6 @@
     const DAY_MS = 24 * 60 * 60 * 1000;
 
     // ─── 工具 ───
-
     function invoke(name, args) {
         if (!window.__TAURI__ || !window.__TAURI__.core) return Promise.reject(new Error('非 Tauri 环境'));
         return window.__TAURI__.core.invoke(name, args);

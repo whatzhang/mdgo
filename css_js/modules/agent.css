@@ -21,7 +21,7 @@
     justify-content: center;
 }
 
-.rag-indicator.chat{
+.rag-indicator.chat {
     background: linear-gradient(135deg, #e6a260, #65a876);
 }
 
@@ -35,6 +35,7 @@
     margin-top: 0;
     margin-left: 1.25rem;
 }
+
 .tool-card {
     display: flex;
     align-items: center;
@@ -48,11 +49,13 @@
     max-width: 100%;
     box-sizing: border-box;
 }
+
 .tool-card .tool-name {
     font-weight: 600;
     color: var(--color-text);
     white-space: nowrap;
 }
+
 .tool-card .tool-args {
     width: auto;
     overflow: hidden;
@@ -60,10 +63,12 @@
     white-space: nowrap;
     font-family: var(--font-mono);
 }
+
 .tool-card .tool-status {
     flex-shrink: 0;
     font-size: 0.7rem;
 }
+
 .tool-card .tool-skill-badge {
     flex-shrink: 0;
     display: inline-flex;
@@ -77,12 +82,15 @@
     font-weight: 500;
     white-space: nowrap;
 }
+
 .tool-card.running .tool-status {
     color: var(--color-warning);
 }
+
 .tool-card.ok .tool-status {
     color: var(--color-success, #2ecc71);
 }
+
 .tool-card.fail .tool-status {
     color: var(--color-danger, #e74c3c);
 }
@@ -200,9 +208,18 @@ mark.source-highlight,
 }
 
 @keyframes source-highlight-fade {
-    0% { background: #ffe066 !important; }
-    70% { background: #ffe066 !important; }
-    100% { background: transparent; box-shadow: none; }
+    0% {
+        background: #ffe066 !important;
+    }
+
+    70% {
+        background: #ffe066 !important;
+    }
+
+    100% {
+        background: transparent;
+        box-shadow: none;
+    }
 }
 
 /* 引用溯源：编辑器整行高亮（Monaco 行装饰） */
@@ -217,11 +234,16 @@ mark.source-highlight,
 }
 
 @keyframes source-node-highlight {
-    0%, 70% {
+
+    0%,
+    70% {
         background: #ffe066 !important;
         border-radius: 4px;
     }
-    100% { background: transparent; }
+
+    100% {
+        background: transparent;
+    }
 }
 
 /* RAG 设置齿轮按钮 */
@@ -294,6 +316,7 @@ mark.source-highlight,
     gap: 0.375rem;
     max-width: 22rem;
 }
+
 .agent-global-task-item {
     display: flex;
     align-items: center;
@@ -307,11 +330,13 @@ mark.source-highlight,
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
     backdrop-filter: blur(6px);
 }
+
 .agent-global-task-label {
     font-weight: 600;
     white-space: nowrap;
     color: #58a6ff;
 }
+
 .agent-global-task-status {
     flex: 1;
     overflow: hidden;
@@ -319,6 +344,7 @@ mark.source-highlight,
     white-space: nowrap;
     color: #d0d7de;
 }
+
 .agent-global-task-stop {
     flex-shrink: 0;
     padding: 0.125rem 0.5rem;
@@ -329,6 +355,7 @@ mark.source-highlight,
     border-radius: 0.3125rem;
     cursor: pointer;
 }
+
 .agent-global-task-stop:hover {
     background: #b91c1c;
 }

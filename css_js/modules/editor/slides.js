@@ -117,7 +117,7 @@
         }
         async function close() {
             document.removeEventListener('keydown', onKey, true);
-             try { await exitFullAppscreen(); } catch (e) { } 
+            try { await exitFullAppscreen(); } catch (e) { }
             overlay.remove();
         }
         async function onKey(e) {
@@ -138,6 +138,6 @@
 
     window.markdownSlides = async function (text) {
         if (!text.trim()) { notify('当前文档为空', 'warning'); return; }
-        await present(text); 
+        await present(text);
     };
 })();

@@ -1,11 +1,11 @@
 const _CANVAS_IMG_CONCURRENCY = 4;         // Canvas 图片节点加载并发限制（避免 20 张大图同时解码导致 CPU 飙升）
-function editCanvasNodeContent(e, btn){
+function editCanvasNodeContent(e, btn) {
     // L35：_canvasObject 未初始化时静默跳过，避免 TypeError 中断（画布未加载/已销毁时点击节点按钮）
     if (_canvasObject && typeof _canvasObject.editNodeContent === 'function') {
         _canvasObject.editNodeContent(e, btn);
     }
 }
-function saveCanvasNodeContent(e, btn){
+function saveCanvasNodeContent(e, btn) {
     // L35：同上，save 路径同样防护
     if (_canvasObject && typeof _canvasObject.saveNodeContent === 'function') {
         _canvasObject.saveNodeContent(e, btn);
@@ -1550,7 +1550,7 @@ class CanvasLess {
             } else if (filePath.endsWith('.mmd')) {
                 await this.embedNodeMmd(filePath, fileText, null, container);
                 this.setupSvgModalZoom(container);
-            }  
+            }
             let modalClosed = false;
             const closeModal = () => {
                 if (modalClosed) return;

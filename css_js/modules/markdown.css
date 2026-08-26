@@ -433,7 +433,7 @@
         size: A4;
     }
 
-    body > *:not(#mdgo-print-root) {
+    body>*:not(#mdgo-print-root) {
         display: none !important;
     }
 
@@ -496,15 +496,34 @@
     outline: none;
 }
 
-.mdgo-block-editor > * {
+.mdgo-block-editor>* {
     margin: 0.35em 0;
 }
 
-.mdgo-block-editor h1 { font-size: 1.8em; margin: 0.5em 0; }
-.mdgo-block-editor h2 { font-size: 1.5em; margin: 0.5em 0; }
-.mdgo-block-editor h3 { font-size: 1.3em; margin: 0.5em 0; }
-.mdgo-block-editor h4 { font-size: 1.15em; margin: 0.5em 0; }
-.mdgo-block-editor h5 { font-size: 1em; margin: 0.5em 0; }
+.mdgo-block-editor h1 {
+    font-size: 1.8em;
+    margin: 0.5em 0;
+}
+
+.mdgo-block-editor h2 {
+    font-size: 1.5em;
+    margin: 0.5em 0;
+}
+
+.mdgo-block-editor h3 {
+    font-size: 1.3em;
+    margin: 0.5em 0;
+}
+
+.mdgo-block-editor h4 {
+    font-size: 1.15em;
+    margin: 0.5em 0;
+}
+
+.mdgo-block-editor h5 {
+    font-size: 1em;
+    margin: 0.5em 0;
+}
 
 .mdgo-block-editor ul,
 .mdgo-block-editor ol {
@@ -526,7 +545,7 @@
     gap: 0.5em;
 }
 
-.mdgo-block-editor ul[data-type="taskList"] li > label {
+.mdgo-block-editor ul[data-type="taskList"] li>label {
     margin-top: 0.2em;
     flex-shrink: 0;
 }
@@ -623,7 +642,7 @@
     background: rgba(255, 255, 255, 0.1);
 }
 
-.mdgo-block-editor .ProseMirror > *:hover > .drag-handle,
+.mdgo-block-editor .ProseMirror>*:hover>.drag-handle,
 .mdgo-block-editor .drag-handle[data-drag-handle-active] {
     opacity: 1;
 }
@@ -821,8 +840,11 @@
 }
 
 .mdgo-slides-nav button {
-    display: inline-flex; align-items: center; justify-content: center;
-    border: 1px solid transparent; /* 预占边框：hover 只改颜色，不改变尺寸 */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    /* 预占边框：hover 只改颜色，不改变尺寸 */
     color: var(--color-primary);
     border-radius: 0.5rem;
     padding: 0.25rem 0.5rem;
@@ -830,9 +852,11 @@
     font-size: 13px;
     transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
+
 .mdgo-slides-exit {
     color: var(--color-danger) !important;
 }
+
 .mdgo-slides-exit:hover:not(:disabled) {
     background: rgba(22, 91, 250, 0.18);
     border-color: var(--color-border);
@@ -851,7 +875,7 @@
 }
 
 @media print {
-    body > *:not(.mdgo-slides-overlay) {
+    body>*:not(.mdgo-slides-overlay) {
         display: none !important;
     }
 
@@ -895,9 +919,11 @@
     transition: opacity 0.2s ease, background 0.2s ease;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
+
 .mdgo-db-wrap:hover .mdgo-db-btn {
     opacity: 1;
 }
+
 .mdgo-db-btn:hover {
     background: rgba(22, 91, 250, 0.15);
 }

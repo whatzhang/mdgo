@@ -203,6 +203,6 @@ ${selfRenderScript}
             console.log('[mdgo]', msg);
         }
     }
- 
+
     window.mdgoExport = mdgoExport;
 })();

@@ -288,6 +288,26 @@
             cursor: default;
         }
 
+        .skill-layout,
+        .knowledge-panel,
+        .git-detail-area,
+        .git-left-panel,
+        .bookmark-empty,
+        .bookmark-toolbar,
+        .pomodoro-container,
+        .dashboard-container,
+        #sidebar,
+        #graph-view-container,
+        .regex-viz-area,
+        .timeline-app-container,
+        .urlEncoder-container,
+        .video-view-container {
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+
         #main-container {
             display: flex;
             flex: 1;
@@ -306,10 +326,6 @@
             flex-shrink: 0;
             display: flex;
             flex-direction: column;
-            -webkit-user-select: none;
-            -moz-user-select: none;
-            -ms-user-select: none;
-            user-select: none;
         }
 
         #sidebar-header {
@@ -3144,10 +3160,6 @@
             overflow-y: auto;
             padding: 4px 10px 10px 10px;
             background: var(--color-bg-secondary);
-            -webkit-user-select: none;
-            -moz-user-select: none;
-            -ms-user-select: none;
-            user-select: none;
         }
 
         .dashboard-container::-webkit-scrollbar {
@@ -3444,8 +3456,7 @@
 
         .activity-section-two {
             display: grid;
-            /* minmax(0, 1fr) 防止被手风琴固定宽度内容撑开溢出窗口 */
-            grid-template-columns: minmax(0, 1fr);
+            grid-template-columns: 1fr 1fr;
             gap: 0.625rem;
             width: 100%;
             box-sizing: border-box;
@@ -3467,289 +3478,12 @@
 
         .activity-column {
             width: 100%;
-            min-width: 0; /* 允许收缩，防止子内容撑开溢出 */
+            min-width: 0;
+            /* 允许收缩，防止子内容撑开溢出 */
             overflow: hidden;
             display: flex;
             flex-direction: column;
             padding: 2px
-        }
-
-        /* AI 总结面板（手风琴） */
-        .ai-summary-panel-title {
-            font-weight: 600;
-            font-size: 0.9375rem;
-            color: var(--color-text, #333);
-            margin-bottom: 0.5rem;
-            display: flex;
-            align-items: center;
-            gap: 0.25rem;
-        }
-
-        .ai-summary-loading,
-        .ai-summary-empty {
-            padding: 1rem 0.5rem;
-            text-align: center;
-            color: var(--color-text-secondary, #888);
-            font-size: 0.8125rem;
-        }
-
-        /* ─── 横向手风琴（demo.html 飞书风格，响应式自适应） ─── */
-        .ai-summary-panel {
-            min-width: 0; /* 允许收缩，防止溢出 */
-        }
-
-        .ai-summary-panel .h-accordion {
-            display: flex;
-            width: 100%;
-            max-width: 100%;
-            min-width: 0;
-            height: 26rem;
-            background: #ffffff;
-            border-radius: 14px;
-            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
-            overflow: hidden;
-        }
-
-        .ai-summary-panel .h-accordion-item {
-            display: flex;
-            flex-direction: row;
-            /* 未激活固定窄条；窗口过窄由媒体查询切换纵向，不做宽度收缩（避免挤压内容区） */
-            flex: 0 0 56px;
-            min-width: 56px;
-            transition: flex-grow 0.5s cubic-bezier(0.22, 1, 0.36, 1),
-                flex-basis 0.5s cubic-bezier(0.22, 1, 0.36, 1),
-                background-color 0.3s,
-                box-shadow 0.3s;
-            background: #ffffff;
-            border-right: 1px solid #f0f1f3;
-            cursor: pointer;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .ai-summary-panel .h-accordion-item:last-child {
-            border-right: none;
-        }
-
-        .ai-summary-panel .h-accordion-item.active {
-            flex: 1 1 0;
-            min-width: 0;
-            background: #ffffff;
-            cursor: default;
-            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.1);
-            z-index: 2;
-        }
-
-        .ai-summary-panel .h-accordion-header {
-            /* 固定窄条标题栏（demo 原版）：header 占 56px，content 占剩余空间 */
-            flex: 0 0 56px;
-            width: 56px;
-            min-width: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: transparent;
-            border: none;
-            writing-mode: vertical-rl;
-            text-orientation: mixed;
-            font-size: 0.8125rem;
-            font-weight: 500;
-            color: #3d3d3d;
-            letter-spacing: 2px;
-            padding: 16px 0;
-            transition: background 0.25s, color 0.25s;
-            user-select: none;
-            position: relative;
-            cursor: pointer;
-            font-family: inherit;
-        }
-
-        .ai-summary-panel .h-accordion-item.active .h-accordion-header {
-            color: #3370ff;
-            background: #f7f8fa;
-        }
-
-        .ai-summary-panel .h-accordion-header::after {
-            content: '';
-            position: absolute;
-            bottom: 10px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 5px;
-            height: 5px;
-            border-radius: 50%;
-            background: #c9cdd4;
-            transition: background 0.3s, transform 0.3s, box-shadow 0.3s;
-        }
-
-        .ai-summary-panel .h-accordion-item.active .h-accordion-header::after {
-            background: #3370ff;
-            transform: translateX(-50%) scale(1.6);
-            box-shadow: 0 0 0 4px rgba(51, 112, 255, 0.15);
-        }
-
-        .ai-summary-panel .h-accordion-item:not(.active):hover {
-            background: #fafbfc;
-        }
-
-        .ai-summary-panel .h-accordion-item:not(.active):hover .h-accordion-header {
-            color: #3370ff;
-        }
-
-        .ai-summary-panel .h-accordion-content {
-            flex: 1;
-            min-width: 0;
-            opacity: 0;
-            transform: translateX(-16px) scale(0.98);
-            transition: opacity 0.35s ease 0.1s,
-                transform 0.35s ease 0.1s;
-            padding: 18px 20px 16px;
-            line-height: 1.8;
-            color: #4e5969;
-            font-size: 0.875rem;
-            display: flex;
-            align-items: flex-start;
-            overflow-y: auto;
-        }
-
-        .ai-summary-panel .h-accordion-item.active .h-accordion-content {
-            opacity: 1;
-            transform: translateX(0) scale(1);
-        }
-
-        /* 内容子元素：填充手风琴内容区，防止 markdown 内容宽度计算异常 */
-        .ai-summary-panel .h-accordion-content .ai-acc-content {
-            flex: 1 1 auto;
-            width: 100%;
-            min-width: 0;
-            max-width: 100%;
-        }
-
-        /* 窄窗口响应式：14 个横向标题栏放不下时，切换为纵向手风琴 */
-        @media (max-width: 720px) {
-            .ai-summary-panel .h-accordion {
-                flex-direction: column;
-                height: auto;
-                max-height: 30rem;
-            }
-
-            .ai-summary-panel .h-accordion-item {
-                flex: 0 0 auto;
-                min-width: 0;
-                flex-direction: column;
-                border-right: none;
-                border-bottom: 1px solid #f0f1f3;
-            }
-
-            .ai-summary-panel .h-accordion-item:last-child {
-                border-bottom: none;
-            }
-
-            .ai-summary-panel .h-accordion-item.active {
-                flex: 0 0 auto;
-            }
-
-            .ai-summary-panel .h-accordion-header {
-                flex: 0 0 40px;
-                width: 100%;
-                writing-mode: horizontal-tb;
-                letter-spacing: 0;
-                padding: 0 12px;
-                justify-content: flex-start;
-            }
-
-            .ai-summary-panel .h-accordion-header::after {
-                bottom: auto;
-                left: auto;
-                right: 12px;
-                top: 50%;
-                transform: translateY(-50%);
-            }
-
-            .ai-summary-panel .h-accordion-item.active .h-accordion-header::after {
-                transform: translateY(-50%) scale(1.6);
-            }
-
-            .ai-summary-panel .h-accordion-content {
-                padding: 12px 14px;
-            }
-
-            .ai-acc-badge {
-                margin-top: 0;
-                margin-left: 8px;
-            }
-        }
-
-        .ai-summary-panel .h-accordion-content::-webkit-scrollbar {
-            width: 4px;
-        }
-
-        .ai-summary-panel .h-accordion-content::-webkit-scrollbar-thumb {
-            background: #d0d3d6;
-            border-radius: 2px;
-        }
-
-        .ai-acc-badge {
-            display: inline-block;
-            margin-top: 8px;
-            font-size: 0.625rem;
-            line-height: 1;
-            padding: 2px 4px;
-            border-radius: 6px;
-            background: #f2f3f5;
-            color: #86909c;
-            writing-mode: horizontal-tb;
-            letter-spacing: 0;
-        }
-
-        .ai-acc-badge-warn {
-            background: #fff7e8;
-            color: #f5a623;
-        }
-
-        /* 手风琴内容区 markdown 基础样式 */
-        .ai-summary-panel .h-accordion-content h1,
-        .ai-summary-panel .h-accordion-content h2,
-        .ai-summary-panel .h-accordion-content h3 {
-            margin: 0.5rem 0 0.25rem;
-            font-size: 1em;
-            color: #1d2129;
-        }
-
-        .ai-summary-panel .h-accordion-content p {
-            margin: 0.25rem 0;
-        }
-
-        .ai-summary-panel .h-accordion-content ul,
-        .ai-summary-panel .h-accordion-content ol {
-            margin: 0.25rem 0;
-            padding-left: 1.25rem;
-        }
-
-        .ai-summary-panel .h-accordion-content table {
-            border-collapse: collapse;
-            margin: 0.375rem 0;
-            font-size: 0.8125rem;
-        }
-
-        .ai-summary-panel .h-accordion-content th,
-        .ai-summary-panel .h-accordion-content td {
-            border: 1px solid #e5e6eb;
-            padding: 0.25rem 0.5rem;
-        }
-
-        .ai-summary-panel .h-accordion-content code {
-            background: #f2f3f5;
-            border-radius: 4px;
-            padding: 0 4px;
-            font-size: 0.8125rem;
-        }
-
-        .ai-summary-panel .h-accordion-content pre {
-            background: #f7f8fa;
-            border-radius: 8px;
-            padding: 0.625rem;
-            overflow-x: auto;
         }
 
         .activity-column .editList,
@@ -5480,11 +5214,12 @@
             box-sizing: border-box;
             padding: 0.5rem;
         }
+
         .chat-toolbar-popup::-webkit-scrollbar {
             display: none;
         }
 
-        .chat-toolbar-popup-warp{
+        .chat-toolbar-popup-warp {
             display: block;
             overflow-y: auto;
             max-height: 20rem;
@@ -7621,10 +7356,6 @@
         .regex-viz-area {
             padding: 12px;
             cursor: pointer;
-            -webkit-user-select: none;
-            -moz-user-select: none;
-            -ms-user-select: none;
-            user-select: none;
             min-height: 100px;
             background: var(--color-bg);
         }
@@ -9468,6 +9199,8 @@
         .timeline-view-tabs,
         .timeline-filters-group {
             display: flex;
+            align-items: center;
+            justify-content: center;
             gap: 4px;
             background: #f1f4f9;
             padding: 3px;
@@ -9476,7 +9209,10 @@
 
         .timeline-view-tab,
         .timeline-filter-chip {
-            padding: 3px 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.3rem 0.5rem;
             border-radius: 6px;
             font-size: 0.8125rem;
             font-weight: 500;
@@ -9484,9 +9220,7 @@
             transition: all 0.2s;
             background: transparent;
             color: var(--t2);
-            line-height: 18px;
-            display: flex;
-            align-items: center;
+            line-height: 1rem;
         }
 
         .timeline-view-tab.timeline-active,
@@ -9499,9 +9233,9 @@
             display: flex;
             align-items: center;
             background: #f1f4f9;
-            border-radius: 0.625rem;
-            padding: 0.188rem 0.875rem;
-            height: 1.563rem;
+            border-radius: 0.5rem;
+            padding: 0.125rem 0.875rem;
+            height: 1.7rem;
             gap: 0.5rem;
             width: 20%;
             flex-shrink: 0;
@@ -11347,7 +11081,7 @@
             border: 1px solid #E5E6EB;
             border-radius: 0.5rem;
             padding: 0.75rem 1rem;
-            font-size: 0.8125rem;
+            font-size: 0.875rem;
             line-height: 1.5;
             outline: none;
             resize: vertical;
@@ -13781,10 +13515,16 @@
         .canvas-node>foreignObject .markdown-body {
             cursor: inherit;
         }
+
+        #mcp-container {
+            display: none;
+            height: 100%;
+            width: 100%;
+        }
     </style>
     <link rel="stylesheet" href="./css_js/modules/skill.css" />
-    <link rel="stylesheet" href="./css_js/modules/mcp.css" />
     <link rel="stylesheet" href="./css_js/modules/agent.css" />
+    <link rel="stylesheet" href="./css_js/modules/ai-summay.css" />
 </head>
 
 <body>
@@ -14008,45 +13748,46 @@
                 </div>
                 <canvas id="graph-canvas" class="graph-canvas"></canvas>
             </div>
-            <div id="behavior-analysis-container" class="dashboard-container" style="display: none;padding: 10px;">
-                <div class="charts-grid">
+            <div id="behavior-analysis-container" class="dashboard-container" style="display: none;padding: 10px;padding-top: 0;">
+                <div class="video-header-bar" style="margin-bottom: 0.5rem;">
+                    <div class="video-header-left">
+                        <span class="video-header-title" style="font-size: 1rem;">文档库分析</span>
+                    </div>
+                    <div class="video-header-right">
+                        <button class="btn btn-sm btn-warning" id="summay-refresh-btn" onclick="restartAiSummary()">
+                            总结分析
+                        </button>
+                    </div>
+                </div>
+                <div class="activity-section-three">
                     <div class="chart-card">
-                        <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
-                                stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-                                style="vertical-align:-2px;margin-right:4px;">
-                                <polyline points="21 8 21 21 3 21 3 8" />
-                                <rect x="1" y="3" width="22" height="5" />
-                                <line x1="10" y1="12" x2="14" y2="12" />
-                            </svg>文档浏览近 7 天趋势</div>
-                        <div id="habit-weekly-chart" class="chart-container chart-container--bar"
-                            style="height:200px;margin-top: 0.5rem;">
+                        <div class="activity-column">
+                            <div class="chart-title">近 7 天趋势</div>
+                            <div id="habit-weekly-chart" class="chart-container chart-container--bar"
+                                style="height:200px;margin-top: 0.5rem;">
+                            </div>
                         </div>
                     </div>
                     <div class="chart-card">
                         <div class="activity-column">
-                            <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
-                                    stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-                                    stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
-                                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                                </svg>使用时段活跃度</div>
+                            <div class="chart-title">时段活跃度</div>
                             <div id="habit-heatmap-chart" class="chart-container"
                                 style="height:200px;margin-top: 0.5rem;"></div>
                         </div>
                     </div>
-                </div>
-                <div class="heatmap-section">
-                    <div class="activity-column">
-                        <div class="chart-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
-                                stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-                                style="vertical-align:-2px;margin-right:4px;">
-                                <line x1="18" y1="20" x2="18" y2="10" />
-                                <line x1="12" y1="20" x2="12" y2="4" />
-                                <line x1="6" y1="20" x2="6" y2="14" />
-                            </svg>文档浏览时长 Top 20</div>
-                        <div id="habit-top20-chart" class="chart-container chart-container--bar"
-                            style="height:200px;margin-top: 0.5rem;">
+                    <div class="chart-card">
+                        <div class="activity-column">
+                            <div class="chart-title">浏览时长 Top 10</div>
+                            <div id="habit-top10-chart" class="chart-container chart-container--bar"
+                                style="height:200px;margin-top: 0.5rem;">
+                            </div>
                         </div>
                     </div>
+                </div>
+                <!-- AI 总结分析板块（行为总结分析 + 知识库分析，竖向手风琴） -->
+                <div class="ai-summary-section">
+                    <div class="ai-summary-panel" id="ai-summary-behavior"></div>
+                    <div class="ai-summary-panel" id="ai-summary-knowledge"></div>
                 </div>
             </div>
             <div id="dir-space-container" class="dashboard-container" style="display: none;padding: 10px;">
@@ -14242,9 +13983,13 @@
                         </div>
                     </div>
                 </div>
-                <div class="activity-section-two" id="ai-summary-panel" style="display: none;">
+                <div class="activity-section-two" id="dashboard-info-panel">
                     <div class="chart-card">
-                        <div class="activity-column ai-summary-panel" id="ai-summary-left">
+                        <div class="activity-column" id="dashboard-info-left">
+                        </div>
+                    </div>
+                    <div class="chart-card">
+                        <div class="activity-column" id="dashboard-info-right">
                         </div>
                     </div>
                 </div>
@@ -16284,8 +16029,8 @@
                                     <div class="stat-label">死链书签</div>
                                 </div>
                             </div>
-                             
-                             <div class="stat-card">
+
+                            <div class="stat-card">
                                 <div class="stat-icon purple"><svg xmlns="http://www.w3.org/2000/svg" width="18"
                                         height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                         stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -16307,7 +16052,7 @@
                                     <div class="stat-label">系统skill</div>
                                 </div>
                             </div>
-                             <div class="stat-card">
+                            <div class="stat-card">
                                 <div class="stat-icon orange"><svg xmlns="http://www.w3.org/2000/svg" width="18"
                                         height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                         stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -16318,7 +16063,7 @@
                                     <div class="stat-label">全局skill</div>
                                 </div>
                             </div>
-                             <div class="stat-card">
+                            <div class="stat-card">
                                 <div class="stat-icon cyan"><svg xmlns="http://www.w3.org/2000/svg" width="18"
                                         height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                         stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -16353,21 +16098,21 @@
                             </div>
                             <div class="stat-card">
                                 <div class="stat-icon green"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
-                                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-                                            stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
-                                            <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-                                        </svg></div>
+                                        stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                                        stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
+                                        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                                    </svg></div>
                                 <div class="stat-info">
                                     <div class="stat-value" id="kb-mcp-count">--</div>
                                     <div class="stat-label">mcp总数</div>
                                 </div>
                             </div>
                             <div class="stat-card">
-                                <div class="stat-icon orange"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
-                                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-                                            stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
-                                            <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-                                        </svg></div>
+                                <div class="stat-icon orange"><svg viewBox="0 0 24 24" width="18" height="18"
+                                        fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                                        stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
+                                        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                                    </svg></div>
                                 <div class="stat-info">
                                     <div class="stat-value" id="kb-mcp-connected">--</div>
                                     <div class="stat-label">已连接mcp</div>
@@ -16375,21 +16120,21 @@
                             </div>
                             <div class="stat-card">
                                 <div class="stat-icon cyan"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
-                                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-                                            stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
-                                            <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-                                        </svg></div>
+                                        stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                                        stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
+                                        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                                    </svg></div>
                                 <div class="stat-info">
                                     <div class="stat-value" id="kb-mcp-disconnected">--</div>
                                     <div class="stat-label">已断开mcp</div>
                                 </div>
                             </div>
-                             <div class="stat-card">
+                            <div class="stat-card">
                                 <div class="stat-icon blue"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
-                                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-                                            stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
-                                            <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-                                        </svg></div>
+                                        stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                                        stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
+                                        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                                    </svg></div>
                                 <div class="stat-info">
                                     <div class="stat-value" id="kb-mcp-failed">--</div>
                                     <div class="stat-label">失败mcp</div>
@@ -16944,7 +16689,7 @@
             { key: '文件词云', value: 'toggleFile("wordCloud")', display: true, type: 'B' },
             { key: '文档关联图谱', value: 'toggleFile("noteGraph")', display: true, type: 'B' },
             { key: '文件类型分布', value: 'toggleFile("fileType")', display: true, type: 'B' },
-            { key: '行为记录大屏', value: 'toggleFile("behaviorAnalysis")', display: true, type: 'B' },
+            { key: '文档库分析', value: 'toggleFile("behaviorAnalysis")', display: true, type: 'B' },
             { key: '目录空间分析', value: 'toggleFile("dirSpace")', display: true, type: 'B' },
 
             { key: '书签', value: 'toggleFile("bookmarks")', display: true, type: 'C' },
@@ -31176,7 +30921,7 @@ kanban-plugin: basic
             const hasKeyFlag = hasKey === true || hasKey === 'true';
             const url = `${query}${hasKeyFlag ? encodeURIComponent(key) : ''}`;
             openUrlInBrowser(url);
-        } 
+        }
         function initDashboard() {
             let html = `
                 <div class="net-search-box" id="tools-buttons-search">
@@ -31233,6 +30978,7 @@ kanban-plugin: basic
                 dirSpaceChartsBound = true;
             }
             requestAnimationFrame(() => resizeDirSpaceCharts());
+            await cacheAiSummary();
         }
 
         async function openDirSpace() {
@@ -31259,12 +31005,9 @@ kanban-plugin: basic
             //监控面板展示
             const monitorPanel = dashboardContainer.querySelector('#monitor-panel');
             const fileSumPanel = dashboardContainer.querySelector('#file-sum-panel');
-            const aiSummaryPanel = dashboardContainer.querySelector('#ai-summary-panel');
             monitorPanel.style.display = 'flex';
             fileSumPanel.style.display = 'none';
-            aiSummaryPanel.style.display = 'grid';
             startTauriSystemMonitor();
-            startAiSummary();
             // 监控初始化完成后设置激活标志（防止 initSystemMonitor → closeSystemMonitor 误复位）
             _dashboardMetricsActive = true;
             if (!(isTauriVisit() && navigator.userAgent.includes('Mac'))) {
@@ -31802,10 +31545,10 @@ kanban-plugin: basic
             const sorted = [...records]
                 .filter(r => (r.durationMs || 0) > 0)
                 .sort((a, b) => (b.durationMs || 0) - (a.durationMs || 0))
-                .slice(0, 20);
+                .slice(0, 10);
 
-            const top20Chart = initDirSpaceChart('habit-top20-chart', 'habit-top20-chart');
-            top20Chart.setOption({
+            const top10Chart = initDirSpaceChart('habit-top10-chart', 'habit-top10-chart');
+            top10Chart.setOption({
                 tooltip: {
                     trigger: 'axis',
                     textStyle: { fontSize: 11 },
@@ -47541,7 +47284,7 @@ kanban-plugin: basic
                         </div>
                     `;
                 }).join('');
-                 popup.innerHTML = `<div class="chat-toolbar-popup-warp">${html}</div>`;
+                popup.innerHTML = `<div class="chat-toolbar-popup-warp">${html}</div>`;
             } catch (e) {
                 console.warn('渲染技能选择器失败:', e);
                 picker.style.display = 'none';
@@ -50556,12 +50299,12 @@ kanban-plugin: basic
                     const unindexed = Math.max(0, _scanFileList.length - (kbStatus.file_count || 0));
                     document.getElementById('kb-stat-unindexed').textContent = unindexed;
 
-                    document.getElementById('kb-skill-count').textContent = skill?.total  || 0;
+                    document.getElementById('kb-skill-count').textContent = skill?.total || 0;
                     document.getElementById('kb-skill-system').textContent = skill?.system_count || 0;
                     document.getElementById('kb-skill-global').textContent = skill?.global_count || 0;
-                    document.getElementById('kb-skill-project').textContent = skill?.project_count  || 0;
+                    document.getElementById('kb-skill-project').textContent = skill?.project_count || 0;
                     document.getElementById('kb-skill-enabled').textContent = skill?.enabled_count || 0;
-                    document.getElementById('kb-skill-sdisabled').textContent = skill?.disabled_count  || 0;
+                    document.getElementById('kb-skill-sdisabled').textContent = skill?.disabled_count || 0;
 
                     document.getElementById('kb-mcp-count').textContent = mcp?.total || 0;
                     document.getElementById('kb-mcp-connected').textContent = mcp?.connected_count || 0;
@@ -51564,15 +51307,22 @@ kanban-plugin: basic
             return all.some(x => x && x.ok);
         }
 
-        /**
-         * 启动 AI 总结（dashboard 打开时调用）：
-         * - 有今日且有效的缓存 → 直接渲染缓存；
-         * - 无缓存/缓存无效 → 后台异步采集数据 + 并发调用 LLM 总结，完成后渲染并落缓存。
-         */
-        async function startAiSummary() {
-            if (!isTauriVisit()) return;
-            const panel = document.getElementById('ai-summary-left');
-            if (!panel) return;
+        /** 重新启动 AI 总结分析 */
+        async function restartAiSummary() {
+            const behaviorPanel = document.getElementById('ai-summary-behavior');
+            const knowledgePanel = document.getElementById('ai-summary-knowledge');
+            if (!behaviorPanel || !knowledgePanel) return;
+            safeLocalStorageRemove(AI_SUMMARY_CACHE_KEY);
+            safeLocalStorageRemove(AI_SUMMARY_DATE_KEY);
+            behaviorPanel.innerHTML = '<div class="ai-summary-empty">⏳ 正在分析用户行为…</div>';
+            knowledgePanel.innerHTML = '<div class="ai-summary-empty">⏳ 正在分析用户知识库…</div>';
+            await startAiSummary();
+        }
+        /** 缓存 AI 总结分析结果 */
+        async function cacheAiSummary() {
+            const behaviorPanel = document.getElementById('ai-summary-behavior');
+            const knowledgePanel = document.getElementById('ai-summary-knowledge');
+            if (!behaviorPanel || !knowledgePanel) return;
 
             // 1. 先尝试渲染今日缓存（秒开）
             const today = new Date().toDateString();
@@ -51582,103 +51332,117 @@ kanban-plugin: basic
                 try {
                     const data = JSON.parse(cached);
                     if (isAiSummaryCacheValid(data)) {
-                        renderAiSummaryPanels(panel, data);
+                        await renderAiSummaryPanels(behaviorPanel, knowledgePanel, data);
                         return; // 今日已总结，直接返回
                     }
                     console.warn('[aiSummay] 缓存无效（版本过期或全失败），重新总结');
                 } catch (e) {
                     console.warn('[aiSummay] 缓存解析失败，重新总结', e);
+                    behaviorPanel.innerHTML = '<div class="ai-summary-empty">行为总结暂时不可用，请重试</div>';
+                    knowledgePanel.innerHTML = '<div class="ai-summary-empty">知识库总结暂时不可用，请重试</div>';
                 }
             }
+            behaviorPanel.innerHTML = '<div class="ai-summary-loading">请点击右上角按钮手动触发分析</div>';
+            knowledgePanel.innerHTML = '<div class="ai-summary-loading">请点击右上角按钮手动触发分析</div>';
+        }
 
-            // 2. 无有效缓存 → 后台异步总结（不阻塞 dashboard 渲染）
-            panel.innerHTML = '<div class="ai-summary-loading">⏳ 正在分析用户行为与知识库…</div>';
-            runAiSummaryBackground(panel);
+        /**
+         * 启动 AI 总结（行为记录大屏打开时调用）：
+         * - 有今日且有效的缓存 → 直接渲染缓存；
+         * - 无缓存/缓存无效 → 后台异步采集数据 + 并发调用 LLM 总结，完成后渲染并落缓存。
+         */
+        async function startAiSummary() {
+            const behaviorPanel = document.getElementById('ai-summary-behavior');
+            const knowledgePanel = document.getElementById('ai-summary-knowledge');
+            if (!behaviorPanel || !knowledgePanel) return;
+            runAiSummaryBackground(behaviorPanel, knowledgePanel);
         }
 
         /** 后台异步总结任务（防重入） */
         let _aiSummaryRunning = false;
-        async function runAiSummaryBackground(panel) {
+        async function runAiSummaryBackground(behaviorPanel, knowledgePanel) {
             if (_aiSummaryRunning) return;
             _aiSummaryRunning = true;
             try {
                 const data = await window.aiSummay.getSummary(7);
                 // 缓存带上版本号（旧缓存自动失效）
                 const payload = { v: AI_SUMMARY_CACHE_VERSION, ...data };
-                renderAiSummaryPanels(panel, payload);
+                await renderAiSummaryPanels(behaviorPanel, knowledgePanel, payload);
                 // 落缓存 + 记录日期（每天首次打开后不再重复总结）
                 safeLocalStorageSet(AI_SUMMARY_CACHE_KEY, JSON.stringify(payload));
                 safeLocalStorageSet(AI_SUMMARY_DATE_KEY, new Date().toDateString());
             } catch (e) {
                 console.warn('[aiSummay] 后台总结失败:', e);
-                panel.innerHTML = '<div class="ai-summary-empty">总结暂时不可用</div>';
+                behaviorPanel.innerHTML = '<div class="ai-summary-empty">行为总结暂时不可用</div>';
+                knowledgePanel.innerHTML = '<div class="ai-summary-empty">知识库总结暂时不可用</div>';
             } finally {
                 _aiSummaryRunning = false;
             }
         }
 
-        /** 渲染单个横向手风琴面板（行为 + 知识库全部合并展示） */
-        function renderAiSummaryPanels(panel, data) {
-            const all = [
-                ...(data.behavior || []),
-                ...(data.knowledge || []),
-            ];
-            panel.innerHTML = renderHorizontalAccordion('🧠 行为总结分析与 📚 知识库分析', all, 'ai-sum-acc');
-            bindHorizontalAccordion(panel);
+        /** 渲染两个板块（行为总结分析 / 知识库分析），各为一个竖向手风琴 */
+       async function renderAiSummaryPanels(behaviorPanel, knowledgePanel, data) {
+            behaviorPanel.innerHTML = renderVerticalAccordion('行为总结分析', data.behavior || [], 'ai-sum-behavior-acc');
+            knowledgePanel.innerHTML = renderVerticalAccordion('知识库分析', data.knowledge || [], 'ai-sum-knowledge-acc');
+            bindVerticalAccordion(behaviorPanel);
+            bindVerticalAccordion(knowledgePanel);
+            await postProcessCodeAndDiagrams(behaviorPanel);
+            await postProcessCodeAndDiagrams(knowledgePanel);
         }
 
         /**
-         * 横向手风琴（demo.html 飞书风格）：每个分类一个纵向标题栏，点击水平展开。
+         * 竖向手风琴：每个分类一个横向标题栏，点击纵向展开。
          * 首个分类默认展开。
          */
-        function renderHorizontalAccordion(title, sections, idPrefix) {
+        function renderVerticalAccordion(title, sections, idPrefix) {
             if (!sections || !sections.length) {
-                return `<div class="ai-summary-panel-title">${title}</div><div class="ai-summary-empty">暂无总结数据</div>`;
+                return `<div class="chart-title">${title}</div><div class="ai-summary-empty">暂无总结数据</div>`;
             }
             const items = sections.map((s, i) => {
                 const isActive = i === 0 ? ' active' : '';
                 const okBadge = s.ok ? '' : `<span class="ai-acc-badge ai-acc-badge-warn">降级</span>`;
-                const body = s.result ? `<div class="ai-acc-content markdown-body">${renderSummaryMarkdown(s.result)}</div>` : '<div class="ai-acc-content">暂无内容</div>';
+                const body = s.result ? `<div class="ai-acc-content">${renderSummaryMarkdown(s.result)}</div>` : '<div class="ai-acc-content">暂无内容</div>';
                 return `
-                <div class="h-accordion-item${isActive}" data-key="${s.key}">
-                    <button class="h-accordion-header" aria-expanded="${isActive === ' active'}">${s.label}${okBadge}</button>
-                    <div class="h-accordion-content">${body}</div>
+                <div class="v-accordion-item${isActive}" data-key="${s.key}">
+                    <button class="v-accordion-header" aria-expanded="${isActive === ' active'}">
+                        <span class="v-accordion-label">${s.label}</span>${okBadge}
+                    </button>
+                    <div class="v-accordion-content">${body}</div>
                 </div>`;
             }).join('');
-            return `<div class="ai-summary-panel-title">${title}</div>
-                <div class="h-accordion" id="${idPrefix}">${items}</div>`;
+            return `<div class="chart-title">${title}</div>
+                <div class="v-accordion" id="${idPrefix}">${items}</div>`;
         }
 
         /** 模型输出 markdown → 安全 HTML（复用页面渲染器；无则基础转义换行） */
         function renderSummaryMarkdown(text) {
             if (!text) return '';
-            // 优先复用聊天 markdown 渲染（marked + DOMPurify sanitize + escapeHtml 兜底）
-            if (typeof renderChatMarkdown === 'function') {
-                try {
-                    return renderChatMarkdown(text);
-                } catch (e) {
-                    console.warn('[aiSummay] markdown 渲染失败，回退转义', e);
-                }
-            }
-            return escapeHtml(text).replace(/\n/g, '<br>');
+            const container = document.createElement('div');
+            container.classList.add('markdown-body');
+            container.style.padding = '0';
+            container.style.background = 'transparent';
+            container.style.userSelect = 'text';
+            container.style.zoom = '0.9';
+            container.innerHTML = markedMd(parseObsidianToHTML(text));
+            return container.outerHTML;
         }
 
-        /** 绑定横向手风琴交互（demo.html 逻辑：点击标题展开/收起，同组互斥） */
-        function bindHorizontalAccordion(root) {
+        /** 绑定竖向手风琴交互（点击标题展开/收起，同组互斥） */
+        function bindVerticalAccordion(root) {
             if (!root) return;
-            const accordion = root.querySelector('.h-accordion');
+            const accordion = root.querySelector('.v-accordion');
             if (!accordion) return;
-            const items = accordion.querySelectorAll('.h-accordion-item');
+            const items = accordion.querySelectorAll('.v-accordion-item');
             function setActiveItem(activeItem) {
                 items.forEach(item => {
                     const isTarget = item === activeItem;
                     item.classList.toggle('active', isTarget);
-                    const header = item.querySelector('.h-accordion-header');
+                    const header = item.querySelector('.v-accordion-header');
                     if (header) header.setAttribute('aria-expanded', isTarget);
                 });
             }
             accordion.addEventListener('click', function (e) {
-                const header = e.target.closest('.h-accordion-header');
+                const header = e.target.closest('.v-accordion-header');
                 if (!header) return;
                 const item = header.parentElement;
                 if (item.classList.contains('active')) {

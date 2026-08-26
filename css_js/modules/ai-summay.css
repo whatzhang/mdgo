@@ -1,12 +1,203 @@
-/* ===== MCP 管理模块样式（模块标杆：css_js/modules/mcp.css） =====
- * 职责：MCP 服务器管理页面的样式（仅本模块特有规则）。
- * 说明：MCP 页面与 Skill 页面同构（v2 设计），布局类（.skill-layout、
- *       .skill-sidebar、.skill-list、.skill-form-* 等）由 skill.css 提供，
- *       本文件只维护 #mcp-container 及后续 mcp 专属规则。
- * 依赖：必须在 index.html 主 <style> 与 skill.css 之后加载（使用其 CSS 变量与布局类）。
- */
-#mcp-container {
-    display: none;
-    height: 100%;
+/* AI 总结板块（行为总结分析 / 知识库分析，竖向手风琴） */
+.ai-summary-section {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
     width: 100%;
+    box-sizing: border-box;
+    margin-top: 0.75rem;
+}
+
+.ai-summary-panel {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    background: var(--color-bg);
+    border-radius: 0.75rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    padding: 0.625rem;
+}
+
+.ai-summary-panel-title {
+    font-weight: 600;
+    font-size: 0.9375rem;
+    color: var(--color-text, #333);
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.ai-summary-loading,
+.ai-summary-empty {
+    padding: 1rem 0.5rem;
+    text-align: center;
+    color: var(--color-text-secondary, #888);
+    font-size: 0.8125rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* ─── 竖向手风琴 ─── */
+.v-accordion {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    background: #ffffff;
+    border-radius: 10px;
+    border: 1px solid #f0f1f3;
+    overflow: hidden;
+}
+
+.v-accordion-item {
+    display: flex;
+    flex-direction: column;
+    border-bottom: 1px solid #f0f1f3;
+    background: #ffffff;
+    transition: background-color 0.3s;
+}
+
+.v-accordion-item:last-child {
+    border-bottom: none;
+}
+
+.v-accordion-item.active {
+    background: #ffffff;
+}
+
+.v-accordion-header {
+    flex: 0 0 auto;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.5rem;
+    background: transparent;
+    border: none;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: #3d3d3d;
+    padding: 0.625rem 0.875rem;
+    transition: background 0.25s, color 0.25s;
+    user-select: none;
+    cursor: pointer;
+    font-family: inherit;
+    text-align: left;
+}
+
+.v-accordion-header::before {
+    content: '▸';
+    display: inline-block;
+    font-size: 0.75rem;
+    color: #c9cdd4;
+    transition: transform 0.3s;
+    flex: 0 0 auto;
+}
+
+.v-accordion-item.active .v-accordion-header::before {
+    transform: rotate(90deg);
+    color: #3370ff;
+}
+
+.v-accordion-item.active .v-accordion-header {
+    color: #3370ff;
+    background: #f7f8fa;
+}
+
+.v-accordion-item:not(.active):hover .v-accordion-header {
+    background: #fafbfc;
+    color: #3370ff;
+}
+
+.v-accordion-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.v-accordion-content {
+    display: none;
+    padding: 0.875rem 1rem 1rem;
+    line-height: 1.8;
+    color: #4e5969;
+    font-size: 0.875rem;
+    border-top: 1px solid #f7f8fa;
+    overflow: auto;
+}
+
+.v-accordion-item.active .v-accordion-content {
+    display: block;
+}
+
+/* 内容子元素：填充手风琴内容区，防止 markdown 内容宽度计算异常 */
+.v-accordion-content .ai-acc-content {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.ai-acc-badge {
+    display: inline-block;
+    flex: 0 0 auto;
+    font-size: 0.625rem;
+    line-height: 1;
+    padding: 2px 4px;
+    border-radius: 6px;
+    background: #f2f3f5;
+    color: #86909c;
+}
+
+.ai-acc-badge-warn {
+    background: #fff7e8;
+    color: #f5a623;
+}
+
+/* 手风琴内容区 markdown 基础样式 */
+.v-accordion-content h1,
+.v-accordion-content h2,
+.v-accordion-content h3 {
+    margin: 0.5rem 0 0.25rem;
+    font-size: 1em;
+    color: #1d2129;
+}
+
+.v-accordion-content p {
+    margin: 0.25rem 0;
+}
+
+.v-accordion-content ul,
+.v-accordion-content ol {
+    margin: 0.25rem 0;
+    padding-left: 1.25rem;
+}
+
+.v-accordion-content table {
+    border-collapse: collapse;
+    margin: 0.375rem 0;
+    font-size: 0.8125rem;
+}
+
+.v-accordion-content th,
+.v-accordion-content td {
+    border: 1px solid #e5e6eb;
+    padding: 0.25rem 0.5rem;
+}
+
+.v-accordion-content code {
+    background: #f2f3f5;
+    border-radius: 4px;
+    padding: 0 4px;
+    font-size: 0.8125rem;
+}
+
+.v-accordion-content pre {
+    background: #f7f8fa;
+    border-radius: 8px;
+    padding: 0.625rem;
+    overflow-x: auto;
 }
