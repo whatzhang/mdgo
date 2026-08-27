@@ -32,7 +32,6 @@ use crate::core::subagent::LruResultStore;
 use crate::core::{ConfigStore, Indexer, IndexerConfig, WatcherService};
 use crate::core::skill::{SkillRegistry, SkillStore};
 use crate::core::skill::metrics::SkillMetrics;
-use crate::core::approval::policy::DestructiveWritePolicy;
 use crate::core::approval::transport::IpcApprovalTransport;
 use crate::core::agent::planner::PlanDecision;
 
@@ -155,6 +154,8 @@ pub struct AppState {
     pub memory_vectors: Arc<crate::core::memory::vector::MemoryVectorIndex>,
     /// AI 用量统计缓存（内存，30s TTL，dashboard 热力图数据源）
     pub ai_stats_cache: Arc<crate::commands::stats::AiStatsCache>,
+    /// 上一请求过程摘要（自我调节 one-shot 槽：下一请求注入 system 后即清除）
+    pub last_process_summary: std::sync::Mutex<Option<String>>,
     /// Prompt 模板存储（按知识库目录惰性创建，`{dir}/.mdgo/mdgo.db`）
     pub prompt_stores:
         std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<crate::services::prompt::PromptStore>>>,
@@ -439,26 +440,20 @@ pub fn run() {
         .manage(TaskRegistry::new())
         .setup(move |app| {
             // ── 组装工具审批门（破坏性操作确认，需 AppHandle 以走前端桥）──
-            // 策略：edit / delete 需用户确认；通道：WebSocket 桥调前端弹窗；
-            // 超时 60s，超时/通道异常默认拒绝（fail-closed）。
-            let mut policies: Vec<Box<dyn crate::core::approval::ApprovalPolicy>> =
-                vec![Box::new(DestructiveWritePolicy::new(true))];
-            // P2-19：配置驱动审批策略（%APPDATA%/com.mdgo/approval.yaml）。
-            // allow/deny 规则短路默认策略（如"只读模式"= deny edit/delete）；
-            // 配置缺失/解析失败保留默认（edit/delete 需确认），不阻断启动。
-            match crate::core::approval::policy::load_approval_rules(
+            // 权限模式（ask/read-only/allow-all，持久化于 approval_mode 文件）
+            // 决定默认策略；配置驱动规则（approval.yaml）始终叠加。
+            // 模式切换经 approval_set_mode 命令热生效。
+            let approval_mode = crate::commands::approval::load_approval_mode();
+            let config_rules = crate::core::approval::policy::load_approval_rules(
                 &crate::core::approval::policy::default_rules_path(),
-            ) {
-                Ok(rules) if !rules.is_empty() => {
-                    policies.insert(
-                        0,
-                        Box::new(crate::core::approval::policy::ConfigApprovalPolicy::new(rules)),
-                    );
-                    log::info!("[approval] 已加载配置审批策略（{} 条规则）", policies.len() - 1);
-                }
-                Ok(_) => {}
-                Err(e) => log::warn!("[approval] 加载审批策略配置失败，使用默认策略: {}", e),
+            )
+            .unwrap_or_default();
+            if !config_rules.is_empty() {
+                log::info!("[approval] 已加载配置审批策略（{} 条规则）", config_rules.len());
             }
+            let policies =
+                crate::commands::approval::policies_for_mode(approval_mode, config_rules);
+            log::info!("[approval] 启动权限模式: {}", approval_mode.as_str());
             // 审批挂起表：IPC 通道与 approval_respond 共享（依赖注入，非全局静态）
             let approval_pending: Arc<
                 Mutex<HashMap<String, tokio::sync::oneshot::Sender<ApprovalOutcome>>>,
@@ -516,6 +511,7 @@ pub fn run() {
                 )),
                 prompt_stores: std::sync::Mutex::new(std::collections::HashMap::new()),
                 ai_stats_cache: Arc::new(crate::commands::stats::AiStatsCache::default()),
+                last_process_summary: std::sync::Mutex::new(None),
                 mcp: Arc::new(crate::core::mcp::McpRegistry::new()),
                 schedule_stores: crate::commands::schedule::empty_store_cache(),
                 schedule_day_info: crate::commands::schedule::build_day_info_provider(),
@@ -645,6 +641,8 @@ pub fn run() {
             commands::llm::agent_task_list,
             commands::llm::agent_task_get,
             commands::approval::approval_respond,
+            commands::approval::approval_get_mode,
+            commands::approval::approval_set_mode,
             commands::question::question_respond,
 
             commands::plan::plan_respond,
@@ -691,6 +689,9 @@ pub fn run() {
             commands::schedule::schedule_set_active_dir,
             commands::schedule::schedule_clear_active_dir,
             commands::stats::stats_ai_usage,
+            commands::web_search::web_search_config_get,
+            commands::web_search::web_search_config_set,
+            commands::web_search::web_search_test,
         ]);
 
     // Windows/Linux：拦截主窗口关闭请求，点击右上角关闭按钮 → 隐藏到系统托盘。

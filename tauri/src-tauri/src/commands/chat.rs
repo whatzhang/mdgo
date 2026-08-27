@@ -353,11 +353,12 @@ pub async fn chat_message_save(
     content: String,
     token_count: i32,
     tool_calls: Option<String>,
+    thinking: Option<String>,
 ) -> Result<ChatMessage, String> {
     let store = state.get_chat_store(&dir_path)?;
     tokio::task::spawn_blocking(move || {
         crate::core::db::with_busy_retry(3, || {
-            store.save_message(&session_id, &role, &content, token_count, tool_calls.as_deref())
+            store.save_message(&session_id, &role, &content, token_count, tool_calls.as_deref(), thinking.as_deref())
         })
     })
     .await

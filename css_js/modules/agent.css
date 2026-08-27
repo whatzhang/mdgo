@@ -95,6 +95,186 @@
     color: var(--color-danger, #e74c3c);
 }
 
+/* ── Agent 过程时间线（三合一：thinking + 工具 + 阶段） ── */
+.process-timeline {
+    margin: 0.25rem;
+    margin-top: 0;
+    margin-left: 1rem;
+    border-radius: 0.5rem;
+    background: var(--color-bg-secondary, rgba(0, 0, 0, 0.02));
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+}
+
+.process-timeline summary {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0;
+    list-style: none;
+    color: var(--t2, #888);
+}
+
+.process-timeline summary::-webkit-details-marker {
+    display: none;
+}
+
+.process-timeline summary::before {
+    content: '▸';
+    display: inline-block;
+    transition: transform 0.2s;
+    color: var(--t3, #aaa);
+}
+
+.process-timeline[open] summary::before {
+    transform: rotate(90deg);
+}
+
+.pt-summary-text {
+    font-weight: 500;
+}
+
+.pt-summary-stats {
+    margin-left: auto;
+    color: var(--t3, #999);
+    font-size: 0.7rem;
+    white-space: nowrap;
+}
+
+.process-timeline-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.25rem 0 0.125rem;
+    border-top: 1px solid var(--color-border, rgba(0, 0, 0, 0.06));
+    max-height: 22rem;
+    overflow-y: auto;
+}
+
+.pt-entry {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.375rem;
+    padding: 0.125rem 0;
+    line-height: 1.5;
+    color: var(--t2, #666);
+}
+
+.pt-dot {
+    flex: 0 0 auto;
+    font-size: 0.6rem;
+    line-height: 1.5;
+    font-family: var(--font-mono, monospace);
+    color: var(--t3, #999);
+    text-transform: lowercase;
+    background: var(--color-bg-secondary, rgba(0, 0, 0, 0.05));
+    border-radius: 0.2rem;
+    padding: 0 0.25rem;
+    margin-top: 0.1rem;
+    white-space: nowrap;
+}
+
+.pt-time {
+    flex: 0 0 auto;
+    margin-left: auto;
+    color: var(--t3, #aaa);
+    font-size: 0.68rem;
+    white-space: nowrap;
+}
+
+/* thinking 条目：think 标签 + preview 同一行（单行高），点击展开 full body */
+.pt-thinking {
+    cursor: pointer;
+    background: rgba(0, 0, 0, 0.03);
+    border-radius: 0.25rem;
+    padding: 0.125rem 2px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    align-items: stretch; /* 覆盖 .pt-entry 的 flex-start：full 占满宽度 */
+}
+
+.pt-thinking-row {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-height: 1.5em;
+    line-height: 1.5;
+    /* 单行高固定：折叠态整体只有一行文字的高度 */
+    max-height: 1.5em;
+    overflow: hidden;
+}
+
+.pt-thinking .pt-dot {
+    flex: 0 0 auto;
+    margin-top: 0;
+}
+
+.pt-thinking-preview {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-style: italic;
+    color: var(--t3, #999);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    /* 单行高度固定，避免流式重渲染时条目高度抖动/撑大 */
+    line-height: 1.5;
+}
+
+.pt-thinking .pt-time {
+    flex: 0 0 auto;
+    margin-left: 0;
+}
+
+.pt-thinking-full {
+    color: var(--t3, #999);
+    white-space: pre-wrap;
+    word-break: break-all;
+    padding: 0.25rem;
+    line-height: 1.6;
+}
+
+/* 阶段条目：分隔线风格 */
+.pt-stage {
+    color: var(--t3, #999);
+    border-top: 1px dashed var(--color-border, rgba(0, 0, 0, 0.08));
+    padding-top: 0.2rem;
+    margin-top: 0.1rem;
+}
+
+.pt-stage .pt-stage-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 时间线内的工具条目（复用 tool-card 基础样式） */
+.pt-tool {
+    cursor: pointer;
+    /* 允许 tool-detail 换行：flex-basis:100% 的元素换到下一行占满宽度，
+       避免与 tool 标签挤在同一行导致错位（左边偏上/右边偏下） */
+    flex-wrap: wrap;
+}
+
+.pt-tool .tool-detail {
+    flex-basis: 100%;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 12rem;
+    overflow: auto;
+    font-size: 0.72rem;
+    color: var(--t3, #888);
+    background: rgba(0, 0, 0, 0.03);
+    border-radius: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    margin-top: 0.15rem;
+}
+
 .msg-rag {
     color: var(--color-warning) !important;
 }
@@ -303,6 +483,128 @@ mark.source-highlight,
 .rag-settings-row input:focus {
     border-color: var(--color-primary, #0879e9);
     box-shadow: 0 0 0 3px rgba(8, 121, 233, 0.1);
+}
+
+/* 网络搜索配置区块 */
+.rag-settings-section-title {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--color-text, #1f2328);
+    border-top: 1px solid var(--color-border, #d0d7de);
+    padding-top: 0.625rem;
+    margin: 0.75rem 0 0.625rem;
+}
+
+.rag-settings-row select {
+    flex: 1;
+    min-width: 0;
+    padding: 0.125rem 0.25rem;
+    font-size: 0.8125rem;
+    height: auto;
+    line-height: 1.5;
+    border: 1px solid var(--color-border, #d0d7de);
+    border-radius: 0.3125rem;
+    outline: none;
+    background: var(--color-bg, #fff);
+    color: var(--color-text, #1f2328);
+}
+
+.rag-settings-row input[type="password"] {
+    padding: 0.125rem 0.25rem;
+    font-size: 0.8125rem;
+    height: auto;
+    line-height: 1.5;
+    border: 1px solid var(--color-border, #d0d7de);
+    border-radius: 0.3125rem;
+    outline: none;
+    box-sizing: border-box;
+}
+
+/* ── 网络搜索设置 popup（对话框底部栏地球图标弹层） ── */
+#chat-websearch-popup {
+    min-width: 15rem;
+    max-width: 17rem;
+}
+
+.websearch-row {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0;
+    font-size: 0.8125rem;
+}
+
+.websearch-row label {
+    flex: 0 0 auto;
+    min-width: 3.5rem;
+    color: var(--color-text, #333);
+}
+
+.websearch-row select {
+    flex: 1;
+    min-width: 0;
+    padding: 0.125rem 0.25rem;
+    font-size: 0.75rem;
+    height: auto;
+    line-height: 1.5;
+    border: 1px solid var(--color-border, #d0d7de);
+    border-radius: 0.3125rem;
+    outline: none;
+    background: var(--color-bg, #fff);
+    color: var(--color-text, #333);
+}
+
+.websearch-row input[type="password"] {
+    flex: 1;
+    min-width: 0;
+    padding: 0.125rem 0.25rem;
+    font-size: 0.75rem;
+    height: auto;
+    line-height: 1.5;
+    border: 1px solid var(--color-border, #d0d7de);
+    border-radius: 0.3125rem;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.websearch-row input[type="number"] {
+    width: 4rem;
+    padding: 0.125rem 0.25rem;
+    font-size: 0.75rem;
+    height: auto;
+    line-height: 1.5;
+    border: 1px solid var(--color-border, #d0d7de);
+    border-radius: 0.3125rem;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.websearch-row .btn-sm {
+    flex: 0 0 auto;
+}
+
+.websearch-status {
+    padding: 0.25rem 0 0.125rem;
+    font-size: 0.6875rem;
+    color: var(--color-text-secondary, #888);
+}
+
+.websearch-footer {
+    margin-top: 0.375rem;
+    padding-top: 0.375rem;
+    border-top: 1px solid var(--color-border, #eee);
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* 网络搜索激活态：整个 SVG 图标显示为淡绿色（启用时） */
+.chat-toolbar-btn.websearch-active {
+    color: #2ecc71;
+}
+
+.chat-toolbar-btn.websearch-active svg {
+    color: #2ecc71;
+    stroke: #2ecc71;
 }
 
 /* ── 全局 Agent 任务状态条（Phase 3：任意界面可见，后台任务展示 + 停止入口） ── */

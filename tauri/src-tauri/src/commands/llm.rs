@@ -432,6 +432,215 @@ fn emit_pending_trace_events(app: &AppHandle, request_id: &str) {
     }
 }
 
+/// 取走上一请求的过程摘要（one-shot：读取后即清除，仅紧邻下一轮生效）。
+pub fn take_process_summary(state: &crate::AppState) -> Option<String> {
+    state
+        .last_process_summary
+        .lock()
+        .ok()
+        .and_then(|mut g| g.take())
+}
+
+/// 工具失败原因分类（轻量关键词规则，不调模型）——
+/// 用于给 one-shot 摘要的模型判断指引，避免模型把「参数/使用方式问题」误判为「工具不可用」。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FailureKind {
+    /// 参数问题（最常见）：路径/文件不存在、参数格式错误、找不到目标——修正参数即可重试
+    Param,
+    /// 使用方式问题：权限不足、需要前置步骤/初始化、操作顺序不对——改变调用方式后重试
+    Usage,
+    /// 环境问题（少数）：连接失败、服务不可用、工具环境本身故障——才考虑替代方案
+    Env,
+}
+
+/// 依据失败原因文本分类（大小写不敏感子串匹配；无命中默认参数问题——
+/// 因为绝大多数失败确实源于参数/使用方式，默认导向「修正重试」而非「换工具」）。
+fn classify_failure(summary: &str) -> FailureKind {
+    let s = summary.to_lowercase();
+    // 环境问题信号（强证据才归环境）
+    const ENV_MARKERS: &[&str] = &[
+        "connection", "connect failed", "timeout", "timed out", "network error",
+        "service unavailable", "internal server error", "connection refused",
+        "econnrefused", "econnreset", "服务器", "连接失败", "超时", "服务不可用",
+        "网络",
+    ];
+    if ENV_MARKERS.iter().any(|m| s.contains(m)) {
+        return FailureKind::Env;
+    }
+    // 使用方式问题信号（前置/权限/状态）
+    const USAGE_MARKERS: &[&str] = &[
+        "permission", "denied", "eacces", "read-only", "read only", "locked", "busy",
+        "not initialized", "no repository", "not a git", "must", "required", "first",
+        "先执行", "需要先", "未初始化", "权限", "拒绝", "只读", "锁定",
+    ];
+    if USAGE_MARKERS.iter().any(|m| s.contains(m)) {
+        return FailureKind::Usage;
+    }
+    // 其余（含 not found / no such / invalid / 不存在 / 找不到 / 格式错误）默认归参数问题
+    FailureKind::Param
+}
+
+fn failure_kind_label(kind: FailureKind) -> &'static str {
+    match kind {
+        FailureKind::Param => "参数问题",
+        FailureKind::Usage => "使用方式问题",
+        FailureKind::Env => "环境问题",
+    }
+}
+
+/// 请求结束时生成过程摘要并写入 one-shot 槽（供紧邻的下一请求注入 system）。
+///
+/// 数据源：任务状态中心快照（trace_events 阶段耗时 + tool_traces 工具结果 + thinking 摘要）。
+/// 摘要为精简文本（抑制 token 开销），仅包含可执行信号：
+/// - 阶段耗时 / 失败 / 检索命中；
+/// - 工具失败为**参数级粒度**（含参数预览与失败原因），并经 [`classify_failure`]
+///   分类（参数/使用方式/环境），默认导向「修正参数或调用方式后重试」——
+///   只有明确的环境故障（连接/服务不可用）才建议改用替代方案。
+pub fn write_process_summary(state: &crate::AppState, request_id: &str) {
+    let Some(task) = state.agent_tasks.get(request_id) else {
+        return;
+    };
+    let mut lines: Vec<String> = Vec::new();
+    lines.push("[过程反馈] 上一轮请求过程摘要：".to_string());
+
+    // 阶段耗时（trace_events: stage + duration_ms + status）
+    let stages: Vec<String> = task
+        .trace_events
+        .iter()
+        .filter_map(|ev| {
+            let stage = ev.get("stage").and_then(|v| v.as_str()).unwrap_or("");
+            let status = ev.get("status").and_then(|v| v.as_str()).unwrap_or("");
+            let dur = ev.get("duration_ms").and_then(|v| v.as_u64()).unwrap_or(0);
+            if stage.is_empty() || status == "start" {
+                return None;
+            }
+            Some(format!("{stage}={status} {dur}ms"))
+        })
+        .collect();
+    if !stages.is_empty() {
+        lines.push(format!("- 阶段耗时: {}", stages.join(", ")));
+    }
+
+    // 工具结果（tool_traces: tool + ok + summary 截断）
+    let tools: Vec<String> = task
+        .tool_traces
+        .iter()
+        .map(|t| {
+            let ok = match t.ok {
+                Some(true) => "ok",
+                Some(false) => "FAIL",
+                None => "running",
+            };
+            let sum = if t.summary.chars().count() > 60 {
+                format!("{}…", t.summary.chars().take(60).collect::<String>())
+            } else {
+                t.summary.clone()
+            };
+            format!("{}({}) {}", t.tool, ok, sum)
+        })
+        .collect();
+    if !tools.is_empty() {
+        lines.push(format!("- 工具: {}", tools.join(" | ")));
+    }
+
+    // 失败明细（参数级粒度 + 原因分类）：同一工具可能多次调用、参数 A 失败而参数 B 成功。
+    // 每条失败都带参数预览、失败原因、问题分类，避免模型误判「工具不可用」而转用替代方案。
+    let failures: Vec<String> = task
+        .tool_traces
+        .iter()
+        .filter(|t| t.ok == Some(false))
+        .map(|t| {
+            let args = if t.args_preview.trim().is_empty() {
+                String::new()
+            } else {
+                let a = t.args_preview.trim();
+                format!(
+                    " 参数[{}]",
+                    if a.chars().count() > 50 {
+                        format!("{}…", a.chars().take(50).collect::<String>())
+                    } else {
+                        a.to_string()
+                    }
+                )
+            };
+            let reason = if t.summary.trim().is_empty() {
+                String::new()
+            } else {
+                let s = t.summary.trim();
+                format!(
+                    " 原因: {}",
+                    if s.chars().count() > 80 {
+                        format!("{}…", s.chars().take(80).collect::<String>())
+                    } else {
+                        s.to_string()
+                    }
+                )
+            };
+            let kind = classify_failure(&t.summary);
+            format!("{}{}{}（{}）", t.tool, args, reason, failure_kind_label(kind))
+        })
+        .collect();
+    if !failures.is_empty() {
+        lines.push(format!("- 失败明细: {}", failures.join("；")));
+    }
+
+    // 同工具成败统计（辅助模型判断问题性质）
+    let mut per_tool: std::collections::BTreeMap<String, (u32, u32)> = std::collections::BTreeMap::new();
+    for t in &task.tool_traces {
+        let e = per_tool.entry(t.tool.clone()).or_insert((0, 0));
+        match t.ok {
+            Some(true) => e.0 += 1,
+            Some(false) => e.1 += 1,
+            None => {}
+        }
+    }
+    let tool_stats: Vec<String> = per_tool
+        .iter()
+        .filter(|(_, (ok, fail))| *ok > 0 || *fail > 0)
+        .map(|(tool, (ok, fail))| format!("{tool}: 成功{ok} 失败{fail}"))
+        .collect();
+    if !tool_stats.is_empty() {
+        lines.push(format!("- 工具成败: {}", tool_stats.join("，")));
+    }
+
+    // 失败分类聚合：决定模型应优先「修正重试」还是「换替代方案」
+    if !failures.is_empty() {
+        let kinds: Vec<FailureKind> = task
+            .tool_traces
+            .iter()
+            .filter(|t| t.ok == Some(false))
+            .map(|t| classify_failure(&t.summary))
+            .collect();
+        let has_env = kinds.contains(&FailureKind::Env);
+        let has_param_or_usage = kinds.iter().any(|k| matches!(k, FailureKind::Param | FailureKind::Usage));
+        if has_env && !has_param_or_usage {
+            // 全部为环境故障：才建议替代方案
+            lines.push(
+                "- 判断指引：本次失败均为「环境问题」（连接/服务/工具环境故障），工具本身或外部依赖不可用，可改用替代方案或向用户说明。".to_string(),
+            );
+        } else {
+            // 默认导向：绝大多数失败源于参数或使用方式，修正后重试，不要急于换工具
+            lines.push(
+                "- 判断指引：失败大多为「参数问题」或「使用方式问题」（路径/参数不当、权限/前置步骤），先修正参数或改变调用方式后重试，不必换工具；仅当失败原因明确为环境故障（连接失败、服务不可用）时才考虑替代方案。".to_string(),
+            );
+        }
+    }
+
+    // 推理要点（thinking 截断为前 200 字符）
+    if !task.thinking.trim().is_empty() {
+        let t: String = task.thinking.chars().take(200).collect();
+        lines.push(format!("- 思考要点: {}…", t));
+    }
+
+    lines.push("- 请依据以上过程自适应：检索命中不足时扩大查询/放宽阈值；工具失败时优先修正参数或调用方式后重试（仅环境故障才换替代方案）；避免重复低效路径。".to_string());
+
+    let summary = lines.join("\n");
+    if let Ok(mut g) = state.last_process_summary.lock() {
+        *g = Some(summary);
+    }
+    log::info!("[process_summary] 已写入 {} 的 one-shot 过程摘要", request_id);
+}
+
 /// P0 防幻觉一致性校验（Action Claim Guard，声明表驱动）：模型在最终回答中声称
 /// "已完成某操作"，但本请求**未调用对应工具**时，向回答追加一致性提醒——
 /// 封死「声称已执行但实际未执行」的失败模式（典型：日程/文件写操作未调用时
@@ -907,6 +1116,9 @@ pub async fn agent_query(
         };
         // P0-3：结构化输出校验 + 修正重试（最多 3 次尝试：1 次原始 + 2 次修正）。
         // 校验失败用可读错误构造修正提示引导模型重发；全部失败 fail-open 不规划。
+        // 🟠 L31：空响应不再直接放弃——推理模型（reasoning_effort 非空）在 1024
+        // 预算下思考耗尽导致 JSON 截断甚至空响应；放宽预算后若仍空响应，带
+        // 「直接输出 JSON、不要思考过程」修正重试一次，避免白白降级不规划。
         const PLAN_JSON_MAX_ATTEMPTS: usize = 3;
         // 🟠 M26 修复：交互式规划的总时限——`generate_plan_json` 内部有
         // completion_with_retry（重试 5 次 × 单请求超时 600s），叠加 3 次修正尝试
@@ -917,28 +1129,48 @@ pub async fn agent_query(
         let mut correction: Option<String> = None;
         let plan_generation = async {
             for attempt in 0..PLAN_JSON_MAX_ATTEMPTS {
-                let Some(plan_json) = plan_llm
+                match plan_llm
                     .generate_plan_json(&query, &messages, cancel.clone(), correction.as_deref())
                     .await
-                else {
-                    break; // 生成失败/取消：fail-open 不规划
-                };
-                if let Some(p) = crate::core::agent::planner::parse_plan(&plan_json) {
-                    plan = Some(p);
-                    break;
-                }
-                if attempt + 1 < PLAN_JSON_MAX_ATTEMPTS {
-                    let errors = crate::core::agent::planner::validate_plan_json(&plan_json)
-                        .map(|_| Vec::new())
-                        .unwrap_or_else(|e| e);
-                    correction = Some(crate::core::validation::build_fix_prompt(
-                        &errors,
-                        "请重新输出符合要求的计划 JSON（goal 目标、steps 步骤、acceptance 验收均必填且类型正确）。",
-                    ));
-                    log::warn!(
-                        "[agent_query] [0.5]: 计划 JSON 校验失败，第 {} 次修正重试 request_id={}",
-                        attempt + 1, request_id
-                    );
+                {
+                    Some(plan_json) => {
+                        if let Some(p) = crate::core::agent::planner::parse_plan(&plan_json) {
+                            plan = Some(p);
+                            break;
+                        }
+                        if attempt + 1 < PLAN_JSON_MAX_ATTEMPTS {
+                            let errors = crate::core::agent::planner::validate_plan_json(&plan_json)
+                                .map(|_| Vec::new())
+                                .unwrap_or_else(|e| e);
+                            correction = Some(crate::core::validation::build_fix_prompt(
+                                &errors,
+                                "请重新输出符合要求的计划 JSON（goal 目标、steps 步骤、acceptance 验收均必填且类型正确）。",
+                            ));
+                            log::warn!(
+                                "[agent_query] [0.5]: 计划 JSON 校验失败，第 {} 次修正重试 request_id={}",
+                                attempt + 1, request_id
+                            );
+                        }
+                    }
+                    None => {
+                        // 用户取消：直接放弃（fail-open 不规划）
+                        if cancel.is_cancelled() {
+                            log::info!("[agent_query] [0.5]: 规划被取消，放弃 request_id={}", request_id);
+                            break;
+                        }
+                        // 空响应/失败：还有额度则带「直接输出 JSON」修正重试
+                        if attempt + 1 < PLAN_JSON_MAX_ATTEMPTS {
+                            correction = Some(
+                                "你上一次没有输出任何内容。请直接输出计划 JSON（goal / steps / acceptance），\
+                                 不要输出思考过程、解释或任何其他文字，只输出 JSON 本身。"
+                                    .to_string(),
+                            );
+                            log::warn!(
+                                "[agent_query] [0.5]: 规划空响应/失败，第 {} 次修正重试 request_id={}",
+                                attempt + 1, request_id
+                            );
+                        }
+                    }
                 }
             }
         };
@@ -1740,6 +1972,27 @@ pub async fn kb_llm_query(
     // 从中央化内存配置读取 LLM 配置
     let llm_cfg = state.llm_config.read().unwrap_or_else(|e| e.into_inner()).clone();
 
+    // 自我调节（chat 模式）：注入上一请求的 one-shot 过程摘要到 system 消息
+    // （取走即清除，仅紧邻下一轮生效；OpenAI/Anthropic 两路共用）
+    let mut messages = messages;
+    if let Some(summary) = take_process_summary(&state) {
+        if let Some(last_sys) = messages.iter_mut().rev().find(|m| m.role == "system") {
+            last_sys.content.push_str("\n\n");
+            last_sys.content.push_str(&summary);
+        } else {
+            messages.insert(
+                0,
+                crate::services::llm::ChatMessage {
+                    id: None,
+                    role: "system".into(),
+                    content: summary,
+                    tool_calls: None,
+                    tool_call_id: None,
+                },
+            );
+        }
+    }
+
     // v2：Anthropic Messages 协议走独立流式通道（普通对话，不含 Agent 工具编排）
     if llm_cfg.protocol == "anthropic" {
         return kb_llm_query_anthropic(&app, &state, task_registry, messages, request_id, llm_cfg).await;
@@ -1902,7 +2155,12 @@ async fn kb_llm_query_loop_v2(
     let prompt_content = prompt.last().map(|m| m.content.clone()).unwrap_or_default();
 
     // 3) LoopAgent（无工具纯对话；系统规约与 rig 版一致）
-    let system_prompt = load_agent_rules(app, "chat_agent.md");
+    let mut system_prompt = load_agent_rules(app, "chat_agent.md");
+    // 自我调节：注入上一请求的 one-shot 过程摘要（取走即清除，仅紧邻下一轮生效）
+    if let Some(summary) = take_process_summary(&state) {
+        system_prompt.push_str("\n\n");
+        system_prompt.push_str(&summary);
+    }
     let mut config = LoopConfig::new(crate::core::agent::DEFAULT_MAX_TURNS, system_prompt);
     config.max_tokens = llm_cfg.max_tokens;
     let mut agent = LoopAgent::new(adapter, config, &request_id);
@@ -1931,7 +2189,8 @@ async fn kb_llm_query_loop_v2(
                     emit_pending_tool_events(&app_emit, &rid);
                 }
                 LoopEvent::ReasoningDelta(r) => {
-                    // B5：推理过程实时转发（前端可折叠展示；不占回答文本）
+                    // B5：推理过程实时转发（前端可折叠展示；不占回答文本）+ 快照（切页恢复）
+                    tasks.add_thinking(&rid, &r);
                     let _ = app_emit.emit(
                         "llm:thinking",
                         serde_json::json!({ "request_id": rid.clone(), "content": r }),
@@ -1996,6 +2255,8 @@ async fn kb_llm_query_loop_v2(
             let _ = app.emit("llm:done", LlmDone { request_id: request_id.clone(), content: outcome.content().to_string() });
         }
     }
+    // 自我调节：请求结束写入 one-shot 过程摘要（供紧邻下一请求注入 system）
+    write_process_summary(&state, &request_id);
     task_registry.unregister(&request_id).await;
     Ok(())
 }
@@ -2116,6 +2377,11 @@ async fn agent_generate_loop_v2(
         }
     }
     let mut system = agent_rules;
+    // 自我调节：注入上一请求的 one-shot 过程摘要（取走即清除，仅紧邻下一轮生效）
+    if let Some(summary) = take_process_summary(&state) {
+        system.push_str("\n\n");
+        system.push_str(&summary);
+    }
     if !context.trim().is_empty() {
         system.push_str(&format!("\n\n检索到的知识库上下文：\n{context}"));
     }
@@ -2182,7 +2448,8 @@ async fn agent_generate_loop_v2(
                     let _ = app_emit.emit("rag:delta", RagDelta { request_id: rid.clone(), content: t });
                 }
                 LoopEvent::ReasoningDelta(r) => {
-                    // B5：推理过程实时转发（前端可折叠展示；不占回答文本）
+                    // B5：推理过程实时转发（前端可折叠展示；不占回答文本）+ 快照（切页恢复）
+                    tasks.add_thinking(&rid, &r);
                     let _ = app_emit.emit(
                         "rag:thinking",
                         serde_json::json!({ "request_id": rid.clone(), "content": r }),
@@ -2340,6 +2607,8 @@ async fn agent_generate_loop_v2(
     }
     // 清空工具总线（实时 drain 已消费全部事件；此处清理桶防残留）
     tool_call_bus().clear(&request_id);
+    // 自我调节：请求结束写入 one-shot 过程摘要（供紧邻下一请求注入 system）
+    write_process_summary(&state, &request_id);
     task_registry.unregister(&request_id).await;
     Ok(())
 }

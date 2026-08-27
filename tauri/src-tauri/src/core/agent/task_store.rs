@@ -71,6 +71,9 @@ pub struct BackgroundAgentTask {
     pub tool_traces: Vec<AgentToolTrace>,
     /// trace 阶段事件快照（planning/searching/generating…）
     pub trace_events: Vec<serde_json::Value>,
+    /// 推理过程快照（llm:thinking / rag:thinking 增量拼接；切回页面恢复 thinking 时间线）
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub thinking: String,
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
     /// 运行状态文本（rag:status，如"正在检索…"）
@@ -147,6 +150,7 @@ impl AgentTaskStore {
                 sources: Vec::new(),
                 tool_traces: Vec::new(),
                 trace_events: Vec::new(),
+                thinking: String::new(),
                 prompt_tokens: 0,
                 completion_tokens: 0,
                 status_message: String::new(),
@@ -233,6 +237,19 @@ impl AgentTaskStore {
         if let Ok(mut map) = self.inner.lock() {
             if let Some(t) = map.get_mut(request_id) {
                 t.trace_events.push(event);
+                t.updated_at = now_ms();
+            }
+        }
+    }
+
+    /// 追加推理过程增量（llm:thinking / rag:thinking；拼接快照供切页恢复 thinking 时间线）。
+    pub fn add_thinking(&self, request_id: &str, content: &str) {
+        if content.trim().is_empty() {
+            return;
+        }
+        if let Ok(mut map) = self.inner.lock() {
+            if let Some(t) = map.get_mut(request_id) {
+                t.thinking.push_str(content);
                 t.updated_at = now_ms();
             }
         }

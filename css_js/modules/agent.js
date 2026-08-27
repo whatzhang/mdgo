@@ -50,26 +50,362 @@ function ensureStreamingAssistantDiv() {
     };
     return div;
 }
+// ── Agent 过程时间线（三合一：thinking + 工具 + 阶段 trace） ──
+// 将 llm:thinking / rag:thinking、agent:tool_call / agent:tool_result、
+// trace:event 三类事件合并为一条按时间排序的过程时间线，挂在助手消息 div 上。
+// 默认折叠为摘要条（步数 / 思考时长 / 工具数 / 总耗时），点开展开完整时间线；
+// thinking 条目默认折叠成一行摘要，点击展开全文。
+
+/** 单条消息 div 的时间线状态（request_id 作用域） */
+function ensureTimelineState(div, requestId) {
+    if (!div) return null;
+    if (!div._timeline) {
+        div._timeline = {
+            requestId: requestId || '',
+            entries: [],          // { type, ts, ... }
+            thinkingBuf: '',      // 当前 thinking 增量累积（未落条目）
+            thinkingStart: 0,
+            toolOpen: {},         // seq -> call 事件（等 result 配对）
+            stageOpen: {},        // stage -> start 事件（等 end 配对）
+            rafPending: false,
+            dirty: false,
+            _seq: 0,
+        };
+    }
+    return div._timeline;
+}
+
+/** 追加一条时间线条目并调度重渲染（rAF 节流） */
+function timelinePush(div, entry) {
+    const tl = div && div._timeline;
+    if (!tl) return;
+    // 内部顺序号：仅用于条目排序展示；后端 seq 单独存 backendSeq（供 result 配对），
+    // 避免内部号覆盖后端号导致 tool result 无法配对（原 bug）。
+    entry.seq = tl._seq++;
+    entry.ts = entry.ts || Date.now();
+    tl.entries.push(entry);
+    tl.dirty = true;
+    if (!tl.rafPending) {
+        tl.rafPending = true;
+        requestAnimationFrame(() => {
+            tl.rafPending = false;
+            if (tl.dirty) {
+                tl.dirty = false;
+                renderProcessTimeline(div);
+            }
+        });
+    }
+    if (div._scroll) div._scroll();
+}
+
+/** 时间线 DOM：外层 <details> 折叠摘要条 + 展开的条目列表 */
+function ensureProcessTimeline(div) {
+    if (!div) return null;
+    if (!div._timelineEl) {
+        const wrap = document.createElement('details');
+        wrap.className = 'process-timeline';
+        wrap.dataset.open = '0';
+        const summary = document.createElement('summary');
+        summary.className = 'process-timeline-summary';
+        summary.innerHTML = '<span class="pt-summary-text">思考过程时间线</span><span class="pt-summary-stats"></span>';
+        const list = document.createElement('div');
+        list.className = 'process-timeline-list';
+        wrap.appendChild(summary);
+        wrap.appendChild(list);
+        // 插入到正文前（与旧 tool-trace 同位置）
+        div.insertBefore(wrap, div._body);
+        div._timelineEl = wrap;
+        div._timelineList = list;
+        // 点击摘要条展开/收起
+        summary.addEventListener('click', () => {
+            const open = wrap.open;
+            wrap.dataset.open = open ? '1' : '0';
+        });
+    }
+    return div._timelineEl;
+}
+
+/** 重渲染整个时间线（从 entries 重建 DOM，简单可靠；条目数有限） */
+function renderProcessTimeline(div) {
+    const tl = div._timeline;
+    const wrap = div._timelineEl;
+    if (!tl || !wrap) return;
+    ensureProcessTimeline(div);
+    const list = div._timelineList;
+    const entries = tl.entries.slice().sort((a, b) => a.seq - b.seq);
+
+    // 统计（折叠摘要条）
+    const toolCount = entries.filter(e => e.type === 'tool').length;
+    const thinkMs = entries.filter(e => e.type === 'thinking').reduce((s, e) => s + (e.duration_ms || 0), 0);
+    const totalStart = entries.length ? entries[0].ts : 0;
+    const totalEnd = entries.length ? entries[entries.length - 1].ts : 0;
+    const totalMs = totalEnd > totalStart ? totalEnd - totalStart : 0;
+    const errCount = entries.filter(e => (e.type === 'tool' && e.ok === false) || (e.type === 'stage' && e.status === 'error')).length;
+    const stats = `${entries.length} steps` + (thinkMs ? ` · think ${(thinkMs / 1000).toFixed(1)}s` : '')
+        + ` · tool ${toolCount}` + (totalMs ? ` · total ${(totalMs / 1000).toFixed(1)}s` : '')
+        + (errCount ? ` · ${errCount} failed` : '');
+    const sum = wrap.querySelector('.pt-summary-stats');
+    if (sum) sum.textContent = stats;
+
+    list.innerHTML = entries.map(entry => renderTimelineEntry(entry)).join('');
+    // 事件委托：thinking 点击展开全文、tool 点击展开 detail（每次重建后重新绑定到 list 一次即可，
+    // 用 onlistener 属性避免重复绑定累积）
+    if (!list.dataset.bound) {
+        list.dataset.bound = '1';
+        list.addEventListener('click', (ev) => {
+            const thinkingEl = ev.target.closest('.pt-thinking');
+            if (thinkingEl) {
+                // 展开状态持久到条目（entry._open），rAF 重建时保持
+                const idx = Array.prototype.indexOf.call(list.children, thinkingEl);
+                const tl = div._timeline;
+                if (tl && idx >= 0) {
+                    const sorted = tl.entries.slice().sort((a, b) => a.seq - b.seq);
+                    const entry = sorted[idx];
+                    if (entry && entry.type === 'thinking') {
+                        entry._open = !entry._open;
+                        tl.dirty = true;
+                        renderProcessTimeline(div);
+                    }
+                }
+                return;
+            }
+            const toolEl = ev.target.closest('.pt-tool');
+            if (toolEl) {
+                const d = toolEl.querySelector('.tool-detail');
+                if (d) d.style.display = d.style.display === 'none' ? 'block' : 'none';
+            }
+        });
+    }
+}
+
+/** 渲染单条时间线条目（emoji 全部用英文单词替代） */
+function renderTimelineEntry(entry) {
+    switch (entry.type) {
+        case 'thinking': {
+            // 展开状态持久在条目上（entry._open），rAF 重建时保持用户选择
+            const open = !!entry._open;
+            const short = entry.content && entry.content.length > 80 ? entry.content.slice(0, 80) + '…' : (entry.content || '');
+            // 结构：一行（think 标签 + preview 单行摘要）→ 点击展开 full body（完整文本换行显示）
+            return `<div class="pt-entry pt-thinking${open ? ' open' : ''}" data-kind="thinking">
+                <div class="pt-thinking-row">
+                    <span class="pt-dot">think</span>
+                    <span class="pt-thinking-preview"${open ? ' style="display:none;"' : ''}>${traceEscapeHtml(short)}</span>
+                    <span class="pt-time">${entry.duration_ms ? (entry.duration_ms / 1000).toFixed(1) + 's' : ''}</span>
+                </div>
+                <div class="pt-thinking-full"${open ? '' : ' style="display:none;"'}>${traceEscapeHtml(entry.content || '')}</div>
+            </div>`;
+        }
+        case 'tool': {
+            const cls = entry.ok === null || entry.ok === undefined ? 'running' : (entry.ok ? 'ok' : 'fail');
+            const statusText = entry.ok === null || entry.ok === undefined ? 'running…' : (entry.ok ? 'done' : 'failed');
+            const skillBadge = entry.skill_id
+                ? `<span class="tool-skill-badge" title="技能触发: ${escapeHtml(entry.skill_id)}">${escapeHtml(entry.skill_id.split(':').pop() || entry.skill_id)}</span>`
+                : '';
+            const dur = entry.duration_ms ? `<span class="pt-time">${(entry.duration_ms / 1000).toFixed(1)}s</span>` : '';
+            return `<div class="pt-entry pt-tool tool-card ${cls}" data-backend-seq="${entry.backendSeq || ''}">
+                <span class="pt-dot">tool</span>
+                <span class="tool-name">${escapeHtml(entry.tool || '')}</span>${skillBadge}
+                <span class="tool-args">${escapeHtml(String(entry.args_preview || '').slice(0, 80))}</span>
+                <span class="tool-status">${statusText}</span>${dur}
+                ${entry.summary ? `<div class="tool-detail" style="display:none;">${escapeHtml(String(entry.summary))}</div>` : ''}
+            </div>`;
+        }
+        case 'stage': {
+            const status = entry.status || '';
+            const icon = status === 'start' ? 'start' : status === 'ok' ? 'ok' : status === 'error' ? 'error' : status === 'cancelled' ? 'cancelled' : status === 'denied' ? 'denied' : 'stage';
+            const dur = status !== 'start' && entry.duration_ms ? `${(entry.duration_ms / 1000).toFixed(1)}s` : '';
+            return `<div class="pt-entry pt-stage">
+                <span class="pt-dot">${icon}</span>
+                <span class="pt-stage-name">${traceEscapeHtml(entry.stage || '')}${entry.detail ? ' — ' + traceEscapeHtml(entry.detail) : ''}</span>
+                <span class="pt-time">${dur}</span>
+            </div>`;
+        }
+        default:
+            return '';
+    }
+}
+
+/** 把未落条的 thinking 缓冲固化为正式条目（移除 _streaming 标记并补耗时）。返回是否落条 */
+function flushThinkingBuffer(div) {
+    const tl = div && div._timeline;
+    if (!tl || !tl.thinkingBuf) return false;
+    const now = Date.now();
+    const duration = tl.thinkingStart ? now - tl.thinkingStart : 0;
+    // 若已存在流式进行中的 thinking 条目，直接补全它（避免重复条目）
+    let updated = false;
+    for (let i = tl.entries.length - 1; i >= 0; i--) {
+        const e = tl.entries[i];
+        if (e.type === 'thinking' && e._streaming) {
+            e.content = tl.thinkingBuf;
+            e.duration_ms = duration;
+            delete e._streaming;
+            updated = true;
+            break;
+        }
+    }
+    if (!updated) {
+        timelinePush(div, {
+            type: 'thinking',
+            content: tl.thinkingBuf,
+            duration_ms: duration,
+        });
+    }
+    tl.thinkingBuf = '';
+    tl.thinkingStart = 0;
+    return true;
+}
+
+/** thinking 增量累积：到达时追加到缓冲，间隔 >1.2s 或总量超限时落成一条 */
+function timelineThinking(div, content) {
+    const tl = div && div._timeline;
+    if (!tl) return;
+    const now = Date.now();
+    if (tl.thinkingBuf && now - tl.thinkingStart > 1200) {
+        // 落一条已累积的 thinking
+        flushThinkingBuffer(div);
+        tl.thinkingStart = now;
+    }
+    if (!tl.thinkingBuf) tl.thinkingStart = now;
+    tl.thinkingBuf += content;
+    // 长思考防爆：超 4000 字符强制落条
+    if (tl.thinkingBuf.length > 4000) {
+        flushThinkingBuffer(div);
+        tl.thinkingStart = now;
+    }
+    // 流式可见性：rAF 重渲染时若缓冲非空，把缓冲内容挂到「进行中」thinking 条目上，
+    // 让用户实时看到正在思考的内容（而非等 1.2s 落条才显示）。
+    tl.dirty = true;
+    if (!tl.rafPending) {
+        tl.rafPending = true;
+        requestAnimationFrame(() => {
+            tl.rafPending = false;
+            // 若存在未落条的缓冲，渲染为最新一条 thinking 的实时内容
+            if (tl.thinkingBuf) {
+                let found = false;
+                for (let i = tl.entries.length - 1; i >= 0; i--) {
+                    const e = tl.entries[i];
+                    if (e.type === 'thinking' && e._streaming) {
+                        e.content = tl.thinkingBuf;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    timelinePush(div, {
+                        type: 'thinking',
+                        content: tl.thinkingBuf,
+                        duration_ms: 0,
+                        _streaming: true, // 标记：流式进行中的 thinking，落条时移除该标记
+                    });
+                }
+            }
+            if (tl.dirty) {
+                tl.dirty = false;
+                renderProcessTimeline(div);
+            }
+        });
+    }
+}
+
+/** 阶段事件：start 开一条、end 配对更新耗时/状态 */
+function timelineStage(div, ev) {
+    const tl = div && div._timeline;
+    if (!tl) return;
+    if (ev.status === 'start') {
+        tl.stageOpen[ev.stage] = { ts: Date.now(), detail: ev.detail || '' };
+        timelinePush(div, { type: 'stage', stage: ev.stage, status: 'start', detail: ev.detail || '', duration_ms: 0 });
+    } else {
+        timelinePush(div, {
+            type: 'stage',
+            stage: ev.stage,
+            status: ev.status,
+            detail: ev.detail || '',
+            duration_ms: ev.duration_ms || 0,
+        });
+    }
+}
+
+/** 工具事件：call 开卡片（running）、result 按后端 seq 精确配对更新 */
+function timelineTool(div, p) {
+    const tl = div && div._timeline;
+    if (!tl) return;
+    if (p.kind === 'call') {
+        const backendSeq = Number(p.seq);
+        tl.toolOpen[String(backendSeq)] = {
+            tool: String(p.tool || ''),
+            backendSeq,
+            ts: Date.now(),
+        };
+        timelinePush(div, {
+            type: 'tool',
+            backendSeq, // 后端 seq：result 按此精确配对（不再用内部号）
+            tool: String(p.tool || ''),
+            args_preview: String(p.args_preview || ''),
+            skill_id: p.skill_id || null,
+            ok: null,
+            summary: '',
+            duration_ms: 0,
+        });
+    } else {
+        // result：按后端 call_seq 精确配对（替代原内部号/工具名 fallback——同名工具并行时也会错配）
+        const backendSeq = Number(p.call_seq);
+        const open = tl.toolOpen[String(backendSeq)];
+        let matched = false;
+        for (let i = tl.entries.length - 1; i >= 0; i--) {
+            const e = tl.entries[i];
+            if (e.type === 'tool' && e.ok === null && e.backendSeq === backendSeq) {
+                e.ok = !!p.ok;
+                e.summary = String(p.summary || '');
+                e.duration_ms = open ? Date.now() - open.ts : 0;
+                matched = true;
+                break;
+            }
+        }
+        // 兜底：后端 call_seq 未匹配到（事件乱序/丢失）时，按同工具最近未决条目更新
+        if (!matched) {
+            for (let i = tl.entries.length - 1; i >= 0; i--) {
+                const e = tl.entries[i];
+                if (e.type === 'tool' && e.ok === null && e.tool === String(p.tool || '')) {
+                    e.ok = !!p.ok;
+                    e.summary = String(p.summary || '');
+                    e.duration_ms = 0;
+                    break;
+                }
+            }
+        }
+        if (open) delete tl.toolOpen[String(backendSeq)];
+        tl.dirty = true;
+        if (!tl.rafPending) {
+            tl.rafPending = true;
+            requestAnimationFrame(() => {
+                tl.rafPending = false;
+                if (tl.dirty) {
+                    tl.dirty = false;
+                    renderProcessTimeline(div);
+                }
+            });
+        }
+        if (div._scroll) div._scroll();
+    }
+}
+
+/** 工具调用轨迹可视化（兼容旧入口：新建消息时初始化 timeline 容器） */
 function ensureToolTrace(div) {
     if (!div) return null;
-    if (!div._toolTrace) {
-        const trace = document.createElement('div');
-        trace.className = 'tool-trace';
-        div.insertBefore(trace, div._body);
-        div._toolTrace = trace;
-    }
-    return div._toolTrace;
+    // 旧 tool-trace 容器已废弃，统一走 process-timeline
+    if (!div._timeline) ensureTimelineState(div, '');
+    return ensureProcessTimeline(div);
 }
-// 历史消息回放：根据持久化的工具调用记录重建轨迹卡片
+// 历史消息回放：根据持久化的工具调用记录重建轨迹卡片（兼容旧入口；新路径走 timeline）
 function renderToolTraceFromRecords(div, records) {
     const trace = document.createElement('div');
     trace.className = 'tool-trace';
     trace.innerHTML = records.map(tc => {
         const cls = tc.ok === null || tc.ok === undefined ? 'running' : (tc.ok ? 'ok' : 'fail');
-        const statusText = tc.ok === null || tc.ok === undefined ? '执行中…' : (tc.ok ? '✓ 完成' : '✗ 失败');
+        const statusText = tc.ok === null || tc.ok === undefined ? 'running…' : (tc.ok ? 'done' : 'failed');
         const skillId = tc.skill_id ? String(tc.skill_id) : '';
         const skillBadge = skillId
-            ? `<span class="tool-skill-badge" title="技能触发: ${escapeHtml(skillId)}">⚡${escapeHtml(skillId.split(':').pop() || skillId)}</span>`
+            ? `<span class="tool-skill-badge" title="技能触发: ${escapeHtml(skillId)}">${escapeHtml(skillId.split(':').pop() || skillId)}</span>`
             : '';
         return `<div class="tool-card ${cls}"><span class="tool-name">${escapeHtml(String(tc.tool || ''))}</span>${skillBadge}<span class="tool-args">${escapeHtml(String(tc.args_preview || '').slice(0, 80))}</span><span class="tool-status" title="${escapeHtml(String(tc.summary || ''))}">${statusText}</span></div>`;
     }).join('');
@@ -80,24 +416,12 @@ function handleAgentToolEvent(e, rid) {
     const p = e.payload;
     if (!p || p.request_id !== rid || p.tool === undefined) return;
     const div = ensureStreamingAssistantDiv();
-    const trace = ensureToolTrace(div);
-    if (!trace) return;
-    const safeTool = escapeHtml(String(p.tool));
-    // 技能来源标签（如果有 skill_id）
-    const skillBadge = p.skill_id ? `<span class="tool-skill-badge" title="技能触发: ${escapeHtml(p.skill_id)}">⚡${escapeHtml(p.skill_id.split(':').pop() || p.skill_id)}</span>` : '';
-    // 以 kind 字段区分 call/result（call 事件后端序列化后含 call_seq:0，
-    // 不能再用 call_seq === undefined 判定）
+    ensureTimelineState(div, rid);
+    ensureProcessTimeline(div);
+    // 写入统一时间线
+    timelineTool(div, p);
+    // 保留持久化记录（供历史回放 expandToolHistory / renderToolTraceFromRecords）
     if (p.kind === 'call') {
-        // call 事件：新增卡片（执行中）
-        const card = document.createElement('div');
-        card.className = 'tool-card running';
-        card.dataset.seq = String(p.seq);
-        // P1-14：记录开始时间，供 result 事件计算耗时徽标
-        card.dataset.startTs = String(Date.now());
-        const args = escapeHtml(String(p.args_preview || '').slice(0, 80));
-        card.innerHTML = `<span class="tool-name">${safeTool}</span>${skillBadge}<span class="tool-args">${args}</span><span class="tool-status">执行中…</span>`;
-        trace.appendChild(card);
-        // 记录到持久化列表（待 result 事件补全 ok/summary/result）
         _streamingToolCalls.push({
             tool: String(p.tool),
             call_id: String(p.call_id || ''),
@@ -110,88 +434,6 @@ function handleAgentToolEvent(e, rid) {
             result: '',
         });
     } else {
-        // result 事件：按 call_seq 配对卡片并更新状态
-        const card = trace.querySelector(`.tool-card[data-seq="${p.call_seq}"]`);
-        if (card) {
-            card.classList.remove('running');
-            card.classList.add(p.ok ? 'ok' : 'fail');
-            const st = card.querySelector('.tool-status');
-            if (st) {
-                st.textContent = p.ok ? '✓ 完成' : '✗ 失败';
-                st.title = String(p.summary || '');
-            }
-            // P1-14：耗时徽标（call 事件记录的开始时间）
-            const startTs = Number(card.dataset.startTs || 0);
-            if (startTs > 0) {
-                const cost = document.createElement('span');
-                cost.className = 'tool-cost';
-                cost.textContent = ((Date.now() - startTs) / 1000).toFixed(1) + 's';
-                cost.style.cssText = 'margin-left:0.4rem;font-size:0.65rem;color:#999;';
-                card.appendChild(cost);
-            }
-            // P1-14：点击卡片展开/收起完整结果摘要（可检视过程）
-            const detail = document.createElement('div');
-            detail.className = 'tool-detail';
-            detail.style.cssText = 'display:none;padding:0.125rem 0.5rem;background:rgba(0,0,0,0.04);border-radius:4px;font-size:0.72rem;color:#666;white-space:pre-wrap;word-break:break-all;max-height:12rem;overflow:auto;';
-            detail.textContent = String(p.summary || '');
-            card.appendChild(detail);
-            // P1-5 输出结构化：按工具类型渲染增强卡片（单一通用渲染器 + 各类型投影）
-            if (p.structured && typeof p.structured === 'object') {
-                const sEl = document.createElement('div');
-                sEl.className = 'tool-structured';
-                sEl.style.cssText = 'margin-top:0.3rem;padding:0.3rem 0.5rem;background:rgba(0,0,0,0.03);border-radius:4px;font-size:0.72rem;color:#555;';
-                const s = p.structured;
-                const rows = [];
-                if (p.tool === 'git_diff' && Array.isArray(s.files)) {
-                    const title = document.createElement('div');
-                    title.textContent = `文件改动（${s.files.length}）：`;
-                    title.style.cssText = 'color:#666;margin-bottom:0.2rem;';
-                    sEl.appendChild(title);
-                    for (const f of s.files) {
-                        const row = document.createElement('div');
-                        const fpath = String(f.path || '');
-                        const adds = Number(f.additions || 0);
-                        const dels = Number(f.deletions || 0);
-                        row.innerHTML = `<span style="word-break:break-all;">${escapeHtml(fpath)}</span> <span style="color:#2e7d32;">+${adds}</span> <span style="color:#c62828;">-${dels}</span>`;
-                        sEl.appendChild(row);
-                    }
-                } else if (Array.isArray(s.sources)) {
-                    // kb_search / code_lookup：引用来源清单（doc_name + score / 符号）
-                    const title = document.createElement('div');
-                    title.textContent = `引用来源（${s.sources.length}）：`;
-                    title.style.cssText = 'color:#666;margin-bottom:0.2rem;';
-                    sEl.appendChild(title);
-                    for (const src of s.sources) {
-                        const row = document.createElement('div');
-                        const name = String(src.doc_name || src.symbol_name || '');
-                        const score = Number(src.score || 0);
-                        const sym = src.symbol_name ? ` [${escapeHtml(String(src.symbol_kind || '符号'))} ${escapeHtml(String(src.symbol_name))}]` : '';
-                        row.innerHTML = `<span style="word-break:break-all;">${escapeHtml(name)}</span>${sym}${score ? ` <span style="color:#888;">${score.toFixed(2)}</span>` : ''}`;
-                        sEl.appendChild(row);
-                    }
-                } else if (Array.isArray(s.files)) {
-                    // read：文件读取清单（path + chars + ok）
-                    const title = document.createElement('div');
-                    title.textContent = `读取文件（${s.files.length}）：`;
-                    title.style.cssText = 'color:#666;margin-bottom:0.2rem;';
-                    sEl.appendChild(title);
-                    for (const f of s.files) {
-                        const row = document.createElement('div');
-                        const ok = f.ok === false ? '<span style="color:#c62828;">✗</span> ' : '';
-                        row.innerHTML = `${ok}<span style="word-break:break-all;">${escapeHtml(String(f.path || ''))}</span> <span style="color:#888;">${Number(f.chars || 0)} 字符</span>`;
-                        sEl.appendChild(row);
-                    }
-                }
-                if (sEl.childElementCount > 0) card.appendChild(sEl);
-            }
-            card.style.cursor = 'pointer';
-            card.addEventListener('click', (ev) => {
-                ev.stopPropagation();
-                const d = card.querySelector('.tool-detail');
-                if (d) d.style.display = d.style.display === 'none' ? 'block' : 'none';
-            });
-        }
-        // 配对持久化记录并补全结果状态（含完整结果文本，供历史回放）
         const rec = _streamingToolCalls.find(r => r.seq === Number(p.call_seq));
         if (rec) {
             rec.ok = !!p.ok;
@@ -322,6 +564,223 @@ function closeRagSettings() {
     if (ragSettingsTippy) {
         ragSettingsTippy.forEach(t => t.destroy());
         ragSettingsTippy = null;
+    }
+}
+
+// ── 网络搜索配置（web_search 工具：Tavily / Brave / Exa） ──
+
+/** 渲染网络搜索设置 popup（与模型/think/权限弹层一致：向上弹出） */
+function renderWebSearchPopup() {
+    const popup = document.getElementById('chat-websearch-popup');
+    if (!popup) return;
+    popup.innerHTML = `<div class="chat-toolbar-popup-warp">
+        <div class="chat-toolbar-popup-title">网络搜索（web_search）</div>
+        <div class="websearch-row">
+            <label>启用</label>
+            <input type="checkbox" id="web-search-enabled" style="width:auto;margin:0;">
+            <span class="setting-help" data-tippy-content="启用后 Agent 获得 web_search 工具，可搜索互联网获取最新信息（新闻/文档/技术动态）。需同时配置提供商与 API Key。">ⓘ</span>
+        </div>
+        <div class="websearch-row">
+            <label>提供商</label>
+            <select id="web-search-provider" onchange="refreshWebSearchKeyField()">
+                <option value="">请选择</option>
+                <option value="tavily">Tavily（免费 1000 次/月）</option>
+                <option value="brave">Brave Search（免费 2000 次/月）</option>
+                <option value="exa">Exa（搜索 + 语义）</option>
+            </select>
+        </div>
+        <div class="websearch-row">
+            <label>API Key</label>
+            <input type="password" id="web-search-api-key" placeholder="粘贴 API Key" autocomplete="off">
+            <button class="btn btn-sm" id="web-search-test-btn" onclick="testWebSearch(event)">测试</button>
+        </div>
+        <div class="websearch-row">
+            <label>返回条数</label>
+            <input type="number" id="web-search-max-results" min="1" max="10" step="1" value="5">
+        </div>
+        <div class="websearch-status" id="web-search-status">未配置</div>
+        <div class="websearch-footer">
+            <button class="btn btn-sm btn-primary" onclick="saveWebSearchSettingsFromPopup()">保存</button>
+        </div>
+    </div>`;
+    // 初始化 tippy（如果可用）
+    if (typeof tippy === 'function') {
+        tippy(popup.querySelectorAll('.setting-help'), {
+            theme: 'custom',
+            content: (ref) => ref.getAttribute('data-tippy-content'),
+        });
+    }
+}
+
+/**
+ * 开关网络搜索设置面板（向上弹出，与权限/think 弹层一致）
+ */
+function toggleWebSearchPicker(event) {
+    if (event) event.stopPropagation();
+    const popup = document.getElementById('chat-websearch-popup');
+    if (!popup) return;
+    const isOpening = popup.style.display === 'none';
+    // 打开时关闭其它弹层
+    if (isOpening) {
+        ['chat-skill-popup', 'chat-prompt-popup', 'chat-approval-popup', 'chat-model-select-popup', 'chat-think-popup'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = 'none';
+        });
+        renderWebSearchPopup();
+        loadWebSearchSettings();
+    }
+    popup.style.display = isOpening ? 'block' : 'none';
+}
+
+/** 保存 popup 中的网络搜索配置（保存后更新状态行） */
+/** 保存 popup 中的网络搜索配置（保存成功后关闭弹层并更新状态） */
+async function saveWebSearchSettingsFromPopup() {
+    await saveWebSearchSettings();
+    updateWebSearchStatusDot();
+    // 保存成功后关闭弹层（与其它设置弹层行为一致）
+    const popup = document.getElementById('chat-websearch-popup');
+    if (popup) popup.style.display = 'none';
+}
+
+/** 更新工具栏图标激活态：启用网络搜索时整个 SVG 显示为淡绿色（替换原绿点） */
+async function updateWebSearchStatusDot() {
+    const trigger = document.getElementById('chat-websearch-trigger');
+    if (!trigger) return;
+    try {
+        if (!window.__TAURI__?.core?.invoke) return;
+        const cfg = await window.__TAURI__.core.invoke('web_search_config_get');
+        trigger.classList.toggle('websearch-active', !!cfg.enabled);
+    } catch (e) {
+        trigger.classList.remove('websearch-active');
+    }
+}
+
+/** 当前 Web 搜索配置缓存（含各提供商 key 掩码，provider 切换时据此回显） */
+let _webSearchCfg = null;
+
+/** 更新 key 输入框：显示当前所选提供商的 key 状态（已配置=掩码，未配置=空） */
+function refreshWebSearchKeyField() {
+    const providerEl = document.getElementById('web-search-provider');
+    const keyEl = document.getElementById('web-search-api-key');
+    if (!providerEl || !keyEl) return;
+    const pid = (providerEl.value || '').trim();
+    const keyInfo = pid && _webSearchCfg && _webSearchCfg.keys ? _webSearchCfg.keys[pid] : null;
+    // 已配置显示掩码（占位提示已保存）；未配置清空
+    keyEl.value = keyInfo && keyInfo.configured ? (keyInfo.masked || '') : '';
+    keyEl.placeholder = keyInfo && keyInfo.configured ? '已保存，留空或输入新 Key 覆盖' : '粘贴 API Key';
+}
+
+/** 加载网络搜索配置到设置表单 */
+async function loadWebSearchSettings() {
+    const enabledEl = document.getElementById('web-search-enabled');
+    const providerEl = document.getElementById('web-search-provider');
+    const keyEl = document.getElementById('web-search-api-key');
+    const maxEl = document.getElementById('web-search-max-results');
+    const statusEl = document.getElementById('web-search-status');
+    if (!enabledEl || !providerEl || !keyEl || !maxEl || !statusEl) return;
+    try {
+        if (!window.__TAURI__?.core?.invoke) return;
+        const cfg = await window.__TAURI__.core.invoke('web_search_config_get');
+        _webSearchCfg = cfg;
+        enabledEl.checked = !!cfg.enabled;
+        providerEl.value = cfg.provider || '';
+        maxEl.value = cfg.max_results || 5;
+        // 按当前提供商回显对应 key 状态（不串号）
+        refreshWebSearchKeyField();
+        statusEl.textContent = cfg.enabled && cfg.provider_label
+            ? `已启用（${cfg.provider_label}，返回 ${cfg.max_results || 5} 条）`
+            : '未配置';
+    } catch (e) {
+        console.warn('[web-search] 加载配置失败:', e);
+        statusEl.textContent = '加载失败';
+    }
+}
+
+/** 测试网络搜索连接（用当前表单值发起一次真实搜索） */
+async function testWebSearch(event) {
+    if (event) event.stopPropagation();
+    const btn = document.getElementById('web-search-test-btn');
+    const statusEl = document.getElementById('web-search-status');
+    if (!btn || !statusEl) return;
+    const enabledEl = document.getElementById('web-search-enabled');
+    const providerEl = document.getElementById('web-search-provider');
+    const keyEl = document.getElementById('web-search-api-key');
+    const maxEl = document.getElementById('web-search-max-results');
+    try {
+        if (!window.__TAURI__?.core?.invoke) {
+            statusEl.textContent = '仅 Tauri 模式可用';
+            return;
+        }
+        const provider = (providerEl.value || '').trim();
+        const key = (keyEl.value || '').trim();
+        if (!enabledEl.checked || !provider) {
+            statusEl.textContent = '请先启用并选择提供商';
+            return;
+        }
+        // 掩码 key 直接传（后端回退该提供商已保存值）；空 key 且未配置过则提示
+        if (!key) {
+            const keyInfo = _webSearchCfg && _webSearchCfg.keys ? _webSearchCfg.keys[provider] : null;
+            if (!keyInfo || !keyInfo.configured) {
+                statusEl.textContent = '请先填写该提供商的 API Key';
+                return;
+            }
+        }
+        btn.disabled = true;
+        btn.textContent = '测试中…';
+        statusEl.textContent = '正在发起搜索…';
+        const result = await window.__TAURI__.core.invoke('web_search_test', {
+            provider,
+            apiKey: key || null,
+            maxResults: parseInt(maxEl.value, 10) || 5,
+            query: 'mdgo 知识库',
+        });
+        statusEl.textContent = `✓ ${result.provider} 返回 ${result.count} 条（首条: ${(result.first_title || '无标题').slice(0, 30)}）`;
+    } catch (e) {
+        console.warn('[web-search] 测试连接失败:', e);
+        statusEl.textContent = '✗ 连接失败: ' + ((e && e.message) || e);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '测试';
+        }
+    }
+}
+
+/** 保存网络搜索配置（只写当前所选提供商的 key，不影响其它提供商） */
+async function saveWebSearchSettings() {
+    const enabledEl = document.getElementById('web-search-enabled');
+    const providerEl = document.getElementById('web-search-provider');
+    const keyEl = document.getElementById('web-search-api-key');
+    const maxEl = document.getElementById('web-search-max-results');
+    const statusEl = document.getElementById('web-search-status');
+    if (!enabledEl || !providerEl || !keyEl || !maxEl || !statusEl) return;
+    try {
+        if (!window.__TAURI__?.core?.invoke) return;
+        const provider = (providerEl.value || '').trim();
+        let apiKey = keyEl.value || null;
+        // 掩码 = 未修改 → 传掩码让后端保留原值；空 = 若当前提供商已配置过，保留原值；
+        // 显式清空需区分：前端空值传 null 时后端保留原值——用户想清除 key 需输入空格？
+        // 简化：空值但已配置 → 传掩码占位（保留）；输入明文 → 覆盖。
+        if (apiKey === '' || apiKey === null) {
+            const keyInfo = _webSearchCfg && _webSearchCfg.keys && provider ? _webSearchCfg.keys[provider] : null;
+            apiKey = keyInfo && keyInfo.configured ? (keyInfo.masked || '') : '';
+        }
+        const result = await window.__TAURI__.core.invoke('web_search_config_set', {
+            enabled: enabledEl.checked,
+            provider: provider || null,
+            apiKey: apiKey || null,
+            maxResults: parseInt(maxEl.value, 10) || 5,
+        });
+        _webSearchCfg = result;
+        // 回显保存后的掩码 key（当前提供商）
+        refreshWebSearchKeyField();
+        statusEl.textContent = result.enabled && result.provider_label
+            ? `已启用（${result.provider_label}，返回 ${result.max_results || 5} 条）`
+            : '未配置';
+        updateWebSearchStatusDot();
+    } catch (e) {
+        console.warn('[web-search] 保存配置失败:', e);
+        showNotification('保存网络搜索配置失败: ' + ((e && e.message) || e), 'error');
     }
 }
 
@@ -478,10 +937,25 @@ async function sendRagQuery(text) {
                 const payload = e.payload ? e.payload : {};
                 const tid = payload.request_id;
                 const tev = payload.events;
-                if (!tid) return;
+                if (!tid || tid !== requestId) return;
                 if (!Array.isArray(tev)) return;
-                const existing = window.__chatTraceMap[tid] ? window.__chatTraceMap[tid] : [];
-                window.__chatTraceMap[tid] = existing.concat(tev);
+                // 阶段事件写入统一时间线（保留 __chatTraceMap 兼容旧面板）
+                const div = _chatStreamingDiv;
+                if (div && div._timeline) {
+                    tev.forEach(ev => timelineStage(div, ev));
+                } else {
+                    const existing = window.__chatTraceMap[tid] ? window.__chatTraceMap[tid] : [];
+                    window.__chatTraceMap[tid] = existing.concat(tev);
+                }
+            }),
+            window.__TAURI__.event.listen('rag:thinking', (e) => {
+                if (e.payload.request_id !== requestId) return;
+                const content = e.payload.content;
+                if (!content) return;
+                const div = ensureStreamingAssistantDiv();
+                ensureTimelineState(div, requestId);
+                ensureProcessTimeline(div);
+                timelineThinking(div, content);
             }),
             window.__TAURI__.event.listen('rag:status', (e) => {
                 if (e.payload.request_id !== requestId) return;
@@ -515,18 +989,22 @@ async function sendRagQuery(text) {
                     const st = streamingDiv.querySelector('.chat-message-header-status');
                     if (st) st.remove();
                 }
-                // 渲染阶段耗时面板（trace:event 按 request_id 收集）
-                const traceEvents = window.__chatTraceMap[requestId] ? window.__chatTraceMap[requestId] : [];
-                if (streamingDiv) {
-                    if (traceEvents.length) {
-                        try {
-                            const panel = document.createElement('div');
-                            panel.innerHTML = renderTracePanel(traceEvents);
-                            streamingDiv.appendChild(panel.firstChild);
-                        } catch (err) {
-                            console.warn('[trace] 渲染阶段面板失败:', err);
+                // 时间线已实时渲染（thinking/tool/stage 均即时写入），done 时收尾：
+                // 1) 把未落条的 thinking 缓冲固化 2) tool 状态兜底（result 丢失闭环）3) 清理兼容 map
+                if (streamingDiv && streamingDiv._timeline) {
+                    const tl = streamingDiv._timeline;
+                    flushThinkingBuffer(streamingDiv);
+                    // 兜底：请求结束仍未配对 result 的工具条目标记为 interrupted
+                    let dirty = false;
+                    tl.entries.forEach(e => {
+                        if (e.type === 'tool' && (e.ok === null || e.ok === undefined)) {
+                            e.ok = false;
+                            e.summary = e.summary || '请求中断，结果未返回';
+                            dirty = true;
                         }
-                    }
+                    });
+                    if (dirty) tl.dirty = true;
+                    renderProcessTimeline(streamingDiv);
                 }
                 delete window.__chatTraceMap[requestId];
                 // 内存态（当前会话立即可见，不依赖落库结果）
@@ -545,6 +1023,7 @@ async function sendRagQuery(text) {
                             content: fullContent,
                             tokenCount: completionTokens,
                             toolCalls: JSON.stringify(toolCallsSnapshot),
+                            thinking: getStreamingThinking(),
                         });
                         // 回填真实 message_id（删除本轮对话时按 id 精确匹配后端删除）
                         if (savedMsg && savedMsg.id) {

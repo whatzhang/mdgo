@@ -5151,8 +5151,21 @@
            若弹层直接相对该宽容器定位，会被 left:0/right:0 拉伸到容器全宽、偏离按钮；
            各自提供定位基准，弹层贴合按钮弹出（垂直在按钮上方、宽度贴合按钮） */
         #chat-model-select-wrap,
-        #chat-think-toggle-wrap {
+        #chat-think-toggle-wrap,
+        #chat-approval-picker,
+        #chat-websearch-picker {
             position: relative;
+        }
+
+        /* 弹框宽度：权限弹框内容少收窄（12rem），模型弹框容纳长模型名放宽（20rem） */
+        #chat-approval-popup {
+            min-width: 12rem;
+            max-width: 12rem;
+        }
+
+        #chat-model-select-popup {
+            min-width: 20rem;
+            max-width: 20rem;
         }
 
         .chat-toolbar-btn {
@@ -5237,6 +5250,23 @@
         .chat-toolbar-popup.short {
             min-width: 2.5rem;
             max-width: 4rem;
+        }
+
+        /* 弹层标题（权限/网络搜索等设置面板共用） */
+        .chat-toolbar-popup-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--color-text-secondary, #888);
+            padding:0.25rem 0 0.5rem 0;
+        }
+
+        /* 权限审批按钮 label（与模型选择器按钮样式一致） */
+        .chat-toolbar-icon #chat-approval-label {
+            font-size: 0.75rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 3.5rem;
         }
 
         .chat-skill-picker-row {
@@ -13983,7 +14013,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="activity-section-two" id="dashboard-info-panel">
+                <div class="activity-section-two" id="dashboard-info-panel" style="display: none;">
                     <div class="chart-card">
                         <div class="activity-column" id="dashboard-info-left">
                         </div>
@@ -15745,6 +15775,35 @@
                                                 </path>
                                             </svg>
                                         </button>
+                                    </div>
+                                    <div class="chat-toolbar-icon" id="chat-approval-picker">
+                                        <button class="chat-toolbar-btn chat-model-select-btn"
+                                            id="chat-approval-trigger" title="权限审批模式"
+                                            onclick="toggleApprovalPicker(event)">
+                                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16"
+                                                height="16">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                    d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                    d="M9 12l2 2 4-4"></path>
+                                            </svg>
+                                            <span id="chat-approval-label">询问</span>
+                                        </button>
+                                        <div class="chat-toolbar-popup" id="chat-approval-popup"
+                                            style="display:none;"></div>
+                                    </div>
+                                    <div class="chat-toolbar-icon" id="chat-websearch-picker">
+                                        <button class="chat-toolbar-btn" id="chat-websearch-trigger"
+                                            title="网络搜索" onclick="toggleWebSearchPicker(event)">
+                                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16"
+                                                height="16">
+                                                <circle cx="12" cy="12" r="10"></circle>
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                    d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"></path>
+                                            </svg>
+                                        </button>
+                                        <div class="chat-toolbar-popup" id="chat-websearch-popup"
+                                            style="display:none;"></div>
                                     </div>
                                     <div class="chat-toolbar-popup" id="chat-skill-popup" style="display:none;"></div>
                                     <div class="chat-toolbar-popup long" id="chat-prompt-popup" style="display:none;">
@@ -17516,6 +17575,8 @@
                 // Agent 全局能力（任务观察者 + 全局审批/计划弹窗）应用级初始化，不随视图切换销毁——后台任务任意界面可见、权限弹框任意界面可弹出。
                 Promise.resolve().then(() => (typeof initAgentGlobalDialogs === 'function' ? initAgentGlobalDialogs() : null)),
                 Promise.resolve().then(() => (typeof initAgentTaskObserver === 'function' ? initAgentTaskObserver() : null)),
+                Promise.resolve().then(() => (typeof initApprovalPicker === 'function' ? initApprovalPicker() : null)),
+                Promise.resolve().then(() => (typeof updateWebSearchStatusDot === 'function' ? updateWebSearchStatusDot() : null)),
             ]);
         }
 
@@ -24660,7 +24721,7 @@
         /** 把看板（kanban-plugin）解析结果 columnListData 转为 jsMind node_tree。
          *  层级映射：列(##) → 卡片(- [ ]) → 子任务/属性（缩进项）；勾选状态用 ✓/☐ 符号保留。 */
         function _parseKanbanDataToJsMind(columnListData) {
-            const root = { id: 'root', topic: '看板', children: [] };
+            const root = { id: 'root', topic: columnListData?.[0]?.topic || '看板', children: [] };
             const checkedMark = (c) => c === true ? '✓ ' : c === false ? '☐ ' : '';
             let nodeId = 0;
             const mkNode = (topic, parent) => {
@@ -25875,6 +25936,7 @@ components:
             const kanbanData = parseMarkdownKanban(`---
 kanban-plugin: basic
 ---
+# 示例
 
 ## 待办
 - [ ] 任务1
@@ -27807,6 +27869,7 @@ kanban-plugin: basic
             let kanbanHeader = '';
             let kanbanFooter = '';
             let meta = {};
+            let title = '';
             const metaMatch = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
             let content = markdown;
             if (metaMatch) {
@@ -27816,6 +27879,12 @@ kanban-plugin: basic
             }
             const footerMatch = content.match(/%% kanban:settings\n```([\s\S]*?)```\n%%/);
             if (footerMatch) kanbanFooter = footerMatch[1];
+            //title
+             const titleRegex = /^#\s+(.*)$/gm;
+             const titleMatch = content.match(titleRegex);
+             if (titleMatch) {
+                 title = titleMatch[0].replace(/^#\s+/, '').trim();
+             }
             //## 分割列
             const columnRegex = /^##\s+(.*)$/gm;
             // 解析列标题,同时记录每个匹配的位置
@@ -27844,6 +27913,7 @@ kanban-plugin: basic
                         columnBody = columnContent.substring(start, end) || '';
                     }
                     columnListData.push({
+                        topic: title,
                         title: columnTitle,
                         body: dedentStr(columnBody),
                         cards: cardData,
@@ -28078,6 +28148,17 @@ kanban-plugin: basic
             const container = document.createElement('div');
             container.id = 'kanban-container';
             container.className = 'kanban-container';
+            //标题
+            const title = kanbanData[0].topic || '';
+            const titleEl = document.createElement('div');
+            titleEl.style.fontSize = '1.125rem';
+            titleEl.style.fontWeight = 'bold';
+            titleEl.style.color = 'var(--color-warning)';
+            titleEl.style.position = 'absolute';
+            titleEl.style.top = '0.45rem';
+            titleEl.style.left = '1.25rem';
+            titleEl.innerHTML = escapeHtml(title);
+            container.appendChild(titleEl);
             for (const column of kanbanData) {
                 const colIndex = kanbanData.indexOf(column);
                 const colEl = document.createElement('div');
@@ -28743,6 +28824,7 @@ kanban-plugin: basic
                 }
                 md = `---\nkanban-plugin: ${pluginType}\n---\n\n`;
             }
+            md += `# ${data?.[0]?.topic || ''}\n\n`;
             data.forEach(col => {
                 md += `## ${col.title}\n`;
                 if (col.body) {
@@ -47324,6 +47406,94 @@ kanban-plugin: basic
             popup.style.display = isOpening ? 'block' : 'none';
         }
 
+        // ─── 权限审批模式（对齐 DSH permission preset，UI 与模型选择器一致） ───
+        const APPROVAL_MODES = [
+            { key: 'ask', label: '询问', desc: '破坏性操作（编辑/删除/写入等）执行前弹窗确认' },
+            { key: 'read-only', label: '只读', desc: '拒绝所有写操作（不弹窗，直接禁止）' },
+            { key: 'allow-all', label: '全放行', desc: '所有工具直接放行（无人值守/自动化）' },
+        ];
+
+        /** 更新权限按钮 label（与模型选择器按钮显示当前值一致） */
+        function updateApprovalBtnLabel(mode) {
+            const label = document.getElementById('chat-approval-label');
+            if (label) {
+                const meta = APPROVAL_MODES.find(m => m.key === mode) || APPROVAL_MODES[0];
+                label.textContent = meta.label;
+            }
+        }
+
+        /** 渲染权限模式选择面板（行样式与模型选择器一致） */
+        async function renderApprovalPopup() {
+            const popup = document.getElementById('chat-approval-popup');
+            if (!popup) return;
+            let current = 'ask';
+            if (window.__TAURI__?.core) {
+                try {
+                    current = await window.__TAURI__.core.invoke('approval_get_mode');
+                } catch (e) {
+                    console.warn('[approval] 查询权限模式失败:', e);
+                }
+            }
+            updateApprovalBtnLabel(current);
+            popup.innerHTML = `<div class="chat-toolbar-popup-warp">${APPROVAL_MODES.map(m => {
+                const isActive = m.key === current;
+                return `<div style="display:flex;align-items:center;gap:0.375rem;padding:0.25rem 0.5rem;border-radius:0.25rem;${isActive ? 'cursor:default;background:rgba(22,91,250,.12);' : 'cursor:pointer;'}" onclick="switchApprovalMode('${m.key}');" title="${m.desc}">
+                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${m.label}</span>
+                    ${isActive ? '✓' : ''}
+                </div>`;
+            }).join('')}</div>`;
+        }
+
+        /**
+         * 开关权限审批模式面板（向上弹出）
+         */
+        function toggleApprovalPicker(event) {
+            if (event) event.stopPropagation();
+            const popup = document.getElementById('chat-approval-popup');
+            if (!popup) return;
+            const isOpening = popup.style.display === 'none';
+            // 打开权限面板时关闭 skill / prompt 面板
+            if (isOpening) {
+                const skillPopup = document.getElementById('chat-skill-popup');
+                if (skillPopup) skillPopup.style.display = 'none';
+                const promptPopup = document.getElementById('chat-prompt-popup');
+                if (promptPopup) promptPopup.style.display = 'none';
+                renderApprovalPopup();
+            }
+            popup.style.display = isOpening ? 'block' : 'none';
+        }
+
+        /** 切换权限审批模式（后端热生效 + 持久化） */
+        async function switchApprovalMode(mode) {
+            if (!window.__TAURI__?.core) return;
+            try {
+                await window.__TAURI__.core.invoke('approval_set_mode', { mode });
+                const meta = APPROVAL_MODES.find(m => m.key === mode) || {};
+                updateApprovalBtnLabel(mode);
+                showNotification(`✓ 权限审批模式已切换为「${meta.label || mode}」`, 'success');
+                await renderApprovalPopup();
+            } catch (e) {
+                console.warn('[approval] 切换权限模式失败:', e);
+                showNotification('✗ 权限模式切换失败: ' + ((e && e.message) || e), 'error');
+            }
+        }
+
+        /** 初始化权限审批按钮（应用启动时加载当前模式到按钮文字） */
+        async function initApprovalPicker() {
+            if (!isTauriVisit() || !window.__TAURI__?.core) return;
+            try {
+                const mode = await window.__TAURI__.core.invoke('approval_get_mode');
+                updateApprovalBtnLabel(mode);
+                const btn = document.getElementById('chat-approval-trigger');
+                if (btn) {
+                    const meta = APPROVAL_MODES.find(m => m.key === mode);
+                    btn.title = `权限审批模式：${meta ? meta.label : mode}`;
+                }
+            } catch (e) {
+                console.warn('[approval] 初始化权限模式失败:', e);
+            }
+        }
+
         // 点击面板外区域时关闭技能选择面板、挂载状态菜单和 prompt 面板。
         // 注意：技能面板内部任意点击（含空白/行/菜单）均不关闭——保持列表打开。
         document.addEventListener('click', (ev) => {
@@ -47349,6 +47519,18 @@ kanban-plugin: basic
             const thinkPopup = document.getElementById('chat-think-popup');
             if (thinkWrap && thinkPopup && !thinkWrap.contains(ev.target)) {
                 thinkPopup.style.display = 'none';
+            }
+            // 权限审批弹层：点击外部关闭
+            const approvalPicker = document.getElementById('chat-approval-picker');
+            const approvalPopup = document.getElementById('chat-approval-popup');
+            if (approvalPicker && approvalPopup && !approvalPicker.contains(ev.target)) {
+                approvalPopup.style.display = 'none';
+            }
+            // 网络搜索弹层：点击外部关闭
+            const websearchPicker = document.getElementById('chat-websearch-picker');
+            const websearchPopup = document.getElementById('chat-websearch-popup');
+            if (websearchPicker && websearchPopup && !websearchPicker.contains(ev.target)) {
+                websearchPopup.style.display = 'none';
             }
         });
 
@@ -47417,7 +47599,7 @@ kanban-plugin: basic
             if (isOpening) {
                 renderChatModelSelector();
                 // 关闭其它弹层
-                ['chat-think-popup', 'chat-skill-popup', 'chat-prompt-popup'].forEach(id => {
+                ['chat-think-popup', 'chat-skill-popup', 'chat-prompt-popup', 'chat-approval-popup', 'chat-websearch-popup'].forEach(id => {
                     const el = document.getElementById(id);
                     if (el) el.style.display = 'none';
                 });
@@ -47473,7 +47655,7 @@ kanban-plugin: basic
             const isOpening = popup.style.display === 'none';
             if (isOpening) {
                 renderChatThinkToggle();
-                ['chat-model-select-popup', 'chat-skill-popup', 'chat-prompt-popup'].forEach(id => {
+                ['chat-model-select-popup', 'chat-skill-popup', 'chat-prompt-popup', 'chat-approval-popup', 'chat-websearch-popup'].forEach(id => {
                     const el = document.getElementById(id);
                     if (el) el.style.display = 'none';
                 });
@@ -47757,6 +47939,17 @@ kanban-plugin: basic
                 }
             }
             throw lastErr;
+        }
+
+        /** 收集当前流式消息时间线中的 thinking 全文（落库持久化用） */
+        function getStreamingThinking() {
+            const div = _chatStreamingDiv;
+            if (!div || !div._timeline) return '';
+            const parts = div._timeline.entries
+                .filter(e => e.type === 'thinking' && e.content)
+                .map(e => e.content);
+            if (div._timeline.thinkingBuf) parts.push(div._timeline.thinkingBuf);
+            return parts.join('\n');
         }
 
         /**
@@ -48070,7 +48263,26 @@ kanban-plugin: basic
                                 const div = getMessageAssistant();
                                 div._rawContent = partial;
                                 div._body.innerHTML = `<div class="markdown-body" style="background:transparent;">${renderChatMarkdown(partial)}</div>`;
-                                if (snap.tool_traces && snap.tool_traces.length && typeof renderToolTraceFromRecords === 'function') {
+                                // 恢复过程时间线（thinking + 工具轨迹快照，后续事件续写）
+                                if (typeof ensureTimelineState === 'function' && (snap.thinking || (snap.tool_traces && snap.tool_traces.length))) {
+                                    ensureTimelineState(div, snap.request_id || 'restore');
+                                    ensureProcessTimeline(div);
+                                    if (snap.thinking && typeof timelinePush === 'function') {
+                                        timelinePush(div, { type: 'thinking', content: String(snap.thinking), duration_ms: 0 });
+                                    }
+                                    if (snap.tool_traces && snap.tool_traces.length && typeof timelinePush === 'function') {
+                                        snap.tool_traces.forEach(tc => timelinePush(div, {
+                                            type: 'tool',
+                                            tool: String(tc.tool || ''),
+                                            args_preview: String(tc.args_preview || ''),
+                                            skill_id: tc.skill_id || null,
+                                            ok: tc.ok === null || tc.ok === undefined ? null : !!tc.ok,
+                                            summary: String(tc.summary || ''),
+                                            duration_ms: 0,
+                                        }));
+                                    }
+                                    if (typeof renderProcessTimeline === 'function') renderProcessTimeline(div);
+                                } else if (snap.tool_traces && snap.tool_traces.length && typeof renderToolTraceFromRecords === 'function') {
                                     renderToolTraceFromRecords(div, snap.tool_traces);
                                 }
                                 if (snap.status_message && typeof updateStreamingStatus === 'function') {
@@ -49259,7 +49471,7 @@ kanban-plugin: basic
             return false;
         }
 
-        async function addChatMessage(role, content, sources, mode, toolCalls, timestamp, messageId) {
+        async function addChatMessage(role, content, sources, mode, toolCalls, timestamp, messageId, thinking) {
             const container = document.getElementById('chat-messages');
             const div = document.createElement('div');
             div.className = 'chat-message ' + role;
@@ -49273,9 +49485,28 @@ kanban-plugin: basic
                 body.innerHTML = `<div class="markdown-body" style="zoom: 1;background: transparent;">${renderChatMarkdown(content)}</div>`;
                 div._body = body;
                 div.appendChild(body);
-                // 历史消息回放：重渲染工具调用轨迹（若已持久化）
-                if (toolCalls && toolCalls.length > 0) {
-                    renderToolTraceFromRecords(div, toolCalls);
+                // 历史消息回放：恢复过程时间线（thinking + 工具轨迹）
+                if (thinking || (toolCalls && toolCalls.length > 0)) {
+                    ensureTimelineState(div, messageId || 'history');
+                    ensureProcessTimeline(div);
+                    if (thinking) {
+                        timelinePush(div, { type: 'thinking', content: String(thinking), duration_ms: 0 });
+                    }
+                    if (toolCalls && toolCalls.length > 0) {
+                        // 历史工具轨迹：转成 timeline 条目（复用持久化记录）
+                        toolCalls.forEach(tc => {
+                            timelinePush(div, {
+                                type: 'tool',
+                                tool: String(tc.tool || ''),
+                                args_preview: String(tc.args_preview || ''),
+                                skill_id: tc.skill_id || null,
+                                ok: tc.ok === null || tc.ok === undefined ? null : !!tc.ok,
+                                summary: String(tc.summary || ''),
+                                duration_ms: 0,
+                            });
+                        });
+                        renderProcessTimeline(div);
+                    }
                 }
             } else if (role === 'user') {
                 div.classList.add('msg-' + mode);
@@ -49583,6 +49814,15 @@ kanban-plugin: basic
                         // rAF 节流渲染 + 滚动（合并到同一帧）
                         _scheduleStreamRender();
                     }),
+                    window.__TAURI__.event.listen('llm:thinking', (e) => {
+                        if (e.payload.request_id !== requestId) return;
+                        const content = e.payload.content;
+                        if (!content) return;
+                        const div = ensureStreamingAssistantDiv();
+                        ensureTimelineState(div, requestId);
+                        ensureProcessTimeline(div);
+                        timelineThinking(div, content);
+                    }),
                     window.__TAURI__.event.listen('llm:usage', (e) => {
                         if (e.payload.request_id !== requestId) return;
                         usageData = e.payload;
@@ -49599,6 +49839,32 @@ kanban-plugin: basic
                         const toolCallsSnapshot = _streamingToolCalls.slice();
                         const streamingDiv = _chatStreamingDiv;
                         const tokenCount = usageData?.completion_tokens || 0;
+                        // 时间线收尾：固化 thinking 缓冲 + tool 状态兜底（result 丢失时避免永久 running）
+                        if (streamingDiv && streamingDiv._timeline) {
+                            const tl = streamingDiv._timeline;
+                            if (typeof flushThinkingBuffer === 'function') {
+                                flushThinkingBuffer(streamingDiv);
+                            } else if (tl.thinkingBuf) {
+                                timelinePush(streamingDiv, {
+                                    type: 'thinking',
+                                    content: tl.thinkingBuf,
+                                    duration_ms: Date.now() - tl.thinkingStart,
+                                });
+                                tl.thinkingBuf = '';
+                            }
+                            // 兜底：请求结束仍未配对 result 的工具条目标记为 interrupted
+                            // （正常路径 result 已实时配对，此处仅覆盖取消/异常导致 result 丢失的闭环）
+                            let dirty = false;
+                            tl.entries.forEach(e => {
+                                if (e.type === 'tool' && (e.ok === null || e.ok === undefined)) {
+                                    e.ok = false;
+                                    e.summary = e.summary || '请求中断，结果未返回';
+                                    dirty = true;
+                                }
+                            });
+                            if (dirty) tl.dirty = true;
+                            renderProcessTimeline(streamingDiv);
+                        }
                         // 快照会话 id：落库/列表刷新/重命名用快照，避免回复期间切换会话导致落错会话
                         // （与 rag 路径 ragSessionId 快照语义一致）
                         const doneSessionId = currentSessionId;
@@ -49618,6 +49884,7 @@ kanban-plugin: basic
                                     content: fullContent,
                                     tokenCount,
                                     toolCalls: JSON.stringify(toolCallsSnapshot),
+                                    thinking: getStreamingThinking(),
                                 });
                                 // 回填真实 message_id（删除本轮对话时按 id 精确匹配后端删除）
                                 if (savedMsg && savedMsg.id) {
@@ -49971,11 +50238,12 @@ kanban-plugin: basic
                         content: m.content,
                         sources: sourcesMap[m.id] || [],
                         toolCalls,
+                        thinking: m.thinking || null,
                         created_at: m.created_at || Date.now(),
                     };
                 });
                 container.innerHTML = '';
-                chatMessages.forEach(m => addChatMessage(m.role, m.content, m.sources, chatMode, m.toolCalls, m.created_at, m.id));
+                chatMessages.forEach(m => addChatMessage(m.role, m.content, m.sources, chatMode, m.toolCalls, m.created_at, m.id, m.thinking));
                 updateTurnCounter();
                 // 加载后立即显示上下文使用率（token_usage 已持久化在 chat_sessions 中）
                 const sessionTokenUsage = session ? session.token_usage || 0 : 0;

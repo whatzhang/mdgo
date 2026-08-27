@@ -38,7 +38,7 @@ pub enum SubagentMode {
 pub fn read_only_tool_set() -> HashSet<String> {
     [
         "kb_search", "code_lookup", "read", "grep", "ls", "glob", "git_status", "git_diff", "webfetch",
-        "search_memory",
+        "web_search", "search_memory",
     ]
     .iter()
     .map(|s| s.to_string())

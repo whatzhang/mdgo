@@ -32,7 +32,7 @@ use crate::core::db::schema;
 /// BASE_TOOLS 工具本就常驻可见，声明仅影响技能详情展示与 SkillGateHook 的 declared 匹配。
 /// ⚠️ 新增/改名注册表工具时须同步本清单（编译期断言见 tests::allowed_tools_cover_registry）。
 pub const ALLOWED_TOOLS: &[&str] = &[
-    "kb_search", "code_lookup", "read", "edit", "multi_edit", "delete", "ls", "glob", "grep", "write", "git_status", "git_diff", "git_commit", "git_checkout", "webfetch",
+    "kb_search", "code_lookup", "read", "edit", "multi_edit", "delete", "ls", "glob", "grep", "write", "git_status", "git_diff", "git_commit", "git_checkout", "webfetch", "web_search",
     "activate_skill", "deactivate_skill", "pomodoro", "raw-parse", "schedule", "open-ui",
     "search_bookmarks", "get_bookmark",
     "deep_research", "read_subagent_result", "spawn_subagent", "parallel_research", "self_review",
@@ -57,6 +57,7 @@ fn tool_label(key: &str) -> String {
         "git_commit" => "Git 提交".into(),
         "git_checkout" => "Git 恢复文件".into(),
         "webfetch" => "网页抓取".into(),
+        "web_search" => "网络搜索".into(),
         "pomodoro" => "番茄钟".into(),
         "raw-parse" => "RAW/ARW 照片解析".into(),
         "schedule" => "日程管理".into(),

@@ -21,3 +21,4 @@ pub mod schedule;
 pub mod skill;
 pub mod stats;
 pub mod system;
+pub mod web_search;

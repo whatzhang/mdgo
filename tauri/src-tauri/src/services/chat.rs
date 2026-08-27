@@ -202,6 +202,17 @@ impl ChatStore {
                 .map_err(|e| format!("添加 tool_calls 列失败: {}", e))?;
         }
 
+        // 兼容旧表：添加 thinking 列（推理过程，持久化历史回放；缺失时 ALTER 补）
+        let has_thinking: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('chat_messages') WHERE name='thinking'")
+            .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i32>(0)))
+            .map(|count| count > 0)
+            .unwrap_or(false);
+        if !has_thinking {
+            conn.execute_batch("ALTER TABLE chat_messages ADD COLUMN thinking TEXT DEFAULT ''")
+                .map_err(|e| format!("添加 thinking 列失败: {}", e))?;
+        }
+
         // 兼容旧表：添加 compaction_state 列（如果不存在，P0-5 压缩检查点落库）
         let has_compaction: bool = conn
             .prepare("SELECT COUNT(*) FROM pragma_table_info('chat_sessions') WHERE name='compaction_state'")
@@ -487,7 +498,7 @@ impl ChatStore {
         self.pool.with_read(|conn| {
             let mut stmt = conn
                 .prepare_cached(
-                    "SELECT id, session_id, role, content, token_count, created_at, tool_calls FROM chat_messages WHERE session_id = ?1 ORDER BY created_at ASC, rowid ASC",
+                    "SELECT id, session_id, role, content, token_count, created_at, tool_calls, thinking FROM chat_messages WHERE session_id = ?1 ORDER BY created_at ASC, rowid ASC",
                 )
                 .map_err(|e| format!("查询消息失败: {}", e))?;
 
@@ -500,6 +511,7 @@ impl ChatStore {
                     let token_count: i32 = row.get(4)?;
                     let created_at: u64 = row.get(5)?;
                     let tool_calls: Option<String> = row.get(6)?;
+                    let thinking: Option<String> = row.get(7)?;
 
                     Ok(ChatMessage {
                         id,
@@ -509,6 +521,7 @@ impl ChatStore {
                         token_count,
                         created_at,
                         tool_calls: tool_calls.filter(|s| !s.trim().is_empty()),
+                        thinking: thinking.filter(|s| !s.trim().is_empty()),
                     })
                 })
                 .map_err(|e| format!("查询消息失败: {}", e))?
@@ -530,7 +543,7 @@ impl ChatStore {
         self.pool.with_read(|conn| {
             let mut stmt = conn
                 .prepare_cached(
-                    "SELECT id, session_id, role, content, token_count, created_at, tool_calls FROM chat_messages WHERE session_id = ?1 ORDER BY created_at ASC, rowid ASC LIMIT -1 OFFSET ?2",
+                    "SELECT id, session_id, role, content, token_count, created_at, tool_calls, thinking FROM chat_messages WHERE session_id = ?1 ORDER BY created_at ASC, rowid ASC LIMIT -1 OFFSET ?2",
                 )
                 .map_err(|e| format!("查询消息失败: {}", e))?;
 
@@ -543,6 +556,7 @@ impl ChatStore {
                     let token_count: i32 = row.get(4)?;
                     let created_at: u64 = row.get(5)?;
                     let tool_calls: Option<String> = row.get(6)?;
+                    let thinking: Option<String> = row.get(7)?;
 
                     Ok(ChatMessage {
                         id,
@@ -552,6 +566,7 @@ impl ChatStore {
                         token_count,
                         created_at,
                         tool_calls: tool_calls.filter(|s| !s.trim().is_empty()),
+                        thinking: thinking.filter(|s| !s.trim().is_empty()),
                     })
                 })
                 .map_err(|e| format!("查询消息失败: {}", e))?
@@ -570,6 +585,7 @@ impl ChatStore {
         content: &str,
         token_count: i32,
         tool_calls: Option<&str>,
+        thinking: Option<&str>,
     ) -> Result<ChatMessage, String> {
         let _w = WriteTimer("save_message", Instant::now());
         let now = unix_timestamp_now();
@@ -583,7 +599,7 @@ impl ChatStore {
             // 相同内容（此时最后一条是 assistant）不受影响。
             if role == "user" {
                 let last = conn.query_row(
-                    "SELECT id, session_id, role, content, token_count, created_at, tool_calls FROM chat_messages WHERE session_id = ?1 ORDER BY created_at ASC, rowid DESC LIMIT 1",
+                    "SELECT id, session_id, role, content, token_count, created_at, tool_calls, thinking FROM chat_messages WHERE session_id = ?1 ORDER BY created_at ASC, rowid DESC LIMIT 1",
                     rusqlite::params![session_id],
                     |row| {
                         Ok((
@@ -594,10 +610,11 @@ impl ChatStore {
                             row.get::<_, i32>(4)?,
                             row.get::<_, u64>(5)?,
                             row.get::<_, Option<String>>(6)?,
+                            row.get::<_, Option<String>>(7)?,
                         ))
                     },
                 );
-                if let Ok((last_id, last_sid, last_role, last_content, last_tokens, last_created, last_tools)) = last {
+                if let Ok((last_id, last_sid, last_role, last_content, last_tokens, last_created, last_tools, last_thinking)) = last {
                     if last_role == role && last_content == content {
                         return Ok(ChatMessage {
                             id: last_id,
@@ -607,6 +624,7 @@ impl ChatStore {
                             token_count: last_tokens,
                             created_at: last_created,
                             tool_calls: last_tools.filter(|s| !s.trim().is_empty()),
+                            thinking: last_thinking.filter(|s| !s.trim().is_empty()),
                         });
                     }
                 }
@@ -628,8 +646,8 @@ impl ChatStore {
 
             // 插入消息
             conn.execute(
-                "INSERT INTO chat_messages (id, session_id, role, content, token_count, created_at, tool_calls) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                rusqlite::params![id, session_id, role, content, token_count, now, tool_calls.unwrap_or("")],
+                "INSERT INTO chat_messages (id, session_id, role, content, token_count, created_at, tool_calls, thinking) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                rusqlite::params![id, session_id, role, content, token_count, now, tool_calls.unwrap_or(""), thinking.unwrap_or("")],
             )
             .map_err(|e| format!("保存消息失败: {}", e))?;
 
@@ -648,6 +666,7 @@ impl ChatStore {
                 token_count,
                 created_at: now,
                 tool_calls: tool_calls.map(|s| s.to_string()),
+                thinking: thinking.map(|s| s.to_string()),
             })
         })
     }

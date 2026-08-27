@@ -113,6 +113,8 @@ pub mod loop_tools;
 pub mod loop_hooks;
 /// 动态外部工具（P2-15，配置驱动）：定义加载 + mtime 缓存；执行由 loop_tools 承担
 pub(crate) mod external_tools;
+/// Web 搜索提供商适配层（Tavily / Brave / Exa）：配置 + API 调用 + 结果格式化
+pub mod search_providers;
 /// 工具注册表：按技能组织工具定义，统一管理工具的注册与构建
 
 /// 始终可用的基础工具（不随技能白名单窄化，对齐主流 Agent：文件操作与技能管理常驻）。
@@ -125,7 +127,7 @@ pub(crate) mod external_tools;
 /// 下一轮激活后重试，而非整个流式请求失败。
 pub const BASE_TOOLS: &[&str] = &[
     "activate_skill", "deactivate_skill", "read", "ls", "glob", "grep", "write", "edit", "multi_edit", "delete",
-    "git_status", "git_diff", "git_commit", "git_checkout", "webfetch", "deep_research", "read_subagent_result",
+    "git_status", "git_diff", "git_commit", "git_checkout", "webfetch", "web_search", "deep_research", "read_subagent_result",
     "remember", "forget", "search_memory", "todo_write", "spawn_subagent", "parallel_research", "self_review",
     "ask_user_question",
 ];

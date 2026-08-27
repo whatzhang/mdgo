@@ -105,7 +105,8 @@ pub trait ApprovalTransport: Send + Sync {
 
 /// 审批门:组合多个策略 + 同一 run 内已决缓存(避免多轮弹窗)。
 pub struct ApprovalGate {
-    policies: Vec<Box<dyn ApprovalPolicy>>,
+    /// 策略集合(运行时可通过 [`Self::set_policies`] 热切换,支撑权限模式切换)
+    policies: std::sync::Mutex<Vec<Box<dyn ApprovalPolicy>>>,
     transport: Box<dyn ApprovalTransport>,
     /// 默认超时
     timeout: Duration,
@@ -116,7 +117,10 @@ pub struct ApprovalGate {
 impl std::fmt::Debug for ApprovalGate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ApprovalGate")
-            .field("policy_count", &self.policies.len())
+            .field(
+                "policy_count",
+                &self.policies.lock().map(|p| p.len()).unwrap_or(0),
+            )
             .field("timeout", &self.timeout)
             .field(
                 "cache_size",
@@ -133,21 +137,38 @@ impl ApprovalGate {
         timeout: Duration,
     ) -> Self {
         Self {
-            policies,
+            policies: std::sync::Mutex::new(policies),
             transport,
             timeout,
             cache: Mutex::new(HashMap::new()),
         }
     }
 
+    /// 运行时替换策略集合（权限模式切换：询问 / 只读 / 全放行）。
+    ///
+    /// 同时清空已决缓存（模式变化后旧决定不再适用，避免"放行过一次就不再询问"）。
+    pub fn set_policies(&self, policies: Vec<Box<dyn ApprovalPolicy>>) {
+        if let Ok(mut guard) = self.policies.lock() {
+            *guard = policies;
+        }
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.clear();
+        }
+    }
+
     /// 检查一次工具调用。`Ok(())` = 放行;`Err(denial)` = 拒绝,携带原因类别。
     pub async fn check(&self, run_id: &str, tool: &str, args: &Value) -> Result<(), ApprovalDenial> {
         // 0a. 策略级放行(配置 allow 规则直接放行并短路其余策略)
-        if self.policies.iter().any(|p| p.allow(tool, args)) {
+        if self.policies.lock().map(|p| p.iter().any(|p| p.allow(tool, args))).unwrap_or(false) {
             return Ok(());
         }
         // 0b. 策略级拒绝(配置规则直接禁止,不弹窗、不缓存——每次调用都被拒)
-        if let Some(reason) = self.policies.iter().find_map(|p| p.deny(tool, args)) {
+        if let Some(reason) = self
+            .policies
+            .lock()
+            .ok()
+            .and_then(|p| p.iter().find_map(|p| p.deny(tool, args)))
+        {
             return Err(ApprovalDenial {
                 category: DenialCategory::PolicyDenied,
                 reason,
@@ -155,7 +176,14 @@ impl ApprovalGate {
         }
 
         // 1. 策略判定:首个命中者决定是否需要审批(无命中 → 放行)
-        let Some(req) = self.policies.iter().find_map(|p| p.evaluate(tool, args)) else {
+        let req = {
+            let guard = match self.policies.lock() {
+                Ok(g) => g,
+                Err(_) => return Ok(()), // 策略锁异常时放行（fail-open 保可用性）
+            };
+            guard.iter().find_map(|p| p.evaluate(tool, args))
+        };
+        let Some(req) = req else {
             return Ok(());
         };
 

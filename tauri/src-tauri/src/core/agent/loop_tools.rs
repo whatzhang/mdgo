@@ -633,6 +633,8 @@ pub fn build_loop_tool_registry(cfg: KbSearchConfig) -> HashMapToolRegistry {
     // 前端桥接工具（pomodoro/raw-parse/open-ui，技能声明门控）+ 外部 HTTP 工具（配置驱动）
     register_bridge_tools(&mut reg, cfg.clone());
     register_external_tools(&mut reg, cfg.clone());
+    // 网络工具：web_search（搜索互联网，配置驱动）+ webfetch（抓取单页）
+    reg.register(Arc::new(WebSearchTool::new(cfg.clone())));
     reg.register(Arc::new(WebfetchTool::new(cfg)));
     reg
 }
@@ -982,8 +984,76 @@ impl Tool for WebfetchTool {
     }
 }
 
-// ─────────────────────────── 技能激活 + 反思工具 ───────────────────────────
+/// web_search：搜索互联网获取最新信息（Tavily / Brave / Exa 按配置分派）。
+///
+/// API key 存本侧配置（`web_search.json`），模型只传 query——key 不暴露给模型。
+/// 未配置时返回引导提示（而非硬失败），模型可据提示建议用户配置。
+pub struct WebSearchTool {
+    cfg: KbSearchConfig,
+}
 
+impl WebSearchTool {
+    pub fn new(cfg: KbSearchConfig) -> Self {
+        Self { cfg }
+    }
+}
+
+#[async_trait]
+impl Tool for WebSearchTool {
+    fn spec(&self) -> &ToolSpec {
+        static SPEC: std::sync::OnceLock<ToolSpec> = std::sync::OnceLock::new();
+        SPEC.get_or_init(|| {
+            read_only_spec(
+                "web_search",
+                "搜索互联网获取最新信息（新闻、技术动态、文档、代码示例等，模型训练数据之外的内容）。返回前 N 条结果的标题、URL 与摘要；需要某条完整内容时，用 webfetch 打开对应 URL。搜索词应简洁聚焦，一次搜索一个主题。",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "query": { "type": "string", "description": "搜索关键词，简洁聚焦（一次一个主题）" },
+                        "max_results": { "type": "integer", "description": "返回条数（默认 5，最大 10）" }
+                    },
+                    "required": ["query"]
+                }),
+            )
+        })
+    }
+
+    async fn execute(&self, args: Value, ctx: &ToolRunContext<'_>) -> Result<Value, ToolError> {
+        use crate::core::agent::search_providers as sp;
+        let query_text = args.get("query").and_then(|s| s.as_str()).unwrap_or_default().trim().to_string();
+        let max_results = args.get("max_results").and_then(|m| m.as_u64()).map(|v| v as usize).unwrap_or(5).clamp(1, 10);
+        ctx.sink.on_call(ctx.call_id, "web_search", &format!("query={} n={}", query_text, max_results), &args);
+        if query_text.is_empty() {
+            let e = "query 不能为空".to_string();
+            ctx.sink.on_result(ctx.call_id, "web_search", false, &e, Some(&e));
+            return Err(ToolError::InvalidArgs(e));
+        }
+
+        let config = sp::load_config();
+        if !config.is_ready() {
+            let msg = "Web 搜索未配置：请在 Agent 设置中启用「网络搜索」并填写搜索 API Key（支持 Tavily / Brave / Exa）。".to_string();
+            ctx.sink.on_result(ctx.call_id, "web_search", false, &msg, Some(&msg));
+            return Err(ToolError::Failed(msg));
+        }
+        let provider = config.provider.expect("is_ready 保证 provider 存在");
+        let api_key = config.active_key().expect("is_ready 保证有 key");
+
+        match sp::query(provider, api_key, &query_text, max_results).await {
+            Ok(results) => {
+                let text = sp::format_results(&query_text, &results);
+                let summary = format!("{} 条结果", results.len());
+                ctx.sink.on_result(ctx.call_id, "web_search", true, &summary, Some(&text));
+                Ok(Value::String(text))
+            }
+            Err(e) => {
+                ctx.sink.on_result(ctx.call_id, "web_search", false, &e, Some(&e));
+                Err(ToolError::Failed(e))
+            }
+        }
+    }
+}
+
+// ─────────────────────────── 技能激活 + 反思工具 ───────────────────────────
 /// activate_skill：激活技能加载指令并解锁专用工具（业务逻辑 ActiveSkillState::activate）。
 pub struct ActivateSkillTool {
     registry: Arc<crate::core::skill::SkillRegistry>,

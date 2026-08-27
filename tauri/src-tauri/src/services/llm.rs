@@ -566,12 +566,11 @@ impl LLMClient {
             LlmMessage::text(LlmRole::User, user_msg),
         ]);
         request.temperature = Some(0.3);
-        // 计划 JSON 输出有界（steps 3-8 步 + goal + acceptance），1024 token 足够；
-        // 收紧上限可截断推理模型的思考/冗余输出，直接压缩慢端点的生成时长。
-        // 🟠 L30：权衡——推理模型把思考 token 计入同一 completion 预算时可能截断
-        // JSON（→ 触发修正重试，属一次额外调用的降级路径，可接受）；若后续对
-        // reasoning_effort 非空的模型放宽到 1536 可减少重试。
-        request.max_tokens = Some(1024);
+        // 🟠 L30/L31：规划预算——推理模型（reasoning_effort 非空）把思考 token 计入
+        // 同一 completion 预算：1024 时思考耗掉预算 → JSON 截断（触发修正重试）甚至
+        // 空响应（二次重试思考更久直接无输出）。放宽到 2048：思考 + JSON 都能放下，
+        // 显著减少重试与空响应；普通模型多出的预算无副作用（输出本就短）。
+        request.max_tokens = Some(2048);
         let request = self.apply_common_params(request);
 
         log::info!("[llm] [任务规划] input: query_len={} history_count={}", query.len(), history.len());
