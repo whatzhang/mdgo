@@ -44,6 +44,7 @@ let skillSearchTerm = '';       // 搜索关键词
 let skillEditMode = 'create';   // create | edit
 let skillEditKey = null;        // 编辑目标 {scope, id}
 let skillChangedSubscribed = false; // skill:changed 事件只订阅一次
+let skillBodyEditor = null;         // 指令正文 Monaco 编辑器实例（编辑视图生命周期内有效）
 
 function skillGetDirPath() {
     const handle = getRootHandle();
@@ -225,7 +226,7 @@ function skillRenderDetail(skill) {
                     ${toolsNames.length ? `<div class="skill-detail-section"><div class="skill-detail-section-title">可用工具</div><div class="skill-tag-row">${toolsNames.map(t => `<span class="skill-tag-chip">${escapeHtml(t)}</span>`).join('')}</div></div>` : ''}
                     <div class="skill-detail-section">
                         <div class="skill-detail-section-title">指令正文</div>
-                        <div class="skill-detail-body"><div class="markdown-body" style="font-size: 0.8125rem;">${markedMd(escapeHtml(skill.body) || '（空）')}</div></div>
+                        <div class="skill-detail-body"><div class="markdown-body" style="font-size: 0.8125rem;">${markedMd(skill.body) || '（空）'}</div></div>
                     </div>
                 </div>`;
 }
@@ -346,10 +347,53 @@ function skillRenderEdit(skill) {
                         </div>
                         <div class="skill-form-field full">
                             <label>指令正文（Markdown）</label>
-                            <textarea id="skill-f-body" oninput="skillValidateForm()" placeholder="# 技能指令&#10;当你收到任务时...">${escapeHtml(skill ? skill.body : '')}</textarea>
+                            <div id="skill-f-body" class="skill-body-editor" style="height: 24rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden;"></div>
                         </div>
                     </div>
                 </div>`;
+    // Monaco 编辑器初始化（独立实例，不占用文件编辑的 currentEditor）
+    skillInitBodyEditor(skill ? skill.body || '' : '');
+}
+
+/** 初始化指令正文 Monaco 编辑器（创建前先销毁旧实例，防止泄漏） */
+async function skillInitBodyEditor(value) {
+    skillDestroyBodyEditor();
+    const container = document.getElementById('skill-f-body');
+    if (!container) return;
+    if (typeof initMonacoEditor !== 'function') return;
+    try {
+        await initMonacoEditor();
+        const editor = createMonacoEditor(container, {
+            value: value || '',
+            language: 'markdown',
+            wordWrap: 'on',
+            minimap: { enabled: false },
+            lineNumbers: 'off',   // 指令正文不显示行号
+            skipCtrlS: true, // 嵌入编辑器：Ctrl+S 不保存文件（保存技能走页面按钮）
+        });
+        skillBodyEditor = editor;
+        // 编辑器失焦时校验表单（替代原 textarea 的 oninput 校验）
+        // 延迟到下一帧绑定：避免 monaco 初始化 setValue/setHasFocus 事件流中
+        // 回调抢先触发时 skillBodyEditor 尚未赋值
+        setTimeout(() => {
+            if (skillBodyEditor === editor && typeof editor.onDidBlurEditorText === 'function') {
+                editor.onDidBlurEditorText(() => skillValidateForm());
+            }
+        }, 0);
+    } catch (e) {
+        console.warn('[SkillPanel] 指令正文编辑器初始化失败:', e);
+    }
+}
+
+/** 销毁指令正文编辑器实例（取消/保存/切换/清理时调用） */
+function skillDestroyBodyEditor() {
+    if (skillBodyEditor) {
+        try { disposeEditor(skillBodyEditor); } catch (e) { /* ignore */ }
+        skillBodyEditor = null;
+    }
+    // 清空挂载容器（monaco 在 dispose 后残留 DOM）
+    const container = document.getElementById('skill-f-body');
+    if (container) container.innerHTML = '';
 }
 
 /** 启停开关标签同步 */
@@ -362,6 +406,7 @@ function skillUpdateEnabledLabel() {
 
 /** 返回详情视图（编辑中取消/返回） */
 function skillBackToDetail() {
+    skillDestroyBodyEditor();
     if (skillCurrent) {
         skillRenderDetail(skillCurrent);
     } else {
@@ -369,12 +414,23 @@ function skillBackToDetail() {
     }
 }
 
+/** 读取指令正文（Monaco 实例优先，回退容器文本） */
+function skillGetBodyValue() {
+    if (skillBodyEditor && typeof skillBodyEditor.getValue === 'function') {
+        try {
+            return skillBodyEditor.getValue() || '';
+        } catch (e) { /* editor 已销毁等异常，回退容器 */ }
+    }
+    const container = document.getElementById('skill-f-body');
+    return container && container.textContent ? container.textContent : '';
+}
+
 /** 前端字段级校验（与后端 validate_skill 约定一致） */
 function skillValidateForm() {
     const errors = [];
     const id = (document.getElementById('skill-f-id')?.value || '').trim();
     const description = (document.getElementById('skill-f-description')?.value || '').trim();
-    const body = (document.getElementById('skill-f-body')?.value || '').trim();
+    const body = skillGetBodyValue().trim();
     const name = (document.getElementById('skill-f-name')?.value || '').trim();
     const priority = parseInt(document.getElementById('skill-f-priority')?.value || '50', 10);
 
@@ -419,7 +475,7 @@ async function skillSaveSkill() {
     const triggers = (document.getElementById('skill-f-triggers')?.value || '')
         .split(/[,，]/).map(s => s.trim()).filter(Boolean);
     const enabled = document.getElementById('skill-f-enabled')?.checked ?? true;
-    const body = document.getElementById('skill-f-body')?.value || '';
+    const body = skillGetBodyValue();
 
     if (!id) { showNotification('请填写 ID', 'error'); return; }
     if (!name) { showNotification('请填写名称', 'error'); return; }
@@ -451,6 +507,7 @@ async function skillSaveSkill() {
         }
         skillEditMode = 'create';
         skillEditKey = null;
+        skillDestroyBodyEditor();
         await skillLoadList();
         skillCurrent = skillAllList.find(s => s.scope === scope && s.id === id) || null;
         if (skillCurrent) skillRenderDetail(skillCurrent);
@@ -491,7 +548,7 @@ async function skillToggleEnabled(scope, id, enabled) {
 /** 删除（确认后执行） */
 function skillDeleteSkill(scope, id) {
     const skill = skillAllList.find(s => s.scope === scope && s.id === id);
-    showConfirmModal('删除技能', `确定删除技能「${skill ? skill.name : id}」（${id}）吗？删除后不可恢复。`, async (ok) => {
+    showConfirmModal('删除技能', `确定删除技能 ${skill ? skill.name : id} 吗？删除后不可恢复。`, async (ok) => {
         if (!ok) return;
         try {
             await window.__mdgoSkill.skillDelete(skillDirPath, scope, id);
@@ -556,6 +613,8 @@ function skillCleanup() {
     skillEditKey = null;
     skillAllList = [];
     skillFilteredList = [];
+    // 销毁指令正文编辑器实例（离开页面时释放）
+    skillDestroyBodyEditor();
     // 清空动态 DOM（下次进入 openSkillManager 时重新渲染）
     const listEl = document.getElementById('skill-list');
     if (listEl) listEl.innerHTML = '';

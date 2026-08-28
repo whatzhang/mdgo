@@ -12,6 +12,13 @@
     width: 100%;
 }
 
+/* ===== Prompt 管理容器（与 skill-container 同构） ===== */
+#prompt-container {
+    display: none;
+    height: 100%;
+    width: 100%;
+}
+
 .skill-layout {
     display: flex;
     height: 100%;
@@ -567,12 +574,11 @@
     font-family: var(--font-family);
     font-size: 0.8125rem;
     color: var(--color-text);
-    line-height: 1.7;
+    line-height: 1.4;
     white-space: normal;
     word-break: break-word;
     border: 1px solid var(--color-border-light);
     border-radius: var(--radius-md);
-    padding: 0.5rem;
     background: var(--color-bg-panel);
     overflow-y: auto;
     cursor: text;

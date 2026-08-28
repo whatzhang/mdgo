@@ -319,6 +319,10 @@ impl AiHistoryStore {
     /// 包含总数、收藏数、按类型分布、近 30 日趋势、最热文件 Top 10 和总 token 用量。
     /// 按天统计 AI 调用次数与 token 用量，自 ts_ms（毫秒时间戳）起。
     /// 返回 (日期 YYYY-MM-DD, 调用次数, token 总量)，按日期升序。
+    ///
+    /// ⚠️ 排除 `type='chat'`：聊天模式的每轮对话同时写入 ai_history（type='chat'）
+    /// 与 chat_messages 两张表，若都计入会导致 stats_ai_usage 的 token 双重计数。
+    /// 聊天相关的调用/消息/token 由 chat_messages 侧统计（见 ChatStore::daily_messages_since）。
     pub fn daily_usage_since(&self, ts_ms: i64) -> Result<Vec<(String, u32, u64)>, String> {
         self.pool.with_read(|conn| {
             let mut stmt = conn
@@ -326,7 +330,8 @@ impl AiHistoryStore {
                     "SELECT strftime('%Y-%m-%d', created_at / 1000, 'unixepoch') as day,
                             COUNT(*) as cnt,
                             COALESCE(SUM(token_count), 0) as tk
-                     FROM ai_history WHERE created_at >= ?1
+                     FROM ai_history
+                     WHERE created_at >= ?1 AND type != 'chat'
                      GROUP BY day ORDER BY day ASC",
                 )
                 .map_err(|e| format!("AI 调用统计查询失败: {}", e))?;
@@ -398,7 +403,8 @@ impl AiHistoryStore {
 
             let total_token_usage: u64 = conn
                 .query_row(
-                    "SELECT COALESCE(SUM(token_count), 0) FROM ai_history",
+                    // 排除 type='chat'：聊天 token 由 chat_messages 侧统计，避免与 stats_ai_usage 双重计数
+                    "SELECT COALESCE(SUM(token_count), 0) FROM ai_history WHERE type != 'chat'",
                     [],
                     |row| row.get(0),
                 )

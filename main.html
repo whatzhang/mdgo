@@ -2684,11 +2684,11 @@
         }
 
         .new-file-modal-item {
-            padding: 0.125rem 0.125rem;
+            padding: 0.125rem 0.5rem;
             box-shadow: var(--shadow-sm);
             border-radius: 0.25rem;
             background: var(--color-bg);
-            font-size: 0.8125rem;
+            font-size: 13px;
             font-weight: normal;
             color: var(--t0);
             font-weight: 500;
@@ -5243,13 +5243,12 @@
         }
 
         .chat-toolbar-popup.long {
-            width: 90%;
-            max-width: 90%;
+            width: 50rem;
+            max-width: 90rem;
         }
 
         .chat-toolbar-popup.short {
-            min-width: 2.5rem;
-            max-width: 4rem;
+            width: 3rem !important;
         }
 
         /* 弹层标题（权限/网络搜索等设置面板共用） */
@@ -13374,10 +13373,7 @@
         }
 
         .prompt-popup-row .row-name {
-            flex: 1;
-            min-width: 0;
-            max-width: 4rem;
-            white-space: nowrap;
+            width: 15%;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -13386,8 +13382,7 @@
         }
 
         .prompt-popup-row .row-content {
-            flex: 1;
-            min-width: 0;
+            width: 80%;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -16356,6 +16351,40 @@
                     </div>
                 </div>
             </div>
+            <!-- ====== Prompt 管理容器 ====== -->
+            <div id="prompt-container" style="display: none;">
+                <div class="skill-layout" id="prompt-layout">
+                    <div class="skill-sidebar" id="prompt-sidebar">
+                        <div class="skill-search-box" id="prompt-search-box">
+                            <span class="skill-search-icon">🔍</span>
+                            <input type="text" id="prompt-search-input" class="skill-search-input"
+                                placeholder="搜索 Prompt 名称..." onkeydown="promptHandleSearchKeydown(event)"
+                                oninput="promptHandleSearchInput()" autocomplete="off">
+                            <button id="prompt-search-clear" class="skill-search-clear" onclick="promptClearSearch()"
+                                style="display:none;">✕</button>
+                        </div>
+                        <div class="skill-scope-chips" id="prompt-scope-chips">
+                            <button class="skill-chip active" data-scope="" onclick="promptScopeChange('')">全部</button>
+                            <button class="skill-chip system" data-scope="system"
+                                onclick="promptScopeChange('system')">系统</button>
+                            <button class="skill-chip global" data-scope="global"
+                                onclick="promptScopeChange('global')">全局</button>
+                            <button class="skill-chip project" data-scope="project"
+                                onclick="promptScopeChange('project')">项目</button>
+                        </div>
+                        <div class="skill-list" id="prompt-list"></div>
+                        <div class="skill-footer" id="prompt-footer">
+                            <button class="skill-create-btn" id="prompt-create-btn"
+                                onclick="promptCreateNew()"><span>＋</span> 新增 Prompt</button>
+                        </div>
+                    </div>
+                    <!-- 右侧 60%：空态 / 详情 / 编辑 -->
+                    <div class="skill-main" id="prompt-main">
+                        <div class="skill-detail-view" id="prompt-detail-view" style="display:none;"></div>
+                        <div class="skill-edit-view" id="prompt-edit-view" style="display:none;"></div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
     <div class="mermaid-fullscreen-overlay" id="mermaid-fullscreen-overlay">
@@ -16764,6 +16793,7 @@
             { key: 'Agent', value: 'toggleFile("aiChat")', display: true, type: 'D' },
             { key: 'Skill', value: 'toggleFile("skill")', display: true, type: 'D' },
             { key: 'MCP', value: 'toggleFile("mcp")', display: true, type: 'D' },
+            { key: 'Prompt', value: 'toggleFile("prompt")', display: true, type: 'D' },
         ]
         // 高亮字体颜色（深色系，确保可读性）
         const HIGHLIGHT_FONT_COLORS = [
@@ -16851,31 +16881,8 @@
                 name: '解释',
                 id: 'explain',
                 display: true,
-                prompt: `你是一个专业、耐心的知识解释助手。
-
-## 任务
-对用户选中的文本进行清晰、准确的解释。
-
-## 规则
-1. **识别内容类型**，自动调整解释策略：
-   - **专业术语/概念**：给出定义，然后用通俗语言解释，必要时举例。
-   - **代码片段**：逐行或逐块解释逻辑，说明输入输出和关键 API。
-   - **外语文本**：先翻译为中文，再解释语义和语境含义。
-   - **古文/文言文**：提供白话翻译，并解释典故和修辞。
-   - **数学公式/逻辑表达式**：用自然语言拆解含义，给出直观理解。
-2. 解释层次：先给一句话概括，再展开细节。
-3. 如果文本涉及多个知识点，按重要性排序逐一解释。
-4. 保持客观中立，不添加主观评价。
-5. 适度使用类比帮助理解，但要标注"类比说明"以区分精确定义。
-6. 如果文本本身已经很直白，简要确认即可，不要过度解读。
-
-## 输出格式
-- 先给出**一句话总结**
-- 再给出**分点详细解释**
-- 如有必要，最后提供**延伸阅读建议**（1-2 条）
-
-## 语言
-使用与用户相同的语言进行解释。如果用户未明确指定，使用中文。`
+                // prompt 由 DB 系统 Prompt（keywords=explain）动态加载
+                prompt: ``
             },
             {
                 index: 3,
@@ -16883,47 +16890,8 @@
                 name: '翻译',
                 id: 'translate',
                 display: true,
-                prompt: `你是一个专业翻译引擎，兼具 DeepL 的精准度和 ChatGPT 的自然表达能力。
-
-## 任务
-将用户选中的文本翻译为**目标语言**。
-
-## 核心规则
-
-### 语言检测
-- 自动检测源语言。
-- 如果源语言是中文 → 翻译为**英文**。
-- 如果源语言是英文或其他外语 → 翻译为**中文**。
-- 如果用户在上下文中指定了目标语言，以用户指定为准。
-
-### 翻译原则
-1. **信达雅优先级**：准确 > 通顺 > 优美。在不歪曲原意的前提下追求自然表达。
-2. **保留专有名词**：
-   - 广为人知的品牌/产品名保留原文（如 GitHub、Kubernetes）。
-   - 小众术语首次出现时用"中文译名（原文）"格式。
-   - 人名、地名使用通用译名，无通用译名时保留原文。
-3. **保留格式结构**：
-   - 原文的段落、列表、标题层级原样保留。
-   - 代码块、变量名、命令行不翻译。
-   - URL、邮箱地址不翻译。
-4. **风格匹配**：
-   - 正式文本 → 翻译为正式风格
-   - 口语化文本 → 翻译为口语风格
-   - 技术文档 → 使用行业通用术语
-   - 营销文案 → 允许意译以贴合目标语言文化
-5. **数字和单位**：
-   - 阿拉伯数字保留不变。
-   - 单位根据目标语言习惯转换（如 英里 ↔ 公里），如不确定则保留原单位。
-
-### 特殊场景处理
-- **代码注释**：只翻译注释部分，代码逻辑保持不变。
-- **表格内容**：逐单元格翻译，保持表格结构。
-- **引文/诗句**：优先使用已有的知名译本，如无则提供意译并标注。
-- **歧义文本**：翻译最可能的含义，如有重大歧义，在译文后用括号注明另一种理解。
-
-## 输出格式
-直接输出翻译结果，不添加额外解释。
-如果需要补充说明（如术语解释、文化背景），在译文之后用分隔线隔开，以"📝 译注"开头。`
+                // prompt 由 DB 系统 Prompt（keywords=translate）动态加载
+                prompt: ``
             },
             {
                 index: 4,
@@ -16931,43 +16899,8 @@
                 name: '总结',
                 id: 'summary',
                 display: true,
-                prompt: `你是一个高效的信息提炼助手，擅长从大量文本中精准提取核心信息。
-
-## 任务
-对用户选中的文本进行摘要总结。
-
-## 规则
-
-### 内容识别与策略调整
-根据文本长度和类型，自动选择总结策略：
-
-- **短文本（< 100 字）**：原文已足够精炼，改为提炼核心关键词 + 一句话概括。
-- **中等文本（100-1000 字）**：3-5 句话概括主旨和要点。
-- **长文本（> 1000 字）**：分层总结——先给一段话的概述，再列要点。
-
-### 总结原则
-1. **不遗漏关键信息**：识别并保留文本中的核心论点、关键数据、重要结论。
-2. **去除冗余**：删除重复表述、过渡性语句、举例说明（除非例子本身就是关键论据）。
-3. **保持客观**：忠实于原文观点，不加入个人理解或评价。
-4. **保留关键数据**：具体的数字、日期、人名、产品名等必须保留。
-5. **结构化输出**：
-   - 议论文/分析文 → 按论点结构组织
-   - 新闻/事件 → 按 5W1H 组织
-   - 技术文档 → 按功能模块/步骤组织
-   - 会议记录/对话 → 按议题和决策组织
-
-### 输出格式
-**一句话概括**：[用不超过 30 字概括全文核心]
-
-**要点提炼**：
-1. [要点一]
-2. [要点二]
-3. [要点三]
-...
-
-**关键词**：[3-5 个关键词，用逗号分隔]
-
-（如果文本较短，可省略"要点提炼"和"关键词"部分）`
+                // prompt 由 DB 系统 Prompt（keywords=summary）动态加载
+                prompt: ``
             },
             {
                 index: 5,
@@ -16975,41 +16908,8 @@
                 name: '重写',
                 id: 'rewrite',
                 display: true,
-                prompt: `你是一个专业的文字重写专家，能够在保持原意的前提下，用全新的表达方式重新组织文本。
-
-## 任务
-对用户选中的文本进行完全重写。
-
-## 核心原则
-1. **语义零损失**：重写后的文本必须完整传达原文的所有信息和含义，不得遗漏关键内容。
-2. **表达全刷新**：避免使用原文的句式结构和用词，用全新的方式表达相同意思。要求改写率 ≥ 70%。
-3. **风格一致性**：保持原文的正式/非正式风格和语气基调，不擅自改变文本的定位。
-4. **流畅自然**：重写后的文本应读起来像是原创文章，而非机械替换。
-
-## 重写策略
-根据文本类型采用不同策略：
-
-- **信息型文本**（技术文档、说明文）：
-  重点重组句子结构，替换同义词，调整段落逻辑顺序，但保留所有技术细节和专业术语。
-
-- **论述型文本**（议论文、分析文）：
-  保留核心论点，但换用不同的论据表达方式、论证逻辑和修辞手法。
-
-- **描述型文本**（产品介绍、营销文案）：
-  更大幅度地调整表达，可以改变叙述角度、修辞方式，但核心卖点和信息不变。
-
-- **代码相关文本**：
-  只重写注释和文档描述，代码本身保持不变。
-
-## 禁止事项
-- 不改变原文的事实和数据
-- 不添加原文没有的信息
-- 不改变原文的立场和倾向
-- 不删除原文的关键内容
-- 不改变代码逻辑
-
-## 输出格式
-直接输出重写后的文本，不添加额外说明。`
+                // prompt 由 DB 系统 Prompt（keywords=rewrite）动态加载
+                prompt: ``
             },
             {
                 index: 6,
@@ -17017,62 +16917,8 @@
                 name: '语法检查',
                 id: 'grammarCheck',
                 display: true,
-                prompt: `你是一个专业的语法审校专家，精通中文和英文的语法规则、标点规范和表达习惯。
-
-## 任务
-对用户选中的文本进行全面的语法和表达检查。
-
-## 检查维度
-
-### 1. 基础语法
-- 主谓一致性、时态一致性、代词指代明确
-- 语序是否正确、句子成分是否完整（残缺/赘余）
-- 虚词使用是否准确（的/地/得、了/着/过、in/on/at 等）
-
-### 2. 标点符号
-- 中英文标点是否混用（中文语境应使用全角标点）
-- 引号、括号是否配对
-- 逗号/句号使用是否恰当（特别注意逗号粘连 comma splice）
-
-### 3. 用词准确性
-- 近义词是否用错（如"截止/截至"、"反应/反映"）
-- 是否存在错别字
-- 英文拼写是否正确
-
-### 4. 表达规范
-- 是否存在歧义句
-- 长句是否需要拆分以提高可读性
-- 口语化表达在正式文本中是否合适
-- 专业术语使用是否准确
-
-### 5. 格式一致性
-- 数字格式是否统一（阿拉伯数字 vs 中文数字）
-- 单位格式是否规范
-- 中英文之间是否有空格（建议有）
-- 英文大小写是否规范
-
-## 输出格式
-
-### 如果没有发现问题：
-✅ 未发现明显的语法或表达问题。
-
-### 如果发现问题，按以下格式输出：
-
-**原文**：[引用有问题的原文片段]
-**问题类型**：[语法/标点/用词/表达/格式]
-**问题说明**：[简要说明哪里有问题，为什么]
-**建议修改**：[给出修改后的文本]
-
----
-
-**修改后全文**：
-[将所有修改应用后的完整文本]
-
-## 规则
-- 指出问题时要具体，引用原文片段，不要笼统地说"第三段有问题"。
-- 如果某个表达虽然不太规范但在口语或特定语境中可接受，标注为"建议优化"而非"错误"。
-- 尊重作者的写作风格和个人表达习惯，只修改确实有误的地方。
-- 涉及主观判断的表达（如观点、立场），不做修改建议。`
+                // prompt 由 DB 系统 Prompt（keywords=grammarCheck）动态加载
+                prompt: ``
             },
             {
                 index: 7,
@@ -17080,55 +16926,8 @@
                 name: '润色',
                 id: 'polish',
                 display: true,
-                prompt: `你是一个资深的文字润色专家，专注于提升文本的表达质量和可读性，同时保留作者的个人风格和核心意思。
-
-## 任务
-对用户选中的文本进行润色优化。
-
-## 与"重写"的区别
-- **重写**：追求表达的全面刷新，改写率 ≥ 70%。
-- **润色**：保留原文骨架和大部分表达，只在必要处做精准优化，改动率 ≤ 30%。
-
-## 润色维度
-
-### 1. 词语优化
-- 将模糊词替换为精确词（"很多" → "超过 200 个"，如果上下文有数据支撑）
-- 将口语化表达提升为书面化（如果原文是书面风格）
-- 消除"基本上"、"其实"、"然后"等口语赘词（仅在书面语境中）
-- 用更有画面感的动词替换平淡动词
-
-### 2. 句式优化
-- 长句拆分：将超过 40 字的长句拆分为多个短句
-- 短句合并：多个碎片化的短句如果逻辑紧密，可适当合并
-- 调整语序以突出重点信息
-- 消除"头重脚轻"的句子结构
-
-### 3. 节奏优化
-- 长短句交替使用，避免节奏单调
-- 并列结构保持对称
-- 关键论点用短句强调
-
-### 4. 逻辑优化
-- 在段落之间添加适当的过渡
-- 调整论点排列顺序使逻辑更清晰
-- 补充必要的连接词（"因此"、"然而"、"具体来说"）
-
-### 5. 风格统一
-- 检查全文用词风格是否一致
-- 确保正式/非正式程度前后统一
-- 专业术语使用是否前后一致
-
-## 禁止事项
-- 不改变原文的核心意思和立场
-- 不添加原文没有的信息或观点
-- 不改变作者的人称视角
-- 不将简单的话说复杂（润色是做减法，不是做加法）
-- 不改变代码内容
-
-## 输出格式
-直接输出润色后的文本。
-
-如果做了较为重要的改动，在文末附上**修改摘要**，简要列出 3-5 处关键优化及理由。`
+                // prompt 由 DB 系统 Prompt（keywords=polish）动态加载
+                prompt: ``
             },
             {
                 index: 8,
@@ -17148,6 +16947,38 @@
                 prompt: ``
             }
         ];
+        /**
+         * 从 DB 加载系统选中文本动作的 prompt（按 keywords 匹配填充 AI_SELECTION_ACTIONS）。
+         * 系统 prompt 统一维护在 DB（seed.sql 灌入全局库），此处按 keywords（=action id）
+         * 匹配填充，保证「解释/翻译/总结/重写/语法检查/润色」的提示词由 DB 驱动。
+         */
+        let _systemActionsLoaded = false;
+        async function loadSystemSelectionActions() {
+            if (_systemActionsLoaded) return;
+            if (!isTauriVisit() || !currentRootPath) return;
+            try {
+                const sysPrompts = await window.__TAURI__.core.invoke('prompt_list', { dirPath: currentRootPath, scope: 'system' });
+                if (!Array.isArray(sysPrompts)) return;
+                for (const p of sysPrompts) {
+                    if (!p || !p.prompt) continue;
+                    const kws = String(p.keywords || '').split(/[,，]/).map(s => s.trim()).filter(Boolean);
+                    // keywords 为空时用 id 匹配
+                    const matchIds = kws.length ? kws : [p.id];
+                    for (const kw of matchIds) {
+                        const action = AI_SELECTION_ACTIONS.find(a => a.id === kw);
+                        if (action) {
+                            action.prompt = p.prompt;
+                            if (!action.name || action.name === action.id) action.name = p.name || action.name;
+                        }
+                    }
+                }
+                _systemActionsLoaded = true;
+                console.log('[Prompt] 系统选中文本动作 prompt 已从 DB 加载');
+            } catch (e) {
+                console.warn('加载系统动作 prompt 失败:', e);
+            }
+        }
+
         // ====== 系统常量 ======
         const DOT = '.';
         const DOUBLE_DOT = '..';
@@ -17467,6 +17298,7 @@
         const knowledgeContainer = document.getElementById('knowledge-container');
         const skillContainer = document.getElementById('skill-container');
         const mcpContainer = document.getElementById('mcp-container');
+        const promptContainer = document.getElementById('prompt-container');
         const jmSaveOpmlBtn = document.getElementById('jsmind-save-opml-btn');
         const opmlSaveMmBtn = document.getElementById('opml-save-mm-btn');
         const jmImgBtn = document.getElementById('jsmind-image-btn');
@@ -17484,7 +17316,7 @@
             graphqlPlaygroundContainer, regexTestContainer, calendarContainer,
             cronViewContainer, videoViewContainer, gitRecordsContainer,
             swaggerEditorContainer, dirSpaceContainer, chatContainer, knowledgeContainer,
-            mcpContainer, behaviorAnalysisContainer
+            mcpContainer, promptContainer, behaviorAnalysisContainer
         ];
 
         const AUX_CONTROLS = [
@@ -17569,6 +17401,7 @@
                 Promise.resolve(initTauriWindowState()), // Tauri 窗口状态（最大化/还原）
                 Promise.resolve(initSkillLoadErrorNotify()), // 技能加载失败全局提醒
                 Promise.resolve(initOpenHistory()), // 初始化打开历史记录
+                Promise.resolve(loadSystemSelectionActions()), // 从 DB 加载系统选中文本动作 prompt
                 Promise.resolve(_restoreCacheRate()), // 恢复持久化的缓存命中率记录（重启后显示上次值）
                 Promise.resolve(renderCacheRate()), // 初始化缓存命中率常驻显示（无数据时显示占位）
                 Promise.resolve().then(() => (typeof AgentInit === 'function' ? AgentInit() : null)), // 初始化RAG（AgentInit 定义于 css_js/modules/agent.js，主脚本后加载）
@@ -17729,6 +17562,8 @@
                 await openSkillManager(); openHistory.addItem('skill');
             } else if (type === 'mcp') {
                 await openMcpManager(); openHistory.addItem('mcp');
+            } else if (type === 'prompt') {
+                await openPromptManager(); openHistory.addItem('prompt');
             } else if (type === 'fileType') {
                 await openFileType(); openHistory.addItem('fileType');
             } else if (type === 'picLayoutDisplay') { //目录右键
@@ -17771,6 +17606,10 @@
             } else if (type === 'knowledge') {
                 aiFabContainer.style.display = 'none';
             } else if (type === 'skill') {
+                aiFabContainer.style.display = 'none';
+            } else if (type === 'mcp') {
+                aiFabContainer.style.display = 'none';
+            } else if (type === 'prompt') {
                 aiFabContainer.style.display = 'none';
             } else if (type === 'dirCanvasDisplay') {
                 dirCanvasDisplayFlag = true;
@@ -18326,12 +18165,15 @@
             });
             editor.focus();
             // v2：Ctrl/Cmd+S 保存当前文件（Monaco 内注册，避免与浏览器默认"另存为"冲突）
-            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-                saveFileOnly().catch(err => {
-                    console.error('保存失败:', err);
-                    showNotification('✗ 保存失败: ' + (err && err.message ? err.message : err), 'error');
+            // skipCtrlS=true：嵌入编辑器（skill 指令正文 / prompt 内容等）不注册，避免误触发文件保存
+            if (!options.skipCtrlS) {
+                editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+                    saveFileOnly().catch(err => {
+                        console.error('保存失败:', err);
+                        showNotification('✗ 保存失败: ' + (err && err.message ? err.message : err), 'error');
+                    });
                 });
-            });
+            }
             return editor;
         }
 
@@ -18434,7 +18276,8 @@
             }
         }
 
-        // Prettier 支持的语言配置（统一管理，避免重复）
+        // Prettier 支持判断（getPrettierConfig / hasPrettierSupport）已迁移至
+        // css_js/modules/support.js；PRETTIER_LANG_CONFIG 保留供旧引用兼容
         const PRETTIER_LANG_CONFIG = {
             javascript: { parser: 'babel', pluginKeys: ['babel', 'estree'] },
             typescript: { parser: 'babel-ts', pluginKeys: ['babel', 'estree'] },
@@ -18446,19 +18289,6 @@
             yaml: { parser: 'yaml', pluginKeys: ['yaml'] },
             graphql: { parser: 'graphql', pluginKeys: ['graphql'] },
         };
-
-        function getPrettierConfig(language) {
-            const cfg = PRETTIER_LANG_CONFIG[language];
-            if (!cfg) return { parser: null, plugins: [] };
-            const plugins = cfg.pluginKeys.map(key => window.prettierPlugins?.[key]).filter(Boolean);
-            return { parser: cfg.parser, plugins };
-        }
-
-        function hasPrettierSupport(language) {
-            const cfg = PRETTIER_LANG_CONFIG[language];
-            if (!cfg || !window.prettier || !window.prettierPlugins) return false;
-            return cfg.pluginKeys.every(key => window.prettierPlugins[key]);
-        }
 
         function formatWithBasicIndentation(code, options = {}) {
             if (code == null) return '';
@@ -18855,6 +18685,7 @@
                 Promise.resolve(todoDestroy()),
                 Promise.resolve(finalizeChatAndCleanup()),
                 Promise.resolve(skillCleanup()),
+                Promise.resolve(promptCleanup()),
                 Promise.resolve(mcpCleanup()),
                 Promise.resolve(agentCleanup()),
             ]);
@@ -19977,9 +19808,6 @@
             });
         }
 
-        function isImageFile(filename) {
-            return isImage(getExt(filename));
-        }
         function isRawFile(filename) {
             return isRaw(getExt(filename));
         }
@@ -19993,20 +19821,7 @@
             const first20Lines = text.split('\n').slice(0, 20).join('\n');
             return /"openapi"\s*:|openapi:\s*["\d.]+/i.test(first20Lines) || /"swagger"\s*:\s*"[^"]*2\./i.test(first20Lines);
         }
-
-        function supportsEdit(filename) {
-            // 不支持编辑: drawio, 非SVG图片, pdf, excalidraw, excel
-            if (filename.endsWith('.drawio') || filename.endsWith('.excalidraw')) return false;
-            if (isImageFile(filename) && !filename.endsWith('.svg')) return false;
-            if (filename.endsWith('.pdf') || filename.endsWith('.xlsx') || filename.endsWith('.xls')) return false;
-            if (isImageFile(filename) && !filename.endsWith('.svg')) return false;
-            // 支持所有文本/代码文件 (包括 canvas 和 svg)
-            return codeEditEnble(filename) || /\.(txt|md|csv|canvas|svg|opml|mm)$/i.test(filename);
-        }
-
-        function codeEditEnble(filename) {
-            return /\.(puml|plantuml)$/i.test(filename) || isCode(getExt(filename));
-        }
+        // supportsEdit / codeEditEnble / isImageFile 已迁移至 css_js/modules/support.js
 
         let treeElementHtml = null;
         function filterFiles(keyword) {
@@ -25290,7 +25105,7 @@
                 return;
             }
             const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-            let html = '<div class="excel-sheet" style="padding: 40px 8px 8px 8px;">';
+            let html = '<div class="excel-sheet" style="padding: 2.5rem 0.5rem 0.5rem 0.5rem;">';
             html += '<div id="csv-sheet-table" style="overflow: auto;">';
             html += '<table>';
             jsonData.forEach((row, rowIndex) => {
@@ -36452,6 +36267,17 @@ kanban-plugin: basic
                     item = { id, name: '自定义模板', prompt: customPrompt };
                 }
                 if (!item) return;
+                // 系统动作 prompt 由 DB 驱动；为空时尝试重载（如首次加载失败）
+                if (!item.prompt && item.type === 'system') {
+                    _systemActionsLoaded = false;
+                    await loadSystemSelectionActions();
+                    const reloaded = AI_SELECTION_ACTIONS.find(i => i.id === id);
+                    if (reloaded && reloaded.prompt) item = reloaded;
+                }
+                if (!item.prompt) {
+                    showNotification(`「${item.name}」的提示词尚未加载（DB 系统 Prompt 缺失），请检查数据库`, 'warning');
+                    return;
+                }
                 const notification = showNotification(`正在${item.name}, 请稍等...`, 'info', 0);
                 try {
                     let promptStr = item.prompt + '\n\n所选文本为：\n' + key;
@@ -36515,6 +36341,7 @@ kanban-plugin: basic
                 // Tauri 模式下模板保存在后端数据库，_customPrompts 为空，需直接按 id 更新
                 await window.__TAURI__.core.invoke('prompt_update', {
                     dirPath: currentRootPath,
+                    scope: 'project',
                     id: promptId,
                     name: newName,
                     prompt: newPrompt,
@@ -36523,6 +36350,7 @@ kanban-plugin: basic
             } else {
                 await window.__TAURI__.core.invoke('prompt_create', {
                     dirPath: currentRootPath,
+                    scope: 'project',
                     name: newName,
                     prompt: newPrompt,
                 });
@@ -36531,7 +36359,7 @@ kanban-plugin: basic
             await refreshCustomPromptsDisplayList();
         }
         async function selectAiCustomPromptDelete(promptId) {
-            await window.__TAURI__.core.invoke('prompt_delete', { dirPath: currentRootPath, id: promptId });
+            await window.__TAURI__.core.invoke('prompt_delete', { dirPath: currentRootPath, scope: 'project', id: promptId });
             showNotification('Prompt 已删除');
             await refreshCustomPromptsDisplayList();
         }
@@ -36587,9 +36415,19 @@ kanban-plugin: basic
         async function getCustomPromptListData() {
             const prompts = [...AI_SELECTION_ACTIONS.filter(i => i.type === 'system')];
             const db = await window.__TAURI__.core.invoke('prompt_list', { dirPath: currentRootPath });
+            // 系统动作的 prompt 已由 AI_SELECTION_ACTIONS 骨架承载（DB 中 keywords 命中动作 id 的项跳过，
+            // 避免重复显示「解释/翻译/总结/重写/语法检查/润色」）；其余系统/全局/项目模板按类型展示
+            const actionIds = new Set(AI_SELECTION_ACTIONS.map(a => a.id));
             for (let i = 0; i < db.length; i++) {
                 const item = db[i];
-                item.type = 'custom';
+                // keywords 命中动作 id 或 id 与动作 id 相同 → 已由骨架提供，跳过
+                const kws = String(item.keywords || '').split(/[,，]/).map(s => s.trim()).filter(Boolean);
+                if (item.scope === 'system') {
+                    const matched = kws.some(k => actionIds.has(k)) || actionIds.has(item.id);
+                    if (matched) continue;
+                }
+                // system 作用域显示为系统模板（只读）；global/project 为用户自定义模板
+                item.type = item.scope === 'system' ? 'system' : 'custom';
                 prompts.push(item);
             }
             _customPromptListCache = prompts;
@@ -49695,16 +49533,17 @@ kanban-plugin: basic
             addChatMessage('user', text, null, chatMode, undefined, Date.now());
             chatMessages.push({ role: 'user', content: text, created_at: Date.now() });
             updateTurnCounter();
-            // 保存用户消息（估算 token 数，用于 token_usage 统计）
+            // 保存用户消息（token 记 0：真实输入消耗已含在对应 assistant 回复的
+            // prompt_tokens 中；若在此记估算值，会与 assistant 的 prompt 部分重复累计，
+            // 造成会话 token_usage / dashboard token 统计虚高）
             if (currentSessionId) {
                 try {
-                    const userTokenCount = estimateTokenCount(text);
                     const savedUserMsg = await saveChatMessageWithRetry({
                         dirPath: currentRootPath,
                         sessionId: currentSessionId,
                         role: 'user',
                         content: text,
-                        tokenCount: userTokenCount,
+                        tokenCount: 0,
                     });
                     // 回填真实 message_id（删除本轮对话时按 id 精确匹配后端删除）
                     if (savedUserMsg && savedUserMsg.id) {
@@ -49839,7 +49678,11 @@ kanban-plugin: basic
                         // 必须先固化，保证落库不受竞态影响。
                         const toolCallsSnapshot = _streamingToolCalls.slice();
                         const streamingDiv = _chatStreamingDiv;
-                        const tokenCount = usageData?.completion_tokens || 0;
+                        // 真实 token 消耗 = 输入(prompt) + 输出(completion)：
+                        // 此前只记 completion_tokens，导致会话 token_usage / dashboard token 统计
+                        // 系统性低估（丢弃了真实输入 token）。user 消息仍为前端估算，此处用模型
+                        // 上报的真实值补足主导部分。
+                        const tokenCount = usageData ? ((usageData.prompt_tokens || 0) + (usageData.completion_tokens || 0)) : 0;
                         // 时间线收尾：固化 thinking 缓冲 + tool 状态兜底（result 丢失时避免永久 running）
                         if (streamingDiv && streamingDiv._timeline) {
                             const tl = streamingDiv._timeline;
@@ -51395,6 +51238,7 @@ kanban-plugin: basic
                     if (isEdit) {
                         await window.__TAURI__.core.invoke('prompt_update', {
                             dirPath: currentRootPath,
+                            scope: 'project',
                             id: promptItem.id,
                             name: newName,
                             prompt: newPrompt,
@@ -51403,6 +51247,7 @@ kanban-plugin: basic
                     } else {
                         await window.__TAURI__.core.invoke('prompt_create', {
                             dirPath: currentRootPath,
+                            scope: 'project',
                             name: newName,
                             prompt: newPrompt,
                         });
@@ -51441,7 +51286,14 @@ kanban-plugin: basic
                         await selectAiCustomPromptDelete(id);
                         return;
                     }
-                    await window.__TAURI__.core.invoke('prompt_delete', { dirPath: currentRootPath, id });
+                    // 从行元素读取 scope（系统 prompt 只读，拒绝删除）
+                    const row = rowEl.closest('.prompt-popup-row');
+                    const scope = row ? (row.dataset.scope || 'project') : 'project';
+                    if (scope === 'system') {
+                        showNotification('系统 Prompt 不可删除', 'warning');
+                        return;
+                    }
+                    await window.__TAURI__.core.invoke('prompt_delete', { dirPath: currentRootPath, scope, id });
                     showNotification('Prompt 已删除');
                     await renderPromptList();
                 } catch (e) {
@@ -51470,10 +51322,10 @@ kanban-plugin: basic
                     return;
                 }
 
-                const rows = prompts.map(p => `
-                    <div class="prompt-popup-row" data-id="${escapeHtml(p.id)}" onclick="insertPromptFromRow(this)">
-                        <span class="row-name" id="prompt-name-${escapeHtml(p.id)}">${escapeHtml(p.name)}</span>
-                        <span class="row-content" id="prompt-content-${escapeHtml(p.id)}" title="${escapeHtml(p.prompt || '')}">${escapeHtml(p.prompt || '')}</span>
+                const rows = prompts.map(p => {
+                    const isSystem = p.scope === 'system';
+                    const scopeBadge = `<span class="row-scope ${escapeHtml(p.scope || '')}">${p.scope === 'system' ? '系统' : (p.scope === 'global' ? '全局' : '项目')}</span>`;
+                    const actions = isSystem ? '' : `
                         <div class="row-actions" onclick="event.stopPropagation()">
                             <button class="row-action-btn" title="编辑" onclick="editPromptFromRow(this)">
                                 <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -51485,9 +51337,14 @@ kanban-plugin: basic
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                                 </svg>
                             </button>
-                        </div>
-                    </div>
-                `).join('');
+                        </div>`;
+                    return `
+                    <div class="prompt-popup-row" data-id="${escapeHtml(p.id)}" data-scope="${escapeHtml(p.scope || 'project')}" onclick="insertPromptFromRow(this)">
+                        <span class="row-name" id="prompt-name-${escapeHtml(p.id)}">${escapeHtml(p.name)}${scopeBadge}</span>
+                        <span class="row-content" id="prompt-content-${escapeHtml(p.id)}" title="${escapeHtml(p.prompt || '')}">${escapeHtml(p.prompt || '')}</span>
+                        ${actions}
+                    </div>`;
+                }).join('');
 
                 popup.innerHTML = `
                     <div class="prompt-popup-list">${rows}</div>
@@ -52128,11 +51985,13 @@ kanban-plugin: basic
             };
         }
     </script>
+    <script src="./css_js/modules/support.js"></script>
     <script src="./css_js/modules/canvas.js"></script>
     <script src="./css_js/modules/chat-history.js"></script>
     <script src="./css_js/modules/editor/export.js"></script>
     <script src="./css_js/modules/editor/slides.js"></script>
     <script src="./css_js/modules/skill.js"></script>
+    <script src="./css_js/modules/prompt.js"></script>
     <script src="./css_js/modules/mcp.js"></script>
     <script src="./css_js/modules/agent.js"></script>
     <script src="./css_js/modules/agent_global.js"></script>

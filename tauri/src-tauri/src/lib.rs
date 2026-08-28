@@ -159,6 +159,8 @@ pub struct AppState {
     /// Prompt 模板存储（按知识库目录惰性创建，`{dir}/.mdgo/mdgo.db`）
     pub prompt_stores:
         std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<crate::services::prompt::PromptStore>>>,
+    /// 全局 Prompt 存储（用户数据目录 `{APPDATA}/com.mdgo/prompts.db`，跨项目共享，进程内单例）
+    pub global_prompt_store: std::sync::Mutex<Option<std::sync::Arc<crate::services::prompt::GlobalPromptStore>>>,
     /// MCP 服务器注册表（v2：配置 + 生命周期 + 工具清单）
     pub mcp: Arc<crate::core::mcp::McpRegistry>,
     /// 日程存储（按知识库目录惰性创建）
@@ -252,6 +254,21 @@ impl AppState {
         }
         let store = std::sync::Arc::new(crate::services::prompt::PromptStore::new(&key_str)?);
         map.insert(key_str, store.clone());
+        Ok(store)
+    }
+
+    /// 获取（或惰性创建）全局 Prompt 存储（用户数据目录 `{APPDATA}/com.mdgo/prompts.db`）。
+    /// 首次创建时执行 seed.sql 灌入系统内置 Prompt。
+    pub fn global_prompt_store(
+        &self,
+        app: &tauri::AppHandle,
+    ) -> Result<std::sync::Arc<crate::services::prompt::GlobalPromptStore>, String> {
+        let mut slot = self.global_prompt_store.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(store) = slot.as_ref() {
+            return Ok(store.clone());
+        }
+        let store = std::sync::Arc::new(crate::services::prompt::GlobalPromptStore::new(app)?);
+        *slot = Some(store.clone());
         Ok(store)
     }
 
@@ -510,6 +527,7 @@ pub fn run() {
                     Arc::new(crate::core::memory::vector::LocalEmbedder),
                 )),
                 prompt_stores: std::sync::Mutex::new(std::collections::HashMap::new()),
+                global_prompt_store: std::sync::Mutex::new(None),
                 ai_stats_cache: Arc::new(crate::commands::stats::AiStatsCache::default()),
                 last_process_summary: std::sync::Mutex::new(None),
                 mcp: Arc::new(crate::core::mcp::McpRegistry::new()),
