@@ -14440,8 +14440,8 @@
             <div class="timeline-app-container" id="timeline-app-container" style="display: none;">
                 <div class="timeline-navbar">
                     <div class="timeline-view-tabs">
-                        <div class="timeline-view-tab timeline-active" data-view="day">每天</div>
-                        <div class="timeline-view-tab" data-view="week">每周</div>
+                        <div class="timeline-view-tab" data-view="day">每天</div>
+                        <div class="timeline-view-tab timeline-active" data-view="week">每周</div>
                         <div class="timeline-view-tab" data-view="month">每月</div>
                         <div class="timeline-view-tab" data-view="quarter">每季度</div>
                         <div class="timeline-view-tab" data-view="year">每年</div>
@@ -32646,6 +32646,7 @@ kanban-plugin: basic
                 jmSaveOpmlBtn: isMmSource && !isNew,
                 opmlSaveMmBtn: !isMmSource && !isNew,
                 jmImgBtn: true,
+                mdImageBtn: false,
             });
         }
         function setControlsState(opts = {}) {
@@ -35770,13 +35771,13 @@ kanban-plugin: basic
                     c.addEventListener('click', _timelineFilterClickHandler);
                 });
                 document.querySelectorAll('.timeline-view-tab').forEach(v => v.classList.remove('timeline-active'));
-                const defaultTab = document.querySelector('.timeline-view-tab[data-view="day"]');
+                const defaultTab = document.querySelector('.timeline-view-tab[data-view="week"]');
                 if (defaultTab) defaultTab.classList.add('timeline-active');
                 // timelineInitTimeline 创建完毕后通过回调应用默认高亮
                 timelineInitTimeline(() => {
                     if (!defaultSelectionApplied) {
                         defaultSelectionApplied = true;
-                        timelineChangeView('day');
+                        timelineChangeView('week');
                     }
                 });
             } catch (err) {

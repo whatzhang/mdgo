@@ -322,7 +322,7 @@ pub fn parse_skill_md(
         }]
     })?;
 
-    let fm: SkillFrontmatter = serde_yaml::from_str(yaml_text).map_err(|e| {
+    let fm: SkillFrontmatter = serde_yaml::from_str(&yaml_text).map_err(|e| {
         vec![SkillFieldError {
             field: "frontmatter".into(),
             message: format!("YAML 解析失败: {}", e),
@@ -376,7 +376,13 @@ pub fn parse_skill_md(
 }
 
 /// 从 YAML 片段中分离 frontmatter 与正文
-fn split_frontmatter(content: &str) -> Option<(&str, &str)> {
+///
+/// 兼容 LF（`\n`）与 CRLF（`\r\n`）两种换行：Windows 用户手写 SKILL.md 常为 CRLF，
+/// 若严格要求 `---` 后紧跟 `\n` 会导致 frontmatter 被误判为缺失。
+/// 返回的 frontmatter / 正文均已归一化为 LF 换行（便于 serde_yaml 解析与后续处理）。
+fn split_frontmatter(content: &str) -> Option<(String, String)> {
+    // 统一 CRLF → LF：Windows 编辑器（VS Code/记事本）保存 SKILL.md 常见 CRLF
+    let content = content.replace("\r\n", "\n");
     let content = content.trim_start_matches('\u{feff}');
     if !content.starts_with("---") {
         return None;
@@ -388,7 +394,7 @@ fn split_frontmatter(content: &str) -> Option<(&str, &str)> {
     let yaml_text = &rest[..end];
     let after = &rest[end + 4..];
     let body = after.strip_prefix('\n').unwrap_or(after);
-    Some((yaml_text, body))
+    Some((yaml_text.to_string(), body.to_string()))
 }
 
 /// Schema 校验（字段类型/枚举/白名单）
@@ -914,6 +920,22 @@ mod tests {
                 s.tools
             );
         }
+    }
+
+    #[test]
+    fn split_frontmatter_accepts_crlf() {
+        // Windows 用户手写 SKILL.md 常为 CRLF 换行：frontmatter 分隔符必须是 `---\r\n`，
+        // YAML 末行可能残留 `\r`，正文首行同理。回归：CRLF 与 LF 应解析出相同结果。
+        let lf = "---\nid: crlf-test\nname: 测试\n---\n# 正文\n第一行\n";
+        let crlf = "---\r\nid: crlf-test\r\nname: 测试\r\n---\r\n# 正文\r\n第一行\r\n";
+        let (lf_yaml, lf_body) = split_frontmatter(lf).expect("LF frontmatter 应解析成功");
+        let (crlf_yaml, crlf_body) = split_frontmatter(crlf).expect("CRLF frontmatter 应解析成功");
+        assert_eq!(lf_yaml, crlf_yaml, "CRLF 与 LF 的 YAML 片段应一致");
+        assert_eq!(lf_body, crlf_body, "CRLF 与 LF 的正文应一致");
+        assert!(lf_body.starts_with("# 正文"), "正文应保留");
+        // 带 BOM 的 CRLF 也应兼容（Windows 编辑器常见 UTF-8 BOM）
+        let bom_crlf = format!("\u{feff}{}", crlf);
+        assert!(split_frontmatter(&bom_crlf).is_some(), "BOM + CRLF frontmatter 应解析成功");
     }
 
     #[test]
