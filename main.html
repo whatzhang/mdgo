@@ -19735,6 +19735,7 @@
 
         async function refreshTree(showNoti = true) {
             await updateTimeAll();
+            _statsData = null;
             try {
                 refreshTreeBtn.disabled = true;
                 await initTreeBrowser(true);
@@ -51781,20 +51782,23 @@ kanban-plugin: basic
             }
             return clockData;
         }
-
+        let _statsData = null;
         async function renderDashAiHeatmap() {
             const heatmapContainer = document.getElementById('ai-sum-heatmap');
             if (!heatmapContainer) return;
             const year = new Date().getFullYear();
-            // 1. 获取 AI 用量统计
             let stats = null;
-            try {
-                const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
-                if (invoke && currentRootPath) {
-                    stats = await invoke('stats_ai_usage', { dirPath: currentRootPath, days: 365 });
+            if (_statsData) stats = _statsData;
+            else{
+                try {
+                    const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+                    if (invoke && currentRootPath) {
+                        stats = await invoke('stats_ai_usage', { dirPath: currentRootPath, days: 365 });
+                        _statsData = stats;
+                    }
+                } catch (e) {
+                    console.warn('[mdgo] AI 用量统计获取失败:', e);
                 }
-            } catch (e) {
-                console.warn('[mdgo] AI 用量统计获取失败:', e);
             }
             // 2. 初始化图表
             if (dashboardCharts.aiHeatmapChart) dashboardCharts.aiHeatmapChart.dispose();

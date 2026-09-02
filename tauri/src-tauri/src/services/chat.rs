@@ -73,11 +73,14 @@ impl ChatStore {
 
     /// 按天统计对话消息数与 token 用量，自 ts_ms（毫秒时间戳）起。
     /// 返回 (日期 YYYY-MM-DD, 消息数, token 总量)，按日期升序。
+    ///
+    /// ⚠️ 日期使用 `localtime`：与前端日历热力图（本地时区）对齐，避免 UTC 偏移
+    /// 导致当天凌晨的使用被归到前一天。
     pub fn daily_messages_since(&self, ts_ms: i64) -> Result<Vec<(String, u32, u64)>, String> {
         self.pool.with_read(|conn| {
             let mut stmt = conn
                 .prepare_cached(
-                    "SELECT strftime('%Y-%m-%d', created_at / 1000, 'unixepoch') as day,
+                    "SELECT strftime('%Y-%m-%d', created_at / 1000, 'unixepoch', 'localtime') as day,
                             COUNT(*) as cnt,
                             COALESCE(SUM(token_count), 0) as tk
                      FROM chat_messages WHERE created_at >= ?1
