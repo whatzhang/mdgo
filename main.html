@@ -288,6 +288,7 @@
             cursor: default;
         }
 
+        .chat-toolbar-popup,
         .skill-layout,
         .knowledge-panel,
         .git-detail-area,
@@ -4147,16 +4148,25 @@
         }
 
         .ai-result-btn {
-            font-size: 0.75rem;
-            padding: 0.125rem 0.5rem !important;
+            width: 1.25rem;
+            height: 1.25rem;
+            padding: 0.125rem;
             color: var(--t2);
             font-weight: normal;
-            background-color: var(--color-bg);
+            border: none;
+            background: transparent;
+            font-size: 1rem;
+            cursor: pointer;
+            border-radius: 0.375rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .ai-result-close {
             width: 1.25rem;
             height: 1.25rem;
+            margin-left: 0.5rem;
             border: none;
             background: transparent;
             font-size: 1rem;
@@ -14708,11 +14718,11 @@
                     <div class="ai-result-header">
                         <div class="ai-result-title" id="ai-result-title">处理结果</div>
                         <div class="ai-result-btns">
-                            <button class="btn btn-ss ai-result-btn" id="ai-result-save"
-                                onclick="saveAIResultModal()">保存
+                            <button class="ai-result-btn" id="ai-result-save"
+                                onclick="saveAIResultModal()" title="保存"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                             </button>
-                            <button class="btn btn-ss ai-result-btn" id="ai-result-copy"
-                                onclick="copyAIResultModal()">复制
+                            <button class="ai-result-btn" id="ai-result-copy"
+                                onclick="copyAIResultModal()" title="复制"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                             </button>
                             <button class="ai-result-close" id="ai-result-close" onclick="closeAIResultModal(event)">✕
                             </button>
@@ -19568,8 +19578,8 @@
                     mdImageBtn: false,
                     mdHtmlBtn: false,
                     mdPdfBtn: false,
-                    livePreviewBtn: false,
                     mdMindmapBtn: false,
+                    livePreviewBtn: false,mdHtmlBtn:false,mdPdfBtn:false,mdMindmapBtn:false,mdImageBtn:false
                 });
             }
             // 演示按钮：仅代码/文档/图片文件可见
@@ -32450,7 +32460,7 @@ kanban-plugin: basic
                 previewBtn: false, formatBtn: false,
                 jmSaveOpmlBtn: !isOpmlSource && !isNew,
                 opmlSaveMmBtn: isOpmlSource && !isNew,
-                jmImgBtn: true,
+                jmImgBtn: true, livePreviewBtn: false,mdHtmlBtn:false,mdPdfBtn:false,mdMindmapBtn:false,mdImageBtn:false
             });
         }
         // OPML 大纲视图控件预设
@@ -32462,7 +32472,7 @@ kanban-plugin: basic
                 jmSaveOpmlBtn: isMmSource && !isNew,
                 opmlSaveMmBtn: !isMmSource && !isNew,
                 jmImgBtn: true,
-                mdImageBtn: false,
+                livePreviewBtn: false,mdHtmlBtn:false,mdPdfBtn:false,mdMindmapBtn:false,mdImageBtn:false
             });
         }
         function setControlsState(opts = {}) {
@@ -47998,6 +48008,10 @@ kanban-plugin: basic
         async function openAiChat() {
             await switchToView(chatContainer, 'flex');
             await loadChatSessions();
+            // 进入 Agent / Chat 页面：自动检测网络搜索配置（已配置真实 provider+key → 绿色，否则灰色）
+            if (typeof updateWebSearchStatusDot === 'function') {
+                updateWebSearchStatusDot().catch(e => console.warn('[web-search] 状态检测失败:', e));
+            }
             // 初始化模型下拉与 think 档位（v2）
             initChatThinkLevel();
             // 初始化自动滚动：用户手动滚动时暂停，滚回底部时恢复
@@ -48200,6 +48214,10 @@ kanban-plugin: basic
             // 2. 切换模式
             chatMode = mode;
             syncModeButtonUI(mode);
+            // 模式切换后同样检测网络搜索配置状态（Agent/Chat 共用同一工具栏图标）
+            if (typeof updateWebSearchStatusDot === 'function') {
+                updateWebSearchStatusDot().catch(e => console.warn('[web-search] 状态检测失败:', e));
+            }
             // 刷新技能 chips（仅 RAG 模式显示）
             chatAttachedSkills = [];
             await renderSkillChips();

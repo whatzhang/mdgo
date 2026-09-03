@@ -592,7 +592,7 @@ function renderWebSearchPopup() {
         <div class="websearch-row">
             <label>API Key</label>
             <input type="password" id="web-search-api-key" placeholder="粘贴 API Key" autocomplete="off">
-            <button class="btn btn-sm" id="web-search-test-btn" onclick="testWebSearch(event)">测试</button>
+            <button class="btn btn-sm btn-success" id="web-search-test-btn" onclick="testWebSearch(event)">测试</button>
         </div>
         <div class="websearch-row">
             <label>返回条数</label>
@@ -642,14 +642,21 @@ async function saveWebSearchSettingsFromPopup() {
     if (popup) popup.style.display = 'none';
 }
 
-/** 更新工具栏图标激活态：启用网络搜索时整个 SVG 显示为淡绿色（替换原绿点） */
+/** 更新工具栏图标激活态：仅当「启用 + 已选提供商 + 该提供商 API key 已配置」全部满足时
+ *  才显示绿色（websearch-active）；任一缺失（含仅开关打开但无 provider/key）→ 灰色。
+ *  等价后端 WebSearchConfig::is_ready()，无需真实网络请求。 */
 async function updateWebSearchStatusDot() {
     const trigger = document.getElementById('chat-websearch-trigger');
     if (!trigger) return;
     try {
         if (!window.__TAURI__?.core?.invoke) return;
         const cfg = await window.__TAURI__.core.invoke('web_search_config_get');
-        trigger.classList.toggle('websearch-active', !!cfg.enabled);
+        // 三条件全满足才算就绪：enabled + provider 已选 + 该 provider 的 key 已配置
+        const pid = (cfg.provider || '').trim();
+        const keyInfo = pid && cfg.keys ? cfg.keys[pid] : null;
+        const ready = !!(cfg.enabled && pid && keyInfo && keyInfo.configured);
+        trigger.classList.toggle('websearch-active', ready);
+        if (!ready) trigger.classList.remove('websearch-active');
     } catch (e) {
         trigger.classList.remove('websearch-active');
     }

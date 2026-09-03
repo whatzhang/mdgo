@@ -84,7 +84,7 @@
     border: 1px solid #e5e7eb;
     border-radius: 6px;
     padding: 6px;
-    gap: 8px;
+    gap: 12px;
     display: none;
     z-index: 1000;
     min-width: 180px;
