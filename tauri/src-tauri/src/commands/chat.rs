@@ -161,6 +161,34 @@ pub async fn chat_session_list(
         .map_err(|e| format!("任务执行失败: {}", e))?
 }
 
+/// 记录 DocAgent 会话的「所属文件」（按文件聚类）。
+#[tauri::command]
+pub async fn chat_session_set_file_key(
+    state: tauri::State<'_, AppState>,
+    dir_path: String,
+    session_id: String,
+    file_key: String,
+) -> Result<(), String> {
+    let store = state.get_chat_store(&dir_path)?;
+    tokio::task::spawn_blocking(move || store.set_session_file_key(&session_id, &file_key))
+        .await
+        .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+/// 按「文件」列出指定类型会话（DocAgent：type='doc' + file_key 聚类）。
+#[tauri::command]
+pub async fn chat_sessions_by_file(
+    state: tauri::State<'_, AppState>,
+    dir_path: String,
+    session_type: String,
+    file_key: String,
+) -> Result<Vec<ChatSession>, String> {
+    let store = state.get_chat_store(&dir_path)?;
+    tokio::task::spawn_blocking(move || store.list_sessions_by_file(&session_type, &file_key))
+        .await
+        .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
 /// 创建新会话。
 ///
 /// 创建前会先把上一个同类型会话（按 updated_at DESC）的所有消息

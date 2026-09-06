@@ -6,6 +6,7 @@ pub mod bridge;
 pub mod chat;
 pub mod clipboard;
 pub mod config;
+pub mod doc;
 pub mod fs;
 pub mod fs_watcher;
 pub mod git;

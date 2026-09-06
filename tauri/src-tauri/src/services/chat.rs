@@ -137,7 +137,8 @@ impl ChatStore {
                 favorite INTEGER NOT NULL DEFAULT 0,
                 message_count INTEGER NOT NULL DEFAULT 0,
                 token_usage INTEGER NOT NULL DEFAULT 0,
-                type TEXT NOT NULL DEFAULT 'regular'
+                type TEXT NOT NULL DEFAULT 'regular',
+                file_key TEXT NOT NULL DEFAULT ''
             );
 
             CREATE TABLE IF NOT EXISTS chat_messages (
@@ -239,6 +240,17 @@ impl ChatStore {
                  ALTER TABLE chat_sessions ADD COLUMN branch_point INTEGER DEFAULT 0",
             )
             .map_err(|e| format!("添加会话分支列失败: {}", e))?;
+        }
+
+        // 兼容旧表：添加 file_key 列（DocAgent：会话按文件聚类）
+        let has_file_key: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('chat_sessions') WHERE name='file_key'")
+            .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i32>(0)))
+            .map(|count| count > 0)
+            .unwrap_or(false);
+        if !has_file_key {
+            conn.execute_batch("ALTER TABLE chat_sessions ADD COLUMN file_key TEXT DEFAULT ''")
+                .map_err(|e| format!("添加 file_key 列失败: {}", e))?;
         }
 
         // 迁移旧数据：将秒级时间戳转换为毫秒级（一次性）
@@ -454,6 +466,61 @@ impl ChatStore {
                 .map_err(|e| e.to_string())
             })
             .unwrap_or(0)
+    }
+
+    /// 记录会话的「所属文件」（DocAgent 会话按文件聚类用）。
+    pub fn set_session_file_key(&self, session_id: &str, file_key: &str) -> Result<(), String> {
+        self.pool.with_write(|conn| {
+            conn.execute(
+                "UPDATE chat_sessions SET file_key = ?2 WHERE id = ?1",
+                rusqlite::params![session_id, file_key],
+            )
+            .map_err(|e| format!("更新会话 file_key 失败: {}", e))?;
+            Ok(())
+        })
+    }
+
+    /// 按「文件」列出会话（type 通常 'doc'，file_key 为知识库内相对路径）。
+    pub fn list_sessions_by_file(
+        &self,
+        session_type: &str,
+        file_key: &str,
+    ) -> Result<Vec<ChatSession>, String> {
+        self.pool.with_read(|conn| {
+            let mut stmt = conn
+                .prepare_cached(
+                    "SELECT id, title, created_at, updated_at, favorite, message_count, token_usage, type
+                     FROM chat_sessions WHERE type = ?1 AND file_key = ?2 ORDER BY updated_at DESC",
+                )
+                .map_err(|e| format!("查询文件会话失败: {}", e))?;
+
+            let sessions = stmt
+                .query_map(rusqlite::params![session_type, file_key], |row| {
+                    let id: String = row.get(0)?;
+                    let title: String = row.get(1)?;
+                    let created_at: u64 = row.get(2)?;
+                    let updated_at: u64 = row.get(3)?;
+                    let favorite: i32 = row.get(4)?;
+                    let message_count: u32 = row.get(5)?;
+                    let token_usage: u32 = row.get(6)?;
+                    let r#type: String = row.get(7)?;
+                    Ok(ChatSession {
+                        id,
+                        title,
+                        created_at,
+                        updated_at,
+                        favorite: favorite != 0,
+                        message_count,
+                        token_usage,
+                        month_group: unix_timestamp_to_year_month(created_at),
+                        r#type,
+                    })
+                })
+                .map_err(|e| format!("查询文件会话失败: {}", e))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| format!("读取文件会话失败: {}", e))?;
+            Ok(sessions)
+        })
     }
 
     /// 按 updated_at DESC 排序返回所有会话

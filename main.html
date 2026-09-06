@@ -3761,245 +3761,6 @@
             flex: 1;
         }
 
-        .ai-header-divider {
-            height: 1px;
-            background: rgba(0, 0, 0, 0.08);
-            margin-bottom: 8px;
-        }
-
-        .ai-action-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-            margin-bottom: 8px;
-        }
-
-        .ai-action-chip {
-            display: inline-flex;
-            align-items: center;
-            padding: 4px 10px;
-            border-radius: 8px;
-            font-size: 12px;
-            font-weight: 500;
-            color: var(--color-text);
-            background: rgba(0, 0, 0, 0.04);
-            border: 1px solid rgba(0, 0, 0, 0.06);
-            cursor: pointer;
-            transition: background 0.2s, border-color 0.2s, transform 0.1s;
-            white-space: nowrap;
-            font-family: var(--font-family);
-        }
-
-        .ai-action-chip:hover {
-            background: rgba(0, 0, 0, 0.08);
-            border-color: rgba(0, 0, 0, 0.12);
-        }
-
-        .ai-action-chip:active {
-            transform: scale(0.96);
-        }
-
-        .ai-input-section {
-            margin-top: 6px;
-            padding-top: 8px;
-            border-top: 1px solid rgba(0, 0, 0, 0.05);
-        }
-
-        .ai-search-box {
-            position: relative;
-            display: flex;
-            align-items: stretch;
-            background: rgba(0, 0, 0, 0.05);
-            border-radius: 8px;
-            padding: 8px 0 0 8px;
-            transition: background 0.2s;
-            flex-direction: column;
-        }
-
-        .ai-search-box textarea {
-            width: 100%;
-            min-height: 80px;
-            max-height: 150px;
-            background: transparent;
-            border: none;
-            outline: none;
-            font-family: var(--font-family);
-            font-size: 12px;
-            color: #1d1d1f;
-            resize: vertical;
-            line-height: 1.4;
-            box-sizing: border-box;
-        }
-
-        .ai-search-box textarea::placeholder {
-            color: #86868b;
-        }
-
-        .ai-action-btn-split {
-            display: flex;
-            height: 1.4rem;
-            border-radius: 0.4rem;
-            overflow: hidden;
-            box-shadow: 0 1px 3px rgba(0, 122, 245, 0.2);
-            margin-left: auto;
-            margin-top: 4px;
-            flex-shrink: 0;
-        }
-
-        .ai-action-btn-left {
-            padding: 0.125rem 0.5rem;
-            background-color: #007af5;
-            color: var(--color-text-white);
-            border: none;
-            font-size: 0.75rem;
-            font-weight: 600;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: background-color 0.2s;
-        }
-
-        .ai-action-btn-left:hover {
-            background-color: #0066cc;
-        }
-
-        .ai-action-btn-right {
-            padding: 0 0.625rem;
-            color: var(--color-text-white);
-            background-color: var(--color-success);
-            border: none;
-            font-size: 0.688rem;
-            font-weight: 600;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: background-color 0.2s;
-        }
-
-        .ai-action-btn-right:hover {
-            background-color: var(--color-success-hover);
-        }
-
-        .ai-history-divider {
-            display: flex;
-            align-items: center;
-            margin-top: 8px;
-            margin-bottom: 6px;
-            gap: 8px;
-        }
-
-        .ai-history-divider::before,
-        .ai-history-divider::after {
-            content: '';
-            flex: 1;
-            height: 1px;
-            background: rgba(0, 0, 0, 0.08);
-        }
-
-        .ai-history-divider-text {
-            font-size: 11px;
-            font-weight: 600;
-            color: #86868b;
-            white-space: nowrap;
-        }
-
-        .ai-history-list {
-            max-height: 310px;
-            overflow-y: auto;
-        }
-
-        .ai-history-list::-webkit-scrollbar {
-            display: none;
-        }
-
-        .ai-history-item {
-            display: flex;
-            align-items: center;
-            padding: 0.25rem 0.5rem;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: background 0.15s;
-            gap: 0.5rem;
-        }
-
-        .ai-history-item:hover {
-            background: rgba(0, 0, 0, 0.04);
-        }
-
-        .ai-history-item-info {
-            flex: 1;
-            min-width: 0;
-            overflow: hidden;
-        }
-
-        .ai-history-item-prompt {
-            font-size: 11px;
-            margin: 0 0 2px 0;
-            color: #1d1d1f;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .ai-history-item-result {
-            font-size: 10px;
-            margin: 2px 0 2px 0;
-            line-height: 1.7;
-            color: #86868b;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .ai-history-item-time {
-            font-size: 10px;
-            margin: 2px 0 2px 0;
-            color: #86868b;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .ai-history-btn-star {
-            font-size: 13px;
-            color: #c7c7cc;
-            cursor: pointer;
-            flex-shrink: 0;
-            padding: 2px;
-            transition: color 0.2s;
-            align-items: center;
-            justify-items: center;
-            align-content: center;
-            justify-content: center;
-        }
-
-        .ai-history-btn-star:hover {
-            color: #ffcc00;
-        }
-
-        .ai-history-btn-star.active {
-            color: #ffcc00;
-        }
-
-        .ai-history-btn-delete {
-            font-size: 11px;
-            color: #c7c7cc;
-            cursor: pointer;
-            flex-shrink: 0;
-            padding: 2px 0 2px 0;
-            transition: color 0.2s;
-            align-items: center;
-            justify-items: center;
-            align-content: center;
-            justify-content: center;
-        }
-
-        .ai-history-btn-delete:hover {
-            color: #ff3b30;
-        }
-
         .ai-result-modal {
             position: fixed;
             top: 0;
@@ -13556,6 +13317,476 @@
             height: 100%;
             width: 100%;
         }
+
+        /* ── 小助手文档问答浮层（DocAgent · 宿主 A：占窗口 2/3） ── */
+        #doc-qa-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.35);
+            backdrop-filter: blur(3px);
+            z-index: 2500;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #doc-qa-overlay.doc-qa-open {
+            display: flex;
+        }
+
+        #doc-qa-panel {
+            width: min(80vw, calc(100vw - 28px));
+            height: min(80vh, calc(100vh - 28px));
+            min-width: min(520px, calc(100vw - 28px));
+            min-height: min(320px, calc(100vh - 28px));
+            background: var(--color-bg, #ffffff);
+            border-radius: 14px;
+            box-shadow: 0 16px 60px rgba(0, 0, 0, 0.28);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .doc-qa-header {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            row-gap: 6px;
+            column-gap: 8px;
+            padding: 8px 12px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+            background: rgba(0, 0, 0, 0.02);
+            flex: none;
+        }
+
+        .doc-qa-title {
+            font-weight: 600;
+            font-size: 14px;
+            flex: none;
+        }
+
+        .doc-qa-file {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .doc-qa-file-name {
+            font-size: 12px;
+            font-weight: 500;
+            max-width: 34%;
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .doc-qa-file-meta {
+            font-size: 11px;
+            color: var(--color-text-secondary, #86868b);
+            white-space: nowrap;
+        }
+
+        .doc-qa-close {
+            flex: none;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            font-size: 15px;
+            color: var(--color-text-secondary, #86868b);
+            padding: 4px 6px;
+            border-radius: 6px;
+        }
+
+        .doc-qa-close:hover {
+            background: rgba(0, 0, 0, 0.06);
+        }
+
+        .doc-qa-session-pick {
+            flex: 0 1 auto;
+            min-width: 0;
+            font-size: 12px;
+            max-width: 150px;
+            border: 1px solid rgba(0, 0, 0, 0.14);
+            border-radius: 6px;
+            padding: 3px 6px;
+            background: var(--color-bg, #fff);
+            color: var(--color-text, #1d1d1f);
+        }
+
+        .doc-qa-mini-btn {
+            flex: none;
+            font-size: 12px;
+            border: 1px solid rgba(0, 0, 0, 0.16);
+            background: transparent;
+            color: var(--color-text, #1d1d1f);
+            border-radius: 6px;
+            padding: 3px 10px;
+            cursor: pointer;
+        }
+
+        .doc-qa-mini-btn:hover {
+            background: rgba(0, 0, 0, 0.05);
+        }
+
+        .doc-qa-actions {
+            flex: none;
+            display: flex;
+            gap: 6px;
+            padding: 6px 12px 0;
+            flex-wrap: wrap;
+        }
+
+        .doc-qa-chip {
+            border: 1px solid rgba(0, 122, 245, 0.35);
+            background: rgba(0, 122, 245, 0.06);
+            color: #007af5;
+            border-radius: 999px;
+            font-size: 12px;
+            padding: 3px 12px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .doc-qa-chip:hover {
+            background: rgba(0, 122, 245, 0.14);
+        }
+
+        .doc-qa-sel-actions {
+            flex: none;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            padding: 4px 16px 0;
+        }
+
+        .doc-qa-sel-chip {
+            border: 1px solid rgba(0, 180, 130, 0.4);
+            background: rgba(0, 180, 130, 0.07);
+            color: #00a37a;
+            border-radius: 999px;
+            font-size: 12px;
+            padding: 2px 11px;
+            cursor: pointer;
+        }
+
+        .doc-qa-sel-chip:hover {
+            background: rgba(0, 180, 130, 0.15);
+        }
+
+        .doc-qa-sel-tip {
+            font-size: 11px;
+            color: var(--color-text-secondary, #86868b);
+            align-self: center;
+        }
+
+        .doc-qa-depth {
+            flex: none;
+            font-size: 12px;
+            border: 1px solid rgba(0, 0, 0, 0.14);
+            border-radius: 6px;
+            padding: 3px 6px;
+            background: var(--color-bg, #fff);
+            color: var(--color-text, #1d1d1f);
+            max-width: 96px;
+        }
+
+        #doc-qa-preview-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(2px);
+            z-index: 2600;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #doc-qa-preview-overlay.doc-qa-preview-open {
+            display: flex;
+        }
+
+        #doc-qa-preview-panel {
+            width: min(66vw, calc(100vw - 28px));
+            height: min(64vh, calc(100vh - 28px));
+            min-width: min(460px, calc(100vw - 28px));
+            min-height: min(280px, calc(100vh - 28px));
+            background: var(--color-bg, #fff);
+            border-radius: 14px;
+            box-shadow: 0 16px 60px rgba(0, 0, 0, 0.28);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .doc-qa-preview-content {
+            flex: 1;
+            overflow: auto;
+            padding: 12px 16px;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .doc-qa-preview-content pre {
+            background: rgba(0, 0, 0, 0.05);
+            padding: 10px;
+            border-radius: 8px;
+            white-space: pre-wrap;
+        }
+
+        .doc-qa-preview-content .mermaid {
+            display: flex;
+            justify-content: center;
+            padding: 12px 0;
+        }
+
+        .doc-qa-mem-label {
+            flex: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            color: var(--color-text-secondary, #86868b);
+            cursor: pointer;
+            white-space: nowrap;
+        } 
+
+        .doc-qa-scope-select {
+            flex: 1 1 200px;
+            min-width: 160px;
+            max-width: 300px;
+            font-size: 12px;
+            border: 1px solid rgba(0, 0, 0, 0.14);
+            border-radius: 6px;
+            background: var(--color-bg, #fff);
+            color: var(--color-text, #1d1d1f);
+        }
+
+        .doc-qa-mem-label input {
+            margin: 0;
+        }
+
+        .doc-qa-msg-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 6px;
+        }
+
+        .doc-qa-msg-btn {
+            border: none;
+            background: transparent;
+            color: var(--color-text-secondary, #86868b);
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .doc-qa-msg-btn:hover {
+            background: rgba(0, 0, 0, 0.06);
+            color: var(--color-text, #1d1d1f);
+        }
+
+        .doc-qa-body {
+            flex: 1;
+            display: flex;
+            min-height: 0;
+        }
+
+        .doc-qa-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 14px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-height: 0;
+        }
+
+        .doc-qa-msg {
+            max-width: 92%;
+            padding: 8px 12px;
+            border-radius: 10px;
+            font-size: 13px;
+            line-height: 1.65;
+            word-break: break-word;
+        }
+
+        .doc-qa-msg.user {
+            align-self: flex-end;
+            background: rgba(0, 122, 245, 0.12);
+        }
+
+        .doc-qa-msg.assistant {
+            align-self: stretch;
+            padding: 2px 4px;
+        }
+
+        .doc-qa-msg .markdown-body {
+            font-size: 13px;
+        }
+
+        .doc-qa-msg .doc-qa-cite {
+            color: #007af5;
+            cursor: pointer;
+            border-bottom: 1px dashed #007af5;
+        }
+
+        .doc-qa-hint {
+            flex: none;
+            font-size: 11px;
+            color: var(--color-text-secondary, #86868b);
+            padding: 0 16px 6px;
+        }
+
+        /* ── 输入区：与 Agent 页聊天输入保持同一视觉（圆角卡片 + 圆形发送） ── */
+        #doc-qa-panel .doc-qa-input-area {
+            flex: none;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+            border-radius: 1rem;
+            padding: 0.3rem;
+            margin: 0.25rem 0.5rem 0.55rem;
+            width: auto;
+            background: var(--color-bg);
+            flex-shrink: 0;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+        }
+
+        #doc-qa-panel .doc-qa-textarea-wrap {
+            flex: 1;
+            border-radius: 0.75rem;
+            background: #f5f3f3;
+            padding: 0.5rem;
+            display: flex;
+            min-height: 0;
+        }
+
+        #doc-qa-panel #doc-qa-input {
+            flex: 1;
+            resize: none;
+            border: none;
+            outline: none;
+            background: transparent;
+            font-size: 0.875rem;
+            font-family: var(--font-family);
+            line-height: 1.3;
+            color: var(--color-text, #1d1d1f);
+            max-height: 7.5rem;
+            box-sizing: border-box;
+            padding: 0;
+        }
+
+        #doc-qa-panel .doc-qa-input-bottom {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            min-height: 1.375rem;
+            padding: 0.125rem 0.5rem 0;
+            font-size: 0.75rem;
+        }
+
+        .doc-qa-stop {
+            border: none;
+            background: transparent;
+            color: var(--color-text-secondary, #8b949e);
+            font-size: 0.75rem;
+            cursor: pointer;
+            display: none;
+            padding: 0.125rem 0.375rem;
+            border-radius: 0.375rem;
+        }
+
+        .doc-qa-stop:hover {
+            background: rgba(0, 0, 0, 0.06);
+        }
+
+        .doc-qa-stop.visible {
+            display: inline-block;
+        }
+
+        /* 圆形发送按钮（对齐 .chat-send-btn） */
+        #doc-qa-panel #doc-qa-send {
+            position: absolute;
+            bottom: 0.75rem;
+            right: 0.75rem;
+            width: 1.7rem;
+            height: 1.7rem;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+            color: #fff;
+            z-index: 1;
+            padding: 0;
+            background: var(--color-primary, #0879e9);
+        }
+
+        #doc-qa-panel #doc-qa-send > svg {
+            transform: rotate(-90deg);
+        }
+
+        #doc-qa-panel #doc-qa-send:not(:disabled):hover {
+            background: var(--color-primary-hover, #0550ae);
+            transform: scale(1.05);
+        }
+
+        #doc-qa-panel #doc-qa-send:disabled {
+            background: #c8ccd0;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .doc-qa-primary {
+            border: none;
+            border-radius: 0.5rem;
+            padding: 6px 14px;
+            font-size: 12px;
+            cursor: pointer;
+            background: #007af5;
+            color: #fff;
+        }
+
+        .doc-qa-primary:hover {
+            background: #0550ae;
+        }
+
+        .doc-qa-diff-title {
+            font-size: 12px;
+            color: var(--color-text-secondary, #86868b);
+            margin: 8px 0 2px;
+        }
+
+        .doc-qa-diff-old,
+        .doc-qa-diff-new {
+            border-radius: 8px;
+            padding: 8px 10px;
+            white-space: pre-wrap;
+            font-family: var(--font-family);
+            font-size: 12px;
+            margin: 0;
+        }
+
+        .doc-qa-diff-old {
+            background: rgba(255, 0, 0, 0.05);
+            border: 1px solid rgba(255, 0, 0, 0.18);
+        }
+
+        .doc-qa-diff-new {
+            background: rgba(0, 180, 130, 0.07);
+            border: 1px solid rgba(0, 180, 130, 0.25);
+        }
     </style>
     <link rel="stylesheet" href="./css_js/modules/skill.css" />
     <link rel="stylesheet" href="./css_js/modules/agent.css" />
@@ -14675,9 +14906,9 @@
                     </svg>
                 </div>
             </div>
-            <!-- AI 助手悬浮按钮（总结/分析/Mermaid 画图等） -->
+            <!-- AI 助手悬浮按钮 -->
             <div id="ai-fab-container" class="ai-fab-container" style="display: none;">
-                <div id="ai-fab-button" class="ai-fab-button" onclick="aiPanelToggleCilck()">
+                <div id="ai-fab-button" class="ai-fab-button" onclick="if (typeof openDocQA === 'function') { openDocQA(); } else { aiPanelToggleCilck(); }">
                     <img src="data:image/jpeg;base64,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"
                         alt="AI" class="ai-fab-icon">
                 </div>
@@ -14694,21 +14925,91 @@
                             </label>
                         </div>
                     </div>
-                    <div class="ai-header-divider"></div>
-                    <div class="ai-action-row" id="ai-action-row"></div>
-                    <div class="ai-input-section">
-                        <div class="ai-search-box">
-                            <textarea id="ai-prompt-input" placeholder="" autocomplete="off"></textarea>
-                            <div class="ai-action-btn-split">
-                                <button class="ai-action-btn-left" onclick="handleAIAction('custom')">执行</button>
-                                <button class="ai-action-btn-right" onclick="clearAIPrompt()">✕</button>
-                            </div>
+                </div>
+            </div>
+            <!-- 小助手文档问答浮层（DocAgent · 宿主 A：占窗口 2/3，默认关联当前文件） -->
+            <div id="doc-qa-overlay" onclick="if (event.target === this) closeDocQA()">
+                <div id="doc-qa-panel">
+                    <div class="doc-qa-header">
+                        <span class="doc-qa-title">小助手</span>
+                        <div class="doc-qa-file">
+                            <span id="doc-qa-file-name" class="doc-qa-file-name">未关联文件</span>
+                            <span id="doc-qa-file-meta" class="doc-qa-file-meta"></span>
                         </div>
+                        <button class="doc-qa-close" onclick="closeDocQA()" title="关闭（Esc）">✕</button>
+                        <button id="doc-qa-scope-btn" class="doc-qa-mini-btn" onclick="toggleDocQaScope()" title="圈选同目录资料一并作为本轮会话上下文">资料圈</button>
+                        <select id="doc-qa-session-pick" class="doc-qa-session-pick" title="本文档历史会话">
+                            <option value="">— 新对话 —</option>
+                        </select>
+                        <button id="doc-qa-new-btn" class="doc-qa-mini-btn" onclick="docQaNew()" title="开启新对话">新对话</button>
+                        <button id="doc-qa-export-btn" class="doc-qa-mini-btn" onclick="docQaExportConversation()" title="把整段会话导出为库内 Markdown 笔记">存会话</button>
+                        <select id="doc-qa-write-mode" class="doc-qa-depth" title="写回模式：Explore=先确认后写入（推荐）；Execute=直接写入（仍可撤销）">
+                            <option value="explore">Explore（先确认）</option>
+                            <option value="execute">Execute（直接改）</option>
+                        </select>
+                        <label class="doc-qa-mem-label" title="把长期记忆中与本知识库相关的内容注入本轮问答">
+                            <input type="checkbox" id="doc-qa-memory"> 记忆
+                        </label>
+                        <label class="doc-qa-mem-label" title="检索书签（收藏/网页）作为辅助参考（仅文本摘要）">
+                            <input type="checkbox" id="doc-qa-bookmarks"> 书签
+                        </label>
+                        <select id="doc-qa-template" class="doc-qa-depth" title="会话风格模板（随发送生效）">
+                            <option value="default">默认</option>
+                            <option value="precise">严格核对</option>
+                            <option value="concise">简洁</option>
+                            <option value="tutor">讲解式</option>
+                        </select>
+                        <select id="doc-qa-depth" class="doc-qa-depth" title="回答档位：自动跟随全局配置 / 快速 / 深度推理">
+                            <option value="auto">自动</option>
+                            <option value="low">快速</option>
+                            <option value="high">深度</option>
+                        </select>
                     </div>
-                    <div class="ai-history-divider">
-                        <span class="ai-history-divider-text">历史记录</span>
+                    <div class="doc-qa-actions">
+                        <button class="doc-qa-chip" onclick="docQaQuick('summarize')" title="对当前文档做结构化总结">总结</button>
+                        <button class="doc-qa-chip" onclick="docQaQuick('analyze')" title="分析文档观点/结构与关键结论">分析</button>
+                        <button class="doc-qa-chip" onclick="docQaQuick('reformat')" title="评估排版并给出改写建议">排版</button>
+                        <button class="doc-qa-chip" onclick="docQaQuick('outline')" title="基于当前文档生成大纲">大纲</button>
+                        <button class="doc-qa-chip" onclick="docQaQuick('mindmap')" title="把当前文档要点生成思维导图（Mermaid）">脑图</button>
+                        <button class="doc-qa-chip" onclick="docQaQuick('ask')" title="关于全文自由提问（请继续在输入框补充问题）">提问</button>
                     </div>
-                    <div id="ai-history-list" class="ai-history-list"></div>
+                    <div id="doc-qa-sel-actions" class="doc-qa-sel-actions" style="display: none;"></div>
+                    <div id="doc-qa-related" class="doc-qa-sel-actions" style="display: none;"></div>
+                    <div id="doc-qa-scope" class="doc-qa-sel-actions" style="display: none;">
+                        <span class="doc-qa-sel-tip">资料圈（≤3）：</span>
+                        <select id="doc-qa-scope-select" multiple size="3" class="doc-qa-scope-select"
+                            title="按住 Ctrl/⌘ 多选，最多 3 个"></select>
+                        <button class="doc-qa-sel-chip" onclick="clearDocQaScope()">清除</button>
+                    </div>
+                    <div class="doc-qa-body">
+                        <div id="doc-qa-messages" class="doc-qa-messages"></div>
+                    </div>
+                    <div id="doc-qa-hint" class="doc-qa-hint"></div>
+                    <div class="doc-qa-input-area">
+                        <div class="doc-qa-textarea-wrap">
+                            <textarea id="doc-qa-input" rows="4"
+                                placeholder="对当前文档提问，可要求总结 / 分析 / 改写 / 续写…（Enter 发送，Shift+Enter 换行）"></textarea>
+                        </div>
+                        <button id="doc-qa-send" onclick="docQaSend()" title="发送消息" aria-label="发送">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <!-- 结构化预览弹层（Mermaid 等） -->
+            <div id="doc-qa-preview-overlay" onclick="if (event.target === this) closeDocQaPreview()">
+                <div id="doc-qa-preview-panel">
+                    <div class="doc-qa-header">
+                        <span id="doc-qa-preview-title" class="doc-qa-title">结构化预览</span>
+                        <button class="doc-qa-close" onclick="closeDocQaPreview()" title="关闭">✕</button>
+                    </div>
+                    <div id="doc-qa-preview-content" class="doc-qa-preview-content"></div>
+                    <div class="doc-qa-input-area">
+                        <button class="doc-qa-mini-btn" onclick="closeDocQaPreview()">取消</button>
+                        <button id="doc-qa-preview-insert" class="doc-qa-primary" onclick="previewActionApply()">插入到光标处</button>
+                    </div>
                 </div>
             </div>
             <!-- AI 处理结果弹窗 -->
@@ -16666,57 +16967,6 @@
         let RANDOM_RULES = [];
         let HTML_RULES = [];
 
-        // AI 助手预设 Prompt 配置，每个 key 对应一种处理模式
-        const PROMPTS = {
-            summarize: {
-                key: '总结',
-                display: true,
-                ext: ".md",
-                systemPrompt: '你是一名专业的信息提炼专家。你的任务是阅读用户提供的内容，提取核心观点和关键信息，输出结构清晰、语言精练的总结。规则：1.用简洁的语言概括主旨，去掉冗余修饰和重复表述。2.保留所有关键数据、结论和重要观点。3.如果内容有明确的结构层次，总结时也应体现层次。4.输出纯总结内容，不加"以下是总结"等引导语，不添加任何解释性文字或评论。',
-                value: '对文件内容进行简洁总结，保留主要观点和核心要点，去掉冗余信息和重复表述，使其更易于理解和记忆',
-                title: '总结结果'
-            },
-            analyze: {
-                key: '分析',
-                display: true,
-                ext: ".md",
-                systemPrompt: '你是一名深度分析专家，擅长解读文本、代码和数据。你的任务是对用户提供的内容进行全面分析，揭示其深层含义、逻辑结构和关键要点。规则：1.对于文本内容：解读核心论点、论证逻辑、隐含前提和潜在影响。2.对于代码内容：总结功能用途、实现原理、架构设计和潜在改进点。3.对于数据内容：识别趋势、异常值和关键洞察。4.分析应有条理，按重要性递减排列。5.输出纯分析内容，不加"以下是分析"等引导语，不添加任何多余的解释性文字。',
-                value: '解读分析文件内容，解释其含义、背景和关键点，如果是代码，总结代码的功能和实现原理，如果是数据，分析数据的趋势和洞察',
-                title: '分析结果'
-            },
-            reformat: {
-                key: '排版',
-                display: true,
-                ext: ".md",
-                systemPrompt: '你是一名专业的文档排版专家。你的任务是对用户提供的内容进行格式优化，使其结构清晰、层次分明、易于阅读。规则：1.保留原文所有核心内容和措辞，不增删实质信息。2.修复标题层级关系，确保序号连贯且逻辑正确（如1.→1.1→1.1.1）。3.合理使用段落分隔，每个独立主题或论点单独成段。4.优化列表格式，适合用列表的地方转为有序/无序列表。5.对齐同类内容的格式风格，统一标点和缩进。6.输出纯排版结果，不加"以下是排版结果"等引导语，不添加任何额外的解释性文字。',
-                value: '对文件内容进行重新排版，优化格式，使标题序号顺序正确，不改变原有核心内容，使其更易读，更清晰',
-                title: '重新排版结果'
-            },
-            mermaid: {
-                key: 'Mermaid画图',
-                display: true,
-                ext: ".mmd",
-                systemPrompt: '你是一名专业的 Mermaid 图表工程师。请严格遵守以下规范生成 Mermaid 代码。\n【任务】根据用户的描述，生成语法正确、可直接在 Mermaid Live Editor / GitHub / Notion 中渲染的图表代码，代码中不添加任何注释，代码语法严格遵循下面的不同图形的语法规则约束\n【支持的图表类型及关键语法约束】\n1. 流程图 (flowchart TD/LR/BT/RL)：\n   - 节点：A["文字"]，连接：-->（实线箭头）、---（实线）、-.->（虚线）、==>（粗箭头）\n   - 子图：subgraph "标题" ... end\n   - 样式：style A fill:#fff,stroke:#333\n2. 时序图 (sequenceDiagram)：\n   - 参与者：participant A / actor A\n   - 箭头：->>、-->>、->、-->>、-x、--x\n   - 激活：activate/deactivate，循环：loop ... end，备选：alt ... else ... end\n3. 类图 (classDiagram)：\n   - 类：class A { +字段:类型 +方法() }\n   - 关系：<|--、*--、o--、-->、..>\n4. 状态图 (stateDiagram-v2)：\n   - 状态：[ * ] 起始/终止，state "描述" as ID\n   - 转换：-->，条件：-->|条件文本|\n   - 注意：若状态描述包含冒号，使用 state "描述" as ID\n5. 甘特图 (gantt)：\n   - 必须包含 title 和 dateFormat\n   - 任务段：任务名 : 状态, 起点, 终点 （状态可选 done/active/crit，不加方括号）\n   - 示例：任务A : done, 2024-01-01, 2024-01-10\n6. ER图 (erDiagram)：\n   - 实体：ENTITY { 属性类型 属性名 }\n   - 关系：||--o{ 表示一对多，关系文本写在中间行\n7. 用户旅程图 (journey)：\n   - 标题：title，区段：section 区段名\n   - 任务：任务名: 评分: 角色1, 角色2\n8. Git图 (gitGraph)：\n   - 分支：branch 分支名，检出：checkout 分支名\n   - 提交：commit [id: "ID"] 或 commit "描述"\n9. 思维导图 (mindmap)：\n   - 必须使用纯缩进结构，禁止出现任何箭头（如 -->、---）和 subgraph 关键字\n   - 所有节点统一使用方括号 ["文本"]（包括根节点和各级子节点）\n   - 示例：\n     mindmap\n       ["根节点"]\n         ["子节点1"]\n           ["孙节点"]\n10. 饼图 (pie)：\n    - 标题：title，数据：分区名 : 数值\n11. 时间线 (timeline)：\n    - 标题：title，区段：section 区段名\n    - 事件：事件名 : 描述\n12. 看板 (kanban)：\n    - 列定义：列名[ "显示名" ]（如 Todo[ "待办" ]）\n    - 卡片：在列下方缩进写 [ "卡片内容" ]\n    - 示例：\n      kanban\n        Todo[ "待办" ]\n          [ "任务1" ]\n          [ "任务2" ]\n        Doing[ "进行中" ]\n13. 四象限图 (quadrantChart)：\n    - 标题：title，x轴：x-axis 左值 --> 右值，y轴：y-axis 底值 --> 顶值\n    - 象限：quadrant-1 区域描述，点：点 "名称" 在 [x, y]\n14. 桑基图 (sankey-beta)：\n    - 节点：节点列表，流动：源节点 --> 目标节点 : 流量值\n15. XY图表 (xychart-beta)：\n    - 标题：title，x轴：x-axis [值列表]，y轴：y-axis "单位"\n    - 数据：line [数据数组] 或 bar [数据数组]\n16. 块状图 (block-beta)：\n    - 布局声明：block-beta，列数：columns 数值\n    - 块定义：块名["标签"]，连接：-->，空格/换行控制布局\n17. 架构图 (architecture-beta)：\n    - 服务：service 名称(标签)，组：group 名称\n    - 连接：名称:连接类型 --> 名称\n18. 数据包图 (packet-beta)：\n    - 数据包定义：packet 名称 行数\n    - 字段：字段名: 位数\n【通用规则】\n- 代码必须包裹在 \`\`\`mermaid 代码块中，代码块前后不得有任何解释性文字、引导语或额外说明。\n- 第一行必须声明图表类型（如 flowchart TD 或 mindmap）。\n- 节点 ID 使用英文字母数字组合，显示文字用双引号包裹（如 A["显示文字"]）。\n- 双引号内的文字可包含中文、英文、括号、逗号等，无需转义。\n- 禁止未闭合的引号或方括号。\n- 所有节点必须有标签文字，禁止空节点。\n- 层级关系清晰，避免过多交叉连线。节点数超过15个建议使用子图分组（mindmap 除外）。\n- 样式颜色使用十六进制值，示例：style A fill:#e6f3ff,stroke:#333。\n- 不得嵌入任何版权素材、品牌标识或水印。\n【输出格式】\n- 只输出包含 Mermaid 代码块的原始结果。\n- 不添加任何注释、解释、引导语（如“以下是总结”、“根据您提供的”等）。\n- 直接输出代码块，不要有任何多余文字',
-                value: '解读分析文件内容，根据分析结果输出合适的 mermaid 图形代码，并严格遵守 Mermaid 语法规范，确保代码可直接渲染',
-                title: 'Mermaid 图'
-            },
-            drawio: {
-                key: 'Drawio画图',
-                display: true,
-                ext: ".drawio",
-                systemPrompt: `你是一名专业的 draw.io (diagrams.net) 图表工程师。请严格遵守以下规范生成可导入 draw.io 的 XML 代码：\n【任务】根据用户的描述，生成完整的 draw.io XML 文件内容，可直接保存为 .drawio 或 .xml 文件并在 draw.io 中打开渲染，代码中不添加任何注释。\n【输出格式要求】1.输出必须是完整的 XML 文档，包含 <mxfile> 和 <diagram> 根节点。2.图表内容包裹在 <mxGraphModel> 内，包含 <root> 节点。3.必须包含两个基础节点（id="0" 和 id="1"），它们是 draw.io 的保留根节点。4.每个图形元素使用 <mxCell> 标签定义，包含 id、value、style、vertex/edge、parent 等属性。5.连线使用 edge="1" 的 <mxCell>，通过 source 和 target 属性指定连接的节点 ID。\n【样式规范】节点 style 属性使用分号分隔的键值对。常用形状：ellipse（椭圆）、rhombus（菱形/判断）、cylinder（圆柱/数据库）、hexagon（六边形）、arrowRight（箭头）。配色使用柔和的商务色系：蓝色系 fillColor=#dae8fc;strokeColor=#6c8ebf，绿色系 fillColor=#d5e8d4;strokeColor=#82b366，橙色系 fillColor=#ffe6cc;strokeColor=#d6b656，红色系 fillColor=#f8cecc;strokeColor=#b85450。连线样式：edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;。字体大小统一12-14px，使用 html=1 启用HTML标签。\n【布局要求】节点尺寸统一（如 width=160 height=60），同级节点水平或垂直对齐，节点间距保持一致（建议水平间距80-100，垂直间距60-80），画布默认大小800x600根据内容动态调整。\n【质量要求】所有ID必须唯一且递增。每个连线必须有合法的source和target。XML必须格式良好（well-formed），可直接解析。生成的代码可在draw.io中零修改直接打开。\n【商业适用性】输出的XML代码为原始创作，用户可自由用于商业用途。不嵌入任何外部图片资源或品牌元素。图表风格专业、简洁，适合商业报告和技术文档。\n\n重要：1.输出代码不添加任何注释和说明\n2.不加"以下是总结、根据您提供的"等引导语，不添加任何解释性文字或评论，直接输出结果不要废话`,
-                value: '解读分析文件内容，根据分析结果输出合适的 Drawio 图形代码，并严格遵守 Drawio XML 语法规范，确保代码可直接导入渲染',
-                title: 'Drawio 图'
-            },
-            excalidraw: {
-                key: 'Excalidraw画图',
-                display: true,
-                ext: ".excalidraw",
-                systemPrompt: `你是一名专业的 Excalidraw 图表工程师。请严格遵守以下规范生成 Excalidraw JSON 代码：\n【任务】根据用户的描述，生成完整的 Excalidraw JSON 文件内容，可直接在 Excalidraw (excalidraw.com) 中通过"粘贴到画布"或"导入"功能加载渲染，代码中不添加任何注释。\n【输出格式要求】1.输出必须是完整合法的 JSON 对象，包含顶层键：type、version、source、elements、appState、files。2.type 固定为 "excalidraw"，version 固定为 2，source 固定为 "https://excalidraw.com"。3.elements 为数组，包含所有图形元素。4.每个元素必须包含以下必需字段：id（唯一字符串）、type（rectangle|ellipse|diamond|line|arrow|text）、x/y（左上角坐标）、width/height（尺寸）、strokeColor（描边颜色十六进制）、backgroundColor（填充颜色，"transparent"表示透明）、fillStyle（hachure|cross-hatch|solid）、strokeWidth（1|2|4）、roughness（0精细|1中等|2手绘）、opacity（0-100）、angle（0弧度）、seed（随机整数）、version（版本号整数）、versionNonce（随机整数）、isDeleted（false）、boundElements（null或数组）、updated（时间戳）、link（null）、locked（false）、groupIds（空数组）。\n【文字元素特殊要求】type为"text"的元素额外需要：text（文字内容）、fontSize（建议16-28）、fontFamily（1手绘体|2等宽体|3衬线体|5默认体）、textAlign（left|center|right）、verticalAlign（top|middle）、baseline（约fontSize的0.7倍）、containerId（null或所属形状id）、originalText（与text相同）、lineHeight（1.25）。\n【箭头/连线元素要求】type为"arrow"或"line"的元素额外需要：points（[[0,0],[dx,dy],...]数组）、startBinding/endBinding（null或{elementId,focus,gap}）、startArrowhead/endArrowhead（null|arrow|dot|triangle）、lastCommittedPoint（null）。\n【风格规范】推荐roughness:1（保持手绘风格），推荐fillStyle:"hachure"（经典斜线填充）。配色方案：标题强调strokeColor="#1e1e1e"backgroundColor="#a5d8ff"，流程节点strokeColor="#1864ab"backgroundColor="#d0ebff"，判断节点strokeColor="#e67700"backgroundColor="#ffec99"，终止节点strokeColor="#2f9e44"backgroundColor="#d8f5a2"，警告错误strokeColor="#c92a2a"backgroundColor="#ffc9c9"。元素尺寸建议：标准节点160x60，判断菱形140x100，标题fontSize 28，正文fontSize 16-20。坐标系统从(0,0)开始，建议内容起始位置(200,100)。appState配置：{"viewBackgroundColor":"#ffffff","gridSize":null}。\n【质量要求】所有id必须唯一。绑定关系必须双向一致（形状的boundElements包含文字id，文字的containerId指向形状id）。JSON必须合法可解析，无尾逗号无注释。生成的JSON可在excalidraw.com中直接导入并正确渲染。seed和versionNonce使用随机正整数确保渲染一致性。\n【商业适用性】输出的JSON代码为原始创作，用户可自由用于商业用途。不嵌入外部图片或品牌素材。图表风格保持Excalidraw特色的手绘美感，同时信息结构专业清晰。\n\n重要：1.输出代码不添加任何注释和说明\n2.不加"以下是总结、根据您提供的"等引导语，不添加任何解释性文字或评论，直接输出结果不要废话`,
-                value: '解读分析文件内容，根据分析结果输出合适的 Excalidraw 图形代码，并严格遵守 Excalidraw JSON 语法规范，确保代码可直接导入渲染',
-                title: 'Excalidraw 图'
-            },
-        };
         // 新建文件的模板列表
         const NEW_FILES = [
             { key: '日记', name: "diary.md", ext: ".md" },
@@ -17015,7 +17265,6 @@
         // ====== 目录名常量 ======
         const DELETED_DIR_NAME = 'mdgo_trash';         // 垃圾箱文件名
         const DIARY_DIR_NAME = 'mdgo_diary';         // 日记文件名
-        const AI_HISTORY_MAX = AGENT_LIMITS.aiHistoryMax; // AI 调用历史最大条数（集中配置）
         //数据文件
         const INDEX_HISTORY_FILE = 'index_ai_history.json';
         const INDEX_DELETED_FILE = 'index_deleted.json';
@@ -17397,8 +17646,6 @@
             if (!await initTreeBrowser()) return; // 初始化文件树
             await Promise.all([
                 Promise.resolve().then(() => (typeof startBridgeTauri === 'function' ? startBridgeTauri() : null)), // 初始化桥（FrontendBridge 定义于 css_js/modules/frontend-bridge.js）
-                Promise.resolve(initAiActionRow()), // 初始化AI相关组件
-                Promise.resolve(initAIPanelToggle()), // 初始化AI面板切换按钮
                 Promise.resolve(initAIResultSettings()),// 初始化AI结果设置
                 Promise.resolve(initNewFileDropdown()), // 初始化新文件下拉菜单
                 Promise.resolve(initAiResultModal()), // 初始化AI结果弹窗
@@ -17605,7 +17852,7 @@
             if (type === 'renderFile') {
                 dirCanvasDisplayFlag = false;
             } else if (type === 'dashboard') {
-                aiFabContainer.style.display = 'block';
+                aiFabContainer.style.display = 'none'; // Dashboard 不显示小助手
             } else if (type === 'randomOpen') {
                 aiFabContainer.style.display = 'block';
             } else if (type === 'canvas') {
@@ -18523,23 +18770,6 @@
             container.innerHTML = htmlContent;
             postProcessMarkdown(container);
         }
-
-        async function initAiActionRow() {
-            const aiActionRow = document.getElementById('ai-action-row');
-            if (!aiActionRow) return;
-            aiActionRow.innerHTML = '';
-            for (const action in PROMPTS) {
-                const prompt = PROMPTS[action];
-                const display = prompt.display
-                if (!display) continue;
-                const btn = document.createElement('button');
-                btn.classList.add('ai-action-chip');
-                btn.textContent = prompt.key;
-                btn.onclick = () => handleAIAction(action);
-                aiActionRow.appendChild(btn);
-            }
-        }
-
         async function initPageNone() {
             await switchToView(contentMain);
             treeElement.innerHTML = '';
@@ -30909,7 +31139,7 @@ kanban-plugin: basic
                 window.addEventListener('resize', resizeDashboardCharts);
                 chartsResizeBound = true;
             }
-            aiFabContainer.style.display = 'block';
+            aiFabContainer.style.display = 'none'; // Dashboard 不显示小助手
             //监控面板展示
             const monitorPanel = dashboardContainer.querySelector('#monitor-panel');
             const fileSumPanel = dashboardContainer.querySelector('#file-sum-panel');
@@ -31956,82 +32186,10 @@ kanban-plugin: basic
             return aiHistory;
         }
 
-        async function saveAIHistory() {
-            if (isTauriVisit()) return;
-        }
-
-        function lruEvict() {
-            // 收藏记录全部保留，只对非收藏记录进行 LRU 淘汰
-            while (aiHistory.length > 0) {
-                // 统计非收藏记录数量
-                const nonFavoriteCount = aiHistory.filter(item => !item.favorite).length;
-                // 如果非收藏记录不超过限制，停止淘汰
-                if (nonFavoriteCount <= AI_HISTORY_MAX) break;
-                // 找到最老的非收藏记录并删除
-                let oldest = Infinity;
-                let oldestIdx = -1;
-                for (let i = 0; i < aiHistory.length; i++) {
-                    if (aiHistory[i].favorite) continue;
-                    const la = aiHistory[i].lastAccess || 0;
-                    if (la < oldest) {
-                        oldest = la;
-                        oldestIdx = i;
-                    }
-                }
-                if (oldestIdx === -1) break;
-                aiHistory.splice(oldestIdx, 1);
-            }
-        }
-
-        function renderAIHistory() {
-            const listEl = document.getElementById('ai-history-list');
-            if (!listEl) return;
-            if (aiHistory.length === 0) {
-                listEl.innerHTML = '';
-                return;
-            }
-            // 收藏优先置顶、组内按创建时间降序；显式排序，不依赖数组内部顺序
-            // （Tauri 后端 list 返回「收藏全部 + 最近 10 条非收藏」，本地 JSON 为追加序，两种输入都能正确渲染）
-            const sortedHistory = aiHistory.slice().sort((a, b) => {
-                const favDiff = (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0);
-                if (favDiff !== 0) return favDiff;
-                return String(b.date || '').localeCompare(String(a.date || ''));
-            });
-            listEl.innerHTML = sortedHistory.map((item) => {
-                const icon = item.type === 'custom' ? '💬' : '⚡';
-                const starIcon = item.favorite ? '★' : '☆';
-                const starClass = item.favorite ? 'ai-history-btn-star active' : 'ai-history-btn-star';
-                return `<div class="ai-history-item" id="${item.id}">
-                    <div class="ai-history-item-info" onclick="event.stopPropagation();showAIHistoryItem('${item.id}')">
-                        <div class="ai-history-item-prompt">${icon} ${escapeHtml(item.label)}</div>
-                        <div class="ai-history-item-result">${escapeHtml(item.result)}</div>
-                        <div class="ai-history-item-time" title="${item.fileName}">${item.date} · ${item.fileName}</div>
-                    </div>
-                    <span class="${starClass}" onclick="event.stopPropagation();toggleAIFavorite('${item.id}')">${starIcon}</span>
-                    <span class="ai-history-btn-delete" onclick="event.stopPropagation();deleteAIHistoryItem('${item.id}')">✕</span>
-                </div>`;
-            }).join('');
-        }
-
-        async function showAIHistoryItem(id) {
-            return await window.showAIHistoryItemTauri(id);
-        }
         async function addAIHistoryItem(item) {
             return await window.addAIHistoryItemTauri(item);
         }
-        async function toggleAIFavorite(id) {
-            return await window.toggleAIFavoriteTauri(id);
-        }
-        async function deleteAIHistoryItem(id) {
-            return await window.deleteAIHistoryItemTauri(id);
-        }
-        function clearAIPrompt() {
-            const input = document.getElementById('ai-prompt-input');
-            if (input) {
-                input.value = '';
-                input.focus();
-            }
-        }
+
         /**
          * 主流 Agent 做法：每次请求在 system prompt 最前注入当前本地时间
          * （日期+时间+星期+时区），作为「今天/现在/明天」等相对时间解析的
@@ -32171,11 +32329,6 @@ kanban-plugin: basic
             }
         }
 
-        function initAIPanelToggle() {
-            getAIHistoryData().then(() => {
-                renderAIHistory();
-            });
-        }
         function displayAiPanel(selectionText = null) {
             aiPanelVisible = true;
             aiFabContainer.style.display = 'block';
@@ -32302,136 +32455,6 @@ kanban-plugin: basic
             return rawText.trim();
         }
 
-        async function handleAIAction(action) {
-            const promptInput = document.getElementById('ai-prompt-input');
-            const prompt = promptInput ? promptInput.value.trim() : '';
-            let customPrompt = '';
-            let systemPrompt = '';
-            if (action === 'custom') {
-                if (!prompt) {
-                    showNotification('请输入自定义 Prompt', 'warning');
-                    return;
-                }
-                customPrompt = prompt;
-            } else {
-                if (!PROMPTS[action]) {
-                    showNotification('未指定有效的操作', 'warning');
-                    return;
-                }
-                if (prompt) {
-                    customPrompt = prompt;
-                } else {
-                    customPrompt = PROMPTS[action].value;
-                }
-                systemPrompt = PROMPTS[action].systemPrompt;
-            }
-            hideAITooltip();
-            let fileName = '';
-            let filePath = '';
-            let promptStr = '';
-            if (aiSelectionMode) {
-                fileName = currentFileName;
-                filePath = currentActiveItem ? currentActiveItem.dataset.filePath : '';
-                promptStr = `请根据以下文本完成要求：${customPrompt}\n\n文本：${aiSelectionText}\n\n`;
-            } else if (aiResultLinkCurrentFile) {
-                fileName = currentFileName;
-                filePath = currentActiveItem ? currentActiveItem.dataset.filePath : '';
-                originalText = await getFileContent(currentFileHandle);
-                let content = originalText;
-                if (getExt(fileName) === 'html') {
-                    content = htmlToText(originalText);
-                }
-                content = content.length > LOCAL_LLM_CONTEXT_LENGTH ? content.substring(0, LOCAL_LLM_CONTEXT_LENGTH) : content;
-                if (action === 'custom') {
-                    promptStr = `请根据文件内容完成以下要求：${customPrompt}\n\n文件内容：${content}\n\n`;
-                } else if (PROMPTS[action]) {
-                    promptStr = `请根据文件内容完成以下要求：${customPrompt}\n\n文件内容：${content}\n\n`;
-                } else {
-                    throw new Error('未指定有效的操作或自定义提示词');
-                }
-            } else {
-                // 兜底：无选中文本且未显式链接文件时，若已打开文件则默认按当前文件处理
-                // （保证"打开 Markdown 文件 → 点总结/分析/排版"始终可用，主流 Agent 行为）
-                if (action === 'analyze' || action === 'summarize' || action === 'reformat') {
-                    if (currentFileHandle && currentFileName) {
-                        fileName = currentFileName;
-                        filePath = currentActiveItem ? currentActiveItem.dataset.filePath : '';
-                        originalText = await getFileContent(currentFileHandle);
-                        let content = originalText;
-                        if (getExt(fileName) === 'html') {
-                            content = htmlToText(originalText);
-                        }
-                        content = content.length > LOCAL_LLM_CONTEXT_LENGTH ? content.substring(0, LOCAL_LLM_CONTEXT_LENGTH) : content;
-                        promptStr = `请根据文件内容完成以下要求：${customPrompt}\n\n文件内容：${content}\n\n`;
-                    } else {
-                        throw new Error('未指定有效的操作或自定义提示词');
-                    }
-                } else {
-                    promptStr = `${customPrompt}`;
-                }
-            }
-            const aiButton = document.getElementById('ai-fab-button');
-            aiButton.classList.remove('error', 'success');
-            aiButton.classList.add('processing');
-            aiFabContainer.style.pointerEvents = 'none';
-            try {
-                showNotification('处理中，请稍候...', 'info', 1000);
-                let inputLen = promptStr.length + systemPrompt.length;
-                const processedResult = await callAIAPI(promptStr, systemPrompt);
-                const outputLen = processedResult.length;
-                const now = new Date();
-                const time = now.getTime();
-                const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-                const label = action === 'custom' ? customPrompt : (PROMPTS[action] ? PROMPTS[action].title : action);
-                const actionStr = action === 'custom' ? '' : (PROMPTS[action] ? PROMPTS[action].key : '');
-                await addAIHistoryItem({
-                    type: action,
-                    label: label,
-                    prompt: customPrompt,
-                    result: processedResult,
-                    fileName: fileName,
-                    filePath: filePath,
-                    date: dateStr,
-                    lastAccess: time
-                });
-                if (aiResultLinkCurrentFile || aiSelectionMode || fileName) {
-                    recordOperation(fileName, filePath, OPERATION_TYPES.AI, time, actionStr);
-                } else {
-                    const context = customPrompt.length > 30 ? customPrompt.substring(0, 30) : customPrompt;
-                    recordOperation(context, '', OPERATION_TYPES.AI, time, actionStr);
-                }
-                if (action === 'analyze' || action === 'summarize') {
-                    const title = PROMPTS[action] ? PROMPTS[action].title : action;
-                    await showAIResultModal(action, title, processedResult, fileName, filePath);
-                    showNotification(`处理完成，${title}已展示在弹窗中，输入字符数: ${inputLen}，输出字符数: ${outputLen}`, 'success');
-                } else if (action === 'reformat') {
-                    if (aiSelectionMode) {
-                        const title = PROMPTS[action] ? PROMPTS[action].title : action;
-                        await showAIResultModal(action, title, processedResult, fileName, filePath);
-                        showNotification(`处理完成，${title}已展示在弹窗中，输入字符数: ${inputLen}，输出字符数: ${outputLen}`, 'success');
-                    } else {
-                        enterEditMode(false, processedResult);
-                        showNotification(`处理完成，结果已放入编辑器，输入字符数: ${inputLen}，输出字符数: ${outputLen}`, 'success');
-                    }
-                } else {
-                    await showAIResultModal(action, customPrompt, processedResult, fileName, filePath);
-                    showNotification(`处理完成，结果已展示在弹窗中，输入字符数: ${inputLen}，输出字符数: ${outputLen}`, 'success');
-                }
-            } catch (error) {
-                console.error('操作失败:', error);
-                aiButton.classList.remove('processing');
-                aiButton.classList.add('error');
-                showNotification('操作失败：' + error.message, 'error');
-                setTimeout(() => {
-                    aiButton.classList.remove('error');
-                }, 5000);
-                return;
-            } finally {
-                aiButton.classList.remove('processing');
-                aiFabContainer.style.pointerEvents = '';
-            }
-        }
-
         /**
          * 统一控制右上角按钮区和按钮的显示隐藏
          * @param {Object} opts - 控制选项
@@ -32511,7 +32534,7 @@ kanban-plugin: basic
             const titleEl = document.getElementById('ai-result-title');
             const contentEl = document.getElementById('ai-result-content');
             let newFileName = fileName;
-            const ext = PROMPTS[action]?.ext || '.md';
+            const ext = { mermaid: '.mmd', drawio: '.drawio', excalidraw: '.excalidraw' }[action] || '.md';
             const title = titles.length > 20 ? titles.substring(0, 20) : titles;
             if (fileName) {
                 newFileName = title + '_' + fileName.replace(/\./g, '_') + ext;
@@ -36268,7 +36291,11 @@ kanban-plugin: basic
             }
             const key = markdownSelectionState.text;
             if (id === 'xiaodi') {
-                displayAiPanel(markdownSelectionState.text);
+                if (typeof openDocQA === 'function') {
+                    openDocQA(markdownSelectionState.text);
+                } else {
+                    displayAiPanel(markdownSelectionState.text);
+                }
             } else if (id === 'custom') {
                 await showCustomPromptPopup();
             } else {
@@ -52020,5 +52047,6 @@ kanban-plugin: basic
     <script src="./css_js/modules/frontend-bridge.js"></script>
     <script src="./css_js/modules/schedule.js"></script>
     <script src="./css_js/modules/ai-summay.js"></script>
+    <script src="./css_js/modules/doc-qa.js"></script>
     <div id="agent-global-task-bar" class="agent-global-task-bar" style="display:none;"></div>
 </body>

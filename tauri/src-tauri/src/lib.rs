@@ -636,6 +636,8 @@ pub fn run() {
             commands::ai_history::ai_history_stats,
             // AI 聊天历史命令
             commands::chat::chat_session_list,
+            commands::chat::chat_session_set_file_key,
+            commands::chat::chat_sessions_by_file,
             commands::chat::chat_session_create,
             commands::chat::chat_session_delete,
             commands::chat::chat_session_rename,
@@ -652,6 +654,13 @@ pub fn run() {
             commands::chat::chat_session_set_last,
             commands::chat::chat_session_get_last,
             commands::chat::chat_fork,
+            // DocAgent（文档子 Agent）命令
+            commands::doc::doc_read_meta,
+            commands::doc::doc_build_context,
+            commands::doc::doc_related,
+            commands::doc::doc_dir_files,
+            commands::doc::doc_tag_files,
+            commands::llm::doc_agent_query,
             // LLM 命令
             commands::llm::agent_query,
             commands::llm::kb_llm_query,

@@ -78,6 +78,13 @@ pub const MAX_EDIT_FILE_BYTES: u64 = 1024 * 1024;
 /// 子代理摘要字符预算
 pub const SUBAGENT_SUMMARY_CHARS: usize = 4_000;
 
+// ── DocAgent（文档子 Agent）──
+
+/// DocAgent 单次会话的最大模型轮次（轻量问答：低于主 Agent 的 20 轮预算）
+pub const DOC_MAX_TURNS: usize = 12;
+/// DocAgent 单文件上下文默认预算（token；调用方可按模型上下文窗口覆盖）
+pub const DOC_DEFAULT_BUDGET_TOKENS: usize = 16_000;
+
 // ── 外部工具 ──
 
 /// 外部工具响应体上限（字符）

@@ -20,6 +20,7 @@ pub mod schedule;
 pub mod knowledge;
 
 pub mod chat_types;
+pub mod docagent;
 pub mod r#loop;
 mod embedding;
 mod indexer;

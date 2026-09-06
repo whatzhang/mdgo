@@ -25,10 +25,19 @@
         if (!isTauriVisit() || !window.__TAURI__?.core?.invoke) return;
         const container = document.getElementById('agent-global-task-bar');
         if (!container) return;
-        // 问题1修复：用户在 Agent/chat 页面时不显示全局状态条——
-        // 页面本身已有流式渲染、停止按钮与 typing 状态；仅切换到其他页面时才显示。
+        // 产品要求：
+        // 1) Agent/chat 页面本身有内联状态 → 右下角任务条不显示；
+        // 2) 小助手浮层打开（对话任务进行中）→ 右下角任务条也不显示；
+        // 3) 其他页面且存在运行任务 → 右下角显示后台任务状态。
         const chatEl = document.getElementById('chat-container');
-        if (chatEl && chatEl.style.display !== 'none') {
+        const onChat = !!(chatEl && chatEl.style.display !== 'none');
+        if (onChat) {
+            container.style.display = 'none';
+            container.innerHTML = '';
+            return;
+        }
+        const docQaOverlay = document.getElementById('doc-qa-overlay');
+        if (docQaOverlay && docQaOverlay.classList.contains('doc-qa-open')) {
             container.style.display = 'none';
             container.innerHTML = '';
             return;
@@ -66,10 +75,12 @@
         _taskBarTimer = setTimeout(refreshAgentTaskBar, 300);
     }
 
-    // ── 后台任务完成通知（用户不在 Agent 页面时） ──
+    // ── 后台任务完成通知（不在 Agent 页时提示；小助手浮层打开期间不弹） ──
     function notifyIfAway(channel) {
         const chatContainer = document.getElementById('chat-container');
-        if (chatContainer && chatContainer.style.display !== 'none') return; // 页面可见无需通知
+        if (chatContainer && chatContainer.style.display !== 'none') return; // Agent 页可见无需通知
+        const docQaOverlay = document.getElementById('doc-qa-overlay');
+        if (docQaOverlay && docQaOverlay.classList.contains('doc-qa-open')) return; // 小助手对话中不提示
         if (typeof Notify === 'undefined' || !Notify.sticky) return;
         const failed = channel.indexOf('error') >= 0;
         Notify.sticky(failed ? '✗ Agent 后台任务失败，请到 Agent 页面查看详情' : '✓ Agent 后台任务已完成，切回 Agent 页面可查看结果');

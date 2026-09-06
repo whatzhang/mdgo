@@ -2261,6 +2261,379 @@ async fn kb_llm_query_loop_v2(
     Ok(())
 }
 
+/// DocAgent 单文件上下文预算（token）：按模型窗口 30% 取，clamp 到
+/// `DOC_DEFAULT_BUDGET_TOKENS` 上限；窗口未配置时回退默认预算。
+fn doc_context_budget_tokens(cfg: &crate::LlmConfig) -> usize {
+    let def = crate::core::agent::limits::DOC_DEFAULT_BUDGET_TOKENS;
+    if cfg.context_length == 0 {
+        def
+    } else {
+        ((cfg.context_length as usize) * 3 / 10).clamp(2048, def)
+    }
+}
+
+/// 整篇文档上下文（无选区时使用：直读 ≤ 预算，超预算按问题选章节）。
+fn build_whole_doc_context(
+    doc: &crate::core::docagent::DocFile,
+    question: &str,
+    cfg: &crate::LlmConfig,
+) -> String {
+    let budget = doc_context_budget_tokens(cfg);
+    crate::core::docagent::build_context(doc, question, budget).prompt_block
+}
+
+/// 列出某文件夹下的可问文档（md/txt/markdown 等文本类，忽略 .mdgo/隐藏），返回相对路径。
+fn list_doc_candidates(root: &str, folder: &str) -> Vec<String> {
+    let Ok(root_c) = std::fs::canonicalize(root) else {
+        return Vec::new();
+    };
+    let dir = std::path::Path::new(&root_c).join(folder);
+    let Ok(dir_c) = std::fs::canonicalize(&dir) else {
+        return Vec::new();
+    };
+    if !dir_c.starts_with(&root_c) || !dir_c.is_dir() {
+        return Vec::new();
+    }
+    let Ok(entries) = std::fs::read_dir(&dir_c) else {
+        return Vec::new();
+    };
+    let mut out: Vec<String> = entries
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let p = e.path();
+            let name = e.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') || name == "mdgo_trash" {
+                return None;
+            }
+            let is_text = p.is_file()
+                && p.extension()
+                    .and_then(|x| x.to_str())
+                    .map(|x| matches!(x.to_lowercase().as_str(), "md" | "txt" | "markdown"))
+                    .unwrap_or(false);
+            if !is_text {
+                return None;
+            }
+            let rel = if folder.is_empty() {
+                name
+            } else {
+                format!("{folder}/{name}")
+            };
+            Some(rel)
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+/// DocAgent 前台流式问答（宿主 A：2/3 浮层「小助手」关联当前文件）。
+///
+/// 定位：单文件（或选区）上下文 + 纯对话 LoopAgent（无整库检索/工具编排），
+/// 事件复用聊天协议（`llm:delta/thinking/usage/done/error`），取消沿用 `kb_cancel_task`。
+/// 会话类型由前端以 `type='doc'` 建会话；多轮历史由前端回传 `messages` 播种。
+/// 引用锚点协议见 `resources/agent/doc_agent.md`（模型按 `[§N]` / `file:行-行` 标注）。
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn doc_agent_query(
+    app: AppHandle,
+    state: tauri::State<'_, crate::AppState>,
+    task_registry: tauri::State<'_, TaskRegistry>,
+    dir_path: String,
+    file_path: String,
+    extra_files: Option<Vec<String>>,
+    extra_folders: Option<Vec<String>>,
+    selection_start: Option<usize>,
+    selection_end: Option<usize>,
+    messages: Vec<ChatMessage>,
+    request_id: String,
+    session_id: Option<String>,
+    reasoning: Option<String>,
+    include_memory: Option<bool>,
+    system_template: Option<String>,
+    extra_bookmarks: Option<Vec<String>>,
+) -> Result<(), String> {
+    macro_rules! doc_abort {
+        ($msg:expr) => {{
+            log::warn!("[doc_agent_query] 中止 request_id={} reason={}", request_id, $msg);
+            emit_command_error(&app, "llm:error", &request_id, $msg.to_string());
+            state
+                .agent_tasks
+                .finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Failed);
+            task_registry.unregister(&request_id).await;
+            return Ok(());
+        }};
+    }
+
+    let cancel = task_registry.register(&request_id).await;
+    let prompt = messages.last().map(|m| m.content.clone()).unwrap_or_default();
+    state
+        .agent_tasks
+        .register(&request_id, session_id.clone(), &dir_path, "doc", &prompt);
+
+    if messages.is_empty() {
+        doc_abort!("消息不能为空");
+    }
+    if file_path.trim().is_empty() {
+        doc_abort!("缺少关联文件 file_path");
+    }
+    let mut llm_cfg = state.llm_config.read().unwrap_or_else(|e| e.into_inner()).clone();
+    if llm_cfg.endpoint.trim().is_empty() || llm_cfg.model.trim().is_empty() {
+        doc_abort!("LLM 未配置，请在设置中填写端点地址和模型名称");
+    }
+    // 快/深档：覆盖推理等级（auto 保持全局配置；low 视为关闭深度推理）
+    match reasoning.as_deref() {
+        Some("high") | Some("medium") | Some("low") => {
+            llm_cfg.reasoning_effort = reasoning;
+        }
+        _ => {}
+    }
+
+    // 文档上下文：优先选区，否则整篇（直读/按问题选章节）
+    let mut doc_block = match crate::core::docagent::read_doc(&dir_path, &file_path) {
+        Ok(doc) => {
+            let use_selection = match (selection_start, selection_end) {
+                (Some(s), Some(e)) => e > s,
+                _ => false,
+            };
+            if use_selection {
+                let sel = crate::core::docagent::build_selection_context(
+                    &doc,
+                    selection_start.unwrap_or(0),
+                    selection_end.unwrap_or(0),
+                );
+                if !sel.trim().is_empty() {
+                    sel
+                } else {
+                    build_whole_doc_context(&doc, &prompt, &llm_cfg)
+                }
+            } else {
+                build_whole_doc_context(&doc, &prompt, &llm_cfg)
+            }
+        }
+        Err(e) => doc_abort!(format!("文档读取失败: {e}")),
+    };
+
+    // @提及 / [[双链]] / @文件夹：展开后统一注入关联文档上下文（去重、排除当前文件、最多 3 个）
+    let mut extra_rels: Vec<String> = extra_files.unwrap_or_default();
+    if let Some(folders) = extra_folders {
+        let mut folder_count = 0usize;
+        for folder in folders {
+            if folder_count >= 2 {
+                break;
+            }
+            let folder = folder
+                .trim()
+                .trim_end_matches(|c| c == '/' || c == '\\')
+                .to_string();
+            if folder.is_empty() {
+                continue;
+            }
+            folder_count += 1;
+            for cand in list_doc_candidates(&dir_path, &folder).into_iter().take(3) {
+                extra_rels.push(cand);
+            }
+        }
+    }
+    if !extra_rels.is_empty() {
+        let mut seen: HashSet<String> = HashSet::new();
+        seen.insert(file_path.clone());
+        let mut added = 0usize;
+        for rel in extra_rels {
+            if added >= 3 {
+                break;
+            }
+            let rel = rel.trim().to_string();
+            if rel.is_empty() || rel == file_path || !seen.insert(rel.clone()) {
+                continue;
+            }
+            if let Ok(neighbor) = crate::core::docagent::read_doc(&dir_path, &rel) {
+                let block = crate::core::docagent::build_context(&neighbor, &prompt, 6_000).prompt_block;
+                if !block.trim().is_empty() {
+                    doc_block.push_str("\n\n");
+                    doc_block.push_str(&format!("【关联文档 {}】\n{block}", rel));
+                    added += 1;
+                }
+            }
+        }
+    }
+
+    // 历史压缩器：优先「摘要+滑窗」（依赖主模型），失败降级纯滑窗
+    let compressor: Arc<dyn ContextCompressor> = match state
+        .llm_client_for(&llm_cfg.endpoint, &llm_cfg.model, &llm_cfg.api_key)
+        .await
+    {
+        Ok(client) => {
+            let summarizer: Arc<dyn crate::core::context::HistorySummarizer> = Arc::new(client);
+            Arc::new(SummarizeThenWindowCompressor::new(summarizer, SUMMARY_MAX_CHARS))
+        }
+        Err(e) => {
+            log::warn!("[doc_agent_query] LLMClient 构建失败，历史压缩降级纯滑窗: {}", e);
+            Arc::new(crate::core::context::SlidingWindowCompressor)
+        }
+    };
+
+    // 会话播种（历史 + 当前问题作为输入）
+    let mut session = Session::new(session_id.as_deref().unwrap_or(&request_id));
+    let (history, prompt_m) = messages.split_at(messages.len().saturating_sub(1));
+    let compressed = prepare_history(
+        history,
+        compressor.as_ref(),
+        compression_budget_tokens(llm_cfg.context_length),
+        cancel.clone(),
+    )
+    .await;
+    let history_messages: Vec<ChatMessage> =
+        compressed.turns.into_iter().map(chat_turn_to_message).collect();
+    seed_session_from_messages(&mut session, &history_messages);
+    let prompt_content = prompt_m.last().map(|m| m.content.clone()).unwrap_or_default();
+
+    // 系统提示 = doc_agent 规约 + 文档上下文（含引用锚点协议）
+    let mut system_prompt = load_agent_rules(&app, "doc_agent.md");
+    if let Some(summary) = take_process_summary(&state) {
+        system_prompt.push_str("\n\n");
+        system_prompt.push_str(&summary);
+    }
+    system_prompt.push_str("\n\n");
+    system_prompt.push_str(&doc_block);
+
+    // 长期记忆注入（P2-4）：开启时把与该知识库相关的记忆片段并入 system
+    // （两级记忆：project=dir_path 内、global=跨库）。同步 SQLite 轻查询。
+    if include_memory.unwrap_or(false) {
+        let mems = state
+            .memory_store
+            .search(&prompt, 5, &dir_path)
+            .unwrap_or_default();
+        if !mems.is_empty() {
+            system_prompt.push_str("\n\n【长期记忆（用户曾记录的相关偏好/事实）】\n");
+            for m in mems {
+                let title = if m.title.trim().is_empty() { m.kind } else { m.title.clone() };
+                system_prompt.push_str(&format!("- {}：{}\n", title, m.body));
+            }
+            system_prompt.push_str("（以上记忆仅作上下文参考；若与文档冲突，以文档为准）\n");
+        }
+    }
+    // 会话级提示模板（T1-6a）：有界长度，仅作风格/输出约束，不覆盖核心规约
+    if let Some(tpl) = system_template {
+        let tpl = tpl.trim();
+        if !tpl.is_empty() {
+            let bounded: String = tpl.chars().take(500).collect();
+            system_prompt.push_str("\n\n【会话风格模板】\n");
+            system_prompt.push_str(&bounded);
+            system_prompt.push('\n');
+        }
+    }
+    // P2-2 相关书签（文本条目，不注入外部正文）：前端仅当其可核实时传入
+    if let Some(bms) = extra_bookmarks {
+        let mut used = 0usize;
+        for line in bms {
+            if used >= 3 {
+                break;
+            }
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            if used == 0 {
+                system_prompt.push_str("\n\n【相关书签（可能相关的收藏/网页）】\n");
+            }
+            system_prompt.push_str("- ");
+            system_prompt.push_str(&line.chars().take(400).collect::<String>());
+            system_prompt.push('\n');
+            used += 1;
+        }
+    }
+
+    let mut config = LoopConfig::new(
+        crate::core::agent::limits::DOC_MAX_TURNS,
+        system_prompt,
+    );
+    config.max_tokens = llm_cfg.max_tokens;
+    let adapter: Arc<dyn LoopLlmAdapter> = build_adapter(&llm_cfg);
+    let mut agent = LoopAgent::new(adapter, config, session_id.as_deref().unwrap_or(&request_id));
+    agent.replace_session(session);
+
+    // 流式转发（与纯对话通道一致）
+    let generating_start = std::time::Instant::now();
+    crate::core::trace::stage_start(&request_id, "generating", "doc");
+    emit_pending_trace_events(&app, &request_id);
+    let tasks = state.agent_tasks.clone();
+    let app_emit = app.clone();
+    let rid = request_id.clone();
+    let outcome = agent
+        .turn(
+            &request_id,
+            LlmMessage::text(LlmRole::User, prompt_content),
+            cancel,
+            &mut |ev| match ev {
+                LoopEvent::Delta(t) => {
+                    tasks.append_text(&rid, &t);
+                    let _ = app_emit.emit("llm:delta", LlmDelta { request_id: rid.clone(), content: t });
+                }
+                LoopEvent::ReasoningDelta(r) => {
+                    tasks.add_thinking(&rid, &r);
+                    let _ = app_emit.emit(
+                        "llm:thinking",
+                        serde_json::json!({ "request_id": rid.clone(), "content": r }),
+                    );
+                }
+                LoopEvent::Usage(u) => {
+                    let _ = app_emit.emit(
+                        "llm:usage",
+                        serde_json::json!({
+                            "request_id": rid,
+                            "prompt_tokens": u.prompt_tokens,
+                            "completion_tokens": u.completion_tokens,
+                            "cached_input_tokens": u.cached_input_tokens,
+                            "cache_creation_input_tokens": u.cache_creation_input_tokens,
+                        }),
+                    );
+                }
+                LoopEvent::ToolResult { .. } => {
+                    emit_pending_tool_events(&app_emit, &rid);
+                }
+                _ => {}
+            },
+        )
+        .await;
+
+    // 事件溯源写路径（doc 会话与 chat/rag 同库）
+    if let (Some(sid), Ok(store)) = (session_id.as_deref(), state.get_chat_store(&dir_path)) {
+        let events: Vec<(u64, &SessionEvent)> = agent
+            .session()
+            .events()
+            .iter()
+            .map(|e| (e.seq, &e.event))
+            .collect();
+        if let Err(e) = store.upsert_session_events(sid, &events) {
+            log::warn!("[doc_agent_query] 会话事件落库失败 session={} err={}", sid, e);
+        }
+    }
+
+    use crate::core::agent::task_store::AgentTaskStatus;
+    match &outcome {
+        TurnOutcome::Failed { content, err, .. } if content.is_empty() => {
+            crate::core::trace::stage_end(&request_id, "generating", "error", generating_start.elapsed().as_millis() as u64, &err.to_string());
+            emit_pending_trace_events(&app, &request_id);
+            state.agent_tasks.finish(&request_id, AgentTaskStatus::Failed);
+            emit_command_error(&app, "llm:error", &request_id, format!("LLM 生成失败: {}", err));
+        }
+        TurnOutcome::Cancelled { .. } => {
+            crate::core::trace::stage_end(&request_id, "generating", "cancelled", generating_start.elapsed().as_millis() as u64, "生成阶段取消");
+            emit_pending_trace_events(&app, &request_id);
+            state.agent_tasks.finish(&request_id, AgentTaskStatus::Cancelled);
+            let _ = app.emit("llm:done", LlmDone { request_id: request_id.clone(), content: outcome.content().to_string() });
+        }
+        _ => {
+            crate::core::trace::stage_end(&request_id, "generating", "ok", generating_start.elapsed().as_millis() as u64, "生成完成");
+            emit_pending_trace_events(&app, &request_id);
+            state.agent_tasks.finish(&request_id, AgentTaskStatus::Done);
+            let _ = app.emit("llm:done", LlmDone { request_id: request_id.clone(), content: outcome.content().to_string() });
+        }
+    }
+    write_process_summary(&state, &request_id);
+    task_registry.unregister(&request_id).await;
+    Ok(())
+}
+
 /// v3：自研 LoopAgent Agent/RAG 生成路径（替代 rig `build_rag_agent` + `stream_chat`）。
 ///
 /// Stage 0-3（技能预激活/规划/预检索/记忆注入）由 `agent_query` 完成并传入产物；本函数只做

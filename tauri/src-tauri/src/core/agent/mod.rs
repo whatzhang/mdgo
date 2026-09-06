@@ -129,7 +129,7 @@ pub const BASE_TOOLS: &[&str] = &[
     "activate_skill", "deactivate_skill", "read", "ls", "glob", "grep", "write", "edit", "multi_edit", "delete",
     "git_status", "git_diff", "git_commit", "git_checkout", "webfetch", "web_search", "deep_research", "read_subagent_result",
     "remember", "forget", "search_memory", "todo_write", "spawn_subagent", "parallel_research", "self_review",
-    "ask_user_question",
+    "doc_agent", "parallel_doc_agent", "ask_user_question",
 ];
 
 /// 软门禁可见工具：始终出现在 `active_tools`（模型可见可调，不会 UnknownToolCall），

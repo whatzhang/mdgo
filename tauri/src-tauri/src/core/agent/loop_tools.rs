@@ -623,6 +623,8 @@ pub fn build_loop_tool_registry(cfg: KbSearchConfig) -> HashMapToolRegistry {
     reg.register(Arc::new(ReadSubagentResultTool::new(cfg.clone())));
     reg.register(Arc::new(SpawnSubagentTool::new(cfg.clone())));
     reg.register(Arc::new(ParallelResearchTool::new(cfg.clone())));
+    reg.register(Arc::new(DocAgentTool::new(cfg.clone())));
+    reg.register(Arc::new(ParallelDocAgentTool::new(cfg.clone())));
     // 反思质量门 + 用户澄清（exclusive：等待用户期间不并行其他工具）
     reg.register(Arc::new(SelfReviewTool::new(cfg.clone())));
     reg.register(Arc::new(AskUserQuestionTool::new(cfg.clone())));
@@ -637,6 +639,323 @@ pub fn build_loop_tool_registry(cfg: KbSearchConfig) -> HashMapToolRegistry {
     reg.register(Arc::new(WebSearchTool::new(cfg.clone())));
     reg.register(Arc::new(WebfetchTool::new(cfg)));
     reg
+}
+
+// ─────────────────────────── DocAgent（文档子 Agent，宿主 B） ───────────────────────────
+
+/// `doc_agent`：主 Agent 对「单个知识库文件」发起一次文档精读问答（宿主 B）。
+///
+/// 语义：在独立 LoopAgent 内执行（无工具、只读隔离），system = doc_agent 规约 + 文档上下文
+/// （直读 ≤ 预算 / 超预算按问题选章节），用户消息 = 问题。返回有界结论（≤
+/// `SUBAGENT_SUMMARY_CHARS`）；全量输出存入共享 `subagent_results`（id 前缀 `doc-`），
+/// 父链可经 `read_subagent_result` 分页读取——与 deep_research 同款结果契约。
+///
+/// 护栏：工具本身不做任何写操作；相对路径经 `core::docagent::read_doc` 的
+/// canonicalize + 前缀校验防穿越；子代理只读白名单不含本工具（防递归）。
+pub struct DocAgentTool {
+    cfg: KbSearchConfig,
+}
+
+impl DocAgentTool {
+    pub fn new(cfg: KbSearchConfig) -> Self {
+        Self { cfg }
+    }
+}
+
+fn doc_budget_tokens_for(cfg: &crate::LlmConfig) -> usize {
+    let def = crate::core::agent::limits::DOC_DEFAULT_BUDGET_TOKENS;
+    if cfg.context_length == 0 {
+        def
+    } else {
+        ((cfg.context_length as usize) * 3 / 10).clamp(2048, def)
+    }
+}
+
+#[async_trait]
+impl Tool for DocAgentTool {
+    fn spec(&self) -> &ToolSpec {
+        static SPEC: std::sync::OnceLock<ToolSpec> = std::sync::OnceLock::new();
+        SPEC.get_or_init(|| {
+            read_only_spec(
+                "doc_agent",
+                "对知识库内【单个 Markdown/文本文件】做一次深度精读并回答问题（doc agent）。\
+                 适用：用户问题只涉及某一个文件时，比整库检索更精确、引用可直接定位到章节/行。\
+                 参数 file_path 必须是知识库内相对路径（与 read 工具路径规则一致）；\
+                 question 为要针对该文件回答的问题（可要求总结/分析/改写等）。\
+                 回答会按引用协议标注来源章节与行号；若你需要读取完整输出，可用 read_subagent_result 读取返回的 doc- 结果。",
+                json!({
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "file_path": { "type": "string", "description": "知识库内单个文件的相对路径（如 notes/xx.md），必须为当前打开目录内文件" },
+                        "question": { "type": "string", "description": "针对该文件的问题或指令（总结/分析/改写/定位某内容等）" }
+                    },
+                    "required": ["file_path", "question"]
+                }),
+            )
+        })
+    }
+
+    async fn execute(&self, args: Value, ctx: &ToolRunContext<'_>) -> Result<Value, ToolError> {
+        let file_path = args
+            .get("file_path")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        let question = args
+            .get("question")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        if file_path.is_empty() {
+            return Err(ToolError::InvalidArgs("file_path 不能为空".into()));
+        }
+        if question.is_empty() {
+            return Err(ToolError::InvalidArgs("question 不能为空".into()));
+        }
+        let preview = format!("{file_path} · {}", question.chars().take(24).collect::<String>());
+        ctx.sink.on_call(ctx.call_id, "doc_agent", &preview, &args);
+
+        let run = match run_doc_agent_direct(&self.cfg, &file_path, &question).await {
+            Ok(r) => r,
+            Err(e) => {
+                ctx.sink.on_result(ctx.call_id, "doc_agent", false, &e, Some(&e));
+                return Err(ToolError::Failed(e));
+            }
+        };
+        ctx.sink.on_result(
+            ctx.call_id,
+            "doc_agent",
+            !run.failed,
+            &format!("{} 字符", run.chars),
+            Some(&run.ret),
+        );
+        Ok(Value::String(run.ret))
+    }
+}
+
+/// 单文件文档精读的一次运行结果（`doc_agent` 与 `parallel_doc_agent` 共用）。
+pub struct DocAgentRun {
+    pub request_id: String,
+    pub ret: String,
+    pub chars: usize,
+    pub failed: bool,
+}
+
+/// 对单个文件执行一次文档精读（doc_agent 语义，供单文件/并行工具共用）。
+///
+/// 只读隔离：独立 LoopAgent（无工具），system = doc_agent 规约 + 按问题选取的章节上下文；
+/// 全量输出写入共享 `subagent_results`（doc- 前缀）。返回有界结论文本。
+pub(crate) async fn run_doc_agent_direct(
+    cfg: &KbSearchConfig,
+    file_path: &str,
+    question: &str,
+) -> Result<DocAgentRun, String> {
+    let state = cfg.app_handle.state::<crate::AppState>();
+    let llm_cfg = state
+        .llm_config
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    if llm_cfg.endpoint.trim().is_empty() || llm_cfg.model.trim().is_empty() {
+        return Err("LLM 未配置".to_string());
+    }
+
+    let doc = crate::core::docagent::read_doc(&cfg.dir_path, file_path)
+        .map_err(|e| format!("文档读取失败: {e}"))?;
+    let doc_block =
+        crate::core::docagent::build_context(&doc, question, doc_budget_tokens_for(&llm_cfg))
+            .prompt_block;
+
+    let sub_request_id = format!("doc-{}", uuid::Uuid::new_v4());
+    let cancel = cfg
+        .cancel
+        .clone()
+        .unwrap_or_else(tokio_util::sync::CancellationToken::new);
+
+    let mut system = crate::core::agent::load_agent_rules(&cfg.app_handle, "doc_agent.md");
+    system.push_str("\n\n");
+    system.push_str(&doc_block);
+    let mut config = crate::core::r#loop::LoopConfig::new(
+        crate::core::agent::limits::DOC_MAX_TURNS,
+        system,
+    );
+    config.max_tokens = llm_cfg.max_tokens;
+    let adapter = build_loop_adapter(&llm_cfg);
+    let mut agent = crate::core::r#loop::LoopAgent::new(adapter, config, &sub_request_id);
+
+    let mut full = String::new();
+    let mut failed = false;
+    let outcome = agent
+        .turn(
+            &sub_request_id,
+            crate::core::r#loop::LlmMessage::text(crate::core::r#loop::LlmRole::User, question.to_string()),
+            cancel,
+            &mut |ev| {
+                if let crate::core::r#loop::LoopEvent::Delta(t) = ev {
+                    full.push_str(&t);
+                }
+            },
+        )
+        .await;
+    match &outcome {
+        crate::core::r#loop::TurnOutcome::Failed { err, .. } => {
+            failed = true;
+            log::warn!("[doc_agent] 精读失败 request_id={} err={}", sub_request_id, err);
+        }
+        crate::core::r#loop::TurnOutcome::Cancelled { .. } => {
+            failed = true;
+            log::info!("[doc_agent] 精读被父链取消 request_id={}", sub_request_id);
+        }
+        _ => {}
+    }
+
+    let summary = if full.trim().is_empty() {
+        if failed {
+            "文档精读未能完成（模型调用失败或被取消），请重试或检查 LLM 配置。".to_string()
+        } else {
+            "(文档精读未产生输出)".to_string()
+        }
+    } else {
+        let budget = crate::core::agent::limits::SUBAGENT_SUMMARY_CHARS;
+        let mut s: String = full.chars().take(budget).collect();
+        if full.chars().count() > budget {
+            s.push_str("\n\n…(已截断，完整结果可用 read_subagent_result 读取)");
+        }
+        s
+    };
+    let summary = crate::core::security::wrap_suspicious(&summary);
+
+    state.subagent_results.insert(sub_request_id.clone(), full.clone());
+    Ok(DocAgentRun {
+        request_id: sub_request_id.clone(),
+        ret: format!(
+            "文档精读完成（file={file_path}，result_id={sub_request_id}，failed={failed}）\n\n{summary}"
+        ),
+        chars: full.chars().count(),
+        failed,
+    })
+}
+
+/// `parallel_doc_agent`：对多个文件并行执行文档精读并汇总（多文件「逐个深读→汇总」）。
+///
+/// 语义：与 `doc_agent` 相同隔离精读；每个文件独立 request_id（doc-*），结果均入共享 LRU；
+/// 本工具把各文件的有界结论按文件分组拼装返回（失败单文件显式标注，不阻断其他文件）。
+pub struct ParallelDocAgentTool {
+    cfg: KbSearchConfig,
+}
+
+impl ParallelDocAgentTool {
+    pub fn new(cfg: KbSearchConfig) -> Self {
+        Self { cfg }
+    }
+}
+
+#[async_trait]
+impl Tool for ParallelDocAgentTool {
+    fn spec(&self) -> &ToolSpec {
+        static SPEC: std::sync::OnceLock<ToolSpec> = std::sync::OnceLock::new();
+        SPEC.get_or_init(|| {
+            read_only_spec(
+                "parallel_doc_agent",
+                "对知识库内【多个文件】并行做文档精读并汇总（每个文件按 doc_agent 语义独立精读同一问题）。\
+                 适用：用户问题需要横跨多个文件时（如“逐个总结这三篇再对比”）。\
+                 file_paths 为知识库内相对路径数组（最多 10 个）；question 为要针对每个文件回答的问题。\
+                 返回按文件分组的有界结论与 result_id（完整输出可用 read_subagent_result 读取）。",
+                json!({
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "file_paths": {
+                            "type": "array",
+                            "maxItems": 10,
+                            "minItems": 1,
+                            "items": { "type": "string", "description": "知识库内相对路径" }
+                        },
+                        "question": { "type": "string", "description": "针对每个文件的问题或指令" }
+                    },
+                    "required": ["file_paths", "question"]
+                }),
+            )
+        })
+    }
+
+    async fn execute(&self, args: Value, ctx: &ToolRunContext<'_>) -> Result<Value, ToolError> {
+        use futures_util::StreamExt as _;
+        let files: Vec<String> = args
+            .get("file_paths")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let question = args
+            .get("question")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        if files.is_empty() || files.len() > 10 {
+            return Err(ToolError::InvalidArgs("file_paths 需为 1-10 个文件相对路径".into()));
+        }
+        if question.is_empty() {
+            return Err(ToolError::InvalidArgs("question 不能为空".into()));
+        }
+        ctx.sink.on_call(ctx.call_id, "parallel_doc_agent", &format!("{} 个文件", files.len()), &args);
+
+        let cfg = self.cfg.clone();
+        let mut entries: Vec<(String, Result<DocAgentRun, String>)> = Vec::new();
+        let mut stream = futures_util::stream::iter(files.iter().cloned())
+            .map(|f| {
+                let cfg = cfg.clone();
+                let q = question.clone();
+                async move {
+                    let out = run_doc_agent_direct(&cfg, &f, &q).await;
+                    (f, out)
+                }
+            })
+            .buffer_unordered(3);
+        while let Some(entry) = stream.next().await {
+            entries.push(entry);
+        }
+
+        let mut parts = Vec::with_capacity(entries.len());
+        let mut any_failed = false;
+        for (f, res) in entries {
+            match res {
+                Ok(run) => {
+                    if run.failed {
+                        any_failed = true;
+                    }
+                    parts.push(format!("【{f}】({})\n{}", run.request_id, run.ret));
+                }
+                Err(e) => {
+                    any_failed = true;
+                    parts.push(format!("【{f}】精读失败：{e}"));
+                }
+            }
+        }
+        let joined = format!(
+            "多文件文档精读完成（{} 个文件）{}：\n\n{}",
+            files.len(),
+            if any_failed { "（部分失败，详见各文件标注）" } else { "" },
+            parts.join("\n\n")
+        );
+        ctx.sink.on_result(
+            ctx.call_id,
+            "parallel_doc_agent",
+            !any_failed,
+            &format!("{} 个文件", files.len()),
+            Some(&joined),
+        );
+        Ok(Value::String(joined))
+    }
 }
 
 // ─────────────────────────── 子代理 + 网络工具 ───────────────────────────
