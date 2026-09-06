@@ -2325,7 +2325,7 @@ fn list_doc_candidates(root: &str, folder: &str) -> Vec<String> {
     out
 }
 
-/// DocAgent 前台流式问答（宿主 A：2/3 浮层「小助手」关联当前文件）。
+/// DocAgent 前台流式问答（宿主 A：停靠栏「小助手」关联当前文件，仅停靠模式）。
 ///
 /// 定位：单文件（或选区）上下文 + 纯对话 LoopAgent（无整库检索/工具编排），
 /// 事件复用聊天协议（`llm:delta/thinking/usage/done/error`），取消沿用 `kb_cancel_task`。

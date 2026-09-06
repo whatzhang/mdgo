@@ -27,7 +27,7 @@
         if (!container) return;
         // 产品要求：
         // 1) Agent/chat 页面本身有内联状态 → 右下角任务条不显示；
-        // 2) 小助手浮层打开（对话任务进行中）→ 右下角任务条也不显示；
+        // 2) 小助手停靠栏打开（对话任务进行中）→ 右下角任务条也不显示；
         // 3) 其他页面且存在运行任务 → 右下角显示后台任务状态。
         const chatEl = document.getElementById('chat-container');
         const onChat = !!(chatEl && chatEl.style.display !== 'none');
@@ -75,7 +75,7 @@
         _taskBarTimer = setTimeout(refreshAgentTaskBar, 300);
     }
 
-    // ── 后台任务完成通知（不在 Agent 页时提示；小助手浮层打开期间不弹） ──
+    // ── 后台任务完成通知（不在 Agent 页时提示；小助手停靠栏打开期间不弹） ──
     function notifyIfAway(channel) {
         const chatContainer = document.getElementById('chat-container');
         if (chatContainer && chatContainer.style.display !== 'none') return; // Agent 页可见无需通知

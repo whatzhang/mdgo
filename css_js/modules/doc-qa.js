@@ -1,7 +1,8 @@
 /**
- * ===== 小助手文档问答浮层（DocAgent · 宿主 A） =====
+ * ===== 小助手文档问答停靠栏（DocAgent · 宿主 A） =====
  *
- * 【职责】2/3 浮层「小助手」：打开当前文件 → 自动「关联当前文件」→ 对文档流式问答；
+ * 【职责】主页面右侧停靠栏「小助手」（TOC 右侧、同图层，不再有居中模态框）：
+ *         打开当前文件 → 自动「关联当前文件」→ 对文档流式问答；
  *         会话以 type='doc' 落库、按「文件」维度本地聚合（localStorage 映射 文件↔sessionId）。
  * 【依赖】main.html 全局：isTauriVisit / showNotification / markedParse / parseObsidianToHTML /
  *         postProcessMarkdown / currentRootPath / currentActiveItem / currentFileName；
@@ -33,77 +34,37 @@
         template: 'default',  // 会话风格模板（P2-4：选择自动记住，下次打开沿用）
         compressNote: '',     // 本地历史压缩提示（T1-6b）
         scopeFiles: [],       // 会话级资料圈（T1-4b，≤3）
-        layout: 'modal',      // modal(居中 2/3) | sidebar(右侧边栏)
         unlisteners: [],
     };
-    // ── 布局：modal（居中浮层）⇄ docked（停靠主页面右侧、TOC 之后同图层） ──
-    const LAYOUT_KEY = 'mdgo_doc_layout';
-    try {
-        const savedLayout = localStorage.getItem(LAYOUT_KEY);
-        if (savedLayout === 'docked') state.layout = 'docked';
-    } catch (e) { /* ignore */ }
-
-    function setLayoutBtnUI() {
-        const btn = $('doc-qa-layout-btn');
-        if (!btn) return;
-        const docked = state.layout === 'docked';
-        btn.textContent = docked ? '窗口' : '停靠';
-        btn.title = docked ? '切换为居中模态框' : '停靠到右侧（TOC 右侧）';
-    }
+    // ── 布局：仅停靠模式（停靠主页面右侧、TOC 之后同图层；不再提供居中模态框） ──
     function placeDocQaNode() {
         const ov = overlay();
         if (!ov) return;
-        const docked = state.layout === 'docked';
-        ov.classList.toggle('doc-qa-docked', docked);
         const toc = document.getElementById('toc-container');
-        if (docked) {
-            if (toc && toc.parentNode && ov.parentNode !== toc.parentNode) {
-                toc.insertAdjacentElement('afterend', ov);
-            } else if (!toc && ov.parentNode !== document.body) {
-                document.body.appendChild(ov);
-            }
-        } else if (ov.parentNode !== document.body) {
-            document.body.appendChild(ov);
+        if (toc && toc.parentNode && ov.parentNode !== toc.parentNode) {
+            toc.insertAdjacentElement('afterend', ov);
         }
     }
     function applyDocQaLayout() {
         placeDocQaNode();
-        setLayoutBtnUI();
-    }
-    function docQaToggleLayout() {
-        state.layout = state.layout === 'docked' ? 'modal' : 'docked';
-        try {
-            localStorage.setItem(LAYOUT_KEY, state.layout);
-        } catch (e) { /* ignore */ }
-        applyDocQaLayout();
-        const input = $('doc-qa-input');
-        if (input) input.focus();
     }
 
-    // 小助手图标点击：停靠态下为 隐藏/显示 切换；模态态下为 开/关 切换
+    // 小助手图标点击：显示/隐藏 停靠栏切换
     function docQaFabClick() {
-        if (state.layout === 'docked') {
-            if (state.open) {
-                closeDocQA();
-                return;
-            }
-            applyDocQaLayout(); // 确保停靠列就位（TOC 右侧）
-            openDocQA();
-            return;
-        }
         if (state.open) {
             closeDocQA();
             return;
         }
+        applyDocQaLayout(); // 确保停靠列就位（TOC 右侧）
         openDocQA();
     }
 
     // 停靠态下离开文件视图（如 Dashboard）时隐藏停靠栏
     function docQaCloseIfDockedOpen() {
-        if (state.open && state.layout === 'docked') closeDocQA();
+        if (state.open) closeDocQA();
     }
     function docQaFileSwitched() {
-        if (!state.open || state.layout !== 'docked') return;
+        if (!state.open) return;
         if (!currentRootPath) {
             closeDocQA();
             return;
@@ -185,6 +146,8 @@
         } else {
             const body = document.createElement('div');
             body.className = 'markdown-body';
+            body.style.backgroundColor = 'transparent';
+            body.style.padding = '0.25rem';
             wrap.appendChild(body);
             const foot = document.createElement('div');
             foot.className = 'doc-qa-msg-actions';
@@ -1338,7 +1301,6 @@
     window.docQaRelated = docQaRelated;
     window.toggleDocQaScope = toggleDocQaScope;
     window.clearDocQaScope = clearDocQaScope;
-    window.docQaToggleLayout = docQaToggleLayout;
     window.docQaFabClick = docQaFabClick;
     window.docQaFileSwitched = docQaFileSwitched;
     window.docQaCloseIfDockedOpen = docQaCloseIfDockedOpen;
