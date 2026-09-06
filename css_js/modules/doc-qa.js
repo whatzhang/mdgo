@@ -33,8 +33,88 @@
         template: 'default',  // 会话风格模板（P2-4：选择自动记住，下次打开沿用）
         compressNote: '',     // 本地历史压缩提示（T1-6b）
         scopeFiles: [],       // 会话级资料圈（T1-4b，≤3）
+        layout: 'modal',      // modal(居中 2/3) | sidebar(右侧边栏)
         unlisteners: [],
     };
+    // ── 布局：modal（居中浮层）⇄ docked（停靠主页面右侧、TOC 之后同图层） ──
+    const LAYOUT_KEY = 'mdgo_doc_layout';
+    try {
+        const savedLayout = localStorage.getItem(LAYOUT_KEY);
+        if (savedLayout === 'docked') state.layout = 'docked';
+    } catch (e) { /* ignore */ }
+
+    function setLayoutBtnUI() {
+        const btn = $('doc-qa-layout-btn');
+        if (!btn) return;
+        const docked = state.layout === 'docked';
+        btn.textContent = docked ? '窗口' : '停靠';
+        btn.title = docked ? '切换为居中模态框' : '停靠到右侧（TOC 右侧）';
+    }
+    function placeDocQaNode() {
+        const ov = overlay();
+        if (!ov) return;
+        const docked = state.layout === 'docked';
+        ov.classList.toggle('doc-qa-docked', docked);
+        const toc = document.getElementById('toc-container');
+        if (docked) {
+            if (toc && toc.parentNode && ov.parentNode !== toc.parentNode) {
+                toc.insertAdjacentElement('afterend', ov);
+            } else if (!toc && ov.parentNode !== document.body) {
+                document.body.appendChild(ov);
+            }
+        } else if (ov.parentNode !== document.body) {
+            document.body.appendChild(ov);
+        }
+    }
+    function applyDocQaLayout() {
+        placeDocQaNode();
+        setLayoutBtnUI();
+    }
+    function docQaToggleLayout() {
+        state.layout = state.layout === 'docked' ? 'modal' : 'docked';
+        try {
+            localStorage.setItem(LAYOUT_KEY, state.layout);
+        } catch (e) { /* ignore */ }
+        applyDocQaLayout();
+        const input = $('doc-qa-input');
+        if (input) input.focus();
+    }
+
+    // 小助手图标点击：停靠态下为 隐藏/显示 切换；模态态下为 开/关 切换
+    function docQaFabClick() {
+        if (state.layout === 'docked') {
+            if (state.open) {
+                closeDocQA();
+                return;
+            }
+            applyDocQaLayout(); // 确保停靠列就位（TOC 右侧）
+            openDocQA();
+            return;
+        }
+        if (state.open) {
+            closeDocQA();
+            return;
+        }
+        openDocQA();
+    }
+
+    // 停靠态下离开文件视图（如 Dashboard）时隐藏停靠栏
+    function docQaCloseIfDockedOpen() {
+        if (state.open && state.layout === 'docked') closeDocQA();
+    }
+    function docQaFileSwitched() {
+        if (!state.open || state.layout !== 'docked') return;
+        if (!currentRootPath) {
+            closeDocQA();
+            return;
+        }
+        const rel = currentRelPath();
+        if (!rel) {
+            closeDocQA();
+            return;
+        }
+        openDocQA(); // 内部：文件变化 → 重置消息并恢复该文件最近 doc 会话；文件未变则保持
+    }
     const TEMPLATE_KEY = 'mdgo_doc_template';
     const DOC_TEMPLATES = {
         default: { text: '' },
@@ -848,6 +928,7 @@
         if (ov) {
             ov.classList.add('doc-qa-open');
             state.open = true;
+            applyDocQaLayout();
         }
         if (switchedFile || !state.sessionId) {
             // 尝试恢复该文件的最近 doc 会话
@@ -1257,4 +1338,8 @@
     window.docQaRelated = docQaRelated;
     window.toggleDocQaScope = toggleDocQaScope;
     window.clearDocQaScope = clearDocQaScope;
+    window.docQaToggleLayout = docQaToggleLayout;
+    window.docQaFabClick = docQaFabClick;
+    window.docQaFileSwitched = docQaFileSwitched;
+    window.docQaCloseIfDockedOpen = docQaCloseIfDockedOpen;
 })();

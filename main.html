@@ -654,6 +654,23 @@
             display: flex;
         }
 
+        /* 内容列包裹：顶部空白条 + 原 #content */
+        #content-col {
+            flex: 1;
+            min-width: 0;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        #content-top-spacer {
+            flex: none;
+            height: 36px; /* 运行时按 #sidebar-header 实际高度覆盖 */
+            background: var(--color-bg-secondary);
+            border-bottom: 1px solid var(--color-border);
+        }
+
         #toc-container {
             width: 17%;
             position: relative;
@@ -3628,137 +3645,9 @@
             z-index: 1;
         }
 
-        .ai-fab-button.processing {
-            border-color: #10b981;
-            box-shadow: 0 0 15px rgba(16, 185, 129, 0.5);
-            animation: processing-flash 1s ease-in-out infinite;
-            transition: none;
-        }
-
-        .ai-fab-button.error {
-            border-color: #ef4444;
-            box-shadow: 0 0 15px rgba(239, 68, 68, 0.5);
-            animation: error-flash 1s ease-in-out infinite;
-            transition: none;
-        }
-
-        @keyframes processing-flash {
-
-            0%,
-            100% {
-                border-color: #10b981;
-                box-shadow: 0 0 20px 8px rgba(16, 185, 129, 0.6);
-            }
-
-            50% {
-                border-color: transparent;
-                box-shadow: 0 0 5px 2px rgba(16, 185, 129, 0.1);
-            }
-        }
-
-        @keyframes error-flash {
-
-            0%,
-            100% {
-                border-color: #ef4444;
-                box-shadow: 0 0 20px 8px rgba(239, 68, 68, 0.6);
-            }
-
-            50% {
-                border-color: transparent;
-                box-shadow: 0 0 5px 2px rgba(239, 68, 68, 0.1);
-            }
-        }
-
         .ai-fab-button:hover {
             transform: scale(1.05);
             box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
-        }
-
-        .ai-fab-tooltip.ai-fab-tooltip-hidden {
-            opacity: 0 !important;
-            visibility: hidden !important;
-            pointer-events: none !important;
-            transform: scale(0.85) translateX(15px) !important;
-        }
-
-        .ai-fab-tooltip:not(.ai-fab-tooltip-hidden) {
-            opacity: 1;
-            visibility: visible;
-            pointer-events: auto;
-            transform: scale(1) translateX(0);
-        }
-
-        .ai-fab-tooltip {
-            position: absolute;
-            top: 0;
-            right: 3.375rem;
-            bottom: auto;
-            left: auto;
-            transform: scale(0.85) translateX(15px);
-            width: 427px;
-            background: rgba(255, 255, 255, 0.92);
-            backdrop-filter: blur(20px) saturate(190%);
-            -webkit-backdrop-filter: blur(20px) saturate(190%);
-            border: 1px solid rgba(255, 255, 255, 0.6);
-            border-radius: 20px;
-            box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06),
-                0 2px 4px rgba(0, 0, 0, 0.05),
-                0 8px 16px rgba(0, 0, 0, 0.07),
-                0 16px 32px rgba(0, 0, 0, 0.11),
-                0 24px 48px rgba(0, 0, 0, 0.09);
-            padding: 12px;
-            opacity: 0;
-            visibility: hidden;
-            pointer-events: none;
-            z-index: 2000;
-            transform-origin: top right;
-            transition: opacity 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275),
-                transform 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275),
-                visibility 0.35s;
-        }
-
-        .ai-fab-tooltip::before {
-            content: "";
-            position: absolute;
-            top: 15px;
-            right: -9px;
-            bottom: auto;
-            left: auto;
-            transform: none;
-            border-width: 8px 0 8px 9px;
-            border-style: solid;
-            border-color: transparent transparent transparent rgba(255, 255, 255, 0.95);
-            display: block;
-            width: 0;
-            z-index: 2000;
-            filter: drop-shadow(2px 0 4px rgba(0, 0, 0, 0.1));
-        }
-
-        .ai-fab-container::after {
-            content: '';
-            position: absolute;
-            top: 0;
-            right: 38px;
-            width: 20px;
-            height: 100%;
-            z-index: 2000;
-        }
-
-        .ai-panel-header-wrapper {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding-bottom: 8px;
-            gap: 8px;
-        }
-
-        .ai-panel-header {
-            font-size: 13px;
-            font-weight: 600;
-            color: #1d1d1f;
-            text-align: left;
-            flex: 1;
         }
 
         .ai-result-modal {
@@ -13337,6 +13226,66 @@
             display: flex;
         }
 
+        /* 停靠到主页面右侧栏（TOC 右侧，同图层）：dock 列形态 + 窄宽度自适应 */
+        #doc-qa-overlay.doc-qa-docked {
+            position: relative;
+            top: auto;
+            left: auto;
+            right: auto;
+            bottom: auto;
+            width: 400px;
+            max-width: 46vw;
+            flex: 0 0 400px;
+            height: 100%;
+            background: var(--color-bg-secondary);
+            border-left: 1px solid rgba(0, 0, 0, 0.08);
+            z-index: auto;
+            align-items: stretch;
+            justify-content: stretch;
+        }
+
+        #doc-qa-overlay.doc-qa-docked.doc-qa-open {
+            display: flex;
+        }
+
+        #doc-qa-overlay.doc-qa-docked #doc-qa-panel {
+            width: 100%;
+            height: 100%;
+            min-width: 0;
+            min-height: 0;
+            border-radius: 0;
+            box-shadow: none;
+        }
+
+        #doc-qa-overlay.doc-qa-docked .doc-qa-header {
+            gap: 5px;
+            padding: 6px 8px;
+            flex-wrap: wrap;
+        }
+
+        #doc-qa-overlay.doc-qa-docked .doc-qa-file-name {
+            max-width: 30%;
+        }
+
+        #doc-qa-overlay.doc-qa-docked .doc-qa-file-meta {
+            display: none;
+        }
+
+        #doc-qa-overlay.doc-qa-docked .doc-qa-session-pick {
+            max-width: 108px;
+        }
+
+        #doc-qa-overlay.doc-qa-docked .doc-qa-depth,
+        #doc-qa-overlay.doc-qa-docked .doc-qa-mini-btn {
+            max-width: 92px;
+            font-size: 11px;
+            padding: 2px 6px;
+        }
+
+        #doc-qa-overlay.doc-qa-docked .doc-qa-mem-label {
+            font-size: 11px;
+        }
+
         #doc-qa-panel {
             width: min(80vw, calc(100vw - 28px));
             height: min(80vh, calc(100vh - 28px));
@@ -13884,7 +13833,10 @@
             </svg>
         </div>
         <!-- ====== 主内容区（文件预览、编辑、统计面板等） ====== -->
-        <div id="content">
+        <div id="content-col">
+            <!-- 顶部空白条：高度 = 左侧栏最顶层按钮行（#sidebar-header）高度 -->
+            <div id="content-top-spacer" class="content-top-spacer" aria-hidden="true"></div>
+            <div id="content">
             <!-- 编辑模式（Monaco 编辑器） -->
             <div id="content-main-edit" class="content-main-edit" style="display: none;"></div>
             <!-- 展示模式（渲染后的内容） -->
@@ -14908,23 +14860,9 @@
             </div>
             <!-- AI 助手悬浮按钮 -->
             <div id="ai-fab-container" class="ai-fab-container" style="display: none;">
-                <div id="ai-fab-button" class="ai-fab-button" onclick="if (typeof openDocQA === 'function') { openDocQA(); } else { aiPanelToggleCilck(); }">
+                <div id="ai-fab-button" class="ai-fab-button" onclick="if (typeof docQaFabClick === 'function') { docQaFabClick(); } else if (typeof openDocQA === 'function') { openDocQA(); }">
                     <img src="data:image/jpeg;base64,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"
                         alt="AI" class="ai-fab-icon">
-                </div>
-                <div id="ai-fab-tooltip" class="ai-fab-tooltip">
-                    <div class="ai-panel-header-wrapper">
-                        <div class="ai-panel-header">小助手</div>
-                        <span id="ai-selection-count" style="font-size: 11px; color: #007af5; display: none;"></span>
-                        <div id="ai-link-file" style="display: flex; align-items: center; gap: 0.375rem;">
-                            <span
-                                style="font-size: 11px; color: var(--t2); line-height: 1; display: inline-flex; align-items: center;">使用当前文件</span>
-                            <label class="ai-result-sw-lark">
-                                <input type="checkbox" checked>
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-                    </div>
                 </div>
             </div>
             <!-- 小助手文档问答浮层（DocAgent · 宿主 A：占窗口 2/3，默认关联当前文件） -->
@@ -14936,7 +14874,7 @@
                             <span id="doc-qa-file-name" class="doc-qa-file-name">未关联文件</span>
                             <span id="doc-qa-file-meta" class="doc-qa-file-meta"></span>
                         </div>
-                        <button class="doc-qa-close" onclick="closeDocQA()" title="关闭（Esc）">✕</button>
+                        <button id="doc-qa-layout-btn" class="doc-qa-mini-btn" onclick="docQaToggleLayout()" title="切换为右侧边栏">侧边栏</button>
                         <button id="doc-qa-scope-btn" class="doc-qa-mini-btn" onclick="toggleDocQaScope()" title="圈选同目录资料一并作为本轮会话上下文">资料圈</button>
                         <select id="doc-qa-session-pick" class="doc-qa-session-pick" title="本文档历史会话">
                             <option value="">— 新对话 —</option>
@@ -16697,6 +16635,7 @@
                 </div>
             </div>
         </div>
+        </div>
     </div>
     <div class="mermaid-fullscreen-overlay" id="mermaid-fullscreen-overlay">
         <button class="mermaid-fullscreen-close-btn" id="mermaid-fullscreen-close-btn" title="关闭">✕</button>
@@ -17426,7 +17365,6 @@
         let aiHistory = [];                 // AI 历史记录数组
         let excalidrawAPI = null;           // excalidraw 实例
         let rootExcalidraw = null;          // 根目录的 excalidraw 实例
-        let aiPanelVisible = false;         // AI 面板可见性状态
         let swaggerEditor = null;           // Swagger 编辑器实例（全局单例，只创建一次）
         let graphqlReactRoot = null;        // GraphQL React 实例根元素
         let _cardCheckboxDebounce = false;  // GraphQL React 实例
@@ -17624,6 +17562,26 @@
         // 禁用 WebView 原生右键菜单（Windows/Linux 生效；macOS 部分原生菜单不受 JS 控制）。
         document.addEventListener('contextmenu', (e) => e.preventDefault());
 
+        // content 顶部空白条高度 = 左侧栏最顶层按钮行高度（动态同步）
+        function syncContentTopSpacer() {
+            const sp = document.getElementById('content-top-spacer');
+            const sh = document.getElementById('sidebar-header');
+            if (!sp || !sh) return;
+            const h = sh.offsetHeight + 6; // margin-top 6px 一并计入
+            sp.style.height = (h > 0 ? h : 36) + 'px';
+        }
+        if (document.readyState !== 'loading') {
+            syncContentTopSpacer();
+        } else {
+            document.addEventListener('DOMContentLoaded', syncContentTopSpacer);
+        }
+        window.addEventListener('resize', syncContentTopSpacer);
+        // 侧边栏显示状态切换后重算（折叠时 #sidebar-header 尺寸为 0，回退 36px）
+        document.addEventListener('click', (e) => {
+            const t = e.target && e.target.closest ? e.target.closest('#sidebar-toggle-btn') : null;
+            if (t) setTimeout(syncContentTopSpacer, 60);
+        });
+
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', async () => {
             initDiffModel();
@@ -17646,7 +17604,6 @@
             if (!await initTreeBrowser()) return; // 初始化文件树
             await Promise.all([
                 Promise.resolve().then(() => (typeof startBridgeTauri === 'function' ? startBridgeTauri() : null)), // 初始化桥（FrontendBridge 定义于 css_js/modules/frontend-bridge.js）
-                Promise.resolve(initAIResultSettings()),// 初始化AI结果设置
                 Promise.resolve(initNewFileDropdown()), // 初始化新文件下拉菜单
                 Promise.resolve(initAiResultModal()), // 初始化AI结果弹窗
                 Promise.resolve(initMarkdownSelectionToolbar()),// 初始化Markdown选择工具栏
@@ -17748,7 +17705,6 @@
                 // 编辑器销毁被取消（如未保存内容用户中止切换）→ 视为切换失败
                 return false;
             }
-            hiddenAiPanel();
             currentArtPlayer?.pause();
             aiFabContainer.style.display = 'none';
             setAllTypeFlag(type);
@@ -17853,6 +17809,7 @@
                 dirCanvasDisplayFlag = false;
             } else if (type === 'dashboard') {
                 aiFabContainer.style.display = 'none'; // Dashboard 不显示小助手
+                if (typeof docQaCloseIfDockedOpen === 'function') setTimeout(docQaCloseIfDockedOpen, 0);
             } else if (type === 'randomOpen') {
                 aiFabContainer.style.display = 'block';
             } else if (type === 'canvas') {
@@ -17874,8 +17831,6 @@
         }
 
         async function renderFile(relativePath = '', fileSpan) {
-            const larkCheckbox = document.querySelector('.ai-result-sw-lark input');
-            if (larkCheckbox) larkCheckbox.checked = true;
             if (currentActiveItem) currentActiveItem.classList.remove('active-file');
             fileSpan.classList.add('active-file');
             currentActiveItem = fileSpan;
@@ -18904,7 +18859,6 @@
                 Promise.resolve(destroyOPML()),
                 Promise.resolve(destroyMermaid()),
                 Promise.resolve(cleanupCanvasState(true)),
-                Promise.resolve(hiddenAiPanel()),
                 Promise.resolve(timelineDestroy()),
                 Promise.resolve(picLayoutDestroy()),
                 Promise.resolve(cleanupKanban()),
@@ -24858,6 +24812,7 @@
 
         async function renderMarkdownFile(text) {
             aiFabContainer.style.display = 'block';
+            if (typeof docQaFileSwitched === 'function') setTimeout(docQaFileSwitched, 40);
             mdIsKanban = false;
             if (isObsidianKanban(text)) {
                 mdIsKanban = true;
@@ -24903,6 +24858,7 @@
                 return;
             }
             aiFabContainer.style.display = 'block';
+            if (typeof docQaFileSwitched === 'function') setTimeout(docQaFileSwitched, 40);
             htmlCanBePng = true;
             setControlsState({ mdImageBtn: true });
             const htmlText = await replaceMediaUrl(text, true);
@@ -32165,21 +32121,6 @@ kanban-plugin: basic
         }
 
         let aiResultContext = '';  //AI结果上下文
-        let aiResultLinkCurrentFile = true; //是否链接当前文件
-        let aiSelectionMode = false; //是否选择模式
-        let aiSelectionText = ''; //选择文本
-        let aiResultSettingsInitialized = false; //是否初始化AI结果设置
-        async function initAIResultSettings() {
-            if (aiResultSettingsInitialized) return;
-            const larkCheckbox = document.querySelector('.ai-result-sw-lark input');
-            if (larkCheckbox) {
-                larkCheckbox.addEventListener('change', function () {
-                    aiResultLinkCurrentFile = this.checked;
-                });
-                larkCheckbox.checked = true;
-            }
-            aiResultSettingsInitialized = true;
-        }
 
         async function getAIHistoryData() {
             aiHistory = await window.getAIHistoryDataTauri();
@@ -32310,65 +32251,6 @@ kanban-plugin: basic
             if (text) return text;
             console.error('未识别的 Anthropic 响应格式:', JSON.stringify(data));
             return '无法解析 API 响应，请检查 API 配置';
-        }
-        function aiPanelToggleCilck() {
-            aiPanelVisible = !aiPanelVisible;
-            if (aiPanelVisible) {
-                displayAiPanel(aiSelectionText);
-            } else {
-                hiddenAiPanel();
-            }
-            const link = document.getElementById('ai-link-file');
-            if (dashboardContainer && dashboardContainer.style.display !== 'none') {
-                aiResultLinkCurrentFile = false;
-                const larkCheckbox = document.querySelector('.ai-result-sw-lark input');
-                if (larkCheckbox) larkCheckbox.checked = false;
-                if (link) link.style.display = 'none';
-            } else {
-                if (link) link.style.display = 'flex';
-            }
-        }
-
-        function displayAiPanel(selectionText = null) {
-            aiPanelVisible = true;
-            aiFabContainer.style.display = 'block';
-            const countEl = document.getElementById('ai-selection-count');
-            if (selectionText) {
-                aiSelectionMode = true;
-                aiSelectionText = selectionText;
-                const larkCheckbox = document.querySelector('.ai-result-sw-lark input');
-                if (larkCheckbox) larkCheckbox.checked = false;
-                aiResultLinkCurrentFile = false;
-                if (countEl) {
-                    countEl.textContent = '已选择 ' + selectionText.length + ' 字';
-                    countEl.style.display = 'inline';
-                }
-            } else {
-                aiSelectionMode = false;
-                aiSelectionText = '';
-                // 无选中文本：恢复"关联当前文件"（dashboard 由 aiPanelToggleCilck 单独处理）
-                const dashboardActive = dashboardContainer && dashboardContainer.style.display !== 'none';
-                if (!dashboardActive) aiResultLinkCurrentFile = true;
-                if (countEl) countEl.style.display = 'none';
-            }
-            showAITooltip();
-        }
-        function hiddenAiPanel() {
-            aiPanelVisible = false;
-            aiSelectionMode = false;
-            aiSelectionText = '';
-            const countEl = document.getElementById('ai-selection-count');
-            if (countEl) countEl.style.display = 'none';
-            hideAITooltip();
-        }
-        const aiChatTooltip = document.getElementById('ai-fab-tooltip');
-        function hideAITooltip() {
-            if (!aiChatTooltip.classList.contains('ai-fab-tooltip-hidden')) {
-                aiChatTooltip.classList.add('ai-fab-tooltip-hidden');
-            }
-        }
-        function showAITooltip() {
-            aiChatTooltip.classList.remove('ai-fab-tooltip-hidden');
         }
 
         /**
@@ -32555,9 +32437,6 @@ kanban-plugin: basic
                 contentEl.innerHTML = content;
             }
             modal.style.display = 'flex';
-            // 关闭弹窗时，重置选中状态
-            aiSelectionMode = false;
-            aiSelectionText = '';
         }
 
         function closeAIResultModal(e) {
@@ -36291,11 +36170,11 @@ kanban-plugin: basic
             }
             const key = markdownSelectionState.text;
             if (id === 'xiaodi') {
-                if (typeof openDocQA === 'function') {
-                    openDocQA(markdownSelectionState.text);
-                } else {
-                    displayAiPanel(markdownSelectionState.text);
+                if (typeof openDocQA !== 'function') {
+                    showNotification('小助手暂不可用（doc-qa 模块未加载）', 'warning');
+                    return;
                 }
+                openDocQA(markdownSelectionState.text);
             } else if (id === 'custom') {
                 await showCustomPromptPopup();
             } else {
