@@ -666,18 +666,22 @@
 
         #content-top-spacer {
             flex: none;
-            /* 静态 CSS 对齐 #sidebar-header 顶行按钮高度：margin-top 6px + .btn-sm 1.65rem + padding-bottom 3px ≈ 36px（不使用 JS 测量） */
             height: 36px;
             background: transparent;
-            position: relative;
-            display: flex;
+            position: absolute;
+            top: 0;
+            right: 0.5rem;
+            display: none;
             align-items: center;
             justify-content: flex-end;
             padding: 0 0.25rem;
             overflow: visible;
+            z-index: 3000;
+        }
+        #content-top-spacer.inLine{
+            position: relative;
         }
 
-        /* 右上角工具栏并入空白条后：取消绝对定位、右对齐 */
         #content-top-spacer .top-right-wrapper {
             position: static;
             margin-left: auto;
@@ -5568,7 +5572,7 @@
         }
 
         .mermaid-toolbar-btn-right {
-            padding-right: 3.875rem !important;
+            padding-right: 4.125rem !important;
         }
 
         .mermaid-fixed-btn {
@@ -5606,7 +5610,7 @@
             margin-left: auto;
             display: flex;
             align-items: center;
-            gap: 5px;
+            gap: 0.5rem;
             flex-shrink: 0;
         }
 
@@ -17501,7 +17505,7 @@
         const commonToolControls = document.getElementById('common-tool-controls');
         const demoBtn = document.getElementById('demo-btn');
         const openHistoryContainer = document.getElementById('open-history');
-
+        const topSpacerContainer =  document.getElementById('content-top-spacer')
         // 所有主视图容器的集合（切换视图时隐藏其他容器用）
         const MAIN_VIEW_CONTAINERS = [
             contentMain, contentEdit, contentCommonContainer, dashboardContainer,
@@ -17782,11 +17786,14 @@
         }
 
         function setAllTypeFlag(type) {
+            topSpacerContainer.style.display  = 'flex';
+            topSpacerContainer.classList.remove('inLine');
             if (type === 'renderFile') {
                 dirCanvasDisplayFlag = false;
             } else if (type === 'dashboard') {
                 aiFabContainer.style.display = 'none'; // Dashboard 不显示小助手
                 if (typeof docQaCloseIfDockedOpen === 'function') setTimeout(docQaCloseIfDockedOpen, 0);
+                topSpacerContainer.style.display  = 'none';
             } else if (type === 'randomOpen') {
                 aiFabContainer.style.display = 'block';
             } else if (type === 'canvas') {
@@ -18796,9 +18803,6 @@
             for (let i = 0; i < AUX_CONTROLS.length; i++) {
                 AUX_CONTROLS[i].style.display = 'none';
             }
-            // 主视图为 Dashboard 时隐藏内容顶部空白条；其它视图恢复显示
-            const topSpacer = document.getElementById('content-top-spacer');
-            if (topSpacer) topSpacer.style.display = targetContainer === dashboardContainer ? 'none' : '';
             await destroyEverything();
         }
 
@@ -24792,6 +24796,7 @@
 
         async function renderMarkdownFile(text) {
             aiFabContainer.style.display = 'block';
+            topSpacerContainer.classList.add('inLine');
             if (typeof docQaFileSwitched === 'function') setTimeout(docQaFileSwitched, 40);
             mdIsKanban = false;
             if (isObsidianKanban(text)) {
