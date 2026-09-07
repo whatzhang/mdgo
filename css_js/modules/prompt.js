@@ -183,7 +183,7 @@ function promptRenderDetail(p) {
                     <div class="skill-detail-meta">${metaItems}</div>
                     <div class="skill-detail-section">
                         <div class="skill-detail-section-title">Prompt 内容</div>
-                        <div class="skill-detail-body"><div class="markdown-body" style="font-size: 0.8125rem;">${markedMd(p.prompt || '（空）')}</div></div>
+                        <div class="skill-detail-body"><div class="markdown-body" style="font-size: 0.875rem;">${markedMd(p.prompt || '（空）')}</div></div>
                     </div>
                 </div>`;
 }

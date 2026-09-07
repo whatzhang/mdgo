@@ -572,7 +572,7 @@
 /* 指令正文 */
 .skill-detail-body {
     font-family: var(--font-family);
-    font-size: 0.8125rem;
+    font-size: 0.875rem;
     color: var(--color-text);
     line-height: 1.4;
     white-space: normal;

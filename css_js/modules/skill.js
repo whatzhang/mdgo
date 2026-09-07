@@ -226,7 +226,7 @@ function skillRenderDetail(skill) {
                     ${toolsNames.length ? `<div class="skill-detail-section"><div class="skill-detail-section-title">可用工具</div><div class="skill-tag-row">${toolsNames.map(t => `<span class="skill-tag-chip">${escapeHtml(t)}</span>`).join('')}</div></div>` : ''}
                     <div class="skill-detail-section">
                         <div class="skill-detail-section-title">指令正文</div>
-                        <div class="skill-detail-body"><div class="markdown-body" style="font-size: 0.8125rem;">${markedMd(skill.body) || '（空）'}</div></div>
+                        <div class="skill-detail-body"><div class="markdown-body" style="font-size: 0.875rem;">${markedMd(skill.body) || '（空）'}</div></div>
                     </div>
                 </div>`;
 }

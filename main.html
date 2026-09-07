@@ -670,7 +670,7 @@
             background: transparent;
             position: absolute;
             top: 0;
-            right: 0.5rem;
+            right: 0.25rem;
             display: none;
             align-items: center;
             justify-content: flex-end;
@@ -2062,7 +2062,9 @@
 
         /* 折叠状态：向右三角形 */
         .mindmap-collapse[data-expanded="false"]::before {
-            content: '▶';
+            content: '▼';
+            transform: rotate(-90deg);
+            transition: transform 0.3s ease;
         }
 
         .mindmap-collapse-child {
@@ -2080,7 +2082,7 @@
 
         .mindmap-collapse-child::before {
             content: '●';
-            font-size: 6px;
+            font-size: 9px;
             padding-top: 0.25rem;
         }
 
@@ -5569,11 +5571,7 @@
             border-bottom: 1px solid #e2e8f0;
             flex-wrap: nowrap;
             flex-shrink: 0;
-        }
-
-        .mermaid-toolbar-btn-right {
-            padding-right: 4.125rem !important;
-        }
+        } 
 
         .mermaid-fixed-btn {
             flex-shrink: 0;
@@ -6258,7 +6256,7 @@
         .mermaid-directory-summary {
             padding: 0.25rem 0.5rem;
             cursor: pointer;
-            font-size: 0.8125rem;
+            font-size: 0.875rem;
             color: #1d2129;
             display: flex;
             align-items: center;
@@ -13362,8 +13360,8 @@
             flex: none;
             display: flex;
             gap: 6px;
-            padding: 0.125rem;
-            margin: 0.25rem;
+            padding: 0.125rem 0;
+            margin: 0.25rem 0.5rem;
             flex-wrap: wrap;
         }
 
@@ -13394,9 +13392,9 @@
             border: 1px solid rgba(0, 180, 130, 0.4);
             background: rgba(0, 180, 130, 0.07);
             color: #00a37a;
-            border-radius: 999px;
-            font-size: 12px;
-            padding: 2px 11px;
+            border-radius: 0.5rem;
+            font-size: 0.75rem;
+            padding: 0.125rem 0.5rem;
             cursor: pointer;
         }
 
@@ -13452,8 +13450,8 @@
         .doc-qa-preview-content {
             flex: 1;
             overflow: auto;
-            padding: 12px 16px;
-            font-size: 13px;
+            padding:0 1rem 0.5rem 1rem;
+            font-size: 0.8125rem;
             line-height: 1.6;
         }
 
@@ -13569,20 +13567,11 @@
         }
 
         /* ── 输入区：与 Agent 页聊天输入保持同一视觉（圆角卡片 + 圆形发送） ── */
-        #doc-qa-panel .doc-qa-input-area {
-            flex: none;
-            position: relative;
+        .doc-qa-input-area {
             display: flex;
-            flex-direction: column;
-            gap: 0.2rem;
-            border-radius: 1rem;
-            padding: 0.3rem;
-            margin: 0.25rem 0.5rem 0.55rem;
-            width: auto;
-            background: var(--color-bg);
-            flex-shrink: 0;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            border: 1px solid rgba(0, 0, 0, 0.05);
+            justify-content: flex-end;
+            gap: 1rem;
+            margin: 1rem;
         }
 
         #doc-qa-panel .doc-qa-textarea-wrap {
@@ -14679,6 +14668,7 @@
                                 </div>
                             </div>
                             <button class="mermaid-tb mermaid-render-btn" id="mermaid-render-btn">渲染</button>
+                            <button id="demo-btn-mmd" class="btn btn-orange btn-sm" style="display:none;" onclick="toggleDemoMode()">演示</button>
                         </div>
                     </div>
 
@@ -18612,66 +18602,75 @@
         function formatXMLNative(code, options = {}) {
             if (!code || !code.trim()) return code;
             const tabSize = options.tabSize || 4;
-            const insertSpaces = options.insertSpaces !== false;
-            const indentChar = insertSpaces ? ' '.repeat(tabSize) : '\t';
-            try {
-                let formatted = '';
-                let padLevel = 0;
-                // 核心正则：匹配注释、CDATA、声明、闭合标签、自闭合标签、开始标签; 极其轻量，避开 .* 贪婪匹配，防止 ReDoS
-                const tagReg = /(< !--[\s\S ]* ?-->| <!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S ]*?\?>|<\/[^>]+>|<[^>]+?\/>|<[^>]+>)/g;
-                let lastIndex = 0;
-                let match;
-                while ((match = tagReg.exec(code)) !== null) {
-                    const tag = match[0];
-                    const index = match.index;
-                    // 1. 提取两个标签之间的文本（节点内容）
-                    // 满足要求：只格式化缩进，对节点里面的内容不做处理
-                    let text = code.slice(lastIndex, index);
-                    // 如果包含实质内容，保持原样追加（不破坏内部换行或空格）
-                    if (text.trim() !== '') {
-                        formatted += text;
-                    }
-                    // 更新指针
-                    lastIndex = tagReg.lastIndex;
-                    // 2. 判断当前标签类型并决定换行与缩进
-                    if (tag.startsWith('<!--') || tag.startsWith('<![CDATA[') || tag.startsWith('<?')) {
-                        // 注释、CDATA、XML 声明：不改变缩进结构，直接换行输出
-                        if (formatted && !formatted.endsWith('\n')) formatted += '\n';
-                        formatted += indentChar.repeat(padLevel) + tag + '\n';
-                    }
-                    else if (tag.startsWith('</')) {
-                        // 结束标签：先退回缩进，再换行输出
-                        padLevel = Math.max(0, padLevel - 1);
-                        // 优化：如果前一个字符不是换行，说明标签内部有文本内容（如 <tag>text</tag>）
-                        // 此时不换行，直接闭合；否则（属于多行结构）需要缩进换行
-                        if (formatted.endsWith('\n')) {
-                            formatted += indentChar.repeat(padLevel) + tag + '\n';
-                        } else {
-                            formatted += tag + '\n';
-                        }
-                    }
-                    else if (tag.endsWith('/>')) {
-                        // 自闭合标签：换行输出，缩进不变
-                        if (formatted && !formatted.endsWith('\n')) formatted += '\n';
-                        formatted += indentChar.repeat(padLevel) + tag + '\n';
-                    }
-                    else {
-                        // 普通开始标签：换行输出，后续行缩进加 1
-                        if (formatted && !formatted.endsWith('\n')) formatted += '\n';
-                        formatted += indentChar.repeat(padLevel) + tag + '\n';
-                        padLevel++;
-                    }
+            const indentChar = options.insertSpaces !== false ? ' '.repeat(tabSize) : '\t';
+            const tagReg = /(<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<![^>]*>|<\/[^>]+>|<(?:"[^"]*"|'[^']*'|[^>"'])*>)/g;
+            let result = '';
+            let level = 0;
+            let lastIndex = 0;
+            let match;
+            const newline = () => { if (result && !result.endsWith('\n')) result += '\n'; };
+            const pad = () => indentChar.repeat(level);
+            const tagName = (t) => (t.match(/^<\/?\s*([^\s/>]+)/) || [])[1] || '';
+            const sameTag = (a, b) => a.toLowerCase() === b.toLowerCase();
+            while ((match = tagReg.exec(code)) !== null) {
+                const tag = match[0];
+                // ---- 1. 标签间的文本节点：实质内容原样保留，纯空白丢弃 ----
+                const text = code.slice(lastIndex, match.index);
+                if (text.trim() !== '') {
+                    result += text;
                 }
-                // 补齐尾部可能剩余的文本
-                if (lastIndex < code.length) {
-                    const tail = code.slice(lastIndex);
-                    if (tail.trim() !== '') formatted += tail;
+                lastIndex = tagReg.lastIndex;
+                // ---- 2. 独立节点：注释 / CDATA / 处理指令 / DOCTYPE，不改变层级 ----
+                if (/^(<!|<\?)/.test(tag)) {
+                    newline();
+                    result += pad() + tag + '\n';
+                    continue;
                 }
-                return formatted.trim();
-            } catch (e) {
-                console.error('原生 XML 格式化失败:', e);
-                return null;
+                // ---- 3. 结束标签：层级 -1，换行缩进输出 ----
+                if (tag.startsWith('</')) {
+                    level = Math.max(0, level - 1);
+                    newline();
+                    result += pad() + tag + '\n';
+                    continue;
+                }
+                // ---- 4. 自闭合标签：层级不变 ----
+                if (tag.endsWith('/>')) {
+                    newline();
+                    result += pad() + tag + '\n';
+                    continue;
+                }
+                // ---- 5. 开始标签：先探测能否"单行合并" ----
+                const rest = code.slice(lastIndex);
+                const name = tagName(tag);
+                // 5a. 空元素：<a></a> → 合并为一行
+                const emptyMatch = rest.match(/^\s*(<\/\s*([^\s/>]+)\s*>)/);
+                if (name && emptyMatch && sameTag(name, emptyMatch[2])) {
+                    newline();
+                    result += pad() + tag + emptyMatch[1] + '\n';
+                    lastIndex += emptyMatch.index + emptyMatch[1].length;
+                    tagReg.lastIndex = lastIndex; // 同步正则指针，跳过已消费的闭合标签
+                    continue;
+                }
+                // 5b. 短文本元素：<a>text</a>（text 中无嵌套标签）→ 合并为一行
+                const inlineMatch = rest.match(/^\s*([^<]+?)(<\/\s*([^\s/>]+)\s*>)/);
+                if (name && inlineMatch && sameTag(name, inlineMatch[3])) {
+                    newline();
+                    result += pad() + tag + inlineMatch[1] + inlineMatch[2] + '\n';
+                    lastIndex += inlineMatch.index + inlineMatch[0].length;
+                    tagReg.lastIndex = lastIndex;
+                    continue;
+                }
+                // 5c. 普通开始标签：换行输出，层级 +1
+                newline();
+                result += pad() + tag + '\n';
+                level++;
             }
+            // ---- 6. 补齐尾部剩余文本 ----
+            if (lastIndex < code.length) {
+                const tail = code.slice(lastIndex);
+                if (tail.trim() !== '') result += tail;
+            }
+            return result.trim();
         }
 
         async function updateLivePreviewContent(content, container) {
@@ -18796,6 +18795,7 @@
             _selectAiCustomPrompt = false;
             // 视图切换时若自定义 Prompt 弹窗仍打开，一并关闭，避免遗留遮罩与监听
             if (_closeCustomPromptPopup) _closeCustomPromptPopup();
+            mmModel = '';
         }
 
         async function destroyEverything() {
@@ -33068,19 +33068,16 @@ kanban-plugin: basic
         async function renderMermaidFile(fileText = '') {
             isMermaidFileDisplay = false;
             await switchToView(mermaidAppContainer);
-            const toolbar = mermaidAppContainer.querySelector(".mermaid-toolbar");
             const toolbarLeft = mermaidAppContainer.querySelector("#mermaid-toolbar-left");
+            const demo = mermaidAppContainer.querySelector("#demo-btn-mmd");
             if (fileText) {
                 if (toolbarLeft) toolbarLeft.style.display = "none";
                 isMermaidFileDisplay = true;
                 inlineMmdCtrl.setEnabled(true);
-                if (!toolbar.classList.contains("mermaid-toolbar-btn-right")) {
-                    toolbar.classList.add("mermaid-toolbar-btn-right");
-                }
-                setControlsState({ commonToolControls: true, demoBtn: true });
+                if(demo) demo.style.display = "flex";
             } else {
                 if (toolbarLeft) toolbarLeft.style.display = "flex";
-                toolbar.classList.remove("mermaid-toolbar-btn-right");
+                if(demo) demo.style.display = "none";
             }
             const resizer = document.querySelector("#mermaid-resizer");
             if (isMermaidFileDisplay) {
