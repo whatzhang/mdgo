@@ -1088,7 +1088,7 @@
             if (metaEl) metaEl.textContent = '';
             return;
         }
-        if (nameEl) nameEl.textContent = state.file;
+        if (nameEl){ nameEl.textContent = state.file; nameEl.title = state.file;}
         if (metaEl) metaEl.textContent = '读取中…';
         try {
             const res = await invoke('doc_read_meta', { dirPath: state.dirPath, relPath: state.file, budgetTokens: null });
@@ -1112,7 +1112,7 @@
             const selInfo = state.selText
                 ? (state.selOffsets ? `（选区优先：已携带 ${state.selText.length} 字）` : `（已携带选区 ${state.selText.length} 字，未映射到行，按整篇）`)
                 : '';
-            hint.textContent = `始终关联当前文件：${state.file}${selInfo}${state.sessionId ? '' : ' · 首次发送将建立本文档会话'}`;
+            hint.textContent = `关联文件：${state.file}${selInfo}${state.sessionId ? '' : ' · 首次发送将建立本文档会话'}`;
             if (state.scopeFiles && state.scopeFiles.length) hint.textContent += ` · 资料圈 ${state.scopeFiles.length}`;
             if (state.compressNote) hint.textContent += ' · ' + state.compressNote;
         } else {

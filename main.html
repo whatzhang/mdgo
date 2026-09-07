@@ -666,7 +666,6 @@
 
         #content-top-spacer {
             flex: none;
-            /* 静态 CSS 对齐 #sidebar-header 顶行按钮高度：margin-top 6px + .btn-sm 1.65rem + padding-bottom 3px ≈ 36px（不使用 JS 测量） */
             height: 36px;
             background: transparent;
             position: relative;
@@ -13252,25 +13251,9 @@
             gap: 5px;
             padding: 0.25rem 0.5rem;
             flex-wrap: wrap;
-        }
+        } 
 
-        #doc-qa-overlay .doc-qa-file {
-            flex: 0 1 auto;
-            min-width: 0;
-            max-width: 100%;
-        }
-
-        #doc-qa-overlay .doc-qa-file-name {
-            max-width: 15rem;
-            min-width: 0;
-            flex: 0 1 auto;
-        }
-
-        #doc-qa-overlay .doc-qa-file-meta {
-            display: none;
-        }
-
-        #doc-qa-overlay .doc-qa-session-pick {
+        #doc-qa-overlay #doc-qa-session-pick {
             max-width: 108px;
         }
 
@@ -13324,7 +13307,7 @@
             font-weight: 500;
             flex: 0 1 auto;
             min-width: 0;
-            max-width: 16rem;
+            max-width: 18rem;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -13355,18 +13338,6 @@
             background: rgba(0, 0, 0, 0.06);
         }
 
-        .doc-qa-session-pick {
-            flex: 0 1 auto;
-            min-width: 0;
-            font-size: 12px;
-            max-width: 150px;
-            border: 1px solid rgba(0, 0, 0, 0.14);
-            border-radius: 6px;
-            padding: 3px 6px;
-            background: var(--color-bg, #fff);
-            color: var(--color-text, #1d1d1f);
-        }
-
         .doc-qa-mini-btn {
             flex: none;
             font-size: 12px;
@@ -13386,7 +13357,8 @@
             flex: none;
             display: flex;
             gap: 6px;
-            padding: 6px 12px 0;
+            padding: 0.125rem;
+            margin: 0.25rem;
             flex-wrap: wrap;
         }
 
@@ -13394,9 +13366,9 @@
             border: 1px solid rgba(0, 122, 245, 0.35);
             background: rgba(0, 122, 245, 0.06);
             color: #007af5;
-            border-radius: 999px;
-            font-size: 12px;
-            padding: 3px 12px;
+            border-radius: 0.5rem;
+            font-size: 0.75rem;
+            padding: 0.125rem 0.5rem;
             cursor: pointer;
             transition: background 0.15s;
         }
@@ -13549,7 +13521,7 @@
         .doc-qa-messages {
             flex: 1;
             overflow-y: auto;
-            padding: 0.5rem 0.5rem;
+            padding: 0 0.5rem;
             display: flex;
             flex-direction: column;
             gap: 12px;
@@ -13558,7 +13530,7 @@
 
         .doc-qa-msg {
             max-width: 100%;
-            padding: 0.5rem 0.75rem;
+            padding: 0.5rem 0.5rem;
             border-radius: 10px;
             font-size: 13px;
             line-height: 1.65;
@@ -13572,7 +13544,6 @@
 
         .doc-qa-msg.assistant {
             align-self: stretch;
-            padding: 2px 4px;
         }
 
         .doc-qa-msg .markdown-body {
@@ -13589,7 +13560,7 @@
             flex: none;
             font-size: 11px;
             color: var(--color-text-secondary, #86868b);
-            padding: 0 16px 6px;
+            padding: 0.25rem 16px;
         }
 
         /* ── 输入区：与 Agent 页聊天输入保持同一视觉（圆角卡片 + 圆形发送） ── */
@@ -14867,13 +14838,12 @@
             <div id="doc-qa-overlay" onclick="if (event.target === this) closeDocQA()">
                 <div id="doc-qa-panel">
                     <div class="doc-qa-header">
-                        <span class="doc-qa-title">小助手</span>
                         <div class="doc-qa-file">
                             <span id="doc-qa-file-name" class="doc-qa-file-name">未关联文件</span>
                             <span id="doc-qa-file-meta" class="doc-qa-file-meta"></span>
                         </div>
                         <button id="doc-qa-scope-btn" class="doc-qa-mini-btn" onclick="toggleDocQaScope()" title="圈选同目录资料一并作为本轮会话上下文">资料圈</button>
-                        <select id="doc-qa-session-pick" class="doc-qa-session-pick" title="本文档历史会话">
+                        <select id="doc-qa-session-pick" class="doc-qa-depth" title="本文档历史会话">
                             <option value="">— 新对话 —</option>
                         </select>
                         <button id="doc-qa-new-btn" class="doc-qa-mini-btn" onclick="docQaNew()" title="开启新对话">新对话</button>
@@ -14923,7 +14893,7 @@
                     <div class="doc-qa-input-area">
                         <div class="doc-qa-textarea-wrap">
                             <textarea id="doc-qa-input" rows="4"
-                                placeholder="对当前文档提问，可要求总结 / 分析 / 改写 / 续写…（Enter 发送，Shift+Enter 换行）"></textarea>
+                                placeholder=""></textarea>
                         </div>
                         <button id="doc-qa-send" onclick="docQaSend()" title="发送消息" aria-label="发送">
                             <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
