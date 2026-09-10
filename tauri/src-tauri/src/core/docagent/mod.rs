@@ -18,6 +18,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::SystemTime;
 
+pub mod tools;
+
 /// 进程级文件缓存：(规范根 + 相对路径) → (mtime, 解析结果)
 static DOC_CACHE: OnceLock<Mutex<HashMap<String, (u64, Arc<DocFile>)>>> = OnceLock::new();
 
@@ -403,12 +405,47 @@ fn tokenize_query(q: &str) -> Vec<String> {
     out
 }
 
+/// 识别问题里**显式引用**的章节，返回章节 id。
+///
+/// 用途：长文档被预算裁剪时，被点名的章节必须进上下文 —— 否则模型只能回答
+/// "该章节未纳入上下文"（用户体感就是"读不到我指定的那章"）。
+/// 语义区分（长文档里两者常不一致，不能混为一谈）：
+/// - `§N` → 章节序号 N（引用协议语义）；
+/// - `第N章` / `N 章` → 标题编号 N，未命中再退回章节序号 N。
+/// 最多返回 3 节，避免一次点名多章把预算吃穿。
+pub fn referenced_section_ids(doc: &DocFile, query: &str) -> Vec<usize> {
+    let refs = tools::query_section_refs(query);
+    if refs.is_empty() {
+        return Vec::new();
+    }
+    let mut out: Vec<usize> = Vec::new();
+    for r in refs {
+        let hit = match r {
+            tools::SectionRef::Id(n) => doc.sections.iter().find(|s| s.id == n).map(|s| s.id),
+            tools::SectionRef::Chapter(n) => doc
+                .sections
+                .iter()
+                .find(|s| tools::heading_matches_number(&s.heading, n))
+                .map(|s| s.id)
+                .or_else(|| doc.sections.iter().find(|s| s.id == n).map(|s| s.id)),
+        };
+        if let Some(id) = hit {
+            if !out.contains(&id) {
+                out.push(id);
+            }
+        }
+    }
+    out.truncate(3);
+    out
+}
+
 /// 在 `budget_tokens` 内构造上下文块。
 ///
 /// 策略（单文件优先、无索引依赖、任意文本可用）：
 /// 1. 整篇 token 估算 ≤ 预算 → 全文注入（保留所有 `§` 章节标记，模型可直接定位）。
-/// 2. 超预算 → 按查询打分选 Top 章节（累积不超过预算）；输出开头附全部章节 TOC，
-///    模型可据此告知用户"文档还包含 §5…"，或请其指明章节后由宿主带新上下文重问。
+/// 2. 超预算 → 先**强制纳入问题里被显式引用的章节**（`§14` / `第14章`），
+///    再按查询打分补足剩余预算；输出开头附全部章节 TOC，
+///    模型可据此调用 `doc_read_section` 工具按需取文（宿主 A 已注册该只读工具集）。
 pub fn build_context(doc: &DocFile, query: &str, budget_tokens: usize) -> ContextOut {
     if budget_tokens == 0 {
         return ContextOut {
@@ -439,9 +476,22 @@ pub fn build_context(doc: &DocFile, query: &str, budget_tokens: usize) -> Contex
     }
     let mut chosen: Vec<usize> = Vec::new();
     let mut used = 0usize;
+    // ① 显式引用章节：无条件纳入（用户点名的章节就是要看的内容；
+    //    最多 3 节，且与既有"单章超预算也至少收录该章"的口径一致）
+    for id in referenced_section_ids(doc, query) {
+        if chosen.contains(&id) {
+            continue;
+        }
+        chosen.push(id);
+        used += section_est(&doc.sections[id]);
+    }
+    // ② 剩余预算按相关度补足
     for id in ranked {
+        if chosen.contains(&id) {
+            continue;
+        }
         let sec = &doc.sections[id];
-        let est = estimate_tokens(&sec.heading) + estimate_tokens(&sec.text) + 4;
+        let est = section_est(sec);
         if used + est > budget_tokens {
             if chosen.is_empty() {
                 // 单章超预算：只放头部（截断渲染由调用方控制，此处仅收录该章节）
@@ -467,6 +517,11 @@ pub fn build_context(doc: &DocFile, query: &str, budget_tokens: usize) -> Contex
         full: false,
         omitted,
     }
+}
+
+/// 章节 token 估算（与工具模块同口径）。
+fn section_est(sec: &DocSection) -> usize {
+    estimate_tokens(&sec.heading) + estimate_tokens(&sec.text) + 4
 }
 
 fn render_full(doc: &DocFile) -> String {
@@ -619,5 +674,33 @@ mod tests {
         assert!(tags.iter().any(|t| t.contains("运维")));
         assert!(tags.contains(&"r2".to_string()));
         assert!(front_matter_tags("无 frontmatter").is_empty());
+    }
+
+    /// 长文档 + 超小预算时，问题里被显式点名的章节必须进上下文
+    /// （否则模型只能回答"该章节未纳入上下文"，见 tools.rs 的工具兜底）。
+    #[test]
+    fn referenced_section_forced_into_tiny_budget() {
+        let doc = read_doc(ROOT, REL).unwrap();
+        let target = 12usize; // 任取一个 id 有效的章节
+        let sec = doc.sections.iter().find(|s| s.id == target).unwrap();
+        let q = format!("请介绍 §{target} 这一节讲了什么");
+        let out = build_context(&doc, &q, 32);
+        assert!(!out.full, "预算 32 时不应全文注入");
+        assert!(
+            out.included_ids.contains(&target),
+            "§{target} 被点名却未纳入上下文：included={:?}",
+            out.included_ids
+        );
+        assert!(out.prompt_block.contains(&format!("§{target} {}", sec.heading)));
+    }
+
+    #[test]
+    fn referenced_section_by_chapter_number() {
+        let doc = read_doc(ROOT, REL).unwrap();
+        // "第 12 章" 这类提法也要能命中（按标题编号匹配，命中不到再退回 §序号）
+        let ids = referenced_section_ids(&doc, "第12章 讲了什么？");
+        assert!(!ids.is_empty(), "章号引用未能解析出章节");
+        // 未点名任何章节时不应强插
+        assert!(referenced_section_ids(&doc, "总结一下全文要点").is_empty());
     }
 }

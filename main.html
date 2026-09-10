@@ -13553,10 +13553,65 @@
             font-size: 13px;
         }
 
+        /* 小助手回答区排版：字号/间距对齐 Agent 页聊天（.chat-message-body>.markdown-body）。
+           全局 reset 只清零了 h1~h4 的 margin，未限定字号，浏览器默认 2em/1.5em/1.17em
+           在 13px 基础上会放大到 26px/19.5px/15.2px —— 停在 400px 侧栏里过于臃肿。 */
+        .doc-qa-msg .markdown-body h1 {
+            font-size: 1.25em;
+            border-bottom: 1px solid var(--border-light);
+            margin: 1em 0;
+        }
+
+        .doc-qa-msg .markdown-body h2 {
+            font-size: 1.2em;
+            margin: 0.75em 0;
+        }
+
+        .doc-qa-msg .markdown-body h3 {
+            font-size: 1.1em;
+            margin: 0.5em 0;
+        }
+
+        .doc-qa-msg .markdown-body h4,
+        .doc-qa-msg .markdown-body h5,
+        .doc-qa-msg .markdown-body h6 {
+            font-size: 1em;
+            margin: 0.25em 0;
+        }
+
+        .doc-qa-msg .markdown-body :where(p, ul, ol, pre, blockquote, table, hr) {
+            margin-top: 0;
+            margin-bottom: 0.5em;
+        }
+
         .doc-qa-msg .doc-qa-cite {
             color: #007af5;
             cursor: pointer;
             border-bottom: 1px dashed #007af5;
+        }
+
+        /* 加载态：三点动画（复用 Agent 页 .chat-typing）+ 文字，整行左对齐，
+           与消息正文左边缘齐平（不居中） */
+        .doc-qa-loading {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 0.375rem;
+            padding: 0.25rem 0 0.25rem 0.25rem;
+        }
+
+        .doc-qa-loading .chat-typing {
+            justify-content: flex-start;
+            padding: 0;
+        }
+
+        .doc-qa-loading-text {
+            flex: none;
+            font-size: 11px;
+            line-height: 1;
+            color: var(--color-text-secondary, #86868b);
+            text-align: left;
+            padding: 0;
         }
 
         .doc-qa-hint {
@@ -13566,12 +13621,36 @@
             padding: 0.25rem 16px;
         }
 
-        /* ── 输入区：与 Agent 页聊天输入保持同一视觉（圆角卡片 + 圆形发送） ── */
+        /* ── 输入区 ── */
+        /* 预览弹层的按钮行（取消 / 插入） */
         .doc-qa-input-area {
             display: flex;
             justify-content: flex-end;
-            gap: 1rem;
-            margin: 1rem;
+            align-items: center;
+            gap: 0.5rem;
+            margin: 0.5rem 1rem 1rem;
+        }
+
+        /* 主面板输入区：与 Agent 页聊天输入保持同一视觉（圆角卡片 + 圆形发送）。
+           注意必须保留 position:relative —— #doc-qa-send 是绝对定位，
+           失去该定位基准后发送按钮会跑到面板角落、与输入框脱开。 */
+        #doc-qa-panel .doc-qa-input-area {
+            flex: none;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            /* 覆盖上面预览行的横向排布：主面板是纵向卡片、子项撑满宽度 */
+            align-items: stretch;
+            justify-content: flex-start;
+            gap: 0.2rem;
+            border-radius: 1rem;
+            padding: 0.3rem;
+            margin: 0.25rem 0.5rem 0.55rem;
+            width: auto;
+            background: var(--color-bg);
+            flex-shrink: 0;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            border: 1px solid rgba(0, 0, 0, 0.05);
         }
 
         #doc-qa-panel .doc-qa-textarea-wrap {
@@ -14888,7 +14967,7 @@
                     <div class="doc-qa-input-area">
                         <div class="doc-qa-textarea-wrap">
                             <textarea id="doc-qa-input" rows="4"
-                                placeholder=""></textarea>
+                                placeholder="对当前文档提问（Enter 发送，Shift+Enter 换行）"></textarea>
                         </div>
                         <button id="doc-qa-send" onclick="docQaSend()" title="发送消息" aria-label="发送">
                             <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
@@ -17042,7 +17121,6 @@
                 name: '解释',
                 id: 'explain',
                 display: true,
-                // prompt 由 DB 系统 Prompt（keywords=explain）动态加载
                 prompt: ``
             },
             {
@@ -17051,7 +17129,6 @@
                 name: '翻译',
                 id: 'translate',
                 display: true,
-                // prompt 由 DB 系统 Prompt（keywords=translate）动态加载
                 prompt: ``
             },
             {
@@ -17060,7 +17137,6 @@
                 name: '总结',
                 id: 'summary',
                 display: true,
-                // prompt 由 DB 系统 Prompt（keywords=summary）动态加载
                 prompt: ``
             },
             {
@@ -17069,7 +17145,6 @@
                 name: '重写',
                 id: 'rewrite',
                 display: true,
-                // prompt 由 DB 系统 Prompt（keywords=rewrite）动态加载
                 prompt: ``
             },
             {
@@ -17078,7 +17153,6 @@
                 name: '语法检查',
                 id: 'grammarCheck',
                 display: true,
-                // prompt 由 DB 系统 Prompt（keywords=grammarCheck）动态加载
                 prompt: ``
             },
             {
@@ -17087,7 +17161,6 @@
                 name: '润色',
                 id: 'polish',
                 display: true,
-                // prompt 由 DB 系统 Prompt（keywords=polish）动态加载
                 prompt: ``
             },
             {
@@ -17467,6 +17540,7 @@
         const demoBtn = document.getElementById('demo-btn');
         const openHistoryContainer = document.getElementById('open-history');
         const topSpacerContainer =  document.getElementById('content-top-spacer')
+
         // 所有主视图容器的集合（切换视图时隐藏其他容器用）
         const MAIN_VIEW_CONTAINERS = [
             contentMain, contentEdit, contentCommonContainer, dashboardContainer,
@@ -17648,7 +17722,7 @@
                 return false;
             }
             currentArtPlayer?.pause();
-            aiFabContainer.style.display = 'none';
+            aiFabContainer.style.display = 'block';
             setAllTypeFlag(type);
             if (type === 'newFile') {
                 newFile(data.newFileName);
@@ -17756,7 +17830,6 @@
                 if (typeof docQaCloseIfDockedOpen === 'function') setTimeout(docQaCloseIfDockedOpen, 0);
                 topSpacerContainer.style.display  = 'none';
             } else if (type === 'randomOpen') {
-                aiFabContainer.style.display = 'block';
             } else if (type === 'canvas') {
                 currentCvsDirPath = null;
                 dirCanvasDisplayFlag = false;
@@ -26673,7 +26746,7 @@ kanban-plugin: basic
                     continue;
                 }
                 let isAttachment = false, isFile = false;
-                const lastDotIndex = target.lastIndexOf('.');
+                const lastDotIndex = target.lastIndexOf(DOT);
                 if (lastDotIndex > 0) {
                     const ext = target.slice(lastDotIndex + 1).toLowerCase();
                     if (ext.length <= 10 && EXT_SET.has(ext)) {
@@ -31211,7 +31284,7 @@ kanban-plugin: basic
                 if (child.url) {
                     result.push({ url: child.url, title: child.title || null, folder: folderPath || null, added_at: child.added_at || null });
                 } else if (child.children) {
-                    const next = folderPath ? folderPath + '/' + child.title : child.title;
+                    const next = folderPath ? folderPath + SLASH + child.title : child.title;
                     collectBookmarkEntries(child, next, result);
                 }
             }
@@ -33387,7 +33460,7 @@ kanban-plugin: basic
                 return;
             }
             try {
-                const ext = (fileName.split('.').pop() || '').toLowerCase();
+                const ext = (fileName.split(DOT).pop() || '').toLowerCase();
                 const filters = ext
                     ? [{ name: ext.toUpperCase() + ' 文件', extensions: [ext] }]
                     : undefined;
@@ -48924,7 +48997,7 @@ kanban-plugin: basic
          * 返回是否命中。
          */
         async function locateSnippetInRawText(docName, snippet) {
-            const targetBase = ((docName || '').split('/').pop() || '').toLowerCase();
+            const targetBase = ((docName || '').split(SLASH).pop() || '').toLowerCase();
             // 等待目标文件内容就绪（编辑器创建或 originalContent 写入；避免取到上一个文件的内容）
             const ctx = await waitForContentRendered(() => {
                 if (targetBase && currentFileName && currentFileName.toLowerCase() !== targetBase) return null;
@@ -50479,7 +50552,7 @@ kanban-plugin: basic
                             type: 'category',
                             data: recentTrend.map(function (d) {
                                 var date = new Date(d.date);
-                                return date.getMonth() + 1 + '/' + date.getDate();
+                                return date.getMonth() + 1 + SLASH + date.getDate();
                             }),
                             axisLabel: { fontSize: '0.6875rem' }
                         },

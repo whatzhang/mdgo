@@ -2549,6 +2549,11 @@ pub async fn doc_agent_query(
     config.max_tokens = llm_cfg.max_tokens;
     let adapter: Arc<dyn LoopLlmAdapter> = build_adapter(&llm_cfg);
     let mut agent = LoopAgent::new(adapter, config, session_id.as_deref().unwrap_or(&request_id));
+    // 只读取文工具（doc_outline / doc_search / doc_read_section）：
+    // 预注入上下文受 token 预算裁剪，长文档只会带 Top 章节；有了这三个工具，
+    // 模型对未注入章节可以"自己去取"，而不是只能回答"该章节未纳入上下文"。
+    // 工具绑定当前文件，模型无法提供路径 → 无越权读取面。
+    agent.set_tools(crate::core::docagent::tools::doc_file_tools(&dir_path, &file_path));
     agent.replace_session(session);
 
     // 流式转发（与纯对话通道一致）

@@ -135,7 +135,91 @@
         }
         state.streaming = busy;
     }
-    function pushRender(role, content, streamingBody) {
+    // 助手消息操作区（终态才挂载；与 Agent 页一致：流式期间只有加载态，回答结束才出现按钮）
+    const MSG_ACTIONS = [
+        ['copy', '复制', '复制回答全文'],
+        ['preview', '预览', '预览结构化内容（Mermaid 等）'],
+        ['insert', '插入', '插入到光标处（需编辑态）'],
+        ['replace', '替换选区', '替换当前选区（需编辑态且有选区）'],
+        ['note', '存为笔记', '保存为库内新笔记并回链当前文档'],
+    ];
+
+    function scrollMsgsToBottom() {
+        const box = messagesEl();
+        if (box) box.scrollTop = box.scrollHeight;
+    }
+    function msgWrapOf(body) {
+        return body && body.closest ? body.closest('.doc-qa-msg.assistant') : null;
+    }
+
+    /**
+     * 加载态开关：三点动画复用 Agent 页聊天的 .chat-typing（同一套 CSS），
+     * 外加「正在生成…」文字；整行**左对齐**（与消息正文左边缘对齐，不居中）。
+     * 开启时隐藏正文容器、只留加载态；关闭时恢复正文容器。
+     */
+    function setMsgLoading(body, on) {
+        const wrap = msgWrapOf(body);
+        if (!wrap || !body) return;
+        const exist = wrap.querySelector('.doc-qa-loading');
+        if (on) {
+            body.style.display = 'none';
+            if (exist) return;
+            const box = document.createElement('div');
+            box.className = 'doc-qa-loading';
+            const typing = document.createElement('div');
+            typing.className = 'chat-typing';
+            typing.innerHTML = '<span></span><span></span><span></span>';
+            const label = document.createElement('span');
+            label.className = 'doc-qa-loading-text';
+            label.textContent = '正在生成…';
+            box.appendChild(typing);
+            box.appendChild(label);
+            wrap.appendChild(box);
+            scrollMsgsToBottom();
+        } else {
+            body.style.display = '';
+            if (exist) exist.remove();
+        }
+    }
+
+    /** 追加操作区（复制/预览/插入/替换/存为笔记），同一消息只挂一次 */
+    function appendMsgActions(body) {
+        const wrap = msgWrapOf(body);
+        if (!wrap || wrap.querySelector('.doc-qa-msg-actions')) return;
+        const foot = document.createElement('div');
+        foot.className = 'doc-qa-msg-actions';
+        for (const [act, label, tip] of MSG_ACTIONS) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'doc-qa-msg-btn';
+            btn.dataset.action = act;
+            btn.textContent = label;
+            btn.title = tip;
+            foot.appendChild(btn);
+        }
+        wrap.appendChild(foot);
+        scrollMsgsToBottom();
+    }
+
+    /**
+     * 回答终态收尾（对齐 Agent 页 llm:done 的行为）：
+     * 收起加载态 → 渲染正文（含 Mermaid 等重型后处理）→ 挂载操作按钮。
+     * 无内容时直接移除这个空壳消息（Agent 页 removeChatTyping 后不留空气泡），
+     * 避免出现"只有复制/保存按钮却没有正文"的观感。
+     */
+    async function finishAssistantAnswer(body, md) {
+        if (!body) return;
+        setMsgLoading(body, false);
+        if (String(md || '').trim()) {
+            await renderAssistantBody(body, md, true);
+            appendMsgActions(body);
+            return;
+        }
+        const wrap = msgWrapOf(body);
+        if (wrap) wrap.remove();
+    }
+
+    function pushRender(role, content, pending) {
         const box = messagesEl();
         if (!box) return null;
         const wrap = document.createElement('div');
@@ -143,42 +227,57 @@
         if (role === 'user') {
             wrap.textContent = content;
             box.appendChild(wrap);
+            box.scrollTop = box.scrollHeight;
+            return wrap;
+        }
+        const body = document.createElement('div');
+        body.className = 'markdown-body';
+        body.style.backgroundColor = 'transparent';
+        body.style.padding = '0.25rem';
+        wrap.appendChild(body);
+        box.appendChild(wrap);
+        if (pending) {
+            // 等待首个 token：先显示加载态；操作区留到终态再挂（对齐 Agent 页）
+            setMsgLoading(body, true);
         } else {
-            const body = document.createElement('div');
-            body.className = 'markdown-body';
-            body.style.backgroundColor = 'transparent';
-            body.style.padding = '0.25rem';
-            wrap.appendChild(body);
-            const foot = document.createElement('div');
-            foot.className = 'doc-qa-msg-actions';
-            for (const [act, label, tip] of [['copy', '复制', '复制回答全文'], ['preview', '预览', '预览结构化内容（Mermaid 等）'], ['insert', '插入', '插入到光标处（需编辑态）'], ['replace', '替换选区', '替换当前选区（需编辑态且有选区）'], ['note', '存为笔记', '保存为库内新笔记并回链当前文档']]) {
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'doc-qa-msg-btn';
-                btn.dataset.action = act;
-                btn.textContent = label;
-                btn.title = tip;
-                foot.appendChild(btn);
-            }
-            wrap.appendChild(foot);
-            box.appendChild(wrap);
-            return body;
+            appendMsgActions(body);
         }
         box.scrollTop = box.scrollHeight;
-        return wrap;
+        return body;
     }
-    async function renderAssistantBody(body, md, decorate) {
+    /**
+     * 渲染助手回答正文
+     * @param {HTMLElement} body 消息正文容器（.markdown-body）
+     * @param {string} md Markdown 原文
+     * @param {boolean} decorate 是否把 [§N] 装饰为可点击引用（终态渲染开启）
+     * @param {{streaming?: boolean}} [opts] streaming=true 表示流式中间帧：
+     *        只做轻量 Markdown 渲染，跳过 Mermaid/KaTeX 等重型后处理。
+     *
+     * 为什么流式帧必须跳过后处理：重型后处理会把 ```mermaid 的 <pre> 代码块
+     * 异步替换成渲染后的 SVG。流式每个 delta 都会重写 innerHTML（内容回到原始代码块），
+     * 上一帧的异步渲染完成后再把它换成图，下一帧又回到代码块 → 代码与图表来回闪烁；
+     * 且并发渲染会不断堆积。终态只渲染一次后处理，图表即稳定。
+     */
+    async function renderAssistantBody(body, md, decorate, opts) {
         if (!body) return;
+        const streaming = !!(opts && opts.streaming);
+        // 渲染代次：同一容器上后发起的渲染作废先前未完成的异步回写（防乱序闪烁）
+        const token = (body.__docQaRenderToken || 0) + 1;
+        body.__docQaRenderToken = token;
         try {
             let src = md || '';
             if (decorate) src = decorateCitations(src);
-            const html = await markedParse(parseObsidianToHTML(src));
+            // 流式帧跳过媒体 URL 替换（与 Agent 页 renderChatMarkdownStream 同一取舍）
+            const html = await markedParse(parseObsidianToHTML(src), !streaming);
+            if (body.__docQaRenderToken !== token) return; // 已被更新的渲染取代
             body.innerHTML = html;
-            try { postProcessMarkdown(body); } catch (e) { /* 忽略后处理异常 */ }
+            if (!streaming) {
+                try { postProcessMarkdown(body); } catch (e) { /* 忽略后处理异常 */ }
+            }
             const box = messagesEl();
             if (box) box.scrollTop = box.scrollHeight;
         } catch (e) {
-            body.textContent = md;
+            if (body.__docQaRenderToken === token) body.textContent = md;
         }
     }
 
@@ -949,46 +1048,84 @@
     }
 
     // ── 主流程 ──
-    async function runDocQuestion(text, extraFiles, extraFolders, extraBookmarks) {
+    // pendingBody：docQaSend 已先挂好的"加载态"助手消息容器（保证发送即刻有反馈）
+    async function runDocQuestion(text, extraFiles, extraFolders, extraBookmarks, pendingBody) {
         setBusy(true);
         const requestId = (crypto.randomUUID ? crypto.randomUUID() : 'doc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10));
         state.requestId = requestId;
-        const streamingBody = pushRender('assistant', '', true);
+        const streamingBody = pendingBody || pushRender('assistant', '', true);
         let buffer = '';
         let done = false;
         let errorMsg = '';
+        let finalRendered = false; // 终态渲染是否已发起（在发起处置位，避免 done 与 finally 竞态重复渲染）
+        let errorNotified = false; // 错误提示去重（llm:error / 调用异常 / 兜底 三处只提示一次）
+        const notifyError = (msg) => {
+            const text = String(msg || '').trim();
+            if (!text || errorNotified) return;
+            errorNotified = true;
+            showNotification('✗ ' + text, 'error');
+        };
 
-        const rafRender = (function () {
-            let raf = null;
-            return function (fn) {
-                if (raf) return;
-                raf = requestAnimationFrame(() => { raf = null; fn(); });
-            };
-        })();
+        // 流式渲染节流：同一帧内合并多个 delta，每帧最多重渲染一次（O(n²)→O(n)）。
+        // 流式帧走轻量渲染（跳过 Mermaid/KaTeX 等重型后处理与媒体替换），
+        // 终态在 llm:done / 停止兜底时用完整渲染覆盖一次 —— 否则重型后处理
+        // 会把代码块异步换成图表，而下一帧又把它写回代码块，出现"代码↔图表"闪烁。
+        let _streamRaf = 0;
+        const cancelStreamRender = () => {
+            if (_streamRaf) {
+                cancelAnimationFrame(_streamRaf);
+                _streamRaf = 0;
+            }
+        };
+        const scheduleStreamRender = () => {
+            if (_streamRaf) return;
+            _streamRaf = requestAnimationFrame(() => {
+                _streamRaf = 0;
+                if (done) return; // 终态已渲染，禁止轻量帧回写
+                // 首个 delta 到达 → 收起加载态（对应 Agent 页 removeChatTyping 的时机）
+                if (buffer) setMsgLoading(streamingBody, false);
+                renderAssistantBody(streamingBody, buffer, false, { streaming: true });
+            });
+        };
 
         try {
             await Promise.all([
                 listen('llm:delta', (p) => {
                     buffer += p.content || '';
-                    rafRender(() => renderAssistantBody(streamingBody, buffer));
+                    scheduleStreamRender();
                 }),
                 listen('llm:done', async (p) => {
                     done = true;
+                    // 作废尚未执行的轻量流式帧，避免其在终态渲染后回写
+                    cancelStreamRender();
                     if (p.content) buffer = p.content;
-                    state.messages.push({ role: 'assistant', content: buffer });
-                    state.messages = trimLocal(state.messages);
-                    await renderAssistantBody(streamingBody, buffer, true);
-                    setWrapContent(streamingBody, buffer);
-                    await persistMsg('assistant', buffer);
+                    // 先置位再渲染：finally 可能与本异步处理器并发，避免重复终态渲染
+                    finalRendered = true;
+                    // 终态：收起加载态 → 完整渲染 → 挂操作区（与 Agent 页一致）
+                    await finishAssistantAnswer(streamingBody, buffer);
+                    // 空回答不入库、不留消息（与 finally 兜底分支同一口径）
+                    if (buffer.trim()) {
+                        state.messages.push({ role: 'assistant', content: buffer });
+                        state.messages = trimLocal(state.messages);
+                        setWrapContent(streamingBody, buffer);
+                        await persistMsg('assistant', buffer);
+                    }
                 }),
                 listen('llm:error', (p) => {
                     done = true;
                     errorMsg = (p && p.message) || 'LLM 请求失败';
+                    notifyError(errorMsg);
                 }),
             ]);
         } catch (e) {
-            showNotification('无法监听事件通道: ' + (e.message || e), 'error');
+            // 事件通道建立失败：清理监听与加载态，避免"永远转圈"的假死观感
+            // （对齐 Agent 页该分支的 removeChatTyping()）
+            await cleanupListeners();
             setBusy(false);
+            const wrap = msgWrapOf(streamingBody);
+            if (wrap) wrap.remove();
+            state.requestId = null;
+            showNotification('✗ 无法建立流式通道: ' + (e.message || e), 'error');
             return;
         }
 
@@ -1013,22 +1150,33 @@
         } catch (err) {
             if (!done) {
                 errorMsg = (err && err.message) || String(err);
-                showNotification('✗ 文档问答失败: ' + errorMsg, 'error');
+                notifyError(errorMsg);
             }
         } finally {
             await new Promise((r) => setTimeout(r, 120));
+            // 停止/异常兜底：同样先作废在途轻量帧，再做一次完整渲染（含 Mermaid 后处理）
+            cancelStreamRender();
             await cleanupListeners();
             setBusy(false);
             if (!done) {
                 if (buffer.trim()) {
                     state.messages.push({ role: 'assistant', content: buffer });
                     state.messages = trimLocal(state.messages);
-                    await renderAssistantBody(streamingBody, buffer, true);
+                    finalRendered = true;
+                    // 停止/中断：已生成的部分同样走终态收尾（收起加载态 + 渲染 + 挂操作区）
+                    await finishAssistantAnswer(streamingBody, buffer);
                     setWrapContent(streamingBody, buffer);
                     await persistMsg('assistant', buffer);
                 }
-                if (errorMsg) showNotification('✗ ' + errorMsg, 'error');
             }
+            // 兜底：无论 done 来源（llm:done / llm:error / 停止 / 断联），
+            // 都必须收起加载态 —— 有内容则完整渲染并挂操作区，无内容则移除空壳消息。
+            if (!finalRendered) {
+                finalRendered = true;
+                await finishAssistantAnswer(streamingBody, buffer);
+                if (buffer.trim()) setWrapContent(streamingBody, buffer);
+            }
+            notifyError(errorMsg);
             state.requestId = null;
             await updateHint();
         }
@@ -1052,13 +1200,24 @@
         pushRender('user', text);
         await persistMsg('user', text);
         await updateHint();
-        const parsed = await collectExtraFiles(text);
-        const merged = Array.isArray(state.scopeFiles) ? state.scopeFiles.slice(0, 3) : [];
-        for (const f of parsed.files) {
-            if (!merged.includes(f) && merged.length < 3) merged.push(f);
+        // 立即进入加载态：附加资料解析（@提及/#标签/书签检索）有多轮 IPC，
+        // 先给出"正在生成"反馈再做预处理 —— 与 Agent 页在请求前 showChatTyping 一致。
+        const pendingBody = pushRender('assistant', '', true);
+        let merged = Array.isArray(state.scopeFiles) ? state.scopeFiles.slice(0, 3) : [];
+        let folders = [];
+        let bookmarks = [];
+        try {
+            const parsed = await collectExtraFiles(text);
+            for (const f of parsed.files) {
+                if (!merged.includes(f) && merged.length < 3) merged.push(f);
+            }
+            folders = parsed.folders;
+            bookmarks = await collectBookmarks(text);
+        } catch (e) {
+            // 预处理失败不阻断提问：退化为仅当前文件上下文
+            console.warn('[doc-qa] 附加资料解析失败，按当前文件继续:', e);
         }
-        const bookmarks = await collectBookmarks(text);
-        await runDocQuestion(text, merged, parsed.folders, bookmarks);
+        await runDocQuestion(text, merged, folders, bookmarks, pendingBody);
     }
 
     async function docQaNew() {
