@@ -576,6 +576,16 @@ fn read_text(full: &Path, display: &str, offset: usize) -> Result<String, String
     if let Some(hit) = cache::tool_result_cache().get(&cache_key, mtime) {
         return Ok(hit);
     }
+    // **二进制文档守卫**（Plan B v2 / D8 最后一处未修点）：
+    // PDF / Office / ODF / RTF / EPUB 是压缩包或 OLE 容器，按 UTF-8 直读只会得到
+    // 乱码（大量替换字符），既无信息量又污染模型上下文。明确拒绝并引导到
+    // `read_document`——后者经 `DocumentLoader` 转换成 Markdown。
+    if let Some(label) = document_converter_label(display) {
+        return Err(format!(
+            "{display} 是二进制文档（转换器：{label}），不能按文本直读。\
+             请改用 read_document 工具读取其文本内容（它会转换成 Markdown）。"
+        ));
+    }
     let data = std::fs::read(full).map_err(|e| format!("读取文件失败: {}", e))?;
     let text = String::from_utf8_lossy(&data).into_owned();
     let total = text.chars().count();
@@ -598,8 +608,200 @@ fn read_text(full: &Path, display: &str, offset: usize) -> Result<String, String
     Ok(result)
 }
 
-/// 将一次知识库内容读取/搜索命中记录为引用来源（score=0 表示非检索命中，引用列表中排后）。
+// ──────────────────────────── 文档读取（read_document）────────────────────────────
+
+/// 该路径是否为「需要转换才能读成文本」的文档格式；返回转换器名（如 `anydoc`）。
 ///
+/// 判据来自注册表：转换器**不是** `Converter::Plain` 的即需要转换。
+/// 返回 `None` 表示文本/代码类（应走 [`read`]）。
+fn document_converter_label(rel_path: &str) -> Option<&'static str> {
+    use crate::core::document::filekind::Converter;
+    let kind = crate::core::document::filekind::lookup(rel_path)?;
+    match kind.converter {
+        Converter::Plain => None,
+        Converter::AnyDoc => Some("anydoc"),
+        Converter::PdfInspector => Some("pdf-inspector"),
+        Converter::LegacyPdf => Some("pdf-extract"),
+    }
+}
+
+/// 跳过原因 → 给模型/用户的下一步建议（让失败可操作，而不只是"读不了"）。
+fn skip_remedy(code: &str) -> &'static str {
+    match code {
+        "needs_ocr" => "该文件是扫描件（图片页），需先用 OCR 生成带文字层的 PDF 后才能检索/读取。",
+        "encrypted" => "该文件已加密，请先解除保护后再放入知识库。",
+        "too_large" => "该文件超过大小上限，可拆分后重试。",
+        "not_utf8" => "该文本文件不是 UTF-8 编码，请转码。",
+        "malformed" | "missing_part" => "文件结构已损坏，请用原软件重新另存后再试。",
+        "resource_limit" => {
+            "该文档触发了安全解析上限（嵌套层级/节点数/解压体积等），可能是异常构造的文件；\
+             请确认文件来源，或另存为更简单的格式后重试。"
+        }
+        "too_small" => "提取到的有效内容过少（接近空文件）。",
+        "empty_content" => "转换后没有提取到任何文本（可能整篇都是图片）。",
+        "unsupported" => "该格式未登记，无法解析。",
+        "io" => "文件读取失败（权限或被占用）。",
+        _ => "请检查文件内容是否完整。",
+    }
+}
+
+/// 经转换缓存装载（与索引侧 `indexer::load_with_cache`、预览侧同口径）。
+///
+/// 转换逻辑仍只有 `DocumentLoader` 一处；这里只是它前面的一层透明加速。
+async fn load_document_cached(
+    dir_path: &str,
+    full: &Path,
+    rel_path: &str,
+) -> Result<
+    crate::core::document::loader::DocumentSource,
+    crate::core::document::loader::SkipReason,
+> {
+    use crate::core::document::loader as loader;
+    let cache_dir = crate::core::db::utils::get_cache_dir(dir_path);
+    match crate::core::db::conversion_cache::ConversionCache::open_shared(&cache_dir) {
+        Ok(cache) => cache.load_or_convert(full, rel_path),
+        Err(e) => {
+            log::debug!("[tools] 转换缓存不可用（回退直接装载）: {e}");
+            loader::load_document(full, rel_path)
+        }
+    }
+}
+
+/// 读取「文档」文件（PDF / Word / PowerPoint / Excel / ODF / RTF / EPUB…）的文本内容。
+///
+/// **与 [`read`] 的分工**：`read` 只适用于文本/代码类文件；对需要转换的二进制文档
+/// 它会明确拒绝并引导到这里（旧实现对这些文件做 `from_utf8_lossy`，等于把压缩包的
+/// 字节当文本塞进模型上下文）。
+///
+/// **实现取向**：底层走 `DocumentLoader`（Plan B v2 的唯一入口契约），因此
+/// - 与索引/预览看到的**是同一份转换结果**（Office→anydoc，PDF→pdf-inspector）；
+/// - 自动命中转换缓存，同一文件重复读取不重复解析；
+/// - 失败时给出**可解释原因 + 下一步建议**（需 OCR / 加密 / 损坏 / 超限…），而非一段乱码。
+///
+/// 输出为 Markdown 正文，前置一行元信息（转换器/来源类型/页数）；分页语义与
+/// [`read`] 一致（`offset` 为字符偏移）。
+pub async fn read_document(
+    cfg: &KbSearchConfig,
+    rel_path: &str,
+    offset: usize,
+) -> Result<String, String> {
+    let full = safe_resolve(&cfg.dir_path, rel_path)?;
+    let meta = std::fs::metadata(&full).map_err(|e| format!("读取文件信息失败: {}", e))?;
+    if meta.is_dir() {
+        return Err(format!("{} 是目录，请改用 ls 查看目录内容", rel_path));
+    }
+
+    // 只接受注册表认可的「需转换文档」；文本类文件引导回 read（两个工具职责不重叠）
+    match crate::core::document::filekind::lookup(rel_path) {
+        None => {
+            return Err(format!(
+                "{} 未登记为可解析文档（格式不在注册表内）。若它是文本/代码文件，请用 read。",
+                rel_path
+            ));
+        }
+        Some(_) if document_converter_label(rel_path).is_none() => {
+            return Err(format!(
+                "{} 是文本类文件（可直接读取），请用 read 工具，无需 read_document。",
+                rel_path
+            ));
+        }
+        Some(_) => {}
+    }
+
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    let cache_key = format!("doc|{rel_path}|{offset}");
+    if let Some(hit) = cache::tool_result_cache().get(&cache_key, mtime) {
+        return Ok(hit);
+    }
+
+    let src = match load_document_cached(&cfg.dir_path, &full, rel_path).await {
+        Ok(s) => s,
+        Err(reason) => {
+            let code = reason.code();
+            return Err(format!(
+                "无法解析 {rel_path}（{code}）：{}\n建议：{}",
+                reason.message(),
+                skip_remedy(code)
+            ));
+        }
+    };
+
+    // 元信息行：让模型知道"这份文本是怎么来的"，也是排查转换问题的线索
+    let result = format_document_output(rel_path, &src, offset);
+    // 引用来源记录与 read 一致（用转换后的正文片段）
+    push_kb_source(cfg, rel_path, &src.text).await;
+    // 提示注入防护：与 read 同口径（不可信知识库内容包裹可疑指令）
+    let result = crate::core::security::wrap_suspicious(&result);
+    cache::tool_result_cache().put(&cache_key, mtime, &result);
+    Ok(result)
+}
+
+/// [`read_document`] 的输出拼装：**元信息行 +（可能分页的）Markdown 正文**。
+///
+/// 抽成纯函数（不依赖 `KbSearchConfig`）的理由：输出格式是**模型可见契约**
+/// ——转换器/来源类型/页数/部分索引提示/截断续读指引都必须可被单测钉住，
+/// 而单测不该为了验证一段字符串去构造 18 个字段的检索配置。
+fn format_document_output(
+    rel_path: &str,
+    src: &crate::core::document::loader::DocumentSource,
+    offset: usize,
+) -> String {
+    let mut meta_line = format!(
+        "[文档] {rel_path} ｜ 转换器={} ｜ 来源类型={} ｜ 形态={}",
+        src.converter.label(),
+        src.source_kind,
+        src.form.as_str()
+    );
+    if !src.page_spans.is_empty() {
+        meta_line.push_str(&format!(" ｜ 页数={}", src.page_spans.len()));
+    }
+    if let crate::core::document::loader::DocStatus::PartiallyIndexed { skipped_pages } =
+        &src.doc_status
+    {
+        meta_line.push_str(&format!(
+            "\n[注意] 该文档有 {} 页无法提取文本（第 {} 页），其余内容如下。",
+            skipped_pages.len(),
+            skipped_pages
+                .iter()
+                .map(|p| p.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        ));
+    }
+    if !src.warnings.is_empty() {
+        meta_line.push_str(&format!("\n[转换提示] {}", src.warnings.join("；")));
+    }
+
+    let total = src.text.chars().count();
+    let body = if offset >= total {
+        format!("[已达文件末尾（正文共 {total} 字符），offset={offset} 超出范围]")
+    } else {
+        let chunk: String = src
+            .text
+            .chars()
+            .skip(offset)
+            .take(MAX_FILE_READ_CHARS)
+            .collect();
+        if offset + MAX_FILE_READ_CHARS >= total {
+            chunk
+        } else {
+            format!(
+                "{chunk}\n\n[内容过长：已显示第 {}~{} 字符（共 {total} 字符）。可再次调用 read_document 并指定 offset={} 读取后续内容]",
+                offset + 1,
+                offset + chunk.chars().count(),
+                offset + MAX_FILE_READ_CHARS
+            )
+        }
+    };
+    format!("{meta_line}\n\n{body}")
+}
+
+/// 将一次知识库内容读取/搜索命中记录为引用来源（score=0 表示非检索命中，引用列表中排后）。///
 /// 供 `read` / `grep` 等「直接读取知识库文件」的工具调用：这些路径此前不产生引用，
 /// 导致同一 Agent 回答中引用「有时有、有时无」。命中写入 `search_sink` 后，
 /// 在 `rag:done` 发射前由 `merge_search_sink` 与预检索来源合并，保证
@@ -622,6 +824,12 @@ async fn push_kb_source(cfg: &KbSearchConfig, doc_name: &str, snippet: &str) {
         symbol_kind: None,
         chunk_type: None,
         tags: None,
+        source_kind: None,
+        converter: None,
+        page_start: None,
+        page_end: None,
+        source_spans: None,
+        table_headers: None,
         score_rerank: None,
         query_sources: Vec::new(),
     };
@@ -1173,7 +1381,7 @@ pub async fn grep_files(
     let include_owned = include.to_vec();
     let exclude_owned = exclude.to_vec();
     let parsed_for_search = parsed.clone();
-    let (hits, truncated, skipped, hit_total) = tokio::task::spawn_blocking(move || {
+    let (hits, truncated, skipped, hit_total, doc_binary_skipped) = tokio::task::spawn_blocking(move || {
         let entries = get_or_refresh_cache(&dir_path, &dir_blacklist, &file_blacklist)?;
         let include_matcher = GlobMatcher::new(&include_owned);
         let exclude_matcher = GlobMatcher::new(&exclude_owned);
@@ -1192,6 +1400,8 @@ pub async fn grep_files(
         let mut scanned: u64 = 0;
         let mut truncated = false;
         let mut skipped = 0u32;
+        // 二进制**文档**被跳过的数量（与 `skipped` 分开：原因不同，提示也不同）
+        let mut doc_binary_skipped = 0u32;
         for (rel, _) in candidates {
             if scanned >= MAX_GREP_SCAN_BYTES {
                 truncated = true;
@@ -1214,8 +1424,15 @@ pub async fn grep_files(
                 // 已到达累计扫描上限：本文件已读入，继续匹配，但后续文件不再扫描
                 truncated = true;
             }
-            // 含 NUL 字节视为二进制文件，跳过
+            // 含 NUL 字节视为二进制文件，跳过。
+            //
+            // 若它是注册表认可的「需转换文档」（pdf/docx/pptx…），单独计数并在输出里
+            // 提示改用 `read_document`——否则模型会把"grep 没找到"误判成"文件里没有
+            // 这个内容"，而实际上只是没法按文本搜。
             if data.contains(&0) {
+                if document_converter_label(&rel).is_some() {
+                    doc_binary_skipped += 1;
+                }
                 continue;
             }
             let text = String::from_utf8_lossy(&data);
@@ -1234,17 +1451,25 @@ pub async fn grep_files(
                 hits.push((rel, lines));
             }
         }
-        Ok::<_, String>((hits, truncated, skipped, hit_total))
+        Ok::<_, String>((hits, truncated, skipped, hit_total, doc_binary_skipped))
     })
     .await
     .map_err(|e| format!("搜索文件内容失败: {}", e))??;
 
     // 读取失败提示：区分"术语不存在"与"文件不可读"，避免误导模型
-    let skip_note = if skipped > 0 {
+    let mut skip_note = if skipped > 0 {
         format!("\n（注：{} 个文件读取失败被跳过，结果可能不完整）", skipped)
     } else {
         String::new()
     };
+    // 二进制文档提示：它们**没有被搜索**，所以"未找到"不代表"内容不存在"
+    if doc_binary_skipped > 0 {
+        skip_note.push_str(&format!(
+            "\n（注：本次有 {} 个文档文件是二进制格式（PDF/Office 等），grep 无法搜索其内容；\
+             若需查看其中内容，请用 read_document 读取该文件）",
+            doc_binary_skipped
+        ));
+    }
 
     // 将 grep 命中的知识库文件记录为引用来源（模型使用的知识库内容对用户透明），
     // 与 read / 预检索 / kb_search 的来源路径保持一致
@@ -2480,4 +2705,195 @@ pub(crate) async fn run_subagent_impl(
         .subagent_results
         .insert(sub_request_id.clone(), outcome.full_output.clone());
     Ok((sub_request_id, outcome))
+}
+
+/// `read_document` / 二进制文档守卫的测试。
+///
+/// **为什么能在这里做真实转换测试**：`load_document_cached` 只需要一个目录路径，
+/// 不需要完整的 `KbSearchConfig`（无 Indexer/无模型）。而 **RTF 是纯文本格式**，
+/// 可以直接在测试里手写一个最小合法 RTF —— 于是不必往仓库塞二进制夹具，就能
+/// 端到端跑通「二进制/容器类文档 → anydoc → Markdown」这条链路。
+#[cfg(test)]
+mod document_read_tests {
+    use super::*;
+
+    /// 最小合法 RTF（`{\rtf1...}` 控制字 + 正文），anydoc 应解析出 `BODY` 文本
+    fn minimal_rtf() -> String {
+        format!(
+            "{{\\rtf1\\ansi\\deff0{{\\fonttbl{{\\f0 Times New Roman;}}}}\
+             \\f0\\fs24 {} \\b BoldPart\\b0  tail.\\par}}",
+            "AnyDocConversionProbe ".repeat(3)
+        )
+    }
+
+    fn write_temp(name: &str, content: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join("mdgo_read_document_tests");
+        std::fs::create_dir_all(&dir).expect("建临时目录");
+        let p = dir.join(name);
+        std::fs::write(&p, content).expect("写临时文件");
+        let full = std::fs::canonicalize(&p).expect("canonicalize");
+        (dir, full)
+    }
+
+    /// 分类判据：哪些扩展名必须走 `read_document`，哪些必须走 `read`。
+    /// 这张表就是两个工具的分工契约（漏一个就会出现"read 读到乱码"）。
+    #[test]
+    fn binary_documents_route_to_read_document_and_text_does_not() {
+        for (p, want) in [
+            ("a.pdf", "pdf-inspector"),
+            ("a.PPTX", "anydoc"),
+            ("a.docx", "anydoc"),
+            ("a.docm", "anydoc"),
+            ("a.doc", "anydoc"),
+            ("a.ppt", "anydoc"),
+            ("a.xlsx", "anydoc"),
+            ("a.xlsb", "anydoc"),
+            ("a.odt", "anydoc"),
+            ("a.ods", "anydoc"),
+            ("a.rtf", "anydoc"),
+            ("a.epub", "anydoc"),
+            ("sub/dir/b.pptx", "anydoc"),
+        ] {
+            assert_eq!(
+                document_converter_label(p),
+                Some(want),
+                "{p} 应识别为需转换文档（转换器 {want}）"
+            );
+        }
+        // 文本/代码类：直读，不该被引导到 read_document
+        for p in [
+            "a.md", "a.markdown", "a.txt", "a.json", "a.csv", "a.yaml", "a.rs", "a.ts",
+            "a.html", "a.opml", "unknown.xyz",
+        ] {
+            assert_eq!(document_converter_label(p), None, "{p} 应走 read（直读）");
+        }
+    }
+
+    /// 每个 `SkipReason::code()` 都必须有可操作建议，不能落到兜底文案
+    /// （否则模型只知道"读不了"，不知道下一步做什么）。
+    #[test]
+    fn skip_remedy_covers_every_skip_code() {
+        use crate::core::document::loader::SkipReason;
+        let all = vec![
+            SkipReason::Unsupported { ext: "xyz".into() },
+            SkipReason::NotUtf8,
+            SkipReason::NeedsOcr { pages: vec![1], page_count: 3 },
+            SkipReason::Encrypted,
+            SkipReason::Malformed { detail: "x".into() },
+            SkipReason::ResourceLimit { limit: "max_nodes".into() },
+            SkipReason::MissingPart { part: "word/document.xml".into() },
+            SkipReason::TooLarge { size: 1, limit: 1 },
+            SkipReason::TooSmall { size: 1 },
+            SkipReason::EmptyContent,
+            SkipReason::Io { detail: "x".into() },
+        ];
+        for r in &all {
+            let advice = skip_remedy(r.code());
+            assert!(
+                !advice.contains("请检查文件内容是否完整"),
+                "{} 落到了兜底建议（应为它写专门文案）",
+                r.code()
+            );
+        }
+        // needs_ocr 的建议必须点明 OCR（这是用户唯一有效的处置动作）
+        assert!(skip_remedy("needs_ocr").contains("OCR"));
+    }
+
+    /// **端到端**：`.rtf`（需转换文档）经 `DocumentLoader` → anydoc → Markdown。
+    /// 这条断言直接对应用户诉求"用 anydoc 解析成 md 纯文本"。
+    #[tokio::test]
+    async fn rtf_document_converts_to_markdown_via_anydoc() {
+        let (dir, full) = write_temp("probe.rtf", &minimal_rtf());
+        let src = load_document_cached(&dir.to_string_lossy(), &full, "probe.rtf")
+            .await
+            .expect("RTF 应能转换成功");
+
+        assert_eq!(src.converter.id, "anydoc", "Office/RTF 走 anydoc");
+        assert_eq!(src.source_kind, "office");
+        assert_eq!(src.form, crate::core::document::filekind::DocumentForm::Markdown);
+        assert!(
+            src.text.contains("AnyDocConversionProbe"),
+            "转换后的正文应含原文内容，实际：{:?}",
+            src.text.chars().take(120).collect::<String>()
+        );
+        assert!(src.text.contains("BoldPart"), "粗体文本不应丢失");
+        // 乱码判据：RTF 是文本格式，转换结果不该出现替换字符
+        assert!(
+            !src.text.contains('\u{FFFD}'),
+            "转换结果不应含替换字符（说明未被按错误编码解读）"
+        );
+    }
+
+    /// 输出格式契约：元信息行必须含转换器/来源类型/形态，正文紧随其后。
+    /// （元信息是模型判断"这份文本怎么来的"的唯一线索，也是排查转换问题的抓手。）
+    #[tokio::test]
+    async fn document_output_has_metadata_header_and_body() {
+        let (dir, full) = write_temp("fmt.rtf", &minimal_rtf());
+        let src = load_document_cached(&dir.to_string_lossy(), &full, "fmt.rtf")
+            .await
+            .expect("RTF 应能转换");
+
+        let out = format_document_output("fmt.rtf", &src, 0);
+        let (head, body) = out.split_once("\n\n").expect("元信息与正文之间应有空行");
+        assert!(head.starts_with("[文档] fmt.rtf"), "实际：{head}");
+        assert!(head.contains("转换器=anydoc@0.2.4"), "实际：{head}");
+        assert!(head.contains("来源类型=office"), "实际：{head}");
+        assert!(head.contains("形态=markdown"), "实际：{head}");
+        // RTF 无页码 provenance → 不该出现页数
+        assert!(!head.contains("页数="), "非分页格式不该有页数，实际：{head}");
+        assert!(body.contains("AnyDocConversionProbe"), "正文应含转换后内容");
+
+        // 分页语义与 read 一致：越界 offset 给出明确提示而非空串
+        let out2 = format_document_output("fmt.rtf", &src, 999_999);
+        assert!(out2.contains("已达文件末尾"), "实际：{out2}");
+    }
+
+    /// 上下文注入防护：`read_document` 的结果经 `wrap_suspicious`（与 read 同口径）。
+    /// 这里只断言"该函数对正常内容是无损的"，避免误伤正常文档。
+    #[tokio::test]
+    async fn document_output_survives_injection_wrapper() {
+        let (dir, full) = write_temp("inject.rtf", &minimal_rtf());
+        let src = load_document_cached(&dir.to_string_lossy(), &full, "inject.rtf")
+            .await
+            .expect("RTF 应能转换");
+        let out = crate::core::security::wrap_suspicious(&format_document_output(
+            "inject.rtf", &src, 0,
+        ));
+        assert!(out.contains("AnyDocConversionProbe"), "正常内容不应被包装破坏");
+    }
+
+    /// `read_text` 对二进制文档必须**明确拒绝并引导**，而不是返回 lossy 乱码。
+    /// 这是本次修复的核心：旧实现对 `.pptx` 做 `from_utf8_lossy` → 垃圾进上下文。
+    #[test]
+    fn read_text_refuses_binary_document_with_actionable_hint() {
+        let (_dir, full) = write_temp("probe2.rtf", &minimal_rtf());
+        let err = read_text(&full, "probe2.rtf", 0)
+            .expect_err("二进制文档不应被 read 直读");
+        assert!(
+            err.contains("read_document"),
+            "错误信息必须指路到 read_document，实际：{err}"
+        );
+        assert!(err.contains("anydoc"), "应说明用哪个转换器，实际：{err}");
+    }
+
+    /// 反向保护：文本类文件仍能用 `read` 正常读取（守卫不能误伤）。
+    #[test]
+    fn read_text_still_reads_plain_text_files() {
+        let (_dir, full) = write_temp("plain.md", "# 标题\n\n普通正文内容，应当可以直读。");
+        let out = read_text(&full, "plain.md", 0).expect("文本文件应可直读");
+        assert!(out.contains("普通正文内容"));
+        // 分页语义仍在：offset 超出范围时给出提示
+        let out2 = read_text(&full, "plain.md", 9999).expect("越界 offset 不报错");
+        assert!(out2.contains("已达文件末尾"), "实际：{out2}");
+    }
+
+    /// 未登记扩展名仍走 lossy 宽容路径（TC-G17 的对应单测）：
+    /// `.log` 不在注册表 → `read` 可用（不报"二进制文档"），保持既有行为。
+    #[test]
+    fn unregistered_extension_is_not_treated_as_document() {
+        let (_dir, full) = write_temp("app.log", "line1\nline2\n");
+        let out = read_text(&full, "app.log", 0).expect("未登记扩展名应可直读");
+        assert!(out.contains("line1"));
+        assert_eq!(document_converter_label("app.log"), None);
+    }
 }

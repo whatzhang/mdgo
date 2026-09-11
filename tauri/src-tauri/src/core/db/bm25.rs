@@ -799,6 +799,14 @@ impl Bm25Index {
                 symbol_kind,
                 chunk_type,
                 tags,
+                // Phase 0C：BM25 schema 不存 provenance（省索引体积）；融合时以向量路为准
+                source_kind: None,
+                converter: None,
+                page_start: None,
+                page_end: None,
+                source_spans: None,
+                // 同上：BM25 schema 不存表头列名（表头本就在 text 中，BM25 已可命中列名）
+                table_headers: None,
                 score_rerank: None,
                 query_sources: Vec::new(),
             });
@@ -993,6 +1001,12 @@ mod tests {
             symbol_kind: None,
             embedding_text: None,
             chunk_type: None,
+            source_kind: None,
+            converter: None,
+            page_start: None,
+            page_end: None,
+            source_spans: None,
+            table_headers: None,
             doc_title: None,
             tags: None,
         }

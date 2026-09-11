@@ -5,6 +5,7 @@ use regex::Regex;
 
 use super::utils;
 use crate::core::document::chunk_engine::{Chunk, ChunkEngine, SemanticChunkEngine};
+use crate::core::document::loader::LineSpan;
 use crate::core::document::text_split::char_len;
 use crate::core::document::{ComrakMarkdownParser, MarkdownParser};
 
@@ -33,6 +34,19 @@ pub struct ChunkResult {
     pub doc_title: Option<String>,
     /// 文档标签（P0-1：frontmatter `tags` + `aliases`；BM25 tags 字段）
     pub tags: Option<Vec<String>>,
+    /// **页码 provenance**（Plan B v2 / Phase 1）：该 chunk 覆盖的起始页（1-indexed）。
+    ///
+    /// 由「行 → 页」映射（构造自转换阶段）翻译得到；**不是分块边界**——
+    /// chunk 仍由语义分组定界，因此可以跨页（此时 `page_end > page_start`）。
+    pub page_start: Option<u32>,
+    /// 覆盖的结束页（1-indexed）；单页 chunk 与 `page_start` 相同
+    pub page_end: Option<u32>,
+    /// 成员行区间的页归属明细（JSON：`[{"page":1,"line_start":10,"line_end":24}]`）
+    pub source_spans: Option<String>,
+    /// **表格表头列名**（JSON 数组，Plan B v2 §4.7 / 决策 R3）；非表格块为 `None`。
+    ///
+    /// 只进 metadata，**不进 `embedding_text`**（§8.1 `table_headers_metadata`）。
+    pub table_headers: Option<String>,
 }
 
 impl ChunkResult {
@@ -49,6 +63,7 @@ impl ChunkResult {
             chunk_type: None,
             doc_title: None,
             tags: None,
+            ..ChunkResult::default()
         }
     }
 
@@ -65,6 +80,7 @@ impl ChunkResult {
             chunk_type: None,
             doc_title: None,
             tags: None,
+            ..ChunkResult::default()
         }
     }
 
@@ -82,6 +98,32 @@ impl ChunkResult {
             chunk_type: None,
             doc_title: None,
             tags: None,
+            ..ChunkResult::default()
+        }
+    }
+}
+
+/// 默认值：provenance 字段回到"无页码"（非分页格式的常态）。
+///
+/// 存在的意义：新增 provenance 字段时，所有既有构造点用 `..ChunkResult::default()`
+/// 自动获得 `None`，不必逐处补字段（降低"新增字段漏改"的风险）。
+impl Default for ChunkResult {
+    fn default() -> Self {
+        Self {
+            text: String::new(),
+            path_depth: None,
+            path_json: None,
+            sentence_window: None,
+            symbol_name: None,
+            symbol_kind: None,
+            embedding_text: None,
+            chunk_type: None,
+            doc_title: None,
+            tags: None,
+            page_start: None,
+            page_end: None,
+            source_spans: None,
+            table_headers: None,
         }
     }
 }
@@ -92,9 +134,25 @@ impl ChunkResult {
 /// heading_path 映射到 path_depth / path_json。
 impl From<Chunk> for ChunkResult {
     fn from(chunk: Chunk) -> Self {
+        // 无页映射（非分页格式）→ provenance 全 None，行为与改造前一致
+        Self::from_chunk(chunk, &[])
+    }
+}
+
+impl ChunkResult {
+    /// AST 引擎产物 → 分块结果，并把**行区间**翻译为页码 provenance（Plan B v2 / Phase 1）。
+    ///
+    /// `pages` 是**构造式**行→页映射（由 `DocumentLoader` 在拼接逐页内容时记账，
+    /// 见 `document::loader::LineSpan`），因此这里只做查表，不做任何文本反查。
+    ///
+    /// 语义（方案 §0.1 原则 2）：**页码是溯源，不是分块边界**——
+    /// chunk 由 `SemanticChunkEngine` 按语义定界，故 `page_end > page_start`（跨页）是正常的。
+    pub fn from_chunk(chunk: Chunk, pages: &[LineSpan]) -> Self {
         let path_depth = (!chunk.path.is_empty()).then_some(chunk.path.len() as u32);
         let path_json = (!chunk.path.is_empty())
             .then(|| serde_json::to_string(&chunk.path).unwrap_or_default());
+        let (page_start, page_end, source_spans) =
+            map_lines_to_pages(pages, chunk.line_start, chunk.line_end);
         ChunkResult {
             text: chunk.text,
             path_depth,
@@ -106,8 +164,88 @@ impl From<Chunk> for ChunkResult {
             chunk_type: Some(chunk.chunk_type),
             doc_title: None,
             tags: None,
+            page_start,
+            page_end,
+            source_spans,
+            // §4.7 / R3：表头列名随 chunk 一路带到落库层；`embedding_text` 已在上面
+            // 从 chunk 原样取走（引擎侧就没往里掺表头词），故此处无需再做剥离
+            table_headers: chunk.table_headers,
         }
     }
+}
+
+/// 行区间 `[line_start, line_end]`（1-based 闭区间）→ 页码 provenance。
+///
+/// 返回 `(page_start, page_end, source_spans_json)`：
+/// - `pages` 为空或行区间为 `(0,0)` → `(None, None, None)`；
+/// - `page_start` 取**起始行**所在页，`page_end` 取**结束行**所在页；
+/// - `source_spans` 为所有与区间相交的页片段（`{page, line_start, line_end}` JSON 数组，
+///   行区间按交集裁剪），供前端展示"第 N–M 页"或未来做 bbox 高亮。
+pub fn map_lines_to_pages(
+    pages: &[LineSpan],
+    line_start: usize,
+    line_end: usize,
+) -> (Option<u32>, Option<u32>, Option<String>) {
+    if pages.is_empty() || (line_start == 0 && line_end == 0) {
+        return (None, None, None);
+    }
+    // 闭区间归一：若 end < start（异常输入）按单行处理
+    let (lo, hi) = if line_end < line_start {
+        (line_end, line_start)
+    } else {
+        (line_start, line_end)
+    };
+    let page_start = pages.iter().find(|s| s.contains_line(lo)).map(|s| s.page);
+    let page_end = pages.iter().find(|s| s.contains_line(hi)).map(|s| s.page);
+
+    let mut spans: Vec<String> = Vec::new();
+    for s in pages {
+        let start = s.line_start.max(lo);
+        let end = s.line_end.min(hi + 1);
+        if start >= end {
+            continue;
+        }
+        spans.push(format!(
+            "{{\"page\":{},\"line_start\":{},\"line_end\":{}}}",
+            s.page,
+            start,
+            end - 1
+        ));
+    }
+    let json = if spans.is_empty() {
+        None
+    } else {
+        Some(format!("[{}]", spans.join(",")))
+    };
+    (page_start, page_end, json)
+}
+
+/// 合并两个 chunk 的 provenance（合并块时使用）：页区间取并集，明细片段拼接。
+///
+/// 片段拼接是安全的：两侧 JSON 均由 [`map_lines_to_pages`] 生成，格式受控
+/// （非用户输入），去掉首尾方括号后直接相接即为合法数组。
+pub fn union_provenance(
+    a: &ChunkResult,
+    b: &ChunkResult,
+) -> (Option<u32>, Option<u32>, Option<String>) {
+    let start = match (a.page_start, b.page_start) {
+        (Some(x), Some(y)) => Some(x.min(y)),
+        (x, y) => x.or(y),
+    };
+    let end = match (a.page_end, b.page_end) {
+        (Some(x), Some(y)) => Some(x.max(y)),
+        (x, y) => x.or(y),
+    };
+    let spans = match (a.source_spans.as_deref(), b.source_spans.as_deref()) {
+        (None, None) => None,
+        (Some(s), None) | (None, Some(s)) => Some(s.to_string()),
+        (Some(x), Some(y)) => {
+            let xs = x.trim().trim_start_matches('[').trim_end_matches(']');
+            let ys = y.trim().trim_start_matches('[').trim_end_matches(']');
+            Some(format!("[{},{}]", xs, ys))
+        }
+    };
+    (start, end, spans)
 }
 
 /// ChunkSplitter 特质：定义文本分割的统一接口。
@@ -116,6 +254,22 @@ impl From<Chunk> for ChunkResult {
 pub trait ChunkSplitter: Send + Sync {
     /// 将输入文本分割为若干文本块，每个块可能携带结构化元数据。
     fn split(&self, text: &str, max_size: usize, overlap: usize) -> Vec<ChunkResult>;
+
+    /// **Phase 1**：带页 provenance 的切分。
+    ///
+    /// `pages` 是**构造式**「行 → 页」映射（见 `document::loader::LineSpan`）。
+    /// 默认实现忽略它（非分页格式无需覆盖）；当前仅 [`MarkdownChunkSplitter`] 覆盖，
+    /// 因为 PDF 转换产物正是按 Markdown 形态分块的。
+    fn split_with_pages(
+        &self,
+        text: &str,
+        max_size: usize,
+        overlap: usize,
+        pages: &[LineSpan],
+    ) -> Vec<ChunkResult> {
+        let _ = pages;
+        self.split(text, max_size, overlap)
+    }
 }
 
 // ─── 纯文本文档分割器 ───
@@ -357,6 +511,8 @@ fn merge_small_chunks_symbol_aware(chunks: Vec<ChunkResult>, max_size: usize) ->
             if prev_too_small && !curr_has_symbol {
                 // 前一个 chunk 太小且当前无符号：合并到前一个
                 let merged_text = format!("{}\n{}", prev.text, chunk.text);
+                // Phase 1：合并块继承两侧 provenance 的并集（页区间可能因此变宽）
+                let (page_start, page_end, source_spans) = union_provenance(prev, &chunk);
                 *prev = ChunkResult {
                     text: merged_text,
                     path_depth: prev.path_depth.or(chunk.path_depth),
@@ -368,12 +524,18 @@ fn merge_small_chunks_symbol_aware(chunks: Vec<ChunkResult>, max_size: usize) ->
                     chunk_type: prev.chunk_type.clone().or(chunk.chunk_type),
                     doc_title: prev.doc_title.clone().or(chunk.doc_title),
                     tags: prev.tags.clone().or(chunk.tags),
+                    page_start,
+                    page_end,
+                    source_spans,
+                    // 合并块的表头取两侧任一（同表分片被合并时两者本就相同）
+                    table_headers: prev.table_headers.clone().or(chunk.table_headers),
                 };
                 continue;
             }
             if !curr_has_symbol && !prev_has_symbol && char_len(&prev.text) < min_size {
                 // 两个都无符号且前一个太小：合并
                 let merged_text = format!("{}\n{}", prev.text, chunk.text);
+                let (page_start, page_end, source_spans) = union_provenance(prev, &chunk);
                 *prev = ChunkResult {
                     text: merged_text,
                     path_depth: prev.path_depth.or(chunk.path_depth),
@@ -385,6 +547,10 @@ fn merge_small_chunks_symbol_aware(chunks: Vec<ChunkResult>, max_size: usize) ->
                     chunk_type: prev.chunk_type.clone().or(chunk.chunk_type),
                     doc_title: prev.doc_title.clone().or(chunk.doc_title),
                     tags: prev.tags.clone().or(chunk.tags),
+                    page_start,
+                    page_end,
+                    source_spans,
+                    table_headers: prev.table_headers.clone().or(chunk.table_headers),
                 };
                 continue;
             }
@@ -670,6 +836,32 @@ impl Default for MarkdownChunkSplitter {
 
 impl ChunkSplitter for MarkdownChunkSplitter {
     fn split(&self, text: &str, max_chars: usize, overlap: usize) -> Vec<ChunkResult> {
+        self.split_inner(text, max_chars, overlap, &[])
+    }
+
+    /// **Phase 1**：带页 provenance 的切分。
+    ///
+    /// `pages` 为**构造式**行→页映射（`DocumentLoader` 拼接逐页内容时记账）；
+    /// 只影响 chunk 的 `page_start/page_end/source_spans`，**不影响分块边界**。
+    fn split_with_pages(
+        &self,
+        text: &str,
+        max_chars: usize,
+        overlap: usize,
+        pages: &[LineSpan],
+    ) -> Vec<ChunkResult> {
+        self.split_inner(text, max_chars, overlap, pages)
+    }
+}
+
+impl MarkdownChunkSplitter {
+    fn split_inner(
+        &self,
+        text: &str,
+        max_chars: usize,
+        overlap: usize,
+        pages: &[LineSpan],
+    ) -> Vec<ChunkResult> {
         let config = &self.config;
 
         if text.trim().is_empty() {
@@ -695,7 +887,8 @@ impl ChunkSplitter for MarkdownChunkSplitter {
         engine
             .build(&document)
             .into_iter()
-            .map(ChunkResult::from)
+            // Phase 1：引擎产物携带行区间，在此翻译为页 provenance
+            .map(|c| ChunkResult::from_chunk(c, pages))
             .collect()
     }
 }
@@ -965,6 +1158,8 @@ impl TreeProcessor {
                 chunk_type: None,
                 doc_title: None,
                 tags: None,
+                // TreeProcessor 路径（OPML/FreeMind）无页概念 → provenance 默认 None
+                ..ChunkResult::default()
             });
             return;
         }
@@ -987,6 +1182,8 @@ impl TreeProcessor {
                 chunk_type: None,
                 doc_title: None,
                 tags: None,
+                // TreeProcessor 路径（OPML/FreeMind）无页概念 → provenance 默认 None
+                ..ChunkResult::default()
             });
         }
     }
@@ -1015,6 +1212,8 @@ impl TreeProcessor {
             chunk_type: None,
             doc_title: None,
             tags: None,
+            // 树形路径无页概念
+            ..ChunkResult::default()
         });
     }
 
@@ -1318,17 +1517,39 @@ impl ChunkSplitterFactory {
         factory.exact.insert("mm", freemind);
 
         // 代码文件类型（有语言特定分隔符的扩展名使用 CodeAwareChunkSplitter）
-        // 其余非 Markdown/OPML/FreeMind/HTML 类型使用 PlainTextChunkSplitter
-        for ext in utils::KB_SUPPORTED_EXTS {
-            if ext == &"md" || ext == &"mdx" || ext == &"opml" || ext == &"mm"
-                || ext == &"html" || ext == &"htm"
-            {
-                continue;
-            }
-            if CODE_LANG_SEPARATORS.contains_key(ext) {
-                factory.exact.insert(ext, Box::new(CodeAwareChunkSplitter::for_extension(ext)));
-            } else {
-                factory.exact.insert(ext, Box::new(PlainTextChunkSplitter));
+        // 其余非 Markdown/HTML/树形类型使用 PlainTextChunkSplitter。
+        //
+        // D7 + C3：路由**完全由注册表的内容形态驱动**（不再按硬编码扩展名列表），
+        // 因此新增 Markdown 家族扩展名（markdown/mdown/rst）会自动获得 AST 语义分块，
+        // 不会退化成 PlainText。
+        for &ext in crate::core::document::filekind::registry().all_exts() {
+            let kind = match crate::core::document::filekind::registry().lookup_ext(ext) {
+                Some(k) => k,
+                None => continue,
+            };
+            use crate::core::document::filekind::DocumentForm;
+            match kind.form {
+                // md / mdx / markdown / mdown / rst → AST 语义分块
+                // （上方已注册 md/mdx，此处按注册表补齐其余 Markdown 家族扩展名）
+                DocumentForm::Markdown => {
+                    factory
+                        .exact
+                        .insert(ext, Box::new(MarkdownChunkSplitter::new()));
+                }
+                DocumentForm::Html => {
+                    factory.exact.insert(ext, Box::new(HtmlChunkSplitter::new()));
+                }
+                // opml / mm 已在上方显式注册（按各自的树形解析器）
+                DocumentForm::Tree => {}
+                DocumentForm::Code | DocumentForm::Plain => {
+                    if CODE_LANG_SEPARATORS.contains_key(ext) {
+                        factory
+                            .exact
+                            .insert(ext, Box::new(CodeAwareChunkSplitter::for_extension(ext)));
+                    } else {
+                        factory.exact.insert(ext, Box::new(PlainTextChunkSplitter));
+                    }
+                }
             }
         }
 
@@ -1371,12 +1592,128 @@ impl Default for ChunkSplitterFactory {
 // 确保分割器可作静态变量
 static PLAIN_TEXT_SPLITTER: PlainTextChunkSplitter = PlainTextChunkSplitter;
 
-// ─── P0-3 测试：工厂路由（I-7 类型策略） ───
+// ─── Phase 1 测试：行区间 → 页 provenance 映射 ───
+
+#[cfg(test)]
+mod provenance_tests {
+    use super::*;
+
+    fn spans() -> Vec<LineSpan> {
+        // 第 1 页占 1..=10 行，第 2 页占 11..=20 行，第 3 页占 21..=30 行
+        vec![
+            LineSpan { line_start: 1, line_end: 11, page: 1 },
+            LineSpan { line_start: 11, line_end: 21, page: 2 },
+            LineSpan { line_start: 21, line_end: 31, page: 3 },
+        ]
+    }
+
+    #[test]
+    fn single_page_chunk_maps_to_one_page() {
+        let (s, e, json) = map_lines_to_pages(&spans(), 3, 8);
+        assert_eq!(s, Some(1));
+        assert_eq!(e, Some(1));
+        let json = json.expect("应有明细");
+        assert!(json.contains("\"page\":1"), "{}", json);
+        assert!(!json.contains("\"page\":2"), "单页 chunk 不应出现第 2 页: {}", json);
+    }
+
+    /// **跨页 chunk**：chunk 边界由语义决定，页码只是 provenance（方案 §0.1 原则 2）
+    #[test]
+    fn cross_page_chunk_reports_page_range() {
+        let (s, e, json) = map_lines_to_pages(&spans(), 8, 14);
+        assert_eq!(s, Some(1), "起始行在第 1 页");
+        assert_eq!(e, Some(2), "结束行在第 2 页 → 应为跨页 chunk");
+        let json = json.expect("应有明细");
+        assert!(json.contains("\"page\":1") && json.contains("\"page\":2"), "{}", json);
+        // 明细按交集裁剪：第 1 页只到第 10 行，第 2 页从第 11 行起
+        assert!(json.contains("\"line_start\":8,\"line_end\":10"), "{}", json);
+        assert!(json.contains("\"line_start\":11,\"line_end\":14"), "{}", json);
+    }
+
+    #[test]
+    fn missing_map_yields_no_provenance() {
+        assert_eq!(map_lines_to_pages(&[], 1, 5), (None, None, None));
+        assert_eq!(
+            map_lines_to_pages(&spans(), 0, 0),
+            (None, None, None),
+            "(0,0) 表示无源码行来源"
+        );
+    }
+
+    #[test]
+    fn out_of_range_lines_yield_no_page_but_keep_span_when_intersecting() {
+        // 全部越界（第 100 行不在任何页）→ 无页号、无明细
+        let (s, e, json) = map_lines_to_pages(&spans(), 100, 120);
+        assert_eq!(s, None);
+        assert_eq!(e, None);
+        assert_eq!(json, None);
+    }
+
+    /// 合并块的 provenance 取并集（页区间可能因此变宽）
+    #[test]
+    fn union_provenance_merges_ranges() {
+        let a = ChunkResult {
+            page_start: Some(1),
+            page_end: Some(1),
+            source_spans: Some("[{\"page\":1,\"line_start\":1,\"line_end\":5}]".to_string()),
+            ..ChunkResult::default()
+        };
+        let b = ChunkResult {
+            page_start: Some(2),
+            page_end: Some(3),
+            source_spans: Some("[{\"page\":2,\"line_start\":11,\"line_end\":12}]".to_string()),
+            ..ChunkResult::default()
+        };
+        let (s, e, json) = union_provenance(&a, &b);
+        assert_eq!(s, Some(1));
+        assert_eq!(e, Some(3));
+        let json = json.expect("应拼接明细");
+        assert!(json.starts_with('[') && json.ends_with(']'), "拼接后必须是合法数组: {}", json);
+        assert_eq!(json.matches("\"page\":").count(), 2, "{}", json);
+    }
+
+    #[test]
+    fn union_provenance_handles_missing_side() {
+        let a = ChunkResult { page_start: Some(4), page_end: Some(4), ..ChunkResult::default() };
+        let b = ChunkResult::default();
+        assert_eq!(union_provenance(&a, &b), (Some(4), Some(4), None));
+        assert_eq!(union_provenance(&b, &a), (Some(4), Some(4), None));
+        assert_eq!(union_provenance(&b, &b), (None, None, None));
+    }
+
+    /// 默认 trait 实现：未覆盖的 splitter 走 `split`，行为不变
+    #[test]
+    fn default_split_with_pages_forwards_to_split() {
+        let f = ChunkSplitterFactory::new();
+        let text = "# 标题\n\n正文段落内容。\n";
+        let a = f.get_splitter("txt").split(text, 448, 56);
+        let b = f
+            .get_splitter("txt")
+            .split_with_pages(text, 448, 56, &spans());
+        assert_eq!(a.len(), b.len());
+        assert!(b.iter().all(|c| c.page_start.is_none()), "非分页格式不应出现页码");
+    }
+
+    /// Markdown 形态（PDF 转换产物）走 pages 覆盖实现
+    #[test]
+    fn markdown_splitter_applies_page_map() {
+        let f = ChunkSplitterFactory::new();
+        // 3 行正文，映射到第 5 页
+        let text = "# 标题\n\n正文段落内容。\n";
+        let pages = vec![LineSpan { line_start: 1, line_end: 10, page: 5 }];
+        let chunks = f.get_splitter("md").split_with_pages(text, 448, 56, &pages);
+        assert!(!chunks.is_empty());
+        assert!(
+            chunks.iter().all(|c| c.page_start == Some(5)),
+            "Markdown 形态应应用页映射: {:?}",
+            chunks.iter().map(|c| c.page_start).collect::<Vec<_>>()
+        );
+    }
+}
 
 #[cfg(test)]
 mod factory_tests {
     use super::*;
-
     #[test]
     fn factory_routes_by_extension() {
         let f = ChunkSplitterFactory::new();
@@ -1431,6 +1768,76 @@ mod factory_tests {
         let f = ChunkSplitterFactory::new();
         let chunks = f.get_splitter("totally-unknown-ext").split("一段普通文本。", 448, 56);
         assert!(!chunks.is_empty());
+    }
+
+    /// D7 契约：注册表声明的「有语言分块器」扩展名集合必须与本表的键一一对应。
+    ///
+    /// `filekind::CODE_LANGS` 是**唯一声明**，本表提供各语言的**分隔符实现**；
+    /// 两侧漂移会导致"注册表说走 CodeAware，实际退化成 Plain"的静默降级。
+    #[test]
+    fn code_lang_table_matches_registry() {
+        use crate::core::document::filekind::CODE_LANGS;
+        for ext in CODE_LANGS {
+            assert!(
+                CODE_LANG_SEPARATORS.contains_key(*ext),
+                "注册表声明 {} 有语言分块器，但 CODE_LANG_SEPARATORS 缺分隔符",
+                ext
+            );
+        }
+        for ext in CODE_LANG_SEPARATORS.keys() {
+            assert!(
+                CODE_LANGS.contains(ext),
+                "CODE_LANG_SEPARATORS 含 {}，但注册表未声明（该语言不会被路由到 CodeAware）",
+                ext
+            );
+        }
+    }
+
+    /// D7：注册表登记的每种格式都必须能被工厂路由并产出 chunk
+    /// （不得出现"注册了但分块器吃不下"的条目）
+    #[test]
+    fn new_registry_exts_are_routable() {
+        use crate::core::document::filekind::{registry, DocumentForm, Matcher};
+        let f = ChunkSplitterFactory::new();
+        for kind in registry().kinds() {
+            let ext = match kind.matcher {
+                Matcher::Ext(e) => e,
+                // FileName 规则由 filename_only_kinds_route_to_plain_text 单独验证
+                Matcher::FileName(_) => continue,
+            };
+            // 按**内容形态**给样例：用 Markdown 文本去喂 HTML/树形分块器不会产出 chunk
+            let sample = match kind.form {
+                DocumentForm::Markdown | DocumentForm::Plain | DocumentForm::Code => {
+                    "# 标题\n\n正文段落内容。\n"
+                }
+                DocumentForm::Html => {
+                    "<html><body><h1>标题</h1><p>正文段落内容。</p></body></html>"
+                }
+                DocumentForm::Tree => {
+                    r#"<?xml version="1.0"?><opml version="2.0"><body><outline text="项目"><outline text="阶段"/></outline></body></opml>"#
+                }
+            };
+            let chunks = f.get_splitter(ext).split(sample, 448, 56);
+            assert!(
+                !chunks.is_empty(),
+                "扩展名 {}（form={:?}）必须能产出 chunk",
+                ext,
+                kind.form
+            );
+        }
+    }
+
+    /// D2：无扩展名约定文件名（Dockerfile/Makefile）必须按 Plain 形态分块
+    #[test]
+    fn filename_only_kinds_route_to_plain_text() {
+        let f = ChunkSplitterFactory::new();
+        for name in ["Dockerfile", "Makefile", "GNUmakefile"] {
+            let kind = crate::core::document::filekind::lookup(name)
+                .unwrap_or_else(|| panic!("{} 应命中注册表", name));
+            assert_eq!(kind.form, crate::core::document::filekind::DocumentForm::Plain);
+            let chunks = f.get_splitter(name).split("FROM rust:1.88\nRUN cargo build\n", 448, 56);
+            assert!(!chunks.is_empty());
+        }
     }
 
     /// 🟠 P0-2 回归：类型标注的常量声明（`pub const SCHEMA_VERSION: &str = "5"`）

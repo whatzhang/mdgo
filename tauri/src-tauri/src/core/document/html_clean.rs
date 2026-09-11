@@ -13,10 +13,21 @@ use std::sync::OnceLock;
 /// 围栏代码块 / 行内代码占位前缀。
 const CODE_PLACEHOLDER_PREFIX: &str = "\u{0}MDGO_CODE_";
 
-/// 是否 Markdown 类文件（与 pipeline::chunk_document 扩展名判断一致；大小写不敏感）。
+/// 是否 Markdown 类文件（**单一来源：`filekind` 注册表**，D7）。
+///
+/// 语义等价于改造前的硬编码 `matches!(md|markdown|mdown|rst)`：
+/// 注册表中 `doc_like && form == Markdown` 恰为这四项（`mdx` 走 Markdown 分块器
+/// 但不解析 frontmatter，属既有行为，保持不变）。
+///
+/// 分块路径已改为消费 `DocumentSource.frontmatter`，本函数保留供其它调用方查询；
+/// 不要在新代码里再用它做路由判断（那是注册表的职责）。
+#[allow(dead_code)]
 pub fn is_markdown_ext(ext: &str) -> bool {
-    let e = ext.to_ascii_lowercase();
-    matches!(e.as_str(), "md" | "markdown" | "mdown" | "rst")
+    use crate::core::document::filekind::{DocumentForm, registry};
+    registry()
+        .lookup_ext(ext)
+        .map(|k| k.caps.doc_like && k.form == DocumentForm::Markdown)
+        .unwrap_or(false)
 }
 
 /// 剥离 Markdown 中自定义 HTML 标注/备注标签，保留标签内部文本。

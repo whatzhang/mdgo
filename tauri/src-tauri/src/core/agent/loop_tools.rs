@@ -31,7 +31,7 @@ use crate::core::r#loop::{
     HashMapToolRegistry, Tool, ToolError, ToolRunContext, ToolSpec,
 };
 
-use super::tools::{glob_files, grep_files, list_files, read};
+use super::tools::{glob_files, grep_files, list_files, read, read_document};
 use super::{code_search, kb_search, KbSearchConfig};
 
 // ─────────────────────────── 纯函数（可单测） ───────────────────────────
@@ -529,6 +529,90 @@ impl Tool for LsTool {
     }
 }
 
+/// read_document：读取二进制文档（PDF/Office/ODF/RTF/EPUB）的文本内容。
+///
+/// 与 `read` 的分工：`read` 只读文本/代码；二进制文档由本工具经 `DocumentLoader`
+/// 转换成 Markdown 后返回（底层 Office 走 anydoc、PDF 走 pdf-inspector）。
+pub struct ReadDocumentTool {
+    cfg: KbSearchConfig,
+}
+
+impl ReadDocumentTool {
+    pub fn new(cfg: KbSearchConfig) -> Self {
+        Self { cfg }
+    }
+}
+
+/// `read_document` 的工具规格。
+///
+/// 提成独立函数（而非直接写在 `spec()` 里）：单测可以在**不需要构造
+/// `KbSearchConfig`**（无需 Indexer/模型）的情况下直接断言这份模型可见契约
+/// —— 工具名、必填参数、只读并行标记都是 LLM 侧接口，改动必须被测试拦住。
+pub(crate) fn read_document_spec() -> &'static ToolSpec {
+    static SPEC: std::sync::OnceLock<ToolSpec> = std::sync::OnceLock::new();
+    SPEC.get_or_init(|| {
+        read_only_spec(
+            "read_document",
+            "读取**二进制文档**的文本内容，返回 Markdown。适用于 PDF、Word（doc/docx/docm）、\
+             PowerPoint（ppt/pptx/pptm/pps/ppsx/ppsm/pot）、Excel（xls/xlsx/xlsm/xlsb）、\
+             OpenDocument（odt/ods/odp）、RTF、EPUB。这些格式无法用 read 直读（read 会明确拒绝并引导到这里）。\
+             内容由后端统一转换（与知识库索引、文件预览使用同一套解析），因此读到的内容与检索结果一致；\
+             同一文件重复读取会命中缓存。单次最多返回 8192 字符，支持 offset 分页续读。\
+             若文件是扫描件（图片型 PDF），本工具会明确告知需要 OCR，而不是返回空白或乱码。\
+             注意：文本/代码类文件（md/txt/json/csv/代码等）请用 read，不要用本工具。",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "知识库内的文档相对路径，如 资料/产品介绍.pptx、docs/spec.pdf"
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "字符偏移量（从 0 开始），用于分页续读长文档。首次读取省略；截断提示中会给出下次应使用的 offset"
+                    }
+                },
+                "required": ["path"]
+            }),
+        )
+    })
+}
+
+#[async_trait]
+impl Tool for ReadDocumentTool {
+    fn spec(&self) -> &ToolSpec {
+        read_document_spec()
+    }
+
+    async fn execute(&self, args: Value, ctx: &ToolRunContext<'_>) -> Result<Value, ToolError> {
+        let path = args
+            .get("path")
+            .and_then(|s| s.as_str())
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        if path.is_empty() {
+            return Err(ToolError::InvalidArgs("文档路径为空，请提供 path 参数".into()));
+        }
+        let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+        ctx.sink.on_call(ctx.call_id, "read_document", &path, &args);
+        match read_document(&self.cfg, &path, offset).await {
+            Ok(text) => {
+                let summary = format!("{} 字符", text.chars().count());
+                ctx.sink
+                    .on_result(ctx.call_id, "read_document", true, &summary, Some(&text));
+                Ok(Value::String(text))
+            }
+            Err(e) => {
+                ctx.sink
+                    .on_result(ctx.call_id, "read_document", false, &e, Some(&e));
+                Err(ToolError::Failed(e))
+            }
+        }
+    }
+}
+
 /// glob：按 glob 模式列举文件（业务助手 `glob_files`）。
 pub struct GlobTool {
     cfg: KbSearchConfig,
@@ -601,6 +685,7 @@ pub fn build_loop_tool_registry(cfg: KbSearchConfig) -> HashMapToolRegistry {
     reg.register(Arc::new(KbSearchTool::new(cfg.clone())));
     reg.register(Arc::new(CodeLookupTool::new(cfg.clone())));
     reg.register(Arc::new(ReadTool::new(cfg.clone())));
+    reg.register(Arc::new(ReadDocumentTool::new(cfg.clone())));
     reg.register(Arc::new(GrepTool::new(cfg.clone())));
     reg.register(Arc::new(LsTool::new(cfg.clone())));
     reg.register(Arc::new(GlobTool::new(cfg.clone())));
@@ -3967,6 +4052,43 @@ mod tests {
         // 基础工具（read）不受技能声明限制：主对话无激活技能时仍应放行——
         // 注意：BASE_TOOLS 语义由 loop 层 Hook 保证；此处 kb_search 走软门禁，read 不在此判定
         assert!(!skill_gated(true, None, "kb_search"));
+    }
+
+    /// `read_document` 的**模型可见契约**：工具名、必填参数、只读并行标记。
+    /// 改这些等于改 LLM 侧接口，必须被拦住（且必须在 BASE_TOOLS 里，否则模型看不到）。
+    #[test]
+    fn read_document_spec_and_base_tools_registration() {
+        let spec = read_document_spec();
+        assert_eq!(spec.name, "read_document");
+        assert!(
+            spec.description.contains("Markdown"),
+            "描述必须点明返回 Markdown（模型据此判断用途）"
+        );
+        assert!(
+            spec.description.contains("read 会明确拒绝"),
+            "描述必须说明与 read 的分工，否则模型会反复用 read 试二进制文件"
+        );
+        assert!(spec.description.contains("ocr") || spec.description.contains("OCR"));
+        assert_eq!(
+            spec.parameters["properties"]["path"]["type"], "string",
+            "path 必须是字符串参数"
+        );
+        assert_eq!(
+            spec.parameters["required"],
+            json!(["path"]),
+            "path 必填"
+        );
+        assert!(
+            spec.parameters["properties"]["offset"]["type"] == "integer",
+            "offset 用于分页续读"
+        );
+        assert!(spec.concurrency_safe, "只读工具应允许并行");
+
+        // 必须在 BASE_TOOLS：否则主对话里模型看不到这个工具（等于没加）
+        assert!(
+            crate::core::agent::BASE_TOOLS.contains(&"read_document"),
+            "read_document 必须在 BASE_TOOLS（基础工具随会话常驻）"
+        );
     }
 
     #[test]

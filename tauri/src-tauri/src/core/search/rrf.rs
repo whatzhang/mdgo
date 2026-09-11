@@ -53,6 +53,16 @@ struct Entry {
     chunk_type: Option<String>,
     /// 🟠 M9：文档标签（JSON 数组字符串），供融合后内存标签过滤
     tags: Option<String>,
+    /// Phase 0C：来源粒度键（向量路提供；BM25/符号路 schema 未存 → 以向量路为准）
+    source_kind: Option<String>,
+    /// Phase 0C：转换器身份 `id@version`
+    converter: Option<String>,
+    /// Phase 1：页码 provenance（向量路提供）
+    page_start: Option<u32>,
+    page_end: Option<u32>,
+    source_spans: Option<String>,
+    /// §4.7 / R3：表格表头列名（向量路提供）
+    table_headers: Option<String>,
 }
 
 /// 将单路 hits 的排名贡献累加到融合表。
@@ -81,6 +91,12 @@ fn accumulate(
                 }
                 entry.chunk_type = entry.chunk_type.clone().or(hit.chunk_type);
                 entry.tags = entry.tags.clone().or(hit.tags);
+                entry.source_kind = entry.source_kind.clone().or(hit.source_kind);
+                entry.converter = entry.converter.clone().or(hit.converter);
+                entry.page_start = entry.page_start.or(hit.page_start);
+                entry.page_end = entry.page_end.or(hit.page_end);
+                entry.source_spans = entry.source_spans.clone().or(hit.source_spans);
+                entry.table_headers = entry.table_headers.clone().or(hit.table_headers);
             }
             FuseField::Bm25 => {
                 entry.score_bm25 = entry.score_bm25.max(hit.score_bm25.max(hit.score));
@@ -102,6 +118,24 @@ fn accumulate(
                 }
                 if entry.tags.is_none() {
                     entry.tags = hit.tags;
+                }
+                if entry.source_kind.is_none() {
+                    entry.source_kind = hit.source_kind;
+                }
+                if entry.converter.is_none() {
+                    entry.converter = hit.converter;
+                }
+                if entry.page_start.is_none() {
+                    entry.page_start = hit.page_start;
+                }
+                if entry.page_end.is_none() {
+                    entry.page_end = hit.page_end;
+                }
+                if entry.source_spans.is_none() {
+                    entry.source_spans = hit.source_spans;
+                }
+                if entry.table_headers.is_none() {
+                    entry.table_headers = hit.table_headers;
                 }
             }
             // 符号路：携带符号证据（symbol_name/symbol_kind）供下游保留与展示；
@@ -126,6 +160,24 @@ fn accumulate(
                 }
                 if entry.tags.is_none() {
                     entry.tags = hit.tags;
+                }
+                if entry.source_kind.is_none() {
+                    entry.source_kind = hit.source_kind;
+                }
+                if entry.converter.is_none() {
+                    entry.converter = hit.converter;
+                }
+                if entry.page_start.is_none() {
+                    entry.page_start = hit.page_start;
+                }
+                if entry.page_end.is_none() {
+                    entry.page_end = hit.page_end;
+                }
+                if entry.source_spans.is_none() {
+                    entry.source_spans = hit.source_spans;
+                }
+                if entry.table_headers.is_none() {
+                    entry.table_headers = hit.table_headers;
                 }
             }
         }
@@ -200,6 +252,12 @@ pub fn rrf_fuse(
             symbol_kind: e.symbol_kind,
             chunk_type: e.chunk_type,
             tags: e.tags,
+            source_kind: e.source_kind,
+            converter: e.converter,
+            page_start: e.page_start,
+            page_end: e.page_end,
+            source_spans: e.source_spans,
+            table_headers: e.table_headers,
             score_rerank: None,
             query_sources: Vec::new(),
         })

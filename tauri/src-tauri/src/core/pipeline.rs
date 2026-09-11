@@ -15,7 +15,6 @@
 //! - `embed_chunks`：批量向量化（优先 `embedding_text`，退化 `text`）＝ embedding_stage
 //! - `write_chunks`：写入 LanceDB + BM25 ＝ index_stage
 
-use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::core::db::bm25::Bm25Index;
@@ -32,8 +31,160 @@ pub(crate) fn chunk_splitter_factory() -> &'static ChunkSplitterFactory {
     CHUNK_SPLITTER_FACTORY.get_or_init(ChunkSplitterFactory::new)
 }
 
-// ─── Token Budget 统计（P0-1 可观测性）───
+// ─── 文档装载层唯一入口（方案 §4.1：索引与预览共用）───
 //
+// 其余类型（`DocStatus`/`PageDiagnostic`/`PageSpan`/`ConverterInfo`/`MIN_DOC_BYTES`）
+// 直接引用 `core::document::loader`，不经本模块再导出，避免产生"看似有消费者"的空转导出。
+
+pub use crate::core::document::loader::{load_document, DocumentSource, SkipReason};
+
+// ─── 跳过原因收集（N3 可观测性；镜像 budget_stats 的「基线差分」范式）───
+//
+// 与 TRUNCATED_/RESPLIT_ 同理：`index_file`/`index_files_batch`（watcher 路径，不持
+// indexing_lock）也会记录跳过，硬清零会让 index_all 的窗口混入窗口外数据；
+// 基线快照使窗口语义与并发无关。
+
+/// 详情上限（方案 §5.3：`skipped_files` 最多 100 条，超出只计数）
+pub const SKIP_DETAIL_LIMIT: usize = 100;
+
+/// 单条跳过记录（前端「为什么这个文件没进库」面板消费）
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SkippedFile {
+    pub rel_path: String,
+    /// 机器可读码（`SkipReason::code()`）
+    pub code: String,
+    /// 中文说明（`SkipReason::message()`）
+    pub reason: String,
+    /// 需 OCR 的页号（仅 needs_ocr；1-indexed）
+    #[serde(default)]
+    pub pages: Vec<u32>,
+}
+
+static SKIP_TOTAL: AtomicU64 = AtomicU64::new(0);
+static SKIP_TOTAL_BASE: AtomicU64 = AtomicU64::new(0);
+static SKIP_DETAILS: std::sync::Mutex<Vec<SkippedFile>> = std::sync::Mutex::new(Vec::new());
+static SKIP_DETAILS_BASE: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+/// 重置跳过统计基线（索引窗口开始）
+pub fn reset_skip_stats() {
+    SKIP_TOTAL_BASE.store(SKIP_TOTAL.load(Ordering::Relaxed), Ordering::Relaxed);
+    let len = SKIP_DETAILS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .len();
+    SKIP_DETAILS_BASE.store(len, Ordering::Relaxed);
+}
+
+/// 记录一条跳过（详情超上限只计数）
+pub fn record_skip(rel_path: &str, reason: &SkipReason) {
+    SKIP_TOTAL.fetch_add(1, Ordering::Relaxed);
+    let mut guard = SKIP_DETAILS.lock().unwrap_or_else(|e| e.into_inner());
+    if guard.len() < SKIP_DETAIL_LIMIT {
+        let pages = match reason {
+            SkipReason::NeedsOcr { pages, .. } => pages.clone(),
+            _ => Vec::new(),
+        };
+        guard.push(SkippedFile {
+            rel_path: rel_path.to_string(),
+            code: reason.code().to_string(),
+            reason: reason.message(),
+            pages,
+        });
+    }
+}
+
+/// 读取窗口内的跳过统计：`(总数, 详情列表)`
+pub fn skip_stats() -> (u32, Vec<SkippedFile>) {
+    let total = SKIP_TOTAL
+        .load(Ordering::Relaxed)
+        .saturating_sub(SKIP_TOTAL_BASE.load(Ordering::Relaxed));
+    let base = SKIP_DETAILS_BASE.load(Ordering::Relaxed);
+    let guard = SKIP_DETAILS.lock().unwrap_or_else(|e| e.into_inner());
+    let from = base.min(guard.len());
+    (total as u32, guard[from..].to_vec())
+}
+
+// ─── 部分索引统计（Plan B v2 §5.3 / §7.2 F9）───
+//
+// 与 `skipped_files` **语义不同、必须分开显示**：
+//   - `skipped_files`：整个文件没进库（PDF 全篇扫描件、加密、超限……）
+//   - `partial_files`：文件**进了库**，但有若干页被跳过（Q8 决策）
+// 混在一起会让用户以为"这个文件没被索引"，而实际上大部分内容是可检索的。
+//
+// 与 skip 同一套基线差分设计（见上方 skip 区块的说明）。
+
+/// 页级诊断（`PageDiagnostic` 的对外可序列化形态）
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PageDiagItem {
+    pub page: u32,
+    pub code: String,
+    pub detail: String,
+}
+
+/// 部分索引记录（前端「哪些页没进库」面板消费）
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PartialFile {
+    pub rel_path: String,
+    /// 被跳过的页号（1-indexed）
+    pub skipped_pages: Vec<u32>,
+    /// 文档总页数（已入库页 + 跳过页）
+    pub page_count: u32,
+    /// 页级诊断（为什么这几页没有）
+    pub diagnostics: Vec<PageDiagItem>,
+}
+
+static PARTIAL_TOTAL: AtomicU64 = AtomicU64::new(0);
+static PARTIAL_TOTAL_BASE: AtomicU64 = AtomicU64::new(0);
+static PARTIAL_DETAILS: std::sync::Mutex<Vec<PartialFile>> = std::sync::Mutex::new(Vec::new());
+static PARTIAL_DETAILS_BASE: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+/// 重置部分索引统计基线（索引窗口开始）
+pub fn reset_partial_stats() {
+    PARTIAL_TOTAL_BASE.store(PARTIAL_TOTAL.load(Ordering::Relaxed), Ordering::Relaxed);
+    let len = PARTIAL_DETAILS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .len();
+    PARTIAL_DETAILS_BASE.store(len, Ordering::Relaxed);
+}
+
+/// 记录一个部分索引文件（仅当确实有页被跳过时调用；详情超上限只计数）
+pub fn record_partial(rel_path: &str, skipped_pages: &[u32], extracted_pages: u32, doc: &crate::core::document::loader::DocumentSource) {
+    PARTIAL_TOTAL.fetch_add(1, Ordering::Relaxed);
+    let mut guard = PARTIAL_DETAILS.lock().unwrap_or_else(|e| e.into_inner());
+    if guard.len() >= SKIP_DETAIL_LIMIT {
+        return;
+    }
+    guard.push(PartialFile {
+        rel_path: rel_path.to_string(),
+        skipped_pages: skipped_pages.to_vec(),
+        page_count: extracted_pages + skipped_pages.len() as u32,
+        diagnostics: doc
+            .page_diagnostics
+            .iter()
+            .map(|d| PageDiagItem {
+                page: d.page,
+                code: d.code.to_string(),
+                detail: d.detail.clone(),
+            })
+            .collect(),
+    });
+}
+
+/// 读取窗口内的部分索引统计：`(总数, 详情列表)`
+pub fn partial_stats() -> (u32, Vec<PartialFile>) {
+    let total = PARTIAL_TOTAL
+        .load(Ordering::Relaxed)
+        .saturating_sub(PARTIAL_TOTAL_BASE.load(Ordering::Relaxed));
+    let base = PARTIAL_DETAILS_BASE.load(Ordering::Relaxed);
+    let guard = PARTIAL_DETAILS.lock().unwrap_or_else(|e| e.into_inner());
+    let from = base.min(guard.len());
+    (total as u32, guard[from..].to_vec())
+}
+
+// ─── Token Budget 统计（P0-1 可观测性）───//
 // chunk_document 是全部索引路径的唯一汇聚点；Validator 的截断/重切统计在此累加，
 // 由 index_all / index_unindexed 在索引窗口内 reset/read（索引由 indexing_lock 串行化，
 // 无并发窗口；watcher 批量路径不产出 KbIndexResult，无需读取）。
@@ -76,77 +227,38 @@ fn accumulate_report(report: &ValidationReport) {
     RESPLIT_CHUNKS.fetch_add(report.resplit_count as u64, Ordering::Relaxed);
 }
 
-/// document_stage：读取文件内容。
+// `read_document` 已由 `core::document::loader::load_document` 取代（Phase 0B / N8）。
+//
+// 旧签名 `-> Option<String>` 的两个结构性问题：
+//   ① 失败不带原因（`.docx` 只能打一条"非 UTF-8 编码"日志）→ 现为 `SkipReason` + 跳过统计；
+//   ② 返回裸 String，provenance（page 等）无处安放 → 现为 `DocumentSource`。
+//
+// 迁移对照（旧 → 新）：
+//   pdf  → Converter::LegacyPdf（Phase 1 换 pdf-inspector）
+//   其余 → Converter::Plain（UTF-8 直读，非 UTF-8 报 NotUtf8 而非静默跳过）
+
+/// chunk_stage：按**内容形态**选择分块器，分块并组装 `DocumentChunk`。
 ///
-/// PDF 走 pdf-extract 提取；其余按 UTF-8 读取。失败返回 None（由调用方跳过）。
-pub fn read_document(path: &Path) -> Option<String> {
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-
-    #[cfg(feature = "pdf-extract")]
-    if ext == "pdf" {
-        return match pdf_extract::extract_text(path) {
-            Ok(text) => {
-                let trimmed = text.trim();
-                if trimmed.is_empty() {
-                    log::warn!(
-                        "[pipeline] 跳过 PDF 文件 {}: 未提取到文本内容",
-                        path.display()
-                    );
-                    None
-                } else {
-                    Some(trimmed.to_string())
-                }
-            }
-            Err(e) => {
-                log::warn!(
-                    "[pipeline] 跳过 PDF 文件 {}: 提取文本失败: {}",
-                    path.display(),
-                    e
-                );
-                None
-            }
-        };
-    }
-
-    // 非 PDF 文件（或 pdf-extract 未启用）：读取 UTF-8 文本
-    match std::fs::read_to_string(path) {
-        Ok(c) => Some(c),
-        Err(e) => {
-            log::warn!(
-                "[pipeline] 跳过文件 {}: {}",
-                path.display(),
-                if e.kind() == std::io::ErrorKind::InvalidData {
-                    "非 UTF-8 编码".to_string()
-                } else {
-                    e.to_string()
-                }
-            );
-            None
-        }
-    }
-}
-
-/// chunk_stage：按扩展名选择分块器，分块并组装 `DocumentChunk`。
+/// `src.form` 来自 [crate::core::document::filekind] 注册表（Phase 0B / C3）：
+/// 不再按源扩展名硬编码判断，转换后的 PDF/Office 因此能复用 Markdown AST 分块。
 ///
 /// `html_render_matcher`：可选「HTML 渲染目录」匹配器（gitignore 格式，来自
 /// 设置 `htmlCodeShowBlacklist`）。语义：命中该目录的 HTML 作为**文档**语义分块
 /// （`HtmlChunkSplitter`）；**未命中的 HTML 直接放弃（返回空，不索引）**——
 /// 不识别为代码；`None`（未配置）时保持现状（全部 HTML 按文档分块，兼容旧行为）。
 pub fn chunk_document(
-    rel_path: &str,
-    content: &str,
+    src: &DocumentSource,
     chunk_size: usize,
     chunk_overlap: usize,
     html_render_matcher: Option<&IgnoreMatcher>,
 ) -> Vec<DocumentChunk> {
-    let ext = rel_path.rsplit('.').next().unwrap_or("txt");
-    // D7：扩展名大小写不敏感（index.HTML 与 index.html 同语义，不绕过 html 渲染目录分支）
-    let is_html = ext.eq_ignore_ascii_case("html") || ext.eq_ignore_ascii_case("htm");
-    let is_md = crate::core::document::html_clean::is_markdown_ext(ext);
+    let rel_path = src.rel_path.as_str();
+    let content = src.text.as_str();
+    // 扩展名可能为空（Dockerfile/Makefile 这类纯文件名规则），此时分块器走 Plain
+    let ext = crate::core::document::filekind::ext_of(rel_path).unwrap_or("");
+    let is_html = src.form == crate::core::document::filekind::DocumentForm::Html;
+    // 等价旧 `is_markdown_ext`：注册表 doc_like && form==Markdown（md/markdown/mdown/rst）
+    let is_md = src.frontmatter;
 
     // P0-1：Markdown 类文件先解析 FrontMatter（tags/aliases/title 重新纳入检索）。
     // 元数据仅用于 BM25 title/tags 字段与 chunk 身份，不进入 embedding 文本。
@@ -186,7 +298,36 @@ pub fn chunk_document(
     } else {
         chunk_splitter_factory().get_splitter(ext)
     };
-    let chunks = splitter.split(cleaned, chunk_size, chunk_overlap);
+    // Phase 1：页 provenance 注入守卫。
+    //
+    // 上面的 frontmatter 剥离 / HTML 清洗会改变文本行号（`cleaned != content`），
+    // 此时 loader 构造的「行 → 页」映射会**系统性错位**，因此只在文本**逐字节未变**时注入。
+    // PDF 转换产物不走这两步（`is_md = false`，`cleaned` 与 `content` 是同一个切片），
+    // 故恒成立；Markdown 家族虽然可能通过长度比较，但它们的 `line_page_map` 恒为空。
+    // 这条守卫把"变换"与"provenance 映射"绑定在一起，避免未来新增预处理时静默错页。
+    //
+    // 用 `cleaned == content`（内容相等）而非 `len() == len()`（长度相等）：长度相等是
+    // 前者的**弱化代理**，等长替换（如标签被替换成同长文本）会骗过它从而错页；正文已在
+    // 内存中，一次 memcmp 的代价相对转换本身可忽略。
+    //
+    // ⚠ 第二道预检：上面的 frontmatter 剥离只是**本函数内**的变换；分块器内部
+    // （`document::markdown::ComrakMarkdownParser::parse`）还会再做两步——
+    //   · `\r\n → \n` 归一：**不改变行数**，而页映射是行号制，故安全；
+    //   · `strip_frontmatter`：会**删掉开头若干行** → 行号整体前移 → 静默错页。
+    // 触发条件极窄（PDF 转换产物首行恰为 `---` 且前 50 行内出现 `键: 值`），但后果是
+    // 页码系统性偏移且无任何报错，所以这里用**同一个判定函数**预检：只有当剥离结果与
+    // 输入逐字节一致（= 未发生剥离）时才注入页映射。
+    let page_map: &[crate::core::document::loader::LineSpan] =
+        if !src.line_page_map.is_empty()
+            && cleaned == content
+            && crate::core::document::markdown::parse_frontmatter(cleaned).1 == cleaned
+        {
+            &src.line_page_map
+        } else {
+            &[]
+        };
+    // 默认实现忽略 pages（非分页格式行为不变）
+    let chunks = splitter.split_with_pages(cleaned, chunk_size, chunk_overlap, page_map);
     if chunks.is_empty() {
         return Vec::new();
     }
@@ -228,7 +369,7 @@ pub fn chunk_document(
         }
     }
 
-    utils::build_document_chunks(rel_path, &validated)
+    utils::build_document_chunks(src, &validated)
 }
 
 /// embedding_stage：批量向量化。
@@ -416,11 +557,76 @@ pub async fn write_chunks(
 mod tests {
     use super::*;
 
+    /// **前端契约**：`SkippedFile` / `PartialFile` 的 JSON 字段名是前端 `main.html`
+    /// 直接读取的（`rel_path` / `reason` / `pages` / `skipped_pages` / `page_count` /
+    /// `diagnostics[].detail`）。它们没有 `rename_all`，改字段名等于静默打断 UI——
+    /// 这里把键名钉死，改名必须同步改前端。
+    #[test]
+    fn diagnostic_dtos_json_keys_are_frontend_contract() {
+        let skipped = SkippedFile {
+            rel_path: "scan.pdf".into(),
+            code: "needs_ocr".into(),
+            reason: "扫描件".into(),
+            pages: vec![1, 2],
+        };
+        let sj: serde_json::Value = serde_json::to_value(&skipped).unwrap();
+        assert_eq!(sj["rel_path"], "scan.pdf");
+        assert_eq!(sj["code"], "needs_ocr");
+        assert_eq!(sj["reason"], "扫描件");
+        assert_eq!(sj["pages"], serde_json::json!([1, 2]));
+
+        let partial = PartialFile {
+            rel_path: "mixed.pdf".into(),
+            skipped_pages: vec![4],
+            page_count: 6,
+            diagnostics: vec![PageDiagItem {
+                page: 4,
+                code: "needs_ocr".into(),
+                detail: "该页无可提取文本".into(),
+            }],
+        };
+        let pj: serde_json::Value = serde_json::to_value(&partial).unwrap();
+        assert_eq!(pj["rel_path"], "mixed.pdf");
+        assert_eq!(pj["skipped_pages"], serde_json::json!([4]));
+        assert_eq!(pj["page_count"], 6);
+        assert_eq!(pj["diagnostics"][0]["page"], 4);
+        assert_eq!(pj["diagnostics"][0]["detail"], "该页无可提取文本");
+
+        // 反序列化（IndexMeta 持久化路径）必须等价往返
+        let back: PartialFile = serde_json::from_value(pj).unwrap();
+        assert_eq!(back.skipped_pages, vec![4]);
+        assert_eq!(back.page_count, 6);
+        let back_s: SkippedFile = serde_json::from_value(sj).unwrap();
+        assert_eq!(back_s.pages, vec![1, 2]);
+    }
+
+    /// 部分索引采集器：只记确实有页被跳过的文件，并保留页号
+    #[test]
+    fn record_partial_collects_skipped_pages() {
+        reset_partial_stats();
+        let src = DocumentSource::for_test("mixed.pdf", "正文");
+        record_partial("mixed.pdf", &[3], 2, &src);
+        let (total, details) = partial_stats();
+        assert_eq!(total, 1, "应记 1 个部分索引文件");
+        assert_eq!(details.len(), 1);
+        assert_eq!(details[0].rel_path, "mixed.pdf");
+        assert_eq!(details[0].skipped_pages, vec![3]);
+        assert_eq!(
+            details[0].page_count, 3,
+            "总页数 = 已提取页(2) + 跳过页(1)"
+        );
+        // 基线差分：重置后窗口内无新增
+        reset_partial_stats();
+        let (total2, details2) = partial_stats();
+        assert_eq!(total2, 0, "重置基线后窗口内应无记录");
+        assert!(details2.is_empty());
+    }
+
     /// V1 闭环：markdown frontmatter → doc_title/tags 注入所有 chunk（BM25 title/tags 字段消费）
     #[test]
     fn chunk_document_injects_frontmatter_metadata() {
         let md = "---\ntitle: Redis 连接池手册\ntags:\n  - redis\n  - 运维\naliases:\n  - Redis Pool\n---\n# 正文\n连接池配置说明内容段落。";
-        let chunks = chunk_document("notes/redis.md", md, 448, 56, None);
+        let chunks = chunk_document(&DocumentSource::for_test("notes/redis.md", md), 448, 56, None);
         assert!(!chunks.is_empty(), "应产出 chunk");
         for c in &chunks {
             assert_eq!(
@@ -442,7 +648,7 @@ mod tests {
     #[test]
     fn chunk_document_without_frontmatter_ok() {
         let md = "# 普通文档\n\n没有 frontmatter 的正文内容段落。";
-        let chunks = chunk_document("notes/plain.md", md, 448, 56, None);
+        let chunks = chunk_document(&DocumentSource::for_test("notes/plain.md", md), 448, 56, None);
         assert!(!chunks.is_empty());
         assert!(chunks.iter().all(|c| c.doc_title.is_none() && c.tags.is_none()));
     }
@@ -451,7 +657,7 @@ mod tests {
     #[test]
     fn chunk_document_non_markdown_no_metadata() {
         let code = "fn main() {\n    let x = 1;\n}\n";
-        let chunks = chunk_document("src/main.rs", code, 448, 56, None);
+        let chunks = chunk_document(&DocumentSource::for_test("src/main.rs", code), 448, 56, None);
         assert!(!chunks.is_empty());
         assert!(chunks.iter().all(|c| c.doc_title.is_none() && c.tags.is_none()));
     }

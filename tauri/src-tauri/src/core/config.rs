@@ -43,17 +43,23 @@ impl IndexerConfig {
     /// 用途：写入 `IndexMeta.chunk_params_version`；`status()` 比对当前配置，
     /// 不一致时标记 `stale=true`（旧索引与新参数混用会导致检索质量不可预期，
     /// 需提示用户全量重建）。
+    ///
+    /// **Plan B v2 / Phase 0C 变更**：纳入 `filekind::REGISTRY_VERSION`
+    /// （格式注册表语义版本——白名单/分块形态/转换器换代都会改变 chunk 产物）。
+    /// 注意这是**全局粒度**；**单个转换器**升级只让对应 `source_kind` 过期
+    /// （`KbStatus.stale_kinds`），不会让整库 stale。
     pub fn chunk_params_version(&self) -> String {
         // 🟠 修复（M22）：版本串纳入 embedding 模型窗口与分块身份版本——
         // 换模型（窗口变化）而 chunk_size 不变时旧索引也能被识别为 stale；
         // 分块器/身份哈希版本（CHUNK_IDENTITY_VERSION）变化同样失效。
         // 注意：get_max_seq_len() 在模型未初始化时回退 512，属既有惰性初始化语义。
         format!(
-            "budget-v1:{}:{}:{}:{}",
+            "budget-v2:{}:{}:{}:{}:registry-{}",
             crate::core::db::utils::CHUNK_IDENTITY_VERSION,
             crate::core::embedding::get_max_seq_len(),
             self.chunk_size,
-            self.chunk_overlap
+            self.chunk_overlap,
+            crate::core::document::filekind::REGISTRY_VERSION,
         )
     }
 }

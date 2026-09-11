@@ -13,8 +13,10 @@
 //! - `chunk_engine.rs`：AST 语义分块引擎（Chunk / SemanticChunkEngine）
 
 pub mod chunk_engine;
+pub mod filekind;
 pub mod html_ast;
 pub mod html_clean;
+pub mod loader;
 pub mod markdown;
 pub mod node;
 pub mod parser;

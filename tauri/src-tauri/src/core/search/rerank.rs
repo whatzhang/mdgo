@@ -555,6 +555,12 @@ mod tests {
             symbol_kind: None,
             chunk_type: None,
             tags: None,
+            source_kind: None,
+            converter: None,
+            page_start: None,
+            page_end: None,
+            source_spans: None,
+            table_headers: None,
             score_rerank: None,
             query_sources: Vec::new(),
         }

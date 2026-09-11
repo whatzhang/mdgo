@@ -29,6 +29,65 @@ pub struct Chunk {
     pub path: Vec<String>,
     /// 分块类型（paragraph/code/table/list/quote/section 等）
     pub chunk_type: String,
+    /// **源码行区间**（1-based 闭区间，来自成员块的 `NodeMetadata`）。
+    ///
+    /// Phase 1 provenance：`db::chunk_splitter` 用「行 → 页」映射把它翻译成
+    /// `page_start/page_end`（方案 §4.4）。**区间只做溯源，不参与分块语义**——
+    /// chunk 边界仍完全由语义分组决定，因此可以跨页。
+    ///
+    /// `(0, 0)` 表示无源码行来源（保留给未来的合成 chunk）。
+    pub line_start: usize,
+    pub line_end: usize,
+    /// **表格表头列名**（JSON 数组字符串，Plan B v2 §4.7 / 决策 R3）。
+    ///
+    /// 仅当 `chunk_type == "table"` 且正文里能找到 GFM 表格时非空。**只进 metadata，
+    /// 绝不进 `embedding_text`**——表头词（如 `Sales_Rep_Name`）进向量会稀释正文语义。
+    /// 表头本来就在 chunk 正文里，所以 BM25 已能命中列名；本字段的价值是让**结构化
+    /// 消费方**（前端展示、后续按列名过滤）不必再解析 Markdown。
+    pub table_headers: Option<String>,
+}
+
+/// 分组用的块条目：块类型 + 正文 + **源码行区间**。
+///
+/// 改造前这里是 `(String, String)`，行区间在收集时被丢弃，导致 provenance 无法
+/// 从 AST 传播到 chunk（Phase 1 的卡点）。本结构只**多携带**行区间，
+/// 不改变任何分组/切分决策。
+#[derive(Debug, Clone)]
+struct BlockEntry {
+    kind: String,
+    text: String,
+    /// 1-based 闭区间
+    line_start: usize,
+    line_end: usize,
+}
+
+impl BlockEntry {
+    fn from_node(node: &DocumentNode) -> Self {
+        Self {
+            kind: node.node_type.as_str().to_string(),
+            text: node.content.clone(),
+            line_start: node.metadata.start_line,
+            line_end: node.metadata.end_line,
+        }
+    }
+
+    /// 成员块行区间并集（空集合返回 `(0, 0)`）
+    fn union_lines(entries: &[BlockEntry]) -> (usize, usize) {
+        let mut start = usize::MAX;
+        let mut end = 0usize;
+        for e in entries {
+            if e.line_start == 0 && e.line_end == 0 {
+                continue;
+            }
+            start = start.min(e.line_start);
+            end = end.max(e.line_end);
+        }
+        if start == usize::MAX {
+            (0, 0)
+        } else {
+            (start, end)
+        }
+    }
 }
 
 /// Chunk 引擎：从 DocumentNode 构建语义 chunk。
@@ -92,7 +151,7 @@ impl SemanticChunkEngine {
         &self,
         nodes: &[DocumentNode],
         path: &mut Vec<String>,
-        blocks: &mut Vec<(String, String)>,
+        blocks: &mut Vec<BlockEntry>,
         out: &mut Vec<Chunk>,
     ) {
         for node in nodes {
@@ -133,6 +192,10 @@ impl SemanticChunkEngine {
                         embedding_text: emb,
                         path: path.to_vec(),
                         chunk_type: "heading".to_string(),
+                        // heading 导航 chunk 的溯源 = 该标题节点自身的行区间
+                        line_start: node.metadata.start_line,
+                        line_end: node.metadata.end_line,
+                        table_headers: None,
                     });
                 }
                 log::debug!(
@@ -143,7 +206,7 @@ impl SemanticChunkEngine {
                 path.pop();
             } else if node.node_type != NodeType::ThematicBreak {
                 // 主题分割线不产生内容
-                blocks.push((node.node_type.as_str().to_string(), node.content.clone()));
+                blocks.push(BlockEntry::from_node(node));
             }
         }
     }
@@ -152,7 +215,7 @@ impl SemanticChunkEngine {
     fn flush_section(
         &self,
         path: &[String],
-        blocks: &mut Vec<(String, String)>,
+        blocks: &mut Vec<BlockEntry>,
         out: &mut Vec<Chunk>,
     ) {
         if blocks.is_empty() {
@@ -163,7 +226,7 @@ impl SemanticChunkEngine {
             Self::build_prefixes(path, self.prefix_max_tokens, &*self.counter);
         let body = blocks
             .iter()
-            .map(|(_, t)| t.as_str())
+            .map(|b| b.text.as_str())
             .collect::<Vec<_>>()
             .join("\n\n");
         let chunk_type = dominant_type(&blocks);
@@ -171,7 +234,7 @@ impl SemanticChunkEngine {
         let embed_prefix_tokens = self.tokens(&embed_prefix);
         let block_desc = blocks
             .iter()
-            .map(|(t, c)| format!("{}:{}字", t, char_len(c)))
+            .map(|b| format!("{}:{}字", b.kind, char_len(&b.text)))
             .collect::<Vec<_>>()
             .join(", ");
         log::debug!(
@@ -201,7 +264,14 @@ impl SemanticChunkEngine {
                 body_tokens,
                 self.max_tokens
             );
-            out.push(self.make_chunk(path, &context_prefix, &embed_prefix, body, &chunk_type));
+            out.push(self.make_chunk(
+                path,
+                &context_prefix,
+                &embed_prefix,
+                body,
+                &chunk_type,
+                BlockEntry::union_lines(&blocks),
+            ));
             return;
         }
 
@@ -218,7 +288,14 @@ impl SemanticChunkEngine {
                 embed_prefix_tokens,
                 self.max_tokens
             );
-            out.push(self.make_chunk(path, &context_prefix, &embed_prefix, body, &chunk_type));
+            out.push(self.make_chunk(
+                path,
+                &context_prefix,
+                &embed_prefix,
+                body,
+                &chunk_type,
+                BlockEntry::union_lines(&blocks),
+            ));
             return;
         }
         let overlap_reserve_tokens = self.overlap_tokens.min(
@@ -236,11 +313,11 @@ impl SemanticChunkEngine {
             overlap_chars,
             overlap_reserve_tokens
         );
-        let mut group: Vec<(String, String)> = Vec::new();
+        let mut group: Vec<BlockEntry> = Vec::new();
         let mut group_tokens = 0usize;
         let mut prev_tail: String = String::new(); // 前一块正文尾部（跨块上下文）
         for block in blocks {
-            let block_tokens = self.tokens(&block.1);
+            let block_tokens = self.tokens(&block.text);
             if block_tokens > available {
                 // 先冲刷当前组，再拆分超长块（代码按行 / 表格按行分组 / 正文按句子）
                 self.flush_group(
@@ -256,14 +333,22 @@ impl SemanticChunkEngine {
                 group_tokens = 0;
                 log::debug!(
                     "[chunk_engine]   单块超长: type={} len={}token(可用{}token) → 二次切分",
-                    block.0,
+                    block.kind,
                     block_tokens,
                     available
                 );
                 let pieces = self.split_oversize_block(&block, available);
                 let last_piece_tail = pieces.last().cloned().unwrap_or_default();
                 for piece in pieces {
-                    out.push(self.make_chunk(path, &context_prefix, &embed_prefix, piece, &chunk_type));
+                    // 每个分片继承源块的行区间（分片是块内二次切分，provenance 相同）
+                    out.push(self.make_chunk(
+                        path,
+                        &context_prefix,
+                        &embed_prefix,
+                        piece,
+                        &chunk_type,
+                        (block.line_start, block.line_end),
+                    ));
                 }
                 // 后续组沿用最后一片的尾部（保持连续性）
                 prev_tail = tail_chars(&last_piece_tail, overlap_chars);
@@ -315,7 +400,7 @@ impl SemanticChunkEngine {
         path: &[String],
         context_prefix: &str,
         embed_prefix: &str,
-        group: &mut Vec<(String, String)>,
+        group: &mut Vec<BlockEntry>,
         chunk_type: &str,
         out: &mut Vec<Chunk>,
         prev_tail: &mut String,
@@ -326,7 +411,7 @@ impl SemanticChunkEngine {
         }
         let body = group
             .iter()
-            .map(|(_, t)| t.as_str())
+            .map(|b| b.text.as_str())
             .collect::<Vec<_>>()
             .join("\n\n");
         let mut body_for_chunk = if prev_tail.is_empty() {
@@ -354,7 +439,7 @@ impl SemanticChunkEngine {
         }
         let group_desc = group
             .iter()
-            .map(|(t, c)| format!("{}:{}字", t, char_len(c)))
+            .map(|b| format!("{}:{}字", b.kind, char_len(&b.text)))
             .collect::<Vec<_>>()
             .join(", ");
         log::debug!(
@@ -365,7 +450,14 @@ impl SemanticChunkEngine {
             group_desc,
             char_len(prev_tail)
         );
-        out.push(self.make_chunk(path, context_prefix, embed_prefix, body_for_chunk, chunk_type));
+        out.push(self.make_chunk(
+            path,
+            context_prefix,
+            embed_prefix,
+            body_for_chunk,
+            chunk_type,
+            BlockEntry::union_lines(group),
+        ));
         *prev_tail = tail_chars(&body, overlap_chars);
         group.clear();
     }
@@ -375,8 +467,8 @@ impl SemanticChunkEngine {
     /// 业界共识（MDKeyChunker / LangChain / LlamaIndex）：表格、代码块等结构化单元
     /// 不得被拆成零散片段；超长时仅在行边界切分，且表格分片重复表头，保证
     /// 每个分片仍是语义完整的最小单元。
-    fn split_oversize_block(&self, block: &(String, String), available_tokens: usize) -> Vec<String> {
-        let (typ, text) = block;
+    fn split_oversize_block(&self, block: &BlockEntry, available_tokens: usize) -> Vec<String> {
+        let (typ, text) = (&block.kind, &block.text);
         let pieces = match typ.as_str() {
             // 代码块按行边界切分，避免打断语句
             "code" => {
@@ -435,6 +527,7 @@ impl SemanticChunkEngine {
         embed_prefix: &str,
         body: String,
         chunk_type: &str,
+        lines: (usize, usize),
     ) -> Chunk {
         let context_text = if context_prefix.is_empty() {
             body.clone()
@@ -458,6 +551,15 @@ impl SemanticChunkEngine {
             embedding_text,
             path: path.to_vec(),
             chunk_type: chunk_type.to_string(),
+            line_start: lines.0,
+            line_end: lines.1,
+            // 只有表格块才提取；且只挂在 metadata 上（`embedding_text` 已在上面定稿，
+            // 刻意不掺入表头词——见字段注释与 §8.1 `table_headers_metadata` 的断言要求）
+            table_headers: if chunk_type == "table" {
+                extract_table_headers(&body)
+            } else {
+                None
+            },
         }
     }
 
@@ -552,10 +654,10 @@ fn tail_chars(text: &str, n: usize) -> String {
 }
 
 /// 统计块集合的主导类型（单块 → 其类型；混合 → 频次最高者，平手归为 section）
-fn dominant_type(blocks: &[(String, String)]) -> String {
+fn dominant_type(blocks: &[BlockEntry]) -> String {
     let mut counts: HashMap<&str, usize> = HashMap::new();
-    for (t, _) in blocks {
-        *counts.entry(t.as_str()).or_insert(0) += 1;
+    for b in blocks {
+        *counts.entry(b.kind.as_str()).or_insert(0) += 1;
     }
     let mut best: (&str, usize) = ("section", 0);
     for (t, count) in counts {
@@ -564,6 +666,55 @@ fn dominant_type(blocks: &[(String, String)]) -> String {
         }
     }
     best.0.to_string()
+}
+
+/// GFM 表格分隔行判定：形如 `| --- | :--: |`（只含 `-`、`:` 与管道符）。
+fn is_gfm_separator_row(line: &str) -> bool {
+    let t = line.trim();
+    if !t.starts_with('|') {
+        return false;
+    }
+    let inner = t.trim_matches('|');
+    !inner.is_empty()
+        && inner.split('|').all(|c| {
+            let c = c.trim();
+            !c.is_empty() && c.chars().all(|ch| ch == '-' || ch == ':')
+        })
+}
+
+/// 从 chunk 正文中提取**第一个 GFM 表格的表头列名**（JSON 数组字符串）。
+///
+/// Plan B v2 §4.7 / 决策 R3：只把**列名**补进 metadata，不新建 TableChunker。
+///
+/// 判定依据是「表头行 + 紧随其后的分隔行」这一 GFM 硬性结构，而不是"以 `|` 开头"——
+/// 后者会把数据行误判成表头（`split_oversize_table` 的分片正文首行也可能看似表头）。
+/// 正文里可能先出现段落（分组 chunk），故**扫描**而非只取首行。
+///
+/// 返回 `None` 表示正文中不存在结构完整的 GFM 表格。
+fn extract_table_headers(body: &str) -> Option<String> {
+    let lines: Vec<&str> = body.lines().collect();
+    for (i, line) in lines.iter().enumerate() {
+        if !line.trim().starts_with('|') {
+            continue;
+        }
+        let Some(next) = lines.get(i + 1) else { break };
+        if !is_gfm_separator_row(next) {
+            continue;
+        }
+        let cols: Vec<String> = line
+            .trim()
+            .trim_matches('|')
+            .split('|')
+            .map(|c| c.trim().to_string())
+            .filter(|c| !c.is_empty())
+            .collect();
+        if cols.is_empty() {
+            return None;
+        }
+        // 列名进 metadata：序列化为 JSON 数组，与 path_json/tags 的既有约定一致
+        return serde_json::to_string(&cols).ok();
+    }
+    None
 }
 
 /// 超长表格按行分组切分，每个分片重复表头行（表头 + 分隔行），保持表格语义单元完整。
@@ -736,6 +887,83 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// §8.1 `table_headers_metadata`（Plan B v2 §4.7 / 决策 R3）：
+    /// GFM 表格块的 `table_headers` 必须正确，且**绝不进 `embedding_text`**。
+    #[test]
+    fn table_headers_metadata_extracted_and_not_in_embedding() {
+        let e = engine(400, 0, 40);
+        let md = "# 销售\n\n| Postcode | Sales_Rep_Name | Value |\n|---|---|---|\n| 2121 | Jane | $84,219 |\n| 2092 | Ashish | $28,322 |\n";
+        let doc = doc_from(md);
+        let chunks = e.build(&doc);
+
+        let table = chunks
+            .iter()
+            .find(|c| c.chunk_type == "table")
+            .unwrap_or_else(|| panic!("应产出 table 类型 chunk，实际: {:?}",
+                chunks.iter().map(|c| c.chunk_type.as_str()).collect::<Vec<_>>()));
+
+        let raw = table.table_headers.as_deref().expect("表格块必须有表头列名");
+        let cols: Vec<String> = serde_json::from_str(raw).expect("表头必须是 JSON 数组");
+        assert_eq!(
+            cols,
+            vec!["Postcode", "Sales_Rep_Name", "Value"],
+            "表头列名必须与源表格一致（按出现顺序）"
+        );
+
+        // 核心断言（§8.1「**不进 embedding_text**」的准确含义）：
+        // 表头行本身就是 GFM 表格正文的一部分，**不可能**（也不应该）从正文里剔除；
+        // 这条要求禁的是把 `table_headers` 这个 **metadata 字段额外注入**向量文本
+        // （例如再拼一行 `表头: A/B/C`）。故判据是**出现次数不增加**：
+        // 每个列名在 embedding_text 中只出现 1 次（来自正文表头行），
+        // 若哪天真被额外注入，次数会变成 2 —— 该断言即失效报警。
+        for col in ["Postcode", "Sales_Rep_Name", "Value"] {
+            assert_eq!(
+                table.embedding_text.matches(col).count(),
+                1,
+                "列名 {} 在 embedding_text 中出现次数应为 1（仅正文表头行），\
+                 出现 >1 说明 table_headers 被额外注入了向量文本: {:?}",
+                col,
+                table.embedding_text.chars().take(80).collect::<String>()
+            );
+        }
+
+        // 非表格块不得有表头（防止把普通段落误判为表格）
+        let para_md = "# 标题\n\n这只是一段普通正文，没有表格。\n";
+        for c in engine(400, 0, 40).build(&doc_from(para_md)) {
+            assert!(
+                c.table_headers.is_none(),
+                "非表格块的 table_headers 必须为 None，实际: {:?} for type={}",
+                c.table_headers,
+                c.chunk_type
+            );
+        }
+    }
+
+    /// 表头判定必须依赖「表头行 + 分隔行」结构，不能只看"行首是 `|`"——
+    /// 否则数据行会被误判成表头（`split_oversize_table` 的分片首行也有此风险）。
+    #[test]
+    fn table_header_detection_requires_separator_row() {
+        // 只有数据行、没有分隔行 → 不是 GFM 表格
+        assert_eq!(extract_table_headers("| a | b |\n| c | d |\n"), None);
+        // 正常 GFM 表
+        assert_eq!(
+            extract_table_headers("| a | b |\n| --- | --- |\n| c | d |").as_deref(),
+            Some(r#"["a","b"]"#)
+        );
+        // 对齐分隔行（:---:）同样成立
+        assert_eq!(
+            extract_table_headers("| x | y |\n|:--|--:|\n| 1 | 2 |").as_deref(),
+            Some(r#"["x","y"]"#)
+        );
+        // 表头前有段落时仍能定位（分组 chunk 的正文可能先出现段落）
+        assert_eq!(
+            extract_table_headers("先来一段说明。\n\n| p | q |\n|---|---|\n| 1 | 2 |").as_deref(),
+            Some(r#"["p","q"]"#)
+        );
+        // 无表格
+        assert_eq!(extract_table_headers("纯文本，无表格。"), None);
     }
 
     /// 性能守卫：~1MB 文档分块在宽松时间上限内完成（防 O(n²) 回归）

@@ -126,7 +126,7 @@ pub mod search_providers;
 /// 内部守卫（未激活返回引导）双层拦截——模型未激活技能时收到温和引导并在
 /// 下一轮激活后重试，而非整个流式请求失败。
 pub const BASE_TOOLS: &[&str] = &[
-    "activate_skill", "deactivate_skill", "read", "ls", "glob", "grep", "write", "edit", "multi_edit", "delete",
+    "activate_skill", "deactivate_skill", "read", "read_document", "ls", "glob", "grep", "write", "edit", "multi_edit", "delete",
     "git_status", "git_diff", "git_commit", "git_checkout", "webfetch", "web_search", "deep_research", "read_subagent_result",
     "remember", "forget", "search_memory", "todo_write", "spawn_subagent", "parallel_research", "self_review",
     "doc_agent", "parallel_doc_agent", "ask_user_question",

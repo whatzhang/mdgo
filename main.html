@@ -13224,9 +13224,8 @@
             left: auto;
             right: auto;
             bottom: auto;
-            width: 400px;
-            max-width: 46vw;
-            flex: 0 0 400px;
+            width: 40%;
+            flex: 0 0 40%;
             height: 100%;
             background: var(--color-bg-secondary);
             border-left: 1px solid rgba(0, 0, 0, 0.08);
@@ -13547,6 +13546,7 @@
 
         .doc-qa-msg.assistant {
             align-self: stretch;
+            padding: 0.5rem 0.125rem;
         }
 
         .doc-qa-msg .markdown-body {
@@ -17294,10 +17294,20 @@
         const getExt = (p) => p?.split(DOT).pop() || '';  // 获取路径里的文件后缀名
         // 文件类型分组（模块级常量，避免每次扫描重建）
         const _EXT_TYPE_MAP = {
-            'html': '前端', 'htm': '前端', 'xhtml': '前端', 'css': '前端', 'scss': '前端', 'sass': '前端', 'less': '前端', 'styl': '前端', 'pcss': '前端', 'postcss': '前端', 'js': '前端', 'jsx': '前端', 'ts': '前端', 'tsx': '前端', 'mjs': '前端', 'cjs': '前端', 'jsm': '前端', 'tsm': '前端', 'mts': '前端', 'cts': '前端', 'vue': '前端', 'svelte': '前端', 'astro': '前端', 'swift': '前端', 'kt': '前端', 'py': '后端', 'pyw': '后端', 'java': '后端', 'kotlin': '后端', 'scala': '后端', 'groovy': '后端', 'c': '后端', 'cpp': '后端', 'h': '后端', 'hpp': '后端', 'cs': '后端', 'go': '后端', 'rs': '后端', 'rlib': '后端', 'rmeta': '后端', 'rb': '后端', 'php': '后端', 'dockerfile': '后端', 'gradle': '后端', 'makefile': '后端', 'cmake': '后端', 'proto': '后端', 'thrift': '后端', 'idl': '后端', 'wasm': '后端', 'asm': '后端', 'sh': '脚本', 'bash': '脚本', 'zsh': '脚本', 'bat': '脚本', 'cmd': '脚本', 'ps1': '脚本', 'sql': '数据库', 'mysql': '数据库', 'pgsql': '数据库', 'sqlite': '数据库', 'db': '数据库', 'db3': '数据库', 'sqlite3': '数据库', 'mdf': '数据库', 'ldf': '数据库', 'sqlitedb': '数据库', 'md': '文档', 'markdown': '文档', 'rst': '文档', 'tex': '文档', 'docx': '文档', 'doc': '文档', 'pdf': '文档', 'ppt': '文档', 'odt': '文档', 'rtf': '文档', 'epub': '文档', 'xlsx': '文档', 'xls': '文档', 'csv': '文档', 'tsv': '文档', 'ods': '文档', 'json': '文档', 'jsonl': '文档', 'jsonc': '文档', 'xml': '文档', 'yaml': '文档', 'yml': '文档', 'toml': '文档', 'ini': '文档', 'conf': '文档', 'env': '文档', 'properties': '文档', 'txt': '文档', 'text': '文档', 'log': '文档', 'bak': '文档', 'tmp': '文档', 'cache': '文档', 'lock': '文档', 'map': '文档', 'gitignore': '文档', 'png': '媒体', 'jpg': '媒体', 'jpeg': '媒体', 'gif': '媒体', 'bmp': '媒体', 'svg': '媒体', 'webp': '媒体', 'ico': '媒体', 'tiff': '媒体', 'tif': '媒体', 'raw': '媒体', 'psd': '媒体', 'ai': '媒体', 'eps': '媒体', 'fig': '媒体', 'mp4': '媒体', 'mov': '媒体', 'avi': '媒体', 'flv': '媒体', 'wmv': '媒体', 'mkv': '媒体', 'webm': '媒体', 'm4v': '媒体', 'mpg': '媒体', 'mpeg': '媒体', '3gp': '媒体', 'mp3': '媒体', 'wav': '媒体', 'flac': '媒体', 'aac': '媒体', 'ogg': '媒体', 'wma': '媒体', 'm4a': '媒体', 'opus': '媒体', 'obj': '媒体', 'fbx': '媒体', 'dae': '媒体', 'stl': '媒体', '3ds': '媒体', 'blend': '媒体', 'zip': '压缩文件', 'rar': '压缩文件', '7z': '压缩文件', 'tar': '压缩文件', 'gz': '压缩文件', 'bz2': '压缩文件', 'xz': '压缩文件', 'dmg': '压缩文件', 'drawio': '图表', 'excalidraw': '图表', 'sketch': '图表', 'xd': '图表', 'afdesign': '图表', 'puml': '图表', 'plantuml': '图表', 'mmd': '图表', 'ttf': '字体', 'otf': '字体', 'woff': '字体', 'woff2': '字体', 'eot': '字体', 'glyphs': '字体', 'glyphs2': '字体'
+            'html': '前端', 'htm': '前端', 'xhtml': '前端', 'css': '前端', 'scss': '前端', 'sass': '前端', 'less': '前端', 'styl': '前端', 'pcss': '前端', 'postcss': '前端', 'js': '前端', 'jsx': '前端', 'ts': '前端', 'tsx': '前端', 'mjs': '前端', 'cjs': '前端', 'jsm': '前端', 'tsm': '前端', 'mts': '前端', 'cts': '前端', 'vue': '前端', 'svelte': '前端', 'astro': '前端', 'swift': '前端', 'kt': '前端', 'py': '后端', 'pyw': '后端', 'java': '后端', 'kotlin': '后端', 'scala': '后端', 'groovy': '后端', 'c': '后端', 'cpp': '后端', 'h': '后端', 'hpp': '后端', 'cs': '后端', 'go': '后端', 'rs': '后端', 'rlib': '后端', 'rmeta': '后端', 'rb': '后端', 'php': '后端', 'dockerfile': '后端', 'gradle': '后端', 'makefile': '后端', 'cmake': '后端', 'proto': '后端', 'thrift': '后端', 'idl': '后端', 'wasm': '后端', 'asm': '后端', 'sh': '脚本', 'bash': '脚本', 'zsh': '脚本', 'bat': '脚本', 'cmd': '脚本', 'ps1': '脚本', 'sql': '数据库', 'mysql': '数据库', 'pgsql': '数据库', 'sqlite': '数据库', 'db': '数据库', 'db3': '数据库', 'sqlite3': '数据库', 'mdf': '数据库', 'ldf': '数据库', 'sqlitedb': '数据库', 'md': '文档', 'markdown': '文档', 'mdown': '文档', 'mdx': '文档', 'rst': '文档', 'tex': '文档', 'docx': '文档', 'doc': '文档', 'docm': '文档', 'pdf': '文档', 'ppt': '文档', 'pps': '文档', 'pot': '文档', 'pptm': '文档', 'ppsx': '文档', 'ppsm': '文档', 'pptx': '文档', 'odt': '文档', 'rtf': '文档', 'epub': '文档', 'odp': '文档', 'xlsx': '文档', 'xls': '文档', 'xlsm': '文档', 'xlsb': '文档', 'csv': '文档', 'tsv': '文档', 'ods': '文档', 'json': '文档', 'jsonl': '文档', 'jsonc': '文档', 'xml': '文档', 'yaml': '文档', 'yml': '文档', 'toml': '文档', 'ini': '文档', 'conf': '文档', 'cfg': '文档', 'env': '文档', 'properties': '文档', 'txt': '文档', 'text': '文档', 'log': '文档', 'bak': '文档', 'tmp': '文档', 'cache': '文档', 'lock': '文档', 'map': '文档', 'gitignore': '文档', 'png': '媒体', 'jpg': '媒体', 'jpeg': '媒体', 'gif': '媒体', 'bmp': '媒体', 'svg': '媒体', 'webp': '媒体', 'ico': '媒体', 'tiff': '媒体', 'tif': '媒体', 'raw': '媒体', 'psd': '媒体', 'ai': '媒体', 'eps': '媒体', 'fig': '媒体', 'mp4': '媒体', 'mov': '媒体', 'avi': '媒体', 'flv': '媒体', 'wmv': '媒体', 'mkv': '媒体', 'webm': '媒体', 'm4v': '媒体', 'mpg': '媒体', 'mpeg': '媒体', '3gp': '媒体', 'mp3': '媒体', 'wav': '媒体', 'flac': '媒体', 'aac': '媒体', 'ogg': '媒体', 'wma': '媒体', 'm4a': '媒体', 'opus': '媒体', 'obj': '媒体', 'fbx': '媒体', 'dae': '媒体', 'stl': '媒体', '3ds': '媒体', 'blend': '媒体', 'zip': '压缩文件', 'rar': '压缩文件', '7z': '压缩文件', 'tar': '压缩文件', 'gz': '压缩文件', 'bz2': '压缩文件', 'xz': '压缩文件', 'dmg': '压缩文件', 'drawio': '图表', 'excalidraw': '图表', 'sketch': '图表', 'xd': '图表', 'afdesign': '图表', 'puml': '图表', 'plantuml': '图表', 'mmd': '图表', 'ttf': '字体', 'otf': '字体', 'woff': '字体', 'woff2': '字体', 'eot': '字体', 'glyphs': '字体', 'glyphs2': '字体'
         };
-        const DOC_EXT_SET = new Set(['md', 'txt', 'mmd', 'csv', 'pdf', 'opml', 'drawio', 'excalidraw', 'puml', 'plantuml', 'html', 'mmd', 'mm', 'doc', 'docx', 'ppt', 'xls', 'xlsx', 'pptx', 'canvas']);
-        const CODE_EXT_SET = new Set(['html', 'htm', 'xhtml', 'iml', 'ghostty', 'dockerfile', 'groovy', 'js', 'jsx', 'ts', 'tsx', 'vue', 'css', 'scss', 'less', 'sass', 'py', 'java', 'c', 'cpp', 'h', 'hpp', 'cs', 'go', 'rust', 'rb', 'php', 'swift',
+        const DOC_EXT_SET = new Set(['md', 'txt', 'mmd', 'csv', 'pdf', 'opml', 'drawio', 'excalidraw', 'puml', 'plantuml', 'html', 'mmd', 'mm', 'doc', 'docx', 'ppt', 'xls', 'xlsx', 'pptx', 'canvas',
+            // Plan B v2 / Phase 2：后端已可索引的 Office/ODF/RTF/EPUB 变体
+            'docm', 'pps', 'pot', 'pptm', 'ppsx', 'ppsm', 'xlsm', 'xlsb', 'odt', 'ods', 'odp', 'rtf', 'epub',
+            // Plan B v2 验收补漏：后端注册表已登记、但前端 `checkFileExt` 会拒开的扩展名
+            // （`markdown`/`mdown`/`mdx` 属 Markdown 家族，`tsv`/`cfg` 属数据/配置文本）。
+            // 后端能索引而前端打不开 = 用户在检索结果里点不开自己的文件。
+            'markdown', 'mdown', 'mdx', 'tsv', 'cfg']);
+        // Plan B v2 / Phase 2：需要**后端转换预览**的二进制文档（不含 pdf/xls/xlsx——
+        // 它们已有原生渲染器：pdf.js 查看器 / SheetJS 表格）。
+        // 命中此集合的文件**绝不走 getFileText()**（Blob.text() 固定 UTF-8 解码 → 必然乱码）。
+        const CONVERTED_DOC_EXT_SET = new Set(['doc', 'docx', 'docm', 'ppt', 'pps', 'pot', 'pptx', 'pptm', 'ppsx', 'ppsm', 'xlsm', 'xlsb', 'odt', 'ods', 'odp', 'rtf', 'epub']);
+        const CODE_EXT_SET = new Set(['html', 'htm', 'xhtml', 'iml', 'ghostty', 'dockerfile', 'makefile', 'gnumakefile', 'groovy', 'js', 'jsx', 'ts', 'tsx', 'vue', 'css', 'scss', 'less', 'sass', 'py', 'java', 'c', 'cpp', 'h', 'hpp', 'cs', 'go', 'rust', 'rb', 'php', 'swift',
             'kt', 'scala', 'sh', 'bat', 'cmd', 'ps1', 'json', 'jsonl', 'xml', 'yaml', 'yml', 'toml', 'ini', 'conf', 'env', 'sql', 'rst', 'log', 'properties', 'gradle', 'gitignore', 'jsm', 'mjs',
             'cjs', 'tsm', 'mts', 'cts', 'svelte', 'astro', 'styl', 'pcss', 'postcss', 'graphql', 'gql', 'prisma', 'proto', 'thrift', 'idl', 'asm', 's', 'asmx', 'fs', 'fsx', 'fsi', 'fsscript',
             'vb', 'vbs', 'pl', 'pm', 't', 'tt', 'pod', 'lua', 'r', 'R', 'matlab', 'm', 'psm1', 'psd1', 'ps1xml', 'xaml', 'axaml', 'resx', 'rs', 'sol', 'vy', 'move', 'aptos', 'sui', 'tsbuildinfo',
@@ -17316,6 +17326,11 @@
         const isRaw = (ext) => _RAW_EXT_SET.has(ext.toLowerCase());
         const isSelectWork = (name) => _SELECT_WORK_EXT_SET.has(getExt(name).toLowerCase());
         const isTocSupported = (name) => _TOC_EXT_SET.has(getExt(name).toLowerCase());
+        // Plan B v2 验收补漏：Markdown 家族判定（`.md` 之外还有 `.markdown`/`.mdown`/`.mdx`）。
+        // 后端注册表把这三者登记为 `form = Markdown`，前端必须同样按 Markdown 渲染，
+        // 否则它们会落到 `else` 兜底进纯文本编辑器（能打开但不能预览渲染）。
+        const _MD_FAMILY_EXT_SET = new Set(['md', 'markdown', 'mdown', 'mdx']);
+        const isMarkdownDoc = (name) => _MD_FAMILY_EXT_SET.has(getExt(name).toLowerCase());
 
         // 带大小限制的 LRU 缓存（Map 封装）
         class LRUCache {
@@ -17882,7 +17897,7 @@
             topRightBtnDisplay(fileName);
             previewFileText = '';
             originalContent = '';
-            if (fileName.endsWith('.md')) {
+            if (isMarkdownDoc(fileName)) {
                 await renderMarkdownFile(await getFileText());
             } else if (fileName.endsWith('.html')) {
                 await renderHTMLFile(await getFileText(), relativePath);
@@ -17916,6 +17931,10 @@
                 await renderExcalidrawFile(await getFileText(), contentMain);
             } else if (fileName.endsWith('.mmd')) {
                 await renderMermaidFile(await getFileText());
+            } else if (CONVERTED_DOC_EXT_SET.has(getExt(fileName).toLowerCase())) {
+                // Plan B v2 / Phase 2：Office/ODF/RTF/EPUB 走后端转换预览
+                // （**必须在 else 之前**：否则会落到 enterEditMode + getFileText → UTF-8 乱码）
+                await renderConvertedDocFile(relativePath);
             } else {
                 try {
                     await enterEditMode(true, await getFileText());
@@ -17945,7 +17964,7 @@
                 livePreviewBtn: false,
                 formatBtn: false, opmlBtns: false
             });
-            if (fileName.endsWith('.md')) {
+            if (isMarkdownDoc(fileName)) {
                 await renderMarkdownFile(fileText);
             } else if (fileName.endsWith('.html')) {
                 await renderHTMLFile(fileText, currentActiveItem ? currentActiveItem.dataset.filePath : '');
@@ -17963,12 +17982,81 @@
                 await renderCanvasFile(fileText, contentMain);
             } else if (fileName.endsWith('.excalidraw')) {
                 await renderExcalidrawFile(fileText, contentMain);
+            } else if (CONVERTED_DOC_EXT_SET.has(getExt(fileName).toLowerCase())) {
+                // Plan B v2 / Phase 2：第二条分发链必须同步（否则"编辑→预览"仍会乱码）
+                await renderConvertedDocFile(currentActiveItem ? currentActiveItem.dataset.filePath : '');
             } else {
                 try {
                     enterEditMode(false, fileText);
                 } catch (error) {
                     renderTextFile(fileText);
                 }
+            }
+        }
+
+        /**
+         * Plan B v2 / Phase 2：二进制文档的**转换后预览**。
+         *
+         * 为什么必须有这个分支：这些格式是 ZIP/OLE 二进制容器，旧的 else 兜底会执行
+         * `enterEditMode(true, await getFileText())`，而 `Blob.text()` 固定按 UTF-8 解码
+         * → 乱码，且 `isOtherFile=true` 会让 previewBtn=false（用户卡在乱码编辑器里无法退回）。
+         *
+         * 设计约束（方案 §7.2.1）：**只传路径**给后端，不把文件读进 JS 再传回
+         * （大 .pptx/.xlsb 会双倍搬运）。后端 `document_preview` 与索引用同一个
+         * `DocumentLoader`，因此预览结果与入库内容天然一致。
+         */
+        async function renderConvertedDocFile(relativePath = '') {
+            const noticeStyle = 'padding:14px 22px;color:#666;font-size:13px;line-height:1.6;border-bottom:1px solid #eee;background:#fafafa;';
+            // 后端 `document_preview` 收的是**绝对路径**（它用 dir_path 做 strip_prefix 折算相对路径），
+            // 这里沿用仓库既有惯例：normalizePath(currentRootPath) + joinPath（见 buildTauriImg）。
+            const rootPath = normalizePath(currentRootPath || '');
+            const absPath = relativePath ? joinPath(rootPath, relativePath) : '';
+            if (!absPath) {
+                contentMain.innerHTML = `<div style="${noticeStyle}color:#b00020">预览失败：无法解析文件路径</div>`;
+                return;
+            }
+            let res = null;
+            try {
+                // `invoke` 在本文件里没有模块级绑定，必须从 window.__TAURI__.core 取
+                const { invoke } = window.__TAURI__.core;
+                res = await invoke('document_preview', { path: absPath, dirPath: rootPath });
+            } catch (e) {
+                contentMain.innerHTML = `<div style="${noticeStyle}color:#b00020">预览失败：${escapeHtml(String(e))}</div>`;
+                return;
+            }
+            // 注意：DocumentPreview 未加 serde rename_all，JSON 键是 snake_case。
+            // 这里同时容忍 camelCase，避免以后后端改名就静默失效。
+            const skipCode = res && (res.skip_code || res.skipCode);
+            if (!res || skipCode) {
+                const reason = (res && (res.skip_reason || res.skipReason)) || skipCode || '未知原因';
+                contentMain.innerHTML = `<div style="${noticeStyle}">该文件无法预览：${escapeHtml(reason)}</div>`;
+                return;
+            }
+            // 注意：notice 最终用 textContent 写入，**不能**在这里转义（否则用户看到 &lt; 字面量）
+            const notice = (res.truncated ? '（内容过长，仅预览前 20 万字符）' : '')
+                + ((res.warnings && res.warnings.length) ? '　' + res.warnings.join('；') : '');
+            await renderMarkdownFile(res.text);
+            // renderMarkdownFile 是**按 .md 文件**设计的：它会打开 editBtn / livePreviewBtn，
+            // 并把 `#common-tool-controls`（放映/演示）置为可见——而那个容器与
+            // `#top-right-controls` 是**兄弟节点**，不受 topControls:false 约束。
+            // 对本类文件这些都是错的：`onclick="enterEditMode()"` 不传文本 → 空编辑器 →
+            // 保存会把 .docx 覆盖成空文件；togglePPTMode() 会退化成 getFileText() →
+            // 原始二进制按 UTF-8 解码 → 幻灯片乱码。故渲染后显式收权为「只读预览」。
+            setControlsState({
+                topControls: false,        // 无编辑/保存/MD 导出（它们都依赖文本态，此处为空）
+                commonToolControls: false, // 放映/演示：会读原始二进制，必须关闭
+                editBtn: false,
+                saveBtn: false,
+                previewBtn: false,
+                livePreviewBtn: false,
+                formatBtn: false,
+                copyBtn: false,            // 复制按钮走 getFileContent() → 同样会拿到乱码
+            });
+            if (notice) {
+                const tip = document.createElement('div');
+                tip.setAttribute('style', noticeStyle);
+                tip.textContent = notice;
+                contentMain.prepend(tip);
             }
         }
 
@@ -26701,7 +26789,7 @@ kanban-plugin: basic
             // 覆盖常见图片、文档、媒体、压缩包
             const EXT_SET = new Set([
                 'png', 'jpg', 'jpeg', 'gif', 'svg', 'bmp', 'tiff', 'webp', 'ico',
-                'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+                'pdf', 'doc', 'docx', 'docm', 'xls', 'xlsx', 'xlsm', 'xlsb', 'ppt', 'pptx', 'pps', 'pot', 'pptm', 'ppsx', 'ppsm', 'rtf', 'epub',
                 'odt', 'ods', 'odp',
                 'mp3', 'wav', 'flac', 'aac', 'ogg', 'wma',
                 'mp4', 'avi', 'mov', 'mkv', 'webm', 'wmv', 'm4v',
@@ -50336,10 +50424,22 @@ kanban-plugin: basic
                     statusDot.className = 'kb-status-dot ready';
                     const dateStr = kbStatus.indexed_at ? new Date(kbStatus.indexed_at).toLocaleString() : '';
                     statusText.textContent = `已索引 (${dateStr})`;
-                    // D8：分块参数已变更但索引未重建 → 提示重建（后端 IndexMeta.chunk_params_version 比对）
+                    // Plan B v2 / Phase 0C（§7.2 F5）：**按类型失效**的操作入口。
+                    // 先清掉上一轮留下的按钮，避免刷新后重复堆叠。
+                    const _oldStaleActions = document.getElementById('kb-stale-actions');
+                    if (_oldStaleActions) _oldStaleActions.remove();
                     if (kbStatus.stale) {
-                        statusText.textContent += ' ⚠️ 分块参数已变更，请重建索引';
+                        // 区分两种 stale，避免把"转换器换代"误报成"分块参数变更"：
+                        //   stale_kinds 非空 → 具体哪些 source_kind 的转换器变了（可只重建这些）
+                        //   为空           → 全局分块参数版本变更（只能全量重建）
+                        const staleKinds = Array.isArray(kbStatus.stale_kinds) ? kbStatus.stale_kinds : [];
                         statusDot.className = 'kb-status-dot error';
+                        if (staleKinds.length) {
+                            statusText.textContent += ` ⚠️ 以下类型的转换器已更新，需重建索引：${staleKinds.join('、')}`;
+                        } else {
+                            statusText.textContent += ' ⚠️ 分块参数已变更，请重建索引';
+                        }
+                        renderStaleActions(staleKinds);
                     }
                     if (emptyMsg) emptyMsg.style.display = 'none';
                     if (dashboardContent) dashboardContent.style.display = '';
@@ -50499,7 +50599,72 @@ kanban-plugin: basic
                 + bar('使用活跃度', activity, '#1976d2')
                 + bar('文件覆盖率', coverage, '#9333ea')
                 + bar('向量化效率', efficiency, '#0891b2')
-                + suggestion;
+                + suggestion
+                + renderIndexDiagnostics(kbStatus);
+        }
+
+        /**
+         * Plan B v2 §5.3 / §7.2 F9：**索引诊断明细**（可解释性）。
+         *
+         * 两类诊断**必须分开显示**，因为它们对用户意味着完全不同的事：
+         * - `skipped_files`：整个文件**没有进库**（扫描件、加密、超限……）→ 搜不到
+         * - `partial_files`：文件**已经进库**，但有若干页被跳过（Q8）→ 大部分内容可搜到，
+         *   只有那几页搜不到
+         * 混在一起展示会让人误判"这个文件白存了"。
+         *
+         * 数据来自 `KbStatus`（后端持久化于 `IndexMeta`），因此**任何时刻**打开仪表盘
+         * 都能看到，而不是只在索引当次的结果里一闪而过。
+         *
+         * 全部用户数据用 `textContent` 语义转义后插入（路径里可能有 `<`、`&` 等字符）。
+         */
+        function renderIndexDiagnostics(kbStatus) {
+            const skipped = Array.isArray(kbStatus?.skipped_files) ? kbStatus.skipped_files : [];
+            const partial = Array.isArray(kbStatus?.partial_files) ? kbStatus.partial_files : [];
+            if (!skipped.length && !partial.length) return '';
+
+            const MAX_SHOW = 20;
+            const esc = (s) => escapeHtml(String(s ?? ''));
+            const itemStyle = 'margin:0.125rem 0;padding-left:0.75rem;text-indent:-0.75rem;color:var(--t2);line-height:1.5;';
+            const listOf = (items, render) => {
+                const shown = items.slice(0, MAX_SHOW).map(render).join('');
+                const more = items.length > MAX_SHOW
+                    ? `<div style="${itemStyle}opacity:0.7;">… 另有 ${items.length - MAX_SHOW} 条（详见索引日志）</div>`
+                    : '';
+                return shown + more;
+            };
+
+            let html = '<div style="margin-top:0.625rem;padding-top:0.5rem;border-top:1px dashed var(--border);font-size:0.6875rem;">';
+
+            if (skipped.length) {
+                html += `<div style="font-weight:600;color:#b45309;margin-bottom:0.125rem;">`
+                    + `⚠️ 未入库文件 ${skipped.length} 个（整文件未进入索引，搜索不到）</div>`;
+                html += listOf(skipped, (s) => {
+                    // 注意：`reason`（来自 `SkipReason::message()`）**已经**包含页码
+                    // （如「扫描件/图片页需 OCR（第 1,2,3 页，共 3 页）」），所以这里不再
+                    // 追加 `pages`，否则页码会重复显示两遍。
+                    // `pages` 字段保留在数据里，供将来做"跳转到该页"之类的交互。
+                    return `<div style="${itemStyle}">· <span style="color:var(--t1);">${esc(s.rel_path)}</span>`
+                        + ` — ${esc(s.reason)}</div>`;
+                });
+            }
+
+            if (partial.length) {
+                html += `<div style="font-weight:600;color:#ea580c;margin-top:0.375rem;margin-bottom:0.125rem;">`
+                    + `⚠️ 部分索引文件 ${partial.length} 个（已入库，但下列页未进库）</div>`;
+                html += listOf(partial, (p) => {
+                    const pages = (p.skipped_pages && p.skipped_pages.length)
+                        ? `第 ${p.skipped_pages.join('、')} 页 / 共 ${p.page_count || '?'} 页`
+                        : `${p.page_count || '?'} 页`;
+                    const why = (p.diagnostics && p.diagnostics.length)
+                        ? `：${p.diagnostics[0].detail || ''}`
+                        : '';
+                    return `<div style="${itemStyle}">· <span style="color:var(--t1);">${esc(p.rel_path)}</span>`
+                        + ` — 跳过 ${esc(pages)}${esc(why)}</div>`;
+                });
+            }
+
+            html += '</div>';
+            return html;
         }
 
         function renderVectorInfo(kbStatus, embInfo) {
@@ -50659,6 +50824,105 @@ kanban-plugin: basic
                 await indexUnindexedDir();
             } else {
                 await indexAllDir();
+            }
+        }
+
+        /**
+         * Plan B v2 / Phase 0C（§7.2 F5）：在「索引已过期」提示旁渲染重建入口。
+         *
+         * 为什么需要两个按钮：`stale` 有两种成因，代价差一个数量级——
+         * - **按类型**（`stale_kinds` 非空，如仅升级了 pdf-inspector）：只重跑这些 source_kind，
+         *   其余类型的 chunk 完全不动；
+         * - **全局**（分块参数版本变更）：没有类型信息可依据，只能全量重建。
+         * 后端为此提供了 `kb_reindex_kinds`；此前前端完全没有调用方，用户无法使用按类型重建。
+         *
+         * @param {string[]} kinds 后端 `KbStatus.stale_kinds`（空数组 = 只能全量重建）
+         */
+        function renderStaleActions(kinds) {
+            const anchor = statusText && statusText.parentNode;
+            if (!anchor) return;
+            const box = document.createElement('span');
+            box.id = 'kb-stale-actions';
+            box.style.cssText = 'display:inline-flex;gap:8px;margin-left:10px;vertical-align:middle;';
+            const mk = (label, title, handler) => {
+                const b = document.createElement('button');
+                b.className = 'btn btn-primary btn-sm';
+                b.textContent = label;
+                b.title = title;
+                b.onclick = handler;
+                return b;
+            };
+            if (Array.isArray(kinds) && kinds.length) {
+                box.appendChild(mk(
+                    `只重建 ${kinds.join('/')}`,
+                    '仅重跑这些类型的转换与分块，其他类型不受影响（推荐）',
+                    () => reindexStaleKinds(kinds)
+                ));
+            }
+            box.appendChild(mk(
+                '全量重建',
+                '重跑目录下全部文件（较慢，但能一并纳入新增/修改的文件）',
+                () => indexAllDir()
+            ));
+            anchor.appendChild(box);
+        }
+
+        /**
+         * 只重建指定的 source_kind（Plan B v2 / Phase 0C 按类型失效的入口）。
+         *
+         * 与 `indexAllDir` 的区别：不重新扫描目录，只对**已在索引中的这些类型**重跑
+         * 转换 + 分块（后端 `Indexer::reindex_kinds`），因此升级单个转换器时不必整库重跑。
+         */
+        async function reindexStaleKinds(kinds) {
+            if (!Array.isArray(kinds) || !kinds.length) return;
+            const dirHandle = getRootHandle();
+            if (!dirHandle) {
+                showNotification('请先打开一个目录', 'warning');
+                return;
+            }
+            const indexSel = document.getElementById('kb-index-select');
+            const progressWrap = document.getElementById('kb-progress-wrap');
+            const progressBar = document.getElementById('kb-progress-bar');
+            const progressText = document.getElementById('kb-progress-text');
+            const kbIndexRefreshBtn = document.getElementById('kb-index-refresh');
+            const kbWatcherCheckbox = document.getElementById('kb-watcher-checkbox');
+
+            indexSel.disabled = true;
+            kbIndexRefreshBtn.disabled = true;
+            if (kbWatcherCheckbox) kbWatcherCheckbox.disabled = true;
+            progressWrap.style.display = '';
+
+            const path = getDirPath(dirHandle);
+            try {
+                let unlisten;
+                try {
+                    const { listen } = window.__TAURI__.event;
+                    unlisten = await listen('kb-progress', (e) => {
+                        const { percent, message } = e.payload;
+                        progressBar.style.width = (percent || 0) + '%';
+                        progressText.textContent = message || '';
+                    });
+                } catch (e) { console.warn('注册进度监听失败:', e); }
+
+                const result = await window.__TAURI__.core.invoke('kb_reindex_kinds', {
+                    dirPath: path,
+                    kinds: kinds,
+                });
+                if (unlisten) unlisten();
+                showNotification(
+                    `✅ 已重建 ${kinds.join('/')}: ${result.file_count} 个文件, ${result.chunk_count} 个文本块`,
+                    'success'
+                );
+                await refreshKnowledgeStatus();
+            } catch (e) {
+                console.error('kb_reindex_kinds 失败:', e);
+                const errMsg = typeof e === 'string' ? e : (e.message || JSON.stringify(e) || '未知错误(请查看控制台)');
+                showNotification('✗ 按类型重建失败: ' + errMsg, 'error');
+            } finally {
+                progressWrap.style.display = 'none';
+                indexSel.disabled = false;
+                kbIndexRefreshBtn.disabled = false;
+                if (kbWatcherCheckbox) kbWatcherCheckbox.disabled = false;
             }
         }
 

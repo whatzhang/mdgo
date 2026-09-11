@@ -109,7 +109,24 @@ tokenizers = { version = "0.22.2", default-features = false, features = ["onig"]
 # 文件监听
 notify = { version = "8", features = ["macos_kqueue"] }
 # PDF 提取
+#
+# Plan B v2 / Phase 1：主用 pdf-inspector（纯 Rust、MIT、逐页 Markdown + 页码 provenance +
+# OCR 路由），`pdf-extract` 保留为可回退后端（决策 Q7 / `Converter::LegacyPdf`）。
+# 版本口径：anydoc 依赖 `pdf-inspector ^1.14.2`，此处声明 `=1.19.0` 让 cargo 统一为**单份**依赖。
+# **精确锁定**（而非 caret）：`ConverterInfo::PDF_INSPECTOR.version` 是手写常量，它同时是
+# 转换缓存主键与 `IndexMeta.kind_converters` 失效快照的一部分。若用 caret，`cargo update`
+# 静默升到 1.19.x 就会换了转换实现而常量不变 → 旧转换结果继续命中缓存且**不会提示 stale**。
+# 锁成精确版本后，升级必须显式改这一行，常量与 Cargo.lock 才能被迫同步（与 anydoc 同口径）。
+pdf-inspector = "=1.19.0"
 pdf-extract = { version = "0.7", optional = true }
+# Office/旧格式/ODF/RTF/EPUB → Markdown（Plan B v2 / Phase 2）。
+#
+# 精确锁定：anydoc 仍处 0.2.x 快速迭代期（0.1.7→0.2.4 约 5 周），且上游**没有 feature flag**
+# （PDF 解析栈必然随包编译），因此版本漂移的风险全靠精确锁定 + 适配层隔离（见 loader.rs）。
+anydoc = "=0.2.4"
+# 内容哈希（Plan B v2 / Phase 3 转换缓存的来源身份；方案 §5.6 要求 SHA-256，
+# 不用 FNV——后者仅保留给既有 embedding 缓存的文本身份契约）
+sha2 = "0.11"
 async-trait = "0.1"
 # JSON Schema 结构化输出（CompletionRequest.output_schema 类型）
 schemars = "1"
@@ -131,6 +148,54 @@ ort = { version = "2.0.0-rc.11", features = ["ndarray", "coreml"] }
 # Intel Mac / Linux：tract-onnx 直接使用
 [target.'cfg(not(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64"))))'.dependencies]
 tract-onnx = "0.23"
+
+# ============== 依赖补丁（临时；随上游修复移除） ==============
+#
+# 问题：`tantivy 0.26`（BM25 引擎）要求 `time = "^0.3.47"`，而 time 0.3.47 把
+# `format_description::FormatItem::StringLiteral` 改名为 `Literal`；
+# `pdf-inspector ≥1.18.0`（Phase 1 的 PDF 后端）依赖 `lopdf ^0.44.0`，其
+# `src/datetime.rs` 仍引用旧名 → `lopdf` 编译失败（上游 issue #518，
+# master 注释原文："it referenced a nonexistent `FormatItem::StringLiteral`"）。
+#
+# 为什么只能打补丁（三条出路逐条排除了）：
+#   ① 不能降级 `time` —— `tantivy 0.26.1` 的 `time = "^0.3.47"` 下限不允许；
+#   ② 不能升 `lopdf` 到 0.45 —— `^0.44.0` 不接受 0.45（semver 边界），
+#      `[patch]` 同样要求被替换 crate 满足原版本需求；
+#   ③ 不能从下游关闭 lopdf 的默认 feature —— `time` 在 lopdf 的 `default` 里，
+#      且 Cargo feature 是**并集**语义：feature 由各依赖方自行启用，下游无法关闭。
+#      （注：printpdf 能靠 `default-features = false` 绕开，是因为它是 lopdf 的
+#      **直接**依赖方；我们是经 pdf-inspector 的**传递**依赖方，做不到。）
+#
+# 做法：补丁到上游修复后、**版本号仍为 `0.44.0`** 的提交（0.45 的 release
+# 提交才改版本号，因此该提交满足 `^0.44.0`）。
+#
+# ── 「降级 pdf-inspector 以删掉本补丁」已评估并**否决**（附依据，勿重复提议）──
+#
+# 事实（来自 cargo registry index 与两个发布版 crate 原件的直接 diff）：
+#   · pdf-inspector 版本 → lopdf 需求：≤0.1.7=`^0.41.0`；0.1.8~**1.17.0**=`^0.42.0`；
+#     **1.18.0 起 = `^0.44.0`**。故「删补丁」只剩降级一条路（降到 ≤1.17.0）。
+#   · 降级实测可行：`=1.17.0` + 删本补丁 → cargo 解析出 registry 的 lopdf 0.42.0，
+#     本补丁被报为 "not used in the crate graph"；423 tests 全绿、15 个真实样本验收逐项一致
+#     （API 是纯超集、我们消费的 `PdfType`/`PageMarkdown`/`PagesExtractionResult`
+#     逐字节相同、`PdfError` 变体相同，故编译与接口层面无风险）。
+#   · **但能力不等价**：1.17.0 → 1.19.0 是 +11053/−1392 行 / 45 文件，1.17.0 缺失：
+#     `xref_repair`（重建 19 字节 classic xref 条目 —— ISO 32000-1 §7.5.4 要求 20 字节，
+#       一批公文归档导出器产出 19 字节，mupdf/pdfium/pdf.js/qpdf 均接受，
+#       而 lopdf ≤0.44 会**整篇加载失败**报 "invalid file trailer"；上游 lopdf#564 截至
+#       2026-09 未发布）→ 降级会让这一类 PDF **直接打不开**；
+#     `identity_overrides`（过期 CMap 修复 → 直击中日文/bcmaps 乱码，即方案 §3.2 陷阱 6）；
+#     `bounded_load_options`（不可信输入的资源上限）；
+#     以及新增 5 个 extractor 模块（`clip_boundaries`/`page_box`/`text_paint`/`geometry`/`scripts`）
+#     与 `content_stream.rs +1970`、`xobjects.rs +962`、`fonts.rs +283`、tables 系列改写。
+#   · 且降级会连带把 `aes/block-padding/cbc/cipher/ecb/inout/weezl` 一起降级。
+#   · 决策：**保留补丁、留在 1.19.0**。理由是"删 git source"换"PDF 解析能力倒退（含
+#     一类 PDF 完全打不开）"不划算；若将来 GitHub 可达性成为构建硬约束，
+#     另一条不损失能力的出路是把修复版 lopdf 源码 vendor 进仓库改用 `path =` 补丁。
+#
+# 移除条件：`pdf-inspector` 依赖 `lopdf >= 0.45`（`lopdf 0.45.0` **已发布**，出口存在）
+# 或其余 PDF 后端不再依赖 lopdf 后，删除本节与 `pdf-inspector` 依赖上方对应的解释注释。
+[patch.crates-io]
+lopdf = { git = "https://github.com/J-F-Liu/lopdf", rev = "a15329d093319162fd5863b1e47ce5c384f45a3a" }
 
 [profile.release]
 opt-level = 3

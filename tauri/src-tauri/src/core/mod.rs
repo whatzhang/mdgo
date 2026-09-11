@@ -25,7 +25,9 @@ pub mod r#loop;
 mod embedding;
 mod indexer;
 pub(crate) mod model_download;
-mod pipeline;
+// `pub(crate)`：验收 harness（`crate::acceptance`）需要复用真实的 `chunk_document`
+// 调用链；与 `model_download` 同一可见性惯例，不扩散到 crate 外部。
+pub(crate) mod pipeline;
 mod watcher;
 
 pub use chat_types::{ChatMessage, ChatMessageSource, ChatSession, ChatSessionSearchResult, ToolCallDto};

@@ -24,23 +24,27 @@ pub enum RetrievalIntent {
     General,
 }
 
-/// 代码文件扩展名统一清单。
-///
-/// 单一来源：`classify_ext`（索引类型统计）与 `intent_allowed_exts`（意图过滤）
-/// 共用本清单，避免两套列表漂移导致"已索引的代码文件在 Code 意图下被漏检"。
-pub const CODE_EXTENSIONS: &[&str] = &[
-    "py", "js", "ts", "rs", "go", "java", "lua", "sh", "bat", "sql", "yaml", "yml", "toml",
-    "conf", "c", "cpp", "cc", "h", "hpp", "rb", "php",
-];
-
 /// 意图 → 允许检索的文件扩展名白名单（候选过滤条件，检索前确定）。
+///
+/// **单一来源：`document::filekind` 注册表的能力位**（D7/D4）。
+/// 改造前本处持有独立的 `CODE_EXTENSIONS` 常量，与索引白名单漂移，导致
+/// `swift/kt/cs/scala/r/jsx/tsx/bash/zsh` 等**已入库**文件在 Code 意图下被硬过滤漏检。
+///
+/// 注意这里只做「能力位 → 扩展名集合」的**推导**：注册表不感知 `RetrievalIntent`，
+/// 检索策略仍完全留在本模块（评审 §十二）。
 fn intent_allowed_exts(intent: RetrievalIntent) -> Option<&'static [&'static str]> {
+    let reg = crate::core::document::filekind::registry();
     match intent {
-        RetrievalIntent::Code => Some(CODE_EXTENSIONS),
-        RetrievalIntent::Document => Some(&["md", "markdown", "mdown", "rst", "txt"]),
-        RetrievalIntent::Outline => Some(&["opml", "mm"]),
+        RetrievalIntent::Code => Some(reg.code_exts()),
+        RetrievalIntent::Document => Some(reg.doc_like_exts()),
+        RetrievalIntent::Outline => Some(reg.outline_exts()),
         RetrievalIntent::General => None,
     }
+}
+
+/// 代码文件扩展名（唯一来源：`filekind` 注册表）
+fn code_extensions() -> &'static [&'static str] {
+    crate::core::document::filekind::registry().code_exts()
 }
 
 /// 查询计划：一次检索的完整决策输入（查询理解层的产物）。
@@ -134,12 +138,12 @@ pub fn route_intent(query: &str) -> RetrievalIntent {
 
 /// 查询是否包含显式代码扩展名（`.rs`、`.py` 等，词边界保护避免 "5.0" 误匹配）。
 ///
-/// 扩展名清单与 [`CODE_EXTENSIONS`] 保持一致（避免"路由为 Code 但过滤白名单不含该扩展名"的漏检）。
+/// 扩展名清单来自 `filekind` 注册表（避免"路由为 Code 但过滤白名单不含该扩展名"的漏检）。
 /// 🟠 M18 修复：同时校验**前导边界**与**后随边界**——扩展名前必须是文件名主干字符
 /// （字母/数字/下划线/连字符），扩展名后必须是结尾或非词延续字符，排除
 /// `config.rs_backup`、`config.rs-old`、`.rsx`、`config.rst` 等误匹配。
 fn has_explicit_extension(query: &str) -> bool {
-    CODE_EXTENSIONS.iter().any(|ext| {
+    code_extensions().iter().any(|ext| {
         let needle = format!(".{}", ext);
         let bytes = query.as_bytes();
         let mut start = 0usize;
@@ -217,8 +221,8 @@ fn is_code_query(query: &str) -> bool {
     if (has_camel || has_snake) && (query.contains("::") || query.contains("->")) {
         return true;
     }
-    // 代码文件扩展名（🟠 M18：与 CODE_EXTENSIONS 单一来源一致，含 c/cpp/h/rb/php）
-    let has_code_ext = CODE_EXTENSIONS
+    // 代码文件扩展名（🟠 M18：与注册表单一来源一致）
+    let has_code_ext = code_extensions()
         .iter()
         .any(|ext| query.contains(&format!(".{}", ext)));
     if has_code_ext {

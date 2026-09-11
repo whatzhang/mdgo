@@ -6,15 +6,16 @@ use serde::Serialize;
 
 use super::lance::DocumentChunk;
 use super::chunk_splitter::ChunkResult;
+use crate::core::document::loader::DocumentSource;
 
 // ─── 常量 ───
 
-pub const KB_SUPPORTED_EXTS: &[&str] = &[
-    "md", "txt", "pdf", "docx", "js", "ts", "jsx", "tsx", "py", "java", "go", "rs", "rb", "php",
-    "c", "cpp", "h", "hpp", "cs", "swift", "kt", "scala", "r", "lua", "sh", "bash", "zsh", "ps1",
-    "sql", "css", "scss", "less", "html", "htm", "xml", "json", "yaml", "yml", "toml", "ini",
-    "cfg", "conf", "env", "gitignore", "dockerfile", "makefile", "opml", "mm",
-];
+// 格式白名单已收敛到 `core::document::filekind`（全库唯一格式清单，Plan B v2 / D7）。
+// 原 `KB_SUPPORTED_EXTS` 在此删除——它曾是 5 份并行清单之一，并与其中
+// `CODE_EXTENSIONS` / `classify_ext` / 工厂注册循环发生漂移。
+// 消费方改用：`filekind::registry().all_exts()`（遍历）/
+//             `filekind::is_indexable_ext(ext)`（判定，O(1)）/
+//             `filekind::is_indexable(rel_path)`（先文件名后扩展名，D2）。
 
 /// 垃圾箱目录名（与前端 DELETED_DIR_NAME 一致）：该目录下的文件不参与索引与监听
 pub const TRASH_DIR_NAME: &str = "mdgo_trash";
@@ -560,8 +561,12 @@ pub fn stable_hash_hex(input: &str) -> String {
     format!("{:032x}", fnv1a_128(input.as_bytes()))
 }
 
-/// 分块器/哈希版本标记（chunk 身份稳定契约的一部分；分块逻辑变化时递增）
-pub const CHUNK_IDENTITY_VERSION: &str = "mdgo-chunk-v1";
+/// 分块器/哈希版本标记（chunk 身份稳定契约的一部分；分块逻辑变化时递增）。
+///
+/// **v1 → v2（Plan B v2 / Phase 0C）**：哈希输入新增 `source_kind` 与
+/// `converter@version`；同时本版改变了"哪些文件可索引"与"PDF/Office 的读取方式"，
+/// 按本常量的既有契约必须递增。
+pub const CHUNK_IDENTITY_VERSION: &str = "mdgo-chunk-v2";
 
 // ─── DocumentChunk 批量创建 ───
 
@@ -571,7 +576,14 @@ pub const CHUNK_IDENTITY_VERSION: &str = "mdgo-chunk-v1";
 /// - 幂等：同一文件重复索引产出相同 id（先删后写语义不变）；
 /// - 支持 embedding 内容哈希缓存（增量索引只重嵌变化 chunk）；
 /// - 哈希输入 = 规范化文本 + 语义元数据 + 位置 + 版本（identity 稳定契约）。
-pub fn build_document_chunks(rel_path: &str, chunks: &[ChunkResult]) -> Vec<DocumentChunk> {
+///
+/// **Phase 0C**：哈希输入追加 `source_kind` 与 `converter@version`——同一份文本由
+/// 不同转换器产出（如 `pdf-extract` → `pdf-inspector`）必须得到**不同 id**，
+/// 否则新内容会复用旧行的主键，让"先删后写"退化为静默覆盖旧 provenance。
+pub fn build_document_chunks(src: &DocumentSource, chunks: &[ChunkResult]) -> Vec<DocumentChunk> {
+    let rel_path = src.rel_path.as_str();
+    let converter_label = src.converter.label();
+    let source_kind = src.source_kind;
     chunks
         .iter()
         .enumerate()
@@ -586,9 +598,11 @@ pub fn build_document_chunks(rel_path: &str, chunks: &[ChunkResult]) -> Vec<Docu
                 .map(|t| serde_json::to_string(t).unwrap_or_default())
                 .unwrap_or_default();
             let hash_input = format!(
-                "{}|{}|{}\n{}\n{}\n{}\n{}\n{}\n{}",
+                "{}|{}|{}|{}|{}\n{}\n{}\n{}\n{}\n{}\n{}",
                 CHUNK_IDENTITY_VERSION,
                 rel_path,
+                source_kind,
+                converter_label,
                 i,
                 r.text,
                 r.embedding_text.as_deref().unwrap_or(""),
@@ -609,6 +623,14 @@ pub fn build_document_chunks(rel_path: &str, chunks: &[ChunkResult]) -> Vec<Docu
                 symbol_kind: r.symbol_kind.clone(),
                 embedding_text: r.embedding_text.clone(),
                 chunk_type: r.chunk_type.clone(),
+                source_kind: Some(source_kind.to_string()),
+                converter: Some(converter_label.clone()),
+                // Phase 1：页码 provenance 直接透传（非分页来源为 None）
+                page_start: r.page_start,
+                page_end: r.page_end,
+                source_spans: r.source_spans.clone(),
+                // §4.7 / R3：表头列名透传（非表格块为 None）
+                table_headers: r.table_headers.clone(),
                 doc_title: r.doc_title.clone(),
                 tags: r.tags.as_ref().map(|t| serde_json::to_string(t).unwrap_or_default()),
             }
@@ -696,19 +718,69 @@ mod chunk_identity_tests {
         let c1 = vec![ChunkResult::plain("内容甲".into())];
         let c2 = vec![ChunkResult::plain("内容甲".into())];
         let c3 = vec![ChunkResult::plain("内容乙".into())];
-        let d1 = build_document_chunks("a.md", &c1);
-        let d2 = build_document_chunks("a.md", &c2);
-        let d3 = build_document_chunks("a.md", &c3);
+        let s1 = DocumentSource::for_test("a.md", "内容甲");
+        let d1 = build_document_chunks(&s1, &c1);
+        let d2 = build_document_chunks(&s1, &c2);
+        let d3 = build_document_chunks(&s1, &c3);
         assert_eq!(d1[0].id, d2[0].id, "同内容同 id（幂等）");
         assert_ne!(d1[0].id, d3[0].id, "内容变化 → id 变化");
         assert!(d1[0].id.starts_with("a.md#"), "id 应带 doc 前缀: {}", d1[0].id);
+    }
+
+    /// **Phase 0C**：转换器身份变化 → chunk id 必须变化（防止新内容复用旧主键）
+    #[test]
+    fn chunk_ids_are_converter_sensitive() {
+        let chunks = vec![ChunkResult::plain("同一段文本".into())];
+        let mut s_legacy = DocumentSource::for_test("doc.pdf", "同一段文本");
+        s_legacy.converter = crate::core::document::loader::ConverterInfo::PDF_EXTRACT;
+        let mut s_inspector = DocumentSource::for_test("doc.pdf", "同一段文本");
+        s_inspector.converter = crate::core::document::loader::ConverterInfo::PDF_INSPECTOR;
+
+        let a = build_document_chunks(&s_legacy, &chunks);
+        let b = build_document_chunks(&s_inspector, &chunks);
+        assert_ne!(
+            a[0].id, b[0].id,
+            "同一文本由不同转换器产出必须得到不同 id（否则会静默覆盖旧 provenance）"
+        );
+        assert_eq!(a[0].source_kind.as_deref(), Some("pdf"));
+        assert_eq!(b[0].converter.as_deref(), Some("pdf-inspector@1.19.0"));
+    }
+
+    /// **§4.7 / R3**：表格表头列名必须一路带到 `DocumentChunk`（落库列），
+    /// 且**不参与 chunk 身份哈希**——它由 `text` 派生，若进哈希会对同一内容
+    /// 产生不稳定 id（表格分片合并/重切时表头可能为 None）。
+    #[test]
+    fn chunk_carries_table_headers_without_affecting_identity() {
+        let src = DocumentSource::for_test("sheet.md", "| a | b |\n|---|---|\n| 1 | 2 |");
+        let with_headers = vec![ChunkResult {
+            text: "| a | b |\n|---|---|\n| 1 | 2 |".into(),
+            table_headers: Some(r#"["a","b"]"#.into()),
+            ..ChunkResult::default()
+        }];
+        let without = vec![ChunkResult {
+            text: "| a | b |\n|---|---|\n| 1 | 2 |".into(),
+            ..ChunkResult::default()
+        }];
+        let a = build_document_chunks(&src, &with_headers);
+        let b = build_document_chunks(&src, &without);
+        assert_eq!(
+            a[0].table_headers.as_deref(),
+            Some(r#"["a","b"]"#),
+            "表头列名必须透传到 DocumentChunk"
+        );
+        assert_eq!(b[0].table_headers, None);
+        assert_eq!(
+            a[0].id, b[0].id,
+            "table_headers 由 text 派生，不应参与身份哈希（否则同一内容 id 不稳定）"
+        );
     }
 
     #[test]
     fn chunk_ids_unique_within_doc() {
         // 同文档内重复内容（相同文本不同位置）→ id 仍唯一（位置参与哈希）
         let chunks = vec![ChunkResult::plain("重复内容".into()), ChunkResult::plain("重复内容".into())];
-        let docs = build_document_chunks("dup.md", &chunks);
+        let src = DocumentSource::for_test("dup.md", "重复内容");
+        let docs = build_document_chunks(&src, &chunks);
         assert_ne!(docs[0].id, docs[1].id, "同文档重复 chunk id 必须唯一（LanceDB 主键）");
     }
 }

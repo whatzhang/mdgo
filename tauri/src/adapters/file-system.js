@@ -109,6 +109,27 @@
                 mkv: 'video/x-matroska',
                 m4v: 'video/x-m4v',
                 '3gp': 'video/3gpp',
+                // Plan B v2 / Phase 2：Office/ODF/RTF/EPUB（此前缺失 → Blob 类型为空，
+                // 影响后续按 MIME 分派/下载的场景）
+                doc: 'application/msword',
+                docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                docm: 'application/vnd.ms-word.document.macroEnabled.12',
+                ppt: 'application/vnd.ms-powerpoint',
+                pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                pptm: 'application/vnd.ms-powerpoint.presentation.macroEnabled.12',
+                pps: 'application/vnd.ms-powerpoint',
+                ppsx: 'application/vnd.openxmlformats-officedocument.presentationml.slideshow',
+                ppsm: 'application/vnd.ms-powerpoint.slideshow.macroEnabled.12',
+                pot: 'application/vnd.ms-powerpoint',
+                xls: 'application/vnd.ms-excel',
+                xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                xlsm: 'application/vnd.ms-excel.sheet.macroEnabled.12',
+                xlsb: 'application/vnd.ms-excel.sheet.binary.macroEnabled.12',
+                odt: 'application/vnd.oasis.opendocument.text',
+                ods: 'application/vnd.oasis.opendocument.spreadsheet',
+                odp: 'application/vnd.oasis.opendocument.presentation',
+                rtf: 'application/rtf',
+                epub: 'application/epub+zip',
             };
             return map[ext] || '';
         }

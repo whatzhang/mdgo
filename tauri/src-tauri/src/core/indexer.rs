@@ -11,14 +11,16 @@ use crate::core::db::chunk_splitter::ChunkResult;
 use crate::core::db::lance::{DocumentChunk, LanceStore, SearchHit};
 use crate::core::db::token_budget;
 use crate::core::db::utils;
+use crate::core::document::filekind;
 use crate::core::db::utils::IgnoreMatcher;
 use crate::core::pipeline;
-use crate::core::search::query_plan::{CODE_EXTENSIONS, QueryPlanner, RetrievalIntent, RuleQueryPlanner};
+use crate::core::search::query_plan::{QueryPlanner, RetrievalIntent, RuleQueryPlanner};
 use crate::core::search::rerank::{LocalBgeReranker, Reranker};
 use crate::core::search::rrf::{rrf_fuse, RrfConfig};
 use crate::core::types::{FileTypeCount, IndexMeta, KbIndexResult, KbStatus};
 
-const KB_SUPPORTED_EXTS: &[&str] = utils::KB_SUPPORTED_EXTS;
+// 格式白名单已收敛到 `core::document::filekind`（D7）：本文件不再持有 KB_SUPPORTED_EXTS，
+// 一致性与"新增格式"都只在注册表一处发生。
 
 /// B3：检索期上下文扩展的最大字符数（sentence_window 上限；整节召回防撑爆 LLM 上下文）。
 /// 与 agent 侧 MAX_CONTEXT_CHARS（12_000）保持在同一量级，扩展文本过大时截断。
@@ -213,16 +215,132 @@ fn compute_alpha(query: &str, base_alpha: f32, intent: RetrievalIntent) -> f32 {
     }
 }
 
-/// 根据文件扩展名分类为 "Markdown" / "代码" / "数据" / "其他"
+/// 根据相对路径分类为 "Markdown" / "代码" / "数据" / "其他"
 ///
-/// 代码扩展名与 `CODE_EXTENSIONS` 保持单一来源（供意图过滤共用）。
+/// 分类口径来自 `filekind` 注册表（**唯一来源**，D7）。保留薄封装供测试与日志使用。
+#[allow(dead_code)]
 fn classify_ext(ext: &str) -> &'static str {
-    match ext {
-        "md" | "markdown" | "mdown" | "rst" => "Markdown",
-        "csv" | "tsv" | "jsonl" | "parquet" | "arrow" | "feather" => "数据",
-        _ if CODE_EXTENSIONS.contains(&ext) => "代码",
-        _ => "其他",
+    filekind::category_of_ext(ext)
+}
+
+/// 纯函数：由「注册表期望值」与「索引快照」求过期 kind 集合（Phase 0C）。
+///
+/// 语义（方案 §5.5）：
+/// - 快照里**没有**的 kind → 不算过期（这类文件从未被索引）；
+/// - 快照值与期望值相同 → 不过期；
+/// - 不同 → 过期（该类型需重建）；
+/// - 结果排序去重，保证确定性（前端展示与日志可比对）。
+fn stale_kinds_from_snapshot(
+    expected: &std::collections::BTreeMap<String, String>,
+    snapshot: &std::collections::BTreeMap<String, String>,
+) -> Vec<String> {
+    let mut out: Vec<String> = expected
+        .iter()
+        .filter_map(|(kind, want)| match snapshot.get(kind) {
+            Some(have) if have == want => None,
+            Some(_) => Some(kind.clone()),
+            None => None,
+        })
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// 从相对路径列表提取去重的 `source_kind` 集合
+fn source_kinds_of_paths(paths: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for rel in paths {
+        if let Some(k) = filekind::lookup(rel) {
+            let kind = k.caps.source_kind.to_string();
+            if !out.contains(&kind) {
+                out.push(kind);
+            }
+        }
     }
+    out
+}
+
+/// **Phase 3**：转换缓存优先装载（缓存不可用时静默回退到直接装载）。
+///
+/// 只对**需要转换**的来源生效（PDF / Office / 过渡期 pdf-extract，见
+/// `conversion_cache::load_or_convert`）；纯文本直读不缓存。
+/// 缓存读写失败一律不影响索引正确性——它只是 `DocumentLoader` 前面的一层透明加速，
+/// **转换逻辑仍只有 loader 一处**（唯一入口契约不破）。
+async fn load_with_cache(
+    dir_path: &str,
+    abs: &Path,
+    rel: &str,
+) -> Result<pipeline::DocumentSource, pipeline::SkipReason> {
+    let src = match crate::core::db::conversion_cache::ConversionCache::open_shared(&utils::get_cache_dir(dir_path)) {
+        Ok(cache) => cache.load_or_convert(abs, rel),
+        Err(e) => {
+            log::debug!("[indexer] 转换缓存不可用（回退直接装载）: {}", e);
+            pipeline::load_document(abs, rel)
+        }
+    }?;
+
+    // Plan B v2 §5.3：**部分索引**（文件进了库，但有页被跳过）必须单独可见，
+    // 不能与"整个文件没进库"混为一谈。装载是唯一能拿到 `DocStatus` 的地方，
+    // 而本条路径是所有索引入口的公共装载点，故在此处记账（一处覆盖全部入口）。
+    if let crate::core::document::loader::DocStatus::PartiallyIndexed { skipped_pages } =
+        &src.doc_status
+    {
+        pipeline::record_partial(rel, skipped_pages, src.page_spans.len() as u32, &src);
+    }
+    Ok(src)
+}
+
+/// 按路径合并诊断清单（Plan B v2 §5.3）。
+///
+/// 语义：`processed` 中的每个路径先**从两个清单移除**（该文件的旧诊断已因重新处理而过时），
+/// 再按本次结果加回——跳过的进 `skipped`，部分索引的进 `partial`，完全正常的两个都不进。
+/// 未处理路径的记录**原样保留**。
+///
+/// 为什么必须合并而不是整体替换：增量索引（watcher 单文件事件）只处理极少文件，
+/// 若整体替换，一次增量就会把全量索引得到的诊断清空 —— 用户看到"问题消失了"，
+/// 而实际上那些文件从未被重新处理过。
+///
+/// 上限与采集侧一致（`SKIP_DETAIL_LIMIT`）：清单是给人看的，不该随库规模无界增长。
+fn merge_diagnostics(
+    mut skipped: Vec<crate::core::pipeline::SkippedFile>,
+    mut partial: Vec<crate::core::pipeline::PartialFile>,
+    processed: &[String],
+    run_skipped: &[crate::core::pipeline::SkippedFile],
+    run_partial: &[crate::core::pipeline::PartialFile],
+) -> (
+    Vec<crate::core::pipeline::SkippedFile>,
+    Vec<crate::core::pipeline::PartialFile>,
+) {
+    if processed.is_empty() && run_skipped.is_empty() && run_partial.is_empty() {
+        return (skipped, partial); // 纯删除/无诊断路径：不动清单
+    }
+    use std::collections::HashSet;
+    let touched: HashSet<&str> = processed.iter().map(|s| s.as_str()).collect();
+    skipped.retain(|s| !touched.contains(s.rel_path.as_str()));
+    partial.retain(|p| !touched.contains(p.rel_path.as_str()));
+    // 只接收**本次处理过**的路径的诊断：增量路径的统计窗口不保证与本次处理范围一致
+    // （`reset_skip_stats` 只在全量/按类型/增量索引开始时调用，watcher 批次不受其约束），
+    // 不过滤会把上个窗口的旧诊断重复计入。
+    for s in run_skipped {
+        if !touched.contains(s.rel_path.as_str()) {
+            continue;
+        }
+        if skipped.len() >= crate::core::pipeline::SKIP_DETAIL_LIMIT {
+            break;
+        }
+        skipped.push(s.clone());
+    }
+    for p in run_partial {
+        if !touched.contains(p.rel_path.as_str()) {
+            continue;
+        }
+        if partial.len() >= crate::core::pipeline::SKIP_DETAIL_LIMIT {
+            break;
+        }
+        partial.push(p.clone());
+    }
+    (skipped, partial)
 }
 
 /// 检查 parent_json 是否是 child_json 的**严格路径前缀**。
@@ -381,6 +499,9 @@ impl Indexer {
 
         // P0-1：Token Budget 统计窗口开始（截断/重切/embedding 兜底计数）
         pipeline::reset_budget_stats();
+        // N3：跳过原因统计窗口开始
+        pipeline::reset_skip_stats();
+    pipeline::reset_partial_stats();
 
         let config = self.config_store.read();
         let base_dir = Path::new(dir_path);
@@ -430,11 +551,6 @@ impl Indexer {
         let cfg = self.config_store.read();
         let html_matcher = html_render_matcher(dir_path);
         for (i, file_path) in files.iter().enumerate() {
-            let content = match pipeline::read_document(file_path) {
-                Some(c) if c.len() >= 10 => c,
-                _ => continue,
-            };
-
             let rel_path = file_path
                 .strip_prefix(base_dir)
                 .unwrap_or(file_path)
@@ -442,10 +558,21 @@ impl Indexer {
                 .to_string()
                 .replace('\\', "/");
 
-            let ext = rel_path.rsplit('.').next().unwrap_or("txt");
-            let ft = classify_ext(ext);
+            // Phase 0B：唯一入口装载（N8）。失败**带原因**记录，不再静默 continue——
+            // 这是「为什么这个文件没进库」可解释性的落点。
+            let src = match load_with_cache(dir_path, file_path, &rel_path).await {
+                Ok(s) => s,
+                Err(reason) => {
+                    pipeline::record_skip(&rel_path, &reason);
+                    log::warn!("[pipeline] 跳过文件 {}: {}", rel_path, reason.message());
+                    continue;
+                }
+            };
+
+            // 分类口径来自注册表（唯一来源）；纯文件名规则（Dockerfile）也能正确归类
+            let ft = filekind::category(&rel_path);
             *type_counts.entry(ft).or_insert(0) += 1;
-            let doc_chunks = pipeline::chunk_document(&rel_path, &content, cfg.chunk_size, cfg.chunk_overlap, html_matcher.as_ref());
+            let doc_chunks = pipeline::chunk_document(&src, cfg.chunk_size, cfg.chunk_overlap, html_matcher.as_ref());
             if doc_chunks.is_empty() {
                 continue;
             }
@@ -528,7 +655,47 @@ impl Indexer {
             })
             .collect();
 
-        let meta = IndexMeta { file_count, chunk_count: total_chunks, vector_count: total_vectors, indexed_at: now, type_distribution, chunk_params_version: config.chunk_params_version() };
+        // N3 / §5.3：诊断汇总（整文件跳过 + 部分索引），**两者分开**
+        let (skip_total, skip_details) = pipeline::skip_stats();
+        let (partial_total, partial_details) = pipeline::partial_stats();
+        if skip_total > 0 {
+            log::warn!(
+                "[indexer] 全量索引完成，{} 个文件未入库（详情 {} 条）：{}",
+                skip_total,
+                skip_details.len(),
+                skip_details
+                    .iter()
+                    .map(|s| format!("{} [{}]", s.rel_path, s.code))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            );
+        }
+        if partial_total > 0 {
+            log::warn!(
+                "[indexer] 全量索引完成，{} 个文件**部分入库**（有页被跳过，详情 {} 条）：{}",
+                partial_total,
+                partial_details.len(),
+                partial_details
+                    .iter()
+                    .map(|p| format!("{} [页 {:?}]", p.rel_path, p.skipped_pages))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            );
+        }
+
+        let meta = IndexMeta {
+            file_count,
+            chunk_count: total_chunks,
+            vector_count: total_vectors,
+            indexed_at: now,
+            type_distribution,
+            chunk_params_version: config.chunk_params_version(),
+            // Phase 0C：全量重建后，索引中每个 kind 都由当前转换器产出 → 快照即期望值
+            kind_converters: Self::expected_kind_converters(),
+            // §5.3：全量重建覆盖所有文件 → 本次窗口的诊断即完整快照（无需合并）
+            skipped_files: skip_details.clone(),
+            partial_files: partial_details.clone(),
+        };
         if let Err(e) = std::fs::write(
             &Path::new(&utils::get_data_dir(dir_path)).join("index_meta.json"),
             &serde_json::to_string(&meta).unwrap_or_default(),
@@ -549,7 +716,16 @@ impl Indexer {
                 resplit_chunks
             );
         }
-        Ok(KbIndexResult { file_count, chunk_count: total_chunks, vector_count: total_vectors, indexed_at: now, truncated_chunks: truncated_chunks as u32, resplit_chunks: resplit_chunks as u32 })
+        Ok(KbIndexResult {
+            file_count,
+            chunk_count: total_chunks,
+            vector_count: total_vectors,
+            indexed_at: now,
+            truncated_chunks: truncated_chunks as u32,
+            resplit_chunks: resplit_chunks as u32,
+            skipped_files: skip_details,
+            partial_files: partial_details,
+        })
     }
 
     /// ─── 单文件索引（增量）───
@@ -560,6 +736,9 @@ impl Indexer {
     ///
     /// 空版本（旧索引）同样视为不匹配（M21 语义：分块口径已从字符升级为 token，
     /// 旧索引必须重建后才能增量）。
+    ///
+    /// **Phase 0C**：这是**全局粒度**守卫（分块器/注册表语义级变化）。单个转换器
+    /// 升级由 [`Self::mismatched_kinds`] 按 `source_kind` 判定，**不应**拦住其它类型的增量。
     fn params_version_mismatch(&self, dir_path: &str) -> bool {
         let Some(meta) = load_metadata(&utils::get_data_dir(dir_path)) else {
             return false; // 无索引记录（首次全量/首次增量场景）不做守卫
@@ -576,19 +755,95 @@ impl Indexer {
         false
     }
 
+    /// **Phase 0C**：哪些 `source_kind` 的转换器与注册表**期望值**不一致。
+    ///
+    /// 这是"按文件类型失效"（方案 §5.5 / 裁决 R2）的核心：
+    /// - 升级 pdf-inspector → 只有 `["pdf"]`，Word/Excel 的增量索引**照常工作**；
+    /// - 旧索引（`kind_converters` 为空且 `source_kind` 列为 NULL）→ 返回**全部**期望 kind，
+    ///   即"首次升级需一次全量重建"。
+    ///
+    /// 判定依据优先用 `IndexMeta.kind_converters` 快照（避免全表扫）；快照缺失时
+    /// 由 `status()` 侧回退到 LanceDB 实际列扫描（见 `status`）。
+    fn expected_kind_converters() -> std::collections::BTreeMap<String, String> {
+        let reg = filekind::registry();
+        let mut out = std::collections::BTreeMap::new();
+        for k in reg.kinds() {
+            let kind = k.caps.source_kind;
+            let label = match k.converter {
+                filekind::Converter::Plain => {
+                    crate::core::document::loader::ConverterInfo::NATIVE.label()
+                }
+                filekind::Converter::LegacyPdf => {
+                    crate::core::document::loader::ConverterInfo::PDF_EXTRACT.label()
+                }
+                filekind::Converter::PdfInspector => {
+                    crate::core::document::loader::ConverterInfo::PDF_INSPECTOR.label()
+                }
+                filekind::Converter::AnyDoc => {
+                    crate::core::document::loader::ConverterInfo::ANYDOC.label()
+                }
+            };
+            out.insert(kind.to_string(), label);
+        }
+        out
+    }
+
+    /// 与注册表期望不一致的 `source_kind` 集合（Phase 0C）
+    fn mismatched_kinds(&self, dir_path: &str) -> Vec<String> {
+        let Some(meta) = load_metadata(&utils::get_data_dir(dir_path)) else {
+            return Vec::new(); // 无索引记录 → 不守卫
+        };
+        if meta.chunk_params_version.is_empty() {
+            // 旧索引：连分块身份都不可信 → 全量重建（不在此处逐 kind 判定）
+            return Vec::new();
+        }
+        let expected = Self::expected_kind_converters();
+        if meta.kind_converters.is_empty() {
+            // 0C 之前建立的索引没有 kind 快照 → 全部 kind 视为过期（需一次全量重建）
+            log::warn!("[indexer] 索引缺少 kind_converters 快照（0C 之前的旧索引）→ 全部类型过期");
+            return expected.keys().cloned().collect();
+        }
+        let out = stale_kinds_from_snapshot(&expected, &meta.kind_converters);
+        for kind in &out {
+            log::info!(
+                "[indexer] 类型 {} 转换器已变更（索引={:?} 当前={:?}）→ 该类型需重建",
+                kind,
+                meta.kind_converters.get(kind),
+                expected.get(kind)
+            );
+        }
+        out
+    }
+
     pub async fn index_file(&self, dir_path: &str, rel_path: &str, abs_path: &str) -> Result<(), String> {
+        // D3：watcher 增量路径必须与全量扫描同口径（filekind 白名单）。旧实现无过滤，导致
+        // ① 增量入库的非白名单格式在全量重建后静默消失；② 二进制文件被反复 UTF-8 读取刷警告。
+        if !filekind::is_indexable(rel_path) {
+            return Ok(());
+        }
         // 🟠 M13：分块参数版本不一致 → 跳过 watcher 单文件增量（防止新旧参数混库）
         if self.params_version_mismatch(dir_path) {
             return Ok(());
         }
+        // Phase 0C：仅当**本文件所属类型**过期时跳过（升级 pdf-inspector 不应拦住
+        // Word/Markdown 的增量索引）
+        let my_kind = filekind::lookup(rel_path).map(|k| k.caps.source_kind).unwrap_or("");
+        if !my_kind.is_empty() && self.mismatched_kinds(dir_path).iter().any(|k| k == my_kind) {
+            log::debug!("[indexer] 类型 {} 需重建，跳过单文件增量: {}", my_kind, rel_path);
+            return Ok(());
+        }
         // document_stage → chunk_stage → embedding_stage → index_stage
-        let content = match pipeline::read_document(Path::new(abs_path)) {
-            Some(c) if c.len() >= 10 => c,
-            _ => return Ok(()),
+        let src = match load_with_cache(dir_path, Path::new(abs_path), rel_path).await {
+            Ok(s) => s,
+            Err(reason) => {
+                pipeline::record_skip(rel_path, &reason);
+                log::debug!("[pipeline] 跳过文件 {}: {}", rel_path, reason.message());
+                return Ok(());
+            }
         };
         let html_matcher = html_render_matcher(dir_path);
         let cfg = self.config_store.read();
-        let doc_chunks = pipeline::chunk_document(rel_path, &content, cfg.chunk_size, cfg.chunk_overlap, html_matcher.as_ref());
+        let doc_chunks = pipeline::chunk_document(&src, cfg.chunk_size, cfg.chunk_overlap, html_matcher.as_ref());
         drop(cfg);
         if doc_chunks.is_empty() {
             return Ok(());
@@ -613,7 +868,26 @@ impl Indexer {
         let file_delta = if old_chunks == 0 { 1 } else { 0 };
         log::info!("[indexer] 更新元数据,new_count: {}, old_count: {}, file_delta: {}, chunk_delta: {}, vector_delta: {}", new_count, old_count, file_delta, chunk_delta, vector_delta);
 
-        self.update_metadata_delta(dir_path, file_delta, chunk_delta, vector_delta).await;
+        // Phase 0C：刷新本文件类型的转换器快照
+        let touched = vec![filekind::lookup(rel_path)
+            .map(|k| k.caps.source_kind.to_string())
+            .unwrap_or_default()];
+        // §5.3：单文件路径同样合并诊断（该文件若仍跳过/部分索引，记录被刷新；
+        // 若已修复，则从清单中移除）
+        let (_, skip_details) = pipeline::skip_stats();
+        let (_, partial_details) = pipeline::partial_stats();
+        let processed_paths = vec![rel_path.to_string()];
+        self.update_metadata_delta_with_diag(
+            dir_path,
+            file_delta,
+            chunk_delta,
+            vector_delta,
+            &touched,
+            &processed_paths,
+            &skip_details,
+            &partial_details,
+        )
+        .await;
         Ok(())
     }
 
@@ -639,6 +913,11 @@ impl Indexer {
         if self.params_version_mismatch(dir_path) {
             return Ok(());
         }
+        // Phase 0C：按类型失效——**每批只算一次**，避免逐文件读元数据
+        let stale_kinds = self.mismatched_kinds(dir_path);
+        if !stale_kinds.is_empty() {
+            log::info!("[indexer] 以下类型转换器已变更，将跳过其增量写入: {:?}", stale_kinds);
+        }
 
         let cfg = self.config_store.read();
         let chunk_size = cfg.chunk_size;
@@ -653,18 +932,35 @@ impl Indexer {
 
         let mut file_delta = 0i32;
         let mut chunk_delta = 0i32;
+        // Phase 0C：本批**实际成功写入**的 source_kind。只能用它刷新快照——用"收到的文件"
+        // 会引入最坏的一类不一致（见下方 `touched` 处注释）。
+        let mut written_kinds: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
 
         // ── 文件级分批：控制单批内存峰值 ──
         for files_chunk in files.chunks(MAX_FILES_PER_BATCH) {
             // ── chunk_stage：逐文件分块，保留文件分组用于先删后写 ──
             let mut groups: Vec<(String, Vec<DocumentChunk>)> = Vec::new();
             for (rel, abs) in files_chunk {
-                let content = match pipeline::read_document(Path::new(abs)) {
-                    Some(c) if c.len() >= 10 => c,
-                    _ => continue,
+                // D3：与全量扫描同口径，避免"增量入库 → 全量重建后消失"的不对称
+                if !filekind::is_indexable(rel) {
+                    continue;
+                }
+                // Phase 0C：仅跳过「本文件所属类型已过期」的文件
+                if !stale_kinds.is_empty() {
+                    let my_kind = filekind::lookup(rel).map(|k| k.caps.source_kind).unwrap_or("");
+                    if !my_kind.is_empty() && stale_kinds.iter().any(|k| k == my_kind) {
+                        continue;
+                    }
+                }
+                let src = match load_with_cache(dir_path, Path::new(abs), rel).await {
+                    Ok(s) => s,
+                    Err(reason) => {
+                        pipeline::record_skip(rel, &reason);
+                        continue;
+                    }
                 };
                 let doc_chunks =
-                    pipeline::chunk_document(rel, &content, chunk_size, chunk_overlap, html_matcher.as_ref());
+                    pipeline::chunk_document(&src, chunk_size, chunk_overlap, html_matcher.as_ref());
                 if doc_chunks.is_empty() {
                     continue;
                 }
@@ -715,6 +1011,11 @@ impl Indexer {
                     if old_chunks == 0 {
                         file_delta += 1;
                     }
+                    if let Some(k) = filekind::lookup(rel).map(|k| k.caps.source_kind) {
+                        if !k.is_empty() {
+                            written_kinds.insert(k.to_string());
+                        }
+                    }
                     start = end;
                     continue;
                 }
@@ -746,13 +1047,40 @@ impl Indexer {
                     if old_chunks == 0 {
                         file_delta += 1;
                     }
+                    if let Some(k) = filekind::lookup(rel).map(|k| k.caps.source_kind) {
+                        if !k.is_empty() {
+                            written_kinds.insert(k.to_string());
+                        }
+                    }
                 }
                 start = end;
             }
         }
 
-        self.update_metadata_delta(dir_path, file_delta, chunk_delta, chunk_delta)
-            .await;
+        // Phase 0C：把**本批实际写入**的 source_kind 快照刷新为当前转换器。
+        //
+        // ⚠ 不能用"本批收到的所有文件"的 kind（`source_kinds_of(files)`）：其中包含
+        // 「因该类型已过期而被上面守卫 `continue` 掉」的文件。若把它们也刷成"当前转换器"，
+        // 就会出现最坏的一类不一致——升级 pdf-inspector 后 watcher 只要收到**一个** PDF 事件，
+        // 快照即被刷成 "pdf-inspector@1.19.0" → `stale_kinds` 变空 → 用户不再被提示重建，
+        // 而库里该类型的 chunk 仍是旧转换器产物（正是按类型失效要防的"新旧混库"）。
+        // 转换失败的文件同理不计入（否则它们的旧 chunk 残留却显示为最新）。
+        let touched: Vec<String> = written_kinds.into_iter().collect();
+        // §5.3：本批处理过的路径（用于按路径合并诊断清单）
+        let processed: Vec<String> = files.iter().map(|(rel, _)| rel.clone()).collect();
+        let (_, skip_details) = pipeline::skip_stats();
+        let (_, partial_details) = pipeline::partial_stats();
+        self.update_metadata_delta_with_diag(
+            dir_path,
+            file_delta,
+            chunk_delta,
+            chunk_delta,
+            &touched,
+            &processed,
+            &skip_details,
+            &partial_details,
+        )
+        .await;
         Ok(())
     }
 
@@ -784,7 +1112,7 @@ impl Indexer {
         if deleted_chunks > 0 || bm25_deleted > 0 {
             let chunk_delta = -(deleted_chunks.max(bm25_deleted as u32) as i32);
             log::info!("[indexer] 更新元数据,删除 chunk 数: {}, BM25 删除 chunk 数: {}, chunk_delta: {}", deleted_chunks, bm25_deleted, chunk_delta);
-            self.update_metadata_delta(dir_path, -1, chunk_delta, chunk_delta).await;
+            self.update_metadata_delta(dir_path, -1, chunk_delta, chunk_delta, &[]).await;
         } else {
             log::warn!("[indexer] 文件无索引数据，跳过元数据更新: {}", rel_path);
         }
@@ -895,12 +1223,36 @@ impl Indexer {
         // 🟠 修复（M21）：旧索引（版本字段为空串）视为 stale——本批次把分块口径从
         // 字符升级为 token 且重写了分块算法，旧索引必须提示重建（与 types.rs 注释一致）。
         let cfg_version = self.config_store.read().chunk_params_version();
-        let stale = meta
+        let params_stale = meta
             .as_ref()
             .map(|m| {
                 m.chunk_params_version.is_empty() || m.chunk_params_version != cfg_version
             })
             .unwrap_or(false);
+
+        // Phase 0C：**按类型失效**（方案 §5.5）。分块参数级变化是全局的（stale=true）；
+        // 单个转换器升级只影响对应 kind，不再把整库判为过期。
+        // 快照缺失时（0C 之前建立的索引）回退到 LanceDB 实际列扫描。
+        let mut stale_kinds = self.mismatched_kinds(dir_path);
+        if stale_kinds.is_empty() && meta.is_some() {
+            match store.kind_converter_pairs().await {
+                Ok(pairs) if !pairs.is_empty() => {
+                    let expected = Self::expected_kind_converters();
+                    for (kind, have) in &pairs {
+                        if let Some(want) = expected.get(kind) {
+                            if want != have {
+                                stale_kinds.push(kind.clone());
+                            }
+                        }
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => log::debug!("[indexer] 读取 kind/converter 失败（跳过按类型判定）: {}", e),
+            }
+        }
+        stale_kinds.sort();
+        stale_kinds.dedup();
+        let stale = params_stale || !stale_kinds.is_empty();
 
         Ok(KbStatus {
             file_count: meta.as_ref().map(|m| m.file_count).unwrap_or(0),
@@ -909,6 +1261,11 @@ impl Indexer {
             indexed_at: meta.as_ref().map(|m| m.indexed_at).unwrap_or(0),
             status,
             stale,
+            stale_kinds,
+            // §5.3 / §7.2 F9：诊断从持久化的元数据读出 → 仪表盘**任何时候**都能回答
+            // "哪个文件没进库 / 哪些页被跳过"，而不是只在索引当次的返回值里可见
+            skipped_files: meta.as_ref().map(|m| m.skipped_files.clone()).unwrap_or_default(),
+            partial_files: meta.as_ref().map(|m| m.partial_files.clone()).unwrap_or_default(),
         })
     }
 
@@ -1654,11 +2011,224 @@ impl Indexer {
         }
     }
 
-    // ─── 元数据增量更新 ───
+    /// ─── Phase 0C：只重建指定 `source_kind`（"只重建受影响类型"）───
+    ///
+    /// 场景：升级单个转换器（如 pdf-inspector 1.19 → 1.20）后，只有该类型的 chunk
+    /// 语义过期。本方法重跑这些文件并**原地替换**（`replace_document_chunks` 先删后写），
+    /// 其它类型完全不动——相比全量重建省掉"读+分块+写"以外的全部工作，
+    /// 且转换缓存（Phase 3）与 embedding 缓存照常命中。
+    ///
+    /// 与 `index_unindexed` 的关键区别：**不跳过已索引文件**（目的就是重写它们）。
+    pub async fn reindex_kinds(
+        &self,
+        dir_path: &str,
+        kinds: &[String],
+        progress: impl Fn(u8, &str) + Send + Sync,
+    ) -> Result<KbIndexResult, String> {
+        if kinds.is_empty() {
+            return Err("kinds 不能为空（只重建受影响类型时至少要给出一个类型）".into());
+        }
+        let _guard = self.indexing_lock.lock().await;
+        // 与全量/增量同口径的全局守卫：分块参数版本不一致时必须先全量重建。
+        // 否则会在旧分块口径的库里**混入**新粒度的 chunk（新旧参数混库），
+        // 也对旧 schema 表直接写新列 batch（旧表五列不存在，写入中途才失败）。
+        if self.params_version_mismatch(dir_path) {
+            return Err(
+                "分块参数已变更：请先执行一次「全量重建」，再使用按类型重建".to_string(),
+            );
+        }
+        pipeline::reset_budget_stats();
+        pipeline::reset_skip_stats();
+    pipeline::reset_partial_stats();
 
+        let config = self.config_store.read();
+        let base_dir = Path::new(dir_path);
+        if !base_dir.exists() {
+            return Err(format!("目录不存在: {}", dir_path));
+        }
+        let ignore = IgnoreMatcher::new(&config.dir_blacklist, &config.file_blacklist);
+        let files = scan_directory(base_dir, &ignore)?;
+
+        // 目标文件：注册表 kind ∈ kinds
+        let mut targets: Vec<(String, std::path::PathBuf)> = Vec::new();
+        for p in files.iter() {
+            let rel = p
+                .strip_prefix(base_dir)
+                .unwrap_or(p)
+                .to_string_lossy()
+                .to_string()
+                .replace('\\', "/");
+            if let Some(k) = filekind::lookup(&rel) {
+                if kinds.iter().any(|want| want == k.caps.source_kind) {
+                    targets.push((rel, p.clone()));
+                }
+            }
+        }
+        progress(
+            5,
+            &format!("待重建 {} 个文件（类型 {:?}）", targets.len(), kinds),
+        );
+        if targets.is_empty() {
+            return Ok(KbIndexResult {
+                file_count: 0,
+                chunk_count: 0,
+                vector_count: 0,
+                indexed_at: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64,
+                truncated_chunks: 0,
+                resplit_chunks: 0,
+                // 没有目标文件 → 本次没有任何文件被处理，诊断清单不动（由增量路径维护）
+                skipped_files: vec![],
+                partial_files: vec![],
+            });
+        }
+
+        let store = self.get_lance_store(dir_path).await;
+        store.create_table().await?;
+        let bm25 = self.get_bm25_index(dir_path).await?;
+        let html_matcher = html_render_matcher(dir_path);
+
+        let mut file_delta = 0i32;
+        let mut chunk_delta = 0i32;
+        let mut file_count = 0u32;
+        let mut total_chunks = 0u32;
+        let mut total_vectors = 0u32;
+
+        let total = targets.len();
+        for (i, (rel, abs)) in targets.iter().enumerate() {
+            let src = match load_with_cache(dir_path, abs, rel).await {
+                Ok(s) => s,
+                Err(reason) => {
+                    pipeline::record_skip(rel, &reason);
+                    log::warn!("[indexer] [按类型重建] 跳过 {}: {}", rel, reason.message());
+                    continue;
+                }
+            };
+            let doc_chunks =
+                pipeline::chunk_document(&src, config.chunk_size, config.chunk_overlap, html_matcher.as_ref());
+            if doc_chunks.is_empty() {
+                continue;
+            }
+            let vectors =
+                pipeline::embed_chunks(&doc_chunks, None, &utils::get_cache_dir(dir_path)).await?;
+            let old_chunks = self
+                .replace_document_chunks(&store, Some(&bm25), rel, &doc_chunks, &vectors)
+                .await?;
+
+            chunk_delta += doc_chunks.len() as i32 - old_chunks as i32;
+            if old_chunks == 0 {
+                file_delta += 1;
+            }
+            file_count += 1;
+            total_chunks += doc_chunks.len() as u32;
+            total_vectors += vectors.len() as u32;
+
+            let pct = 5 + ((i + 1) * 90 / total.max(1)) as u8;
+            progress(
+                pct.min(95),
+                &format!("按类型重建 {}/{}（{}）", i + 1, total, rel),
+            );
+        }
+
+        if let Err(e) = store.ensure_vector_index().await {
+            log::warn!("[indexer] [按类型重建] 创建向量索引失败（检索退化全表扫描）: {}", e);
+        }
+        // touched = kinds：这些类型的转换器快照刷新为当前值
+        // §5.3：按类型重建处理过 `targets` 全部路径 → 用其合并诊断清单
+        let processed: Vec<String> = targets.iter().map(|(rel, _)| rel.clone()).collect();
+        let (_, skip_details) = pipeline::skip_stats();
+        let (_, partial_details) = pipeline::partial_stats();
+        self.update_metadata_delta_with_diag(
+            dir_path,
+            file_delta,
+            chunk_delta,
+            chunk_delta,
+            kinds,
+            &processed,
+            &skip_details,
+            &partial_details,
+        )
+        .await;
+        self.invalidate_cache().await;
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        let (truncated_chunks, resplit_chunks) = pipeline::budget_stats();
+        let (skip_total, skip_details) = pipeline::skip_stats();
+        let (partial_total, partial_details) = pipeline::partial_stats();
+        progress(100, "按类型重建完成");
+        log::info!(
+            "[indexer] [按类型重建] kinds={:?} 文件={} chunk={} 未入库文件={} 部分入库={}",
+            kinds,
+            file_count,
+            total_chunks,
+            skip_total,
+            partial_total
+        );
+        Ok(KbIndexResult {
+            file_count,
+            chunk_count: total_chunks,
+            vector_count: total_vectors,
+            indexed_at: now,
+            truncated_chunks: truncated_chunks as u32,
+            resplit_chunks: resplit_chunks as u32,
+            skipped_files: skip_details,
+            partial_files: partial_details,
+        })
+    }
+
+    // ─── 元数据增量更新 ───
     /// 增量更新元数据（file_delta: 新增文件数, chunk_delta: 新增块数, vector_delta 正=新增 负=删除）
     /// 总是更新 indexed_at 到当前时间，确保增量操作后状态查询返回最新时间戳
-    async fn update_metadata_delta(&self, dir_path: &str, file_delta: i32, chunk_delta: i32, vector_delta: i32) {
+    ///
+    /// **Phase 0C**：`touched_kinds` 为本批实际写入的 `source_kind` 集合，
+    /// 用于把 `kind_converters` 快照刷新为"当前转换器"——否则新写入的 PDF 仍会被
+    /// 记为旧转换器，导致 `stale_kinds` 永远报过期。传空切片表示"不改快照"
+    /// （纯删除路径）。
+    ///
+    /// **Plan B v2 §5.3**：`processed_paths` + 两次统计快照用于**按路径合并**诊断清单。
+    /// 语义：本次处理过的每个文件，先从两个清单里移除，再按本次结果重新加回
+    /// （跳过的进 `skipped_files`、部分索引的进 `partial_files`、正常的都不进）。
+    /// 未在本次处理范围内的文件**保留原记录**——否则一次增量索引就会把全量索引
+    /// 得到的诊断信息整片清掉（用户会以为问题"自愈"了）。
+    async fn update_metadata_delta(
+        &self,
+        dir_path: &str,
+        file_delta: i32,
+        chunk_delta: i32,
+        vector_delta: i32,
+        touched_kinds: &[String],
+    ) {
+        self.update_metadata_delta_with_diag(
+            dir_path,
+            file_delta,
+            chunk_delta,
+            vector_delta,
+            touched_kinds,
+            &[],
+            &[],
+            &[],
+        )
+        .await
+    }
+
+    /// 带诊断合并的元数据增量更新（见 [`Self::update_metadata_delta`] 的字段说明）
+    #[allow(clippy::too_many_arguments)]
+    async fn update_metadata_delta_with_diag(
+        &self,
+        dir_path: &str,
+        file_delta: i32,
+        chunk_delta: i32,
+        vector_delta: i32,
+        touched_kinds: &[String],
+        processed_paths: &[String],
+        run_skipped: &[crate::core::pipeline::SkippedFile],
+        run_partial: &[crate::core::pipeline::PartialFile],
+    ) {
         let data_dir = utils::get_data_dir(dir_path);
         let meta = load_metadata(&data_dir).unwrap_or(IndexMeta {
             file_count: 0,
@@ -1667,12 +2237,35 @@ impl Indexer {
             indexed_at: 0,
             type_distribution: vec![],
             chunk_params_version: String::new(),
+            kind_converters: std::collections::BTreeMap::new(),
+            skipped_files: vec![],
+            partial_files: vec![],
         });
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64;
+
+        // Phase 0C：刷新被写入类型的转换器快照
+        let mut kind_converters = meta.kind_converters;
+        if !touched_kinds.is_empty() {
+            let expected = Self::expected_kind_converters();
+            for kind in touched_kinds {
+                if let Some(label) = expected.get(kind) {
+                    kind_converters.insert(kind.clone(), label.clone());
+                }
+            }
+        }
+
+        // §5.3：按路径合并诊断（本次处理过的先移除，再按本次结果加回）
+        let (skipped_files, partial_files) = merge_diagnostics(
+            meta.skipped_files,
+            meta.partial_files,
+            processed_paths,
+            run_skipped,
+            run_partial,
+        );
 
         let new_meta = IndexMeta {
             file_count: (meta.file_count as i32 + file_delta).max(0) as u32,
@@ -1682,6 +2275,10 @@ impl Indexer {
             type_distribution: meta.type_distribution,
             // 增量路径保留既有版本：若分块参数已变更，status() 仍会标 stale
             chunk_params_version: meta.chunk_params_version,
+            kind_converters,
+            // §5.3：按路径合并后的诊断清单
+            skipped_files,
+            partial_files,
         };
         save_metadata(&data_dir, &new_meta);
     }
@@ -1795,6 +2392,14 @@ impl Indexer {
                     symbol_kind: None,
                     embedding_text: None,
                     chunk_type: None,
+                    // 会话历史是独立来源（独立的 chat_vectors 表），不属于注册表里的文件类型；
+                    // 标为 "chat" 以免被按类型失效逻辑误判为某个文件 kind
+                    source_kind: Some("chat".to_string()),
+                    converter: Some("native@1".to_string()),
+                    page_start: None,
+                    page_end: None,
+                    source_spans: None,
+                    table_headers: None,
                     doc_title: None,
                     tags: None,
                 }
@@ -2012,6 +2617,18 @@ impl Indexer {
 
         // P0-1：Token Budget 统计窗口开始
         pipeline::reset_budget_stats();
+        // N3：跳过原因统计窗口开始
+        pipeline::reset_skip_stats();
+    pipeline::reset_partial_stats();
+
+        // Phase 0C：按类型失效——过期类型的新文件本次不增量（等该类型重建）
+        let stale_kinds = self.mismatched_kinds(dir_path);
+        if !stale_kinds.is_empty() {
+            log::info!(
+                "[indexer] [增量索引] 以下类型转换器已变更，其文件本次不增量: {:?}",
+                stale_kinds
+            );
+        }
 
         let config = self.config_store.read();
         let base_dir = Path::new(dir_path);
@@ -2061,6 +2678,9 @@ impl Indexer {
                 indexed_at: 0,
                 truncated_chunks: 0,
                 resplit_chunks: 0,
+                // 无文件被处理 → 诊断清单不动（保留上次索引的结果，避免"问题凭空消失"）
+                skipped_files: vec![],
+                partial_files: vec![],
             });
         }
         log::info!("[indexer] [增量索引] 共发现 {} 个未索引文件, 共 {} 个文件", unindexed_count, total);
@@ -2074,11 +2694,22 @@ impl Indexer {
         let mut file_count: u32 = 0;
 
         for (idx, (rel, abs)) in unindexed_paths.iter().enumerate() {
-            let content = match pipeline::read_document(Path::new(abs)) {
-                Some(c) if c.len() >= 10 => c,
-                _ => continue,
+            // Phase 0C：过期类型的新文件本次不增量
+            if !stale_kinds.is_empty() {
+                let my_kind = filekind::lookup(rel).map(|k| k.caps.source_kind).unwrap_or("");
+                if !my_kind.is_empty() && stale_kinds.iter().any(|k| k == my_kind) {
+                    continue;
+                }
+            }
+            let src = match load_with_cache(dir_path, Path::new(abs), rel).await {
+                Ok(s) => s,
+                Err(reason) => {
+                    pipeline::record_skip(rel, &reason);
+                    log::warn!("[pipeline] 跳过未索引文件 {}: {}", rel, reason.message());
+                    continue;
+                }
             };
-            let doc_chunks = pipeline::chunk_document(rel, &content, cfg.chunk_size, cfg.chunk_overlap, html_matcher.as_ref());
+            let doc_chunks = pipeline::chunk_document(&src, cfg.chunk_size, cfg.chunk_overlap, html_matcher.as_ref());
             if doc_chunks.is_empty() {
                 continue;
             }
@@ -2093,7 +2724,18 @@ impl Indexer {
 
         if all_file_data.is_empty() {
             progress(100, "增量索引完成（无有效内容）");
-            return Ok(KbIndexResult { file_count: 0, chunk_count: 0, vector_count: 0, indexed_at: 0, truncated_chunks: 0, resplit_chunks: 0 });
+            let (_, skip_details) = pipeline::skip_stats();
+            let (_, partial_details) = pipeline::partial_stats();
+            return Ok(KbIndexResult {
+                file_count: 0,
+                chunk_count: 0,
+                vector_count: 0,
+                indexed_at: 0,
+                truncated_chunks: 0,
+                resplit_chunks: 0,
+                skipped_files: skip_details,
+                partial_files: partial_details,
+            });
         }
 
         // 合并所有 chunks，一次性批量 Embedding
@@ -2129,7 +2771,28 @@ impl Indexer {
         }
 
         // 批量更新元数据
-        self.update_metadata_delta(dir_path, file_count as i32, total_new_chunks as i32, all_vectors.len() as i32).await;
+        // Phase 0C：刷新本次实际写入类型的转换器快照
+        let processed_paths: Vec<String> =
+            all_file_data.iter().map(|(r, _)| r.clone()).collect();
+        let touched_kinds = source_kinds_of_paths(&processed_paths);
+        // §5.3：按路径合并诊断（本次处理过的文件刷新记录；未处理的保留）
+        // 注意用 `unindexed_paths` 而非 `all_file_data`：后者不含"读取失败/空内容"的文件，
+        // 而那些恰恰需要进 `skipped_files`。
+        let processed_all: Vec<String> =
+            unindexed_paths.iter().map(|(rel, _)| rel.clone()).collect();
+        let (_, skip_details) = pipeline::skip_stats();
+        let (_, partial_details) = pipeline::partial_stats();
+        self.update_metadata_delta_with_diag(
+            dir_path,
+            file_count as i32,
+            total_new_chunks as i32,
+            all_vectors.len() as i32,
+            &touched_kinds,
+            &processed_all,
+            &skip_details,
+            &partial_details,
+        )
+        .await;
 
         progress(100, &format!("增量索引完成: {} 文件, {} 文本块", file_count, total_new_chunks));
         log::info!("[indexer] [增量索引] 共索引 {} 个文件, {} 个文本块, {} 个向量", file_count, total_new_chunks, all_vectors.len() as u32);
@@ -2150,6 +2813,8 @@ impl Indexer {
             indexed_at: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64,
             truncated_chunks: truncated_chunks as u32,
             resplit_chunks: resplit_chunks as u32,
+            skipped_files: skip_details,
+            partial_files: partial_details,
         })
     }
 }
@@ -2218,11 +2883,10 @@ pub(crate) fn scan_directory(base_dir: &Path, ignore: &IgnoreMatcher) -> Result<
             if !ignore.is_kb_file_allowed(&file_name, &rel) {
                 continue;
             }
-            if let Some(ext) = entry.path().extension() {
-                let ext = ext.to_string_lossy().to_lowercase();
-                if KB_SUPPORTED_EXTS.contains(&ext.as_str()) {
-                    files.push(entry.path().to_path_buf());
-                }
+            // D2/D7：先文件名（Dockerfile/Makefile 无扩展名）后扩展名，口径来自注册表。
+            // 旧实现只查 `Path::extension()`，使 Makefile 之类永不命中。
+            if filekind::is_indexable(&rel) {
+                files.push(entry.path().to_path_buf());
             }
         }
     }
@@ -2309,6 +2973,228 @@ fn trigger_reranker_download_background() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ─── Plan B v2 §5.3：诊断清单的按路径合并 ───
+
+    /// **向后兼容**：升级前写入的 `index_meta.json` 没有 `skipped_files`/`partial_files`
+    /// 两个键。若反序列化失败，`load_metadata` 会返回 `None` → 整个索引被当成"未索引"，
+    /// 用户会被迫重建全库。这两个字段必须靠 `#[serde(default)]` 容忍缺失。
+    #[test]
+    fn index_meta_without_diagnostics_fields_still_loads() {
+        let dir = std::env::temp_dir().join("mdgo_meta_compat");
+        std::fs::create_dir_all(&dir).expect("建临时目录");
+        // 严格模拟旧版本写出的 JSON（只有旧字段）
+        let legacy = r#"{
+            "file_count": 12,
+            "chunk_count": 340,
+            "vector_count": 340,
+            "indexed_at": 1700000000000,
+            "type_distribution": [],
+            "chunk_params_version": "budget-v2:x",
+            "kind_converters": {"pdf": "pdf-inspector@1.19.0"}
+        }"#;
+        std::fs::write(dir.join("index_meta.json"), legacy).expect("写旧元数据");
+
+        let meta = load_metadata(&dir.to_string_lossy())
+            .expect("旧 index_meta.json 必须仍能反序列化（否则会触发全库重建）");
+        assert_eq!(meta.file_count, 12);
+        assert_eq!(meta.kind_converters.get("pdf").map(String::as_str), Some("pdf-inspector@1.19.0"));
+        assert!(meta.skipped_files.is_empty(), "缺失字段应回落为空清单");
+        assert!(meta.partial_files.is_empty(), "缺失字段应回落为空清单");
+
+        // 写入后再读回：新字段必须完整往返
+        let with_diag = IndexMeta {
+            skipped_files: vec![crate::core::pipeline::SkippedFile {
+                rel_path: "scan.pdf".into(),
+                code: "needs_ocr".into(),
+                reason: "扫描件".into(),
+                pages: vec![1, 2, 3],
+            }],
+            partial_files: vec![crate::core::pipeline::PartialFile {
+                rel_path: "mixed.pdf".into(),
+                skipped_pages: vec![4],
+                page_count: 6,
+                diagnostics: vec![],
+            }],
+            ..meta
+        };
+        save_metadata(&dir.to_string_lossy(), &with_diag);
+        let back = load_metadata(&dir.to_string_lossy()).expect("读回");
+        assert_eq!(back.skipped_files.len(), 1);
+        assert_eq!(back.skipped_files[0].rel_path, "scan.pdf");
+        assert_eq!(back.skipped_files[0].pages, vec![1, 2, 3]);
+        assert_eq!(back.partial_files.len(), 1);
+        assert_eq!(back.partial_files[0].skipped_pages, vec![4]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 诊断清单必须**按路径合并**：增量索引只处理个别文件时，绝不能清掉其它文件的
+    /// 历史诊断——否则用户看到"问题凭空消失了"，而实际上那些文件从未被重新处理。
+    #[test]
+    fn diagnostics_merge_preserves_untouched_and_refreshes_processed() {
+        use crate::core::pipeline::{PartialFile, SkippedFile};
+        let sk = |p: &str| SkippedFile {
+            rel_path: p.to_string(),
+            code: "needs_ocr".to_string(),
+            reason: "扫描件".to_string(),
+            pages: vec![1, 2],
+        };
+        let pf = |p: &str, pages: Vec<u32>| PartialFile {
+            rel_path: p.to_string(),
+            skipped_pages: pages,
+            page_count: 5,
+            diagnostics: vec![],
+        };
+
+        // 初始：a/b 整文件跳过，c 部分索引
+        let (s0, p0) = merge_diagnostics(
+            vec![sk("a.md"), sk("b.pdf")],
+            vec![pf("c.pdf", vec![2])],
+            &[],
+            &[],
+            &[],
+        );
+        assert_eq!(s0.len(), 2);
+        assert_eq!(p0.len(), 1, "无参数调用不得清空清单");
+
+        // 增量只处理 a.md（且已修复）→ 只移除 a，b/c 原样保留
+        let (s1, p1) = merge_diagnostics(s0, p0, &["a.md".to_string()], &[], &[]);
+        assert_eq!(
+            s1.iter().map(|x| x.rel_path.as_str()).collect::<Vec<_>>(),
+            vec!["b.pdf"],
+            "已修复的文件必须从跳过清单移除"
+        );
+        assert_eq!(p1.len(), 1, "未处理文件的诊断必须保留");
+
+        // 增量处理 d.pdf 且它需要 OCR → 追加进去
+        let (s2, _) = merge_diagnostics(s1, p1.clone(), &["d.pdf".to_string()], &[sk("d.pdf")], &[]);
+        assert_eq!(s2.len(), 2, "新出现的跳过文件必须计入");
+        assert!(s2.iter().any(|x| x.rel_path == "d.pdf"));
+
+        // 部分索引已修复 → 从 partial 移除
+        let (_, p2) = merge_diagnostics(s2.clone(), p1, &["c.pdf".to_string()], &[], &[]);
+        assert!(p2.is_empty(), "修复后的文件必须从 partial 清单移除");
+
+        // 未在本次处理范围内的 run_* 条目被忽略（防止统计窗口串味）
+        let (s3, _) = merge_diagnostics(
+            s2,
+            p2,
+            &["e.pdf".to_string()],
+            &[sk("zzz.pdf")],
+            &[pf("zzz.pdf", vec![1])],
+        );
+        assert!(
+            !s3.iter().any(|x| x.rel_path == "zzz.pdf"),
+            "未处理路径的诊断不得写入"
+        );
+    }
+
+    /// 部分索引与整文件跳过**必须分开**（§5.3）：同一份输入里两者不互相覆盖
+    #[test]
+    fn skipped_and_partial_are_kept_separate() {
+        use crate::core::pipeline::{PartialFile, SkippedFile};
+        let skipped = vec![SkippedFile {
+            rel_path: "scan.pdf".to_string(),
+            code: "needs_ocr".to_string(),
+            reason: "全篇扫描件".to_string(),
+            pages: vec![1, 2, 3],
+        }];
+        let partial = vec![PartialFile {
+            rel_path: "mixed.pdf".to_string(),
+            skipped_pages: vec![4],
+            page_count: 6,
+            diagnostics: vec![],
+        }];
+        let (s, p) = merge_diagnostics(
+            vec![],
+            vec![],
+            &["scan.pdf".to_string(), "mixed.pdf".to_string()],
+            &skipped,
+            &partial,
+        );
+        assert_eq!(s.len(), 1);
+        assert_eq!(s[0].rel_path, "scan.pdf");
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[0].rel_path, "mixed.pdf");
+        assert_eq!(p[0].skipped_pages, vec![4], "部分索引必须保留被跳过的页号");
+        assert_eq!(p[0].page_count, 6);
+    }
+
+    // ─── Phase 0C：按类型失效（方案 §5.5）───
+
+    fn map(pairs: &[(&str, &str)]) -> std::collections::BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    /// 只升级 pdf 转换器 → 只有 pdf 过期（Word/Excel/Markdown 不受牵连）
+    #[test]
+    fn stale_kinds_isolates_single_converter_upgrade() {
+        let expected = map(&[
+            ("pdf", "pdf-inspector@1.20"),
+            ("office", "anydoc@0.2.4"),
+            ("markdown", "native@1"),
+            ("code", "native@1"),
+        ]);
+        let snapshot = map(&[
+            ("pdf", "pdf-inspector@1.19.0"),
+            ("office", "anydoc@0.2.4"),
+            ("markdown", "native@1"),
+            ("code", "native@1"),
+        ]);
+        let stale = stale_kinds_from_snapshot(&expected, &snapshot);
+        assert_eq!(stale, vec!["pdf"], "仅 pdf 应过期，实际 {:?}", stale);
+    }
+
+    /// 交换任意单个 kind 都会精确命中该 kind
+    #[test]
+    fn stale_kinds_reports_each_changed_kind() {
+        let expected = map(&[("pdf", "p@2"), ("office", "a@2"), ("code", "n@1")]);
+        let snapshot = map(&[("pdf", "p@1"), ("office", "a@2"), ("code", "n@1")]);
+        assert_eq!(stale_kinds_from_snapshot(&expected, &snapshot), vec!["pdf"]);
+
+        let snapshot2 = map(&[("pdf", "p@2"), ("office", "a@1"), ("code", "n@1")]);
+        assert_eq!(stale_kinds_from_snapshot(&expected, &snapshot2), vec!["office"]);
+
+        let snapshot3 = map(&[("pdf", "p@1"), ("office", "a@1"), ("code", "n@1")]);
+        assert_eq!(
+            stale_kinds_from_snapshot(&expected, &snapshot3),
+            vec!["office", "pdf"],
+            "应排序且全部报出"
+        );
+    }
+
+    /// 从未索引过的 kind 不算过期（避免"没这份数据却提示重建"）
+    #[test]
+    fn stale_kinds_ignores_kinds_absent_from_snapshot() {
+        let expected = map(&[("pdf", "p@2"), ("office", "a@2")]);
+        let snapshot = map(&[("pdf", "p@2")]);
+        assert!(
+            stale_kinds_from_snapshot(&expected, &snapshot).is_empty(),
+            "快照中缺失的 kind 不应报过期"
+        );
+    }
+
+    /// 注册表期望值本身覆盖所有已登记 kind（防止新增格式漏配转换器标签）
+    #[test]
+    fn expected_kind_converters_cover_registry() {
+        let expected = Indexer::expected_kind_converters();
+        for k in filekind::registry().kinds() {
+            assert!(
+                expected.contains_key(k.caps.source_kind),
+                "kind {} 缺少期望转换器标签",
+                k.caps.source_kind
+            );
+        }
+        // Phase 1：pdf 走 pdf-inspector
+        assert_eq!(
+            expected.get("pdf").map(|s| s.as_str()),
+            Some("pdf-inspector@1.19.0")
+        );
+        assert_eq!(expected.get("markdown").map(|s| s.as_str()), Some("native@1"));
+    }
 
     /// 🟠 M10：标签过滤条件构造——JSON 元素精确匹配 + 大小写不敏感 + 通配符转义
     #[test]

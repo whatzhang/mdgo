@@ -177,9 +177,22 @@ fn resolve_in_root(root: &str, rel: &str) -> Result<PathBuf, String> {
     Ok(full)
 }
 
-fn read_text_at(full: &Path) -> Result<(String, u64), String> {
+fn read_text_at(full: &Path, rel: &str) -> Result<(String, u64), String> {
     let mtime = mtime_ms_of(full);
-    // UTF-8 读取失败时降级 lossy（避免单个乱码文件阻断问答）
+    // Plan B v2 / N7：**统一走 DocumentLoader**——PDF/Office 得到转换后的 Markdown，
+    // 而不是 `from_utf8_lossy` 把二进制解成乱码（旧实现在 .docx/.pdf 上必然产生垃圾元数据）。
+    match crate::core::document::loader::load_document(full, rel) {
+        Ok(src) => return Ok((src.text, mtime)),
+        Err(reason) => {
+            // 关键区分：**已登记**格式（pdf/office/…）转换失败时绝不能退化为 lossy。
+            // 否则扫描件 PDF（needs_ocr）或加密 .docx 的原始字节会被按 UTF-8 解码成
+            // 满屏 U+FFFD 送进模型上下文——正是 N7 要修掉的东西，而且用户看不到真实原因。
+            if crate::core::document::filekind::lookup(rel).is_some() {
+                return Err(format!("该文件无法作为文本读取：{}", reason.message()));
+            }
+        }
+    }
+    // 回退语义：**未登记**格式（如用户显式打开 `.log`/`.env`）仍按 lossy 读取，保持既有宽容行为。
     let raw = std::fs::read(full).map_err(|e| format!("读取文件失败: {e}"))?;
     let text = String::from_utf8_lossy(&raw).into_owned();
     Ok((text, mtime))
@@ -201,7 +214,7 @@ pub fn read_doc(root: &str, rel: &str) -> Result<Arc<DocFile>, String> {
             }
         }
     }
-    let (text, mtime) = read_text_at(&full)?;
+    let (text, mtime) = read_text_at(&full, rel)?;
     let doc = parse_doc(root, rel, text, mtime);
     if let Ok(mut map) = doc_cache().lock() {
         if !map.contains_key(&key) && map.len() >= CACHE_MAX_ENTRIES {
@@ -612,6 +625,35 @@ mod tests {
 
     const ROOT: &str = "G:/gitProject/mdgo";
     const REL: &str = "docs/PRD-小助手文档Agent.md";
+
+    /// N7 回归：**已登记**二进制格式转换失败时，绝不能退化成 `from_utf8_lossy` 乱码。
+    ///
+    /// 旧实现只判断 `load_document` 是否 `Ok`，失败就无条件 lossy 兜底——扫描件 PDF
+    /// （needs_ocr）或损坏的 .docx 会把原始字节解成满屏 U+FFFD 送进模型上下文。
+    /// 现在：已登记格式失败 → 报错（可解释）；未登记格式失败 → 保留 lossy 宽容行为。
+    #[test]
+    fn registered_binary_never_falls_back_to_lossy_garbage() {
+        let dir = std::env::temp_dir().join("mdgo_docagent_n7");
+        std::fs::create_dir_all(&dir).expect("建临时目录");
+
+        // 1) 已登记（.docx）但内容不是合法 OOXML → 必须报错，而不是给出乱码文本
+        let bad_docx = dir.join("broken.docx");
+        std::fs::write(&bad_docx, [0xFFu8, 0xFE, 0x00, 0x01, 0x80, 0x81]).expect("写文件");
+        let err = read_text_at(&bad_docx, "broken.docx")
+            .expect_err("已登记格式转换失败必须报错（不得 lossy 兜底）");
+        assert!(
+            err.contains("无法作为文本读取"),
+            "错误信息应可解释，实际: {}",
+            err
+        );
+
+        // 2) 未登记（.log）且非 UTF-8 → 仍保持既有 lossy 宽容行为
+        let log = dir.join("app.log");
+        std::fs::write(&log, [0x41u8, 0xFF, 0x42]).expect("写文件");
+        let (text, _) = read_text_at(&log, "app.log").expect("未登记格式应保持 lossy 宽容");
+        assert!(text.contains('A') && text.contains('B'), "lossy 文本应保留可解码部分");
+        assert!(text.contains('\u{FFFD}'), "lossy 兜底应产生替换字符（保持旧行为）");
+    }
 
     #[test]
     fn parse_known_doc_produces_sections() {

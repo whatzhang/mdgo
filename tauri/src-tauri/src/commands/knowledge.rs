@@ -159,8 +159,7 @@ pub async fn kb_index(
     result
 }
 
-/// 增量索引：仅索引未索引的文件（不清理已有索引）
-///
+/// 增量索引：仅索引未索引的文件（不清理已有索引）///
 /// 扫描目录后逐个检查 LanceDB，跳过已有 chunk 的文件，
 /// 只对新文件执行 index_file。
 #[tauri::command]
@@ -194,6 +193,40 @@ pub async fn kb_index_unindexed(
         })
         .await;
 
+    state.watcher.resume();
+
+    result
+}
+
+/// **只重建指定文件类型**（Plan B v2 / Phase 0C："只重建受影响类型"）。
+///
+/// 用途：`KbStatus.stale_kinds` 非空时（例如升级了 pdf-inspector），用户可只重建该类型，
+/// 不必全量重建——其它类型的 chunk 完全不动。
+///
+/// `kinds` 取值来自 `filekind` 注册表的 `source_kind`：
+/// `pdf` / `office` / `markdown` / `code` / `text` / `data`。
+#[tauri::command]
+pub async fn kb_reindex_kinds(
+    app: AppHandle,
+    dir_path: String,
+    kinds: Vec<String>,
+) -> Result<KbIndexResult, String> {
+    let state = app.state::<AppState>();
+
+    // 与全量索引一致：先暂停 watcher 增量，避免并发写 DB
+    state.watcher.pause();
+    let result = state
+        .indexer
+        .reindex_kinds(&dir_path, &kinds, |percent, msg| {
+            let _ = app.emit(
+                "kb-progress",
+                KbProgress {
+                    percent,
+                    message: msg.to_string(),
+                },
+            );
+        })
+        .await;
     state.watcher.resume();
 
     result

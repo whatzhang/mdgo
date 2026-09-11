@@ -79,6 +79,14 @@
 
     // ═══════════ 3. 编辑支持 ═══════════
 
+    /**
+     * Plan B v2 / Phase 2：走后端「转换后只读预览」的二进制文档扩展名。
+     *
+     * 与 main.html 的 `CONVERTED_DOC_EXT_SET` 保持一致；此处用正则而非跨文件共享 const，
+     * 避免模块与主脚本的加载顺序耦合。
+     */
+    const CONVERTED_DOC_RE = /\.(doc|docx|docm|ppt|pps|pot|pptx|pptm|ppsx|ppsm|xlsm|xlsb|odt|ods|odp|rtf|epub)$/i;
+
     /** 文件名是否属于可编辑的代码类（plantuml / 代码扩展名） */
     function codeEditEnble(filename) {
         return /\.(puml|plantuml)$/i.test(filename) || isCode(getExt(filename));
@@ -90,6 +98,11 @@
         if (filename.endsWith('.drawio') || filename.endsWith('.excalidraw')) return false;
         if (isImageFile(filename) && !filename.endsWith('.svg')) return false;
         if (filename.endsWith('.pdf') || filename.endsWith('.xlsx') || filename.endsWith('.xls')) return false;
+        // Plan B v2 / Phase 2：二进制文档容器（Office/ODF/RTF/EPUB）一律不可编辑——
+        // 它们由后端 DocumentLoader 转换后**只读预览**；显式排除，避免将来
+        // CODE_EXT_SET 扩容时被误判为可编辑（实测当前 codeEditEnble 已返回 false，
+        // 这里是把语义写死，防止回归）。
+        if (CONVERTED_DOC_RE.test(filename)) return false;
         // 支持所有文本/代码文件 (包括 canvas 和 svg)
         return codeEditEnble(filename) || /\.(txt|md|csv|canvas|svg|opml|mm)$/i.test(filename);
     }

@@ -69,19 +69,16 @@ pub async fn doc_dir_files(
         if name.starts_with('.') || !p.is_file() {
             continue;
         }
-        let ext = p
-            .extension()
-            .and_then(|x| x.to_str())
-            .map(|x| x.to_lowercase())
-            .unwrap_or_default();
-        if ext != "md" && ext != "txt" && ext != "markdown" {
-            continue;
-        }
-        out.push(if folder.is_empty() {
+        // D8/N7：资料圈选口径由注册表统一决定（覆盖 PDF/Office/EPUB 等转换后形态）
+        let rel = if folder.is_empty() {
             name
         } else {
             format!("{folder}/{name}")
-        });
+        };
+        if !crate::core::document::filekind::is_document_material(&rel) {
+            continue;
+        }
+        out.push(rel);
     }
     out.sort();
     Ok(out)
@@ -118,19 +115,16 @@ pub async fn doc_tag_files(
         if name.starts_with('.') || !p.is_file() {
             continue;
         }
-        let ext = p
-            .extension()
-            .and_then(|x| x.to_str())
-            .map(|x| x.to_lowercase())
-            .unwrap_or_default();
-        if ext != "md" && ext != "txt" && ext != "markdown" {
-            continue;
-        }
         let rel = if folder.is_empty() {
             name.clone()
         } else {
             format!("{folder}/{name}")
         };
+        // D8/N7：资料圈选口径由注册表统一决定（覆盖 PDF/Office/EPUB 等转换后形态），
+        // 不再硬编码 md/txt/markdown——否则会出现"前端能看、DocAgent 圈不到"的分裂。
+        if !crate::core::document::filekind::is_document_material(&rel) {
+            continue;
+        }
         if rel == file_path {
             continue;
         }
@@ -182,19 +176,16 @@ pub async fn doc_related(
         if name.starts_with('.') || !p.is_file() {
             continue;
         }
-        let ext = p
-            .extension()
-            .and_then(|x| x.to_str())
-            .map(|x| x.to_lowercase())
-            .unwrap_or_default();
-        if ext != "md" && ext != "txt" && ext != "markdown" {
-            continue;
-        }
         let rel = if folder.is_empty() {
             name.clone()
         } else {
             format!("{folder}/{name}")
         };
+        // D8/N7：资料圈选口径由注册表统一决定（覆盖 PDF/Office/EPUB 等转换后形态），
+        // 不再硬编码 md/txt/markdown——否则会出现"前端能看、DocAgent 圈不到"的分裂。
+        if !crate::core::document::filekind::is_document_material(&rel) {
+            continue;
+        }
         if rel == file_path {
             continue;
         }
@@ -281,4 +272,140 @@ pub async fn doc_build_context(
         omitted,
         meta,
     })
+}
+
+// ─── 文档预览（Phase 0B：与索引共用 DocumentLoader，方案 §4.1 / §7.3）───
+
+/// 预览正文上限（字符）。防止把 50MB 的转换结果整体送进 webview。
+/// 超出部分截断并置 `truncated = true`（前端提示）。
+const PREVIEW_TEXT_LIMIT: usize = 200_000;
+
+/// 文档预览载荷。
+#[derive(Serialize)]
+pub struct DocumentPreview {
+    /// 转换/读取后的正文（Phase 1 起为转换器产出的 Markdown）
+    pub text: String,
+    /// 内容形态（markdown/html/tree/code/plain）——前端据此选渲染器
+    pub form: String,
+    /// 版本失效粒度键（pdf/office/markdown/code/text/data）
+    pub source_kind: String,
+    /// 转换器身份（`id@version`）
+    pub converter: String,
+    /// 成功为 None；失败时为 `SkipReason::code()`（如 unsupported/not_utf8/too_large）
+    pub skip_code: Option<String>,
+    /// 对应的中文说明
+    pub skip_reason: Option<String>,
+    /// 页码归属 `[page, byte_start, byte_end]`（Phase 1 起非空）
+    pub page_spans: Vec<[u64; 3]>,
+    pub warnings: Vec<String>,
+    /// 正文是否被预览上限截断
+    pub truncated: bool,
+    /// 正文总字节数（截断前）
+    pub bytes: usize,
+}
+
+/// 预览侧装载：**索引与预览必须走同一条通路**（方案 §4.1 / §7.3：
+/// `DocumentLoader → ConversionCache`）。
+///
+/// 给出 `dir_path` 时用转换缓存（目录可由 `get_cache_dir` 推断）：刚索引过的 PDF/Office
+/// 打开预览会直接命中，不再二次全量解析；缺省时退化为直接装载（无从推断缓存目录）。
+/// 缓存不可用只降级、不影响正确性——转换逻辑仍只有 loader 一处（唯一入口契约不破）。
+fn load_preview_source(
+    abs: &std::path::Path,
+    rel_path: &str,
+    dir_path: Option<&str>,
+) -> Result<crate::core::document::loader::DocumentSource, crate::core::document::loader::SkipReason>
+{
+    use crate::core::document::loader as loader;
+    let Some(dir) = dir_path else {
+        return loader::load_document(abs, rel_path);
+    };
+    match crate::core::db::conversion_cache::ConversionCache::open_shared(
+        &crate::core::db::utils::get_cache_dir(dir),
+    ) {
+        Ok(cache) => cache.load_or_convert(abs, rel_path),
+        Err(e) => {
+            log::debug!("[doc] 预览转换缓存不可用（回退直接装载）: {}", e);
+            loader::load_document(abs, rel_path)
+        }
+    }
+}
+
+/// 预览一个文件：**必须经 `DocumentLoader`**（唯一入口契约）。
+///
+/// `dir_path` 可选：提供时用于把绝对路径折算成相对路径（与索引侧 `doc_name` 同口径，
+/// 保证预览与索引看到同一份 `FileKind`）；缺省时退化为按文件名匹配。
+///
+/// 设计要点（方案 §4.1 / §7.2.1）：
+/// - 前端**只传路径**，不要把文件内容读进 JS 再传回（大 `.pptx` 会双倍搬运）；
+/// - 与索引共用同一装载实现，预览与入库结果天然一致；
+/// - Phase 3 接入转换缓存后，预览与索引都不再重复解析。
+#[tauri::command]
+pub async fn document_preview(
+    path: String,
+    dir_path: Option<String>,
+) -> Result<DocumentPreview, String> {
+    let abs = std::path::PathBuf::from(&path);
+    if !abs.is_file() {
+        return Err(format!("不是文件: {}", path));
+    }
+    let rel_path = match dir_path.as_deref() {
+        Some(dir) => {
+            let d = std::path::Path::new(dir);
+            abs.strip_prefix(d)
+                .map(|p| p.to_string_lossy().replace('\\', "/"))
+                .unwrap_or_else(|_| {
+                    abs.file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default()
+                })
+        }
+        None => abs
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default(),
+    };
+
+    match load_preview_source(&abs, &rel_path, dir_path.as_deref()) {
+        Ok(src) => {
+            let total_bytes = src.text.len();
+            let truncated = src.text.chars().count() > PREVIEW_TEXT_LIMIT;
+            let text: String = if truncated {
+                src.text.chars().take(PREVIEW_TEXT_LIMIT).collect()
+            } else {
+                src.text.clone()
+            };
+            Ok(DocumentPreview {
+                text,
+                form: src.form.as_str().to_string(),
+                source_kind: src.source_kind.to_string(),
+                converter: src.converter.label(),
+                skip_code: None,
+                skip_reason: None,
+                page_spans: src
+                    .page_spans
+                    .iter()
+                    .map(|s| [s.page as u64, s.byte_start as u64, s.byte_end as u64])
+                    .collect(),
+                warnings: src.warnings.clone(),
+                truncated,
+                bytes: total_bytes,
+            })
+        }
+        Err(reason) => {
+            // 失败也返回结构化结果（而非 Err），前端据此显示"为什么打不开"
+            Ok(DocumentPreview {
+                text: String::new(),
+                form: "plain".to_string(),
+                source_kind: String::new(),
+                converter: String::new(),
+                skip_code: Some(reason.code().to_string()),
+                skip_reason: Some(reason.message()),
+                page_spans: Vec::new(),
+                warnings: Vec::new(),
+                truncated: false,
+                bytes: 0,
+            })
+        }
+    }
 }

@@ -4,6 +4,10 @@ mod commands;
 // 🟠 L31：`core` 保持私有（不暴露整个 core 层公共 API 面）；benchmark bin 通过
 // 下面的窄门面 `bench_api` 访问所需符号（`required-features = ["bench"]` 见 Cargo.toml）。
 mod core;
+// Plan B v2 端到端验收 harness（真实样本，经 `MDGO_ACCEPT_DIR` 启用）。
+// 放 crate 内是为了在不破坏上面 L31 边界的前提下拿到 `core` 的真实调用链。
+#[cfg(test)]
+mod acceptance;
 mod services;
 mod tray;
 
@@ -599,6 +603,8 @@ pub fn run() {
             commands::clipboard::copy_to_clipboard,
             commands::knowledge::kb_index,
             commands::knowledge::kb_index_unindexed,
+            // 只重建受影响文件类型（Phase 0C）
+            commands::knowledge::kb_reindex_kinds,
             commands::knowledge::kb_search_hybrid,
             commands::knowledge::kb_status,
             commands::knowledge::kb_clear,
@@ -660,6 +666,8 @@ pub fn run() {
             commands::doc::doc_related,
             commands::doc::doc_dir_files,
             commands::doc::doc_tag_files,
+            // 文档预览（Phase 0B：与索引共用 DocumentLoader）
+            commands::doc::document_preview,
             commands::llm::doc_agent_query,
             // LLM 命令
             commands::llm::agent_query,

@@ -1,5 +1,6 @@
 pub mod bm25;
 pub mod chunk_splitter;
+pub mod conversion_cache;
 pub mod embedding_cache;
 pub mod global;
 pub mod lance;

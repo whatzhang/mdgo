@@ -47,6 +47,23 @@ pub struct DocumentChunk {
     pub embedding_text: Option<String>,
     /// 分块类型（AST 语义分块用）：paragraph/code/table/list/quote/section 等
     pub chunk_type: Option<String>,
+    /// **版本失效粒度键**（Plan B v2 / Phase 0C）：pdf / office / markdown / code / text / data。
+    /// 用于"按文件类型失效"——升级 pdf-inspector 只让 PDF 相关索引 stale（方案 §5.5）。
+    /// 必须落库（与仅进 BM25 的 doc_title/tags 不同）。
+    pub source_kind: Option<String>,
+    /// **转换器身份** `id@version`（如 `pdf-inspector@1.19.0` / `anydoc@0.2.4` / `native@1`）。
+    /// 与 `source_kind` 一起构成"索引里实际用了哪个转换器"的事实记录。
+    pub converter: Option<String>,
+    /// **页码 provenance**（Plan B v2 / Phase 1）：起始页（1-indexed）。
+    /// 仅分页来源（如 PDF）有值；**不是分块边界**——跨页 chunk 会 `page_end > page_start`。
+    pub page_start: Option<u32>,
+    /// 结束页（1-indexed）；单页 chunk 与 `page_start` 相同
+    pub page_end: Option<u32>,
+    /// 成员行区间的页归属明细（JSON：`[{"page":1,"line_start":10,"line_end":24}]`）
+    pub source_spans: Option<String>,
+    /// **表格表头列名**（JSON 数组，Plan B v2 §4.7 / 决策 R3）；非表格块为 `None`。
+    /// 只进 metadata，**不进 `embedding_text`**。
+    pub table_headers: Option<String>,
     /// 文档显式标题（P0-1：frontmatter title；BM25 title 字段优先使用，不落 LanceDB 列）
     pub doc_title: Option<String>,
     /// 文档标签（P0-1：frontmatter tags+aliases 的 JSON 数组字符串；BM25 tags 字段，不落 LanceDB 列）
@@ -80,6 +97,24 @@ pub struct SearchHit {
     pub symbol_kind: Option<String>,
     /// 分块类型（AST 语义分块用）
     pub chunk_type: Option<String>,
+    /// 版本失效粒度键（Phase 0C；前端可据此对 PDF/Office 显示不同徽标）
+    #[serde(default)]
+    pub source_kind: Option<String>,
+    /// 转换器身份 `id@version`（Phase 0C）
+    #[serde(default)]
+    pub converter: Option<String>,
+    /// 起始页（1-indexed；Phase 1，仅分页来源有值）
+    #[serde(default)]
+    pub page_start: Option<u32>,
+    /// 结束页（1-indexed；单页与 page_start 相同）
+    #[serde(default)]
+    pub page_end: Option<u32>,
+    /// 页归属明细 JSON（Phase 1）
+    #[serde(default)]
+    pub source_spans: Option<String>,
+    /// 表格表头列名 JSON 数组（§4.7 / R3）；非表格块为 None
+    #[serde(default)]
+    pub table_headers: Option<String>,
     /// 文档标签（P0-1：frontmatter tags+aliases 的 JSON 数组字符串；
     /// 🟠 M9：落 SearchHit 供融合后内存标签过滤——BM25/符号路无法 SQL 下推）
     pub tags: Option<String>,
@@ -102,6 +137,16 @@ struct SymbolEntry {
     path_json: Option<String>,
     sentence_window: Option<String>,
     chunk_type: Option<String>,
+    /// Phase 0C：版本失效粒度键（符号路命中同样要携带 provenance）
+    source_kind: Option<String>,
+    /// Phase 0C：转换器身份
+    converter: Option<String>,
+    /// Phase 1：页码 provenance
+    page_start: Option<u32>,
+    page_end: Option<u32>,
+    source_spans: Option<String>,
+    /// §4.7 / R3：表格表头列名
+    table_headers: Option<String>,
     /// 🟠 M9：文档标签（JSON 数组字符串），供融合后标签过滤
     tags: Option<String>,
 }
@@ -180,6 +225,15 @@ impl LanceStore {
             Field::new("chunk_type", DataType::Utf8, true),
             // A3：frontmatter 标签（JSON 数组字符串），供 metadata 过滤下推
             Field::new("tags", DataType::Utf8, true),
+            // Plan B v2 / 0C：版本失效粒度（source_kind）与转换器身份（converter）
+            Field::new("source_kind", DataType::Utf8, true),
+            Field::new("converter", DataType::Utf8, true),
+            // Plan B v2 / Phase 1：页码 provenance（分页来源）
+            Field::new("page_start", DataType::UInt32, true),
+            Field::new("page_end", DataType::UInt32, true),
+            Field::new("source_spans", DataType::Utf8, true),
+            // Plan B v2 / §4.7（决策 R3）：表格表头列名（JSON 数组字符串）
+            Field::new("table_headers", DataType::Utf8, true),
             Field::new(
                 "vector",
                 DataType::FixedSizeList(
@@ -310,6 +364,12 @@ impl LanceStore {
         let mut symbol_kind_arr: Vec<Option<&str>> = Vec::with_capacity(n);
         let mut chunk_type_arr: Vec<Option<&str>> = Vec::with_capacity(n);
         let mut tags_arr: Vec<Option<&str>> = Vec::with_capacity(n);
+        let mut source_kind_arr: Vec<Option<&str>> = Vec::with_capacity(n);
+        let mut converter_arr: Vec<Option<&str>> = Vec::with_capacity(n);
+        let mut page_start_arr: Vec<Option<u32>> = Vec::with_capacity(n);
+        let mut page_end_arr: Vec<Option<u32>> = Vec::with_capacity(n);
+        let mut source_spans_arr: Vec<Option<&str>> = Vec::with_capacity(n);
+        let mut table_headers_arr: Vec<Option<&str>> = Vec::with_capacity(n);
 
         for chunk in chunks {
             id_arr.push(chunk.id.as_str());
@@ -323,6 +383,12 @@ impl LanceStore {
             symbol_kind_arr.push(chunk.symbol_kind.as_deref());
             chunk_type_arr.push(chunk.chunk_type.as_deref());
             tags_arr.push(chunk.tags.as_deref());
+            source_kind_arr.push(chunk.source_kind.as_deref());
+            converter_arr.push(chunk.converter.as_deref());
+            page_start_arr.push(chunk.page_start);
+            page_end_arr.push(chunk.page_end);
+            source_spans_arr.push(chunk.source_spans.as_deref());
+            table_headers_arr.push(chunk.table_headers.as_deref());
         }
 
         let vector_arrays: Vec<Option<Vec<Option<f32>>>> = vectors
@@ -348,6 +414,12 @@ impl LanceStore {
                 Field::new("symbol_kind", DataType::Utf8, true),
                 Field::new("chunk_type", DataType::Utf8, true),
                 Field::new("tags", DataType::Utf8, true),
+                Field::new("source_kind", DataType::Utf8, true),
+                Field::new("converter", DataType::Utf8, true),
+                Field::new("page_start", DataType::UInt32, true),
+                Field::new("page_end", DataType::UInt32, true),
+                Field::new("source_spans", DataType::Utf8, true),
+                Field::new("table_headers", DataType::Utf8, true),
                 Field::new(
                     "vector",
                     DataType::FixedSizeList(
@@ -370,6 +442,12 @@ impl LanceStore {
                 Arc::new(StringArray::from(symbol_kind_arr)),
                 Arc::new(StringArray::from(chunk_type_arr)),
                 Arc::new(StringArray::from(tags_arr)),
+                Arc::new(StringArray::from(source_kind_arr)),
+                Arc::new(StringArray::from(converter_arr)),
+                Arc::new(UInt32Array::from(page_start_arr)),
+                Arc::new(UInt32Array::from(page_end_arr)),
+                Arc::new(StringArray::from(source_spans_arr)),
+                Arc::new(StringArray::from(table_headers_arr)),
                 Arc::new(vector_arr),
             ],
         )
@@ -495,6 +573,27 @@ impl LanceStore {
             let tags_col = batch
                 .column_by_name("tags")
                 .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+            // Phase 0C：旧表（0C 之前建的表）无这两列 → None，由 stale 判定要求重建
+            let source_kind_col = batch
+                .column_by_name("source_kind")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+            let converter_col = batch
+                .column_by_name("converter")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+            // Phase 1：旧表无这三列 → None
+            let page_start_col = batch
+                .column_by_name("page_start")
+                .and_then(|c| c.as_any().downcast_ref::<UInt32Array>());
+            let page_end_col = batch
+                .column_by_name("page_end")
+                .and_then(|c| c.as_any().downcast_ref::<UInt32Array>());
+            let source_spans_col = batch
+                .column_by_name("source_spans")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+            // §4.7 / R3：旧表无该列 → None（与上面三列同一"缺列即 None"策略）
+            let table_headers_col = batch
+                .column_by_name("table_headers")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
 
             for i in 0..batch.num_rows() {
                 let dist = distances.value(i);
@@ -517,6 +616,24 @@ impl LanceStore {
                 let tags_val = tags_col.and_then(|arr| {
                     if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
                 });
+                let source_kind_val = source_kind_col.and_then(|arr| {
+                    if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
+                });
+                let converter_val = converter_col.and_then(|arr| {
+                    if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
+                });
+                let page_start_val = page_start_col.and_then(|arr| {
+                    if arr.is_null(i) { None } else { Some(arr.value(i)) }
+                });
+                let page_end_val = page_end_col.and_then(|arr| {
+                    if arr.is_null(i) { None } else { Some(arr.value(i)) }
+                });
+                let source_spans_val = source_spans_col.and_then(|arr| {
+                    if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
+                });
+                let table_headers_val = table_headers_col.and_then(|arr| {
+                    if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
+                });
                 hits.push(SearchHit {
                     text: texts.value(i).to_string(),
                     doc_name: doc_names.value(i).to_string(),
@@ -530,6 +647,12 @@ impl LanceStore {
                     symbol_kind: symbol_kind_val,
                     chunk_type: chunk_type_val,
                     tags: tags_val,
+                    source_kind: source_kind_val,
+                    converter: converter_val,
+                    page_start: page_start_val,
+                    page_end: page_end_val,
+                    source_spans: source_spans_val,
+                    table_headers: table_headers_val,
                     score_rerank: None,
                     query_sources: Vec::new(),
                 });
@@ -594,6 +717,12 @@ impl LanceStore {
                     symbol_kind: e.symbol_kind.clone(),
                     chunk_type: e.chunk_type.clone(),
                     tags: e.tags.clone(),
+                    source_kind: e.source_kind.clone(),
+                    converter: e.converter.clone(),
+                    page_start: e.page_start,
+                    page_end: e.page_end,
+                    source_spans: e.source_spans.clone(),
+                    table_headers: e.table_headers.clone(),
                     score_rerank: None,
                     query_sources: Vec::new(),
                 },
@@ -644,6 +773,12 @@ impl LanceStore {
                 "sentence_window",
                 "chunk_type",
                 "tags",
+                "source_kind",
+                "converter",
+                "page_start",
+                "page_end",
+                "source_spans",
+                "table_headers",
             ]))
             .execute()
             .await
@@ -686,6 +821,25 @@ impl LanceStore {
             let tags_col = batch
                 .column_by_name("tags")
                 .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+            // Phase 0C：旧表无这两列 → None
+            let source_kind_col = batch
+                .column_by_name("source_kind")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+            let converter_col = batch
+                .column_by_name("converter")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+            let page_start_col = batch
+                .column_by_name("page_start")
+                .and_then(|c| c.as_any().downcast_ref::<UInt32Array>());
+            let page_end_col = batch
+                .column_by_name("page_end")
+                .and_then(|c| c.as_any().downcast_ref::<UInt32Array>());
+            let source_spans_col = batch
+                .column_by_name("source_spans")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+            let table_headers_col = batch
+                .column_by_name("table_headers")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
 
             for i in 0..batch.num_rows() {
                 if symbol_names.is_null(i) {
@@ -711,6 +865,24 @@ impl LanceStore {
                     tags: tags_col.and_then(|arr| {
                         if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
                     }),
+                    source_kind: source_kind_col.and_then(|arr| {
+                        if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
+                    }),
+                    converter: converter_col.and_then(|arr| {
+                        if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
+                    }),
+                    page_start: page_start_col.and_then(|arr| {
+                        if arr.is_null(i) { None } else { Some(arr.value(i)) }
+                    }),
+                    page_end: page_end_col.and_then(|arr| {
+                        if arr.is_null(i) { None } else { Some(arr.value(i)) }
+                    }),
+                    source_spans: source_spans_col.and_then(|arr| {
+                        if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
+                    }),
+                    table_headers: table_headers_col.and_then(|arr| {
+                        if arr.is_null(i) { None } else { Some(arr.value(i).to_string()) }
+                    }),
                 });
             }
         }
@@ -725,6 +897,57 @@ impl LanceStore {
         }
     }
 
+
+    /// **Phase 0C**：读取索引中实际出现的 `(source_kind, converter)` 去重集合。
+    ///
+    /// 用途：`KbStatus.stale_kinds` 的判定依据——把"索引里真实用的转换器"与
+    /// 注册表的**期望值**比对，得到**按文件类型**的过期集合（方案 §5.5）。
+    ///
+    /// 行为约定：
+    /// - `source_kind` 为 NULL 的行（0C 之前的旧索引）**不返回**，由调用方判定为"全部过期"；
+    /// - 只 select 两列，不读 vector（避免全量向量解码）。
+    pub async fn kind_converter_pairs(
+        &self,
+    ) -> Result<std::collections::HashSet<(String, String)>, String> {
+        let table = self.open_table().await?;
+        let batches: Vec<RecordBatch> = table
+            .query()
+            .select(lancedb::query::Select::columns(&["source_kind", "converter"]))
+            .limit(100_000)
+            .execute()
+            .await
+            .map_err(|e| format!("读取 source_kind/converter 失败: {}", e))?
+            .try_collect()
+            .await
+            .map_err(|e| format!("读取 source_kind/converter 失败: {}", e))?;
+
+        let mut pairs = std::collections::HashSet::new();
+        for batch in &batches {
+            // 旧表缺列 → 视为空集合（调用方按"无 kind 记录"处理）
+            let kinds = batch
+                .column_by_name("source_kind")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+            let converters = batch
+                .column_by_name("converter")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+            let (Some(kinds), Some(converters)) = (kinds, converters) else {
+                continue;
+            };
+            for i in 0..batch.num_rows() {
+                if kinds.is_null(i) {
+                    continue;
+                }
+                let k = kinds.value(i).to_string();
+                let c = if converters.is_null(i) {
+                    String::new()
+                } else {
+                    converters.value(i).to_string()
+                };
+                pairs.insert((k, c));
+            }
+        }
+        Ok(pairs)
+    }
 
     /// 获取所有已索引的文档名列表（去重）。
     ///
@@ -878,6 +1101,115 @@ impl LanceStore {
         Ok(())
     }
 
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 造一个含全部 provenance/元数据列的 chunk（其余列用占位值）
+    fn sample_chunk(id: &str) -> DocumentChunk {
+        DocumentChunk {
+            id: id.to_string(),
+            doc_name: "表.md".to_string(),
+            chunk_index: 0,
+            text: "| Postcode | Sales_Rep_Name |\n|---|---|\n| 2121 | Jane |".to_string(),
+            path_depth: None,
+            path_json: Some(r#"["销售"]"#.to_string()),
+            sentence_window: None,
+            symbol_name: None,
+            symbol_kind: None,
+            embedding_text: None,
+            chunk_type: Some("table".to_string()),
+            source_kind: Some("markdown".to_string()),
+            converter: Some("native@1".to_string()),
+            page_start: Some(2),
+            page_end: Some(3),
+            source_spans: Some(r#"[{"page":2,"line_start":1,"line_end":3}]"#.to_string()),
+            table_headers: Some(r#"["Postcode","Sales_Rep_Name"]"#.to_string()),
+            doc_title: None,
+            tags: None,
+        }
+    }
+
+    /// **LanceDB 落库往返**（Plan B v2 的 provenance/元数据列）：
+    /// 这条路径此前**完全没有测试**，而它是"schema 字段顺序 ↔ RecordBatch 数组顺序"
+    /// 必须严格对齐的地方——顺序错位（尤其是相邻的两个 Utf8 列互换）不会编译报错，
+    /// 只会在运行时静默把 A 列的值写进 B 列。
+    ///
+    /// 需要本地 embedding 模型只为拿到建表维度（`create_table` 的 384 维来自模型）；
+    /// 模型不可用时跳过并说明原因，避免把环境依赖带进日常 `cargo test`。
+    #[tokio::test]
+    async fn chunk_metadata_round_trips_through_lancedb() {
+        if crate::core::db::utils::get_local_embedding_dimension().is_err() {
+            eprintln!("[skip] 本地 embedding 模型不可用，跳过 LanceDB 往返测试");
+            return;
+        }
+        let dim = crate::core::db::utils::get_local_embedding_dimension().unwrap() as usize;
+
+        let dir = std::env::temp_dir().join("mdgo_lance_roundtrip");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("建临时目录");
+        let store = LanceStore::new(&dir.to_string_lossy(), "vectors");
+        store.create_table().await.expect("建表");
+
+        let chunk = sample_chunk("row1");
+        let vectors = vec![vec![0.01f32; dim]];
+        store.add_chunks(&[chunk.clone()], &vectors).await.expect("写入 chunks");
+
+        // 读回全部列，逐列核对（含 vector 列，确保数组与 schema 仍对齐）
+        let table = store.open_table().await.expect("打开表");
+        let batches: Vec<arrow_array::RecordBatch> = table
+            .query()
+            .execute()
+            .await
+            .expect("查询")
+            .try_collect()
+            .await
+            .expect("收集");
+        assert_eq!(batches.len(), 1, "应恰好一个 batch");
+        let batch = &batches[0];
+        assert_eq!(batch.num_rows(), 1, "应恰好一行");
+
+        let s = |col: &str| -> Option<String> {
+            batch
+                .column_by_name(col)
+                .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>())
+                .map(|a| a.value(0).to_string())
+        };
+
+        // 关键：这几列都是 Utf8 且相邻，最容易被"顺序错位"写串
+        assert_eq!(s("chunk_type").as_deref(), Some("table"), "chunk_type 列串位");
+        assert_eq!(s("source_kind").as_deref(), Some("markdown"), "source_kind 列串位");
+        assert_eq!(s("converter").as_deref(), Some("native@1"), "converter 列串位");
+        assert_eq!(
+            s("source_spans").as_deref(),
+            Some(r#"[{"page":2,"line_start":1,"line_end":3}]"#),
+            "source_spans 列串位"
+        );
+        assert_eq!(
+            s("table_headers").as_deref(),
+            Some(r#"["Postcode","Sales_Rep_Name"]"#),
+            "table_headers 列串位（§4.7 / R3）"
+        );
+
+        let u = |col: &str| -> Option<u32> {
+            batch
+                .column_by_name(col)
+                .and_then(|c| c.as_any().downcast_ref::<arrow_array::UInt32Array>())
+                .map(|a| a.value(0))
+        };
+        assert_eq!(u("page_start"), Some(2), "page_start 列串位");
+        assert_eq!(u("page_end"), Some(3), "page_end 列串位");
+
+        // vector 列必须仍在最后且维度正确（数组顺序与 schema 对齐的最终凭据）
+        let vec_col = batch.column_by_name("vector").expect("vector 列存在");
+        assert_eq!(
+            vec_col.len(),
+            1,
+            "vector 列行数不符（数组整体错位的典型症状）"
+        );
+    }
 }
 
 // 别名，用于构建 Schema 时避免歧义
