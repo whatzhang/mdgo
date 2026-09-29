@@ -37,6 +37,11 @@ error() { echo -e "${RED}[ERROR]${NC} $1"; }
 install_deps() {
   info "安装 Node 依赖..."
   cd "$TAURI_DIR"
+  # 清理上次被中断的 npm install 留下的暂存目录
+  if [ -d "node_modules/.ignored" ]; then
+    warn "清理残留的 node_modules/.ignored（上次安装被中断）"
+    rm -rf node_modules/.ignored
+  fi
   npm install
   ok "Node 依赖安装完成"
 
@@ -46,14 +51,50 @@ install_deps() {
 }
 
 # ------------------------------------------------------------------------------
+# 校验 node_modules 完整性（自动修复被中断的 npm install）
+# npm 会把即将移除的包暂存到 node_modules/.ignored；若安装过程被中断
+# （Ctrl+C、进程被杀），这些直接依赖就会滞留其中，而 .bin 下的 shim 仍指向
+# 原路径，于是出现 Cannot find module .../@tauri-apps/cli/tauri.js
+# ------------------------------------------------------------------------------
+ensure_node_deps() {
+  local need_install=0
+
+  if [ -d "$TAURI_DIR/node_modules/.ignored" ]; then
+    warn "检测到 node_modules/.ignored，上次 npm install 被中断，正在清理..."
+    rm -rf "$TAURI_DIR/node_modules/.ignored"
+    need_install=1
+  fi
+
+  [ -f "$TAURI_DIR/node_modules/@tauri-apps/cli/tauri.js" ] || need_install=1
+  [ -f "$TAURI_DIR/node_modules/vite/package.json" ] || need_install=1
+
+  if [ "$need_install" -eq 1 ]; then
+    info "Node 依赖不完整，正在执行 npm install..."
+    ( cd "$TAURI_DIR" && npm install ) || { error "npm install 失败"; return 1; }
+  fi
+
+  if [ ! -f "$TAURI_DIR/node_modules/@tauri-apps/cli/tauri.js" ]; then
+    error "Tauri CLI 缺失：$TAURI_DIR/node_modules/@tauri-apps/cli/tauri.js"
+    info  "请删除 node_modules 目录后执行: ./build.sh install"
+    return 1
+  fi
+
+  if [ ! -f "$TAURI_DIR/node_modules/vite/package.json" ]; then
+    error "vite 缺失：$TAURI_DIR/node_modules/vite/package.json"
+    info  "请删除 node_modules 目录后执行: ./build.sh install"
+    return 1
+  fi
+
+  return 0
+}
+
+# ------------------------------------------------------------------------------
 # 前端构建检查（Vite）
 # ------------------------------------------------------------------------------
 check_frontend() {
   info "构建前端（Vite）..."
   cd "$TAURI_DIR"
-  if [ ! -d "node_modules" ]; then
-    npm install
-  fi
+  ensure_node_deps || return 1
   # 清理构建缓存，确保使用最新代码
   rm -rf dist
   rm -rf "$PROJECT_DIR/.vite"
@@ -88,6 +129,7 @@ run_tests() {
 run_dev() {
   info "启动 Tauri 开发模式..."
   cd "$TAURI_DIR"
+  ensure_node_deps || return 1
   npx tauri dev
 }
 

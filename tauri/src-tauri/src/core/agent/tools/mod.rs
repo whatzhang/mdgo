@@ -620,6 +620,8 @@ fn document_converter_label(rel_path: &str) -> Option<&'static str> {
     match kind.converter {
         Converter::Plain => None,
         Converter::AnyDoc => Some("anydoc"),
+        // Phase 4：epub 走「anydoc 正文 + rbook 目录」的富化通路
+        Converter::Epub => Some("epub"),
         Converter::PdfInspector => Some("pdf-inspector"),
         Converter::LegacyPdf => Some("pdf-extract"),
     }
@@ -2751,7 +2753,8 @@ mod document_read_tests {
             ("a.odt", "anydoc"),
             ("a.ods", "anydoc"),
             ("a.rtf", "anydoc"),
-            ("a.epub", "anydoc"),
+            // Phase 4：EPUB 走自己的富化通路（anydoc 正文 + rbook 目录 + 图片导出）
+            ("a.epub", "epub"),
             ("sub/dir/b.pptx", "anydoc"),
         ] {
             assert_eq!(

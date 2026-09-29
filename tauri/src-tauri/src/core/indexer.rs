@@ -782,6 +782,11 @@ impl Indexer {
                 filekind::Converter::AnyDoc => {
                     crate::core::document::loader::ConverterInfo::ANYDOC.label()
                 }
+                // Phase 4：EPUB 独立失效粒度键（source_kind = "epub"）→
+                // 富化实现变化只让 epub 判为过期，Office 增量索引照常工作
+                filekind::Converter::Epub => {
+                    crate::core::document::loader::ConverterInfo::EPUB.label()
+                }
             };
             out.insert(kind.to_string(), label);
         }

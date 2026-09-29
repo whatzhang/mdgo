@@ -14,7 +14,7 @@ REM   build.bat clean        Clean build artifacts
 REM ==============================================================================
 
 REM -- Version Info --
-set "SCRIPT_VERSION=1.1.0"
+set "SCRIPT_VERSION=1.2.0"
 set "PROJECT_VERSION=0.1.0"
 
 REM -- Path Settings --
@@ -66,6 +66,13 @@ goto :eof
 
 :install_deps
 echo [INFO]  Installing Node dependencies...
+
+REM -- Fix 11: Clear staging leftovers from an interrupted npm install --
+if exist "%TAURI_DIR%\node_modules\.ignored" (
+    echo [WARN]  Removing stale node_modules\.ignored from an interrupted install
+    rmdir /s /q "%TAURI_DIR%\node_modules\.ignored"
+)
+
 pushd "%TAURI_DIR%"
 call npm install
 if errorlevel 1 (
@@ -98,19 +105,57 @@ if errorlevel 1 (
 echo [OK]    Rust toolchain ready
 goto :eof
 
+REM -- Fix 11: Detect and repair a node_modules tree left half-installed --
+REM npm stages packages it is about to replace/remove in node_modules\.ignored.
+REM If an install is interrupted (Ctrl+C, killed process), the already-retired
+REM direct dependencies stay there while their bin shims still point at the
+REM original paths, producing "Cannot find module ...\@tauri-apps\cli\tauri.js".
+:ensure_node_deps
+set "NEED_NPM_INSTALL="
+
+if exist "%TAURI_DIR%\node_modules\.ignored" (
+    echo [WARN]  Found node_modules\.ignored - a previous npm install was interrupted
+    rmdir /s /q "%TAURI_DIR%\node_modules\.ignored"
+    set "NEED_NPM_INSTALL=1"
+)
+
+if not exist "%TAURI_DIR%\node_modules\@tauri-apps\cli\tauri.js" set "NEED_NPM_INSTALL=1"
+if not exist "%TAURI_DIR%\node_modules\vite\package.json" set "NEED_NPM_INSTALL=1"
+
+if not defined NEED_NPM_INSTALL goto :ensure_node_deps_verify
+
+echo [INFO]  Node dependencies incomplete, running npm install...
+pushd "%TAURI_DIR%"
+call npm install
+set "NPM_INSTALL_EXIT=!ERRORLEVEL!"
+popd
+
+if not "!NPM_INSTALL_EXIT!"=="0" (
+    echo [ERROR] npm install failed ^(exit code: !NPM_INSTALL_EXIT!^)
+    exit /b 1
+)
+
+:ensure_node_deps_verify
+if not exist "%TAURI_DIR%\node_modules\@tauri-apps\cli\tauri.js" (
+    echo [ERROR] Tauri CLI missing: node_modules\@tauri-apps\cli\tauri.js
+    echo [HINT]  Delete the node_modules folder and run: build.bat install
+    exit /b 1
+)
+
+if not exist "%TAURI_DIR%\node_modules\vite\package.json" (
+    echo [ERROR] vite missing: node_modules\vite\package.json
+    echo [HINT]  Delete the node_modules folder and run: build.bat install
+    exit /b 1
+)
+
+exit /b 0
+
 :check_frontend
 echo [INFO]  Building frontend (Vite)...
-pushd "%TAURI_DIR%"
+call :ensure_node_deps
+if errorlevel 1 exit /b 1
 
-if not exist "node_modules" (
-    echo [INFO]  node_modules not found, installing dependencies...
-    call npm install
-    if errorlevel 1 (
-        echo [ERROR] Dependencies installation failed
-        popd
-        exit /b 1
-    )
-)
+pushd "%TAURI_DIR%"
 
 REM -- Fix 4: Check if vite is in package.json --
 if not exist "package.json" (
@@ -167,18 +212,10 @@ if %TEST_EXIT_CODE% equ 0 (
 
 :run_dev
 echo [INFO]  Starting Tauri dev mode...
+call :ensure_node_deps
+if errorlevel 1 exit /b 1
 
 pushd "%TAURI_DIR%"
-
-if not exist "node_modules" (
-    echo [INFO]  node_modules not found, installing dependencies...
-    call npm install
-    if errorlevel 1 (
-        echo [ERROR] Dependencies installation failed
-        popd
-        exit /b 1
-    )
-)
 
 REM -- Fix 5: Check if tauri-cli exists --
 if not exist "package.json" (
@@ -198,6 +235,8 @@ popd
 
 if %DEV_EXIT_CODE% neq 0 (
     echo [ERROR] Tauri dev mode startup failed
+    echo [HINT]  MODULE_NOT_FOUND for @tauri-apps\cli usually means a broken node_modules
+    echo [HINT]  Fix it with: build.bat install
     exit /b 1
 )
 goto :eof

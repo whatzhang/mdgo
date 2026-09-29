@@ -180,6 +180,15 @@ fn acceptance_real_samples() {
                         );
                         assert_eq!(src.source_kind, "office", "{} 的 source_kind 应为 office", rel);
                     }
+                    filekind::Converter::Epub => {
+                        checked_office += 1;
+                        assert_eq!(
+                            src.converter, ConverterInfo::EPUB,
+                            "{} 应记为 epub 富化通路",
+                            rel
+                        );
+                        assert_eq!(src.source_kind, "epub", "{} 的 source_kind 应为 epub", rel);
+                    }
                     filekind::Converter::PdfInspector => {
                         checked_pdf += 1;
                         assert_eq!(
@@ -385,7 +394,9 @@ fn acceptance_conversion_cache_roundtrip() {
         let rel = rel_of(&dir, p);
         matches!(
             filekind::lookup(&rel).map(|k| k.converter),
-            Some(filekind::Converter::PdfInspector) | Some(filekind::Converter::AnyDoc)
+            Some(filekind::Converter::PdfInspector)
+                | Some(filekind::Converter::AnyDoc)
+                | Some(filekind::Converter::Epub)
         )
     });
     let Some(target) = target else {

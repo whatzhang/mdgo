@@ -17217,7 +17217,7 @@
         const DOT = '.';
         const DOUBLE_DOT = '..';
         const SLASH = '/';
-        const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB - 大文件限制
+        const MAX_FILE_SIZE = 100 * 1024 * 1024; // 50MB - 大文件限制
         const MAX_DIR_DEPTH = 20; // 最大目录深度
         const DELETED_INDEX_EXPIRE_DAYS = 365; // 删除索引过期天数
         // ====== localStorage 键名 ======
@@ -17869,6 +17869,13 @@
             currentActiveItem = fileSpan;
             safeLocalStorageSet(LAST_FILE_KEY, relativePath);
             await switchToView(contentMain);
+            // 打开新文件：先清掉上一个文件遗留的"待用真目录 / 转换类文档"标记。
+            // 正常情况下 `generateTOC` 会消费并清空它们，但存在**提前返回、走不到 generateTOC**
+            // 的分支（例如转换产物被判成 Obsidian 看板时会 `renderKanbanToContent` 后直接 return）。
+            // 在唯一入口处清一次，可以保证标记绝不跨文件泄漏——否则下一个 `.md` 笔记的
+            // Links/Tags 页签会被误隐藏。
+            _pendingEpubToc = null;
+            _pendingConvertedDoc = false;
             //判断文件类型是否为支持的，不是则不打开
             const ext = getExt(relativePath);
             if (await checkFileExt(ext)) {
@@ -17884,6 +17891,26 @@
                 aiFabContainer.style.display = 'none';
                 openVideoFile(ext, fileName, relativePath);
                 recordView(relativePath, fileName);
+                _startBrowsingTimer(relativePath);
+                return;
+            }
+            // 缺口 G5：**转换类**文件（Office/ODF/RTF/EPUB）只需路径就够——后端
+            // `document_preview` 自己读盘并走同一个 DocumentLoader。旧写法在这里无条件
+            // `getFile()`，而 Tauri 适配层的 getFile 会把**整个文件读进 JS**再包 Blob，
+            // 对 .pptx/.xlsb/.epub 是纯粹的双倍搬运（方案 §7.2.1「预览不经前端搬字节」只做了一半）。
+            // 因此这里先判类型：命中就直接用相对路径取文件名，完全跳过整文件读取。
+            // 代价是绕过了前端门禁，但后端 `precheck_size` 用的是同一份
+            // `ConversionPolicy::max_file_bytes`（200MB）并以 TooLarge 结构化返回，
+            // 前端会照常显示「该文件无法预览：文件过大…」，不会静默失败。
+            if (CONVERTED_DOC_EXT_SET.has(getExt(relativePath).toLowerCase())) {
+                const convertedName = basename(relativePath);
+                currentFileName = convertedName;
+                await cleanupCommonIframe();
+                topRightBtnDisplay(convertedName);
+                previewFileText = '';
+                originalContent = '';
+                await renderConvertedDocFile(relativePath);
+                recordView(relativePath, convertedName);
                 _startBrowsingTimer(relativePath);
                 return;
             }
@@ -18028,12 +18055,30 @@
             // 这里同时容忍 camelCase，避免以后后端改名就静默失效。
             const skipCode = res && (res.skip_code || res.skipCode);
             if (!res || skipCode) {
+                // 失败/跳过路径也要清掉上一次文件的授权目录与待用目录，避免串到别的文件
+                if (typeof window.mdgoSetAssetRoot === 'function') window.mdgoSetAssetRoot('');
+                _pendingEpubToc = null;
+                _pendingConvertedDoc = false;
                 const reason = (res && (res.skip_reason || res.skipReason)) || skipCode || '未知原因';
                 contentMain.innerHTML = `<div style="${noticeStyle}">该文件无法预览：${escapeHtml(reason)}</div>`;
                 return;
             }
+            // 缺口 G1：登记本次导出的图片资源目录。前端据此**校验**正文里的
+            // mdgoasset:// URL 只允许指向该目录（否则构造过的 EPUB 能读任意本地文件）。
+            if (typeof window.mdgoSetAssetRoot === 'function') {
+                window.mdgoSetAssetRoot(res.asset_root || res.assetRoot || '');
+            }
+            // 缺口 G4：真目录必须在 renderMarkdownFile **之前**交给 generateTOC——
+            // renderOriginalMarkdown 是用 requestIdleCallback 异步排 generateTOC 的，
+            // 若等 renderMarkdownFile 返回后再设置，回调可能已经跑完并清空了。
+            _pendingEpubToc = Array.isArray(res.toc) && res.toc.length ? res.toc : null;
+            // 转换类文档：隐藏 TOC link 三页签（Links 图 / Links列表 / Tags），
+            // 它们的语义只对用户自己的 Markdown 笔记成立（理由见 _pendingConvertedDoc 注释）。
+            _pendingConvertedDoc = true;
             // 注意：notice 最终用 textContent 写入，**不能**在这里转义（否则用户看到 &lt; 字面量）
-            const notice = (res.truncated ? '（内容过长，仅预览前 20 万字符）' : '')
+            // 截断提示不再写死「20 万字符」：上限已提到 400 万（后端 PREVIEW_TEXT_LIMIT），
+            // 写死数字会和后端脱钩，故改为不承诺具体数值。
+            const notice = (res.truncated ? '（内容过长，已截断，仅显示开头部分）' : '')
                 + ((res.warnings && res.warnings.length) ? '　' + res.warnings.join('；') : '');
             await renderMarkdownFile(res.text);
             // renderMarkdownFile 是**按 .md 文件**设计的：它会打开 editBtn / livePreviewBtn，
@@ -27142,7 +27187,66 @@ kanban-plugin: basic
         }
 
         // 从 Markdown 解析标题并生成目录侧栏
+        /** 缺口 G4：后端读出的 EPUB 真目录（EPUB 3 nav / EPUB 2 ncx）。
+         * 由 `renderConvertedDocFile` 在**调用 renderMarkdownFile 之前**写入，
+         * 由紧随其后的 `generateTOC` 消费并清空——这样不依赖 requestIdleCallback 的时序。 */
+        let _pendingEpubToc = null;
+
+        /** 本次渲染的是否是**后端转换类文档**（Office/ODF/RTF/EPUB）。
+         *
+         * 为什么需要：右下角那三个页签（Links 图 / Links列表 / Tags）全部是为**用户自己的
+         * Markdown 知识库**设计的——
+         * - Links 图：把 `[[wiki-link]]` / 文档间链接画成 mermaid 思维导图（vault 的知识图谱）；
+         * - Links列表：点击后 `scrollToTocLink` 先按 `href === target` 找 `<a>`，
+         *   再退回按文本匹配；
+         * - Tags：`extractTags` 抓 `#tag`，跳转靠 `.ob-tag` 元素（Obsidian 标签语法）。
+         *
+         * 而转换类文档里这三件事**语义都不成立、且实现上会坏**：
+         * - "链接"其实是 anydoc 为跨章引用/脚注生成的**书内锚点**。`marked` 会对 href 做
+         *   `encodeURI`，非 ASCII 片段（中文书几乎必然）被百分号编码，与 Markdown 源里的原始
+         *   target 不再相等 → 主匹配路径（href 相等）**必然失配**；退化的文本匹配也不可靠
+         *   （alias 是含转义的原始 Markdown 文本，如 `\[1\]`，与渲染后的 `[1]` 不相等）。
+         *   实测表现就是「点了没反应 / 提示未找到该链接」。
+         * - 书的正文里出现的 `#词` 并不是 vault 的标签，`.ob-tag` 也未必存在；
+         * - 电子书（尤其带脚注的）链接极密，思维导图会膨胀到渲染失败或完全不可读。
+         *
+         * 因此对转换类文档**整块隐藏** `#toc-link`，只保留右侧大纲（真目录）。
+         * 用户自己的 `.md` 笔记行为完全不变。 */
+        let _pendingConvertedDoc = false;
+
+        /**
+         * 缺口 G4：把真目录折成 `buildTOC` 需要的 `{level, text, id}`。
+         *
+         * `heading_index` 是后端给出的「对应正文第几个标题」（1-based，与
+         * `extractMarkdownHeadings` 的产出顺序一致），因此可以直接取 `headings[n-1].id`
+         * 作为锚点——**不需要按标题文字做模糊匹配**。
+         * 映射不到标题的条目（封面、版权页、推广页这类没有 `<h1>` 的章节）直接丢弃：
+         * 流式阅读里它们没有可跳转的目标，留着只会是死链。
+         */
+        function _buildEpubTocItems(headings) {
+            const out = [];
+            if (!_pendingEpubToc || !_pendingEpubToc.length || !headings || !headings.length) return out;
+            const seen = new Set();
+            for (const it of _pendingEpubToc) {
+                const label = String(it && it.label != null ? it.label : '').trim();
+                if (!label) continue;
+                const n = Number(it.heading_index) || 0;
+                if (n < 1 || n > headings.length) continue;
+                const id = headings[n - 1].id;
+                if (!id || seen.has(id)) continue;
+                seen.add(id);
+                const lvl = Number(it.level) || 1;
+                out.push({ level: Math.max(1, Math.min(6, lvl)), text: label, id });
+            }
+            return out;
+        }
+
         async function generateTOC(markdownText, type, opmlData) {
+            // 消费一次即清空，避免影响下一个文件
+            const epubToc = _pendingEpubToc;
+            _pendingEpubToc = null;
+            const convertedDoc = _pendingConvertedDoc;
+            _pendingConvertedDoc = false;
             tocElement.innerHTML = '';
             let headings = [];
             if (type === 'md') {
@@ -27159,13 +27263,16 @@ kanban-plugin: basic
             // 有标题时恢复布局
             contentMain.style.width = '';
             tocContainer.style.display = 'flex';
-            const tocHTML = buildTOC(headings);
-            tocElement.innerHTML = tocHTML;
-            // 为文档中的标题添加ID
+            // 先给标题打 id，才能按真目录的 heading_index 取到锚点
             if (type === 'md') { addHeadingIDs(headings); }
+            // G4：有作者声明的真目录时用它，否则沿用「按标题反推」
+            const epubItems = epubToc ? _buildEpubTocItems(headings) : [];
+            const tocHTML = buildTOC(epubItems.length ? epubItems : headings);
+            tocElement.innerHTML = tocHTML;
             showTocToggleBtn(true);
-            // Markdown 文件展示 TOC link，其他文件不展示
-            if (type === 'md') {
+            // TOC link 三页签只对**用户自己的 Markdown 笔记**有意义；
+            // 转换类文档（Office/ODF/RTF/EPUB）整块隐藏，理由见 `_pendingConvertedDoc` 注释。
+            if (type === 'md' && !convertedDoc) {
                 tocLinkElement.style.display = '';
                 tocElement.style.flex = '';
                 if (typeof requestIdleCallback === 'function') {
@@ -27174,6 +27281,7 @@ kanban-plugin: basic
                     setTimeout(() => generateTOCLinks(markdownText, type, opmlData), 0);
                 }
             } else {
+                // 转换类文档：连内容都不要生成（避免白跑一次 mermaid 渲染）
                 tocLinkElement.innerHTML = '';
                 tocLinkElement.style.display = 'none';
                 tocElement.style.flex = '1';
@@ -27182,7 +27290,13 @@ kanban-plugin: basic
 
         function extractMarkdownHeadings(markdownText) {
             const headings = [];
-            let idCounter = 1;
+            // 缺口 G3：标题 id 必须与后端 anydoc 的 `gfm_slug` **逐字一致**，
+            // 否则 anydoc 产出的跨章引用/内链（`[见 2.1](#21-子节)`）会指向不存在的 id。
+            // 分配顺序也要一致（按文档顺序占位 + 同名后缀 -1/-2…）。
+            // 模块未加载时退回旧的 `heading-N`，避免因脚本顺序而整体失效。
+            const claimSlug = (typeof window.mdgoSlugAllocator === 'function')
+                ? window.mdgoSlugAllocator()
+                : ((t) => `heading-${headings.length + 1}`);
             const len = markdownText.length;
             let i = 0;
             // 代码块状态
@@ -27267,7 +27381,7 @@ kanban-plugin: basic
                                 headings.push({
                                     level: hashCount,
                                     text: text,
-                                    id: `heading-${idCounter++}`
+                                    id: claimSlug(text)
                                 });
                             }
                         }
@@ -46890,6 +47004,14 @@ kanban-plugin: basic
         function buildLazyTauriImg(text, isFullText = false, photoDirPath = '') {
             const normalizedRootPath = normalizePath(currentRootPath);
             return _replaceImgWithDataSrc(text, isFullText, (src) => {
+                // 缺口 G1：后端导出的 EPUB 内嵌图片（mdgoasset://local/<base64url>）。
+                // 必须**先于** buildLocalImgSrc 判断——否则会被当成相对路径拼接，永远解不出。
+                // 授权目录由后端在 document_preview 里给出（mdgoSetAssetRoot），
+                // 不在该目录内的路径一律拒绝，防止构造过的 EPUB 借 scheme 读任意本地文件。
+                if (typeof window.mdgoIsAssetSrc === 'function' && window.mdgoIsAssetSrc(src)) {
+                    const epubAbs = window.mdgoResolveAssetSrc(src);
+                    return epubAbs ? getAssetUrl(epubAbs) : null;
+                }
                 const localSrc = buildLocalImgSrc(src, normalizedRootPath, photoDirPath);
                 const absPath = joinPath(normalizedRootPath, localSrc);
                 return getAssetUrl(absPath);
@@ -52204,6 +52326,7 @@ kanban-plugin: basic
         }
     </script>
     <script src="./css_js/modules/support.js"></script>
+    <script src="./css_js/modules/epub-anchor.js"></script>
     <script src="./css_js/modules/canvas.js"></script>
     <script src="./css_js/modules/chat-history.js"></script>
     <script src="./css_js/modules/editor/export.js"></script>

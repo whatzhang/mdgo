@@ -162,6 +162,20 @@ impl ConverterInfo {
     pub const PDF_INSPECTOR: Self = Self { id: "pdf-inspector", version: "1.19.0" };
     /// Phase 2：anydoc（版本与 Cargo.toml 的精确锁定值 `=0.2.4` 同步）
     pub const ANYDOC: Self = Self { id: "anydoc", version: "0.2.4" };
+    /// Phase 4：EPUB 富化通路（anydoc 出正文 + rbook 出真目录 + zip 内嵌图片导出）。
+    ///
+    /// **必须与 [`Self::ANYDOC`] 分开**：`label()` 是转换缓存主键（`id@version`）的组成部分
+    /// （`db::conversion_cache::key_parts`）。任何影响 EPUB **产出结构**的改动都要递增 ver，
+    /// 否则旧缓存会继续命中并返回旧结果。
+    ///
+    /// # 版本历史（递增即让旧缓存与旧索引失效，改行为必须补一行）
+    ///
+    /// - `1`：图片 URL 为 `mdgoasset://local/<base64url(绝对路径)>`。
+    /// - `2`：图片 URL 改为 `mdgoasset://local/<文件名>`（去掉绝对路径，见 `epub::asset_url`）。
+    ///   **为什么必须跟着 bump**：`1` 的 URL 形态被前端新的资源解析器判为不合法
+    ///   （它只接受 `<sha256 前 32 位>.<ext>`），若缓存仍返回 `1` 的正文，
+    ///   表现为**该书所有图片都不显示**——这正是「改了产出格式却忘了递增版本」的典型事故。
+    pub const EPUB: Self = Self { id: "epub-enhanced", version: "2" };
 
     /// `id@version` 形式（落库到 `DocumentChunk.converter`，供版本失效判定）
     pub fn label(&self) -> String {
@@ -229,6 +243,14 @@ pub struct DocumentSource {
     pub doc_status: DocStatus,
     pub page_diagnostics: Vec<PageDiagnostic>,
     pub warnings: Vec<String>,
+    /// EPUB 真目录（Phase 4 / G4）；非 EPUB 恒为空。
+    ///
+    /// 放在 `DocumentSource` 上而不是让 `document_preview` 自己解析，是为了守住
+    /// 「预览命令不得自行调用 anydoc/rbook」的唯一入口契约（见本文件头注释）。
+    pub epub_toc: Vec<super::epub::TocItem>,
+    /// EPUB 内嵌图片导出的资源目录（绝对路径，`/` 分隔）；非 EPUB 为 `None`。
+    /// 前端据此**校验** `mdgoasset://` URL 只允许指向本目录。
+    pub asset_root: Option<String>,
 }
 
 impl DocumentSource {
@@ -251,6 +273,8 @@ impl DocumentSource {
             doc_status: DocStatus::Indexed,
             page_diagnostics: Vec::new(),
             warnings: Vec::new(),
+            epub_toc: Vec::new(),
+            asset_root: None,
         }
     }
 
@@ -355,10 +379,12 @@ pub fn load_document_bytes(
                 doc_status: pdf.doc_status,
                 page_diagnostics: pdf.diagnostics,
                 warnings: pdf.warnings,
+                epub_toc: Vec::new(),
+                asset_root: None,
             });
         }
         Converter::AnyDoc => {
-            let text = convert_anydoc(bytes, rel_path)?;
+            let text = convert_anydoc(bytes, rel_path, None)?;
             return Ok(DocumentSource {
                 rel_path: rel_path.to_string(),
                 text,
@@ -371,6 +397,27 @@ pub fn load_document_bytes(
                 doc_status: DocStatus::Indexed,
                 page_diagnostics: Vec::new(),
                 warnings: Vec::new(),
+                epub_toc: Vec::new(),
+                asset_root: None,
+            });
+        }
+        // ── Phase 4 / G1+G4：EPUB 富化通路 ──
+        Converter::Epub => {
+            let (text, toc, asset_root, warnings) = convert_epub(bytes, rel_path, abs_path)?;
+            return Ok(DocumentSource {
+                rel_path: rel_path.to_string(),
+                text,
+                form: kind.form,
+                frontmatter: false, // EPUB 无 frontmatter 概念
+                source_kind: kind.caps.source_kind,
+                page_spans: Vec::new(),
+                line_page_map: Vec::new(),
+                converter: ConverterInfo::EPUB,
+                doc_status: DocStatus::Indexed,
+                page_diagnostics: Vec::new(),
+                warnings,
+                epub_toc: toc,
+                asset_root,
             });
         }
     };
@@ -396,6 +443,8 @@ pub fn load_document_bytes(
         doc_status: DocStatus::Indexed,
         page_diagnostics: Vec::new(),
         warnings: Vec::new(),
+        epub_toc: Vec::new(),
+        asset_root: None,
     })
 }
 
@@ -599,12 +648,19 @@ fn map_pdf_error(e: pdf_inspector::PdfError) -> SkipReason {
 ///   呈现（字节只在 `to_document().assets`，本版不需要资产入库）；
 /// - `ConvertError` 是 `#[non_exhaustive]` → 映射必须保留 catch-all 且**不得 panic**
 ///   （见 [`map_anydoc_error`]）。
-fn convert_anydoc(bytes: &[u8], rel_path: &str) -> Result<String, SkipReason> {
+fn convert_anydoc(
+    bytes: &[u8],
+    rel_path: &str,
+    explicit: Option<anydoc::Format>,
+) -> Result<String, SkipReason> {
     use anydoc::Format;
 
     // CSV 无内容签名，必须显式命名格式；本注册表把 csv 交给 Plain 直读，
     // 因此此处 format 为 None 只会出现在"既无签名也认不出扩展名"的情况。
-    let format = Format::from_bytes(bytes).or_else(|| Format::from_path(Path::new(rel_path)));
+    //
+    // `explicit` 由 EPUB 富化通路传入：那条路径上的字节已被我们重建，
+    // 不再依赖内容嗅探（嗅探失败会退化成"按扩展名"甚至 Unsupported）。
+    let format = explicit.or_else(|| Format::from_bytes(bytes).or_else(|| Format::from_path(Path::new(rel_path))));
     let ext = filekind::ext_of(rel_path).unwrap_or("");
 
     let md = match anydoc::to_markdown_bytes(bytes, format) {
@@ -618,6 +674,49 @@ fn convert_anydoc(bytes: &[u8], rel_path: &str) -> Result<String, SkipReason> {
         return Err(SkipReason::EmptyContent);
     }
     Ok(md)
+}
+
+// ──────────────────── Phase 4：EPUB 富化通路（G1 图片 + G4 真目录） ────────────────────
+
+/// **EPUB 专用装载**：图片导出/重写（G1）+ anydoc 出正文 + rbook 出真目录（G4）。
+///
+/// 为什么要把图片富化放在**装载**里，而不是只在预览命令里做：
+/// 图片在 anydoc 的 Markdown 里**没有任何标记**（只有 alt 文本），后处理拿不到插入位置；
+/// 唯一能让 anydoc 渲染出 `![](url)` 的办法是在**交给它之前**把容器内 `<img src>` 改成
+/// 带 scheme 的绝对 URI。既然正文因此改变，就必须让**索引与预览拿到同一份正文**
+/// （方案 §4.1 唯一入口契约），否则同一本书在「检索侧」和「阅读侧」内容不一致。
+///
+/// 失败姿态：图片导出/目录提取的任何失败都只降级为"少图/无目录"，不阻断正文装载。
+fn convert_epub(
+    bytes: &[u8],
+    rel_path: &str,
+    abs_path: &Path,
+) -> Result<(String, Vec<super::epub::TocItem>, Option<String>, Vec<String>), SkipReason> {
+    // 1) 图片：导出到内容哈希目录，并把正文里的 <img src> 重写成 mdgoasset://
+    let asset_dir = super::epub::asset_dir_for(bytes);
+    let enrichment = super::epub::enrich(bytes, &asset_dir);
+    let source_bytes: &[u8] = if enrichment.changed { &enrichment.bytes } else { bytes };
+    if enrichment.images > 0 {
+        log::debug!("[loader] epub 导出内嵌图片 {} 张: {}", enrichment.images, rel_path);
+    }
+
+    // 2) 正文：仍由 anydoc 产出（显式指定 Epub，不再依赖对重建后容器做内容嗅探）
+    let text = convert_anydoc(source_bytes, rel_path, Some(anydoc::Format::Epub))?;
+
+    // 3) 目录：rbook 读作者声明的 nav/ncx；再按 anydoc 的文档模型把条目对应到标题序号。
+    //    目录在**未重写**的原始字节上读即可（重写只动 <img src>）；有磁盘路径时走
+    //    `extract_toc_from_path`，省掉一次整本字节复制。
+    //    但标题映射必须用**同一份** `source_bytes`，否则序号可能与实际 Markdown 不符。
+    let mut toc = super::epub::extract_toc_from_path(bytes, abs_path);
+    if !toc.is_empty() {
+        match anydoc::to_document(source_bytes, Some(anydoc::Format::Epub)) {
+            Ok(doc) => super::epub::map_headings(&mut toc, &doc),
+            Err(e) => log::debug!("[loader] epub 标题映射跳过（文档模型不可用）: {}", e),
+        }
+    }
+
+    // 图片导出失败只记录诊断，不影响正文（`enrich` 内部已保证 changed ⇔ images > 0）
+    Ok((text, toc, enrichment.asset_root, enrichment.warnings))
 }
 
 /// anydoc 错误 → mdgo 跳过原因（`ConvertError` 为 `#[non_exhaustive]`，必须有 catch-all）

@@ -276,9 +276,14 @@ pub async fn doc_build_context(
 
 // ─── 文档预览（Phase 0B：与索引共用 DocumentLoader，方案 §4.1 / §7.3）───
 
-/// 预览正文上限（字符）。防止把 50MB 的转换结果整体送进 webview。
+/// 预览正文上限（字符）。防止把超大的转换结果整体送进 webview。
 /// 超出部分截断并置 `truncated = true`（前端提示）。
-const PREVIEW_TEXT_LIMIT: usize = 200_000;
+///
+/// **为什么从 20 万提到 400 万（缺口 G2）**：20 万字符是「按 PDF/报告」定的量级，
+/// 对**整本书**是硬伤——一本 20 万字的中文长篇正好卡在边界，技术书/小说几乎必被截断，
+/// 用户点开电子书只能看到开头一小半。400 万字符可容纳约 300 万汉字（≈ 十本长篇），
+/// 同时仍是 8MB 级 UTF-8 字符串，webview 侧可接受；真正超限时仍照旧给出截断提示。
+const PREVIEW_TEXT_LIMIT: usize = 4_000_000;
 
 /// 文档预览载荷。
 #[derive(Serialize)]
@@ -287,7 +292,7 @@ pub struct DocumentPreview {
     pub text: String,
     /// 内容形态（markdown/html/tree/code/plain）——前端据此选渲染器
     pub form: String,
-    /// 版本失效粒度键（pdf/office/markdown/code/text/data）
+    /// 版本失效粒度键（pdf/office/epub/markdown/code/text/data）
     pub source_kind: String,
     /// 转换器身份（`id@version`）
     pub converter: String,
@@ -302,6 +307,15 @@ pub struct DocumentPreview {
     pub truncated: bool,
     /// 正文总字节数（截断前）
     pub bytes: usize,
+    /// EPUB 真目录（Phase 4 / G4）；非 EPUB 为空数组。
+    ///
+    /// 每条都带 `heading_index`（对应正文第几个标题，1-based），前端据此把目录条目
+    /// 挂到渲染后的 `heading-{n}` 锚点上——**不需要按标题文字做模糊匹配**。
+    pub toc: Vec<crate::core::document::epub::TocItem>,
+    /// EPUB 内嵌图片导出的资源目录（绝对路径，`/` 分隔）；非 EPUB 为 None。
+    /// 前端用它**校验**正文里出现的 `mdgoasset://` URL 确实指向本次导出目录，
+    /// 避免恶意 EPUB 借该 scheme 引用任意本地文件。
+    pub asset_root: Option<String>,
 }
 
 /// 预览侧装载：**索引与预览必须走同一条通路**（方案 §4.1 / §7.3：
@@ -390,6 +404,8 @@ pub async fn document_preview(
                 warnings: src.warnings.clone(),
                 truncated,
                 bytes: total_bytes,
+                toc: src.epub_toc.clone(),
+                asset_root: src.asset_root.clone(),
             })
         }
         Err(reason) => {
@@ -405,6 +421,8 @@ pub async fn document_preview(
                 warnings: Vec::new(),
                 truncated: false,
                 bytes: 0,
+                toc: Vec::new(),
+                asset_root: None,
             })
         }
     }

@@ -68,6 +68,14 @@ pub enum Converter {
     AnyDoc,
     /// pdf-inspector 提取 + 逐页 provenance（Phase 1）
     PdfInspector,
+    /// EPUB（Phase 4 / G1+G4）：正文仍由 anydoc 产出，但**交给 anydoc 之前**先做
+    /// zip 内嵌图片导出与 `<img src>` 重写；目录由 rbook 读出（anydoc 完全不读 nav/ncx）。
+    ///
+    /// 为什么单独立一个变体而不是复用 [`Converter::AnyDoc`]：`source_kind` +
+    /// 本枚举共同决定 `IndexMeta.kind_converters` 失效快照（`indexer.rs`），
+    /// 复用会让"epub 转换实现变了"这件事无法表达，只能整体 bump anydoc 版本，
+    /// 从而把全部 Office 文件一起判为过期。单列变体把失效范围**精确限在 epub**。
+    Epub,
 }
 
 /// 决定**分块策略**的内容形态。
@@ -441,7 +449,7 @@ fn build() -> Registry {
         );
     }
 
-    // ── Office / ODF / RTF / EPUB（Phase 2 / C2）：anydoc → Markdown ──
+    // ── Office / ODF / RTF（Phase 2 / C2）：anydoc → Markdown ──
     //
     // 统一语义：
     // - `form = Markdown`：转换产物是 Markdown → 复用 comrak AST 语义分块（C3）；
@@ -458,8 +466,8 @@ fn build() -> Registry {
         "xls", "xlsx", "xlsm", "xlsb",
         // OpenDocument
         "odt", "ods", "odp",
-        // RTF / EPUB
-        "rtf", "epub",
+        // RTF
+        "rtf",
     ] {
         // 电子表格类标记为结构化（供未来"列名/表头进 metadata"判断）
         let sheet = matches!(ext, "xls" | "xlsx" | "xlsm" | "xlsb" | "ods");
@@ -472,6 +480,25 @@ fn build() -> Registry {
             ConversionPolicy::BINARY_DOC
         );
     }
+
+    // ── EPUB（Phase 4 / G1+G4）：anydoc 出正文 + rbook 出真目录 ──
+    //
+    // 为什么从 Office 组拆出来单独登记：
+    // - **转换实现已经不同**：正文交给 anydoc 前会先做 zip 内嵌图片导出 + `<img src>` 重写，
+    //   并由 rbook 读出作者声明的目录树；实现变了就必须能**按类型失效**（方案 §5.5），
+    //   而失效粒度键正是 `source_kind`（见 `indexer::expected_kind_converters`）；
+    // - `source_kind = "epub"` 同时让诊断/统计不再把电子书混进 Office 口径。
+    //
+    // 其余能力位与 Office 组保持一致：`form = Markdown`（复用 comrak 分块）、
+    // `binary = true`（禁止 UTF-8 直读）、`doc_like = false`（无 frontmatter）。
+    push!(
+        Matcher::Ext("epub"),
+        Converter::Epub,
+        DocumentForm::Markdown,
+        "其他",
+        caps("epub", false, false, false, false, false, true),
+        ConversionPolicy::BINARY_DOC
+    );
 
     build_index(kinds)
 }
@@ -858,13 +885,14 @@ mod tests {
         }
     }
 
-    /// Phase 2：Office/ODF/RTF/EPUB 必须以 AnyDoc + Markdown 形态登记
+    /// Phase 2：Office/ODF/RTF 必须以 AnyDoc + Markdown 形态登记
+    /// （EPUB 于 Phase 4 拆出为 [`Converter::Epub`]，见下一个用例）
     #[test]
     fn phase2_formats_use_anydoc_markdown_form() {
         let r = registry();
         for ext in [
             "doc", "docx", "docm", "ppt", "pps", "pot", "pptx", "pptm", "ppsx", "ppsm", "xls",
-            "xlsx", "xlsm", "xlsb", "odt", "ods", "odp", "rtf", "epub",
+            "xlsx", "xlsm", "xlsb", "odt", "ods", "odp", "rtf",
         ] {
             let k = r.lookup_ext(ext).unwrap_or_else(|| panic!("{} 应在册", ext));
             assert_eq!(k.converter, Converter::AnyDoc, "{} 应走 anydoc", ext);
@@ -878,6 +906,19 @@ mod tests {
         for ext in ["xls", "xlsx", "xlsm", "xlsb", "ods"] {
             assert!(r.lookup_ext(ext).expect("在册").caps.is_structured, "{} 应为结构化", ext);
         }
+    }
+
+    /// Phase 4：EPUB 单独登记，`source_kind = "epub"` 以便**按类型失效**只影响 epub。
+    #[test]
+    fn epub_uses_its_own_converter_and_source_kind() {
+        let r = registry();
+        let k = r.lookup_ext("epub").expect("epub 应在册");
+        assert_eq!(k.converter, Converter::Epub, "epub 应走专用富化通路");
+        assert_eq!(k.form, DocumentForm::Markdown, "转换产物仍按 Markdown 分块");
+        assert!(k.caps.binary, "EPUB 是 zip 容器，必须禁止 UTF-8 直读");
+        assert_eq!(k.caps.source_kind, "epub", "失效粒度键必须独立于 office");
+        assert!(!k.caps.doc_like, "EPUB 无 frontmatter 概念");
+        assert!(!k.caps.paginated);
     }
 
     // ── 跨层一致性守卫 ──
@@ -944,11 +985,12 @@ mod tests {
         let html = std::fs::read_to_string(&html_path).expect("读取 main.html");
         let sup = std::fs::read_to_string(&sup_path).expect("读取 support.js");
 
-        // 唯一真源：注册表里所有 Office 类扩展名（由 capabilities 派生，不另抄一份名单）
+        // 唯一真源：注册表里所有**需要后端转换预览**的类扩展名（由 capabilities 派生，
+        // 不另抄一份名单）。Phase 4 起 EPUB 有独立 `source_kind`，故两组合并来看。
         let office: std::collections::BTreeSet<String> = registry()
             .kinds()
             .iter()
-            .filter(|k| k.caps.source_kind == "office")
+            .filter(|k| matches!(k.caps.source_kind, "office" | "epub"))
             .filter_map(|k| match k.matcher {
                 Matcher::Ext(e) => Some(e.to_string()),
                 Matcher::FileName(_) => None,
