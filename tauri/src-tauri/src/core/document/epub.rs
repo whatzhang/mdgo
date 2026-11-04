@@ -654,10 +654,11 @@ fn hex_val(c: u8) -> Option<u8> {
 /// 只取**一个**目录源，不合并两版：生产者同时提供时二者常互相矛盾
 /// （重新生成时间不同 / NCX 是扁平变体），合并会出现重复与幻影条目。
 ///
-/// 本变体按字节解析；调用方手上有磁盘路径时应优先用 [`extract_toc_from_path`]。
+/// 本变体按字节解析（需要整本复制，见下）；生产路径优先走
+/// [`extract_toc_from_path`]，由它在路径不可用时回退到这里。
 pub fn extract_toc(bytes: &[u8]) -> Vec<TocItem> {
     // `Epub::read` 要求 `R: 'static`，`&[u8]` 不满足 → 只能复制一份字节。
-    // 这是**兜底**路径（测试、内存字节），生产路径见下。
+    // 这是**兜底**路径（磁盘路径打不开、测试、内存字节），生产路径见下。
     collect_toc(rbook::Epub::read(Cursor::new(bytes.to_vec())).ok())
 }
 
@@ -665,11 +666,13 @@ pub fn extract_toc(bytes: &[u8]) -> Vec<TocItem> {
 ///
 /// 为什么值得单独有：`rbook::Epub::read` 需要 `'static` 的 reader，因此字节变体必须
 /// `to_vec()` 复制整本书（EPUB 政策上限 200MB）。有路径时直接 `Epub::open` 就没有这次复制。
-/// 路径打不开（例如已被移动）时回退到字节变体，功能不变。
+/// 路径打不开（例如已被移动）时回退到 [`extract_toc`]，功能不变。
 pub fn extract_toc_from_path(bytes: &[u8], abs_path: &Path) -> Vec<TocItem> {
-    let epub = rbook::Epub::open(abs_path)
-        .or_else(|_| rbook::Epub::read(Cursor::new(bytes.to_vec())));
-    collect_toc(epub.ok())
+    match rbook::Epub::open(abs_path) {
+        Ok(epub) => collect_toc(Some(epub)),
+        // 只有路径失效时才付"整本复制"的代价
+        Err(_) => extract_toc(bytes),
+    }
 }
 
 fn collect_toc(epub: Option<rbook::Epub>) -> Vec<TocItem> {
@@ -1034,6 +1037,15 @@ mod tests {
         assert_eq!(toc[1].label, "Section 1.1");
         assert_eq!(toc[1].level, 2);
         assert_eq!(toc[1].href, "OEBPS/ch1.xhtml#s11");
+    }
+
+    /// 兜底分支：路径不可用时必须回退到字节解析，别把整本书的目录丢成空。
+    #[test]
+    fn extract_toc_from_path_falls_back_to_bytes_when_path_is_missing() {
+        let epub = minimal_epub();
+        let toc = extract_toc_from_path(&epub, Path::new("no-such-dir/no-such.epub"));
+        assert_eq!(toc.len(), 4, "路径打不开时仍应读出目录: {toc:?}");
+        assert_eq!(toc[0].label, "Chapter One");
     }
 
     #[test]
