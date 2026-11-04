@@ -3515,6 +3515,186 @@
             overflow: hidden;
         }
 
+        /* ── 标签数据统计：书签（环形进度）/ skill（分段条）/ MCP（状态条） ── */
+        .kb-card-title {
+            display: flex;
+            align-items: center;
+        }
+
+        .kb-card-title .kb-chart-total {
+            margin-left: auto;
+            padding-left: 0.5rem;
+            font-size: 0.6875rem;
+            font-weight: 400;
+            color: var(--t3);
+        }
+
+        .kb-dist-body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            min-height: 5.75rem;
+        }
+
+        .kb-dist-empty {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 5rem;
+            font-size: 0.75rem;
+            color: var(--t3);
+        }
+
+        .kb-dist {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.25rem 0.25rem 0;
+        }
+
+        /* 环形进度：conic-gradient 画「已解析占比」，中心挖空放百分比 */
+        .kb-ring {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 5.5rem;
+            height: 5.5rem;
+            flex: 0 0 auto;
+            border-radius: 50%;
+            background: #e8ecf1;
+        }
+
+        .kb-ring-hole {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 4rem;
+            height: 4rem;
+            border-radius: 50%;
+            background: var(--color-bg);
+            line-height: 1.15;
+        }
+
+        .kb-ring-hole b {
+            font-size: 0.9375rem;
+            color: var(--color-text);
+        }
+
+        .kb-ring-hole em {
+            font-style: normal;
+            font-size: 0.625rem;
+            color: var(--t3);
+        }
+
+        .kb-dist-facts {
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+            min-width: 0;
+            font-size: 0.6875rem;
+            color: var(--t2);
+        }
+
+        .kb-dist-facts > div {
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+            white-space: nowrap;
+        }
+
+        .kb-dist-facts b {
+            margin-left: auto;
+            padding-left: 0.5rem;
+            color: var(--color-text);
+            font-weight: 600;
+        }
+
+        .kb-dot {
+            display: inline-block;
+            width: 0.5rem;
+            height: 0.5rem;
+            flex: 0 0 auto;
+            border-radius: 50%;
+        }
+
+        .kb-bars {
+            display: flex;
+            flex-direction: column;
+            gap: 0.45rem;
+            padding: 0.25rem 0.25rem 0;
+        }
+
+        .kb-bar-row {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.6875rem;
+            color: var(--t2);
+        }
+
+        .kb-bar-label {
+            flex: 0 0 auto;
+            width: 2rem;
+        }
+
+        .kb-bar-track {
+            flex: 1 1 auto;
+            height: 0.5rem;
+            min-width: 0;
+            border-radius: 999px;
+            background: #e8ecf1;
+            overflow: hidden;
+        }
+
+        .kb-bar-fill {
+            display: flex;
+            height: 100%;
+        }
+
+        .kb-bar-fill i {
+            display: block;
+            height: 100%;
+        }
+
+        .kb-bar-num {
+            flex: 0 0 auto;
+            min-width: 1.5rem;
+            text-align: right;
+            color: var(--color-text);
+            font-weight: 600;
+        }
+
+        .kb-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.25rem 0.5rem;
+            padding: 0.25rem 0.25rem 0.25rem;          
+            font-size: 0.625rem;
+            color: var(--t3);
+        }
+
+        .kb-legend > span {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .kb-segbar {
+            display: flex;
+            height: 0.625rem;
+            margin: 0.5rem 0.25rem 0.4rem;
+            border-radius: 999px;
+            background: #e8ecf1;
+            overflow: hidden;
+        }
+
+        .kb-segbar i {
+            display: block;
+            height: 100%;
+        }
+
         .activity-column {
             width: 100%;
             min-width: 0;
@@ -16329,164 +16509,51 @@
                                     <div class="stat-label">AI操作</div>
                                 </div>
                             </div>
-                            <div class="stat-card">
-                                <div class="stat-icon purple"><svg xmlns="http://www.w3.org/2000/svg" width="18"
-                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-stat-bookmarks">--</div>
-                                    <div class="stat-label">书签总数</div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon yellow"><svg xmlns="http://www.w3.org/2000/svg" width="18"
-                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-stat-bookmarks-padding">--</div>
-                                    <div class="stat-label">未解析书签</div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon blue"><svg xmlns="http://www.w3.org/2000/svg" width="18"
-                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-stat-bookmarks-ready">--</div>
-                                    <div class="stat-label">已解析书签</div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon cyan"><svg xmlns="http://www.w3.org/2000/svg" width="18"
-                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-stat-bookmarks-dead">--</div>
-                                    <div class="stat-label">死链书签</div>
-                                </div>
-                            </div>
-
-                            <div class="stat-card">
-                                <div class="stat-icon purple"><svg xmlns="http://www.w3.org/2000/svg" width="18"
-                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-skill-count">--</div>
-                                    <div class="stat-label">skill总数</div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon green"><svg xmlns="http://www.w3.org/2000/svg" width="18"
-                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-skill-system">--</div>
-                                    <div class="stat-label">系统skill</div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon orange"><svg xmlns="http://www.w3.org/2000/svg" width="18"
-                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-skill-global">--</div>
-                                    <div class="stat-label">全局skill</div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon cyan"><svg xmlns="http://www.w3.org/2000/svg" width="18"
-                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-skill-project">--</div>
-                                    <div class="stat-label">项目skill</div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon blue"><svg xmlns="http://www.w3.org/2000/svg" width="18"
-                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-skill-enabled">--</div>
-                                    <div class="stat-label">启用skill</div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon purple"><svg xmlns="http://www.w3.org/2000/svg" width="18"
-                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-skill-sdisabled">--</div>
-                                    <div class="stat-label">停用skill</div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon green"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
-                                        stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-                                        stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
-                                        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-mcp-count">--</div>
-                                    <div class="stat-label">mcp总数</div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon orange"><svg viewBox="0 0 24 24" width="18" height="18"
-                                        fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-                                        stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
-                                        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-mcp-connected">--</div>
-                                    <div class="stat-label">已连接mcp</div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon cyan"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
-                                        stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-                                        stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
-                                        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-mcp-disconnected">--</div>
-                                    <div class="stat-label">已断开mcp</div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon blue"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
-                                        stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-                                        stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
-                                        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-mcp-failed">--</div>
-                                    <div class="stat-label">失败mcp</div>
-                                </div>
-                            </div>
                         </div>
 
                         <div id="kb-dashboard-content" style="display:none;">
+                            <!-- 标签数据统计：书签 / skill / MCP（混合图形：环形进度 + 分段条 + 状态条） -->
+                            <div class="activity-section-three">
+                                <!-- 书签：环形进度（已解析率）+ 状态构成数字 -->
+                                <div class="chart-card">
+                                    <div class="chart-title kb-card-title">
+                                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                                            stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
+                                            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                                        </svg>书签分布
+                                        <span class="kb-chart-total" id="kb-bm-total"></span>
+                                    </div>
+                                    <div class="kb-dist-body" id="kb-bm-body"></div>
+                                </div>
+
+                                <!-- skill：按来源分段的堆叠条，段内再分启用/停用 -->
+                                <div class="chart-card">
+                                    <div class="chart-title kb-card-title">
+                                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                                            stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
+                                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                                        </svg>技能分布
+                                        <span class="kb-chart-total" id="kb-skill-total"></span>
+                                    </div>
+                                    <div class="kb-dist-body" id="kb-skill-body"></div>
+                                </div>
+
+                                <!-- MCP：一条状态构成条（已连接 / 已断开 / 失败） -->
+                                <div class="chart-card">
+                                    <div class="chart-title kb-card-title">
+                                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                                            stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
+                                            <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                                        </svg>MCP 分布
+                                        <span class="kb-chart-total" id="kb-mcp-total"></span>
+                                    </div>
+                                    <div class="kb-dist-body" id="kb-mcp-body"></div>
+                                </div>
+                            </div>
+
                             <div class="activity-section">
                                 <!-- 文档类型分布 -->
                                 <div class="chart-card">
@@ -50572,10 +50639,6 @@ kanban-plugin: basic
                     document.getElementById('kb-stat-chunks').textContent = kbStatus.chunk_count || 0;
                     document.getElementById('kb-stat-vectors').textContent = kbStatus.vector_count || 0;
                     document.getElementById('kb-stat-storage').textContent = scanData?.storage_size || 0;
-                    document.getElementById('kb-stat-bookmarks').textContent = (bmStats && bmStats.total) ? bmStats.total : 0;
-                    document.getElementById('kb-stat-bookmarks-padding').textContent = (bmStats && bmStats.pending) ? bmStats.pending : 0;
-                    document.getElementById('kb-stat-bookmarks-dead').textContent = (bmStats && bmStats.dead) ? bmStats.dead : 0;
-                    document.getElementById('kb-stat-bookmarks-ready').textContent = (bmStats && bmStats.ready) ? bmStats.ready : 0;
 
                     if (statsRow1) statsRow1.style.display = '';
 
@@ -50586,17 +50649,8 @@ kanban-plugin: basic
                     const unindexed = Math.max(0, _scanFileList.length - (kbStatus.file_count || 0));
                     document.getElementById('kb-stat-unindexed').textContent = unindexed;
 
-                    document.getElementById('kb-skill-count').textContent = skill?.total || 0;
-                    document.getElementById('kb-skill-system').textContent = skill?.system_count || 0;
-                    document.getElementById('kb-skill-global').textContent = skill?.global_count || 0;
-                    document.getElementById('kb-skill-project').textContent = skill?.project_count || 0;
-                    document.getElementById('kb-skill-enabled').textContent = skill?.enabled_count || 0;
-                    document.getElementById('kb-skill-sdisabled').textContent = skill?.disabled_count || 0;
-
-                    document.getElementById('kb-mcp-count').textContent = mcp?.total || 0;
-                    document.getElementById('kb-mcp-connected').textContent = mcp?.connected_count || 0;
-                    document.getElementById('kb-mcp-disconnected').textContent = mcp?.disconnected_count || 0;
-                    document.getElementById('kb-mcp-failed').textContent = mcp?.failed_count || 0;
+                    // 书签 / skill / MCP：混合图形（环形进度 + 分段条 + 状态条），见 renderDistributionCards
+                    renderDistributionCards(bmStats, skill, mcp);
 
                     renderTypeDistribution(scanData?.type_distribution);
                     renderHealthDetails(kbStatus, scanData);
@@ -50620,6 +50674,161 @@ kanban-plugin: basic
                 statusDot.className = 'kb-status-dot error';
                 statusText.textContent = '加载失败';
             }
+        }
+
+        /**
+         * 标签数据统计（书签 / skill / MCP）：**混合图形**。
+         *
+         * 为什么不用饼图：这三类都是「总数 + 构成」，且真实数据常一边倒（例如书签
+         * 1110 条全部是 pending、skill 全部是系统内置），饼图会退化成"一个满圆"，
+         * 占比信息量为零；而且 0 值扇区不可见、1/4 卡宽下外置标签会互相挤压。
+         * 因此按数据特性分别选型：
+         *   - 书签：环形进度表达「已解析率」+ 右侧状态构成（`dead` 是独立标记位，
+         *           会与 ready/pending/failed 重叠，故只列数字、不进构成）；
+         *   - skill：按来源分段的横向堆叠条，段内再分启用/停用（两个正交维度同图表达）；
+         *   - MCP：一条状态构成条（connected / disconnected / failed 三者互斥）。
+         *
+         * 三者都用 DOM/CSS（不建 ECharts 实例）：小尺寸下更清晰，也不受"隐藏容器
+         * 初始化尺寸为 0"的影响；颜色用语义色（绿=正常、橙=待处理、红=失败、灰=断开）。
+         */
+        function renderDistributionCards(bmStats, skill, mcp) {
+            renderBookmarkRing(bmStats);
+            renderSkillScopeBars(skill);
+            renderMcpStatusBar(mcp);
+        }
+
+        /** 书签：环形进度（已解析率）+ 状态构成数字 */
+        function renderBookmarkRing(bm) {
+            const body = document.getElementById('kb-bm-body');
+            if (!body) return;
+            const total = Number(bm?.total || 0);
+            const ready = Number(bm?.ready || 0);
+            const pending = Number(bm?.pending || 0);
+            const failed = Number(bm?.failed || 0);
+            const dead = Number(bm?.dead || 0);
+
+            const totalEl = document.getElementById('kb-bm-total');
+            if (totalEl) totalEl.textContent = total ? `共 ${total} 条` : '';
+
+            if (!total) {
+                body.innerHTML = '<div class="kb-dist-empty">暂无书签数据</div>';
+                return;
+            }
+
+            const pct = Math.max(0, Math.min(100, Math.round((ready / total) * 100)));
+            const facts = [
+                ['#16a34a', '已解析', ready],
+                ['#ea580c', '未解析', pending],
+                ['#dc2626', '失败', failed],
+                ['#94a3b8', '死链（标记）', dead],
+            ].map(([color, label, n]) =>
+                `<div><i class="kb-dot" style="background:${color}"></i>${label}<b>${n}</b></div>`
+            ).join('');
+
+            body.innerHTML = `
+                <div class="kb-dist">
+                    <div class="kb-ring" title="已解析 ${ready} / 共 ${total}（${pct}%）"
+                        style="background: conic-gradient(#16a34a 0% ${pct}%, #e8ecf1 ${pct}% 100%);">
+                        <div class="kb-ring-hole"><b>${pct}%</b><em>已解析</em></div>
+                    </div>
+                    <div class="kb-dist-facts">${facts}</div>
+                </div>`;
+        }
+
+        /** skill：按来源（系统/全局/项目）分段的堆叠条，段内再分启用/停用 */
+        function renderSkillScopeBars(skill) {
+            const body = document.getElementById('kb-skill-body');
+            if (!body) return;
+            const total = Number(skill?.total || 0);
+
+            const totalEl = document.getElementById('kb-skill-total');
+            if (totalEl) totalEl.textContent = total ? `共 ${total} 个` : '';
+
+            if (!total) {
+                body.innerHTML = '<div class="kb-dist-empty">暂无技能</div>';
+                return;
+            }
+
+            // per-scope 启用数由后端 `SkillStats.{scope}_enabled` 提供；旧后端缺字段时退化为整段启用。
+            const scopes = [
+                {
+                    label: '系统',
+                    count: Number(skill?.system_count || 0),
+                    enabled: Number(skill?.system_enabled ?? skill?.system_count ?? 0),
+                    color: '#7c3aed',
+                },
+                {
+                    label: '全局',
+                    count: Number(skill?.global_count || 0),
+                    enabled: Number(skill?.global_enabled ?? skill?.global_count ?? 0),
+                    color: '#ea580c',
+                },
+                {
+                    label: '项目',
+                    count: Number(skill?.project_count || 0),
+                    enabled: Number(skill?.project_enabled ?? skill?.project_count ?? 0),
+                    color: '#0891b2',
+                },
+            ];
+            // 条长按各来源数量相对最大值缩放，便于横向比较；段内实色=启用、浅色=停用。
+            const max = Math.max(1, ...scopes.map(s => s.count));
+            const rows = scopes.map(s => {
+                const width = Math.round((s.count / max) * 100);
+                const enabled = Math.max(0, Math.min(s.count, s.enabled));
+                const disabled = Math.max(0, s.count - enabled);
+                const fill = s.count
+                    ? `<span class="kb-bar-fill" style="width:${width}%">
+                           <i style="flex:${enabled};background:${s.color}"></i>
+                           <i style="flex:${disabled};background:${s.color}40"></i>
+                       </span>`
+                    : '';
+                return `<div class="kb-bar-row" title="${s.label}：共 ${s.count} 个（启用 ${enabled} / 停用 ${disabled}）">
+                    <span class="kb-bar-label">${s.label}</span>
+                    <span class="kb-bar-track">${fill}</span>
+                    <span class="kb-bar-num">${s.count}</span>
+                </div>`;
+            }).join('');
+            const legend = scopes
+                .map(s => `<span><i class="kb-dot" style="background:${s.color}"></i>${s.label} ${s.count}</span>`)
+                .join('');
+
+            body.innerHTML = `
+                <div class="kb-bars">${rows}</div>
+                <div class="kb-legend">${legend}
+                    <span style="margin-left:auto">启用 ${Number(skill?.enabled_count || 0)} · 停用 ${Number(skill?.disabled_count || 0)}</span>
+                </div>`;
+        }
+
+        /** MCP：一条状态构成条（已连接 / 已断开 / 失败，三者互斥且相加等于总数） */
+        function renderMcpStatusBar(mcp) {
+            const body = document.getElementById('kb-mcp-body');
+            if (!body) return;
+            const total = Number(mcp?.total || 0);
+
+            const totalEl = document.getElementById('kb-mcp-total');
+            if (totalEl) totalEl.textContent = total ? `共 ${total} 个` : '';
+
+            if (!total) {
+                body.innerHTML = '<div class="kb-dist-empty">暂无 MCP 服务</div>';
+                return;
+            }
+
+            const parts = [
+                { label: '已连接', n: Number(mcp?.connected_count || 0), color: '#16a34a' },
+                { label: '已断开', n: Number(mcp?.disconnected_count || 0), color: '#94a3b8' },
+                { label: '失败', n: Number(mcp?.failed_count || 0), color: '#dc2626' },
+            ];
+            const segs = parts
+                .filter(p => p.n > 0)
+                .map(p => `<i style="width:${(p.n / total) * 100}%;background:${p.color}" title="${p.label} ${p.n}"></i>`)
+                .join('');
+
+            body.innerHTML = `
+                <div class="kb-segbar">${segs}</div>
+                <div class="kb-legend">${parts
+                    .map(p => `<span><i class="kb-dot" style="background:${p.color}"></i>${p.label} ${p.n}</span>`)
+                    .join('')}
+                </div>`;
         }
 
         function renderTypeDistribution(typeDist) {
