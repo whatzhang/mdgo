@@ -520,6 +520,33 @@ impl WatcherService {
     }
 }
 
+/// Agent 写入静默窗口（毫秒）：最近一次 Agent 写文件后这段时间内不触发 watcher 索引。
+///
+/// 语义：Agent 的一次大文档改写通常由多次 `edit` 组成（每次都是一次落盘）。若每次都
+/// 走「2s 防抖 → 整篇重解析/重分块/重嵌入」，整轮编辑期间 CPU 会持续被打满；
+/// 等编辑停止（静默窗口）后再索引一次，结果相同、开销只付一次。
+const AGENT_INDEX_QUIET_MS: u64 = 8_000;
+
+/// 是否应因「Agent 正在连续编辑」而暂缓 watcher 索引（纯函数，便于单测）。
+fn defer_for_agent_write(now_ms: u64, last_agent_write_ms: u64) -> bool {
+    last_agent_write_ms > 0 && now_ms.saturating_sub(last_agent_write_ms) < AGENT_INDEX_QUIET_MS
+}
+
+#[cfg(test)]
+mod agent_write_tests {
+    use super::*;
+
+    /// Agent 连续编辑期间（静默窗口内）暂缓索引；窗口外/从未写过则正常处理。
+    #[test]
+    fn agent_write_quiet_window_defers_indexing() {
+        assert!(!defer_for_agent_write(10_000, 0), "从未写过 → 不抑制");
+        assert!(defer_for_agent_write(10_000, 9_500), "刚写过 → 抑制");
+        assert!(defer_for_agent_write(10_000, 2_001), "窗口边界内 → 抑制");
+        assert!(!defer_for_agent_write(10_000, 2_000), "恰好 8s → 不再抑制");
+        assert!(!defer_for_agent_write(10_000, 1_000), "早已超过窗口 → 不抑制");
+    }
+}
+
 /// 防抖处理主循环
 ///
 /// 策略：
@@ -604,6 +631,21 @@ async fn run_debounce_loop(
                     if now.duration_since(start) < burst_max_wait
                         && now.duration_since(last) < burst_quiet
                     {
+                        continue;
+                    }
+                }
+
+                // Agent 连续编辑抑制：一次大文档改写会连续落盘多次，逐次整篇重索引没有意义
+                // （每次都要重解析/重分块/重嵌入），等编辑停下来（静默窗口）再统一索引一次。
+                if !pending.is_empty() {
+                    let now_ms = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis() as u64)
+                        .unwrap_or(0);
+                    if defer_for_agent_write(
+                        now_ms,
+                        crate::core::agent::tools::last_agent_write_ms(),
+                    ) {
                         continue;
                     }
                 }

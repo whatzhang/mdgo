@@ -2769,7 +2769,11 @@ async fn agent_generate_loop_v2(
 
     let mut config = LoopConfig::new(crate::core::agent::DEFAULT_MAX_TURNS, system);
     config.max_tokens = llm_cfg.max_tokens;
-    // 溢出重试的压缩回调待会话压缩接入后提供（当前 None：溢出按失败处理，防死循环）
+    // 上下文溢出恢复：OverflowRetryHook 返回 Retry 时，这里按 **step 边界**遮蔽较旧事件
+    // 并生成确定性摘要后再发（不调用 LLM，保证恢复路径本身不会再溢出）。
+    config.retry_prepare = Some(Arc::new(
+        |session: &mut crate::core::r#loop::Session| session.emergency_compact(),
+    ));
 
     // 3) 工具注册表（迁移工具 + 技能激活 + 反思/澄清 + 桥接/外部/MCP）+ 业务 Hook + 事件 sink
     let search_sink = search_config.search_sink.clone();
@@ -2799,6 +2803,8 @@ async fn agent_generate_loop_v2(
     if let Some(gate) = state.approval_gate.clone() {
         agent.add_hook(Arc::new(crate::core::agent::loop_hooks::ApprovalHook { gate }));
     }
+    // 上下文溢出 → 压缩后重试（避免"溢出即整轮失败"；压缩动作见 config.retry_prepare）
+    agent.add_hook(Arc::new(crate::core::agent::loop_hooks::OverflowRetryHook));
     // 技能指令注入 + active_tools 窄化（P1-5 约束摘要每轮常驻；MCP 工具名并入可见性）
     agent.add_hook(Arc::new(crate::core::agent::loop_hooks::SkillInstructionHook {
         state: active_skills.clone(),
@@ -2907,6 +2913,9 @@ async fn agent_generate_loop_v2(
             record_skill_execution(&metrics, &dir, inputs, success, error_code.as_deref(), &rid);
         });
     };
+    // MaxTurns 不是"成功"：内容可能只是半截。收尾按成功处理（保留已生成内容），
+    // 但额外发一个事件让前端用既有提示框提醒"轮次用尽、可继续"。
+    let hit_max_turns = matches!(&outcome, TurnOutcome::MaxTurns { .. });
     match &outcome {
         TurnOutcome::Failed { err, .. } if full_content.trim().is_empty() => {
             log::warn!("[agent_query_v3] 流式失败 request_id={} err={}", request_id, err);
@@ -2939,6 +2948,16 @@ async fn agent_generate_loop_v2(
             emit_pending_trace_events(app, &request_id);
             state.agent_tasks.finish(&request_id, AgentTaskStatus::Done);
             record_exec(true, None);
+            if hit_max_turns {
+                // 前端用既有 showNotification 提示"轮次用尽，可回复继续"
+                let _ = app.emit(
+                    "agent:max-turns",
+                    serde_json::json!({
+                        "request_id": request_id,
+                        "max_turns": crate::core::agent::DEFAULT_MAX_TURNS,
+                    }),
+                );
+            }
 
             // C2：证据校验（默认关）——回答中未获检索上下文支撑的断言附加标注。
             // 轻量规则版（零 LLM 调用）；开启会增加一次规则计算，不增加 LLM 延迟。

@@ -124,6 +124,17 @@ pdf-extract = { version = "0.7", optional = true }
 # 精确锁定：anydoc 仍处 0.2.x 快速迭代期（0.1.7→0.2.4 约 5 周），且上游**没有 feature flag**
 # （PDF 解析栈必然随包编译），因此版本漂移的风险全靠精确锁定 + 适配层隔离（见 loader.rs）。
 anydoc = "=0.2.4"
+# EPUB 目录/书脊结构提取（EPUB 3 `nav.xhtml` + EPUB 2 `toc.ncx`）：驱动右侧大纲面板（G4）。
+# 为什么必须另配一个：anydoc 的 EPUB 实现只按 spine 顺序拼接章节正文，**完全不读 nav/ncx**
+# （`anydoc-0.2.4/src/formats/epub/mod.rs` 无任何 nav/ncx 代码），所以正文出得来、真目录出不来。
+# 版本口径：rbook 0.7.10 与 anydoc 共用同一批依赖（zip 8.6 / quick-xml 0.41 / indexmap 2.x /
+# thiserror 2.x），`cargo tree` 实测**不新增任何 crate 版本**；
+# `default-features = false` 去掉只写不读的 write 半边（本仓只读 EPUB，不生成）。
+rbook = { version = "0.7.10", default-features = false, features = ["threadsafe"] }
+# EPUB 内嵌图片导出与 `<img src>` 重写（G1）：需要直接读/重建 zip 容器。
+# 版本与 anydoc 内部所用 zip 完全一致（8.6 / deflate，default-features=false），
+# cargo 特性合并后仍是**单份**依赖，不新增 crate 版本。
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
 # 内容哈希（Plan B v2 / Phase 3 转换缓存的来源身份；方案 §5.6 要求 SHA-256，
 # 不用 FNV——后者仅保留给既有 embedding 缓存的文本身份契约）
 sha2 = "0.11"

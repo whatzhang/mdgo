@@ -25,13 +25,13 @@ use tauri::Manager;
 
 use crate::core::agent::limits::{
     ASK_USER_TIMEOUT_SECS, KB_TOP_K_SCHEMA_MAX, MAX_GREP_FILES, MAX_LIST_ITEMS, MAX_TOP_K,
-    POMODORO_MINUTES_MAX, READ_PATHS_MAX,
+    POMODORO_MINUTES_MAX, READ_PATHS_MAX, MAX_READ_RANGES,
 };
 use crate::core::r#loop::{
     HashMapToolRegistry, Tool, ToolError, ToolRunContext, ToolSpec,
 };
 
-use super::tools::{glob_files, grep_files, list_files, read, read_document};
+use super::tools::{glob_files, grep_files, list_files, read_document};
 use super::{code_search, kb_search, KbSearchConfig};
 
 // ─────────────────────────── 纯函数（可单测） ───────────────────────────
@@ -74,8 +74,12 @@ pub fn parse_str_list(v: &Value) -> Vec<String> {
     }
 }
 
-/// 解析 read 参数：返回 `(单路径 Option, 多路径 Vec, offset)`。
-pub fn parse_read_args(args: &Value) -> (Option<String>, Vec<String>, usize) {
+/// 解析 read 参数：返回 `(单路径 Option, 多路径 Vec, 读取方式 ReadSpec)`。
+///
+/// 读取方式优先级：`ranges` > `start_line/end_line` > `offset`（字符，兼容旧调用）。
+pub fn parse_read_args(
+    args: &Value,
+) -> (Option<String>, Vec<String>, crate::core::agent::tools::ReadSpec) {
     let single = args
         .get("path")
         .and_then(|s| s.as_str())
@@ -92,11 +96,44 @@ pub fn parse_read_args(args: &Value) -> (Option<String>, Vec<String>, usize) {
                 .collect()
         })
         .unwrap_or_default();
-    let offset = args
-        .get("offset")
-        .and_then(|o| o.as_u64())
-        .unwrap_or(0) as usize;
-    (single, multi, offset)
+    let offset = args.get("offset").and_then(|o| o.as_u64()).unwrap_or(0) as usize;
+    let start_line = args
+        .get("start_line")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize)
+        .filter(|v| *v > 0);
+    let end_line = args
+        .get("end_line")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize)
+        .filter(|v| *v > 0);
+    let ranges: Vec<(usize, usize)> = args
+        .get("ranges")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|it| {
+                    let a = it.as_array()?;
+                    let s = a.first()?.as_u64()? as usize;
+                    let e = a.get(1).and_then(|v| v.as_u64()).unwrap_or(s as u64) as usize;
+                    (s > 0 && e >= s).then_some((s, e))
+                })
+                .take(MAX_READ_RANGES)
+                .collect()
+        })
+        .unwrap_or_default();
+    // 只给 end_line、不给 start_line 时：从第 1 行读到 end_line
+    let start_line = start_line.or(if end_line.is_some() { Some(1) } else { None });
+    (
+        single,
+        multi,
+        crate::core::agent::tools::ReadSpec {
+            offset,
+            start_line,
+            end_line,
+            ranges,
+        },
+    )
 }
 
 // ─────────────────────────── 工具实现 ───────────────────────────
@@ -277,7 +314,7 @@ impl Tool for ReadTool {
         SPEC.get_or_init(|| {
             read_only_spec(
                 "read",
-                "读取文件内容，单次最多返回 8192 字符，支持分页续读。支持三类路径：1) 知识库目录内的相对路径（如 docs/note.md，可读取打开目录中的所有文件，含子目录）；2) 当前激活技能的参考文档路径（如 references/flowchart.md，通常由技能 SKILL.md 中以相对链接给出；未激活技能时无法读取，需先 activate_skill）；3) 已激活技能的 SKILL.md 完整正文路径（如 outline-mindmap/SKILL.md，技能正文已随系统启动加载进内存，直接读取不落盘，激活时正文被截断可据此获取完整内容）。当返回内容末尾提示\"内容过长\"时，内容只显示了第 1~8192 字符，若需要文件后续部分，请再次调用本工具并指定 offset 参数（如 offset=8192）继续读取，不要从头重读全文。如需一次读取多个文件，可用 paths 数组并行读取（最多 10 个）。",
+                "读取文件内容（输出带行号，便于精确定位与后续行范围编辑）。默认按行分页，单页约 8192 字符；三种读取方式：1) 不带参数读首屏；2) `start_line`/`end_line` 按行区间读；3) `ranges` 一次读多个行区间。支持三类路径：知识库内相对路径（如 docs/note.md）；当前激活技能的参考文档（如 references/flowchart.md，需先 activate_skill）；已激活技能的 SKILL.md 完整正文（如 outline-mindmap/SKILL.md）。\n\n大文件（>2000 行或 >200KB）建议先用 `md_outline` 看标题结构，再用 `read_section`/`start_line`+`end_line` 精确读取，不要从第 1 行顺序翻到末尾；页尾会给出下一次的 start_line。行号前缀 `123| ` 仅用于定位，编辑时不要把它复制进 old_string。一次读多个文件用 `paths`（最多 10 个）。",
                 json!({
                     "type": "object",
                     "additionalProperties": false,
@@ -294,7 +331,26 @@ impl Tool for ReadTool {
                         },
                         "offset": {
                             "type": "integer",
-                            "description": "字符偏移量（从 0 开始），用于分页续读长文件。首次读取省略；截断提示中会给出下次应使用的 offset"
+                            "description": "字符偏移量（从 0 开始，兼容旧调用）。大文件请优先用 start_line/end_line"
+                        },
+                        "start_line": {
+                            "type": "integer",
+                            "description": "起始行号（1 起）。与 end_line 搭配按行区间读取；输出每行带 `行号| ` 前缀（前缀仅用于定位，不要复制进 old_string）"
+                        },
+                        "end_line": {
+                            "type": "integer",
+                            "description": "结束行号（含）。省略时读到当前位置的字符上限"
+                        },
+                        "ranges": {
+                            "type": "array",
+                            "maxItems": MAX_READ_RANGES,
+                            "items": {
+                                "type": "array",
+                                "items": { "type": "integer" },
+                                "minItems": 2,
+                                "maxItems": 2
+                            },
+                            "description": "一次读取多个行区间，如 [[10,40],[120,160]]（最多 8 段）。适合同时看多处上下文，省去多次往返"
                         }
                     },
                     "anyOf": [
@@ -307,7 +363,7 @@ impl Tool for ReadTool {
     }
 
     async fn execute(&self, args: Value, ctx: &ToolRunContext<'_>) -> Result<Value, ToolError> {
-        let (single, multi, offset) = parse_read_args(&args);
+        let (single, multi, spec) = parse_read_args(&args);
         if single.is_none() && multi.is_empty() {
             return Err(ToolError::InvalidArgs("文件路径为空，请提供 path 或 paths 参数".into()));
         }
@@ -322,8 +378,10 @@ impl Tool for ReadTool {
             let mut stream = futures_util::stream::iter(multi.iter().cloned())
                 .map(|p| {
                     let cfg = self.cfg.clone();
+                    // 多文件模式：每个文件读取同一区间（首屏或指定行段）
+                    let sub = spec.clone();
                     async move {
-                        let out = read(&cfg, &p, 0).await;
+                        let out = crate::core::agent::tools::read_with(&cfg, &p, sub).await;
                         (p, out)
                     }
                 })
@@ -347,9 +405,15 @@ impl Tool for ReadTool {
         }
 
         let rel = single.expect("multi 为空时 single 必为 Some");
-        let preview = if offset == 0 { rel.clone() } else { format!("{rel} (offset={offset})") };
+        let preview = match (spec.start_line, spec.end_line, spec.ranges.len(), spec.offset) {
+            (Some(s), Some(e), _, _) => format!("{rel} (行 {s}-{e})"),
+            (Some(s), None, _, _) => format!("{rel} (行 {s}-)"),
+            (_, _, n, _) if n > 0 => format!("{rel} ({} 个行区间)", n),
+            (_, _, _, o) if o > 0 => format!("{rel} (offset={o})"),
+            _ => rel.clone(),
+        };
         ctx.sink.on_call(ctx.call_id, "read", &preview, &args);
-        match read(&self.cfg, &rel, offset).await {
+        match crate::core::agent::tools::read_with(&self.cfg, &rel, spec.clone()).await {
             Ok(text) => {
                 let summary = format!("{} 字符", text.chars().count());
                 ctx.sink.on_result(ctx.call_id, "read", true, &summary, Some(&text));
@@ -693,6 +757,13 @@ pub fn build_loop_tool_registry(cfg: KbSearchConfig) -> HashMapToolRegistry {
     reg.register(Arc::new(WriteTool::new(cfg.clone())));
     reg.register(Arc::new(EditTool::new(cfg.clone())));
     reg.register(Arc::new(MultiEditTool::new(cfg.clone())));
+    // 大文档结构工具：先看结构、按章节读写、按问题选段、unified diff 批量改
+    reg.register(Arc::new(MdOutlineTool::new(cfg.clone())));
+    reg.register(Arc::new(ReadSectionTool::new(cfg.clone())));
+    reg.register(Arc::new(ReplaceSectionTool::new(cfg.clone())));
+    reg.register(Arc::new(InsertAfterHeadingTool::new(cfg.clone())));
+    reg.register(Arc::new(ReadRelevantTool::new(cfg.clone())));
+    reg.register(Arc::new(ApplyPatchTool::new(cfg.clone())));
     reg.register(Arc::new(DeleteTool::new(cfg.clone())));
     reg.register(Arc::new(GitStatusTool::new(cfg.clone())));
     reg.register(Arc::new(GitDiffTool::new(cfg.clone())));
@@ -2284,7 +2355,7 @@ impl Tool for EditTool {
         SPEC.get_or_init(|| {
             ToolSpec::new(
                 "edit",
-                "编辑当前打开知识库目录内的一个文本文件：将文件中与 old_string 完全匹配且唯一出现的片段替换为 new_string。只允许操作当前打开目录内的文件，不能操作目录外的文件，也不允许修改 .mdgo 内部数据。修改前建议先用 read 读取文件确认原文。",
+                "编辑当前打开知识库目录内的一个文本文件。三种互斥方式：\n1) 行范围替换（**大文档推荐**）：给 `start_line`/`end_line` + `new_string`，直接替换这些行，无需复制原正文；\n2) 原文替换：给 `old_string` + `new_string`，要求唯一匹配（匹配时忽略 CRLF 与行尾空白差异）；\n3) 批量同串替换：`old_string` + `new_string` + `replace_all=true`。\n\n`old_string` 可含**省略锚点**：独占一行的 `…`，表示中段省略，只写「首锚点 … 尾锚点」，用于替换大段内容（如整章）。写回会保持文件原有换行风格。只允许操作当前打开目录内的文件，不允许修改 .mdgo 内部数据。",
                 json!({
                     "type": "object",
                     "additionalProperties": false,
@@ -2295,14 +2366,26 @@ impl Tool for EditTool {
                         },
                         "old_string": {
                             "type": "string",
-                            "description": "需替换的原文片段（必须与文件内容完全一致且唯一出现）"
+                            "description": "需替换的原文片段（唯一出现；可含独占一行的省略锚点 `…` 表示中段省略）。与 start_line 二选一"
                         },
                         "new_string": {
                             "type": "string",
                             "description": "替换后的新内容"
+                        },
+                        "replace_all": {
+                            "type": "boolean",
+                            "description": "为 true 时替换 old_string 的全部出现（默认 false，要求唯一）"
+                        },
+                        "start_line": {
+                            "type": "integer",
+                            "description": "行范围替换的起始行（1 起，含）。与 end_line 搭配，和 old_string 互斥"
+                        },
+                        "end_line": {
+                            "type": "integer",
+                            "description": "行范围替换的结束行（1 起，含）。省略时等于 start_line"
                         }
                     },
-                    "required": ["rel_path", "old_string", "new_string"]
+                    "required": ["rel_path", "new_string"]
                 }),
             )
         })
@@ -2315,9 +2398,28 @@ impl Tool for EditTool {
         if rel.is_empty() {
             return Err(ToolError::InvalidArgs("rel_path 为空".into()));
         }
-        let preview = format!("{rel}: {} → {} 字符", old.chars().count(), new.chars().count());
+        let replace_all = args.get("replace_all").and_then(|v| v.as_bool()).unwrap_or(false);
+        let start_line = args.get("start_line").and_then(|v| v.as_u64()).map(|v| v as usize);
+        let end_line = args.get("end_line").and_then(|v| v.as_u64()).map(|v| v as usize);
+        let preview = match start_line {
+            Some(s) => format!("{rel}: 行 {s}-{} → {} 字符", end_line.unwrap_or(s), new.chars().count()),
+            None => format!(
+                "{rel}: {} → {} 字符{}",
+                old.chars().count(),
+                new.chars().count(),
+                if replace_all { "（全部）" } else { "" }
+            ),
+        };
         ctx.sink.on_call(ctx.call_id, "edit", &preview, &args);
-        match super::tools::edit_file(&self.cfg, &rel, &old, &new).await {
+        let spec = super::tools::EditSpec {
+            rel_path: &rel,
+            old_string: &old,
+            new_string: &new,
+            replace_all,
+            start_line,
+            end_line,
+        };
+        match super::tools::edit_file_with(&self.cfg, spec).await {
             Ok(text) => {
                 ctx.sink.on_result(ctx.call_id, "edit", true, &text, Some(&text));
                 Ok(Value::String(text))
@@ -2348,7 +2450,7 @@ impl Tool for MultiEditTool {
         SPEC.get_or_init(|| {
             ToolSpec::new(
                 "multi_edit",
-                "批量编辑当前打开知识库目录内的多个文本文件：每个编辑项为 {rel_path, old_string, new_string}，所有编辑先全量校验（路径安全/UTF-8/old_string 唯一匹配），全部通过后一次性写入。相比逐次调用 edit 节省模型轮次预算；校验失败时不写任何文件。只允许操作打开目录内文件，不允许修改 .mdgo 内部数据。",
+                "批量编辑当前打开知识库目录内的文本文件：每个编辑项为 {rel_path, old_string, new_string, replace_all?}。**同一文件可以有多条编辑**，按数组顺序依次应用在「已应用前序编辑的内容」上（因此第 N 条的 old_string 应匹配第 N-1 条之后的内容）。所有编辑先在内存中全量校验，任一失败即整体拒绝、不写任何文件；全部通过后每个文件只写一次。用于把「一次改多处」压缩进一次工具调用。只允许操作打开目录内文件，不允许修改 .mdgo 内部数据。",
                 json!({
                     "type": "object",
                     "additionalProperties": false,
@@ -2359,12 +2461,13 @@ impl Tool for MultiEditTool {
                                 "type": "object",
                                 "properties": {
                                     "rel_path": { "type": "string", "description": "文件相对路径" },
-                                    "old_string": { "type": "string", "description": "需替换的原文片段（必须唯一出现）" },
-                                    "new_string": { "type": "string", "description": "替换后的新内容" }
+                                    "old_string": { "type": "string", "description": "需替换的原文片段（唯一出现；可含省略锚点 `…`）" },
+                                    "new_string": { "type": "string", "description": "替换后的新内容" },
+                                    "replace_all": { "type": "boolean", "description": "是否替换该片段的全部出现（默认 false）" }
                                 },
                                 "required": ["rel_path", "old_string", "new_string"]
                             },
-                            "description": "编辑项数组（最多 10 个）"
+                            "description": "编辑项数组（最多 10 个；同一文件可重复出现）"
                         }
                     },
                     "required": ["edits"]
@@ -2374,7 +2477,7 @@ impl Tool for MultiEditTool {
     }
 
     async fn execute(&self, args: Value, ctx: &ToolRunContext<'_>) -> Result<Value, ToolError> {
-        let edits: Vec<(String, String, String)> = args
+        let edits: Vec<super::tools::MultiEditItem> = args
             .get("edits")
             .and_then(|e| e.as_array())
             .map(|arr| {
@@ -2383,7 +2486,7 @@ impl Tool for MultiEditTool {
                         let rel = it.get("rel_path").and_then(|s| s.as_str()).unwrap_or("").trim().to_string();
                         let old = it.get("old_string").and_then(|s| s.as_str()).unwrap_or("").to_string();
                         let new = it.get("new_string").and_then(|s| s.as_str()).unwrap_or("").to_string();
-                        if rel.is_empty() { None } else { Some((rel, old, new)) }
+                        if rel.is_empty() { None } else { Some(super::tools::MultiEditItem { rel_path: rel, old_string: old, new_string: new, replace_all: it.get("replace_all").and_then(|v| v.as_bool()).unwrap_or(false) }) }
                     })
                     .collect()
             })
@@ -2393,13 +2496,334 @@ impl Tool for MultiEditTool {
         }
         let preview = format!("{} 个文件", edits.len());
         ctx.sink.on_call(ctx.call_id, "multi_edit", &preview, &args);
-        match super::tools::multi_edit_files(&self.cfg, &edits).await {
+        match super::tools::multi_edit_batch(&self.cfg, &edits).await {
             Ok(text) => {
                 ctx.sink.on_result(ctx.call_id, "multi_edit", true, &text, Some(&text));
                 Ok(Value::String(text))
             }
             Err(e) => {
                 ctx.sink.on_result(ctx.call_id, "multi_edit", false, &e, Some(&e));
+                Err(ToolError::Failed(e))
+            }
+        }
+    }
+}
+
+// ─────────── Markdown 结构工具（大文档：先看结构，再按章节读写） ───────────
+
+/// `md_outline`：Markdown 标题树（层级 / 标题 / 行区间 / 字符数）。
+pub struct MdOutlineTool {
+    cfg: KbSearchConfig,
+}
+
+impl MdOutlineTool {
+    pub fn new(cfg: KbSearchConfig) -> Self {
+        Self { cfg }
+    }
+}
+
+#[async_trait]
+impl Tool for MdOutlineTool {
+    fn spec(&self) -> &ToolSpec {
+        static SPEC: std::sync::OnceLock<ToolSpec> = std::sync::OnceLock::new();
+        SPEC.get_or_init(|| {
+            read_only_spec(
+                "md_outline",
+                "返回 Markdown 文档的标题树：每个标题的层级（# 数量）、标题文本、所在行区间与字符数。大文档（几千行以上）**先调用它**建立全文地图，再配合 read_section / replace_section / read 的行区间精确定位，避免按 8k 字符一页页盲翻。非 Markdown 文本按单个章节返回。",
+                json!({
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "path": { "type": "string", "description": "知识库内相对路径（如 docs/guide.md）" }
+                    },
+                    "required": ["path"]
+                }),
+            )
+        })
+    }
+
+    async fn execute(&self, args: Value, ctx: &ToolRunContext<'_>) -> Result<Value, ToolError> {
+        let rel = args.get("path").and_then(|s| s.as_str()).unwrap_or("").trim().to_string();
+        if rel.is_empty() {
+            return Err(ToolError::InvalidArgs("path 为空".into()));
+        }
+        ctx.sink.on_call(ctx.call_id, "md_outline", &rel, &args);
+        match super::tools::md_outline(&self.cfg, &rel).await {
+            Ok(text) => {
+                let summary = format!("{} 行", text.lines().count());
+                ctx.sink.on_result(ctx.call_id, "md_outline", true, &summary, Some(&text));
+                Ok(Value::String(text))
+            }
+            Err(e) => {
+                ctx.sink.on_result(ctx.call_id, "md_outline", false, &e, Some(&e));
+                Err(ToolError::Failed(e))
+            }
+        }
+    }
+}
+
+/// `read_section`：按标题读取章节（带行号）。
+pub struct ReadSectionTool {
+    cfg: KbSearchConfig,
+}
+
+impl ReadSectionTool {
+    pub fn new(cfg: KbSearchConfig) -> Self {
+        Self { cfg }
+    }
+}
+
+#[async_trait]
+impl Tool for ReadSectionTool {
+    fn spec(&self) -> &ToolSpec {
+        static SPEC: std::sync::OnceLock<ToolSpec> = std::sync::OnceLock::new();
+        SPEC.get_or_init(|| {
+            read_only_spec(
+                "read_section",
+                "按标题读取 Markdown 的一个章节（含标题行，输出带行号）。标题先精确匹配、再大小写不敏感、最后唯一包含匹配；重名或歧义会列出候选。比 read 整篇更省 token，适合大文档精读某一节。",
+                json!({
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "path": { "type": "string", "description": "知识库内相对路径" },
+                        "heading": { "type": "string", "description": "章节标题（可带 # 前缀，如 `## 安装` 或 `安装`）" },
+                        "max_chars": { "type": "integer", "description": "本次返回的最大字符数（默认 8192）" }
+                    },
+                    "required": ["path", "heading"]
+                }),
+            )
+        })
+    }
+
+    async fn execute(&self, args: Value, ctx: &ToolRunContext<'_>) -> Result<Value, ToolError> {
+        let rel = args.get("path").and_then(|s| s.as_str()).unwrap_or("").trim().to_string();
+        let heading = args.get("heading").and_then(|s| s.as_str()).unwrap_or("").to_string();
+        if rel.is_empty() || heading.trim().is_empty() {
+            return Err(ToolError::InvalidArgs("path / heading 不能为空".into()));
+        }
+        let max_chars = args.get("max_chars").and_then(|v| v.as_u64()).unwrap_or(8192) as usize;
+        ctx.sink.on_call(ctx.call_id, "read_section", &format!("{rel} › {heading}"), &args);
+        match super::tools::read_section(&self.cfg, &rel, &heading, max_chars).await {
+            Ok(text) => {
+                let summary = format!("{} 字符", text.chars().count());
+                ctx.sink.on_result(ctx.call_id, "read_section", true, &summary, Some(&text));
+                Ok(Value::String(text))
+            }
+            Err(e) => {
+                ctx.sink.on_result(ctx.call_id, "read_section", false, &e, Some(&e));
+                Err(ToolError::Failed(e))
+            }
+        }
+    }
+}
+
+/// `replace_section`：整节替换（含标题行；内容为空 = 删除该节）。
+pub struct ReplaceSectionTool {
+    cfg: KbSearchConfig,
+}
+
+impl ReplaceSectionTool {
+    pub fn new(cfg: KbSearchConfig) -> Self {
+        Self { cfg }
+    }
+}
+
+#[async_trait]
+impl Tool for ReplaceSectionTool {
+    fn spec(&self) -> &ToolSpec {
+        static SPEC: std::sync::OnceLock<ToolSpec> = std::sync::OnceLock::new();
+        SPEC.get_or_init(|| {
+            ToolSpec::new(
+                "replace_section",
+                "用一个新章节整体替换指定标题的章节（**包含标题行**，替换范围到下一个任意级别标题之前；content 为空即删除该章节）。**大文档改写首选**：不需要复制旧正文，token 只取决于新内容。content 必须自带标题行（如 `## 安装`）。",
+                json!({
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "path": { "type": "string", "description": "知识库内相对路径" },
+                        "heading": { "type": "string", "description": "要替换的章节标题（可带 # 前缀）" },
+                        "content": { "type": "string", "description": "新的完整章节 Markdown（含标题行）；空串表示删除该章节" }
+                    },
+                    "required": ["path", "heading", "content"]
+                }),
+            )
+        })
+    }
+
+    async fn execute(&self, args: Value, ctx: &ToolRunContext<'_>) -> Result<Value, ToolError> {
+        let rel = args.get("path").and_then(|s| s.as_str()).unwrap_or("").trim().to_string();
+        let heading = args.get("heading").and_then(|s| s.as_str()).unwrap_or("").to_string();
+        let content = args.get("content").and_then(|s| s.as_str()).unwrap_or("").to_string();
+        if rel.is_empty() || heading.trim().is_empty() {
+            return Err(ToolError::InvalidArgs("path / heading 不能为空".into()));
+        }
+        ctx.sink.on_call(ctx.call_id, "replace_section", &format!("{rel} › {heading}"), &args);
+        match super::tools::replace_section(&self.cfg, &rel, &heading, &content).await {
+            Ok(text) => {
+                ctx.sink.on_result(ctx.call_id, "replace_section", true, &text, Some(&text));
+                Ok(Value::String(text))
+            }
+            Err(e) => {
+                ctx.sink.on_result(ctx.call_id, "replace_section", false, &e, Some(&e));
+                Err(ToolError::Failed(e))
+            }
+        }
+    }
+}
+
+/// `insert_after_heading`：在标题行之后插入内容。
+pub struct InsertAfterHeadingTool {
+    cfg: KbSearchConfig,
+}
+
+impl InsertAfterHeadingTool {
+    pub fn new(cfg: KbSearchConfig) -> Self {
+        Self { cfg }
+    }
+}
+
+#[async_trait]
+impl Tool for InsertAfterHeadingTool {
+    fn spec(&self) -> &ToolSpec {
+        static SPEC: std::sync::OnceLock<ToolSpec> = std::sync::OnceLock::new();
+        SPEC.get_or_init(|| {
+            ToolSpec::new(
+                "insert_after_heading",
+                "在指定标题行之后插入一段 Markdown（成为该章节的开头）。适合给已有章节补充内容而无需改写整节。",
+                json!({
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "path": { "type": "string", "description": "知识库内相对路径" },
+                        "heading": { "type": "string", "description": "章节标题（可带 # 前缀）" },
+                        "content": { "type": "string", "description": "要插入的 Markdown 内容" }
+                    },
+                    "required": ["path", "heading", "content"]
+                }),
+            )
+        })
+    }
+
+    async fn execute(&self, args: Value, ctx: &ToolRunContext<'_>) -> Result<Value, ToolError> {
+        let rel = args.get("path").and_then(|s| s.as_str()).unwrap_or("").trim().to_string();
+        let heading = args.get("heading").and_then(|s| s.as_str()).unwrap_or("").to_string();
+        let content = args.get("content").and_then(|s| s.as_str()).unwrap_or("").to_string();
+        if rel.is_empty() || heading.trim().is_empty() {
+            return Err(ToolError::InvalidArgs("path / heading 不能为空".into()));
+        }
+        ctx.sink.on_call(ctx.call_id, "insert_after_heading", &format!("{rel} › {heading}"), &args);
+        match super::tools::insert_after_heading(&self.cfg, &rel, &heading, &content).await {
+            Ok(text) => {
+                ctx.sink.on_result(ctx.call_id, "insert_after_heading", true, &text, Some(&text));
+                Ok(Value::String(text))
+            }
+            Err(e) => {
+                ctx.sink.on_result(ctx.call_id, "insert_after_heading", false, &e, Some(&e));
+                Err(ToolError::Failed(e))
+            }
+        }
+    }
+}
+
+/// `read_relevant`：按问题有预算地读取相关章节。
+pub struct ReadRelevantTool {
+    cfg: KbSearchConfig,
+}
+
+impl ReadRelevantTool {
+    pub fn new(cfg: KbSearchConfig) -> Self {
+        Self { cfg }
+    }
+}
+
+#[async_trait]
+impl Tool for ReadRelevantTool {
+    fn spec(&self) -> &ToolSpec {
+        static SPEC: std::sync::OnceLock<ToolSpec> = std::sync::OnceLock::new();
+        SPEC.get_or_init(|| {
+            read_only_spec(
+                "read_relevant",
+                "按问题从一篇 Markdown 中挑选相关章节并注入（有 token 预算）：全文在预算内则全文注入，否则按问题词面打分选段，并附全部章节 TOC。适合「这篇大文档里哪里讲了 X」的定向读取，比逐页 read 省很多轮次。",
+                json!({
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "path": { "type": "string", "description": "知识库内相对路径" },
+                        "query": { "type": "string", "description": "要查找的问题/关键词" },
+                        "budget_tokens": { "type": "integer", "description": "注入预算（token，默认 8000，clamp 512~32000）" }
+                    },
+                    "required": ["path", "query"]
+                }),
+            )
+        })
+    }
+
+    async fn execute(&self, args: Value, ctx: &ToolRunContext<'_>) -> Result<Value, ToolError> {
+        let rel = args.get("path").and_then(|s| s.as_str()).unwrap_or("").trim().to_string();
+        let query = args.get("query").and_then(|s| s.as_str()).unwrap_or("").to_string();
+        if rel.is_empty() || query.trim().is_empty() {
+            return Err(ToolError::InvalidArgs("path / query 不能为空".into()));
+        }
+        let budget = args.get("budget_tokens").and_then(|v| v.as_u64()).unwrap_or(8000) as usize;
+        ctx.sink.on_call(ctx.call_id, "read_relevant", &format!("{rel} ‹{query}›"), &args);
+        match super::tools::read_relevant(&self.cfg, &rel, &query, budget).await {
+            Ok(text) => {
+                let summary = format!("{} 字符", text.chars().count());
+                ctx.sink.on_result(ctx.call_id, "read_relevant", true, &summary, Some(&text));
+                Ok(Value::String(text))
+            }
+            Err(e) => {
+                ctx.sink.on_result(ctx.call_id, "read_relevant", false, &e, Some(&e));
+                Err(ToolError::Failed(e))
+            }
+        }
+    }
+}
+
+/// `apply_patch`：应用 unified diff（多文件 / 多 hunk）。
+pub struct ApplyPatchTool {
+    cfg: KbSearchConfig,
+}
+
+impl ApplyPatchTool {
+    pub fn new(cfg: KbSearchConfig) -> Self {
+        Self { cfg }
+    }
+}
+
+#[async_trait]
+impl Tool for ApplyPatchTool {
+    fn spec(&self) -> &ToolSpec {
+        static SPEC: std::sync::OnceLock<ToolSpec> = std::sync::OnceLock::new();
+        SPEC.get_or_init(|| {
+            ToolSpec::new(
+                "apply_patch",
+                "应用标准 unified diff 补丁（一次调用改多处）：格式为 `--- a/<相对路径>` + `+++ b/<相对路径>` + 若干 `@@ -旧起始,旧行数 +新起始,新行数 @@` hunk，行前缀 ` `（上下文）/`-`（删除）/`+`（新增）。支持一个补丁包含多个文件与多个 hunk；定位失败会返回期望位置附近的实际内容。相比逐处 edit，一次调用完成多处修改、上下文更小。所有文件先在内存中应用，任一失败即整体拒绝。",
+                json!({
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "patch": { "type": "string", "description": "unified diff 文本（≤200KB）" }
+                    },
+                    "required": ["patch"]
+                }),
+            )
+        })
+    }
+
+    async fn execute(&self, args: Value, ctx: &ToolRunContext<'_>) -> Result<Value, ToolError> {
+        let patch = args.get("patch").and_then(|s| s.as_str()).unwrap_or("").to_string();
+        if patch.trim().is_empty() {
+            return Err(ToolError::InvalidArgs("patch 为空".into()));
+        }
+        ctx.sink.on_call(ctx.call_id, "apply_patch", &format!("{} 行", patch.lines().count()), &args);
+        match super::tools::apply_patch(&self.cfg, &patch).await {
+            Ok(text) => {
+                ctx.sink.on_result(ctx.call_id, "apply_patch", true, &text, Some(&text));
+                Ok(Value::String(text))
+            }
+            Err(e) => {
+                ctx.sink.on_result(ctx.call_id, "apply_patch", false, &e, Some(&e));
                 Err(ToolError::Failed(e))
             }
         }
@@ -4091,6 +4515,33 @@ mod tests {
         );
     }
 
+    /// read 的三类寻址参数都要被正确解析（行区间 / 多区间 / 旧 offset）。
+    #[test]
+    fn parse_read_args_supports_lines_and_ranges() {
+        let (single, multi, spec) = parse_read_args(&json!({"path":"a.md"}));
+        assert_eq!(single.as_deref(), Some("a.md"));
+        assert!(multi.is_empty());
+        assert_eq!(spec.offset, 0);
+        assert!(spec.start_line.is_none());
+        assert!(spec.ranges.is_empty());
+
+        let (_, _, spec) = parse_read_args(&json!({"path":"a.md","start_line":10,"end_line":20}));
+        assert_eq!(spec.start_line, Some(10));
+        assert_eq!(spec.end_line, Some(20));
+
+        let (_, _, spec) = parse_read_args(&json!({"path":"a.md","ranges":[[1,2],[5,6]]}));
+        assert_eq!(spec.ranges, vec![(1, 2), (5, 6)]);
+
+        // 只给 end_line → 从第 1 行开始
+        let (_, _, spec) = parse_read_args(&json!({"path":"a.md","end_line":5}));
+        assert_eq!(spec.start_line, Some(1));
+        assert_eq!(spec.end_line, Some(5));
+
+        // 旧的 char offset 仍然被保留
+        let (_, _, spec) = parse_read_args(&json!({"path":"a.md","offset":8192}));
+        assert_eq!(spec.offset, 8192);
+    }
+
     #[test]
     fn resolve_top_k_clamps() {
         assert_eq!(resolve_top_k(&json!({"top_k": 100}), 5), MAX_TOP_K);
@@ -4108,15 +4559,15 @@ mod tests {
 
     #[test]
     fn parse_read_args_single_multi_offset() {
-        let (single, multi, offset) = parse_read_args(&json!({"path": "a.md", "offset": 1024}));
+        let (single, multi, spec) = parse_read_args(&json!({"path": "a.md", "offset": 1024}));
         assert_eq!(single, Some("a.md".to_string()));
         assert!(multi.is_empty());
-        assert_eq!(offset, 1024);
+        assert_eq!(spec.offset, 1024);
 
-        let (single, multi, offset) = parse_read_args(&json!({"paths": ["a.md", "b.md"]}));
+        let (single, multi, spec) = parse_read_args(&json!({"paths": ["a.md", "b.md"]}));
         assert!(single.is_none());
         assert_eq!(multi.len(), 2);
-        assert_eq!(offset, 0);
+        assert_eq!(spec.offset, 0);
 
         let (single, multi, _) = parse_read_args(&json!({}));
         assert!(single.is_none());

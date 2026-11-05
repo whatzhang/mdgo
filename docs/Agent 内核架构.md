@@ -62,6 +62,8 @@ pub struct LoopConfig {
     pub budget_warning_threshold: usize,  // 剩余轮次 ≤ 此值时注入预算提醒（默认 3）
     pub max_request_retries: usize,       // on_request_error 返回 Retry 的最大重试次数（默认 1）
     pub max_parallel_tools: usize,        // 并行工具上限（默认 4）
+    pub max_stream_retries: usize,        // 流式请求**启动阶段**瞬时错误重试次数（默认 2）
+    pub stream_retry_base_ms: u64,        // 退避基数（默认 800ms，指数增长 + 0–400ms 抖动）
     pub max_tokens: Option<u32>,          // 最大输出 token（None = 服务器默认）
     pub retry_prepare: Option<Arc<dyn Fn(&mut Session) -> bool + Send + Sync>>,
     //                                    // 请求失败重试前的准备回调（如压缩会话）
@@ -69,7 +71,14 @@ pub struct LoopConfig {
 ```
 
 - `LoopConfig::new(max_turns, system_prompt)` 给出默认值：`budget_warning_threshold=3`、
-  `max_request_retries=1`、`max_parallel_tools=4`、`max_tokens=None`、`retry_prepare=None`。
+  `max_request_retries=1`、`max_parallel_tools=4`、`max_stream_retries=2`、
+  `stream_retry_base_ms=800`、`max_tokens=None`、`retry_prepare=None`。
+- **上下文溢出恢复**：`OverflowRetryHook` 把 `ContextOverflow` 归类为可重试；命令层把
+  `retry_prepare` 接到 `Session::emergency_compact()`（按 step 边界遮蔽旧事件并生成确定性摘要，
+  不调用 LLM），因此溢出不再等于整轮失败。
+- **工具结果预算**：单条结果进入历史前截断到 `MAX_TOOL_RESULT_CHARS`（24k 字符）；
+  历史累计工具结果超过 `MAX_HISTORY_TOOL_RESULT_CHARS`（120k 字符）时，最旧的结果被清成占位符
+  （`Session::derive_history` 内实现，配对关系不变）。
 - 命令层实际使用的轮次预算常量是 `core/agent/limits.rs::DEFAULT_MAX_TURNS = 20`
   （对齐 Claude Code / Codex 的多步工具任务预算；第 21 次请求触发 MaxTurns）。
 

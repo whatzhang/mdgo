@@ -72,6 +72,14 @@ struct CachedPayload {
     diagnostics: Vec<(u32, String, String)>,
     #[serde(default)]
     warnings: Vec<String>,
+    /// Phase 4：EPUB 真目录（G4）。**必须入缓存**——否则命中缓存的那本书
+    /// 会退回「只有正文、没有大纲」的行为，用户看到的现象是"第一次打开有大纲、
+    /// 第二次没了"。旧缓存行没有该键 → `serde(default)` 得空数组，向后兼容。
+    #[serde(default)]
+    epub_toc: Vec<crate::core::document::epub::TocItem>,
+    /// Phase 4：EPUB 内嵌图片导出目录（G1）。目录名是内容哈希，因此对同一份字节稳定。
+    #[serde(default)]
+    asset_root: Option<String>,
 }
 
 impl CachedPayload {
@@ -98,6 +106,8 @@ impl CachedPayload {
                 .map(|d| (d.page, d.code.to_string(), d.detail.clone()))
                 .collect(),
             warnings: src.warnings.clone(),
+            epub_toc: src.epub_toc.clone(),
+            asset_root: src.asset_root.clone(),
         }
     }
 
@@ -142,6 +152,8 @@ impl CachedPayload {
                 })
                 .collect(),
             warnings: self.warnings,
+            epub_toc: self.epub_toc,
+            asset_root: self.asset_root,
         }
     }
 }
@@ -273,6 +285,9 @@ impl ConversionCache {
         let converter = match kind.converter {
             Converter::PdfInspector => ConverterInfo::PDF_INSPECTOR,
             Converter::AnyDoc => ConverterInfo::ANYDOC,
+            // Phase 4：EPUB 用**自己的** ConverterInfo，从而缓存主键与 Office 分离——
+            // 图片富化/目录提取的改动只会让 EPUB 旧结果失效，不必整体 bump anydoc 版本
+            Converter::Epub => ConverterInfo::EPUB,
             Converter::LegacyPdf => ConverterInfo::PDF_EXTRACT,
             // 直读路径不缓存
             Converter::Plain => return loader::load_document(abs_path, rel_path),
@@ -284,8 +299,23 @@ impl ConversionCache {
         };
         let key = Self::key_parts(&bytes, converter);
         if let Some(payload) = self.get(&key) {
-            log::debug!("[conversion_cache] 命中: {} ({})", rel_path, converter);
-            return Ok(payload.into_source(rel_path, kind, converter));
+            // Phase 4：EPUB 命中缓存时，一并校验图片导出目录**仍然存在**。
+            // 场景：用户清了系统缓存目录，但 `.mdgo/*.sqlite` 里的行还在——
+            // 此时正文里的 mdgoasset:// URL 会全部 404。与其返回一堆坏图，
+            // 不如当次缓存未命中重新转换（重新导出图片，成本可接受）。
+            let assets_ok = match payload.asset_root.as_deref() {
+                Some(root) if !root.is_empty() => std::path::Path::new(root).is_dir(),
+                _ => true,
+            };
+            if assets_ok {
+                log::debug!("[conversion_cache] 命中: {} ({})", rel_path, converter);
+                return Ok(payload.into_source(rel_path, kind, converter));
+            }
+            log::warn!(
+                "[conversion_cache] epub 图片目录已不存在，忽略缓存重新转换: {} ({:?})",
+                rel_path,
+                payload.asset_root
+            );
         }
         // 未命中：走唯一转换点（用已读入的字节，避免二次读盘）
         let src = loader::load_document_bytes(abs_path, rel_path, &bytes)?;
@@ -356,6 +386,8 @@ mod tests {
             skipped_pages: vec![3],
             diagnostics: vec![(3, "needs_ocr".to_string(), "该页无可提取文本".to_string())],
             warnings: vec!["版面较复杂".to_string()],
+            epub_toc: Vec::new(),
+            asset_root: None,
         };
         cache.put(&key, &payload);
 
@@ -395,6 +427,8 @@ mod tests {
                 skipped_pages: vec![],
                 diagnostics: vec![],
                 warnings: vec![],
+                epub_toc: Vec::new(),
+                asset_root: None,
             },
         );
         assert!(cache.get(&key).is_some());

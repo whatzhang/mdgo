@@ -29,6 +29,11 @@ pub struct SkillStats {
     pub system_count: usize,
     pub global_count: usize,
     pub project_count: usize,
+    /// 各来源中**已启用**的数量：前端按来源画「段内分启用/停用」的堆叠条要用
+    /// （`{scope}_count` 与 `{scope}_enabled` 相减即该来源的停用数）。
+    pub system_enabled: usize,
+    pub global_enabled: usize,
+    pub project_enabled: usize,
     pub enabled_count: usize,
     pub disabled_count: usize,
     pub skills: Vec<SkillStatItem>,
@@ -400,6 +405,18 @@ pub async fn kb_skill(
     let system_count = skills.iter().filter(|s| s.scope == SkillScope::System).count();
     let global_count = skills.iter().filter(|s| s.scope == SkillScope::Global).count();
     let project_count = skills.iter().filter(|s| s.scope == SkillScope::Project).count();
+    let system_enabled = skills
+        .iter()
+        .filter(|s| s.scope == SkillScope::System && s.enabled)
+        .count();
+    let global_enabled = skills
+        .iter()
+        .filter(|s| s.scope == SkillScope::Global && s.enabled)
+        .count();
+    let project_enabled = skills
+        .iter()
+        .filter(|s| s.scope == SkillScope::Project && s.enabled)
+        .count();
     let enabled_count = skills.iter().filter(|s| s.enabled).count();
     let disabled_count = total - enabled_count;
 
@@ -418,6 +435,9 @@ pub async fn kb_skill(
         system_count,
         global_count,
         project_count,
+        system_enabled,
+        global_enabled,
+        project_enabled,
         enabled_count,
         disabled_count,
         skills: list,

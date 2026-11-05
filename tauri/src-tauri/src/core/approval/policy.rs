@@ -62,6 +62,30 @@ impl ApprovalPolicy for DestructiveWritePolicy {
                 summary: format!("删除文件 {rel_path}(不可恢复)"),
                 detail: "删除操作不可恢复,已删除内容无法通过本应用找回".to_string(),
             }),
+            // 大文档结构写工具（按章节/补丁改写）：与 edit/write 同等风险，必须确认
+            "replace_section" | "insert_after_heading" => Some(ApprovalRequest {
+                tool: tool.to_string(),
+                args: args.clone(),
+                summary: format!(
+                    "{} {rel_path}（章节：{}）",
+                    if tool == "replace_section" { "整节替换" } else { "插入内容到" },
+                    args.get("heading").and_then(|v| v.as_str()).unwrap_or("?")
+                ),
+                detail: "章节级改写会直接覆盖原有正文且不可撤销,请确认这是预期修改".to_string(),
+            }),
+            "apply_patch" => {
+                let lines = args
+                    .get("patch")
+                    .and_then(|v| v.as_str())
+                    .map(|p| p.lines().count())
+                    .unwrap_or(0);
+                Some(ApprovalRequest {
+                    tool: tool.to_string(),
+                    args: args.clone(),
+                    summary: format!("应用补丁（{lines} 行 unified diff）"),
+                    detail: "补丁会同时修改补丁内的多个文件且不可撤销,请确认".to_string(),
+                })
+            }
             "write" => Some(ApprovalRequest {
                 tool: tool.to_string(),
                 args: args.clone(),

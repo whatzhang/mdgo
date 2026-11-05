@@ -5901,6 +5901,7 @@ dependencies = [
  "pdf-extract",
  "pdf-inspector",
  "rayon",
+ "rbook",
  "readability",
  "regex",
  "reqwest 0.12.28",
@@ -5933,6 +5934,7 @@ dependencies = [
  "walkdir",
  "windows-sys 0.61.2",
  "winreg 0.55.0",
+ "zip",
 ]
 
 [[package]]
@@ -7803,6 +7805,19 @@ checksum = "22e18b0f0062d30d4230b2e85ff77fdfe4326feb054b9783a3460d8435c8ab91"
 dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
+]
+
+[[package]]
+name = "rbook"
+version = "0.7.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "663ec1a8b0a945c8bb9c9912b1f8b328ba698a05165a81072e16604be019f45d"
+dependencies = [
+ "indexmap 2.14.0",
+ "percent-encoding",
+ "quick-xml 0.41.0",
+ "thiserror 2.0.18",
+ "zip",
 ]
 
 [[package]]

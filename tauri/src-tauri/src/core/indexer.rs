@@ -782,6 +782,11 @@ impl Indexer {
                 filekind::Converter::AnyDoc => {
                     crate::core::document::loader::ConverterInfo::ANYDOC.label()
                 }
+                // Phase 4：EPUB 独立失效粒度键（source_kind = "epub"）→
+                // 富化实现变化只让 epub 判为过期，Office 增量索引照常工作
+                filekind::Converter::Epub => {
+                    crate::core::document::loader::ConverterInfo::EPUB.label()
+                }
             };
             out.insert(kind.to_string(), label);
         }
@@ -2299,28 +2304,54 @@ impl Indexer {
         doc_chunks: &[DocumentChunk],
         vectors: &[Vec<f32>],
     ) -> Result<usize, String> {
-        let old_chunks = self.count_document_chunks(store, rel_path).await;
+        // ── 增量写入（P3）：按 chunk id 差集只重写变化块 ──
+        //
+        // chunk id = 文档路径 + 内容哈希（稳定），因此「id 集合差」= 新增/删除的块。
+        // 旧实现每次 save 都 delete_document + add_chunks 整篇重写：495KB 文档（~230 块）
+        // 每次编辑都会重写全部行 + 重建 BM25。现在只：
+        //   1) 没有任何变化（id 集合相同）→ 直接返回，连 BM25/元数据都不动；
+        //   2) 有变化 → 按 id 删除消失的块、只追加新块（未变化块原地保留）。
+        // BM25 是「按文档」粒度的倒排（tantivy 无按行更新），仍整篇 delete+add。
+        let existing = store.list_chunk_ids(rel_path).await.unwrap_or_default();
+        let new_ids: std::collections::HashSet<&String> =
+            doc_chunks.iter().map(|c| &c.id).collect();
+        let to_delete: Vec<String> = existing
+            .iter()
+            .filter(|id| !new_ids.contains(id))
+            .cloned()
+            .collect();
+        let mut to_add: Vec<&DocumentChunk> = Vec::new();
+        let mut to_add_vecs: Vec<Vec<f32>> = Vec::new();
+        for (chunk, vec) in doc_chunks.iter().zip(vectors.iter()) {
+            if !existing.contains(&chunk.id) {
+                to_add.push(chunk);
+                to_add_vecs.push(vec.clone());
+            }
+        }
+        if to_add.is_empty() && to_delete.is_empty() {
+            return Ok(existing.len() as usize);
+        }
 
-        if let Err(e) = store.delete_document(rel_path).await {
-            log::warn!("[indexer] 删除旧 LanceDB 数据失败 ({}): {}", rel_path, e);
+        if let Err(e) = store.delete_chunks_by_ids(&to_delete).await {
+            log::warn!("[indexer] 增量删除旧 chunk 失败 ({}): {}", rel_path, e);
+        }
+        if !to_add.is_empty() {
+            let owned: Vec<DocumentChunk> = to_add.into_iter().cloned().collect();
+            store.add_chunks(&owned, &to_add_vecs).await.map_err(|e| {
+                log::error!("[indexer] 写入 LanceDB 失败 ({}): {}", rel_path, e);
+                e
+            })?;
         }
         if let Some(bm25) = bm25 {
             if let Err(e) = bm25.delete_document(rel_path) {
                 log::warn!("[indexer] 删除 BM25 旧数据失败 ({}): {}", rel_path, e);
             }
-        }
-
-        store.add_chunks(doc_chunks, vectors).await.map_err(|e| {
-            log::error!("[indexer] 写入 LanceDB 失败 ({}): {}", rel_path, e);
-            e
-        })?;
-        if let Some(bm25) = bm25 {
             bm25.add_documents(doc_chunks).map_err(|e| {
                 log::error!("[indexer] 写入 BM25 失败 ({}): {}", rel_path, e);
                 e
             })?;
         }
-        Ok(old_chunks as usize)
+        Ok(existing.len() as usize)
     }
 
     /// 统计某个 doc_name 下的 chunk 数量

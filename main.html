@@ -3515,6 +3515,187 @@
             overflow: hidden;
         }
 
+        /* ── 标签数据统计：书签（环形进度）/ skill（分段条）/ MCP（状态条） ── */
+        .kb-card-title {
+            display: flex;
+            align-items: center;
+        }
+
+        .kb-card-title .kb-chart-total {
+            margin-left: auto;
+            padding-left: 0.5rem;
+            font-size: 0.6875rem;
+            font-weight: 400;
+            color: var(--t3);
+        }
+
+        .kb-dist-body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            min-height: 5.75rem;
+        }
+
+        .kb-dist-empty {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 5rem;
+            font-size: 0.75rem;
+            color: var(--t3);
+        }
+
+        .kb-dist {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1.5rem;
+            padding: 0.25rem;
+        }
+
+        /* 环形进度：conic-gradient 画「已解析占比」，中心挖空放百分比 */
+        .kb-ring {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 5.5rem;
+            height: 5.5rem;
+            flex: 0 0 auto;
+            border-radius: 50%;
+            background: #e8ecf1;
+        }
+
+        .kb-ring-hole {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 4rem;
+            height: 4rem;
+            border-radius: 50%;
+            background: var(--color-bg);
+            line-height: 1.15;
+        }
+
+        .kb-ring-hole b {
+            font-size: 0.9375rem;
+            color: var(--color-text);
+        }
+
+        .kb-ring-hole em {
+            font-style: normal;
+            font-size: 0.625rem;
+            color: var(--t3);
+        }
+
+        .kb-dist-facts {
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+            min-width: 0;
+            font-size: 0.6875rem;
+            color: var(--t2);
+        }
+
+        .kb-dist-facts > div {
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+            white-space: nowrap;
+        }
+
+        .kb-dist-facts b {
+            margin-left: auto;
+            padding-left: 0.5rem;
+            color: var(--color-text);
+            font-weight: 600;
+        }
+
+        .kb-dot {
+            display: inline-block;
+            width: 0.5rem;
+            height: 0.5rem;
+            flex: 0 0 auto;
+            border-radius: 50%;
+        }
+
+        .kb-bars {
+            display: flex;
+            flex-direction: column;
+            gap: 0.45rem;
+            padding: 0.25rem 0.25rem 0;
+        }
+
+        .kb-bar-row {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.6875rem;
+            color: var(--t2);
+        }
+
+        .kb-bar-label {
+            flex: 0 0 auto;
+            width: 2rem;
+        }
+
+        .kb-bar-track {
+            flex: 1 1 auto;
+            height: 0.5rem;
+            min-width: 0;
+            border-radius: 999px;
+            background: #e8ecf1;
+            overflow: hidden;
+        }
+
+        .kb-bar-fill {
+            display: flex;
+            height: 100%;
+        }
+
+        .kb-bar-fill i {
+            display: block;
+            height: 100%;
+        }
+
+        .kb-bar-num {
+            flex: 0 0 auto;
+            min-width: 1.5rem;
+            text-align: right;
+            color: var(--color-text);
+            font-weight: 600;
+        }
+
+        .kb-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.25rem 0.5rem;
+            padding: 0.25rem 0.25rem 0.25rem;          
+            font-size: 0.625rem;
+            color: var(--t3);
+        }
+
+        .kb-legend > span {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .kb-segbar {
+            display: flex;
+            height: 0.625rem;
+            margin: 0.5rem 0.25rem 0.4rem;
+            border-radius: 999px;
+            background: #e8ecf1;
+            overflow: hidden;
+        }
+
+        .kb-segbar i {
+            display: block;
+            height: 100%;
+        }
+
         .activity-column {
             width: 100%;
             min-width: 0;
@@ -16329,164 +16510,51 @@
                                     <div class="stat-label">AI操作</div>
                                 </div>
                             </div>
-                            <div class="stat-card">
-                                <div class="stat-icon purple"><svg xmlns="http://www.w3.org/2000/svg" width="18"
-                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-stat-bookmarks">--</div>
-                                    <div class="stat-label">书签总数</div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon yellow"><svg xmlns="http://www.w3.org/2000/svg" width="18"
-                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-stat-bookmarks-padding">--</div>
-                                    <div class="stat-label">未解析书签</div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon blue"><svg xmlns="http://www.w3.org/2000/svg" width="18"
-                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-stat-bookmarks-ready">--</div>
-                                    <div class="stat-label">已解析书签</div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon cyan"><svg xmlns="http://www.w3.org/2000/svg" width="18"
-                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-stat-bookmarks-dead">--</div>
-                                    <div class="stat-label">死链书签</div>
-                                </div>
-                            </div>
-
-                            <div class="stat-card">
-                                <div class="stat-icon purple"><svg xmlns="http://www.w3.org/2000/svg" width="18"
-                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-skill-count">--</div>
-                                    <div class="stat-label">skill总数</div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon green"><svg xmlns="http://www.w3.org/2000/svg" width="18"
-                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-skill-system">--</div>
-                                    <div class="stat-label">系统skill</div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon orange"><svg xmlns="http://www.w3.org/2000/svg" width="18"
-                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-skill-global">--</div>
-                                    <div class="stat-label">全局skill</div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon cyan"><svg xmlns="http://www.w3.org/2000/svg" width="18"
-                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-skill-project">--</div>
-                                    <div class="stat-label">项目skill</div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon blue"><svg xmlns="http://www.w3.org/2000/svg" width="18"
-                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-skill-enabled">--</div>
-                                    <div class="stat-label">启用skill</div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon purple"><svg xmlns="http://www.w3.org/2000/svg" width="18"
-                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-skill-sdisabled">--</div>
-                                    <div class="stat-label">停用skill</div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon green"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
-                                        stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-                                        stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
-                                        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-mcp-count">--</div>
-                                    <div class="stat-label">mcp总数</div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon orange"><svg viewBox="0 0 24 24" width="18" height="18"
-                                        fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-                                        stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
-                                        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-mcp-connected">--</div>
-                                    <div class="stat-label">已连接mcp</div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon cyan"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
-                                        stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-                                        stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
-                                        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-mcp-disconnected">--</div>
-                                    <div class="stat-label">已断开mcp</div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon blue"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
-                                        stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-                                        stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
-                                        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-                                    </svg></div>
-                                <div class="stat-info">
-                                    <div class="stat-value" id="kb-mcp-failed">--</div>
-                                    <div class="stat-label">失败mcp</div>
-                                </div>
-                            </div>
                         </div>
 
                         <div id="kb-dashboard-content" style="display:none;">
+                            <!-- 标签数据统计：书签 / skill / MCP（混合图形：环形进度 + 分段条 + 状态条） -->
+                            <div class="activity-section-three">
+                                <!-- 书签：环形进度（已解析率）+ 状态构成数字 -->
+                                <div class="chart-card">
+                                    <div class="chart-title kb-card-title">
+                                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                                            stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
+                                            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                                        </svg>书签分布
+                                        <span class="kb-chart-total" id="kb-bm-total"></span>
+                                    </div>
+                                    <div class="kb-dist-body" id="kb-bm-body"></div>
+                                </div>
+
+                                <!-- skill：按来源分段的堆叠条，段内再分启用/停用 -->
+                                <div class="chart-card">
+                                    <div class="chart-title kb-card-title">
+                                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                                            stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
+                                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                                        </svg>技能分布
+                                        <span class="kb-chart-total" id="kb-skill-total"></span>
+                                    </div>
+                                    <div class="kb-dist-body" id="kb-skill-body"></div>
+                                </div>
+
+                                <!-- MCP：一条状态构成条（已连接 / 已断开 / 失败） -->
+                                <div class="chart-card">
+                                    <div class="chart-title kb-card-title">
+                                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                            stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                                            stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
+                                            <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                                        </svg>MCP 分布
+                                        <span class="kb-chart-total" id="kb-mcp-total"></span>
+                                    </div>
+                                    <div class="kb-dist-body" id="kb-mcp-body"></div>
+                                </div>
+                            </div>
+
                             <div class="activity-section">
                                 <!-- 文档类型分布 -->
                                 <div class="chart-card">
@@ -17217,7 +17285,7 @@
         const DOT = '.';
         const DOUBLE_DOT = '..';
         const SLASH = '/';
-        const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB - 大文件限制
+        const MAX_FILE_SIZE = 100 * 1024 * 1024; // 50MB - 大文件限制
         const MAX_DIR_DEPTH = 20; // 最大目录深度
         const DELETED_INDEX_EXPIRE_DAYS = 365; // 删除索引过期天数
         // ====== localStorage 键名 ======
@@ -17869,6 +17937,13 @@
             currentActiveItem = fileSpan;
             safeLocalStorageSet(LAST_FILE_KEY, relativePath);
             await switchToView(contentMain);
+            // 打开新文件：先清掉上一个文件遗留的"待用真目录 / 转换类文档"标记。
+            // 正常情况下 `generateTOC` 会消费并清空它们，但存在**提前返回、走不到 generateTOC**
+            // 的分支（例如转换产物被判成 Obsidian 看板时会 `renderKanbanToContent` 后直接 return）。
+            // 在唯一入口处清一次，可以保证标记绝不跨文件泄漏——否则下一个 `.md` 笔记的
+            // Links/Tags 页签会被误隐藏。
+            _pendingEpubToc = null;
+            _pendingConvertedDoc = false;
             //判断文件类型是否为支持的，不是则不打开
             const ext = getExt(relativePath);
             if (await checkFileExt(ext)) {
@@ -17884,6 +17959,26 @@
                 aiFabContainer.style.display = 'none';
                 openVideoFile(ext, fileName, relativePath);
                 recordView(relativePath, fileName);
+                _startBrowsingTimer(relativePath);
+                return;
+            }
+            // 缺口 G5：**转换类**文件（Office/ODF/RTF/EPUB）只需路径就够——后端
+            // `document_preview` 自己读盘并走同一个 DocumentLoader。旧写法在这里无条件
+            // `getFile()`，而 Tauri 适配层的 getFile 会把**整个文件读进 JS**再包 Blob，
+            // 对 .pptx/.xlsb/.epub 是纯粹的双倍搬运（方案 §7.2.1「预览不经前端搬字节」只做了一半）。
+            // 因此这里先判类型：命中就直接用相对路径取文件名，完全跳过整文件读取。
+            // 代价是绕过了前端门禁，但后端 `precheck_size` 用的是同一份
+            // `ConversionPolicy::max_file_bytes`（200MB）并以 TooLarge 结构化返回，
+            // 前端会照常显示「该文件无法预览：文件过大…」，不会静默失败。
+            if (CONVERTED_DOC_EXT_SET.has(getExt(relativePath).toLowerCase())) {
+                const convertedName = basename(relativePath);
+                currentFileName = convertedName;
+                await cleanupCommonIframe();
+                topRightBtnDisplay(convertedName);
+                previewFileText = '';
+                originalContent = '';
+                await renderConvertedDocFile(relativePath);
+                recordView(relativePath, convertedName);
                 _startBrowsingTimer(relativePath);
                 return;
             }
@@ -18028,12 +18123,30 @@
             // 这里同时容忍 camelCase，避免以后后端改名就静默失效。
             const skipCode = res && (res.skip_code || res.skipCode);
             if (!res || skipCode) {
+                // 失败/跳过路径也要清掉上一次文件的授权目录与待用目录，避免串到别的文件
+                if (typeof window.mdgoSetAssetRoot === 'function') window.mdgoSetAssetRoot('');
+                _pendingEpubToc = null;
+                _pendingConvertedDoc = false;
                 const reason = (res && (res.skip_reason || res.skipReason)) || skipCode || '未知原因';
                 contentMain.innerHTML = `<div style="${noticeStyle}">该文件无法预览：${escapeHtml(reason)}</div>`;
                 return;
             }
+            // 缺口 G1：登记本次导出的图片资源目录。前端据此**校验**正文里的
+            // mdgoasset:// URL 只允许指向该目录（否则构造过的 EPUB 能读任意本地文件）。
+            if (typeof window.mdgoSetAssetRoot === 'function') {
+                window.mdgoSetAssetRoot(res.asset_root || res.assetRoot || '');
+            }
+            // 缺口 G4：真目录必须在 renderMarkdownFile **之前**交给 generateTOC——
+            // renderOriginalMarkdown 是用 requestIdleCallback 异步排 generateTOC 的，
+            // 若等 renderMarkdownFile 返回后再设置，回调可能已经跑完并清空了。
+            _pendingEpubToc = Array.isArray(res.toc) && res.toc.length ? res.toc : null;
+            // 转换类文档：隐藏 TOC link 三页签（Links 图 / Links列表 / Tags），
+            // 它们的语义只对用户自己的 Markdown 笔记成立（理由见 _pendingConvertedDoc 注释）。
+            _pendingConvertedDoc = true;
             // 注意：notice 最终用 textContent 写入，**不能**在这里转义（否则用户看到 &lt; 字面量）
-            const notice = (res.truncated ? '（内容过长，仅预览前 20 万字符）' : '')
+            // 截断提示不再写死「20 万字符」：上限已提到 400 万（后端 PREVIEW_TEXT_LIMIT），
+            // 写死数字会和后端脱钩，故改为不承诺具体数值。
+            const notice = (res.truncated ? '（内容过长，已截断，仅显示开头部分）' : '')
                 + ((res.warnings && res.warnings.length) ? '　' + res.warnings.join('；') : '');
             await renderMarkdownFile(res.text);
             // renderMarkdownFile 是**按 .md 文件**设计的：它会打开 editBtn / livePreviewBtn，
@@ -27142,7 +27255,66 @@ kanban-plugin: basic
         }
 
         // 从 Markdown 解析标题并生成目录侧栏
+        /** 缺口 G4：后端读出的 EPUB 真目录（EPUB 3 nav / EPUB 2 ncx）。
+         * 由 `renderConvertedDocFile` 在**调用 renderMarkdownFile 之前**写入，
+         * 由紧随其后的 `generateTOC` 消费并清空——这样不依赖 requestIdleCallback 的时序。 */
+        let _pendingEpubToc = null;
+
+        /** 本次渲染的是否是**后端转换类文档**（Office/ODF/RTF/EPUB）。
+         *
+         * 为什么需要：右下角那三个页签（Links 图 / Links列表 / Tags）全部是为**用户自己的
+         * Markdown 知识库**设计的——
+         * - Links 图：把 `[[wiki-link]]` / 文档间链接画成 mermaid 思维导图（vault 的知识图谱）；
+         * - Links列表：点击后 `scrollToTocLink` 先按 `href === target` 找 `<a>`，
+         *   再退回按文本匹配；
+         * - Tags：`extractTags` 抓 `#tag`，跳转靠 `.ob-tag` 元素（Obsidian 标签语法）。
+         *
+         * 而转换类文档里这三件事**语义都不成立、且实现上会坏**：
+         * - "链接"其实是 anydoc 为跨章引用/脚注生成的**书内锚点**。`marked` 会对 href 做
+         *   `encodeURI`，非 ASCII 片段（中文书几乎必然）被百分号编码，与 Markdown 源里的原始
+         *   target 不再相等 → 主匹配路径（href 相等）**必然失配**；退化的文本匹配也不可靠
+         *   （alias 是含转义的原始 Markdown 文本，如 `\[1\]`，与渲染后的 `[1]` 不相等）。
+         *   实测表现就是「点了没反应 / 提示未找到该链接」。
+         * - 书的正文里出现的 `#词` 并不是 vault 的标签，`.ob-tag` 也未必存在；
+         * - 电子书（尤其带脚注的）链接极密，思维导图会膨胀到渲染失败或完全不可读。
+         *
+         * 因此对转换类文档**整块隐藏** `#toc-link`，只保留右侧大纲（真目录）。
+         * 用户自己的 `.md` 笔记行为完全不变。 */
+        let _pendingConvertedDoc = false;
+
+        /**
+         * 缺口 G4：把真目录折成 `buildTOC` 需要的 `{level, text, id}`。
+         *
+         * `heading_index` 是后端给出的「对应正文第几个标题」（1-based，与
+         * `extractMarkdownHeadings` 的产出顺序一致），因此可以直接取 `headings[n-1].id`
+         * 作为锚点——**不需要按标题文字做模糊匹配**。
+         * 映射不到标题的条目（封面、版权页、推广页这类没有 `<h1>` 的章节）直接丢弃：
+         * 流式阅读里它们没有可跳转的目标，留着只会是死链。
+         */
+        function _buildEpubTocItems(headings) {
+            const out = [];
+            if (!_pendingEpubToc || !_pendingEpubToc.length || !headings || !headings.length) return out;
+            const seen = new Set();
+            for (const it of _pendingEpubToc) {
+                const label = String(it && it.label != null ? it.label : '').trim();
+                if (!label) continue;
+                const n = Number(it.heading_index) || 0;
+                if (n < 1 || n > headings.length) continue;
+                const id = headings[n - 1].id;
+                if (!id || seen.has(id)) continue;
+                seen.add(id);
+                const lvl = Number(it.level) || 1;
+                out.push({ level: Math.max(1, Math.min(6, lvl)), text: label, id });
+            }
+            return out;
+        }
+
         async function generateTOC(markdownText, type, opmlData) {
+            // 消费一次即清空，避免影响下一个文件
+            const epubToc = _pendingEpubToc;
+            _pendingEpubToc = null;
+            const convertedDoc = _pendingConvertedDoc;
+            _pendingConvertedDoc = false;
             tocElement.innerHTML = '';
             let headings = [];
             if (type === 'md') {
@@ -27159,13 +27331,16 @@ kanban-plugin: basic
             // 有标题时恢复布局
             contentMain.style.width = '';
             tocContainer.style.display = 'flex';
-            const tocHTML = buildTOC(headings);
-            tocElement.innerHTML = tocHTML;
-            // 为文档中的标题添加ID
+            // 先给标题打 id，才能按真目录的 heading_index 取到锚点
             if (type === 'md') { addHeadingIDs(headings); }
+            // G4：有作者声明的真目录时用它，否则沿用「按标题反推」
+            const epubItems = epubToc ? _buildEpubTocItems(headings) : [];
+            const tocHTML = buildTOC(epubItems.length ? epubItems : headings);
+            tocElement.innerHTML = tocHTML;
             showTocToggleBtn(true);
-            // Markdown 文件展示 TOC link，其他文件不展示
-            if (type === 'md') {
+            // TOC link 三页签只对**用户自己的 Markdown 笔记**有意义；
+            // 转换类文档（Office/ODF/RTF/EPUB）整块隐藏，理由见 `_pendingConvertedDoc` 注释。
+            if (type === 'md' && !convertedDoc) {
                 tocLinkElement.style.display = '';
                 tocElement.style.flex = '';
                 if (typeof requestIdleCallback === 'function') {
@@ -27174,6 +27349,7 @@ kanban-plugin: basic
                     setTimeout(() => generateTOCLinks(markdownText, type, opmlData), 0);
                 }
             } else {
+                // 转换类文档：连内容都不要生成（避免白跑一次 mermaid 渲染）
                 tocLinkElement.innerHTML = '';
                 tocLinkElement.style.display = 'none';
                 tocElement.style.flex = '1';
@@ -27182,7 +27358,13 @@ kanban-plugin: basic
 
         function extractMarkdownHeadings(markdownText) {
             const headings = [];
-            let idCounter = 1;
+            // 缺口 G3：标题 id 必须与后端 anydoc 的 `gfm_slug` **逐字一致**，
+            // 否则 anydoc 产出的跨章引用/内链（`[见 2.1](#21-子节)`）会指向不存在的 id。
+            // 分配顺序也要一致（按文档顺序占位 + 同名后缀 -1/-2…）。
+            // 模块未加载时退回旧的 `heading-N`，避免因脚本顺序而整体失效。
+            const claimSlug = (typeof window.mdgoSlugAllocator === 'function')
+                ? window.mdgoSlugAllocator()
+                : ((t) => `heading-${headings.length + 1}`);
             const len = markdownText.length;
             let i = 0;
             // 代码块状态
@@ -27267,7 +27449,7 @@ kanban-plugin: basic
                                 headings.push({
                                     level: hashCount,
                                     text: text,
-                                    id: `heading-${idCounter++}`
+                                    id: claimSlug(text)
                                 });
                             }
                         }
@@ -46890,6 +47072,14 @@ kanban-plugin: basic
         function buildLazyTauriImg(text, isFullText = false, photoDirPath = '') {
             const normalizedRootPath = normalizePath(currentRootPath);
             return _replaceImgWithDataSrc(text, isFullText, (src) => {
+                // 缺口 G1：后端导出的 EPUB 内嵌图片（mdgoasset://local/<base64url>）。
+                // 必须**先于** buildLocalImgSrc 判断——否则会被当成相对路径拼接，永远解不出。
+                // 授权目录由后端在 document_preview 里给出（mdgoSetAssetRoot），
+                // 不在该目录内的路径一律拒绝，防止构造过的 EPUB 借 scheme 读任意本地文件。
+                if (typeof window.mdgoIsAssetSrc === 'function' && window.mdgoIsAssetSrc(src)) {
+                    const epubAbs = window.mdgoResolveAssetSrc(src);
+                    return epubAbs ? getAssetUrl(epubAbs) : null;
+                }
                 const localSrc = buildLocalImgSrc(src, normalizedRootPath, photoDirPath);
                 const absPath = joinPath(normalizedRootPath, localSrc);
                 return getAssetUrl(absPath);
@@ -49868,6 +50058,8 @@ kanban-plugin: basic
                 await window.__TAURI__.core.invoke('kb_llm_query', {
                     messages,
                     requestId,
+                    dirPath: currentRootPath,
+                    sessionId: currentSessionId,
                 });
             } catch (err) {
                 if (err.name !== 'AbortError' && !llmDone) {
@@ -49876,7 +50068,7 @@ kanban-plugin: basic
                         partialSaved = true;
                         await savePartialAssistantMessage();
                     }
-                    showNotification('✗ LLM 请求失败: ' + err.message, 'error');
+                    showNotification('✗ LLM 请求失败: ' + (err?.message || err), 'error');
                 } else if (err.name === 'AbortError' && !llmDone) {
                     partialSaved = true;
                     await savePartialAssistantMessage();
@@ -50448,10 +50640,6 @@ kanban-plugin: basic
                     document.getElementById('kb-stat-chunks').textContent = kbStatus.chunk_count || 0;
                     document.getElementById('kb-stat-vectors').textContent = kbStatus.vector_count || 0;
                     document.getElementById('kb-stat-storage').textContent = scanData?.storage_size || 0;
-                    document.getElementById('kb-stat-bookmarks').textContent = (bmStats && bmStats.total) ? bmStats.total : 0;
-                    document.getElementById('kb-stat-bookmarks-padding').textContent = (bmStats && bmStats.pending) ? bmStats.pending : 0;
-                    document.getElementById('kb-stat-bookmarks-dead').textContent = (bmStats && bmStats.dead) ? bmStats.dead : 0;
-                    document.getElementById('kb-stat-bookmarks-ready').textContent = (bmStats && bmStats.ready) ? bmStats.ready : 0;
 
                     if (statsRow1) statsRow1.style.display = '';
 
@@ -50462,17 +50650,8 @@ kanban-plugin: basic
                     const unindexed = Math.max(0, _scanFileList.length - (kbStatus.file_count || 0));
                     document.getElementById('kb-stat-unindexed').textContent = unindexed;
 
-                    document.getElementById('kb-skill-count').textContent = skill?.total || 0;
-                    document.getElementById('kb-skill-system').textContent = skill?.system_count || 0;
-                    document.getElementById('kb-skill-global').textContent = skill?.global_count || 0;
-                    document.getElementById('kb-skill-project').textContent = skill?.project_count || 0;
-                    document.getElementById('kb-skill-enabled').textContent = skill?.enabled_count || 0;
-                    document.getElementById('kb-skill-sdisabled').textContent = skill?.disabled_count || 0;
-
-                    document.getElementById('kb-mcp-count').textContent = mcp?.total || 0;
-                    document.getElementById('kb-mcp-connected').textContent = mcp?.connected_count || 0;
-                    document.getElementById('kb-mcp-disconnected').textContent = mcp?.disconnected_count || 0;
-                    document.getElementById('kb-mcp-failed').textContent = mcp?.failed_count || 0;
+                    // 书签 / skill / MCP：混合图形（环形进度 + 分段条 + 状态条），见 renderDistributionCards
+                    renderDistributionCards(bmStats, skill, mcp);
 
                     renderTypeDistribution(scanData?.type_distribution);
                     renderHealthDetails(kbStatus, scanData);
@@ -50496,6 +50675,161 @@ kanban-plugin: basic
                 statusDot.className = 'kb-status-dot error';
                 statusText.textContent = '加载失败';
             }
+        }
+
+        /**
+         * 标签数据统计（书签 / skill / MCP）：**混合图形**。
+         *
+         * 为什么不用饼图：这三类都是「总数 + 构成」，且真实数据常一边倒（例如书签
+         * 1110 条全部是 pending、skill 全部是系统内置），饼图会退化成"一个满圆"，
+         * 占比信息量为零；而且 0 值扇区不可见、1/4 卡宽下外置标签会互相挤压。
+         * 因此按数据特性分别选型：
+         *   - 书签：环形进度表达「已解析率」+ 右侧状态构成（`dead` 是独立标记位，
+         *           会与 ready/pending/failed 重叠，故只列数字、不进构成）；
+         *   - skill：按来源分段的横向堆叠条，段内再分启用/停用（两个正交维度同图表达）；
+         *   - MCP：一条状态构成条（connected / disconnected / failed 三者互斥）。
+         *
+         * 三者都用 DOM/CSS（不建 ECharts 实例）：小尺寸下更清晰，也不受"隐藏容器
+         * 初始化尺寸为 0"的影响；颜色用语义色（绿=正常、橙=待处理、红=失败、灰=断开）。
+         */
+        function renderDistributionCards(bmStats, skill, mcp) {
+            renderBookmarkRing(bmStats);
+            renderSkillScopeBars(skill);
+            renderMcpStatusBar(mcp);
+        }
+
+        /** 书签：环形进度（已解析率）+ 状态构成数字 */
+        function renderBookmarkRing(bm) {
+            const body = document.getElementById('kb-bm-body');
+            if (!body) return;
+            const total = Number(bm?.total || 0);
+            const ready = Number(bm?.ready || 0);
+            const pending = Number(bm?.pending || 0);
+            const failed = Number(bm?.failed || 0);
+            const dead = Number(bm?.dead || 0);
+
+            const totalEl = document.getElementById('kb-bm-total');
+            if (totalEl) totalEl.textContent = total ? `共 ${total} 条` : '';
+
+            if (!total) {
+                body.innerHTML = '<div class="kb-dist-empty">暂无书签数据</div>';
+                return;
+            }
+
+            const pct = Math.max(0, Math.min(100, Math.round((ready / total) * 100)));
+            const facts = [
+                ['#16a34a', '已解析', ready],
+                ['#ea580c', '未解析', pending],
+                ['#dc2626', '失败', failed],
+                ['#94a3b8', '死链（标记）', dead],
+            ].map(([color, label, n]) =>
+                `<div><i class="kb-dot" style="background:${color}"></i>${label}<b>${n}</b></div>`
+            ).join('');
+
+            body.innerHTML = `
+                <div class="kb-dist">
+                    <div class="kb-ring" title="已解析 ${ready} / 共 ${total}（${pct}%）"
+                        style="background: conic-gradient(#16a34a 0% ${pct}%, #e8ecf1 ${pct}% 100%);">
+                        <div class="kb-ring-hole"><b>${pct}%</b><em>已解析</em></div>
+                    </div>
+                    <div class="kb-dist-facts">${facts}</div>
+                </div>`;
+        }
+
+        /** skill：按来源（系统/全局/项目）分段的堆叠条，段内再分启用/停用 */
+        function renderSkillScopeBars(skill) {
+            const body = document.getElementById('kb-skill-body');
+            if (!body) return;
+            const total = Number(skill?.total || 0);
+
+            const totalEl = document.getElementById('kb-skill-total');
+            if (totalEl) totalEl.textContent = total ? `共 ${total} 个` : '';
+
+            if (!total) {
+                body.innerHTML = '<div class="kb-dist-empty">暂无技能</div>';
+                return;
+            }
+
+            // per-scope 启用数由后端 `SkillStats.{scope}_enabled` 提供；旧后端缺字段时退化为整段启用。
+            const scopes = [
+                {
+                    label: '系统',
+                    count: Number(skill?.system_count || 0),
+                    enabled: Number(skill?.system_enabled ?? skill?.system_count ?? 0),
+                    color: '#7c3aed',
+                },
+                {
+                    label: '全局',
+                    count: Number(skill?.global_count || 0),
+                    enabled: Number(skill?.global_enabled ?? skill?.global_count ?? 0),
+                    color: '#ea580c',
+                },
+                {
+                    label: '项目',
+                    count: Number(skill?.project_count || 0),
+                    enabled: Number(skill?.project_enabled ?? skill?.project_count ?? 0),
+                    color: '#0891b2',
+                },
+            ];
+            // 条长按各来源数量相对最大值缩放，便于横向比较；段内实色=启用、浅色=停用。
+            const max = Math.max(1, ...scopes.map(s => s.count));
+            const rows = scopes.map(s => {
+                const width = Math.round((s.count / max) * 100);
+                const enabled = Math.max(0, Math.min(s.count, s.enabled));
+                const disabled = Math.max(0, s.count - enabled);
+                const fill = s.count
+                    ? `<span class="kb-bar-fill" style="width:${width}%">
+                           <i style="flex:${enabled};background:${s.color}"></i>
+                           <i style="flex:${disabled};background:${s.color}40"></i>
+                       </span>`
+                    : '';
+                return `<div class="kb-bar-row" title="${s.label}：共 ${s.count} 个（启用 ${enabled} / 停用 ${disabled}）">
+                    <span class="kb-bar-label">${s.label}</span>
+                    <span class="kb-bar-track">${fill}</span>
+                    <span class="kb-bar-num">${s.count}</span>
+                </div>`;
+            }).join('');
+            const legend = scopes
+                .map(s => `<span><i class="kb-dot" style="background:${s.color}"></i>${s.label} ${s.count}</span>`)
+                .join('');
+
+            body.innerHTML = `
+                <div class="kb-bars">${rows}</div>
+                <div class="kb-legend">${legend}
+                    <span style="margin-left:auto">启用 ${Number(skill?.enabled_count || 0)} · 停用 ${Number(skill?.disabled_count || 0)}</span>
+                </div>`;
+        }
+
+        /** MCP：一条状态构成条（已连接 / 已断开 / 失败，三者互斥且相加等于总数） */
+        function renderMcpStatusBar(mcp) {
+            const body = document.getElementById('kb-mcp-body');
+            if (!body) return;
+            const total = Number(mcp?.total || 0);
+
+            const totalEl = document.getElementById('kb-mcp-total');
+            if (totalEl) totalEl.textContent = total ? `共 ${total} 个` : '';
+
+            if (!total) {
+                body.innerHTML = '<div class="kb-dist-empty">暂无 MCP 服务</div>';
+                return;
+            }
+
+            const parts = [
+                { label: '已连接', n: Number(mcp?.connected_count || 0), color: '#16a34a' },
+                { label: '已断开', n: Number(mcp?.disconnected_count || 0), color: '#94a3b8' },
+                { label: '失败', n: Number(mcp?.failed_count || 0), color: '#dc2626' },
+            ];
+            const segs = parts
+                .filter(p => p.n > 0)
+                .map(p => `<i style="width:${(p.n / total) * 100}%;background:${p.color}" title="${p.label} ${p.n}"></i>`)
+                .join('');
+
+            body.innerHTML = `
+                <div class="kb-segbar">${segs}</div>
+                <div class="kb-legend">${parts
+                    .map(p => `<span><i class="kb-dot" style="background:${p.color}"></i>${p.label} ${p.n}</span>`)
+                    .join('')}
+                </div>`;
         }
 
         function renderTypeDistribution(typeDist) {
@@ -52204,6 +52538,7 @@ kanban-plugin: basic
         }
     </script>
     <script src="./css_js/modules/support.js"></script>
+    <script src="./css_js/modules/epub-anchor.js"></script>
     <script src="./css_js/modules/canvas.js"></script>
     <script src="./css_js/modules/chat-history.js"></script>
     <script src="./css_js/modules/editor/export.js"></script>

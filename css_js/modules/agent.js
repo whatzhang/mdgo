@@ -1307,6 +1307,21 @@ async function AgentInit() {
         } catch (e) {
             console.warn('注册 agent:file-written 监听失败:', e);
         }
+        // 轮次预算用尽（MaxTurns）：回答可能只是半截，用既有提示框提醒用户可继续。
+        try {
+            const { listen } = window.__TAURI__.event;
+            listen('agent:max-turns', (e) => {
+                const maxTurns = (e && e.payload && e.payload.max_turns) || 20;
+                if (typeof showNotification === 'function') {
+                    showNotification(
+                        `⚠ 本轮工具调用已达上限（${maxTurns} 轮），回答可能不完整。回复“继续”可让我接着做。`,
+                        'warning'
+                    );
+                }
+            });
+        } catch (e) {
+            console.warn('注册 agent:max-turns 监听失败:', e);
+        }
         // 监听 watcher 错误事件，通知用户
         try {
             const { listen } = window.__TAURI__.event;

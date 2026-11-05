@@ -289,6 +289,23 @@ pub fn chunk_document(
     } else {
         body
     };
+
+    // Phase 4：EPUB 富化会把图片写成 `![alt](mdgoasset://local/<文件名>)`——那是**渲染用**的
+    // 本地资源地址。而 Markdown 分块的 chunk 文本取的是**源码行切片**（`document/markdown.rs`
+    // 的 sourcepos 切片，不是 inline 纯文本），URL 因此会原样进入 BM25 文本与 embedding 输入：
+    // 一本书几十张图就是几十段无意义词项，既污染关键词检索又白占 token 预算。
+    // 这里把图片**目标地址清空**（`![alt]()`）：alt 文本（真正的检索价值）保留、
+    // AST 形态与 `chunk_type` 不变、预览渲染不受影响（预览用的是原始 `src.text`）。
+    //
+    // 只作用于 `source_kind == "epub"`：普通 Markdown 的图片路径属于**用户自己的内容**，
+    // 动它会改变既有索引文本并触发全量重建，收益与风险都不成比例，故保持原行为。
+    let epub_owned;
+    let cleaned: &str = if src.source_kind == "epub" {
+        epub_owned = crate::core::document::epub::strip_image_destinations(cleaned);
+        epub_owned.as_str()
+    } else {
+        cleaned
+    };
     let splitter = if is_html {
         match html_render_matcher {
             // 已配置渲染目录：命中 → 文档分块；未命中 → 放弃该文件（不索引）

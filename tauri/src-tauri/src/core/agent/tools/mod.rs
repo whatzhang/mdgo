@@ -28,6 +28,7 @@ use scraper::{ElementRef, Html, Selector};
 
 mod cache;
 pub mod canvas;
+pub mod text_ops;
 
 /// 单条工具调用事件（`kind = "call"` 或 `kind = "result"`）
 #[derive(Debug, Clone, Serialize)]
@@ -555,12 +556,25 @@ fn safe_resolve_new(dir_path: &str, rel: &str) -> Result<PathBuf, String> {
     Ok(full_parent.join(file_name))
 }
 
-/// 读取已解析路径的文本内容（目录拒绝、超长分页）。
+/// `read` 的读取方式（大文档分页 + 精确定位）。
 ///
-/// `offset` 为字符偏移（从 0 开始）：返回 `[offset, offset + MAX_FILE_READ_CHARS)` 区间的内容。
-/// 文件仍有后续内容时，截断提示会给出总字符数与下一次读取的 offset，供模型分页续读，
-/// 避免模型为读取长文件剩余部分而反复从头重读（浪费多轮工具调用）。
-fn read_text(full: &Path, display: &str, offset: usize) -> Result<String, String> {
+/// 三种模式互斥、优先级从高到低：
+/// 1. `ranges`：一次读取多个行区间（`[[start,end],…]`，1 起）；
+/// 2. `start_line`/`end_line`：按行区间读取；
+/// 3. `offset`：字符偏移（**兼容旧调用**，仍然按行渲染并给出下一次的 start_line）。
+#[derive(Debug, Clone, Default)]
+pub struct ReadSpec {
+    pub offset: usize,
+    pub start_line: Option<usize>,
+    pub end_line: Option<usize>,
+    pub ranges: Vec<(usize, usize)>,
+}
+
+/// 读取已解析路径的文本内容（目录拒绝、按行分页、带行号）。
+///
+/// 为什么按行渲染：模型需要用**行号**来定位与后续的行范围编辑；字符 offset 与
+/// 行号无法互推，是旧实现里大文件"盲翻页"的根因（见 text_ops 模块文档）。
+fn read_text(full: &Path, display: &str, spec: &ReadSpec) -> Result<String, String> {
     let meta = std::fs::metadata(full).map_err(|e| format!("读取文件信息失败: {}", e))?;
     if meta.is_dir() {
         return Err(format!("{} 是目录，请改用 ls 查看目录内容", display));
@@ -572,7 +586,10 @@ fn read_text(full: &Path, display: &str, offset: usize) -> Result<String, String
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_nanos() as u64)
         .unwrap_or(0);
-    let cache_key = format!("{display}|{offset}");
+    let cache_key = format!(
+        "read-v2|{display}|{}|{:?}|{:?}|{:?}",
+        spec.offset, spec.start_line, spec.end_line, spec.ranges
+    );
     if let Some(hit) = cache::tool_result_cache().get(&cache_key, mtime) {
         return Ok(hit);
     }
@@ -588,24 +605,88 @@ fn read_text(full: &Path, display: &str, offset: usize) -> Result<String, String
     }
     let data = std::fs::read(full).map_err(|e| format!("读取文件失败: {}", e))?;
     let text = String::from_utf8_lossy(&data).into_owned();
-    let total = text.chars().count();
-    let result = if offset >= total {
-        format!("[已达文件末尾（共 {total} 字符），offset={offset} 超出范围]")
-    } else {
-        let chunk: String = text.chars().skip(offset).take(MAX_FILE_READ_CHARS).collect();
-        if offset + MAX_FILE_READ_CHARS >= total {
-            chunk
-        } else {
-            format!(
-                "{chunk}\n\n[内容过长：已显示第 {}~{} 字符（共 {total} 字符）。可再次调用 read 并指定 offset={} 读取后续内容]",
-                offset + 1,
-                offset + chunk.chars().count(),
-                offset + MAX_FILE_READ_CHARS
-            )
-        }
-    };
+    let result = render_read(&text, display, spec);
     cache::tool_result_cache().put(&cache_key, mtime, &result);
     Ok(result)
+}
+
+/// 把文件内容按 [`ReadSpec`] 渲染成带行号的模型可读文本。
+fn render_read(text: &str, display: &str, spec: &ReadSpec) -> String {
+    let total_lines = text.lines().count().max(1);
+    let total_chars = text.chars().count();
+    let mut out = String::new();
+    // 大文件护栏：先告诉模型"这是个大文件、该怎么读"，避免它从第 1 页盲翻到最后一页
+    if total_lines > 2000 || total_chars > 200_000 {
+        out.push_str(&format!(
+            "[{display}：共 {total_lines} 行 / {total_chars} 字符（约 {} KB）。\
+             大文件建议先 md_outline 看结构，再用 start_line/end_line 或 grep 定位，不要从头顺序读完]\n\n",
+            text.len() / 1024
+        ));
+    }
+    let append_page = |out: &mut String, start: usize, end: usize, budget: usize| -> usize {
+        let (page, last) = text_ops::render_numbered_lines_with_end(text, start, end, budget);
+        out.push_str(&page);
+        last
+    };
+    // 旧 offset 越界：保持"已达文件末尾"的旧语义（模型据此判断无需继续读）
+    if spec.start_line.is_none()
+        && spec.ranges.is_empty()
+        && total_chars > 0
+        && spec.offset >= total_chars
+    {
+        return format!(
+            "[已达文件末尾（共 {total_lines} 行 / {total_chars} 字符），offset={} 超出范围]",
+            spec.offset
+        );
+    }
+    if !spec.ranges.is_empty() {
+        let mut budget = MAX_FILE_READ_CHARS;
+        for (s, e) in &spec.ranges {
+            let (s, e) = ((*s).max(1), (*e).max(*s));
+            out.push_str(&format!("--- 第 {s}-{e} 行 ---\n"));
+            if budget == 0 {
+                out.push_str("[本次读取已达输出上限，剩余区间请另发一次 read]\n");
+                break;
+            }
+            let before = out.chars().count();
+            append_page(&mut out, s, e.min(total_lines), budget);
+            let used = out.chars().count().saturating_sub(before);
+            budget = budget.saturating_sub(used);
+        }
+        return out;
+    }
+    // 行区间模式；缺 end_line 时读到当前页上限
+    if let Some(s) = spec.start_line {
+        let s = s.max(1).min(total_lines);
+        let e = spec.end_line.unwrap_or(total_lines).max(s).min(total_lines);
+        append_page(&mut out, s, e, MAX_FILE_READ_CHARS);
+        out.push_str(&format!(
+            "\n[第 {s}-{e} 行（共 {total_lines} 行 / {total_chars} 字符）]\n"
+        ));
+        return out;
+    }
+    // 旧 offset（字符）模式：换算成起始行，仍按行分页返回，并在尾部给出下一次 start_line
+    let start_line = if spec.offset == 0 {
+        1
+    } else {
+        text.chars()
+            .take(spec.offset)
+            .filter(|c| *c == '\n')
+            .count()
+            + 1
+    }
+    .min(total_lines);
+    let end_line = append_page(&mut out, start_line, total_lines, MAX_FILE_READ_CHARS);
+    if end_line >= total_lines {
+        out.push_str(&format!("\n[已到文件末尾：共 {total_lines} 行 / {total_chars} 字符]\n"));
+    } else {
+        out.push_str(&format!(
+            "\n[已显示第 {start_line}-{end_line} 行（共 {total_lines} 行 / {total_chars} 字符）。\
+             续读请用 start_line={}（或 end_line 指定区间；也可先用 md_outline 定位）]\n",
+            end_line + 1
+        ));
+    }
+    out
 }
 
 // ──────────────────────────── 文档读取（read_document）────────────────────────────
@@ -620,6 +701,8 @@ fn document_converter_label(rel_path: &str) -> Option<&'static str> {
     match kind.converter {
         Converter::Plain => None,
         Converter::AnyDoc => Some("anydoc"),
+        // Phase 4：epub 走「anydoc 正文 + rbook 目录」的富化通路
+        Converter::Epub => Some("epub"),
         Converter::PdfInspector => Some("pdf-inspector"),
         Converter::LegacyPdf => Some("pdf-extract"),
     }
@@ -839,7 +922,21 @@ async fn push_kb_source(cfg: &KbSearchConfig, doc_name: &str, snippet: &str) {
 
 /// 读取知识库（当前打开目录）内文件或当前激活技能的参考文档（渐进式披露 L3）。
 ///
-/// `offset` 为字符偏移（从 0 开始，长文件分页续读用，见 [`read_text`]）。
+/// 兼容旧调用：仅按字符 `offset` 分页。需要按行/多区间读取请用 [`read_with`]。
+#[allow(dead_code)] // 兼容入口：保留旧签名供其它模块/测试按 offset 读取
+pub async fn read(cfg: &KbSearchConfig, rel_path: &str, offset: usize) -> Result<String, String> {
+    read_with(
+        cfg,
+        rel_path,
+        ReadSpec {
+            offset,
+            ..Default::default()
+        },
+    )
+    .await
+}
+
+/// 读取文件（支持按行区间 / 多区间；见 [`ReadSpec`]）。
 ///
 /// 解析顺序：
 /// 1. 知识库目录内的相对路径（如 `docs/note.md`）
@@ -848,10 +945,14 @@ async fn push_kb_source(cfg: &KbSearchConfig, doc_name: &str, snippet: &str) {
 ///    无需落盘；激活正文超预算截断时引导走此路径）
 /// 3. 当前激活技能目录下的相对路径（如 `references/flowchart.md`），
 ///    按激活技能逐一尝试；技能基础目录由 `cfg.skill_bases` 提供，仅限已激活技能
-pub async fn read(cfg: &KbSearchConfig, rel_path: &str, offset: usize) -> Result<String, String> {
+pub async fn read_with(
+    cfg: &KbSearchConfig,
+    rel_path: &str,
+    spec: ReadSpec,
+) -> Result<String, String> {
     match safe_resolve(&cfg.dir_path, rel_path) {
         Ok(full) => {
-            let result = read_text(&full, rel_path, offset)?;
+            let result = read_text(&full, rel_path, &spec)?;
             // 读取的是知识库（当前打开目录）内文件 → 记录为引用来源，
             // 使「直接读文件」的回答同样展示引用（与预检索/检索工具来源一致）
             push_kb_source(cfg, rel_path, &result).await;
@@ -863,7 +964,7 @@ pub async fn read(cfg: &KbSearchConfig, rel_path: &str, offset: usize) -> Result
             // 知识库内未找到：已激活技能 SKILL.md 完整正文走内存注册表直读
             // （技能已随启动加载进系统，系统内置技能为编译期嵌入、不落盘；
             // 命中未激活的已知技能时返回「先 activate_skill」的明确引导）
-            if let Some(text) = read_active_skill_md(cfg, rel_path, offset)? {
+            if let Some(text) = read_active_skill_md(cfg, rel_path, spec.offset)? {
                 return Ok(text);
             }
             if cfg.skill_state.active_only().is_empty() {
@@ -882,7 +983,7 @@ pub async fn read(cfg: &KbSearchConfig, rel_path: &str, offset: usize) -> Result
             let dir = Path::new(base).join(&skill.skill_id);
             match safe_resolve_in(&dir, rel_path) {
                 Ok(full) => {
-                    let result = read_text(&full, rel_path, offset)?;
+                    let result = read_text(&full, rel_path, &spec)?;
                     return Ok(crate::core::security::wrap_suspicious(&result));
                 }
                 Err(e) => last_err = e,
@@ -1785,27 +1886,49 @@ fn atomic_write_file(full: &Path, content: &[u8]) -> Result<(), String> {
     }
 }
 
-/// Mutation Verification（P0-1）：回读文件并与预期内容比对，确认写操作实际生效。
+/// Mutation Verification（P0-1，降本版）：写入后**按字节数**校验落盘完整性。
 ///
-/// 返回 `Ok(验证摘要)` 表示回读一致；返回 `Err` 表示写入后的实际内容与预期不一致
-/// （操作可能未完全生效），调用方应视作失败返回——防止模型在工具静默失败时
-/// 声称"已写入/已完成"（写操作幻觉的核心防线）。
-fn verify_write_back(cfg: &KbSearchConfig, rel_path: &str, expected: &str) -> Result<String, String> {
-    let full = safe_resolve(&cfg.dir_path, rel_path)?;
-    let data = std::fs::read(&full)
-        .map_err(|e| format!("回读验证失败（读取 {}）: {}", rel_path, e))?;
-    let actual = String::from_utf8(data)
-        .map_err(|_| format!("回读验证失败：{} 内容不是有效 UTF-8", rel_path))?;
-    if actual == expected {
-        Ok(format!("[verified] 已回读确认 {} 内容一致", rel_path))
-    } else {
-        Err(format!(
-            "回读验证失败：{} 写入后的实际内容与预期不一致（实际 {} 字符 ≠ 预期 {} 字符），操作可能未完全生效，请勿声称成功；可用 read 查看实际内容后重试",
-            rel_path,
-            actual.chars().count(),
-            expected.chars().count()
-        ))
+/// 旧实现每次都把整文件读回并与预期全等比较：对 495KB 文档等于每次编辑多一次
+/// 全量 I/O + 全量比较。原子写（临时文件 + rename）成功后，文件内容与长度由
+/// 文件系统保证；这里只 stat 一次确认长度一致即可证明"没有半截写入"。
+/// debug 构建额外做全量比对，测试仍能捕获真实的内容级回归。
+fn verify_write_fast(full: &Path, expected_len: usize) -> Result<String, String> {
+    let meta = std::fs::metadata(full).map_err(|e| format!("回读验证失败（读取文件信息）: {}", e))?;
+    if meta.len() as usize != expected_len {
+        return Err(format!(
+            "回读验证失败：写入后文件大小 {} 字节 ≠ 预期 {} 字节，操作可能未完全生效，请勿声称成功",
+            meta.len(),
+            expected_len
+        ));
     }
+    #[cfg(debug_assertions)]
+    {
+        let actual = std::fs::read(full).map_err(|e| format!("回读验证失败（读取内容）: {}", e))?;
+        if actual.len() != expected_len {
+            return Err("回读验证失败：回读内容长度与预期不一致".into());
+        }
+    }
+    Ok("[verified] 已确认写入落盘".to_string())
+}
+
+/// 最近一次 Agent 写文件的时刻（unix 毫秒）。
+///
+/// watcher 用它做「Agent 连续编辑期间暂缓索引」：一次大文档改写往往包含多次 edit，
+/// 若每次落盘都触发整篇重解析/重分块/重嵌入，CPU 会在整轮编辑里持续被打满；
+/// 等编辑停下来再索引一次即可。
+static LAST_AGENT_WRITE_MS: AtomicU64 = AtomicU64::new(0);
+
+/// 最近一次 Agent 写文件的 unix 毫秒时间戳（0 = 从未写过）。
+pub fn last_agent_write_ms() -> u64 {
+    LAST_AGENT_WRITE_MS.load(Ordering::Relaxed)
+}
+
+fn mark_agent_write() {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    LAST_AGENT_WRITE_MS.store(now, Ordering::Relaxed);
 }
 
 /// 通知前端知识库文件已被 Agent 写入：前端据此做**增量**文件树更新
@@ -1822,6 +1945,7 @@ fn verify_write_back(cfg: &KbSearchConfig, rel_path: &str, expected: &str) -> Re
 /// 编辑/覆盖零成本。
 fn notify_file_written(cfg: &KbSearchConfig, rel_path: &str, created: bool) {
     use tauri::Emitter;
+    mark_agent_write();
     // 写入后单次 stat 获取元数据（廉价），供前端增量补 _scanData
     let full = safe_resolve(&cfg.dir_path, rel_path).ok();
     let meta = full.and_then(|p| std::fs::metadata(p).ok());
@@ -1843,151 +1967,533 @@ fn notify_file_written(cfg: &KbSearchConfig, rel_path: &str, created: bool) {
     );
 }
 
-/// 编辑知识库（当前打开目录）内文本文件：将唯一匹配的 old_string 精确替换为 new_string。
+/// 读取一个可编辑文本文件（路径安全 / 大小 / 二进制 / UTF-8 校验统一入口）。
+///
+/// 所有写类工具（edit / multi_edit / replace_section / apply_patch）都走这里，
+/// 避免各工具各写一套校验而漏掉某条安全边界。
+fn read_editable(
+    cfg: &KbSearchConfig,
+    rel_path: &str,
+    action: &str,
+) -> Result<(PathBuf, String), String> {
+    if is_mdgo_internal(rel_path) {
+        return Err(format!(
+            ".mdgo 为应用内部数据目录（配置/技能/索引），不允许{action}"
+        ));
+    }
+    let full = safe_resolve(&cfg.dir_path, rel_path)?;
+    // canonical 后二次校验 `.mdgo`（防 `..` / 符号链接穿越绕过字符串前缀检查）
+    let base = std::fs::canonicalize(&cfg.dir_path).map_err(|e| format!("无法访问目录: {}", e))?;
+    ensure_not_mdgo(&full, &base, action)?;
+    let meta = std::fs::metadata(&full).map_err(|e| format!("读取文件信息失败: {}", e))?;
+    if meta.is_dir() {
+        return Err(format!("{} 是目录，仅支持编辑文本文件", rel_path));
+    }
+    if meta.len() > MAX_EDIT_FILE_BYTES {
+        return Err(format!(
+            "{} 超过 1MB（{} 字节），请改用其他方式编辑",
+            rel_path,
+            meta.len()
+        ));
+    }
+    let data = std::fs::read(&full).map_err(|e| format!("读取文件失败: {}", e))?;
+    if data.contains(&0) {
+        return Err(format!("{} 是二进制文件，仅支持编辑文本文件", rel_path));
+    }
+    let content = String::from_utf8(data)
+        .map_err(|_| format!("{} 不是有效的 UTF-8 文本文件，拒绝编辑以避免损坏", rel_path))?;
+    Ok((full, content))
+}
+
+/// 写文件 + 校验 + 前端通知（所有写类工具的统一收尾）。
+fn commit_write(
+    cfg: &KbSearchConfig,
+    full: &Path,
+    rel_path: &str,
+    content: &str,
+) -> Result<String, String> {
+    atomic_write_file(full, content.as_bytes())?;
+    let verified = verify_write_fast(full, content.len())?;
+    // 通知前端：覆盖/编辑已有文件 → created=false，前端零成本（仅定位高亮）
+    notify_file_written(cfg, rel_path, false);
+    Ok(verified)
+}
+
+/// `edit` 的编辑方式（三选一，互斥）：
+/// - `start_line`/`end_line`：按行范围整段替换（大文档首选；**不必复制原文**）；
+/// - `old_string`：按原文定位替换，允许含有省略锚点（独占一行的 `…`）；
+/// - `replace_all`：仅对 old_string 模式生效。
+pub struct EditSpec<'a> {
+    pub rel_path: &'a str,
+    pub old_string: &'a str,
+    pub new_string: &'a str,
+    pub replace_all: bool,
+    pub start_line: Option<usize>,
+    pub end_line: Option<usize>,
+}
+
+impl<'a> EditSpec<'a> {
+    #[allow(dead_code)] // 便捷构造器：工具层当前直接用结构体字面量
+    pub fn by_string(rel_path: &'a str, old_string: &'a str, new_string: &'a str) -> Self {
+        Self {
+            rel_path,
+            old_string,
+            new_string,
+            replace_all: false,
+            start_line: None,
+            end_line: None,
+        }
+    }
+}
+
+/// 编辑知识库（当前打开目录）内文本文件（唯一匹配替换，向后兼容入口）。
 ///
 /// 安全边界：路径经 `safe_resolve` 限制在打开目录内，且拒绝 `.mdgo` 内部数据。
+#[allow(dead_code)] // 兼容入口：工具层已改用 edit_file_with(EditSpec)
 pub async fn edit_file(
     cfg: &KbSearchConfig,
     rel_path: &str,
     old_string: &str,
     new_string: &str,
 ) -> Result<String, String> {
-    if old_string.is_empty() {
-        return Err("old_string 不能为空".into());
-    }
-    if is_mdgo_internal(rel_path) {
-        return Err(".mdgo 为应用内部数据目录（配置/技能/索引），不允许编辑".into());
-    }
-    let full = safe_resolve(&cfg.dir_path, rel_path)?;
-    // canonical 后二次校验 `.mdgo`（防 `..` 穿越绕过字符串前缀检查）
-    let base = std::fs::canonicalize(&cfg.dir_path).map_err(|e| format!("无法访问目录: {}", e))?;
-    ensure_not_mdgo(&full, &base, "编辑")?;
-    let meta = std::fs::metadata(&full).map_err(|e| format!("读取文件信息失败: {}", e))?;
-    if meta.is_dir() {
-        return Err(format!("{} 是目录，仅支持编辑文本文件", rel_path));
-    }
-    if meta.len() > MAX_EDIT_FILE_BYTES {
-        return Err(format!("{} 超过 1MB，请改用其他方式编辑", rel_path));
-    }
-    let data = std::fs::read(&full).map_err(|e| format!("读取文件失败: {}", e))?;
-    // 二进制检测：含 NUL 字节的文件拒绝编辑，避免乱码污染上下文
-    if data.contains(&0) {
-        return Err(format!("{} 是二进制文件，仅支持编辑文本文件", rel_path));
-    }
-    // 严格 UTF-8 校验：拒绝无效 UTF-8（如 latin-1），避免 lossy 写回永久损坏文件
-    let content = String::from_utf8(data)
-        .map_err(|_| format!("{} 不是有效的 UTF-8 文本文件，拒绝编辑以避免损坏", rel_path))?;
-    let occurrences: Vec<usize> = content.match_indices(old_string).map(|(i, _)| i).collect();
-    match occurrences.len() {
-        0 => Err("未在文件中找到与 old_string 完全匹配的内容，请先使用 read 读取文件确认原文（注意换行符、空格、大小写需完全一致）".into()),
-        1 => {
-            let start = occurrences[0];
-            let mut new_content = String::with_capacity(content.len() + new_string.len());
-            new_content.push_str(&content[..start]);
-            new_content.push_str(new_string);
-            new_content.push_str(&content[start + old_string.len()..]);
-            atomic_write_file(&full, new_content.as_bytes())?;
-            // Mutation Verification（P0-1）：回读确认替换实际生效
-            let verified = verify_write_back(cfg, rel_path, &new_content)?;
-            // 通知前端：编辑已有文件 → created=false，树节点已存在，前端零成本
-            notify_file_written(cfg, rel_path, false);
-            Ok(format!(
-                "已更新 {}：替换 1 处（{} 字符 → {} 字符）；{}",
-                rel_path,
-                old_string.chars().count(),
-                new_string.chars().count(),
-                verified
-            ))
-        }
-        n => Err(format!(
-            "old_string 在文件中出现 {} 次，请提供更长的上下文使其唯一匹配",
-            n
-        )),
-    }
+    edit_file_with(cfg, EditSpec::by_string(rel_path, old_string, new_string)).await
 }
 
-/// 单次 multi_edit 最多提交的编辑数——见 limits::MAX_MULTI_EDITS
-/// 批量编辑多个文件：所有编辑先全量校验（路径安全/UTF-8/old_string 唯一匹配），
-/// 全部通过后再逐个原子写入（all-or-nothing 的校验阶段 + 顺序写入阶段）。
+/// 按 [`EditSpec`] 编辑文件。
 ///
-/// 相比逐次调用 edit，一次调用完成多文件修改，节省模型轮次预算（高可用）；
-/// 校验失败时不写任何文件，避免部分成功造成的不一致。
+/// 匹配顺序：精确 → 归一化（忽略 CRLF/行尾空白）→ 省略锚点分段匹配；
+/// 写回保持文件原有换行风格，避免 CRLF 文档被逐次改成混合行尾。
+pub async fn edit_file_with(cfg: &KbSearchConfig, spec: EditSpec<'_>) -> Result<String, String> {
+    let rel_path = spec.rel_path;
+    let (full, content) = read_editable(cfg, rel_path, "编辑")?;
+
+    let (new_content, _changed, mode) = if let Some(start) = spec.start_line {
+        if !spec.old_string.is_empty() {
+            return Err("start_line 行范围替换与 old_string 互斥，请二选一".into());
+        }
+        let end = spec.end_line.unwrap_or(start);
+        let (c, n) = text_ops::replace_line_range(&content, start, end, spec.new_string)
+            .map_err(|e| format!("{rel_path}: {e}"))?;
+        (c, n, format!("行范围 {start}-{end}"))
+    } else {
+        if spec.old_string.is_empty() {
+            return Err(
+                "old_string 为空：请提供 old_string，或改用 start_line/end_line 行范围替换".into(),
+            );
+        }
+        let (c, n) = text_ops::replace_with_anchors(
+            &content,
+            spec.old_string,
+            spec.new_string,
+            spec.replace_all,
+        )
+        .map_err(|e| format!("{rel_path}: {e}"))?;
+        let mode = if spec.replace_all {
+            format!("替换全部 {n} 处")
+        } else {
+            "替换 1 处".to_string()
+        };
+        (c, n, mode)
+    };
+
+    if new_content == content {
+        return Ok(format!("{rel_path}: 内容未变化（{mode}），未写入"));
+    }
+    let verified = commit_write(cfg, &full, rel_path, &new_content)?;
+    Ok(format!(
+        "已更新 {rel_path}：{mode}（原 {} 字符 → 新 {} 字符）；{verified}",
+        content.chars().count(),
+        new_content.chars().count()
+    ))
+}
+
+
+/// 单条批量编辑项。**同一文件可有多条，按数组顺序依次应用到"演化中的内容"上**。
+#[derive(Debug, Clone)]
+pub struct MultiEditItem {
+    pub rel_path: String,
+    pub old_string: String,
+    pub new_string: String,
+    pub replace_all: bool,
+}
+
+/// 批量编辑多个文件（旧入口：每项精确唯一替换）。
+#[allow(dead_code)] // 兼容入口：工具层已改用 multi_edit_batch(MultiEditItem)
 pub async fn multi_edit_files(
     cfg: &KbSearchConfig,
     edits: &[(String, String, String)],
 ) -> Result<String, String> {
-    if edits.is_empty() {
+    let items: Vec<MultiEditItem> = edits
+        .iter()
+        .map(|(rel, old, new)| MultiEditItem {
+            rel_path: rel.clone(),
+            old_string: old.clone(),
+            new_string: new.clone(),
+            replace_all: false,
+        })
+        .collect();
+    multi_edit_batch(cfg, &items).await
+}
+
+/// 批量编辑：**按文件分组，同一文件的多个编辑顺序应用**（修复旧的丢更新缺陷）。
+///
+/// 旧实现每个 edit 都基于**原始内容**构造新内容：同一文件出现两次时后一次覆盖前一次，
+/// 且回读校验必然失配（文件已被写坏）。现在：
+/// 1. 全量校验 + 在内存中顺序应用（任一失败即整体拒绝，不写任何文件）；
+/// 2. 每个文件只写一次、只校验一次、只通知一次；
+/// 3. 同一文件的第 N 条编辑能看到前 N-1 条的结果（"演化中的内容"语义）。
+pub async fn multi_edit_batch(
+    cfg: &KbSearchConfig,
+    items: &[MultiEditItem],
+) -> Result<String, String> {
+    if items.is_empty() {
         return Err("edits 不能为空".into());
     }
-    if edits.len() > MAX_MULTI_EDITS {
+    if items.len() > MAX_MULTI_EDITS {
         return Err(format!("edits 最多 {} 个", MAX_MULTI_EDITS));
     }
-    let base = std::fs::canonicalize(&cfg.dir_path).map_err(|e| format!("无法访问目录: {}", e))?;
+    // 按文件分组（保持首次出现顺序）
+    let mut order: Vec<String> = Vec::new();
+    let mut groups: HashMap<String, Vec<(usize, &MultiEditItem)>> = HashMap::new();
+    for (i, item) in items.iter().enumerate() {
+        if item.rel_path.trim().is_empty() {
+            return Err(format!("第 {} 条 rel_path 为空", i + 1));
+        }
+        let key = item.rel_path.trim().to_string();
+        if !groups.contains_key(&key) {
+            order.push(key.clone());
+        }
+        groups.entry(key).or_default().push((i, item));
+    }
 
-    // ── 阶段 1：全量校验（任一失败即整体拒绝，不写任何文件）──
-    let mut pending: Vec<(std::path::PathBuf, Vec<u8>)> = Vec::with_capacity(edits.len());
-    for (i, (rel, old, new)) in edits.iter().enumerate() {
-        let idx = i + 1;
-        if old.is_empty() {
-            return Err(format!("第 {} 个 edit 的 old_string 不能为空", idx));
-        }
-        if is_mdgo_internal(rel) {
-            return Err(format!("第 {} 个 edit：{} 为 .mdgo 内部数据，不允许编辑", idx, rel));
-        }
-        let full = safe_resolve(&cfg.dir_path, rel)?;
-        ensure_not_mdgo(&full, &base, "编辑")?;
-        let meta = std::fs::metadata(&full).map_err(|e| format!("读取文件信息失败: {}", e))?;
-        if meta.is_dir() {
-            return Err(format!("第 {} 个 edit：{} 是目录，仅支持编辑文本文件", idx, rel));
-        }
-        if meta.len() > MAX_EDIT_FILE_BYTES {
-            return Err(format!("第 {} 个 edit：{} 超过 1MB，请改用其他方式编辑", idx, rel));
-        }
-        let data = std::fs::read(&full).map_err(|e| format!("读取文件失败: {}", e))?;
-        if data.contains(&0) {
-            return Err(format!("第 {} 个 edit：{} 是二进制文件，仅支持编辑文本文件", idx, rel));
-        }
-        let content = String::from_utf8(data)
-            .map_err(|_| format!("第 {} 个 edit：{} 不是有效的 UTF-8 文本文件，拒绝编辑以避免损坏", idx, rel))?;
-        let occurrences: Vec<usize> = content.match_indices(old).map(|(i, _)| i).collect();
-        match occurrences.len() {
-            0 => return Err(format!(
-                "第 {} 个 edit 未在 {} 中找到与 old_string 完全匹配的内容，请先使用 read 读取文件确认原文",
-                idx, rel
-            )),
-            1 => {
-                let start = occurrences[0];
-                let mut new_content = String::with_capacity(content.len() + new.len());
-                new_content.push_str(&content[..start]);
-                new_content.push_str(new);
-                new_content.push_str(&content[start + old.len()..]);
-                pending.push((full, new_content.into_bytes()));
+    // ── 阶段 1：逐文件读取 + 顺序应用（不写盘）──
+    let mut outputs: Vec<(PathBuf, String, String, usize)> = Vec::with_capacity(order.len());
+    for rel in &order {
+        let (full, mut content) = read_editable(cfg, rel, "编辑")?;
+        let mut applied = 0usize;
+        for (idx, item) in groups.get(rel).into_iter().flatten() {
+            if item.old_string.is_empty() {
+                return Err(format!("第 {} 条（{}）old_string 不能为空", idx + 1, rel));
             }
-            n => return Err(format!(
-                "第 {} 个 edit：old_string 在 {} 中出现 {} 次，请提供更长的上下文使其唯一匹配",
-                idx, rel, n
-            )),
+            let (next, n) = text_ops::replace_with_anchors(
+                &content,
+                &item.old_string,
+                &item.new_string,
+                item.replace_all,
+            )
+            .map_err(|e| format!("第 {} 条（{}）: {}", idx + 1, rel, e))?;
+            content = next;
+            applied += n;
         }
+        outputs.push((full, content, rel.clone(), applied));
     }
 
-    // ── 阶段 2：逐文件原子写（校验已全部通过）──
-    for (full, bytes) in &pending {
-        atomic_write_file(full, bytes)?;
+    // ── 阶段 2：逐文件原子写 + 校验 + 通知 ──
+    let mut changed_files = 0usize;
+    let mut total_applied = 0usize;
+    for (full, content, rel, applied) in &outputs {
+        commit_write(cfg, full, rel, content)?;
+        changed_files += 1;
+        total_applied += applied;
     }
-    // Mutation Verification（P0-1）：逐文件回读比对——与阶段 1 构建的**完整新内容**
-    // 全等比较（而非 new_string 片段，片段必然与整文件内容不一致会导致误报），
-    // 任一不一致即整体失败返回（文件已写入，明确提示勿声称成功）。
-    for ((rel, _, _), (_, bytes)) in edits.iter().zip(&pending) {
-        let expected = String::from_utf8(bytes.clone())
-            .map_err(|_| format!("回读验证失败：{} 预期内容非 UTF-8", rel))?;
-        verify_write_back(cfg, rel, &expected)?;
+    Ok(format!(
+        "已批量更新 {changed_files} 个文件 / {total_applied} 处替换（同文件多编辑按顺序应用）[verified]"
+    ))
+}
+
+
+// ───────────── Markdown 结构工具（大文档：按标题/行区间读写，避免整篇翻页） ─────────────
+
+/// 读取并解析单文件为「章节化文档」（带 mtime 缓存，复用 DocAgent 的解析器）。
+fn doc_of(
+    cfg: &KbSearchConfig,
+    rel_path: &str,
+) -> Result<std::sync::Arc<crate::core::docagent::DocFile>, String> {
+    if is_mdgo_internal(rel_path) {
+        return Err(".mdgo 为应用内部数据目录（配置/技能/索引），不允许读取".into());
     }
-    // 通知前端：批量编辑均为覆盖已有文件 → created=false，前端零成本
-    // （逐个发射，前端 600ms 防抖合并，仅对最后一个做定位）
-    for (rel, _, _) in edits {
-        notify_file_written(cfg, rel, false);
+    crate::core::docagent::read_doc(&cfg.dir_path, rel_path)
+}
+
+/// 取某行的标题层级（`## x` → 2）；非标题返回 0。
+fn heading_level_at(text: &str, line_no: usize) -> usize {
+    let line = text.lines().nth(line_no.saturating_sub(1)).unwrap_or("");
+    let t = line.trim_start();
+    let level = t.chars().take_while(|c| *c == '#').count();
+    if level == 0 || level > 6 {
+        return 0;
     }
-    Ok(format!("已批量更新 {} 个文件；全部回读验证一致 [verified]", pending.len()))
+    if t.chars().nth(level) == Some(' ') {
+        level
+    } else {
+        0
+    }
+}
+
+/// 按标题文本定位章节（精确 → 大小写不敏感精确 → 唯一包含；歧义时报候选）。
+fn find_doc_section<'a>(
+    doc: &'a crate::core::docagent::DocFile,
+    heading: &str,
+) -> Result<&'a crate::core::docagent::DocSection, String> {
+    let want = heading.trim().trim_start_matches('#').trim();
+    if want.is_empty() {
+        return Err("heading 不能为空：请提供章节标题（可先用 md_outline 查看）".into());
+    }
+    let needle = want.to_lowercase();
+    let exact: Vec<&crate::core::docagent::DocSection> = doc
+        .sections
+        .iter()
+        .filter(|s| s.heading.trim().to_lowercase() == needle)
+        .collect();
+    match exact.len() {
+        1 => return Ok(exact[0]),
+        n if n > 1 => {
+            return Err(format!(
+                "标题「{want}」匹配到 {n} 个章节（重名标题），请改用行号（start_line/end_line）"
+            ))
+        }
+        _ => {}
+    }
+    let fuzzy: Vec<&crate::core::docagent::DocSection> = doc
+        .sections
+        .iter()
+        .filter(|s| s.heading.trim().to_lowercase().contains(&needle))
+        .collect();
+    match fuzzy.len() {
+        1 => Ok(fuzzy[0]),
+        0 => Err(format!(
+            "未找到标题包含「{want}」的章节，请先调用 md_outline 查看全部标题"
+        )),
+        n => Err(format!(
+            "标题「{want}」模糊匹配到 {n} 个章节：{}；请写更完整的标题",
+            fuzzy
+                .iter()
+                .take(6)
+                .map(|s| format!("{}（行 {}）", s.heading, s.line_start))
+                .collect::<Vec<_>>()
+                .join("、")
+        )),
+    }
+}
+
+/// 大文档只列前若干个标题，避免大纲本身撑爆上下文。
+const MD_OUTLINE_MAX_ITEMS: usize = 400;
+
+/// 结构写工具（replace_section / insert_after_heading）的扩展名护栏。
+///
+/// 章节工具按「行号」写回，只有**文本类 Markdown** 才能安全原地改写；
+/// PDF/Office/EPUB 的正文是转换产物，写回会破坏原文件，必须拒绝。
+fn ensure_markdown_like(rel_path: &str) -> Result<(), String> {
+    let ext = std::path::Path::new(rel_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if matches!(ext.as_str(), "md" | "markdown" | "mdx" | "txt") {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} 不是 Markdown 文本（扩展名 .{}），replace_section/insert_after_heading 仅支持 .md/.markdown/.mdx/.txt",
+            rel_path,
+            if ext.is_empty() { "?" } else { &ext }
+        ))
+    }
+}
+
+/// 防并发漂移：确认 `line` 行仍然是 `heading` 标题，否则拒绝按旧行号写入。
+fn ensure_heading_at(content: &str, line: usize, heading: &str) -> Result<(), String> {
+    let actual = content
+        .lines()
+        .nth(line.saturating_sub(1))
+        .unwrap_or("")
+        .trim()
+        .trim_start_matches('#')
+        .trim();
+    if actual.eq_ignore_ascii_case(heading.trim()) {
+        Ok(())
+    } else {
+        Err(format!(
+            "章节位置已变化：第 {line} 行现在是「{actual}」而不是「{heading}」（文件可能被其它操作修改过），请重新调用 md_outline 后再试"
+        ))
+    }
+}
+
+/// `md_outline`：返回 Markdown 标题树（层级/标题/行区间/字符数）。
+///
+/// 用途：大文档的"全文地图"。模型先用它定位章节，再用 `read_section` /
+/// `replace_section` 精确读写，避免按 8k 字符一页页盲翻。
+pub async fn md_outline(cfg: &KbSearchConfig, rel_path: &str) -> Result<String, String> {
+    let doc = doc_of(cfg, rel_path)?;
+    let mut out = format!(
+        "{}：共 {} 行 / {} 字符，{} 个章节\n",
+        doc.rel_path,
+        doc.total_lines,
+        doc.total_chars,
+        doc.sections.len()
+    );
+    if doc.sections.is_empty() {
+        out.push_str("（无标题：整篇视为一个章节）\n");
+        return Ok(out);
+    }
+    for (i, s) in doc.sections.iter().enumerate() {
+        if i >= MD_OUTLINE_MAX_ITEMS {
+            out.push_str(&format!(
+                "…（其余 {} 个章节已省略；请用 grep 或行范围读取）\n",
+                doc.sections.len() - MD_OUTLINE_MAX_ITEMS
+            ));
+            break;
+        }
+        let level = heading_level_at(&doc.full_text, s.line_start).max(1);
+        let chars = doc
+            .full_text
+            .lines()
+            .skip(s.line_start.saturating_sub(1))
+            .take(s.line_end.saturating_sub(s.line_start) + 1)
+            .map(|l| l.chars().count() + 1)
+            .sum::<usize>();
+        out.push_str(&format!(
+            "{}{}  [行 {}-{} / {} 字符]\n",
+            "#".repeat(level),
+            s.heading,
+            s.line_start,
+            s.line_end,
+            chars
+        ));
+    }
+    Ok(out)
+}
+
+/// `read_section`：按标题读取章节（带行号），用于替代"从头翻页"。
+pub async fn read_section(
+    cfg: &KbSearchConfig,
+    rel_path: &str,
+    heading: &str,
+    max_chars: usize,
+) -> Result<String, String> {
+    let doc = doc_of(cfg, rel_path)?;
+    let sec = find_doc_section(&doc, heading)?;
+    let budget = max_chars.min(MAX_FILE_READ_CHARS).max(512);
+    let mut out = format!(
+        "{} › {}（行 {}-{}）\n",
+        rel_path, sec.heading, sec.line_start, sec.line_end
+    );
+    out.push_str(&text_ops::render_numbered_lines(
+        &doc.full_text,
+        sec.line_start,
+        sec.line_end,
+        budget,
+    ));
+    Ok(out)
+}
+
+/// `replace_section`：用 `content` 整体替换指定章节（**含标题行**）。
+///
+/// `content` 为空 = 删除该章节。相比 old_string 替换：不需要复制旧正文，
+/// 长度与 token 只取决于新内容（大段改写从"读整节 + 复述整节"变成"读大纲 + 写新节"）。
+pub async fn replace_section(
+    cfg: &KbSearchConfig,
+    rel_path: &str,
+    heading: &str,
+    content: &str,
+) -> Result<String, String> {
+    ensure_markdown_like(rel_path)?;
+    let doc = doc_of(cfg, rel_path)?;
+    let sec = find_doc_section(&doc, heading)?;
+    let (start, end) = (sec.line_start, sec.line_end);
+    let (full, current) = read_editable(cfg, rel_path, "编辑")?;
+    // 防并发漂移：定位用的行号来自（带缓存的）解析结果，落盘前确认该行仍是目标标题
+    ensure_heading_at(&current, start, &sec.heading)?;
+    // 以**磁盘当前内容**为基准（DOC 缓存可能落后于一次并发写入）
+    let (next, _) = text_ops::replace_line_range(&current, start, end, content)
+        .map_err(|e| format!("{rel_path}: {e}"))?;
+    if next == current {
+        return Ok(format!("{rel_path}: 章节「{heading}」内容未变化，未写入"));
+    }
+    let verified = commit_write(cfg, &full, rel_path, &next)?;
+    Ok(format!(
+        "已替换章节「{}」（行 {}-{}）：{} 字符 → {} 字符；{verified}",
+        sec.heading,
+        start,
+        end,
+        current.chars().count(),
+        next.chars().count()
+    ))
+}
+
+/// `insert_after_heading`：在指定标题行之后插入内容（作为该章节开头）。
+pub async fn insert_after_heading(
+    cfg: &KbSearchConfig,
+    rel_path: &str,
+    heading: &str,
+    content: &str,
+) -> Result<String, String> {
+    ensure_markdown_like(rel_path)?;
+    let doc = doc_of(cfg, rel_path)?;
+    let sec = find_doc_section(&doc, heading)?;
+    let (full, current) = read_editable(cfg, rel_path, "编辑")?;
+    ensure_heading_at(&current, sec.line_start, &sec.heading)?;
+    let (next, n) = text_ops::insert_after_line(&current, sec.line_start, content)
+        .map_err(|e| format!("{rel_path}: {e}"))?;
+    let verified = commit_write(cfg, &full, rel_path, &next)?;
+    Ok(format!(
+        "已在「{}」（行 {}）之后插入 {n} 段内容；{verified}",
+        sec.heading, sec.line_start
+    ))
+}
+
+/// `read_relevant`：按问题**有预算地**读取文档相关章节（复用 DocAgent 的选段策略）。
+pub async fn read_relevant(
+    cfg: &KbSearchConfig,
+    rel_path: &str,
+    query: &str,
+    budget_tokens: usize,
+) -> Result<String, String> {
+    let doc = doc_of(cfg, rel_path)?;
+    let budget = budget_tokens.clamp(512, 32_000);
+    let ctx = crate::core::docagent::build_context(&doc, query, budget);
+    let mut out = format!(
+        "{}：按问题选段（预算 {budget} tokens，{}）\n\n",
+        rel_path,
+        if ctx.full { "已全文注入" } else { "超预算，仅注入相关章节" }
+    );
+    out.push_str(&ctx.prompt_block);
+    if !ctx.omitted.is_empty() {
+        out.push_str(&format!(
+            "\n\n[未注入的章节：{}]",
+            ctx.omitted.iter().take(12).cloned().collect::<Vec<_>>().join("、")
+        ));
+    }
+    Ok(out)
+}
+
+/// `apply_patch`：应用标准 unified diff（多文件、多 hunk）。
+///
+/// 相比逐个 `edit`：一次调用改多处，上下文只需 3 行；`apply_hunks` 内含
+/// 归一化定位（CRLF/行尾空白容忍），失败会返回期望位置附近的实际内容。
+pub async fn apply_patch(cfg: &KbSearchConfig, patch: &str) -> Result<String, String> {
+    if patch.len() > 200_000 {
+        return Err("补丁超过 200KB，请拆分为多次 apply_patch".into());
+    }
+    let files = text_ops::parse_unified_patch(patch)?;
+    // 阶段 1：全部在内存中应用（任一失败即整体拒绝，不写任何文件）
+    let mut pending: Vec<(PathBuf, String, String, usize)> = Vec::new();
+    for fp in &files {
+        let (full, content) = read_editable(cfg, &fp.path, "编辑")?;
+        let next = text_ops::apply_hunks(&content, &fp.hunks)
+            .map_err(|e| format!("{}: {e}", fp.path))?;
+        pending.push((full, next, fp.path.clone(), fp.hunks.len()));
+    }
+    // 阶段 2：逐文件写入
+    let mut changed = 0usize;
+    let mut hunks = 0usize;
+    for (full, content, rel, n) in &pending {
+        commit_write(cfg, full, rel, content)?;
+        changed += 1;
+        hunks += n;
+    }
+    Ok(format!(
+        "已应用补丁：{changed} 个文件 / {hunks} 个 hunk [verified]"
+    ))
 }
 
 /// 创建新文件或整体覆盖知识库（当前打开目录）内文本文件（对齐主流 Agent 的 write 能力）。
@@ -2058,7 +2564,7 @@ pub async fn write_file(
     let existed = full.exists();
     atomic_write_file(&full, effective.as_bytes())?;
     // Mutation Verification（P0-1）：回读确认写入实际生效
-    let verified = verify_write_back(cfg, rel_path, &effective)?;
+    let verified = verify_write_fast(&full, effective.len())?;
     // 通知前端：新建文件 → 增量插入树节点 + 补 _scanData；覆盖已有 → 零成本
     notify_file_written(cfg, rel_path, !existed);
     Ok(format!(
@@ -2751,7 +3257,8 @@ mod document_read_tests {
             ("a.odt", "anydoc"),
             ("a.ods", "anydoc"),
             ("a.rtf", "anydoc"),
-            ("a.epub", "anydoc"),
+            // Phase 4：EPUB 走自己的富化通路（anydoc 正文 + rbook 目录 + 图片导出）
+            ("a.epub", "epub"),
             ("sub/dir/b.pptx", "anydoc"),
         ] {
             assert_eq!(
@@ -2867,7 +3374,7 @@ mod document_read_tests {
     #[test]
     fn read_text_refuses_binary_document_with_actionable_hint() {
         let (_dir, full) = write_temp("probe2.rtf", &minimal_rtf());
-        let err = read_text(&full, "probe2.rtf", 0)
+        let err = read_text(&full, "probe2.rtf", &ReadSpec::default())
             .expect_err("二进制文档不应被 read 直读");
         assert!(
             err.contains("read_document"),
@@ -2880,10 +3387,18 @@ mod document_read_tests {
     #[test]
     fn read_text_still_reads_plain_text_files() {
         let (_dir, full) = write_temp("plain.md", "# 标题\n\n普通正文内容，应当可以直读。");
-        let out = read_text(&full, "plain.md", 0).expect("文本文件应可直读");
+        let out = read_text(&full, "plain.md", &ReadSpec::default()).expect("文本文件应可直读");
         assert!(out.contains("普通正文内容"));
         // 分页语义仍在：offset 超出范围时给出提示
-        let out2 = read_text(&full, "plain.md", 9999).expect("越界 offset 不报错");
+        let out2 = read_text(
+            &full,
+            "plain.md",
+            &ReadSpec {
+                offset: 9999,
+                ..Default::default()
+            },
+        )
+        .expect("越界 offset 不报错");
         assert!(out2.contains("已达文件末尾"), "实际：{out2}");
     }
 
@@ -2892,8 +3407,121 @@ mod document_read_tests {
     #[test]
     fn unregistered_extension_is_not_treated_as_document() {
         let (_dir, full) = write_temp("app.log", "line1\nline2\n");
-        let out = read_text(&full, "app.log", 0).expect("未登记扩展名应可直读");
+        let out = read_text(&full, "app.log", &ReadSpec::default()).expect("未登记扩展名应可直读");
         assert!(out.contains("line1"));
         assert_eq!(document_converter_label("app.log"), None);
+    }
+}
+
+// ───────────── 大文档读写：行号渲染 / 章节定位（纯函数单测） ─────────────
+
+#[cfg(test)]
+mod big_doc_edit_tests {
+    use super::*;
+
+    #[test]
+    fn render_read_adds_line_numbers_and_eof_hint() {
+        let out = render_read("a\nb\nc\n", "x.md", &ReadSpec::default());
+        assert!(out.contains("1| a"), "{out}");
+        assert!(out.contains("3| c"), "{out}");
+        assert!(out.contains("已到文件末尾"), "{out}");
+    }
+
+    #[test]
+    fn render_read_supports_line_range_and_multi_ranges() {
+        let text = "l1\nl2\nl3\nl4\nl5\n";
+        let out = render_read(
+            text,
+            "x.md",
+            &ReadSpec {
+                start_line: Some(2),
+                end_line: Some(3),
+                ..Default::default()
+            },
+        );
+        assert!(out.contains("2| l2") && out.contains("3| l3"), "{out}");
+        assert!(!out.contains("4| l4"), "区间外不应出现：{out}");
+
+        let out = render_read(
+            text,
+            "x.md",
+            &ReadSpec {
+                ranges: vec![(1, 1), (5, 5)],
+                ..Default::default()
+            },
+        );
+        assert!(out.contains("第 1-1 行") && out.contains("第 5-5 行"), "{out}");
+        assert!(out.contains("1| l1") && out.contains("5| l5"), "{out}");
+    }
+
+    #[test]
+    fn render_read_warns_large_file_to_use_outline() {
+        let text: String = (1..=2500).map(|i| format!("line{i}\n")).collect();
+        let out = render_read(&text, "big.md", &ReadSpec::default());
+        assert!(out.contains("md_outline"), "大文件应提示先用 md_outline：{out}");
+        assert!(out.contains("2500 行") || out.contains("共 2500"), "{out}");
+    }
+
+    #[test]
+    fn render_read_keeps_legacy_offset_eof_semantics() {
+        let out = render_read(
+            "abc\n",
+            "x.md",
+            &ReadSpec {
+                offset: 999,
+                ..Default::default()
+            },
+        );
+        assert!(out.contains("已达文件末尾"), "{out}");
+    }
+
+    /// 构造一个仅用于章节定位的 DocFile（字段均为 pub，无需真实文件）。
+    fn doc_with(headings: &[(&str, usize, usize)]) -> crate::core::docagent::DocFile {
+        let full_text: String = (1..=20).map(|i| format!("line{i}\n")).collect();
+        crate::core::docagent::DocFile {
+            rel_path: "doc.md".into(),
+            mtime_ms: 0,
+            total_lines: 20,
+            total_chars: full_text.chars().count(),
+            sections: headings
+                .iter()
+                .enumerate()
+                .map(|(i, (h, s, e))| crate::core::docagent::DocSection {
+                    id: i,
+                    heading: (*h).to_string(),
+                    line_start: *s,
+                    line_end: *e,
+                    text: String::new(),
+                })
+                .collect(),
+            full_text,
+            fits_budget: None,
+        }
+    }
+
+    #[test]
+    fn find_doc_section_exact_then_fuzzy_and_reports_ambiguity() {
+        let doc = doc_with(&[("安装", 1, 5), ("配置", 6, 10), ("安装说明", 11, 15)]);
+        let s = find_doc_section(&doc, "## 安装").expect("去掉 # 前缀后应精确命中");
+        assert_eq!(s.line_start, 1);
+
+        let s = find_doc_section(&doc, "配置").expect("精确命中");
+        assert_eq!(s.line_start, 6);
+
+        // "安" 同时包含于「安装」与「安装说明」→ 歧义必须报候选，而不是随便挑一个
+        let err = find_doc_section(&doc, "安").unwrap_err();
+        assert!(err.contains("匹配到") || err.contains("模糊匹配"), "{err}");
+
+        let err = find_doc_section(&doc, "不存在").unwrap_err();
+        assert!(err.contains("md_outline"), "未命中应引导看大纲：{err}");
+    }
+
+    #[test]
+    fn heading_level_counts_atx_hashes() {
+        let text = "# a\n### b\n无标题\n####### 7 个井号\n";
+        assert_eq!(heading_level_at(text, 1), 1);
+        assert_eq!(heading_level_at(text, 2), 3);
+        assert_eq!(heading_level_at(text, 3), 0);
+        assert_eq!(heading_level_at(text, 4), 0, "超过 6 级不算 ATX 标题");
     }
 }

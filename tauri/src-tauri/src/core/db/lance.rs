@@ -26,6 +26,50 @@ pub(crate) fn escape_sql_string(s: &str) -> String {
     out
 }
 
+/// 分块表的**列定义唯一来源**（建表、旧表补列、以及 `add_chunks` 的 RecordBatch 顺序
+/// 都必须与之一致——注意相邻 Utf8 列的顺序错位不会编译报错，只会静默串列）。
+///
+/// 前四列为**必需列**（主键与写入契约）；其余为可空元数据列，随版本演进追加：
+/// `sentence_window` / `symbol_*` / `tags` / `source_kind` / `converter` / 页码 /
+/// `source_spans` / `table_headers`。
+fn chunk_fields() -> Vec<Field> {
+    vec![
+        Field::new("id", DataType::Utf8, false),
+        Field::new("text", DataType::Utf8, false),
+        Field::new("doc_name", DataType::Utf8, false),
+        Field::new("chunk_index", DataType::UInt32, false),
+        Field::new("path_depth", DataType::UInt32, true),
+        Field::new("path_json", DataType::Utf8, true),
+        Field::new("sentence_window", DataType::Utf8, true),
+        Field::new("symbol_name", DataType::Utf8, true),
+        Field::new("symbol_kind", DataType::Utf8, true),
+        Field::new("chunk_type", DataType::Utf8, true),
+        // A3：frontmatter 标签（JSON 数组字符串），供 metadata 过滤下推
+        Field::new("tags", DataType::Utf8, true),
+        // Plan B v2 / 0C：版本失效粒度（source_kind）与转换器身份（converter）
+        Field::new("source_kind", DataType::Utf8, true),
+        Field::new("converter", DataType::Utf8, true),
+        // Plan B v2 / Phase 1：页码 provenance（分页来源）
+        Field::new("page_start", DataType::UInt32, true),
+        Field::new("page_end", DataType::UInt32, true),
+        Field::new("source_spans", DataType::Utf8, true),
+        // Plan B v2 / §4.7（决策 R3）：表格表头列名（JSON 数组字符串）
+        Field::new("table_headers", DataType::Utf8, true),
+    ]
+}
+
+/// `vector` 列（维度由本地 embedding 模型决定；固定大小的 Float32 列表）
+fn vector_field(dim: i32) -> Field {
+    Field::new(
+        "vector",
+        DataType::FixedSizeList(
+            Arc::new(Field::new("item", DataType::Float32, true)),
+            dim,
+        ),
+        true,
+    )
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DocumentChunk {
     pub id: String,
@@ -185,20 +229,26 @@ impl LanceStore {
         Ok(cloned)
     }
 
-    /// 创建或确保向量表存在（固定 384 维，本地 bge-small-zh-v1.5 模型）
+    /// 创建或确保向量表存在（维度由本地 embedding 模型决定）
     ///
-    /// 开发阶段策略：表已存在则直接返回（不做列迁移——表结构以本文件 schema 为准；
-    /// 结构变更时由调用方 drop_table_only 后重建）；表不存在则按当前 schema 创建。
+    /// 策略：
+    /// - 表已存在 → 先做**列补齐自愈**（[`Self::upgrade_legacy_schema`]：只补可空列、
+    ///   不重写旧数据），再确保向量索引存在；
+    /// - 表不存在 → 按 [`chunk_fields`] + 当前模型维度创建。
+    ///
+    /// 需要重写数据的结构变更（必需列缺失、向量维度变化）不做原地迁移，
+    /// 由调用方 `drop_table_only` 后重建；`upgrade_legacy_schema` 会返回明确错误。
     pub async fn create_table(&self) -> Result<(), String> {
         let db = self.get_connection().await?;
 
-        // 表已存在 → 直接返回（开发阶段不做向后兼容迁移）
+        // 表已存在 → 补齐旧版本缺的列后直接返回
         let open_result = tokio::time::timeout(
             Duration::from_secs(30),
             db.open_table(&self.table_name).execute(),
         )
         .await;
-        if let Ok(Ok(_table)) = open_result {
+        if let Ok(Ok(table)) = open_result {
+            self.upgrade_legacy_schema(&table).await?;
             // 补建向量索引（已有索引则瞬间跳过；构建失败不阻断，仅影响检索性能）
             if let Err(e) = self.ensure_vector_index().await {
                 log::warn!("[lance] 确保向量索引失败（检索将退化为全表扫描）: {}", e);
@@ -212,37 +262,12 @@ impl LanceStore {
         let dim = tokio::task::spawn_blocking(get_local_embedding_dimension)
             .await
             .map_err(|e| format!("获取模型维度任务失败: {}", e))??;
-        let schema = Arc::new(Schema::new(vec![
-            Field::new("id", DataType::Utf8, false),
-            Field::new("text", DataType::Utf8, false),
-            Field::new("doc_name", DataType::Utf8, false),
-            Field::new("chunk_index", DataType::UInt32, false),
-            Field::new("path_depth", DataType::UInt32, true),
-            Field::new("path_json", DataType::Utf8, true),
-            Field::new("sentence_window", DataType::Utf8, true),
-            Field::new("symbol_name", DataType::Utf8, true),
-            Field::new("symbol_kind", DataType::Utf8, true),
-            Field::new("chunk_type", DataType::Utf8, true),
-            // A3：frontmatter 标签（JSON 数组字符串），供 metadata 过滤下推
-            Field::new("tags", DataType::Utf8, true),
-            // Plan B v2 / 0C：版本失效粒度（source_kind）与转换器身份（converter）
-            Field::new("source_kind", DataType::Utf8, true),
-            Field::new("converter", DataType::Utf8, true),
-            // Plan B v2 / Phase 1：页码 provenance（分页来源）
-            Field::new("page_start", DataType::UInt32, true),
-            Field::new("page_end", DataType::UInt32, true),
-            Field::new("source_spans", DataType::Utf8, true),
-            // Plan B v2 / §4.7（决策 R3）：表格表头列名（JSON 数组字符串）
-            Field::new("table_headers", DataType::Utf8, true),
-            Field::new(
-                "vector",
-                DataType::FixedSizeList(
-                    Arc::new(Field::new("item", DataType::Float32, true)),
-                    dim as i32,
-                ),
-                true,
-            ),
-        ]));
+        let schema = Arc::new(Schema::new(
+            chunk_fields()
+                .into_iter()
+                .chain(std::iter::once(vector_field(dim as i32)))
+                .collect::<Vec<_>>(),
+        ));
 
         tokio::time::timeout(
             Duration::from_secs(30),
@@ -252,6 +277,94 @@ impl LanceStore {
         .map_err(|_| "LanceDB 创建表超时 (30s)".to_string())?
         .map_err(|e| format!("LanceDB 创建表失败: {}", e))?;
 
+        Ok(())
+    }
+
+    /// 旧表结构自愈：把后续版本新增的**可空**列原地补上（旧行置 NULL）。
+    ///
+    /// 背景：`create_table` 复用已存在的表。若该表是旧版本建的（列集合是当前 schema
+    /// 的子集），`add_chunks` 会在 LanceDB 的 `validate_schema` 处硬失败：
+    /// `Invalid input, field 'source_kind' does not exist in table schema`
+    /// （输入多出表里没有的列即报错；表多出输入没有的列则允许）。
+    ///
+    /// 为什么必须自愈而不是"让用户重建"：文档表有全量重建入口（`clear` → 重建），
+    /// 对话索引表 `chat_vectors` **没有任何重建入口**，一旦命中旧结构就再也无法
+    /// 索引任何会话（错误只在后端日志与 `chat-index-error` 事件里可见）。
+    ///
+    /// 用 `NewColumnTransform::AllNulls` 只做**元数据级**演进：不重写旧数据、不重建
+    /// 已有向量索引。必需列缺失或向量维度变化属于需要重写数据的结构变更 → 明确报错。
+    async fn upgrade_legacy_schema(&self, table: &lancedb::Table) -> Result<(), String> {
+        let schema = tokio::time::timeout(Duration::from_secs(30), table.schema())
+            .await
+            .map_err(|_| format!("读取表 {} 结构超时 (30s)", self.table_name))?
+            .map_err(|e| format!("读取表 {} 结构失败: {}", self.table_name, e))?;
+
+        // 必需列缺失：无法用 NULL 补齐（写入契约依赖），只能重建
+        let missing_required: Vec<String> = chunk_fields()
+            .into_iter()
+            .filter(|f| !f.is_nullable())
+            .map(|f| f.name().clone())
+            .filter(|name| schema.field_with_name(name).is_err())
+            .collect();
+        if !missing_required.is_empty() {
+            return Err(format!(
+                "表 {} 缺少必需列 {:?}（旧版本结构），无法原地补齐，请重建该索引",
+                self.table_name, missing_required
+            ));
+        }
+
+        let missing: Vec<Field> = chunk_fields()
+            .into_iter()
+            .filter(|f| f.is_nullable() && schema.field_with_name(f.name()).is_err())
+            .collect();
+        if missing.is_empty() {
+            return Ok(());
+        }
+
+        let names: Vec<String> = missing.iter().map(|f| f.name().clone()).collect();
+        let null_columns = Arc::new(ArrowSchema::new(missing));
+        let attempt = tokio::time::timeout(
+            Duration::from_secs(60),
+            table.add_columns(
+                lancedb::table::NewColumnTransform::AllNulls(null_columns),
+                None,
+            ),
+        )
+        .await;
+        match attempt {
+            Ok(Ok(_)) => {}
+            other => {
+                // 并发竞争：另一写入方（两个窗口/并发索引任务）可能已补齐同一批列，
+                // 此时重新读 schema 确认即可，不必把一次无害的重复自愈当成写入失败
+                let all_present = table
+                    .schema()
+                    .await
+                    .map(|after| {
+                        names
+                            .iter()
+                            .all(|name| after.field_with_name(name).is_ok())
+                    })
+                    .unwrap_or(false);
+                if all_present {
+                    log::debug!(
+                        "[lance] 表 {} 的缺失列已由并发写入方补齐: {}",
+                        self.table_name,
+                        names.join(",")
+                    );
+                    return Ok(());
+                }
+                return Err(match other {
+                    Ok(Err(e)) => format!("补齐旧表列失败 ({}): {}", names.join(","), e),
+                    _ => format!("补齐旧表列超时 (60s): {}", names.join(",")),
+                });
+            }
+        }
+
+        log::info!(
+            "[lance] 表 {} 为旧版本结构，已原地补齐缺失列（旧行置 NULL）: {}",
+            self.table_name,
+            names.join(",")
+        );
         Ok(())
     }
 
@@ -402,34 +515,12 @@ impl LanceStore {
         );
 
         let batch = RecordBatch::try_new(
-            ArrowSchema::new(vec![
-                Field::new("id", DataType::Utf8, false),
-                Field::new("text", DataType::Utf8, false),
-                Field::new("doc_name", DataType::Utf8, false),
-                Field::new("chunk_index", DataType::UInt32, false),
-                Field::new("path_depth", DataType::UInt32, true),
-                Field::new("path_json", DataType::Utf8, true),
-                Field::new("sentence_window", DataType::Utf8, true),
-                Field::new("symbol_name", DataType::Utf8, true),
-                Field::new("symbol_kind", DataType::Utf8, true),
-                Field::new("chunk_type", DataType::Utf8, true),
-                Field::new("tags", DataType::Utf8, true),
-                Field::new("source_kind", DataType::Utf8, true),
-                Field::new("converter", DataType::Utf8, true),
-                Field::new("page_start", DataType::UInt32, true),
-                Field::new("page_end", DataType::UInt32, true),
-                Field::new("source_spans", DataType::Utf8, true),
-                Field::new("table_headers", DataType::Utf8, true),
-                Field::new(
-                    "vector",
-                    DataType::FixedSizeList(
-                        Arc::new(Field::new("item", DataType::Float32, true)),
-                        dim,
-                    ),
-                    true,
-                ),
-            ])
-            .into(),
+            Arc::new(ArrowSchema::new(
+                chunk_fields()
+                    .into_iter()
+                    .chain(std::iter::once(vector_field(dim)))
+                    .collect::<Vec<_>>(),
+            )),
             vec![
                 Arc::new(StringArray::from(id_arr)),
                 Arc::new(StringArray::from(text_arr)),
@@ -1078,6 +1169,64 @@ impl LanceStore {
         Ok(())
     }
 
+    /// 列出某文档在向量表中的全部 chunk id（增量索引：只重写变化的块）。
+    ///
+    /// chunk id 是「文档路径 + 内容哈希」的稳定值（见 `utils::build_document_chunks`），
+    /// 因此「id 集合差」正好等于「新增/删除的块」——未变化的块无需重写。
+    pub async fn list_chunk_ids(
+        &self,
+        doc_name: &str,
+    ) -> Result<std::collections::HashSet<String>, String> {
+        let table = match self.open_table().await {
+            Ok(t) => t,
+            Err(_) => return Ok(std::collections::HashSet::new()),
+        };
+        let escaped = escape_sql_string(doc_name);
+        let batches: Vec<RecordBatch> = table
+            .query()
+            .only_if(format!("doc_name = '{}'", escaped))
+            .select(lancedb::query::Select::columns(&["id"]))
+            .limit(1_000_000)
+            .execute()
+            .await
+            .map_err(|e| format!("读取文档 chunk id 失败: {}", e))?
+            .try_collect()
+            .await
+            .map_err(|e| format!("收集文档 chunk id 失败: {}", e))?;
+        let mut ids = std::collections::HashSet::new();
+        for batch in &batches {
+            if let Some(arr) = batch
+                .column_by_name("id")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>())
+            {
+                for i in 0..batch.num_rows() {
+                    if !arr.is_null(i) {
+                        ids.insert(arr.value(i).to_string());
+                    }
+                }
+            }
+        }
+        Ok(ids)
+    }
+
+    /// 按 id 批量删除 chunk（增量索引的删除侧）。
+    pub async fn delete_chunks_by_ids(&self, ids: &[String]) -> Result<(), String> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let table = self.open_table().await?;
+        let list: Vec<String> = ids
+            .iter()
+            .map(|id| format!("'{}'", escape_sql_string(id)))
+            .collect();
+        table
+            .delete(&format!("id IN ({})", list.join(", ")))
+            .await
+            .map_err(|e| format!("按 id 删除 chunk 失败: {}", e))?;
+        self.invalidate_symbol_cache();
+        Ok(())
+    }
+
     /// 删除指定文档的所有块
     ///
     /// 注意：doc_name 由 Rust 端内部生成（文件相对路径），不直接来自前端输入。
@@ -1209,6 +1358,221 @@ mod tests {
             1,
             "vector 列行数不符（数组整体错位的典型症状）"
         );
+    }
+
+    /// **增量索引的组件契约**：按文档列出 chunk id、按 id 删除（只动目标块）。
+    ///
+    /// 索引器依赖「id 集合差 = 新增/删除的块」来做增量写入，两个方法必须语义正确，
+    /// 否则会出现"删错块/漏删块"的静默数据损坏。
+    #[tokio::test]
+    async fn chunk_ids_can_be_listed_and_deleted_individually() {
+        if crate::core::db::utils::get_local_embedding_dimension().is_err() {
+            eprintln!("[skip] 本地 embedding 模型不可用，跳过 chunk id 增量测试");
+            return;
+        }
+        let dim = crate::core::db::utils::get_local_embedding_dimension().unwrap() as usize;
+        let dir = std::env::temp_dir().join("mdgo_lance_chunk_ids");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("建临时目录");
+        let store = LanceStore::new(&dir.to_string_lossy(), "vectors");
+        store.create_table().await.expect("建表");
+
+        let mut c1 = sample_chunk("a.md#1");
+        c1.id = "a.md#1".into();
+        c1.doc_name = "a.md".into();
+        c1.chunk_index = 0;
+        let mut c2 = sample_chunk("a.md#2");
+        c2.id = "a.md#2".into();
+        c2.doc_name = "a.md".into();
+        c2.chunk_index = 1;
+        store
+            .add_chunks(&[c1, c2], &[vec![0.01f32; dim], vec![0.02f32; dim]])
+            .await
+            .expect("写入两块");
+
+        let ids = store.list_chunk_ids("a.md").await.expect("列 id");
+        assert_eq!(ids.len(), 2, "应列出该文档的两块");
+        assert!(ids.contains("a.md#1") && ids.contains("a.md#2"));
+
+        // 只删一块：另一块必须保留（增量索引的删除侧）
+        store
+            .delete_chunks_by_ids(&["a.md#1".to_string()])
+            .await
+            .expect("按 id 删除");
+        let ids = store.list_chunk_ids("a.md").await.expect("再列 id");
+        assert_eq!(ids.len(), 1);
+        assert!(ids.contains("a.md#2"), "未删除的块必须保留");
+
+        // 空列表是 no-op（不能把整表删掉）
+        store.delete_chunks_by_ids(&[]).await.expect("空删除应 no-op");
+        assert_eq!(store.list_chunk_ids("a.md").await.unwrap().len(), 1);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **回归：旧版本创建的表必须能自愈后继续写入。**
+    ///
+    /// 现场错误（用户可见）：
+    /// `索引当前会话失败: LanceDB 写入失败: Invalid input, field 'source_kind'
+    /// does not exist in table schema`。
+    /// 成因：旧版本建的 `chat_vectors` 没有任何 Plan B v2 新增列，而 `create_table`
+    /// 遇到已存在的表直接返回；`add_chunks` 的 RecordBatch 含 `source_kind`，被
+    /// LanceDB `validate_schema` 拒收（输入列在表里不存在即报错）。文档表有重建入口，
+    /// 对话索引表没有，所以命中后**永久不可索引**。
+    ///
+    /// 不依赖 embedding 模型：旧表由测试按旧 schema（8 维向量）手工创建，
+    /// 自愈只做可空列的元数据级演进。
+    #[tokio::test]
+    async fn legacy_table_is_upgraded_before_write() {
+        let dim: i32 = 8;
+        let dir = std::env::temp_dir().join("mdgo_lance_legacy_upgrade");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("建临时目录");
+        let uri = dir.to_string_lossy().to_string();
+
+        let legacy_fields = || {
+            vec![
+                Field::new("id", DataType::Utf8, false),
+                Field::new("text", DataType::Utf8, false),
+                Field::new("doc_name", DataType::Utf8, false),
+                Field::new("chunk_index", DataType::UInt32, false),
+                Field::new("path_depth", DataType::UInt32, true),
+                Field::new("path_json", DataType::Utf8, true),
+                vector_field(dim),
+            ]
+        };
+
+        let conn = lancedb::connect(&uri).execute().await.expect("连接");
+        conn.create_empty_table(
+            "chat_vectors",
+            Arc::new(ArrowSchema::new(legacy_fields())),
+        )
+        .execute()
+        .await
+        .expect("建旧表");
+
+        // 旧数据先落进旧表：验证自愈不丢历史行
+        let legacy_batch = RecordBatch::try_new(
+            Arc::new(ArrowSchema::new(legacy_fields())),
+            vec![
+                Arc::new(StringArray::from(vec!["chat:s1:0"])),
+                Arc::new(StringArray::from(vec!["[user] 旧消息"])),
+                Arc::new(StringArray::from(vec!["s1"])),
+                Arc::new(UInt32Array::from(vec![0u32])),
+                Arc::new(UInt32Array::from(vec![None::<u32>])),
+                Arc::new(StringArray::from(vec![None::<&str>])),
+                Arc::new(
+                    FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
+                        vec![Some(vec![Some(0.5f32); dim as usize])],
+                        dim,
+                    ),
+                ),
+            ],
+        )
+        .expect("构造旧数据");
+        conn.open_table("chat_vectors")
+            .execute()
+            .await
+            .expect("打开旧表")
+            .add(legacy_batch)
+            .execute()
+            .await
+            .expect("写旧数据");
+
+        // 生产入口：create_table 发现旧表 → 原地补列（改前这里直接返回，之后写入必败）
+        let store = LanceStore::new(&uri, "chat_vectors");
+        store.create_table().await.expect("旧表应被原地补齐，而不是报错");
+
+        let schema = store
+            .open_table()
+            .await
+            .expect("打开表")
+            .schema()
+            .await
+            .expect("读 schema");
+        for col in [
+            "sentence_window",
+            "symbol_name",
+            "symbol_kind",
+            "chunk_type",
+            "tags",
+            "source_kind",
+            "converter",
+            "page_start",
+            "page_end",
+            "source_spans",
+            "table_headers",
+        ] {
+            assert!(
+                schema.field_with_name(col).is_ok(),
+                "缺失列 {col} 未被补齐"
+            );
+        }
+
+        // 自愈后的写入——正是现场报错的那一步
+        store
+            .add_chunks(&[sample_chunk("chat:s1:1")], &[vec![0.01f32; dim as usize]])
+            .await
+            .expect("自愈后写入不应再报 field 'source_kind' 不存在");
+
+        let table = store.open_table().await.expect("打开表");
+        assert_eq!(
+            table.count_rows(None).await.expect("行数"),
+            2,
+            "旧行必须保留，新行必须写入"
+        );
+
+        // 旧行的新列为 NULL（元数据级演进，不重写历史数据）
+        let batches: Vec<RecordBatch> = table
+            .query()
+            .execute()
+            .await
+            .expect("查询")
+            .try_collect()
+            .await
+            .expect("收集");
+        let mut old_rows = 0;
+        for batch in &batches {
+            let ids = batch
+                .column_by_name("id")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>())
+                .expect("id 列");
+            let kinds = batch
+                .column_by_name("source_kind")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>())
+                .expect("source_kind 列");
+            for i in 0..batch.num_rows() {
+                if ids.value(i) == "chat:s1:0" {
+                    old_rows += 1;
+                    assert!(kinds.is_null(i), "旧行的 source_kind 应为 NULL");
+                }
+            }
+        }
+        assert_eq!(old_rows, 1, "旧行应可读回");
+
+        // 空旧表（建了表但从未写入）同样要能自愈：这是"升级后第一次索引"的形态
+        conn.create_empty_table("chat_vectors_empty", Arc::new(ArrowSchema::new(legacy_fields())))
+            .execute()
+            .await
+            .expect("建空的旧表");
+        let empty_store = LanceStore::new(&uri, "chat_vectors_empty");
+        empty_store
+            .create_table()
+            .await
+            .expect("空旧表也应被原地补齐");
+        let empty_schema = empty_store
+            .open_table()
+            .await
+            .expect("打开空表")
+            .schema()
+            .await
+            .expect("schema");
+        assert!(
+            empty_schema.field_with_name("source_kind").is_ok(),
+            "空旧表也必须补齐 source_kind"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 
