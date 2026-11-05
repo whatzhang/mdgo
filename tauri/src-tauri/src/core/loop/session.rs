@@ -23,6 +23,13 @@ pub const MAX_TOOL_RESULT_CHARS: usize = 24_000;
 /// 既保住协议合法性，又让"最近几步"始终完整可见。
 pub const MAX_HISTORY_TOOL_RESULT_CHARS: usize = 120_000;
 
+/// 触发"溢出压缩"的**整段历史**字符阈值。
+///
+/// 与 [`MAX_HISTORY_TOOL_RESULT_CHARS`] 是两个独立旋钮：前者只约束工具结果内容的
+/// 保留量，这里约束的是"模型可见上下文总量"（还含用户消息/助手文本/tool_call 参数）。
+/// 之前直接复用工具结果预算，调任何一个都会同时改变另一侧行为。
+pub const COMPACT_TRIGGER_CHARS: usize = 120_000;
+
 /// turn 结束原因。
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TurnEndReason {
@@ -195,6 +202,24 @@ impl Session {
         }
 
         let mut out: Vec<LlmMessage> = Vec::new();
+        // 压缩摘要统一放在历史**最前面**：它替代的是"最早的一段上下文"，
+        // 若按事件顺序追加到末尾，模型会把摘要当成最新的用户指令（且历史首条会变成
+        // assistant，协议上也很别扭）。多条摘要按产生顺序合并成一条。
+        let summaries: Vec<&str> = self
+            .events
+            .iter()
+            .filter(|e| !shadowed.contains(&e.seq))
+            .filter_map(|e| match &e.event {
+                SessionEvent::CompactionSummary { summary, .. } => Some(summary.as_str()),
+                _ => None,
+            })
+            .collect();
+        if !summaries.is_empty() {
+            out.push(LlmMessage::text(
+                LlmRole::User,
+                format!("[历史摘要（上下文压缩）]{}", summaries.join("\n")),
+            ));
+        }
         for ev in &self.events {
             if shadowed.contains(&ev.seq) {
                 continue;
@@ -240,13 +265,8 @@ impl Session {
                         });
                     }
                 }
-                // 压缩摘要：作为一条 user 消息注入，保证模型仍知道"前面发生过什么"
-                SessionEvent::CompactionSummary { summary, .. } => {
-                    out.push(LlmMessage::text(
-                        LlmRole::User,
-                        format!("[历史摘要（上下文压缩）]{summary}"),
-                    ));
-                }
+                // 压缩摘要已在上面统一前置，这里不再重复注入
+                SessionEvent::CompactionSummary { .. } => {}
                 // turn/step 等非模型可见事件不进入历史
                 _ => {}
             }
@@ -275,7 +295,7 @@ impl Session {
             .filter(|e| !already.contains(&e.seq))
             .map(event_chars)
             .sum();
-        if total <= MAX_HISTORY_TOOL_RESULT_CHARS {
+        if total <= COMPACT_TRIGGER_CHARS {
             return false;
         }
         let target = total / 2;
@@ -320,7 +340,29 @@ impl Session {
         if shadowed_seqs.is_empty() {
             return false;
         }
-        let summary = build_compact_summary(&self.events[..cutoff], &already, shadowed_seqs.len());
+        // 关键：压缩切点按 step 取，而本轮的 UserMessage 排在它自己 step 之前，
+        // 所以"当前正在处理的问题"经常正好被切掉。一旦命中，必须把原文写进摘要，
+        // 否则模型压缩后就不知道要做什么（实测会把整轮任务丢掉）。
+        let shadowed_set: HashSet<u64> = shadowed_seqs.iter().copied().collect();
+        let latest_user_seq = self
+            .events
+            .iter()
+            .rev()
+            .find(|e| matches!(e.event, SessionEvent::UserMessage { .. }))
+            .map(|e| e.seq);
+        let latest_user = latest_user_seq
+            .filter(|seq| shadowed_set.contains(seq))
+            .and_then(|seq| self.events.iter().find(|e| e.seq == seq))
+            .and_then(|e| match &e.event {
+                SessionEvent::UserMessage { content, .. } => Some(content.as_str()),
+                _ => None,
+            });
+        let summary = build_compact_summary(
+            &self.events[..cutoff],
+            &already,
+            shadowed_seqs.len(),
+            latest_user,
+        );
         self.append(SessionEvent::CompactionSummary {
             summary,
             shadowed_seqs,
@@ -387,16 +429,25 @@ fn event_chars(ev: &PersistedEvent) -> usize {
     }
 }
 
-/// 生成确定性压缩摘要（不调用 LLM）：工具调用统计 + 涉及文件 + 最近一段输出。
+/// 生成确定性压缩摘要（不调用 LLM）：用户请求 + 工具统计 + 涉及文件 + 最近输出。
 ///
 /// 为什么不用 LLM 摘要：溢出重试是**错误恢复路径**，此时再发一次大请求可能再次溢出，
 /// 而且压缩必须是同步的（`retry_prepare` 是同步回调）。确定性摘要保证"一定能成功"。
+///
+/// `latest_user`：被遮蔽区间里"最近一条用户消息"的原文（仅当它确实被遮蔽时传入）。
+/// 这是压缩后模型还能继续干活的唯一依据，必须放在摘要最前面。
 #[allow(clippy::collapsible_if)] // 保留逐键判断的可读性（`rel_path`/`path`/`file` 三个候选键）
-fn build_compact_summary(events: &[PersistedEvent], already: &HashSet<u64>, shadowed: usize) -> String {
+fn build_compact_summary(
+    events: &[PersistedEvent],
+    already: &HashSet<u64>,
+    shadowed: usize,
+    latest_user: Option<&str>,
+) -> String {
     use std::collections::BTreeMap;
     let mut tools: BTreeMap<String, usize> = BTreeMap::new();
     let mut files: Vec<String> = Vec::new();
     let mut last_assistant = String::new();
+    let mut prev_summaries: Vec<String> = Vec::new();
     for ev in events {
         if already.contains(&ev.seq) {
             continue;
@@ -419,10 +470,16 @@ fn build_compact_summary(events: &[PersistedEvent], already: &HashSet<u64>, shad
                 let start = chars.len().saturating_sub(400);
                 last_assistant = chars[start..].iter().collect();
             }
+            // 上一次压缩的摘要会被本次遮蔽：把它的内容并进来，避免反复压缩后信息归零
+            SessionEvent::CompactionSummary { summary, .. } => prev_summaries.push(summary.clone()),
             _ => {}
         }
     }
-    let mut out = format!("（上下文压缩）已省略 {shadowed} 条较早事件。");
+    let mut out = format!("已省略 {shadowed} 条较早事件。");
+    if let Some(q) = latest_user {
+        let q: String = q.chars().take(600).collect();
+        out.push_str(&format!("用户当前请求：{}。", q.trim()));
+    }
     if !tools.is_empty() {
         let summary = tools
             .iter()
@@ -437,6 +494,9 @@ fn build_compact_summary(events: &[PersistedEvent], already: &HashSet<u64>, shad
     }
     if !last_assistant.trim().is_empty() {
         out.push_str(&format!("最近输出：{}", last_assistant.trim()));
+    }
+    if !prev_summaries.is_empty() {
+        out.push_str(&format!("（更早的压缩摘要：{}）", prev_summaries.join("；")));
     }
     out
 }
@@ -586,5 +646,76 @@ mod tests {
         assert_eq!(calls, results, "遮蔽后仍须保持 tool_call/result 配对");
         // 至少保留最后一步
         assert!(h.iter().any(|m| m.role == LlmRole::Tool), "最近结果必须可见");
+    }
+
+    /// 回归：压缩后必须还能看到"用户当前要做什么"。
+    ///
+    /// 压缩切点按 step 取，而本轮的 UserMessage 排在它自己的 step 之前，很容易正好被切掉。
+    /// 同时摘要必须出现在历史**首位**，否则历史首条会变成 assistant（协议别扭）、
+    /// 且模型会把摘要当成最新的用户指令。
+    #[test]
+    fn compaction_keeps_user_request_and_puts_summary_first() {
+        let mut s = Session::new("s1");
+        s.append(SessionEvent::TurnStart { turn: 1 });
+        s.append(user("请把《安装指南》第 3 节的部署步骤重写一遍"));
+        for i in 0..6 {
+            let id = format!("c{i}");
+            s.append(SessionEvent::StepStart { turn: 1, step: i + 1 });
+            s.append(assistant("读文件", vec![(id.as_str(), "read")]));
+            s.append(tool_result(&id, &"q".repeat(30_000)));
+        }
+        assert!(s.emergency_compact(), "应触发压缩");
+        let h = s.derive_history();
+        assert_eq!(h.first().map(|m| m.role), Some(LlmRole::User), "首条必须是 user（摘要）");
+        assert!(
+            h[0].plain_text().contains("部署步骤重写"),
+            "摘要里必须保留被遮蔽的用户请求：{}",
+            h[0].plain_text()
+        );
+        assert!(
+            h.iter().filter(|m| m.role == LlmRole::User).count() >= 1
+                && !h.iter().skip(1).any(|m| m.plain_text().contains("部署步骤重写")),
+            "用户请求应只出现在首条摘要里（原事件已被遮蔽）"
+        );
+    }
+
+    /// 多次压缩不能让更早的摘要信息归零：新摘要要继承旧摘要内容。
+    #[test]
+    fn repeated_compaction_keeps_previous_summary_text() {
+        let mut s = Session::new("s1");
+        s.append(user("第一问"));
+        for i in 0..4 {
+            let id = format!("a{i}");
+            s.append(SessionEvent::StepStart { turn: 1, step: i + 1 });
+            s.append(assistant("x", vec![(id.as_str(), "read")]));
+            s.append(tool_result(&id, &"a".repeat(30_000)));
+        }
+        assert!(s.emergency_compact());
+        let first_summary = s
+            .events()
+            .iter()
+            .find_map(|e| match &e.event {
+                SessionEvent::CompactionSummary { summary, .. } => Some(summary.clone()),
+                _ => None,
+            })
+            .expect("应有第一条摘要");
+        // 继续追加事件并再次压缩
+        for i in 0..4 {
+            let id = format!("b{i}");
+            s.append(SessionEvent::StepStart { turn: 2, step: i + 1 });
+            s.append(assistant("y", vec![(id.as_str(), "read")]));
+            s.append(tool_result(&id, &"b".repeat(30_000)));
+        }
+        assert!(s.emergency_compact(), "第二次也应能压缩");
+        let joined: String = s
+            .derive_history()
+            .iter()
+            .map(|m| m.plain_text())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            joined.contains(first_summary.trim()) || joined.contains("更早的压缩摘要"),
+            "旧摘要信息不应丢失：{joined}"
+        );
     }
 }

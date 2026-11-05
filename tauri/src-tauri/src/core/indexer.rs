@@ -2312,7 +2312,22 @@ impl Indexer {
         //   1) 没有任何变化（id 集合相同）→ 直接返回，连 BM25/元数据都不动；
         //   2) 有变化 → 按 id 删除消失的块、只追加新块（未变化块原地保留）。
         // BM25 是「按文档」粒度的倒排（tantivy 无按行更新），仍整篇 delete+add。
-        let existing = store.list_chunk_ids(rel_path).await.unwrap_or_default();
+        //
+        // 失败处理：`list_chunk_ids` 读失败时**不能**当成"该文档没有块"——那样会把
+        // 全部块重新 add 一遍，旧行仍在 → 同一文档出现重复 chunk（检索结果重复、
+        // 分数失真）。此时回退到"整篇删除 + 重写"的自愈路径（旧行为），
+        // 既不丢数据也不会产生重复。
+        let existing = match store.list_chunk_ids(rel_path).await {
+            Ok(ids) => ids,
+            Err(e) => {
+                log::warn!(
+                    "[indexer] 读取旧 chunk id 失败，回退整篇重写 ({}): {}",
+                    rel_path,
+                    e
+                );
+                return self.rewrite_document_chunks(store, bm25, rel_path, doc_chunks, vectors).await;
+            }
+        };
         let new_ids: std::collections::HashSet<&String> =
             doc_chunks.iter().map(|c| &c.id).collect();
         let to_delete: Vec<String> = existing
@@ -2327,6 +2342,17 @@ impl Indexer {
                 to_add.push(chunk);
                 to_add_vecs.push(vec.clone());
             }
+        }
+        // 防御：块与向量必须一一对应。前面的 `zip` 会静默截断，让 `add_chunks`
+        // 看不到长度不一致（它会以为两边都短了），结果是"悄悄少写块"。
+        if vectors.len() != doc_chunks.len() {
+            log::warn!(
+                "[indexer] chunks({}) 与 vectors({}) 数量不一致，回退整篇重写 ({})",
+                doc_chunks.len(),
+                vectors.len(),
+                rel_path
+            );
+            return self.rewrite_document_chunks(store, bm25, rel_path, doc_chunks, vectors).await;
         }
         if to_add.is_empty() && to_delete.is_empty() {
             return Ok(existing.len() as usize);
@@ -2352,6 +2378,38 @@ impl Indexer {
             })?;
         }
         Ok(existing.len() as usize)
+    }
+
+    /// 整篇重写（旧行为）：先删除该文档全部块再写入。
+    ///
+    /// 作为增量路径的自愈回退：增量信息不可信时（读旧 id 失败/块与向量数量不一致），
+    /// 用它保证"内容正确"优先于"省 I/O"。
+    async fn rewrite_document_chunks(
+        &self,
+        store: &LanceStore,
+        bm25: Option<&Bm25Index>,
+        rel_path: &str,
+        doc_chunks: &[DocumentChunk],
+        vectors: &[Vec<f32>],
+    ) -> Result<usize, String> {
+        let old = self.count_document_chunks(store, rel_path).await;
+        if let Err(e) = store.delete_document(rel_path).await {
+            log::warn!("[indexer] 删除旧 LanceDB 数据失败 ({}): {}", rel_path, e);
+        }
+        store.add_chunks(doc_chunks, vectors).await.map_err(|e| {
+            log::error!("[indexer] 写入 LanceDB 失败 ({}): {}", rel_path, e);
+            e
+        })?;
+        if let Some(bm25) = bm25 {
+            if let Err(e) = bm25.delete_document(rel_path) {
+                log::warn!("[indexer] 删除 BM25 旧数据失败 ({}): {}", rel_path, e);
+            }
+            bm25.add_documents(doc_chunks).map_err(|e| {
+                log::error!("[indexer] 写入 BM25 失败 ({}): {}", rel_path, e);
+                e
+            })?;
+        }
+        Ok(old as usize)
     }
 
     /// 统计某个 doc_name 下的 chunk 数量

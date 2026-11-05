@@ -75,10 +75,21 @@ pub struct LoopConfig {
   `stream_retry_base_ms=800`、`max_tokens=None`、`retry_prepare=None`。
 - **上下文溢出恢复**：`OverflowRetryHook` 把 `ContextOverflow` 归类为可重试；命令层把
   `retry_prepare` 接到 `Session::emergency_compact()`（按 step 边界遮蔽旧事件并生成确定性摘要，
-  不调用 LLM），因此溢出不再等于整轮失败。
+  不调用 LLM），因此溢出不再等于整轮失败。两条约束：
+  1. 压缩切点按 step 取，而本轮 `UserMessage` 排在它自己的 step 之前——一旦被切掉，
+     摘要里必须带上「用户当前请求」原文，否则压缩后模型会不知道要做什么；
+  2. 摘要投影到历史**首位**（而不是按事件顺序落到末尾），既保证首条仍是 user 角色，
+     也避免模型把摘要当成最新的用户指令。
 - **工具结果预算**：单条结果进入历史前截断到 `MAX_TOOL_RESULT_CHARS`（24k 字符）；
   历史累计工具结果超过 `MAX_HISTORY_TOOL_RESULT_CHARS`（120k 字符）时，最旧的结果被清成占位符
-  （`Session::derive_history` 内实现，配对关系不变）。
+  （`Session::derive_history` 内实现，配对关系不变）。触发压缩的整段历史阈值是独立的
+  `COMPACT_TRIGGER_CHARS`（120k），两个旋钮互不影响。
+- **provider 错误分级**：Anthropic 客户端返回保留 HTTP 状态码的 `AnthropicError`
+  （400 + `prompt is too long` → `ContextOverflow`；401/403/400 → `InvalidRequest` 不重试；
+  429/529/5xx/传输层 → 可退避重试），不再把所有失败压成"可重试"。
+- **前缀缓存**：`system` 由 loop 组装为「稳定规约 + 时间块/预算提醒」。适配器按
+  `VOLATILE_SYSTEM_MARKER`（`[当前时间]`）拆成两个 content block，缓存断点只打在前者上；
+  否则时间每分钟变化会让缓存键整体失效。
 - 命令层实际使用的轮次预算常量是 `core/agent/limits.rs::DEFAULT_MAX_TURNS = 20`
   （对齐 Claude Code / Codex 的多步工具任务预算；第 21 次请求触发 MaxTurns）。
 

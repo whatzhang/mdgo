@@ -34,7 +34,13 @@ impl ApprovalPolicy for DestructiveWritePolicy {
         if !self.enabled.load(Ordering::Relaxed) {
             return None;
         }
-        let rel_path = args.get("rel_path").and_then(|v| v.as_str()).unwrap_or("?");
+        // 新结构工具的参数名是 `path`（`rel_path` 是 edit/write/multi_edit 的名字）。
+        // 只认 `rel_path` 会让审批弹窗显示"整节替换 ?（章节：安装）"，用户没法确认改的是哪个文件。
+        let rel_path = args
+            .get("rel_path")
+            .or_else(|| args.get("path"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("?");
         match tool {
             "edit" => {
                 let old_len = args
@@ -74,15 +80,34 @@ impl ApprovalPolicy for DestructiveWritePolicy {
                 detail: "章节级改写会直接覆盖原有正文且不可撤销,请确认这是预期修改".to_string(),
             }),
             "apply_patch" => {
-                let lines = args
-                    .get("patch")
-                    .and_then(|v| v.as_str())
-                    .map(|p| p.lines().count())
-                    .unwrap_or(0);
+                let patch = args.get("patch").and_then(|v| v.as_str()).unwrap_or("");
+                let lines = patch.lines().count();
+                // 补丁可能一次改多个文件：必须把目标文件列出来，否则用户只能"盲批"
+                let mut files: Vec<String> = Vec::new();
+                for l in patch.lines() {
+                    if let Some(rest) = l.strip_prefix("+++ ") {
+                        let p = rest.split_whitespace().next().unwrap_or("");
+                        let p = p.trim_start_matches("b/");
+                        if !p.is_empty() && p != "/dev/null" && !files.iter().any(|f| f == p) {
+                            files.push(p.to_string());
+                        }
+                    }
+                }
+                let file_hint = if files.is_empty() {
+                    String::new()
+                } else {
+                    let shown = files.iter().take(3).cloned().collect::<Vec<_>>().join("、");
+                    let more = files.len().saturating_sub(3);
+                    if more > 0 {
+                        format!("，文件：{shown} 等 {} 个", files.len())
+                    } else {
+                        format!("，文件：{shown}")
+                    }
+                };
                 Some(ApprovalRequest {
                     tool: tool.to_string(),
                     args: args.clone(),
-                    summary: format!("应用补丁（{lines} 行 unified diff）"),
+                    summary: format!("应用补丁（{lines} 行 unified diff{file_hint}）"),
                     detail: "补丁会同时修改补丁内的多个文件且不可撤销,请确认".to_string(),
                 })
             }

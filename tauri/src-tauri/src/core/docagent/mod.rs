@@ -20,12 +20,12 @@ use std::time::SystemTime;
 
 pub mod tools;
 
-/// 进程级文件缓存：(规范根 + 相对路径) → (mtime, 解析结果)
-static DOC_CACHE: OnceLock<Mutex<HashMap<String, (u64, Arc<DocFile>)>>> = OnceLock::new();
+/// 进程级文件缓存：(规范根 + 相对路径) → (mtime, size, 解析结果)
+static DOC_CACHE: OnceLock<Mutex<HashMap<String, (u64, u64, Arc<DocFile>)>>> = OnceLock::new();
 
 const CACHE_MAX_ENTRIES: usize = 64;
 
-fn doc_cache() -> &'static Mutex<HashMap<String, (u64, Arc<DocFile>)>> {
+fn doc_cache() -> &'static Mutex<HashMap<String, (u64, u64, Arc<DocFile>)>> {
     DOC_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -202,19 +202,25 @@ fn cache_key(root: &str, rel: &str) -> String {
     format!("{root}\u{0}{rel}")
 }
 
-/// 读取并解析单文件（带 mtime 缓存）。
+/// 读取并解析单文件（带 (mtime, size) 缓存）。
+///
+/// 缓存键为什么带 size：只比 mtime 时，"同一毫秒内两次写入"或低时间戳分辨率的文件系统
+/// 会让缓存命中**旧解析结果**；而 `replace_section` 依赖这里的 line_start/line_end，
+/// 命中旧结果就可能按过期行号写错范围（经典的 ABA：状态看起来没变，其实变了）。
 pub fn read_doc(root: &str, rel: &str) -> Result<Arc<DocFile>, String> {
     let full = resolve_in_root(root, rel)?;
+    let size = std::fs::metadata(&full).map(|m| m.len()).unwrap_or(0);
     let mtime = mtime_ms_of(&full);
     let key = cache_key(root, rel);
     if let Ok(map) = doc_cache().lock() {
-        if let Some((t, doc)) = map.get(&key) {
-            if *t == mtime {
+        if let Some((t, s, doc)) = map.get(&key) {
+            if *t == mtime && *s == size {
                 return Ok(doc.clone());
             }
         }
     }
     let (text, mtime) = read_text_at(&full, rel)?;
+    let size = text.len() as u64;
     let doc = parse_doc(root, rel, text, mtime);
     if let Ok(mut map) = doc_cache().lock() {
         if !map.contains_key(&key) && map.len() >= CACHE_MAX_ENTRIES {
@@ -222,7 +228,7 @@ pub fn read_doc(root: &str, rel: &str) -> Result<Arc<DocFile>, String> {
                 map.remove(&oldest);
             }
         }
-        map.insert(key, (mtime, Arc::new(doc.clone())));
+        map.insert(key, (mtime, size, Arc::new(doc.clone())));
     }
     Ok(Arc::new(doc))
 }

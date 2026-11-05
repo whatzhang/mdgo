@@ -570,6 +570,25 @@ pub struct ReadSpec {
     pub ranges: Vec<(usize, usize)>,
 }
 
+/// 读取文件开头若干字符，专用于「引用来源片段」。
+///
+/// 与 [`read_text`] 的区别：不做行号渲染、不走工具结果缓存，只取原始正文开头，
+/// 因此 UI 里的来源片段仍是文件原文（而不是 `12| 原文` 或大文件横幅）。
+fn raw_head_snippet(full: &Path, max_chars: usize) -> String {
+    use std::io::Read;
+    let Ok(mut f) = std::fs::File::open(full) else {
+        return String::new();
+    };
+    let cap = max_chars.saturating_mul(4).clamp(256, 64 * 1024);
+    let mut buf = vec![0u8; cap];
+    let Ok(n) = f.read(&mut buf) else {
+        return String::new();
+    };
+    buf.truncate(n);
+    let text = String::from_utf8_lossy(&buf);
+    text.chars().take(max_chars).collect()
+}
+
 /// 读取已解析路径的文本内容（目录拒绝、按行分页、带行号）。
 ///
 /// 为什么按行渲染：模型需要用**行号**来定位与后续的行范围编辑；字符 offset 与
@@ -643,6 +662,12 @@ fn render_read(text: &str, display: &str, spec: &ReadSpec) -> String {
         let mut budget = MAX_FILE_READ_CHARS;
         for (s, e) in &spec.ranges {
             let (s, e) = ((*s).max(1), (*e).max(*s));
+            if s > total_lines {
+                out.push_str(&format!(
+                    "[第 {s} 行超出文件总行数 {total_lines}，已跳过该区间]\n"
+                ));
+                continue;
+            }
             out.push_str(&format!("--- 第 {s}-{e} 行 ---\n"));
             if budget == 0 {
                 out.push_str("[本次读取已达输出上限，剩余区间请另发一次 read]\n");
@@ -657,7 +682,14 @@ fn render_read(text: &str, display: &str, spec: &ReadSpec) -> String {
     }
     // 行区间模式；缺 end_line 时读到当前页上限
     if let Some(s) = spec.start_line {
-        let s = s.max(1).min(total_lines);
+        let s = s.max(1);
+        if s > total_lines {
+            // 明确报错而不是静默夹到末行：否则模型会把最后一行当成第 N 行继续编辑
+            return format!(
+                "[start_line={s} 超出文件总行数 {total_lines}（共 {total_chars} 字符）；\
+                 省略 start_line 可读首屏，或用 start_line=1 从开头读]"
+            );
+        }
         let e = spec.end_line.unwrap_or(total_lines).max(s).min(total_lines);
         append_page(&mut out, s, e, MAX_FILE_READ_CHARS);
         out.push_str(&format!(
@@ -954,8 +986,11 @@ pub async fn read_with(
         Ok(full) => {
             let result = read_text(&full, rel_path, &spec)?;
             // 读取的是知识库（当前打开目录）内文件 → 记录为引用来源，
-            // 使「直接读文件」的回答同样展示引用（与预检索/检索工具来源一致）
-            push_kb_source(cfg, rel_path, &result).await;
+            // 使「直接读文件」的回答同样展示引用（与预检索/检索工具来源一致）。
+            // 注意 snippet 用**原始文本**：渲染结果带 `123| ` 行号前缀与大文件横幅，
+            // 直接当引用片段会把 UI 的来源面板污染成 "1| # 标题"。
+            let snippet = raw_head_snippet(&full, MAX_SOURCE_SNIPPET_CHARS);
+            push_kb_source(cfg, rel_path, &snippet).await;
             // 提示注入防护：不可信知识库文件内容原样进模型前包裹可疑指令
             // （与子代理摘要/预检索上下文处理保持一致；无命中时原样返回）
             return Ok(crate::core::security::wrap_suspicious(&result));
@@ -964,7 +999,7 @@ pub async fn read_with(
             // 知识库内未找到：已激活技能 SKILL.md 完整正文走内存注册表直读
             // （技能已随启动加载进系统，系统内置技能为编译期嵌入、不落盘；
             // 命中未激活的已知技能时返回「先 activate_skill」的明确引导）
-            if let Some(text) = read_active_skill_md(cfg, rel_path, spec.offset)? {
+            if let Some(text) = read_active_skill_md(cfg, rel_path, &spec)? {
                 return Ok(text);
             }
             if cfg.skill_state.active_only().is_empty() {
@@ -1005,7 +1040,7 @@ pub async fn read_with(
 fn read_active_skill_md(
     cfg: &KbSearchConfig,
     rel_path: &str,
-    offset: usize,
+    spec: &ReadSpec,
 ) -> Result<Option<String>, String> {
     let p = Path::new(rel_path);
     let is_skill_md = p.file_name().and_then(|n| n.to_str()) == Some("SKILL.md");
@@ -1043,22 +1078,9 @@ fn read_active_skill_md(
                     skill.name, skill.id, skill.version, body
                 )
             };
-            let total = full.chars().count();
-            if offset >= total {
-                return Ok(Some(format!(
-                    "[已达文件末尾（共 {total} 字符），offset={offset} 超出范围]"
-                )));
-            }
-            let chunk: String = full.chars().skip(offset).take(MAX_FILE_READ_CHARS).collect();
-            if offset + MAX_FILE_READ_CHARS >= total {
-                return Ok(Some(chunk));
-            }
-            return Ok(Some(format!(
-                "{chunk}\n\n[内容过长：已显示第 {}~{} 字符（共 {total} 字符）。可再次调用 read 并指定 offset={} 读取后续内容]",
-                offset + 1,
-                offset + chunk.chars().count(),
-                offset + MAX_FILE_READ_CHARS
-            )));
+            // 与磁盘文件同一套读取语义（行号分页 / 行区间 / 多区间 / 旧 offset），
+            // 否则模型对 SKILL.md 传 start_line 会被静默忽略，行为与 read 文档不符。
+            return Ok(Some(render_read(&full, rel_path, spec)));
         }
     }
     // 是技能正文路径但该技能未激活：给出明确引导，避免模型误以为文件不存在而反复尝试
@@ -1886,13 +1908,17 @@ fn atomic_write_file(full: &Path, content: &[u8]) -> Result<(), String> {
     }
 }
 
-/// Mutation Verification（P0-1，降本版）：写入后**按字节数**校验落盘完整性。
+/// Mutation Verification（P0-1）：确认写操作真的落盘。
 ///
-/// 旧实现每次都把整文件读回并与预期全等比较：对 495KB 文档等于每次编辑多一次
-/// 全量 I/O + 全量比较。原子写（临时文件 + rename）成功后，文件内容与长度由
-/// 文件系统保证；这里只 stat 一次确认长度一致即可证明"没有半截写入"。
-/// debug 构建额外做全量比对，测试仍能捕获真实的内容级回归。
-fn verify_write_fast(full: &Path, expected_len: usize) -> Result<String, String> {
+/// 成本策略（不要退化成"只比长度"）：
+/// - 恒定一次 `stat` 抓"半截写入"；
+/// - 内容全等比较只在 `expected.len() <= 2MB` 时做：编辑类工具本来就有 1MB 上限
+///   （`MAX_EDIT_FILE_BYTES`），字节比较是微秒级，比"长度相同但内容错位"的静默失败
+///   划算得多；debug 构建无条件比对，便于测试捕获内容级回归。
+fn verify_write_fast(full: &Path, expected: &str) -> Result<String, String> {
+    /// 超过该体积只做长度校验（避免超大 write 每次多读一遍全量内容）。
+    const CONTENT_VERIFY_MAX_BYTES: usize = 2 * 1024 * 1024;
+    let expected_len = expected.len();
     let meta = std::fs::metadata(full).map_err(|e| format!("回读验证失败（读取文件信息）: {}", e))?;
     if meta.len() as usize != expected_len {
         return Err(format!(
@@ -1901,34 +1927,63 @@ fn verify_write_fast(full: &Path, expected_len: usize) -> Result<String, String>
             expected_len
         ));
     }
-    #[cfg(debug_assertions)]
-    {
+    let verify_content = cfg!(debug_assertions) || expected_len <= CONTENT_VERIFY_MAX_BYTES;
+    if verify_content {
         let actual = std::fs::read(full).map_err(|e| format!("回读验证失败（读取内容）: {}", e))?;
-        if actual.len() != expected_len {
-            return Err("回读验证失败：回读内容长度与预期不一致".into());
+        if actual.as_slice() != expected.as_bytes() {
+            return Err(
+                "回读验证失败：写入后的实际内容与预期不一致（长度相同），操作可能未完全生效，请勿声称成功"
+                    .into(),
+            );
         }
     }
     Ok("[verified] 已确认写入落盘".to_string())
 }
 
-/// 最近一次 Agent 写文件的时刻（unix 毫秒）。
+/// Agent 写文件的"最近时刻 + 连续写次数"状态。
 ///
-/// watcher 用它做「Agent 连续编辑期间暂缓索引」：一次大文档改写往往包含多次 edit，
-/// 若每次落盘都触发整篇重解析/重分块/重嵌入，CPU 会在整轮编辑里持续被打满；
-/// 等编辑停下来再索引一次即可。
-static LAST_AGENT_WRITE_MS: AtomicU64 = AtomicU64::new(0);
+/// 时钟用**进程内单调时钟**（不是系统墙钟）：墙钟回拨（NTP 校时/手动改表）会让
+/// `now - last` 归零，从而把"刚写过"判成永久为真，watcher 就一直不索引了。
+static AGENT_WRITE_STATE: std::sync::Mutex<(u64, u32)> = std::sync::Mutex::new((0, 0));
 
-/// 最近一次 Agent 写文件的 unix 毫秒时间戳（0 = 从未写过）。
+/// 连续写的判定窗口：两次写间隔不超过该值算同一批（同一轮编辑）。
+const AGENT_WRITE_BURST_WINDOW_MS: u64 = 10_000;
+
+fn mono_epoch() -> std::time::Instant {
+    static EPOCH: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    *EPOCH.get_or_init(std::time::Instant::now)
+}
+
+/// 进程启动以来的单调毫秒数（watcher 计算静默窗口时用它，而不是 `SystemTime`）。
+pub fn mono_ms() -> u64 {
+    mono_epoch().elapsed().as_millis() as u64
+}
+
+/// 最近一次 Agent 写文件的单调毫秒时间戳（0 = 从未写过）。
 pub fn last_agent_write_ms() -> u64 {
-    LAST_AGENT_WRITE_MS.load(Ordering::Relaxed)
+    AGENT_WRITE_STATE
+        .lock()
+        .map(|g| g.0)
+        .unwrap_or_else(|e| e.into_inner().0)
+}
+
+/// 当前这批连续编辑包含几次写（1 = 单次编辑）。
+pub fn agent_write_burst_count() -> u32 {
+    AGENT_WRITE_STATE
+        .lock()
+        .map(|g| g.1)
+        .unwrap_or_else(|e| e.into_inner().1)
 }
 
 fn mark_agent_write() {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-    LAST_AGENT_WRITE_MS.store(now, Ordering::Relaxed);
+    let now = mono_ms();
+    let mut g = AGENT_WRITE_STATE.lock().unwrap_or_else(|e| e.into_inner());
+    if g.0 > 0 && now.saturating_sub(g.0) <= AGENT_WRITE_BURST_WINDOW_MS {
+        g.1 = g.1.saturating_add(1);
+    } else {
+        g.1 = 1;
+    }
+    g.0 = now;
 }
 
 /// 通知前端知识库文件已被 Agent 写入：前端据此做**增量**文件树更新
@@ -2013,7 +2068,7 @@ fn commit_write(
     content: &str,
 ) -> Result<String, String> {
     atomic_write_file(full, content.as_bytes())?;
-    let verified = verify_write_fast(full, content.len())?;
+    let verified = verify_write_fast(full, content)?;
     // 通知前端：覆盖/编辑已有文件 → created=false，前端零成本（仅定位高亮）
     notify_file_written(cfg, rel_path, false);
     Ok(verified)
@@ -2167,9 +2222,12 @@ pub async fn multi_edit_batch(
     }
 
     // ── 阶段 1：逐文件读取 + 顺序应用（不写盘）──
-    let mut outputs: Vec<(PathBuf, String, String, usize)> = Vec::with_capacity(order.len());
+    // 同时保留"读盘时的原始内容"，阶段 2 用它判断该文件是否真的变了：
+    // 未变化的文件不该被重写（会白触发索引/前端通知），也不该计入"已更新"。
+    let mut outputs: Vec<(PathBuf, String, String, usize, String)> = Vec::with_capacity(order.len());
     for rel in &order {
         let (full, mut content) = read_editable(cfg, rel, "编辑")?;
+        let original = content.clone();
         let mut applied = 0usize;
         for (idx, item) in groups.get(rel).into_iter().flatten() {
             if item.old_string.is_empty() {
@@ -2185,20 +2243,29 @@ pub async fn multi_edit_batch(
             content = next;
             applied += n;
         }
-        outputs.push((full, content, rel.clone(), applied));
+        outputs.push((full, content, rel.clone(), applied, original));
     }
 
-    // ── 阶段 2：逐文件原子写 + 校验 + 通知 ──
+    // ── 阶段 2：逐文件原子写 + 校验 + 通知（只写真正变化的文件）──
     let mut changed_files = 0usize;
     let mut total_applied = 0usize;
-    for (full, content, rel, applied) in &outputs {
+    let mut unchanged: Vec<String> = Vec::new();
+    for (full, content, rel, applied, original) in &outputs {
+        if content == original {
+            unchanged.push(rel.clone());
+            continue;
+        }
         commit_write(cfg, full, rel, content)?;
         changed_files += 1;
         total_applied += applied;
     }
-    Ok(format!(
+    let mut out = format!(
         "已批量更新 {changed_files} 个文件 / {total_applied} 处替换（同文件多编辑按顺序应用）[verified]"
-    ))
+    );
+    if !unchanged.is_empty() {
+        out.push_str(&format!("；内容未变化而未写入：{}", unchanged.join("、")));
+    }
+    Ok(out)
 }
 
 
@@ -2217,17 +2284,7 @@ fn doc_of(
 
 /// 取某行的标题层级（`## x` → 2）；非标题返回 0。
 fn heading_level_at(text: &str, line_no: usize) -> usize {
-    let line = text.lines().nth(line_no.saturating_sub(1)).unwrap_or("");
-    let t = line.trim_start();
-    let level = t.chars().take_while(|c| *c == '#').count();
-    if level == 0 || level > 6 {
-        return 0;
-    }
-    if t.chars().nth(level) == Some(' ') {
-        level
-    } else {
-        0
-    }
+    atx_heading_level(text.lines().nth(line_no.saturating_sub(1)).unwrap_or(""))
 }
 
 /// 按标题文本定位章节（精确 → 大小写不敏感精确 → 唯一包含；歧义时报候选）。
@@ -2301,21 +2358,69 @@ fn ensure_markdown_like(rel_path: &str) -> Result<(), String> {
 }
 
 /// 防并发漂移：确认 `line` 行仍然是 `heading` 标题，否则拒绝按旧行号写入。
+///
+/// 比较前统一去掉首部 BOM / 零宽字符与 `#` 标记：`parse_doc` 会剥离 BOM，而落盘内容
+/// 不会——不剥的话，带 BOM 的文档第 1 行标题永远"对不上"，报错还会误导用户
+/// （"文件可能被其它操作修改过"）。
+fn normalize_heading_text(s: &str) -> String {
+    s.trim_start_matches(|c: char| {
+        c == '\u{feff}' || c == '\u{200b}' || c == '\u{200c}' || c == '\u{200d}' || c.is_whitespace()
+    })
+    .trim_start_matches('#')
+    .trim()
+    .to_lowercase()
+}
+
 fn ensure_heading_at(content: &str, line: usize, heading: &str) -> Result<(), String> {
-    let actual = content
-        .lines()
-        .nth(line.saturating_sub(1))
-        .unwrap_or("")
-        .trim()
-        .trim_start_matches('#')
-        .trim();
-    if actual.eq_ignore_ascii_case(heading.trim()) {
+    let actual = normalize_heading_text(content.lines().nth(line.saturating_sub(1)).unwrap_or(""));
+    if actual == normalize_heading_text(heading) {
         Ok(())
     } else {
         Err(format!(
             "章节位置已变化：第 {line} 行现在是「{actual}」而不是「{heading}」（文件可能被其它操作修改过），请重新调用 md_outline 后再试"
         ))
     }
+}
+
+/// 该行是否为 ATX 标题（`#`~`######` 后跟空格）；返回层级（非标题返回 0）。
+fn atx_heading_level(line: &str) -> usize {
+    let t = line.trim_start();
+    let level = t.chars().take_while(|c| *c == '#').count();
+    if level == 0 || level > 6 {
+        return 0;
+    }
+    if t.chars().nth(level) == Some(' ') { level } else { 0 }
+}
+
+/// 在**磁盘当前内容**上重算章节范围，返回 `(标题行, 末个非空行)`。
+///
+/// 为什么不直接用 `DocSection.line_end`：它来自带 mtime 缓存的解析结果，而
+/// `parse_doc` 的 `line_end` 还包含"下一节之前的空行"。一旦缓存命中旧解析
+/// （同毫秒内两次写入等），按旧末行替换会改错范围；同时把尾部空行纳入替换范围
+/// 也会在删除章节时吃掉与下一节之间的分隔空行。
+fn section_range_in(content: &str, start: usize, total_lines: usize) -> (usize, usize) {
+    let mut raw_end = total_lines;
+    for (idx, line) in content.lines().enumerate() {
+        let lnum = idx + 1;
+        if lnum <= start {
+            continue;
+        }
+        if atx_heading_level(line) > 0 {
+            raw_end = lnum - 1;
+            break;
+        }
+    }
+    let mut last_non_empty = start;
+    for (idx, line) in content.lines().enumerate() {
+        let lnum = idx + 1;
+        if lnum < start || lnum > raw_end {
+            continue;
+        }
+        if !line.trim().is_empty() {
+            last_non_empty = lnum;
+        }
+    }
+    (start, last_non_empty.max(start))
 }
 
 /// `md_outline`：返回 Markdown 标题树（层级/标题/行区间/字符数）。
@@ -2360,6 +2465,9 @@ pub async fn md_outline(cfg: &KbSearchConfig, rel_path: &str) -> Result<String, 
             chars
         ));
     }
+    // 结构工具同样要把命中的文档登记为引用来源，否则「用 md_outline/read_section 读过
+    // 再作答」的回答既没有来源展示，还会被 grounding 守卫判成"未读取任何本地文件"。
+    push_kb_source(cfg, rel_path, &doc.full_text).await;
     Ok(out)
 }
 
@@ -2383,6 +2491,7 @@ pub async fn read_section(
         sec.line_end,
         budget,
     ));
+    push_kb_source(cfg, rel_path, &sec.text).await;
     Ok(out)
 }
 
@@ -2399,11 +2508,15 @@ pub async fn replace_section(
     ensure_markdown_like(rel_path)?;
     let doc = doc_of(cfg, rel_path)?;
     let sec = find_doc_section(&doc, heading)?;
-    let (start, end) = (sec.line_start, sec.line_end);
+    let start_line = sec.line_start;
+    let heading_text = sec.heading.clone();
     let (full, current) = read_editable(cfg, rel_path, "编辑")?;
     // 防并发漂移：定位用的行号来自（带缓存的）解析结果，落盘前确认该行仍是目标标题
-    ensure_heading_at(&current, start, &sec.heading)?;
-    // 以**磁盘当前内容**为基准（DOC 缓存可能落后于一次并发写入）
+    ensure_heading_at(&current, start_line, &heading_text)?;
+    // 以**磁盘当前内容**为基准重算章节末尾（DOC 缓存可能落后于一次并发写入，
+    // 且缓存里的 line_end 含尾部空行，直接用它替换会吃掉节间分隔空行）
+    let total_lines = current.lines().count().max(1);
+    let (start, end) = section_range_in(&current, start_line, total_lines);
     let (next, _) = text_ops::replace_line_range(&current, start, end, content)
         .map_err(|e| format!("{rel_path}: {e}"))?;
     if next == current {
@@ -2412,7 +2525,7 @@ pub async fn replace_section(
     let verified = commit_write(cfg, &full, rel_path, &next)?;
     Ok(format!(
         "已替换章节「{}」（行 {}-{}）：{} 字符 → {} 字符；{verified}",
-        sec.heading,
+        heading_text,
         start,
         end,
         current.chars().count(),
@@ -2463,6 +2576,7 @@ pub async fn read_relevant(
             ctx.omitted.iter().take(12).cloned().collect::<Vec<_>>().join("、")
         ));
     }
+    push_kb_source(cfg, rel_path, &ctx.prompt_block).await;
     Ok(out)
 }
 
@@ -2564,7 +2678,7 @@ pub async fn write_file(
     let existed = full.exists();
     atomic_write_file(&full, effective.as_bytes())?;
     // Mutation Verification（P0-1）：回读确认写入实际生效
-    let verified = verify_write_fast(&full, effective.len())?;
+    let verified = verify_write_fast(&full, &effective)?;
     // 通知前端：新建文件 → 增量插入树节点 + 补 _scanData；覆盖已有 → 零成本
     notify_file_written(cfg, rel_path, !existed);
     Ok(format!(

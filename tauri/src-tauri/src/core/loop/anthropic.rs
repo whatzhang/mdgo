@@ -133,7 +133,9 @@ impl LlmAdapter for AnthropicAdapter {
                     let _ = tx.send(Ok(StreamEvent::Finish(FinishReason::Stop))).await;
                 }
                 Err(e) => {
-                    let _ = tx.send(Err(LlmError::Provider(e))).await;
+                    // 保留状态码分类：401/403 不再被当成"可重试 provider 错误"，
+                    // 上下文溢出也能被 OverflowRetryHook 识别。
+                    let _ = tx.send(Err(map_anthropic_error(e))).await;
                 }
             }
         });
@@ -142,4 +144,22 @@ impl LlmAdapter for AnthropicAdapter {
         });
         Ok(Box::pin(stream))
     }
+}
+
+/// 把 Anthropic 客户端错误映射为协议无关的 [`LlmError`]。
+///
+/// 旧实现所有失败都包成 `LlmError::Provider`（"保守可重试"），副作用是：
+/// - 401/403/400 也会被退避重试，一次配错 Key 要多等数秒；
+/// - `ContextOverflow` 永远不出现，`OverflowRetryHook`/`emergency_compact` 对 Anthropic 无效。
+fn map_anthropic_error(e: crate::services::anthropic::AnthropicError) -> LlmError {
+    if e.is_context_overflow() {
+        return LlmError::ContextOverflow;
+    }
+    if e.is_retryable() {
+        return match e.status {
+            Some(code) => LlmError::StatusCode(code, e.message),
+            None => LlmError::Http(e.message),
+        };
+    }
+    LlmError::InvalidRequest(e.to_string())
 }

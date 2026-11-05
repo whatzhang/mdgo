@@ -1173,14 +1173,24 @@ impl LanceStore {
     ///
     /// chunk id 是「文档路径 + 内容哈希」的稳定值（见 `utils::build_document_chunks`），
     /// 因此「id 集合差」正好等于「新增/删除的块」——未变化的块无需重写。
+    ///
+    /// 注意错误语义：**只有"表不存在"才返回空集**（新建知识库的正常状态），
+    /// 其它读取失败一律上抛。旧实现把 `open_table` 的所有错误都当成空集，
+    /// 上层会把全部块重新 add 一遍、旧行仍在 → 同一文档出现重复 chunk。
     pub async fn list_chunk_ids(
         &self,
         doc_name: &str,
     ) -> Result<std::collections::HashSet<String>, String> {
-        let table = match self.open_table().await {
-            Ok(t) => t,
-            Err(_) => return Ok(std::collections::HashSet::new()),
-        };
+        let db = self.get_connection().await?;
+        let names = db
+            .table_names()
+            .execute()
+            .await
+            .map_err(|e| format!("列出向量表失败: {}", e))?;
+        if !names.iter().any(|n| n == &self.table_name) {
+            return Ok(std::collections::HashSet::new());
+        }
+        let table = self.open_table().await?;
         let escaped = escape_sql_string(doc_name);
         let batches: Vec<RecordBatch> = table
             .query()

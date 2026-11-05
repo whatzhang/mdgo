@@ -35,17 +35,23 @@ pub enum SubagentMode {
 /// - `pomodoro`：前端交互工具（子代理无人机交互界面）
 /// - `deep_research` / `read_subagent_result` / `spawn_subagent` / `parallel_research`：
 ///   防无限递归嵌套
+///
+/// 注意：子代理的 system prompt 就是 `rag_agent.md`，其中要求"大文档先 md_outline /
+/// 用 read_section 精读"。这些读类工具必须在这里登记，否则子代理会拿到
+/// "工具不存在"——指令与工具集对不上。
 pub fn read_only_tool_set() -> HashSet<String> {
     [
         "kb_search", "code_lookup", "read", "grep", "ls", "glob", "git_status", "git_diff", "webfetch",
         "web_search", "search_memory",
+        // 大文档结构读：只读，无副作用
+        "md_outline", "read_section", "read_relevant", "read_document",
     ]
     .iter()
     .map(|s| s.to_string())
     .collect()
 }
 
-/// 写型子代理工具白名单：只读集 + edit/delete/write。
+/// 写型子代理工具白名单：只读集 + edit/delete/write + 结构写工具。
 ///
 /// 写操作经审批门确认；`remember`/`forget` 仍排除（记忆写入仅主链负责，
 /// 避免子代理未经用户感知地污染全局记忆）。
@@ -57,6 +63,10 @@ pub fn write_tool_set() -> HashSet<String> {
     set.insert("multi_edit".to_string());
     set.insert("git_commit".to_string());
     set.insert("git_checkout".to_string());
+    // 结构写工具与 edit 同风险级别，同样走审批门
+    set.insert("replace_section".to_string());
+    set.insert("insert_after_heading".to_string());
+    set.insert("apply_patch".to_string());
     set
 }
 
@@ -367,18 +377,27 @@ mod tests {
         assert!(!set.contains("pomodoro"), "不得包含前端交互工具");
         assert!(!set.contains("deep_research"), "防无限递归");
         assert!(!set.contains("read_subagent_result"), "防无限递归");
+        // rag_agent.md 要求大文档走结构工具：只读子代理必须能用（否则指令与工具集冲突）
+        assert!(set.contains("md_outline"), "结构读工具必须可用");
+        assert!(set.contains("read_section"));
+        assert!(set.contains("read_relevant"));
+        assert!(!set.contains("replace_section"), "只读子代理不得包含结构写工具");
+        assert!(!set.contains("apply_patch"), "只读子代理不得包含补丁工具");
     }
 
     #[test]
     fn write_tool_set_includes_edits_and_excludes_recursion() {
         let set = write_tool_set();
-        // 写型：只读集 + edit/delete/write/multi_edit/git_commit/git_checkout
+        // 写型：只读集 + edit/delete/write/multi_edit/git_commit/git_checkout + 结构写工具
         assert!(set.contains("edit"));
         assert!(set.contains("delete"));
         assert!(set.contains("write"));
         assert!(set.contains("multi_edit"));
         assert!(set.contains("git_commit"));
         assert!(set.contains("git_checkout"));
+        assert!(set.contains("replace_section"));
+        assert!(set.contains("insert_after_heading"));
+        assert!(set.contains("apply_patch"));
         assert!(set.contains("read"));
         assert!(set.contains("grep"));
         // 递归子代理与记忆写操作仍排除
@@ -388,7 +407,7 @@ mod tests {
         assert!(!set.contains("read_subagent_result"), "防无限递归");
         assert!(!set.contains("remember"), "记忆写仅主链负责");
         assert!(!set.contains("forget"), "记忆写仅主链负责");
-        // 写型 = 只读 ∪ {edit, delete, write, multi_edit, git_commit, git_checkout}
+        // 写型 = 只读 ∪ {edit, delete, write, multi_edit, git_commit, git_checkout, 结构写}
         let expected: HashSet<String> = {
             let mut s = read_only_tool_set();
             s.insert("edit".to_string());
@@ -397,6 +416,9 @@ mod tests {
             s.insert("multi_edit".to_string());
             s.insert("git_commit".to_string());
             s.insert("git_checkout".to_string());
+            s.insert("replace_section".to_string());
+            s.insert("insert_after_heading".to_string());
+            s.insert("apply_patch".to_string());
             s
         };
         assert_eq!(set, expected);
