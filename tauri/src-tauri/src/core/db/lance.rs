@@ -1169,6 +1169,64 @@ impl LanceStore {
         Ok(())
     }
 
+    /// 列出某文档在向量表中的全部 chunk id（增量索引：只重写变化的块）。
+    ///
+    /// chunk id 是「文档路径 + 内容哈希」的稳定值（见 `utils::build_document_chunks`），
+    /// 因此「id 集合差」正好等于「新增/删除的块」——未变化的块无需重写。
+    pub async fn list_chunk_ids(
+        &self,
+        doc_name: &str,
+    ) -> Result<std::collections::HashSet<String>, String> {
+        let table = match self.open_table().await {
+            Ok(t) => t,
+            Err(_) => return Ok(std::collections::HashSet::new()),
+        };
+        let escaped = escape_sql_string(doc_name);
+        let batches: Vec<RecordBatch> = table
+            .query()
+            .only_if(format!("doc_name = '{}'", escaped))
+            .select(lancedb::query::Select::columns(&["id"]))
+            .limit(1_000_000)
+            .execute()
+            .await
+            .map_err(|e| format!("读取文档 chunk id 失败: {}", e))?
+            .try_collect()
+            .await
+            .map_err(|e| format!("收集文档 chunk id 失败: {}", e))?;
+        let mut ids = std::collections::HashSet::new();
+        for batch in &batches {
+            if let Some(arr) = batch
+                .column_by_name("id")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>())
+            {
+                for i in 0..batch.num_rows() {
+                    if !arr.is_null(i) {
+                        ids.insert(arr.value(i).to_string());
+                    }
+                }
+            }
+        }
+        Ok(ids)
+    }
+
+    /// 按 id 批量删除 chunk（增量索引的删除侧）。
+    pub async fn delete_chunks_by_ids(&self, ids: &[String]) -> Result<(), String> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let table = self.open_table().await?;
+        let list: Vec<String> = ids
+            .iter()
+            .map(|id| format!("'{}'", escape_sql_string(id)))
+            .collect();
+        table
+            .delete(&format!("id IN ({})", list.join(", ")))
+            .await
+            .map_err(|e| format!("按 id 删除 chunk 失败: {}", e))?;
+        self.invalidate_symbol_cache();
+        Ok(())
+    }
+
     /// 删除指定文档的所有块
     ///
     /// 注意：doc_name 由 Rust 端内部生成（文件相对路径），不直接来自前端输入。
@@ -1300,6 +1358,56 @@ mod tests {
             1,
             "vector 列行数不符（数组整体错位的典型症状）"
         );
+    }
+
+    /// **增量索引的组件契约**：按文档列出 chunk id、按 id 删除（只动目标块）。
+    ///
+    /// 索引器依赖「id 集合差 = 新增/删除的块」来做增量写入，两个方法必须语义正确，
+    /// 否则会出现"删错块/漏删块"的静默数据损坏。
+    #[tokio::test]
+    async fn chunk_ids_can_be_listed_and_deleted_individually() {
+        if crate::core::db::utils::get_local_embedding_dimension().is_err() {
+            eprintln!("[skip] 本地 embedding 模型不可用，跳过 chunk id 增量测试");
+            return;
+        }
+        let dim = crate::core::db::utils::get_local_embedding_dimension().unwrap() as usize;
+        let dir = std::env::temp_dir().join("mdgo_lance_chunk_ids");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("建临时目录");
+        let store = LanceStore::new(&dir.to_string_lossy(), "vectors");
+        store.create_table().await.expect("建表");
+
+        let mut c1 = sample_chunk("a.md#1");
+        c1.id = "a.md#1".into();
+        c1.doc_name = "a.md".into();
+        c1.chunk_index = 0;
+        let mut c2 = sample_chunk("a.md#2");
+        c2.id = "a.md#2".into();
+        c2.doc_name = "a.md".into();
+        c2.chunk_index = 1;
+        store
+            .add_chunks(&[c1, c2], &[vec![0.01f32; dim], vec![0.02f32; dim]])
+            .await
+            .expect("写入两块");
+
+        let ids = store.list_chunk_ids("a.md").await.expect("列 id");
+        assert_eq!(ids.len(), 2, "应列出该文档的两块");
+        assert!(ids.contains("a.md#1") && ids.contains("a.md#2"));
+
+        // 只删一块：另一块必须保留（增量索引的删除侧）
+        store
+            .delete_chunks_by_ids(&["a.md#1".to_string()])
+            .await
+            .expect("按 id 删除");
+        let ids = store.list_chunk_ids("a.md").await.expect("再列 id");
+        assert_eq!(ids.len(), 1);
+        assert!(ids.contains("a.md#2"), "未删除的块必须保留");
+
+        // 空列表是 no-op（不能把整表删掉）
+        store.delete_chunks_by_ids(&[]).await.expect("空删除应 no-op");
+        assert_eq!(store.list_chunk_ids("a.md").await.unwrap().len(), 1);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// **回归：旧版本创建的表必须能自愈后继续写入。**

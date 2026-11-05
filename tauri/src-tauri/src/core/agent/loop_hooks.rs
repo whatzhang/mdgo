@@ -15,6 +15,7 @@ use serde_json::Value;
 
 use crate::core::approval::{ApprovalDenial, ApprovalGate, DenialCategory};
 use crate::core::r#loop::{HookCtx, LlmMessage, LoopHook, RequestPatch, ToolDecision};
+use crate::core::r#loop::{LoopError, RetryAction};
 use crate::core::skill::activation::ActiveSkillState;
 use crate::core::skill::SkillRegistry;
 
@@ -165,6 +166,24 @@ impl LoopHook for ApprovalHook {
                 );
                 ToolDecision::Skip(skip_message(name, &denial))
             }
+        }
+    }
+}
+
+/// 上下文溢出恢复 Hook：溢出时请求 loop「压缩后重试」。
+///
+/// 真正的压缩动作由 `LoopConfig.retry_prepare` 提供（`Session::emergency_compact`），
+/// 这里只负责把 `ContextOverflow` 归类为可重试——避免"溢出即整轮失败"。
+pub struct OverflowRetryHook;
+
+#[async_trait]
+impl LoopHook for OverflowRetryHook {
+    async fn on_request_error(&self, _ctx: &HookCtx, err: &LoopError) -> Option<RetryAction> {
+        if err.is_context_overflow() {
+            log::info!("[loop] 上下文溢出，压缩会话后重试");
+            Some(RetryAction::Retry)
+        } else {
+            None
         }
     }
 }

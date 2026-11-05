@@ -126,6 +126,8 @@ fn save_approval_mode(mode: ApprovalMode) {
 /// 写类工具前缀（read-only 模式拒绝的集合）
 const WRITE_TOOL_NAMES: &[&str] = &[
     "edit", "write", "delete", "multi_edit", "git_commit", "git_checkout", "git_reset",
+    // 大文档结构写工具：与 edit/write 同等风险（只读模式必须同样拒绝）
+    "replace_section", "insert_after_heading", "apply_patch",
 ];
 
 fn is_write_tool(tool: &str) -> bool {

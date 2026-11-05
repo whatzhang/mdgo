@@ -54,6 +54,8 @@ pub const AGREEMENT_BONUS_WEIGHT: f32 = 0.05;
 
 /// read 单次读取最大字符数（分页续读单元）
 pub const MAX_FILE_READ_CHARS: usize = 8192;
+/// read 一次最多读取的行区间数（`ranges` 数组上限）
+pub const MAX_READ_RANGES: usize = 8;
 /// ls / glob 单次最多返回条目数
 pub const MAX_LIST_ITEMS: usize = 60;
 /// 引用来源片段截断上限

@@ -9,24 +9,22 @@
 //! 不变式（"模型可见即已记录"）：所有进入请求的消息均来自 `Session::derive_history` 投影；
 //! system prompt 与工具 schema 是每轮装配的（不落会话日志，对齐 DSH）。
 
+use std::pin::Pin;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use chrono::Datelike;
-use futures::StreamExt;
+use futures::{Stream, StreamExt};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use super::error::LoopError;
 use super::hooks::{HookCtx, LoopHook, RetryAction};
 use super::llm_seam::{CompletionRequest, LlmAdapter, ToolSchema};
-use super::session::{Session, SessionEvent, TurnEndReason};
+use super::session::{truncate_tool_result, Session, SessionEvent, TurnEndReason};
 use super::tool::{NullSink, ToolEventSink, ToolRegistry, ToolResult};
 use super::tool_calls::execute_tool_calls;
-use super::types::{LlmMessage, LlmRole, StreamEvent, TokenUsage, ToolCall};
-
-#[cfg(test)]
-use std::pin::Pin;
+use super::types::{LlmError, LlmMessage, LlmRole, StreamEvent, TokenUsage, ToolCall};
 
 #[cfg(test)]
 use super::tool::ToolError;
@@ -46,6 +44,10 @@ pub struct LoopConfig {
     pub max_request_retries: usize,
     /// 并行工具上限（默认 4）
     pub max_parallel_tools: usize,
+    /// 流式请求**启动阶段**的瞬时错误重试次数（429/408/5xx/网络；默认 2）
+    pub max_stream_retries: usize,
+    /// 流式重试的指数退避基数（毫秒；默认 800，叠加 0–400ms 抖动）
+    pub stream_retry_base_ms: u64,
     /// 最大输出 token（`None` = 不设置，由服务器/模型默认）
     pub max_tokens: Option<u32>,
     /// 请求失败重试前的准备回调（如压缩会话）。返回 `true` 表示已推进、可安全重试；
@@ -61,6 +63,8 @@ impl LoopConfig {
             budget_warning_threshold: 3,
             max_request_retries: 1,
             max_parallel_tools: 4,
+            max_stream_retries: 2,
+            stream_retry_base_ms: 800,
             max_tokens: None,
             retry_prepare: None,
         }
@@ -225,11 +229,10 @@ impl LoopAgent {
                 req.extra_params = Some(ep);
             }
 
-            // ── 发起模型请求（初始失败走 request-error 钩子）──
-            let stream = match self.adapter.stream(req, cancel.clone()).await {
+            // ── 发起模型请求（瞬时错误先做退避重试；仍失败走 request-error 钩子）──
+            let stream = match self.stream_with_retry(&req, &cancel).await {
                 Ok(s) => s,
-                Err(e) => {
-                    let err = LoopError::Llm(e);
+                Err(err) => {
                     match self.try_recover(&hook_ctx, &err, &mut retries).await {
                         Some(true) => continue, // retry_prepare 已推进，重发
                         Some(false) | None => {
@@ -342,9 +345,10 @@ impl LoopAgent {
             .await;
             for ex in executions {
                 on_event(LoopEvent::ToolResult { call: ex.call.clone(), result: ex.result.clone() });
+                // 进入模型历史前做单条预算截断（UI/日志仍保留完整结果）
                 self.session.append(SessionEvent::ToolResult {
                     call_id: ex.result.call_id,
-                    content: ex.result.content,
+                    content: truncate_tool_result(&ex.result.content),
                     is_error: ex.result.is_error,
                 });
             }
@@ -407,7 +411,11 @@ impl LoopAgent {
             weekday_cn,
             now_local.format("%:z")
         );
-        system = format!("{}\n\n{}", time_block, system);
+        // 动态时间块放在 system **末尾**（而不是最前）：规约 + 工具 + 技能指令构成稳定前缀，
+        // 才能命中 provider 的前缀缓存（Anthropic cache_control / OpenAI automatic caching）。
+        // 若放在最前，时间一变整个前缀失效，每步都按全价重算。
+        system.push_str("\n\n");
+        system.push_str(&time_block);
         // 预算预警（剩余轮次不足时强制引导收敛，避免 MaxTurnsError 丢失整段回答）
         let remaining = hook_ctx.remaining_turns;
         if remaining <= self.config.budget_warning_threshold {
@@ -438,6 +446,39 @@ impl LoopAgent {
             }
         }
         out
+    }
+
+    /// 流式请求启动阶段的重试（指数退避 + 抖动）。
+    ///
+    /// 只重试**尚未产出任何内容**的启动失败（429/408/5xx/连接/超时/provider 文本）：
+    /// 此时请求没有副作用，重发安全。流开始后中途断开仍按失败处理（重放会重复输出）。
+    async fn stream_with_retry(
+        &self,
+        req: &CompletionRequest,
+        cancel: &CancellationToken,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, LlmError>> + Send>>, LoopError> {
+        let mut attempt = 0usize;
+        loop {
+            match self.adapter.stream(req.clone(), cancel.clone()).await {
+                Ok(stream) => return Ok(stream),
+                Err(e) if e.is_retryable() && attempt < self.config.max_stream_retries => {
+                    attempt += 1;
+                    let delay = backoff_delay(attempt, self.config.stream_retry_base_ms);
+                    log::warn!(
+                        "[loop] 流式请求失败，{}ms 后重试（第 {}/{} 次）：{}",
+                        delay.as_millis(),
+                        attempt,
+                        self.config.max_stream_retries,
+                        e
+                    );
+                    tokio::select! {
+                        _ = cancel.cancelled() => return Err(LoopError::Cancelled),
+                        _ = tokio::time::sleep(delay) => {}
+                    }
+                }
+                Err(e) => return Err(LoopError::Llm(e)),
+            }
+        }
     }
 
     /// 请求失败恢复：跑 on_request_error 钩子；Retry 时调用 retry_prepare（作用于真实会话），
@@ -478,6 +519,17 @@ impl LoopAgent {
     fn finish_turn(&mut self, turn: u32, reason: TurnEndReason) {
         self.session.append(SessionEvent::TurnEnd { turn, reason });
     }
+}
+
+/// 指数退避 + 0–400ms 抖动（避免多个并发请求同时重试顶到限流）。
+fn backoff_delay(attempt: usize, base_ms: u64) -> std::time::Duration {
+    let base = base_ms.max(100);
+    let exp = base.saturating_mul(1u64 << (attempt.saturating_sub(1)).min(5));
+    let jitter = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() as u64 % 400)
+        .unwrap_or(0);
+    std::time::Duration::from_millis(exp + jitter)
 }
 
 #[cfg(test)]
@@ -757,5 +809,163 @@ mod tests {
             .turn("r1", LlmMessage::text(LlmRole::User, "q"), CancellationToken::new(), &mut |_| {})
             .await;
         assert!(matches!(outcome, TurnOutcome::Failed { .. }));
+    }
+
+    #[test]
+    fn backoff_delay_grows_and_is_capped() {
+        let d1 = backoff_delay(1, 800);
+        assert!((800..=1200).contains(&d1.as_millis()), "{d1:?}");
+        let d2 = backoff_delay(2, 800);
+        assert!((1600..=2000).contains(&d2.as_millis()), "{d2:?}");
+        let d9 = backoff_delay(9, 800);
+        assert!(d9.as_millis() <= 800 * 32 + 400, "指数退避必须有上限：{d9:?}");
+    }
+
+    /// 启动阶段返回指定状态码的 adapter（用于验证重试策略）。
+    struct FlakyStartAdapter {
+        calls: std::sync::atomic::AtomicUsize,
+        fail_status: u16,
+    }
+
+    #[async_trait::async_trait]
+    impl LlmAdapter for FlakyStartAdapter {
+        fn model(&self) -> &str {
+            "flaky"
+        }
+
+        async fn complete(
+            &self,
+            _req: CompletionRequest,
+            _cancel: CancellationToken,
+        ) -> Result<CompletionResponse, LlmError> {
+            unimplemented!()
+        }
+
+        async fn stream(
+            &self,
+            _req: CompletionRequest,
+            _cancel: CancellationToken,
+        ) -> Result<Pin<Box<dyn futures::Stream<Item = Result<StreamEvent, LlmError>> + Send>>, LlmError>
+        {
+            let n = self
+                .calls
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if n == 0 {
+                return Err(LlmError::StatusCode(self.fail_status, "transient".into()));
+            }
+            Ok(Box::pin(futures::stream::iter(vec![
+                Ok(StreamEvent::TextDelta("ok".into())),
+                Ok(StreamEvent::Finish(FinishReason::Stop)),
+            ])))
+        }
+    }
+
+    /// 启动阶段 429（可重试）→ 自动退避重试一次后成功（不消耗 request-error 钩子预算）。
+    #[tokio::test]
+    async fn retries_transient_stream_start_failure() {
+        let adapter = Arc::new(FlakyStartAdapter {
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            fail_status: 429,
+        });
+        let mut config = LoopConfig::new(5, "sys");
+        config.stream_retry_base_ms = 100; // 测试不等 800ms
+        let mut agent = LoopAgent::new(adapter.clone(), config, "s1");
+        let outcome = agent
+            .turn("r1", LlmMessage::text(LlmRole::User, "hi"), CancellationToken::new(), &mut |_| {})
+            .await;
+        match outcome {
+            TurnOutcome::Completed { content, .. } => assert_eq!(content, "ok"),
+            other => panic!("可重试错误应自动重试后成功，实际：{other:?}"),
+        }
+        assert_eq!(
+            adapter.calls.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "应恰好重试一次"
+        );
+    }
+
+    /// 400（不可重试）→ 不重试，直接失败。
+    #[tokio::test]
+    async fn does_not_retry_non_retryable_stream_error() {
+        let adapter = Arc::new(FlakyStartAdapter {
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            fail_status: 400,
+        });
+        let mut config = LoopConfig::new(5, "sys");
+        config.stream_retry_base_ms = 100;
+        let mut agent = LoopAgent::new(adapter.clone(), config, "s1");
+        let outcome = agent
+            .turn("r1", LlmMessage::text(LlmRole::User, "hi"), CancellationToken::new(), &mut |_| {})
+            .await;
+        assert!(matches!(outcome, TurnOutcome::Failed { .. }));
+        assert_eq!(
+            adapter.calls.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "不可重试错误不应重试"
+        );
+    }
+
+    /// 单个工具结果超过 `MAX_TOOL_RESULT_CHARS` 时，进入历史前必须截断（A1）；
+    /// 否则一次 grep/read_document 就可能独占上下文。
+    #[tokio::test]
+    async fn oversized_tool_result_is_truncated_in_history() {
+        struct BigTool;
+        #[async_trait]
+        impl Tool for BigTool {
+            fn spec(&self) -> &ToolSpec {
+                static SPEC: std::sync::OnceLock<ToolSpec> = std::sync::OnceLock::new();
+                SPEC.get_or_init(|| {
+                    let mut s = ToolSpec::new(
+                        "read",
+                        "读取文件",
+                        serde_json::json!({"type":"object","properties":{"path":{"type":"string"}}}),
+                    );
+                    s.concurrency_safe = true;
+                    s
+                })
+            }
+            async fn execute(&self, _args: Value, _ctx: &ToolRunContext<'_>) -> Result<Value, ToolError> {
+                Ok(Value::String("x".repeat(crate::core::r#loop::session::MAX_TOOL_RESULT_CHARS + 5_000)))
+            }
+        }
+
+        let adapter = Arc::new(MockAdapter::new(vec![
+            vec![
+                StreamEvent::ToolCall { index: 0, call: read_call() },
+                StreamEvent::Finish(FinishReason::ToolCalls),
+            ],
+            vec![
+                StreamEvent::TextDelta("done".into()),
+                StreamEvent::Finish(FinishReason::Stop),
+            ],
+        ]));
+        let mut reg = HashMapToolRegistry::new();
+        reg.register(Arc::new(BigTool));
+        let mut agent = LoopAgent::new(adapter.clone(), LoopConfig::new(5, "sys"), "s1");
+        agent.set_tools(Arc::new(reg));
+        let _ = agent
+            .turn("r1", LlmMessage::text(LlmRole::User, "q"), CancellationToken::new(), &mut |_| {})
+            .await;
+
+        let reqs = adapter.requests();
+        let tool_msg = reqs[1]
+            .messages
+            .iter()
+            .find(|m| m.role == LlmRole::Tool)
+            .expect("第二次请求应包含工具结果");
+        let body = tool_msg
+            .content
+            .iter()
+            .find_map(|b| match b {
+                crate::core::r#loop::types::ContentBlock::ToolResult { content, .. } => Some(content.clone()),
+                _ => None,
+            })
+            .expect("应为 tool_result 块");
+        assert!(
+            body.chars().count() <= crate::core::r#loop::session::MAX_TOOL_RESULT_CHARS + 500,
+            "历史中的工具结果必须被截断，实际 {} 字符",
+            body.chars().count()
+        );
+        assert!(body.contains("工具结果过长已截断"), "必须给出截断说明");
     }
 }

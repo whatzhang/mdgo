@@ -127,6 +127,8 @@ pub mod search_providers;
 /// 下一轮激活后重试，而非整个流式请求失败。
 pub const BASE_TOOLS: &[&str] = &[
     "activate_skill", "deactivate_skill", "read", "read_document", "ls", "glob", "grep", "write", "edit", "multi_edit", "delete",
+    // 大文档结构工具：先看结构、按章节/行区间读写（模型必须可见，否则等于没加）
+    "md_outline", "read_section", "replace_section", "insert_after_heading", "read_relevant", "apply_patch",
     "git_status", "git_diff", "git_commit", "git_checkout", "webfetch", "web_search", "deep_research", "read_subagent_result",
     "remember", "forget", "search_memory", "todo_write", "spawn_subagent", "parallel_research", "self_review",
     "doc_agent", "parallel_doc_agent", "ask_user_question",

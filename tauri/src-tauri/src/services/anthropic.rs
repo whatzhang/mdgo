@@ -146,6 +146,37 @@ impl AnthropicStreamClient {
         !self.base_url.is_empty() && !self.model.is_empty()
     }
 
+    /// 构造 Anthropic Messages 请求体（纯函数，便于单测缓存断点 / thinking 预算）。
+    fn build_request_body(
+        &self,
+        system: Option<&str>,
+        body_messages: Vec<serde_json::Value>,
+    ) -> serde_json::Value {
+        let mut body = serde_json::json!({
+            "model": self.model,
+            "max_tokens": self.max_tokens,
+            "messages": body_messages,
+            "stream": true,
+        });
+        if let Some(s) = system.map(|s| s.trim()).filter(|s| !s.is_empty()) {
+            // Prompt caching：system 以内容块数组发送，并在末尾打 ephemeral 断点。
+            // 稳定前缀（规约 + 技能指令；工具 schema 后续接入时同样需要断点）可被 provider
+            // 缓存复用，避免每一步都按全价重算输入（显著降低首字延迟与成本）。
+            body["system"] = serde_json::json!([{
+                "type": "text",
+                "text": s,
+                "cache_control": { "type": "ephemeral" }
+            }]);
+        }
+        if let Some(budget) = self.thinking_budget {
+            // thinking 开启时 max_tokens 必须大于 budget_tokens
+            let max_tokens = self.max_tokens.max(budget + 1024);
+            body["max_tokens"] = serde_json::json!(max_tokens);
+            body["thinking"] = serde_json::json!({ "type": "enabled", "budget_tokens": budget });
+        }
+        body
+    }
+
     /// 流式对话：`system` 单独提取（Anthropic 顶层字段），`messages` 仅 user/assistant。
     ///
     /// 通过 `on_event` 回调推送增量/用量事件；返回完整文本。
@@ -173,21 +204,7 @@ impl AnthropicStreamClient {
             return Err("消息列表为空".into());
         }
 
-        let mut body = serde_json::json!({
-            "model": self.model,
-            "max_tokens": self.max_tokens,
-            "messages": body_messages,
-            "stream": true,
-        });
-        if let Some(s) = system.map(|s| s.trim()).filter(|s| !s.is_empty()) {
-            body["system"] = serde_json::json!(s);
-        }
-        if let Some(budget) = self.thinking_budget {
-            // thinking 开启时 max_tokens 必须大于 budget_tokens
-            let max_tokens = (self.max_tokens as u32).max(budget + 1024);
-            body["max_tokens"] = serde_json::json!(max_tokens);
-            body["thinking"] = serde_json::json!({ "type": "enabled", "budget_tokens": budget });
-        }
+        let body = self.build_request_body(system, body_messages);
 
         let client = reqwest::Client::builder()
             // reqwest 总超时覆盖流式 body 读取：300s 会掐断慢模型的长流式生成
@@ -432,8 +449,48 @@ mod tests {
     }
 
     #[test]
-    fn parse_frame_with_data_lines() {
-        let frame = b"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}\n\n";
+    fn build_body_marks_system_for_prompt_caching() {
+        let c = AnthropicStreamClient::new(
+            "https://api.anthropic.com".into(),
+            "k".into(),
+            "claude-sonnet-4-5".into(),
+            4096,
+            None,
+        );
+        let body = c.build_request_body(
+            Some("你是助手"),
+            vec![serde_json::json!({"role":"user","content":"hi"})],
+        );
+        assert_eq!(body["system"][0]["type"], "text");
+        assert_eq!(body["system"][0]["text"], "你是助手");
+        assert_eq!(
+            body["system"][0]["cache_control"]["type"], "ephemeral",
+            "system 必须带 prompt caching 断点"
+        );
+        // 无 system 时不写该字段（避免空块）
+        let empty = c.build_request_body(None, vec![serde_json::json!({"role":"user","content":"hi"})]);
+        assert!(empty.get("system").is_none());
+    }
+
+    #[test]
+    fn thinking_budget_raises_max_tokens() {
+        let c = AnthropicStreamClient::new(
+            "https://api.anthropic.com".into(),
+            "k".into(),
+            "claude-sonnet-4-5".into(),
+            4096,
+            Some(8000),
+        );
+        let body = c.build_request_body(None, vec![serde_json::json!({"role":"user","content":"hi"})]);
+        assert_eq!(body["thinking"]["budget_tokens"], 8000);
+        assert!(
+            body["max_tokens"].as_u64().unwrap() > 8000,
+            "thinking 开启时 max_tokens 必须大于 budget"
+        );
+    }
+
+    #[test]
+    fn parse_frame_with_data_lines() {        let frame = b"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}\n\n";
         let line = parse_data_line(frame).unwrap();
         assert!(line.contains("\"text\":\"hi\""));
     }
