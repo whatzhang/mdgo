@@ -255,17 +255,17 @@ impl AnthropicStreamClient {
         body
     }
 
-    /// 流式对话：`system` 单独提取（Anthropic 顶层字段），`messages` 仅 user/assistant。
+    /// 发起流式请求并返回可消费的事件流。
     ///
-    /// 通过 `on_event` 回调推送增量/用量事件；返回完整文本。
-    /// 取消时立即断开并返回已累积文本（不报错）。
-    pub async fn stream_chat(
+    /// **为什么要把"发起"和"消费"拆开**：只有 `open_stream` 在 `await` 时把 429/5xx
+    /// 等启动失败以 `Err` 返回，上层的 `stream_with_retry`（只重试"尚未产出内容"的
+    /// 启动失败）才能看到它。旧实现把 HTTP 请求放在 `stream_chat` 内部的 spawn 里，
+    /// 错误只能从流里冒出来，启动阶段退避重试对 Anthropic 完全无效。
+    pub async fn open_stream(
         &self,
         system: Option<&str>,
         messages: &[AnthropicMessage],
-        cancel: CancellationToken,
-        on_event: impl Fn(AnthropicEvent),
-    ) -> Result<String, AnthropicError> {
+    ) -> Result<AnthropicEventStream, AnthropicError> {
         if !self.is_configured() {
             return Err(AnthropicError::new(
                 None,
@@ -315,9 +315,43 @@ impl AnthropicStreamClient {
                 format!("Anthropic API 错误 ({}): {}", status, err_msg),
             ));
         }
+        Ok(AnthropicEventStream { resp })
+    }
 
+    /// 流式对话：`system` 单独提取（Anthropic 顶层字段），`messages` 仅 user/assistant。
+    ///
+    /// 通过 `on_event` 回调推送增量/用量事件；返回完整文本。
+    /// 取消时立即断开并返回已累积文本（不报错）。
+    ///
+    /// 纯对话通道（`commands/llm.rs` 的 v2 路径）继续用这个一站式入口；
+    /// Agent 通道走 [`Self::open_stream`] + [`AnthropicEventStream::pump`]，
+    /// 以便让启动失败能被上层重试策略看到。
+    pub async fn stream_chat(
+        &self,
+        system: Option<&str>,
+        messages: &[AnthropicMessage],
+        cancel: CancellationToken,
+        on_event: impl Fn(AnthropicEvent),
+    ) -> Result<String, AnthropicError> {
+        let stream = self.open_stream(system, messages).await?;
+        stream.pump(cancel, on_event).await
+    }
+}
+
+/// 已建立的 Anthropic SSE 响应流（发起成功、尚未消费）。
+pub struct AnthropicEventStream {
+    resp: reqwest::Response,
+}
+
+impl AnthropicEventStream {
+    /// 消费 SSE 流：逐事件回调，返回完整文本（取消时返回已累积内容）。
+    pub async fn pump(
+        self,
+        cancel: CancellationToken,
+        on_event: impl Fn(AnthropicEvent),
+    ) -> Result<String, AnthropicError> {
         // SSE 流式解析：按 \n\n 分帧，逐行处理 data:
-        let mut stream = resp.bytes_stream();
+        let mut stream = self.resp.bytes_stream();
         let mut buf: Vec<u8> = Vec::new();
         let mut full_content = String::new();
         let mut input_tokens: u32 = 0;

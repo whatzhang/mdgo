@@ -87,6 +87,10 @@ pub struct LoopConfig {
 - **provider 错误分级**：Anthropic 客户端返回保留 HTTP 状态码的 `AnthropicError`
   （400 + `prompt is too long` → `ContextOverflow`；401/403/400 → `InvalidRequest` 不重试；
   429/529/5xx/传输层 → 可退避重试），不再把所有失败压成"可重试"。
+- **启动阶段重试对两家协议一致**：Anthropic 适配器改为**先 `open_stream` 再返回流**
+  （`AnthropicEventStream::pump` 消费 SSE）。这样 429/5xx/连接失败以 `Err` 从
+  `LlmAdapter::stream()` 返回，`LoopAgent::stream_with_retry` 的退避重试同样生效；
+  流开始后中途断开仍不重试（避免重放已输出内容）。
 - **前缀缓存**：`system` 由 loop 组装为「稳定规约 + 时间块/预算提醒」。适配器按
   `VOLATILE_SYSTEM_MARKER`（`[当前时间]`）拆成两个 content block，缓存断点只打在前者上；
   否则时间每分钟变化会让缓存键整体失效。

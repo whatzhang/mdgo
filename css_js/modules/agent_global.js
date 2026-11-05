@@ -127,7 +127,18 @@
             await listen('approval:request', async (e) => {
                 const { request_id, tool, summary, detail } = (e.payload || {});
                 if (!request_id) return;
-                const opName = tool === 'delete' ? '删除文件' : tool === 'edit' ? '修改文件' : '执行操作';
+                // 新结构工具的标题要与实际动作一致：统一显示"执行操作"会让用户
+                // 无法判断这次弹窗是"整节替换"还是"应用补丁"（后者可能一次改多个文件）。
+                const TOOL_LABELS = {
+                    delete: '删除文件',
+                    edit: '修改文件',
+                    write: '写入文件',
+                    multi_edit: '批量编辑文件',
+                    replace_section: '整节替换章节',
+                    insert_after_heading: '章节插入内容',
+                    apply_patch: '应用代码补丁',
+                };
+                const opName = TOOL_LABELS[tool] || '执行操作';
                 const message = `${summary || ''}${detail ? '\n\n' + detail : ''}`;
                 let approved = false;
                 try {
