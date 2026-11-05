@@ -2385,7 +2385,13 @@ impl Tool for EditTool {
                             "description": "行范围替换的结束行（1 起，含）。省略时等于 start_line"
                         }
                     },
-                    "required": ["rel_path", "new_string"]
+                    "required": ["rel_path", "new_string"],
+                    // 两种定位方式必须给一个：只给 new_string 会在运行时才报错，
+                    // 提前用 schema 约束能让模型少走一次无效调用。
+                    "anyOf": [
+                        { "required": ["old_string"] },
+                        { "required": ["start_line"] }
+                    ]
                 }),
             )
         })

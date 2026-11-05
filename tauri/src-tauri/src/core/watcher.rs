@@ -520,30 +520,67 @@ impl WatcherService {
     }
 }
 
-/// Agent 写入静默窗口（毫秒）：最近一次 Agent 写文件后这段时间内不触发 watcher 索引。
+/// Agent **连续编辑**时的静默窗口（毫秒）。
 ///
-/// 语义：Agent 的一次大文档改写通常由多次 `edit` 组成（每次都是一次落盘）。若每次都
-/// 走「2s 防抖 → 整篇重解析/重分块/重嵌入」，整轮编辑期间 CPU 会持续被打满；
-/// 等编辑停止（静默窗口）后再索引一次，结果相同、开销只付一次。
-const AGENT_INDEX_QUIET_MS: u64 = 8_000;
+/// 一次大文档改写通常由多次 `edit` 组成（每次都是一次落盘）。若每次都走
+/// 「2s 防抖 → 整篇重解析/重分块/重嵌入」，整轮编辑期间 CPU 会持续被打满；
+/// 等编辑停止后再索引一次，结果相同、开销只付一次。
+const AGENT_INDEX_QUIET_BURST_MS: u64 = 8_000;
+
+/// 单次 Agent 写入的静默窗口（毫秒）。
+///
+/// 为什么单次也要窗口、但不能太长：窗口必须 >= 防抖期（2s）才不会立刻索引，
+/// 但旧实现统一用 8s，导致"Agent 写完一次 → 8 秒内 kb_search 仍命中旧索引"。
+/// 单次写用 2.5s（防抖后立刻索引），只有连续写（≥2 次）才升级到 8s 抑制。
+const AGENT_INDEX_QUIET_SINGLE_MS: u64 = 2_500;
 
 /// 是否应因「Agent 正在连续编辑」而暂缓 watcher 索引（纯函数，便于单测）。
-fn defer_for_agent_write(now_ms: u64, last_agent_write_ms: u64) -> bool {
-    last_agent_write_ms > 0 && now_ms.saturating_sub(last_agent_write_ms) < AGENT_INDEX_QUIET_MS
+///
+/// `now < last`（时钟异常/基准不一致）时**不抑制**：宁可多索引一次，也不能让
+/// 索引永久停摆（fail-open）。
+fn defer_for_agent_write(now_ms: u64, last_agent_write_ms: u64, quiet_ms: u64) -> bool {
+    last_agent_write_ms > 0
+        && now_ms >= last_agent_write_ms
+        && now_ms - last_agent_write_ms < quiet_ms
+}
+
+/// 按当前批次大小选择静默窗口（单次写短窗口，连续写长窗口）。
+fn agent_index_quiet_ms(burst: u32) -> u64 {
+    if burst >= 2 {
+        AGENT_INDEX_QUIET_BURST_MS
+    } else {
+        AGENT_INDEX_QUIET_SINGLE_MS
+    }
 }
 
 #[cfg(test)]
 mod agent_write_tests {
     use super::*;
 
-    /// Agent 连续编辑期间（静默窗口内）暂缓索引；窗口外/从未写过则正常处理。
+    /// 连续编辑期间（静默窗口内）暂缓索引；窗口外/从未写过则正常处理。
     #[test]
     fn agent_write_quiet_window_defers_indexing() {
-        assert!(!defer_for_agent_write(10_000, 0), "从未写过 → 不抑制");
-        assert!(defer_for_agent_write(10_000, 9_500), "刚写过 → 抑制");
-        assert!(defer_for_agent_write(10_000, 2_001), "窗口边界内 → 抑制");
-        assert!(!defer_for_agent_write(10_000, 2_000), "恰好 8s → 不再抑制");
-        assert!(!defer_for_agent_write(10_000, 1_000), "早已超过窗口 → 不抑制");
+        let quiet = 8_000u64;
+        assert!(!defer_for_agent_write(10_000, 0, quiet), "从未写过 → 不抑制");
+        assert!(defer_for_agent_write(10_000, 9_500, quiet), "刚写过 → 抑制");
+        assert!(defer_for_agent_write(10_000, 2_001, quiet), "窗口边界内 → 抑制");
+        assert!(!defer_for_agent_write(10_000, 2_000, quiet), "恰好 8s → 不再抑制");
+        assert!(!defer_for_agent_write(10_000, 1_000, quiet), "早已超过窗口 → 不抑制");
+        // 墙钟回拨（now < last）不应被当成"刚写过"而无限抑制
+        assert!(!defer_for_agent_write(1_000, 50_000, quiet), "时钟回拨 → 不能永久抑制");
+    }
+
+    /// 单次写用短窗口（写完尽快可检索），连续写才升级为长窗口（省 CPU）。
+    #[test]
+    fn quiet_window_depends_on_burst_size() {
+        assert_eq!(agent_index_quiet_ms(0), AGENT_INDEX_QUIET_SINGLE_MS);
+        assert_eq!(agent_index_quiet_ms(1), AGENT_INDEX_QUIET_SINGLE_MS);
+        assert_eq!(agent_index_quiet_ms(2), AGENT_INDEX_QUIET_BURST_MS);
+        assert_eq!(agent_index_quiet_ms(9), AGENT_INDEX_QUIET_BURST_MS);
+        assert!(
+            AGENT_INDEX_QUIET_SINGLE_MS < AGENT_INDEX_QUIET_BURST_MS,
+            "单次窗口必须更短，否则又回到「写一次停 8 秒」的老问题"
+        );
     }
 }
 
@@ -637,14 +674,16 @@ async fn run_debounce_loop(
 
                 // Agent 连续编辑抑制：一次大文档改写会连续落盘多次，逐次整篇重索引没有意义
                 // （每次都要重解析/重分块/重嵌入），等编辑停下来（静默窗口）再统一索引一次。
+                // 窗口长度按"这批编辑有几次写"取：单次写 2.5s（写完尽快可检索），
+                // 连续写才用 8s；时钟用单调毫秒，系统墙钟回拨不会让抑制永久生效。
                 if !pending.is_empty() {
-                    let now_ms = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_millis() as u64)
-                        .unwrap_or(0);
+                    let quiet = agent_index_quiet_ms(
+                        crate::core::agent::tools::agent_write_burst_count(),
+                    );
                     if defer_for_agent_write(
-                        now_ms,
+                        crate::core::agent::tools::mono_ms(),
                         crate::core::agent::tools::last_agent_write_ms(),
+                        quiet,
                     ) {
                         continue;
                     }

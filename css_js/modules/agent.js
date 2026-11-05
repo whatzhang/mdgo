@@ -1308,6 +1308,7 @@ async function AgentInit() {
             console.warn('注册 agent:file-written 监听失败:', e);
         }
         // 轮次预算用尽（MaxTurns）：回答可能只是半截，用既有提示框提醒用户可继续。
+        // 时长显式放宽到 8s：默认 3s 一闪而过，且这条提示是"回答不完整"的唯一信号。
         try {
             const { listen } = window.__TAURI__.event;
             listen('agent:max-turns', (e) => {
@@ -1315,7 +1316,8 @@ async function AgentInit() {
                 if (typeof showNotification === 'function') {
                     showNotification(
                         `⚠ 本轮工具调用已达上限（${maxTurns} 轮），回答可能不完整。回复“继续”可让我接着做。`,
-                        'warning'
+                        'warning',
+                        8000
                     );
                 }
             });

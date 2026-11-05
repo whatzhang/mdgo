@@ -189,7 +189,16 @@ pub const ACTION_CLAIMS: &[ActionClaim] = &[
         id: "file_write",
         verbs: &["已写入", "写入了", "保存了", "已保存", "创建了", "已创建", "写入成功", "保存成功", "创建成功"],
         objects: &["文件", "文档", "笔记"],
-        required_tools: &["write", "edit", "multi_edit"],
+        // 新结构工具同样是"真的改了文件"：漏登记会让正确的操作被误判成幻觉
+        // （追加"该操作可能未执行"并污染 hallucination_warnings 指标）
+        required_tools: &[
+            "write",
+            "edit",
+            "multi_edit",
+            "replace_section",
+            "insert_after_heading",
+            "apply_patch",
+        ],
         observe_tools: &[],
     },
     ActionClaim {

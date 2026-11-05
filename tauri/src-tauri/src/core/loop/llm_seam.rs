@@ -14,6 +14,15 @@ use tokio_util::sync::CancellationToken;
 
 use super::types::{FinishReason, LlmError, LlmMessage, StreamEvent, TokenUsage, ToolCall};
 
+/// 每轮变化的 system 块标记（时间/预算提醒段的固定开头）。
+///
+/// 用途：provider 的前缀缓存（Anthropic `cache_control` / OpenAI 自动缓存）只能复用
+/// **稳定前缀**。loop 每轮在 system 末尾追加 `[当前时间]…`，适配器据此把 system
+/// 拆成"稳定前缀 + 易变尾巴"，断点只打在前者上——否则时间一分钟一变，缓存键整体失效。
+///
+/// 该字面量必须与 `services::anthropic` 里的同名标记一致（有单测交叉校验）。
+pub const VOLATILE_SYSTEM_MARKER: &str = "[当前时间]";
+
 /// 模型可见的工具 schema（对齐 OpenAI `tools` 数组与 DSH `ToolSchema`）。
 #[derive(Debug, Clone)]
 pub struct ToolSchema {

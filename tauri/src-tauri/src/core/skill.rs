@@ -33,6 +33,8 @@ use crate::core::db::schema;
 /// ⚠️ 新增/改名注册表工具时须同步本清单（编译期断言见 tests::allowed_tools_cover_registry）。
 pub const ALLOWED_TOOLS: &[&str] = &[
     "kb_search", "code_lookup", "read", "edit", "multi_edit", "delete", "ls", "glob", "grep", "write", "git_status", "git_diff", "git_commit", "git_checkout", "webfetch", "web_search",
+    // 大文档结构读写（技能可显式声明，如"按章节改写"类技能）
+    "md_outline", "read_section", "replace_section", "insert_after_heading", "read_relevant", "apply_patch",
     "activate_skill", "deactivate_skill", "pomodoro", "raw-parse", "schedule", "open-ui",
     "search_bookmarks", "get_bookmark",
     "deep_research", "read_subagent_result", "spawn_subagent", "parallel_research", "self_review",
@@ -49,6 +51,12 @@ fn tool_label(key: &str) -> String {
         "glob" => "文件匹配".into(),
         "edit" => "编辑文件".into(),
         "multi_edit" => "批量编辑".into(),
+        "md_outline" => "文档大纲".into(),
+        "read_section" => "读取章节".into(),
+        "replace_section" => "替换章节".into(),
+        "insert_after_heading" => "章节插入内容".into(),
+        "read_relevant" => "按问题选读".into(),
+        "apply_patch" => "应用补丁".into(),
         "delete" => "删除文件".into(),
         "grep" => "全局搜索".into(),
         "ls" => "列出文件".into(),

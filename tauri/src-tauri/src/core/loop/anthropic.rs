@@ -102,13 +102,21 @@ impl LlmAdapter for AnthropicAdapter {
         if messages.is_empty() {
             return Err(LlmError::InvalidRequest("消息列表为空".into()));
         }
+        // **先发起请求再返回流**：启动阶段的 429/5xx/连接失败必须以 `Err` 从 stream()
+        // 返回，loop 的 `stream_with_retry` 才能退避重试（旧实现在 spawn 内部发起，
+        // 错误只能从流里冒出来，启动重试对 Anthropic 完全失效）。
+        let opened = self
+            .client
+            .open_stream(system.as_deref(), &messages)
+            .await
+            .map_err(map_anthropic_error)?;
+
         let (tx, rx) = tokio::sync::mpsc::channel::<Result<StreamEvent, LlmError>>(64);
-        let client = self.client.clone();
         let cancel2 = cancel.clone();
         // 回调 → 通道（Delta/Usage 实时转发）；结束后发送 Finish/错误并随任务结束关闭通道
         tokio::spawn(async move {
-            let result = client
-                .stream_chat(system.as_deref(), &messages, cancel2, |ev| match ev {
+            let result = opened
+                .pump(cancel2, |ev| match ev {
                     AnthropicEvent::Delta(t) => {
                         let _ = tx.try_send(Ok(StreamEvent::TextDelta(t)));
                     }
@@ -133,7 +141,9 @@ impl LlmAdapter for AnthropicAdapter {
                     let _ = tx.send(Ok(StreamEvent::Finish(FinishReason::Stop))).await;
                 }
                 Err(e) => {
-                    let _ = tx.send(Err(LlmError::Provider(e))).await;
+                    // 保留状态码分类：401/403 不再被当成"可重试 provider 错误"，
+                    // 上下文溢出也能被 OverflowRetryHook 识别。
+                    let _ = tx.send(Err(map_anthropic_error(e))).await;
                 }
             }
         });
@@ -141,5 +151,82 @@ impl LlmAdapter for AnthropicAdapter {
             rx.recv().await.map(|item| (item, rx))
         });
         Ok(Box::pin(stream))
+    }
+}
+
+/// 把 Anthropic 客户端错误映射为协议无关的 [`LlmError`]。
+///
+/// 旧实现所有失败都包成 `LlmError::Provider`（"保守可重试"），副作用是：
+/// - 401/403/400 也会被退避重试，一次配错 Key 要多等数秒；
+/// - `ContextOverflow` 永远不出现，`OverflowRetryHook`/`emergency_compact` 对 Anthropic 无效。
+fn map_anthropic_error(e: crate::services::anthropic::AnthropicError) -> LlmError {
+    if e.is_context_overflow() {
+        return LlmError::ContextOverflow;
+    }
+    if e.is_retryable() {
+        return match e.status {
+            Some(code) => LlmError::StatusCode(code, e.message),
+            None => LlmError::Http(e.message),
+        };
+    }
+    LlmError::InvalidRequest(e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::anthropic::AnthropicError;
+
+    fn err(status: Option<u16>, message: &str) -> AnthropicError {
+        AnthropicError { status, message: message.to_string() }
+    }
+
+    /// 三类失败必须映射到不同 `LlmError`：溢出→压缩重试；429/5xx→退避重试；
+    /// 401/403/400→立即失败（旧实现全部塌成 Provider，三者都被"可重试"）。
+    #[test]
+    fn error_mapping_separates_overflow_retryable_and_fatal() {
+        assert!(
+            matches!(
+                map_anthropic_error(err(
+                    Some(400),
+                    "Anthropic API 错误 (400 Bad Request): prompt is too long: 210000 tokens"
+                )),
+                LlmError::ContextOverflow
+            ),
+            "400 + prompt is too long 必须映射为 ContextOverflow"
+        );
+
+        match map_anthropic_error(err(Some(429), "Anthropic API 错误 (429): rate limited")) {
+            LlmError::StatusCode(code, _) => assert_eq!(code, 429, "429 应保留状态码以便退避重试"),
+            other => panic!("429 应映射为 StatusCode，实际：{other:?}"),
+        }
+
+        assert!(
+            matches!(
+                map_anthropic_error(err(Some(401), "Anthropic API 错误 (401): invalid x-api-key")),
+                LlmError::InvalidRequest(_)
+            ),
+            "401 不应被当成可重试错误"
+        );
+
+        assert!(
+            matches!(
+                map_anthropic_error(err(None, "Anthropic 请求失败: connection reset")),
+                LlmError::Http(_)
+            ),
+            "无状态码的传输错误应映射为 Http（可重试）"
+        );
+    }
+
+    /// 不可重试性必须能被 loop 的通用判定识别（否则请求钩子仍会重试）。
+    #[test]
+    fn fatal_error_is_not_retryable_but_transient_is() {
+        let fatal = map_anthropic_error(err(Some(403), "Anthropic API 错误 (403): forbidden"));
+        assert!(
+            matches!(fatal, LlmError::InvalidRequest(_)),
+            "403 必须是确定性失败"
+        );
+        let transient = map_anthropic_error(err(Some(529), "Anthropic API 错误 (529): overloaded"));
+        assert!(transient.is_retryable(), "529 限载必须可重试");
     }
 }

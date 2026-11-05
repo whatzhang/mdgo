@@ -115,6 +115,73 @@ struct SseError {
     message: Option<String>,
 }
 
+/// Anthropic 调用错误。
+///
+/// 为什么要保留状态码：旧实现把所有失败压成一个 `String`，适配器只能统一包成
+/// `LlmError::Provider`（保守可重试），于是 401/403/400 也会被退避重试；
+/// 同时"上下文溢出"无法识别，`OverflowRetryHook` 对 Anthropic 永远不生效。
+///
+/// `message` 与旧实现**逐字一致**（`Anthropic API 错误 (401 Unauthorized): ...`），
+/// 保证前端/日志的既有文案不变。
+#[derive(Debug, Clone)]
+pub struct AnthropicError {
+    /// HTTP 状态码；连接失败/流中断等无响应阶段的错误为 `None`。
+    pub status: Option<u16>,
+    pub message: String,
+}
+
+impl AnthropicError {
+    fn new(status: Option<u16>, message: impl Into<String>) -> Self {
+        Self { status, message: message.into() }
+    }
+
+    /// 是否属瞬时错误（429/408/5xx/529 限载/传输层）→ 可退避重试。
+    pub fn is_retryable(&self) -> bool {
+        match self.status {
+            Some(code) => {
+                code == 429 || code == 408 || code == 529 || (500..=599).contains(&code)
+            }
+            // 无状态码 = 连接/读取阶段的传输错误，保守按可重试处理
+            None => true,
+        }
+    }
+
+    /// 是否上下文窗口溢出（Anthropic 用 400 + `prompt is too long` 表达）。
+    pub fn is_context_overflow(&self) -> bool {
+        if self.status != Some(400) {
+            return false;
+        }
+        let m = self.message.to_ascii_lowercase();
+        m.contains("prompt is too long")
+            || m.contains("context_length_exceeded")
+            || m.contains("maximum context length")
+            || m.contains("context window")
+    }
+}
+
+impl std::fmt::Display for AnthropicError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+/// 把 system 拆成「稳定前缀 + 易变尾巴」。
+///
+/// 易变尾巴从 `[当前时间]` 标记所在的那一段开始（loop 每轮在 system 末尾追加
+/// 时间块与预算提醒）。prompt caching 的断点必须只覆盖稳定前缀，否则时间一分钟后
+/// 变化，整个缓存键失效，跨请求永远打不中。
+fn split_system_stable_prefix(system: &str) -> (&str, Option<&str>) {
+    const MARKER: &str = "[当前时间]";
+    match system.find(MARKER) {
+        Some(pos) => {
+            // 回退到标记前的空行分隔处，避免把上一句截断
+            let split = system[..pos].rfind("\n\n").unwrap_or(pos);
+            (&system[..split], Some(&system[split..]))
+        }
+        None => (system, None),
+    }
+}
+
 impl AnthropicStreamClient {
     pub fn new(
         base_url: String,
@@ -159,14 +226,25 @@ impl AnthropicStreamClient {
             "stream": true,
         });
         if let Some(s) = system.map(|s| s.trim()).filter(|s| !s.is_empty()) {
-            // Prompt caching：system 以内容块数组发送，并在末尾打 ephemeral 断点。
-            // 稳定前缀（规约 + 技能指令；工具 schema 后续接入时同样需要断点）可被 provider
-            // 缓存复用，避免每一步都按全价重算输入（显著降低首字延迟与成本）。
-            body["system"] = serde_json::json!([{
-                "type": "text",
-                "text": s,
-                "cache_control": { "type": "ephemeral" }
-            }]);
+            // Prompt caching：system 以内容块数组发送，**只给稳定前缀打断点**。
+            // 稳定前缀（规约 + 技能指令）可被 provider 缓存复用；时间块/预算提醒
+            // 放在不带断点的第二块里，它们变化不会让缓存键整体失效。
+            let (stable, volatile) = split_system_stable_prefix(s);
+            let mut blocks: Vec<serde_json::Value> = Vec::new();
+            let stable = stable.trim();
+            if !stable.is_empty() {
+                blocks.push(serde_json::json!({
+                    "type": "text",
+                    "text": stable,
+                    "cache_control": { "type": "ephemeral" }
+                }));
+            }
+            if let Some(v) = volatile.map(str::trim).filter(|v| !v.is_empty()) {
+                blocks.push(serde_json::json!({ "type": "text", "text": v }));
+            }
+            if !blocks.is_empty() {
+                body["system"] = serde_json::json!(blocks);
+            }
         }
         if let Some(budget) = self.thinking_budget {
             // thinking 开启时 max_tokens 必须大于 budget_tokens
@@ -177,19 +255,22 @@ impl AnthropicStreamClient {
         body
     }
 
-    /// 流式对话：`system` 单独提取（Anthropic 顶层字段），`messages` 仅 user/assistant。
+    /// 发起流式请求并返回可消费的事件流。
     ///
-    /// 通过 `on_event` 回调推送增量/用量事件；返回完整文本。
-    /// 取消时立即断开并返回已累积文本（不报错）。
-    pub async fn stream_chat(
+    /// **为什么要把"发起"和"消费"拆开**：只有 `open_stream` 在 `await` 时把 429/5xx
+    /// 等启动失败以 `Err` 返回，上层的 `stream_with_retry`（只重试"尚未产出内容"的
+    /// 启动失败）才能看到它。旧实现把 HTTP 请求放在 `stream_chat` 内部的 spawn 里，
+    /// 错误只能从流里冒出来，启动阶段退避重试对 Anthropic 完全无效。
+    pub async fn open_stream(
         &self,
         system: Option<&str>,
         messages: &[AnthropicMessage],
-        cancel: CancellationToken,
-        on_event: impl Fn(AnthropicEvent),
-    ) -> Result<String, String> {
+    ) -> Result<AnthropicEventStream, AnthropicError> {
         if !self.is_configured() {
-            return Err("Anthropic 未配置（缺少地址或模型）".into());
+            return Err(AnthropicError::new(
+                None,
+                "Anthropic 未配置（缺少地址或模型）",
+            ));
         }
 
         // 过滤非法 role：Anthropic 仅接受 user / assistant（system 已提取）
@@ -201,7 +282,7 @@ impl AnthropicStreamClient {
             })
             .collect();
         if body_messages.is_empty() {
-            return Err("消息列表为空".into());
+            return Err(AnthropicError::new(None, "消息列表为空"));
         }
 
         let body = self.build_request_body(system, body_messages);
@@ -213,7 +294,7 @@ impl AnthropicStreamClient {
             .timeout(ANTHROPIC_REQUEST_TIMEOUT)
             .connect_timeout(std::time::Duration::from_secs(15))
             .build()
-            .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+            .map_err(|e| AnthropicError::new(None, format!("创建 HTTP 客户端失败: {}", e)))?;
 
         let resp = client
             .post(self.messages_url())
@@ -223,17 +304,54 @@ impl AnthropicStreamClient {
             .json(&body)
             .send()
             .await
-            .map_err(|e| format!("Anthropic 请求失败: {}", e))?;
+            .map_err(|e| AnthropicError::new(None, format!("Anthropic 请求失败: {}", e)))?;
 
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
             let err_msg = parse_error_body(&text).unwrap_or_else(|| format!("HTTP {}", status));
-            return Err(format!("Anthropic API 错误 ({}): {}", status, err_msg));
+            return Err(AnthropicError::new(
+                Some(status.as_u16()),
+                format!("Anthropic API 错误 ({}): {}", status, err_msg),
+            ));
         }
+        Ok(AnthropicEventStream { resp })
+    }
 
+    /// 流式对话：`system` 单独提取（Anthropic 顶层字段），`messages` 仅 user/assistant。
+    ///
+    /// 通过 `on_event` 回调推送增量/用量事件；返回完整文本。
+    /// 取消时立即断开并返回已累积文本（不报错）。
+    ///
+    /// 纯对话通道（`commands/llm.rs` 的 v2 路径）继续用这个一站式入口；
+    /// Agent 通道走 [`Self::open_stream`] + [`AnthropicEventStream::pump`]，
+    /// 以便让启动失败能被上层重试策略看到。
+    pub async fn stream_chat(
+        &self,
+        system: Option<&str>,
+        messages: &[AnthropicMessage],
+        cancel: CancellationToken,
+        on_event: impl Fn(AnthropicEvent),
+    ) -> Result<String, AnthropicError> {
+        let stream = self.open_stream(system, messages).await?;
+        stream.pump(cancel, on_event).await
+    }
+}
+
+/// 已建立的 Anthropic SSE 响应流（发起成功、尚未消费）。
+pub struct AnthropicEventStream {
+    resp: reqwest::Response,
+}
+
+impl AnthropicEventStream {
+    /// 消费 SSE 流：逐事件回调，返回完整文本（取消时返回已累积内容）。
+    pub async fn pump(
+        self,
+        cancel: CancellationToken,
+        on_event: impl Fn(AnthropicEvent),
+    ) -> Result<String, AnthropicError> {
         // SSE 流式解析：按 \n\n 分帧，逐行处理 data:
-        let mut stream = resp.bytes_stream();
+        let mut stream = self.resp.bytes_stream();
         let mut buf: Vec<u8> = Vec::new();
         let mut full_content = String::new();
         let mut input_tokens: u32 = 0;
@@ -280,16 +398,22 @@ impl AnthropicStreamClient {
                         }
                         Ok(Some(Err(e))) => {
                             if cancel.is_cancelled() { break; }
-                            return Err(format!("Anthropic 流式读取失败: {}", e));
+                            return Err(AnthropicError::new(
+                                None,
+                                format!("Anthropic 流式读取失败: {}", e),
+                            ));
                         }
                         Ok(None) => break,
                         Err(_) => {
                             // 🟠 L27：空闲超时丢弃已累积内容（与"取消保留部分内容"
                             // 行为不一致）——错误信息中明确说明，提示用户已生成部分内容
                             // 会丢失；完整修复需把部分内容随错误一并返回（改签名，后续排期）。
-                            return Err(format!(
-                                "Anthropic 流式响应空闲超时（{}s 内无数据，可能为死流）；已累积的部分内容将丢弃",
-                                ANTHROPIC_STREAM_IDLE_TIMEOUT.as_secs()
+                            return Err(AnthropicError::new(
+                                None,
+                                format!(
+                                    "Anthropic 流式响应空闲超时（{}s 内无数据，可能为死流）；已累积的部分内容将丢弃",
+                                    ANTHROPIC_STREAM_IDLE_TIMEOUT.as_secs()
+                                ),
                             ));
                         }
                     }
@@ -486,6 +610,65 @@ mod tests {
         assert!(
             body["max_tokens"].as_u64().unwrap() > 8000,
             "thinking 开启时 max_tokens 必须大于 budget"
+        );
+    }
+
+    /// 缓存断点只能盖住稳定前缀：时间块/预算提醒必须落在**第二个**无断点的块里，
+    /// 否则时间一分钟一变，整个缓存键都失效。
+    #[test]
+    fn system_is_split_into_stable_and_volatile_blocks() {
+        let c = AnthropicStreamClient::new(
+            "https://api.anthropic.com".into(),
+            "k".into(),
+            "claude-sonnet-4-5".into(),
+            4096,
+            None,
+        );
+        let system = "你是助手，遵守规约。\n\n[当前时间] 本地时间 2026-11-05 21:00（星期四，+08:00）。";
+        let body = c.build_request_body(Some(system), vec![serde_json::json!({"role":"user","content":"hi"})]);
+        assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
+        assert_eq!(body["system"][0]["text"], "你是助手，遵守规约。");
+        assert_eq!(body["system"][1]["type"], "text");
+        assert!(
+            body["system"][1].get("cache_control").is_none(),
+            "易变块上不能打断点：{}",
+            body["system"][1]
+        );
+        assert!(body["system"][1]["text"].as_str().unwrap().contains("本地时间"));
+        // 标记字面量必须与 loop 侧一致（两边各有一份常量，靠这条测试防漂移）
+        assert!(
+            split_system_stable_prefix(system)
+                .1
+                .unwrap()
+                .contains(crate::core::r#loop::llm_seam::VOLATILE_SYSTEM_MARKER),
+            "volatile 块必须由 VOLATILE_SYSTEM_MARKER 起始"
+        );
+    }
+
+    /// 只有 400 + "prompt is too long" 才算溢出；401/403 不可重试；429/5xx/529 可重试。
+    #[test]
+    fn error_classification_keeps_status_and_retryability() {
+        let overflow = AnthropicError::new(
+            Some(400),
+            "Anthropic API 错误 (400 Bad Request): prompt is too long: 210000 tokens",
+        );
+        assert!(overflow.is_context_overflow(), "400 prompt is too long 必须识别为溢出");
+        assert!(!overflow.is_retryable());
+
+        let bad_key = AnthropicError::new(Some(401), "Anthropic API 错误 (401): invalid x-api-key");
+        assert!(!bad_key.is_retryable(), "401 不应被退避重试");
+        assert!(!bad_key.is_context_overflow());
+
+        let overloaded = AnthropicError::new(Some(529), "Anthropic API 错误 (529): overloaded");
+        assert!(overloaded.is_retryable(), "529 限载应可重试");
+
+        let transport = AnthropicError::new(None, "Anthropic 请求失败: connection reset");
+        assert!(transport.is_retryable(), "传输层错误保守可重试");
+
+        // Display 与旧文案逐字一致（前端/日志不感知签名变化）
+        assert_eq!(
+            bad_key.to_string(),
+            "Anthropic API 错误 (401): invalid x-api-key"
         );
     }
 

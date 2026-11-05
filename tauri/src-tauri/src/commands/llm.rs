@@ -716,12 +716,31 @@ fn apply_grounding_validator(content: &mut String, has_sources: bool, tools_call
         return;
     }
     // 调用过本地文件观察/操作工具即视为有依据（含写工具：写完引用刚写的文件是合理行为；
-    // 含 git 观察工具：复述 git 状态不算凭空断言）
+    // 含 git 观察工具：复述 git 状态不算凭空断言）。
+    // 大文档结构工具（md_outline/read_section/read_relevant）与结构写工具同样算"读过/改过文件"，
+    // 否则只用它们读完再作答会被误判"未读取本地文件"，追加无依据提醒。
     let observed_local = tools_called.iter().any(|t| {
         matches!(
             t.as_str(),
-            "read" | "ls" | "glob" | "grep" | "write" | "edit" | "multi_edit" | "delete"
-                | "git_status" | "git_diff" | "git_commit" | "git_checkout"
+            "read"
+                | "read_document"
+                | "ls"
+                | "glob"
+                | "grep"
+                | "write"
+                | "edit"
+                | "multi_edit"
+                | "delete"
+                | "md_outline"
+                | "read_section"
+                | "read_relevant"
+                | "replace_section"
+                | "insert_after_heading"
+                | "apply_patch"
+                | "git_status"
+                | "git_diff"
+                | "git_commit"
+                | "git_checkout"
         )
     });
     if observed_local {
@@ -2769,6 +2788,9 @@ async fn agent_generate_loop_v2(
 
     let mut config = LoopConfig::new(crate::core::agent::DEFAULT_MAX_TURNS, system);
     config.max_tokens = llm_cfg.max_tokens;
+    // 事件里报的轮次上限必须取自**实际配置**，而不是再写一次默认常量：
+    // 将来按会话配置轮次时，写死的常量会让提示显示错误的上限。
+    let max_turns_cfg = config.max_turns;
     // 上下文溢出恢复：OverflowRetryHook 返回 Retry 时，这里按 **step 边界**遮蔽较旧事件
     // 并生成确定性摘要后再发（不调用 LLM，保证恢复路径本身不会再溢出）。
     config.retry_prepare = Some(Arc::new(
@@ -2954,7 +2976,7 @@ async fn agent_generate_loop_v2(
                     "agent:max-turns",
                     serde_json::json!({
                         "request_id": request_id,
-                        "max_turns": crate::core::agent::DEFAULT_MAX_TURNS,
+                        "max_turns": max_turns_cfg,
                     }),
                 );
             }
@@ -3158,7 +3180,8 @@ async fn kb_llm_query_anthropic(
                 );
             } else {
                 state.agent_tasks.finish(&request_id, crate::core::agent::task_store::AgentTaskStatus::Failed);
-                emit_command_error(app, "llm:error", &request_id, e);
+                // AnthropicError 的 Display 与旧字符串逐字一致，前端文案不变
+                emit_command_error(app, "llm:error", &request_id, e.to_string());
             }
         }
     }

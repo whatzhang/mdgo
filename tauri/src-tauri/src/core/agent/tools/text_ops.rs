@@ -15,6 +15,8 @@
 pub enum Eol {
     Lf,
     Crlf,
+    /// 老式 Mac 风格：孤立 `\r`。
+    Cr,
 }
 
 impl Eol {
@@ -22,16 +24,23 @@ impl Eol {
         match self {
             Eol::Lf => "\n",
             Eol::Crlf => "\r\n",
+            Eol::Cr => "\r",
         }
     }
 }
 
-/// 检测文本的主导换行风格（CRLF 行数 ≥ 纯 LF 行数时判为 CRLF）。
+/// 检测文本的主导换行风格（三种候选取出现次数最多者，并列时 CRLF > CR > LF）。
+///
+/// 旧实现只比较 CRLF 与 `\n`：孤立 `\r` 的文件会被判成 LF，归一化匹配与写回
+/// 都按 LF 处理（与模块文档承诺的"孤立 `\r` → `\n`"不符）。
 pub fn detect_eol(text: &str) -> Eol {
     let crlf = text.matches("\r\n").count();
-    let lf = text.matches('\n').count();
-    if crlf > 0 && crlf * 2 >= lf {
+    let cr = text.matches('\r').count() - crlf; // 孤立 CR
+    let lf = text.matches('\n').count() - crlf; // 纯 LF
+    if crlf > 0 && crlf >= lf && crlf >= cr {
         Eol::Crlf
+    } else if cr > 0 && cr > lf && cr > crlf {
+        Eol::Cr
     } else {
         Eol::Lf
     }
@@ -43,6 +52,7 @@ pub fn to_eol(text: &str, eol: Eol) -> String {
     match eol {
         Eol::Lf => lf,
         Eol::Crlf => lf.replace('\n', "\r\n"),
+        Eol::Cr => lf.replace('\n', "\r"),
     }
 }
 
@@ -71,6 +81,25 @@ impl Normalized {
             .map(|(o, _)| *o)
             .unwrap_or(self.orig_len)
     }
+
+    /// `map` 下标 → 规范化文本中的**字节**偏移。
+    ///
+    /// 调用方（`find_block`）需要"原文偏移 ≥ X 的位置在规范化文本里对应哪个字节"，
+    /// 而 `map.iter().position(..)` 给的是**下标**。纯 ASCII 时下标与字节偏移相等，
+    /// 一旦有多字节字符就会错位（曾导致 `n.text[idx..]` 在字符中间切片而 panic）。
+    /// 所有换算必须走这里，不要再把下标当偏移用。
+    pub fn norm_byte_at(&self, idx: usize) -> usize {
+        self.map
+            .get(idx)
+            .map(|(_, n)| *n)
+            .unwrap_or(self.text.len())
+    }
+
+    /// 原文偏移 `orig` → 规范化文本中第一个 `orig_byte >= orig` 的**字节**偏移。
+    pub fn norm_byte_for_orig(&self, orig: usize) -> usize {
+        let idx = self.map.partition_point(|(o, _)| *o < orig);
+        self.norm_byte_at(idx)
+    }
 }
 
 /// 归一化文本（供匹配用）。
@@ -88,7 +117,8 @@ pub fn normalize(text: &str) -> Normalized {
         let trimmed = body.trim_end_matches([' ', '\t']);
         for (off, ch) in trimmed.char_indices() {
             map.push((pos + off, out.len()));
-            out.push(ch);
+            // 行内的孤立 `\r` 也按换行归一化（与 `\r\n` 的映射保持一一对应）
+            out.push(if ch == '\r' { '\n' } else { ch });
         }
         if has_nl {
             // 换行映射到原行尾（CRLF 时指向 `\r` 之前的边界；替换端点只用字符起点）
@@ -234,7 +264,10 @@ fn is_elision_line(line: &str) -> bool {
 /// ## 卸载
 /// ```
 /// 中段被省略，只要求各段按顺序出现。替换范围 = 首段起点 → 末段终点。
-/// 返回 `(新内容, 锚点段数)`；无省略行时等价于唯一替换。
+///
+/// 返回 `(新内容, 实际替换处数)`——注意是**处数**（一组锚点算一处），
+/// 不是锚点段数：上层用它生成"替换 N 处"的提示，段数会误导模型。
+/// `replace_all=true` 时替换全部出现的锚点组（旧实现会静默只改第一处）。
 pub fn replace_with_anchors(content: &str, old: &str, new: &str, replace_all: bool) -> Result<(String, usize), String> {
     let lines: Vec<&str> = old.split_inclusive('\n').collect();
     if !lines.iter().any(|l| is_elision_line(l)) {
@@ -257,34 +290,74 @@ pub fn replace_with_anchors(content: &str, old: &str, new: &str, replace_all: bo
     if segments.len() < 2 {
         return Err("省略锚点无效：省略号两侧都需要至少一段原文".into());
     }
-    // 逐段向后查找，要求严格递增且不重叠
-    let mut spans: Vec<Span> = Vec::new();
-    let mut search_from = 0usize;
-    for seg in &segments {
-        let seg_spans = find_spans(&content[search_from..], seg);
-        let Some(span) = seg_spans.into_iter().next() else {
-            return Err(format!(
-                "省略锚点的第 {} 段未在文件中找到：{}",
-                spans.len() + 1,
-                seg.lines().next().unwrap_or("").trim()
-            ));
-        };
-        let abs = Span {
-            start: search_from + span.start,
-            end: search_from + span.end,
-        };
-        search_from = abs.end;
-        spans.push(abs);
+    // 找全部"按顺序出现的锚点组"（各组之间不重叠）
+    let mut groups: Vec<Span> = Vec::new();
+    let mut from = 0usize;
+    loop {
+        let found = find_anchor_group(content, &segments, from)?;
+        let Some(group) = found else { break };
+        if group.start < from || group.end > content.len() {
+            break; // 防御：不推进则不循环
+        }
+        from = group.end;
+        groups.push(group);
+        // 空段落组会让 from 不前进（理论上不可达：段非空且 end > start）
+        if from >= content.len() {
+            break;
+        }
     }
-    let start = spans.first().unwrap().start;
-    let end = spans.last().unwrap().end;
+    if groups.is_empty() {
+        return Err(format!(
+            "省略锚点的首段未在文件中找到：{}（请用 md_outline / read 确认原文后重试）",
+            segments[0].lines().next().unwrap_or("").trim()
+        ));
+    }
+    if !replace_all && groups.len() > 1 {
+        return Err(format!(
+            "省略锚点匹配到 {} 处，请提供更长的首尾锚点使其唯一，或改用 replace_all=true",
+            groups.len()
+        ));
+    }
+    let targets: &[Span] = if replace_all { &groups } else { &groups[..1] };
     let eol = detect_eol(content);
     let new_text = to_eol(new, eol);
-    let mut out = String::with_capacity(content.len() + new_text.len());
-    out.push_str(&content[..start]);
-    out.push_str(&new_text);
-    out.push_str(&content[end..]);
-    Ok((out, segments.len()))
+    let mut out = String::with_capacity(content.len() + new_text.len() * targets.len());
+    let mut cursor = 0usize;
+    for span in targets {
+        out.push_str(&content[cursor..span.start]);
+        out.push_str(&new_text);
+        cursor = span.end;
+    }
+    out.push_str(&content[cursor..]);
+    Ok((out, targets.len()))
+}
+
+/// 从 `from` 开始找一组锚点：各段按顺序出现且不重叠，返回首段起点→末段终点。
+///
+/// 返回 `Ok(None)` = 首段就没找到（调用方据此结束扫描）；
+/// `Err` = 首段找到但后续某段找不到（这是"锚点写错"的真错误，必须报给模型）。
+fn find_anchor_group(content: &str, segments: &[String], from: usize) -> Result<Option<Span>, String> {
+    let mut start: Option<usize> = None;
+    let mut end = from;
+    for (k, seg) in segments.iter().enumerate() {
+        let hay = &content[end..];
+        let Some(span) = find_spans(hay, seg).into_iter().next() else {
+            return if k == 0 {
+                Ok(None)
+            } else {
+                Err(format!(
+                    "省略锚点的第 {} 段未在文件中找到：{}",
+                    k + 1,
+                    seg.lines().next().unwrap_or("").trim()
+                ))
+            };
+        };
+        if k == 0 {
+            start = Some(end + span.start);
+        }
+        end = end + span.end;
+    }
+    Ok(start.map(|s| Span { start: s, end }))
 }
 
 /// 行号（1 起，含端点）→ 原文字节区间。`end_line` 超出总行数时截断到末行。
@@ -330,7 +403,8 @@ pub fn replace_line_range(
     let span = line_span(content, start_line, end_line)?;
     let eol = detect_eol(content);
     let mut body = to_eol(new, eol);
-    if !body.is_empty() && !body.ends_with('\n') {
+    // 用目标换行风格判断，而不是写死 `\n`：CR 风格文件的换行是 `\r`
+    if !body.is_empty() && !body.ends_with(eol.as_str()) {
         body.push_str(eol.as_str());
     }
     let mut out = String::with_capacity(content.len() + body.len());
@@ -343,10 +417,14 @@ pub fn replace_line_range(
 }
 
 /// 在指定行**之后**插入内容（`line` 为 0 表示插入到文件最前面）。
+///
+/// 插入点选在第 `line` 行的行尾（含行尾换行）。若该行恰好是文件末行且文件
+/// **不以换行结尾**，则先补一个换行再插入——否则新内容会粘在末行尾部
+/// （旧实现会写出 `"a\nbX\n"` 这种把 `b` 和 `X` 拼成一行的坏文件）。
 pub fn insert_after_line(content: &str, line: usize, new: &str) -> Result<(String, usize), String> {
     let eol = detect_eol(content);
     let mut body = to_eol(new, eol);
-    if !body.is_empty() && !body.ends_with('\n') {
+    if !body.is_empty() && !body.ends_with(eol.as_str()) {
         body.push_str(eol.as_str());
     }
     if line == 0 {
@@ -356,9 +434,12 @@ pub fn insert_after_line(content: &str, line: usize, new: &str) -> Result<(Strin
         return Ok((out, 1));
     }
     let span = line_span(content, line, line)?;
-    // 插入点：该行行尾（含换行）
-    let mut out = String::with_capacity(content.len() + body.len());
+    // 插入点：该行行尾（含换行）；末行无换行时先补一个，保证是新的一行
+    let mut out = String::with_capacity(content.len() + body.len() + eol.as_str().len());
     out.push_str(&content[..span.end]);
+    if span.end == content.len() && !content[..span.end].ends_with(eol.as_str()) {
+        out.push_str(eol.as_str());
+    }
     out.push_str(&body);
     out.push_str(&content[span.end..]);
     Ok((out, 1))
@@ -399,75 +480,99 @@ pub struct FilePatch {
 /// +new
 /// ```
 /// 路径前缀 `a/`、`b/` 会被剥离。
+///
+/// 容错约定（都来自真实模型/真实 git 输出）：
+/// - `\ No newline at end of file` 标记行直接跳过（旧实现把它当上下文行，导致必定失配）；
+/// - hunk 内的**裸空行**按"空上下文行"处理（模型常把 `" "` 写成空行）；
+/// - 只有"空行 + 紧接下一个文件头/hunk 头"才视为分隔符，避免把文件间隔吃掉。
 pub fn parse_unified_patch(input: &str) -> Result<Vec<FilePatch>, String> {
+    let lines: Vec<&str> = input.lines().map(|l| l.trim_end_matches('\r')).collect();
+    let is_header = |s: &str| s.starts_with("--- ") || s.starts_with("diff --git");
+    // 注意：`\ No newline at end of file` 不列入 boundary——它是可以跳过的标记行，
+    // 如果当作 boundary 提前 break，会把后面的 `+` 行漏掉（补丁只应用一半）。
+    let is_boundary = |s: &str| is_header(s) || s.starts_with("@@ ");
     let mut files: Vec<FilePatch> = Vec::new();
-    let mut lines = input.lines().peekable();
-    while let Some(line) = lines.next() {
-        let line = line.trim_end_matches('\r');
-        if let Some(rest) = line.strip_prefix("--- ") {
-            // 期待紧随 +++. 也可能是 `--- /dev/null`
-            let old_path = rest.split_whitespace().next().unwrap_or("");
-            let Some(next) = lines.next() else {
-                return Err("补丁不完整：--- 之后缺少 +++ 行".into());
-            };
-            let next = next.trim_end_matches('\r');
-            let Some(new_raw) = next.strip_prefix("+++ ") else {
-                return Err("补丁格式错误：--- 之后必须紧跟 +++ 行".into());
-            };
-            let new_path = new_raw.split_whitespace().next().unwrap_or("");
-            let path = strip_diff_prefix(if new_path == "/dev/null" { old_path } else { new_path });
-            if path.is_empty() {
-                return Err("补丁格式错误：文件路径为空".into());
+    let mut i = 0usize;
+    while i < lines.len() {
+        let line = lines[i];
+        let Some(rest) = line.strip_prefix("--- ") else {
+            i += 1;
+            continue;
+        };
+        // 期待紧随 +++. 也可能是 `--- /dev/null`
+        let old_path = rest.split_whitespace().next().unwrap_or("");
+        let Some(next) = lines.get(i + 1) else {
+            return Err("补丁不完整：--- 之后缺少 +++ 行".into());
+        };
+        let Some(new_raw) = next.strip_prefix("+++ ") else {
+            return Err("补丁格式错误：--- 之后必须紧跟 +++ 行".into());
+        };
+        let new_path = new_raw.split_whitespace().next().unwrap_or("");
+        let path = strip_diff_prefix(if new_path == "/dev/null" { old_path } else { new_path });
+        if path.is_empty() {
+            return Err("补丁格式错误：文件路径为空".into());
+        }
+        i += 2;
+        let mut hunks: Vec<PatchHunk> = Vec::new();
+        while i < lines.len() {
+            let cur = lines[i];
+            if is_header(cur) {
+                break; // 下一个文件
             }
-            let mut hunks: Vec<PatchHunk> = Vec::new();
-            while let Some(peek) = lines.peek() {
-                let peek = peek.trim_end_matches('\r');
-                if peek.starts_with("--- ") || peek.starts_with("diff --git") {
+            let Some(h) = cur.strip_prefix("@@ ") else {
+                i += 1;
+                continue;
+            };
+            i += 1;
+            let (old_start, old_len) = parse_hunk_range(h)?;
+            let mut plines: Vec<PatchLine> = Vec::new();
+            while i < lines.len() {
+                let p = lines[i];
+                if p.starts_with("@@ ") || is_boundary(p) || is_header(p) {
                     break;
                 }
-                if let Some(h) = peek.strip_prefix("@@ ") {
-                    lines.next();
-                    let (old_start, old_len) = parse_hunk_range(h)?;
-                    let mut plines: Vec<PatchLine> = Vec::new();
-                    while let Some(p) = lines.peek() {
-                        let p = p.trim_end_matches('\r');
-                        if p.starts_with("@@ ") || p.starts_with("--- ") || p.starts_with("diff --git") {
-                            break;
-                        }
-                        if p.is_empty() {
-                            lines.next();
-                            continue;
-                        }
-                        let (kind, body) = p.split_at(1);
-                        let body = body.to_string();
-                        match kind {
-                            " " => plines.push(PatchLine::Context(body)),
-                            "-" => plines.push(PatchLine::Remove(body)),
-                            "+" => plines.push(PatchLine::Add(body)),
-                            _ => {
-                                // 容错：空白被吃掉的行按上下文处理
-                                plines.push(PatchLine::Context(p.to_string()));
-                            }
-                        }
-                        lines.next();
-                    }
-                    if plines.is_empty() {
-                        return Err("补丁格式错误：空 hunk".into());
-                    }
-                    hunks.push(PatchHunk {
-                        old_start,
-                        old_len,
-                        lines: plines,
-                    });
-                } else {
-                    lines.next();
+                if p.starts_with('\\') {
+                    i += 1; // "\ No newline at end of file"
+                    continue;
                 }
+                if p.is_empty() {
+                    // 裸空行：后面紧跟边界 → 视为分隔符；否则当作空上下文行
+                    let next_is_boundary = lines.get(i + 1).map(|n| is_boundary(n)).unwrap_or(true);
+                    if next_is_boundary {
+                        break;
+                    }
+                    plines.push(PatchLine::Context(String::new()));
+                    i += 1;
+                    continue;
+                }
+                // 用 chars 取首个字符，避免 split_at(1) 在多字节首字符处 panic
+                let mut it = p.chars();
+                let kind = it.next().unwrap_or(' ');
+                let body = it.as_str().to_string();
+                match kind {
+                    ' ' => plines.push(PatchLine::Context(body)),
+                    '-' => plines.push(PatchLine::Remove(body)),
+                    '+' => plines.push(PatchLine::Add(body)),
+                    _ => {
+                        // 容错：行前缀被吃掉的行按上下文处理（保留整行原文）
+                        plines.push(PatchLine::Context(p.to_string()));
+                    }
+                }
+                i += 1;
             }
-            if hunks.is_empty() {
-                return Err(format!("补丁格式错误：{path} 没有任何 @@ hunk"));
+            if plines.is_empty() {
+                return Err("补丁格式错误：空 hunk".into());
             }
-            files.push(FilePatch { path, hunks });
+            hunks.push(PatchHunk {
+                old_start,
+                old_len,
+                lines: plines,
+            });
         }
+        if hunks.is_empty() {
+            return Err(format!("补丁格式错误：{path} 没有任何 @@ hunk"));
+        }
+        files.push(FilePatch { path, hunks });
     }
     if files.is_empty() {
         return Err("补丁为空：未找到 ---/+++ 文件头".into());
@@ -520,9 +625,25 @@ pub fn apply_hunks(content: &str, hunks: &[PatchHunk]) -> Result<String, String>
             return Err(format!("第 {} 个 hunk 没有上下文/删除行，无法定位", i + 1));
         }
         let old_block = join_lines(&old_lines, eol);
+        // 文件末行"无换行"时，按行拼接的块会多出一个行尾：再试一次去掉行尾的版本。
+        // （git 用 `\ No newline at end of file` 表达这件事，这里不依赖标记本身，
+        //   只要精确匹配失败就补一次尝试，避免因标记缺失/多余而整体失配。）
+        let old_block_no_tail = old_block
+            .strip_suffix(eol.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| old_block.clone());
         let hint_start = ((hunk.old_start.saturating_sub(1)) as isize + shift).max(0) as usize;
         let hint = hint_start.min(out.len());
-        let (span, text) = match find_block(&out, &old_block, hint, search_from) {
+        let found = find_block(&out, &old_block, hint, search_from).or_else(|| {
+            if old_block_no_tail == old_block {
+                return None;
+            }
+            // 只有在**文件末尾**才接受"去掉行尾"的匹配：否则短块会命中别的行中间
+            // （例如块 "a" 命中 "xabc"），造成错误替换。
+            find_block(&out, &old_block_no_tail, hint, search_from)
+                .filter(|(span, _)| span.end == out.len())
+        });
+        let (span, text) = match found {
             Some(v) => v,
             None => {
                 let line_no = out[..hint.min(out.len())].matches('\n').count() + 1;
@@ -564,8 +685,15 @@ pub fn apply_hunks(content: &str, hunks: &[PatchHunk]) -> Result<String, String>
 }
 
 /// 在 `content[hint..]` 之后查找 `block`（先精确、后归一化），返回原文字节区间与命中文本。
+///
+/// 两个坑（都曾造成 panic/错位，务必保持）：
+/// 1. `hint` 由"行号 + 字节位移"估算，可能落在多字节字符中间 → 先对齐到字符边界；
+/// 2. 归一化映射的下标 ≠ 字节偏移，必须用 [`Normalized::norm_byte_for_orig`] 换算。
 fn find_block(content: &str, block: &str, hint: usize, min_from: usize) -> Option<(Span, String)> {
-    let from = hint.max(min_from).min(content.len());
+    let mut from = hint.max(min_from).min(content.len());
+    while from < content.len() && !content.is_char_boundary(from) {
+        from += 1;
+    }
     let tail = &content[from..];
     if let Some(pos) = tail.find(block) {
         let start = from + pos;
@@ -580,18 +708,24 @@ fn find_block(content: &str, block: &str, hint: usize, min_from: usize) -> Optio
     // 归一化重试：在全文上找（限制在 from 之后）
     let n = normalize(content);
     let nb = normalize(block);
-    // 把原文字节 from 映射到规范化位置：找第一个 orig >= from 的项
-    let start_norm = n
-        .map
-        .iter()
-        .position(|(o, _)| *o >= from)
-        .unwrap_or(0);
+    if nb.text.is_empty() {
+        return None;
+    }
+    // 原文字节 from → 规范化**字节**偏移（不是 map 下标！）
+    let start_norm = n.norm_byte_for_orig(from);
+    if start_norm >= n.text.len() {
+        return None;
+    }
     let hit = n.text[start_norm..].find(nb.text.as_str())?;
     let s_norm = start_norm + hit;
     let span = Span {
         start: n.to_orig(s_norm),
         end: n.to_orig(s_norm + nb.text.len()),
     };
+    // 端点必须可切片（归一化映射在极端输入下可能给出非字符边界）
+    if !content.is_char_boundary(span.start) || !content.is_char_boundary(span.end) {
+        return None;
+    }
     Some((span, content[span.start..span.end].to_string()))
 }
 
@@ -615,6 +749,9 @@ pub fn render_numbered_lines(content: &str, start_line: usize, end_line: usize, 
 ///
 /// 读取续页提示必须用真实末行（而不是另算一遍预算），否则两套算法有偏差时
 /// 会把一行的开头截断在下一页、甚至跳过内容。
+///
+/// 单行超过预算时会**行内截断**：旧实现用 `used > 0` 保护首行整行输出，
+/// 一条 1MB 的单行 JSON 会整段灌进上下文（与"单页约 8192 字符"的契约相反）。
 pub fn render_numbered_lines_with_end(
     content: &str,
     start_line: usize,
@@ -624,6 +761,7 @@ pub fn render_numbered_lines_with_end(
     let mut out = String::new();
     let mut used = 0usize;
     let mut truncated = false;
+    let mut long_line_cut = false;
     let mut last_line = start_line.saturating_sub(1);
     for (idx, line) in content.lines().enumerate() {
         let lnum = idx + 1;
@@ -633,10 +771,26 @@ pub fn render_numbered_lines_with_end(
         if lnum > end_line {
             break;
         }
-        let rendered = format!("{lnum}| {line}\n");
-        if used + rendered.chars().count() > max_chars && used > 0 {
+        let prefix = format!("{lnum}| ");
+        let mut rendered = format!("{prefix}{line}\n");
+        let over = used + rendered.chars().count() > max_chars;
+        if over && used > 0 {
             truncated = true;
             break;
+        }
+        if over {
+            // 首行即超预算 → 行内截断（留出省略标记的固定开销）
+            let avail = max_chars.saturating_sub(used);
+            let keep = avail.saturating_sub(prefix.chars().count() + 24).max(1);
+            let total_chars = line.chars().count();
+            if total_chars > keep {
+                let head: String = line.chars().take(keep).collect();
+                rendered = format!(
+                    "{prefix}{head}…（该行过长，已省略 {} 字符）\n",
+                    total_chars - keep
+                );
+                long_line_cut = true;
+            }
         }
         used += rendered.chars().count();
         last_line = lnum;
@@ -644,6 +798,8 @@ pub fn render_numbered_lines_with_end(
     }
     if truncated {
         out.push_str("...（本页已达字符上限，用 start_line/end_line 继续）\n");
+    } else if long_line_cut {
+        out.push_str("...（超长行已行内截断；单行无法按行号拆分，如需全文请用 grep 或其它工具）\n");
     }
     (out, last_line)
 }
@@ -710,8 +866,28 @@ mod tests {
     fn anchors_replace_between_segments() {
         let content = "## A\nold body\n## B\nkeep\n## C\nend\n";
         let (out, n) = replace_with_anchors(content, "## A\n…\n## B", "## A\nnew body\n## B", false).unwrap();
-        assert_eq!(n, 2);
+        // 返回"替换处数"（一组锚点 = 一处），不是锚点段数
+        assert_eq!(n, 1);
         assert_eq!(out, "## A\nnew body\n## B\nkeep\n## C\nend\n");
+    }
+
+    /// `replace_all=true` 时必须替换**全部**出现的锚点组（旧实现静默只改第一处）。
+    #[test]
+    fn anchors_replace_all_replaces_every_group() {
+        let content = "## A\nold\n## B\n## A\nold\n## B\n";
+        let err = replace_with_anchors(content, "## A\n…\n## B", "## A\nnew\n## B", false).unwrap_err();
+        assert!(err.contains("匹配到 2 处"), "{err}");
+        let (out, n) = replace_with_anchors(content, "## A\n…\n## B", "## A\nnew\n## B", true).unwrap();
+        assert_eq!(n, 2, "两组都应被替换");
+        assert_eq!(out, "## A\nnew\n## B\n## A\nnew\n## B\n");
+    }
+
+    /// 末段找不到时仍要给出"第 N 段"的定位信息（便于模型修正锚点）。
+    #[test]
+    fn anchors_report_missing_tail_segment() {
+        let content = "## A\nbody\n## C\n";
+        let err = replace_with_anchors(content, "## A\n…\n## Z", "x", false).unwrap_err();
+        assert!(err.contains("第 2 段"), "{err}");
     }
 
     #[test]
@@ -725,6 +901,79 @@ mod tests {
         assert_eq!(out2, "l1\nl2\ninserted\nl3\nl4\n");
     }
 
+    /// 回归：末行无换行时"在该行后插入"不能把新内容粘到末行尾部。
+    #[test]
+    fn insert_after_last_line_without_trailing_newline() {
+        let (out, _) = insert_after_line("a\nb", 2, "X").unwrap();
+        assert_eq!(out, "a\nb\nX\n", "末行与插入内容必须各占一行");
+        // 有换行的常规情况不受影响
+        let (out2, _) = insert_after_line("a\nb\n", 2, "X").unwrap();
+        assert_eq!(out2, "a\nb\nX\n");
+    }
+
+    /// 孤立 `\r`（老式 Mac 换行）也要能被归一化匹配到，并按 `\r` 写回。
+    #[test]
+    fn isolated_cr_file_matches_and_keeps_cr() {
+        let content = "a\rb\rc";
+        let (out, n) = replace_once(content, "a\nb\nc", "X", false).unwrap();
+        assert_eq!(n, 1);
+        assert_eq!(out, "X");
+        assert_eq!(detect_eol("a\rb\rc"), Eol::Cr);
+        assert_eq!(to_eol("a\nb", Eol::Cr), "a\rb");
+    }
+
+    /// 回归：多字节内容的归一化回退曾把 map 下标当字节偏移，直接在字符中间切片 panic。
+    #[test]
+    fn normalized_block_match_is_utf8_safe() {
+        let mut content = String::new();
+        for i in 1..=6 {
+            content.push_str(&format!("中文内容行{}   \n", i));
+        }
+        // 第 5 行起；上下文行在补丁里缺了行尾空格 → 精确匹配失败 → 走归一化回退
+        let patch = "--- a/d.md\n+++ b/d.md\n@@ -5,2 +5,2 @@\n 中文内容行5\n-中文内容行6\n+替换行6\n";
+        let files = parse_unified_patch(patch).unwrap();
+        let out = apply_hunks(&content, &files[0].hunks).expect("多字节内容不应 panic");
+        assert!(out.contains("替换行6"), "{out}");
+        assert!(out.contains("中文内容行1"), "其它行必须保持原样：{out}");
+    }
+
+    /// 回归：git 对"无末行换行"的文件会输出 `\ No newline at end of file`，
+    /// 旧实现把它当上下文行，导致补丁必然失配。
+    #[test]
+    fn patch_with_no_newline_marker_applies() {
+        let patch = "--- a/d.md\n+++ b/d.md\n@@ -1,2 +1,2 @@\n a\n-b\n\\ No newline at end of file\n+c\n\\ No newline at end of file\n";
+        let files = parse_unified_patch(patch).unwrap();
+        let out = apply_hunks("a\nb", &files[0].hunks).unwrap();
+        assert_eq!(out, "a\nc\n");
+    }
+
+    /// 模型常把"空上下文行"写成真正的空行（而不是 `" "`），应按空上下文处理。
+    #[test]
+    fn patch_with_blank_context_line_applies() {
+        let patch = "--- a/d.md\n+++ b/d.md\n@@ -1,3 +1,3 @@\n a\n\n-c\n+C\n";
+        let files = parse_unified_patch(patch).unwrap();
+        let out = apply_hunks("a\n\nc\n", &files[0].hunks).unwrap();
+        assert_eq!(out, "a\n\nC\n");
+    }
+
+    /// 多文件补丁之间的空行不能被当成上下文行吞掉。
+    #[test]
+    fn blank_line_between_file_sections_is_separator() {
+        let patch = "--- a/x.md\n+++ b/x.md\n@@ -1,1 +1,1 @@\n-a\n+A\n\n--- a/y.md\n+++ b/y.md\n@@ -1,1 +1,1 @@\n-b\n+B\n";
+        let files = parse_unified_patch(patch).unwrap();
+        assert_eq!(files.len(), 2);
+        assert_eq!(apply_hunks("a\n", &files[0].hunks).unwrap(), "A\n");
+        assert_eq!(apply_hunks("b\n", &files[1].hunks).unwrap(), "B\n");
+    }
+
+    /// 补丁行首是多字节字符时不得 panic（旧实现用 `split_at(1)`）。
+    #[test]
+    fn patch_line_starting_with_multibyte_char_does_not_panic() {
+        let patch = "--- a/d.md\n+++ b/d.md\n@@ -1,1 +1,1 @@\n中文\n-中文\n+新\n";
+        let files = parse_unified_patch(patch).unwrap();
+        let _ = apply_hunks("中文\n", &files[0].hunks);
+    }
+
     #[test]
     fn numbered_lines_render_range() {
         let content = "a\nb\nc\nd\n";
@@ -732,6 +981,16 @@ mod tests {
         assert!(s.contains("2| b"), "{s}");
         assert!(s.contains("3| c"), "{s}");
         assert!(!s.contains("4| d"), "{s}");
+    }
+
+    /// 超长单行必须被行内截断，不能整段输出（否则单行 1MB 的文件会灌满上下文）。
+    #[test]
+    fn numbered_lines_truncate_oversized_single_line() {
+        let long = format!("{}\nshort\n", "z".repeat(5_000));
+        let (page, _last) = render_numbered_lines_with_end(&long, 1, 2, 200);
+        assert!(page.chars().count() < 600, "整行输出会超预算：{} 字符", page.chars().count());
+        assert!(page.contains("该行过长"), "{page}");
+        assert!(!page.contains(&"z".repeat(1_000)), "不应包含整段超长行");
     }
 
     #[test]
@@ -752,5 +1011,21 @@ mod tests {
         let content = "a\r\nb\r\n";
         let out = apply_hunks(content, &files[0].hunks).unwrap();
         assert_eq!(out, "a\r\nc\r\n");
+    }
+
+    /// 回归：为"文件无末行换行"补的去掉行尾回退，不能在文件中段乱匹配。
+    ///
+    /// 若不加"必须命中文件末尾"的限制，短块 `"a"` 会命中 `"xabc"` 中间的 `a`，
+    /// 把别的行改坏（比失配更糟：静默损坏）。
+    #[test]
+    fn trimmed_block_fallback_only_matches_at_eof() {
+        let patch = "--- a/d.md\n+++ b/d.md\n@@ -1,1 +1,1 @@\n-a\n+A\n";
+        let files = parse_unified_patch(patch).unwrap();
+        // 文件里只有 "xabc" 含 a，且 a 不在文件末尾 → 必须失配而不是改坏
+        let out = apply_hunks("xabc\nzzz\n", &files[0].hunks);
+        assert!(out.is_err(), "不得把 xabc 中间的 a 当成整行匹配：{out:?}");
+        // 真正的末行（无换行）仍应能应用
+        let out = apply_hunks("zzz\na", &files[0].hunks).expect("末行无换行应可应用");
+        assert_eq!(out, "zzz\nA\n");
     }
 }

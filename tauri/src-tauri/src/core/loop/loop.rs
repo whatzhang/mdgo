@@ -406,14 +406,16 @@ impl LoopAgent {
             chrono::Weekday::Sun => "日",
         };
         let time_block = format!(
-            "[当前时间] 本地时间 {}（星期{}，{}）。用户说“今天/现在/明天/后天/本周/本月”等相对时间时一律以此为准，禁止自行推算或猜测日期。",
+            "{} 本地时间 {}（星期{}，{}）。用户说“今天/现在/明天/后天/本周/本月”等相对时间时一律以此为准，禁止自行推算或猜测日期。",
+            super::llm_seam::VOLATILE_SYSTEM_MARKER,
             now_local.format("%Y-%m-%d %H:%M"),
             weekday_cn,
             now_local.format("%:z")
         );
         // 动态时间块放在 system **末尾**（而不是最前）：规约 + 工具 + 技能指令构成稳定前缀，
         // 才能命中 provider 的前缀缓存（Anthropic cache_control / OpenAI automatic caching）。
-        // 若放在最前，时间一变整个前缀失效，每步都按全价重算。
+        // 适配器会用 `VOLATILE_SYSTEM_MARKER` 把这一段单独放进"无缓存断点"的块，
+        // 所以时间/预算提醒变化不会刷掉稳定前缀的缓存。
         system.push_str("\n\n");
         system.push_str(&time_block);
         // 预算预警（剩余轮次不足时强制引导收敛，避免 MaxTurnsError 丢失整段回答）
