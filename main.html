@@ -46754,6 +46754,8 @@ kanban-plugin: basic
                 });
             }
 
+            if (typeof docQaCloseIfDockedOpen === 'function') { docQaCloseIfDockedOpen(); }
+
             // 重新调整内容区域大小
             resizeContentMain();
         }

@@ -961,14 +961,14 @@
             showNotification('请先打开知识库目录', 'warning');
             return;
         }
+        // Dashboard 等非文件页不显示小助手
+        if (typeof dashboardContainer !== 'undefined' && dashboardContainer && dashboardContainer.style.display !== 'none') {
+            toggleFile("aiChat");
+            return;
+        }
         const rel = currentRelPath();
         if (!rel) {
             showNotification('请先打开一个 Markdown/文本文件', 'warning');
-            return;
-        }
-        // Dashboard 等非文件页不显示小助手
-        if (typeof dashboardContainer !== 'undefined' && dashboardContainer && dashboardContainer.style.display !== 'none') {
-            showNotification('小助手仅在文件页可用（Dashboard 不显示）', 'warning');
             return;
         }
         // 固定「关联当前文件」：始终以当前打开文件作为上下文
