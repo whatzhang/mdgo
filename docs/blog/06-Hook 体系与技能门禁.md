@@ -281,6 +281,8 @@ Skip 的调用不会执行，而是立刻按模型序回填一条错误结果：
 
 三层合起来是一个刻意的成本梯度：**目录常驻（便宜但只有元数据）→ 摘要每轮（防长任务/压缩后规范漂移）→ 正文一次（真正贵的那次只付一次）→ 参考文档按需（最贵但最精准）**。`context.rs:404-439` 里还留着旧的一次性拼接函数 `format_skill_instructions`，但已被标 `#[allow(dead_code)]`，注释写明「当前仅测试路径使用」（`context.rs:402-403`）。
 
+> **2026-11 补丁（L3 读取）**：`read` 现兼容 `{skill_id}/references/...` 前缀（模型从 SKILL.md 的相对链接推导时常带上技能 ID）；且当本请求未激活任何技能时，对**唯一命中**的 `references/...` 放行。原因是技能激活是请求级状态，而对话历史会保留上一轮的 `<active_skill>` 正文，用户续问时模型往往直接 `read references/...` 而不重新 `activate_skill`。多个技能存在同名参考文档时仍返回歧义错误，要求先激活。实现见 `core/agent/tools/mod.rs::split_skill_prefixed_ref` 与 `find_unique_skill_ref`。
+
 ### 4.2 三层拦截链（可见性 / 裁决 / 闭包守卫）
 
 同一件事被写了三遍，看起来冗余，实际分工不同：

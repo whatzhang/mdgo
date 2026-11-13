@@ -1002,8 +1002,67 @@ pub async fn read_with(
             if let Some(text) = read_active_skill_md(cfg, rel_path, &spec)? {
                 return Ok(text);
             }
+            // 兼容 `{skill_id}/references/...` 前缀（模型从 SKILL.md 里的相对
+            // Markdown 链接推导路径时常带上前缀）：仅对已激活技能生效，剥掉前缀后
+            // 按该技能目录解析。不做这层兼容时，路径会变成
+            // `{base}/{skill_id}/{skill_id}/references/...` 而必然失败，
+            // 且错误信息不提示正确写法，模型会反复重试（实测连续 8 次）。
+            if let Some((skill_id, rest)) = split_skill_prefixed_ref(rel_path) {
+                if let Some(skill) = cfg
+                    .skill_state
+                    .active_only()
+                    .iter()
+                    .find(|a| a.skill_id == skill_id)
+                {
+                    for (scope, base) in &cfg.skill_bases {
+                        if scope != skill.scope.as_str() {
+                            continue;
+                        }
+                        let dir = Path::new(base).join(&skill.skill_id);
+                        if let Ok(full) = safe_resolve_in(&dir, rest) {
+                            let result = read_text(&full, rest, &spec)?;
+                            return Ok(crate::core::security::wrap_suspicious(&result));
+                        }
+                    }
+                    return Err(format!(
+                        "技能 '{skill_id}' 已激活，但未找到 '{rest}'。技能参考资料请用相对技能目录的路径：\
+                         read path=\"{rest}\"（不要加 `{skill_id}/` 前缀）。"
+                    ));
+                }
+                if cfg.skill_registry.find_enabled(skill_id).is_some() {
+                    // 技能已知但本请求未激活：先尝试唯一命中的静态参考文档
+                    // （跨请求续问场景，模型常沿用上一轮历史里的 <active_skill>）。
+                    if let Some((skill_ref, full)) = find_unique_skill_ref(cfg, rest)? {
+                        log::info!(
+                            "[read] 技能 '{}' 本请求未激活，但参考文档唯一命中 {}：{}",
+                            skill_id,
+                            skill_ref,
+                            rest
+                        );
+                        let result = read_text(&full, rest, &spec)?;
+                        return Ok(crate::core::security::wrap_suspicious(&result));
+                    }
+                    return Err(format!(
+                        "技能 '{skill_id}' 未激活，无法读取其参考文档。请先调用 activate_skill 激活技能，\
+                         然后用 read path=\"{rest}\"（不要加技能 ID 前缀）读取。"
+                    ));
+                }
+            }
             if cfg.skill_state.active_only().is_empty() {
-                // 无任何已激活（Active）技能：若目标是技能参考路径，明确指出需先激活技能，
+                // 无任何已激活（Active）技能：先尝试「唯一命中」的静态参考文档
+                // （技能激活是请求级状态，模型续问时常沿用上一轮历史里的
+                // <active_skill> 正文而不再 activate_skill；参考文档是随包静态资源，
+                // 唯一命中时允许读取，避免整条追问链路反复失败）。
+                if let Some((skill_ref, full)) = find_unique_skill_ref(cfg, rel_path)? {
+                    log::info!(
+                        "[read] 本请求未激活技能，但参考文档唯一命中 {}：{}",
+                        skill_ref,
+                        rel_path
+                    );
+                    let result = read_text(&full, rel_path, &spec)?;
+                    return Ok(crate::core::security::wrap_suspicious(&result));
+                }
+                // 若目标是技能参考路径，明确指出需先激活技能，
                 // 避免模型误以为文件不存在而反复尝试（浪费多轮工具调用）
                 return Err(skill_ref_hint(rel_path, e));
             }
@@ -1025,7 +1084,80 @@ pub async fn read_with(
             }
         }
     }
+    // 已激活技能目录都没有：再尝试唯一命中的其他已启用技能（跨请求续问场景）
+    if let Some((skill_ref, full)) = find_unique_skill_ref(cfg, rel_path)? {
+        log::info!(
+            "[read] 已激活技能未命中，回退到唯一命中的技能参考文档 {}：{}",
+            skill_ref,
+            rel_path
+        );
+        let result = read_text(&full, rel_path, &spec)?;
+        return Ok(crate::core::security::wrap_suspicious(&result));
+    }
     Err(skill_ref_hint(rel_path, last_err))
+}
+
+/// 在当前请求未激活目标技能时，按 `references/...` 在所有**已启用**技能目录里
+/// 查找唯一命中（返回 `scope:id` 与绝对路径）。
+///
+/// 存在的理由：`ActiveSkillState` 是请求级状态，而对话历史会保留上一轮的
+/// `<active_skill>` 正文；用户续问时模型经常直接 `read references/timeline.md`
+/// 而不再 `activate_skill`，严格按「仅已激活技能可读」会让 L3 参考文档永远读不到。
+/// 技能参考文档是随包/随项目分发的静态资源（不涉及用户数据），因此唯一命中时放行；
+/// 多个技能同名参考文档时返回歧义错误，要求模型显式激活。
+fn find_unique_skill_ref(
+    cfg: &KbSearchConfig,
+    rel_path: &str,
+) -> Result<Option<(String, PathBuf)>, String> {
+    if !rel_path.starts_with("references/") {
+        return Ok(None);
+    }
+    let mut hits: Vec<(String, PathBuf)> = Vec::new();
+    for skill in cfg.skill_registry.list(None) {
+        if !skill.enabled {
+            continue;
+        }
+        let Some((_, base)) = cfg
+            .skill_bases
+            .iter()
+            .find(|(scope, _)| scope == skill.scope.as_str())
+        else {
+            continue;
+        };
+        let dir = Path::new(base).join(&skill.id);
+        if let Ok(full) = safe_resolve_in(&dir, rel_path) {
+            hits.push((format!("{}:{}", skill.scope.as_str(), skill.id), full));
+        }
+    }
+    match hits.len() {
+        0 => Ok(None),
+        1 => Ok(hits.pop()),
+        _ => Err(format!(
+            "路径 '{}' 在多个技能中都存在（{}）。请先调用 activate_skill 指定要使用哪个技能，再读取其参考文档。",
+            rel_path,
+            hits.iter()
+                .map(|(id, _)| id.as_str())
+                .collect::<Vec<_>>()
+                .join("、")
+        )),
+    }
+}
+
+/// 识别 `{skill_id}/references/...` 与 `{skill_id}/SKILL.md` 两种带技能 ID 前缀的
+/// 技能路径，返回 `(skill_id, 相对技能目录的剩余路径)`。
+///
+/// 只认这两种形态（不把任意 `a/b` 当技能路径），避免知识库里的普通二级路径
+/// （如 `docs/note.md`）被误判成技能引用。
+fn split_skill_prefixed_ref(rel_path: &str) -> Option<(&str, &str)> {
+    let (id, rest) = rel_path.split_once('/')?;
+    if id.is_empty() || rest.is_empty() {
+        return None;
+    }
+    if rest.starts_with("references/") || rest == "SKILL.md" {
+        Some((id, rest))
+    } else {
+        None
+    }
 }
 
 /// 读取已激活技能的 SKILL.md 完整正文（内存注册表直读，不经过磁盘）。
@@ -1092,13 +1224,21 @@ fn read_active_skill_md(
     Ok(None)
 }
 
-/// 当读取路径指向技能参考文档（`references/` 开头）而解析失败时，
-/// 在原错误信息后追加「需先 activate_skill 激活对应技能」的引导。
+/// 当读取路径指向技能参考文档（`references/` 开头，或 `{skill_id}/references/`）
+/// 而解析失败时，在原错误信息后追加可执行的纠正引导。
 fn skill_ref_hint(rel_path: &str, base_err: String) -> String {
     if rel_path.starts_with("references/") {
         format!(
-            "{}。提示：references/ 开头的路径是技能参考文档，需先调用 activate_skill 激活对应技能后才能读取。",
+            "{}。提示：references/ 开头的路径是技能参考文档；技能激活状态仅在单次请求内有效\
+             （对话历史里的 <active_skill> 正文不代表本请求已激活），请先调用 activate_skill \
+             激活对应技能后再读取。",
             base_err
+        )
+    } else if let Some((id, rest)) = split_skill_prefixed_ref(rel_path) {
+        format!(
+            "{}。提示：带技能 ID 前缀的路径不受支持；技能参考文档请用相对技能目录的路径 `{}`\
+             （即 read path=\"{}\"），并确认已调用 activate_skill 激活技能 '{}'。",
+            base_err, rest, rest, id
         )
     } else {
         base_err
@@ -3637,5 +3777,34 @@ mod big_doc_edit_tests {
         assert_eq!(heading_level_at(text, 2), 3);
         assert_eq!(heading_level_at(text, 3), 0);
         assert_eq!(heading_level_at(text, 4), 0, "超过 6 级不算 ATX 标题");
+    }
+
+    /// 回归：模型从 SKILL.md 的相对链接推导出的 `{skill_id}/references/...`
+    /// 必须被识别（否则会拼成 `{skill_id}/{skill_id}/references/...` 反复失败）。
+    #[test]
+    fn split_skill_prefixed_ref_only_accepts_skill_paths() {
+        assert_eq!(
+            split_skill_prefixed_ref("mermaid/references/timeline.md"),
+            Some(("mermaid", "references/timeline.md"))
+        );
+        assert_eq!(
+            split_skill_prefixed_ref("mermaid/SKILL.md"),
+            Some(("mermaid", "SKILL.md"))
+        );
+        // 普通知识库路径不能被误判为技能路径
+        assert_eq!(split_skill_prefixed_ref("references/timeline.md"), None);
+        assert_eq!(split_skill_prefixed_ref("docs/note.md"), None);
+        assert_eq!(split_skill_prefixed_ref("mermaid/other.md"), None);
+    }
+
+    /// 带前缀路径失败时，错误信息必须给出可直接照做的正确写法。
+    #[test]
+    fn skill_ref_hint_explains_prefixed_form() {
+        let hint = skill_ref_hint("mermaid/references/timeline.md", "文件不存在".into());
+        assert!(hint.contains("references/timeline.md"), "{hint}");
+        assert!(hint.contains("不要加") || hint.contains("不受支持"), "{hint}");
+        // 无前缀的相对路径仍给「先激活技能」引导
+        let hint = skill_ref_hint("references/timeline.md", "文件不存在".into());
+        assert!(hint.contains("activate_skill"), "{hint}");
     }
 }

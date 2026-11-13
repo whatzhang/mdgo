@@ -2785,6 +2785,19 @@ async fn agent_generate_loop_v2(
     if !catalog.trim().is_empty() {
         system.push_str(&format!("\n\n---\n\n{catalog}"));
     }
+    // 技能激活是请求级状态：历史里保留的 <active_skill> 正文很容易让模型误以为
+    // 本请求仍处于激活态，于是不调 activate_skill 直接 read references/...。
+    // 本请求确实没有激活技能、但历史里出现过技能正文时，显式纠正一次。
+    if active_skills.active_only().is_empty()
+        && history_messages
+            .iter()
+            .any(|m| m.content.contains("<active_skill"))
+    {
+        system.push_str(
+            "\n\n[技能状态] 技能激活仅在单次请求内有效：对话历史中的 <active_skill> 正文不代表本请求已激活。\
+             如需继续使用该技能（包括读取其 references/ 参考文档），请先调用 activate_skill 重新激活。",
+        );
+    }
 
     let mut config = LoopConfig::new(crate::core::agent::DEFAULT_MAX_TURNS, system);
     config.max_tokens = llm_cfg.max_tokens;

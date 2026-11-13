@@ -557,13 +557,29 @@ impl SkillStore {
     ///
     /// 与全局/项目技能同一套「运行时读盘」逻辑；`read` 工具的技能基础目录
     /// 也复用此解析（见 `commands/llm.rs::resolve_skill_bases`）。
+    ///
+    /// 路径兼容：Tauri 在 Windows 上 `resource_dir()` 返回 **exe 所在目录**，而
+    /// `bundle.resources` 会保留 `resources/skills` 相对路径（实测打包产物为
+    /// `{exe_dir}/resources/skills`）。因此两种布局都要探测；否则安装版会拿到
+    /// 不存在的 `{exe_dir}/skills`，导致系统技能全部加载不到。
     pub fn resolve_system_skills_dir(app: &tauri::AppHandle) -> PathBuf {
-        app.path()
-            .resource_dir()
-            .ok()
-            .map(|r| r.join("skills"))
-            .filter(|p| p.is_dir())
-            .unwrap_or_else(Self::system_skills_dir)
+        // 开发期优先源码目录：SKILL.md 改动可被 watcher 立即感知；构建产物里的
+        // `resources/skills` 副本不会随源码编辑自动同步，优先它会破坏热更新体验。
+        let source = Self::system_skills_dir();
+        if cfg!(debug_assertions) && source.is_dir() {
+            return source;
+        }
+        if let Ok(resource) = app.path().resource_dir() {
+            for candidate in [
+                resource.join("skills"),
+                resource.join("resources").join("skills"),
+            ] {
+                if candidate.is_dir() {
+                    return candidate;
+                }
+            }
+        }
+        source
     }
 
     /// 扫描目录下全部 Skill，并收集解析失败项（供前端消息提醒）。

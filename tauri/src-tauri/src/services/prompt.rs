@@ -51,13 +51,26 @@ fn prompt_resource_dir() -> PathBuf {
 }
 
 /// 解析系统 Prompt 资源目录：运行时资源目录优先（打包后），源码资源目录回退（开发期）。
+///
+/// 与技能目录同一口径：Tauri 在 Windows 的 `resource_dir()` 是 exe 目录，而
+/// `bundle.resources` 保留 `resources/prompt` 相对路径，故两种布局都要探测。
 fn resolve_prompt_resource_dir(app: &tauri::AppHandle) -> PathBuf {
-    app.path()
-        .resource_dir()
-        .ok()
-        .map(|r| r.join("prompt"))
-        .filter(|p| p.is_dir())
-        .unwrap_or_else(prompt_resource_dir)
+    // 开发期优先源码目录（seed.sql 可直接改后重启生效）
+    let source = prompt_resource_dir();
+    if cfg!(debug_assertions) && source.is_dir() {
+        return source;
+    }
+    if let Ok(resource) = app.path().resource_dir() {
+        for candidate in [
+            resource.join("prompt"),
+            resource.join("resources").join("prompt"),
+        ] {
+            if candidate.is_dir() {
+                return candidate;
+            }
+        }
+    }
+    source
 }
 
 /// 读取系统内置 Prompt 种子 SQL（`seed.sql`）。

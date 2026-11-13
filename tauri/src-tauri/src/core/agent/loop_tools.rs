@@ -314,14 +314,14 @@ impl Tool for ReadTool {
         SPEC.get_or_init(|| {
             read_only_spec(
                 "read",
-                "读取文件内容（输出带行号，便于精确定位与后续行范围编辑）。默认按行分页，单页约 8192 字符；三种读取方式：1) 不带参数读首屏；2) `start_line`/`end_line` 按行区间读；3) `ranges` 一次读多个行区间。支持三类路径：知识库内相对路径（如 docs/note.md）；当前激活技能的参考文档（如 references/flowchart.md，需先 activate_skill）；已激活技能的 SKILL.md 完整正文（如 outline-mindmap/SKILL.md）。\n\n大文件（>2000 行或 >200KB）建议先用 `md_outline` 看标题结构，再用 `read_section`/`start_line`+`end_line` 精确读取，不要从第 1 行顺序翻到末尾；页尾会给出下一次的 start_line。行号前缀 `123| ` 仅用于定位，编辑时不要把它复制进 old_string。一次读多个文件用 `paths`（最多 10 个）。",
+                "读取文件内容（输出带行号，便于精确定位与后续行范围编辑）。默认按行分页，单页约 8192 字符；三种读取方式：1) 不带参数读首屏；2) `start_line`/`end_line` 按行区间读；3) `ranges` 一次读多个行区间。支持三类路径：知识库内相对路径（如 docs/note.md）；当前激活技能的参考文档（如 references/flowchart.md，需先 activate_skill；不要写成 技能ID/references/flowchart.md 这种带前缀的形式）；已激活技能的 SKILL.md 完整正文（如 outline-mindmap/SKILL.md）。\n\n大文件（>2000 行或 >200KB）建议先用 `md_outline` 看标题结构，再用 `read_section`/`start_line`+`end_line` 精确读取，不要从第 1 行顺序翻到末尾；页尾会给出下一次的 start_line。行号前缀 `123| ` 仅用于定位，编辑时不要把它复制进 old_string。一次读多个文件用 `paths`（最多 10 个）。",
                 json!({
                     "type": "object",
                     "additionalProperties": false,
                     "properties": {
                         "path": {
                             "type": "string",
-                            "description": "文件相对路径：知识库内路径、技能参考文档路径（如 references/flowchart.md），或已激活技能 SKILL.md 完整正文路径（如 outline-mindmap/SKILL.md）。与 paths 二选一"
+                            "description": "文件相对路径：知识库内路径、技能参考文档路径（如 references/flowchart.md，不要带技能 ID 前缀），或已激活技能 SKILL.md 完整正文路径（如 outline-mindmap/SKILL.md）。与 paths 二选一"
                         },
                         "paths": {
                             "type": "array",
@@ -1614,6 +1614,11 @@ impl Tool for ActivateSkillTool {
         if !skill.description.trim().is_empty() {
             msg.push_str(&format!("\n\n说明：{}", skill.description.trim()));
         }
+        // 显式给出参考资料的正确读取形式：SKILL.md 正文里的相对链接（references/xxx.md）
+        // 容易被模型推导成 `{skill_id}/references/xxx.md`，而 read 只接受相对技能目录的路径。
+        msg.push_str(&format!(
+            "\n\n读取参考资料：用 read，path 写 `references/<文件名>`（相对技能目录，不要加 `{id}/` 前缀）。"
+        ));
         if !skill.tools.is_empty() {
             msg.push_str(&format!("\n专用工具：{}", skill.tools.iter().map(|t| format!("`{t}`")).collect::<Vec<_>>().join(", ")));
         }

@@ -42,18 +42,29 @@ fn rules_cache() -> &'static Mutex<HashMap<String, (SystemTime, String)>> {
 }
 
 /// 解析规约文件绝对路径：运行时资源目录（打包后）优先，源码资源目录（开发期）回退。
+///
+/// 与技能目录同一口径：Tauri 在 Windows 的 `resource_dir()` 是 exe 目录，而
+/// `bundle.resources` 保留 `resources/agent` 相对路径，故两种布局都要探测。
 fn resolve_agent_rules_path(app: &AppHandle, name: &str) -> Option<PathBuf> {
-    if let Ok(dir) = app.path().resource_dir() {
-        let candidate = dir.join("agent").join(name);
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-    let fallback = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("resources")
         .join("agent")
         .join(name);
-    fallback.exists().then_some(fallback)
+    // 开发期优先源码目录：规约改动即时生效（与技能目录同一策略）
+    if cfg!(debug_assertions) && source.exists() {
+        return Some(source);
+    }
+    if let Ok(dir) = app.path().resource_dir() {
+        for candidate in [
+            dir.join("agent").join(name),
+            dir.join("resources").join("agent").join(name),
+        ] {
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+    }
+    source.exists().then_some(source)
 }
 
 /// 内置兜底规约（资源文件缺失或为空时），保证任何环境下 Agent 都有明确的中文回答约束。

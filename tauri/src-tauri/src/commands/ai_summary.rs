@@ -160,13 +160,27 @@ const SUMMARY_INSTRUCTION_FILE: &str = "prompt/summay_analysis.md";
 /// 2. 未打包环境回退源码 `resources/prompt/summay_analysis.md`；
 /// 3. 均不存在/读取失败 → 回退内置常量（不阻塞功能）。
 fn load_summary_instruction(app: &AppHandle) -> String {
-    // 1) 打包资源目录
-    if let Ok(dir) = app.path().resource_dir() {
-        let p = dir.join(SUMMARY_INSTRUCTION_FILE);
-        if let Ok(content) = std::fs::read_to_string(&p) {
+    // 1) 打包资源目录（Tauri 保留 resources/ 前缀，两种布局都探测）；
+    //    开发期优先源码目录，避免用到构建时拷贝的旧副本。
+    let src = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources").join(SUMMARY_INSTRUCTION_FILE);
+    if cfg!(debug_assertions) {
+        if let Ok(content) = std::fs::read_to_string(&src) {
             let t = content.trim();
             if !t.is_empty() {
                 return t.to_string();
+            }
+        }
+    }
+    if let Ok(dir) = app.path().resource_dir() {
+        for candidate in [
+            dir.join(SUMMARY_INSTRUCTION_FILE),
+            dir.join("resources").join(SUMMARY_INSTRUCTION_FILE),
+        ] {
+            if let Ok(content) = std::fs::read_to_string(&candidate) {
+                let t = content.trim();
+                if !t.is_empty() {
+                    return t.to_string();
+                }
             }
         }
     }
