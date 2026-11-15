@@ -13938,6 +13938,7 @@
     <link rel="stylesheet" href="./css_js/modules/agent.css" />
     <link rel="stylesheet" href="./css_js/modules/ai-summay.css" />
     <link rel="stylesheet" href="./css_js/modules/global-search.css" />
+    <link rel="stylesheet" href="./css_js/modules/behavior-analysis.css" />
 </head>
 
 <body>
@@ -14285,47 +14286,112 @@
                 </div>
                 <canvas id="graph-canvas" class="graph-canvas"></canvas>
             </div>
-            <div id="behavior-analysis-container" class="dashboard-container" style="display: none;padding: 10px;padding-top: 0;">
-                <div class="video-header-bar" style="margin-bottom: 0.5rem;">
-                    <div class="video-header-left">
-                        <span class="video-header-title" style="font-size: 1rem;">文档库分析</span>
+            <div id="behavior-analysis-container" class="dashboard-container" style="display: none;">
+                <div class="ba-page">
+                    <!-- 页头：标题 + 时间范围 + 重新分析 / 刷新 -->
+                    <div class="ba-header">
+                        <div class="ba-header-left">
+                            <div class="ba-title">文档库分析</div>
+                            <div class="ba-sub">使用视角：浏览 / 编辑节奏与阅读覆盖</div>
+                        </div>
+                        <div class="ba-header-right">
+                            <div class="ba-range" id="ba-range">
+                                <button type="button" data-days="1">今天</button>
+                                <button type="button" data-days="7">近 7 天</button>
+                                <button type="button" data-days="30" class="active">近 30 天</button>
+                                <button type="button" data-days="0">全部</button>
+                            </div>
+                            <span id="ai-summary-updated" class="ai-summary-updated"></span>
+                            <button class="btn btn-sm btn-warning" id="summay-refresh-btn" onclick="restartAiSummary()">
+                                重新分析
+                            </button>
+                            <button class="btn btn-sm btn-primary" id="ba-refresh-btn" onclick="refreshBehaviorAnalysis()">
+                                刷新
+                            </button>
+                        </div>
                     </div>
-                    <div class="video-header-right">
-                        <span id="ai-summary-updated" class="ai-summary-updated"></span>
-                        <button class="btn btn-sm btn-warning" id="summay-refresh-btn" onclick="restartAiSummary()">
-                            重新分析
-                        </button>
-                    </div>
-                </div>
-                <div class="activity-section-three">
-                    <div class="chart-card">
-                        <div class="activity-column">
-                            <div class="chart-title">近 7 天趋势</div>
-                            <div id="habit-weekly-chart" class="chart-container chart-container--bar"
-                                style="height:200px;margin-top: 0.5rem;">
+
+                    <!-- KPI 概览 -->
+                    <div class="ba-kpi" id="ba-kpi"></div>
+
+                    <!-- 图表网格 -->
+                    <div class="ba-grid">
+                        <div class="ba-card">
+                            <div class="ba-card-head">
+                                <span class="ba-card-title">浏览与编辑趋势</span>
+                                <span class="ba-card-sub">柱=浏览时长（分钟）· 线=编辑次数</span>
+                            </div>
+                            <div class="ba-chart-wrap">
+                                <div id="ba-trend-chart" class="ba-chart ba-chart--lg"></div>
+                            </div>
+                        </div>
+                        <div class="ba-card">
+                            <div class="ba-card-head">
+                                <span class="ba-card-title">活跃时段</span>
+                                <span class="ba-card-sub">按小时 · 浏览 / 编辑 / 删除 / AI</span>
+                            </div>
+                            <div class="ba-chart-wrap">
+                                <div id="ba-hourly-chart" class="ba-chart ba-chart--lg"></div>
+                            </div>
+                        </div>
+                        <div class="ba-card">
+                            <div class="ba-card-head">
+                                <span class="ba-card-title">文件热度 Top 10</span>
+                                <span class="ba-metric-switch" id="ba-top-metric">
+                                    <button type="button" data-metric="view_ms" class="active">时长</button>
+                                    <button type="button" data-metric="opens">次数</button>
+                                </span>
+                            </div>
+                            <div class="ba-chart-wrap">
+                                <div id="ba-top10-chart" class="ba-chart"></div>
+                            </div>
+                        </div>
+                        <div class="ba-card">
+                            <div class="ba-card-head">
+                                <span class="ba-card-title">目录热度</span>
+                                <span class="ba-card-sub">面积=浏览时长 · 点击目录筛选左侧榜单</span>
+                            </div>
+                            <div class="ba-chart-wrap">
+                                <div id="ba-treemap-chart" class="ba-chart"></div>
+                            </div>
+                        </div>
+                        <div class="ba-card">
+                            <div class="ba-card-head">
+                                <span class="ba-card-title">文件冷热分布</span>
+                                <span class="ba-card-sub">按区间内打开次数 · 回答「哪些从未读过」</span>
+                            </div>
+                            <div class="ba-chart-wrap">
+                                <div id="ba-coldhot-chart" class="ba-chart"></div>
+                            </div>
+                        </div>
+                        <div class="ba-card">
+                            <div class="ba-card-head">
+                                <span class="ba-card-title">浏览 vs 编辑</span>
+                                <span class="ba-card-sub">右上=核心文件 · 右下=改了没细看</span>
+                            </div>
+                            <div class="ba-chart-wrap">
+                                <div id="ba-scatter-chart" class="ba-chart"></div>
                             </div>
                         </div>
                     </div>
-                    <div class="chart-card">
-                        <div class="activity-column">
-                            <div class="chart-title">时段活跃度</div>
-                            <div id="habit-heatmap-chart" class="chart-container"
-                                style="height:200px;margin-top: 0.5rem;"></div>
-                        </div>
-                    </div>
-                    <div class="chart-card">
-                        <div class="activity-column">
-                            <div class="chart-title">浏览时长 Top 10</div>
-                            <div id="habit-top10-chart" class="chart-container chart-container--bar"
-                                style="height:200px;margin-top: 0.5rem;">
+
+                    <!-- AI 分析 -->
+                    <div class="ba-ai">
+                        <div class="ba-ai-head">
+                            <div class="ba-ai-title">
+                                AI 分析
+                                <span id="ba-ai-meta" class="ba-ai-meta"></span>
+                            </div>
+                            <div class="ba-ai-actions">
+                                <button class="btn btn-sm" id="ba-ai-copy" onclick="copyAiSummary()">复制全文</button>
                             </div>
                         </div>
+                        <div class="ba-conclusions" id="ba-conclusions"></div>
+                        <div class="ba-ai-cols">
+                            <div class="ai-summary-panel" id="ai-summary-behavior"></div>
+                            <div class="ai-summary-panel" id="ai-summary-knowledge"></div>
+                        </div>
                     </div>
-                </div>
-                <!-- AI 总结分析板块（行为总结分析 + 知识库分析，竖向手风琴） -->
-                <div class="ai-summary-section">
-                    <div class="ai-summary-panel" id="ai-summary-behavior"></div>
-                    <div class="ai-summary-panel" id="ai-summary-knowledge"></div>
                 </div>
             </div>
             <div id="dir-space-container" class="dashboard-container" style="display: none;padding: 10px;">
@@ -17514,7 +17580,105 @@
             _browsingTimerStart = 0;
         }
 
+        // ====== 使用行为统计（行为分析页数据底座，落 .mdgo/mdgo.db） ======
+        // 事件按批累计：5s / 30 条 / 页面隐藏时 flush，避免每次点击都走 IPC。
+        const USAGE_QUEUE_LIMIT = 30;
+        const USAGE_FLUSH_MS = 5000;
+        const USAGE_RETENTION_DAYS = 400;
+        let _usageQueue = [];
+        let _usageFlushTimer = null;
+        let _usageFlushing = false;
+
+        /** 本地日期/小时（必须与用户日历一致，后端不做时区换算） */
+        function _usageParts(ts) {
+            const d = new Date(ts || Date.now());
+            const p2 = (n) => String(n).padStart(2, '0');
+            return {
+                date: d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()),
+                hour: d.getHours(),
+            };
+        }
+
+        function _usagePruneBefore() {
+            const d = new Date();
+            d.setHours(0, 0, 0, 0);
+            d.setDate(d.getDate() - USAGE_RETENTION_DAYS);
+            const p2 = (n) => String(n).padStart(2, '0');
+            return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate());
+        }
+
+        /** 入队一条事件（kind: open | view_ms | edit | create | delete | ai） */
+        function queueUsage(kind, path, n, ts) {
+            try {
+                if (!currentRootPath) return;
+                if (typeof window.__TAURI__ === 'undefined' || !window.__TAURI__.core) return;
+                const value = Math.round(Number(n) || 0);
+                if (!value || value < 1) return;
+                const { date, hour } = _usageParts(ts);
+                _usageQueue.push({
+                    kind,
+                    date,
+                    hour,
+                    path: path || null,
+                    n: value,
+                    ts: ts || Date.now(),
+                    dir: currentRootPath, // 事件归属的知识库：切换目录后仍写回原库
+                });
+                if (_usageQueue.length >= USAGE_QUEUE_LIMIT) {
+                    flushUsage();
+                    return;
+                }
+                if (!_usageFlushTimer) {
+                    _usageFlushTimer = setTimeout(() => {
+                        _usageFlushTimer = null;
+                        flushUsage();
+                    }, USAGE_FLUSH_MS);
+                }
+            } catch (e) {
+                console.warn('[usage] 入队失败:', e);
+            }
+        }
+
+        /**
+         * 批量写入（按知识库分组）。
+         * - 部分成功也会把成功的批次出队，避免下次重复累计；
+         * - 失败批次留在队列里，下个 tick 重试。
+         */
+        async function flushUsage() {
+            if (_usageFlushing || !_usageQueue.length) return;
+            if (!currentRootPath || typeof window.__TAURI__ === 'undefined' || !window.__TAURI__.core) return;
+            _usageFlushing = true;
+            const batch = _usageQueue.slice();
+            const pruneBefore = _usagePruneBefore();
+            const done = [];
+            try {
+                const groups = new Map();
+                batch.forEach((e) => {
+                    const key = e.dir || currentRootPath;
+                    if (!groups.has(key)) groups.set(key, []);
+                    groups.get(key).push(e);
+                });
+                for (const [dirPath, events] of groups) {
+                    await window.__TAURI__.core.invoke('usage_record', { dirPath, events, pruneBefore });
+                    done.push(...events);
+                }
+            } catch (e) {
+                console.warn('[usage] 写入失败（保留重试）:', e);
+            } finally {
+                if (done.length) {
+                    _usageQueue = _usageQueue.filter((e) => done.indexOf(e) === -1);
+                }
+                _usageFlushing = false;
+            }
+        }
+
+        window.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') flushUsage();
+        });
+        window.addEventListener('beforeunload', () => { flushUsage(); });
         function _accumulateBrowsingDuration(filePath, durationMs) {
+            // 行为统计：先入队（不依赖 localStorage 记录是否存在），由 flushUsage 批量落库
+            queueUsage('view_ms', filePath, durationMs);
             try {
                 const stored = safeLocalStorageGet(VIEW_SUM_KEY);
                 if (!stored) return;
@@ -31885,6 +32049,7 @@ kanban-plugin: basic
                 viewData.lastUpdate = Date.now();
                 safeLocalStorageSet(VIEW_SUM_KEY, JSON.stringify(viewData));
                 recordOperation(fileName, filePath, OPERATION_TYPES.VIEW);
+                queueUsage('open', filePath, 1);
             } catch (e) {
                 console.warn('记录浏览信息失败:', e);
             }
@@ -31917,6 +32082,13 @@ kanban-plugin: basic
                 // 只保留最近的50条
                 viewList = viewList.slice(0, 30);
                 safeLocalStorageSet(VIEW_OPER_RECORDS_KEY, JSON.stringify(viewList));
+
+                // 行为统计：操作类型 → 使用事件（「查看」由 recordView 的 open 事件负责，避免重复计数）
+                const _opKey = typeInfo && typeInfo.key;
+                const _kindMap = { '创建': 'create', '删除': 'delete', '永久删除': 'delete', 'AI': 'ai' };
+                if (_opKey && _opKey !== '查看') {
+                    queueUsage(_kindMap[_opKey] || 'edit', path, 1, timestamp);
+                }
             } catch (error) {
                 console.warn('记录操作日志失败:', error);
             }
@@ -31945,166 +32117,22 @@ kanban-plugin: basic
             const h = Math.floor(min / 60);
             return h + ' 时 ' + (min % 60) + ' 分 ';
         }
+        /**
+         * 行为分析页入口（P0/P1 改版）：KPI + 6 张图交给独立模块渲染。
+         * 这里保留旧函数名，避免其它调用点（openBehaviorAnalysis）失效。
+         */
         async function renderHabitAnalysis() {
-            const viewData = loadViewData();
-            const records = viewData.sumList || [];
-            const opRecords = viewData.viewList || [];
-
-            // 先 dispose 旧的图表实例，避免 ECharts 复用旧实例的 0x0 尺寸缓存
-            if (dashboardCharts['habitTop10']) dashboardCharts['habitTop10'].dispose();
-            if (dashboardCharts['habitHeatmap']) dashboardCharts['habitHeatmap'].dispose();
-            if (dashboardCharts['habitWeekly']) dashboardCharts['habitWeekly'].dispose();
-
-            // 浏览时长 Top 20 条形图
-            const sorted = [...records]
-                .filter(r => (r.durationMs || 0) > 0)
-                .sort((a, b) => (b.durationMs || 0) - (a.durationMs || 0))
-                .slice(0, 10);
-
-            const top10Chart = initDirSpaceChart('habit-top10-chart', 'habit-top10-chart');
-            top10Chart.setOption({
-                tooltip: {
-                    trigger: 'axis',
-                    textStyle: { fontSize: 11 },
-                    formatter: function (params) {
-                        const p = params[0];
-                        const record = sorted[sorted.length - 1 - p.dataIndex];
-                        return record.name + '<br/>总时长: ' + _fmtDuration(record.durationMs) + '<br/>打开次数: ' + (record.count || 0) + ' 次';
-                    }
-                },
-                grid: { left: '3%', right: '3%', bottom: '3%', top: '10%', containLabel: true }, // 建议增大 bottom 以容纳旋转后的类目轴文字
-                xAxis: {
-                    type: 'category',
-                    data: sorted.map(r => r.name.length > 10 ? r.name.slice(0, 10) + '…' : r.name),
-                    axisLabel: {
-                        fontSize: '0.6875rem',
-                        rotate: 45,  // 建议：类目较多时旋转45度防止文字重叠
-                        interval: 0  // 强制显示所有类目标签
-                    }
-                },
-                yAxis: {
-                    type: 'value',
-                    name: '分钟',
-                    axisLabel: { fontSize: '0.6875rem' }
-                },
-                series: [{
-                    type: 'bar',
-                    data: sorted.map(r => Math.round((r.durationMs || 0) / 60000 * 10) / 10).reverse(),
-                    itemStyle: {
-                        color: '#ED8A5D',
-                        borderRadius: [4, 4, 0, 0]
-                    },
-                    barMaxWidth: 24,
-                    label: {
-                        show: true,
-                        position: 'top',
-                        formatter: function (p) {
-                            const idx = sorted.length - 1 - p.dataIndex;
-                            const record = sorted[idx];
-                            const sec = Math.round((record.durationMs || 0) / 1000);
-                            return sec < 60 ? sec + ' 秒' : p.value + ' 分钟';
-                        },
-                        fontSize: 11
-                    }
-                }]
-            });
-
-            // 时段活跃度热力图（按小时统计操作次数）
-            const hourData = Array(24).fill(0);
-            opRecords.forEach(r => {
-                const h = new Date(r.viewTime).getHours();
-                if (!isNaN(h)) hourData[h] += 1;
-            });
-            const heatmapChart = initDirSpaceChart('habit-heatmap-chart', 'habit-heatmap-chart');
-            heatmapChart.setOption({
-                tooltip: {
-                    trigger: 'axis',
-                    textStyle: { fontSize: 11 },
-                    formatter: function (params) {
-                        const p = params[0];
-                        return `${p.name}: ${p.value} 次浏览`;
-                    }
-                },
-                grid: {
-                    left: '3%',
-                    right: '4%',
-                    bottom: '3%',
-                    top: '3%',
-                    containLabel: true
-                },
-                xAxis: {
-                    type: 'category',
-                    data: Array.from({ length: 24 }, (_, i) => i + '时'),
-                    axisLabel: { fontSize: '0.6875rem' }
-                },
-                yAxis: { type: 'value', name: '活跃度', axisLabel: { fontSize: '0.6875rem' } },
-                series: [{
-                    type: 'line',
-                    data: hourData,
-                    smooth: true,
-                    areaStyle: {
-                        color: {
-                            type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
-                            colorStops: [
-                                { offset: 0, color: 'rgba(59, 130, 246, 0.5)' },
-                                { offset: 1, color: 'rgba(59, 130, 246, 0.05)' }
-                            ]
-                        }
-                    },
-                    lineStyle: { color: '#3B82F6', width: 1 },
-                    symbol: 'circle',
-                    symbolSize: 6,
-                    itemStyle: { color: '#3B82F6' }
-                }]
-            });
-
-            // 近 7 天趋势折线图
-            const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
-            const weekData = [];
-            const now = new Date();
-            for (let i = 6; i >= 0; i--) {
-                const d = new Date(now);
-                d.setDate(d.getDate() - i);
-                const dayStart = d.setHours(0, 0, 0, 0);
-                const dayEnd = dayStart + 86400000;
-                const dayDuration = records
-                    .filter(r => r.lastViewTime >= dayStart && r.lastViewTime < dayEnd)
-                    .reduce((sum, r) => sum + (r.durationMs || 0), 0);
-                const dayLabel = (i === 0 ? '今天' : (i === 1 ? '昨天' : '周' + dayNames[d.getDay()]));
-                weekData.push({ label: dayLabel, value: Math.round(dayDuration / 60000 * 10) / 10, ts: dayStart });
+            if (window.mdgoBehavior && typeof window.mdgoBehavior.render === 'function') {
+                await window.mdgoBehavior.render();
             }
-            const weeklyChart = initDirSpaceChart('habit-weekly-chart', 'habit-weekly-chart');
-            weeklyChart.setOption({
-                tooltip: {
-                    trigger: 'axis',
-                    textStyle: { fontSize: 11 },
-                    formatter: function (params) {
-                        const p = params[0];
-                        const d = weekData[p.dataIndex];
-                        const dateStr = new Date(d.ts).toLocaleDateString('zh-CN');
-                        return d.label + ' (' + dateStr + ')<br/>浏览时长: ' + d.value + ' 分钟';
-                    }
-                },
-                grid: { left: '3%', right: '3%', bottom: '3%', top: '3%', containLabel: true },
-                xAxis: {
-                    type: 'category',
-                    data: weekData.map(d => d.label),
-                    axisLabel: { fontSize: '0.6875rem' }
-                },
-                yAxis: { type: 'value', name: '分钟', axisLabel: { fontSize: '0.6875rem' } },
-                series: [{
-                    type: 'line',
-                    data: weekData.map(d => d.value),
-                    smooth: true,
-                    lineStyle: { color: '#2EA043', width: 1.5 },
-                    areaStyle: {
-                        color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(46,160,67,0.5)' }, { offset: 1, color: 'rgba(46,160,67,0.05)' }] }
-                    },
-                    symbol: 'circle',
-                    symbolSize: 6,
-                    itemStyle: { color: '#2EA043' }
-                }]
-            });
+        }
+
+        /** 页头「刷新」：只重算统计，不重新调用 LLM */
+        async function refreshBehaviorAnalysis() {
+            if (window.mdgoBehavior && typeof window.mdgoBehavior.refresh === 'function') {
+                await window.mdgoBehavior.refresh();
+                showNotification('✓ 行为统计已刷新', 'success', 1500);
+            }
         }
 
         async function openFileFromPathAndType(filePath, type = '', timestamp = null) {
@@ -51991,11 +52019,13 @@ kanban-plugin: basic
         // 语义：进入页面只读「上一次结果」；「重新分析」成功后才覆盖写入，失败不动旧结果。
         // 旧实现（localStorage + 每日有效期）已废弃，仅保留一次性迁移逻辑。
         const AI_SUMMARY_SLOT = 'doc_analysis';
-        const AI_SUMMARY_VERSION = 3; // payload 结构版本：只存渲染所需字段（不再存采集原文 text）
+        const AI_SUMMARY_VERSION = 4; // v4：+ conclusions（结论卡）/ meta（耗时·段数）/ rangeDays
         const AI_SUMMARY_LEGACY_CACHE_KEY = 'mdgo_ai_summary_cache';
         const AI_SUMMARY_LEGACY_DATE_KEY = 'mdgo_ai_summary_last_date';
+        const AI_SUMMARY_EMPTY_TEXT = '暂无分析结果，点击右上角「重新分析」生成';
 
         let _aiSummaryRunning = false;
+        let _lastAiSummaryPayload = null;
 
         function aiSummaryPanels() {
             const behaviorPanel = document.getElementById('ai-summary-behavior');
@@ -52003,7 +52033,17 @@ kanban-plugin: basic
             return behaviorPanel && knowledgePanel ? { behaviorPanel, knowledgePanel } : null;
         }
 
-        /** 结构校验：只保留渲染需要的 key/label/ok/result（顺带丢弃旧缓存的 text 原文） */
+        /** 当前页面选中的统计窗口（由图表模块维护，默认近 30 天） */
+        function currentAiRangeDays() {
+            return (window.mdgoBehavior && typeof window.mdgoBehavior.getRangeDays === 'function')
+                ? window.mdgoBehavior.getRangeDays() : 30;
+        }
+
+        function aiRangeLabel(days) {
+            return days === 0 ? '全部' : (days === 1 ? '今天' : ('近 ' + days + ' 天'));
+        }
+
+        /** 结构校验：只保留渲染需要的字段（丢弃旧缓存的采集原文 text） */
         function normalizeAiSummary(data) {
             if (!data || typeof data !== 'object') return null;
             const norm = (list) => (Array.isArray(list) ? list : [])
@@ -52018,7 +52058,25 @@ kanban-plugin: basic
             const behavior = norm(data.behavior);
             const knowledge = norm(data.knowledge);
             if (!behavior.length && !knowledge.length) return null;
-            return { v: AI_SUMMARY_VERSION, generatedAt: Number(data.generatedAt) || 0, behavior, knowledge };
+            const conclusions = (Array.isArray(data.conclusions) ? data.conclusions : [])
+                .filter(c => c && (c.tag || c.text))
+                .map(c => ({ tag: String(c.tag || ''), text: String(c.text || '') }))
+                .filter(c => c.text)
+                .slice(0, 3);
+            const meta = (data.meta && typeof data.meta === 'object') ? {
+                costMs: Number(data.meta.costMs) || 0,
+                okCount: Number(data.meta.okCount) || 0,
+                totalCount: Number(data.meta.totalCount) || 0,
+            } : null;
+            return {
+                v: AI_SUMMARY_VERSION,
+                generatedAt: Number(data.generatedAt) || 0,
+                rangeDays: Number(data.rangeDays) || 0,
+                conclusions,
+                meta,
+                behavior,
+                knowledge,
+            };
         }
 
         function countAiSummaryOk(payload) {
@@ -52029,6 +52087,34 @@ kanban-plugin: basic
             const el = document.getElementById('ai-summary-updated');
             if (!el) return;
             el.textContent = updatedAt ? ('上次分析：' + new Date(updatedAt).toLocaleString()) : '';
+        }
+
+        /** 三张结论卡（核心结论 / 风险提示 / 行动建议） */
+        function renderAiConclusions(payload) {
+            const el = document.getElementById('ba-conclusions');
+            if (!el) return;
+            const cards = (payload && payload.conclusions) || [];
+            if (!cards.length) { el.innerHTML = ''; return; }
+            el.innerHTML = cards.map(c => (
+                '<div class="ba-conclusion">' +
+                '<div class="ba-conclusion-tag">' + escapeHtml(c.tag) + '</div>' +
+                '<div class="ba-conclusion-text">' + escapeHtml(c.text) + '</div>' +
+                '</div>'
+            )).join('');
+        }
+
+        /** AI 区元信息：生成时间 / 窗口 / 段数 / 耗时 */
+        function renderAiMeta(payload, updatedAt) {
+            const el = document.getElementById('ba-ai-meta');
+            if (!el) return;
+            if (!payload) { el.textContent = ''; return; }
+            const parts = [];
+            if (payload.rangeDays) parts.push('窗口：' + aiRangeLabel(payload.rangeDays));
+            const total = payload.meta ? payload.meta.totalCount : ((payload.behavior || []).length + (payload.knowledge || []).length);
+            const ok = payload.meta ? payload.meta.okCount : countAiSummaryOk(payload);
+            if (total) parts.push('段数：' + ok + '/' + total);
+            if (payload.meta && payload.meta.costMs) parts.push('耗时 ' + (payload.meta.costMs / 1000).toFixed(1) + 's');
+            el.textContent = parts.join(' · ');
         }
 
         /** 一次性迁移：把旧版本存在 localStorage 的结果写进当前知识库（迁移后删除旧 key） */
@@ -52073,6 +52159,7 @@ kanban-plugin: basic
             if (!panels) return;
             const { behaviorPanel, knowledgePanel } = panels;
             setAiSummaryUpdatedLabel(0);
+            renderAiMeta(null, 0);
 
             if (!currentRootPath || typeof window.__TAURI__ === 'undefined' || !window.__TAURI__.core) {
                 behaviorPanel.innerHTML = '<div class="ai-summary-empty">仅桌面模式支持分析结果的持久化，请先打开知识库</div>';
@@ -52082,6 +52169,7 @@ kanban-plugin: basic
 
             behaviorPanel.innerHTML = '<div class="ai-summary-loading">正在载入上次分析…</div>';
             knowledgePanel.innerHTML = '';
+            renderAiConclusions(null);
 
             let payload = null;
             let updatedAt = 0;
@@ -52106,7 +52194,10 @@ kanban-plugin: basic
 
             if (payload) {
                 if (!updatedAt) updatedAt = Date.now();
+                _lastAiSummaryPayload = payload;
                 setAiSummaryUpdatedLabel(updatedAt);
+                renderAiConclusions(payload);
+                renderAiMeta(payload, updatedAt);
                 try {
                     await renderAiSummaryPanels(behaviorPanel, knowledgePanel, payload);
                 } catch (e) {
@@ -52116,11 +52207,12 @@ kanban-plugin: basic
                 }
                 return;
             }
-            behaviorPanel.innerHTML = '<div class="ai-summary-empty">暂无分析结果，点击右上角「重新分析」生成</div>';
+            _lastAiSummaryPayload = null;
+            behaviorPanel.innerHTML = '<div class="ai-summary-empty">' + AI_SUMMARY_EMPTY_TEXT + '</div>';
             knowledgePanel.innerHTML = '';
         }
 
-        /** 「重新分析」：完整采集 + LLM；全部失败则不覆盖旧结果 */
+        /** 「重新分析」：完整采集 + LLM（含一次结论卡调用）；全部失败则不覆盖旧结果 */
         async function restartAiSummary() {
             const panels = aiSummaryPanels();
             if (!panels || _aiSummaryRunning) return;
@@ -52131,20 +52223,25 @@ kanban-plugin: basic
             const { behaviorPanel, knowledgePanel } = panels;
             const btn = document.getElementById('summay-refresh-btn');
             const prevLabel = btn ? btn.textContent : '';
+            const days = currentAiRangeDays();
             _aiSummaryRunning = true;
             if (btn) { btn.disabled = true; btn.textContent = '分析中…'; }
             behaviorPanel.innerHTML = '<div class="ai-summary-loading">⏳ 正在分析用户行为…</div>';
             knowledgePanel.innerHTML = '<div class="ai-summary-loading">⏳ 正在分析知识库…</div>';
+            renderAiConclusions(null);
 
+            const t0 = performance.now();
             try {
-                const data = await window.aiSummay.getSummary(7);
-                const payload = normalizeAiSummary({ ...data, generatedAt: Date.now() });
+                const data = await window.aiSummay.getSummary(days);
+                const payload = normalizeAiSummary({ ...data, generatedAt: Date.now(), rangeDays: days });
                 const okCount = payload ? countAiSummaryOk(payload) : 0;
                 const totalCount = payload ? payload.behavior.length + payload.knowledge.length : 0;
                 if (!payload || okCount === 0) {
                     throw new Error('本次分析全部失败（请检查模型配置/网络后重试）');
                 }
-                const record = await window.__TAURI__.core.invoke('ai_summary_save', {
+                // ① 先保存并渲染分段结果：用户不必等结论卡就能看到内容（感知更快）
+                payload.meta = { costMs: Math.round(performance.now() - t0), okCount, totalCount, rangeDays: days };
+                let record = await window.__TAURI__.core.invoke('ai_summary_save', {
                     dirPath: currentRootPath,
                     req: {
                         payload: JSON.stringify(payload),
@@ -52154,13 +52251,42 @@ kanban-plugin: basic
                         slot: AI_SUMMARY_SLOT,
                     },
                 });
-                setAiSummaryUpdatedLabel(Number(record && record.updated_at) || Date.now());
+                let updatedAt = Number(record && record.updated_at) || Date.now();
+                _lastAiSummaryPayload = payload;
+                setAiSummaryUpdatedLabel(updatedAt);
+                renderAiMeta(payload, updatedAt);
                 try {
                     await renderAiSummaryPanels(behaviorPanel, knowledgePanel, payload);
                 } catch (e) {
-                    console.error('[aiSummay] 结果已保存但渲染失败:', e);
+                    console.error('[aiSummay] 分段结果渲染失败:', e);
                     behaviorPanel.innerHTML = '<div class="ai-summary-empty">结果已保存，但渲染失败：' + escapeHtml(String((e && e.message) || e)) + '</div>';
                     knowledgePanel.innerHTML = '';
+                }
+
+                // ② 结论卡：单独一次轻量调用（依赖上面全部结果，无法与分段并行）
+                try {
+                    const cards = await window.__TAURI__.core.invoke('ai_summary_conclusions', {
+                        items: [...payload.behavior, ...payload.knowledge].map(s => ({ label: s.label, result: s.result })),
+                    });
+                    payload.conclusions = (Array.isArray(cards) ? cards : []).slice(0, 3);
+                    payload.meta = { ...payload.meta, costMs: Math.round(performance.now() - t0) };
+                    const saved2 = await window.__TAURI__.core.invoke('ai_summary_save', {
+                        dirPath: currentRootPath,
+                        req: {
+                            payload: JSON.stringify(payload),
+                            version: AI_SUMMARY_VERSION,
+                            ok_count: okCount,
+                            total_count: totalCount,
+                            slot: AI_SUMMARY_SLOT,
+                        },
+                    });
+                    updatedAt = Number(saved2 && saved2.updated_at) || updatedAt;
+                    _lastAiSummaryPayload = payload;
+                    setAiSummaryUpdatedLabel(updatedAt);
+                    renderAiConclusions(payload);
+                    renderAiMeta(payload, updatedAt);
+                } catch (e) {
+                    console.warn('[aiSummay] 结论卡生成失败（分段结果已保存）:', e);
                 }
                 showNotification('✓ 分析完成并已保存（' + okCount + '/' + totalCount + ' 段）', 'success', 2500);
             } catch (e) {
@@ -52175,13 +52301,67 @@ kanban-plugin: basic
         }
 
         /** 渲染两个板块（行为总结分析 / 知识库分析），各为一个竖向手风琴 */
-       async function renderAiSummaryPanels(behaviorPanel, knowledgePanel, data) {
+        async function renderAiSummaryPanels(behaviorPanel, knowledgePanel, data) {
             behaviorPanel.innerHTML = renderVerticalAccordion('行为总结分析', data.behavior || [], 'ai-sum-behavior-acc');
             knowledgePanel.innerHTML = renderVerticalAccordion('知识库分析', data.knowledge || [], 'ai-sum-knowledge-acc');
             bindVerticalAccordion(behaviorPanel);
             bindVerticalAccordion(knowledgePanel);
             await postProcessCodeAndDiagrams(behaviorPanel);
             await postProcessCodeAndDiagrams(knowledgePanel);
+        }
+
+        /** 组装 Markdown（复制/导出用） */
+        function buildAiSummaryMarkdown(payload) {
+            if (!payload) return '';
+            const lines = ['# 文档库分析', ''];
+            if (payload.rangeDays) lines.push('- 分析窗口：' + aiRangeLabel(payload.rangeDays));
+            if (payload.generatedAt) lines.push('- 生成时间：' + new Date(payload.generatedAt).toLocaleString());
+            lines.push('');
+            if (payload.conclusions && payload.conclusions.length) {
+                lines.push('## 结论卡');
+                payload.conclusions.forEach(c => lines.push('- **' + c.tag + '**：' + c.text));
+                lines.push('');
+            }
+            const section = (title, list) => {
+                if (!list || !list.length) return;
+                lines.push('## ' + title, '');
+                list.forEach(s => {
+                    lines.push('### ' + s.label + (s.ok ? '' : '（降级）'), '', s.result || '（无内容）', '');
+                });
+            };
+            section('行为总结分析', payload.behavior);
+            section('知识库分析', payload.knowledge);
+            return lines.join('\n');
+        }
+
+        /** 复制全文（AI 区「复制全文」） */
+        async function copyAiSummary() {
+            const payload = _lastAiSummaryPayload;
+            if (!payload) {
+                showNotification('暂无可复制的分析结果，请先重新分析', 'warning');
+                return;
+            }
+            const md = buildAiSummaryMarkdown(payload);
+            try {
+                await navigator.clipboard.writeText(md);
+                showNotification('✓ 分析结果已复制到剪贴板', 'success', 1800);
+            } catch (e) {
+                // 回退：临时 textarea + execCommand
+                try {
+                    const ta = document.createElement('textarea');
+                    ta.value = md;
+                    ta.style.position = 'fixed';
+                    ta.style.opacity = '0';
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(ta);
+                    showNotification('✓ 分析结果已复制到剪贴板', 'success', 1800);
+                } catch (err) {
+                    console.warn('[aiSummay] 复制失败:', err);
+                    showNotification('✗ 复制失败，请手动选择文本', 'error');
+                }
+            }
         }
 
         /**
@@ -52856,4 +53036,5 @@ kanban-plugin: basic
     <script src="./css_js/modules/backlinks.js"></script>
     <script src="./css_js/modules/global-search.js"></script>
     <div id="agent-global-task-bar" class="agent-global-task-bar" style="display:none;"></div>
+    <script src="./css_js/modules/behavior-analysis.js"></script>
 </body>

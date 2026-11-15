@@ -75,10 +75,53 @@
         kbEco: '你是一个知识库生态分析引擎。基于以下 RAG 索引/Skill/MCP/对话/向量模型数据，总结知识库数字化程度，给出建议。只基于给定数据，禁止臆造。输出 Markdown。',
     };
 
+    // 图表要求：追加到每一段的分析指令末尾（与后端 base instruction 的图表规则叠加，
+    // 保证「行为总结」「知识库总结」的每一项提示词里都带图形要求）。
+    const CHART_HINT = '\n\n补充要求：如果上文数据里存在可比较的分类占比/趋势/排名，请在结论之后至少输出 1 个 Mermaid 图表（用 ```mermaid 代码块；可选 pie / xychart-beta / flowchart），图中标题与标签用中文、数值只能来自上文，禁止编造；图表后紧跟一句读图结论；单段最多 2 张图。';
+
     // ─── 行为分类采集（每个函数 = 一个分类，返回文本） ───
 
     /** 1. 操作记录：浏览时长 top + 操作次数（localStorage 视图数据） */
-    function collectOperation(day = 7) {
+    /**
+     * 1. 操作记录：优先用使用统计库（usage_summary / usage_files，与页面图表同口径）；
+     *    非 Tauri 或统计为空时回退到 localStorage 的 20 条旧记录。
+     */
+    async function collectOperation(day = 7) {
+        try {
+            const bh = window.mdgoBehavior;
+            if (window.__TAURI__ && window.__TAURI__.core && bh && typeof bh.rangeFor === 'function' && currentRootPath) {
+                const r = bh.rangeFor(day);
+                const [sum, files] = await Promise.all([
+                    invoke('usage_summary', Object.assign({ dirPath: currentRootPath }, r)).catch(() => null),
+                    invoke('usage_files', { dirPath: currentRootPath, from: r.from, to: r.to, limit: 10 }).catch(() => null),
+                ]);
+                const t = (sum && sum.totals) || {};
+                const hasData = ['view_ms', 'opens', 'edits', 'ai_calls'].some((k) => Number(t[k]) > 0);
+                if (hasData) {
+                    const lines = [];
+                    lines.push(`统计区间: ${r.from} ~ ${r.to}（${day === 0 ? '全部' : '近 ' + day + ' 天'}）`);
+                    lines.push(`浏览时长: ${fmtDuration(t.view_ms || 0)}，打开文件: ${t.opens || 0} 次，编辑: ${t.edits || 0} 次，新建: ${t.creates || 0} 次，删除: ${t.deletes || 0} 次，AI 调用: ${t.ai_calls || 0} 次`);
+                    lines.push(`区间内被打开过的文件: ${(files && files.opened_total) || 0} 个`);
+                    const top = (files && files.rows) || [];
+                    if (top.length) {
+                        lines.push('浏览时长 Top5:');
+                        top.slice(0, 5).forEach((f, i) => lines.push(
+                            `${i + 1}. ${f.path} - ${fmtDuration(f.view_ms)}，打开 ${f.opens} 次，编辑 ${f.edits} 次`
+                        ));
+                    } else {
+                        lines.push('浏览时长 Top5: 暂无数据');
+                    }
+                    return lines.join('\n');
+                }
+            }
+        } catch (e) {
+            console.warn('[aiSummay] 使用统计读取失败，回退本地记录', e);
+        }
+        return collectOperationLegacy(day);
+    }
+
+    /** 旧口径（localStorage 最近 20 条），仅作降级 */
+    function collectOperationLegacy(day = 7) {
         try {
             const viewData = loadViewData();
             const sumList = viewData.sumList || [];
@@ -99,11 +142,10 @@
             return lines.join('\n');
         } catch (e) {
             console.warn('[aiSummay] 操作记录采集失败', e);
-            return '操作记录数据获取失败';
+            return '操作记录获取失败';
         }
     }
-
-    /** 2. 删除文件（index_deleted.json，value 含 deletedAt） */
+    /** 2. 删除记录：index_deleted.json（deletedAt 毫秒） */
     async function collectDeleted(day = 7) {
         try {
             const res = await getAssetsData(INDEX_DELETED_FILE);
@@ -411,7 +453,7 @@
                 collectKbDist(),
                 collectKbEco(),
             ]);
-        const operation = collectOperation(day);
+        const operation = await collectOperation(day);
         const files = collectFiles(day);
 
         // 行为分类（左卡片）
@@ -438,10 +480,12 @@
 
         // 逐类调用 Rust 后端 LLM 总结（后端串行、单类超时/失败降级）
         // 失败时保留错误信息（不静默吞掉），便于面板展示与排查
+        // 图表要求逐段注入（后端 base instruction 已含图表规范，这里再叠加到每一项）
+        const withChart = (sections) => sections.map(s => ({ ...s, instruction: s.instruction + CHART_HINT }));
         const [behavior, knowledge] = await Promise.all([
-            invoke('kb_ai_summary', { sections: behaviorSections })
+            invoke('kb_ai_summary', { sections: withChart(behaviorSections) })
                 .catch(e => { console.warn('[aiSummay] 行为总结调用失败:', e); return null; }),
-            invoke('kb_ai_summary', { sections: knowledgeSections })
+            invoke('kb_ai_summary', { sections: withChart(knowledgeSections) })
                 .catch(e => { console.warn('[aiSummay] 知识库总结调用失败:', e); return null; }),
         ]);
 

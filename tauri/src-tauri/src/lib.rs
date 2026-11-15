@@ -129,6 +129,8 @@ pub struct AppState {
     pub ai_history_stores: Mutex<HashMap<String, Arc<services::ai_history::AiHistoryStore>>>,
     /// 按目录路径缓存的「文档库分析」结果存储（`.mdgo/mdgo.db` 的 ai_summary 表，惰性创建）
     pub ai_summary_stores: Mutex<HashMap<String, Arc<services::ai_summary::AiSummaryStore>>>,
+    /// 按目录路径缓存的使用行为统计存储（`usage_*` 三表，惰性创建）
+    pub usage_stores: Mutex<HashMap<String, Arc<services::usage::UsageStore>>>,
     /// LLM 连接配置（中央化，由前端保存后通过 kb_update_llm_config 更新）
     pub llm_config: RwLock<LlmConfig>,
     /// LLM 客户端缓存（按「endpoint|model|api_key|reasoning_effort」指纹复用；
@@ -419,6 +421,23 @@ impl AppState {
         stores.insert(key_str, Arc::clone(&store));
         Ok(store)
     }
+
+    /// 获取或创建指定知识库的使用行为统计存储（`{dir}/.mdgo/mdgo.db` 的 `usage_*` 三表）。
+    pub fn get_usage_store(
+        &self,
+        dir_path: &str,
+    ) -> Result<Arc<services::usage::UsageStore>, String> {
+        let key = crate::core::db::global::sanitize_kb_dir(dir_path)?;
+        let key_str = key.to_string_lossy().to_string();
+        let mut stores = self.usage_stores.lock().map_err(|e| e.to_string())?;
+        if let Some(store) = stores.get(&key_str) {
+            return Ok(Arc::clone(store));
+        }
+        let db_dir = std::path::Path::new(&key_str).join(".mdgo");
+        let store = Arc::new(services::usage::UsageStore::new(&db_dir.to_string_lossy())?);
+        stores.insert(key_str, Arc::clone(&store));
+        Ok(store)
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -529,6 +548,7 @@ pub fn run() {
                 chat_stores: Mutex::new(HashMap::new()),
                 ai_history_stores: Mutex::new(HashMap::new()),
                 ai_summary_stores: Mutex::new(HashMap::new()),
+                usage_stores: Mutex::new(HashMap::new()),
                 llm_config: RwLock::new(LlmConfig::default()),
                 llm_client_cache: tokio::sync::Mutex::new(std::collections::HashMap::new()),
                 skill_registry,
@@ -641,6 +661,10 @@ pub fn run() {
             commands::ai_summary::ai_summary_load,
             commands::ai_summary::ai_summary_save,
             commands::ai_summary::ai_summary_clear,
+            commands::ai_summary::ai_summary_conclusions,
+            commands::usage::usage_record,
+            commands::usage::usage_summary,
+            commands::usage::usage_files,
             commands::knowledge::kb_get_indexer_config,
             commands::knowledge::kb_update_indexer_config,
             commands::config::kb_config_read,

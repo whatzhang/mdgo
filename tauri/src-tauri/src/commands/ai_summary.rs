@@ -24,6 +24,18 @@ use crate::AppState;
 /// 可调低该值（如 4/8）以串行化。
 const MAX_CONCURRENT: usize = 14;
 
+/// 实际使用的并发上限：允许用 `MDGO_SUMMARY_CONCURRENCY`（1..=32）覆盖。
+///
+/// 为什么要可配：本机 llama.cpp / Ollama 常以单槽（`--parallel 1`）运行，此时
+/// 提高并发只会排队等待；把该值调到 2~4 反而更快出首段结果。远端 API 可保持默认。
+fn max_concurrent() -> usize {
+    std::env::var("MDGO_SUMMARY_CONCURRENCY")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|n| (1..=32).contains(n))
+        .unwrap_or(MAX_CONCURRENT)
+}
+
 /// 一个待分析分类（前端采集的原始文本 + 该分类的分析指令）。
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct SummarySection {
@@ -90,8 +102,14 @@ pub async fn kb_ai_summary(
     // 运行时资源目录优先，源码 resources/prompt 回退；加载失败回退内置常量）
     let base_instruction = load_summary_instruction(&app);
 
-    // 并发执行：信号量限流，避免同时打爆本地模型
-    let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT));
+    // 并发执行：信号量限流；并发数可用 MDGO_SUMMARY_CONCURRENCY 覆盖（本地单槽模型建议 2~4）
+    let concurrency = max_concurrent();
+    log::info!(
+        "[ai_summary] 开始总结 {} 个分类，并发上限 {}",
+        sections.len(),
+        concurrency
+    );
+    let semaphore = Arc::new(Semaphore::new(concurrency));
     let futures: Vec<_> = sections
         .into_iter()
         .map(|s| {
@@ -99,6 +117,18 @@ pub async fn kb_ai_summary(
             let semaphore = semaphore.clone();
             let base_instruction = base_instruction.clone();
             async move {
+                // 空数据分类直接跳过模型：旧实现仍会发一次「（该分类暂无数据）」，
+                // 本地单槽模型下每次都是数秒级浪费。
+                if s.text.trim().is_empty() {
+                    log::info!("[ai_summary] 分类 {} 无数据，跳过模型调用", s.key);
+                    return SummarySectionResult {
+                        key: s.key,
+                        label: s.label,
+                        result: "（该分类暂无数据，已跳过模型调用）".to_string(),
+                        ok: true,
+                    };
+                }
+                let started = std::time::Instant::now();
                 let _permit = semaphore.acquire().await;
                 let cancel = CancellationToken::new();
                 let instruction = if s.instruction.trim().is_empty() {
@@ -107,11 +137,7 @@ pub async fn kb_ai_summary(
                     // 分类级指令优先，但以基础指令为前缀（基础指令约束通用分析原则与输出格式）
                     format!("{}\n\n{}", base_instruction, s.instruction)
                 };
-                let user_text = if s.text.trim().is_empty() {
-                    "（该分类暂无数据）".to_string()
-                } else {
-                    s.text.clone()
-                };
+                let user_text = s.text.clone();
                 log::info!(
                     "[ai_summary] 分类 {} 开始总结（输入 {} 字符）",
                     s.key,
@@ -121,7 +147,7 @@ pub async fn kb_ai_summary(
                 let timeout = tokio::time::Duration::from_secs(90);
                 let outcome = tokio::time::timeout(timeout, async {
                     client
-                        .complete_text(&instruction, &user_text, Some(1536), Some(0.3), cancel)
+                        .complete_text(&instruction, &user_text, Some(1024), Some(0.3), cancel)
                         .await
                 })
                 .await;
@@ -138,6 +164,13 @@ pub async fn kb_ai_summary(
                     Ok(Err(e)) => (format!("分析失败: {}", e), false),
                     Err(_) => ("分析超时（90s），已跳过该分类。".to_string(), false),
                 };
+                log::info!(
+                    "[ai_summary] 分类 {} 完成（{} ms，ok={}，输出 {} 字符）",
+                    s.key,
+                    started.elapsed().as_millis(),
+                    ok,
+                    result.chars().count()
+                );
                 SummarySectionResult {
                     key: s.key,
                     label: s.label,
@@ -202,11 +235,16 @@ fn load_summary_instruction(app: &AppHandle) -> String {
 const DEFAULT_SUMMARY_INSTRUCTION: &str = concat!(
     "你是一个知识库用户行为与知识资产分析助手。下面提供的是 mdgo 知识库采集到的统计数据文本。\n",
     "请基于这些数据输出简洁、结构化、有洞察的总结与建议，要求：\n",
-    "1. 用 Markdown 输出，先给 2-4 条核心结论（每条一句话），再给 1-3 条可执行建议；\n",
+    "1. 用 Markdown 输出，先给 2-4 条核心结论（每条一句话），再给 1-3 条可执行建议；正文尽量控制在 300 字以内（Mermaid 代码块不计）；\n",
     "2. 只基于给定数据推理，禁止臆造数据、文件内容或系统架构；\n",
     "3. 数字保留原值，不四舍五入编造；\n",
     "4. 结论要具体（点名文件/目录/指标），避免空泛套话；\n",
-    "5. 全文中文，不用 emoji 开头，不输出「以下是总结」等引导语。"
+    "5. 全文中文，不用 emoji 开头，不输出「以下是总结」等引导语；\n",
+    "6. **图表要求（必须遵守）**：当给定数据包含可比较的分类占比、趋势或排名时，必须在结论后插入至少一个 Mermaid 图表\n",
+    "   用 ```mermaid 代码块包裹，可选用 `pie`（占比）、`xychart-beta`（柱状/折线趋势）或 `flowchart`（结构/流程）；\n",
+    "   图中标题、标签、图例一律用中文，数值必须来自给定数据，禁止编造数据点或凑整；某个数据集为空时不要画该图；\n",
+    "7. 每个图表后面紧跟一句「读图结论」（不超过 30 字），说明这张图说明了什么；\n",
+    "8. 图表只做辅助，不要把全部数据都做成图（单段最多 2 张）。"
 );
 
 // ───────────────────────── 结果持久化（知识库级 .mdgo/mdgo.db） ─────────────────────────
@@ -263,4 +301,234 @@ pub async fn ai_summary_clear(
     })
     .await
     .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+// ───────────────────────── 结论卡（一次轻量 LLM 汇总） ─────────────────────────
+
+/// 一张结论卡
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ConclusionCard {
+    /// 核心结论 / 风险提示 / 行动建议
+    pub tag: String,
+    pub text: String,
+}
+
+/// 结论卡的输入：上面 14 段分析结果（只要 label + result，不需要原始采集文本）
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ConclusionInput {
+    pub label: String,
+    #[serde(default)]
+    pub result: String,
+}
+
+/// 三张卡的固定标签与顺序
+const CONCLUSION_TAGS: [&str; 3] = ["核心结论", "风险提示", "行动建议"];
+
+const CONCLUSION_INSTRUCTION: &str = concat!(
+    "你是知识库使用行为分析助手。下面给出上一轮已经完成的若干段分析结果（每段含标题与正文）。\n",
+    "请把它们压缩成 3 张结论卡，严格按下面格式输出（共 3 行，不要多余内容，不要 markdown 标记）：\n",
+    "核心结论：<一句话，不超过 46 字，必须是具体事实，带关键数字>\n",
+    "风险提示：<一句话，不超过 46 字，指出最值得注意的问题；没有问题就写「暂无明显风险」>\n",
+    "行动建议：<一句话，不超过 46 字，可执行、指向具体文件或目录>\n",
+    "要求：只使用给定内容，禁止引入新数据；不要复述原文；不要用「建议用户」这类空话。"
+);
+
+/// 从 14 段分析结果提炼 3 张结论卡（单独一次 LLM 调用，失败时规则兜底）。
+#[tauri::command]
+pub async fn ai_summary_conclusions(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    items: Vec<ConclusionInput>,
+) -> Result<Vec<ConclusionCard>, String> {
+    if items.is_empty() {
+        return Ok(rule_based_conclusions(&items));
+    }
+
+    // 输入压缩：每段最多取 600 字，避免把 14 段全文塞进上下文
+    let mut user_text = String::new();
+    for it in items.iter().filter(|it| !it.result.trim().is_empty()) {
+        let body: String = it.result.trim().chars().take(600).collect();
+        user_text.push_str(&format!("## {}\n{}\n\n", it.label, body));
+    }
+    if user_text.trim().is_empty() {
+        return Ok(rule_based_conclusions(&items));
+    }
+
+    let cfg = state.llm_config.read().unwrap_or_else(|e| e.into_inner()).clone();
+    if cfg.endpoint.trim().is_empty() || cfg.model.trim().is_empty() {
+        log::warn!("[ai_summary] 结论卡：LLM 未配置，使用规则兜底");
+        return Ok(rule_based_conclusions(&items));
+    }
+
+    let client = match state
+        .llm_client_for_role(&cfg, crate::ModelRole::Summary)
+        .await
+    {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("[ai_summary] 结论卡：客户端不可用（{}），使用规则兜底", e);
+            return Ok(rule_based_conclusions(&items));
+        }
+    };
+    let _ = app; // 预留：后续可把模型名写回元信息
+
+    let cancel = CancellationToken::new();
+    let outcome = tokio::time::timeout(
+        tokio::time::Duration::from_secs(60),
+        client.complete_text(CONCLUSION_INSTRUCTION, &user_text, Some(320), Some(0.2), cancel),
+    )
+    .await;
+
+    let text = match outcome {
+        Ok(Ok(t)) => t,
+        Ok(Err(e)) => {
+            log::warn!("[ai_summary] 结论卡生成失败（{}），使用规则兜底", e);
+            return Ok(rule_based_conclusions(&items));
+        }
+        Err(_) => {
+            log::warn!("[ai_summary] 结论卡生成超时，使用规则兜底");
+            return Ok(rule_based_conclusions(&items));
+        }
+    };
+
+    let cards = parse_conclusion_text(&text);
+    if cards.len() == 3 {
+        Ok(cards)
+    } else {
+        log::warn!("[ai_summary] 结论卡输出格式不符，使用规则兜底：{:?}", text);
+        Ok(rule_based_conclusions(&items))
+    }
+}
+
+/// 解析「标签：内容」三行；容忍中英文冒号与少量前缀噪声
+fn parse_conclusion_text(text: &str) -> Vec<ConclusionCard> {
+    let mut out: Vec<ConclusionCard> = Vec::new();
+    for raw in text.lines() {
+        let line = raw.trim().trim_start_matches(['-', '*', ' ', '#', '1', '2', '3', '.', '、']);
+        if line.is_empty() {
+            continue;
+        }
+        let Some((head, body)) = line
+            .split_once('：')
+            .or_else(|| line.split_once(':'))
+        else {
+            continue;
+        };
+        let tag = CONCLUSION_TAGS
+            .iter()
+            .find(|t| head.contains(**t))
+            .copied();
+        let Some(tag) = tag else { continue };
+        let body = body.trim().trim_matches(['`', '"', '「', '」', '。']);
+        if body.is_empty() {
+            continue;
+        }
+        if out.iter().any(|c| c.tag == tag) {
+            continue;
+        }
+        let text: String = body.chars().take(80).collect();
+        out.push(ConclusionCard {
+            tag: tag.to_string(),
+            text,
+        });
+    }
+    // 保持固定顺序
+    out.sort_by_key(|c| {
+        CONCLUSION_TAGS
+            .iter()
+            .position(|t| *t == c.tag)
+            .unwrap_or(usize::MAX)
+    });
+    out
+}
+
+/// 规则兜底：从最相关段落的首句提取，保证 UI 永远有 3 张卡
+fn rule_based_conclusions(items: &[ConclusionInput]) -> Vec<ConclusionCard> {
+    fn first_sentence(result: &str) -> Option<String> {
+        let line = result
+            .lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty() && !l.starts_with("```") && !l.starts_with('#'))?;
+        let cleaned = line.trim_start_matches(&['-', '*', ' ', '>'][..]).trim();
+        let sentence: String = cleaned.chars().take(60).collect();
+        if sentence.is_empty() {
+            None
+        } else {
+            Some(sentence)
+        }
+    }
+
+    let pick = |labels: &[&str]| -> Option<String> {
+        for want in labels {
+            if let Some(it) = items.iter().find(|i| i.label.contains(want)) {
+                if let Some(s) = first_sentence(&it.result) {
+                    return Some(s);
+                }
+            }
+        }
+        None
+    };
+
+    let failed: Vec<&str> = items
+        .iter()
+        .filter(|i| i.result.trim().is_empty())
+        .map(|i| i.label.as_str())
+        .collect();
+
+    vec![
+        ConclusionCard {
+            tag: "核心结论".into(),
+            text: pick(&["操作记录", "文件与磁盘", "内容分布"])
+                .unwrap_or_else(|| "本次分析暂无可用结论".into()),
+        },
+        ConclusionCard {
+            tag: "风险提示".into(),
+            text: if failed.is_empty() {
+                pick(&["删除记录", "RAG 与生态", "Git"]).unwrap_or_else(|| "暂无明显风险".into())
+            } else {
+                format!("{} 段分析未生成结果，请重试", failed.len())
+            },
+        },
+        ConclusionCard {
+            tag: "行动建议".into(),
+            text: pick(&["文件增改", "书签", "Skill 使用"])
+                .unwrap_or_else(|| "先打开最近编辑的文件继续阅读".into()),
+        },
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_three_tagged_lines() {
+        let text = "核心结论：阅读集中在 AI 目录，Top5 占 68% 时长\n风险提示：52% 文件从未被打开\n行动建议：为 3 个冷目录补索引摘要";
+        let cards = parse_conclusion_text(text);
+        assert_eq!(cards.len(), 3);
+        assert_eq!(cards[0].tag, "核心结论");
+        assert!(cards[0].text.contains("68%"));
+    }
+
+    #[test]
+    fn tolerates_prefixes_and_english_colon() {
+        let text = "- 核心结论: 其一\n2. 风险提示：其二\n> 行动建议：其三";
+        let cards = parse_conclusion_text(text);
+        assert_eq!(cards.len(), 3);
+        assert_eq!(cards[1].tag, "风险提示");
+        assert_eq!(cards[2].text, "其三");
+    }
+
+    #[test]
+    fn rule_fallback_always_returns_three_cards() {
+        let items = vec![
+            ConclusionInput { label: "操作记录".into(), result: "浏览高度集中，Top5 占 68%".into() },
+            ConclusionInput { label: "删除记录".into(), result: "".into() },
+        ];
+        let cards = rule_based_conclusions(&items);
+        assert_eq!(cards.len(), 3);
+        assert_eq!(cards[0].tag, "核心结论");
+        assert!(cards[0].text.contains("Top5"));
+        assert!(cards[1].text.contains("未生成结果"));
+    }
 }
