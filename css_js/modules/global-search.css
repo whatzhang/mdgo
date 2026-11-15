@@ -1,0 +1,823 @@
+/**
+ * ===== 全局搜索页 + 反向链接面板样式（css_js/modules/global-search.css） =====
+ *
+ * 仅被 main.html（Tauri 桌面端）引用；浏览器模式（index.html / index_cdn.html）不引入。
+ * 全部颜色/圆角/阴影取自 :root 变量，避免与既有工具页风格分叉。
+ */
+
+/* ─────────────────────────── 全局搜索页骨架 ─────────────────────────── */
+
+#global-search-container {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+.gs-wrap {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    background: var(--color-bg);
+    font-family: var(--font-family);
+}
+
+/* 顶部搜索区 */
+.gs-header {
+    flex-shrink: 0;
+    padding: 14px 18px 9px;
+    border-bottom: 1px solid var(--color-border-light);
+    background: var(--color-bg);
+}
+
+.gs-input-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-bg-secondary);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.gs-input-row:focus-within {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(22, 91, 250, 0.09);
+    background: var(--color-bg);
+}
+
+.gs-input-ico {
+    flex-shrink: 0;
+    color: var(--color-text-tertiary);
+    display: flex;
+}
+
+#gs-input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--color-text);
+    font-family: var(--font-family);
+}
+
+#gs-input::placeholder {
+    color: var(--color-text-tertiary);
+}
+
+.gs-kbd {
+    flex-shrink: 0;
+    font-size: 10px;
+    color: var(--color-text-tertiary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 1px 5px;
+    background: var(--color-bg);
+    user-select: none;
+}
+
+.gs-clear {
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    color: var(--color-text-tertiary);
+    cursor: pointer;
+    font-size: 13px;
+    padding: 2px 4px;
+    border-radius: var(--radius-sm);
+    display: none;
+}
+
+.gs-clear:hover {
+    background: var(--color-hover-subtle);
+    color: var(--color-text);
+}
+
+/* 过滤 chips */
+.gs-chips {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+}
+
+.gs-chip-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.gs-chip-label {
+    font-size: 11px;
+    color: var(--color-text-tertiary);
+    margin-right: 2px;
+}
+
+.gs-chip {
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+    color: var(--color-text-secondary);
+    font-size: 11px;
+    line-height: 1;
+    padding: 4px 8px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    font-family: var(--font-family);
+    white-space: nowrap;
+}
+
+.gs-chip:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+.gs-chip.on {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: var(--color-text-white);
+}
+
+/* 元信息行（结果数 / 用时 / 通道 / 过滤口径） */
+.gs-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 9px;
+    font-size: 11px;
+    color: var(--color-text-tertiary);
+}
+
+.gs-meta b {
+    color: var(--color-text);
+    font-weight: 600;
+}
+
+.gs-meta .gs-dot::before {
+    content: '·';
+    margin-right: 8px;
+    color: var(--color-border);
+}
+
+.gs-meta-warn {
+    color: var(--color-orange);
+}
+
+/* 主体三栏 */
+.gs-body {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 210px minmax(0, 1fr) 322px;
+}
+
+.gs-facets {
+    min-height: 0;
+    overflow-y: auto;
+    padding: 12px 8px 20px;
+    border-right: 1px solid var(--color-border-light);
+    background: var(--color-bg-secondary);
+}
+
+.gs-facet-sec {
+    margin-bottom: 14px;
+}
+
+.gs-facet-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--color-text-tertiary);
+    text-transform: uppercase;
+    padding: 0 6px 5px;
+}
+
+.gs-facet-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    user-select: none;
+}
+
+.gs-facet-item:hover {
+    background: var(--color-hover-subtle);
+    color: var(--color-text);
+}
+
+.gs-facet-item.on {
+    background: var(--color-primary);
+    color: var(--color-text-white);
+}
+
+.gs-facet-item.on .gs-facet-count {
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.gs-facet-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gs-facet-count {
+    flex-shrink: 0;
+    font-size: 10px;
+    color: var(--color-text-tertiary);
+    font-variant-numeric: tabular-nums;
+}
+
+/* 结果区 */
+.gs-results {
+    min-height: 0;
+    overflow-y: auto;
+    padding: 12px 16px 32px;
+}
+
+.gs-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 14px 0 8px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--color-text-secondary);
+}
+
+.gs-section-title:first-child {
+    margin-top: 0;
+}
+
+.gs-section-title span.gs-sec-count {
+    font-weight: 500;
+    color: var(--color-text-tertiary);
+}
+
+.gs-section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--color-border-light);
+}
+
+/* 文件卡片 */
+.gs-file {
+    border: 1px solid var(--color-border-light);
+    border-radius: var(--radius-md);
+    background: var(--color-bg);
+    margin-bottom: 8px;
+    overflow: hidden;
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.gs-file:hover {
+    border-color: var(--color-border);
+}
+
+.gs-file.sel {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px rgba(22, 91, 250, 0.14);
+    background: rgba(22, 91, 250, 0.035);
+}
+
+.gs-file-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    cursor: pointer;
+}
+
+.gs-file-head:hover {
+    background: var(--color-bg-secondary);
+}
+
+.gs-file-ico {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--color-text-white);
+    background: var(--color-text-tertiary);
+}
+
+.gs-ico-doc { background: #2c76d8; }
+.gs-ico-code { background: #6e40c9; }
+.gs-ico-chart { background: #0f9d8f; }
+.gs-ico-media { background: #d2691e; }
+.gs-ico-other { background: #8b949e; }
+
+.gs-file-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.gs-file-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gs-file-name mark {
+    background: rgba(255, 217, 0, 0.42);
+    color: inherit;
+    padding: 0;
+    border-radius: 2px;
+}
+
+.gs-file-sub {
+    margin-top: 2px;
+    font-size: 10.5px;
+    color: var(--color-text-tertiary);
+    display: flex;
+    gap: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gs-file-badges {
+    flex-shrink: 0;
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.gs-badge {
+    font-size: 10px;
+    line-height: 1;
+    padding: 2px 5px;
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-panel);
+    border: 1px solid var(--color-border-light);
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+}
+
+.gs-badge-hit {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: var(--color-text-white);
+}
+
+/* 命中行 */
+.gs-hits {
+    border-top: 1px solid var(--color-border-light);
+}
+
+.gs-hit {
+    display: flex;
+    gap: 8px;
+    padding: 7px 10px 7px 40px;
+    cursor: pointer;
+    border-top: 1px solid transparent;
+}
+
+.gs-hit + .gs-hit {
+    border-top-color: var(--color-bg-panel);
+}
+
+.gs-hit:hover {
+    background: var(--color-bg-secondary);
+}
+
+.gs-hit.sel {
+    background: rgba(22, 91, 250, 0.09);
+    box-shadow: inset 3px 0 0 var(--color-primary);
+}
+
+.gs-hit-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.gs-snippet {
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--color-text-secondary);
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.gs-snippet mark {
+    background: rgba(255, 217, 0, 0.55);
+    color: var(--color-text);
+    padding: 0 1px;
+    border-radius: 2px;
+}
+
+.gs-hit-tags {
+    margin-top: 3px;
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+    font-size: 10px;
+    color: var(--color-text-tertiary);
+}
+
+.gs-hit-tags .gs-ch {
+    border-radius: 3px;
+    padding: 1px 4px;
+    background: var(--color-bg-panel);
+    border: 1px solid var(--color-border-light);
+}
+
+.gs-hit-tags .gs-ch-dense { color: #2c76d8; border-color: #cfe0f8; background: #f3f8fe; }
+.gs-hit-tags .gs-ch-bm25 { color: #1a7f37; border-color: #cdeddc; background: #f1fbf5; }
+.gs-hit-tags .gs-ch-symbol { color: #6e40c9; border-color: #ded0f5; background: #f8f4fe; }
+.gs-hit-tags .gs-ch-exact { color: #b85c1b; border-color: #f5ddc6; background: #fdf6ef; }
+
+.gs-hit-more {
+    padding: 6px 10px 6px 40px;
+    font-size: 11px;
+    color: var(--color-primary);
+    cursor: pointer;
+    user-select: none;
+}
+
+.gs-hit-more:hover {
+    background: var(--color-bg-secondary);
+}
+
+/* 平铺视图行 */
+.gs-flat-row {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    padding: 7px 10px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    border-bottom: 1px solid var(--color-bg-panel);
+}
+
+.gs-flat-row:hover { background: var(--color-bg-secondary); }
+.gs-flat-row.sel { background: rgba(22, 91, 250, 0.07); box-shadow: inset 2px 0 0 var(--color-primary); }
+
+.gs-flat-file {
+    flex-shrink: 0;
+    max-width: 210px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--color-note);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gs-flat-text {
+    flex: 1;
+    min-width: 0;
+    font-size: 11.5px;
+    color: var(--color-text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 预览面板 */
+.gs-preview {
+    min-height: 0;
+    overflow-y: auto;
+    padding: 14px 12px 28px;
+    border-left: 1px solid var(--color-border-light);
+    background: var(--color-bg);
+}
+
+.gs-pv-empty {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--color-text-tertiary);
+    font-size: 12px;
+    text-align: center;
+    padding: 24px;
+}
+
+.gs-pv-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--color-text);
+    word-break: break-all;
+    line-height: 1.45;
+}
+
+.gs-pv-path {
+    margin-top: 3px;
+    font-size: 10.5px;
+    color: var(--color-text-tertiary);
+    word-break: break-all;
+}
+
+.gs-pv-meta {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.gs-pv-sec {
+    margin-top: 14px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+}
+
+.gs-pv-text {
+    margin-top: 6px;
+    padding: 9px 10px;
+    border-radius: var(--radius-md);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-light);
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--color-text);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.gs-pv-text mark {
+    background: rgba(255, 217, 0, 0.55);
+    border-radius: 2px;
+}
+
+.gs-pv-actions {
+    margin-top: 12px;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.gs-btn {
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+    color: var(--color-text-secondary);
+    font-size: 11px;
+    padding: 5px 9px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-family: var(--font-family);
+    transition: all var(--transition-fast);
+}
+
+.gs-btn:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+.gs-btn-primary {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: var(--color-text-white);
+}
+
+.gs-btn-primary:hover {
+    background: var(--color-primary-hover);
+    border-color: var(--color-primary-hover);
+    color: var(--color-text-white);
+}
+
+/* 状态栏 */
+.gs-status {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 16px;
+    border-top: 1px solid var(--color-border-light);
+    background: var(--color-bg-secondary);
+    font-size: 11px;
+    color: var(--color-text-tertiary);
+    min-height: 30px;
+}
+
+.gs-status .gs-spacer { flex: 1; }
+
+.gs-progress {
+    flex: 0 0 160px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--color-border);
+    overflow: hidden;
+    display: none;
+}
+
+.gs-progress.on { display: block; }
+
+.gs-progress-bar {
+    display: block;
+    height: 100%;
+    width: 0;
+    background: var(--color-primary);
+    transition: width 0.2s linear;
+}
+
+/* 空态 / 提示 */
+.gs-empty {
+    height: 100%;
+    min-height: 240px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    text-align: center;
+    color: var(--color-text-tertiary);
+    font-size: 12.5px;
+    padding: 32px 24px;
+}
+
+.gs-empty-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+}
+
+.gs-empty-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 4px;
+}
+
+.gs-recent {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+    max-width: 560px;
+}
+
+.gs-recent-item {
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px dashed var(--color-border);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    background: var(--color-bg);
+}
+
+.gs-recent-item:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+.gs-tip {
+    font-size: 11px;
+    color: var(--color-text-tertiary);
+    line-height: 1.7;
+}
+
+.gs-tip kbd {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    border: 1px solid var(--color-border);
+    border-radius: 3px;
+    padding: 0 3px;
+    background: var(--color-bg);
+}
+
+/* 骨架加载 */
+.gs-loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 4px;
+    font-size: 11.5px;
+    color: var(--color-text-tertiary);
+}
+
+.gs-spin {
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--color-border);
+    border-top-color: var(--color-primary);
+    border-radius: 50%;
+    animation: gs-spin 0.7s linear infinite;
+}
+
+@keyframes gs-spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (max-width: 1240px) {
+    .gs-body {
+        grid-template-columns: 176px minmax(0, 1fr) 280px;
+    }
+}
+
+@media (max-width: 1040px) {
+    .gs-body {
+        grid-template-columns: 0 minmax(0, 1fr) 0;
+    }
+
+    .gs-facets,
+    .gs-preview {
+        display: none;
+    }
+}
+
+/* ─────────────────────── 反向链接面板（TOC 第 4 个 tab） ─────────────────────── */
+/* 结构：一行「刷新」按钮 + 与 Links列表 同款的无序链接列表；数量/时间只进控制台 */
+
+/* 4 个 tab 时压缩字号，避免在 280px 宽下换行 */
+#toc-link .toc-tab {
+    font-size: 0.625rem;
+    padding: 0.28rem 0.06rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bk-wrap {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+/* 刷新按钮条：右对齐、不占高度、滚动时固定 */
+.bk-bar {
+    flex-shrink: 0;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    padding: 2px 8px 2px;
+}
+
+.bk-refresh {
+    border: 1px solid var(--color-border-light);
+    background: var(--color-bg);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    font-size: 10px;
+    line-height: 1;
+    padding: 3px 7px;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+    font-family: var(--font-family);
+}
+
+.bk-refresh:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+.bk-refresh:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+/* 列表：沿用 #toc-link ul/li/a 的既有样式（与 Links列表 一致），这里只补滚动与间距 */
+#toc-link .bk-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 2px 8px 8px;
+}
+
+.bk-empty {
+    padding: 18px 10px;
+    text-align: center;
+    color: var(--color-text-tertiary);
+    font-size: 11px;
+    line-height: 1.7;
+}
+
+/* 面板自身不滚动，交给 .bk-list（避免双滚动条） */
+#toc-link .toc-tab-panel[data-tab="toc-backlinks"].active {
+    overflow: hidden;
+}

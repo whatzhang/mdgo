@@ -49,8 +49,30 @@
         placeDocQaNode();
     }
 
-    // 小助手图标点击：显示/隐藏 停靠栏切换
+    // ── 非文件视图（Dashboard / 全局搜索 / 其他工具页）→ 直接进入 Agent 对话 ──
+    // 小助手停靠栏依赖"当前文件"与右侧 TOC 列；在搜索等工具页里既没有 TOC 列也没有稳定上下文，
+    // 因此这些页面点 agent 按钮时直接切到主 Agent/chat 视图（与 Dashboard 的既有行为一致）。
+    function isNonFileView() {
+        const host = window.__mdgoHost;
+        if (host && typeof host.isFileView === 'function') return !host.isFileView();
+        if (typeof dashboardContainer !== 'undefined' && dashboardContainer && dashboardContainer.style.display !== 'none') return true;
+        return false;
+    }
+    function goAgentChat() {
+        const host = window.__mdgoHost;
+        // 已经在 Agent 对话里：不重复初始化（避免闪烁）
+        if (host && typeof host.currentView === 'function' && host.currentView() === 'aiChat') return true;
+        if (host && typeof host.openAiChatView === 'function') { host.openAiChatView(); return true; }
+        if (typeof toggleFile === 'function') { toggleFile('aiChat'); return true; }
+        return false;
+    }
+
+    // 小助手图标点击：非文件视图 → Agent 对话；文件视图 → 显示/隐藏停靠栏
     function docQaFabClick() {
+        if (isNonFileView()) {
+            goAgentChat();
+            return;
+        }
         if (state.open) {
             closeDocQA();
             return;
@@ -961,9 +983,9 @@
             showNotification('请先打开知识库目录', 'warning');
             return;
         }
-        // Dashboard 等非文件页不显示小助手
-        if (typeof dashboardContainer !== 'undefined' && dashboardContainer && dashboardContainer.style.display !== 'none') {
-            toggleFile("aiChat");
+        // 非文件视图（Dashboard / 全局搜索 / 其他工具页）不显示停靠栏，直接进入 Agent 对话
+        if (isNonFileView()) {
+            goAgentChat();
             return;
         }
         const rel = currentRelPath();

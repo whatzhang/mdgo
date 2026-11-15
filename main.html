@@ -13937,6 +13937,7 @@
     <link rel="stylesheet" href="./css_js/modules/skill.css" />
     <link rel="stylesheet" href="./css_js/modules/agent.css" />
     <link rel="stylesheet" href="./css_js/modules/ai-summay.css" />
+    <link rel="stylesheet" href="./css_js/modules/global-search.css" />
 </head>
 
 <body>
@@ -14159,6 +14160,8 @@
             <div id="content-main" style="display: block;"></div>
             <!-- 通用容器（书签/白板等） -->
             <div id="content-common-container" style="display: none;"></div>
+            <!-- 全局搜索视图（仅 Tauri；浏览器模式不引入该功能） -->
+            <div id="global-search-container" style="display: none;"></div>
             <!-- Swagger 专用容器（隔离 innerHTML 覆盖） -->
             <div id="swagger-editor-container" style="display: none;"></div>
             <!-- 关系图谱 -->
@@ -17048,6 +17051,7 @@
             FORMAT: { key: '格式化', color: '#f22431ff' },
         };
         let DASHBOARD_BUTTON = [
+            { key: '全局搜索', value: 'toggleFile("globalSearch")', display: true, fileProtocolDisplay: false, tauriDisplay: true },
             { key: 'GraphQL', value: 'toggleFile("graphQLPlayground")', display: true, type: 'A' },
             { key: 'OpenResty', value: 'toggleFile("openRestyEditor")', display: false, type: 'A' },
             { key: 'Swagger', value: 'toggleFile("swaggerDemo")', display: true, type: 'A' },
@@ -17568,6 +17572,8 @@
         const copyClipboardBtn = document.getElementById('copy-clipboard-btn');
         const newFileDropdownPanel = document.getElementById('new-file-dropdown-panel');
         const contentCommonContainer = document.getElementById('content-common-container');
+        // 全局搜索（主内容区独立视图，仅 Tauri）
+        const globalSearchContainer = document.getElementById('global-search-container');
         const swaggerEditorContainer = document.getElementById('swagger-editor-container');
         const dirSpaceContainer = document.getElementById('dir-space-container');
         const behaviorAnalysisContainer = document.getElementById('behavior-analysis-container');
@@ -17610,7 +17616,7 @@
             graphqlPlaygroundContainer, regexTestContainer, calendarContainer,
             cronViewContainer, videoViewContainer, gitRecordsContainer,
             swaggerEditorContainer, dirSpaceContainer, chatContainer, knowledgeContainer,
-            mcpContainer, promptContainer, behaviorAnalysisContainer
+            mcpContainer, promptContainer, behaviorAnalysisContainer, globalSearchContainer
         ];
 
         const AUX_CONTROLS = [
@@ -17853,6 +17859,13 @@
                 await openMcpManager(); openHistory.addItem('mcp');
             } else if (type === 'prompt') {
                 await openPromptManager(); openHistory.addItem('prompt');
+            } else if (type === 'globalSearch') {
+                if (typeof window.openGlobalSearch === 'function') {
+                    await window.openGlobalSearch();
+                    openHistory.addItem('globalSearch');
+                } else {
+                    showNotification('✗ 全局搜索模块未加载', 'error', 3000);
+                }
             } else if (type === 'fileType') {
                 await openFileType(); openHistory.addItem('fileType');
             } else if (type === 'picLayoutDisplay') { //目录右键
@@ -17897,6 +17910,9 @@
             } else if (type === 'skill') {
             } else if (type === 'mcp') {
             } else if (type === 'prompt') {
+            } else if (type === 'globalSearch') {
+                // 搜索页占满主内容区：隐藏顶部空白条，避免正文被压缩
+                topSpacerContainer.style.display = 'none';
             } else if (type === 'dirCanvasDisplay') {
                 dirCanvasDisplayFlag = true;
             }
@@ -24749,6 +24765,15 @@
                     originalContent = newContent;
                     clearFileTextCache(getFileTextCacheKey()); // 保存后失效缓存
                 }
+                // 反向链接索引：md 保存后增量更新该文件的出链（静默失败，不影响保存主流程）
+                try {
+                    const nm = String(targetHandle.name || '');
+                    if (/\.(md|markdown)$/i.test(nm) && window.mdgoBacklinks) {
+                        const rel = (targetHandle === currentFileHandle && currentActiveItem)
+                            ? currentActiveItem.dataset.filePath : '';
+                        if (rel) window.mdgoBacklinks.onFileSaved(rel);
+                    }
+                } catch (e) { /* 忽略 */ }
                 if (notify) showNotification('✓ 文件保存成功', 'success');
             } catch (error) {
                 console.error('保存文件失败:', error);
@@ -27005,7 +27030,7 @@ kanban-plugin: basic
         // TOC link 标签页定义（可扩展：后续 push 新标签即可）
         const tocLinkTabs = [
             {
-                id: 'toc-links-graph', label: 'Links', async render(markdownText) {
+                id: 'toc-links-graph', label: '关系', async render(markdownText) {
                     const links = getDocLinks(markdownText);
                     if (links.length === 0) return '<div class="toc-link-empty">暂无链接</div>';
                     //拼接为mermaid 思维导图
@@ -27036,7 +27061,7 @@ kanban-plugin: basic
                 }
             },
             {
-                id: 'toc-links-list', label: 'Links列表', render(markdownText) {
+                id: 'toc-links-list', label: '链接', render(markdownText) {
                     const links = getDocLinks(markdownText);
                     if (links.length === 0) return '<div class="toc-link-empty">暂无链接</div>';
                     let html = '<ul>';
@@ -27048,6 +27073,13 @@ kanban-plugin: basic
                     }
                     html += '</ul>';
                     return html;
+                }
+            }, {
+                // 反向链接（入链）：懒渲染——只有首次切到该 tab 才建立/读取索引，避免拖慢每个文件打开
+                id: 'toc-backlinks', label: '反向链接', lazy: true,
+                render() {
+                    if (!window.mdgoBacklinks) return '<div class="toc-link-empty">反向链接模块未加载</div>';
+                    return window.mdgoBacklinks.renderPanel();
                 }
             }, {
                 id: 'toc-tags', label: 'Tags', render(markdownText) {
@@ -27144,6 +27176,26 @@ kanban-plugin: basic
             tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
             const panels = tocLinkElement.querySelectorAll('.toc-tab-panel');
             panels.forEach(p => p.classList.toggle('active', p.dataset.tab === tabId));
+            // 懒渲染 tab（如反向链接）：首次切到该 tab 才计算，避免拖慢"打开文件"主路径
+            const tab = tocLinkTabs.find(t => t.id === tabId);
+            const panel = tocLinkElement.querySelector(`.toc-tab-panel[data-tab="${tabId}"]`);
+            if (!tab || !panel || !tab.lazy || panel.dataset.tocRendered === '1') return;
+            const token = String(Date.now()) + Math.random().toString(36).slice(2, 7);
+            panel.dataset.tocToken = token;
+            panel.innerHTML = '<div class="toc-link-empty">加载中…</div>';
+            Promise.resolve()
+                .then(() => tab.render(''))
+                .then((html) => {
+                    if (!panel.isConnected || panel.dataset.tocToken !== token) return;
+                    panel.innerHTML = html;
+                    // 仅在成功后打标记：失败时允许用户再次点击重试
+                    panel.dataset.tocRendered = '1';
+                })
+                .catch((e) => {
+                    console.error('懒渲染 tab 失败:', tabId, e);
+                    if (!panel.isConnected) return;
+                    panel.innerHTML = '<div class="toc-link-empty">渲染失败，点击标签重试</div>';
+                });
         }
 
         async function generateTOCLinks(markdownText, type, opmlData) {
@@ -27170,17 +27222,22 @@ kanban-plugin: basic
             let bodyHtml = '';
             for (const tab of tocLinkTabs) {
                 const panelClass = tab.id === 'toc-links-graph' ? 'toc-tab-panel active' : 'toc-tab-panel';
-                bodyHtml += `<div class="${panelClass}" data-tab="${tab.id}"><div class="toc-link-empty">暂无链接</div></div>`;
+                const placeholder = tab.lazy ? '切换到此标签时加载' : '暂无链接';
+                bodyHtml += `<div class="${panelClass}" data-tab="${tab.id}"><div class="toc-link-empty">${placeholder}</div></div>`;
             }
             tocLinkElement.innerHTML = `<div class="toc-link-header">${headerHtml}</div><div class="toc-link-content">${bodyHtml}</div>`;
-            // 并行渲染全部 tab（含慢速的 mermaid 图示），互不阻塞；切换文件后旧 panel 已脱离文档，isConnected 校验自动丢弃过期结果
+            // 并行渲染全部非懒加载 tab（含慢速的 mermaid 图示），互不阻塞；
+            // 切换文件后旧 panel 已脱离文档，isConnected 校验自动丢弃过期结果。
+            // 懒加载 tab（反向链接）不在此渲染：它在 switchTocTab 首次激活时才计算。
             const panels = tocLinkElement.querySelectorAll('.toc-tab-panel');
             await Promise.all(tocLinkTabs.map(async (tab, i) => {
                 const panel = panels[i];
+                if (!panel || tab.lazy) return;
                 try {
                     const content = await tab.render(markdownText);
                     if (!panel || !panel.isConnected) return; // 面板已被重建（切换了文件），丢弃
                     panel.innerHTML = content;
+                    panel.dataset.tocRendered = '1';
                 } catch (e) {
                     console.error('TOC tab 渲染失败:', tab.id, e);
                     if (!panel || !panel.isConnected) return;
@@ -52497,6 +52554,188 @@ kanban-plugin: basic
                 }
             };
         }
+
+        // ==================== 全局搜索 / 反向链接：宿主桥 ====================
+        // 说明：两个新功能以独立模块（css_js/modules/global-search.js、backlinks.js）实现，
+        // 模块不直接依赖本文件的内联作用域，统一通过本桥取能力，避免"模块与巨石脚本耦合"。
+
+        /** 按相对路径打开文件（树中不存在时按需展开目录；必要时回退到文件系统句柄） */
+        async function openFileByPath(relPath) {
+            if (!relPath) return false;
+            const p = normalizePath(relPath);
+            let span = treeElement.querySelector(`.file-item[data-file-path="${CSS.escape(p)}"]`);
+            if (!span) {
+                try { span = await expandPathToFile(p); } catch (e) { span = null; }
+            }
+            if (!span) {
+                showNotification('✗ 未在文件树中定位到: ' + p + '（可能位于被忽略的目录）', 'error', 3000);
+                return false;
+            }
+            if (currentActiveItem) currentActiveItem.classList.remove('active-file');
+            span.classList.add('active-file');
+            currentActiveItem = span;
+            await clickFileSpan(p, span, false);
+            return true;
+        }
+
+        /** 在正文中定位到文本/链接，滚动并高亮 2s（搜索命中与反向链接共用） */
+        function revealText(needle) {
+            const art = document.getElementById('content-article') ||
+                document.getElementById('content-main');
+            if (!art || !needle) return false;
+            const target = String(needle).trim();
+            if (!target) return false;
+            const lowTarget = target.toLowerCase();
+            // 1) 链接锚点优先（双链渲染为 a.ob-internal-link）
+            const anchors = art.querySelectorAll('a[href], a.ob-internal-link');
+            for (let i = 0; i < anchors.length; i++) {
+                const a = anchors[i];
+                const href = String(a.getAttribute('href') || '').toLowerCase();
+                const txt = String(a.textContent || '').toLowerCase();
+                if ((href && href.includes(lowTarget)) || (txt && txt.includes(lowTarget))) {
+                    flashAndScroll(a);
+                    return true;
+                }
+            }
+            // 2) 文本节点：精确 → 退化到前 16 字（Markdown 会把一行拆成多个节点）
+            const el = findTextElement(art, target) || findTextElement(art, target.slice(0, 16));
+            if (el) {
+                flashAndScroll(el);
+                return true;
+            }
+            return false;
+        }
+
+        function findTextElement(root, needle) {
+            if (!needle) return null;
+            const low = String(needle).toLowerCase();
+            const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+            let n;
+            while ((n = walker.nextNode())) {
+                const v = n.nodeValue;
+                if (v && v.toLowerCase().includes(low)) return n.parentElement;
+            }
+            return null;
+        }
+
+        function flashAndScroll(el) {
+            if (!el || !el.scrollIntoView) return;
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            const prevBg = el.style.backgroundColor;
+            const prevTr = el.style.transition;
+            el.style.transition = 'background-color 0.35s ease';
+            el.style.backgroundColor = 'rgba(255, 235, 59, 0.4)';
+            setTimeout(() => {
+                el.style.backgroundColor = prevBg;
+                setTimeout(() => { el.style.transition = prevTr; }, 350);
+            }, 2000);
+        }
+
+        /** 切到全局搜索视图（占满主内容区） */
+        async function showGlobalSearchView() {
+            await switchToView(globalSearchContainer);
+            contentMain.style.width = '100%';
+            const fab = document.getElementById('ai-fab-button');
+            if (fab) fab.style.display = 'none';
+        }
+
+        /** 退出搜索：回到统计面板（与既有"返回"心智一致） */
+        function exitGlobalSearch() {
+            toggleFile('dashboard');
+        }
+
+        window.__mdgoHost = {
+            rootName: () => {
+                try { return getRootHandle().name || ''; } catch (e) { return ''; }
+            },
+            rootPath: () => {
+                try { return getDirPath(getRootHandle()); } catch (e) { return ''; }
+            },
+            container: () => globalSearchContainer,
+            showSearchView: showGlobalSearchView,
+            exitSearch: exitGlobalSearch,
+            files: () => getScanFileList(),
+            fileType: (ext) => _EXT_TYPE_MAP[String(ext || '').toLowerCase()] || '其他',
+            basename: (p) => basename(p || ''),
+            getExt: (p) => getExt(p || ''),
+            escapeHtml: (s) => escapeHtml(String(s === null || s === undefined ? '' : s)),
+            notify: (msg, type, dur) => showNotification(msg, type, dur),
+            openFile: (rel) => openFileByPath(rel),
+            // 当前是否处于"文件视图"（决定小助手按钮的行为：非文件视图 → 直接进入 Agent 对话）
+            isFileView: () => (lastToggle === 'renderFile' || lastToggle === 'randomOpen'),
+            currentView: () => lastToggle,
+            openAiChatView: () => { toggleFile('aiChat'); },
+            revealText: (needle) => revealText(needle),
+            currentRelPath: () => (currentActiveItem ? currentActiveItem.dataset.filePath : ''),
+            currentFileName: () => currentFileName,
+            readTextFile: async (rel) => {
+                const fh = await getFileHandleByPath(rel);
+                if (!fh) throw new Error('文件不存在: ' + rel);
+                return await getFileContent(fh);
+            },
+            kbStatus: async () => {
+                const p = getDirPath(getRootHandle());
+                return await window.__TAURI__.core.invoke('kb_status', { dirPath: p });
+            },
+            searchHybrid: async (query, topK) => {
+                const p = getDirPath(getRootHandle());
+                return await window.__TAURI__.core.invoke('kb_search_hybrid', {
+                    dirPath: p, query, topK: topK || 60,
+                });
+            },
+            kbIndex: async (onProgress) => {
+                const p = getDirPath(getRootHandle());
+                let unlisten = null;
+                try {
+                    if (window.__TAURI__.event && window.__TAURI__.event.listen) {
+                        unlisten = await window.__TAURI__.event.listen('kb-progress', (e) => {
+                            const payload = e.payload || {};
+                            if (onProgress) onProgress(payload.percent || 0, payload.message || '');
+                        });
+                    }
+                } catch (e) { /* 进度监听失败不影响索引 */ }
+                try {
+                    return await window.__TAURI__.core.invoke('kb_index', {
+                        dirPath: p,
+                        dirBlacklist: DIR_BLACKLIST,
+                        fileBlacklist: FILE_BLACKLIST,
+                    });
+                } finally {
+                    if (unlisten) { try { unlisten(); } catch (e) { /* 忽略 */ } }
+                }
+            },
+            loadJSON: async (name) => {
+                try {
+                    const dir = await getDataDir();
+                    const fh = await getFileHandleByDirHandle(dir, name);
+                    const text = await getFileContent(fh);
+                    return text && text.trim() ? JSON.parse(text) : null;
+                } catch (e) { return null; }
+            },
+            writeJSON: async (name, obj) => {
+                const dir = await getDataDir();
+                await writeFileByDirHandle(dir, name, JSON.stringify(obj));
+            },
+            loadLinkGraph: () => loadLinkGraphData(),
+            resolveLinkTarget: (target, srcPath, pathMap, fileList) =>
+                resolveLinkTargetAll(target, srcPath, pathMap, fileList),
+        };
+
+        // Ctrl/Cmd + K：打开 / 聚焦全局搜索（与仪表盘按钮等价；Esc 在搜索页内清空或退出）
+        (function bindGlobalSearchShortcut() {
+            window.addEventListener('keydown', (e) => {
+                if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
+                if (String(e.key || '').toLowerCase() !== 'k') return;
+                e.preventDefault();
+                e.stopPropagation();
+                if (lastToggle === 'globalSearch') {
+                    const inp = document.getElementById('gs-input');
+                    if (inp) { inp.focus(); inp.select(); }
+                    return;
+                }
+                toggleFile('globalSearch');
+            }, true);
+        })();
     </script>
     <script src="./css_js/modules/support.js"></script>
     <script src="./css_js/modules/epub-anchor.js"></script>
@@ -52513,5 +52752,7 @@ kanban-plugin: basic
     <script src="./css_js/modules/schedule.js"></script>
     <script src="./css_js/modules/ai-summay.js"></script>
     <script src="./css_js/modules/doc-qa.js"></script>
+    <script src="./css_js/modules/backlinks.js"></script>
+    <script src="./css_js/modules/global-search.js"></script>
     <div id="agent-global-task-bar" class="agent-global-task-bar" style="display:none;"></div>
 </body>
