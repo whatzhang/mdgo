@@ -14291,8 +14291,9 @@
                         <span class="video-header-title" style="font-size: 1rem;">文档库分析</span>
                     </div>
                     <div class="video-header-right">
+                        <span id="ai-summary-updated" class="ai-summary-updated"></span>
                         <button class="btn btn-sm btn-warning" id="summay-refresh-btn" onclick="restartAiSummary()">
-                            总结分析
+                            重新分析
                         </button>
                     </div>
                 </div>
@@ -31392,7 +31393,7 @@ kanban-plugin: basic
                 dirSpaceChartsBound = true;
             }
             requestAnimationFrame(() => resizeDirSpaceCharts());
-            await cacheAiSummary();
+            await renderAiSummaryFromStore();
         }
 
         async function openDirSpace() {
@@ -51986,90 +51987,190 @@ kanban-plugin: basic
             });
         }
         /** 渲染 AI 总结面板（手风琴） */
-        // ─── AI 总结面板：每天首次打开软件后台异步总结一次 ───
-        const AI_SUMMARY_CACHE_KEY = 'mdgo_ai_summary_cache';
-        const AI_SUMMARY_DATE_KEY = 'mdgo_ai_summary_last_date';
-        // 缓存结构版本：代码改动导致缓存结构/渲染变化时 +1，旧缓存自动失效
-        const AI_SUMMARY_CACHE_VERSION = 2;
+        // ─── 文档库分析：知识库级持久化（`.mdgo/mdgo.db` 的 ai_summary 表）───
+        // 语义：进入页面只读「上一次结果」；「重新分析」成功后才覆盖写入，失败不动旧结果。
+        // 旧实现（localStorage + 每日有效期）已废弃，仅保留一次性迁移逻辑。
+        const AI_SUMMARY_SLOT = 'doc_analysis';
+        const AI_SUMMARY_VERSION = 3; // payload 结构版本：只存渲染所需字段（不再存采集原文 text）
+        const AI_SUMMARY_LEGACY_CACHE_KEY = 'mdgo_ai_summary_cache';
+        const AI_SUMMARY_LEGACY_DATE_KEY = 'mdgo_ai_summary_last_date';
 
-        /** 校验缓存是否有效：结构正确且至少有一个成功结果（全失败缓存视为无效） */
-        function isAiSummaryCacheValid(data) {
-            if (!data || data.v !== AI_SUMMARY_CACHE_VERSION) return false;
-            const all = [...(data.behavior || []), ...(data.knowledge || [])];
-            if (!all.length) return false;
-            return all.some(x => x && x.ok);
-        }
+        let _aiSummaryRunning = false;
 
-        /** 重新启动 AI 总结分析 */
-        async function restartAiSummary() {
+        function aiSummaryPanels() {
             const behaviorPanel = document.getElementById('ai-summary-behavior');
             const knowledgePanel = document.getElementById('ai-summary-knowledge');
-            if (!behaviorPanel || !knowledgePanel) return;
-            safeLocalStorageRemove(AI_SUMMARY_CACHE_KEY);
-            safeLocalStorageRemove(AI_SUMMARY_DATE_KEY);
-            behaviorPanel.innerHTML = '<div class="ai-summary-empty">⏳ 正在分析用户行为…</div>';
-            knowledgePanel.innerHTML = '<div class="ai-summary-empty">⏳ 正在分析用户知识库…</div>';
-            await startAiSummary();
+            return behaviorPanel && knowledgePanel ? { behaviorPanel, knowledgePanel } : null;
         }
-        /** 缓存 AI 总结分析结果 */
-        async function cacheAiSummary() {
-            const behaviorPanel = document.getElementById('ai-summary-behavior');
-            const knowledgePanel = document.getElementById('ai-summary-knowledge');
-            if (!behaviorPanel || !knowledgePanel) return;
 
-            // 1. 先尝试渲染今日缓存（秒开）
-            const today = new Date().toDateString();
-            const lastDate = safeLocalStorageGet(AI_SUMMARY_DATE_KEY);
-            const cached = safeLocalStorageGet(AI_SUMMARY_CACHE_KEY);
-            if (lastDate === today && cached) {
-                try {
-                    const data = JSON.parse(cached);
-                    if (isAiSummaryCacheValid(data)) {
-                        await renderAiSummaryPanels(behaviorPanel, knowledgePanel, data);
-                        return; // 今日已总结，直接返回
-                    }
-                    console.warn('[aiSummay] 缓存无效（版本过期或全失败），重新总结');
-                } catch (e) {
-                    console.warn('[aiSummay] 缓存解析失败，重新总结', e);
-                    behaviorPanel.innerHTML = '<div class="ai-summary-empty">行为总结暂时不可用，请重试</div>';
-                    knowledgePanel.innerHTML = '<div class="ai-summary-empty">知识库总结暂时不可用，请重试</div>';
+        /** 结构校验：只保留渲染需要的 key/label/ok/result（顺带丢弃旧缓存的 text 原文） */
+        function normalizeAiSummary(data) {
+            if (!data || typeof data !== 'object') return null;
+            const norm = (list) => (Array.isArray(list) ? list : [])
+                .filter(x => x && typeof x === 'object')
+                .map(x => ({
+                    key: String(x.key || ''),
+                    label: String(x.label || ''),
+                    ok: !!x.ok,
+                    result: String(x.result || ''),
+                }))
+                .filter(x => x.key || x.result);
+            const behavior = norm(data.behavior);
+            const knowledge = norm(data.knowledge);
+            if (!behavior.length && !knowledge.length) return null;
+            return { v: AI_SUMMARY_VERSION, generatedAt: Number(data.generatedAt) || 0, behavior, knowledge };
+        }
+
+        function countAiSummaryOk(payload) {
+            return [...(payload.behavior || []), ...(payload.knowledge || [])].filter(x => x.ok).length;
+        }
+
+        function setAiSummaryUpdatedLabel(updatedAt) {
+            const el = document.getElementById('ai-summary-updated');
+            if (!el) return;
+            el.textContent = updatedAt ? ('上次分析：' + new Date(updatedAt).toLocaleString()) : '';
+        }
+
+        /** 一次性迁移：把旧版本存在 localStorage 的结果写进当前知识库（迁移后删除旧 key） */
+        async function migrateLegacyAiSummary() {
+            try {
+                const raw = safeLocalStorageGet(AI_SUMMARY_LEGACY_CACHE_KEY);
+                if (!raw) return null;
+                const payload = normalizeAiSummary(JSON.parse(raw));
+                if (!payload) {
+                    safeLocalStorageRemove(AI_SUMMARY_LEGACY_CACHE_KEY);
+                    safeLocalStorageRemove(AI_SUMMARY_LEGACY_DATE_KEY);
+                    return null;
                 }
+                const record = await window.__TAURI__.core.invoke('ai_summary_save', {
+                    dirPath: currentRootPath,
+                    req: {
+                        payload: JSON.stringify(payload),
+                        version: AI_SUMMARY_VERSION,
+                        ok_count: countAiSummaryOk(payload),
+                        total_count: payload.behavior.length + payload.knowledge.length,
+                        slot: AI_SUMMARY_SLOT,
+                    },
+                });
+                safeLocalStorageRemove(AI_SUMMARY_LEGACY_CACHE_KEY);
+                safeLocalStorageRemove(AI_SUMMARY_LEGACY_DATE_KEY);
+                setAiSummaryUpdatedLabel(Number(record && record.updated_at) || 0);
+                console.info('[aiSummay] 已把旧 localStorage 结果迁移到知识库数据库');
+                return payload;
+            } catch (e) {
+                console.warn('[aiSummay] 旧结果迁移失败（忽略）:', e);
+                return null;
             }
-            behaviorPanel.innerHTML = '<div class="ai-summary-loading">请点击右上角按钮手动触发分析</div>';
-            knowledgePanel.innerHTML = '<div class="ai-summary-loading">请点击右上角按钮手动触发分析</div>';
         }
 
         /**
-         * 启动 AI 总结（行为记录大屏打开时调用）：
-         * - 有今日且有效的缓存 → 直接渲染缓存；
-         * - 无缓存/缓存无效 → 后台异步采集数据 + 并发调用 LLM 总结，完成后渲染并落缓存。
+         * 进入页面：只读库里的「上一次分析结果」。
+         * - 有记录 → 渲染（不关心是哪天生成的）；
+         * - 无记录 → 空态提示手动分析（不再出现"进入页面空白/时有时无"）。
          */
-        async function startAiSummary() {
-            const behaviorPanel = document.getElementById('ai-summary-behavior');
-            const knowledgePanel = document.getElementById('ai-summary-knowledge');
-            if (!behaviorPanel || !knowledgePanel) return;
-            runAiSummaryBackground(behaviorPanel, knowledgePanel);
+        async function renderAiSummaryFromStore() {
+            const panels = aiSummaryPanels();
+            if (!panels) return;
+            const { behaviorPanel, knowledgePanel } = panels;
+            setAiSummaryUpdatedLabel(0);
+
+            if (!currentRootPath || typeof window.__TAURI__ === 'undefined' || !window.__TAURI__.core) {
+                behaviorPanel.innerHTML = '<div class="ai-summary-empty">仅桌面模式支持分析结果的持久化，请先打开知识库</div>';
+                knowledgePanel.innerHTML = '';
+                return;
+            }
+
+            behaviorPanel.innerHTML = '<div class="ai-summary-loading">正在载入上次分析…</div>';
+            knowledgePanel.innerHTML = '';
+
+            let payload = null;
+            let updatedAt = 0;
+            try {
+                const record = await window.__TAURI__.core.invoke('ai_summary_load', {
+                    dirPath: currentRootPath,
+                    slot: AI_SUMMARY_SLOT,
+                });
+                if (record && record.payload) {
+                    updatedAt = Number(record.updated_at) || 0;
+                    try {
+                        payload = normalizeAiSummary(JSON.parse(record.payload));
+                    } catch (e) {
+                        console.warn('[aiSummay] 已存结果解析失败，按无结果处理:', e);
+                    }
+                }
+            } catch (e) {
+                console.warn('[aiSummay] 读取已存结果失败:', e);
+            }
+
+            if (!payload) payload = await migrateLegacyAiSummary();
+
+            if (payload) {
+                if (!updatedAt) updatedAt = Date.now();
+                setAiSummaryUpdatedLabel(updatedAt);
+                try {
+                    await renderAiSummaryPanels(behaviorPanel, knowledgePanel, payload);
+                } catch (e) {
+                    console.error('[aiSummay] 渲染已存结果失败:', e);
+                    behaviorPanel.innerHTML = '<div class="ai-summary-empty">分析结果渲染失败：' + escapeHtml(String((e && e.message) || e)) + '</div>';
+                    knowledgePanel.innerHTML = '';
+                }
+                return;
+            }
+            behaviorPanel.innerHTML = '<div class="ai-summary-empty">暂无分析结果，点击右上角「重新分析」生成</div>';
+            knowledgePanel.innerHTML = '';
         }
 
-        /** 后台异步总结任务（防重入） */
-        let _aiSummaryRunning = false;
-        async function runAiSummaryBackground(behaviorPanel, knowledgePanel) {
-            if (_aiSummaryRunning) return;
+        /** 「重新分析」：完整采集 + LLM；全部失败则不覆盖旧结果 */
+        async function restartAiSummary() {
+            const panels = aiSummaryPanels();
+            if (!panels || _aiSummaryRunning) return;
+            if (!currentRootPath || typeof window.__TAURI__ === 'undefined' || !window.__TAURI__.core) {
+                showNotification('仅桌面模式支持分析结果的持久化，请先打开知识库', 'warning');
+                return;
+            }
+            const { behaviorPanel, knowledgePanel } = panels;
+            const btn = document.getElementById('summay-refresh-btn');
+            const prevLabel = btn ? btn.textContent : '';
             _aiSummaryRunning = true;
+            if (btn) { btn.disabled = true; btn.textContent = '分析中…'; }
+            behaviorPanel.innerHTML = '<div class="ai-summary-loading">⏳ 正在分析用户行为…</div>';
+            knowledgePanel.innerHTML = '<div class="ai-summary-loading">⏳ 正在分析知识库…</div>';
+
             try {
                 const data = await window.aiSummay.getSummary(7);
-                // 缓存带上版本号（旧缓存自动失效）
-                const payload = { v: AI_SUMMARY_CACHE_VERSION, ...data };
-                await renderAiSummaryPanels(behaviorPanel, knowledgePanel, payload);
-                // 落缓存 + 记录日期（每天首次打开后不再重复总结）
-                safeLocalStorageSet(AI_SUMMARY_CACHE_KEY, JSON.stringify(payload));
-                safeLocalStorageSet(AI_SUMMARY_DATE_KEY, new Date().toDateString());
+                const payload = normalizeAiSummary({ ...data, generatedAt: Date.now() });
+                const okCount = payload ? countAiSummaryOk(payload) : 0;
+                const totalCount = payload ? payload.behavior.length + payload.knowledge.length : 0;
+                if (!payload || okCount === 0) {
+                    throw new Error('本次分析全部失败（请检查模型配置/网络后重试）');
+                }
+                const record = await window.__TAURI__.core.invoke('ai_summary_save', {
+                    dirPath: currentRootPath,
+                    req: {
+                        payload: JSON.stringify(payload),
+                        version: AI_SUMMARY_VERSION,
+                        ok_count: okCount,
+                        total_count: totalCount,
+                        slot: AI_SUMMARY_SLOT,
+                    },
+                });
+                setAiSummaryUpdatedLabel(Number(record && record.updated_at) || Date.now());
+                try {
+                    await renderAiSummaryPanels(behaviorPanel, knowledgePanel, payload);
+                } catch (e) {
+                    console.error('[aiSummay] 结果已保存但渲染失败:', e);
+                    behaviorPanel.innerHTML = '<div class="ai-summary-empty">结果已保存，但渲染失败：' + escapeHtml(String((e && e.message) || e)) + '</div>';
+                    knowledgePanel.innerHTML = '';
+                }
+                showNotification('✓ 分析完成并已保存（' + okCount + '/' + totalCount + ' 段）', 'success', 2500);
             } catch (e) {
-                console.warn('[aiSummay] 后台总结失败:', e);
-                behaviorPanel.innerHTML = '<div class="ai-summary-empty">行为总结暂时不可用</div>';
-                knowledgePanel.innerHTML = '<div class="ai-summary-empty">知识库总结暂时不可用</div>';
+                console.warn('[aiSummay] 重新分析失败:', e);
+                showNotification('✗ 分析失败：' + (e && (e.message || e)), 'error', 4000);
+                // 失败不覆盖旧结果：重新载入，若旧结果仍在界面立即恢复
+                await renderAiSummaryFromStore();
             } finally {
                 _aiSummaryRunning = false;
+                if (btn) { btn.disabled = false; btn.textContent = prevLabel || '重新分析'; }
             }
         }
 

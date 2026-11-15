@@ -201,3 +201,15 @@
     padding: 0.625rem;
     overflow-x: auto;
 }
+
+/* 头部「上次分析时间」：低调的小字，紧邻「重新分析」按钮 */
+.ai-summary-updated {
+    font-size: 0.6875rem;
+    color: var(--color-text-tertiary, #999);
+    margin-right: 0.5rem;
+    white-space: nowrap;
+}
+
+.ai-summary-updated:empty {
+    display: none;
+}

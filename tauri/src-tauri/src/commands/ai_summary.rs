@@ -208,3 +208,59 @@ const DEFAULT_SUMMARY_INSTRUCTION: &str = concat!(
     "4. 结论要具体（点名文件/目录/指标），避免空泛套话；\n",
     "5. 全文中文，不用 emoji 开头，不输出「以下是总结」等引导语。"
 );
+
+// ───────────────────────── 结果持久化（知识库级 .mdgo/mdgo.db） ─────────────────────────
+//
+// 与上面的「生成」职责分离：本组命令只做读写，不触发任何模型调用。
+// 前端语义：进入页面 → `ai_summary_load`；「重新分析」成功 → `ai_summary_save`。
+
+/// 读取某知识库上一次的分析结果（不存在返回 `null`）。
+#[tauri::command]
+pub async fn ai_summary_load(
+    state: State<'_, AppState>,
+    dir_path: String,
+    slot: Option<String>,
+) -> Result<Option<crate::services::ai_summary::AiSummaryRecord>, String> {
+    let store = state.get_ai_summary_store(&dir_path)?;
+    let slot = slot.unwrap_or_else(|| crate::services::ai_summary::SLOT_DOC_ANALYSIS.to_string());
+    tokio::task::spawn_blocking(move || {
+        crate::core::db::with_busy_retry(3, || store.load(&slot))
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+/// 覆盖写入分析结果（原子 upsert；校验失败时旧记录保持不变）。
+#[tauri::command]
+pub async fn ai_summary_save(
+    state: State<'_, AppState>,
+    dir_path: String,
+    req: crate::services::ai_summary::AiSummarySaveRequest,
+) -> Result<crate::services::ai_summary::AiSummaryRecord, String> {
+    let store = state.get_ai_summary_store(&dir_path)?;
+    let slot = req
+        .slot
+        .clone()
+        .unwrap_or_else(|| crate::services::ai_summary::SLOT_DOC_ANALYSIS.to_string());
+    tokio::task::spawn_blocking(move || {
+        crate::core::db::with_busy_retry(3, || store.save(&req, &slot))
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+/// 清除某知识库的分析结果（当前 UI 未暴露，供后续"清空分析"入口使用）。
+#[tauri::command]
+pub async fn ai_summary_clear(
+    state: State<'_, AppState>,
+    dir_path: String,
+    slot: Option<String>,
+) -> Result<bool, String> {
+    let store = state.get_ai_summary_store(&dir_path)?;
+    let slot = slot.unwrap_or_else(|| crate::services::ai_summary::SLOT_DOC_ANALYSIS.to_string());
+    tokio::task::spawn_blocking(move || {
+        crate::core::db::with_busy_retry(3, || store.clear(&slot))
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+}

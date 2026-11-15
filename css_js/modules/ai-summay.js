@@ -362,11 +362,11 @@
             ]);
             const lines = [];
             if (kbStatus) {
-                lines.push(`RAG 索引: 文件 ${kbStatus.fileCount || 0}，chunk ${kbStatus.chunkCount || 0}，向量 ${kbStatus.vectorCount || 0}，状态 ${kbStatus.status || 'unknown'}`);
+                lines.push(`RAG 索引: 文件 ${kbStatus.file_count || 0}，chunk ${kbStatus.chunk_count || 0}，向量 ${kbStatus.vector_count || 0}，状态 ${kbStatus.status || 'unknown'}`);
             }
             if (dash) lines.push(`索引占用空间: ${dash.storage_size || '--'}`);
             if (embInfo) lines.push(`向量模型: ${embInfo.model_name || '未知'}(${embInfo.dimension || 0}维, ${embInfo.status || '未知'})`);
-            if (chatStats) lines.push(`对话: 会话 ${chatStats.sessionCount || 0}，消息 ${chatStats.messageCount || 0}`);
+            if (chatStats) lines.push(`对话: 会话 ${chatStats.session_count || 0}，消息 ${chatStats.message_count || 0}`);
             if (skill) {
                 lines.push(`Skill: 共 ${skill.total || 0}(系统 ${skill.system_count || 0}/全局 ${skill.global_count || 0}/项目 ${skill.project_count || 0}，启用 ${skill.enabled_count || 0})`);
                 if (skill.skills && skill.skills.length) {
