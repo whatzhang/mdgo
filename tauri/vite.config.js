@@ -10,7 +10,8 @@ export default defineConfig({
         viteStaticCopy({
             targets: [
                 {
-                    src: ['css_js/**', '!css_js/snipaste.png', '!index_cdn.html'],
+                    // Tauri 只用 Rust 后端，isomorphic-git 不再打包进桌面端
+                    src: ['css_js/**', '!css_js/snipaste.png', '!index_cdn.html', '!css_js/cdn/isomorphic-git.min.js'],
                     dest: '.',
                 }
             ],

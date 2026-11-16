@@ -1,11 +1,11 @@
 /**
- * Tauri 模式 Git 适配器（使用 Rust gix 实现）
- * API 与 isomorphic-git 完全兼容
+ * Tauri 模式 Git 适配器（唯一实现：Rust `commands/git.rs`）
  *
- * 优化说明:
- * 1. 请求去重: 相同参数的并发请求只发一次，复用同一个 Promise
- * 2. 短路缓存: 100ms 内相同请求直接返回上次结果
- * 3. 减少不必要的序列化/反序列化开销
+ * 只暴露「记录 / 对比 / 暂存 / 提交」四条主链路所需的最小接口。
+ * 设计原则：
+ *  - 不做结果缓存（写操作后不会读到旧数据），只做并发请求去重；
+ *  - 所有错误统一抛 `Error(String)`，不再把失败吞成 null；
+ *  - 参数名按 Tauri 约定用 camelCase（Rust 侧 snake_case）。
  */
 (function () {
     if (typeof window.__TAURI__ === 'undefined') {
@@ -14,221 +14,105 @@
 
     const { invoke } = window.__TAURI__.core;
 
-    // 请求去重表: key -> Promise
-    // 当同一函数同一参数同时被调用多次时，只发一次请求
-    const inflightMap = new Map();
-
-    /**
-     * 带请求去重的 invoke 包装
-     * 相同 key 的并发请求只会发起一次调用
-     */
-    function dedupedInvoke(cmd, params, cacheKey) {
-        const key = cacheKey || cmd + '_' + JSON.stringify(params);
-        // 如果已有相同请求在执行中，直接复用
-        if (inflightMap.has(key)) {
-            return inflightMap.get(key);
-        }
-        const promise = invoke(cmd, params)
-            .then(result => {
-                inflightMap.delete(key);
-                return result;
-            })
-            .catch(err => {
-                inflightMap.delete(key);
-                throw err;
-            });
-        inflightMap.set(key, promise);
-        return promise;
+    /** 并发去重：同一 key 的请求在飞行中只发一次 */
+    const inflight = new Map();
+    function dedupe(key, factory) {
+        if (inflight.has(key)) return inflight.get(key);
+        const p = factory().finally(() => inflight.delete(key));
+        inflight.set(key, p);
+        return p;
     }
 
-    // Git Rust 适配器（接口与 isomorphic-git 完全一致）
+    async function call(cmd, args) {
+        try {
+            return await invoke(cmd, args);
+        } catch (err) {
+            const msg = err && typeof err === 'object' && 'message' in err ? err.message : String(err);
+            throw new Error(msg || `${cmd} 执行失败`);
+        }
+    }
+
+    function toBlobPayload(raw) {
+        if (!raw) throw new Error('读取文件内容失败');
+        return {
+            data: raw.data instanceof Uint8Array ? raw.data : new Uint8Array(raw.data || []),
+            size: raw.size || 0,
+            isBinary: !!raw.is_binary,
+        };
+    }
+
     window.GitRustAdapter = {
-        /**
-         * 获取提交记录
-         * @param {Object} options - { dir, depth, filepath }
-         * @returns {Promise<Array>} - 提交列表
-         */
+        /** 历史记录（分页） */
         async log(options) {
-            const { dir, depth, filepath } = options;
-            const cacheKey = `git_log_${dir}_${depth}_${filepath}`;
-            try {
-                const commits = await dedupedInvoke('git_log', {
-                    dir,
-                    depth,
-                    filepath: filepath || null,
-                }, cacheKey);
-                return commits;
-            } catch (error) {
-                console.error('[GitRust] log error:', error);
-                throw new Error(`Git log 失败: ${error}`);
-            }
+            const { dir, depth, skip, ref, filepath } = options || {};
+            if (!dir) throw new Error('仓库路径为空');
+            const args = {
+                dir,
+                depth: depth || 100,
+                skip: skip || 0,
+                refName: ref || null,
+                filepath: filepath || null,
+            };
+            return dedupe(`log:${JSON.stringify(args)}`, () => call('git_log', args));
         },
 
-        /**
-         * 获取文件状态矩阵
-         * @param {Object} options - { dir }
-         * @returns {Promise<Array>} - 状态矩阵 [[filepath, head, workdir, stage], ...]
-         */
-        async statusMatrix(options) {
-            const { dir } = options;
-            const cacheKey = `git_status_${dir}`;
-            try {
-                const matrix = await dedupedInvoke('git_status_matrix', { dir }, cacheKey);
-                return matrix;
-            } catch (error) {
-                console.error('[GitRust] statusMatrix error:', error);
-                throw new Error(`Git status 失败: ${error}`);
-            }
+        /** 某次提交的变更文件列表 */
+        async files(dir, commit, parent) {
+            if (!dir || !commit) throw new Error('缺少仓库路径或提交号');
+            const args = { dir, commit, parent: parent || null };
+            return dedupe(`files:${JSON.stringify(args)}`, () => call('git_commit_files', args));
         },
 
-        /**
-         * 恢复文件到 HEAD 状态
-         * @param {Object} options - { dir, filepaths, force }
-         * @returns {Promise<void>}
-         */
-        async checkout(options) {
-            const { dir, filepaths, force } = options;
-            try {
-                await invoke('git_checkout', {
-                    dir,
-                    filepaths: filepaths || [],
-                    force: force || false,
-                });
-            } catch (error) {
-                console.error('[GitRust] checkout error:', error);
-                throw new Error(`Git checkout 失败: ${error}`);
-            }
-        },
-
-        /**
-         * 解析引用（分支、标签等）
-         * @param {String} dir - 仓库路径
-         * @returns {Promise<Object>} - 引用信息
-         */
-        async parseRefs(dir) {
-            const cacheKey = `git_parseRefs_${dir}`;
-            try {
-                const refs = await dedupedInvoke('git_parse_refs', { dir }, cacheKey);
-                return refs;
-            } catch (error) {
-                console.error('[GitRust] parseRefs error:', error);
-                throw new Error(`Git parseRefs 失败: ${error}`);
-            }
-        },
-
-        /**
-         * 获取提交的文件变更（对比 parent commit）
-         * @param {String} dir - 仓库路径
-         * @param {String} commitOid - 提交 hash
-         * @param {String|null} parentOid - 父提交 hash
-         * @returns {Promise<Array>} - 文件变更列表 [{path, status}, ...]
-         */
-        async diffTree(dir, commitOid, parentOid) {
-            const cacheKey = `git_diffTree_${dir}_${commitOid}_${parentOid}`;
-            try {
-                const changes = await dedupedInvoke('git_diff_tree', {
-                    dir,
-                    commitOid,
-                    parentOid: parentOid || null,
-                }, cacheKey);
-                return changes;
-            } catch (error) {
-                console.error('[GitRust] diffTree error:', error);
-                throw new Error(`Git diffTree 失败: ${error}`);
-            }
-        },
-
-        /**
-         * 读取文件内容（从指定 commit）
-         * @param {String} dir - 仓库路径
-         * @param {String} oid - 提交 hash
-         * @param {String} filepath - 文件路径
-         * @returns {Promise<Object|null>} - {blob: Uint8Array} 或 null（文件不存在时）
-         */
+        /** 读取提交内文件内容 */
         async readBlob(dir, oid, filepath) {
-            try {
-                const result = await invoke('git_read_blob', {
-                    dir,
-                    oid,
-                    filepath,
-                });
-                return {
-                    blob: new Uint8Array(result.blob),
-                };
-            } catch (error) {
-                // 文件不在该 commit 中属于正常情况（如新增文件在 parent commit 中不存在），返回 null
-                console.warn('[GitRust] readBlob error (file may not exist in commit):', error);
-                return null;
-            }
+            const raw = await call('git_read_blob', { dir, oid, filepath });
+            return toBlobPayload(raw);
         },
 
-        /**
-         * 暂存文件（git add）
-         * @param {String} dir - 仓库路径
-         * @param {String} filepath - 文件路径
-         * @returns {Promise<void>}
-         */
-        async add(dir, filepath) {
-            try {
-                await invoke('git_add', { dir, filepath });
-            } catch (error) {
-                console.error('[GitRust] add error:', error);
-                throw new Error(`Git add 失败: ${error}`);
-            }
+        /** 读取已暂存文件内容（index:stage 0） */
+        async readIndexBlob(dir, filepath) {
+            const raw = await call('git_read_index_blob', { dir, filepath });
+            return toBlobPayload(raw);
         },
 
-        /**
-         * 取消暂存文件（git reset）
-         * @param {String} dir - 仓库路径
-         * @param {String} filepath - 文件路径
-         * @returns {Promise<void>}
-         */
-        async reset(dir, filepath) {
-            try {
-                await invoke('git_reset', { dir, filepath });
-            } catch (error) {
-                console.error('[GitRust] reset error:', error);
-                throw new Error(`Git reset 失败: ${error}`);
-            }
+        /** 分支 / 远程 / 标签 / HEAD 状态 */
+        async parseRefs(dir) {
+            return dedupe(`refs:${dir}`, () => call('git_parse_refs', { dir }));
         },
 
-        /**
-         * 提交暂存（git commit）
-         * @param {String} dir - 仓库路径
-         * @param {String} message - 提交信息
-         * @param {String} authorName - 作者名称
-         * @param {String} authorEmail - 作者邮箱
-         * @returns {Promise<String>} - 提交 SHA
-         */
+        /** 工作区状态（原始 XY 码） */
+        async status(dir) {
+            return call('git_status', { dir });
+        },
+
+        async stage(dir, paths) {
+            return call('git_stage', { dir, paths: paths || [] });
+        },
+
+        async unstage(dir, paths) {
+            return call('git_unstage', { dir, paths: paths || [] });
+        },
+
+        async discard(dir, paths) {
+            return call('git_discard', { dir, paths: paths || [] });
+        },
+
+        async identity(dir) {
+            return call('git_identity', { dir });
+        },
+
+        async setIdentity(dir, name, email) {
+            return call('git_set_identity', { dir, name, email });
+        },
+
+        /** 提交，返回完整 SHA */
         async commit(dir, message, authorName, authorEmail) {
-            try {
-                const sha = await invoke('git_commit', {
-                    dir,
-                    message,
-                    authorName,
-                    authorEmail,
-                });
-                return sha;
-            } catch (error) {
-                console.error('[GitRust] commit error:', error);
-                throw new Error(`Git commit 失败: ${error}`);
-            }
-        },
-
-        /**
-         * 解析引用（获取 commit hash）
-         * @param {String} dir - 仓库路径
-         * @param {String} refName - 引用名称
-         * @returns {Promise<String>} - commit hash
-         */
-        async resolveRef(dir, refName) {
-            try {
-                const sha = await invoke('git_resolve_ref', { dir, refName });
-                return sha;
-            } catch (error) {
-                console.error('[GitRust] resolveRef error:', error);
-                throw new Error(`Git resolveRef 失败: ${error}`);
-            }
+            return call('git_commit', {
+                dir,
+                message,
+                authorName: authorName || null,
+                authorEmail: authorEmail || null,
+            });
         },
     };
 })();

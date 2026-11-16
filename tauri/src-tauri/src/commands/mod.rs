@@ -10,6 +10,7 @@ pub mod doc;
 pub mod fs;
 pub mod fs_watcher;
 pub mod git;
+pub mod git_ai;
 pub mod git_types;
 pub mod knowledge;
 pub mod llm;

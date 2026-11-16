@@ -57,10 +57,16 @@ window.__tauriInitPromise = (async () => {
         console.error('[TauriAdapter] 加载核心适配器失败:', e);
     }
 
-    // Git 适配器非启动关键，后置加载
-    import('./git-rust.js')
-        .then(() => console.log('[TauriAdapter] Git Rust 适配器已加载'))
-        .catch((e) => console.error('[TauriAdapter] 加载 Git Rust 适配器失败:', e));
+    // Git 适配器非启动关键，后置加载；同时暴露 ready promise 供 Git 页面按需等待
+    window.__gitAdapterReady = import('./git-rust.js')
+        .then(() => {
+            console.log('[TauriAdapter] Git Rust 适配器已加载');
+            return true;
+        })
+        .catch((e) => {
+            console.error('[TauriAdapter] 加载 Git Rust 适配器失败:', e);
+            return false;
+        });
 
     console.log('[TauriAdapter] 所有适配器初始化完成');
 })();
