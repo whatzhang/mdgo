@@ -566,18 +566,62 @@ pub fn git_read_index_blob(dir: String, filepath: String) -> Result<BlobPayload,
 /// 解析引用（分支 / 远程 / 标签 / HEAD 状态）
 #[tauri::command]
 pub fn git_parse_refs(dir: String) -> Result<RefsInfo, String> {
-    let out = run_git_str(
-        &[
-            "-c",
-            "core.quotepath=false",
-            "for-each-ref",
-            "--format=%(refname)%00%(objectname)%00%(*objectname)",
-            "refs/heads",
-            "refs/remotes",
-            "refs/tags",
-        ],
-        &dir,
-    )?;
+    // Windows 上单个 git 进程约 50ms：把 6 个互不依赖的查询并发执行，
+    // 首屏耗时只取决于最慢的一条，而不是累加。
+    let (refs_out, branch_out, head_out, remote_out, upstream_out, ab_out) =
+        std::thread::scope(|s| {
+            let h_refs = s.spawn(|| {
+                run_git_str(
+                    &[
+                        "-c",
+                        "core.quotepath=false",
+                        "for-each-ref",
+                        "--format=%(refname)%00%(objectname)%00%(*objectname)",
+                        "refs/heads",
+                        "refs/remotes",
+                        "refs/tags",
+                    ],
+                    &dir,
+                )
+            });
+            let h_branch = s.spawn(|| run_git(&["symbolic-ref", "-q", "--short", "HEAD"], &dir));
+            let h_head = s.spawn(|| run_git(&["rev-parse", "--verify", "-q", "HEAD"], &dir));
+            let h_remote = s.spawn(|| run_git_str(&["remote"], &dir));
+            let h_up = s.spawn(|| {
+                run_git(
+                    &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+                    &dir,
+                )
+            });
+            let h_ab = s.spawn(|| {
+                run_git(
+                    &["rev-list", "--left-right", "--count", "@{u}...HEAD"],
+                    &dir,
+                )
+            });
+            (
+                h_refs
+                    .join()
+                    .unwrap_or_else(|_| Err("refs 线程崩溃".to_string())),
+                h_branch
+                    .join()
+                    .unwrap_or_else(|_| Err("branch 线程崩溃".to_string())),
+                h_head
+                    .join()
+                    .unwrap_or_else(|_| Err("HEAD 线程崩溃".to_string())),
+                h_remote
+                    .join()
+                    .unwrap_or_else(|_| Err("remote 线程崩溃".to_string())),
+                h_up
+                    .join()
+                    .unwrap_or_else(|_| Err("upstream 线程崩溃".to_string())),
+                h_ab
+                    .join()
+                    .unwrap_or_else(|_| Err("ahead/behind 线程崩溃".to_string())),
+            )
+        });
+
+    let out = refs_out?;
 
     let mut heads = Vec::new();
     let mut remotes = Vec::new();
@@ -613,26 +657,53 @@ pub fn git_parse_refs(dir: String) -> Result<RefsInfo, String> {
         }
     }
 
-    let branch = run_git(
-        &["symbolic-ref", "-q", "--short", "HEAD"],
-        &dir,
-    )?;
-    let (current_branch, detached) = if branch.success() {
-        let name = String::from_utf8_lossy(&branch.stdout).trim().to_string();
-        if name.is_empty() {
-            ("HEAD".to_string(), true)
-        } else {
-            (name, false)
+    let (current_branch, detached) = match branch_out {
+        Ok(o) if o.success() => {
+            let name = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            if name.is_empty() {
+                ("HEAD".to_string(), true)
+            } else {
+                (name, false)
+            }
         }
-    } else {
-        ("HEAD".to_string(), true)
+        _ => ("HEAD".to_string(), true),
     };
 
-    let head_hash = run_git(&["rev-parse", "--verify", "-q", "HEAD"], &dir)
+    let head_hash = head_out
         .ok()
         .filter(|o| o.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .filter(|s| !s.is_empty());
+
+    let mut remote_names: Vec<String> = remote_out
+        .unwrap_or_default()
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+    remote_names.sort();
+    let remote = if remote_names.iter().any(|n| n == "origin") {
+        Some("origin".to_string())
+    } else {
+        remote_names.first().cloned()
+    };
+
+    let upstream = upstream_out
+        .ok()
+        .filter(|o| o.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    // 左=上游独有（behind），右=本地独有（ahead）
+    let (mut ahead, mut behind) = (0u32, 0u32);
+    if let Ok(o) = ab_out {
+        if o.success() {
+            let text = String::from_utf8_lossy(&o.stdout);
+            let mut it = text.split_whitespace();
+            behind = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+            ahead = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+        }
+    }
 
     Ok(RefsInfo {
         heads,
@@ -641,6 +712,10 @@ pub fn git_parse_refs(dir: String) -> Result<RefsInfo, String> {
         head_hash,
         current_branch,
         detached,
+        remote,
+        upstream,
+        ahead,
+        behind,
     })
 }
 
@@ -726,16 +801,22 @@ pub fn git_discard(dir: String, paths: Vec<String>) -> Result<(), String> {
 /// 提交身份（读 git config；未配置时返回空字符串）
 #[tauri::command]
 pub fn git_identity(dir: String) -> Result<Identity, String> {
-    let name = run_git(&["config", "--get", "user.name"], &dir)
-        .ok()
-        .filter(|o| o.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_default();
-    let email = run_git(&["config", "--get", "user.email"], &dir)
-        .ok()
-        .filter(|o| o.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_default();
+    // 一次 git 调用同时取 name/email（原来两次进程，各约 50ms）
+    let out = run_git(&["config", "--get-regexp", "^user\\.(name|email)$"], &dir)?;
+    let mut name = String::new();
+    let mut email = String::new();
+    if out.success() {
+        for line in String::from_utf8_lossy(&out.stdout).lines() {
+            let mut parts = line.splitn(2, ' ');
+            let key = parts.next().unwrap_or("").trim();
+            let value = parts.next().unwrap_or("").trim();
+            if key == "user.name" {
+                name = value.to_string();
+            } else if key == "user.email" {
+                email = value.to_string();
+            }
+        }
+    }
     Ok(Identity { name, email })
 }
 
@@ -903,63 +984,16 @@ fn output_detail(out: &GitOutput) -> String {
 }
 
 fn remote_status_internal(dir: &str) -> Result<RemoteStatus, String> {
+    // 复用 parse_refs 的并发查询结果，不再重复跑一遍 git
     let refs = git_parse_refs(dir.to_string())?;
-    let branch = refs.current_branch.clone();
-    let detached = refs.detached;
-
-    let remotes_text = run_git_str(&["remote"], dir)?;
-    let mut names: Vec<&str> = remotes_text
-        .lines()
-        .map(|l| l.trim())
-        .filter(|l| !l.is_empty())
-        .collect();
-    names.sort_unstable();
-    let remote = if names.iter().any(|n| *n == "origin") {
-        Some("origin".to_string())
-    } else {
-        names.first().map(|s| s.to_string())
-    };
-
-    let up = run_git(
-        &[
-            "rev-parse",
-            "--abbrev-ref",
-            "--symbolic-full-name",
-            "@{u}",
-        ],
-        dir,
-    )?;
-    let upstream = if up.success() {
-        let s = String::from_utf8_lossy(&up.stdout).trim().to_string();
-        if s.is_empty() {
-            None
-        } else {
-            Some(s)
-        }
-    } else {
-        None
-    };
-
-    // `rev-list --left-right --count @{u}...HEAD`：左=上游独有（behind），右=本地独有（ahead）
-    let (mut ahead, mut behind) = (0u32, 0u32);
-    if upstream.is_some() {
-        let out = run_git(&["rev-list", "--left-right", "--count", "@{u}...HEAD"], dir)?;
-        if out.success() {
-            let text = String::from_utf8_lossy(&out.stdout);
-            let mut it = text.split_whitespace();
-            behind = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
-            ahead = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
-        }
-    }
-
     Ok(RemoteStatus {
-        has_remote: remote.is_some(),
-        remote,
-        branch,
-        detached,
-        upstream,
-        ahead,
-        behind,
+        has_remote: refs.remote.is_some(),
+        remote: refs.remote,
+        branch: refs.current_branch,
+        detached: refs.detached,
+        upstream: refs.upstream,
+        ahead: refs.ahead,
+        behind: refs.behind,
     })
 }
 

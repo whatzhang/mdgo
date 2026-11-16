@@ -9136,22 +9136,22 @@
         }
 
         .timeline-heatmap-container {
-            margin: 10px 12px 0 10px;
+            margin: 2px 12px 0 10px;
         }
 
         .timeline-heatmap-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 12px;
+            margin-bottom: 6px;
         }
 
         .timeline-months-heatmap {
             display: flex;
             flex-direction: row;
-            justify-content: center;
-            justify-items: center;
-            gap: 10px;
+            /* 不能用 center：内容超宽时左侧会溢出到不可滚动区域，1~3 月被裁掉且滚不回去 */
+            justify-content: flex-start;
+            gap: 6px;
             overflow-x: auto;
             padding-bottom: 8px;
         }
@@ -9236,7 +9236,7 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            margin: 12px 2px 0 8px;
+            margin: 6px 2px 0 8px;
             font-size: 10px;
             color: var(--t2);
         }
@@ -9265,7 +9265,7 @@
         .timeline-timeline-container {
             flex: 1;
             background: var(--color-bg);
-            border-radius: 24px;
+            border-radius: 12px;
             border: 1px solid var(--color-border-light);
             box-shadow: var(--shadow-sm);
             overflow: auto;
@@ -11838,7 +11838,7 @@
             align-items: center;
             justify-content: center;
             color: var(--t2);
-            font-size: 14px;
+            font-size: 13px;
             pointer-events: none;
         }
 
@@ -11869,6 +11869,9 @@
             flex-direction: column;
             gap: 0;
             border-bottom: none;
+            /* .git-left-header 的 align-items:center 会让提示文字/身份输入行被居中收缩，这里恢复拉伸 */
+            align-items: stretch;
+            justify-content: flex-start;
         }
 
         .git-commit-input-row {
@@ -12005,6 +12008,7 @@
             color: var(--t3);
             padding-top: 3px;
             line-height: 1.4;
+            text-align: left;
         }
 
         .git-identity-hint.warn {
@@ -35879,7 +35883,7 @@ kanban-plugin: basic
         }
 
         // 核心：构建热力图，并根据当前视图 + 选中的变量高亮对应方格或月份边框
-        async function timelineBuildHeatmap() {
+        async function timelineBuildHeatmap(opts = {}) {
             const wrapper = document.getElementById('heatmapWrapper');
             wrapper.style.display = 'block';
             const now = new Date(), y = now.getFullYear();
@@ -36002,8 +36006,9 @@ kanban-plugin: basic
                 el.removeEventListener('click', timelineMonthBlockClick);
                 el.addEventListener('click', timelineMonthBlockClick);
             });
-            // 自动滚动到高亮月份块
-            if (selectedMonthIndices.length) {
+            // 自动滚动到高亮月份块：只在用户主动切换视图时执行；
+            // 首次进入保持 scrollLeft=0，从 1 月开始展示
+            if (opts.scrollToSelection && selectedMonthIndices.length) {
                 const firstHighlight = document.querySelector(`.timeline-month-block[data-month-index="${selectedMonthIndices[0]}"]`);
                 if (firstHighlight) {
                     const cont = document.getElementById('timelineMonthsHeatmap');
@@ -36087,7 +36092,7 @@ kanban-plugin: basic
         }
 
         // 视图切换：清空并按照当前时间设置默认选中，不保留手动取消状态
-        async function timelineChangeView(view) {
+        async function timelineChangeView(view, opts = {}) {
             timelineCurrentView = view;
             // 清空所有选中
             timelineSelectedDay = null;
@@ -36108,7 +36113,7 @@ kanban-plugin: basic
                 timelineSelectedYear = new Date().getFullYear();
             }
             timelineUpdate();
-            timelineBuildHeatmap().then(() => {
+            timelineBuildHeatmap(opts).then(() => {
                 // 更新小方格光标样式
                 const isDisableClick = (view === 'month' || view === 'quarter' || view === 'year' || view === 'all');
                 document.querySelectorAll('.timeline-heatmap-day[data-date]').forEach(el => {
@@ -36121,7 +36126,7 @@ kanban-plugin: basic
         function timeViewTabClick(t) {
             document.querySelectorAll('.timeline-view-tab').forEach(v => v.classList.remove('timeline-active'));
             t.classList.add('timeline-active');
-            timelineChangeView(t.dataset.view);
+            timelineChangeView(t.dataset.view, { scrollToSelection: true });
         }
 
         function timelineChangeFilterClick(c) {
@@ -36171,7 +36176,7 @@ kanban-plugin: basic
                     const t = e.currentTarget;
                     document.querySelectorAll('.timeline-view-tab').forEach(v => v.classList.remove('timeline-active'));
                     t.classList.add('timeline-active');
-                    timelineChangeView(t.dataset.view);
+                    timelineChangeView(t.dataset.view, { scrollToSelection: true });
                 };
                 document.querySelectorAll('.timeline-view-tab').forEach(t => {
                     t.removeEventListener('click', _timelineViewTabClickHandler);
@@ -43564,7 +43569,7 @@ kanban-plugin: basic
         //   3) 暂存：暂存 / 取消暂存 / 放弃更改（重命名、删除、未跟踪文件都走正确路径）
         //   4) 提交：读 git config 身份、提交、回显真实 SHA、提交后刷新
         // 明确不做：分支切换、fetch/pull/push、stash、rebase、cherry-pick、tag 管理、右键菜单、提交搜索。
-        const GIT_COMMIT_PAGE_SIZE = 100; // 每页提交数（加载更多按 100 条续载）
+        const GIT_COMMIT_PAGE_SIZE = 50; // 首屏 50 条，加载更多每次续 50 条
         const GIT_GRAPH_ROW_HEIGHT = 70; // 图中每一行的内容高度（与 CSS 对应）
         const GIT_GRAPH_ROW_MARGIN = 5; // 行上下 margin（与 CSS .git-graph-row 一致）
         const GIT_GRAPH_ROW_STEP = GIT_GRAPH_ROW_HEIGHT + GIT_GRAPH_ROW_MARGIN * 2;
@@ -43637,6 +43642,7 @@ kanban-plugin: basic
         let gitDiffUpdateDisposable = null;
         let gitDiffChanges = [];
         let gitDiffNavIdx = -1;
+        let gitDiffSideBySide = false; // false=行内，true=左右；跨文件保持用户选择
         let gitEditorGen = 0; // diff 挂载代号
         let gitDiffToken = 0; // 异步加载 diff 内容代号
 
@@ -43750,6 +43756,8 @@ kanban-plugin: basic
                     </div>
                     <div class="git-diff-header-nav">
                         ${scopeTabs || ''}
+                        <button class="git-diff-nav-btn" data-git-diff-mode="toggle"
+                            title="${gitDiffSideBySide ? '切换为行内对比' : '切换为左右视图'}">${gitDiffSideBySide ? '行对比' : '左右视图'}</button>
                         <button class="git-diff-nav-btn" data-git-nav="prev" disabled>上一个</button>
                         <span class="git-diff-nav-indicator" id="gitDiffNavIndicator">0/0</span>
                         <button class="git-diff-nav-btn" data-git-nav="next" disabled>下一个</button>
@@ -43798,6 +43806,26 @@ kanban-plugin: basic
             if (nextBtn) nextBtn.disabled = total === 0;
         }
 
+        /**
+         * 切换 diff 视图：行内（inline） <-> 左右（side-by-side）
+         * 按钮文案表示“下一个动作”：行内时显示「左右视图」，左右时显示「行对比」。
+         * 选择在本次会话内跨文件保持。
+         */
+        function gitToggleDiffMode() {
+            if (!gitDiffEditor) return;
+            gitDiffSideBySide = !gitDiffSideBySide;
+            gitDiffEditor.updateOptions({
+                renderSideBySide: gitDiffSideBySide,
+                renderSideBySideInlineBreakpoint: 0,
+            });
+            const btn = gitDiffContainer ? gitDiffContainer.querySelector('[data-git-diff-mode]') : null;
+            if (btn) {
+                btn.textContent = gitDiffSideBySide ? '行对比' : '左右视图';
+                btn.title = gitDiffSideBySide ? '切换为行内对比' : '切换为左右视图';
+            }
+            try { gitDiffEditor.layout(); } catch (e) { }
+        }
+
         /** 统一挂载 diff：一处实现，避免两条路径行为漂移 */
         async function gitMountDiff({ original, modified, path, headerHtml }) {
             const gen = ++gitEditorGen;
@@ -43831,12 +43859,16 @@ kanban-plugin: basic
             const dark = document.documentElement.getAttribute('data-theme') === 'dark';
             gitDiffEditor = monaco.editor.createDiffEditor(wrap, {
                 readOnly: true,
-                renderSideBySide: true,
+                renderSideBySide: gitDiffSideBySide,
+                // 关闭“窄宽度自动切行内”，保证按钮切换一定生效
+                renderSideBySideInlineBreakpoint: 0,
                 automaticLayout: true,
                 enableSplitViewResizing: true,
                 renderOverviewRuler: false,
                 scrollBeyondLastLine: false,
                 minimap: { enabled: false },
+                glyphMargin: false,
+                folding: false,
                 ignoreTrimWhitespace: false,
                 diffWordWrap: 'on',
                 theme: dark ? 'vs-dark' : 'vs',
@@ -44399,6 +44431,8 @@ kanban-plugin: basic
                 gitDiffContainer.addEventListener('click', async (e) => {
                     const nav = e.target.closest('[data-git-nav]');
                     if (nav) { gitDiffNavigate(nav.dataset.gitNav); return; }
+                    const modeBtn = e.target.closest('[data-git-diff-mode]');
+                    if (modeBtn) { gitToggleDiffMode(); return; }
                     const scope = e.target.closest('[data-git-scope]');
                     if (scope && gitActiveStatusItem) {
                         await gitShowStatusDiff(gitActiveStatusItem, scope.dataset.gitScope);
@@ -44420,6 +44454,18 @@ kanban-plugin: basic
             gitHeadHash = (refs && refs.head_hash) || null;
             gitDetached = !!(refs && refs.detached);
             gitCurrentBranch = gitDetached ? 'HEAD（游离）' : ((refs && refs.current_branch) || 'HEAD');
+            // refs 已顺带返回 remote/upstream/ahead/behind，省掉一次独立的远端状态查询
+            if (refs) {
+                gitRemoteStatus = {
+                    has_remote: !!refs.remote,
+                    remote: refs.remote || null,
+                    branch: refs.current_branch || '',
+                    detached: !!refs.detached,
+                    upstream: refs.upstream || null,
+                    ahead: refs.ahead || 0,
+                    behind: refs.behind || 0,
+                };
+            }
         }
 
         function gitUpdateRepoInfo() {
@@ -44460,6 +44506,7 @@ kanban-plugin: basic
 
         // ==================== 记录：历史 ====================
         async function gitLoadRepo({ filepath = null, keepSelection = false } = {}) {
+            const t0 = performance.now();
             const gen = ++gitLoadGen;
             gitFileFilter = filepath || null;
             const adapter = await gitEnsureAdapter();
@@ -44471,15 +44518,23 @@ kanban-plugin: basic
             gitMergeInProgress = await gitMergeHeadExists();
             if (gen !== gitLoadGen) return;
             gitRenderRepoBanner();
-            await gitRefreshRemoteStatus();
-            if (gen !== gitLoadGen) return;
 
-            await gitLoadHistory({ reset: true, gen });
+            // 历史 / 工作区状态 / 提交身份互不依赖，并行执行（单条 git 进程 Windows 约 50ms）
+            const results = await Promise.allSettled([
+                gitLoadHistory({ reset: true, gen }),
+                gitRefreshStatus(),
+                gitLoadIdentity(),
+            ]);
             if (gen !== gitLoadGen) return;
-            await gitRefreshStatus();
-            if (gen !== gitLoadGen) return;
-            await gitLoadIdentity();
-            if (gen !== gitLoadGen) return;
+            if (results[0].status === 'rejected') {
+                if (gitDetailArea) {
+                    gitDetailArea.innerHTML = `<div class="git-empty-state">
+                        <div class="git-empty-hint">读取提交历史失败</div>
+                        <div class="git-empty-sub">${gitEscapeHtml(gitErr(results[0].reason))}</div>
+                    </div>`;
+                }
+                return;
+            }
 
             if (gitCommits.length === 0) {
                 gitRenderHistory();
@@ -44497,7 +44552,11 @@ kanban-plugin: basic
             const target = keepSelection && gitActiveOid && typeof gitCommitLookup[gitActiveOid] === 'number'
                 ? gitActiveOid
                 : gitCommits[0].oid;
-            await gitSelectCommit(target, { autoOpenFile: true });
+            // 详情与首个文件 diff 放后台：Monaco 首次加载较慢，不应阻塞首屏
+            gitSelectCommit(target, { autoOpenFile: true }).catch((e) => {
+                console.warn('[git] 提交详情加载失败', e);
+            });
+            console.info(`[git] 首屏就绪 ${Math.round(performance.now() - t0)}ms`);
         }
 
         async function gitLoadHistory({ reset = false, gen } = {}) {
@@ -45329,8 +45388,8 @@ kanban-plugin: basic
             const missing = !gitIdentity.name || !gitIdentity.email;
             if (gitIdentityHint) {
                 gitIdentityHint.textContent = missing
-                    ? '未配置提交身份：请填写姓名与邮箱并保存（写入仓库级 git config）'
-                    : `以 ${gitIdentity.name} <${gitIdentity.email}> 提交`;
+                    ? '未配置提交身份：请 `git config` 配置'
+                    : `${gitIdentity.name} <${gitIdentity.email}>`;
                 gitIdentityHint.classList.toggle('warn', missing);
             }
             if (gitIdentityRow) gitIdentityRow.style.display = missing ? '' : 'none';
@@ -45454,9 +45513,11 @@ kanban-plugin: basic
                 return;
             }
             try {
-                gitRemoteStatus = await window.__TAURI__.core.invoke('git_remote_status', { dir: gitRepoDir });
+                // 直接复用 parse_refs（内含 remote/upstream/ahead/behind），少一次 IPC 与一轮重复 git 查询
+                const refs = await gitApi().parseRefs(gitRepoDir);
+                gitApplyRefs(refs);
             } catch (e) {
-                console.warn('[git] 读取远端状态失败', e);
+                console.warn('[git] 刷新远端状态失败', e);
                 gitRemoteStatus = null;
             }
             gitUpdateRepoInfo();
@@ -45567,13 +45628,17 @@ kanban-plugin: basic
         }
 
         async function openGitPageCore(fileFilter = null) {
-            await switchToView(gitRecordsContainer, 'flex');
+            const tEnter = performance.now();
             const loading = document.getElementById('git-loading');
             const main = document.getElementById('git-main');
             if (!loading || !main) return;
+            // 先显示 loading 再做视图切换/模块清理，避免切换空窗期看起来像“卡住”
             main.style.display = 'none';
             loading.style.display = 'flex';
             loading.innerHTML = `<div class="raw-spinner"></div><span style="color:var(--color-text-secondary);font-size:12px">正在读取仓库…</span>`;
+
+            await switchToView(gitRecordsContainer, 'flex');
+            console.info(`[git] switchToView ${Math.round(performance.now() - tEnter)}ms`);
             // 让 loading 有机会渲染
             await new Promise((r) => setTimeout(r, 16));
 
@@ -45599,6 +45664,8 @@ kanban-plugin: basic
                 gitApplySavedSplits();
                 // 布局从 display:none 变为可见后，轨道图需要按真实视口重画一次
                 gitScheduleGraphPaint();
+                // 后台预热 Monaco：首屏不等待它，用户点开文件时通常已就绪
+                initMonacoEditor().catch(() => { });
             } catch (e) {
                 gitViewActive = false;
                 main.style.display = 'none';

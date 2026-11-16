@@ -37,6 +37,14 @@ pub struct RefsInfo {
     pub current_branch: String,
     /// HEAD 是否处于游离状态
     pub detached: bool,
+    /// 首选远程名（优先 origin）
+    pub remote: Option<String>,
+    /// 当前分支上游（如 origin/main）
+    pub upstream: Option<String>,
+    /// 本地领先上游的提交数
+    pub ahead: u32,
+    /// 本地落后上游的提交数
+    pub behind: u32,
 }
 
 #[derive(Serialize, Clone)]
