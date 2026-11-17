@@ -161,7 +161,7 @@ where
 /// 无 GPU 环境（虚拟机、无驱动、远程桌面等）下检索功能仍可用，仅精排速度下降。
 #[cfg(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64")))]
 fn create_session(model_path: &Path) -> Result<SessionType, String> {
-    let mut builder = ort::session::Session::builder()
+    let mut builder = ort::session::Session::builder(crate::core::embedding::ort_environment()?)
         .map_err(|e| format!("创建 ONNX Runtime 配置失败: {}", e))?;
 
     #[cfg(target_os = "windows")]
@@ -185,7 +185,7 @@ fn create_session(model_path: &Path) -> Result<SessionType, String> {
         }
         Err(gpu_err) => {
             log::warn!("[reranker] GPU 执行提供者初始化失败，回退 CPU: {}", gpu_err);
-            ort::session::Session::builder()
+            ort::session::Session::builder(crate::core::embedding::ort_environment()?)
                 .map_err(|e| format!("创建 ONNX Runtime 配置失败（CPU 回退）: {}", e))?
                 .commit_from_file(model_path)
                 .map_err(|e| format!("加载 ONNX 模型失败（CPU 回退后仍失败）: {}", e))

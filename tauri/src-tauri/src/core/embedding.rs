@@ -200,10 +200,29 @@ fn create_session(model_path: &Path) -> Result<SessionType, String> {
     Ok(model)
 }
 
+/// 全局 ONNX Runtime Environment（rc.14+ 要求 Session::builder(&Environment)；
+/// 每个进程只允许一个 Environment，embedding 与 rerank 共用）。
+#[cfg(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64")))]
+static ORT_ENV: OnceLock<ort::environment::Environment> = OnceLock::new();
+
+#[cfg(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64")))]
+pub(crate) fn ort_environment() -> Result<&'static ort::environment::Environment, String> {
+    if let Some(env) = ORT_ENV.get() {
+        return Ok(env);
+    }
+    let env = ort::init()
+        .build()
+        .map_err(|e| format!("初始化 ONNX Runtime 环境失败: {}", e))?;
+    let _ = ORT_ENV.set(env);
+    ORT_ENV
+        .get()
+        .ok_or_else(|| "ONNX Runtime 环境初始化失败".to_string())
+}
+
 /// 创建原生 ONNX Runtime Session（Windows / macOS Apple Silicon GPU 后端）。
 #[cfg(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64")))]
 fn create_session(model_path: &Path) -> Result<SessionType, String> {
-    let mut builder = ort::session::Session::builder()
+    let mut builder = ort::session::Session::builder(ort_environment()?)
         .map_err(|e| format!("创建 ONNX Runtime 配置失败: {}", e))?;
 
     // Windows：DirectML GPU 加速
