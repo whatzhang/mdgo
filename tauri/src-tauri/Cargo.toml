@@ -146,7 +146,7 @@ anyhow = "1.0.104"
 # ─── ONNX Runtime / 推理引擎 按平台选择 ───
 # Windows：原生 ONNX Runtime + DirectML GPU
 [target.'cfg(target_os = "windows")'.dependencies]
-ort = { version = "2.0.0-rc.11", features = ["ndarray", "directml"] }
+ort = { version = "2.0.0-rc.14", features = ["ndarray", "directml"] }
 # Windows 注册表读取（GPU 静态信息：名称/显存，替代 PowerShell 子进程）
 winreg = "0.55"
 # Windows 性能计数器 PDH（GPU 使用率/显存采集，进程内，替代 PowerShell 子进程）
@@ -154,7 +154,7 @@ windows-sys = { version = "0.61.2", features = ["Win32_System_Performance", "Win
 
 # macOS Apple Silicon：原生 ONNX Runtime + CoreML GPU
 [target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
-ort = { version = "2.0.0-rc.11", features = ["ndarray", "coreml"] }
+ort = { version = "2.0.0-rc.14", features = ["ndarray", "coreml"] }
 
 # Intel Mac / Linux：tract-onnx 直接使用
 [target.'cfg(not(any(target_os = "windows", all(target_os = "macos", target_arch = "aarch64"))))'.dependencies]
