@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ===== 文档库分析页（行为分析）· 图表与 KPI 渲染 =====
  *
  * 【职责】把 `.mdgo/mdgo.db` 里的 `usage_daily / usage_hourly / usage_file_daily`
@@ -22,11 +22,19 @@
         delete: '#E5484D',
         ai: '#7C5CFF',
         create: '#22A06B',
-        axis: '#8A929E',
+        axis: '#5B6472',
         split: '#EEF0F3',
         text: '#1F2329',
         sub: '#5B6472',
     };
+
+    // 图表字号：以 rem 计算、12px 为可读下限（窄屏根字号 14px 时仍保持 12px）
+    const ROOT_FONT_PX = (typeof window !== 'undefined' && window.getComputedStyle)
+        ? (parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16)
+        : 16;
+    const CHART_FS = Math.max(12, Math.round(ROOT_FONT_PX * 0.75));
+    const CHART_FS_LG = Math.max(18, Math.round(ROOT_FONT_PX * 1.125));
+
     const DIR_COLORS = ['#2F6BFF', '#12A5A5', '#7C5CFF', '#F2994A', '#22A06B', '#E5484D', '#9AA4B2'];
 
     const state = {
@@ -201,7 +209,7 @@
                 backgroundColor: 'rgba(255,255,255,0.98)',
                 borderColor: '#E6E8EC',
                 borderWidth: 1,
-                textStyle: { color: COLOR.text, fontSize: 11 },
+                textStyle: { color: COLOR.text, fontSize: CHART_FS },
                 extraCssText: 'box-shadow:0 4px 16px rgba(0,0,0,.08);border-radius:8px;',
             },
             grid: { left: 8, right: 12, top: 34, bottom: 6, containLabel: true },
@@ -215,14 +223,14 @@
             data: data,
             axisTick: { show: false },
             axisLine: { lineStyle: { color: COLOR.split } },
-            axisLabel: { color: COLOR.axis, fontSize: 10 },
+            axisLabel: { color: COLOR.axis, fontSize: CHART_FS },
         }, extra || {});
     }
 
     function valueAxis(extra) {
         return Object.assign({
             type: 'value',
-            axisLabel: { color: COLOR.axis, fontSize: 10 },
+            axisLabel: { color: COLOR.axis, fontSize: CHART_FS },
             splitLine: { lineStyle: { color: COLOR.split } },
         }, extra || {});
     }
@@ -476,7 +484,7 @@
         const hasData = rows.some((r) => r.view > 0 || r.edits > 0 || r.opens > 0);
         setEmpty('ba-trend-chart', hasData ? '' : '该区间暂无浏览/编辑记录');
         chart.setOption(baseOption({
-            legend: { top: 2, right: 4, itemWidth: 10, itemHeight: 8, textStyle: { color: COLOR.sub, fontSize: 10 } },
+            legend: { top: 2, right: 4, itemWidth: 10, itemHeight: 8, textStyle: { color: COLOR.sub, fontSize: CHART_FS } },
             tooltip: Object.assign({}, baseOption().tooltip, {
                 trigger: 'axis',
                 formatter: (ps) => {
@@ -488,8 +496,9 @@
             grid: { left: 8, right: 14, top: 34, bottom: 4, containLabel: true },
             xAxis: categoryAxis(rows.map((r) => r.label)),
             yAxis: [
-                valueAxis({ name: '分钟', nameTextStyle: { color: COLOR.axis, fontSize: 10 } }),
-                valueAxis({ name: '编辑', nameTextStyle: { color: COLOR.axis, fontSize: 10 }, splitLine: { show: false } }),
+                valueAxis({ name: '分钟', nameTextStyle: { color: COLOR.axis, fontSize: CHART_FS } }),
+                // 右侧「编辑次数」已由 legend 表达，不再重复渲染轴名，避免与图例重叠
+                valueAxis({ splitLine: { show: false } }),
             ],
             series: [
                 {
@@ -542,11 +551,11 @@
         const total = series.reduce((sum, s) => sum + s.data.reduce((a, b) => a + b, 0), 0);
         setEmpty('ba-hourly-chart', total > 0 ? '' : '该区间暂无操作记录');
         chart.setOption(baseOption({
-            legend: { top: 2, right: 4, itemWidth: 10, itemHeight: 8, textStyle: { color: COLOR.sub, fontSize: 10 } },
+            legend: { top: 2, right: 4, itemWidth: 10, itemHeight: 8, textStyle: { color: COLOR.sub, fontSize: CHART_FS } },
             tooltip: Object.assign({}, baseOption().tooltip, { trigger: 'axis', axisPointer: { type: 'shadow' } }),
             grid: { left: 8, right: 12, top: 34, bottom: 4, containLabel: true },
-            xAxis: categoryAxis(Array.from({ length: 24 }, (_, i) => i + '时'), { axisLabel: { color: COLOR.axis, fontSize: 10, interval: 2 } }),
-            yAxis: valueAxis({ name: '次数', nameTextStyle: { color: COLOR.axis, fontSize: 10 } }),
+            xAxis: categoryAxis(Array.from({ length: 24 }, (_, i) => i + '时'), { axisLabel: { color: COLOR.axis, fontSize: CHART_FS, interval: 3 } }),
+            yAxis: valueAxis({ name: '次数', nameTextStyle: { color: COLOR.axis, fontSize: CHART_FS } }),
             series,
         }), true);
     }
@@ -584,9 +593,9 @@
                         '<br/>打开次数：' + (r.opens || 0) + ' 次<br/>编辑次数：' + (r.edits || 0) + ' 次</div>';
                 },
             }),
-            xAxis: valueAxis({ name: metric === 'opens' ? '次数' : '分钟', nameTextStyle: { color: COLOR.axis, fontSize: 10 } }),
+            xAxis: valueAxis({ name: metric === 'opens' ? '次数' : '分钟', nameTextStyle: { color: COLOR.axis, fontSize: CHART_FS } }),
             yAxis: categoryAxis(names.slice().reverse(), {
-                axisLabel: { color: COLOR.sub, fontSize: 10, width: 96, overflow: 'truncate' },
+                axisLabel: { color: COLOR.sub, fontSize: CHART_FS, width: CHART_FS * 8, overflow: 'truncate' },
                 axisLine: { show: false },
             }),
             series: [{
@@ -597,7 +606,7 @@
                 label: {
                     show: true,
                     position: 'right',
-                    fontSize: 10,
+                    fontSize: CHART_FS,
                     color: COLOR.sub,
                     formatter: (p) => (metric === 'opens' ? p.value + ' 次' : p.value + ' 分'),
                 },
@@ -648,7 +657,7 @@
                 left: 4,
                 right: 4,
                 bottom: 4,
-                label: { fontSize: 10, color: '#fff', formatter: (p) => p.name + '\n' + p.value + ' 分' },
+                label: { fontSize: CHART_FS, color: '#fff', formatter: (p) => p.name + '\n' + p.value + ' 分' },
                 itemStyle: { borderColor: '#fff', borderWidth: 2, gapWidth: 2 },
                 data,
             }],
@@ -684,9 +693,9 @@
         chart.setOption(baseOption({
             tooltip: Object.assign({}, baseOption().tooltip, {
                 trigger: 'item',
-                formatter: (p) => p.name + '：' + p.value + ' 个（' + pct(p.value, sum) + '）',
+                formatter: (p) => '<div style="font-size: 12px; line-height: 1.6;">'+ p.name + '：' + p.value + ' 个（' + pct(p.value, sum) + '）</div>',
             }),
-            legend: { bottom: 0, left: 'center', itemWidth: 8, itemHeight: 8, textStyle: { color: COLOR.sub, fontSize: 10 } },
+            legend: { bottom: 0, left: 'center', itemWidth: 8, itemHeight: 8, textStyle: { color: COLOR.sub, fontSize: CHART_FS } },
             series: [{
                 type: 'pie',
                 radius: ['48%', '70%'],
@@ -700,12 +709,12 @@
                 type: 'text',
                 left: 'center',
                 top: '38%',
-                style: { text: String(total || 0), fontSize: 18, fontWeight: 600, fill: COLOR.text, textAlign: 'center' },
+                style: { text: String(total || 0), fontSize: CHART_FS_LG, fontWeight: 600, fill: COLOR.text, textAlign: 'center' },
             }, {
                 type: 'text',
                 left: 'center',
                 top: '47%',
-                style: { text: '文件总数', fontSize: 10, fill: COLOR.axis, textAlign: 'center' },
+                style: { text: '文件总数', fontSize: CHART_FS, fill: COLOR.axis, textAlign: 'center' },
             }],
         }), true);
     }
@@ -726,11 +735,11 @@
         setEmpty('ba-scatter-chart', points.length ? '' : '该区间暂无可对比的文件');
         chart.setOption(baseOption({
             tooltip: Object.assign({}, baseOption().tooltip, {
-                formatter: (p) => '<b>' + esc(p.value[3]) + '</b><br/>浏览：' + p.value[0] + ' 分钟<br/>编辑：' + p.value[1] + ' 次<br/>打开：' + p.value[2] + ' 次',
+                formatter: (p) => '<div style="font-size: 12px; line-height: 1.6;"><b>' + esc(p.value[3]) + '</b><br/>浏览：' + p.value[0] + ' 分钟<br/>编辑：' + p.value[1] + ' 次<br/>打开：' + p.value[2] + ' 次</div>',
             }),
             grid: { left: 8, right: 16, top: 30, bottom: 4, containLabel: true },
-            xAxis: valueAxis({ name: '浏览(分钟)', nameTextStyle: { color: COLOR.axis, fontSize: 10 }, scale: true }),
-            yAxis: valueAxis({ name: '编辑(次)', nameTextStyle: { color: COLOR.axis, fontSize: 10 }, scale: true }),
+            xAxis: valueAxis({ name: '浏览(分钟)', nameTextStyle: { color: COLOR.axis, fontSize: CHART_FS }, scale: true }),
+            yAxis: valueAxis({ name: '编辑(次)', nameTextStyle: { color: COLOR.axis, fontSize: CHART_FS }, scale: true }),
             series: [{
                 type: 'scatter',
                 symbolSize: (v) => Math.min(18, 7 + (Number(v[2]) || 0)),
@@ -852,3 +861,5 @@
         rangeFor,
     };
 })();
+
+

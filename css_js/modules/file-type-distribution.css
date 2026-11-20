@@ -1,0 +1,566 @@
+﻿/* ===== 文件类型分布视图（v2：KPI + Treemap + 排行 + 明细） ===== */
+
+/* 宿主 #content-common-container 默认是居中 flex；本视图改为普通块级容器，
+   避免 flex 居中留下左右空白，并让页面稳定占满内容区。 */
+#content-common-container.ftd-active {
+    display: block;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    scrollbar-width: none;
+}
+
+#content-common-container.ftd-active::-webkit-scrollbar {
+    display: none;
+}
+
+/* 文件类型页不需要 Markdown 目录，避免右侧 17% 宽度被 TOC 占走 */
+#content-common-container.ftd-active ~ #toc-container,
+#content-common-container.ftd-active ~ #toc-toggle-btn {
+    display: none !important;
+}
+
+.ftd-page {
+    --ftd-fs-xs: max(12px, 0.75rem);
+    --ftd-fs-sm: max(13px, 0.8125rem);
+    --ftd-fs-md: max(14px, 0.875rem);
+    --ftd-fs-title: max(16px, 1rem);
+    --ftd-muted: #5b6472;
+    --ftd-soft: #667085;
+    --ftd-border: var(--color-border-light, #e9ebef);
+    --ftd-shadow: 0 1px 2px rgba(16, 24, 40, 0.03);
+    display: flex;
+    flex-direction: column;
+    gap: 0.875rem;
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    min-height: 0;
+    margin: 0;
+    padding: 0.875rem;
+    box-sizing: border-box;
+    overflow-y: auto;
+    scrollbar-width: none;
+}
+
+.ftd-page::-webkit-scrollbar {
+    display: none;
+}
+
+/* 宿主 #content-common-container 是居中 flex；让本视图占满而不是内容宽度 */
+#content-common-container > .ftd-page {
+    align-self: stretch;
+    width: 100%;
+}
+
+[data-theme="dark"] .ftd-page,
+body.dark .ftd-page {
+    --ftd-muted: #b6c0cc;
+    --ftd-soft: #9aa4b2;
+}
+
+.ftd-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.875rem;
+    flex-wrap: wrap;
+}
+
+.ftd-title {
+    font-size: var(--ftd-fs-title);
+    font-weight: 600;
+    color: var(--color-text, #1f2329);
+}
+
+.ftd-sub {
+    margin-top: 0.375rem;
+    font-size: var(--ftd-fs-xs);
+    line-height: 1.5;
+    color: var(--ftd-muted);
+}
+
+.ftd-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.ftd-seg {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.125rem;
+    padding: 0.125rem;
+    border-radius: 999px;
+    background: var(--color-bg-secondary, #f2f4f7);
+}
+
+.ftd-seg button {
+    border: 0;
+    background: transparent;
+    color: var(--ftd-muted);
+    font: inherit;
+    font-size: var(--ftd-fs-xs);
+    line-height: 1;
+    padding: 0.4375rem 0.75rem;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+
+.ftd-seg button.active {
+    background: var(--color-bg, #fff);
+    color: var(--color-primary, #2f6bff);
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08);
+}
+
+.ftd-search {
+    position: relative;
+}
+
+.ftd-search input {
+    width: 13rem;
+    height: 1.875rem;
+    padding: 0 0.625rem 0 1.75rem;
+    border: 1px solid var(--ftd-border);
+    border-radius: 0.5rem;
+    background: var(--color-bg, #fff);
+    color: var(--color-text, #1f2329);
+    font: inherit;
+    font-size: var(--ftd-fs-xs);
+    outline: none;
+}
+
+.ftd-search input:focus {
+    border-color: var(--color-primary, #2f6bff);
+    box-shadow: 0 0 0 2px rgba(47, 107, 255, 0.12);
+}
+
+.ftd-search svg {
+    position: absolute;
+    left: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0.875rem;
+    height: 0.875rem;
+    color: var(--ftd-soft);
+}
+
+/* ── KPI ── */
+.ftd-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.ftd-kpi {
+    background: var(--color-bg, #fff);
+    border: 1px solid var(--ftd-border);
+    border-radius: 0.75rem;
+    padding: 0.75rem 0.875rem;
+    box-shadow: var(--ftd-shadow);
+    min-width: 0;
+}
+
+.ftd-kpi-label {
+    font-size: var(--ftd-fs-xs);
+    color: var(--ftd-muted);
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ftd-kpi-value {
+    margin-top: 0.375rem;
+    font-size: max(16px, 1rem);
+    font-weight: 600;
+    color: var(--color-text, #1f2329);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ftd-kpi-foot {
+    margin-top: 0.3125rem;
+    font-size: var(--ftd-fs-xs);
+    color: var(--ftd-soft);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ── 主区域 ── */
+.ftd-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1.9fr) minmax(17rem, 1fr);
+    gap: 0.875rem;
+    align-items: start;
+}
+
+.ftd-card {
+    background: var(--color-bg, #fff);
+    border: 1px solid var(--ftd-border);
+    border-radius: 0.75rem;
+    padding: 0.875rem 1rem;
+    box-shadow: var(--ftd-shadow);
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+.ftd-card-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.625rem;
+    flex-wrap: wrap;
+}
+
+.ftd-card-title {
+    font-size: var(--ftd-fs-md);
+    font-weight: 600;
+    color: var(--color-text, #1f2329);
+}
+
+.ftd-card-sub {
+    font-size: var(--ftd-fs-xs);
+    color: var(--ftd-soft);
+}
+
+.ftd-treemap-wrap {
+    position: relative;
+    height: 25rem;
+    min-height: 20rem;
+}
+
+.ftd-treemap {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    border-radius: 0.5rem;
+    background: var(--color-bg-secondary, #f7f8fa);
+}
+
+.ftd-treemap svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.ftd-treemap text {
+    pointer-events: none;
+    user-select: none;
+}
+
+.ftd-treemap .ftd-cell {
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+
+.ftd-treemap .ftd-cell:hover {
+    opacity: 0.86;
+}
+
+.ftd-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--ftd-soft);
+    font-size: var(--ftd-fs-xs);
+    text-align: center;
+    padding: 1rem;
+}
+
+/* ── 排行 ── */
+.ftd-rank {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.ftd-rank-row {
+    display: grid;
+    grid-template-columns: 1.25rem minmax(0, 1fr) auto;
+    gap: 0.5rem;
+    align-items: center;
+    padding: 0.25rem 0.375rem;
+    border-radius: 0.4375rem;
+    cursor: pointer;
+    outline: none;
+}
+
+.ftd-rank-row:hover,
+.ftd-rank-row:focus-visible {
+    background: var(--color-bg-secondary, #f7f8fa);
+}
+
+.ftd-rank-row.hover,
+.ftd-rank-row.selected {
+    background: rgba(47, 107, 255, 0.08);
+}
+
+.ftd-rank-index {
+    font-size: var(--ftd-fs-xs);
+    color: var(--ftd-soft);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.ftd-rank-main {
+    min-width: 0;
+}
+
+.ftd-rank-label {
+    display: flex;
+    align-items: baseline;
+    gap: 0.375rem;
+    font-size: var(--ftd-fs-xs);
+    color: var(--color-text, #1f2329);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ftd-rank-label b {
+    font-weight: 600;
+}
+
+.ftd-rank-label span {
+    color: var(--ftd-soft);
+    font-weight: 400;
+}
+
+.ftd-rank-track {
+    margin-top: 0.25rem;
+    height: 0.4375rem;
+    border-radius: 999px;
+    background: var(--color-bg-secondary, #f2f4f7);
+    overflow: hidden;
+}
+
+.ftd-rank-bar {
+    height: 100%;
+    border-radius: 999px;
+    min-width: 2px;
+    transition: width 0.25s ease;
+}
+
+.ftd-rank-value {
+    font-size: var(--ftd-fs-xs);
+    color: var(--ftd-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.ftd-rank-more {
+    align-self: flex-start;
+    border: 0;
+    background: transparent;
+    color: var(--color-primary, #2f6bff);
+    font: inherit;
+    font-size: var(--ftd-fs-xs);
+    padding: 0.25rem 0.375rem;
+    cursor: pointer;
+}
+
+/* ── 表格 ── */
+.ftd-table-card {
+    padding-bottom: 0.5rem;
+}
+
+.ftd-table-wrap {
+    overflow: auto;
+    max-height: 20rem;
+    border: 1px solid var(--ftd-border);
+    border-radius: 0.5rem;
+}
+
+.ftd-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--ftd-fs-sm);
+    color: var(--color-text, #1f2329);
+}
+
+.ftd-table th,
+.ftd-table td {
+    padding: 0.5rem 0.625rem;
+    text-align: left;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--ftd-border);
+}
+
+.ftd-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--color-bg-secondary, #f7f8fa);
+    color: var(--ftd-muted);
+    font-size: var(--ftd-fs-xs);
+    font-weight: 500;
+    cursor: pointer;
+    user-select: none;
+}
+
+.ftd-table th.sortable:hover {
+    color: var(--color-primary, #2f6bff);
+}
+
+.ftd-table tbody tr {
+    cursor: pointer;
+}
+
+.ftd-table tbody tr:hover {
+    background: var(--color-bg-secondary, #f7f8fa);
+}
+
+.ftd-table tbody tr.hover,
+.ftd-table tbody tr.selected {
+    background: rgba(47, 107, 255, 0.08);
+}
+
+.ftd-table th.num,
+.ftd-table td.num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.ftd-table .ftd-dot {
+    display: inline-block;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    margin-right: 0.375rem;
+    vertical-align: 0.0625rem;
+}
+
+/* ── 选中类型的文件列表 ── */
+.ftd-files {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.ftd-files-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.ftd-files-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+    gap: 0.375rem;
+    max-height: 16rem;
+    overflow: auto;
+}
+
+.ftd-file {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4375rem 0.5625rem;
+    border: 1px solid var(--ftd-border);
+    border-radius: 0.5rem;
+    cursor: pointer;
+    min-width: 0;
+    background: var(--color-bg, #fff);
+}
+
+.ftd-file:hover {
+    border-color: var(--color-primary, #2f6bff);
+    background: var(--color-bg-secondary, #f7f8fa);
+}
+
+.ftd-file-name {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--ftd-fs-xs);
+    color: var(--color-text, #1f2329);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ftd-file-size {
+    font-size: var(--ftd-fs-xs);
+    color: var(--ftd-soft);
+    font-variant-numeric: tabular-nums;
+}
+
+.ftd-link {
+    border: 0;
+    background: transparent;
+    color: var(--color-primary, #2f6bff);
+    font: inherit;
+    font-size: var(--ftd-fs-xs);
+    cursor: pointer;
+    padding: 0.125rem 0.25rem;
+}
+
+/* ── Tooltip ── */
+.ftd-tooltip {
+    position: fixed;
+    z-index: 9999;
+    display: none;
+    max-width: 18rem;
+    padding: 0.5625rem 0.6875rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--ftd-border);
+    background: var(--color-bg, #fff);
+    box-shadow: 0 6px 20px rgba(16, 24, 40, 0.14);
+    color: var(--color-text, #1f2329);
+    font-size: var(--ftd-fs-xs);
+    line-height: 1.6;
+    pointer-events: none;
+}
+
+.ftd-tooltip b {
+    font-weight: 600;
+}
+
+.ftd-tooltip .muted {
+    color: var(--ftd-soft);
+}
+
+/* ── 响应式 ── */
+@media (max-width: 73.75rem) {
+    .ftd-main {
+        grid-template-columns: 1fr;
+    }
+
+    .ftd-kpis {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .ftd-treemap-wrap {
+        height: 22rem;
+    }
+}
+
+@media (max-width: 56.25rem) {
+    .ftd-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .ftd-controls {
+        justify-content: flex-start;
+    }
+
+    .ftd-search input {
+        width: 100%;
+    }
+}
+
+
+
+

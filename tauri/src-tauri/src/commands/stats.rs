@@ -15,8 +15,8 @@ use tauri::State;
 
 use crate::AppState;
 
-/// 缓存 TTL（秒）
-const STATS_CACHE_TTL_SECS: u64 = 60 * 60;
+/// 缓存 TTL（秒）：统计需在 AI 使用后尽快反映到热力图，30s 足够挡住连续刷新
+const STATS_CACHE_TTL_SECS: u64 = 30;
 /// 默认统计范围（天）
 const DEFAULT_DAYS: u32 = 365;
 /// 一天毫秒数

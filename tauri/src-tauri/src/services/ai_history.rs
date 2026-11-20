@@ -115,6 +115,35 @@ impl AiHistoryStore {
             ",
         )
         .map_err(|e| format!("建表失败: {}", e))?;
+
+        // 兼容旧库：token 统计列是后加的，CREATE TABLE IF NOT EXISTS 不会补列；
+        // 缺列会让 stats_ai_usage 的聚合查询直接报错，热力图所有数值都变 0。
+        for (name, ddl) in [
+            (
+                "token_count",
+                "ALTER TABLE ai_history ADD COLUMN token_count INTEGER NOT NULL DEFAULT 0",
+            ),
+            (
+                "prompt_length",
+                "ALTER TABLE ai_history ADD COLUMN prompt_length INTEGER NOT NULL DEFAULT 0",
+            ),
+            (
+                "result_length",
+                "ALTER TABLE ai_history ADD COLUMN result_length INTEGER NOT NULL DEFAULT 0",
+            ),
+        ] {
+            let exists: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('ai_history') WHERE name = ?1",
+                    [name],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+            if exists == 0 {
+                conn.execute_batch(ddl)
+                    .map_err(|e| format!("补齐 ai_history.{} 列失败: {}", name, e))?;
+            }
+        }
         Ok(())
     }
 
@@ -326,7 +355,14 @@ impl AiHistoryStore {
                 .prepare_cached(
                     "SELECT strftime('%Y-%m-%d', created_at / 1000, 'unixepoch', 'localtime') as day,
                             COUNT(*) as cnt,
-                            COALESCE(SUM(CASE WHEN type != 'chat' THEN token_count ELSE 0 END), 0) as tk
+                            -- 有真实 token_count 用真实值；旧记录为 0 时按 prompt/result 长度估算兜底
+                            COALESCE(SUM(
+                                CASE WHEN type != 'chat' THEN
+                                    CASE WHEN token_count > 0 THEN token_count
+                                         ELSE CAST((COALESCE(prompt_length,0) + COALESCE(result_length,0)) / 2 AS INTEGER)
+                                    END
+                                ELSE 0 END
+                            ), 0) as tk
                      FROM ai_history
                      WHERE created_at >= ?1
                      GROUP BY day ORDER BY day ASC",

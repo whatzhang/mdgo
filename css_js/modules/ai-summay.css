@@ -204,8 +204,8 @@
 
 /* 头部「上次分析时间」：低调的小字，紧邻「重新分析」按钮 */
 .ai-summary-updated {
-    font-size: 0.6875rem;
-    color: var(--color-text-tertiary, #999);
+    font-size: max(12px, 0.75rem);
+    color: var(--color-text-secondary, #5b6472);
     margin-right: 0.5rem;
     white-space: nowrap;
 }

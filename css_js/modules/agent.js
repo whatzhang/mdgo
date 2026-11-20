@@ -988,6 +988,11 @@ async function sendRagQuery(text) {
                 const completionTokens = e.payload.completion_tokens || 0;
                 const cachedInputTokens = e.payload.cached_input_tokens || 0;
                 const cacheCreationInputTokens = e.payload.cache_creation_input_tokens || 0;
+                // 模型未上报 usage 时用内容长度估算兜底，避免会话/热力图 token 恒为 0
+                const usageTokens = promptTokens + completionTokens;
+                const tokenCount = usageTokens > 0
+                    ? usageTokens
+                    : (estimateTokenCount(text) + estimateTokenCount(fullContent));
                 const toolCallsSnapshot = _streamingToolCalls.slice();
                 let streamingDiv = _chatStreamingDiv;
                 // 降级路径均依赖此变量，不赋值会导致引用在保存/断联时丢失
@@ -1028,7 +1033,7 @@ async function sendRagQuery(text) {
                             sessionId: ragSessionId,
                             role: 'assistant',
                             content: fullContent,
-                            tokenCount: completionTokens,
+                            tokenCount,
                             toolCalls: JSON.stringify(toolCallsSnapshot),
                             thinking: getStreamingThinking(),
                         });
@@ -1066,7 +1071,7 @@ async function sendRagQuery(text) {
                                 result: fullContent,
                                 fileName: '',
                                 filePath: '',
-                                tokenCount: completionTokens || 0,
+                                tokenCount,
                             }).catch(e => console.warn('记录 AI 历史失败:', e));
                         }
                         // 会话列表刷新一次（含重命名检查；传快照 ragSessionId 防视图切换漂移）

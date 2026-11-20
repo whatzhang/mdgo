@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 
 <head>
@@ -3318,7 +3318,7 @@
         }
 
         .stat-value {
-            font-size: 1rem;
+            font-size: 1.125rem;
             font-weight: 700;
         }
 
@@ -13681,6 +13681,10 @@
             justify-content: center;
             justify-items: center;
         }
+        .file-name > .skill-tag-chip{
+             font-size: 13px;
+             padding: 0.125rem 0.5rem;
+        }
 
         .canvas-node>foreignObject .markdown-body {
             cursor: inherit;
@@ -14260,6 +14264,7 @@
     <link rel="stylesheet" href="./css_js/modules/ai-summay.css" />
     <link rel="stylesheet" href="./css_js/modules/global-search.css" />
     <link rel="stylesheet" href="./css_js/modules/behavior-analysis.css" />
+    <link rel="stylesheet" href="./css_js/modules/file-type-distribution.css" />
 </head>
 
 <body>
@@ -36904,7 +36909,8 @@ kanban-plugin: basic
                         fileName: fileName,
                         filePath: filePath,
                         date: dateStr,
-                        lastAccess: time
+                        lastAccess: time,
+                        tokenCount: estimateTokenCount(promptStr) + estimateTokenCount(processedResult)
                     });
                     recordOperation(fileName, filePath, OPERATION_TYPES.AI, time, item.name);
                     await showAIResultModal(id, item.name, processedResult, fileName, filePath);
@@ -42811,158 +42817,38 @@ kanban-plugin: basic
             nextBtn.disabled = shown >= total;
         }
 
-        function BubbleChart(data, {
-            label,
-            value = ([, y]) => y,
-            group,
-            width = 640,
-            height = width,
-            padding = 3,
-            margin = 1,
-            marginTop = margin,
-            marginRight = margin,
-            marginBottom = margin,
-            marginLeft = margin,
-            colors = d3.schemeTableau10,
-            fill = "#cccccc",
-            fillOpacity = 0.7,
-        } = {}) {
-            data = data.map(item => {
-                const raw = value(item);
-                let adjustedValue;
-                if (raw <= 20) {
-                    // 核心：低值区高区分度
-                    const exponent = 0.35;
-                    const normalized = raw / 20;
-                    const mapped = Math.pow(Math.max(normalized, 0), exponent);
-                    adjustedValue = 20 + mapped * 80; // 20 → 100
-                } else {
-                    // 高值区线性增长
-                    adjustedValue = 100 + (raw - 20) * 2.5;
-                }
-                return {
-                    ...item,
-                    value: Math.round(Math.min(300, adjustedValue))
-                };
-            });
-
-            const V = d3.map(data, d => d.value);
-            const G = group == null ? null : d3.map(data, group);
-            const I = d3.range(V.length).filter(i => V[i] > 0);
-            if (G) {
-                const gs = new d3.InternSet(I.map(i => G[i]));
-                var color = d3.scaleOrdinal(gs, colors);
-            }
-            const L = label == null ? null : d3.map(data, label);
-            const root = d3.pack()
-                .size([width - marginLeft - marginRight, height - marginTop - marginBottom])
-                .padding(padding)
-                (d3.hierarchy({ children: I }).sum(i => V[i]));
-            const svg = d3.create("svg")
-                .attr("width", width)
-                .attr("height", height)
-                .attr("viewBox", [-marginLeft, -marginTop, width, height])
-                .attr("style", "max-width: 100%; height: auto;")
-                .attr("fill", "#fff")
-                .attr("font-family", "sans-serif")
-                .attr("text-anchor", "middle");
-            const leaf = svg.selectAll("g")
-                .data(root.leaves())
-                .join("g")
-                .attr("transform", d => `translate(${d.x},${d.y})`);
-            leaf.append("circle")
-                .attr("r", d => d.r)
-                .attr("fill", G ? d => color(G[d.data]) : fill == null ? "none" : fill)
-                .attr("fill-opacity", fillOpacity);
-            if (L) {
-                leaf.append("clipPath")
-                    .attr("id", (d, i) => `cp-${i}`)
-                    .append("circle")
-                    .attr("r", d => d.r);
-                leaf.append("text")
-                    .attr("clip-path", (d, i) => `url(#cp-${i})`)
-                    .selectAll("tspan")
-                    .data(d => `${L[d.data]}`.split(/\n/g))
-                    .join("tspan")
-                    .attr("font-size", function () {
-                        const r = this.parentNode.__data__.r;
-                        return `${r / 48}rem`;
-                    })
-                    .attr("x", 0)
-                    .attr("y", (d, i, nodes) => `${i - nodes.length / 2 + 0.85}em`)
-                    .text(d => d);
-            }
-            return svg.node();
-        }
-
-        // 文件类型分布视图的缩放控制器引用（视图切换/重新打开时销毁，防事件泄漏）
-        let _fileTypePanZoom = null;
-
         async function openFileType(dirPath) {
-            await switchToView(contentCommonContainer, 'flex');
-            // 清理上一次视图（内容 + 缩放控制器，防重复打开堆积/事件残留）
-            if (_fileTypePanZoom) {
-                try { _fileTypePanZoom.destroy(); } catch (e) { /* ignore */ }
-                _fileTypePanZoom = null;
-            }
+            await switchToView(contentCommonContainer, 'block');
+            destroyFileType();
             contentCommonContainer.innerHTML = '';
-            var allFiles = _getFilesByDirPath(dirPath || '');
+            // 文件类型页不需要 Markdown 目录；显式隐藏，避免右侧 TOC 继续占 17% 宽度
+            const tocEl = document.getElementById('toc-container');
+            if (tocEl) tocEl.style.display = 'none';
+            const tocToggleEl = document.getElementById('toc-toggle-btn');
+            if (tocToggleEl) tocToggleEl.style.display = 'none';
+            const allFiles = _getFilesByDirPath(dirPath || '');
             if (allFiles.length === 0) {
                 showNotification(`目录下没有文件`, 'warning');
                 return;
             }
-            const cache = {}, data = [];
-            allFiles.forEach(({ ext }) => cache[ext] ? cache[ext].value++ : data.push(cache[ext] = { id: ext, value: 1 }));
-
-            const colors = [...new Set(data.map(d => d.id))].map((g, i) => getGraphGroupColor(i, 0));
-
-            const svg = BubbleChart(data, {
-                padding: 10, margin: 20,
-                label: d => `${d.id}\n${d.value}`,
-                value: d => d.value,
-                group: d => d.id,
-                colors,
-                fillOpacity: 0.85
+            if (!window.FileTypeDistribution) {
+                showNotification('文件类型分布组件未加载', 'error');
+                return;
+            }
+            window.FileTypeDistribution.mount(contentCommonContainer, allFiles, {
+                categoryOf: (ext) => (_EXT_TYPE_MAP[String(ext || '').toLowerCase()] || '其他'),
+                onOpenFile: (file) => {
+                    if (file && file.path && typeof openFileByPath === 'function') {
+                        openFileByPath(file.path).catch((e) => console.warn('打开文件失败:', e));
+                    }
+                },
             });
-
-            const div = document.createElement('div');
-            Object.assign(div.style, {
-                position: 'relative', height: '100%', width: '100%',
-                overflow: 'hidden', cursor: 'grab',
-            });
-            const wrap = document.createElement('div');
-            // 注意：不设 willChange:transform（会强制合成层把 SVG 光栅化到位图，缩放变模糊）
-            Object.assign(wrap.style, { position: 'absolute', left: '0', top: '0' });
-            wrap.appendChild(svg);
-            div.appendChild(wrap);
-            contentCommonContainer.appendChild(div);
-
-            const panZoom = createPanZoomController({
-                container: div,
-                target: wrap,
-                initialZoom: 100,
-                minZoom: 20,
-                maxZoom: 400,
-                wheelStep: 10,
-                panOnlyZoomed: false, // 任意缩放级别均可拖拽平移
-            });
-            _fileTypePanZoom = panZoom;
-
-            // 初始自适应：图（640×640）按容器尺寸等比缩小后居中显示
-            const cw = div.clientWidth || div.offsetWidth;
-            const ch = div.clientHeight || div.offsetHeight;
-            const SW = svg.width.baseVal.value || 640;
-            const SH = svg.height.baseVal.value || 640;
-            const fitScale = Math.min(cw / SW, ch / SH, 1);
-            panZoom.setZoom(Math.round(fitScale * 100));
-            panZoom.setPan(Math.max(0, (cw - SW * fitScale) / 2), Math.max(0, (ch - SH * fitScale) / 2));
         }
 
-        /** 销毁文件类型分布视图的缩放控制器（视图切换清理用） */
+        /** 销毁文件类型分布视图（视图切换清理用） */
         function destroyFileType() {
-            if (_fileTypePanZoom) {
-                try { _fileTypePanZoom.destroy(); } catch (e) { /* ignore */ }
-                _fileTypePanZoom = null;
+            if (window.FileTypeDistribution) {
+                try { window.FileTypeDistribution.destroy(); } catch (e) { /* ignore */ }
             }
         }
 
@@ -48450,7 +48336,7 @@ kanban-plugin: basic
                     sessionId: sid,
                     role: 'assistant',
                     content: partialContent,
-                    tokenCount: 0,
+                    tokenCount: estimateTokenCount(partialContent),
                     toolCalls: JSON.stringify(_streamingToolCalls),
                 });
                 // 同时保存 RAG sources（使用真实 message_id）
@@ -50328,8 +50214,13 @@ kanban-plugin: basic
                         // 真实 token 消耗 = 输入(prompt) + 输出(completion)：
                         // 此前只记 completion_tokens，导致会话 token_usage / dashboard token 统计
                         // 系统性低估（丢弃了真实输入 token）。user 消息仍为前端估算，此处用模型
-                        // 上报的真实值补足主导部分。
-                        const tokenCount = usageData ? ((usageData.prompt_tokens || 0) + (usageData.completion_tokens || 0)) : 0;
+                        // 上报的真实值补足主导部分；模型未上报 usage 时用内容长度估算兜底。
+                        const usageTokens = usageData
+                            ? ((usageData.prompt_tokens || 0) + (usageData.completion_tokens || 0))
+                            : 0;
+                        const tokenCount = usageTokens > 0
+                            ? usageTokens
+                            : (estimateTokenCount(text) + estimateTokenCount(fullContent));
                         // 时间线收尾：固化 thinking 缓冲 + tool 状态兜底（result 丢失时避免永久 running）
                         if (streamingDiv && streamingDiv._timeline) {
                             const tl = streamingDiv._timeline;
@@ -52767,7 +52658,6 @@ kanban-plugin: basic
             container.style.padding = '0';
             container.style.background = 'transparent';
             container.style.userSelect = 'text';
-            container.style.zoom = '0.9';
             container.innerHTML = markedMd(parseObsidianToHTML(text));
             return container.outerHTML;
         }
@@ -53006,17 +52896,16 @@ kanban-plugin: basic
             if (!heatmapContainer) return;
             const year = new Date().getFullYear();
             let stats = null;
-            if (_statsData) stats = _statsData;
-            else{
-                try {
-                    const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
-                    if (invoke && currentRootPath) {
-                        stats = await invoke('stats_ai_usage', { dirPath: currentRootPath, days: 365 });
-                        _statsData = stats;
-                    }
-                } catch (e) {
-                    console.warn('[mdgo] AI 用量统计获取失败:', e);
+            // 每次进 dashboard 都重新取统计：后端有 30s 缓存，前端不再长期缓存，
+            // 否则 AI 使用后 token 数会一直是上次的旧值（常见为 0）。
+            try {
+                const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+                if (invoke && currentRootPath) {
+                    stats = await invoke('stats_ai_usage', { dirPath: currentRootPath, days: 365 });
+                    _statsData = stats;
                 }
+            } catch (e) {
+                console.warn('[mdgo] AI 用量统计获取失败:', e);
             }
             // 2. 初始化图表
             if (dashboardCharts.aiHeatmapChart) dashboardCharts.aiHeatmapChart.dispose();
@@ -53403,9 +53292,11 @@ kanban-plugin: basic
     <script src="./css_js/modules/frontend-bridge.js"></script>
     <script src="./css_js/modules/schedule.js"></script>
     <script src="./css_js/modules/ai-summay.js"></script>
+    <script src="./css_js/modules/file-type-distribution.js"></script>
     <script src="./css_js/modules/doc-qa.js"></script>
     <script src="./css_js/modules/backlinks.js"></script>
     <script src="./css_js/modules/global-search.js"></script>
     <div id="agent-global-task-bar" class="agent-global-task-bar" style="display:none;"></div>
     <script src="./css_js/modules/behavior-analysis.js"></script>
 </body>
+

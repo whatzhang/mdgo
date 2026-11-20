@@ -82,7 +82,12 @@ impl ChatStore {
                 .prepare_cached(
                     "SELECT strftime('%Y-%m-%d', created_at / 1000, 'unixepoch', 'localtime') as day,
                             COUNT(*) as cnt,
-                            COALESCE(SUM(token_count), 0) as tk
+                            -- 有真实 token_count 用真实值；旧记录为 0 时按正文长度估算兜底
+                            COALESCE(SUM(
+                                CASE WHEN token_count > 0 THEN token_count
+                                     WHEN role = 'assistant' THEN CAST(length(content) / 2 AS INTEGER)
+                                     ELSE 0 END
+                            ), 0) as tk
                      FROM chat_messages WHERE created_at >= ?1
                      GROUP BY day ORDER BY day ASC",
                 )

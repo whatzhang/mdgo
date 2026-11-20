@@ -9,9 +9,14 @@ pub async fn ai_history_add(
     item: crate::services::ai_history::AddAiHistoryRequest,
 ) -> Result<crate::services::ai_history::AiHistoryItem, String> {
     let store = state.get_ai_history_store(&dir_path)?;
-    tokio::task::spawn_blocking(move || crate::core::db::with_busy_retry(3, || store.add(&item)))
+    let result = tokio::task::spawn_blocking(move || crate::core::db::with_busy_retry(3, || store.add(&item)))
         .await
-        .map_err(|e| format!("任务执行失败: {}", e))?
+        .map_err(|e| format!("任务执行失败: {}", e))?;
+    // AI 历史新增后清空统计缓存，避免 dashboard 热力图最多 30s 内看到旧 token 数
+    if let Ok(mut cache) = state.ai_stats_cache.inner.lock() {
+        cache.clear();
+    }
+    result
 }
 
 #[tauri::command]

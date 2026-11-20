@@ -384,13 +384,18 @@ pub async fn chat_message_save(
     thinking: Option<String>,
 ) -> Result<ChatMessage, String> {
     let store = state.get_chat_store(&dir_path)?;
-    tokio::task::spawn_blocking(move || {
+    let result = tokio::task::spawn_blocking(move || {
         crate::core::db::with_busy_retry(3, || {
             store.save_message(&session_id, &role, &content, token_count, tool_calls.as_deref(), thinking.as_deref())
         })
     })
     .await
-    .map_err(|e| format!("任务执行失败: {}", e))?
+    .map_err(|e| format!("任务执行失败: {}", e))?;
+    // 消息落库后清空 AI 统计缓存，dashboard 热力图可立即看到新 token
+    if let Ok(mut cache) = state.ai_stats_cache.inner.lock() {
+        cache.clear();
+    }
+    result
 }
 
 /// 清空会话消息：同时从 SQLite 和对话索引中删除
