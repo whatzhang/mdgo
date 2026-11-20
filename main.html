@@ -11433,10 +11433,6 @@
             transition: all 0.2s ease;
         }
 
-        .git-graph-row:hover .git-graph-cell-info {
-            transform: scale(1.03);
-        }
-
         /* ── Commit Hover Detail Panel ── */
         .git-commit-hover-panel {
             display: none;
@@ -43757,7 +43753,7 @@ kanban-plugin: basic
                     <div class="git-diff-header-nav">
                         ${scopeTabs || ''}
                         <button class="git-diff-nav-btn" data-git-diff-mode="toggle"
-                            title="${gitDiffSideBySide ? '切换为行内对比' : '切换为左右视图'}">${gitDiffSideBySide ? '行对比' : '左右视图'}</button>
+                            title="${gitDiffSideBySide ? '切换为行内对比' : '切换为左右视图'}">${gitDiffSideBySide ? '行视图' : '左右视图'}</button>
                         <button class="git-diff-nav-btn" data-git-nav="prev" disabled>上一个</button>
                         <span class="git-diff-nav-indicator" id="gitDiffNavIndicator">0/0</span>
                         <button class="git-diff-nav-btn" data-git-nav="next" disabled>下一个</button>
@@ -43808,7 +43804,7 @@ kanban-plugin: basic
 
         /**
          * 切换 diff 视图：行内（inline） <-> 左右（side-by-side）
-         * 按钮文案表示“下一个动作”：行内时显示「左右视图」，左右时显示「行对比」。
+         * 按钮文案表示“下一个动作”：行内时显示「左右视图」，左右时显示「行视图」。
          * 选择在本次会话内跨文件保持。
          */
         function gitToggleDiffMode() {
@@ -43820,7 +43816,7 @@ kanban-plugin: basic
             });
             const btn = gitDiffContainer ? gitDiffContainer.querySelector('[data-git-diff-mode]') : null;
             if (btn) {
-                btn.textContent = gitDiffSideBySide ? '行对比' : '左右视图';
+                btn.textContent = gitDiffSideBySide ? '行视图' : '左右视图';
                 btn.title = gitDiffSideBySide ? '切换为行内对比' : '切换为左右视图';
             }
             try { gitDiffEditor.layout(); } catch (e) { }

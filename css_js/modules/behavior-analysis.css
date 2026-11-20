@@ -294,9 +294,9 @@
 }
 
 .ba-conclusion-tag {
-    font-size: 0.625rem;
+    font-size: 0.75rem;
     color: var(--color-text-secondary, #5b6472);
-    margin-bottom: 0.2rem;
+    margin-bottom: 0.4rem;
 }
 
 .ba-conclusion-text {

@@ -482,7 +482,7 @@
                 formatter: (ps) => {
                     if (!ps || !ps.length) return '';
                     const r = rows[ps[0].dataIndex] || {};
-                    return '<b>' + esc(r.date) + '</b><br/>浏览时长：' + r.view + ' 分钟<br/>打开次数：' + r.opens + ' 次<br/>编辑次数：' + r.edits + ' 次';
+                    return '<div style="font-size: 12px; line-height: 1.6;"><b>' + esc(r.date) + '</b><br/>浏览时长：' + r.view + ' 分钟<br/>打开次数：' + r.opens + ' 次<br/>编辑次数：' + r.edits + ' 次</div>';
                 },
             }),
             grid: { left: 8, right: 14, top: 34, bottom: 4, containLabel: true },
@@ -580,8 +580,8 @@
                 formatter: (ps) => {
                     if (!ps || !ps.length) return '';
                     const r = rows[ps[0].dataIndex] || {};
-                    return '<b>' + esc(r.path) + '</b><br/>浏览时长：' + fmtDuration(r.view_ms) +
-                        '<br/>打开次数：' + (r.opens || 0) + ' 次<br/>编辑次数：' + (r.edits || 0) + ' 次';
+                    return '<div style="font-size: 12px; line-height: 1.6;"><b>' + esc(r.path) + '</b><br/>浏览时长：' + fmtDuration(r.view_ms) +
+                        '<br/>打开次数：' + (r.opens || 0) + ' 次<br/>编辑次数：' + (r.edits || 0) + ' 次</div>';
                 },
             }),
             xAxis: valueAxis({ name: metric === 'opens' ? '次数' : '分钟', nameTextStyle: { color: COLOR.axis, fontSize: 10 } }),
@@ -635,7 +635,7 @@
         setEmpty('ba-treemap-chart', data.length ? '' : '该区间暂无目录浏览数据');
         chart.setOption(baseOption({
             tooltip: Object.assign({}, baseOption().tooltip, {
-                formatter: (p) => '<b>' + esc(p.name) + '</b><br/>浏览时长：' + p.value + ' 分钟',
+                formatter: (p) => '<div style="font-size: 11px; line-height: 1.6;"><b>' + esc(p.name) + '</b><br/>浏览时长：' + p.value + ' 分钟</div>'
             }),
             series: [{
                 type: 'treemap',

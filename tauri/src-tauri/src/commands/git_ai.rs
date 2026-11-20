@@ -32,6 +32,8 @@ const MAX_HEADER_CHARS: usize = 70;
 const MAX_BODY_CHARS: usize = 2_000;
 /// 单次生成超时（本地模型首次冷启动可能 >30s，给足 120s）
 const LLM_TIMEOUT_SECS: u64 = 120;
+/// 单次生成的输出 token 预算（原 300 会把 JSON 截断，触发解析失败）
+const MAX_OUTPUT_TOKENS: u32 = 800;
 
 /// 阿里巴巴规范允许的 type（自动生成不包含 to/merge/sync/build/ci）
 const ALLOWED_TYPES: &[&str] = &[
@@ -218,7 +220,7 @@ pub async fn git_suggest_commit_message(
         client.complete_text(
             &system_prompt,
             &user_prompt,
-            Some(300),
+            Some(MAX_OUTPUT_TOKENS),
             Some(0.2),
             cancel,
         ),
@@ -247,7 +249,7 @@ pub async fn git_suggest_commit_message(
         note_parts.push(suggestion.notes.trim().to_string());
     }
     if parse_fallback {
-        note_parts.push("模型输出非标准 JSON，已回退为首行".to_string());
+        note_parts.push("模型输出非标准 JSON，已容错解析".to_string());
     }
     if repaired {
         note_parts.push("标题类型已按规范修正".to_string());
@@ -413,21 +415,196 @@ fn strip_fences(s: &str) -> String {
     t.to_string()
 }
 
-/// 取第一个 `{` 到最后一个 `}` 之间的内容
+/// 取第一个 `{` 开始、花括号配平的 JSON 对象（字符串内的括号不算）。
+/// 旧实现用「第一个 { 到最后一个 }」，模型输出多个对象或前后带解释时会切出非法片段。
 fn extract_object(s: &str) -> Option<&str> {
     let start = s.find('{')?;
-    let end = s.rfind('}')?;
-    if end <= start {
-        return None;
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (i, ch) in s.char_indices().skip_while(|(i, _)| *i < start) {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match ch {
+            '"' => in_string = true,
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&s[start..=i]);
+                }
+            }
+            _ => {}
+        }
     }
-    Some(&s[start..=end])
+    None
 }
 
-/// 解析模型输出；非法 JSON 时回退首行
+/// 把字符串值里的裸换行/制表符转义成 JSON 合法转义（模型常直接输出多行 body）
+fn escape_control_chars_in_strings(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut in_string = false;
+    let mut escaped = false;
+    for ch in s.chars() {
+        if in_string {
+            if escaped {
+                out.push(ch);
+                escaped = false;
+                continue;
+            }
+            match ch {
+                '\\' => {
+                    out.push(ch);
+                    escaped = true;
+                }
+                '"' => {
+                    out.push(ch);
+                    in_string = false;
+                }
+                '\n' => out.push_str("\\n"),
+                '\r' => out.push_str("\\r"),
+                '\t' => out.push_str("\\t"),
+                c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+                c => out.push(c),
+            }
+        } else {
+            out.push(ch);
+            if ch == '"' {
+                in_string = true;
+            }
+        }
+    }
+    out
+}
+
+/// 去掉对象/数组结尾多余的逗号（字符串内的逗号不受影响）
+fn remove_trailing_commas(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = String::with_capacity(s.len());
+    let mut in_string = false;
+    let mut escaped = false;
+    for i in 0..chars.len() {
+        let ch = chars[i];
+        if in_string {
+            out.push(ch);
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        if ch == '"' {
+            in_string = true;
+            out.push(ch);
+            continue;
+        }
+        if ch == ',' {
+            let mut j = i + 1;
+            while j < chars.len() && chars[j].is_whitespace() {
+                j += 1;
+            }
+            if j < chars.len() && (chars[j] == '}' || chars[j] == ']') {
+                continue;
+            }
+        }
+        out.push(ch);
+    }
+    out
+}
+
+/// 从半截/非法 JSON 中提取一个字符串字段（用于输出被截断时仍可拿到 subject/body）。
+fn extract_string_field(input: &str, key: &str) -> Option<String> {
+    let needle = format!("\"{}\"", key);
+    let key_pos = input.find(&needle)?;
+    let after = &input[key_pos + needle.len()..];
+    let colon = after.find(':')?;
+    let value = after[colon + 1..].trim_start();
+    let chars: Vec<char> = value.chars().collect();
+    if chars.first() != Some(&'"') {
+        return None;
+    }
+    let mut out = String::new();
+    let mut j = 1usize;
+    while j < chars.len() {
+        match chars[j] {
+            '\\' => {
+                if j + 1 >= chars.len() {
+                    break;
+                }
+                match chars[j + 1] {
+                    'n' => out.push('\n'),
+                    'r' => out.push('\r'),
+                    't' => out.push('\t'),
+                    '"' => out.push('"'),
+                    '\\' => out.push('\\'),
+                    '/' => out.push('/'),
+                    'u' => {
+                        if j + 5 < chars.len() {
+                            let hex: String = chars[j + 2..j + 6].iter().collect();
+                            if let Ok(v) = u32::from_str_radix(&hex, 16) {
+                                if let Some(c) = char::from_u32(v) {
+                                    out.push(c);
+                                }
+                                j += 6;
+                                continue;
+                            }
+                        }
+                        out.push_str("\\u");
+                        j += 2;
+                        continue;
+                    }
+                    c => out.push(c),
+                }
+                j += 2;
+            }
+            '"' => return Some(out.trim().to_string()),
+            c => {
+                out.push(c);
+                j += 1;
+            }
+        }
+    }
+    // 没有收尾引号（被 max_tokens 截断）：返回已解析部分
+    Some(out.trim().trim_end_matches('\\').trim().to_string())
+}
+
+/// 解析模型输出；优先严格 JSON，失败后做容错修复/字段提取，绝不把 JSON 残片当标题。
 fn parse_suggestion(raw: &str) -> (RawSuggestion, bool) {
     let unfenced = strip_fences(raw);
-    if let Some(json) = extract_object(&unfenced) {
-        if let Ok(mut v) = serde_json::from_str::<RawSuggestion>(json) {
+    let text = unfenced.replace("\r\n", "\n");
+
+    let mut candidates: Vec<String> = Vec::new();
+    if let Some(obj) = extract_object(&text) {
+        let escaped = escape_control_chars_in_strings(obj);
+        candidates.push(obj.to_string());
+        if escaped != obj {
+            candidates.push(escaped.clone());
+        }
+        let no_commas = remove_trailing_commas(&escaped);
+        if no_commas != escaped {
+            candidates.push(no_commas);
+        }
+    }
+    // 兜底：整段文本（模型可能只给出一个对象，前后带空白/解释）
+    let escaped_all = escape_control_chars_in_strings(&text);
+    candidates.push(remove_trailing_commas(&escaped_all));
+
+    for candidate in candidates {
+        if let Ok(mut v) = serde_json::from_str::<RawSuggestion>(&candidate) {
+            if v.subject.trim().is_empty() {
+                continue;
+            }
             v.subject = v.subject.trim().trim_matches('"').trim().to_string();
             v.body = v.body.trim().to_string();
             v.footer = v.footer.trim().to_string();
@@ -435,12 +612,34 @@ fn parse_suggestion(raw: &str) -> (RawSuggestion, bool) {
             return (v, false);
         }
     }
-    let line = unfenced
+
+    // 容错：JSON 被截断/含未转义字符时，逐字段提取（subject 在对象开头，通常完整）
+    let subject = extract_string_field(&text, "subject").unwrap_or_default();
+    if !subject.trim().is_empty() {
+        let body = extract_string_field(&text, "body").unwrap_or_default();
+        let footer = extract_string_field(&text, "footer").unwrap_or_default();
+        let notes = extract_string_field(&text, "notes").unwrap_or_default();
+        return (
+            RawSuggestion {
+                subject,
+                body,
+                footer,
+                notes,
+            },
+            true,
+        );
+    }
+
+    let line = text
         .lines()
         .map(|l| l.trim())
         .find(|l| !l.is_empty())
         .unwrap_or("");
     let cleaned = line.trim_start_matches(['-', '*', '1', '.', ' ']).trim();
+    // 兜底行本身是 JSON 残片时不要当作提交标题（否则会出现 `chore: {"subject":...}`）
+    if cleaned.starts_with('{') || cleaned.contains("\"subject\"") {
+        return (RawSuggestion::default(), true);
+    }
     (
         RawSuggestion {
             subject: cleaned.to_string(),
@@ -490,6 +689,10 @@ fn normalize_header(raw: &str) -> (String, bool) {
         .trim_end_matches(['。', '.'])
         .trim();
     if s.is_empty() {
+        return (String::new(), false);
+    }
+    // 防御：JSON 残片绝不能当标题（否则会生成 `chore: {"subject":...}`）
+    if s.starts_with('{') || s.contains("\"subject\"") {
         return (String::new(), false);
     }
 
@@ -632,6 +835,58 @@ mod tests {
         let (s, fallback) = parse_suggestion("feat: 直接给了一行\n多余解释");
         assert!(fallback);
         assert_eq!(s.subject, "feat: 直接给了一行");
+    }
+
+    #[test]
+    fn parse_truncated_json_salvages_fields() {
+        // 复现线上问题：输出被 max_tokens 截断，JSON 没有收尾
+        let raw = r#"{"subject":"style: 调整图表提示字号与 diff 视图按钮文案","body":"放大行为分析图表"#;
+        let (s, fallback) = parse_suggestion(raw);
+        assert!(fallback);
+        assert_eq!(s.subject, "style: 调整图表提示字号与 diff 视图按钮文案");
+        assert!(s.body.starts_with("放大行为分析图表"));
+        assert!(!s.subject.contains('{'));
+    }
+
+    #[test]
+    fn parse_json_with_literal_newlines_in_body() {
+        // 模型把多行 body 直接写成裸换行（非法 JSON）
+        let raw = "{\"subject\":\"feat: 新增功能\",\"body\":\"第一行\n第二行\",\"footer\":\"\",\"notes\":\"\"}";
+        let (s, fallback) = parse_suggestion(raw);
+        assert!(!fallback);
+        assert_eq!(s.subject, "feat: 新增功能");
+        assert_eq!(s.body, "第一行\n第二行");
+    }
+
+    #[test]
+    fn parse_json_with_trailing_comma() {
+        let raw = r#"{"subject":"fix: 修复问题","body":"说明","footer":"","notes":"",}"#;
+        let (s, fallback) = parse_suggestion(raw);
+        assert!(!fallback);
+        assert_eq!(s.subject, "fix: 修复问题");
+        assert_eq!(s.body, "说明");
+    }
+
+    #[test]
+    fn parse_multiple_objects_uses_first_balanced() {
+        let raw = r#"{"subject":"docs: 更新文档","body":"a","footer":"","notes":""} 或者 {"subject":"x"}"#;
+        let (s, fallback) = parse_suggestion(raw);
+        assert!(!fallback);
+        assert_eq!(s.subject, "docs: 更新文档");
+    }
+
+    #[test]
+    fn fallback_never_uses_json_fragment_as_subject() {
+        let (s, fallback) = parse_suggestion("{\"unexpected\":1}");
+        assert!(fallback);
+        assert!(s.subject.is_empty());
+    }
+
+    #[test]
+    fn normalize_rejects_json_fragment() {
+        let (h, repaired) = normalize_header(r#"{"subject":"x"}"#);
+        assert!(h.is_empty());
+        assert!(!repaired);
     }
 
     #[test]
