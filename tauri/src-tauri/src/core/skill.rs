@@ -32,7 +32,7 @@ use crate::core::db::schema;
 /// BASE_TOOLS 工具本就常驻可见，声明仅影响技能详情展示与 SkillGateHook 的 declared 匹配。
 /// ⚠️ 新增/改名注册表工具时须同步本清单（编译期断言见 tests::allowed_tools_cover_registry）。
 pub const ALLOWED_TOOLS: &[&str] = &[
-    "kb_search", "code_lookup", "read", "edit", "multi_edit", "delete", "ls", "glob", "grep", "write", "git_status", "git_diff", "git_commit", "git_checkout", "webfetch", "web_search",
+    "kb_search", "code_lookup", "read", "edit", "multi_edit", "delete", "ls", "glob", "grep", "write", "git_status", "git_diff", "git_log", "git_show", "git_refs", "git_commit", "git_checkout", "webfetch", "web_search",
     // 大文档结构读写（技能可显式声明，如"按章节改写"类技能）
     "md_outline", "read_section", "replace_section", "insert_after_heading", "read_relevant", "apply_patch",
     "activate_skill", "deactivate_skill", "pomodoro", "raw-parse", "schedule", "open-ui",
@@ -62,6 +62,9 @@ fn tool_label(key: &str) -> String {
         "ls" => "列出文件".into(),
         "git_status" => "获取 Git 状态".into(),
         "git_diff" => "查看 Git 差异".into(),
+        "git_log" => "查看提交历史".into(),
+        "git_show" => "查看提交详情".into(),
+        "git_refs" => "查看分支/标签".into(),
         "git_commit" => "Git 提交".into(),
         "git_checkout" => "Git 恢复文件".into(),
         "webfetch" => "网页抓取".into(),

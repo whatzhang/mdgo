@@ -140,7 +140,7 @@ pub const BASE_TOOLS: &[&str] = &[
     "activate_skill", "deactivate_skill", "read", "read_document", "ls", "glob", "grep", "write", "edit", "multi_edit", "delete",
     // 大文档结构工具：先看结构、按章节/行区间读写（模型必须可见，否则等于没加）
     "md_outline", "read_section", "replace_section", "insert_after_heading", "read_relevant", "apply_patch",
-    "git_status", "git_diff", "git_commit", "git_checkout", "webfetch", "web_search", "deep_research", "read_subagent_result",
+    "git_status", "git_diff", "git_log", "git_show", "git_refs", "git_commit", "git_checkout", "webfetch", "web_search", "deep_research", "read_subagent_result",
     "remember", "forget", "search_memory", "todo_write", "spawn_subagent", "parallel_research", "self_review",
     "doc_agent", "parallel_doc_agent", "ask_user_question",
 ];
@@ -224,8 +224,8 @@ pub const ACTION_CLAIMS: &[ActionClaim] = &[
         verbs: &["已提交", "提交了", "提交成功", "已 commit", "commit 了"],
         objects: &["代码", "改动", "修改", "提交"],
         required_tools: &["git_commit"],
-        // 复述 git 状态（git_status/git_diff 输出）不属于"声称执行提交"→ 观察即豁免
-        observe_tools: &["git_status", "git_diff"],
+        // 复述 git 状态/历史（git_status/git_diff/git_log/git_show/git_refs 输出）不属于"声称执行提交"→ 观察即豁免
+        observe_tools: &["git_status", "git_diff", "git_log", "git_show", "git_refs"],
     },
 ];
 

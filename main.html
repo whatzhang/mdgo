@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 
 <head>
@@ -45091,6 +45091,7 @@ kanban-plugin: basic
             try {
                 entries = await gitApi().status(gitRepoDir);
             } catch (e) {
+                gitWorkingStatus = { staged: [], unstaged: [], conflicted: [] };
                 gitRenderStatusAll([], [], [], gitErr(e));
                 return;
             }
@@ -45110,12 +45111,31 @@ kanban-plugin: basic
                     conflicted.push({ ...base, code: 'U', kind: 'conflict' });
                     continue;
                 }
-                // X = index vs HEAD → 已暂存；Y = worktree vs index → 未暂存
-                if (x !== ' ' && x !== '?') staged.push({ ...base, code: x, kind: 'staged' });
-                if (y !== ' ') unstaged.push({ ...base, code: y, kind: 'unstaged' });
+                // X = index vs HEAD → 已暂存；Y = worktree vs index → 未暂存。
+                // porcelain v1 未变更位是空格，v2 是 `.`；两者都视为未变更（防后端/旧适配器混用）。
+                if (x !== ' ' && x !== '.' && x !== '?') staged.push({ ...base, code: x, kind: 'staged' });
+                if (y !== ' ' && y !== '.') unstaged.push({ ...base, code: y, kind: 'unstaged' });
             }
             gitWorkingStatus = { staged, unstaged, conflicted };
+            // 刷新后把「当前选中文件」迁移到新对象/新分组：
+            // 暂存/取消暂存只改变 kind，不应让右侧 diff 继续显示旧视角或丢失选中。
+            const hadActive = !!gitActiveStatusItem;
+            if (hadActive) {
+                const old = gitActiveStatusItem;
+                const all = [...staged, ...unstaged, ...conflicted];
+                gitActiveStatusItem = all.find((it) => it.path === old.path && it.kind === old.kind)
+                    || all.find((it) => it.path === old.path)
+                    || null;
+            }
             gitRenderStatusAll(staged, unstaged, conflicted, null);
+            if (hadActive) {
+                if (gitActiveStatusItem) {
+                    const scope = gitActiveStatusItem.kind === 'staged' ? 'staged' : 'worktree';
+                    await gitShowStatusDiff(gitActiveStatusItem, scope);
+                } else {
+                    gitShowDiffPlaceholder('选择一个文件查看差异');
+                }
+            }
         }
 
         function gitStatusItemHtml(item) {

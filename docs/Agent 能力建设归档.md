@@ -56,7 +56,7 @@
 
 ### 文件与职责
 - `core/subagent/mod.rs`:
-  - `read_only_tool_set()`:kb_search/code_lookup/read/grep/ls/git_status;**明确不含** edit/delete(写)、activate/deactivate_skill(注入面)、pomodoro(交互)、deep_research/read_subagent_result(防递归)。
+  - `read_only_tool_set()`:kb_search/code_lookup/read/grep/ls/glob/git_status/git_diff/git_log/git_show/git_refs;**明确不含** edit/delete(写)、activate/deactivate_skill(注入面)、pomodoro(交互)、deep_research/read_subagent_result(防递归)。
   - **`SUBAGENT_MAX_TURNS` 常量已更名为 `SubagentSpec.max_turns` 字段**（v3：`core/subagent/mod.rs:73`，轮次上限由调用方经 `SubagentSpec` 传入，工具侧默认 12、上限 30）；`SUBAGENT_SUMMARY_CHARS=4000` 保留（limits.rs）。
   - `SubagentRunner::run(adapter, search_config, base_rules, spec)`（v3 签名）：构造**自研 LoopAgent**（`LoopConfig::new(spec.max_turns, base_rules)` + 白名单过滤注册表 + 独立 request_id），流式收集；`select!` 监听父链取消；`ToolBusGuard`(RAII) 兜底清理工具总线；结束清 trace 总线。**`build_rag_agent`（rig 版构造）已移除**。
   - `LruResultStore`:AtomicU64 访问序 LRU(insert 满淘汰最旧、get 刷新访问序、已有 id 更新不淘汰)，**替代"满则清空"**——保留。

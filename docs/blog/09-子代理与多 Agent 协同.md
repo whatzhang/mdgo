@@ -73,7 +73,7 @@ pub fn read_only_tool_set() -> HashSet<String> {
 | `kb_search` `code_lookup` | ✅ | ✅ | 知识库/代码检索 |
 | `read` `read_document` `grep` `ls` `glob` | ✅ | ✅ | 文件读取与枚举 |
 | `md_outline` `read_section` `read_relevant` | ✅ | ✅ | 大文档结构读（`rag_agent.md` 要求，必须登记否则指令与工具集冲突） |
-| `git_status` `git_diff` | ✅ | ✅ | 只读 git |
+| `git_status` `git_diff` `git_log` `git_show` `git_refs` | ✅ | ✅ | 只读 git（严格过滤 .mdgo/敏感文件） |
 | `webfetch` `web_search` | ✅ | ✅ | 外网只读 |
 | `search_memory` | ✅ | ✅ | 记忆**读**；`remember`/`forget` 两边都排除 |
 | `edit` `write` `multi_edit` `delete` `apply_patch` `replace_section` `insert_after_heading` | ❌ | ✅（挂审批门） | 每次写操作仍需用户确认 |

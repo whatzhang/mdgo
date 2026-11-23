@@ -16,6 +16,8 @@
 
 #![allow(dead_code)]
 
+pub mod git;
+
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -765,8 +767,8 @@ pub fn build_loop_tool_registry(cfg: KbSearchConfig) -> HashMapToolRegistry {
     reg.register(Arc::new(ReadRelevantTool::new(cfg.clone())));
     reg.register(Arc::new(ApplyPatchTool::new(cfg.clone())));
     reg.register(Arc::new(DeleteTool::new(cfg.clone())));
-    reg.register(Arc::new(GitStatusTool::new(cfg.clone())));
-    reg.register(Arc::new(GitDiffTool::new(cfg.clone())));
+    // Git 只读（status/log/show/diff/refs）：统一 core/git，严格敏感过滤
+    git::register_git_read_tools(&mut reg, cfg.clone());
     reg.register(Arc::new(GitCommitTool::new(cfg.clone())));
     reg.register(Arc::new(GitCheckoutTool::new(cfg.clone())));
     // 长期记忆 + 任务清单
@@ -2888,100 +2890,6 @@ impl Tool for DeleteTool {
             }
             Err(e) => {
                 ctx.sink.on_result(ctx.call_id, "delete", false, &e, Some(&e));
-                Err(ToolError::Failed(e))
-            }
-        }
-    }
-}
-
-/// git_status：工作区状态（业务助手 `git_status`）。
-pub struct GitStatusTool {
-    cfg: KbSearchConfig,
-}
-
-impl GitStatusTool {
-    pub fn new(cfg: KbSearchConfig) -> Self {
-        Self { cfg }
-    }
-}
-
-#[async_trait]
-impl Tool for GitStatusTool {
-    fn spec(&self) -> &ToolSpec {
-        static SPEC: std::sync::OnceLock<ToolSpec> = std::sync::OnceLock::new();
-        SPEC.get_or_init(|| {
-            read_only_spec(
-                "git_status",
-                "查看当前打开知识库目录的 Git 工作区状态（未提交的修改/新增/删除文件概览）。当用户询问改动情况、或需要了解仓库当前状态时调用。",
-                json!({ "type": "object", "properties": {}, "required": [] }),
-            )
-        })
-    }
-
-    async fn execute(&self, args: Value, ctx: &ToolRunContext<'_>) -> Result<Value, ToolError> {
-        ctx.sink.on_call(ctx.call_id, "git_status", "status", &args);
-        match super::tools::git_status(&self.cfg).await {
-            Ok(text) => {
-                ctx.sink.on_result(ctx.call_id, "git_status", true, &format!("{} 字符", text.chars().count()), Some(&text));
-                Ok(Value::String(text))
-            }
-            Err(e) => {
-                ctx.sink.on_result(ctx.call_id, "git_status", false, &e, Some(&e));
-                Err(ToolError::Failed(e))
-            }
-        }
-    }
-}
-
-/// git_diff：查看工作区/暂存区差异（业务助手 `git_diff`）。
-pub struct GitDiffTool {
-    cfg: KbSearchConfig,
-}
-
-impl GitDiffTool {
-    pub fn new(cfg: KbSearchConfig) -> Self {
-        Self { cfg }
-    }
-}
-
-#[async_trait]
-impl Tool for GitDiffTool {
-    fn spec(&self) -> &ToolSpec {
-        static SPEC: std::sync::OnceLock<ToolSpec> = std::sync::OnceLock::new();
-        SPEC.get_or_init(|| {
-            read_only_spec(
-                "git_diff",
-                "查看当前打开知识库目录的 Git 差异：staged=false 查看工作区未暂存改动，staged=true 查看已暂存改动；stat_only=true 只输出文件级增删统计（+N/-N）。差异过大自动截断。",
-                json!({
-                    "type": "object",
-                    "properties": {
-                        "staged": {
-                            "type": "boolean",
-                            "description": "是否查看已暂存（--cached）差异，默认 false"
-                        },
-                        "stat_only": {
-                            "type": "boolean",
-                            "description": "是否只输出文件级增删统计（numstat），默认 false"
-                        }
-                    },
-                    "required": []
-                }),
-            )
-        })
-    }
-
-    async fn execute(&self, args: Value, ctx: &ToolRunContext<'_>) -> Result<Value, ToolError> {
-        let staged = args.get("staged").and_then(|b| b.as_bool()).unwrap_or(false);
-        let stat_only = args.get("stat_only").and_then(|b| b.as_bool()).unwrap_or(false);
-        let preview = if stat_only { "stat".to_string() } else if staged { "staged".to_string() } else { "diff".to_string() };
-        ctx.sink.on_call(ctx.call_id, "git_diff", &preview, &args);
-        match super::tools::git_diff(&self.cfg.dir_path, staged, stat_only).await {
-            Ok((text, _structured)) => {
-                ctx.sink.on_result(ctx.call_id, "git_diff", true, &format!("{} 字符", text.chars().count()), Some(&text));
-                Ok(Value::String(text))
-            }
-            Err(e) => {
-                ctx.sink.on_result(ctx.call_id, "git_diff", false, &e, Some(&e));
                 Err(ToolError::Failed(e))
             }
         }

@@ -1821,18 +1821,6 @@ fn truncate_hint() -> String {
 
 // ─────────────────────────── Git 状态工具（只读） ───────────────────────────
 
-/// 查询知识库所在 Git 仓库的工作区状态（只读，不支持提交等写操作）。
-pub async fn git_status(cfg: &KbSearchConfig) -> Result<String, String> {
-    // 复用 run_git_tool（spawn_blocking + 超时 + 错误归一），避免重复实现
-    let text = run_git_tool(&cfg.dir_path, &["status", "--short"], 10).await?;
-    let total = text.lines().count();
-    if total == 0 {
-        return Ok("Git 工作区干净，当前无任何改动。".into());
-    }
-    let head: Vec<&str> = text.lines().take(200).collect();
-    Ok(format!("Git 状态（共 {total} 项改动）：\n{}", head.join("\n")))
-}
-
 /// 执行 git 命令（spawn_blocking + 超时 + 错误归一），供 git_diff/git_commit/git_checkout 复用（SRP）。
 async fn run_git_tool(dir: &str, args: &[&str], timeout_secs: u64) -> Result<String, String> {
     let dir_owned = dir.to_string();

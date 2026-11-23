@@ -41,7 +41,7 @@ pub enum SubagentMode {
 /// "工具不存在"——指令与工具集对不上。
 pub fn read_only_tool_set() -> HashSet<String> {
     [
-        "kb_search", "code_lookup", "read", "grep", "ls", "glob", "git_status", "git_diff", "webfetch",
+        "kb_search", "code_lookup", "read", "grep", "ls", "glob", "git_status", "git_diff", "git_log", "git_show", "git_refs", "webfetch",
         "web_search", "search_memory",
         // 大文档结构读：只读，无副作用
         "md_outline", "read_section", "read_relevant", "read_document",

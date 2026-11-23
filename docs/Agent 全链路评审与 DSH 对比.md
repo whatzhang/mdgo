@@ -148,7 +148,7 @@ agent_query (commands/llm.rs:671)
 **执行模型（rig 时代）**：mdgo 无自写 agent 循环——rig 0.41 内部驱动（`drive_tool_calls`），mdgo 只消费 `MultiTurnStreamItem` 流做旁路转发。工具默认顺序执行；取消走 `TaskRegistry` + `next_or_cancel` 偏置 select；`DEFAULT_MAX_TURNS=20` + 剩余 3 轮预算预警。
 **v3 现状**：以上全部由自研内核取代——`LoopAgent::turn()` turn/step 状态机（`core/loop/loop.rs`）、并行工具调度（`tool_calls.rs`）、`LoopConfig`（max_turns/预算预警阈值/重试预算/并行上限）。
 
-**工具全清单（v3，30+ 内置 `Tool`）**：kb_search / code_lookup / read / grep / ls / glob / write / edit / multi_edit / delete / git_status / git_diff / git_commit / git_checkout / remember / forget / search_memory / todo_write / deep_research / read_subagent_result / spawn_subagent / parallel_research / webfetch / self_review / ask_user_question / schedule / search_bookmarks / get_bookmark / activate_skill / deactivate_skill + BridgeTool（pomodoro/raw-parse/open-ui）+ ExternalHttpTool + McpTool（`mcp_<server>_<tool>`）。
+**工具全清单（v3，30+ 内置 `Tool`）**：kb_search / code_lookup / read / grep / ls / glob / write / edit / multi_edit / delete / git_status / git_diff / git_log / git_show / git_refs / git_commit / git_checkout / remember / forget / search_memory / todo_write / deep_research / read_subagent_result / spawn_subagent / parallel_research / webfetch / self_review / ask_user_question / schedule / search_bookmarks / get_bookmark / activate_skill / deactivate_skill + BridgeTool（pomodoro/raw-parse/open-ui）+ ExternalHttpTool + McpTool（`mcp_<server>_<tool>`）。
 
 **关键机制（v3）**：`ToolCallBus`（12K 截断、64 桶）→ `emit_pending_tool_events` 转发前端；`ApprovalHook` 挂在 `SkillGateHook` 之后（短路序：先技能门禁、后审批），60s 超时 fail-closed；技能三层披露 + `active_tools` 窄化 + 软门禁；防幻觉 = Mutation Verification 回读（前置）+ Action Claim 声明表守卫 + Grounding Validator（后置）+ Loop Guard 熔断。
 

@@ -284,7 +284,7 @@ Phase 2b concurrent execute：
 | 分组 | 工具（`concurrency_safe`） |
 |---|---|
 | 只读检索/文件 | `kb_search` `code_lookup` `read` `grep` `ls` `glob`（均 true） |
-| 写/文件/Git | `write` `edit` `multi_edit` `delete` `git_commit` `git_checkout`（false）；`git_status` `git_diff`（true，只读） |
+| 写/文件/Git | `write` `edit` `multi_edit` `delete` `git_commit` `git_checkout`（false）；`git_status` `git_diff` `git_log` `git_show` `git_refs`（true，只读） |
 | 长期记忆 + 任务清单 | `remember` `forget`（false，写）；`search_memory` `todo_write`（true） |
 | 子代理 + 网络 | `deep_research` `read_subagent_result` `parallel_research` `webfetch`（true）；`spawn_subagent`（false） |
 | 反思质量门 + 用户澄清 | `self_review`（true）；`ask_user_question`（false，等待用户回答期间独占） |

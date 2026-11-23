@@ -739,6 +739,9 @@ fn apply_grounding_validator(content: &mut String, has_sources: bool, tools_call
                 | "apply_patch"
                 | "git_status"
                 | "git_diff"
+                | "git_log"
+                | "git_show"
+                | "git_refs"
                 | "git_commit"
                 | "git_checkout"
         )

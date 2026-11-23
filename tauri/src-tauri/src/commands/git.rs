@@ -12,12 +12,11 @@
 
 use crate::commands::git_types::*;
 use serde::Serialize;
-use std::io::Read;
 use std::path::Path;
-use std::process::{Command, Stdio};
-use std::sync::mpsc;
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use crate::core::git::runner::{GitOutput, GitRunner, RunOptions};
+use crate::core::git::{CancelFlag, GitLimits, GitReadService, LogQuery, StatusQuery};
 
 // ==================== 常量 ====================
 
@@ -34,116 +33,27 @@ const MAX_LOG_DEPTH: u32 = 1000;
 
 // ==================== 进程执行 ====================
 
-/// 创建 git 命令：Windows 下隐藏控制台；统一关闭交互提示
-fn git_cmd() -> Command {
-    let mut cmd = Command::new("git");
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
-    // 不弹凭据、不写可选锁、固定 UTF-8 输出，避免 locale 影响解析
-    cmd.env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .env("GIT_PAGER", "cat")
-        .stdin(Stdio::null());
-    cmd
-}
-
-struct GitOutput {
-    stdout: Vec<u8>,
-    stderr: Vec<u8>,
-    code: Option<i32>,
-}
-
-impl GitOutput {
-    fn success(&self) -> bool {
-        self.code == Some(0)
-    }
-
-    fn stderr_text(&self) -> String {
-        let s = String::from_utf8_lossy(&self.stderr).trim().to_string();
-        if s.chars().count() > 2000 {
-            let mut out: String = s.chars().take(2000).collect();
-            out.push('…');
-            out
-        } else {
-            s
-        }
-    }
-}
-
-fn wait_stream(rx: mpsc::Receiver<Vec<u8>>, deadline: Instant) -> Option<Vec<u8>> {
-    let now = Instant::now();
-    if now >= deadline {
-        return None;
-    }
-    rx.recv_timeout(deadline - now).ok()
-}
-
-/// 执行 git 命令（stdout/stderr 分别读取，超时 kill）
-fn run_git(args: &[&str], dir: &str) -> Result<GitOutput, String> {
-    run_git_with_timeout(args, dir, GIT_TIMEOUT)
-}
-
-/// 执行 git 命令（可指定超时；网络命令使用更长的超时）
+/// 执行 git 命令（核心 runner：env 硬化、超时 kill、输出上限）。
+///
+/// 读命令的语义由 `core::git` 统一；写命令继续复用本入口，保持原有行为。
 fn run_git_with_timeout(args: &[&str], dir: &str, timeout: Duration) -> Result<GitOutput, String> {
-    if dir.is_empty() {
+    if dir.trim().is_empty() {
         return Err("仓库路径为空".to_string());
     }
-    if !Path::new(dir).is_dir() {
-        return Err(format!("仓库目录不存在: {}", dir));
-    }
+    let owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    let opts = RunOptions {
+        timeout,
+        cancel: None,
+        ..Default::default()
+    };
+    GitRunner::new()
+        .run(Path::new(dir), &owned, &opts)
+        .map_err(|e| e.to_user_message())
+}
 
-    let mut child = git_cmd()
-        .args(args)
-        .current_dir(dir)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("启动 git 失败（请确认已安装 Git 并在 PATH 中）: {}", e))?;
-
-    let stdout = child.stdout.take().ok_or("无法获取 git stdout")?;
-    let stderr = child.stderr.take().ok_or("无法获取 git stderr")?;
-
-    let (tx_out, rx_out) = mpsc::channel();
-    thread::spawn(move || {
-        let mut buf = Vec::new();
-        let mut reader = stdout;
-        let _ = reader.read_to_end(&mut buf);
-        let _ = tx_out.send(buf);
-    });
-    let (tx_err, rx_err) = mpsc::channel();
-    thread::spawn(move || {
-        let mut buf = Vec::new();
-        let mut reader = stderr;
-        let _ = reader.read_to_end(&mut buf);
-        let _ = tx_err.send(buf);
-    });
-
-    let deadline = Instant::now() + timeout;
-    let out_buf = wait_stream(rx_out, deadline);
-    let err_buf = wait_stream(rx_err, deadline);
-
-    if out_buf.is_none() || err_buf.is_none() {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(format!(
-            "git 命令超时（{}s）: git {}",
-            timeout.as_secs(),
-            args.join(" ")
-        ));
-    }
-
-    let status = child
-        .wait()
-        .map_err(|e| format!("等待 git 进程失败: {}", e))?;
-
-    Ok(GitOutput {
-        stdout: out_buf.unwrap_or_default(),
-        stderr: err_buf.unwrap_or_default(),
-        code: status.code(),
-    })
+/// 执行 git 命令（默认超时）。
+fn run_git(args: &[&str], dir: &str) -> Result<GitOutput, String> {
+    run_git_with_timeout(args, dir, GIT_TIMEOUT)
 }
 
 /// 执行 git 命令，失败时把 stderr 作为错误抛出
@@ -420,50 +330,47 @@ pub fn git_log(
     ref_name: Option<String>,
     skip: Option<u32>,
 ) -> Result<Vec<CommitInfo>, String> {
-    let limit = depth.unwrap_or(100).clamp(1, MAX_LOG_DEPTH);
-    let skip = skip.unwrap_or(0);
-    let rev = ref_name.unwrap_or_else(|| "HEAD".to_string());
-    validate_rev(&rev)?;
-
-    // 空仓库：HEAD 不存在 → 返回空历史，而不是报错
-    if !has_head(&dir)? {
-        return Ok(Vec::new());
-    }
-
-    // %x00 字段分隔 + %x1e 记录分隔，消息正文里的换行/竖线都不会破坏解析
-    const FORMAT: &str = "--format=%H%x00%T%x00%P%x00%an%x00%ae%x00%at%x00%cn%x00%ce%x00%ct%x00%B%x00%x1e";
-    let limit_s = limit.to_string();
-    let skip_s = skip.to_string();
-
-    let mut args: Vec<String> = vec![
-        "-c".into(),
-        "core.quotepath=false".into(),
-        "-c".into(),
-        "log.showSignature=false".into(),
-        "log".into(),
-        "--topo-order".into(),
-        "--no-show-signature".into(),
-        "--no-color".into(),
-        "-n".into(),
-        limit_s,
-        "--skip".into(),
-        skip_s,
-        FORMAT.into(),
-        rev,
-    ];
-
-    let normalized_path = match filepath.as_deref() {
-        Some(p) if !p.trim().is_empty() => Some(normalize_rel_path(p)?),
-        _ => None,
+    let limits = GitLimits {
+        log_max_limit: MAX_LOG_DEPTH,
+        ..Default::default()
     };
-    if let Some(p) = normalized_path.as_deref() {
-        args.push("--".into());
-        args.push(literal_pathspec(p));
-    }
-
-    let argv: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    let out = run_git_ok(&argv, &dir)?;
-    parse_log_output(&out)
+    let q = LogQuery {
+        limit: depth.unwrap_or(100).clamp(1, MAX_LOG_DEPTH),
+        skip: skip.unwrap_or(0),
+        rev: ref_name.filter(|r| !r.trim().is_empty()),
+        path: filepath.filter(|p| !p.trim().is_empty()),
+        strict: false,
+        ..Default::default()
+    };
+    let result = GitReadService::with_limits(limits)
+        .log(&dir, &q, &CancelFlag::new())
+        .map_err(|e| e.to_user_message())?;
+    Ok(result
+        .commits
+        .into_iter()
+        .map(|c| CommitInfo {
+            oid: c.oid,
+            commit_inner: CommitInner {
+                message: if c.message.trim().is_empty() {
+                    c.subject.clone()
+                } else {
+                    format!("{}\n\n{}", c.subject, c.message.trim_start_matches('\n'))
+                },
+                tree: c.tree,
+                parent: c.parents,
+                author: AuthorInfo {
+                    name: c.author_name,
+                    email: c.author_email,
+                    timestamp: c.author_timestamp,
+                },
+                committer: AuthorInfo {
+                    name: c.committer_name,
+                    email: c.committer_email,
+                    timestamp: c.committer_timestamp,
+                },
+            },
+        })
+        .collect())
 }
 
 /// 某次提交的变更文件列表（含重命名、真实增删行数、二进制标记）
@@ -473,79 +380,26 @@ pub fn git_commit_files(
     commit: String,
     parent: Option<String>,
 ) -> Result<Vec<FileChange>, String> {
-    validate_oid(&commit)?;
-    let parent = match parent {
-        Some(p) if !p.trim().is_empty() => {
-            validate_oid(&p)?;
-            Some(p)
-        }
-        _ => first_parent(&dir, &commit)?,
-    };
-
-    let mut name_args: Vec<String> = vec![
-        "-c".into(),
-        "core.quotepath=false".into(),
-        "diff-tree".into(),
-        "-r".into(),
-        "-M".into(),
-        "--no-commit-id".into(),
-        "--name-status".into(),
-        "-z".into(),
-    ];
-    let mut num_args: Vec<String> = vec![
-        "-c".into(),
-        "core.quotepath=false".into(),
-        "diff-tree".into(),
-        "-r".into(),
-        "-M".into(),
-        "--no-commit-id".into(),
-        "--numstat".into(),
-        "-z".into(),
-    ];
-    match &parent {
-        Some(p) => {
-            name_args.push(p.clone());
-            name_args.push(commit.clone());
-            num_args.push(p.clone());
-            num_args.push(commit.clone());
-        }
-        None => {
-            name_args.push("--root".into());
-            name_args.push(commit.clone());
-            num_args.push("--root".into());
-            num_args.push(commit.clone());
-        }
-    }
-
-    let name_argv: Vec<&str> = name_args.iter().map(|s| s.as_str()).collect();
-    let num_argv: Vec<&str> = num_args.iter().map(|s| s.as_str()).collect();
-    let name_out = run_git_ok(&name_argv, &dir)?;
-    let num_out = run_git_ok(&num_argv, &dir)?;
-
-    let mut stats: std::collections::HashMap<String, (Option<u32>, Option<u32>, bool)> =
-        std::collections::HashMap::new();
-    for (path, add, del, binary) in parse_numstat_z(&num_out) {
-        stats.insert(path, (add, del, binary));
-    }
-
-    let mut changes: Vec<FileChange> = parse_name_status_z(&name_out)
+    let changes = GitReadService::new()
+        .commit_files(
+            &dir,
+            &commit,
+            parent.as_deref().filter(|p| !p.trim().is_empty()),
+            false,
+            &CancelFlag::new(),
+        )
+        .map_err(|e| e.to_user_message())?;
+    Ok(changes
         .into_iter()
-        .map(|(path, raw, from)| {
-            let (additions, deletions, binary) =
-                stats.get(&path).copied().unwrap_or((None, None, false));
-            FileChange {
-                status: status_label(&raw).to_string(),
-                path,
-                from,
-                additions,
-                deletions,
-                binary,
-            }
+        .map(|c| FileChange {
+            path: c.path,
+            status: c.status,
+            from: c.from,
+            additions: c.additions,
+            deletions: c.deletions,
+            binary: c.binary,
         })
-        .collect();
-
-    changes.sort_by(|a, b| a.path.cmp(&b.path));
-    Ok(changes)
+        .collect())
 }
 
 /// 读取某个提交里的文件内容（带体积上限与二进制判定）
@@ -553,14 +407,28 @@ pub fn git_commit_files(
 pub fn git_read_blob(dir: String, oid: String, filepath: String) -> Result<BlobPayload, String> {
     validate_oid(&oid)?;
     let rel = normalize_rel_path(&filepath)?;
-    read_blob_spec(&dir, &format!("{}:{}", oid, rel))
+    let payload = GitReadService::new()
+        .read_blob(&dir, &format!("{oid}:{rel}"), &CancelFlag::new())
+        .map_err(|e| e.to_user_message())?;
+    Ok(BlobPayload {
+        data: payload.data,
+        size: payload.size,
+        is_binary: payload.is_binary,
+    })
 }
 
 /// 读取已暂存（index, stage 0）的文件内容，用于「已暂存」视角的对比
 #[tauri::command]
 pub fn git_read_index_blob(dir: String, filepath: String) -> Result<BlobPayload, String> {
     let rel = normalize_rel_path(&filepath)?;
-    read_blob_spec(&dir, &format!(":0:{}", rel))
+    let payload = GitReadService::new()
+        .read_blob(&dir, &format!(":0:{rel}"), &CancelFlag::new())
+        .map_err(|e| e.to_user_message())?;
+    Ok(BlobPayload {
+        data: payload.data,
+        size: payload.size,
+        is_binary: payload.is_binary,
+    })
 }
 
 /// 解析引用（分支 / 远程 / 标签 / HEAD 状态）
@@ -888,20 +756,41 @@ pub fn git_commit(
 // ==================== 命令：工作区状态 ====================
 
 /// 工作区状态（原始 porcelain XY 码，未跟踪文件展开到文件级）
+///
+/// UI 侧不做严格过滤（用户可看到自己的全部文件）；Agent 侧走 `strict=true`。
+///
+/// 兼容性：`core/git` 使用 porcelain v2，未变更位是 `.`；前端历史/提交页沿用
+/// porcelain v1 的「空格表示未变更」约定，因此这里统一把 `.` 映射回空格。
+/// 不映射会导致：取消暂存后 `x=.` 被前端当成「仍有暂存」，文件一直留在待提交列表。
 #[tauri::command]
 pub fn git_status(dir: String) -> Result<Vec<StatusEntry>, String> {
-    let out = run_git_ok(
-        &[
-            "-c",
-            "core.quotepath=false",
-            "status",
-            "--porcelain=v1",
-            "-z",
-            "--untracked-files=all",
-        ],
-        &dir,
-    )?;
-    Ok(parse_status_z(&out))
+    let q = StatusQuery {
+        path: None,
+        max_entries: usize::MAX,
+        strict: false,
+    };
+    let status = GitReadService::new()
+        .status(&dir, &q, &CancelFlag::new())
+        .map_err(|e| e.to_user_message())?;
+    Ok(status
+        .entries
+        .into_iter()
+        .map(|e| StatusEntry {
+            path: e.path,
+            x: ui_status_code(&e.x),
+            y: ui_status_code(&e.y),
+            from: e.from,
+        })
+        .collect())
+}
+
+/// porcelain v2 的未变更位 `.` → 前端沿用的空格。
+fn ui_status_code(code: &str) -> String {
+    if code == "." {
+        " ".to_string()
+    } else {
+        code.to_string()
+    }
 }
 
 // ==================== 内部辅助 ====================
@@ -1242,5 +1131,52 @@ mod tests {
         assert!(validate_rev("origin/main").is_ok());
         assert!(validate_oid("--hard").is_err());
         assert!(validate_oid("abc123").is_ok());
+    }
+
+    #[test]
+    fn ui_status_code_maps_porcelain_v2_dot_to_space() {
+        // 前端提交页沿用 porcelain v1 约定：未变更位是空格。
+        assert_eq!(ui_status_code("."), " ");
+        assert_eq!(ui_status_code("M"), "M");
+        assert_eq!(ui_status_code("?"), "?");
+    }
+
+    #[test]
+    fn unstage_moves_file_out_of_staged_list() {
+        let td = tempfile::tempdir().expect("tempdir");
+        let dir = td.path().to_str().unwrap().to_string();
+        run_git_ok(&["init", "-q"], &dir).unwrap();
+        std::fs::write(td.path().join("a.txt"), "one\n").unwrap();
+        run_git_ok(&["add", "-A"], &dir).unwrap();
+        run_git_ok(
+            &[
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-q",
+                "-m",
+                "init",
+            ],
+            &dir,
+        )
+        .unwrap();
+
+        std::fs::write(td.path().join("a.txt"), "two\n").unwrap();
+        git_stage(dir.clone(), vec!["a.txt".to_string()]).unwrap();
+
+        let staged = git_status(dir.clone()).unwrap();
+        let entry = staged.iter().find(|e| e.path == "a.txt").expect("staged entry");
+        assert_eq!(entry.x, "M", "stage 后暂存位应为 M");
+        assert_eq!(entry.y, " ", "未变更的工作区位必须是空格（不能是 .）");
+
+        git_unstage(dir.clone(), vec!["a.txt".to_string()]).unwrap();
+        let after = git_status(dir.clone()).unwrap();
+        let entry = after.iter().find(|e| e.path == "a.txt").expect("after unstage");
+        assert_eq!(entry.x, " ", "取消暂存后暂存位应为空格");
+        assert_eq!(entry.y, "M", "取消暂存后应回到未暂存列表");
     }
 }
