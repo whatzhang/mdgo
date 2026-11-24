@@ -210,9 +210,11 @@ pub fn tool_call_bus() -> &'static ToolCallBus {
 /// 技能来源 `skill_id` 动态解析：优先取「已激活技能中声明了该工具」的技能，
 /// 同时覆盖预激活与 LLM 激活两条路径；无声明时回退到预激活主技能（`cfg.skill_id`）。
 /// `args` 为模型原始参数（JSON），完整序列化用于会话历史回放；
-/// 调用 ID 在本处生成（`call_{uuid}`），结果事件按 call_seq 配对继承。
+/// `call_id` 用模型给出的 `ToolCall.id`（调度器与工具自报共用同一 ID → 可按 ID 去重，
+/// 一次调用只产生一对 call/result），结果事件按 `call_seq` 配对继承。
 pub fn record_tool_call(
     cfg: &KbSearchConfig,
+    call_id: &str,
     tool: &str,
     args_preview: &str,
     args: Option<&serde_json::Value>,
@@ -229,14 +231,15 @@ pub fn record_tool_call(
         .find(|s| s.tools.iter().any(|t| t == tool))
         .map(|s| format!("{}:{}", s.scope.as_str(), s.skill_id))
         .or_else(|| cfg.skill_id.clone());
-    let call_id = format!("call_{}", uuid::Uuid::new_v4());
     let arguments = args
         .map(|a| a.to_string())
         .unwrap_or_default();
+    // `call_id` 用模型给出的 `ToolCall.id`：调度器统一上报与工具自报共用同一 ID 后，
+    // `BusToolEventSink` 可按 ID 去重（一次调用只产生一对 call/result）。
     tool_call_bus().record_call(
         &cfg.request_id,
         tool,
-        &call_id,
+        call_id,
         args_preview,
         &arguments,
         skill_id.as_deref(),

@@ -37,8 +37,6 @@ pub const STREAM_TOTAL_TIMEOUT: Duration = Duration::from_secs(1800);
 /// 🟠 L26：边界——**不输出 `reasoning_content` 且静默思考 >10 分钟**的推理端点
 /// 会被误杀为死流（错误信息明确、可重试，属可接受的权衡）。
 pub const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(600);
-/// 连接阶段超时（快速失败，避免死端点挂满总时限）
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// OpenAI 兼容补全适配器。
 #[derive(Clone)]
@@ -76,14 +74,6 @@ impl OpenAiAdapter {
 
     fn chat_url(&self) -> String {
         format!("{}/chat/completions", self.base_url)
-    }
-
-    fn http_client(&self, total_timeout: Duration) -> reqwest::Client {
-        reqwest::Client::builder()
-            .timeout(total_timeout)
-            .connect_timeout(CONNECT_TIMEOUT)
-            .build()
-            .expect("reqwest client build")
     }
 
     fn build_body(&self, req: &CompletionRequest, stream: bool) -> Value {
@@ -168,10 +158,12 @@ impl LlmAdapter for OpenAiAdapter {
         req: CompletionRequest,
         cancel: CancellationToken,
     ) -> Result<CompletionResponse, LlmError> {
-        let client = self.http_client(self.timeout);
+        // 共享客户端（连接池/TLS 跨 step、跨轮复用）；总超时逐请求设置。
+        let client = crate::core::http::shared();
         let body = self.build_body(&req, false);
         let send = client
             .post(self.chat_url())
+            .timeout(self.timeout)
             .bearer_auth(&self.api_key)
             .json(&body)
             .send();
@@ -193,10 +185,12 @@ impl LlmAdapter for OpenAiAdapter {
         req: CompletionRequest,
         cancel: CancellationToken,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, LlmError>> + Send>>, LlmError> {
-        let client = self.http_client(STREAM_TOTAL_TIMEOUT);
+        // 共享客户端（连接池/TLS 跨 step、跨轮复用）；流式总时限逐请求设置。
+        let client = crate::core::http::shared();
         let body = self.build_body(&req, true);
         let send = client
             .post(self.chat_url())
+            .timeout(STREAM_TOTAL_TIMEOUT)
             .bearer_auth(&self.api_key)
             .json(&body)
             .send();
@@ -535,12 +529,41 @@ fn parse_usage(chunk: &Value) -> TokenUsage {
         }
         cur.as_u64().unwrap_or(0) as u32
     };
+    // 同一语义字段在不同网关上的命名不一致：按优先级取第一个非零值。
+    // 拿不到 cached 统计会让"缓存命中率"永远显示 0%，从而无法验证前缀缓存是否生效。
+    let pick = |keys: &[&[&str]]| -> u32 {
+        keys.iter().map(|p| n(p)).find(|v| *v > 0).unwrap_or(0)
+    };
+
+    let prompt_tokens = pick(&[&["prompt_tokens"], &["input_tokens"]]);
+    let completion_tokens = pick(&[&["completion_tokens"], &["output_tokens"]]);
+    let reported_total = n(&["total_tokens"]);
+    let cached_input_tokens = pick(&[
+        // OpenAI 官方
+        &["prompt_tokens_details", "cached_tokens"],
+        // DeepSeek（context caching）
+        &["prompt_cache_hit_tokens"],
+        // 部分网关的扁平字段
+        &["cached_tokens"],
+        &["cache_read_input_tokens"],
+        &["prompt_tokens_details", "cache_read_tokens"],
+    ]);
+    let cache_creation_input_tokens = pick(&[
+        &["cache_creation_input_tokens"],
+        &["prompt_tokens_details", "cache_creation_tokens"],
+    ]);
+
     TokenUsage {
-        prompt_tokens: n(&["prompt_tokens"]),
-        completion_tokens: n(&["completion_tokens"]),
-        total_tokens: n(&["total_tokens"]),
-        cached_input_tokens: n(&["prompt_tokens_details", "cached_tokens"]),
-        cache_creation_input_tokens: 0,
+        prompt_tokens,
+        completion_tokens,
+        // 网关未上报 total 时用 prompt + completion 兜底（cached 已含在 prompt 内，不重复加）
+        total_tokens: if reported_total > 0 {
+            reported_total
+        } else {
+            prompt_tokens.saturating_add(completion_tokens)
+        },
+        cached_input_tokens,
+        cache_creation_input_tokens,
     }
 }
 
@@ -747,6 +770,38 @@ mod tests {
             }
             other => panic!("expected Usage, got {other:?}"),
         }
+    }
+
+    /// 同一语义的缓存字段在不同网关命名不同：都要能读出来，否则命中率恒为 0%。
+    #[test]
+    fn parse_usage_reads_cache_fields_across_gateways() {
+        let openai = parse_usage(&json!({
+            "usage": { "prompt_tokens": 1000, "completion_tokens": 20, "total_tokens": 1020,
+                       "prompt_tokens_details": { "cached_tokens": 800 } }
+        }));
+        assert_eq!(openai.cached_input_tokens, 800);
+        assert_eq!(openai.total_tokens, 1020);
+
+        let deepseek = parse_usage(&json!({
+            "usage": { "prompt_tokens": 1000, "completion_tokens": 20,
+                       "prompt_cache_hit_tokens": 640, "prompt_cache_miss_tokens": 360 }
+        }));
+        assert_eq!(deepseek.cached_input_tokens, 640);
+        // 未上报 total 时用 prompt + completion 兜底（cached 已含在 prompt 内，不重复加）
+        assert_eq!(deepseek.total_tokens, 1020);
+
+        let anthropic_shaped = parse_usage(&json!({
+            "usage": { "input_tokens": 500, "output_tokens": 10,
+                       "cache_read_input_tokens": 300, "cache_creation_input_tokens": 100 }
+        }));
+        assert_eq!(anthropic_shaped.prompt_tokens, 500);
+        assert_eq!(anthropic_shaped.cached_input_tokens, 300);
+        assert_eq!(anthropic_shaped.cache_creation_input_tokens, 100);
+        assert_eq!(anthropic_shaped.total_tokens, 510);
+
+        // 完全没有 usage 块：全 0，且不会 panic
+        let empty = parse_usage(&json!({ "choices": [] }));
+        assert!(empty.is_empty());
     }
 
     #[test]

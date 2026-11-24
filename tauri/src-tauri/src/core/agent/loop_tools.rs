@@ -3338,21 +3338,47 @@ pub fn filter_registry(
 ///
 /// 说明：总线以工具名配对 call/result（预存在语义）；新 loop 的调度器按模型序提交结果，
 /// 故 `on_result` 调用序与 call 序一致，配对正确。
+///
+/// **去重**：调度器（`tool_calls::run_one`）与工具实现**都会**调用 `on_call/on_result`，
+/// 旧实现因此每次调用产生两张卡片、IPC 载荷翻倍、质量计数被计两次（`tool_successes` +2）。
+/// 现在两条路径都用模型给出的 `ToolCall.id` 作为 `call_id`，本 sink 按 `call_id` 去重：
+/// 同一调用只落一对 call/result，且结果继承真实 call_id 供前端精确配对。
 pub struct BusToolEventSink {
     cfg: KbSearchConfig,
+    /// 已上报过 call 的调用 ID
+    seen_calls: std::sync::Mutex<std::collections::HashSet<String>>,
+    /// 已上报过 result 的调用 ID
+    seen_results: std::sync::Mutex<std::collections::HashSet<String>>,
 }
 
 impl BusToolEventSink {
     pub fn new(cfg: KbSearchConfig) -> Self {
-        Self { cfg }
+        Self {
+            cfg,
+            seen_calls: std::sync::Mutex::new(std::collections::HashSet::new()),
+            seen_results: std::sync::Mutex::new(std::collections::HashSet::new()),
+        }
     }
 }
 
 impl crate::core::r#loop::ToolEventSink for BusToolEventSink {
-    fn on_call(&self, _call_id: &str, tool: &str, args_preview: &str, args: &Value) {
-        super::tools::record_tool_call(&self.cfg, tool, args_preview, Some(args));
+    fn on_call(&self, call_id: &str, tool: &str, args_preview: &str, args: &Value) {
+        // 空 ID（个别网关不下发 tool_call id）时不做去重：宁可重复也不要吞掉不同调用。
+        if !call_id.trim().is_empty() {
+            let mut seen = self.seen_calls.lock().unwrap_or_else(|e| e.into_inner());
+            if !seen.insert(call_id.to_string()) {
+                return; // 同一调用已上报（工具自报与调度器上报只保留第一条）
+            }
+        }
+        super::tools::record_tool_call(&self.cfg, call_id, tool, args_preview, Some(args));
     }
-    fn on_result(&self, _call_id: &str, tool: &str, ok: bool, summary: &str, result: Option<&str>) {
+    fn on_result(&self, call_id: &str, tool: &str, ok: bool, summary: &str, result: Option<&str>) {
+        if !call_id.trim().is_empty() {
+            let mut seen = self.seen_results.lock().unwrap_or_else(|e| e.into_inner());
+            if !seen.insert(call_id.to_string()) {
+                return; // 同一调用的结果已上报，不再重复计数/转发
+            }
+        }
         super::tools::record_tool_result(&self.cfg, tool, ok, summary, result);
     }
 }

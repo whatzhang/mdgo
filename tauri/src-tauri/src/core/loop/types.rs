@@ -116,6 +116,31 @@ impl TokenUsage {
     pub fn is_empty(&self) -> bool {
         self.prompt_tokens == 0 && self.completion_tokens == 0 && self.total_tokens == 0
     }
+
+    /// 跨 step 累加用量：一次 turn 可能有多个 step，最终上报给前端/落库的必须是**合计**，
+    /// 而不是最后一步（旧实现每 step 覆盖，多步任务只统计到 1/N）。
+    ///
+    /// 口径说明（对齐 OpenAI / DeepSeek / Anthropic）：
+    /// - `prompt_tokens` 已包含被缓存的输入 token；`cached_input_tokens` 是其中命中部分；
+    /// - 两者都独立累加、互不抵扣，避免"缓存命中后总数变小"的错误统计。
+    pub fn accumulate(&mut self, other: &TokenUsage) {
+        self.prompt_tokens = self.prompt_tokens.saturating_add(other.prompt_tokens);
+        self.completion_tokens = self.completion_tokens.saturating_add(other.completion_tokens);
+        self.total_tokens = self.total_tokens.saturating_add(other.total_tokens);
+        self.cached_input_tokens =
+            self.cached_input_tokens.saturating_add(other.cached_input_tokens);
+        self.cache_creation_input_tokens = self
+            .cache_creation_input_tokens
+            .saturating_add(other.cache_creation_input_tokens);
+    }
+
+    /// 缓存命中率（0.0–1.0）；没有 prompt token 时返回 `None`（显示层显示占位而不是 0%）。
+    pub fn cache_hit_ratio(&self) -> Option<f64> {
+        if self.prompt_tokens == 0 {
+            return None;
+        }
+        Some((self.cached_input_tokens as f64 / self.prompt_tokens as f64).clamp(0.0, 1.0))
+    }
 }
 
 /// 流式结束原因。
@@ -238,5 +263,32 @@ mod tests {
         assert!(!LlmError::StatusCode(401, String::new()).is_retryable());
         assert!(!LlmError::ContextOverflow.is_retryable());
         assert!(!LlmError::InvalidRequest("x".into()).is_retryable());
+    }
+
+    #[test]
+    fn usage_accumulates_across_steps_without_double_counting() {
+        let mut acc = TokenUsage::default();
+        acc.accumulate(&TokenUsage {
+            prompt_tokens: 10_000,
+            completion_tokens: 200,
+            total_tokens: 10_200,
+            cached_input_tokens: 8_000,
+            cache_creation_input_tokens: 0,
+        });
+        acc.accumulate(&TokenUsage {
+            prompt_tokens: 10_500,
+            completion_tokens: 300,
+            total_tokens: 10_800,
+            cached_input_tokens: 8_400,
+            cache_creation_input_tokens: 0,
+        });
+        assert_eq!(acc.prompt_tokens, 20_500);
+        assert_eq!(acc.completion_tokens, 500);
+        assert_eq!(acc.total_tokens, 21_000);
+        // cached 是 prompt 的子集：累加后仍 ≤ prompt，命中率按"合计/合计"计算
+        assert_eq!(acc.cached_input_tokens, 16_400);
+        let ratio = acc.cache_hit_ratio().expect("有 prompt token 时必须有命中率");
+        assert!((ratio - 0.8).abs() < 1e-9, "命中率应为 80%，实际 {ratio}");
+        assert!(TokenUsage::default().cache_hit_ratio().is_none(), "无用量时不给 0%");
     }
 }

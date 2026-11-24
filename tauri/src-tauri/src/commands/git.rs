@@ -24,10 +24,6 @@ use crate::core::git::{CancelFlag, GitLimits, GitReadService, LogQuery, StatusQu
 const GIT_TIMEOUT: Duration = Duration::from_secs(30);
 /// 网络类命令（pull/push）超时：远端握手 + 传输可能远慢于本地命令
 const GIT_NETWORK_TIMEOUT: Duration = Duration::from_secs(120);
-/// 单文件 diff 的体量上限（超过则不读入内存，前端显示占位）
-const MAX_BLOB_BYTES: u64 = 2 * 1024 * 1024;
-/// 二进制嗅探字节数
-const BINARY_SNIFF_BYTES: usize = 8000;
 /// 单次 log 最多返回条数（防御性上限）
 const MAX_LOG_DEPTH: u32 = 1000;
 
@@ -97,12 +93,11 @@ fn normalize_rel_path(raw: &str) -> Result<String, String> {
     Ok(trimmed)
 }
 
-/// literal pathspec，避免 `*`/`?`/`:!` 被当成通配或排除规则
-fn literal_pathspec(path: &str) -> String {
-    format!(":(literal){}", path)
-}
-
-/// 校验引用名：只允许常见字符，且不能以 `-` 开头（防止被当选项）
+/// 校验引用名：只允许常见字符，且不能以 `-` 开头（防止被当选项）。
+///
+/// 生产代码的 rev 校验已收敛到 `core::git::scope`；本函数仅供本文件单测做回归对照，
+/// 因此只在 test 构建下编译（避免 dead_code 告警）。
+#[cfg(test)]
 fn validate_rev(rev: &str) -> Result<(), String> {
     if rev.is_empty() || rev.starts_with('-') || rev.len() > 200 {
         return Err(format!("非法引用: {}", rev));
@@ -129,6 +124,7 @@ fn validate_oid(oid: &str) -> Result<(), String> {
 /// 解析 `git log --format` 输出。
 /// 记录分隔 `\x1e`，字段分隔 `\x00`，字段顺序：
 /// oid, tree, parents, author name, author email, author ts, committer name, committer email, committer ts, message(%B)
+#[cfg(test)]
 fn parse_log_output(bytes: &[u8]) -> Result<Vec<CommitInfo>, String> {
     let text = String::from_utf8_lossy(bytes);
     let mut commits = Vec::new();
@@ -173,6 +169,7 @@ fn parse_log_output(bytes: &[u8]) -> Result<Vec<CommitInfo>, String> {
 
 /// 解析 `git status --porcelain=v1 -z` 输出。
 /// 普通条目：`XY path\0`；重命名：`XY new\0old\0`
+#[cfg(test)]
 fn parse_status_z(bytes: &[u8]) -> Vec<StatusEntry> {
     let mut tokens: Vec<String> = bytes
         .split(|b| *b == 0)
@@ -221,6 +218,7 @@ fn parse_status_z(bytes: &[u8]) -> Vec<StatusEntry> {
 
 /// 解析 `git diff-tree -r -M --name-status -z`：
 /// 普通条目 `<status>\0<path>\0`；重命名 `<Rxxx>\0<old>\0<new>\0`
+#[cfg(test)]
 fn parse_name_status_z(bytes: &[u8]) -> Vec<(String, String, Option<String>)> {
     let mut tokens: Vec<String> = bytes
         .split(|b| *b == 0)
@@ -261,6 +259,7 @@ fn parse_name_status_z(bytes: &[u8]) -> Vec<(String, String, Option<String>)> {
 
 /// 解析 `git diff-tree -r -M --numstat -z`：
 /// 普通条目 `<add>\t<del>\t<path>\0`；重命名 `<add>\t<del>\t\0<old>\0<new>\0`
+#[cfg(test)]
 fn parse_numstat_z(bytes: &[u8]) -> Vec<(String, Option<u32>, Option<u32>, bool)> {
     let mut tokens: Vec<String> = bytes
         .split(|b| *b == 0)
@@ -302,6 +301,7 @@ fn parse_numstat_z(bytes: &[u8]) -> Vec<(String, Option<u32>, Option<u32>, bool)
     out
 }
 
+#[cfg(test)]
 fn status_label(raw: &str) -> &'static str {
     match raw.chars().next().unwrap_or('M') {
         'A' => "added",
@@ -798,34 +798,6 @@ fn ui_status_code(code: &str) -> String {
 fn has_head(dir: &str) -> Result<bool, String> {
     let out = run_git(&["rev-parse", "--verify", "-q", "HEAD"], dir)?;
     Ok(out.success())
-}
-
-fn first_parent(dir: &str, commit: &str) -> Result<Option<String>, String> {
-    let out = run_git_str(&["rev-list", "--parents", "-n", "1", commit], dir)?;
-    let mut parts = out.split_whitespace();
-    let _self_oid = parts.next();
-    Ok(parts.next().map(|s| s.to_string()))
-}
-
-fn read_blob_spec(dir: &str, spec: &str) -> Result<BlobPayload, String> {
-    let size_text = run_git_str(&["cat-file", "-s", spec], dir)?;
-    let size: u64 = size_text
-        .trim()
-        .parse()
-        .map_err(|_| format!("无法读取对象大小: {}", spec))?;
-    if size > MAX_BLOB_BYTES {
-        return Err(format!(
-            "文件过大（{:.1} MB），跳过内容加载",
-            size as f64 / (1024.0 * 1024.0)
-        ));
-    }
-    let data = run_git_ok(&["cat-file", "blob", spec], dir)?;
-    let is_binary = data.iter().take(BINARY_SNIFF_BYTES).any(|b| *b == 0);
-    Ok(BlobPayload {
-        size: data.len() as u64,
-        is_binary,
-        data,
-    })
 }
 
 // ==================== 远端同步：拉取 / 推送 ====================

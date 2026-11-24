@@ -287,17 +287,14 @@ impl AnthropicStreamClient {
 
         let body = self.build_request_body(system, body_messages);
 
-        let client = reqwest::Client::builder()
-            // reqwest 总超时覆盖流式 body 读取：300s 会掐断慢模型的长流式生成
-            // （表现为"error decoding response body"）；流式放宽到 30 分钟，
-            // 连接阶段单独 15s 快速失败。
-            .timeout(ANTHROPIC_REQUEST_TIMEOUT)
-            .connect_timeout(std::time::Duration::from_secs(15))
-            .build()
-            .map_err(|e| AnthropicError::new(None, format!("创建 HTTP 客户端失败: {}", e)))?;
+        // 共享客户端（连接池/TLS 跨 step、跨轮复用）；reqwest 总超时覆盖流式 body 读取：
+        // 300s 会掐断慢模型的长流式生成（表现为"error decoding response body"），
+        // 故流式放宽到 30 分钟，连接阶段由共享 client 的 connect_timeout（15s）快速失败。
+        let client = crate::core::http::shared();
 
         let resp = client
             .post(self.messages_url())
+            .timeout(ANTHROPIC_REQUEST_TIMEOUT)
             .header("Content-Type", "application/json")
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", "2023-06-01")

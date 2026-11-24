@@ -126,10 +126,16 @@ impl LlmAdapter for AnthropicAdapter {
                         cache_read_input_tokens,
                         cache_creation_input_tokens,
                     } => {
+                        // 归一化为 OpenAI 口径：prompt_tokens **包含**被缓存的输入 token
+                        // （Anthropic 的 input_tokens 只统计未命中缓存的输入），
+                        // 这样 cached / prompt 才是真正的命中率，total 也不会漏计缓存部分。
+                        let prompt_tokens = input_tokens
+                            .saturating_add(cache_read_input_tokens)
+                            .saturating_add(cache_creation_input_tokens);
                         let _ = tx.try_send(Ok(StreamEvent::Usage(TokenUsage {
-                            prompt_tokens: input_tokens,
+                            prompt_tokens,
                             completion_tokens: output_tokens,
-                            total_tokens: input_tokens.saturating_add(output_tokens),
+                            total_tokens: prompt_tokens.saturating_add(output_tokens),
                             cached_input_tokens: cache_read_input_tokens,
                             cache_creation_input_tokens,
                         })));

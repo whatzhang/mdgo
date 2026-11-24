@@ -146,9 +146,47 @@ impl ToolRegistry for HashMapToolRegistry {
         self.map.get(name).cloned()
     }
 
+    /// 名字按字典序返回。
+    ///
+    /// 顺序即模型可见 `tools` 数组的顺序，而 `tools` 排列在 messages 之前参与 provider 的
+    /// **前缀缓存**；`HashMap` 迭代序随实例随机，会让两轮请求的 tools 段字节不同 →
+    /// 整段前缀缓存失效。这里排序保证同一工具集合永远产出同一序列。
     fn names(&self) -> Vec<String> {
-        self.map.keys().cloned().collect()
+        let mut names: Vec<String> = self.map.keys().cloned().collect();
+        names.sort();
+        names
     }
+}
+
+/// 规范化"同一次工具调用"的复用键：工具名 + 规范化参数。
+///
+/// 规范化只做**对象键排序 + 扁平拼接**，因此模型调整参数键顺序、或复用同一参数对象时
+/// 能命中同一键；非对象/非法 JSON 退化为原字符串，宁可少命中也不误命中。
+///
+/// 用途：`LoopAgent::turn` 在请求内复用"同参数重复调用"的结果（见 `loop.rs` 的
+/// `replay_cache`）。放在 loop 层而非业务层，避免内核反向依赖 `core/agent`。
+pub fn canonical_call_key(name: &str, arguments: &str) -> String {
+    fn canon(v: &Value) -> String {
+        match v {
+            Value::Object(map) => {
+                let mut entries: Vec<(String, String)> =
+                    map.iter().map(|(k, val)| (k.clone(), canon(val))).collect();
+                entries.sort();
+                entries
+                    .iter()
+                    .map(|(k, val)| format!("{k}={val}"))
+                    .collect::<Vec<_>>()
+                    .join("&")
+            }
+            Value::Array(items) => items.iter().map(canon).collect::<Vec<_>>().join(","),
+            _ => v.to_string(),
+        }
+    }
+    let normalized = match serde_json::from_str::<Value>(arguments) {
+        Ok(v) => canon(&v),
+        Err(_) => arguments.trim().to_string(),
+    };
+    format!("{name}\u{1f}{normalized}")
 }
 
 #[cfg(test)]
@@ -180,5 +218,23 @@ mod tests {
         assert!(reg.get("echo").is_some());
         assert!(reg.get("missing").is_none());
         assert_eq!(reg.names(), vec!["echo".to_string()]);
+    }
+
+    #[test]
+    fn canonical_call_key_ignores_object_key_order() {
+        let a = canonical_call_key("read", r#"{"path":"a.md","offset":10}"#);
+        let b = canonical_call_key("read", r#"{ "offset" : 10 , "path" : "a.md" }"#);
+        assert_eq!(a, b, "对象键顺序差异不应产生不同复用键");
+        let n = canonical_call_key("read", r#"{"path":"b.md","offset":10}"#);
+        assert_ne!(a, n, "参数值不同必须区分");
+        assert_ne!(a, canonical_call_key("grep", r#"{"path":"a.md","offset":10}"#));
+    }
+
+    #[test]
+    fn canonical_call_key_falls_back_for_invalid_json() {
+        assert_eq!(
+            canonical_call_key("noop", " not-json "),
+            "noop\u{1f}not-json"
+        );
     }
 }

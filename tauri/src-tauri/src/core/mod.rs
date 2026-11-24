@@ -22,6 +22,8 @@ pub mod git;
 
 pub mod chat_types;
 pub mod docagent;
+/// 进程级共享 HTTP 客户端（连接池复用；见模块注释）。
+pub mod http;
 pub mod r#loop;
 mod embedding;
 mod indexer;

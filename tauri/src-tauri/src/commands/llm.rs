@@ -70,10 +70,16 @@ pub struct RagDone {
     pub request_id: String,
     pub content: String,
     pub sources: Vec<RagSource>,
+    /// 本轮**所有 step 累计**的输入 token（成本/统计口径）。
     #[serde(default)]
     pub prompt_tokens: u32,
+    /// 本轮**所有 step 累计**的输出 token。
     #[serde(default)]
     pub completion_tokens: u32,
+    /// 最后一个 step 的输入 token（= 本轮真实上下文规模，供"上下文占用率"显示用；
+    /// 多 step 场景下它远小于累计值，二者不能混用）。
+    #[serde(default)]
+    pub context_tokens: u32,
     /// 本次请求命中 provider 缓存的输入 token 数（缓存命中率 = cached / prompt）
     #[serde(default)]
     pub cached_input_tokens: u32,
@@ -1271,6 +1277,7 @@ pub async fn agent_query(
                             sources: Vec::new(),
                             prompt_tokens: 0,
                             completion_tokens: 0,
+                            context_tokens: 0,
                             cached_input_tokens: 0,
                             cache_creation_input_tokens: 0,
                         },
@@ -1351,6 +1358,7 @@ pub async fn agent_query(
                             sources: Vec::new(),
                             prompt_tokens: 0,
                             completion_tokens: 0,
+                            context_tokens: 0,
                             cached_input_tokens: 0,
                             cache_creation_input_tokens: 0,
                         },
@@ -1391,6 +1399,7 @@ pub async fn agent_query(
                     sources: Vec::new(),
                     prompt_tokens: 0,
                     completion_tokens: 0,
+                    context_tokens: 0,
                     cached_input_tokens: 0,
                     cache_creation_input_tokens: 0,
                 },
@@ -2177,16 +2186,14 @@ async fn kb_llm_query_loop_v2(
     let prompt_content = prompt.last().map(|m| m.content.clone()).unwrap_or_default();
 
     // 3) LoopAgent（无工具纯对话；系统规约与 rig 版一致）
-    let mut system_prompt = load_agent_rules(app, "chat_agent.md");
-    // 自我调节：注入上一请求的 one-shot 过程摘要（取走即清除，仅紧邻下一轮生效）
-    if let Some(summary) = take_process_summary(&state) {
-        system_prompt.push_str("\n\n");
-        system_prompt.push_str(&summary);
-    }
+    // system 保持**静态**（前缀缓存可命中），过程摘要这类逐轮变化的内容走 turn context。
+    let system_prompt = load_agent_rules(app, "chat_agent.md");
+    let turn_context = take_process_summary(&state).unwrap_or_default();
     let mut config = LoopConfig::new(crate::core::agent::DEFAULT_MAX_TURNS, system_prompt);
     config.max_tokens = llm_cfg.max_tokens;
     let mut agent = LoopAgent::new(adapter, config, &request_id);
     agent.replace_session(session);
+    agent.set_turn_context(turn_context);
 
     // 4) 流式转发（delta → llm:delta + 任务快照；usage → llm:usage；
     //    工具结果 → 实时 drain ToolCallBus 转发 agent:tool_call/result，对齐 rig 版逐步轨迹）
@@ -2776,17 +2783,30 @@ async fn agent_generate_loop_v2(
             }
         }
     }
-    let mut system = agent_rules;
+    // system 只放**静态**规约：它必须逐字节稳定，provider 的前缀缓存（OpenAI/DeepSeek
+    // 自动缓存、Anthropic cache_control）才会命中。以下内容都属于"本轮易变"，全部走
+    // turn context（在 turn 开始时作为一条 user 消息插在问题之前，位置固定、多 step 不变）：
+    // 过程摘要 / 检索上下文 / 技能目录 / 技能状态纠正。
+    let system = agent_rules;
+    let mut turn_context = String::new();
+    let mut push_ctx = |part: &str| {
+        if part.trim().is_empty() {
+            return;
+        }
+        if !turn_context.is_empty() {
+            turn_context.push_str("\n\n");
+        }
+        turn_context.push_str(part);
+    };
     // 自我调节：注入上一请求的 one-shot 过程摘要（取走即清除，仅紧邻下一轮生效）
     if let Some(summary) = take_process_summary(&state) {
-        system.push_str("\n\n");
-        system.push_str(&summary);
+        push_ctx(&summary);
     }
     if !context.trim().is_empty() {
-        system.push_str(&format!("\n\n检索到的知识库上下文：\n{context}"));
+        push_ctx(&format!("检索到的知识库上下文：\n{context}"));
     }
     if !catalog.trim().is_empty() {
-        system.push_str(&format!("\n\n---\n\n{catalog}"));
+        push_ctx(&format!("---\n\n{catalog}"));
     }
     // 技能激活是请求级状态：历史里保留的 <active_skill> 正文很容易让模型误以为
     // 本请求仍处于激活态，于是不调 activate_skill 直接 read references/...。
@@ -2796,8 +2816,8 @@ async fn agent_generate_loop_v2(
             .iter()
             .any(|m| m.content.contains("<active_skill"))
     {
-        system.push_str(
-            "\n\n[技能状态] 技能激活仅在单次请求内有效：对话历史中的 <active_skill> 正文不代表本请求已激活。\
+        push_ctx(
+            "[技能状态] 技能激活仅在单次请求内有效：对话历史中的 <active_skill> 正文不代表本请求已激活。\
              如需继续使用该技能（包括读取其 references/ 参考文档），请先调用 activate_skill 重新激活。",
         );
     }
@@ -2830,6 +2850,8 @@ async fn agent_generate_loop_v2(
     allow_extra.extend(mcp_tool_names.iter().cloned());
     let mut agent = LoopAgent::new(adapter, config, session_id.as_deref().unwrap_or(&request_id));
     agent.replace_session(session);
+    // 本轮易变上下文（摘要/检索/技能目录/技能状态）只注入本 turn 一次
+    agent.set_turn_context(turn_context);
     agent.set_tools(Arc::new(registry));
     agent.set_sink(Arc::new(crate::core::agent::loop_tools::BusToolEventSink::new(search_config.clone())));
     // 先技能门禁、后审批（与 rig 挂载顺序一致）；放行集 = 外部工具 ∪ MCP 工具
@@ -2856,6 +2878,8 @@ async fn agent_generate_loop_v2(
     let app_emit = app.clone();
     let rid = request_id.clone();
     let mut usage_info: Option<UsageInfo> = None;
+    // 最后一个 step 的输入 token（本轮真实上下文规模；用于 UI 的"上下文占用率"）
+    let mut context_tokens: u32 = 0;
     // 防幻觉守卫证据（在 turn 回调中实时收集；ToolCallBus 已被实时 drain，不再读总线）
     let mut tools_called_evidence: Vec<String> = Vec::new();
     let mut last_success_result: Option<String> = None;
@@ -2891,13 +2915,25 @@ async fn agent_generate_loop_v2(
                     emit_pending_tool_events(&app_emit, &rid);
                 }
                 LoopEvent::Usage(u) => {
-                    usage_info = Some(UsageInfo {
-                        prompt_tokens: u.prompt_tokens,
-                        completion_tokens: u.completion_tokens,
-                        total_tokens: u.total_tokens,
-                        cached_input_tokens: u.cached_input_tokens,
-                        cache_creation_input_tokens: u.cache_creation_input_tokens,
+                    // 多 step 的用量必须**累加**：旧实现每 step 覆盖，3 步任务只统计到 1/3，
+                    // 会话/热力图的 token 数与缓存命中率都因此偏低。
+                    let acc = usage_info.get_or_insert(UsageInfo {
+                        prompt_tokens: 0,
+                        completion_tokens: 0,
+                        total_tokens: 0,
+                        cached_input_tokens: 0,
+                        cache_creation_input_tokens: 0,
                     });
+                    acc.prompt_tokens = acc.prompt_tokens.saturating_add(u.prompt_tokens);
+                    acc.completion_tokens = acc.completion_tokens.saturating_add(u.completion_tokens);
+                    acc.total_tokens = acc.total_tokens.saturating_add(u.total_tokens);
+                    acc.cached_input_tokens =
+                        acc.cached_input_tokens.saturating_add(u.cached_input_tokens);
+                    acc.cache_creation_input_tokens = acc
+                        .cache_creation_input_tokens
+                        .saturating_add(u.cache_creation_input_tokens);
+                    // 覆盖（非累加）：取最后一个 step 的输入规模作为上下文占用
+                    context_tokens = u.prompt_tokens;
                 }
                 _ => {}
             },
@@ -2930,6 +2966,8 @@ async fn agent_generate_loop_v2(
     apply_anti_hallucination_guard(&mut full_content, &tools_called);
     let merged_sources = merge_search_sink(sources_clone, &search_sink).await;
     apply_grounding_validator(&mut full_content, !merged_sources.is_empty(), &tools_called);
+    // prompt/completion/cached 为**全轮累计**（成本口径）；context_tokens 为最后一个 step 的
+    // 输入规模（真实上下文占用，供 UI 显示，二者不可混用）
     let (prompt_tokens, completion_tokens, cached_input_tokens, cache_creation_input_tokens) = usage_info
         .as_ref()
         .map(|u| (u.prompt_tokens, u.completion_tokens, u.cached_input_tokens, u.cache_creation_input_tokens))
@@ -2976,6 +3014,7 @@ async fn agent_generate_loop_v2(
                     sources: merged_sources,
                     prompt_tokens,
                     completion_tokens,
+                    context_tokens,
                     cached_input_tokens,
                     cache_creation_input_tokens,
                 },
@@ -3034,6 +3073,7 @@ async fn agent_generate_loop_v2(
                     sources: merged_sources,
                     prompt_tokens,
                     completion_tokens,
+                    context_tokens,
                     cached_input_tokens,
                     cache_creation_input_tokens,
                 },

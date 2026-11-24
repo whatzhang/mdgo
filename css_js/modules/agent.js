@@ -986,6 +986,9 @@ async function sendRagQuery(text) {
                 const sources = e.payload.sources || [];
                 const promptTokens = e.payload.prompt_tokens || 0;
                 const completionTokens = e.payload.completion_tokens || 0;
+                // 上下文占用用"最后一个 step 的输入 token"：promptTokens 是**全轮累计**（成本口径，
+                // 多 step 时是单步的数倍），直接当占用率会虚高
+                const contextTokens = e.payload.context_tokens || promptTokens;
                 const cachedInputTokens = e.payload.cached_input_tokens || 0;
                 const cacheCreationInputTokens = e.payload.cache_creation_input_tokens || 0;
                 // 模型未上报 usage 时用内容长度估算兜底，避免会话/热力图 token 恒为 0
@@ -1084,8 +1087,8 @@ async function sendRagQuery(text) {
                 const uiTask = (async () => {
                     try {
                         // 更新上下文使用率（模型上下文窗口占用率）
-                        if (promptTokens > 0) {
-                            updateContextUsage(promptTokens, LOCAL_LLM_CONTEXT_LENGTH || 10000);
+                        if (contextTokens > 0) {
+                            updateContextUsage(contextTokens, LOCAL_LLM_CONTEXT_LENGTH || 10000);
                         }
                         // 更新缓存命中率（DSH 口径；provider 未上报缓存字段时显示占位）
                         updateCacheRate({

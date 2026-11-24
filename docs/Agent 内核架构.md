@@ -1,6 +1,6 @@
 # Agent 内核架构（core/loop 自研 Loop 内核）
 
-> 最后更新：2026-08-23
+> 最后更新：2026-11-24（工具重复调用复用 / 工具事件去重 / 共享 HTTP 客户端）
 
 > 定位：本文是 mdgo 自研 Agent 内核 **现状架构参考**。仓库已自 commit `7278d50` 起移除 rig
 > 依赖，现 HEAD=`edab77e`，`cargo test --lib` 321 通过。文中所列符号均以 `tauri/src-tauri/src/core/loop/`
@@ -106,8 +106,11 @@ step = 一次模型请求 + 该请求产出的工具批次
 
 `LoopAgent::turn(request_id, input, cancel, on_event)` 执行流程（loop.rs）：
 
-1. `turn = session.current_turn() + 1`，append `SessionEvent::TurnStart`；非空用户文本 append
-   `SessionEvent::UserMessage`。
+1. `turn = session.current_turn() + 1`，append `SessionEvent::TurnStart`；
+   再 append **本轮上下文** `SessionEvent::UserMessage { source: "system_context" }`
+   （`build_turn_context`：`[当前时间]` 块 + `set_turn_context` 注入的检索结果/记忆/
+   技能目录/过程摘要），最后 append 非空用户文本。上下文固定插在问题**之前**、整轮只插一次，
+   因此多 step 之间这段字节完全一致（前缀缓存友好，见 §2.2.1）。
 2. 进入 step 循环（每轮循环顶部做两个检查）：
    - `cancel.is_cancelled()` → 记 `TurnEndReason::Aborted`，返回 `TurnOutcome::Cancelled`；
    - `steps > config.max_turns` → 记 `TurnEndReason::MaxTokens`，返回 `TurnOutcome::MaxTurns`
@@ -115,12 +118,13 @@ step = 一次模型请求 + 该请求产出的工具批次
 3. append `SessionEvent::StepStart`；`history = session.derive_history()`；
    构造 `HookCtx`（turn / step / model / request_id / remaining_turns）。
 4. **组装请求**（`assemble_request` + `assemble_tool_schemas`）：
-   - system = `[当前时间]` 块（本地时间 + 星期 + 时区，逐请求刷新、不落会话缓存）
-     + 基础规约 + 各 Hook `pre_request` 的 `preamble_override` 拼接 + 预算预警
-     （`remaining <= budget_warning_threshold` 时强制引导"停止调用工具、直接生成最终答案"）；
-   - `active_tools` 由 Hook patch 窄化（`None` = 注册表全部工具）；
-   - `CompletionRequest`：`messages = [System] + history`，`stream=true`，`max_tokens`，
-     `tools = assemble_tool_schemas(active_tools)`，`extra_params` 合并。
+   - system = **仅静态内容**：基础规约 + 各 Hook `pre_request` 的 `preamble_override`。
+     时间块与预算提醒已移出（前者进本轮上下文，后者走尾部提示），保证 system 逐字节稳定；
+   - 预算预警（`remaining <= budget_warning_threshold`）作为 **tail notice** 追加在 history
+     之后（逐 step 变化只影响尾部增量，不冲掉前缀）；
+   - `active_tools` 由 Hook patch 窄化（`None` = 注册表全部工具，`names()` 已按字典序排序）；
+   - `CompletionRequest`：`messages = [System] + history (+ tail notice)`，`stream=true`，
+     `max_tokens`，`tools = assemble_tool_schemas(active_tools)`，`extra_params` 合并。
 5. `adapter.stream(req, cancel.clone())`：初始失败走 `try_recover`（见 §2.4）。
 6. **消费流式事件**（`tokio::select! { biased; cancel / stream.next() }`，取消优先）：
    - `StreamEvent::TextDelta` → 追加 step_content 与总 content，回调 `LoopEvent::Delta`；
@@ -133,11 +137,49 @@ step = 一次模型请求 + 该请求产出的工具批次
    - 流错误：**已产出内容时不重试**（重放会重复工具副作用），仅当 `step_content` 与
      `step_tool_calls` 均为空才走 `try_recover`；否则 `TurnEnd(Error)` → `Failed`；
    - 否则 append `AssistantMessage{content, tool_calls, usage, interrupted: false}`。
-8. **工具执行**：`step_tool_calls` 为空 → `break`（turn 完成）；非空 → 逐个 append
-   `SessionEvent::ToolCall`，调 `execute_tool_calls(tools, calls, hooks, hook_ctx, request_id,
-   cancel, sink, max_parallel_tools)`（§4.2），每个结果回调 `LoopEvent::ToolResult` 并 append
-   `SessionEvent::ToolResult`；然后回到步骤 2 开始下一个 step。
-9. 正常退出 → append `TurnEnd(Completed)`，返回 `TurnOutcome::Completed`。
+8. **工具重复调用复用（replay）**：一批调用里，凡"工具名 + 规范化参数"命中本 turn 缓存的，
+   直接回填上一次的真实结果（`replay_note` 注明"未重复执行"/第 N 次），**不再执行、也不再返回
+   "被拦截"错误**——错误文案会诱使模型再换措辞试一次，白付一个完整 step。缓存规则：
+   - 键 = `canonical_call_key(name, args)`（对象键排序 + 扁平拼接，见 `tool.rs`）；
+   - 一次 exclusive（写/阻塞）调用发生后清空读类缓存（结果可能已过期），只保留写自身的结果
+     （同参数重复写直接复用，避免重复副作用）；单条结果 >64KB 不入缓存。
+9. **工具执行**：`step_tool_calls` 为空 → `break`（turn 完成）；非空 → 逐个 append
+   `SessionEvent::ToolCall`；命中 replay 的直接回填（同时通过 `ToolEventSink` 补一对 call/result，
+   保证前端轨迹成对），其余调 `execute_tool_calls(tools, calls, hooks, hook_ctx, request_id,
+   cancel, sink, max_parallel_tools)`（§4.2）；所有结果**按模型序**提交、回调 `LoopEvent::ToolResult`
+   并 append `SessionEvent::ToolResult`；然后回到步骤 2 开始下一个 step。
+10. 正常退出 → append `TurnEnd(Completed)`，返回 `TurnOutcome::Completed`。
+
+### 2.2.1 前缀缓存友好的 prompt 布局（2026-11-24）
+
+provider 的前缀缓存（OpenAI/DeepSeek 自动缓存、Anthropic `cache_control`）按**字节前缀**匹配：
+从第 0 个 token 起逐块命中，任何位置一变，其后全部失效。因此 prompt 的布局本身就是性能契约：
+
+```text
+[system]          仅静态：rag_agent.md 规约 + 技能约束摘要（Hook preamble）
+[history]         已完成轮次 + 本轮 tool 结果（append-only）
+[本轮上下文]      时间块 + 检索上下文 + 记忆 + 技能目录 + 过程摘要（整轮只插一次、位置固定）
+[本轮用户问题]
+[assistant / tool ...] 之后每个 step 追加
+[tail notice]      仅最后几轮的预算提醒（逐 step 变化，放在最尾部）
+```
+
+四条规则（改动时不要破坏）：
+
+1. **system 永不逐轮变化**：时间/检索/记忆/摘要一律不进 system。命令层通过
+   `LoopAgent::set_turn_context()` 注入，loop 在 turn 开始时落成一条 `UserMessage`；
+2. **本轮上下文位置固定且只插一次**：多 step 之间字节完全一致，否则 step 2+ 前缀就断了；
+3. **逐 step 变化的内容只放尾部**（预算提醒）：影响面限于尾部增量；
+4. **工具数组顺序确定化**：`HashMapToolRegistry::names()` 排序返回；`active_tools` 本身
+   按「BASE → 软门禁 → 外部 → MCP → 技能声明」的固定顺序追加。
+
+缓存边界：**单轮内**（多 step）可命中到 history 末尾；**跨轮**可命中到"上一轮上下文之前"——
+因为前端每轮用自身消息重建会话，本轮的上下文消息不会回流到下一轮（要拿到完整跨轮命中，
+需要 P2 的"服务端会话 + 只发增量"）。
+
+可观测：每个 step 打两条日志——`[loop] ttft turn/step/ms` 与
+`[loop] usage prompt/cached/hit/completion/total`；`RagDone.prompt_tokens` 为**全轮累计**、
+`context_tokens` 为最后一个 step 的输入规模（UI 上下文占用率用它，避免多 step 虚高）。
 
 ### 2.3 终止条件与取消语义
 
@@ -276,6 +318,11 @@ Phase 2b concurrent execute：
 - 取消：取消后未启动的调用产出 `ToolError::Cancelled` 结果（保回放完整），已启动的 drain 到
   quiescence（工具尊重 `ctx.cancel`）。
 - 工具未注册 → 结果 "工具不存在: {name}"（is_error=true），不致命。
+- **本阶段只处理"未命中 replay 的调用"**：同参数重复调用在 `LoopAgent::turn` 的步骤 8 已被
+  直接回填（见 §2.2），不会再进调度器/审批门。
+- **事件出口去重**：调度器（`run_one`）与工具实现都会调 `ToolEventSink`，两条路径共用模型给的
+  `ToolCall.id`；`BusToolEventSink` 按 `call_id` 去重，保证一次调用只产生一对 call/result，
+  IPC 载荷不再翻倍、质量计数（`tool_successes/failures`）不再被计两次。
 
 ### 4.3 业务工具注册表（core/agent/loop_tools.rs）
 
@@ -370,11 +417,14 @@ pub trait LlmAdapter: Send + Sync {
   `normalize_base_url` 剥离 `/chat/completions` 后缀、保留 `/v1` 前缀；`with_timeout` 可自定义
   非流式超时（默认 `DEFAULT_TIMEOUT = 600s`）。
 - **超时三档**（常量在 openai.rs）：
-  - `CONNECT_TIMEOUT = 15s`：连接阶段快速失败；
+  - 连接超时 = 共享 client 的 `connect_timeout = 15s`（`core::http`）：连接阶段快速失败；
   - `STREAM_IDLE_TIMEOUT = 600s`：流式**空闲看门狗**——无数据块持续 600s 判定死流并中止；
     每收到一个数据块重新计时（慢速持续吐字的流不会被误杀）；
-  - `STREAM_TOTAL_TIMEOUT = 1800s`：流式请求总超时兜底（reqwest `.timeout()`，覆盖连接+发送+读体）；
-    30 分钟兜底死流。
+  - `STREAM_TOTAL_TIMEOUT = 1800s`：流式请求总超时兜底（逐请求 `RequestBuilder::timeout`，
+    覆盖连接+发送+读体）；30 分钟兜底死流。
+- **连接复用**：`http` 客户端取自 `crate::core::http::shared()`（进程级单例，连接池/keep-alive/
+  TLS session 跨 step、跨轮复用），总超时逐请求设置。旧实现每个 step 都
+  `Client::builder().build()`，等于每步重做一次 DNS/TCP/TLS 握手。
 - 请求体（`build_body`）：`model`/`messages`/`stream`/`max_tokens`/`temperature`/
   `reasoning_effort`（请求级优先，回退适配器默认）；`output_schema` → `response_format:
   {"type":"json_schema","json_schema":{...strict:true}}`；`tools` → OpenAI `{type:"function",
@@ -534,6 +584,7 @@ rig 依赖已自 commit `7278d50` 移除（现 HEAD=`edab77e`），代码中仅�
 
 | 文件 | 职责 |
 |---|---|
+| `core/http.rs` | 进程级共享 `reqwest::Client`（连接池/TLS 复用；超时逐请求设置） |
 | `core/loop/mod.rs` | 模块注册 + 公开窄接口聚合导出 |
 | `core/loop/types.rs` | 协议无关消息/内容块/流事件/错误类型 |
 | `core/loop/llm_seam.rs` | `LlmAdapter` 抽象 + `CompletionRequest/Response` + `ToolSchema` |
