@@ -33,7 +33,7 @@ use crate::core::{SearchHit, call_embedding_query, call_embedding_queries};
 use crate::services::llm::{ChatMessage, LLMClient, UsageInfo};
 
 // ─── 后端消息长度预算（集中定义见 crate::core::agent::limits） ───
-use crate::core::agent::limits::{MAX_MESSAGE_CHARS, MAX_MESSAGE_TOKENS, SUMMARY_MAX_CHARS};
+use crate::core::agent::limits::{MAX_MESSAGE_CHARS, SUMMARY_MAX_CHARS};
 
 // ─── 事件类型 ───
 
@@ -213,17 +213,18 @@ async fn prepare_history(
         .await
 }
 
-/// 历史压缩预算（token）：默认按模型上下文窗口的 **80%** 计算（用户确认的口径），
-/// 随模型窗口缩放，避免固定阈值在大窗口模型上过早压缩；
-/// - 未配置上下文窗口（context_length=0）→ 回退固定 `MAX_MESSAGE_TOKENS`（旧行为兜底）；
-/// - 极小窗口受下限保护（防预算过小导致每次请求都压缩）。
-fn compression_budget_tokens(context_length: u32) -> usize {
-    const MIN_BUDGET_TOKENS: usize = 2_000;
-    if context_length > 0 {
-        (context_length as usize * 8 / 10).max(MIN_BUDGET_TOKENS)
-    } else {
-        MAX_MESSAGE_TOKENS
-    }
+/// 本请求的上下文预算（单一入口：窗口 + 输出上限 → 历史/工具结果/schema 预算）。
+fn context_budget(llm_cfg: &crate::LlmConfig) -> crate::core::r#loop::ContextBudget {
+    crate::core::r#loop::ContextBudget::from_window(llm_cfg.context_length, llm_cfg.max_tokens)
+}
+
+/// 历史压缩预算（token）：由 [`ContextBudget`] 统一推导（延迟预算，不再按窗口百分比）。
+///
+/// 旧口径 `context_length × 0.8` 在 1M 窗口下等于 800k token（从不触发压缩）；
+/// 现在用"窗口 × 安全系数 − 输出预留 − 固定段，再与 24k 硬上限取小"，
+/// 未配置窗口时回退 `MAX_MESSAGE_TOKENS`（15k，旧行为）。
+fn history_budget_tokens(llm_cfg: &crate::LlmConfig) -> usize {
+    context_budget(llm_cfg).history_tokens() as usize
 }
 
 /// 判断流式错误是否为「模型上下文窗口超限」（P1-3：context_length_exceeded）。
@@ -2176,7 +2177,7 @@ async fn kb_llm_query_loop_v2(
     let compressed = prepare_history(
         history,
         compressor.as_ref(),
-        compression_budget_tokens(llm_cfg.context_length),
+        history_budget_tokens(&llm_cfg),
         cancel.clone(),
     )
     .await;
@@ -2191,6 +2192,7 @@ async fn kb_llm_query_loop_v2(
     let turn_context = take_process_summary(&state).unwrap_or_default();
     let mut config = LoopConfig::new(crate::core::agent::DEFAULT_MAX_TURNS, system_prompt);
     config.max_tokens = llm_cfg.max_tokens;
+    config.budget = context_budget(&llm_cfg);
     let mut agent = LoopAgent::new(adapter, config, &request_id);
     agent.replace_session(session);
     agent.set_turn_context(turn_context);
@@ -2217,12 +2219,12 @@ async fn kb_llm_query_loop_v2(
                     // 每批工具执行完成时实时转发轨迹（BusToolEventSink 已写入 call+result）
                     emit_pending_tool_events(&app_emit, &rid);
                 }
-                LoopEvent::ReasoningDelta(r) => {
+                LoopEvent::ReasoningDelta { text: r, step } => {
                     // B5：推理过程实时转发（前端可折叠展示；不占回答文本）+ 快照（切页恢复）
                     tasks.add_thinking(&rid, &r);
                     let _ = app_emit.emit(
                         "llm:thinking",
-                        serde_json::json!({ "request_id": rid.clone(), "content": r }),
+                        serde_json::json!({ "request_id": rid.clone(), "content": r, "step": step }),
                     );
                 }
                 LoopEvent::Usage(u) => {
@@ -2236,6 +2238,16 @@ async fn kb_llm_query_loop_v2(
                             "cache_creation_input_tokens": u.cache_creation_input_tokens,
                         }),
                     );
+                }
+                LoopEvent::ContextPruned { dropped_chars, strategy } => {
+                    crate::core::trace::stage_end(
+                        &rid,
+                        "context",
+                        "pruned",
+                        0,
+                        &format!("上下文剪枝：释放约 {dropped_chars} 字符（{strategy}）"),
+                    );
+                    emit_pending_trace_events(&app_emit, &rid);
                 }
                 _ => {}
             },
@@ -2506,7 +2518,7 @@ pub async fn doc_agent_query(
     let compressed = prepare_history(
         history,
         compressor.as_ref(),
-        compression_budget_tokens(llm_cfg.context_length),
+        history_budget_tokens(&llm_cfg),
         cancel.clone(),
     )
     .await;
@@ -2575,6 +2587,7 @@ pub async fn doc_agent_query(
         crate::core::agent::limits::DOC_MAX_TURNS,
         system_prompt,
     );
+    config.budget = context_budget(&llm_cfg);
     config.max_tokens = llm_cfg.max_tokens;
     let adapter: Arc<dyn LoopLlmAdapter> = build_adapter(&llm_cfg);
     let mut agent = LoopAgent::new(adapter, config, session_id.as_deref().unwrap_or(&request_id));
@@ -2602,11 +2615,11 @@ pub async fn doc_agent_query(
                     tasks.append_text(&rid, &t);
                     let _ = app_emit.emit("llm:delta", LlmDelta { request_id: rid.clone(), content: t });
                 }
-                LoopEvent::ReasoningDelta(r) => {
+                LoopEvent::ReasoningDelta { text: r, step } => {
                     tasks.add_thinking(&rid, &r);
                     let _ = app_emit.emit(
                         "llm:thinking",
-                        serde_json::json!({ "request_id": rid.clone(), "content": r }),
+                        serde_json::json!({ "request_id": rid.clone(), "content": r, "step": step }),
                     );
                 }
                 LoopEvent::Usage(u) => {
@@ -2620,6 +2633,16 @@ pub async fn doc_agent_query(
                             "cache_creation_input_tokens": u.cache_creation_input_tokens,
                         }),
                     );
+                }
+                LoopEvent::ContextPruned { dropped_chars, strategy } => {
+                    crate::core::trace::stage_end(
+                        &rid,
+                        "context",
+                        "pruned",
+                        0,
+                        &format!("上下文剪枝：释放约 {dropped_chars} 字符（{strategy}）"),
+                    );
+                    emit_pending_trace_events(&app_emit, &rid);
                 }
                 LoopEvent::ToolResult { .. } => {
                     emit_pending_tool_events(&app_emit, &rid);
@@ -2723,7 +2746,7 @@ async fn agent_generate_loop_v2(
     let compressed = prepare_history(
         &hist_messages,
         compressor.as_ref(),
-        compression_budget_tokens(llm_cfg.context_length),
+        history_budget_tokens(&llm_cfg),
         cancel.clone(),
     )
     .await;
@@ -2824,6 +2847,7 @@ async fn agent_generate_loop_v2(
 
     let mut config = LoopConfig::new(crate::core::agent::DEFAULT_MAX_TURNS, system);
     config.max_tokens = llm_cfg.max_tokens;
+    config.budget = context_budget(&llm_cfg);
     // 事件里报的轮次上限必须取自**实际配置**，而不是再写一次默认常量：
     // 将来按会话配置轮次时，写死的常量会让提示显示错误的上限。
     let max_turns_cfg = config.max_turns;
@@ -2893,12 +2917,12 @@ async fn agent_generate_loop_v2(
                     tasks.append_text(&rid, &t);
                     let _ = app_emit.emit("rag:delta", RagDelta { request_id: rid.clone(), content: t });
                 }
-                LoopEvent::ReasoningDelta(r) => {
+                LoopEvent::ReasoningDelta { text: r, step } => {
                     // B5：推理过程实时转发（前端可折叠展示；不占回答文本）+ 快照（切页恢复）
                     tasks.add_thinking(&rid, &r);
                     let _ = app_emit.emit(
                         "rag:thinking",
-                        serde_json::json!({ "request_id": rid.clone(), "content": r }),
+                        serde_json::json!({ "request_id": rid.clone(), "content": r, "step": step }),
                     );
                 }
                 LoopEvent::ToolResult { call, result } => {
@@ -2934,6 +2958,17 @@ async fn agent_generate_loop_v2(
                         .saturating_add(u.cache_creation_input_tokens);
                     // 覆盖（非累加）：取最后一个 step 的输入规模作为上下文占用
                     context_tokens = u.prompt_tokens;
+                }
+                LoopEvent::ContextPruned { dropped_chars, strategy } => {
+                    // 每 step 前的无模型压缩（遮最旧 step）：写一条 trace，前端时间线可见
+                    crate::core::trace::stage_end(
+                        &rid,
+                        "context",
+                        "pruned",
+                        0,
+                        &format!("上下文剪枝：释放约 {dropped_chars} 字符（{strategy}）"),
+                    );
+                    emit_pending_trace_events(&app_emit, &rid);
                 }
                 _ => {}
             },

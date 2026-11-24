@@ -50193,6 +50193,12 @@ kanban-plugin: basic
                         if (e.payload.request_id !== requestId) return;
                         const delta = e.payload.content;
                         if (!delta) return;
+                        // 语义边界：正文开始 → 思考阶段结束（flush 对空缓冲是 no-op）
+                        if (_chatStreamingDiv && _chatStreamingDiv._timeline
+                            && _chatStreamingDiv._timeline.thinkingBuf
+                            && typeof flushThinkingBuffer === 'function') {
+                            flushThinkingBuffer(_chatStreamingDiv);
+                        }
                         _chatStreamingFullContent += delta;
                         if (!_chatStreamingDiv) {
                             removeChatTyping();
@@ -50214,7 +50220,7 @@ kanban-plugin: basic
                         const div = ensureStreamingAssistantDiv();
                         ensureTimelineState(div, requestId);
                         ensureProcessTimeline(div);
-                        timelineThinking(div, content);
+                        timelineThinking(div, content, e.payload.step);
                     }),
                     window.__TAURI__.event.listen('llm:usage', (e) => {
                         if (e.payload.request_id !== requestId) return;

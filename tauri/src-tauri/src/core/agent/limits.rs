@@ -12,10 +12,11 @@
 pub const DEFAULT_MAX_TURNS: usize = 20;
 /// 单条消息最大字符数（超长问题截断上限）
 pub const MAX_MESSAGE_CHARS: usize = 30_000;
-/// 对话历史压缩的 token 预算
-pub const MAX_MESSAGE_TOKENS: usize = 15_000;
-/// 历史摘要的最大字符数
-pub const SUMMARY_MAX_CHARS: usize = 6_000;
+// 注：历史压缩预算已收敛到内核的 `core::loop::budget::ContextBudget`（按延迟预算推导，
+// 不再按窗口百分比）；旧常量 `MAX_MESSAGE_TOKENS` 已退役，由
+// `ContextBudget::DEFAULT_HISTORY_TOKENS`（未配置窗口时的兜底）取代。
+/// 历史摘要的最大字符数（8k ≈ 4k token；提高上限是为了少丢细节，压缩后仍远小于历史预算）
+pub const SUMMARY_MAX_CHARS: usize = 8_000;
 // ── 检索 ──
 
 /// kb_search / code_lookup 工具默认 top_k 上限
@@ -77,8 +78,9 @@ pub const MAX_EDIT_FILE_BYTES: u64 = 1024 * 1024;
 
 // ── 子代理 ──
 
-/// 子代理摘要字符预算
-pub const SUBAGENT_SUMMARY_CHARS: usize = 4_000;
+/// 子代理摘要字符预算（父链直接消费的**有界交接**；全文仍可 read_subagent_result 分页读取，
+/// 因此提高上限只影响"一次能看多少"，不会丢内容）
+pub const SUBAGENT_SUMMARY_CHARS: usize = 6_000;
 
 // ── DocAgent（文档子 Agent）──
 

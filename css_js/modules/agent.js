@@ -65,6 +65,7 @@ function ensureTimelineState(div, requestId) {
             entries: [],          // { type, ts, ... }
             thinkingBuf: '',      // 当前 thinking 增量累积（未落条目）
             thinkingStart: 0,
+            thinkingStep: 0,      // 当前缓冲所属的模型调用序号（1-based；0 = 未知）
             toolOpen: {},         // seq -> call 事件（等 result 配对）
             stageOpen: {},        // stage -> start 事件（等 end 配对）
             rafPending: false,
@@ -141,13 +142,15 @@ function renderProcessTimeline(div) {
     const totalEnd = entries.length ? entries[entries.length - 1].ts : 0;
     const totalMs = totalEnd > totalStart ? totalEnd - totalStart : 0;
     const errCount = entries.filter(e => (e.type === 'tool' && e.ok === false) || (e.type === 'stage' && e.status === 'error')).length;
-    const stats = `${entries.length} steps` + (thinkMs ? ` · think ${(thinkMs / 1000).toFixed(1)}s` : '')
+    const stats = `${entries.length} 条记录` + (thinkMs ? ` · think ${(thinkMs / 1000).toFixed(1)}s` : '')
         + ` · tool ${toolCount}` + (totalMs ? ` · total ${(totalMs / 1000).toFixed(1)}s` : '')
         + (errCount ? ` · ${errCount} failed` : '');
     const sum = wrap.querySelector('.pt-summary-stats');
     if (sum) sum.textContent = stats;
 
-    list.innerHTML = entries.map(entry => renderTimelineEntry(entry)).join('');
+    // 多步任务才显示 step 徽标：单步（纯对话）里出现 "step 1" 只是噪声
+    const multiStep = entries.some(e => e.type === 'thinking' && (Number(e.step) || 0) > 1);
+    list.innerHTML = entries.map(entry => renderTimelineEntry(entry, multiStep)).join('');
     // 事件委托：thinking 点击展开全文、tool 点击展开 detail（每次重建后重新绑定到 list 一次即可，
     // 用 onlistener 属性避免重复绑定累积）
     if (!list.dataset.bound) {
@@ -179,20 +182,34 @@ function renderProcessTimeline(div) {
 }
 
 /** 渲染单条时间线条目（emoji 全部用英文单词替代） */
-function renderTimelineEntry(entry) {
+function renderTimelineEntry(entry, multiStep) {
     switch (entry.type) {
         case 'thinking': {
             // 展开状态持久在条目上（entry._open），rAF 重建时保持用户选择
             const open = !!entry._open;
-            const short = entry.content && entry.content.length > 80 ? entry.content.slice(0, 80) + '…' : (entry.content || '');
-            // 结构：一行（think 标签 + preview 单行摘要）→ 点击展开 full body（完整文本换行显示）
+            const body = entry.content || '';
+            const streaming = !!entry._streaming;
+            // 流式中显示"最新"内容（像终端跟读，视觉上能看出还在写）；
+            // 落条后折叠显示开头摘要（便于区分不同思考阶段）。
+            const preview = streaming
+                ? body.slice(-120)
+                : (body.length > 80 ? body.slice(0, 80) + '…' : body);
+            // 懒渲染全文：折叠时**不**把正文塞进 DOM —— 单条思考可能上万字符，
+            // 每帧 innerHTML 重建会把流式渲染拖慢（这也正是旧实现用 4000 字符硬切的原因）。
+            // 流式中只渲染尾部窗口（2000 字符），落条后展开才给全文。
+            const full = open
+                ? traceEscapeHtml(streaming ? body.slice(-2000) : body)
+                : '';
+            const stepBadge = (multiStep && entry.step)
+                ? `<span class="pt-step" title="第 ${entry.step} 次模型调用">step ${entry.step}</span>`
+                : '';
             return `<div class="pt-entry pt-thinking${open ? ' open' : ''}" data-kind="thinking">
                 <div class="pt-thinking-row">
-                    <span class="pt-dot">think</span>
-                    <span class="pt-thinking-preview"${open ? ' style="display:none;"' : ''}>${traceEscapeHtml(short)}</span>
+                    <span class="pt-dot">think</span>${stepBadge}
+                    <span class="pt-thinking-preview"${open ? ' style="display:none;"' : ''}>${traceEscapeHtml(preview)}</span>
                     <span class="pt-time">${entry.duration_ms ? (entry.duration_ms / 1000).toFixed(1) + 's' : ''}</span>
                 </div>
-                <div class="pt-thinking-full"${open ? '' : ' style="display:none;"'}>${traceEscapeHtml(entry.content || '')}</div>
+                <div class="pt-thinking-full"${open ? '' : ' style="display:none;"'}>${full}</div>
             </div>`;
         }
         case 'tool': {
@@ -231,6 +248,7 @@ function flushThinkingBuffer(div) {
     if (!tl || !tl.thinkingBuf) return false;
     const now = Date.now();
     const duration = tl.thinkingStart ? now - tl.thinkingStart : 0;
+    const step = tl.thinkingStep || 0;
     // 若已存在流式进行中的 thinking 条目，直接补全它（避免重复条目）
     let updated = false;
     for (let i = tl.entries.length - 1; i >= 0; i--) {
@@ -238,6 +256,7 @@ function flushThinkingBuffer(div) {
         if (e.type === 'thinking' && e._streaming) {
             e.content = tl.thinkingBuf;
             e.duration_ms = duration;
+            if (step) e.step = step;
             delete e._streaming;
             updated = true;
             break;
@@ -248,32 +267,54 @@ function flushThinkingBuffer(div) {
             type: 'thinking',
             content: tl.thinkingBuf,
             duration_ms: duration,
+            step: step || undefined,
         });
     }
     tl.thinkingBuf = '';
     tl.thinkingStart = 0;
+    tl.thinkingStep = 0;
+    // 落条后要重渲染一次：把"流式中（尾部预览）"形态换成"已收束（头部摘要）"形态。
+    // 若靠后续事件顺带渲染，正文开始（此时没有新的时间线事件）会长时间停留在流式形态。
+    tl.dirty = true;
+    if (!tl.rafPending) {
+        tl.rafPending = true;
+        requestAnimationFrame(() => {
+            tl.rafPending = false;
+            if (tl.dirty) {
+                tl.dirty = false;
+                renderProcessTimeline(div);
+            }
+        });
+    }
     return true;
 }
 
-/** thinking 增量累积：到达时追加到缓冲，间隔 >1.2s 或总量超限时落成一条 */
-function timelineThinking(div, content) {
+/**
+ * thinking 增量累积：**同一 step 内的思考合并成一条条目**。
+ *
+ * 落条只由"语义边界"触发（跨 step / 工具调用前 / 正文开始前 / 流结束）。
+ * 旧实现按「4000 字符」或「间隔 >1.2s」硬切，会把一段连续思考切成七八条，
+ * UI 上看起来像模型思考了七八次；30s 仅作为死流兜底，不进正常路径。
+ *
+ * @param {number} [step] 产生该增量的模型调用序号（1-based；缺省 = 不区分步）
+ */
+function timelineThinking(div, content, step) {
     const tl = div && div._timeline;
     if (!tl) return;
     const now = Date.now();
-    if (tl.thinkingBuf && now - tl.thinkingStart > 1200) {
-        // 落一条已累积的 thinking
+    const stepNo = Number(step) || 0;
+    // 跨 step：新一步的思考必须独立成条（否则会并进上一条，且顺序会错到工具卡片之前）
+    const stepChanged = stepNo > 0 && tl.thinkingStep > 0 && stepNo !== tl.thinkingStep;
+    if (tl.thinkingBuf && (stepChanged || now - tl.thinkingStart > 30000)) {
         flushThinkingBuffer(div);
-        tl.thinkingStart = now;
     }
-    if (!tl.thinkingBuf) tl.thinkingStart = now;
+    if (!tl.thinkingBuf) {
+        tl.thinkingStart = now;
+        if (stepNo > 0) tl.thinkingStep = stepNo;
+    }
     tl.thinkingBuf += content;
-    // 长思考防爆：超 4000 字符强制落条
-    if (tl.thinkingBuf.length > 4000) {
-        flushThinkingBuffer(div);
-        tl.thinkingStart = now;
-    }
     // 流式可见性：rAF 重渲染时若缓冲非空，把缓冲内容挂到「进行中」thinking 条目上，
-    // 让用户实时看到正在思考的内容（而非等 1.2s 落条才显示）。
+    // 让用户实时看到正在思考的内容（而非等落条才显示）。
     tl.dirty = true;
     if (!tl.rafPending) {
         tl.rafPending = true;
@@ -295,6 +336,7 @@ function timelineThinking(div, content) {
                         type: 'thinking',
                         content: tl.thinkingBuf,
                         duration_ms: 0,
+                        step: tl.thinkingStep || undefined,
                         _streaming: true, // 标记：流式进行中的 thinking，落条时移除该标记
                     });
                 }
@@ -418,6 +460,9 @@ function handleAgentToolEvent(e, rid) {
     const div = ensureStreamingAssistantDiv();
     ensureTimelineState(div, rid);
     ensureProcessTimeline(div);
+    // 语义边界：工具调用意味着"思考阶段结束"，先落条再记工具卡片
+    // （否则下一步的思考会并进上一条，并写回到工具卡片之前，顺序错乱）
+    if (p.kind === 'call') flushThinkingBuffer(div);
     // 写入统一时间线
     timelineTool(div, p);
     // 保留持久化记录（供历史回放 expandToolHistory / renderToolTraceFromRecords）
@@ -925,6 +970,11 @@ async function sendRagQuery(text) {
                 if (e.payload.request_id !== requestId) return;
                 const delta = e.payload.content;
                 if (!delta) return;
+                // 语义边界：正文开始 → 思考阶段结束（flush 对空缓冲是 no-op，可每帧调用）
+                if (_chatStreamingDiv && _chatStreamingDiv._timeline
+                    && _chatStreamingDiv._timeline.thinkingBuf) {
+                    flushThinkingBuffer(_chatStreamingDiv);
+                }
                 _chatStreamingFullContent += delta;
                 if (!_chatStreamingDiv) {
                     console.debug('[rag] FIRST delta received len=' + delta.length);
@@ -962,7 +1012,7 @@ async function sendRagQuery(text) {
                 const div = ensureStreamingAssistantDiv();
                 ensureTimelineState(div, requestId);
                 ensureProcessTimeline(div);
-                timelineThinking(div, content);
+                timelineThinking(div, content, e.payload.step);
             }),
             window.__TAURI__.event.listen('rag:status', (e) => {
                 if (e.payload.request_id !== requestId) return;
@@ -1148,6 +1198,10 @@ async function sendRagQuery(text) {
                 console.error('[rag] error event requestId=' + requestId + ' msg=' + e.payload.message);
                 ragDone = true;
                 _chatStreamingStatusMsg = '';
+                // 失败路径也要收尾思考缓冲，避免时间线里留一条永久"进行中"的 think
+                if (_chatStreamingDiv && _chatStreamingDiv._timeline) {
+                    flushThinkingBuffer(_chatStreamingDiv);
+                }
                 if (_chatStreamingDiv) {
                     const st = _chatStreamingDiv.querySelector('.chat-message-header-status');
                     if (st) st.remove();

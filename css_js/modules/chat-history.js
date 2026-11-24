@@ -129,7 +129,11 @@
         const ctxLen = (typeof LOCAL_LLM_CONTEXT_LENGTH !== 'undefined' && LOCAL_LLM_CONTEXT_LENGTH > 0)
             ? LOCAL_LLM_CONTEXT_LENGTH
             : 8000;
-        const budget = Math.floor(ctxLen * ratio);
+        // 与后端 ContextBudget 对齐的硬上限：窗口再大（如 1M），历史也不超过 32k token。
+        // 旧口径只按 ctx × ratio 算，1M 窗口下等于 40 万 token（从不裁剪）。
+        // 后端仍会按同一预算再裁一次（权威口径在后端），这里只是省掉无谓的 IPC 传输。
+        const HISTORY_HARD_CAP_TOKENS = 32000;
+        const budget = Math.min(Math.floor(ctxLen * ratio), HISTORY_HARD_CAP_TOKENS);
         // 按「工具调用单元」分组（review 修复：避免单条裁剪切散 tool_call 与 tool 结果）
         const units = groupToolUnits(messages);
         let totalTokens = 0;

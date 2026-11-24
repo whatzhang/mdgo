@@ -12,7 +12,7 @@
 
 **三条改造主线**（对齐 DSH 的成熟做法，并补齐主流 Agent 已普及的机制）：
 
-1. **预算以"延迟预算"为准，不以"窗口比例"为准**：历史硬上限 24k token（可配 16k–48k），其余全部下调一个数量级。
+1. **预算以"延迟预算"为准，不以"窗口比例"为准**：历史硬上限 32k token（可配 16k–48k），其余全部下调一个数量级。
 2. **工具结果先"无模型剪枝"再谈摘要**：保头/保尾 + 统计摘要 + 剪枝标记 + 续读句柄（零模型成本、可逆），这是 DSH 的核心做法，mdgo 目前只有"整条清成占位符"。
 3. **压缩从"每轮一次"改成"每 step 前的压力检查"**：DSH 是 `pre-step` 压力检查 + `request-error` 溢出恢复双触发；mdgo 只在 turn 开始前压一次，多步任务中途必然胀回去。
 
@@ -194,8 +194,8 @@ pub struct ContextBudget {
     pub system_cap: u32,        // 静态规约上限 8_000
     pub tools_cap: u32,         // 工具 schema 上限 12_000
     pub context_cap: u32,       // 检索/记忆注入上限 6_000
-    pub tool_result_item_cap: u32,   // 单条工具结果 8_000（原 24k 字符 ≈ 12–16k token）
-    pub tool_result_total_cap: u32,  // 历史工具结果累计 16_000
+    pub tool_result_item_cap: u32,   // 单条工具结果 10_000（2026-11-24 由 8_000 上调）
+    pub tool_result_total_cap: u32,  // 历史工具结果累计 24_000（由 16_000 上调）
 }
 
 impl ContextBudget {
@@ -210,7 +210,7 @@ impl ContextBudget {
 |---|---|---|---|
 | 历史预算 | `ctx × 0.8`（≈800k） | `min(ctx×0.6 − 预留 − 固定段, 24k)` | 真正的"延迟预算" |
 | 前端裁剪 | `ctx × 0.4` | 与服务端同源：`history_tokens()` 的结果（后端下发 or 同公式） | 消灭双口径 |
-| 单条工具结果 | 24k **字符** | 8k **token**（≈12–16k 字符，按语言折算） | 统一到 token |
+| 单条工具结果 | 24k **字符** | 10k **token**（≈20k 字符，按语言折算） | 统一到 token |
 | 累计工具结果 | 120k 字符 | 16k token | 同上 |
 | 压缩触发 | turn 前超过 0.8×ctx | **每 step 前 ≥ 0.85×预算** | DSH 式压力检查 |
 | 摘要上限 | 6000 字符 | 2000 token | 摘要不该自己变成大头 |
@@ -383,3 +383,87 @@ Select-String -Path "$env:APPDATA\com.mdgo\logs\mdgo.log" -Pattern '\[loop\] usa
 
 - 本文替换"按窗口比例设预算"的旧口径；`docs/blog/07-上下文工程-Token 预算与压缩.md` 中 §2.2（"模型窗口的 80%"）与 §2.4（预算常量实值）**在 C1 落地后需同步修订**；
 - 前缀缓存（P0-2）与本方案互补：P0-2 解决"能不能复用"，本文解决"要不要发"。
+
+---
+
+## 10. 实施记录（2026-11-24，C1–C5 已落地）
+
+> 与 §5 设计一致；下列参数为**当前默认值**，全部集中在 `ContextBudget` 一处。
+
+### 10.1 落地清单
+
+| 批次 | 内容 | 代码位置 |
+|---|---|---|
+| C1 | `ContextBudget` 单一预算入口（窗口 → prompt / 历史 / 工具结果 / schema 预算）+ 后端替换 + 前端 24k 硬上限 | `core/loop/budget.rs`（新增）、`commands/llm.rs`（`context_budget` / `history_budget_tokens`）、`css_js/modules/chat-history.js` |
+| C2 | 工具结果 L1 剪枝：头 4/5 + 尾 1/5 + 剪枝标记 + 续读提示；累计超限的旧结果保留 200 字符头部摘要 | `core/loop/session.rs`（`prune_tool_result` / `pruned_placeholder` / `derive_history_with`） |
+| C3 | 每 step 前压力检查：超 85% 水位 → `compact_to` 无模型压缩（按 step 边界遮最旧，**保留本轮 system_context**） | `core/loop/loop.rs::turn`、`Session::compact_to` |
+| C4 | 工具 schema 预算：超限渐进截断描述（1200→800→500→320 字符），**不丢工具** | `core/loop/loop.rs::fit_tool_schemas` |
+| C5 | 观测：`LoopEvent::ContextPruned` → `trace:event`（阶段 `context`）+ `[loop] context pressure` 日志 | `core/loop/loop.rs`、`commands/llm.rs` |
+
+### 10.2 默认参数
+
+| 参数 | 值 | 说明 |
+|---|---|---|
+| 窗口安全系数 | 0.6 | prompt 预算 = 窗口 × 0.6 |
+| 输出预留 | `min(max_tokens, 8192)` | 不把整窗都当输入 |
+| 历史硬上限 | 32k token | 1M 窗口下也是 32k（2026-11-24 精度优先，由 24k 上调） |
+| system / tools / context | 8k / **20k** / 6k token | 固定段；小窗口按 `prompt/2` 收缩（tools 由 12k 上调，现有工具集约 26.5k 字符，避免描述被兜底截断） |
+| 单条工具结果 | **10k token**（≈20k 字符，且 ≤ 历史 40%） | 超限走头尾剪枝（由 8k 上调） |
+| 工具结果累计 | **24k token** | 超限的旧结果保留头部 200 字符（由 16k 上调） |
+| 压力水位 | 历史预算 × 85% | 超水位触发无模型压缩 |
+| 未配置窗口 | 历史 15k token（旧行为） | `DEFAULT_HISTORY_TOKENS` |
+
+### 10.3 行为变化（升级须知）
+
+1. 大窗口模型不再"塞满窗口"：长会话会更早触发剪枝/压缩（这正是本次目的）；
+2. 工具结果超限时是"头 + 尾 + 标记"，不再整条清空；累计超限的旧结果保留 200 字符头部；
+3. 工具 schema 超预算时**只截描述、不丢工具**；
+4. `MAX_MESSAGE_TOKENS` 常量退役，权威口径为 `ContextBudget`；
+5. 压缩时**保留本轮 `system_context`**（检索/记忆注入），只遮历史 step。
+
+### 10.4 验证
+
+- `cargo test --lib`：**593 passed / 0 failed**（新增：budget 5 项、工具结果剪枝 1 项、schema 预算 2 项；并修正了按"全量字符"计预算的旧断言）；
+- `cargo check --lib`：0 warning；
+- 日志：`[loop] context pressure … before/after/dropped/compacted`、`[loop] usage … prompt/cached/hit`；
+- 前端时间线：出现 `context` 阶段的 `pruned` 事件。
+
+### 10.5 未覆盖（后续）
+
+- 工具描述"内容级瘦身"（把长规则下沉到技能文档）：本次只落了机制（截断），内容编辑需 A/B；
+- 服务端会话（只发增量）仍为 P2；
+- 手动 `/compact` 入口未做；
+- `docs/blog/07-上下文工程-Token 预算与压缩.md` §2.2/§2.4 的旧口径说明待随文修订（该文为历史存档，改动前先与作者确认）。
+
+### 10.6 调参记录（2026-11-24：精度优先，上调上限）
+
+**触发原因**：现网日志 `[loop] 工具 schema 仍超预算：26574 > 24000 字符`。描述已截到 320 字符下限仍超，
+说明体积主要来自**参数 JSON + 每工具固定开销（+48）+ 工具数量**，再截描述只会持续损失工具说明、且降不下去。
+
+| 旋钮 | 旧 | 新 | 理由 |
+|---|---|---|---|
+| `tools_cap` | 12k token（24k 字符） | **20k token（40k 字符）** | 实测工具集 26.5k 字符，留 ~50% 余量后不再触发截断 |
+| `hard_cap_tokens`（历史） | 24k token | **32k token** | 减少压缩/剪枝触发频率，保留更多上下文细节 |
+| `tool_result_item_cap` | 8k token | **10k token** | 单条结果被剪得过碎的边界抬高 |
+| `tool_result_total_cap` | 16k token | **24k token** | 多工具轮次不急于清理较早结果 |
+| `SUMMARY_MAX_CHARS` | 6k 字符 | **8k 字符** | 压缩摘要少丢细节 |
+| `SUBAGENT_SUMMARY_CHARS` | 4k 字符 | **6k 字符** | 子代理交接一次看更多（全文仍可分页读） |
+| 前端历史硬上限 | 24k token | **32k token** | 与后端同源 |
+
+**日志噪声修复**：schema 超预算从"每 step 打一次 warn"改为**每 turn 只打一次**（`fit_tool_schemas`
+返回 overage，由 `turn()` 记录）；"已截断到 N 字符"仍是 info。顺带给 `tools` 预算留出余量后，
+正常情况不再走截断分支。
+
+**同类限制审计**（是否也存在"静默截断、降低精度"）：
+
+| 限制 | 处理 | 说明 |
+|---|---|---|
+| `MAX_CONTEXT_CHARS` 12k（RAG 注入） | **保留** | 继续加只会引入噪声；它属于"证据"而非"历史" |
+| `MAX_TOOL_RESULT_CHARS` 24k（落库前存储上限） | 保留 | derive 层现在是 20k 字符，仍在护栏内 |
+| `grep 60k / git_diff 60k / webfetch 50k / MCP 60k / 外部 100k` | 保留 | 工具**输出**上限，最终都受 20k 字符 item 剪枝约束；调大只增加进程内存 |
+| `MAX_MESSAGE_CHARS` 30k（单条提问） | 保留 | 超长提问罕见，且截断会明确提示 |
+| `MAX_FILE_READ_CHARS` 8k/页 | 保留 | 分页续读是设计，不是损失 |
+| `DOC_DEFAULT_BUDGET_TOKENS` 16k | 保留 | 文档子 Agent 单文件预算，与主链独立 |
+
+**成本影响**：`tools_cap` 是**上限**而非目标值——实际工具集 ≈13k token，只比之前"截断后"多 1–2k token；
+历史段只有接近 32k 时才会多付。典型每 step prompt 仍在 25–35k，不会回到改造前的 60–140k。

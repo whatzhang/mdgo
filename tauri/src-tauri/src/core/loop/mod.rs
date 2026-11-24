@@ -23,6 +23,7 @@
 #![allow(unused_imports)]
 
 pub mod anthropic;
+pub mod budget;
 pub mod error;
 pub mod hooks;
 pub mod llm_seam;
@@ -37,6 +38,7 @@ pub mod r#loop;
 
 // 公开 API（业务层/命令层依赖的窄接口）
 pub use anthropic::AnthropicAdapter;
+pub use budget::{ContextBudget, CHARS_PER_TOKEN};
 pub use error::LoopError;
 pub use hooks::{HookCtx, LoopHook, RequestPatch, RetryAction, ToolDecision};
 pub use llm_seam::{CompletionRequest, CompletionResponse, LlmAdapter, ToolSchema};

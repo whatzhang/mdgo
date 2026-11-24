@@ -30,6 +30,77 @@ pub const MAX_HISTORY_TOOL_RESULT_CHARS: usize = 120_000;
 /// 之前直接复用工具结果预算，调任何一个都会同时改变另一侧行为。
 pub const COMPACT_TRIGGER_CHARS: usize = 120_000;
 
+/// 工具结果进入历史时的两级字符预算（由 [`super::budget::ContextBudget`] 换算得到）。
+///
+/// - `item_chars`：单条结果的上限，超出则做「保头 + 保尾 + 剪枝标记」（可续读，不丢全文语义）；
+/// - `total_chars`：历史中所有工具结果的累计上限，超出的旧结果退化为「头部摘要 + 续读提示」。
+///
+/// `Default` 保持改造前的 24k / 120k 行为，便于测试与旧路径按需回退。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ToolResultLimits {
+    pub item_chars: usize,
+    pub total_chars: usize,
+}
+
+impl Default for ToolResultLimits {
+    fn default() -> Self {
+        Self {
+            item_chars: MAX_TOOL_RESULT_CHARS,
+            total_chars: MAX_HISTORY_TOOL_RESULT_CHARS,
+        }
+    }
+}
+
+/// 超长工具结果的剪枝标记（放在正文最前，模型先知道"这是片段"）。
+fn prune_marker(total: usize, kept: usize) -> String {
+    format!(
+        "（工具结果已按上下文预算剪枝：原 {total} 字符，保留首尾共 {kept} 字符，中间省略；\
+         如需更多内容，请用同一工具缩小范围或带 offset 续读）"
+    )
+}
+
+/// 把超长工具结果剪成「头 4/5 + 尾 1/5 + 标记」。
+///
+/// 保尾的原因：错误信息/结论/汇总常常在末尾。剪枝是**可逆**的——模型可以再用
+/// `read offset` / `grep` 等参数续读，而不是像旧实现那样整条清空。
+pub(crate) fn prune_tool_result(content: &str, keep_chars: usize) -> String {
+    let total = content.chars().count();
+    if keep_chars == 0 || total <= keep_chars {
+        return content.to_string();
+    }
+    let head_len = keep_chars * 4 / 5;
+    let tail_len = keep_chars.saturating_sub(head_len).max(1);
+    let head: String = content.chars().take(head_len).collect();
+    let tail: String = content
+        .chars()
+        .rev()
+        .take(tail_len)
+        .collect::<Vec<char>>()
+        .into_iter()
+        .rev()
+        .collect();
+    let kept = head_len + tail_len;
+    format!(
+        "{}\n{}\n…（中间省略 {} 字符）…\n{}",
+        prune_marker(total, kept),
+        head,
+        total.saturating_sub(kept),
+        tail
+    )
+}
+
+/// 累计预算用尽后的旧结果占位：保留开头一小段，避免模型完全失去线索。
+fn pruned_placeholder(content: &str) -> String {
+    const HEAD_CHARS: usize = 200;
+    let total = content.chars().count();
+    let head: String = content.chars().take(HEAD_CHARS).collect();
+    format!(
+        "（该工具结果已清理（按上下文预算）：原 {total} 字符，仅保留开头 {} 字符；\
+         如需完整内容，请用同一工具缩小范围或带 offset 续读）\n{head}",
+        head.chars().count()
+    )
+}
+
 /// turn 结束原因。
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TurnEndReason {
@@ -99,6 +170,8 @@ pub struct Session {
     events: Vec<PersistedEvent>,
     /// 派生缓存（`dirty` 时失效）
     derived: Vec<LlmMessage>,
+    /// 派生缓存对应的工具结果预算（预算变化也要失效，否则会复用旧口径的结果）
+    derived_limits: ToolResultLimits,
     dirty: bool,
     /// 当前 turn/step（供 loop 用）
     current_turn: u32,
@@ -111,6 +184,7 @@ impl Session {
             id: id.into(),
             events: Vec::new(),
             derived: Vec::new(),
+            derived_limits: ToolResultLimits::default(),
             dirty: true,
             current_turn: 0,
             current_step: 0,
@@ -155,7 +229,15 @@ impl Session {
     /// 才视为已配对——未配对的工具调用不重放（assistant 侧剔除）、孤儿 tool 结果不重放
     /// （tool 侧剔除），避免 OpenAI 协议因 tool_call 无配对结果而拒绝请求。
     pub fn derive_history(&mut self) -> Vec<LlmMessage> {
-        if !self.dirty && !self.derived.is_empty() {
+        self.derive_history_with(ToolResultLimits::default())
+    }
+
+    /// 派生模型可见历史，并按给定预算剪枝工具结果。
+    ///
+    /// 与 [`Self::derive_history`] 的唯一区别是工具结果预算：生产路径由
+    /// `ContextBudget` 换算（单条 / 累计都是 token 口径），测试与旧路径用默认值。
+    pub fn derive_history_with(&mut self, limits: ToolResultLimits) -> Vec<LlmMessage> {
+        if !self.dirty && !self.derived.is_empty() && self.derived_limits == limits {
             return self.derived.clone();
         }
         // 0) 压缩遮蔽集（可能有多条 CompactionSummary 叠加）
@@ -165,8 +247,9 @@ impl Session {
                 shadowed.extend(shadowed_seqs.iter().copied());
             }
         }
-        // 1) 工具结果累计预算：从最新往回保留，放不下的旧结果清成占位符
+        // 1) 工具结果累计预算：从最新往回保留，放不下的旧结果退化为「头部摘要 + 续读提示」
         //    （保留事件本身 → tool_call 配对不受影响，只压缩内容）
+        //    单条按 `item_chars` 计入有效大小：超长结果会被保头保尾剪枝，不该按全长占预算。
         let mut kept_results: HashSet<u64> = HashSet::new();
         let mut result_budget = 0usize;
         for ev in self.events.iter().rev() {
@@ -174,8 +257,8 @@ impl Session {
                 continue;
             }
             if let SessionEvent::ToolResult { content, .. } = &ev.event {
-                let n = content.chars().count();
-                if result_budget + n <= MAX_HISTORY_TOOL_RESULT_CHARS {
+                let n = content.chars().count().min(limits.item_chars);
+                if result_budget + n <= limits.total_chars {
                     kept_results.insert(ev.seq);
                     result_budget += n;
                 }
@@ -248,12 +331,15 @@ impl Session {
                     // 只重放已配对（有 assistant 调用）的工具结果
                     if assistant_call.contains_key(call_id.as_str()) {
                         let body = if kept_results.contains(&ev.seq) {
-                            content.clone()
+                            // 命中累计预算：单条仍超出上限时做「保头 + 保尾 + 标记」
+                            if content.chars().count() > limits.item_chars {
+                                prune_tool_result(content, limits.item_chars)
+                            } else {
+                                content.clone()
+                            }
                         } else {
-                            format!(
-                                "（该工具结果已清理以节省上下文：原 {} 字符。如需该内容，请重新调用工具并缩小范围）",
-                                content.chars().count()
-                            )
+                            // 累计预算用尽：保留开头一小段，避免模型完全失去线索
+                            pruned_placeholder(content)
                         };
                         out.push(LlmMessage {
                             role: LlmRole::Tool,
@@ -272,16 +358,30 @@ impl Session {
             }
         }
         self.derived = out.clone();
+        self.derived_limits = limits;
         self.dirty = false;
         out
     }
 
     /// 溢出恢复：把最旧的若干个 **step** 整体遮蔽为一条压缩摘要（确定性，不调用 LLM）。
     ///
+    /// 触发阈值与目标沿用 [`COMPACT_TRIGGER_CHARS`]（压到一半），供 loop 的
+    /// `request-error` 恢复路径使用。
+    pub fn emergency_compact(&mut self) -> bool {
+        self.compact_to(COMPACT_TRIGGER_CHARS, COMPACT_TRIGGER_CHARS / 2)
+    }
+
+    /// 按"触发阈值 + 目标字符数"遮蔽最旧的 step（确定性，不调用 LLM）。
+    ///
     /// 为什么按 step 切：一个 step = 一次 assistant 消息 + 它的全部工具结果；按 step 遮蔽
     /// 才能保证 tool_call 与 tool_result 同进同退（否则会产生协议拒绝的孤儿消息）。
-    /// 返回 `true` 表示发生了压缩（hook 可以据此决定重试）。
-    pub fn emergency_compact(&mut self) -> bool {
+    ///
+    /// 用途：
+    /// - `emergency_compact`（溢出恢复）：trigger=120k / target=60k；
+    /// - loop 的**每 step 压力检查**（先便宜后昂贵）：trigger=历史预算 / target=预算的 60%。
+    ///
+    /// 返回 `true` 表示发生了压缩。
+    pub fn compact_to(&mut self, trigger_chars: usize, target_chars: usize) -> bool {
         // 已遮蔽集合：重复溢出时只统计"仍可见"的内容，避免越压越切
         let mut already: HashSet<u64> = HashSet::new();
         for ev in &self.events {
@@ -295,10 +395,10 @@ impl Session {
             .filter(|e| !already.contains(&e.seq))
             .map(event_chars)
             .sum();
-        if total <= COMPACT_TRIGGER_CHARS {
+        if total <= trigger_chars {
             return false;
         }
-        let target = total / 2;
+        let target = target_chars.max(1);
         // step 起点索引（保证切分在 step 边界）
         let boundaries: Vec<usize> = self
             .events
@@ -335,6 +435,11 @@ impl Session {
         let shadowed_seqs: Vec<u64> = self.events[..cutoff]
             .iter()
             .filter(|e| !already.contains(&e.seq))
+            // 保留本轮注入的上下文（检索片段/记忆/时间）：它不是"历史废话"，
+            // 被遮掉会让模型丢失答案依据（压缩摘要只带用户问题原文，不带检索片段）。
+            .filter(|e| {
+                !matches!(&e.event, SessionEvent::UserMessage { source, .. } if source == "system_context")
+            })
             .map(|e| e.seq)
             .collect();
         if shadowed_seqs.is_empty() {
@@ -597,15 +702,17 @@ mod tests {
     fn derive_history_clears_oldest_tool_results_beyond_budget() {
         let mut s = Session::new("s1");
         s.append(user("q"));
+        // 单条 61k 字符 > item 上限（24k），每条按 24k 计入累计预算；
+        // 6 条 = 144k > total（120k），因此最旧的必须被清理。
         let big = "y".repeat(MAX_HISTORY_TOOL_RESULT_CHARS / 2 + 1000);
-        for (i, id) in ["c1", "c2", "c3"].iter().enumerate() {
+        let ids = ["c1", "c2", "c3", "c4", "c5", "c6"];
+        for id in ids.iter() {
             s.append(assistant("", vec![(*id, "read")]));
             s.append(tool_result(id, &big));
-            let _ = i;
         }
         let h = s.derive_history();
-        // 3 组配对，全部保留在历史里（结构不变）
-        assert_eq!(h.iter().filter(|m| m.role == LlmRole::Tool).count(), 3);
+        // 6 组配对全部保留在历史里（结构不变）
+        assert_eq!(h.iter().filter(|m| m.role == LlmRole::Tool).count(), 6);
         let bodies: Vec<String> = h
             .iter()
             .filter(|m| m.role == LlmRole::Tool)
@@ -616,7 +723,54 @@ mod tests {
             })
             .collect();
         assert!(bodies[0].contains("已清理"), "最旧的结果应被清理：{}", bodies[0]);
-        assert!(!bodies[2].contains("已清理"), "最新结果必须完整");
+        // 清理不是"清空"：保留开头一小段，模型不至于完全失去线索
+        assert!(
+            bodies[0].chars().count() <= 600,
+            "清理后应只保留头部摘要，实际 {} 字符",
+            bodies[0].chars().count()
+        );
+        assert!(!bodies[5].contains("已清理"), "最新结果不应被清理");
+        // 最新一条仍超 item 上限，走"保头保尾"剪枝而不是清理
+        assert!(bodies[5].contains("已按上下文预算剪枝"), "最新结果应为剪枝形态");
+    }
+
+    /// 取出历史里第一条工具结果的正文（测试辅助）。
+    fn tool_body(history: &[LlmMessage]) -> String {
+        history
+            .iter()
+            .filter(|m| m.role == LlmRole::Tool)
+            .flat_map(|m| m.content.iter())
+            .find_map(|b| match b {
+                ContentBlock::ToolResult { content, .. } => Some(content.clone()),
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
+
+    /// 预算剪枝：单条超限 → 保头保尾 + 标记；预算变化会使派生缓存失效。
+    #[test]
+    fn derive_history_prunes_oversized_result_and_honors_limit_changes() {
+        let mut s = Session::new("s1");
+        s.append(user("q"));
+        s.append(assistant("", vec![("c1", "read")]));
+        s.append(tool_result(
+            "c1",
+            &format!("HEAD1234{}TAIL5678", "m".repeat(4_000)),
+        ));
+
+        let tight = ToolResultLimits { item_chars: 1_000, total_chars: 4_000 };
+        let text = tool_body(&s.derive_history_with(tight));
+        assert!(
+            text.starts_with("（工具结果已按上下文预算剪枝"),
+            "剪枝标记必须在最前：{text}"
+        );
+        assert!(text.contains("HEAD1234") && text.contains("TAIL5678"), "头尾都要保留");
+        assert!(text.chars().count() < 1_400, "实际 {}", text.chars().count());
+
+        // 预算放宽后必须重新派生（缓存按 limits 失效），不再剪枝
+        let text2 = tool_body(&s.derive_history_with(ToolResultLimits::default()));
+        assert!(!text2.contains("已按上下文预算剪枝"), "默认预算下 4k 结果无需剪枝");
+        assert!(text2.contains("TAIL5678"));
     }
 
     /// 溢出恢复：按 step 边界遮蔽旧事件，生成一条摘要事件；配对不产生孤儿。

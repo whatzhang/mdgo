@@ -19,13 +19,14 @@ use futures::{Stream, StreamExt};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
+use super::budget::ContextBudget;
 use super::error::LoopError;
 use super::hooks::{HookCtx, LoopHook, RetryAction};
 use super::llm_seam::{CompletionRequest, LlmAdapter, ToolSchema};
-use super::session::{truncate_tool_result, Session, SessionEvent, TurnEndReason};
+use super::session::{truncate_tool_result, Session, SessionEvent, ToolResultLimits, TurnEndReason};
 use super::tool::{canonical_call_key, NullSink, ToolEventSink, ToolRegistry, ToolResult};
 use super::tool_calls::{execute_tool_calls, ToolExecution};
-use super::types::{LlmError, LlmMessage, LlmRole, StreamEvent, TokenUsage, ToolCall};
+use super::types::{ContentBlock, LlmError, LlmMessage, LlmRole, StreamEvent, TokenUsage, ToolCall};
 
 #[cfg(test)]
 use super::tool::ToolError;
@@ -54,6 +55,8 @@ pub struct LoopConfig {
     /// 请求失败重试前的准备回调（如压缩会话）。返回 `true` 表示已推进、可安全重试；
     /// `false` 表示未推进（按失败处理，防死循环）。
     pub retry_prepare: Option<Arc<dyn Fn(&mut Session) -> bool + Send + Sync>>,
+    /// 上下文预算（单一入口）：历史上限、工具结果剪枝阈值、工具 schema 预算都由它推导。
+    pub budget: ContextBudget,
 }
 
 impl LoopConfig {
@@ -68,6 +71,7 @@ impl LoopConfig {
             stream_retry_base_ms: 800,
             max_tokens: None,
             retry_prepare: None,
+            budget: ContextBudget::default(),
         }
     }
 }
@@ -76,10 +80,16 @@ impl LoopConfig {
 #[derive(Debug, Clone)]
 pub enum LoopEvent {
     Delta(String),
-    ReasoningDelta(String),
+    /// 推理/思考增量（`step` = 产生该增量的模型调用序号，1-based；前端按 step 分组展示）
+    ReasoningDelta { text: String, step: u32 },
     ToolCall { call: ToolCall },
     ToolResult { call: ToolCall, result: ToolResult },
     Usage(TokenUsage),
+    /// 上下文压力释放（无模型压缩：遮最旧 step / 收紧工具结果预算）。
+    ///
+    /// 命令层据此写 `trace:event`（阶段 `context`），前端"过程时间线"可见；
+    /// `dropped_chars` 是估算的历史字符减少量。
+    ContextPruned { dropped_chars: usize, strategy: String },
 }
 
 /// turn 结果。
@@ -118,6 +128,65 @@ impl TurnOutcome {
             | TurnOutcome::Failed { turns_used, .. } => *turns_used,
         }
     }
+}
+
+/// 估算一条消息的字符数（文本 + 工具调用参数 + 工具结果；用于上下文压力检查）。
+///
+/// 只是"够用的水位尺"：与预算同口径（字符），避免每 step 跑 tokenizer。
+fn message_chars(msg: &LlmMessage) -> usize {
+    msg.content
+        .iter()
+        .map(|block| match block {
+            ContentBlock::Text(t) => t.chars().count(),
+            ContentBlock::ToolCall(tc) => tc.name.chars().count() + tc.arguments.chars().count(),
+            ContentBlock::ToolResult { content, .. } => content.chars().count(),
+        })
+        .sum()
+}
+
+/// 单条工具 schema 的近似字符数（name + description + parameters JSON）。
+fn schema_chars(schema: &ToolSchema) -> usize {
+    schema.name.chars().count()
+        + schema.description.chars().count()
+        + schema.parameters.to_string().chars().count()
+        + 48 // JSON 结构开销（"type":"function" / 引号 / 逗号等）
+}
+
+/// 把工具 schema 压进预算：**渐进截断描述**（1200 → 800 → 500 → 320 字符）。
+///
+/// 只截描述、不丢工具——丢工具会改变能力边界；描述里超长的"强制规则"应当下沉到
+/// 技能文档（渐进式披露），这里只是防"schema 悄悄吃掉整个预算"。
+///
+/// 返回 `(schemas, oversize_total)`：`oversize_total` 仅在"描述截到 320 字符仍超预算"
+/// 时是 `Some`，由调用方按 **turn 维度只告警一次**（旧实现每 step 都 warn，日志会刷屏）。
+fn fit_tool_schemas(
+    mut schemas: Vec<ToolSchema>,
+    cap_chars: usize,
+) -> (Vec<ToolSchema>, Option<usize>) {
+    if schemas.is_empty() || cap_chars == 0 {
+        return (schemas, None);
+    }
+    if schemas.iter().map(schema_chars).sum::<usize>() <= cap_chars {
+        return (schemas, None);
+    }
+    for cap in [1_200usize, 800, 500, 320] {
+        for schema in &mut schemas {
+            if schema.description.chars().count() > cap {
+                let head: String = schema.description.chars().take(cap).collect();
+                schema.description = format!("{head}…（完整用法见技能文档）");
+            }
+        }
+        if schemas.iter().map(schema_chars).sum::<usize>() <= cap_chars {
+            log::info!(
+                "[loop] 工具 schema 超出预算，已把描述截断到 {} 字符（tools_cap_chars={}）",
+                cap,
+                cap_chars
+            );
+            return (schemas, None);
+        }
+    }
+    let total: usize = schemas.iter().map(schema_chars).sum();
+    (schemas, Some(total))
 }
 
 /// Agent 循环主体。
@@ -297,6 +366,8 @@ impl LoopAgent {
         // （读类结果可能已过期），只保留写操作自身的结果（同参数重复写：直接复用，避免重复副作用）。
         let mut replay_cache: HashMap<String, ToolResult> = HashMap::new();
         let mut replay_counts: HashMap<String, u8> = HashMap::new();
+        // 工具 schema 超预算告警：每个 turn 只打一次
+        let mut schema_oversize_logged = false;
 
         // 一轮 turn 内的请求失败重试（对齐 DSH request-error：仅当 retry_prepare 推进时重发）
         loop {
@@ -311,7 +382,40 @@ impl LoopAgent {
             }
             self.session.append(SessionEvent::StepStart { turn, step: steps });
 
-            let history = self.session.derive_history();
+            // ── 上下文压力检查（每 step 前；先便宜后昂贵）──
+            // 1) 派生历史时按预算剪枝工具结果（单条 / 累计，token 口径换算成字符）；
+            // 2) 仍超水位（默认 85% 历史预算）→ 无模型压缩：遮最旧的 step（确定性、毫秒级，
+            //    不调用 LLM），把额度留给最近几步。LLM 摘要压缩仍在命令层 turn 开始前做。
+            let limits = ToolResultLimits {
+                item_chars: self.config.budget.tool_result_item_chars(),
+                total_chars: self.config.budget.tool_result_total_chars(),
+            };
+            let mut history = self.session.derive_history_with(limits);
+            let mut history_chars: usize = history.iter().map(message_chars).sum();
+            let pressure = self.config.budget.pressure_chars();
+            if history_chars > pressure {
+                let before = history_chars;
+                let compacted = self.session.compact_to(
+                    pressure,
+                    self.config.budget.history_chars() * 3 / 5,
+                );
+                if compacted {
+                    history = self.session.derive_history_with(limits);
+                    history_chars = history.iter().map(message_chars).sum();
+                }
+                let dropped = before.saturating_sub(history_chars);
+                log::info!(
+                    "[loop] context pressure turn={} step={} before={} after={} dropped={} compacted={} budget={} request_id={}",
+                    turn, steps, before, history_chars, dropped, compacted,
+                    self.config.budget.history_chars(), request_id
+                );
+                if dropped > 0 {
+                    on_event(LoopEvent::ContextPruned {
+                        dropped_chars: dropped,
+                        strategy: if compacted { "compact" } else { "prune" }.to_string(),
+                    });
+                }
+            }
             let remaining = self.config.max_turns.saturating_sub(steps as usize);
             let hook_ctx = HookCtx::new(
                 turn,
@@ -333,7 +437,19 @@ impl LoopAgent {
             }
             req.stream = true;
             req.max_tokens = self.config.max_tokens;
-            req.tools = self.assemble_tool_schemas(active_tools.as_ref());
+            let (tools, schema_oversize) = self.assemble_tool_schemas(active_tools.as_ref());
+            if let Some(total) = schema_oversize {
+                // 每个 turn 只告警一次：schema 是每 step 重新组装的，逐 step 打会刷屏
+                if !schema_oversize_logged {
+                    schema_oversize_logged = true;
+                    log::warn!(
+                        "[loop] 工具 schema 仍超预算：{} > {} 字符（描述已截到 320 字符；建议下沉到技能文档或调大 tools_cap）",
+                        total,
+                        self.config.budget.tools_chars()
+                    );
+                }
+            }
+            req.tools = tools;
             if let Some(ep) = extra_params {
                 req.extra_params = Some(ep);
             }
@@ -397,7 +513,7 @@ impl LoopAgent {
                                     on_event(LoopEvent::Delta(t));
                                 }
                                 StreamEvent::ReasoningDelta(r) => {
-                                    on_event(LoopEvent::ReasoningDelta(r));
+                                    on_event(LoopEvent::ReasoningDelta { text: r, step: steps });
                                 }
                                 StreamEvent::ToolCall { call, .. } => {
                                     on_event(LoopEvent::ToolCall { call: call.clone() });
@@ -628,7 +744,12 @@ impl LoopAgent {
     }
 
     /// 组装模型可见工具 schema（active_tools 窄化；未设置 = 全部已注册）。
-    fn assemble_tool_schemas(&self, active_tools: Option<&Vec<String>>) -> Vec<ToolSchema> {
+    ///
+    /// 返回 `(schemas, oversize_total)`：后者只用于"本 turn 打一次告警"，见 [`fit_tool_schemas`]。
+    fn assemble_tool_schemas(
+        &self,
+        active_tools: Option<&Vec<String>>,
+    ) -> (Vec<ToolSchema>, Option<usize>) {
         let names: Vec<String> = match active_tools {
             Some(list) => list.clone(),
             None => self.tools.names(),
@@ -644,9 +765,8 @@ impl LoopAgent {
                 });
             }
         }
-        out
+        fit_tool_schemas(out, self.config.budget.tools_chars())
     }
-
     /// 流式请求启动阶段的重试（指数退避 + 抖动）。
     ///
     /// 只重试**尚未产出任何内容**的启动失败（429/408/5xx/连接/超时/provider 文本）：
@@ -1293,10 +1413,84 @@ mod tests {
             })
             .expect("应为 tool_result 块");
         assert!(
-            body.chars().count() <= crate::core::r#loop::session::MAX_TOOL_RESULT_CHARS + 500,
-            "历史中的工具结果必须被截断，实际 {} 字符",
+            body.chars().count() <= 12_500,
+            "历史中的工具结果必须按预算剪枝（默认 item 上限 12k 字符），实际 {} 字符",
             body.chars().count()
         );
-        assert!(body.contains("工具结果过长已截断"), "必须给出截断说明");
+        assert!(
+            body.contains("已按上下文预算剪枝"),
+            "剪枝标记必须在正文开头，模型才知道自己看到的是片段：{body}"
+        );
+        assert!(body.contains("如需更多"), "必须给出续读提示");
+    }
+
+    /// 工具 schema 预算：超限时渐进截断描述，但**不丢工具**（丢工具会改能力边界）。
+    #[test]
+    fn tool_schema_fitting_truncates_descriptions_without_dropping_tools() {
+        let schemas = vec![
+            ToolSchema {
+                name: "long_tool".into(),
+                description: "x".repeat(5_000),
+                parameters: serde_json::json!({"type": "object", "properties": {}}),
+            },
+            ToolSchema {
+                name: "short_tool".into(),
+                description: "短描述".into(),
+                parameters: serde_json::json!({"type": "object", "properties": {}}),
+            },
+        ];
+        let cap_chars = 2_000;
+        let (fitted, oversize) = fit_tool_schemas(schemas, cap_chars);
+        assert!(oversize.is_none(), "截断描述后应回到预算内，不应报超限");
+        assert_eq!(fitted.len(), 2, "不得丢工具");
+        assert!(
+            fitted[0].description.chars().count() <= 1_300,
+            "长描述应被截断，实际 {}",
+            fitted[0].description.chars().count()
+        );
+        assert!(fitted[0].description.contains("完整用法见技能文档"));
+        assert_eq!(fitted[1].description, "短描述", "短描述不应被改动");
+        assert!(
+            fitted.iter().map(schema_chars).sum::<usize>() <= cap_chars,
+            "截断后应回到预算内"
+        );
+    }
+
+    /// 预算内不截断。
+    #[test]
+    fn tool_schema_fitting_keeps_small_sets_untouched() {
+        let schemas = vec![ToolSchema {
+            name: "read".into(),
+            description: "读取文件".into(),
+            parameters: serde_json::json!({"type": "object"}),
+        }];
+        let (fitted, oversize) = fit_tool_schemas(schemas, 24_000);
+        assert!(oversize.is_none());
+        assert_eq!(fitted[0].description, "读取文件");
+    }
+
+    /// 参数 JSON 本身就超预算时：描述截到 320 仍不够 → 返回 overage 供上层"每 turn 告警一次"，
+    /// 但**工具一个都不能丢**（丢工具会改变能力边界）。
+    #[test]
+    fn tool_schema_fitting_reports_overage_without_dropping_tools() {
+        let fat_params = serde_json::json!({
+            "type": "object",
+            "description": "x".repeat(3_000),
+        });
+        let schemas = vec![
+            ToolSchema {
+                name: "fat_a".into(),
+                description: "y".repeat(2_000),
+                parameters: fat_params.clone(),
+            },
+            ToolSchema {
+                name: "fat_b".into(),
+                description: "z".repeat(2_000),
+                parameters: fat_params,
+            },
+        ];
+        let (fitted, oversize) = fit_tool_schemas(schemas, 1_000);
+        assert_eq!(fitted.len(), 2, "超预算也不能丢工具");
+        assert_eq!(oversize.map(|v| v > 1_000), Some(true));
     }
 }

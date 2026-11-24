@@ -212,6 +212,18 @@
     margin-top: 0;
 }
 
+/* 步骤徽标：多步任务里区分"第几次模型调用产生的思考" */
+.pt-step {
+    flex: 0 0 auto;
+    font-size: 0.6rem;
+    line-height: 1.4;
+    padding: 0 0.25rem;
+    border-radius: 0.25rem;
+    color: var(--t3, #999);
+    background: rgba(0, 0, 0, 0.05);
+    white-space: nowrap;
+}
+
 .pt-thinking-preview {
     flex: 1 1 auto;
     min-width: 0;

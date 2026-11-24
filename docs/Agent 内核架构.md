@@ -181,6 +181,28 @@ provider 的前缀缓存（OpenAI/DeepSeek 自动缓存、Anthropic `cache_contr
 `[loop] usage prompt/cached/hit/completion/total`；`RagDone.prompt_tokens` 为**全轮累计**、
 `context_tokens` 为最后一个 step 的输入规模（UI 上下文占用率用它，避免多 step 虚高）。
 
+### 2.2.2 上下文预算与压力释放（2026-11-24）
+
+预算不再按窗口百分比，而是由 `ContextBudget`（`core/loop/budget.rs`）单一推导：
+
+```text
+prompt  = window × 0.6
+history = min(prompt − min(max_tokens, 8192) − (system + tools + context), 32k)
+item    = min(10k token, history × 0.4)    // 单条工具结果（字符 = token × 2）
+total   = min(24k token, history × 0.8)    // 历史中工具结果累计
+水位     = history × 0.85                   // 超过即触发无模型压缩
+```
+
+- `Session::derive_history_with(limits)`：单条超 `item` → 保头 4/5 + 尾 1/5 + 剪枝标记；
+  累计超 `total` → 旧结果保留 200 字符头部 + 续读提示（旧实现是整条清空）。
+- 每个 step 前做压力检查：超水位先 `Session::compact_to(trigger, target)`（无模型、按 step
+  边界遮最旧，**保留本轮 `system_context`**：检索/记忆注入不该被当成历史废话压掉），
+  再重新派生；LLM 摘要压缩仍在命令层 turn 开始前做（`prepare_history`）。
+- 工具 schema 超 `tools_cap` → 渐进截断描述（1200→800→500→320 字符），**不丢工具**。
+- 观测：`LoopEvent::ContextPruned` → `trace:event`（阶段 `context`）；日志
+  `[loop] context pressure … before/after/dropped/compacted`、`[loop] usage … prompt/cached/hit`。
+- 兼容：未配置窗口（`context_length = 0`）→ 历史 15k token，行为与改造前一致。
+
 ### 2.3 终止条件与取消语义
 
 | 条件 | 结果 | 说明 |
@@ -586,6 +608,7 @@ rig 依赖已自 commit `7278d50` 移除（现 HEAD=`edab77e`），代码中仅�
 |---|---|
 | `core/http.rs` | 进程级共享 `reqwest::Client`（连接池/TLS 复用；超时逐请求设置） |
 | `core/loop/mod.rs` | 模块注册 + 公开窄接口聚合导出 |
+| `core/loop/budget.rs` | `ContextBudget`：窗口 → prompt/历史/工具结果/schema 预算（单一入口） |
 | `core/loop/types.rs` | 协议无关消息/内容块/流事件/错误类型 |
 | `core/loop/llm_seam.rs` | `LlmAdapter` 抽象 + `CompletionRequest/Response` + `ToolSchema` |
 | `core/loop/openai.rs` | OpenAI 兼容 SSE 适配器（SseParser 纯状态机、空闲看门狗、溢出识别） |
