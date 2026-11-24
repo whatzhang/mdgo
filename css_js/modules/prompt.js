@@ -244,7 +244,7 @@ function promptRenderEdit(item) {
                         </div>
                         <div class="skill-form-field full">
                             <label>Prompt 内容</label>
-                            <div id="prompt-f-content" class="skill-body-editor" style="height: 24rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden;"></div>
+                            <div id="prompt-f-content" class="skill-body-editor" style="height: 40rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden;"></div>
                         </div>
                     </div>
                 </div>`;

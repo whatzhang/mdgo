@@ -347,7 +347,7 @@ function skillRenderEdit(skill) {
                         </div>
                         <div class="skill-form-field full">
                             <label>指令正文（Markdown）</label>
-                            <div id="skill-f-body" class="skill-body-editor" style="height: 24rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden;"></div>
+                            <div id="skill-f-body" class="skill-body-editor" style="height: 40rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden;"></div>
                         </div>
                     </div>
                 </div>`;

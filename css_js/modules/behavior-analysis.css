@@ -119,8 +119,7 @@ body.dark .ba-page {
     border-radius: 0.75rem;
     padding: 0.8125rem 0.9375rem 0.75rem;
     min-width: 0;
-    box-shadow: var(--ba-card-shadow);
-    transition: border-color var(--transition-fast, 0.15s), box-shadow var(--transition-fast, 0.15s);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .ba-kpi-label {
@@ -191,8 +190,7 @@ body.dark .ba-page {
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    box-shadow: var(--ba-card-shadow);
-    transition: border-color var(--transition-fast, 0.15s), box-shadow var(--transition-fast, 0.15s);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .ba-card-head {
@@ -283,7 +281,7 @@ body.dark .ba-page {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-    box-shadow: var(--ba-card-shadow);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .ba-ai-head {
