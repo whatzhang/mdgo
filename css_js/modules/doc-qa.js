@@ -4,7 +4,7 @@
  * 【职责】主页面右侧停靠栏「小助手」（TOC 右侧、同图层，不再有居中模态框）：
  *         打开当前文件 → 自动「关联当前文件」→ 对文档流式问答；
  *         会话以 type='doc' 落库、按「文件」维度本地聚合（localStorage 映射 文件↔sessionId）。
- * 【依赖】main.html 全局：isTauriVisit / showNotification / markedParse / parseObsidianToHTML /
+ * 【依赖】main.html 全局：isTauriVisit / showNotification / markedParse / parseWiki / DOMPurify /
  *         postProcessMarkdown / currentRootPath / currentActiveItem / currentFileName；
  *         Tauri 命令：doc_agent_query / doc_read_meta / kb_cancel_task /
  *         chat_session_create / chat_session_messages / chat_message_save。
@@ -142,7 +142,7 @@
         } catch (e) { /* ignore */ }
         return typeof currentFileName === 'string' ? currentFileName : '';
     }
-    const SEND_ICON_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" /></svg>';
+    const SEND_ICON_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" /></svg>';
     const STOP_ICON_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1.5" /></svg>';
 
     // 发送/停止合一（与 Agent 页一致）：busy 时同一按钮变为“停止”
@@ -182,9 +182,14 @@
     function setMsgLoading(body, on) {
         const wrap = msgWrapOf(body);
         if (!wrap || !body) return;
+        // 正文外面多了一层 .chat-message-body（与 Agent 页同一套模板），
+        // 隐藏时要把这层一起隐藏，否则它的 padding + min-height 会留出空白、把加载动画顶下去。
+        const host = (body.parentElement && body.parentElement.classList.contains('chat-message-body'))
+            ? body.parentElement
+            : body;
         const exist = wrap.querySelector('.doc-qa-loading');
         if (on) {
-            body.style.display = 'none';
+            host.style.display = 'none';
             if (exist) return;
             const box = document.createElement('div');
             box.className = 'doc-qa-loading';
@@ -193,13 +198,12 @@
             typing.innerHTML = '<span></span><span></span><span></span>';
             const label = document.createElement('span');
             label.className = 'doc-qa-loading-text';
-            label.textContent = '正在生成…';
             box.appendChild(typing);
             box.appendChild(label);
             wrap.appendChild(box);
             scrollMsgsToBottom();
         } else {
-            body.style.display = '';
+            host.style.display = '';
             if (exist) exist.remove();
         }
     }
@@ -252,11 +256,17 @@
             box.scrollTop = box.scrollHeight;
             return wrap;
         }
+        const bodyWrap = document.createElement('div');
+        // 与 Agent 主页面同一套模板：.chat-message-body > .markdown-body
+        // 正文排版（字号 0.875rem / 行高 1.7 / 段落与标题间距）全部由 Agent 页那份 CSS 提供，
+        // 这里不再写任何内联样式，避免两处各自维护导致样式漂移。
+        bodyWrap.className = 'chat-message-body';
+        bodyWrap.style.marginLeft = '0'; 
+        bodyWrap.style.padding = '0 0.125rem';
         const body = document.createElement('div');
         body.className = 'markdown-body';
-        body.style.backgroundColor = 'transparent';
-        body.style.padding = '0.25rem';
-        wrap.appendChild(body);
+        bodyWrap.appendChild(body);
+        wrap.appendChild(bodyWrap);
         box.appendChild(wrap);
         if (pending) {
             // 等待首个 token：先显示加载态；操作区留到终态再挂（对齐 Agent 页）
@@ -289,8 +299,14 @@
         try {
             let src = md || '';
             if (decorate) src = decorateCitations(src);
-            // 流式帧跳过媒体 URL 替换（与 Agent 页 renderChatMarkdownStream 同一取舍）
-            const html = await markedParse(parseObsidianToHTML(src), !streaming);
+            // 与 Agent 主页面同一套渲染管线：parseWiki（wikilink）→ marked → DOMPurify。
+            // 之前这里用 parseObsidianToHTML，会额外做 %%注释%% 删除、==高亮== 包装、![[]] 嵌入替换，
+            // 模型输出里出现这些字符时会被改写，和 Agent 页表现不一致，故统一到 parseWiki。
+            // 唯一保留的文档侧差异：相对媒体路径要替换成可访问 URL（markedParse 的第二个参数）。
+            let html = await markedParse(parseWiki(src), !streaming);
+            if (!streaming && typeof DOMPurify !== 'undefined') {
+                try { html = DOMPurify.sanitize(html); } catch (e) { /* 净化失败则用原 HTML */ }
+            }
             if (body.__docQaRenderToken !== token) return; // 已被更新的渲染取代
             body.innerHTML = html;
             if (!streaming) {

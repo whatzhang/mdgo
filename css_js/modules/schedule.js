@@ -444,9 +444,13 @@ function todoDestroy() {
     TimerManager.clear('todoModalTime');
     todoStopLocalScheduler();
     _todoEarlyInitialized = false;
+    // 离开日历页：收起悬浮面板，避免残留在其他页面上方
+    if (typeof _todoPopoverHide === 'function') _todoPopoverHide(true);
 }
 
 function todoRenderAll() {
+    // 重渲染会移除旧的事件节点，悬浮面板的锚点随之失效 → 先收起
+    if (typeof _todoPopoverHide === 'function') _todoPopoverHide(true);
     todoUpdateHeader();
     todoRenderMiniCalendar();
     // 只渲染当前可见视图，减少不必要的 DOM 操作
@@ -647,7 +651,7 @@ function todoRenderMonthView() {
             const cronClass = isCronVirtual ? ' todo-cron-event' : '';
             const reminderClass = isReminder ? ' todo-reminder-event' : '';
             const onclick = ` onclick="event.stopPropagation(); todoEditEvent('${todoE.id}')"`;
-            html += `<div class="todo-month-event todo-${todoE.color || 'blue'}${cronClass}${reminderClass}"${onclick}>${isCronVirtual ? eventTime + ' ' : ''}${escapeHtml(todoE.title)}</div>`;
+            html += `<div class="todo-month-event todo-${todoE.color || 'blue'}${cronClass}${reminderClass}"${_todoHoverAttrs(todoE)}${onclick}>${isCronVirtual ? eventTime + ' ' : ''}${escapeHtml(todoE.title)}</div>`;
         });
         html += `</div><div class="todo-add-event-hint">+</div>`;
         el.innerHTML = html;
@@ -846,6 +850,11 @@ function todoCreateWeekEvent(todoE, allDayEvents) {
     const el = document.createElement('div');
     const isReminder = todoE.event_type === 'reminder';
     el.className = `todo-week-event todo-${todoE.color}${isCronVirtual ? ' todo-cron-event' : ''}${isReminder ? ' todo-reminder-event' : ''}`;
+    // 悬浮详情面板：用 data-* 关联事件（cron 虚拟实例额外记本次实例时间）
+    el.dataset.eventId = todoE.id;
+    if (isCronVirtual && todoE._cronTime instanceof Date) {
+        el.dataset.cronTime = String(todoE._cronTime.getTime());
+    }
     el.style.top = `${startHour * 60}px`;
     el.style.height = `${Math.max(duration * 60, 20)}px`;
     // 重叠布局 - 并排显示时左右各留 4px 间隙
@@ -868,7 +877,7 @@ function todoCreateWeekEvent(todoE, allDayEvents) {
                     <div style="font-size:10px;opacity:0.8;">🔄 ${todoFormatTime(eventTime)}</div>
                     <div style="font-size:11px;">${escapeHtml(todoE.title)}</div>
                 `;
-        el.title = `Cron: ${todoE.cron}`;
+        // 不再设置原生 title：悬浮已有详情面板，原生 tooltip 会与其重叠
         el.style.cursor = 'pointer';
         el.onclick = (todoEv) => {
             todoEv.stopPropagation();
@@ -880,7 +889,6 @@ function todoCreateWeekEvent(todoE, allDayEvents) {
                     <div class="todo-event-time-small">🔔 ${todoFormatTime(eventTime)}</div>
                     <div>${escapeHtml(todoE.title)}</div>
                 `;
-        el.title = (todoE.desc ? '备注: ' + todoE.desc : '单点提醒');
         el.style.cursor = 'pointer';
         el.onclick = (todoEv) => {
             todoEv.stopPropagation();
@@ -955,7 +963,7 @@ function todoRenderTodayEvents() {
             timeStr = '';
         }
         const cronClass = isCronVirtual ? ' todo-cron-sidebar' : '';
-        html += '<div class="todo-event-item todo-' + (todoE.color || 'blue') + cronClass + '" onclick="todoEditEvent(\'' + todoE.id + '\')">' +
+        html += '<div class="todo-event-item todo-' + (todoE.color || 'blue') + cronClass + '"' + _todoHoverAttrs(todoE) + ' onclick="todoEditEvent(\'' + todoE.id + '\')">' +
             '<div class="todo-event-time">' + timeStr + '</div>' +
             '<div class="todo-event-title">' + escapeHtml(todoE.title) + '</div>' +
             '</div>';
@@ -1044,7 +1052,7 @@ function todoRenderHistoryEvents() {
                 }) : '')
                 : dateStr);
         const cronClass = isCronVirtual ? ' todo-cron-sidebar' : '';
-        return '<div class="todo-event-item todo-' + (todoE.color || 'blue') + cronClass + '" onclick="todoEditEvent(\'' + todoE.id + '\')">' +
+        return '<div class="todo-event-item todo-' + (todoE.color || 'blue') + cronClass + '"' + _todoHoverAttrs(todoE) + ' onclick="todoEditEvent(\'' + todoE.id + '\')">' +
             '<div class="todo-event-time">' + timeStr + '</div>' +
             '<div class="todo-event-title">' + escapeHtml(todoE.title) + '</div>' +
             '</div>';
@@ -1876,3 +1884,337 @@ function updateHeaderUpcoming() {
         fel.textContent = '';
     }
 }
+
+// ─────────────────────────── 日程悬浮详情面板 ───────────────────────────
+// 交互契约：
+// - 悬停 180ms 才显示（鼠标扫过一排日程时不闪）；已有面板时切换目标立即换内容；
+// - 面板贴在色块**右侧 10px**，右侧放不下翻到左侧；纵向居中并夹在视口内；
+// - 鼠标从色块移到面板上不关闭（可选中/复制文字）；离开两者 160ms 后关闭；
+// - 滚动、缩放、Esc、拖拽、点击页面都会立即关闭；
+// - 面板是**单例**（document.body 下一个节点），不参与日历布局，不影响拖拽与点选。
+let _todoPopoverEl = null;
+let _todoPopoverAnchor = null;
+let _todoPopoverShowTimer = null;
+let _todoPopoverHideTimer = null;
+let _todoPopoverBound = false;
+
+const _TODO_POPOVER_SELECTOR = '.todo-month-event, .todo-week-event, .todo-event-item';
+const _TODO_POPOVER_GAP = 10;
+const _TODO_POPOVER_PAD = 8;
+const _TODO_COLOR_HEX = {
+    blue: 'var(--color-primary)',
+    purple: '#7B61FF',
+    green: '#10B981',
+    orange: '#F59E0B',
+    red: '#EF4444'
+};
+
+/** 悬浮面板锚点属性（data-event-id / data-cron-time）；cron 实例额外记本次实例时间戳 */
+function _todoHoverAttrs(todoE) {
+    const cronMs = todoE._isCronVirtual && todoE._cronTime instanceof Date
+        ? todoE._cronTime.getTime()
+        : null;
+    return ` data-event-id="${escapeHtml(String(todoE.id))}"` + (cronMs ? ` data-cron-time="${cronMs}"` : '');
+}
+
+function _todoPad2(n) {
+    return String(n).padStart(2, '0');
+}
+
+function _todoHM(d) {
+    return `${_todoPad2(d.getHours())}:${_todoPad2(d.getMinutes())}`;
+}
+
+function _todoShortDateTime(d) {
+    return `${_todoPad2(d.getMonth() + 1)}-${_todoPad2(d.getDate())} ${_todoHM(d)}`;
+}
+
+/** 把后端 "YYYY-MM-DDTHH:MM" 压成 "MM-DD HH:MM"；解析失败原样返回 */
+function _todoFormatStamp(raw) {
+    const s = String(raw || '');
+    const m = s.match(/^\d{4}-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+    return m ? `${m[1]}-${m[2]} ${m[3]}:${m[4]}` : s;
+}
+
+function _todoDurationText(minutes) {
+    if (minutes <= 0) return '0 分钟';
+    if (minutes < 60) return `${minutes} 分钟`;
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return m ? `${h} 小时 ${m} 分` : `${h} 小时`;
+}
+
+function _todoBaseName(path) {
+    return String(path || '').split(/[\\/]/).pop() || String(path || '');
+}
+
+function _todoTypeLabel(type) {
+    const map = { meeting: '会议', focus: '专注', personal: '个人', task: '任务', work: '工作', reminder: '提醒' };
+    return map[String(type || '').toLowerCase()] || '日程';
+}
+
+function _todoEnergyLabel(energy) {
+    const map = { deep_work: '深度工作', shallow: '浅层工作', rest: '休息' };
+    return map[String(energy || '').toLowerCase()] || String(energy || '');
+}
+
+function _todoPriorityChip(priority) {
+    const p = String(priority || '').toLowerCase();
+    if (p === 'high') return { text: '高优先级', cls: 'is-priority-high' };
+    if (p === 'medium') return { text: '中优先级', cls: 'is-priority-medium' };
+    if (p === 'low') return { text: '低优先级', cls: '' };
+    return null;
+}
+
+function _todoStatusChip(start, end, virtual) {
+    if (virtual) return { text: '重复实例', cls: '' };
+    const now = Date.now();
+    const s = start.getTime();
+    const e = end ? end.getTime() : s;
+    if (now < s) return { text: '未开始', cls: '' };
+    if (now > e) return { text: '已结束', cls: '' };
+    return { text: '进行中', cls: 'is-status-running' };
+}
+
+function _todoTimeRangeText(start, end, isReminder) {
+    const now = new Date();
+    const sameDay = start.toDateString() === now.toDateString();
+    const day = sameDay ? '今天' : `${start.getMonth() + 1}月${start.getDate()}日`;
+    const t1 = _todoHM(start);
+    if (isReminder || !end) return `${day} ${t1} · 单点提醒`;
+    const minutes = Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000));
+    if (minutes <= 0) return `${day} ${t1}`;
+    return `${day} ${t1}–${_todoHM(end)} · ${_todoDurationText(minutes)}`;
+}
+
+function _todoPopoverRow(icon, text) {
+    return `<div class="todo-popover-row"><span class="todo-popover-ico">${icon}</span><span class="todo-popover-txt">${escapeHtml(String(text))}</span></div>`;
+}
+
+/** 渲染面板内容（信息优先级：类型/优先级/状态 → 标题 → 时间 → 重复/提醒 → 描述 → 关联/AI → 元信息） */
+function _todoPopoverRender(ctx) {
+    const { ev, start, end, virtual } = ctx;
+    const color = _TODO_COLOR_HEX[ev.color] || _TODO_COLOR_HEX.blue;
+
+    const chips = [`<span class="todo-popover-chip">${escapeHtml(_todoTypeLabel(ev.event_type))}</span>`];
+    const pr = _todoPriorityChip(ev.priority);
+    if (pr) chips.push(`<span class="todo-popover-chip ${pr.cls}">${pr.text}</span>`);
+    const st = _todoStatusChip(start, end, virtual);
+    if (st) chips.push(`<span class="todo-popover-chip ${st.cls}">${st.text}</span>`);
+
+    const rows = [_todoPopoverRow('🕐', _todoTimeRangeText(start, end, ev.event_type === 'reminder'))];
+    if (ev.cron) {
+        const next = _findNextCronTime(ev, Date.now());
+        const nextText = Number.isFinite(next) ? ` · 下次 ${_todoShortDateTime(new Date(next))}` : '';
+        rows.push(_todoPopoverRow('🔁', `${todoParseCron(ev.cron)}${nextText}`));
+    }
+    if (ev.event_type === 'reminder') {
+        rows.push(_todoPopoverRow('🔔', '到点弹窗提醒'));
+    } else if (ev.notify === false) {
+        rows.push(_todoPopoverRow('🔕', '不提醒'));
+    } else {
+        const before = Number(ev.notify_before) || 0;
+        rows.push(_todoPopoverRow('⏰', before > 0 ? `提前 ${before} 分钟提醒` : '开始时提醒'));
+    }
+
+    let html = `<div class="todo-popover-head"><span class="todo-popover-dot" style="background:${color}"></span>${chips.join('')}</div>`;
+    html += `<div class="todo-popover-title">${escapeHtml(ev.title || '(无标题)')}</div>`;
+    html += rows.join('');
+
+    const desc = String(ev.desc || '').trim();
+    const related = ev.related || {};
+    const docs = Array.isArray(related.docs) ? related.docs : [];
+    const tasks = Array.isArray(related.tasks) ? related.tasks : [];
+    const git = Array.isArray(related.git) ? related.git : [];
+    const ai = ev.ai || {};
+    const aiBits = [];
+    if (ai.energy) aiBits.push(_todoEnergyLabel(ai.energy));
+    if (ai.category) aiBits.push(String(ai.category));
+    if (Number(ai.estimated_hours) > 0) aiBits.push(`预计 ${Number(ai.estimated_hours)} 小时`);
+
+    if (desc || docs.length || tasks.length || git.length || aiBits.length) {
+        html += '<div class="todo-popover-sep"></div>';
+    }
+    if (desc) {
+        html += `<div class="todo-popover-desc">${escapeHtml(desc)}</div>`;
+    }
+    if (docs.length || tasks.length || git.length) {
+        const tags = [];
+        docs.slice(0, 3).forEach(d => {
+            tags.push(`<span class="todo-popover-tag" title="${escapeHtml(String(d))}">📄 ${escapeHtml(_todoBaseName(d))}</span>`);
+        });
+        tasks.slice(0, 3).forEach(t => {
+            tags.push(`<span class="todo-popover-tag" title="${escapeHtml(String(t))}">✅ ${escapeHtml(String(t))}</span>`);
+        });
+        git.slice(0, 2).forEach(g => {
+            tags.push(`<span class="todo-popover-tag" title="${escapeHtml(String(g))}">🔀 ${escapeHtml(String(g))}</span>`);
+        });
+        const more = docs.length + tasks.length + git.length - tags.length;
+        if (more > 0) tags.push(`<span class="todo-popover-tag">+${more}</span>`);
+        html += `<div class="todo-popover-tags">${tags.join('')}</div>`;
+    }
+    if (aiBits.length) {
+        html += _todoPopoverRow('🧠', aiBits.join(' · '));
+    }
+    const stamp = ev.updated_at || ev.created_at;
+    if (stamp) {
+        html += `<div class="todo-popover-meta">更新于 ${escapeHtml(_todoFormatStamp(stamp))}</div>`;
+    }
+    return html;
+}
+
+function _todoPopoverEnsure() {
+    if (_todoPopoverEl && _todoPopoverEl.isConnected) return _todoPopoverEl;
+    const el = document.createElement('div');
+    el.className = 'todo-popover';
+    el.setAttribute('role', 'tooltip');
+    el.setAttribute('aria-hidden', 'true');
+    el.addEventListener('mouseenter', () => {
+        if (_todoPopoverHideTimer) {
+            clearTimeout(_todoPopoverHideTimer);
+            _todoPopoverHideTimer = null;
+        }
+    });
+    el.addEventListener('mouseleave', (e) => {
+        const to = e.relatedTarget;
+        // 移回任一日程或面板内部：不关（交回 mouseover/mouseleave 流程）
+        if (to && to.closest && to.closest(_TODO_POPOVER_SELECTOR)) return;
+        _todoPopoverHide(false);
+    });
+    document.body.appendChild(el);
+    _todoPopoverEl = el;
+    return el;
+}
+
+/** 从被 hover 的色块解析出事件与本次展示的时间范围 */
+function _todoPopoverResolve(chip) {
+    const ds = chip.dataset || {};
+    const id = ds.eventId;
+    if (!id) return null;
+    const ev = todoEvents.find(e => e.id === id);
+    if (!ev) return null;
+    const cronMs = ds.cronTime ? Number(ds.cronTime) : NaN;
+    if (Number.isFinite(cronMs) && cronMs > 0) {
+        const start = new Date(cronMs);
+        return { ev, start, end: new Date(start.getTime() + 30 * 60000), virtual: true };
+    }
+    const start = ev.start instanceof Date ? ev.start : new Date(ev.start);
+    if (isNaN(start.getTime())) return null;
+    let end = ev.end instanceof Date ? ev.end : new Date(ev.end);
+    if (isNaN(end.getTime())) end = null;
+    return { ev, start, end, virtual: false };
+}
+
+function _todoPopoverPlace(chip) {
+    const el = _todoPopoverEl;
+    if (!el || !chip) return;
+    const rect = chip.getBoundingClientRect();
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    // 水平：优先右侧，放不下翻左侧，最后夹进视口
+    let left = rect.right + _TODO_POPOVER_GAP;
+    if (left + w > vw - _TODO_POPOVER_PAD) left = rect.left - w - _TODO_POPOVER_GAP;
+    left = Math.max(_TODO_POPOVER_PAD, Math.min(left, vw - w - _TODO_POPOVER_PAD));
+
+    // 垂直：与色块垂直居中对齐，再夹进视口
+    let top = rect.top + rect.height / 2 - h / 2;
+    top = Math.max(_TODO_POPOVER_PAD, Math.min(top, vh - h - _TODO_POPOVER_PAD));
+
+    el.style.left = `${Math.round(left)}px`;
+    el.style.top = `${Math.round(top)}px`;
+}
+
+function _todoPopoverShow(chip) {
+    const ctx = _todoPopoverResolve(chip);
+    if (!ctx) return;
+    const el = _todoPopoverEnsure();
+    el.innerHTML = _todoPopoverRender(ctx);
+    el.classList.add('todo-popover-visible');
+    el.setAttribute('aria-hidden', 'false');
+    _todoPopoverAnchor = chip;
+    _todoPopoverPlace(chip);
+}
+
+function _todoPopoverHide(immediate) {
+    if (_todoPopoverShowTimer) {
+        clearTimeout(_todoPopoverShowTimer);
+        _todoPopoverShowTimer = null;
+    }
+    if (_todoPopoverHideTimer) {
+        clearTimeout(_todoPopoverHideTimer);
+        _todoPopoverHideTimer = null;
+    }
+    const el = _todoPopoverEl;
+    if (!el) return;
+    const doHide = () => {
+        el.classList.remove('todo-popover-visible');
+        el.setAttribute('aria-hidden', 'true');
+        _todoPopoverAnchor = null;
+    };
+    if (immediate) doHide();
+    else _todoPopoverHideTimer = setTimeout(doHide, 160);
+}
+
+function _todoPopoverBind() {
+    if (_todoPopoverBound) return;
+    _todoPopoverBound = true;
+
+    const chipOf = (node) => (node && node.closest) ? node.closest(_TODO_POPOVER_SELECTOR) : null;
+
+    document.addEventListener('mouseover', (e) => {
+        const chip = chipOf(e.target);
+        if (!chip) return;
+        // 拖拽中不弹面板（避免挡住放置目标）
+        if (document.querySelector('.todo-dragging')) {
+            _todoPopoverHide(true);
+            return;
+        }
+        if (chip === _todoPopoverAnchor) return;
+        if (_todoPopoverShowTimer) {
+            clearTimeout(_todoPopoverShowTimer);
+            _todoPopoverShowTimer = null;
+        }
+        const visible = _todoPopoverEl && _todoPopoverEl.classList.contains('todo-popover-visible');
+        if (visible) {
+            // 已有面板：直接换内容，不做延迟（否则在相邻日程间移动会明显迟滞）
+            _todoPopoverShow(chip);
+            return;
+        }
+        _todoPopoverShowTimer = setTimeout(() => {
+            _todoPopoverShowTimer = null;
+            if (!chip.isConnected) return;
+            _todoPopoverShow(chip);
+        }, 180);
+    }, true);
+
+    document.addEventListener('mouseout', (e) => {
+        const chip = chipOf(e.target);
+        if (!chip) return;
+        const to = e.relatedTarget;
+        if (to && to === _todoPopoverEl) return;
+        if (to && to.closest && to.closest('.todo-popover')) return;
+        // 直接移到另一个日程：交给 mouseover 处理切换
+        if (chipOf(to)) return;
+        _todoPopoverHide(false);
+    }, true);
+
+    document.addEventListener('mousedown', (e) => {
+        if (_todoPopoverEl && _todoPopoverEl.contains(e.target)) return;
+        _todoPopoverHide(true);
+    }, true);
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') _todoPopoverHide(true);
+    });
+    window.addEventListener('scroll', (e) => {
+        // 面板自身滚动（内容超长）不要关掉它
+        if (_todoPopoverEl && e.target && e.target.nodeType === 1 && _todoPopoverEl.contains(e.target)) return;
+        _todoPopoverHide(true);
+    }, true);
+    window.addEventListener('resize', () => _todoPopoverHide(true));
+    document.addEventListener('dragstart', () => _todoPopoverHide(true), true);
+}
+
+_todoPopoverBind();
