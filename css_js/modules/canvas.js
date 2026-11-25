@@ -1174,7 +1174,7 @@ class CanvasLess {
                 canvasContainer.style.width = '50%';
                 canvasContainer.style.position = 'relative';
             }
-            setControlsState({ editBtn: false });
+            setControlsState({ editBtn: false, demoBtn: false });
         }
         return contentPanel;
     }
@@ -1671,7 +1671,7 @@ class CanvasLess {
                             <div class="markdown-body" style="padding: 8px 8px;background: transparent;">${htmlContent}</div>`;
                 this.setNodePanelState({ fileContent: text });
                 destroyNodeEditor();
-                setControlsState({ demoBtn: true, commonToolControls: true });
+                setControlsState({ commonToolControls: true });
                 postProcessMarkdown(contentPanel);
             };
             if (newText === originalContent) {

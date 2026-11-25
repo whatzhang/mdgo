@@ -1312,38 +1312,40 @@
             <!-- 小助手文档问答停靠栏（DocAgent · 宿主 A：停靠主页面右侧、TOC 右侧同图层，默认关联当前文件） -->
             <div id="doc-qa-overlay" onclick="if (event.target === this) closeDocQA()">
                 <div id="doc-qa-panel">
-                    <div class="doc-qa-header">
-                        <div class="doc-qa-file">
-                            <span id="doc-qa-file-name" class="doc-qa-file-name">未关联文件</span>
-                            <span id="doc-qa-file-meta" class="doc-qa-file-meta"></span>
+                    <div class="doc-qa-header-top">
+                        <div class="doc-qa-header">
+                            <div class="doc-qa-file">
+                                <span id="doc-qa-file-name" class="doc-qa-file-name">未关联文件</span>
+                                <span id="doc-qa-file-meta" class="doc-qa-file-meta"></span>
+                            </div>
+                            <button id="doc-qa-scope-btn" class="doc-qa-mini-btn" onclick="toggleDocQaScope()" title="圈选同目录资料一并作为本轮会话上下文">资料圈</button>
+                            <select id="doc-qa-session-pick" class="doc-qa-depth" title="本文档历史会话">
+                                <option value="">— 新对话 —</option>
+                            </select>
+                            <button id="doc-qa-new-btn" class="doc-qa-mini-btn" onclick="docQaNew()" title="开启新对话">新对话</button>
+                            <button id="doc-qa-export-btn" class="doc-qa-mini-btn" onclick="docQaExportConversation()" title="把整段会话导出为库内 Markdown 笔记">存会话</button>
+                            <select id="doc-qa-write-mode" class="doc-qa-depth" title="写回模式：Explore=先确认后写入（推荐）；Execute=直接写入（仍可撤销）">
+                                <option value="explore">Explore（先确认）</option>
+                                <option value="execute">Execute（直接改）</option>
+                            </select>
+                            <label class="doc-qa-mem-label" title="把长期记忆中与本知识库相关的内容注入本轮问答">
+                                <input type="checkbox" id="doc-qa-memory"> 记忆
+                            </label>
+                            <label class="doc-qa-mem-label" title="检索书签（收藏/网页）作为辅助参考（仅文本摘要）">
+                                <input type="checkbox" id="doc-qa-bookmarks"> 书签
+                            </label>
+                            <select id="doc-qa-template" class="doc-qa-depth" title="会话风格模板（随发送生效）">
+                                <option value="default">默认</option>
+                                <option value="precise">严格核对</option>
+                                <option value="concise">简洁</option>
+                                <option value="tutor">讲解式</option>
+                            </select>
+                            <select id="doc-qa-depth" class="doc-qa-depth" title="回答档位：自动跟随全局配置 / 快速 / 深度推理">
+                                <option value="auto">自动</option>
+                                <option value="low">快速</option>
+                                <option value="high">深度</option>
+                            </select>
                         </div>
-                        <button id="doc-qa-scope-btn" class="doc-qa-mini-btn" onclick="toggleDocQaScope()" title="圈选同目录资料一并作为本轮会话上下文">资料圈</button>
-                        <select id="doc-qa-session-pick" class="doc-qa-depth" title="本文档历史会话">
-                            <option value="">— 新对话 —</option>
-                        </select>
-                        <button id="doc-qa-new-btn" class="doc-qa-mini-btn" onclick="docQaNew()" title="开启新对话">新对话</button>
-                        <button id="doc-qa-export-btn" class="doc-qa-mini-btn" onclick="docQaExportConversation()" title="把整段会话导出为库内 Markdown 笔记">存会话</button>
-                        <select id="doc-qa-write-mode" class="doc-qa-depth" title="写回模式：Explore=先确认后写入（推荐）；Execute=直接写入（仍可撤销）">
-                            <option value="explore">Explore（先确认）</option>
-                            <option value="execute">Execute（直接改）</option>
-                        </select>
-                        <label class="doc-qa-mem-label" title="把长期记忆中与本知识库相关的内容注入本轮问答">
-                            <input type="checkbox" id="doc-qa-memory"> 记忆
-                        </label>
-                        <label class="doc-qa-mem-label" title="检索书签（收藏/网页）作为辅助参考（仅文本摘要）">
-                            <input type="checkbox" id="doc-qa-bookmarks"> 书签
-                        </label>
-                        <select id="doc-qa-template" class="doc-qa-depth" title="会话风格模板（随发送生效）">
-                            <option value="default">默认</option>
-                            <option value="precise">严格核对</option>
-                            <option value="concise">简洁</option>
-                            <option value="tutor">讲解式</option>
-                        </select>
-                        <select id="doc-qa-depth" class="doc-qa-depth" title="回答档位：自动跟随全局配置 / 快速 / 深度推理">
-                            <option value="auto">自动</option>
-                            <option value="low">快速</option>
-                            <option value="high">深度</option>
-                        </select>
                     </div>
                     <div class="doc-qa-actions">
                         <button class="doc-qa-chip" onclick="docQaQuick('summarize')" title="对当前文档做结构化总结">总结</button>
@@ -2284,7 +2286,7 @@
                         <div class="git-splitter" data-git-split="changed" title="拖动调整高度，双击复位"></div>
 
                         <div class="git-left-header">
-                            <span>提交历史</span>
+                            <span style="width: 30px;">记录</span>
                             <span id="gitRepoInfo"
                                 style="font-weight:500;color:var(--t1);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px;">尚未打开仓库</span>
                         </div>
@@ -3756,6 +3758,26 @@
         let _browsingTimerStart = 0;        // 当前文件计时开始时间戳 (Date.now())
         let _docLinks = [];                  // 文档链接数组
         let openHistory = null;           // 打开历史记录实例
+        /**
+         * 统一的"当前知识库"设置入口。
+         * 切换知识库时必须做两件事，否则会跨库串数据：
+         * 1) 关闭右侧小助手（避免继续沿用上一个库的会话/文件上下文）；
+         * 2) 把"最近打开历史"切换成新库自己的那一份（历史按根目录隔离存储）。
+         */
+        function setCurrentRootPath(nextPath) {
+            const prev = currentRootPath || '';
+            const next = String(nextPath == null ? '' : nextPath).replace(/[\/\\]+$/, '');
+            currentRootPath = next;
+            if (prev !== next) {
+                if (typeof docQaCloseIfDockedOpen === 'function') {
+                    try { docQaCloseIfDockedOpen(); } catch (e) { /* ignore */ }
+                }
+                if (openHistory) {
+                    try { openHistory.reloadForRoot(); } catch (e) { /* ignore */ }
+                }
+            }
+            return currentRootPath;
+        }
 
         function _startBrowsingTimer(filePath) {
             _browsingFilePath = filePath;
@@ -4255,7 +4277,6 @@
 
         function setAllTypeFlag(type) {
             topSpacerContainer.style.display  = 'flex';
-            topSpacerContainer.classList.remove('inLine');
             if (type === 'renderFile') {
                 dirCanvasDisplayFlag = false;
             } else if (type === 'dashboard') {
@@ -4271,7 +4292,6 @@
             } else if (type === 'mcp') {
             } else if (type === 'prompt') {
             } else if (type === 'globalSearch') {
-                // 搜索页占满主内容区：隐藏顶部空白条，避免正文被压缩
                 topSpacerContainer.style.display = 'none';
             } else if (type === 'dirCanvasDisplay') {
                 dirCanvasDisplayFlag = true;
@@ -11398,7 +11418,6 @@
         }
 
         async function renderMarkdownFile(text) {
-            topSpacerContainer.classList.add('inLine');
             if (typeof docQaFileSwitched === 'function') setTimeout(docQaFileSwitched, 40);
             mdIsKanban = false;
             if (isObsidianKanban(text)) {
@@ -20683,7 +20702,7 @@ kanban-plugin: basic
                 try {
                     // 先清理旧目录数据（使用旧的 currentRootPath），再更新路径
                     await clearOldData();
-                    currentRootPath = dirHandle.path.replace(/[\/\\]+$/, '');
+                    setCurrentRootPath(dirHandle.path);
                     safeLocalStorageSet("ROOT_DIR", currentRootPath);
                     safeLocalStorageSet(PERMISSION_TIME_KEY, Date.now().toString());
                     if (window.__tauriStorageFlush) await window.__tauriStorageFlush();
@@ -20721,7 +20740,9 @@ kanban-plugin: basic
             safeLocalStorageRemove(TOC_VISIBLE_KEY);
             safeLocalStorageRemove('highlight-colors');
             safeLocalStorageRemove('annotation-colors');
-            safeLocalStorageRemove(OPEN_HISTORY_KEY);
+            // 打开历史改为「按知识库隔离存储」（openHistory:<root>），
+            // 切换知识库时不能再删除它，否则旧库的历史会丢；
+            // 切换后的列表刷新由 setCurrentRootPath() → openHistory.reloadForRoot() 负责。
             _markersMap = null; // markers 缓存
             _cachedLastFile = null;    // createFileItem 预缓存：最后一次打开的文件路径
             _browserRefreshed = false;   // createFileItem 预缓存：是否浏览器刷新场景
@@ -20773,7 +20794,7 @@ kanban-plugin: basic
             }
             if (!currentRootPath || !isRootHandleAvailable() || currentRootPath !== savedPath) {
                 setRootHandle(handle);
-                currentRootPath = savedPath;
+                setCurrentRootPath(savedPath);
                 const setting = await loadSetting();
             }
             try {
@@ -32650,7 +32671,7 @@ kanban-plugin: basic
                 if (isInit) {
                     if (!isSaveAfter) {
                         await clearOldData();
-                        currentRootPath = '';
+                        setCurrentRootPath('');
                         closeModal(true);
                         openDir();
                         return;
@@ -32686,7 +32707,7 @@ kanban-plugin: basic
                             return;
                         }
                         //去除路径末尾的斜杠，兼容 windows 和 linux 系统
-                        currentRootPath = trimmedPath.replace(/[\/\\]+$/, '');
+                        setCurrentRootPath(trimmedPath);
                         // 先停止旧目录的文件监听
                         try { await window.__TAURI__.core.invoke('kb_stop_watcher'); } catch (e) { }
                         //验证路径是否合法
@@ -32739,7 +32760,7 @@ kanban-plugin: basic
                     showNotification('✗ 保存设置参数失败', 'error');
                     console.error('保存设置参数失败:', e);
                     await clearOldData();
-                    currentRootPath = '';
+                    setCurrentRootPath('');
                     setRootHandle(null);
                     showNotification('✗ 保存设置参数失败，请重新选择目录！', 'error');
                     openDir();
@@ -35580,27 +35601,69 @@ kanban-plugin: basic
 
         // ─── 引用溯源：打开引用文档并定位/高亮到具体片段 ───
 
+        /** 判断某个文档是否就是当前正在显示（渲染视图或编辑器）的文档 */
+        function _isDocCurrentlyOpen(docName) {
+            const target = String(docName || '').replace(/\\/g, '/').replace(/^\.?\//, '');
+            const targetBase = target.split('/').pop().toLowerCase();
+            if (!targetBase || !currentFileName) return false;
+            const curName = String(currentFileName).toLowerCase();
+            // 文件名必须一致（当前文件名是 basename）
+            if (curName !== targetBase) return false;
+            // 目标带目录时，再用「当前激活文件项」的完整相对路径做一次严格比对，
+            // 避免不同目录下同名文件被误判为"已打开"
+            const curPath = (currentActiveItem && currentActiveItem.dataset && currentActiveItem.dataset.filePath) || '';
+            if (curPath && target.indexOf('/') !== -1) {
+                const a = String(curPath).replace(/\\/g, '/').toLowerCase();
+                const b = target.toLowerCase();
+                if (a !== b && !a.endsWith('/' + b) && !b.endsWith('/' + a)) return false;
+            }
+            const mainEl = document.getElementById('content-main');
+            const editEl = document.getElementById('content-main-edit');
+            const mainVisible = !!(mainEl && mainEl.offsetParent !== null && mainEl.offsetHeight > 0);
+            const editVisible = !!(editEl && editEl.offsetParent !== null && editEl.offsetHeight > 0);
+            return mainVisible || editVisible;
+        }
+
         /**
          * 打开引用来源文档并定位到引用片段位置（引用溯源闭环）。
+         * - 文档已经打开时**不再重新打开/重渲染**，直接在当前 DOM 上定位+高亮，
+         *   否则会先整篇重渲染一次（视觉上二次闪现）再滚到目标位置；
          * - markdown：在渲染正文中匹配片段文本并滚动高亮
          * - OPML/FreeMind：按 path_json 层级路径定位并高亮节点
          * - 其他类型：仅打开文件（提示手动定位）
+         * @returns {Promise<boolean>} 是否定位命中
          */
         async function openSourceAndLocate(source) {
             const docName = source.doc_name || source.docName || '';
-            if (!docName) return;
-            await openFileFromPath(docName);
-            // 文件渲染为异步流程，延迟后等待渲染完成再定位
-            setTimeout(async () => {
+            if (!docName) return false;
+            // 已在当前文档：就地定位，避免「打开 → 重渲染 → 再定位」的两次闪烁
+            if (_isDocCurrentlyOpen(docName)) {
                 try {
-                    await locateInOpenedFile(source);
+                    return await locateInOpenedFile(source);
                 } catch (e) {
                     console.warn('引用定位失败:', e);
+                    return false;
                 }
-            }, 150);
+            }
+            await openFileFromPath(docName);
+            // 文件渲染为异步流程，延迟后等待渲染完成再定位
+            return new Promise((resolve) => {
+                setTimeout(async () => {
+                    try {
+                        resolve(await locateInOpenedFile(source));
+                    } catch (e) {
+                        console.warn('引用定位失败:', e);
+                        resolve(false);
+                    }
+                }, 150);
+            });
         }
 
-        /** 在已打开的文档视图中定位引用片段 */
+        /**
+         * 在已打开的文档视图中定位引用片段。
+         * @returns {Promise<boolean>} 是否定位命中（调用方靠它判断要不要再走"打开文件"的兜底，
+         *          之前恒返回 undefined 会导致命中后仍重新打开一次文档 → 二次闪现）
+         */
         async function locateInOpenedFile(source) {
             const docName = source.doc_name || source.docName || '';
             const snippet = (source.snippet || source.text || '').trim();
@@ -35608,15 +35671,16 @@ kanban-plugin: basic
             const ext = getExt(docName).toLowerCase();
             // 大纲类文档：按层级路径定位节点
             if ((ext === 'opml' || ext === 'mm') && pathJson) {
-                if (await locateOutlinePath(ext, pathJson)) return;
+                if (await locateOutlinePath(ext, pathJson)) return true;
             }
             // markdown 文档：正文文本匹配定位
             if (ext === 'md' && snippet) {
-                if (await locateSnippetInMarkdown(snippet)) return;
+                if (await locateSnippetInMarkdown(snippet)) return true;
             }
             // 通用兜底：任意文件在原始文本/代码编辑器中按片段定位到行
-            if (snippet && await locateSnippetInRawText(docName, snippet)) return;
+            if (snippet && await locateSnippetInRawText(docName, snippet)) return true;
             showNotification('已打开引用文件（未定位到精确位置，请手动查找）', 'info');
+            return false;
         }
 
         /**
@@ -38739,6 +38803,17 @@ kanban-plugin: basic
             constructor() {
                 this.openHistory = [];
             }
+            /** 当前知识库对应的存储键：按根目录隔离，避免跨库串历史 */
+            storageKey() {
+                const root = String(currentRootPath || '').replace(/[\/\\]+$/, '');
+                return OPEN_HISTORY_KEY + ':' + (root || '__no_root__');
+            }
+            /** 切换知识库后调用：清空内存与列表，再载入新库自己的历史 */
+            reloadForRoot() {
+                this.openHistory = [];
+                if (openHistoryContainer) openHistoryContainer.innerHTML = '';
+                this.loadHistory();
+            }
             deleteItemByPrefix(dirPrefix) {
                 if (!dirPrefix) return;
                 if (!isEmpty(this.openHistory)) {
@@ -38872,10 +38947,24 @@ kanban-plugin: basic
                 });
             }
             storeHistory() {
-                safeLocalStorageSet(OPEN_HISTORY_KEY, JSON.stringify(this.openHistory));
+                safeLocalStorageSet(this.storageKey(), JSON.stringify(this.openHistory));
             }
             loadHistory() {
-                this.openHistory = JSON.parse(safeLocalStorageGet(OPEN_HISTORY_KEY)) || [];
+                const key = this.storageKey();
+                let raw = safeLocalStorageGet(key);
+                // 旧版本把所有知识库的历史混存在全局 key 里：
+                // 首次升级时把它迁移到"当前知识库"名下，之后各库互不可见。
+                if (!raw && currentRootPath) {
+                    const legacy = safeLocalStorageGet(OPEN_HISTORY_KEY);
+                    if (legacy) {
+                        raw = legacy;
+                        safeLocalStorageSet(key, legacy);
+                        safeLocalStorageRemove(OPEN_HISTORY_KEY);
+                    }
+                }
+                let list = null;
+                try { list = JSON.parse(raw); } catch (e) { list = null; }
+                this.openHistory = Array.isArray(list) ? list : [];
                 this.renderHistory();
             }
         }

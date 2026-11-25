@@ -340,14 +340,15 @@
             .concat(sec.text.split('\n').filter((l) => l.trim()))
             .slice(0, 5);
         const snippet = snippetLines.join('\n');
-        const isCurrent = currentFileName && String(currentFileName).toLowerCase() === String(state.file).split('/').pop().toLowerCase();
         try {
-            if (isCurrent && typeof locateInOpenedFile === 'function') {
-                const hit = await locateInOpenedFile({ doc_name: state.file, snippet });
-                if (hit) return;
-            }
+            // 统一走 openSourceAndLocate：它内部先判断"文档是否已打开"，
+            // 已打开时只做定位+高亮（不重渲染），未打开才打开文件，
             if (typeof openSourceAndLocate === 'function') {
                 await openSourceAndLocate({ doc_name: state.file, snippet });
+                return;
+            }
+            if (typeof locateInOpenedFile === 'function') {
+                await locateInOpenedFile({ doc_name: state.file, snippet });
                 return;
             }
         } catch (e) {

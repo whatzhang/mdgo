@@ -13886,6 +13886,10 @@ jmnodes.theme-self jmnode.jmnode-color-g {
     flex-direction: column;
     overflow: hidden;
 }
+.doc-qa-header-top {
+    padding-top: 2.125rem;
+    background: rgba(0, 0, 0, 0.02);
+}
 
 .doc-qa-header {
     display: flex;
@@ -14132,7 +14136,7 @@ jmnodes.theme-self jmnode.jmnode-color-g {
 .doc-qa-messages {
     flex: 1;
     overflow-y: auto;
-    padding: 0 7px;
+    padding: 0.25rem 0.5rem;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
@@ -14195,7 +14199,7 @@ jmnodes.theme-self jmnode.jmnode-color-g {
     flex: none;
     font-size: 11px;
     color: var(--color-text-secondary, #86868b);
-    padding: 0.25rem 7px;
+    padding: 0.25rem 0.5rem;
 }
 
 /* ── 输入区 ── */
