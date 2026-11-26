@@ -205,117 +205,114 @@
         </div>
         <!-- ====== 主内容区（文件预览、编辑、统计面板等） ====== -->
         <div id="content-col">
-            <!-- 顶部空白条：高度 = 左侧栏最顶层按钮行（#sidebar-header）高度 -->
-            <div id="content-top-spacer" class="content-top-spacer">
-                <div id="top-right-wrapper" class="top-right-wrapper" style="display: flex;">
-                    <div id="top-right-controls" class="top-right-controls" style="display: none;">
-                        <span class="opml-original-buttons" id="opml-original-buttons">
-                            <button id="opml-mindmap-btn" class="btn btn-success btn-sm" onclick="mindmapViewModel()">
-                                思维导图
-                            </button>
-                            <button id="opml-back-btn" class="btn btn-success btn-sm" onclick="outlineViewModel()">
-                                大纲笔记
-                            </button>
-                            <button id="jsmind-save-opml-btn" class="btn btn-warning btn-sm" onclick="jsMindSaveOpml()"
-                                style="display:none;">
-                                保存为大纲笔记
-                            </button>
-                            <button id="opml-save-mm-btn" class="btn btn-warning btn-sm" onclick="opmlSaveAsMm()"
-                                style="display:none;">
-                                保存为思维导图
-                            </button>
-                            <button id="jsmind-image-btn" class="btn btn-warning btn-sm" onclick="jsMindSaveImage()"
-                                style="display:none;">
-                                导出为图片
-                            </button>
-                            <button id="opml-collapse-btn-1" class="btn btn-warning btn-sm" onclick="collapse1Level(2)">
-                                一级
-                            </button>
-                            <button id="opml-collapse-btn-2" class="btn btn-warning btn-sm" onclick="collapse1Level(3)">
-                                二级
-                            </button>
-                            <button id="opml-collapse-btn-3" class="btn btn-warning btn-sm" onclick="collapse1Level(4)">
-                                三级
-                            </button>
-                            <select id="opml-level-select" class="btn btn-warning btn-sm"
-                                onchange="collapse1Level(this.value)" title="层级选择">
-                                <option value="" selected>选择</option>
-                                <option value="5">四级</option>
-                                <option value="6">五级</option>
-                                <option value="7">六级</option>
-                                <option value="8">七级</option>
-                                <option value="9">八级</option>
-                                <option value="10">九级</option>
-                                <option value="11">十级</option>
-                            </select>
-                            <button id="opml-expand-btn" class="btn btn-warning btn-sm" onclick="expandAll()">
-                                展开所有
-                            </button>
-                        </span>
-                        <button id="live-preview-btn" class="btn btn-success btn-sm" style="display: none;"
-                            onclick="enterLivePreviewMode()">
-                            分屏预览
-                        </button>
-                        <button id="preview-btn" class="btn btn-success btn-sm" style="display: none;"
-                            onclick="previewFile()">
-                            预览
-                        </button>
-                        <button id="format-btn" class="btn btn-primary btn-sm" onclick="formatEditorValue()">
-                            格式化
-                        </button>
-                        <button id="edit-btn" class="btn btn-primary btn-sm" onclick="enterEditMode()">
-                            编辑
-                        </button>
-                        <button id="save-btn" class="btn btn-primary btn-sm" onclick="saveFileOnly()">
-                            保存
-                        </button>
-                        <button id="markdown-btn" class="btn btn-warning btn-sm" style="display: none;"
-                            onclick="enterOriginalMarkdown()">
-                            markdown
-                        </button>
-                        <button id="md-mindmap-btn" class="btn btn-warning btn-sm" style="display: none;"
-                            onclick="viewMarkdownAsMindmap()" title="把当前 Markdown 的标题层级渲染为思维导图">
+            <div id="top-right-wrapper" class="top-right-wrapper" style="display: flex;">
+                <div id="top-right-controls" class="top-right-controls" style="display: none;">
+                    <span class="opml-original-buttons" id="opml-original-buttons">
+                        <button id="opml-mindmap-btn" class="btn btn-success btn-sm" onclick="mindmapViewModel()">
                             思维导图
                         </button>
-                        <button id="plantuml-btn" class="btn btn-warning btn-sm" style="display: none;"
-                            onclick="enterPlantUMLSvg()">
-                            渲染
+                        <button id="opml-back-btn" class="btn btn-success btn-sm" onclick="outlineViewModel()">
+                            大纲笔记
                         </button>
-                        <button id="plantuml-svg-btn" class="btn btn-warning btn-sm" style="display: none;"
-                            onclick="plantUMLSvgSave()">
-                            保存为 svg
+                        <button id="jsmind-save-opml-btn" class="btn btn-warning btn-sm" onclick="jsMindSaveOpml()"
+                            style="display:none;">
+                            保存为大纲笔记
                         </button>
-                        <button id="md-image-btn" class="btn btn-warning btn-sm" style="display: none;"
-                            onclick="mdToImage()">
+                        <button id="opml-save-mm-btn" class="btn btn-warning btn-sm" onclick="opmlSaveAsMm()"
+                            style="display:none;">
+                            保存为思维导图
+                        </button>
+                        <button id="jsmind-image-btn" class="btn btn-warning btn-sm" onclick="jsMindSaveImage()"
+                            style="display:none;">
                             导出为图片
                         </button>
-                        <button id="md-html-btn" class="btn btn-warning btn-sm" style="display: none;" onclick="mdToHtml()"
-                            title="导出为HTML">
-                            HTML
+                        <button id="opml-collapse-btn-1" class="btn btn-warning btn-sm" onclick="collapse1Level(2)">
+                            一级
                         </button>
-                        <button id="md-pdf-btn" class="btn btn-warning btn-sm" style="display: none;" onclick="mdToPdf()"
-                            title="导出为PDF">
-                            PDF
+                        <button id="opml-collapse-btn-2" class="btn btn-warning btn-sm" onclick="collapse1Level(3)">
+                            二级
                         </button>
-                        <button id="copy-clipboard-btn" class="btn btn-warning btn-sm" style="display: inline-flex;"
-                            onclick="copyToClipboard()">
-                            复制
+                        <button id="opml-collapse-btn-3" class="btn btn-warning btn-sm" onclick="collapse1Level(4)">
+                            三级
                         </button>
-                    </div>
-                    <div id="common-tool-controls" class="top-right-controls" style="display: none;">
-                        <button id="demo-ppt-btn" class="btn btn-orange btn-sm" style="display:none;"
-                            onclick="togglePPTMode()" title="Markdown 幻灯片放映（--- 分页，←/→ 翻页，Esc 退出）">
-                            放映
+                        <select id="opml-level-select" class="btn btn-warning btn-sm"
+                            onchange="collapse1Level(this.value)" title="层级选择">
+                            <option value="" selected>选择</option>
+                            <option value="5">四级</option>
+                            <option value="6">五级</option>
+                            <option value="7">六级</option>
+                            <option value="8">七级</option>
+                            <option value="9">八级</option>
+                            <option value="10">九级</option>
+                            <option value="11">十级</option>
+                        </select>
+                        <button id="opml-expand-btn" class="btn btn-warning btn-sm" onclick="expandAll()">
+                            展开所有
                         </button>
-                        <button id="demo-btn" class="btn btn-orange btn-sm" style="display:none;"
-                            onclick="toggleDemoMode()">
-                            演示
-                        </button>
-                    </div>
-                    <div id="ai-fab-button" style="display: none;">
-                        <img src="data:image/jpeg;base64,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"
-                            alt="AI" class="ai-fab-icon">
-                    </div>
+                    </span>
+                    <button id="live-preview-btn" class="btn btn-success btn-sm" style="display: none;"
+                        onclick="enterLivePreviewMode()">
+                        分屏预览
+                    </button>
+                    <button id="preview-btn" class="btn btn-success btn-sm" style="display: none;"
+                        onclick="previewFile()">
+                        预览
+                    </button>
+                    <button id="format-btn" class="btn btn-primary btn-sm" onclick="formatEditorValue()">
+                        格式化
+                    </button>
+                    <button id="edit-btn" class="btn btn-primary btn-sm" onclick="enterEditMode()">
+                        编辑
+                    </button>
+                    <button id="save-btn" class="btn btn-primary btn-sm" onclick="saveFileOnly()">
+                        保存
+                    </button>
+                    <button id="markdown-btn" class="btn btn-warning btn-sm" style="display: none;"
+                        onclick="enterOriginalMarkdown()">
+                        markdown
+                    </button>
+                    <button id="md-mindmap-btn" class="btn btn-warning btn-sm" style="display: none;"
+                        onclick="viewMarkdownAsMindmap()" title="把当前 Markdown 的标题层级渲染为思维导图">
+                        思维导图
+                    </button>
+                    <button id="plantuml-btn" class="btn btn-warning btn-sm" style="display: none;"
+                        onclick="enterPlantUMLSvg()">
+                        渲染
+                    </button>
+                    <button id="plantuml-svg-btn" class="btn btn-warning btn-sm" style="display: none;"
+                        onclick="plantUMLSvgSave()">
+                        保存为 svg
+                    </button>
+                    <button id="md-image-btn" class="btn btn-warning btn-sm" style="display: none;"
+                        onclick="mdToImage()">
+                        导出为图片
+                    </button>
+                    <button id="md-html-btn" class="btn btn-warning btn-sm" style="display: none;" onclick="mdToHtml()"
+                        title="导出为HTML">
+                        HTML
+                    </button>
+                    <button id="md-pdf-btn" class="btn btn-warning btn-sm" style="display: none;" onclick="mdToPdf()"
+                        title="导出为PDF">
+                        PDF
+                    </button>
+                    <button id="copy-clipboard-btn" class="btn btn-warning btn-sm" style="display: inline-flex;"
+                        onclick="copyToClipboard()">
+                        复制
+                    </button>
+                </div>
+                <div id="common-tool-controls" class="top-right-controls" style="display: none;">
+                    <button id="demo-ppt-btn" class="btn btn-orange btn-sm" style="display:none;"
+                        onclick="togglePPTMode()" title="Markdown 幻灯片放映（--- 分页，←/→ 翻页，Esc 退出）">
+                        放映
+                    </button>
+                    <button id="demo-btn" class="btn btn-orange btn-sm" style="display:none;"
+                        onclick="toggleDemoMode()">
+                        演示
+                    </button>
+                </div>
+                <div id="ai-fab-button" style="display: none;">
+                    <img src="data:image/jpeg;base64,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"
+                        alt="AI" class="ai-fab-icon">
                 </div>
             </div>
             <div id="content">
@@ -3988,7 +3985,6 @@
         const commonToolControls = document.getElementById('common-tool-controls');
         const demoBtn = document.getElementById('demo-btn');
         const openHistoryContainer = document.getElementById('open-history');
-        const topSpacerContainer =  document.getElementById('content-top-spacer')
 
         // 所有主视图容器的集合（切换视图时隐藏其他容器用）
         const MAIN_VIEW_CONTAINERS = [
@@ -4276,12 +4272,10 @@
         }
 
         function setAllTypeFlag(type) {
-            topSpacerContainer.style.display  = 'flex';
             if (type === 'renderFile') {
                 dirCanvasDisplayFlag = false;
             } else if (type === 'dashboard') {
                 if (typeof docQaCloseIfDockedOpen === 'function') setTimeout(docQaCloseIfDockedOpen, 0);
-                topSpacerContainer.style.display  = 'none';
             } else if (type === 'randomOpen') {
             } else if (type === 'canvas') {
                 currentCvsDirPath = null;
@@ -4292,7 +4286,6 @@
             } else if (type === 'mcp') {
             } else if (type === 'prompt') {
             } else if (type === 'globalSearch') {
-                topSpacerContainer.style.display = 'none';
             } else if (type === 'dirCanvasDisplay') {
                 dirCanvasDisplayFlag = true;
             }
