@@ -214,6 +214,7 @@ select option {
     flex: 1;
     min-height: 0;
     overflow: hidden;
+    position: relative;
 }
 
 #sidebar {
@@ -562,33 +563,6 @@ summary:hover {
     display: flex;
     flex-direction: column;
     overflow: hidden;
-}
-
-#content-top-spacer {
-    flex: none;
-    height: 36px;
-    background: transparent;
-    position: absolute;
-    top: 0;
-    right: 0.25rem;
-    display: none;
-    align-items: center;
-    justify-content: flex-end;
-    padding: 0 0.25rem;
-    overflow: visible;
-    z-index: 3000;
-}
-
-#content-top-spacer.inLine {
-    position: relative;
-}
-
-#content-top-spacer .top-right-wrapper {
-    position: static;
-    margin-left: auto;
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
 }
 
 #toc-container {
