@@ -127,11 +127,15 @@
     font-size: 11px;
     line-height: 1;
     padding: 4px 8px;
-    border-radius: 999px;
+    border-radius: 6px;
     cursor: pointer;
     transition: all var(--transition-fast);
     font-family: var(--font-family);
     white-space: nowrap;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    justify-items: center;
 }
 
 .gs-chip:hover {
