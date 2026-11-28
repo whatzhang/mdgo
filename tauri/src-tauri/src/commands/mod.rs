@@ -24,4 +24,5 @@ pub mod skill;
 pub mod stats;
 pub mod system;
 pub mod usage;
+pub mod vpn;
 pub mod web_search;

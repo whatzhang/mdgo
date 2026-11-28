@@ -601,9 +601,54 @@ pub fn run() {
             }
             // 初始化系统托盘（关闭到托盘 / 左键显示 / 右键菜单：显示、退出）。
             // 托盘是外围功能：创建失败不阻断启动（如 Linux 无托盘宿主），降级为无托盘模式。
+            // ── VPN 模块：管理器 + 崩溃恢复 + 后台监控（须在托盘之前注册，供托盘菜单取状态）──
+            let vpn_manager = crate::core::vpn::VpnManager::new(app.handle().clone());
+            // 启动即清理上次异常退出（调试 Ctrl+C / 崩溃 / 强杀）遗留的内核进程，
+            // 避免下一次启动后出现两个 mihomo。
+            vpn_manager.cleanup_stale_cores();
+            app.manage(vpn_manager.clone());
+            {
+                let manager = vpn_manager.clone();
+                tauri::async_runtime::spawn(async move {
+                    manager.recover_after_crash().await;
+                    manager.ensure_monitors();
+                    let settings = manager.settings();
+                    if settings.auto_connect {
+                        manager.prepare_last_profile();
+                        let _ = manager.connect().await;
+                    }
+                });
+            }
+            // 调试模式 Ctrl+C：先做收尾（恢复系统代理 + 停内核），再退出；
+            // 避免终端中断后 mihomo 变成孤儿进程。
+            {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if tokio::signal::ctrl_c().await.is_ok() {
+                        log::warn!("[vpn] 检测到 Ctrl+C，正在停止内核并恢复系统代理");
+                        if let Some(state) = handle
+                            .try_state::<std::sync::Arc<crate::core::vpn::VpnManager>>()
+                        {
+                            let manager = state.inner().clone();
+                            let _ = tokio::time::timeout(
+                                std::time::Duration::from_secs(6),
+                                manager.shutdown(),
+                            )
+                            .await;
+                        }
+                        handle.exit(0);
+                    }
+                });
+            }
             match crate::tray::setup_tray(app) {
                 Ok(()) => tray_ok.store(true, Ordering::Relaxed),
                 Err(e) => log::warn!("[tray] 系统托盘创建失败，应用将以无托盘模式运行: {}", e),
+            }
+            // `--autostart`（开机自启）：静默进入托盘，不弹主窗口
+            if std::env::args().any(|a| a == "--autostart") {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
             }
             // 启动 WebSocket 通信桥（替代 Tauri 事件/命令，Rust 工具闭包 ↔ 前端）
             tauri::async_runtime::spawn(async move {
@@ -785,6 +830,36 @@ pub fn run() {
             commands::web_search::web_search_config_get,
             commands::web_search::web_search_config_set,
             commands::web_search::web_search_test,
+            // ── VPN（mihomo 内核 · 无 TUN）──
+            commands::vpn::vpn_state,
+            commands::vpn::vpn_connect,
+            commands::vpn::vpn_disconnect,
+            commands::vpn::vpn_restart_core,
+            commands::vpn::vpn_diag_run,
+            commands::vpn::vpn_proxies,
+            commands::vpn::vpn_select_proxy,
+            commands::vpn::vpn_delay,
+            commands::vpn::vpn_group_delay,
+            commands::vpn::vpn_mode_set,
+            commands::vpn::vpn_rules,
+            commands::vpn::vpn_connections,
+            commands::vpn::vpn_kill_connection,
+            commands::vpn::vpn_kill_all,
+            commands::vpn::vpn_logs,
+            commands::vpn::vpn_logs_clear,
+            commands::vpn::vpn_profiles,
+            commands::vpn::vpn_profile_add,
+            commands::vpn::vpn_profile_update,
+            commands::vpn::vpn_profile_remove,
+            commands::vpn::vpn_profile_activate,
+            commands::vpn::vpn_profile_versions,
+            commands::vpn::vpn_profile_rollback,
+            commands::vpn::vpn_settings_get,
+            commands::vpn::vpn_settings_set,
+            commands::vpn::vpn_sysproxy_set,
+            commands::vpn::vpn_network_state,
+            commands::vpn::vpn_open_data_dir,
+            commands::vpn::vpn_pick_yaml,
         ]);
 
     // Windows/Linux：拦截主窗口关闭请求，点击右上角关闭按钮 → 隐藏到系统托盘。
@@ -806,6 +881,21 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_app_handle, _event| {
+            // 退出前收尾：恢复系统代理 + 停止 mihomo 内核（有界等待，避免退出卡死）
+            if let tauri::RunEvent::ExitRequested { .. } = _event {
+                if let Some(state) = _app_handle
+                    .try_state::<std::sync::Arc<crate::core::vpn::VpnManager>>()
+                {
+                    let manager = state.inner().clone();
+                    let _ = tauri::async_runtime::block_on(async move {
+                        let _ = tokio::time::timeout(
+                            std::time::Duration::from_secs(6),
+                            manager.shutdown(),
+                        )
+                        .await;
+                    });
+                }
+            }
             // macOS：点击 Dock 图标 → 恢复/重新打开主窗口（系统原生习惯）
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = _event {
