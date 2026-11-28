@@ -19,6 +19,7 @@ pub mod validation;
 pub mod schedule;
 pub mod knowledge;
 pub mod git;
+pub mod vpn;
 
 pub mod chat_types;
 pub mod docagent;

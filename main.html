@@ -101,6 +101,7 @@
     <link rel="stylesheet" href="./css_js/modules/agent.css" />
     <link rel="stylesheet" href="./css_js/modules/ai-summay.css" />
     <link rel="stylesheet" href="./css_js/modules/global-search.css" />
+    <link rel="stylesheet" href="./css_js/modules/vpn.css" />
     <link rel="stylesheet" href="./css_js/modules/behavior-analysis.css" />
     <link rel="stylesheet" href="./css_js/modules/file-type-distribution.css" />
 </head>
@@ -382,9 +383,9 @@
                             <div class="graph-toolbar-slider-item">
                                 <label>连线长度</label>
                                 <span class="graph-toolbar-row-inline">
-                                    <input type="range" id="graph-link-distance" min="10" max="400" step="5" value="40"
+                                    <input type="range" id="graph-link-distance" min="10" max="400" step="5" value="80"
                                         oninput="updateGraphParam('linkDistance')">
-                                    <span class="graph-toolbar-value" id="graph-link-distance-value">40</span>
+                                    <span class="graph-toolbar-value" id="graph-link-distance-value">80</span>
                                 </span>
                             </div>
                             <div class="graph-toolbar-slider-item">
@@ -1066,6 +1067,8 @@
             <div id="iframe-common-container" style="display: none; width: 100%; height: 100%;">
                 <iframe id="common-iframe" src="" style="width: 100%; height: 100%; border: none;"></iframe>
             </div>
+            <!-- VPN（mihomo 内核 · 无 TUN）：原生视图容器，由 css_js/modules/vpn.js 挂载 -->
+            <div id="vpn-container" class="vpn-view" style="display: none; width: 100%; height: 100%;"></div>
             <!-- Mermaid 图表编辑器 -->
             <div id="mermaid-app-container" class="mermaid-app-container" style="display: none;">
                 <div class="mermaid-app">
@@ -3346,6 +3349,7 @@
             { key: 'Skill', value: 'toggleFile("skill")', display: true, type: 'D' },
             { key: 'MCP', value: 'toggleFile("mcp")', display: true, type: 'D' },
             { key: 'Prompt', value: 'toggleFile("prompt")', display: true, type: 'D' },
+            { key: 'VPN', value: 'toggleFile("vpn")', display: true, type: 'D' },
         ]
         // 高亮字体颜色（深色系，确保可读性）
         const HIGHLIGHT_FONT_COLORS = [
@@ -3961,6 +3965,8 @@
         const graphqlPlaygroundContainer = document.getElementById('graphql-playground-container');
         const openrestyEditorContainer = document.getElementById('openresty-editor-container');
         const iframeCommonContainer = document.getElementById('iframe-common-container');
+        // VPN 视图容器（原生模块，css_js/modules/vpn.js 通过 window.vpnApp.mount 挂载）
+        const vpnContainer = document.getElementById('vpn-container');
         const mermaidAppContainer = document.getElementById('mermaid-app-container');
         const timelineAppContainer = document.getElementById('timeline-app-container');
         const selectionToolbar = document.getElementById('markdown-selection-toolbar');
@@ -3990,7 +3996,7 @@
         const MAIN_VIEW_CONTAINERS = [
             contentMain, contentEdit, contentCommonContainer, dashboardContainer,
             skillContainer, openrestyEditorContainer, graphViewContainer,
-            iframeCommonContainer, mermaidAppContainer, timelineAppContainer,
+            iframeCommonContainer, vpnContainer, mermaidAppContainer, timelineAppContainer,
             graphqlPlaygroundContainer, regexTestContainer, calendarContainer,
             cronViewContainer, videoViewContainer, gitRecordsContainer,
             swaggerEditorContainer, dirSpaceContainer, chatContainer, knowledgeContainer,
@@ -4170,6 +4176,8 @@
             setAllTypeFlag(type);
             if (type === 'newFile') {
                 newFile(data.newFileName);
+            } else if (type === 'vpn') {
+                await openVpnPage(); openHistory.addItem('vpn');
             } else if (type === 'fileGraph') {
                 await openFileGraph(); openHistory.addItem('fileGraph');
             } else if (type === 'noteGraph') {
@@ -5405,7 +5413,7 @@
             for (let i = 0; i < AUX_CONTROLS.length; i++) {
                 AUX_CONTROLS[i].style.display = 'none';
             }
-            await destroyEverything();
+            await destroyEverything(targetContainer === vpnContainer);
             // 视图切换完成后重算悬浮按钮（TOC / 小助手）的显隐与贴边：
             // 小助手按钮只在文档阅读/编辑视图出现，切换后要立刻跟着更新
             scheduleSideTogglePositions();
@@ -5433,7 +5441,7 @@
             mmModel = '';
         }
 
-        async function destroyEverything() {
+        async function destroyEverything(skipVpn) {
             cleanupObjectUrls();
             destroyLazyImages();
             showTocToggleBtn(false);
@@ -5454,6 +5462,7 @@
                 Promise.resolve(cleanupKanban()),
                 Promise.resolve(destroySwaggerEditor()),
                 Promise.resolve(cleanupCommonIframe()),
+                skipVpn ? Promise.resolve() : Promise.resolve(destroyVpnPage()),
                 Promise.resolve(destroyRegesTest()),
                 Promise.resolve(destroyJSONPage()),
                 Promise.resolve(closeSystemMonitor()),
@@ -19353,6 +19362,29 @@ kanban-plugin: basic
             }
         }
 
+        /**
+         * 打开 VPN 视图（原生模块视图，非 iframe）。
+         *
+         * 视图由 css_js/modules/vpn.js 提供：window.vpnApp.mount(容器) 负责建 DOM、
+         * 订阅 vpn://* 事件与轮询；离开视图时 destroy() 解绑事件、清理定时器。
+         */
+        async function openVpnPage() {
+            await switchToView(vpnContainer);
+            if (window.vpnApp && typeof window.vpnApp.mount === 'function') {
+                await window.vpnApp.mount(vpnContainer);
+            } else {
+                showNotification('VPN 模块未加载，请刷新后重试', 'error');
+            }
+        }
+
+        /** 销毁 VPN 视图：解绑事件、清理定时器并清空容器。 */
+        function destroyVpnPage() {
+            if (window.vpnApp && typeof window.vpnApp.destroy === 'function') {
+                window.vpnApp.destroy();
+            }
+            if (vpnContainer) vpnContainer.innerHTML = '';
+        }
+
         function initOpenRestyEditor(content, filePath) {
             openrestyEditorContainer.innerHTML =
                 `<div id="openresty-editor-toolbar">
@@ -24791,7 +24823,7 @@ kanban-plugin: basic
             centerStrength: 0.3,
             chargeStrength: -350,
             linkStrength: 0.5,
-            linkDistance: 40,
+            linkDistance: 80,
             nodeSize: 0.8,
             filterPath: '',
             showTags: true,
@@ -39426,5 +39458,7 @@ kanban-plugin: basic
     <script src="./css_js/modules/global-search.js"></script>
     <div id="agent-global-task-bar" class="agent-global-task-bar" style="display:none;"></div>
     <script src="./css_js/modules/behavior-analysis.js"></script>
+    <!-- VPN 原生视图（挂载到 #vpn-container，直接调用 Tauri 命令） -->
+    <script src="./css_js/modules/vpn.js"></script>
 </body>
 
